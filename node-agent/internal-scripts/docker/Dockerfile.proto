@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile:1
+FROM golang:1.24-bookworm AS builder
+
+# Install protoc and cleanup apt cache
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    protobuf-compiler && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Go plugins for protoc
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1 && \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0
+
+WORKDIR /workspace
+ENTRYPOINT ["protoc"]
+

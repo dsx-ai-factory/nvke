@@ -1,0 +1,13 @@
+#!/bin/bash
+set -e
+
+echo "Installing NKE Agent   version {{VERSION}}..."
+systemctl daemon-reload
+
+systemctl enable nke-agent
+if [ ! -f /etc/default/nke-agent ]; then
+  echo 'AGENT_ARGS=""' >/etc/default/nke-agent
+fi
+systemctl restart nke-agent
+
+echo "NKE Services installed and started."

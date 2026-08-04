@@ -1,0 +1,54 @@
+# ============================================================
+# NKE Universal Builder Image
+# For Go projects with proto, lint, test, and packaging stages
+# ============================================================
+
+FROM golang:1.24
+
+# ------------------------------------------------------------
+# Environment setup
+# ------------------------------------------------------------
+ENV PATH="/go/bin:${PATH}"
+ENV GOBIN=/go/bin
+WORKDIR /app
+
+# Install base dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      make git curl unzip ca-certificates protobuf-compiler fakeroot \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install AWS CLI v2
+RUN curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o /tmp/awscliv2.zip \
+    && unzip -q /tmp/awscliv2.zip -d /tmp \
+    && /tmp/aws/install \
+    && rm -rf /tmp/aws /tmp/awscliv2.zip
+
+# Install Go tools with GOMAXPROCS=1 for QEMU stability (H1: parallelism too high)
+# Split into separate RUN commands for better isolation and caching (H5: sequential succeeds)
+
+# H1/H5 diagnostic: protoc-gen-go (lightweight)
+RUN echo "[DIAG] Installing protoc-gen-go on $(uname -m)..." && \
+    GOMAXPROCS=1 go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.34.1 && \
+    echo "[DIAG] protoc-gen-go SUCCESS"
+
+# H1/H5 diagnostic: protoc-gen-go-grpc (lightweight)
+RUN echo "[DIAG] Installing protoc-gen-go-grpc on $(uname -m)..." && \
+    GOMAXPROCS=1 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.4.0 && \
+    echo "[DIAG] protoc-gen-go-grpc SUCCESS"
+
+# H2 diagnostic: golangci-lint (HEAVY - most likely to fail under QEMU)
+# Use pre-built binary instead of compiling from source to avoid QEMU segfaults
+RUN echo "[DIAG] Installing golangci-lint on $(uname -m)..." && \
+    curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /go/bin v1.64.8 && \
+    echo "[DIAG] golangci-lint SUCCESS"
+
+# H8+H9 fix: go-licenses only on amd64, with CGO_ENABLED=0 (no C deps needed)
+# Skip on arm64 to avoid QEMU segfaults
+RUN echo "[DIAG] Installing go-licenses on $(uname -m)..." && \
+    if [ "$(uname -m)" = "x86_64" ]; then \
+        CGO_ENABLED=0 go install github.com/google/go-licenses@v1.6.0 && \
+        echo "[DIAG] go-licenses SUCCESS (amd64)"; \
+    else \
+        echo "[DIAG] go-licenses SKIPPED (arm64 - QEMU unstable)"; \
+    fi
+

@@ -1,0 +1,25 @@
+{
+  "name": "bootstrap-bundle-collection",
+  "version": "1.0.0",
+  "summary": "Example collection for node bootstrap",
+  "description": "Installs kubeadm, display-mode-selector, and etcd-manager. Use with InstallCollection RPC.",
+  "bundles": [
+    {
+      "name": "kubeadm",
+      "version": "v1.31.9",
+      "installCmd": ["python", "kubeadm-install.py"],
+      "installFile": "kubeadm-install.py"
+    },
+    {
+      "name": "display-mode-selector",
+      "version": "v1.67.0",
+      "installCmd": ["/bin/bash", "-c", "cp displaymodeselector /usr/bin/ && chmod 755 /usr/bin/displaymodeselector"]
+    },
+    {
+      "name": "etcd-manager",
+      "version": "v1.0.3",
+      "installCmd": ["./install.sh"],
+      "installFile": "install.sh"
+    }
+  ]
+}

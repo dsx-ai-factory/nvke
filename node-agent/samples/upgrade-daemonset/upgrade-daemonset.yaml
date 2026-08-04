@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: agent-updater
+  namespace: kube-system 
+spec:
+  selector:
+    matchLabels:
+      name: agent-updater
+  template:
+    metadata:
+      labels:
+        name: agent-updater
+    spec:
+      tolerations:
+      - operator: "Exists"  # run on all nodes, even tainted ones
+      containers:
+      - name: agent-updater
+          image: nvcr.io/nvidian/nke/nke-agent-installer:latest
+        imagePullPolicy: Always
+        securityContext:
+          privileged: true 
+        volumeMounts:
+        - name: host-root
+          mountPath: /host
+      volumes:
+      - name: host-root
+        hostPath:
+          path: /

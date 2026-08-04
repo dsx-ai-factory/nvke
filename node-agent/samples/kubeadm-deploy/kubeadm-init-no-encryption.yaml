@@ -1,0 +1,15 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: "10.85.140.141"
+  bindPort: 6443
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+clusterName: ktv-cluster
+controlPlaneEndpoint: "10.85.140.141"
+kubernetesVersion: "v1.31.9" # match bundled/pre-loaded images in air-gap
+networking:
+  podSubnet: "192.168.0.0/16"       # Calico-compatible
+  serviceSubnet: "10.96.0.0/12"
+  dnsDomain: "cluster.local"

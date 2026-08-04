@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+---
+
+- - :permit
+  - Apache 2.0
+  - :who: Mark Larter
+    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :versions: []
+    :when: 2025-02-05 12:27:56.175691000 Z
+- - :permit
+  - BSD-3-Clause
+  - :who: Mark Larter
+    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :versions: []
+    :when: 2025-02-05 12:27:56.175691000 Z
+- - :permit
+  - MIT
+  - :who: Mark Larter
+    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :versions: []
+    :when: 2025-02-05 12:27:56.175691000 Z
+- - :permit
+  - Simplified BSD
+  - :who: Mark Larter
+    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :versions: []
+    :when: 2025-02-05 12:27:56.175691000 Z

@@ -1,0 +1,238 @@
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+version: "2"
+
+run:
+  concurrency: 8
+  modules-download-mode: readonly
+  tests: true
+  allow-parallel-runners: true
+linters:
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - decorder
+    - depguard
+    - dogsled
+    - durationcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - forcetypeassert
+    - funlen
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - godot
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosmopolitan
+    - grouper
+    - importas
+    - inamedparam
+    - interfacebloat
+    - intrange
+    - loggercheck
+    - makezero
+    - mirror
+    - nakedret
+    - nilerr
+    - nolintlint
+    - nonamedreturns
+    - predeclared
+    - promlinter
+    - reassign
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - tagliatelle
+    - testableexamples
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - varnamelen
+    - zerologlint
+  disable:
+    - exhaustruct
+    - godox
+    - nlreturn
+    - noctx       # TODO: fix and re-enable - requires adding context to exec.Command and net.Dial calls
+    - perfsprint  # TODO: fix and re-enable - string concatenation in loops
+    - revive      # TODO: fix and re-enable - various style issues (naming, unused params, etc.)
+    - testpackage
+    - wrapcheck
+    # TODO: fix and re-enable the following linters (384 issues total)
+    - contextcheck   # 11 issues - context propagation
+    - dupl           # 3 issues - duplicate code blocks
+    - dupword        # 3 issues - duplicate words in comments
+    - errchkjson     # 1 issue - json error checking
+    - errname        # 1 issue - error naming convention
+    - errorlint      # 43 issues - error wrapping
+    - exhaustive     # 2 issues - exhaustive switch/map
+    - forcetypeassert # 6 issues - unchecked type assertions
+    - goconst        # 7 issues - repeated strings to constants
+    - gocritic       # 76 issues - various code style
+    - godot          # 32 issues - comment punctuation
+    - gosec          # 18 issues - security issues
+    - grouper        # 2 issues - declaration grouping
+    - inamedparam    # 1 issue - interface param naming
+    - intrange       # 1 issue - integer range loops
+    - misspell       # 10 issues - spelling errors
+    - musttag        # 1 issue - struct tag requirements
+    - nilerr         # 1 issue - nil error returns
+    - nolintlint     # 2 issues - nolint directive issues
+    - protogetter    # 124 issues - proto field access
+    - tagliatelle    # 4 issues - struct tag naming
+    - unconvert      # 7 issues - unnecessary conversions
+    - unparam        # 2 issues - unused parameters
+    - usestdlibvars  # 1 issue - stdlib variable usage
+    - wastedassign   # 1 issue - wasted assignments
+    - whitespace     # 6 issues - whitespace issues
+    - govet          # 8 issues - go vet checks
+    - staticcheck    # 1 issue - static analysis
+  settings:
+    depguard:
+      rules:
+        main:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: github.com/pkg/errors
+              desc: use stdlib instead
+    dupl:
+      threshold: 100
+    funlen:
+      lines: 500
+      statements: -1
+      ignore-comments: true
+    goconst:
+      min-len: 2
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - unnamedResult
+    gocyclo:
+      min-complexity: 15
+    gosec:
+      excludes:
+        - G115
+    staticcheck:
+      checks:
+        - "all"
+        - "-QF1001"  # TODO: fix and re-enable - De Morgan's law
+        - "-QF1003"  # TODO: fix and re-enable - tagged switch
+        - "-QF1007"  # TODO: fix and re-enable - merge conditional assignment
+    govet:
+      disable:
+        - fieldalignment
+      enable-all: true
+    grouper:
+      const-require-grouping: true
+      import-require-grouping: true
+      var-require-single-var: true
+      var-require-grouping: false
+    misspell:
+      locale: US
+    tagalign:
+      align: false
+      sort: true
+      order:
+        - embed
+        - help
+        - name
+        - prefix
+        - envprefix
+        - enum
+        - env
+        - default
+      strict: true
+    varnamelen:
+      min-name-length: 1
+    wsl:
+      allow-assign-and-call: true
+      allow-assign-and-anything: true
+      allow-trailing-comment: false
+      allow-cuddle-declarations: true
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - linters:
+          - dupl
+          - forcetypeassert
+          - gochecknoglobals
+          - goconst
+          - gocritic
+          - gosec
+          - grouper
+          - wrapcheck
+          - wsl
+        path: (.+)_test\.go
+      - linters:
+          - dupl
+          - perfsprint
+        path: testcases
+      - linters:
+          - staticcheck
+        text: 'ST1003:'
+    paths:
+      - pkg/workflow/cluster
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  fix: false
+formatters:
+  # TODO: fix and re-enable all formatters
+  # - gofmt     # 1 issue
+  # - goimports # 4 issues
+  # - gci       # 6 issues - import grouping
+  # - gofumpt   # 3 issues - stricter formatting
+  enable: []
+  settings:
+    gci:
+      sections:
+        - standard
+        - dot
+        - default
+        - prefix(k8s.io,sigs.k8s.io)
+        - prefix(github.com/NVIDIA/)
+      custom-order: true
+    goimports:
+      local-prefixes:
+        - github.com/NVIDIA
+        - github.com/NVIDIA/nke
+        - github.com/NVIDIA/nke/node-agent
+  exclusions:
+    generated: lax
+    paths:
+      - pkg/workflow/cluster
+      - third_party$
+      - builtin$
+      - examples$

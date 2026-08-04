@@ -1,0 +1,10 @@
+# Argus security triage decisions.
+#
+# Add an entry only after reviewing a concrete finding. Every entry must use
+# the finding's stable slug and include a reason and triaged_by owner. Delete
+# an entry when the decision or its compensating control is no longer valid.
+version: 1
+
+false_positives: []
+accepted_risks: []
+suppressed_cves: []

@@ -1,0 +1,18 @@
+# Build artifacts
+node-agent/agent
+**/*.test
+**/bin/
+**/dist/
+**/release/
+
+# Editor / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Go workspace overrides
+go.work
+go.work.sum

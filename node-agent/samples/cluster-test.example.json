@@ -1,0 +1,40 @@
+{
+  "grpc": {
+    "port": 15005,
+    "plaintext": true
+  },
+  "cluster": {
+    "control_plane_endpoint": "",
+    "pod_network_cidr": "10.244.0.0/16",
+    "service_cidr": "10.96.0.0/12",
+    "kubernetes_version": "v1.31.9"
+  },
+  "cni": {
+    "variant": "ovn",
+    "version": "",
+    "helm_sets": []
+  },
+  "nodes": {
+    "control_plane": [
+      "192.168.1.10",
+      "192.168.1.12",
+      "192.168.1.13"
+    ],
+    "workers": [
+      "192.168.1.11",
+      "192.168.1.14"
+    ]
+  },
+  "packages": {
+    "skip": true,
+    "install_cni_packages": false,
+    "collection_url": "",
+    "collection_staging": false,
+    "extra": []
+  },
+  "timing": {
+    "agent_ready_timeout_sec": 300,
+    "kubeadm_timeout_sec": 900,
+    "poll_sec": 5
+  }
+}

@@ -1,0 +1,7 @@
+Package: nke-agent
+Version: 0.1.7
+Section: base
+Priority: optional
+Architecture: amd64
+Maintainer: Nvidia NKE
+Description: NKE Node Agent and Attestation Service

@@ -1,0 +1,20 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: JoinConfiguration
+controlPlane:
+  localAPIEndpoint:
+    advertiseAddress: 10.85.140.173
+  extraArgs:
+    encryption-provider-config: /etc/kubernetes/encryption-config.yaml
+  extraVolumes:
+    - name: encryptionconfig
+      hostPath: /etc/kubernetes/encryption-config.yaml
+      mountPath: /etc/kubernetes/encryption-config.yaml
+      readOnly: true
+      pathType: File
+discovery:
+  bootstrapToken:
+    token: "7etwj3.sbb6cevgpvbnbgfi"
+    apiServerEndpoint: "10.85.140.141:6443"
+    caCertHashes: 
+    - sha256:dd16f724cb81339727b87baae82f4fccb0483af3bd4ff54a4f80102bf49d50e1
+

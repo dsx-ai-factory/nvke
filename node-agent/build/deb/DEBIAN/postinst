@@ -1,0 +1,11 @@
+#!/bin/bash
+set -e
+
+# Reload systemd to recognize new service files
+systemctl daemon-reload
+
+# Enable and start services
+systemctl enable nke-agent
+systemctl restart nke-agent
+
+echo "NKE Services installed and started."

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Thin wrapper so local .githooks matches internal-scripts/hooks.
+exec "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/internal-scripts/hooks/pre-commit"

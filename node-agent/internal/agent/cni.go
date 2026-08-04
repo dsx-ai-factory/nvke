@@ -1,0 +1,791 @@
+package agent
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/netip"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
+
+	semver "github.com/Masterminds/semver/v3"
+	pb "github.com/NVIDIA/nke/node-agent/pkg/agent/proto"
+	nkeutils "github.com/NVIDIA/nke/node-agent/pkg/utils"
+	yaml "gopkg.in/yaml.v2"
+)
+
+var CILIUM_VERSION semver.Version = *semver.MustParse("1.15.5")
+
+// errCNIApplyRequiresControlPlane is returned when charts deploy is requested on a node
+// whose Role is not controlplane (see ControlPlaneRole in agent.go).
+var errCNIApplyRequiresControlPlane = errors.New("InstallCNI may only be invoked on control-plane nodes")
+
+var errCNIBadRequestImagesRole = errors.New("InstallCNI no longer installs CNI image packages; use InstallPackages (or kubelet/registry pull)")
+
+// errCNIChartsDebNotInstalled is returned when the charts/manifest deb is missing — install via
+// InstallPackages (or apt) before invoking InstallCNI. The agent does not validate container images
+// in containerd/CRI so clusters can rely entirely on kubelet/registry pull from a tenant registry.
+var errCNIChartsDebNotInstalled = errors.New("CNI charts Debian package must be installed before InstallCNI")
+
+// chartsDebPresenceCheck verifies the charts package is registered in dpkg (swappable in tests).
+var chartsDebPresenceCheck = chartsDebPresenceDefault
+
+func chartsDebPresenceDefault(ctx context.Context, binPkg string) error {
+	if _, err := dpkgInstalledVersion(ctx, binPkg); err != nil {
+		slog.WarnContext(ctx, "CNI charts package not installed",
+			"package", binPkg,
+			"detail", err,
+		)
+		return fmt.Errorf("%w (%q)", errCNIChartsDebNotInstalled, binPkg)
+	}
+	return nil
+}
+
+// errOvnRequiresHostOpenVSwitch is returned when ovn-kubernetes cannot use host Open vSwitch (ovs-vsctl).
+var errOvnRequiresHostOpenVSwitch = errors.New(
+	"openvswitch is required on the host for ovn-kubernetes (install a package such as openvswitch-switch and ensure ovs-vsctl can reach ovs-vswitchd)")
+
+const (
+	ovnKubernetesHelmChartDir = "/etc/dgx/ovn-kubernetes"
+	// defaultOvnCniChartStream is the OVN Kubernetes chart stream baked into Debian package names
+	// when InstallCNIRequest.version is empty. Sync with OVN_STREAM in cni-packages debs/ovn/BUILD.
+	defaultOvnCniChartStream = "1.4.0"
+	// defaultCalicoCniStream is the Calico patch stream in Debian package names when version is empty.
+	// Sync with CALICO_STREAM in cni-packages debs/calico/BUILD.
+	defaultCalicoCniStream = "3.30.1"
+)
+
+// checkHostOpenVSwitchReady verifies ovs-vsctl is installed (ovs-vsctl --version).
+func checkHostOpenVSwitchReady(runner nkeutils.CommandRunner) error {
+	out, err := runner.Run("ovs-vsctl", []string{"--version"}, &nkeutils.CommandOptions{Env: os.Environ()})
+	if err != nil {
+		msg := strings.TrimSpace(string(out))
+		if msg != "" {
+			return fmt.Errorf("%w: ovs-vsctl --version failed: %v (%s)", errOvnRequiresHostOpenVSwitch, err, msg)
+		}
+		return fmt.Errorf("%w: ovs-vsctl --version failed: %w", errOvnRequiresHostOpenVSwitch, err)
+	}
+	return nil
+}
+
+func (s *NodeAgentServer) applyTigeraManifestOverrides(path, operatorManifest, resourceManifest string) error {
+	if operatorManifest != "" {
+		operatorManifestPath := filepath.Join(path, "manifests", "tigera-operator.yaml")
+		operatorManifestBackupPath := operatorManifestPath + ".bak"
+		s.Runner.Run("mv", []string{operatorManifestPath, operatorManifestBackupPath}, &nkeutils.CommandOptions{}) //nolint:all
+		if err := os.WriteFile(operatorManifestPath, []byte(operatorManifest), 0o644); err != nil {
+			return fmt.Errorf("failed to write operator manifest file: %w", err)
+		}
+	}
+
+	if resourceManifest != "" {
+		resourceManifestPath := filepath.Join(path, "manifests", "custom-resources.yaml")
+		resourceManifestBackupPath := resourceManifestPath + ".bak"
+		_, err := s.Runner.Run("mv", []string{resourceManifestPath, resourceManifestBackupPath}, &nkeutils.CommandOptions{})
+		if err != nil {
+			return fmt.Errorf("failed to backup default manifest files: %w", err)
+		}
+		if err := os.WriteFile(resourceManifestPath, []byte(resourceManifest), 0o644); err != nil {
+			return fmt.Errorf("failed to write custom resource manifest file: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifest, resourceManifest string) error {
+	// TODO:  It would be nice to simply drop into "InstallBundle" here but CNI's are a little unique in that we usually provide
+	// custom manifests.  For now those custom manifests aren't int he bundle so we're doing a two step process:
+	// 1. Download/Extract the bundle
+	// 2. Overwrite the manifests
+	//
+	// We can update the bundle to our "formula" and include everything in it then just call "installBundle"
+	slog.Info("fetching calico bundle by index", "version", version.String(), "architecture", s.NodeStatus.Architecture)
+	calicoBundle, err := nkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, "calico", version, s.NodeStatus.Architecture)
+	if err != nil {
+		slog.Error("failed to fetch calico bundle", "error", err)
+		return err
+	}
+	slog.Info("retrived calico bundle by index", "Bundle", calicoBundle)
+
+	requestID := generateRequestID()
+
+	bundleStatus := &Bundle{
+		RequestID:   requestID,
+		Name:        calicoBundle.Name,
+		Version:     version,
+		InstallTime: time.Now().Format(time.RFC3339),
+		Status:      "installing",
+		Source:      calicoBundle.URL,
+	}
+
+	calicoBundle.InstallFile = "calico-install.py"
+	calicoBundle.InstallCmd = []string{nkeutils.ResolvePython(), "calico-install.py"}
+
+	defer s.AppendBundleToStatus(bundleStatus)
+
+	path, err := nkeutils.DownloadAndExtractArchive(calicoBundle, s.BundleSource)
+	if err != nil {
+		bundleStatus.Status = "error"
+		bundleStatus.Error = fmt.Sprintf("failed to download calico bundle: %v", err.Error())
+		return err
+	}
+
+	if err := s.applyTigeraManifestOverrides(path, operatorManifest, resourceManifest); err != nil {
+		bundleStatus.Error = err.Error()
+		bundleStatus.Status = "error"
+		return err
+	}
+
+	slog.Info("attempting install of calico bundle", "name", calicoBundle.Name, "url", calicoBundle.URL)
+	// Ensure insall file is executable
+	_, _ = s.Runner.Run("chmod", []string{"+x", calicoBundle.InstallFile}, &nkeutils.CommandOptions{Dir: path})
+	out, err := s.Runner.Run(calicoBundle.InstallCmd[0],
+		calicoBundle.InstallCmd[1:],
+		&nkeutils.CommandOptions{
+			Dir: path,
+			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+		})
+	if err != nil {
+		slog.Error("calico bundle install failed", "error", err, "output", string(out))
+		bundleStatus.Error = fmt.Sprintf("failed to install calico bundle: %v", err.Error())
+		bundleStatus.Status = "error"
+		bundleStatus.Output = string(out)
+		return err
+	}
+
+	installLog := filepath.Join(path, "tigera-install.log")
+	logContents, _ := os.ReadFile(installLog)
+	s.mu.Lock()
+	s.NodeStatus.CalicoInstallLog = string(logContents)
+	s.mu.Unlock()
+	bundleStatus.Status = "success"
+	bundleStatus.Output = string(logContents)
+
+	return nil
+}
+
+// helmValuesFileArgs appends -f flags for standard value files present under chartDir.
+func helmValuesFileArgs(chartDir string) []string {
+	var args []string
+	for _, name := range []string{"values-nke.yaml", "values-images.yaml", "values.yaml", "values-production.yaml"} {
+		p := filepath.Join(chartDir, name)
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			args = append(args, "-f", p)
+		}
+	}
+	return args
+}
+
+// buildOvnKubernetesHelmInstallArgs returns argv for `helm install` for an OVN chart directory.
+// imageRegistry, when non-empty, is injected as --set global.registry=<value> before cniConfig
+// entries so that per-request CniConfig values take precedence over the site-wide default.
+func buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, imageRegistry string, cniConfig map[string]string) []string {
+	args := []string{
+		"install",
+		"ovn-kubernetes",
+		chartDir,
+	}
+	args = append(args, helmValuesFileArgs(chartDir)...)
+	args = append(args,
+		"--set", "k8sAPIServer="+apiServer,
+		"--set-string", "podNetwork="+helmPodNetworkValue(podNetworkCidr),
+		"--set", "serviceNetwork="+serviceCidr,
+	)
+	if imageRegistry != "" {
+		args = append(args, "--set", "global.registry="+imageRegistry)
+	}
+	for key, value := range cniConfig {
+		if key == "" {
+			continue
+		}
+		if value == "" {
+			value = "\"\""
+		}
+		args = append(args, "--set", fmt.Sprintf("%s=%s", key, value))
+	}
+	return args
+}
+
+// helmPodNetworkValue escapes commas so Helm passes all pod CIDR ranges through
+// --set-string as one literal value instead of parsing them as separate assignments.
+func helmPodNetworkValue(podNetworkCIDR string) string {
+	return strings.ReplaceAll(podNetworkCIDR, ",", `\,`)
+}
+
+func kubeadmPodNetworkCIDR(podNetworkCIDR string) string {
+	parts := strings.Split(podNetworkCIDR, ",")
+	selected := make([]string, 0, len(parts))
+	seenIPv4 := false
+	seenIPv6 := false
+
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(part)
+		if err != nil {
+			selected = append(selected, part)
+			continue
+		}
+
+		switch {
+		case prefix.Addr().Is4():
+			if seenIPv4 {
+				continue
+			}
+			seenIPv4 = true
+		case prefix.Addr().Is6():
+			if seenIPv6 {
+				continue
+			}
+			seenIPv6 = true
+		}
+
+		selected = append(selected, prefix.Masked().String())
+	}
+	return strings.Join(selected, ",")
+}
+
+func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetworkCidr, serviceCidr string, cniConfig map[string]string) error {
+	apiServer, err := getKubeAPIServer(KubeConfig)
+	if err != nil {
+		return fmt.Errorf(
+			"failed to parse apiserver endpoint from kubeconfig %s: %w",
+			KubeConfig,
+			err,
+		)
+	}
+	args := buildOvnKubernetesHelmInstallArgs(chartDir, apiServer, podNetworkCidr, serviceCidr, s.CniImageRegistry, cniConfig)
+	stdout, err := s.Runner.Run("helm", args, &nkeutils.CommandOptions{
+		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+	})
+	if err != nil {
+		return fmt.Errorf(
+			"failed to install chart ovn-kubernetes, stdout: %v, error: %v",
+			string(stdout),
+			err,
+		)
+	}
+	return nil
+}
+
+func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest) error {
+	slog.Info("installing OVN Kubernetes CNI plugin")
+
+	if err := checkHostOpenVSwitchReady(s.Runner); err != nil {
+		slog.Error("OVS readiness check failed", "error", err)
+		return err
+	}
+
+	versionStr := req.GetPluginVersion()
+	if versionStr == "" {
+		return fmt.Errorf("ovn plugin requires a version")
+	}
+	version, err := semver.NewVersion(versionStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse ovn version: %w", err)
+	}
+
+	ovnBundle, err := nkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, "ovn", version, s.NodeStatus.Architecture)
+	if err != nil {
+		return err
+	}
+	ovnBundle.InstallFile = "install.sh"
+	ovnBundle.InstallCmd = []string{"/bin/bash", "-c", "./install.sh"}
+
+	requestID := generateRequestID()
+	bundleStatus := &Bundle{
+		RequestID:   requestID,
+		Name:        ovnBundle.Name,
+		Version:     ovnBundle.Version,
+		Status:      "pending",
+		InstallTime: time.Now().Format(time.RFC3339),
+	}
+	defer s.AppendBundleToStatus(bundleStatus)
+
+	path, err := nkeutils.DownloadAndExtractArchive(ovnBundle, s.BundleSource)
+	if err != nil {
+		return err
+	}
+
+	slog.Info("attempting install of ovn bundle", "name", ovnBundle.Name, "url", ovnBundle.URL)
+	// Ensure install file is executable
+	_, _ = s.Runner.Run("chmod", []string{"+x", ovnBundle.InstallFile}, &nkeutils.CommandOptions{Dir: path})
+	out, err := s.Runner.Run(ovnBundle.InstallCmd[0],
+		ovnBundle.InstallCmd[1:],
+		&nkeutils.CommandOptions{
+			Dir: path,
+			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+		})
+	if err != nil {
+		slog.Error("ovn-kubernetes bundle install failed", "error", err, "path", path, "output", string(out))
+		bundleStatus.Error = fmt.Sprintf("failed to install ovn-kubernetes bundle: %v, path: %s", err.Error(), path)
+		bundleStatus.Status = "error"
+		return err
+	}
+
+	if err := s.runOvnKubernetesHelmInstallFromDir(ovnKubernetesHelmChartDir, req.GetPodNetworkCidr(), req.GetServiceCidr(), req.GetCniConfig()); err != nil {
+		bundleStatus.Status = "error"
+		bundleStatus.Error = err.Error()
+		return err
+	}
+	bundleStatus.Status = "success"
+	return nil
+}
+
+func aptBinaryPackageName(aptSpec string) string {
+	aptSpec = strings.TrimSpace(aptSpec)
+	if i := strings.IndexByte(aptSpec, '='); i >= 0 {
+		return strings.TrimSpace(aptSpec[:i])
+	}
+	return aptSpec
+}
+
+// effectiveCniVariant maps UNSPECIFIED to OVN (default InstallCNI product).
+func effectiveCniVariant(v pb.CniVariant) pb.CniVariant {
+	if v == pb.CniVariant_CNI_VARIANT_UNSPECIFIED {
+		return pb.CniVariant_CNI_VARIANT_OVN
+	}
+	return v
+}
+
+// nkeCniAptSpec builds an apt install spec for the discrete NKE CNI packages.
+//
+// OVN Debian names include the Helm chart stream, e.g. nke-cni-ovn-images-1.4.0 and
+// nke-cni-ovn-charts-1.4.0. Request version (after stripping a leading "v") selects that
+// stream; when empty, defaultOvnCniChartStream is used. Non-empty version also appends
+// =<version> for an apt equality pin on the Debian package version.
+//
+// Calico uses stream-suffixed names when installed from cni-packages, e.g.
+// nke-cni-calico-images-3.30.1 and nke-cni-calico-manifests-3.30.1. Request version (after stripping a leading "v")
+// selects that stream; when empty, defaultCalicoCniStream is used. Non-empty version also appends
+// =<version> for an apt equality pin on the Debian package version.
+//
+// Legacy pkg-builder names (nke-calico-container-images / nke-calico-charts without stream suffix) remain
+// installable but are not emitted by this helper.
+//
+// A single leading "v" on version is stripped when non-empty.
+func nkeCniAptSpec(variant pb.CniVariant, role pb.CniAptRole, version string) (string, error) {
+	variant = effectiveCniVariant(variant)
+	pin := strings.TrimSpace(version)
+	pin = strings.TrimPrefix(pin, "v")
+	pin = strings.TrimSpace(pin)
+
+	var pkg string
+	switch variant {
+	case pb.CniVariant_CNI_VARIANT_OVN:
+		stream := pin
+		if stream == "" {
+			stream = defaultOvnCniChartStream
+		}
+		switch role {
+		case pb.CniAptRole_CNI_APT_ROLE_IMAGES:
+			pkg = "nke-cni-ovn-images-" + stream
+		case pb.CniAptRole_CNI_APT_ROLE_CHARTS:
+			pkg = "nke-cni-ovn-charts-" + stream
+		case pb.CniAptRole_CNI_APT_ROLE_UNSPECIFIED:
+			return "", errors.New("cni_apt_role must be IMAGES or CHARTS")
+		default:
+			return "", errors.New("cni_apt_role must be IMAGES or CHARTS")
+		}
+		if pin == "" {
+			return pkg, nil
+		}
+		return pkg + "=" + pin, nil
+	case pb.CniVariant_CNI_VARIANT_CALICO:
+		stream := pin
+		if stream == "" {
+			stream = defaultCalicoCniStream
+		}
+		switch role {
+		case pb.CniAptRole_CNI_APT_ROLE_IMAGES:
+			pkg = "nke-cni-calico-images-" + stream
+		case pb.CniAptRole_CNI_APT_ROLE_CHARTS:
+			pkg = "nke-cni-calico-manifests-" + stream
+		case pb.CniAptRole_CNI_APT_ROLE_UNSPECIFIED:
+			return "", errors.New("cni_apt_role must be IMAGES or CHARTS")
+		default:
+			return "", errors.New("cni_apt_role must be IMAGES or CHARTS")
+		}
+		if pin == "" {
+			return pkg, nil
+		}
+		return pkg + "=" + pin, nil
+	default:
+		return "", errors.New("cni_variant must be OVN or CALICO")
+	}
+}
+
+func nkeCniChartsDebLogicalSpec(req *pb.InstallCNIRequest) (string, error) {
+	if req == nil {
+		return "", errors.New("request is nil")
+	}
+	return nkeCniAptSpec(req.GetCniVariant(), pb.CniAptRole_CNI_APT_ROLE_CHARTS, req.GetVersion())
+}
+
+func dpkgInstalledVersion(ctx context.Context, binPkg string) (string, error) {
+	cmd := exec.CommandContext(ctx, "dpkg-query", "--show", "--showformat=${Version}", binPkg)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("dpkg-query version for %q: %w", binPkg, err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func dpkgListFiles(ctx context.Context, binPkg string) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "dpkg-query", "-L", binPkg)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("dpkg-query -L %q: %w", binPkg, err)
+	}
+	var files []string
+	for line := range strings.Lines(string(out)) {
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\n"))
+		if line != "" {
+			files = append(files, line)
+		}
+	}
+	return files, nil
+}
+
+func ovnHelmChartStaged() bool {
+	_, err := os.Stat(filepath.Join(ovnKubernetesHelmChartDir, "values-nke.yaml"))
+	return err == nil
+}
+
+func helmChartDirFromPackage(ctx context.Context, binPkg string) (string, error) {
+	files, err := dpkgListFiles(ctx, binPkg)
+	if err != nil {
+		return "", err
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f, "/Chart.yaml") {
+			return filepath.Dir(f), nil
+		}
+	}
+	return "", fmt.Errorf("no Chart.yaml in package %q", binPkg)
+}
+
+// calicoInstallRootFromFiles picks the install root from paths listed by dpkg-query -L.
+// Prefer a Helm chart directory that contains manifests/tigera-operator.yaml; otherwise use the
+// parent of manifests/ for a static manifest-only package.
+func calicoInstallRootFromFiles(files []string) (string, error) {
+	for _, f := range files {
+		if strings.HasSuffix(f, "/Chart.yaml") {
+			dir := filepath.Dir(f)
+			want := filepath.Join(dir, "manifests", "tigera-operator.yaml")
+			for _, g := range files {
+				if g == want {
+					return dir, nil
+				}
+			}
+		}
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f, "/manifests/tigera-operator.yaml") {
+			return filepath.Dir(filepath.Dir(f)), nil
+		}
+	}
+	return "", errors.New("no calico tigera manifests in package file list")
+}
+
+// calicoInstallRoot returns the directory that contains manifests/tigera-operator.yaml for Calico:
+// either a Helm chart root (with Chart.yaml) or a static tree (e.g. nke-cni-calico-manifests-* under /usr/share/nke-cni/calico).
+func calicoInstallRoot(ctx context.Context, binPkg string) (string, error) {
+	files, err := dpkgListFiles(ctx, binPkg)
+	if err != nil {
+		return "", err
+	}
+	root, err := calicoInstallRootFromFiles(files)
+	if err != nil {
+		return "", fmt.Errorf("%w: %q", err, binPkg)
+	}
+	return root, nil
+}
+
+func ovnHelmChartDir(ctx context.Context, binPkg string) (string, error) {
+	if ovnHelmChartStaged() {
+		return ovnKubernetesHelmChartDir, nil
+	}
+	return helmChartDirFromPackage(ctx, binPkg)
+}
+
+func (s *NodeAgentServer) runCalicoHelmInstallFromDir(chartDir string, req *pb.InstallCNIRequest) error {
+	args := []string{
+		"install", "tigera-operator", chartDir,
+		"--namespace", "tigera-operator",
+		"--create-namespace",
+	}
+	args = append(args, helmValuesFileArgs(chartDir)...)
+	if s.CniImageRegistry != "" {
+		args = append(args, "--set", "global.registry="+s.CniImageRegistry)
+	}
+	if pod := strings.TrimSpace(req.GetPodNetworkCidr()); pod != "" {
+		// Tigera operator chart renders Installation.spec from .Values.installation (see custom-resources.yaml).
+		args = append(args, "--set-string", "installation.calicoNetwork.ipPools[0].cidr="+pod)
+	}
+	for key, value := range req.GetCniConfig() {
+		if key == "" {
+			continue
+		}
+		if value == "" {
+			value = "\"\""
+		}
+		args = append(args, "--set", fmt.Sprintf("%s=%s", key, value))
+	}
+	stdout, err := s.Runner.Run("helm", args, &nkeutils.CommandOptions{
+		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+	})
+	if err != nil {
+		return fmt.Errorf("helm install calico charts: %w, output: %s", err, string(stdout))
+	}
+	return nil
+}
+
+// calicoDefaultIPPoolsCIDRLine is the bundled default in cni-packages custom-resources.yaml; must stay in sync
+// with debs/calico/custom-resources.yaml (cidr for the default-ipv4-ippool).
+const calicoDefaultIPPoolsCIDRLine = "cidr: 192.168.0.0/16"
+
+// calicoKubectlEnv returns os.Environ() plus KUBECONFIG and, when non-empty, CALICO_POD_CIDR for apply-manifests.sh.
+func calicoKubectlEnv(podNetworkCidr string) []string {
+	env := append(os.Environ(), "KUBECONFIG="+KubeConfig)
+	if c := strings.TrimSpace(podNetworkCidr); c != "" {
+		env = append(env, "CALICO_POD_CIDR="+c)
+	}
+	return env
+}
+
+// calicoCustomResourcesApplyPath returns the filesystem path to pass to kubectl for Calico custom resources.
+// When podNetworkCidr is empty it is the packaged file; otherwise the default pool CIDR line is substituted
+// into a temp file (caller must run cleanup). When podNetworkCidr is non-empty and that line is missing, returns an error.
+func calicoCustomResourcesApplyPath(manifestsDir, podNetworkCidr string) (string, func(), error) {
+	base := filepath.Join(manifestsDir, "custom-resources.yaml")
+	c := strings.TrimSpace(podNetworkCidr)
+	if c == "" {
+		return base, nil, nil
+	}
+	raw, err := os.ReadFile(base)
+	if err != nil {
+		return "", nil, err
+	}
+	s := string(raw)
+	const needle = calicoDefaultIPPoolsCIDRLine
+	if !strings.Contains(s, needle) {
+		return "", nil, fmt.Errorf(
+			"calico custom-resources %s: cannot apply requested pod network CIDR %q: expected default pool line %q not found in manifest",
+			base, c, needle,
+		)
+	}
+	replacement := "cidr: " + c
+	rendered := strings.ReplaceAll(s, needle, replacement)
+	tmp, err := os.CreateTemp("", "nke-calico-custom-resources-*.yaml")
+	if err != nil {
+		return "", nil, err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.WriteString(rendered); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return "", nil, err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return "", nil, err
+	}
+	return tmpPath, func() { _ = os.Remove(tmpPath) }, nil
+}
+
+func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root string, podNetworkCidr string) error {
+	applyScript := filepath.Join(root, "apply-manifests.sh")
+	if st, err := os.Stat(applyScript); err == nil && !st.IsDir() {
+		out, err := s.Runner.Run(applyScript, nil, &nkeutils.CommandOptions{
+			Dir: root,
+			Env: calicoKubectlEnv(podNetworkCidr),
+		})
+		if err != nil {
+			return fmt.Errorf("run %s: %w, output: %s", applyScript, err, string(out))
+		}
+		return nil
+	}
+
+	manifestsDir := filepath.Join(root, "manifests")
+	opPath := filepath.Join(manifestsDir, "tigera-operator.yaml")
+	crPath, crCleanup, err := calicoCustomResourcesApplyPath(manifestsDir, podNetworkCidr)
+	if err != nil {
+		return fmt.Errorf("calico custom resources prepare: %w", err)
+	}
+	if crCleanup != nil {
+		defer crCleanup()
+	}
+	paths := []string{opPath, crPath}
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			return fmt.Errorf("calico manifest %s: %w", p, err)
+		}
+	}
+	args := []string{"apply", "-f", paths[0], "-f", paths[1]}
+	stdout, err := s.Runner.Run("kubectl", args, &nkeutils.CommandOptions{
+		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+	})
+	if err != nil {
+		return fmt.Errorf("kubectl apply calico manifests: %w, output: %s", err, string(stdout))
+	}
+	return nil
+}
+
+func (s *NodeAgentServer) runCniChartsDeploy(ctx context.Context, req *pb.InstallCNIRequest, binPkg string, bundleStatus *Bundle) error {
+	switch effectiveCniVariant(req.GetCniVariant()) {
+	case pb.CniVariant_CNI_VARIANT_OVN:
+		chartDir, err := ovnHelmChartDir(ctx, binPkg)
+		if err != nil {
+			bundleStatus.Status = "error"
+			bundleStatus.Error = err.Error()
+			return err
+		}
+		if err := s.runOvnKubernetesHelmInstallFromDir(chartDir, req.GetPodNetworkCidr(), req.GetServiceCidr(), req.GetCniConfig()); err != nil {
+			bundleStatus.Status = "error"
+			bundleStatus.Error = err.Error()
+			return err
+		}
+	case pb.CniVariant_CNI_VARIANT_CALICO:
+		root, err := calicoInstallRoot(ctx, binPkg)
+		if err != nil {
+			bundleStatus.Status = "error"
+			bundleStatus.Error = err.Error()
+			return err
+		}
+		tigeraOpPath := filepath.Join(root, "manifests", "tigera-operator.yaml")
+		if req.GetTigeraOperatorManifest() != "" || req.GetTigeraCustomResourceManifest() != "" {
+			if _, statErr := os.Stat(tigeraOpPath); statErr != nil {
+				err := fmt.Errorf("tigera manifest overrides requested but %s not found: %w", tigeraOpPath, statErr)
+				bundleStatus.Status = "error"
+				bundleStatus.Error = err.Error()
+				return err
+			}
+			if err := s.applyTigeraManifestOverrides(root, req.GetTigeraOperatorManifest(), req.GetTigeraCustomResourceManifest()); err != nil {
+				bundleStatus.Status = "error"
+				bundleStatus.Error = err.Error()
+				return err
+			}
+		}
+		var deployErr error
+		if _, statErr := os.Stat(filepath.Join(root, "Chart.yaml")); statErr == nil {
+			deployErr = s.runCalicoHelmInstallFromDir(root, req)
+		} else {
+			deployErr = s.runCalicoKubectlApplyFromDir(root, req.GetPodNetworkCidr())
+		}
+		if deployErr != nil {
+			bundleStatus.Status = "error"
+			bundleStatus.Error = deployErr.Error()
+			return deployErr
+		}
+		installLog := filepath.Join(root, "tigera-install.log")
+		if logContents, readErr := os.ReadFile(installLog); readErr == nil {
+			s.mu.Lock()
+			s.NodeStatus.CalicoInstallLog = string(logContents)
+			s.mu.Unlock()
+			bundleStatus.Output = string(logContents)
+		}
+	default:
+		err := errors.New("cni_variant must be OVN or CALICO")
+		bundleStatus.Status = "error"
+		bundleStatus.Error = err.Error()
+		return err
+	}
+	bundleStatus.Status = "success"
+	return nil
+}
+
+func (s *NodeAgentServer) installCNI(ctx context.Context, req *pb.InstallCNIRequest, chartsPkgLogical string) error {
+	role := strings.TrimSpace(s.NodeStatus.Role)
+	if !strings.EqualFold(role, ControlPlaneRole) {
+		return fmt.Errorf("%w (current role=%q)", errCNIApplyRequiresControlPlane, role)
+	}
+
+	chartsPkgLogical = strings.TrimSpace(chartsPkgLogical)
+	if chartsPkgLogical == "" {
+		return errors.New("resolved charts package spec is empty")
+	}
+	binPkg := aptBinaryPackageName(chartsPkgLogical)
+	if binPkg == "" {
+		slog.ErrorContext(ctx, "InstallCNI failed", "operation", "validate charts package spec", "error", errors.New("invalid package spec"), "charts_spec", chartsPkgLogical)
+		return errors.New("invalid charts package spec")
+	}
+
+	if effectiveCniVariant(req.GetCniVariant()) == pb.CniVariant_CNI_VARIANT_OVN {
+		if err := checkHostOpenVSwitchReady(s.Runner); err != nil {
+			slog.ErrorContext(ctx, "OVS readiness check failed", "error", err)
+			return err
+		}
+	}
+
+	if err := chartsDebPresenceCheck(ctx, binPkg); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "InstallCNI charts deploy",
+		"charts_spec", chartsPkgLogical,
+		"binary_package", binPkg,
+		"cni_variant", effectiveCniVariant(req.GetCniVariant()).String(),
+	)
+
+	requestID := generateRequestID()
+	bundleStatus := &Bundle{
+		RequestID:   requestID,
+		Name:        binPkg,
+		Status:      "installing",
+		InstallTime: time.Now().Format(time.RFC3339),
+		Source:      "charts:" + chartsPkgLogical,
+	}
+	defer s.AppendBundleToStatus(bundleStatus)
+
+	if verStr, err := dpkgInstalledVersion(ctx, binPkg); err == nil && verStr != "" {
+		if v, err := semver.NewVersion(verStr); err == nil {
+			bundleStatus.Version = v
+		}
+	}
+
+	return s.runCniChartsDeploy(ctx, req, binPkg, bundleStatus)
+}
+
+func getKubeAPIServer(kubeconfig string) (string, error) {
+	// Read the kubeconfig file
+	content, err := os.ReadFile(kubeconfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to read kubeconfig: %v", err)
+	}
+
+	// Parse YAML into a map
+	var config map[string]any
+	if err := yaml.Unmarshal(content, &config); err != nil {
+		return "", fmt.Errorf("failed to parse kubeconfig: %v", err)
+	}
+
+	// Navigate the map to find the server URL
+	clusters, ok := config["clusters"].([]any)
+	if !ok || len(clusters) == 0 {
+		return "", fmt.Errorf("no clusters found in kubeconfig")
+	}
+
+	cluster, ok := clusters[0].(map[any]any)
+	if !ok {
+		return "", fmt.Errorf("invalid cluster format in kubeconfig")
+	}
+
+	clusterInfo, ok := cluster["cluster"].(map[any]any)
+	if !ok {
+		return "", fmt.Errorf("invalid cluster info format in kubeconfig")
+	}
+
+	server, ok := clusterInfo["server"].(string)
+	if !ok {
+		return "", fmt.Errorf("server URL not found in kubeconfig")
+	}
+	return server, nil
+}

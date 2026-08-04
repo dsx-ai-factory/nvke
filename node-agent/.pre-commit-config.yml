@@ -1,0 +1,63 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      # - id: check-yaml
+      # - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: gofumpt
+        name: gofumpt
+        entry: gofumpt
+        language: system
+        files: \.go$
+        exclude: ^pkg/api/
+        args: [-w]
+
+      - id: goimports
+        name: goimports
+        entry: goimports
+        language: system
+        files: \.go$
+        exclude: ^pkg/api/
+        args: [-w]
+
+      - id: gci
+        name: gci
+        entry: gci
+        language: system
+        files: \.go$
+        exclude: ^pkg/api/
+        args:
+          - write
+          - --skip-generated
+          - -s
+          - standard
+          - -s
+          - dot
+          - -s
+          - default
+          - -s
+          - "prefix(k8s.io,sigs.k8s.io)"
+          - -s
+          - "prefix(github.com/NVIDIA/)"
+          - --custom-order
+
+      # - id: golangci-lint
+      #   name: golangci-lint
+      #   entry: golangci-lint
+      #   language: system
+      #   files: \.go$
+      #   args: [run, --timeout, 5m]
+
+      - id: go-vet
+        name: go vet
+        entry: go
+        language: system
+        files: \.go$
+        args: [vet, ./...]
+        pass_filenames: false
+

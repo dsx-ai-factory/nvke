@@ -1,0 +1,5 @@
+version: v2
+modules:
+  - path: .
+    excludes:
+      - internal-scripts

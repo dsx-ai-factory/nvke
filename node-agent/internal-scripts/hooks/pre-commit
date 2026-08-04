@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Pre-commit hook for node-agent (monorepo-aware).
+# Install via: (cd node-agent && make setup-hooks)
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+AGENT_DIR="${ROOT}/node-agent"
+
+# When developing against a standalone checkout, fall back to repo root.
+if [[ ! -d "${AGENT_DIR}/pkg/agent/proto" ]]; then
+  AGENT_DIR="${ROOT}"
+fi
+
+if [[ ! -d "${AGENT_DIR}/pkg/agent/proto" ]]; then
+  echo "No node-agent proto tree found; skipping proto checks."
+  exit 0
+fi
+
+echo "🔍 Running pre-commit proto verification in ${AGENT_DIR}..."
+
+cd "${AGENT_DIR}"
+
+if ! find pkg -type f -name '*.proto' | grep -q .; then
+  echo "No .proto files found, skipping verification."
+  exit 0
+fi
+
+if ! make -s check-protos; then
+  echo "⚙️  Protos need formatting or regeneration — running make protos..."
+  make -s protos
+  echo "➕ Staging updated proto files..."
+  git add $(find pkg -type f -name '*.pb.go' -o -name '*.proto')
+  echo "✅ Proto files regenerated and staged."
+else
+  echo "✅ Proto verification passed."
+fi
+
+echo "✅ Pre-commit checks passed."

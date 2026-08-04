@@ -1,0 +1,7 @@
+#!/bin/bash
+set -e
+
+# Stop services before removal or upgrade
+if [ -d /run/systemd/system ]; then
+  systemctl stop nke-agent.service || true
+fi
