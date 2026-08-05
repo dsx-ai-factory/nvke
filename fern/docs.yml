@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# TODO: Confirm instance URL and custom-domain with docs infra team before publishing.
+instances:
+  - url: nvidia.docs.buildwithfern.com/nke
+    custom-domain: docs.nvidia.com/nke
+    multi-source: true
+
+title: NVIDIA Kubernetes Engine
+
+global-theme: nvidia
+
+metadata:
+  canonical-host: "docs.nvidia.com/nke"
+
+products:
+  - display-name: NVIDIA Kubernetes Engine
+    slug: /
+    path: ../docs/index.yml
+    versions:
+      # Managed by publish-fern-docs.yml — do not edit manually.
+      # The newest entry is stamped "Latest · vX.Y.Z" at publish time.
+
+redirects:
+  - source: "/nke/index.html"
+    destination: "/nke/"
+
+logo:
+  href: /nke
+  right-text: NKE
+
+navbar-links:
+  - type: github
+    value: https://github.com/NVIDIA/nke
+
+experimental:
+  mdx-components:
+    - ./components
+  basepath-aware: true
