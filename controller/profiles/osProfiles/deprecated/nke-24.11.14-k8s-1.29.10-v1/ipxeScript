@@ -1,0 +1,3 @@
+kernel https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/24.11.14/24.11.14-vmlinuz console=tty0 console=ttyS1,115200 ip=dhcp fb=false interface=ens5f0 url=https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/24.11.14/24.11.14.iso autoinstall ds=nocloud-net;s=${cloudinit-url} initrd=initrd.magic
+initrd https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/24.11.14/24.11.14-initrd
+boot

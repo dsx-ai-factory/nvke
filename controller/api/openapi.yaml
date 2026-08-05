@@ -1,0 +1,2893 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+openapi: 3.0.3
+info:
+  title: CWE API
+  version: "0.0.1"
+  description: NKE Cloud Workflow Engine API
+servers:
+  - url: /api
+
+paths:
+  /cniPlugins:
+    get:
+      summary: List CNI Plugins
+      operationId: listCNIPlugins
+      responses:
+        "200":
+          description: A list of CNI plugins
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListCNIPluginsResponse"
+
+  /clusters:
+    get:
+      summary: List Clusters
+      operationId: listClusters
+      parameters:
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter clusters by name (exact match)
+      responses:
+        "200":
+          description: A list of clusters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListClustersResponse"
+    post:
+      summary: Create Cluster
+      operationId: createCluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClusterRequest"
+      responses:
+        "201":
+          description: Cluster created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cluster"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /clusters/{clusterID}:
+    parameters:
+      - name: clusterID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a Cluster
+      operationId: getCluster
+      responses:
+        "200":
+          description: Returns the requested cluster
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cluster"
+        "404":
+          description: Cluster not found
+    patch:
+      summary: Update a Cluster
+      operationId: updateCluster
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClusterRequest"
+      responses:
+        "200":
+          description: Cluster updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cluster"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "404":
+          description: Cluster not found
+        "409":
+          description: |
+            Another mutually-exclusive cluster operation is already in progress.
+            The response body includes the operation type (etcd_encryption,
+            k8s_upgrade, cp_nodes_recycling, oidc_enable) currently running.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+    delete:
+      summary: Delete a Cluster
+      operationId: deleteCluster
+      responses:
+        "202":
+          description: Cluster deletion initiated
+        "404":
+          description: Cluster not found
+
+  /nodePools:
+    get:
+      summary: List Node Pools
+      operationId: listNodePools
+      parameters:
+        - name: clusterID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter node pools by cluster ID
+        - name: clusterName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter node pools by cluster name (exact match)
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter node pools by name (exact match)
+      responses:
+        "200":
+          description: A list of node pools
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListNodePoolsResponse"
+    post:
+      summary: Create Node Pool
+      operationId: createNodePool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateNodePoolRequest"
+      responses:
+        "201":
+          description: Node Pool created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePool"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "409":
+          description: Cannot create node pool when parent cluster is deleting
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /nodePools/{nodePoolID}:
+    parameters:
+      - name: nodePoolID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a Node Pool
+      operationId: getNodePool
+      responses:
+        "200":
+          description: Returns the requested node pool
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePool"
+        "404":
+          description: Node Pool not found
+    patch:
+      summary: Update Node Pool
+      operationId: updateNodePool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateNodePoolRequest"
+      responses:
+        "200":
+          description: Node Pool updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePool"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "404":
+          description: Node Pool not found
+    delete:
+      summary: Delete a Node Pool
+      operationId: deleteNodePool
+      responses:
+        "202":
+          description: Node Pool deletion initiated
+        "404":
+          description: Node Pool not found
+
+  /nodePools/{nodePoolID}/configHistory:
+    parameters:
+      - name: nodePoolID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get Node Pool Config History
+      operationId: getNodePoolConfigHistory
+      description: Returns the config change history for a node pool, derived from its NodeSet snapshots. Each entry represents a config change and shows which fields changed relative to the previous snapshot.
+      responses:
+        "200":
+          description: Returns the node pool config history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodePoolConfigHistory"
+        "404":
+          description: Node Pool not found
+
+  /nodeSets:
+    get:
+      summary: List Node Sets
+      operationId: listNodeSets
+      parameters:
+        - name: nodePoolID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter node sets by node pool ID
+      responses:
+        "200":
+          description: A list of node sets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListNodeSetsResponse"
+
+  /nodeSets/{nodeSetID}:
+    parameters:
+      - name: nodeSetID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a Node Set
+      operationId: getNodeSet
+      responses:
+        "200":
+          description: Returns the requested node set
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeSet"
+        "404":
+          description: Node Set not found
+
+  /nodes:
+    get:
+      summary: List Nodes
+      operationId: listNodes
+      parameters:
+        - name: clusterID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter nodes by cluster ID
+        - name: nodePoolID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter nodes by node pool ID
+        - name: clusterName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter nodes by cluster name
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter nodes by node name
+      responses:
+        "200":
+          description: A list of nodes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListNodesResponse"
+
+  /nodes/{nodeID}:
+    parameters:
+      - name: nodeID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a Single Node
+      operationId: getNode
+      responses:
+        "200":
+          description: Returns the requested node
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          description: Node not found
+    delete:
+      summary: Delete a Single Node
+      description: |
+        Delete a single node from the cluster. 
+        The MachineHealthIssue payload may be optionally provided, which will cause the node to be flagged for repair to the Forge team.
+      operationId: deleteNode
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeleteNodeRequest"
+      responses:
+        "202":
+          description: Node deletion initiated
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "404":
+          description: Node not found
+
+  /nodes/{nodeID}/history:
+    parameters:
+      - name: nodeID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get Node Workflow History
+      operationId: getNodeHistory
+      description: Returns Temporal workflow execution history for a node, including per-activity timing for provisioning, rebooting, and teardown operations.
+      responses:
+        "200":
+          description: Returns the node workflow history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeHistory"
+        "404":
+          description: Node not found
+
+  /sites:
+    get:
+      summary: List Sites
+      operationId: listSites
+      responses:
+        "200":
+          description: A list of registered sites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListSitesResponse"
+    post:
+      summary: Register Site
+      operationId: registerSite
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterSiteRequest"
+      responses:
+        "201":
+          description: Site registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /sites/{siteID}:
+    parameters:
+      - name: siteID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a Site
+      operationId: getSite
+      responses:
+        "200":
+          description: Returns the requested site
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Site"
+        "404":
+          description: Site not found
+
+  /vipAllocations:
+    get:
+      summary: List VIP Allocations
+      operationId: listVIPAllocations
+      parameters:
+        - name: siteID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Filter VIP allocations by site ID
+      responses:
+        "200":
+          description: A list of VIP allocations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListVIPAllocationsResponse"
+    post:
+      summary: Create VIP Allocation
+      operationId: createVIPAllocation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVIPAllocationRequest"
+      responses:
+        "201":
+          description: VIP allocation created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VIPAllocation"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /vipAllocations/{vipAllocationID}:
+    parameters:
+      - name: vipAllocationID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a VIP Allocation
+      operationId: getVIPAllocation
+      responses:
+        "200":
+          description: Returns the requested VIP allocation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VIPAllocation"
+        "404":
+          description: VIP allocation not found
+
+  /osProfiles:
+    get:
+      summary: List OS Profiles
+      operationId: listOSProfiles
+      responses:
+        "200":
+          description: A list of OS profiles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListOSProfilesResponse"
+
+  /configProfiles:
+    get:
+      summary: List Config Profiles
+      operationId: listConfigProfiles
+      responses:
+        "200":
+          description: A list of config profiles
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListConfigProfilesResponse"
+
+  #--------------------------------
+  #  Forge API Proxy Endpoints
+  #--------------------------------
+  /forge/tenants:
+    get:
+      summary: List Forge Tenants
+      operationId: listForgeTenants
+      responses:
+        "200":
+          description: A list of Forge tenants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeTenantsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/instances:
+    get:
+      summary: List Forge Instances
+      operationId: listForgeInstances
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Forge Site ID
+        - name: vpcID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Forge VPC ID
+      responses:
+        "200":
+          description: A list of Forge instances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeInstancesResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/subnets:
+    get:
+      summary: List Forge Subnets
+      operationId: listForgeSubnets
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Forge Site ID
+        - name: vpcID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Forge VPC ID
+      responses:
+        "200":
+          description: A list of Forge subnets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeSubnetsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/vpcPrefixes:
+    get:
+      summary: List Forge VPC Prefixes
+      operationId: listForgeVpcPrefixes
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Forge Site ID
+        - name: vpcID
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Forge VPC ID
+      responses:
+        "200":
+          description: A list of Forge VPC prefixes
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeVpcPrefixesResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/vpcs:
+    get:
+      summary: List Forge VPCs
+      operationId: listForgeVPCs
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Forge Site ID
+      responses:
+        "200":
+          description: A list of Forge VPCs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeVPCsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/sshKeyGroups:
+    get:
+      summary: List Forge SSH Key Groups
+      operationId: listForgeSSHKeyGroups
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Forge Site ID
+      responses:
+        "200":
+          description: A list of Forge SSH key groups
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeSSHKeyGroupsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/instanceTypes:
+    get:
+      summary: List Forge Instance Types
+      operationId: listForgeInstanceTypes
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Site ID to filter instance types
+      responses:
+        "200":
+          description: A list of Forge instance types
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeInstanceTypesResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/infiniBandPartitions:
+    get:
+      summary: List Forge InfiniBand Partitions
+      operationId: listForgeInfiniBandPartitions
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Site ID to filter InfiniBand Partitions
+      responses:
+        "200":
+          description: A list of Forge InfiniBand Partitions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeInfiniBandPartitionsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/nvlinkLogicalPartitions:
+    get:
+      summary: List Forge NVLink Logical Partitions
+      operationId: listForgeNVLinkLogicalPartitions
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Site ID to filter NVLink Logical Partitions
+      responses:
+        "200":
+          description: A list of Forge NVLink Logical Partitions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeNVLinkLogicalPartitionsResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/sites:
+    get:
+      summary: List Forge Sites
+      operationId: listForgeSites
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+      responses:
+        "200":
+          description: A list of Forge sites
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeSitesResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+  /forge/ipBlocks:
+    get:
+      summary: List Forge IP Blocks
+      operationId: listForgeIPBlocks
+      parameters:
+        - name: orgID
+          in: query
+          required: true
+          schema:
+            type: string
+          description: NGC Organization ID
+        - name: siteID
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: A list of Forge IP blocks
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListForgeIPBlocksResponse"
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
+components:
+  schemas:
+    #--------------------------------
+    #  Cluster
+    #--------------------------------
+    CreateClusterRequest:
+      type: object
+      required:
+        - name
+        - controlPlaneKubernetesVersion
+        - cniPlugin
+        - etcdEncrypted
+        - nodePools
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9]([a-z0-9-]*[a-z0-9])?$'
+          minLength: 1
+          maxLength: 55
+          example: "my-cluster"
+          description: The name of the cluster. Must be a lowercase DNS label so CWE can derive the `cluster-<name>` namespace for CAPI resources.
+          x-order: 1
+        orgID:
+          type: string
+          example: dipfedrcvjiw
+          description: The ID of the NGC organization that owns the cluster
+          x-go-type-skip-optional-pointer: true
+          x-order: 2
+        siteID:
+          type: string
+          format: uuid
+          description: |
+            Selects the infrastructure mode for the cluster.
+            Use a registered non-nil site ID for Forge-backed clusters.
+            Use the nil UUID default site for CAPI-backed clusters.
+          x-go-type-skip-optional-pointer: true
+          x-order: 3
+        vpcID:
+          type: string
+          format: uuid
+          description: The ID of the VPC where the Forge-backed cluster will be created. Required for Forge-backed clusters and omitted for CAPI-backed clusters.
+          x-go-type-skip-optional-pointer: true
+          x-order: 4
+        # controlPlaneKubernetesVersion: validated by pattern (semver version core only, no leading "v").
+        # Pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+        # We disallow leading "v" because provisioning templates add "v" when building URLs (e.g. kubeadm_v{{ .KubernetesVersion }}).
+        controlPlaneKubernetesVersion:
+          type: string
+          pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
+          example: "1.29.7"
+          description: |
+            The version of Kubernetes to use for the cluster.
+            Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
+            Must not include a leading "v".
+            The pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+          x-order: 5
+        cniPlugin:
+          type: string
+          example: "calico"
+          description: The CNI plugin to use for the cluster
+          x-order: 6
+        cniVersion:
+          type: string
+          pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
+          example: "3.30.1"
+          description: |
+            The CNI package/chart stream to use for the selected CNI plugin.
+            Optional for backwards compatibility; when omitted, the server defaults by cniPlugin.
+            Must be a valid semver version core (X.Y.Z only) and must not include a leading "v".
+          x-order: 7
+        etcdEncrypted:
+          type: boolean
+          example: false
+          description: Enable or disable etcd encryption for the cluster
+          x-order: 8
+        disableKubeVip:
+          type: boolean
+          default: false
+          description: "Don't configure Kube-VIP for the cluster control plane. This field is intended for development and testing purposes only and should not be used in production environments."
+          x-go-type-skip-optional-pointer: true
+          x-order: 9
+        teleportEnabled:
+          type: boolean
+          description: Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
+          x-order: 10
+        network:
+          $ref: "#/components/schemas/ClusterNetworkCreateConfig"
+          description: Immutable pod and service network configuration. When omitted, the server-side defaults are materialized on the cluster.
+          x-order: 11
+        nodePools:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodePoolCreateConfig"
+          description: The initial set of node pools to create for the cluster
+          example:
+            - namePrefix: "cp"
+              subnetID: "123e4567-e89b-12d3-a456-426614174000"
+              instanceTypeID: "123e4567-e89b-12d3-a456-426614174001"
+              desiredNodeCount: 1
+              controlPlane: true
+          x-order: 12
+        capiInfraCluster:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource. Required for CAPI-backed clusters and omitted for Forge-backed clusters.
+          x-go-type-skip-optional-pointer: true
+          x-order: 100
+
+    ControlPlaneConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        maxSurge:
+          type: integer
+          minimum: 0
+          description: |
+            Cluster-level surge capacity for control plane nodes during upgrades.
+        instanceTypePreference:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Ordered Forge instance type IDs for cluster-level control plane provisioning.
+        provisioningMonitorDisabled:
+          type: boolean
+          description: |
+            When true, the timeout-based provisioning monitor is paused for cluster-level
+            control plane nodes.
+
+    UpdateClusterControlPlaneConfig:
+      type: object
+      additionalProperties: false
+      properties:
+        maxSurge:
+          type: integer
+          minimum: 0
+          description: Set cluster-level max surge.
+        instanceTypePreference:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Replace the ordered Forge instance type preference list for cluster-level control plane nodes.
+        provisioningMonitorDisabled:
+          type: boolean
+          description: Pause or resume the provisioning monitor for cluster-level control plane nodes.
+
+    Cluster:
+      type: object
+      required:
+        - id
+        - name
+        - controlPlaneKubernetesVersion
+        - cniPlugin
+        - cniVersion
+        - etcdEncrypted
+        - network
+        - createdAt
+        - conditions
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the cluster
+          x-order: 1
+        name:
+          type: string
+          description: The name of the cluster
+          x-order: 2
+        orgID:
+          type: string
+          example: dipfedrcvjiw
+          description: The ID of the NGC organization that owns the cluster
+          x-go-type-skip-optional-pointer: true
+          x-order: 3
+        siteID:
+          type: string
+          format: uuid
+          description: The registered site ID for this cluster. Forge-backed clusters use a non-nil site ID. CAPI-backed clusters use the nil UUID default site.
+          x-go-type-skip-optional-pointer: true
+          x-order: 4
+        vpcID:
+          type: string
+          format: uuid
+          description: The VPC ID for Forge-backed clusters. Omitted for CAPI-backed clusters.
+          x-go-type-skip-optional-pointer: true
+          x-order: 5
+        controlPlaneKubernetesVersion:
+          type: string
+          description: The version of Kubernetes used by the cluster
+          x-order: 6
+        cniPlugin:
+          type: string
+          description: The CNI plugin used by the cluster
+          x-order: 7
+        cniVersion:
+          type: string
+          description: The CNI package/chart stream used by the cluster
+          x-order: 8
+        etcdEncrypted:
+          type: boolean
+          example: false
+          description: Enable or disable etcd encryption for the cluster
+          x-order: 9
+        controlPlaneVIP:
+          type: string
+          format: ipv4
+          description: The VIP configured for access to the control plane
+          x-order: 10
+        enableCPNodeRecycling:
+          type: boolean
+          default: false
+          description: Enable or disable control plane node recycling during version upgrades. When enabled, the cluster can upgrade control plane nodes by creating new nodes with the target version and removing old nodes. When disabled, old nodes are not recycled.
+          x-order: 11
+        teleportEnabled:
+          type: boolean
+          default: false
+          description: Whether Teleport SSH enrollment is enabled for nodes in this cluster.
+          x-order: 12
+        controlPlaneConfig:
+          $ref: "#/components/schemas/ControlPlaneConfig"
+          description: Cluster-level control plane configuration.
+          x-order: 13
+        network:
+          $ref: "#/components/schemas/ClusterNetwork"
+          description: Immutable pod and service network configuration applied to the cluster.
+          x-order: 14
+        createdAt:
+          type: string
+          format: date-time
+          description: When the cluster was created
+          x-order: 15
+        conditions:
+          $ref: "#/components/schemas/ClusterConditions"
+          description: Conditions representing various aspects of the Cluster's state
+        capiInfraCluster:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource. Present only for CAPI-backed clusters.
+          x-go-type-skip-optional-pointer: true
+          x-order: 100
+
+    UpdateClusterRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        enableCPNodeRecycling:
+          type: boolean
+          description: Enable or disable control plane node recycling during version upgrades.
+        # Same pattern and rationale as CreateClusterRequest.controlPlaneKubernetesVersion (semver.org version core; no leading "v").
+        controlPlaneKubernetesVersion:
+          type: string
+          pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
+          description: |
+            Target Kubernetes version for control plane upgrade (must be greater than current version).
+            Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
+            Must not include a leading "v".
+            The pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+        teleportEnabled:
+          type: boolean
+          description: Enable or disable Teleport SSH enrollment for nodes in this cluster.
+        enableEtcdEncryption:
+          type: boolean
+          description: |
+            Set to true to start one-way etcd encryption enablement on a provisioned cluster.
+            false is rejected because disabling etcd encryption is not supported.
+            If the cluster is already encrypted, true is treated as an idempotent no-op.
+            While the operation is running, subsequent UpdateCluster mutations return 409.
+        enableOidc:
+          type: boolean
+          description: |
+            Set to true to start one-way OIDC authentication enablement on a provisioned cluster.
+            false is rejected because disabling OIDC authentication is not supported.
+            If OIDC is already enabled, true is treated as an idempotent no-op.
+            Cannot be combined with a control-plane Kubernetes upgrade or etcd encryption
+            enablement in the same request. While the operation is running, subsequent
+            UpdateCluster mutations return 409.
+        controlPlaneConfig:
+          $ref: "#/components/schemas/UpdateClusterControlPlaneConfig"
+        network:
+          allOf:
+            - $ref: "#/components/schemas/ClusterNetworkCreateConfig"
+          readOnly: true
+          description: Immutable cluster network configuration. Any value supplied on update is rejected.
+
+    ClusterNetworkCreateConfig:
+      type: object
+      additionalProperties: false
+      description: Non-default pod or service CIDRs are supported only with the ovn-kubernetes CNI plugin.
+      properties:
+        podCIDR:
+          type: string
+          example: "10.240.0.0/16,10.241.0.0/16"
+          description: |
+            Comma-separated IPv4 pod network CIDRs. Each CIDR must be a private range with a prefix
+            length between /12 and /23 and must not overlap another pod CIDR or the serviceCIDR.
+            NKE allocates a /24 block to each node. The ranges together must provide enough blocks for all
+            desired nodes plus configured surge capacity, or at least one spare block when surge is
+            zero. The same capacity rule applies when node pools are created or scaled.
+            Defaults to 192.168.0.0/16; a non-default value requires the ovn-kubernetes CNI plugin.
+          x-go-type-skip-optional-pointer: true
+        serviceCIDR:
+          type: string
+          example: "10.233.0.0/18"
+          description: IPv4 service network CIDR. Must be a private range with a prefix length between /12 and /24. Defaults to 10.96.0.0/12; a non-default value requires the ovn-kubernetes CNI plugin.
+          x-go-type-skip-optional-pointer: true
+
+    ClusterNetwork:
+      type: object
+      additionalProperties: false
+      required:
+        - podCIDR
+        - serviceCIDR
+      properties:
+        podCIDR:
+          type: string
+          description: Canonical comma-separated IPv4 pod network CIDRs applied to the cluster.
+        serviceCIDR:
+          type: string
+          description: Canonical IPv4 service network CIDR applied to the cluster.
+
+    ListCNIPluginsResponse:
+      type: object
+      required:
+        - cniPlugins
+      properties:
+        cniPlugins:
+          type: array
+          items:
+            type: string
+          description: A list of CNI plugins
+
+    ListClustersResponse:
+      type: object
+      required:
+        - clusters
+      properties:
+        clusters:
+          type: array
+          items:
+            $ref: "#/components/schemas/Cluster"
+          description: The list of clusters
+
+    #--------------------------------
+    # Node Pool
+    #--------------------------------
+    CloudInitFile:
+      type: object
+      required:
+        - path
+        - content
+      properties:
+        path:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Full path on disk where the file should be written.
+        owner:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: File ownership, for example `root:root`.
+        permissions:
+          type: string
+          minLength: 1
+          maxLength: 16
+          description: File permissions, for example `0644`.
+        content:
+          type: string
+          minLength: 1
+          maxLength: 10240
+          description: File contents written by cloud-init.
+
+    CreateNodePoolRequest:
+      allOf:
+        - type: object
+          required:
+            - clusterID
+          properties:
+            clusterID:
+              type: string
+              format: uuid
+              description: The ID of the cluster that will own the node pool
+              x-order: 0
+        - $ref: "#/components/schemas/NodePoolCreateConfig"
+
+    NodeNamePrefix:
+      type: string
+      minLength: 1
+      description: |
+        Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
+        CWE assigns suffix as a 4-digit decimal number (0000–9999).
+        Generated names must fit within 63 characters (Kubernetes Node name limit).
+        Maximum prefix length depends on cluster name length.
+
+    NodePoolCreateConfig:
+      type: object
+      required:
+        - name
+        - desiredNodeCount
+        - nodeNamePrefix
+      properties:
+        name:
+          type: string
+          pattern: '^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$'
+          minLength: 1
+          maxLength: 253
+          description: The name of the node pool (must conform to Kubernetes resource naming standards)
+          example: "worker"
+          x-order: 1
+        nodeNamePrefix:
+          $ref: "#/components/schemas/NodeNamePrefix"
+          x-order: 2
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: The IDs of the subnets to use for the Forge instances for the nodes in the pool. Required when the site does not have native networking enabled (isNativeNetworkingEnabled is false). Either subnetIDs or vpcPrefixIDs must be provided.
+          x-go-type-skip-optional-pointer: true
+          x-order: 3
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: The IDs of the VPC prefixes to use for the Forge instances for the nodes in the pool. Required when the site has native networking enabled (isNativeNetworkingEnabled is true). Either subnetIDs or vpcPrefixIDs must be provided.
+          x-go-type-skip-optional-pointer: true
+          x-order: 4
+        instanceTypeID:
+          type: string
+          format: uuid
+          description: The ID of the instance type to use for the Forge instances for the nodes in the pool
+          x-go-type-skip-optional-pointer: true
+          x-order: 5
+        infinibandPartitionID:
+          type: string
+          format: uuid
+          description: The ID of the infiniband partition to use for the Forge instances for the nodes in the pool
+          x-order: 6
+        sshKeyGroupIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: The IDs of the SSH key groups to use for the Forge instances for the nodes in the pool
+          x-order: 7
+        osProfile:
+          type: string
+          description: The name of the OS profile to use for Forge-backed nodes in the pool. Must be omitted for CAPI-backed pools.
+          x-go-name: OSProfile
+          x-go-type-skip-optional-pointer: true
+          x-order: 8
+        configProfile:
+          type: string
+          description: The name of the config profile to use for the nodes in the pool. Required for Forge-backed pools and optional for CAPI-backed pools.
+          x-go-type-skip-optional-pointer: true
+          x-order: 9
+        systemReservedMemory:
+          type: string
+          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+          default: "16Gi"
+          x-go-type-skip-optional-pointer: true
+          x-order: 10
+        controlPlane:
+          type: boolean
+          default: false
+          description: Whether the nodes in this pool should be added as Kubernetes control plane nodes
+          x-go-type-skip-optional-pointer: true
+          x-order: 11
+        nodeLabels:
+          type: array
+          items:
+            type: string
+          description: A list of labels for the nodes in the pool
+          x-order: 12
+        desiredNodeCount:
+          type: integer
+          minimum: 0
+          description: The desired number of nodes in the pool
+          x-order: 13
+        description:
+          type: string
+          description: An optional description for the node pool.
+          x-order: 14
+        autoProvisionDisabled:
+          type: boolean
+          default: false
+          description: Whether the node pool is disabled for auto-provisioning.
+          x-order: 15
+        autoModeDisabled:
+          type: boolean
+          default: false
+          description: Whether the node pool is disabled for auto-mode (automatic node recycling).
+          x-order: 16
+        provisioningMonitorDisabled:
+          type: boolean
+          default: false
+          description: Whether the timeout-based provisioning monitor is paused for this node pool. When true, nodes stuck in provisioning past the configured timeout will not be recycled by the system; an operator must investigate manually.
+          x-order: 17
+        recycleBudget:
+          type: integer
+          minimum: 0
+          default: 0
+          description: The maximum number of nodes that can be recycled at once.
+          x-order: 18
+        teleportEnabled:
+          type: boolean
+          description: Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
+          x-order: 19
+        diskSelectionStrategy:
+          $ref: "#/components/schemas/DiskSelectionStrategyCreate"
+          x-order: 20
+        nvLinkLogicalPartitionID:
+          type: string
+          format: uuid
+          description: The ID of the NVLink logical partition to use for the Forge instances for the nodes in the pool
+          x-order: 21
+        capiInfraMachineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource. Required for node pools in CAPI-backed clusters and omitted for Forge-backed clusters.
+          x-go-type-skip-optional-pointer: true
+          x-order: 100
+        capiSpireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethodCreate"
+          description: |
+            Controls how CWE configures SPIRE agent attestation for CAPI-backed nodes.
+            Relevant only when `capiInfraMachineTemplate` is used.
+            Defaults to `tpm`, which configures the SPIRE agent to use TPM attestation and expects
+            `nke.nvidia.com/spire-agent-spiffe-id-path` to be populated on the InfraMachine by some external process or template.
+            Set to `joinToken` to have CWE generate a SPIRE join token, inject it into bootstrap data, and stamp the corresponding annotation itself.
+          x-order: 101
+        capiBootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Additional cloud-init `write_files` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
+          x-go-type-skip-optional-pointer: true
+          x-order: 102
+        capiPreKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Additional cloud-init `runcmd` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
+          x-go-type-skip-optional-pointer: true
+          x-order: 103
+
+    UpdateNodePoolRequest:
+      type: object
+      # No required fields since all fields are optional
+      properties:
+        autoProvisionDisabled:
+          type: boolean
+          description: Whether the node pool is disabled for auto-provisioning.
+        autoModeDisabled:
+          type: boolean
+          description: Whether the node pool is disabled for auto-mode (automatic node recycling).
+        provisioningMonitorDisabled:
+          type: boolean
+          description: Whether the timeout-based provisioning monitor is paused for this node pool.
+        configProfile:
+          type: string
+          description: The name of the config profile to use for the nodes in the set
+        systemReservedMemory:
+          type: string
+          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+        description:
+          type: string
+          description: An optional description for the node pool.
+        desiredNodeCount:
+          type: integer
+          minimum: 0
+          description: The desired number of nodes in the pool
+        osProfile:
+          type: string
+          description: The name of the OS profile to use for Forge-backed nodes in the set. Omit to leave unchanged. Not supported for CAPI-backed node pools.
+          x-go-name: OSProfile
+        recycleBudget:
+          type: integer
+          minimum: 0
+          description: The maximum number of nodes that can be recycled at once.
+        maxSurge:
+          type: integer
+          minimum: 0
+          description: |
+            Controls surge node provisioning during upgrades.
+            - 0: Sequential upgrade (teardown then provision)
+          default: 0
+        teleportEnabled:
+          type: boolean
+          description: Enable or disable Teleport SSH enrollment for nodes in this pool.
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |
+            Subnet IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
+            Allowed only when the site does not have native networking.
+          x-go-type-skip-optional-pointer: true
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |
+            VPC prefix IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
+            Allowed only when the site has native networking.
+          x-go-type-skip-optional-pointer: true
+        diskSelectionStrategy:
+          $ref: "#/components/schemas/DiskSelectionStrategy"
+        # Same pattern and rationale as UpdateClusterRequest.controlPlaneKubernetesVersion (semver.org version core; no leading "v").
+        kubernetesVersion:
+          type: string
+          pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
+          description: |
+            Target Kubernetes version for worker node upgrade (must be greater than current version).
+            Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
+            Must not include a leading "v".
+            The pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
+        capiInfraMachineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource. Present only for CAPI-backed node pools.
+        capiSpireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethod"
+          description: |
+            Sets how CWE configures SPIRE agent attestation for CAPI-backed nodes.
+            Relevant only when the node pool uses `capiInfraMachineTemplate`. Omit to leave unchanged.
+        capiBootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: |
+            Cloud-init `write_files` entries to set on a CAPI-backed node pool (replaces existing). Omit = no change. Empty array = clear all custom files.
+          x-go-type-skip-optional-pointer: true
+        capiPreKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: |
+            Cloud-init `runcmd` entries to set on a CAPI-backed node pool (replaces existing). Omit = no change. Empty array = clear all custom commands.
+          x-go-type-skip-optional-pointer: true
+
+    NodePool:
+      type: object
+      required:
+        - id
+        - clusterID
+        - name
+        - nodeNamePrefix
+        - instanceTypeID
+        - sshKeyGroupIDs
+        - osProfile
+        - configProfile
+        - kubernetesVersion
+        - controlPlane
+        - nodeLabels
+        - conditions
+        - desiredNodeCount
+        - autoProvisionDisabled
+        - currentNodeSetID
+        - autoModeDisabled
+        - provisioningMonitorDisabled
+        - recycleBudget
+        - diskSelectionStrategy
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the node pool
+          x-order: 1
+        clusterID:
+          type: string
+          format: uuid
+          description: The ID of the cluster that owns the node pool
+          x-order: 2
+        name:
+          type: string
+          description: The name of the node pool
+          x-order: 3
+        nodeNamePrefix:
+          $ref: "#/components/schemas/NodeNamePrefix"
+          x-order: 4
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          description: The IDs of the subnets where the nodes in the pool are located. Present when the site does not have native networking enabled (isNativeNetworkingEnabled is false).
+          x-go-type-skip-optional-pointer: true
+          x-order: 5
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          description: The IDs of the VPC prefixes where the nodes in the pool are located. Present when the site has native networking enabled (isNativeNetworkingEnabled is true).
+          x-go-type-skip-optional-pointer: true
+          x-order: 6
+        instanceTypeID:
+          type: string
+          format: uuid
+          description: The ID of the instance type used by the nodes in the pool
+          x-order: 7
+        infinibandPartitionID:
+          type: string
+          format: uuid
+          description: The ID of the infiniband partition used by the nodes in the pool
+          x-order: 8
+        sshKeyGroupIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: The IDs of the SSH key groups to be used for the node pool
+          x-order: 9
+        osProfile:
+          type: string
+          description: The name of the OS profile used by Forge-backed nodes in the pool. Empty for CAPI-backed pools.
+          x-go-name: OSProfile
+          x-order: 10
+        configProfile:
+          type: string
+          description: The name of the config profile used by the nodes in the pool
+          x-order: 11
+        kubernetesVersion:
+          type: string
+          description: The desired version of Kubernetes for nodes in the pool
+          x-order: 12
+        systemReservedMemory:
+          type: string
+          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+          default: "16Gi"
+          x-order: 13
+        controlPlane:
+          type: boolean
+          description: Whether the nodes in this pool are control plane nodes
+          x-order: 14
+        nodeLabels:
+          type: array
+          items:
+            type: string
+          description: A list of labels for the nodes in the pool
+          x-order: 15
+        conditions:
+          $ref: "#/components/schemas/NodePoolConditions"
+          description: Conditions representing various aspects of the node pool's state
+          x-order: 16
+        description:
+          type: string
+          description: An optional description for the node pool.
+          x-order: 17
+        desiredNodeCount:
+          type: integer
+          minimum: 0
+          description: The desired number of nodes in the pool
+          x-order: 18
+        autoProvisionDisabled:
+          type: boolean
+          description: Whether the node pool is disabled for auto-provisioning.
+          x-order: 19
+        currentNodeSetID:
+          type: string
+          format: uuid
+          description: The ID of the current node set for the node pool
+          nullable: true
+          x-order: 20
+        autoModeDisabled:
+          type: boolean
+          description: Whether the node pool is disabled for auto-mode (automatic node recycling).
+          x-order: 21
+        provisioningMonitorDisabled:
+          type: boolean
+          default: false
+          description: Whether the timeout-based provisioning monitor is paused for this node pool. When true, nodes stuck in provisioning past the configured timeout will not be recycled by the system; an operator must investigate manually.
+          x-order: 22
+        recycleBudget:
+          type: integer
+          minimum: 0
+          description: The maximum number of nodes that can be recycled at once.
+          x-order: 23
+        maxSurge:
+          type: integer
+          minimum: 0
+          description: |
+            Controls surge node provisioning during upgrades.
+            - 0: Sequential upgrade (teardown then provision)
+          default: 0
+          x-order: 24
+        teleportEnabled:
+          type: boolean
+          default: false
+          description: Whether Teleport SSH enrollment is enabled for nodes in this pool.
+          x-order: 25
+        diskSelectionStrategy:
+          $ref: "#/components/schemas/DiskSelectionStrategy"
+          x-order: 26
+        nvLinkLogicalPartitionID:
+          type: string
+          format: uuid
+          description: The ID of the NVLink logical partition used by the nodes in the pool
+          x-order: 27
+        capiInfraMachineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource.
+          x-order: 100
+        capiSpireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethod"
+          description: |
+            How CWE configures SPIRE agent attestation for CAPI-backed nodes in this pool.
+            Present only for CAPI-backed pools.
+          x-order: 101
+        capiBootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Custom cloud-init `write_files` entries configured for this node pool. Present only for CAPI-backed pools.
+          x-order: 102
+        capiPreKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Custom cloud-init `runcmd` entries configured for this node pool. Present only for CAPI-backed pools.
+          x-order: 103
+
+    ListNodePoolsResponse:
+      type: object
+      required:
+        - nodePools
+      properties:
+        nodePools:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodePool"
+          description: The list of node pools
+    
+    #--------------------------------
+    # Node Set
+    #--------------------------------
+    ListNodeSetsResponse:
+      type: object
+      required:
+        - nodeSets
+      properties:
+        nodeSets:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeSet"
+          description: The list of node sets
+
+    NodePoolConfigHistory:
+      type: object
+      required:
+        - changes
+      properties:
+        changes:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodePoolConfigChange"
+          description: Config snapshots ordered from oldest to newest. Each entry after the first shows which fields changed relative to the previous snapshot.
+
+    NodePoolConfigChange:
+      type: object
+      required:
+        - nodeSetID
+        - createdAt
+        - isCurrent
+        - changedFields
+      properties:
+        nodeSetID:
+          type: string
+          format: uuid
+          description: The ID of the NodeSet snapshot representing this config.
+        createdAt:
+          type: string
+          format: date-time
+          description: When this config snapshot was created (i.e. when the config change took effect).
+        isCurrent:
+          type: boolean
+          description: Whether this NodeSet is the current active config for the node pool.
+        changedFields:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodePoolConfigField"
+          description: Fields that changed relative to the previous snapshot. Empty for the initial snapshot.
+
+    NodePoolConfigField:
+      type: object
+      required:
+        - field
+        - to
+      properties:
+        field:
+          type: string
+          description: The name of the config field that changed.
+        from:
+          type: string
+          description: The previous value, JSON-encoded. Omitted for the initial snapshot.
+        to:
+          type: string
+          description: The new value, JSON-encoded.
+    
+    NodeSet:
+      type: object
+      required:
+        - id
+        - nodePoolID
+        - desiredCount
+        - osProfile
+        - configProfile
+        - kubernetesVersion
+        - systemReservedMemory
+        - diskSelectionStrategy
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the node set
+          readOnly: true
+        nodePoolID:
+          type: string
+          format: uuid
+          description: The ID of the node pool that owns the node set
+          readOnly: true
+        desiredCount:
+          type: integer
+          minimum: 0
+          description: The desired number of nodes in the node set
+          readOnly: true
+          x-order: 1
+        osProfile:
+          type: string
+          description: The name of the OS profile to use for Forge-backed nodes in the pool. Empty for CAPI-backed node sets.
+          x-go-name: OSProfile
+          readOnly: true
+        configProfile:
+          type: string
+          description: The name of the config profile to use for the nodes in the pool
+          readOnly: true
+        kubernetesVersion:
+          type: string
+          description: The version of Kubernetes for nodes in the node set
+          readOnly: true
+        systemReservedMemory:
+          type: string
+          description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
+          readOnly: true
+        teleportEnabled:
+          type: boolean
+          default: false
+          description: Whether Teleport SSH enrollment is enabled for nodes in this node set.
+          readOnly: true
+        diskSelectionStrategy:  
+          $ref: "#/components/schemas/DiskSelectionStrategy"
+          readOnly: true
+        capiInfraMachineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource copied from the parent node pool.
+        capiBootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Cloud-init `write_files` entries copied from the parent node pool. Present only for CAPI-backed node sets.
+          readOnly: true
+        capiPreKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Cloud-init `runcmd` entries copied from the parent node pool. Present only for CAPI-backed node sets.
+          readOnly: true
+
+    #--------------------------------
+    # Node
+    #--------------------------------
+    Node:
+      type: object
+      required:
+        - id
+        - nodePoolID
+        - nodeSetID
+        - name
+        - conditions
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the node
+          x-order: 1
+        nodePoolID:
+          type: string
+          format: uuid
+          description: The ID of the node pool that owns the node
+          x-order: 2
+        nodeSetID:
+          type: string
+          format: uuid
+          description: The ID of the node set that owns the node
+          x-order: 3
+        name:
+          type: string
+          description: The name of the node
+          x-order: 4
+        forgeInstanceID:
+          type: string
+          description: The ID of the Forge instance that was created for the node
+          x-go-type-skip-optional-pointer: true
+          x-order: 5
+        forgeMachineID:
+          type: string
+          description: The machine ID of the Forge instance that was created for the node
+          x-go-type-skip-optional-pointer: true
+          x-order: 6
+        ip:
+          type: string
+          format: ipv4
+          description: The IP address of the node
+          x-go-type-skip-optional-pointer: true
+          x-order: 7
+        instanceTypeID:
+          type: string
+          format: uuid
+          description: The Forge instance type ID used to provision this node
+          x-go-type-skip-optional-pointer: true
+          x-order: 8
+        conditions:
+          $ref: "#/components/schemas/NodeConditions"
+          description: Conditions representing various aspects of the node's state
+          x-order: 9
+
+    ListNodesResponse:
+      type: object
+      required:
+        - nodes
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Node"
+
+    NodeHistory:
+      type: object
+      required:
+        - workflows
+      properties:
+        workflows:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeHistoryWorkflow"
+
+    NodeHistoryWorkflow:
+      type: object
+      required:
+        - workflowID
+        - runID
+        - workflowType
+        - status
+        - startTime
+        - durationMs
+        - activities
+      properties:
+        workflowID:
+          type: string
+        runID:
+          type: string
+        workflowType:
+          type: string
+        status:
+          type: string
+          description: "Workflow execution status: Running, Completed, Failed, Canceled, Terminated, TimedOut"
+        startTime:
+          type: string
+          format: date-time
+        closeTime:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          format: int64
+          description: Duration in milliseconds, or elapsed time if still running
+        activities:
+          type: array
+          items:
+            $ref: "#/components/schemas/NodeHistoryActivity"
+
+    NodeHistoryActivity:
+      type: object
+      required:
+        - name
+        - scheduledTime
+        - status
+        - durationMs
+      properties:
+        name:
+          type: string
+        scheduledTime:
+          type: string
+          format: date-time
+        closeTime:
+          type: string
+          format: date-time
+        durationMs:
+          type: integer
+          format: int64
+          description: Duration in milliseconds, or elapsed time if still running
+        status:
+          type: string
+          description: "Activity status: Running, Completed, Failed"
+        failureMessage:
+          type: string
+          description: The error message describing why the activity failed
+
+    DeleteNodeRequest:
+      type: object
+      properties:
+        machineHealthIssue:
+          $ref: "#/components/schemas/MachineHealthIssue"
+          description: | 
+            Optional health issue information to report to Forge when deleting the node.
+            If provided, the node will be flagged for repair to the Forge team.
+
+    MachineHealthIssue:
+      type: object
+      required:
+        - category
+        - summary
+      properties:
+        category:
+          type: string
+          description: "Category of the health issue. Must be a valid Forge category enum value (e.g., 'Hardware', 'Network', 'Performance', 'Other', etc.)"
+          example: "Hardware"
+          x-order: 1
+        summary:
+          type: string
+          description: Short summary describing the issue
+          example: "Node only has 7 GPUs"
+          minLength: 1
+          x-order: 2
+        details:
+          type: string
+          description: Optional detailed information about the issue helpful for diagnosis
+          example: "The node reboot completed at 12:51Z and it started reporting XID 79 at 14:09Z"
+          x-go-type-skip-optional-pointer: true
+          x-order: 3
+
+    Condition:
+      type: object
+      required:
+        - status
+        - lastTransitionTime
+        - message
+      properties:
+        status:
+          type: string
+          enum:
+            - "True"
+            - "False"
+            - "Unknown"
+          description: The status of the condition
+          x-order: 1
+        lastTransitionTime:
+          type: string
+          format: date-time
+          description: The last time the condition transitioned
+          x-order: 2
+        message:
+          type: string
+          description: A message explaining the condition
+          x-order: 3
+
+    ClusterConditions:
+      type: object
+      required:
+        - provisioning
+        - provisioned
+        - deleting
+        - upgrading
+      description: Conditions representing various aspects of the Cluster's state
+      properties:
+        provisioning:
+          description: The condition indicating whether the cluster is currently provisioning.
+          x-order: 1
+          $ref: "#/components/schemas/Condition"
+        provisioned:
+          description: The condition indicating whether the cluster is provisioned.
+          x-order: 2
+          $ref: "#/components/schemas/Condition"
+        deleting:
+          description: The condition indicating whether the cluster is currently being deleted.
+          x-order: 3
+          $ref: "#/components/schemas/Condition"
+        cpNodesRecycling:
+          description: The condition indicating whether the cluster control plane nodes are currently being recycled.
+          x-order: 4
+          $ref: "#/components/schemas/Condition"
+        controlPlaneUpgrading:
+          description: The condition indicating whether the control plane is currently being upgraded.
+          x-order: 5
+          $ref: "#/components/schemas/Condition"
+        updateInProgress:
+          description: |
+            The mutually-exclusive cluster mutation currently in flight
+            (etcd_encryption, k8s_upgrade, cp_nodes_recycling, or oidc_enable).
+            Absent when no such operation is running. Replaces the per-operation
+            boolean flags for new operation types.
+          x-order: 6
+          $ref: "#/components/schemas/UpdateInProgress"
+        updateFailed:
+          description: The condition indicating that the most recent cluster update failed.
+          x-order: 7
+          $ref: "#/components/schemas/Condition"
+
+    UpdateInProgress:
+      type: object
+      required:
+        - type
+        - startedAt
+      description: A mutually-exclusive cluster mutation in flight.
+      properties:
+        type:
+          type: string
+          enum:
+            - etcd_encryption
+            - k8s_upgrade
+            - cp_nodes_recycling
+            - oidc_enable
+          description: The kind of long-running cluster mutation in flight.
+          x-order: 1
+        message:
+          type: string
+          description: Optional human-readable context for the in-flight operation.
+          x-order: 2
+        startedAt:
+          type: string
+          format: date-time
+          description: Timestamp at which the operation was started.
+          x-order: 3
+    NodePoolConditions:
+      type: object
+      required:
+        - provisioning
+        - provisioned
+        - deleting
+      description: Conditions representing various aspects of the node pool's state
+      properties:
+        provisioning:
+          description: The condition indicating whether the node pool is currently provisioning.
+          $ref: "#/components/schemas/Condition"
+          x-order: 1
+        provisioned:
+          description: The condition indicating whether the node pool is provisioned.
+          $ref: "#/components/schemas/Condition"
+          x-order: 2
+        deleting:
+          description: The condition indicating whether the node pool is currently being deleted.
+          $ref: "#/components/schemas/Condition"
+          x-order: 3
+
+    NodeConditions:
+      type: object
+      required:
+        - pending
+        - provisioning
+        - readyToJoin
+        - joined
+        - provisioned
+        - deleting
+        - kubernetesReady
+        - kubernetesUnschedulable
+        - nodeAgentReady
+        - rebooting
+        - markedForRecycling
+        - markedForRepair
+      description: Conditions representing various aspects of the node's state
+      properties:
+        pending:
+          description: The condition indicating whether the node is pending.
+          $ref: "#/components/schemas/Condition"
+          x-order: 1
+        provisioning:
+          description: The condition indicating whether the node is currently provisioning.
+          $ref: "#/components/schemas/Condition"
+          x-order: 2
+        readyToJoin:
+          description: The condition indicating whether the node is ready to join the cluster.
+          $ref: "#/components/schemas/Condition"
+          x-order: 3
+        joined:
+          description: The condition indicating whether the node has joined the cluster.
+          $ref: "#/components/schemas/Condition"
+          x-order: 4
+        provisioned:
+          description: The condition indicating whether the node is provisioned.
+          $ref: "#/components/schemas/Condition"
+          x-order: 5
+        deleting:
+          description: The condition indicating whether the node is currently being deleted.
+          $ref: "#/components/schemas/Condition"
+          x-order: 6
+        kubernetesReady:
+          description: The condition indicating whether the Kubelet is reporting Ready status.
+          $ref: "#/components/schemas/Condition"
+          x-order: 7
+        kubernetesUnschedulable:
+          description: The condition indicating whether the node is schedulable by Kubernetes.
+          $ref: "#/components/schemas/Condition"
+          x-order: 8
+        nodeAgentReady:
+          description: The condition indicating whether the Node Agent is healthy on the node.
+          $ref: "#/components/schemas/Condition"
+          x-order: 9
+        rebooting:
+          description: The condition indicating whether the node is currently rebooting.
+          $ref: "#/components/schemas/Condition"
+          x-order: 10
+        markedForRecycling:
+          description: The condition indicating whether the node is marked for recycling.
+          $ref: "#/components/schemas/Condition"
+          x-order: 11
+        markedForRepair:
+          description: The condition indicating whether the node is marked for repair.
+          $ref: "#/components/schemas/Condition"
+          x-order: 12
+        teleportRegistered:
+          description: The condition indicating whether the node is registered with Teleport for SSH. True when confirmed registered; includes lastTransitionTime and message.
+          $ref: "#/components/schemas/Condition"
+          x-order: 13
+
+    GenericError:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: The error message
+          x-order: 1
+
+    OSProfile:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: The name of the OS profile
+          x-order: 1
+
+    ConfigProfile:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: The name of the config profile
+          x-order: 1
+    
+    DiskSelectionStrategy:
+      type: string
+      enum:
+        - "smallest"
+        - "largest"
+      description: The strategy to use for selecting the OS install disk on nodes.
+
+    DiskSelectionStrategyCreate:
+      type: string
+      enum:
+        - "smallest"
+        - "largest"
+      description: The strategy to use for selecting the OS install disk on nodes.
+      x-go-type-skip-optional-pointer: true
+
+    SpireAttestationMethod:
+      type: string
+      enum:
+        - "tpm"
+        - "joinToken"
+      description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+
+    SpireAttestationMethodCreate:
+      type: string
+      enum:
+        - "tpm"
+        - "joinToken"
+      description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+      x-go-type-skip-optional-pointer: true
+
+    ListOSProfilesResponse:
+      type: object
+      required:
+        - osProfiles
+      properties:
+        osProfiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/OSProfile"
+          description: The list of OS profiles
+
+    ListConfigProfilesResponse:
+      type: object
+      required:
+        - configProfiles
+      properties:
+        configProfiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConfigProfile"
+          description: The list of config profiles
+
+    RegisterSiteRequest:
+      type: object
+      required:
+        - id
+        - vipRanges
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the site, matching the ID of the Forge site
+          x-order: 1
+        vipRanges:
+          type: array
+          items:
+            type: string
+          example: ["10.91.192.176/28", "10.91.192.192/28"]
+          description: The VIP ranges provided by the GNI team, in CIDR block format. Multiple disjoint ranges can be specified to maximize IP space utilization.
+          x-go-name: VIPRanges
+          x-order: 2
+
+    Site:
+      type: object
+      required:
+        - id
+        - vipRanges
+        - vipAllocations
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the site, matching the ID of the Forge site
+          x-order: 1
+        vipRanges:
+          type: array
+          items:
+            type: string
+          example: ["10.91.192.176/28", "10.91.192.192/28"]
+          description: The VIP ranges provided by the GNI team, in CIDR block format. Multiple disjoint ranges can be specified to maximize IP space utilization.
+          x-go-name: VIPRanges
+          x-order: 2
+        vipAllocations:
+          type: array
+          items:
+            $ref: "#/components/schemas/VIPAllocation"
+          description: List of VIPs that have been allocated from the vipRanges
+          x-go-name: VIPAllocations
+          x-order: 3
+
+    VIPAllocation:
+      type: object
+      required:
+        - id
+        - siteID
+        - vip
+        - allocationType
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The unique ID of the VIP allocation
+          x-order: 1
+        siteID:
+          type: string
+          format: uuid
+          description: The ID of the site where this VIP is allocated
+          x-order: 2
+        vip:
+          type: string
+          description: The allocated VIP
+          x-go-name: VIP
+          x-order: 3
+        allocationType:
+          type: string
+          enum: ["cluster", "siteController"]
+          description: Type of resource that has been allocated this VIP
+          x-order: 4
+        clusterID:
+          type: string
+          format: uuid
+          description: ID of the cluster that has been allocated this VIP (if allocationType is cluster)
+          x-order: 5
+        createdAt:
+          type: string
+          format: date-time
+          description: When this VIP was allocated
+          x-order: 6
+
+    ListSitesResponse:
+      type: object
+      required:
+        - sites
+      properties:
+        sites:
+          type: array
+          items:
+            $ref: "#/components/schemas/Site"
+          description: The list of sites
+
+    ListVIPAllocationsResponse:
+      type: object
+      required:
+        - vipAllocations
+      properties:
+        vipAllocations:
+          type: array
+          items:
+            $ref: "#/components/schemas/VIPAllocation"
+          description: The list of VIP allocations
+
+    CreateVIPAllocationRequest:
+      type: object
+      required:
+        - siteID
+        - vip
+        - allocationType
+      properties:
+        siteID:
+          type: string
+          format: uuid
+          description: The site ID where the VIP should be allocated
+          x-order: 1
+        vip:
+          type: string
+          description: The VIP to allocate
+          x-order: 2
+        allocationType:
+          type: string
+          enum: ["cluster", "siteController"]
+          description: The type of resource to allocate this VIP to
+          x-order: 3
+        clusterID:
+          type: string
+          format: uuid
+          description: The cluster ID (required if allocationType is cluster)
+          x-order: 4
+
+    ListForgeTenantsResponse:
+      type: object
+      required:
+        - tenants
+      properties:
+        tenants:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeTenant"
+          description: The list of Forge tenants
+
+    ListForgeInstancesResponse:
+      type: object
+      required:
+        - instances
+      properties:
+        instances:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeInstance"
+          description: The list of Forge instances
+
+    ListForgeSubnetsResponse:
+      type: object
+      required:
+        - subnets
+      properties:
+        subnets:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeSubnet"
+          description: The list of Forge subnets
+
+    ListForgeVPCsResponse:
+      type: object
+      required:
+        - vpcs
+      properties:
+        vpcs:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeVPC"
+          description: The list of Forge VPCs
+
+    ListForgeVpcPrefixesResponse:
+      type: object
+      required:
+        - vpcPrefixes
+      properties:
+        vpcPrefixes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeVpcPrefix"
+          description: The list of Forge VPC prefixes
+
+    ListForgeSSHKeyGroupsResponse:
+      type: object
+      required:
+        - sshKeyGroups
+      properties:
+        sshKeyGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeSSHKeyGroup"
+          description: The list of Forge SSH key groups
+
+    ListForgeInstanceTypesResponse:
+      type: object
+      required:
+        - instanceTypes
+      properties:
+        instanceTypes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeInstanceType"
+          description: The list of Forge instance types
+
+    ListForgeInfiniBandPartitionsResponse:
+      type: object
+      required:
+        - infiniBandPartitions
+      properties:
+        infiniBandPartitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeInfiniBandPartition"
+          description: The list of Forge InfiniBand Partitions
+
+    ListForgeNVLinkLogicalPartitionsResponse:
+      type: object
+      required:
+        - nvLinkLogicalPartitions
+      properties:
+        nvLinkLogicalPartitions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeNVLinkLogicalPartition"
+          description: The list of Forge NVLink Logical Partitions
+
+    ListForgeSitesResponse:
+      type: object
+      required:
+        - sites
+      properties:
+        sites:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeSite"
+          description: The list of Forge sites
+
+    ListForgeIPBlocksResponse:
+      type: object
+      required:
+        - ipBlocks
+      properties:
+        ipBlocks:
+          type: array
+          items:
+            $ref: "#/components/schemas/ForgeIPBlock"
+          description: The list of Forge IP blocks
+
+    #--------------------------------
+    #  Forge API Resource Schemas
+    #--------------------------------
+
+    ForgeTenant:
+      type: object
+      required:
+        - id
+        - orgID
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the tenant
+          x-order: 1
+        orgID:
+          type: string
+          description: The NGC organization ID
+          x-order: 2
+        name:
+          type: string
+          description: The name of the tenant
+          x-order: 3
+
+    ForgeInstance:
+      type: object
+      description: Represents a Forge instance
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the instance
+          x-order: 1
+        name:
+          type: string
+          description: The name of the instance
+          x-order: 2
+        subnetId:
+          type: string
+          format: uuid
+          description: The ID of the subnet (if not using native networking)
+          x-order: 3
+        vpcPrefixId:
+          type: string
+          format: uuid
+          description: The ID of the VPC prefix (if using native networking)
+          x-order: 4
+
+    ForgeSubnet:
+      type: object
+      description: Represents a Forge subnet
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the subnet
+          x-order: 1
+        name:
+          type: string
+          description: The name of the subnet
+          x-order: 2
+        prefixLength:
+          type: integer
+          description: The prefix length of the subnet
+          x-order: 3
+
+    ForgeVPC:
+      type: object
+      description: Represents a Forge VPC
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the VPC
+          x-order: 1
+        name:
+          type: string
+          description: The name of the VPC
+          x-order: 2
+
+    ForgeVpcPrefix:
+      type: object
+      description: Represents a Forge VPC prefix
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the VPC prefix
+          x-order: 1
+        name:
+          type: string
+          description: The name of the VPC prefix
+          x-order: 2
+        prefixLength:
+          type: integer
+          description: The prefix length of the VPC prefix
+          x-order: 3
+
+    ForgeSSHKeyGroup:
+      type: object
+      description: Represents a Forge SSH key group
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the SSH key group
+          x-order: 1
+        name:
+          type: string
+          description: The name of the SSH key group
+          x-order: 2
+        siteAssociations:
+          type: array
+          items:
+            type: string
+          description: The list of site associations
+          x-order: 3
+
+    ForgeInstanceType:
+      type: object
+      description: Represents a Forge instance type
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the instance type
+          x-order: 1
+        name:
+          type: string
+          description: The name of the instance type
+          x-order: 2
+        total:
+          type: integer
+          description: The total number of instances of this type that can be created
+          x-order: 3
+        unused:
+          type: integer
+          description: The number of instances of this type that are not currently in use
+          x-order: 4
+        unusedUsable:
+          type: integer
+          description: The number of instances of this type that are not currently in use and are usable
+          x-order: 5
+
+    ForgeInfiniBandPartition:
+      type: object
+      description: Represents a Forge InfiniBand Partition
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the InfiniBand Partition
+          x-order: 1
+        name:
+          type: string
+          description: The name of the InfiniBand Partition
+          x-order: 2
+
+    ForgeNVLinkLogicalPartition:
+      type: object
+      description: Represents a Forge NVLink Logical Partition
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the NVLink Logical Partition
+          x-order: 1
+        name:
+          type: string
+          description: The name of the NVLink Logical Partition
+          x-order: 2
+
+    ForgeSite:
+      type: object
+      description: Represents a Forge site
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the site
+          x-order: 1
+        name:
+          type: string
+          description: The name of the site
+          x-order: 2
+        capabilities:
+          $ref: "#/components/schemas/ForgeSiteCapabilities"
+          description: The capabilities of the site
+          x-order: 3
+
+    ForgeSiteCapabilities:
+      type: object
+      description: Represents the capabilities of a Forge site
+      required:
+        - nativeNetworking
+      properties:
+        nativeNetworking:
+          type: boolean
+          description: Whether native networking is enabled for this site
+          x-order: 1
+
+    ForgeIPBlock:
+      type: object
+      description: Represents a Forge IP block
+      required:
+        - id
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The ID of the IP block
+          x-order: 1
+        name:
+          type: string
+          description: The name of the IP block
+          x-order: 2

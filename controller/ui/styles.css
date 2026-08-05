@@ -1,0 +1,2212 @@
+/**
+ * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+ *
+ * NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+ * property and proprietary rights in and to this material, related
+ * documentation and any modifications thereto. Any use, reproduction,
+ * disclosure or distribution of this material and related documentation
+ * without an express license agreement from NVIDIA CORPORATION or
+ * its affiliates is strictly prohibited.
+ */
+
+:root {
+    --nvidia-green: #76b900;
+    --nvidia-dark: #1a1a1a;
+    --nvidia-darker: #121212;
+    --nvidia-light: #333333;
+    --nvidia-text: #e0e0e0;
+    --nvidia-highlight: #8dd419;
+    --nvidia-shadow: rgba(0, 0, 0, 0.5);
+    --nvidia-warning: #ff9900;
+    --nvidia-error: #ff5555;
+    --nvidia-info: #4a90e2;
+
+    /* New Grey Scale Variables */
+    --nvidia-grey-1: #cccccc; /* Lightest grey, e.g., for h1, h2 */
+    --nvidia-grey-2: #bfbfbf; /* Light grey, e.g., for less important text, help text */
+    --nvidia-grey-3: #b4b4b4; /* Medium-light grey, e.g., for detail values, loading text */
+    --nvidia-grey-4: #999999; /* Medium-dark grey, e.g., for labels */
+    --nvidia-grey-5: #555555; /* Darker grey, e.g., for borders */
+    --nvidia-grey-6: #444444; /* Darkest grey, e.g., for hover states, secondary backgrounds */
+
+    /* Interactive UI Element Colors */
+    --interactive-blue-primary: #0078d7; /* For tooltips, help icons */
+    --interactive-blue-hover: #0069c0;   /* Hover state for interactive blue */
+
+    /* Transparent Accent Colors */
+    --nvidia-green-transparent-bg: rgba(118, 185, 0, 0.1);
+    --nvidia-green-transparent-border: rgba(118, 185, 0, 0.3);
+    --nvidia-error-transparent-bg: rgba(255, 85, 85, 0.1);
+    --nvidia-warning-transparent-bg: rgba(255, 153, 0, 0.1);
+
+    /* Transparent Background Colors */
+    --nvidia-dark-transparent-bg1: rgba(25, 25, 25, 0.4); /* For detail rows */
+    --nvidia-dark-transparent-bg2: rgba(30, 30, 30, 0.3); /* For configs, tables, empty states */
+}
+
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--nvidia-darker);
+    color: var(--nvidia-text);
+}
+
+h1, h2 {
+    color: var(--nvidia-grey-1);
+}
+
+.wrapper {
+    width: 1400px;
+    margin: 0 auto;
+    padding: 20px 20px 20px;
+}
+
+.container {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+}
+
+.left-panel {
+    min-width: 300px;
+    flex-shrink: 0;
+    border-radius: 5px;
+    padding: 15px;
+    background-color: var(--nvidia-dark);
+    box-shadow: 0 4px 8px var(--nvidia-shadow);
+    height: fit-content;
+    max-height: 80vh;
+    overflow-y: auto;
+    align-self: flex-start;
+}
+
+.right-panel {
+    flex-grow: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.panel {
+    flex: 1;
+    border-radius: 5px;
+}
+
+.panel h2 {
+    margin-top: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.panel h2 > div {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.left-panel h2 {
+    margin-top: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#cluster-details {
+    background-color: #232323;
+    padding: 20px;
+    border-radius: 5px;
+}
+
+.detail-row {
+    display: flex;
+    margin-bottom: 4px;
+    padding: 2px 0px;
+    border-radius: 2px;
+    align-items: center;
+    min-height: 17px;
+}
+
+.detail-label {
+    width: 180px;
+    font-weight: bold;
+    color: var(--nvidia-grey-4);
+    font-size: 13px;
+}
+
+.detail-value {
+    flex-grow: 1;
+    color: var(--nvidia-grey-3);
+    font-size: 13px;
+}
+
+/* Detail value with a hover tooltip */
+.detail-value.has-tooltip {
+    text-decoration: underline dotted;
+    text-underline-offset: 3px;
+    cursor: help;
+}
+
+.instance-type-preference-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+}
+
+.instance-type-preference-item {
+    line-height: 1.4;
+}
+
+.item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin: 8px 0;
+    background-color: var(--nvidia-light);
+    border-radius: 3px;
+    cursor: pointer;
+    color: var(--nvidia-text);
+    border-left: 3px solid transparent;
+    transition: all 0.2s ease;
+}
+
+.item:hover {
+    background-color: var(--nvidia-grey-6);
+    border-left: 3px solid var(--nvidia-green);
+}
+
+.item.selected {
+    background-color: var(--nvidia-grey-6);
+    border-left: 3px solid var(--nvidia-green);
+    box-shadow: 0 0 5px var(--nvidia-green-transparent-border);
+}
+
+.actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+}
+
+button {
+    padding: 8px 12px;
+    cursor: pointer;
+    background-color: var(--nvidia-dark);
+    color: var(--nvidia-text);
+    border: 1px solid var(--nvidia-green);
+    border-radius: 3px;
+    transition: all 0.2s ease;
+}
+
+button:hover:not(:disabled) {
+    background-color: var(--nvidia-green);
+    color: var(--nvidia-darker);
+    box-shadow: 0 0 8px rgba(118, 185, 0, 0.5);
+}
+
+button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    border-color: var(--nvidia-grey-5);
+}
+
+.form-group {
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center !important;
+    width: 100%;
+    position: relative;
+    padding-right: 30px;
+}
+
+.form-group input[type="text"],
+.form-group input[type="number"],
+.form-group select {
+    flex: 1;
+    min-width: 0;
+    align-self: center;
+}
+
+label {
+    display: inline-block;
+    margin-bottom: 0;
+    margin-right: 10px;
+    color: var(--nvidia-text);
+    width: 200px;
+    text-align: right;
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* Fix for Control Plane VIP specifically */
+label[for="control-plane-vip"] {
+    width: 150px;
+}
+
+input, select {
+    padding: 0.5rem;
+    border: 1px solid var(--nvidia-grey-5);
+    border-radius: 3px;
+    width: 100%;
+    box-sizing: border-box;
+    background-color: var(--nvidia-light);
+    color: var(--nvidia-text);
+    display: block;
+    flex-grow: 1;
+}
+
+select[multiple] {
+    height: auto;
+    min-height: 100px;
+    max-height: 150px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+select[multiple] option {
+    padding: 0.5rem;
+    border-bottom: 1px solid var(--nvidia-grey-6);
+}
+
+select[multiple] option:last-child {
+    border-bottom: none;
+}
+
+select[disabled] {
+    opacity: 0.7;
+    cursor: not-allowed;
+    border-color: var(--nvidia-grey-6);
+    background-color: #2a2a2a;
+}
+
+/* Style for elements with tooltips to indicate they have hover information */
+select[title]:not([title=""]):disabled {
+    border-left: 3px solid var(--nvidia-grey-5);
+}
+
+.select-input-container {
+    flex-grow: 1;
+    width: 100%;
+    display: flex;
+}
+
+.select-input-container select {
+    width: 100%;
+    display: block;
+}
+
+.checkbox-group {
+    align-items: center;
+}
+
+.checkbox-group input[type="checkbox"] {
+    margin-left: 10px;
+}
+
+input:focus, select:focus {
+    outline: none;
+    border-color: var(--nvidia-green);
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.7);
+}
+
+.modal-content {
+    background-color: var(--nvidia-dark);
+    margin: 2% auto;
+    padding: 20px;
+    width: 700px;
+    max-width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-radius: 5px;
+    border: 1px solid var(--nvidia-light);
+    box-shadow: 0 4px 15px var(--nvidia-shadow);
+}
+
+.close {
+    float: right;
+    cursor: pointer;
+    font-size: 20px;
+    color: var(--nvidia-text);
+    margin-left: 10px;
+}
+
+.close:hover {
+    color: var(--nvidia-green);
+}
+
+.error {
+    color: #ff5555;
+}
+
+.modal-error {
+    color: #ff5555;
+    margin: 10px 0px;
+}
+
+.loading {
+    color: var(--nvidia-grey-3);
+}
+
+.modal-loading {
+    color: var(--nvidia-grey-3);
+    margin: 10px 0px;
+}
+
+/* Fix for checkbox display */
+input[type="checkbox"] {
+    width: auto;
+    flex-grow: 0;
+    accent-color: var(--nvidia-green);
+    min-width: 18px;
+    height: 18px;
+    margin-top: 0;
+    vertical-align: middle;
+}
+
+/* Apply specific styling for "Control Plane" form group */
+.form-group label[for*="control-plane"] {
+    display: inline-block;
+    vertical-align: middle;
+}
+
+/* Styling for checkbox with inline label */
+.checkbox-with-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+}
+
+.checkbox-with-label input[type="checkbox"] {
+    width: auto;
+    height: auto;
+    margin: 0;
+    flex-shrink: 0;
+}
+
+.checkbox-with-label .checkbox-label {
+    color: var(--nvidia-grey-3);
+    font-size: 0.9em;
+    font-style: italic;
+}
+
+#edit-cluster-modal .edit-cluster-cp-node-recycling-group {
+    display: block;
+    padding-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-cp-node-recycling-group .checkbox-with-label {
+    justify-content: flex-start;
+}
+
+#edit-cluster-modal .edit-cluster-cp-node-recycling-group label {
+    width: auto;
+    text-align: left;
+    margin-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-cp-node-recycling-group .help-text {
+    display: block;
+    margin-left: 0;
+    width: 100%;
+    margin-top: 5px;
+    font-size: 0.85em;
+    color: #999;
+    font-style: italic;
+}
+
+#edit-cluster-modal .edit-cluster-etcd-encryption-group {
+    display: block;
+    padding-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-etcd-encryption-group .checkbox-with-label {
+    justify-content: flex-start;
+}
+
+#edit-cluster-modal .edit-cluster-etcd-encryption-group label {
+    width: auto;
+    text-align: left;
+    margin-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-etcd-encryption-group .help-text {
+    display: block;
+    margin-left: 0;
+    width: 100%;
+    margin-top: 5px;
+    font-size: 0.85em;
+    color: #999;
+    font-style: italic;
+}
+
+#edit-cluster-modal .edit-cluster-provisioning-monitor-group {
+    display: block;
+    padding-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-provisioning-monitor-group .checkbox-with-label {
+    justify-content: flex-start;
+}
+
+#edit-cluster-modal .edit-cluster-provisioning-monitor-group label {
+    width: auto;
+    text-align: left;
+    margin-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-provisioning-monitor-group .help-text {
+    display: block;
+    margin-left: 0;
+    width: 100%;
+    margin-top: 5px;
+    font-size: 0.85em;
+    color: #999;
+    font-style: italic;
+}
+
+#edit-cluster-modal .edit-cluster-version-label {
+    width: auto;
+    text-align: left;
+    margin-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-note {
+    margin-bottom: 15px;
+    font-size: 0.9em;
+    line-height: 1.3;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #333;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-list li.edit-cluster-instance-type-item {
+    cursor: grab;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-list li.edit-cluster-instance-type-item.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-list li.edit-cluster-instance-type-item.drag-over {
+    border-top: 2px solid var(--nvidia-green);
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-drag-handle {
+    flex-shrink: 0;
+    color: #888;
+    user-select: none;
+    font-size: 14px;
+    line-height: 1;
+    cursor: grab;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-label {
+    flex: 1;
+    min-width: 0;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-reorder {
+    padding: 2px 8px;
+    font-size: 12px;
+    min-width: auto;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-remove {
+    flex-shrink: 0;
+}
+
+/* Stack CP config fields vertically (global .form-group is row flex) */
+#edit-cluster-modal .edit-cluster-cp-config-group {
+    margin-bottom: 15px;
+}
+
+#edit-cluster-modal .edit-cluster-cp-config-group .form-group {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch !important;
+    padding-right: 0;
+    margin-bottom: 12px;
+}
+
+#edit-cluster-modal .edit-cluster-cp-config-group .form-group:last-child {
+    margin-bottom: 0;
+}
+
+#edit-cluster-modal .edit-cluster-cp-config-group .form-group label {
+    width: 100%;
+    text-align: left;
+    margin-bottom: 5px;
+    margin-right: 0;
+}
+
+#edit-cluster-modal .edit-cluster-cp-config-group .form-group > input[type="number"],
+#edit-cluster-modal .edit-cluster-cp-config-group .form-group > input[type="text"],
+#edit-cluster-modal .edit-cluster-cp-config-group .form-group > select {
+    width: 100%;
+    flex: none;
+    align-self: stretch;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+#edit-cluster-modal .edit-cluster-cp-config-group #edit-cluster-max-surge {
+    max-width: 120px;
+}
+
+#edit-cluster-modal .edit-cluster-cp-config-group .form-group .help-text {
+    display: block;
+    margin-left: 0;
+    width: 100%;
+    margin-top: 5px;
+    font-size: 0.85em;
+    color: #999;
+    font-style: italic;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+#edit-cluster-modal .edit-cluster-instance-type-row .add-btn {
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+.nodepool-config {
+    border: 1px solid #444;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+}
+
+.nodepool-config-header {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.nodepool-config-title {
+    flex-grow: 1;
+}
+
+.nodepool-config .form-group {
+    margin-bottom: 10px;
+}
+
+.nodepool-config .form-group:last-child {
+    margin-bottom: 0;
+}
+
+/* Create cluster modal spacing adjustments */
+#create-cluster-modal .modal-content {
+    width: 800px;
+    max-width: 95vw;
+    padding: 25px;
+}
+
+/* Improve spacing and layout without changing the fundamental structure */
+#create-cluster-modal .form-group {
+    margin-bottom: 15px;
+    padding-right: 10px;
+}
+
+#create-cluster-modal .form-group label {
+    min-width: 200px;
+    font-weight: 500;
+}
+
+#create-cluster-modal .pod-cidr-input-group {
+    flex: 1;
+    min-width: 0;
+}
+
+#create-cluster-modal .pod-cidr-input-group input {
+    box-sizing: border-box;
+    width: 100%;
+}
+
+#create-cluster-modal .pod-cidr-input-group .help-text {
+    margin-left: 0;
+    width: 100%;
+}
+
+#create-cluster-modal .nodepools-container {
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px solid var(--nvidia-grey-3);
+}
+
+#create-cluster-modal .nodepool-config {
+    background-color: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--nvidia-grey-4);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+/* Ensure all inputs and selects fit within their containers */
+.nodepool-config input,
+.nodepool-config select,
+.nodepool-config .select-input-container {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+form button[type="submit"] {
+    background-color: var(--nvidia-green);
+    color: var(--nvidia-darker);
+    border: none;
+    padding: 10px 15px;
+    font-weight: bold;
+    margin-top: 20px;
+    width: 150px;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+form button[type="submit"]:hover:not(:disabled) {
+    background-color: var(--nvidia-highlight);
+}
+
+form button[type="submit"]:disabled {
+    background-color: var(--nvidia-grey-5);
+    color: var(--nvidia-grey-3);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.modal-content h2 {
+    border-bottom: 1px solid var(--nvidia-light);
+    padding-bottom: 10px;
+    margin-top: 0;
+}
+
+.nodepool-container {
+    margin-top: 20px;
+    margin-bottom: 30px;
+    border-radius: 5px;
+    background-color: #232323;
+    box-shadow: 0 2px 4px var(--nvidia-shadow);
+    overflow: hidden;
+    transition: all 0.2s ease;
+    padding: 20px;
+}
+
+.nodepool-container:hover {
+    box-shadow: 0 4px 8px var(--nvidia-shadow);
+    border-color: var(--nvidia-light);
+}
+
+.nodepool-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: bold;
+    margin-bottom: 20px;
+}
+
+.nodepool-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* General Badge Styles */
+.badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-weight: normal;
+    margin-right: 8px;
+    color: white;
+}
+
+.deprecated-badge {
+    background-color: #c27627;
+    font-size: 13px;
+}
+
+.subnet-full-badge {
+    background-color: var(--nvidia-warning);
+}
+
+.gpu-available-badge {
+    background-color: var(--nvidia-green);
+}
+
+.nodepool-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nodepool-header-actions .edit-btn,
+.nodepool-header-actions .delete-btn {
+    padding: 5px 8px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-width: 1px;
+    border-style: solid;
+}
+
+.nodepool-header-actions .edit-btn {
+    color: var(--nvidia-green);
+    background-color: var(--nvidia-green-transparent-bg);
+    border-color: var(--nvidia-green-transparent-border);
+}
+
+.nodepool-header-actions .edit-btn:hover {
+    color: #ffffff;
+    background-color: var(--nvidia-green);
+    border-color: var(--nvidia-highlight);
+}
+
+.nodepool-header-actions .delete-btn {
+    color: var(--nvidia-error);
+    background-color: var(--nvidia-error-transparent-bg);
+    border-color: rgba(255, 85, 85, 0.3);
+}
+
+.nodepool-header-actions .delete-btn:hover {
+    color: #ffffff;
+    background-color: var(--nvidia-error);
+    border-color: var(--nvidia-error);
+}
+
+.nodepool-header-actions .pause-btn,
+.nodepool-header-actions .resume-btn {
+    padding: 5px 10px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid;
+}
+
+.nodepool-header-actions .pause-btn {
+    color: #b8860b;
+    background-color: rgba(184, 134, 11, 0.12);
+    border-color: rgba(184, 134, 11, 0.4);
+}
+
+.nodepool-header-actions .pause-btn:hover {
+    color: #ffffff;
+    background-color: #b8860b;
+    border-color: #b8860b;
+}
+
+.nodepool-header-actions .resume-btn {
+    color: var(--nvidia-green);
+    background-color: var(--nvidia-green-transparent-bg);
+    border-color: var(--nvidia-green-transparent-border);
+}
+
+.nodepool-header-actions .resume-btn:hover {
+    color: #ffffff;
+    background-color: var(--nvidia-green);
+    border-color: var(--nvidia-highlight);
+}
+
+.nodeset-container {
+    border-radius: 5px;
+    background-color: #303030;
+    padding: 20px;
+    margin-top: 20px;
+    box-shadow: 0 5px 15px -5px var(--nvidia-shadow);
+}
+
+.nodeset-header {
+    margin-bottom: 15px;
+    color: var(--nvidia-grey-3);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.deprecation-toggle {
+    padding: 4px 8px;
+    font-size: 11px;
+    margin-left: auto;
+    background-color: var(--nvidia-grey-6);
+    border: 1px solid var(--nvidia-grey-5);
+    color: var(--nvidia-text);
+    border-radius: 3px;
+}
+
+.deprecation-toggle:hover {
+    background-color: var(--nvidia-grey-5);
+}
+
+.nodeset-details {
+    display: flex;
+}
+
+.nodeset-details-column {
+    width: 100%;
+
+}
+
+.nodeset-detail-row {
+    display: flex;
+    margin-bottom: 4px;
+    align-items: center;
+    min-height: 17px;
+}
+
+.nodeset-detail-label {
+    width: 200px;
+    font-weight: bold;
+    color: var(--nvidia-grey-4);
+    font-size: 13px;
+}
+
+.nodeset-detail-value {
+    flex-grow: 1;
+    color: var(--nvidia-grey-3);
+    font-size: 13px;
+}
+
+.nodes-container {
+    margin-top: 20px;
+}
+
+.history-btn {
+    color: var(--nvidia-text-secondary, #a0a0a0);
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 12px;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    margin-right: 6px;
+}
+
+.history-btn:hover {
+    color: #ffffff;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.delete-btn {
+    color: var(--nvidia-error);
+    background-color: var(--nvidia-error-transparent-bg);
+    border: 1px solid rgba(255, 85, 85, 0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 12px;
+    transition: all 0.2s ease;
+    min-width: 80px;
+    white-space: nowrap;
+}
+
+.delete-btn:hover {
+    color: #ffffff !important;
+    background-color: rgba(255, 85, 85, 0.7) !important;
+    border-color: #ff5555 !important;
+    box-shadow: 0 0 5px rgba(255, 85, 85, 0.5) !important;
+}
+
+.item-content {
+    flex-grow: 1;
+    white-space: nowrap;
+}
+
+.item-actions {
+    display: flex;
+}
+
+/* Styling for all text-based add buttons */
+.add-btn {
+    color: var(--nvidia-green);
+    background-color: var(--nvidia-green-transparent-bg);
+    border: 1px solid var(--nvidia-green-transparent-border);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 12px;
+    transition: all 0.2s ease;
+    min-width: 80px;
+    white-space: nowrap;
+}
+
+.add-btn:hover {
+    color: #ffffff;
+    background-color: var(--nvidia-green);
+    border-color: var(--nvidia-highlight);
+    box-shadow: 0 0 5px rgba(118, 185, 0, 0.5);
+}
+
+/* Styling for text-based add buttons in headers */
+.left-panel h2 .add-btn,
+.right-panel h2 .add-btn,
+.nodepool-header-actions .add-btn {
+    font-size: 13px;
+    font-weight: 500;
+    padding: 5px 10px;
+    min-width: auto;
+}
+
+.condition {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 12px;
+    margin-right: 8px;
+    color: var(--nvidia-darker);
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+
+.condition-deleting {
+    background-color: #ff5555;
+}
+
+.condition-provisioning {
+    background-color: #ffaa33;
+}
+
+.condition-provisioned {
+    background-color: var(--nvidia-green);
+}
+
+.condition-pending {
+    background-color: #6c757d;
+}
+
+.condition-rebooting {
+    background-color: #ff9900;
+}
+
+.condition-marked-for-recycling {
+    background-color: #9966ff;
+}
+
+.condition-marked-for-repair {
+    background-color: #9966ff;
+}
+
+.condition-control-plane-upgrading {
+    background-color: var(--nvidia-info);
+}
+
+.condition-cp-nodes-recycling {
+    background-color: var(--nvidia-info);
+}
+
+.condition-update-in-progress {
+    background-color: var(--nvidia-warning);
+}
+
+.condition-update-failed {
+    background-color: var(--nvidia-error);
+}
+
+.condition-message {
+    font-style: italic;
+    font-size: 12px;
+    color: var(--nvidia-grey-2);
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.node-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0;
+    background-color: #262626;
+    border-radius: 5px;
+    overflow: hidden;
+}
+
+.node-table th {
+    text-align: left;
+    padding: 10px;
+    color: var(--nvidia-grey-2);
+    font-weight: bold;
+    font-size: 14px;
+    background-color: #3a3a3a;
+}
+
+.node-table td {
+    padding: 6px 10px;
+}
+
+.node-table tbody tr:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.node-table .actions-cell {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.node-table .conditions-cell {
+    width: 40%;
+}
+
+.node-table .instance-type-cell {
+    font-family: inherit;
+}
+
+.node-table .name-cell,
+.node-table .ip-cell {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.node-table .name-cell {
+    white-space: nowrap;
+    word-break: keep-all;
+    hyphens: none;
+    overflow-wrap: normal;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 20px;
+    background-color: #3a3a3a;
+    border-radius: 3px;
+    margin: 0;
+}
+
+.empty-state p {
+    margin-top: 0;
+    margin-bottom: 0px;
+    color: var(--nvidia-grey-2);
+    font-style: italic;
+}
+
+.empty-state .actions {
+    margin-top: 0;
+    justify-content: center;
+}
+
+.nodepool-details {
+    display: flex;
+}
+
+.nodepool-details-column {
+    width: 100%;
+}
+
+.nodepool-detail-row {
+    display: flex;
+    margin-bottom: 4px;
+    align-items: center;
+    min-height: 17px;
+}
+
+.nodepool-detail-label {
+    width: 175px;
+    font-weight: bold;
+    color: var(--nvidia-grey-4);
+    font-size: 13px;
+}
+
+.nodepool-detail-value {
+    flex-grow: 1;
+    color: var(--nvidia-grey-3);
+    font-size: 13px;
+}
+
+.nodepools-container {
+    margin-top: 20px;
+}
+
+.nodepools-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+}
+
+.nodepools-header h3 {
+    margin: 0;
+    color: var(--nvidia-grey-2);
+}
+
+.nodepool-config-title {
+    font-weight: bold;
+    color: var(--nvidia-grey-2);
+}
+
+form button[type="submit"] {
+    background-color: var(--nvidia-green);
+    color: var(--nvidia-darker);
+    border: none;
+    padding: 10px 15px;
+    font-weight: bold;
+    margin-top: 20px;
+    width: 150px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* Validation warnings */
+.validation-warnings {
+    margin: 5px 0 10px 150px;
+}
+
+.warning-message {
+    color: var(--nvidia-warning);
+    background-color: var(--nvidia-warning-transparent-bg);
+    border-left: 3px solid var(--nvidia-warning);
+    padding: 8px 12px;
+    margin-bottom: 5px;
+    font-size: 13px;
+    border-radius: 2px;
+}
+
+.error-message {
+    color: var(--nvidia-error);
+    background-color: var(--nvidia-error-transparent-bg);
+    border-left: 3px solid var(--nvidia-error);
+    padding: 8px 12px;
+    margin-bottom: 5px;
+    font-size: 13px;
+    border-radius: 2px;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--nvidia-light);
+    padding-bottom: 10px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    border-bottom: none !important;
+    padding-bottom: 0;
+    flex-grow: 1;
+}
+
+.modal-header .close-btn {
+    flex-shrink: 0;
+    font-size: 24px;
+    line-height: 1;
+}
+
+/* Add specific styles for multi-select controls */
+select[multiple] {
+    height: auto;
+    min-height: 100px;
+    max-height: 150px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Ensure all select-input-containers use flex for consistent alignment */
+.select-input-container {
+    flex-grow: 1;
+    width: 100%;
+    display: flex;
+}
+
+/* Reset tooltip to defaults with smaller text for Control Plane VIP */
+.tooltip {
+    visibility: hidden;
+    opacity: 0;
+    width: 280px;
+    background-color: var(--interactive-blue-primary);
+    color: white;
+    text-align: left;
+    border-radius: 4px;
+    padding: 8px 12px;
+    position: absolute;
+    z-index: 10;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    transition: opacity 0.2s, transform 0.2s;
+    font-weight: normal;
+    font-style: normal;
+    border: none;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
+    font-size: 12px;
+    line-height: 1.4;
+    pointer-events: none;
+}
+
+.tooltip::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    margin-left: -6px;
+    border-width: 6px;
+    border-style: solid;
+    border-color: var(--interactive-blue-primary) transparent transparent transparent;
+}
+
+/* For nodepool help icons, reset to original position */
+.nodepool-config .help-icon .tooltip {
+    left: auto;
+    right: -10px;
+    transform: translateY(10px);
+}
+
+.nodepool-config .help-icon .tooltip::after {
+    left: auto;
+    right: 15px;
+    margin-left: 0;
+}
+
+/* Special positioning for Control Plane VIP help icon */
+input#control-plane-vip + .help-icon {
+    right: 10px;
+}
+
+/* Right-aligned tooltip for Control Plane VIP */
+input#control-plane-vip + .help-icon .tooltip {
+    left: auto;
+    right: 0;
+    transform: translateY(10px);
+    font-size: 10px;
+    width: 220px;
+    white-space: normal;
+}
+
+input#control-plane-vip + .help-icon .tooltip::after {
+    left: auto;
+    right: 10px;
+    margin-left: 0;
+}
+
+/* Create more space in the form group */
+.form-group:has(input#control-plane-vip) {
+    padding-right: 40px;
+}
+
+/* Add specific styling for form groups inside the modal */
+.modal-content .form-group {
+    padding-right: 35px;
+}
+
+/* Nodepool form group adjustments */
+.nodepool-config .form-group {
+    padding-right: 15px;
+}
+
+/* Special case for help icons in nodepool config */
+.nodepool-config .help-icon {
+    right: 25px;
+}
+
+/* Specific styling for control plane checkbox group */
+.form-group:has(input[id*="control-plane"]) {
+    display: flex;
+    align-items: center;
+}
+
+.form-group label[for*="control-plane"] + input[type="checkbox"] {
+    margin-left: 15px;
+}
+
+/* Fix for form containers */
+.form-group .select-input-container {
+    flex: 1;
+    min-width: 0;
+    align-self: center;
+}
+
+/* Control plane group styling */
+.control-plane-group {
+    display: flex;
+    align-items: center;
+}
+
+.control-plane-group label {
+    margin-bottom: 0;
+}
+
+.control-plane-group input[type="checkbox"] {
+    margin-top: 0;
+    margin-left: 0;
+}
+
+/* New container for checkbox alignment */
+.checkbox-input-container {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+}
+
+.form-group:has(input#control-plane-vip) {
+    padding-right: 30px;
+}
+
+/* Alternative for browsers that don't support :has */
+input#control-plane-vip + .help-icon {
+    right: 45px;
+}
+
+/* Help icon and tooltip styles */
+.help-icon {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 16px;
+    height: 16px;
+    background-color: var(--interactive-blue-primary);
+    color: white;
+    border-radius: 50%;
+    font-size: 11px;
+    cursor: help;
+    position: absolute;
+    right: 5px;
+    top: 50%; 
+    transform: translateY(-50%);
+    font-weight: bold;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    z-index: 2;
+}
+
+.help-icon:hover {
+    background-color: var(--interactive-blue-hover);
+}
+
+.help-icon:hover .tooltip {
+    visibility: visible;
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Ensure tooltip is fully visible in modal content */
+.modal-content .tooltip {
+    max-width: min(280px, calc(100vw - 40px));
+}
+
+/* Styling for API error list */
+.modal-error-list {
+    margin-top: 15px;
+}
+
+/* Node history modal */
+.node-history-modal-content {
+    max-width: 860px;
+    width: 90vw;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+
+.node-history-workflow {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    margin-bottom: 10px;
+    overflow: hidden;
+}
+
+.node-history-workflow-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    cursor: default;
+}
+
+.node-history-workflow-title {
+    font-weight: 600;
+    font-size: 14px;
+    flex: 0 0 auto;
+    min-width: 160px;
+}
+
+a.node-history-workflow-title {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+a.node-history-workflow-title:hover {
+    opacity: 0.8;
+}
+
+.node-history-workflow-meta {
+    color: var(--nvidia-text-secondary, #a0a0a0);
+    font-size: 13px;
+    flex: 1;
+    font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.node-history-toggle {
+    background: none;
+    border: none;
+    color: var(--nvidia-text-secondary, #a0a0a0);
+    cursor: pointer;
+    font-size: 11px;
+    padding: 2px 6px;
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.node-history-toggle:hover {
+    color: #ffffff;
+}
+
+.node-history-badge {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 10px;
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.node-history-badge-completed  { background: rgba(76, 175, 80, 0.2);  color: #81c784; }
+.node-history-badge-running    { background: rgba(33, 150, 243, 0.2); color: #64b5f6; }
+.node-history-badge-failed     { background: rgba(244, 67, 54, 0.2);  color: #e57373; }
+.node-history-badge-canceled   { background: rgba(158, 158, 158, 0.2); color: #bdbdbd; }
+.node-history-badge-terminated { background: rgba(158, 158, 158, 0.2); color: #bdbdbd; }
+.node-history-badge-timedout   { background: rgba(255, 152, 0, 0.2);  color: #ffb74d; }
+
+.node-history-activities {
+    padding: 0 14px 10px;
+}
+
+.node-history-activity-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    margin-top: 8px;
+}
+
+.node-history-activity-table th {
+    text-align: left;
+    color: var(--nvidia-text-secondary, #a0a0a0);
+    font-weight: 500;
+    padding: 4px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-size: 12px;
+}
+
+.node-history-activity-table td {
+    padding: 5px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    vertical-align: middle;
+}
+
+.node-history-activity-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.node-history-activity-table tbody tr:hover td {
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.node-history-activity-name-failed {
+    text-decoration: underline dotted;
+    cursor: help;
+    color: #e57373;
+}
+
+.node-history-duration-medium { color: #ffb74d; }
+.node-history-duration-long   { color: #e57373; font-weight: 600; }
+
+.node-history-empty {
+    color: var(--nvidia-text-secondary, #a0a0a0);
+    font-style: italic;
+    font-size: 13px;
+    padding: 12px 0;
+    margin: 0;
+}
+
+.modal-error-list .error-message {
+    margin-bottom: 8px;
+}
+
+textarea {
+    padding: 0.5rem;
+    border: 1px solid var(--nvidia-grey-5);
+    border-radius: 3px;
+    width: 100%;
+    box-sizing: border-box;
+    background-color: var(--nvidia-light);
+    color: var(--nvidia-text);
+    display: block;
+    flex-grow: 1;
+    min-height: 70px;
+    resize: vertical;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--nvidia-green);
+}
+
+.form-group textarea {
+    flex: 1;
+    min-width: 0;
+    align-self: flex-start;
+}
+
+.manifest-textarea {
+    min-height: 140px;
+    font-family: "Consolas", "Monaco", "Courier New", monospace;
+}
+
+.manifest-display {
+    margin: 0;
+    min-height: 30vh;
+    max-height: 72vh;
+    overflow: auto;
+    white-space: pre;
+    font-family: "Consolas", "Monaco", "Courier New", monospace;
+    font-size: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--nvidia-grey-2);
+    border-radius: 4px;
+    padding: 8px;
+}
+
+.manifest-view-btn {
+    min-width: auto;
+    padding: 3px 10px;
+    font-size: 12px;
+}
+
+.manifest-modal-content {
+    width: 1200px;
+    max-width: 90%;
+    max-height: 95vh;
+}
+
+/* Adjust label alignment for textareas if needed */
+.form-group label[for*="description"] {
+    align-self: flex-start;
+    padding-top: 0.5rem;
+}
+
+.form-group label[for*="capi-bootstrap-files"],
+.form-group label[for*="capi-pre-kubeadm-commands"] {
+    align-self: flex-start;
+    padding-top: 0.5rem;
+}
+
+.nodepool-notes {
+    background: rgba(60, 70, 90, 0.15);
+    border-left: 3px solid var(--nvidia-info);
+    margin: 10px 0 0 0;
+    padding: 10px 16px;
+    border-radius: 3px;
+}
+
+.nodepool-notes-label {
+    font-weight: bold;
+    color: #7da2d6;
+    margin-bottom: 4px;
+    font-size: 13px;
+}
+
+.nodepool-notes-value {
+    color: #bfc9d8;
+    font-size: 13px;
+    white-space: pre-line;
+}
+
+.nodes-container .empty-state .add-btn {
+    margin-top: 10px;
+}
+
+.form-group .help-text {
+    display: block;
+    font-style: italic;
+    color: var(--nvidia-grey-2);
+    font-size: 0.9em;
+    margin-left: 165px;
+    margin-top: 5px;
+    width: calc(100% - 165px);
+}
+
+/* Modal action button styling */
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid var(--nvidia-light);
+}
+
+.modal-actions button {
+    padding: 8px 15px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: bold;
+    transition: all 0.2s ease;
+}
+
+/* Save Changes button - more prominent */
+.modal-actions button:first-child {
+    background-color: var(--nvidia-green);
+    color: var(--nvidia-darker);
+    border: 1px solid var(--nvidia-green);
+}
+
+.modal-actions button:first-child:hover {
+    background-color: var(--nvidia-highlight);
+    border-color: var(--nvidia-highlight);
+}
+
+/* Cancel button - less prominent */
+.modal-actions button:last-child {
+    background-color: var(--nvidia-light);
+    color: var(--nvidia-text);
+    border: 1px solid var(--nvidia-grey-5);
+}
+
+.modal-actions button:last-child:hover {
+    background-color: var(--nvidia-grey-6);
+    border-color: var(--nvidia-grey-5);
+}
+
+/* Styles for the wrapper around checkbox and help text */
+.input-area-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding-left: 0;
+}
+
+.input-area-content input[type="checkbox"] {
+    align-self: flex-start;
+    margin: 0 0 5px 0;
+}
+
+.form-group .input-area-content .help-text {
+    display: block;
+    font-style: italic;
+    color: var(--nvidia-grey-2);
+    font-size: 0.9em;
+    margin-left: 0;
+    margin-top: 3px;
+    width: 100%; 
+}
+
+/* Remove or adjust the overly broad .form-group > .help-text if it conflicts */
+/* For example, if all help texts are now inside .input-area-content or similar */
+.form-group > .help-text {
+    margin-left: 165px; 
+    width: calc(100% - 165px);
+}
+
+/* Specific alignment for the form group containing the deprecated checkbox */
+.form-group:has(#edit-nodepool-deprecated) {
+    align-items: baseline !important;
+}
+
+/* Custom multi-select container for SSH Key Groups */
+.custom-multiselect-container {
+    border: 1px solid var(--nvidia-grey-5);
+    border-radius: 3px;
+    background-color: var(--nvidia-light);
+    padding: 0.5rem;
+    min-height: 100px; /* Adjust as needed */
+    max-height: 150px; /* Adjust as needed */
+    overflow-y: auto;
+    flex-grow: 1; /* Takes up available space in the form-group */
+    box-sizing: border-box;
+}
+
+.custom-multiselect-container.custom-multiselect-disabled {
+    background-color: #2a2a2a; /* Darker background like disabled selects */
+    border-color: var(--nvidia-grey-6); /* Dimmer border */
+    cursor: not-allowed;
+}
+
+.custom-multiselect-container.custom-multiselect-disabled .empty-text {
+    color: var(--nvidia-grey-4); /* Dimmer text for the placeholder message */
+}
+
+.custom-multiselect-container .loading-text,
+.custom-multiselect-container .empty-text,
+.custom-multiselect-container .error-text {
+    color: var(--nvidia-grey-3);
+    padding: 0.25rem;
+    font-style: italic;
+}
+
+.custom-multiselect-container .error-text {
+    color: var(--nvidia-error);
+    font-style: normal;
+}
+
+.ssh-key-group-item {
+    display: flex;
+    align-items: center;
+    padding: 0.35rem 0.25rem; /* Added a bit more vertical padding */
+    border-bottom: 1px solid var(--nvidia-grey-6); /* Separator line */
+}
+
+.ssh-key-group-item:last-child {
+    border-bottom: none; /* No line for the last item */
+}
+
+.ssh-key-group-item input[type="checkbox"] {
+    margin-right: 0.75rem; /* Increased spacing between checkbox and label */
+    flex-shrink: 0;
+    accent-color: var(--nvidia-green);
+}
+
+.ssh-key-group-item label {
+    width: auto; /* Override form-group label styles */
+    text-align: left; /* Override form-group label styles */
+    margin-bottom: 0; /* Override form-group label styles */
+    color: var(--nvidia-text);
+    cursor: pointer;
+    flex-grow: 1;
+    font-weight: normal; /* Ensure labels are not bold if form-group labels are */
+}
+
+/* Subnet multi-select styles (similar to SSH key groups) */
+.subnet-item {
+    display: flex;
+    align-items: center;
+    padding: 0.35rem 0.25rem;
+    border-bottom: 1px solid var(--nvidia-grey-6);
+}
+
+.subnet-item:last-child {
+    border-bottom: none;
+}
+
+.subnet-item input[type="checkbox"] {
+    margin-right: 0.75rem;
+    flex-shrink: 0;
+    accent-color: var(--nvidia-green);
+}
+
+.subnet-item label {
+    width: auto;
+    text-align: left;
+    margin-bottom: 0;
+    color: var(--nvidia-text);
+    cursor: pointer;
+    flex-grow: 1;
+    font-weight: normal;
+}
+
+/* Disabled state for multi-select containers */
+.custom-multiselect-container.disabled {
+    background: #2a2a2a;
+    border-color: #444;
+    color: #999;
+    cursor: not-allowed;
+}
+
+.custom-multiselect-container.disabled .empty-text {
+    color: #999;
+}
+
+.site-expansion-icon {
+    margin-right: 8px;
+    cursor: pointer;
+    user-select: none;
+    font-family: monospace;
+    font-weight: bold;
+    color: var(--nvidia-green);
+}
+
+.site-name {
+    cursor: pointer;
+    user-select: none;
+}
+
+.site-name:hover {
+    color: var(--nvidia-green);
+}
+
+.nodepool-header-actions .edit-btn[title="Add Cluster"] {
+    font-size: 16px;
+    font-weight: bold;
+    padding: 4px 8px;
+}
+
+.nodes-container .item {
+    margin: 4px 0;
+    padding: 8px 10px;
+}
+
+.condition-health {
+    background-color: #ff5555;
+    margin-top: 4px;
+}
+
+.health-condition {
+    margin-top: 4px;
+}
+
+.health-condition .condition-message {
+    margin-left: 8px;
+}
+
+.node-monitor-paused-note {
+    margin-top: 4px;
+    font-size: 12px;
+    font-style: italic;
+    color: #b8860b;
+}
+
+.count-badge {
+    background: #007acc;
+    color: white;
+}
+
+.auto-provision-disabled-badge {
+    background: #666;
+    color: white;
+}
+
+.auto-mode-disabled-badge {
+    background: #8b5a2b;
+    color: white;
+}
+
+.provisioning-monitor-paused-badge {
+    background: #b8860b;
+    color: white;
+}
+
+.current-badge {
+    background: #28a745;
+    color: white;
+    font-size: 13px;
+}
+
+.teleport-badge {
+    background-color: #6f42c1;
+    color: white;
+    font-size: 13px;
+}
+
+.empty-state-note {
+    margin-top: 10px;
+    font-style: italic;
+    color: #999;
+}
+
+.help-text {
+    font-size: 0.85em;
+    color: #999;
+    display: block;
+    margin-top: 4px;
+}
+
+/* Specific styling for edit node pool modal */
+#edit-nodepool-modal .modal-content {
+    max-width: 600px;
+    width: 90%;
+}
+
+#edit-nodepool-modal .form-group {
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch !important;
+}
+
+#edit-nodepool-modal .form-group label {
+    width: auto;
+    text-align: left;
+    margin-bottom: 5px;
+    margin-right: 0;
+    font-weight: bold;
+    color: var(--nvidia-text);
+}
+
+#edit-nodepool-modal .form-group input,
+#edit-nodepool-modal .form-group select,
+#edit-nodepool-modal .form-group textarea {
+    width: 100%;
+    margin-bottom: 5px;
+}
+
+#edit-nodepool-modal .form-group .help-text {
+    margin-left: 0;
+    width: 100%;
+    font-size: 0.85em;
+    color: #999;
+    font-style: italic;
+}
+
+#edit-nodepool-modal .input-area-content {
+    display: flex;
+    flex-direction: column;
+}
+
+#edit-nodepool-modal .input-area-content input[type="checkbox"] {
+    width: auto;
+    margin-bottom: 5px;
+}
+
+/* Fix for the NodeSet configuration section */
+#edit-nodepool-modal .form-group:has([id*="nodepool-config"]) {
+    border-top: 1px solid var(--nvidia-grey-5);
+    padding-top: 15px;
+    margin-top: 25px;
+}
+
+#edit-nodepool-modal .form-group:has([id*="nodepool-config"]) label {
+    font-size: 1.1em;
+    color: var(--nvidia-highlight);
+}
+
+/* Better spacing for the modal sections */
+#edit-nodepool-modal .modal-content > div:not(.modal-header):not(.modal-actions) {
+    margin-bottom: 15px;
+}
+
+/* Compact subnet/VPC prefix list in edit node pool modal (single column, tight rows) */
+#edit-nodepool-modal #edit-nodepool-subnets-container {
+    padding: 0.5rem;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+#edit-nodepool-modal #edit-nodepool-subnets-container .subnet-item {
+    padding: 0.2rem 0;
+    border-bottom: 1px solid var(--nvidia-grey-6);
+}
+
+#edit-nodepool-modal #edit-nodepool-subnets-container .subnet-item:last-child {
+    border-bottom: none;
+}
+
+#edit-nodepool-modal #edit-nodepool-subnets-container .subnet-item input[type="checkbox"] {
+    width: auto;
+    min-width: unset;
+    flex-shrink: 0;
+    margin-right: 0.5rem;
+}
+
+#edit-nodepool-modal #edit-nodepool-subnets-container .subnet-item label {
+    font-size: 0.9em;
+    flex: 1;
+    min-width: 0;
+}
+
+/* Toggle Switch Styles */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+    cursor: pointer;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--nvidia-grey-5);
+    transition: 0.3s;
+    border-radius: 24px;
+}
+
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background-color: var(--nvidia-green);
+}
+
+.toggle-switch input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+}
+
+.toggle-switch input:disabled + .toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Toast Animation */
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+/* Version display */
+.version-display {
+    margin-top: 20px;
+    padding-top: 15px;
+    border-top: 1px solid var(--nvidia-grey-5);
+    font-size: 12px;
+    color: var(--nvidia-grey-4);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.copyable-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.copy-btn {
+    position: relative;
+    padding: 0 4px;
+    min-width: 0;
+    height: 18px;
+    line-height: 16px;
+    font-size: 12px;
+    background: transparent;
+    color: var(--nvidia-grey-4);
+    border: 1px solid transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+/* Expand hit area to ≥44x44 without changing visual size. */
+.copy-btn::before {
+    content: "";
+    position: absolute;
+    inset: -13px;
+    min-width: 44px;
+    min-height: 44px;
+}
+
+.copyable-value:hover .copy-btn {
+    opacity: 1;
+}
+
+.copy-btn:hover:not(:disabled) {
+    background: var(--nvidia-grey-6, rgba(0, 0, 0, 0.05));
+    color: var(--nvidia-green, #76b900);
+    border-color: var(--nvidia-grey-5, rgba(0, 0, 0, 0.1));
+}
+
+.copy-btn:focus-visible {
+    opacity: 1;
+    outline: 2px solid var(--nvidia-green, #76b900);
+    outline-offset: 2px;
+}
+
+.copy-btn.copied {
+    opacity: 1;
+    color: var(--nvidia-green, #76b900);
+}
+
+/* Config history modal */
+#nodepool-config-history-content {
+    overflow-x: auto;
+}
+
+#nodepool-config-history-content dl {
+    margin: 0;
+}
+
+#nodepool-config-history-content dt {
+    font-weight: 600;
+    margin-top: 4px;
+    color: var(--nvidia-text, inherit);
+}
+
+#nodepool-config-history-content dd {
+    margin: 0 0 4px 12px;
+    font-family: monospace;
+    font-size: 0.875em;
+    color: var(--nvidia-grey-3, #aaa);
+    word-break: break-all;
+}

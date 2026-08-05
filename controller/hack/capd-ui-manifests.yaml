@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# Copy/paste these YAML snippets into the CWE UI for a CAPD-backed cluster.
+# Paste the DockerCluster manifest into the cluster infrastructure manifest field.
+# Paste the DockerMachineTemplate manifest into a node pool infrastructure machine template field.
+# Paste the pre-kubeadm commands into the node pool pre-kubeadm commands field.
+
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: DockerCluster
+spec: {}
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: DockerMachineTemplate
+spec:
+  template:
+    spec:
+      customImage: cwe-capd-kindest-node:local
+      extraMounts:
+        - containerPath: /var/run/docker.sock
+          hostPath: /var/run/docker.sock
+---
+# Pre-kubeadm commands (hack to make CAPD work)
+- mkdir -p /run/cluster-api
+- echo success > /run/cluster-api/bootstrap-success.complete

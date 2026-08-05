@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "cloud-workflow-engine.fullname" . }}-test-connection"
+  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args: ['{{ include "cloud-workflow-engine.fullname" . }}:{{ .Values.service.port }}']
+  restartPolicy: Never

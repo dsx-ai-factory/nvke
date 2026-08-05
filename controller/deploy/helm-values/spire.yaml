@@ -1,0 +1,80 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# Note: example.org values, the TPM attestor checksum, and the OIDC leaf cert
+# IP SANs are replaced in the Tiltfile via --set-string overrides.
+
+global:
+  spire:
+    trustDomain: example.org
+    # Logical OIDC issuer per Story 1 / OQ-3. String-compared against the JWT's
+    # iss claim — does not need to resolve anywhere.
+    jwtIssuer: "https://nke.site-controller.internal"
+  installAndUpgradeHooks:
+    enabled: false
+  deleteHooks:
+    enabled: false
+
+spire-server:
+  adminIDs:
+    - spiffe://example.org/nke-service/cloud-workflow-engine
+  controllerManager:
+    className: spire-mgmt-spire
+  nodeAttestor:
+    tpmDirect:
+      enabled: true
+  # Mount the Tilt-managed tpm-pubhashes ConfigMap into the SPIRE server so
+  # the TPM attestor can look up CWE-populated EK public-key hashes at runtime.
+  extraVolumes:
+    - name: tpm-pubhashes
+      configMap:
+        name: tpm-pubhashes
+        optional: true
+  extraVolumeMounts:
+    - name: tpm-pubhashes
+      mountPath: /run/spire/data/tpm-direct/hashes
+      readOnly: true
+
+spiffe-oidc-discovery-provider:
+  enabled: true
+  replicaCount: 2
+  tls:
+    spire:
+      enabled: false
+    certManager:
+      enabled: true
+      issuer:
+        # We own the Issuer (see deploy/k8s/oidc-upstream-ca-issuer.yaml).
+        create: false
+      certificate:
+        duration: 2160h               # 90d
+        privateKey:
+          algorithm: ECDSA
+          size: 256                   # P-256 — fast/small, ample for a 90d leaf
+        dnsNames:
+          - nke.site-controller.internal
+          - localhost
+        # IP SANs (kind host + forge-vms bridge gateway) are injected by the
+        # Tiltfile via --set-string overrides; cert-manager merges them in.
+        issuerRef:
+          group: cert-manager.io
+          kind: Issuer
+          name: nke-oidc-upstream-ca
+  config:
+    # The provider rejects requests whose Host header is not in this list.
+    # Every value that will appear in a request URL must be present — including
+    # the literal IPs tenants hit (kube-apiserver fetches the discovery URL by
+    # IP, not by the logical issuer host). The kind host IP and the forge-vms
+    # bridge gateway are computed in the Tiltfile and appended via
+    # --set-string overrides.
+    additionalDomains:
+      - "nke.site-controller.internal"
+      - "localhost"
+      - "127.0.0.1"

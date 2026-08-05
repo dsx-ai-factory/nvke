@@ -1,0 +1,44 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# Leave an EK certificate on disk for Forge/NICo-style APIs. `nico-mock`
+# reads `/var/lib/swtpm/ek.cert` directly and returns it via
+# `tpmEkCertificate`, which lets CWE keep its normal TPM pubhash
+# reconciliation flow without having the mock duplicate TPM state outside the
+# container.
+#
+# `swtpm_setup` may emit algorithm-specific EK cert filenames, so normalize the
+# first cert it creates to a single stable path.
+
+set -euo pipefail
+
+state_dir=/var/lib/swtpm
+cert_path="${state_dir}/ek.cert"
+
+if [[ -s "${cert_path}" ]]; then
+    exit 0
+fi
+
+mkdir -p "${state_dir}"
+if ! swtpm_setup \
+    --tpm2 \
+    --tpmstate "${state_dir}" \
+    --create-ek-cert \
+    --create-platform-cert \
+    --write-ek-cert-files "${state_dir}" \
+    --lock-nvram \
+    >/dev/null 2>&1; then
+    echo "swtpm_setup failed to initialize ${state_dir}" >&2
+    exit 1
+fi
+for cert in "${state_dir}/ek-rsa2048.crt" "${state_dir}"/ek-*.crt; do
+    if [[ -s "${cert}" ]]; then
+        cp "${cert}" "${cert_path}"
+        chmod 0644 "${cert_path}"
+        exit 0
+    fi
+done
+
+echo "swtpm_setup did not write an EK certificate file under ${state_dir}" >&2
+exit 1

@@ -1,0 +1,85 @@
+# Mutagen project template for a remote Linux Tilt harness (e.g. Colossus).
+#
+# Docs: docs/remote-colossus-tilt.md
+#
+# Placeholders (substituted from env vars during setup):
+#   __LOCAL_NKE_ROOT__   Mac absolute path to the NKE sibling checkout parent
+#   __REMOTE_SSH_ALIAS__ SSH Host alias for the target
+#   __REMOTE_NKE_ROOT__  Path relative to the remote user's home
+#
+# Model: Mac is source of truth (edit + git here). Target runs Tilt.
+# Do NOT run git on the target -- one-way-replica overwrites it to match the Mac.
+#
+# Port offset: first remote target = +1000 (see docs). Only local "source"
+# ports are offset; destination ports stay at the stack defaults.
+
+sync:
+  defaults:
+    mode: "one-way-replica"
+    # Mutagen's portable default is 0600/0700 (owner-only). CWE containers
+    # run as non-root and read synced files (e.g. profiles/), so they must be
+    # world-readable. Executable bit is still tracked separately.
+    permissions:
+      defaultFileMode: 0644
+      defaultDirectoryMode: 0755
+    ignore:
+      paths:
+        - "bin/"
+        - "var/"
+        - ".dev/"
+        - "logs/"
+        - "release/"
+        - "images/"
+        - ".gocache/"
+        - ".gomodcache/"
+        - ".cache/"
+        - ".local/"
+        - ".flox/run/"
+        - "coverage.txt"
+        - "*.qcow2"
+        - "*.log"
+        - "__debug_bin*"
+  cloud-workflow-engine:
+    alpha: "__LOCAL_NKE_ROOT__/cloud-workflow-engine"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/cloud-workflow-engine"
+  cluster-api-provider-nico:
+    alpha: "__LOCAL_NKE_ROOT__/cluster-api-provider-nico"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/cluster-api-provider-nico"
+  node-agent:
+    alpha: "__LOCAL_NKE_ROOT__/node-agent"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/node-agent"
+
+forward:
+  tilt:
+    source: "tcp:localhost:11350"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:10350"
+  cwe:
+    source: "tcp:localhost:9080"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:8080"
+  temporal-ui:
+    source: "tcp:localhost:9081"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:8081"
+  temporal-frontend:
+    source: "tcp:localhost:8233"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:7233"
+  postgres:
+    source: "tcp:localhost:6432"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:5432"
+  forge-vms:
+    source: "tcp:localhost:19080"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:18080"
+  grafana:
+    source: "tcp:localhost:4000"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:3000"
+  # kube-api is managed by ../fetch-kubeconfig.sh --update-mutagen <alias>
+  # (remote kind API port is dynamic). Example after first run:
+  # kube-api:
+  #   source: "tcp:localhost:16443"
+  #   destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:REMOTE_KIND_PORT"
+  # Optional extras:
+  # loki:
+  #   source: "tcp:localhost:4100"
+  #   destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:3100"
+  # spire-server:
+  #   source: "tcp:localhost:31440"
+  #   destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:30440"

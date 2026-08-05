@@ -1,0 +1,15 @@
+{
+  "name": "PLACEHOLDER",
+  "siteID": "00000000-0000-0000-0000-000000000000",
+  "controlPlaneKubernetesVersion": "PLACEHOLDER",
+  "cniPlugin": "calico",
+  "etcdEncrypted": false,
+  "disableKubeVip": false,
+  "nodePools": [],
+  "capiInfraCluster": {
+    "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+    "kind": "DockerCluster",
+    "metadata": { "name": "PLACEHOLDER" },
+    "spec": {}
+  }
+}

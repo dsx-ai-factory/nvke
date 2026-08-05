@@ -1,0 +1,454 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# nico-vm provider: installs the released CAPNICo provider chart (NGC
+# classic Helm registry) into the management cluster and points it at the local
+# forge-vms backend, then exposes manual create/inspect/delete buttons for a
+# bare VM boot.
+#
+# Raw helm/kubectl in local_resources rather than helm_repo/helm_resource: the
+# NGC classic repo needs --username/--password at repo-add time, and the chart
+# renders its own Namespace object, so the pre-created namespace must be
+# labelled/annotated for Helm adoption before install. Neither is expressible
+# with the helm_resource extension.
+#
+# Install modes -- the chart is the default; only the 'capnico-provider'
+# resource differs between them, everything downstream is identical:
+#
+#   chart  (default)  Installs the released chart from NGC. Needs helm and
+#                     NGC_API_KEY, and creates the nvcr-creds pull secret.
+#   source            Set 'capnico_source_dir' in tilt_config.json (or export
+#                     CAPNICO_SOURCE_DIR, which wins) to a local checkout of
+#                     https://gitlab-master.nvidia.com/nke/cluster-api-provider-nico.
+#                     Builds the controller image from that checkout, loads it
+#                     into kind and applies config/default. No helm, no NGC
+#                     credentials and no pull secret: the image is already in
+#                     the cluster's image store.
+#
+# Clearing capnico_source_dir restores the chart flow exactly.
+
+load("ext://uibutton", "cmd_button", "text_input")
+
+CAPNICO_PROVIDER_RESOURCE = "capnico-provider"
+CAPNICO_CREDENTIALS_RESOURCE = "capnico-credentials"
+CAPNICO_CREATE_INSTANCE_RESOURCE = "capnico-create-instance"
+
+CAPNICO_NAMESPACE = "capnico-system"
+CAPNICO_RELEASE = "capi-provider-nico"
+CAPNICO_CHART_VERSION = "0.0.28"
+CAPNICO_HELM_REPO = "ngc-components-dev"
+CAPNICO_HELM_REPO_URL = "https://helm.ngc.nvidia.com/0837451325059433/components-dev"
+
+# Source-mode only: tag for the locally built controller image. Same tag the
+# 'nico' provider uses -- the two providers are mutually exclusive, so they can
+# never race over it.
+CAPNICO_SOURCE_IMAGE = "cluster-api-provider-nico:local"
+CAPNICO_SOURCE_REPO_URL = "https://gitlab-master.nvidia.com/nke/cluster-api-provider-nico"
+
+# forge-vms tenant/auth (see forge-vms/internal/seed/default-seed.yaml).
+FORGE_VMS_ORG_ID = "novxwn552ssc"
+FORGE_VMS_TOKEN = "forge-vmsctl-token"
+FORGE_VMS_PORT = "18080"
+
+def _get_kind_cluster_name():
+    """Kind cluster name, derived the same way as the root Tiltfile."""
+    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "")
+    if kind_cluster_name != "":
+        return kind_cluster_name
+
+    current_context = k8s_context()
+    if current_context.startswith("kind-"):
+        return current_context[5:]
+
+    return "kind-cluster-name-not-set"
+
+def _capnico_source_dir(ctx):
+    """Local cluster-api-provider-nico checkout to build from, or "".
+
+    Empty (the default) selects the released-chart install. The env var wins
+    over tilt_config.json so a one-off `CAPNICO_SOURCE_DIR=... tilt up` works
+    without editing the config file. Relative paths resolve against main_dir.
+    """
+    source_dir = os.getenv("CAPNICO_SOURCE_DIR", ctx.cfg.get("capnico_source_dir", ""))
+    if not source_dir:
+        return ""
+    if not source_dir.startswith("/"):
+        source_dir = os.path.join(ctx.main_dir, source_dir)
+    return source_dir
+
+def register(ctx):
+    """Register the CAPNICo provider resources (Helm chart or local source).
+
+    Args:
+        ctx: struct with main_dir, cfg, kind_host_ip, provider_dir.
+
+    Returns:
+        struct with cwe_resource_deps, cwe_env_overrides and preflight_script.
+    """
+    labels = ["6-capnico"]
+    source_dir = _capnico_source_dir(ctx)
+
+    # forge-vms listens on *:18080 on the host; pods reach it via the kind
+    # network gateway.
+    endpoint = "http://%s:%s" % (ctx.kind_host_ip, FORGE_VMS_PORT)
+
+    # NGC_API_KEY is read from the environment at run time and never
+    # interpolated into the script text (Tilt echoes the command it runs).
+    provider_script = """
+          set -euo pipefail
+          : "${NGC_API_KEY:?NGC_API_KEY must be exported in the shell that runs tilt (it is set in ~/.bashrc, which tilt does not inherit)}"
+
+          kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n %s create secret docker-registry nvcr-creds \
+            --docker-server=nvcr.io \
+            --docker-username='$oauthtoken' \
+            --docker-password="${NGC_API_KEY}" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          # The chart renders its own Namespace object; without adopting the
+          # pre-created one the install aborts on Helm ownership validation.
+          kubectl label namespace %s app.kubernetes.io/managed-by=Helm --overwrite
+          kubectl annotate namespace %s \
+            meta.helm.sh/release-name=%s \
+            meta.helm.sh/release-namespace=%s --overwrite
+
+          echo "Adding NGC helm repo %s..."
+          helm repo add %s %s \
+            --username '$oauthtoken' --password "${NGC_API_KEY}" --force-update >/dev/null
+          helm repo update %s >/dev/null
+
+          echo "Installing CAPNICo chart %s..."
+          helm upgrade --install %s %s/%s \
+            --version %s \
+            -n %s \
+            --set 'imagePullSecrets[0].name=nvcr-creds' \
+            --wait --timeout 5m
+          kubectl -n %s rollout status deployment/controller-manager --timeout=180s
+    """ % (
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+        CAPNICO_RELEASE,
+        CAPNICO_NAMESPACE,
+        CAPNICO_HELM_REPO,
+        CAPNICO_HELM_REPO,
+        CAPNICO_HELM_REPO_URL,
+        CAPNICO_HELM_REPO,
+        CAPNICO_CHART_VERSION,
+        CAPNICO_RELEASE,
+        CAPNICO_HELM_REPO,
+        CAPNICO_RELEASE,
+        CAPNICO_CHART_VERSION,
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+    )
+
+    # Source mode replaces the chart script above (and nothing else): the
+    # controller is built from a local checkout, so helm, the NGC repo and the
+    # nvcr-creds pull secret all drop out. capnico-credentials and the buttons
+    # only need the CRDs plus a running controller, so they are unaffected.
+    provider_deps = []
+    if source_dir:
+        kind_cluster_name = _get_kind_cluster_name()
+        provider_deps = [source_dir]
+        provider_script = """
+          set -euo pipefail
+          source_dir="%s"
+          provider_image="%s"
+
+          if [ ! -d "${source_dir}" ]; then
+            echo "capnico_source_dir '${source_dir}' does not exist." >&2
+            echo "Point capnico_source_dir (tilt_config.json) or CAPNICO_SOURCE_DIR at a checkout of" >&2
+            echo "%s, or clear it to install the released chart instead." >&2
+            exit 1
+          fi
+          if [ ! -d "${source_dir}/config/default" ]; then
+            echo "capnico_source_dir '${source_dir}' does not look like a cluster-api-provider-nico checkout: config/default is missing." >&2
+            exit 1
+          fi
+          if [ ! -f "${source_dir}/Makefile" ] && [ ! -f "${source_dir}/go.mod" ]; then
+            echo "capnico_source_dir '${source_dir}' does not look like a cluster-api-provider-nico checkout: neither Makefile nor go.mod is present." >&2
+            exit 1
+          fi
+
+          if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+            export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+          fi
+
+          docker buildx version >/dev/null 2>&1 || {
+            echo "docker buildx is required to build the CAPNICo controller: the provider repo's .dockerignore excludes everything (**) and re-includes sources (!**/*.go), a pattern only BuildKit honours -- the legacy builder drops the re-included files and the build fails at 'COPY api/ api/'." >&2
+            echo "Install it user-level: download the docker-buildx binary for your platform from https://github.com/docker/buildx/releases into ~/.docker/cli-plugins/docker-buildx and chmod +x it." >&2
+            exit 1
+          }
+
+          echo "Building CAPNICo controller image from ${source_dir}..."
+          # DOCKER_BUILDKIT=1: without BuildKit the legacy builder mishandles the
+          # repo's exclude-all + re-include .dockerignore and 'COPY api/ api/' fails.
+          DOCKER_BUILDKIT=1 docker build -t "${provider_image}" "${source_dir}"
+          echo "Loading ${provider_image} into kind cluster %s..."
+          kind load docker-image "${provider_image}" --name "%s"
+
+          # No nvcr-creds secret and no Helm namespace adoption here: the image
+          # lives in the cluster's own image store (nothing to pull) and
+          # config/default is applied with kubectl, not installed with Helm.
+          kubectl create namespace %s --dry-run=client -o yaml | kubectl apply -f -
+
+          echo "Applying CAPNICo manifests from ${source_dir}/config/default..."
+          kubectl apply -k "${source_dir}/config/default"
+
+          # config/default pins the released image; repoint the deployment at
+          # the local tag and restart so a rebuilt image is actually picked up.
+          kubectl -n %s set image deployment/controller-manager manager="${provider_image}"
+          kubectl -n %s rollout restart deployment/controller-manager
+          kubectl -n %s rollout status deployment/controller-manager --timeout=180s
+    """ % (
+            source_dir,
+            CAPNICO_SOURCE_IMAGE,
+            CAPNICO_SOURCE_REPO_URL,
+            kind_cluster_name,
+            kind_cluster_name,
+            CAPNICO_NAMESPACE,
+            CAPNICO_NAMESPACE,
+            CAPNICO_NAMESPACE,
+            CAPNICO_NAMESPACE,
+        )
+
+    local_resource(
+        CAPNICO_PROVIDER_RESOURCE,
+        labels=labels,
+        cmd=["bash", "-c", provider_script],
+        resource_deps=["check-management-cluster"],
+        deps=provider_deps,
+        allow_parallel=True,
+    )
+
+    # The controller reads nico-credentials on demand each reconcile, so
+    # creating it after the chart install is safe. The probe runs first: a
+    # kind_host_ip that pods cannot reach (firewall, wrong gateway) otherwise
+    # surfaces much later as a stuck Provisioning cluster.
+    credentials_script = """
+          set -euo pipefail
+          endpoint="%s"
+
+          echo "Probing ${endpoint}/healthz from inside the cluster..."
+          kubectl -n %s delete pod capnico-endpoint-probe --ignore-not-found >/dev/null
+          kubectl -n %s run capnico-endpoint-probe \
+            --rm --attach --restart=Never --quiet \
+            --image=curlimages/curl:8.11.1 \
+            --command -- curl -fsS --max-time 10 "${endpoint}/healthz" || {
+            echo "forge-vms is not reachable at ${endpoint} from inside the cluster." >&2
+            exit 1
+          }
+
+          kubectl -n %s create secret generic nico-credentials \
+            --from-literal=endpoint="${endpoint}" \
+            --from-literal=orgID=%s \
+            --from-literal=token=%s \
+            --from-literal=apiName=forge \
+            --dry-run=client -o yaml | kubectl apply -f -
+    """ % (
+        endpoint,
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+        FORGE_VMS_ORG_ID,
+        FORGE_VMS_TOKEN,
+    )
+
+    local_resource(
+        CAPNICO_CREDENTIALS_RESOURCE,
+        labels=labels,
+        cmd=["bash", "-c", credentials_script],
+        resource_deps=[CAPNICO_PROVIDER_RESOURCE, "forge-vms"],
+        allow_parallel=True,
+    )
+
+    # Manual only: creating a VM is an explicit act, not something a Tiltfile
+    # reload should trigger.
+    local_resource(
+        CAPNICO_CREATE_INSTANCE_RESOURCE,
+        labels=labels,
+        cmd=["bash", "-c", """
+          set -euo pipefail
+          cd %s
+          ./hack/capnico-create-instance.sh
+        """ % ctx.main_dir],
+        resource_deps=[CAPNICO_CREDENTIALS_RESOURCE],
+        auto_init=False,
+        trigger_mode=TRIGGER_MODE_MANUAL,
+        allow_parallel=True,
+    )
+
+    cmd_button(
+        "1-create-instance",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          cd %s
+          INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}" \
+          OS_PROFILE="${OS_PROFILE:-nke-260611-24.04-amd64-fde}" \
+          INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000005}" \
+          DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}" \
+          ./hack/capnico-create-instance.sh
+        """ % ctx.main_dir],
+        resource=CAPNICO_CREATE_INSTANCE_RESOURCE,
+        icon_name="add_box",
+        text="Create instance",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+            text_input("OS_PROFILE", default="nke-260611-24.04-amd64-fde"),
+            text_input("INSTANCE_TYPE_ID", default="a1b2c3d4-0005-4000-8000-000000000005"),
+            text_input("DISK_SELECTION_STRATEGY", default="smallest"),
+        ],
+    )
+
+    # Machine READY stays Unknown in the bare-VM flow (no node ever joins) --
+    # NicoMachine .status.ready is the VM's real readiness signal.
+    cmd_button(
+        "2-instance-status",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          namespace="${NAMESPACE:-forge-test}"
+          instance_name="${INSTANCE_NAME:-capnico-vm-1}"
+
+          kubectl get cluster,nicocluster,machine,nicomachine -n "${namespace}"
+          echo
+          echo "nicomachine/${instance_name} ready: $(kubectl get nicomachine "${instance_name}" -n "${namespace}" -o jsonpath='{.status.ready}')"
+          echo "nicomachine/${instance_name} reason: $(kubectl get nicomachine "${instance_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')"
+        """],
+        resource=CAPNICO_CREATE_INSTANCE_RESOURCE,
+        icon_name="fact_check",
+        text="Instance status",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+            text_input("NAMESPACE", default="forge-test"),
+        ],
+    )
+
+    cmd_button(
+        "3-console-log",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          namespace="${NAMESPACE:-forge-test}"
+          instance_name="${INSTANCE_NAME:-capnico-vm-1}"
+
+          # `|| true`: a missing Machine must reach the friendly message below
+          # rather than aborting on set -e with a bare kubectl error.
+          instance_id="$(kubectl get machine "${instance_name}" -n "${namespace}" -o jsonpath='{.spec.providerID}' 2>/dev/null || true)"
+          instance_id="${instance_id#nico://}"
+          if [ -z "${instance_id}" ]; then
+            echo "providerID is not set yet -- no forge-vms instance for ${instance_name}." >&2
+            exit 1
+          fi
+
+          curl -fsS -H "Authorization: Bearer %s" \
+            "http://localhost:%s/v2/org/%s/forge/instance/${instance_id}/console-log"
+        """ % (FORGE_VMS_TOKEN, FORGE_VMS_PORT, FORGE_VMS_ORG_ID)],
+        resource=CAPNICO_CREATE_INSTANCE_RESOURCE,
+        icon_name="terminal",
+        text="Console log",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+            text_input("NAMESPACE", default="forge-test"),
+        ],
+    )
+
+    cmd_button(
+        "4-delete-instance",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          cd %s
+          INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}" \
+          ./hack/capnico-delete-instance.sh
+        """ % ctx.main_dir],
+        resource=CAPNICO_CREATE_INSTANCE_RESOURCE,
+        icon_name="delete",
+        text="Delete instance",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+        ],
+    )
+
+    preflight_script = """
+      # hack/capnico-create-instance.sh needs both: jq escapes the VM login into
+      # the cloud-config and prints the instance JSON, curl queries forge-vms.
+      command -v jq >/dev/null || {
+        echo "jq is required in PATH for the 'nico-vm' provider" >&2
+        exit 1
+      }
+      command -v curl >/dev/null || {
+        echo "curl is required in PATH for the 'nico-vm' provider" >&2
+        exit 1
+      }
+"""
+
+    # helm and NGC_API_KEY are chart-mode requirements only: source mode installs
+    # with kubectl and pulls neither the chart nor the image from NGC. The source
+    # checkout, docker, buildx and kind gate the whole 'capnico-provider'
+    # resource, so they fail rather than warn.
+    if source_dir:
+        preflight_script += """      if [ ! -d "%s" ]; then
+        echo "capnico_source_dir '%s' does not exist -- point it at a checkout of" >&2
+        echo "%s, or clear it to install the released chart instead." >&2
+        exit 1
+      fi
+      command -v docker >/dev/null || {
+        echo "docker is required in PATH to build the CAPNICo controller from capnico_source_dir" >&2
+        exit 1
+      }
+      command -v kind >/dev/null || {
+        echo "kind is required in PATH to load the locally built CAPNICo controller image" >&2
+        exit 1
+      }
+      # BuildKit is not optional here: the provider repo's .dockerignore excludes
+      # everything and re-includes sources, which the legacy builder ignores.
+      docker buildx version >/dev/null 2>&1 || {
+        echo "docker buildx is required to build the CAPNICo controller from capnico_source_dir: the provider repo's .dockerignore re-include pattern (** then !**/*.go) is only honoured by BuildKit." >&2
+        echo "Install it user-level: download the docker-buildx binary for your platform from https://github.com/docker/buildx/releases into ~/.docker/cli-plugins/docker-buildx and chmod +x it." >&2
+        exit 1
+      }
+""" % (source_dir, source_dir, CAPNICO_SOURCE_REPO_URL)
+    else:
+        preflight_script += """      command -v helm >/dev/null || {
+        echo "helm is required in PATH to install the CAPNICo chart for the 'nico-vm' provider" >&2
+        exit 1
+      }
+      if [ -z "${NGC_API_KEY:-}" ]; then
+        echo "NGC_API_KEY is not set. Export it in the shell running tilt (~/.bashrc is interactive-only and is not inherited)." >&2
+        exit 1
+      fi
+"""
+
+    if source_dir:
+        crd_install_source = "from the local source checkout"
+    else:
+        crd_install_source = "with the chart"
+
+    preflight_script += """      # hack/capnico-create-instance.sh takes the bare-boot VM login from the
+      # environment (never committed) and enforces it itself with ${VAR:?...}.
+      # Warn only: these gate one manual button, and check-management-cluster is
+      # the root dependency of the whole stack -- failing here would block the
+      # controller chart install for someone who never creates a VM.
+      if [ -z "${VM_USER:-}" ] || [ -z "${VM_PASSWORD:-}" ]; then
+        echo "WARNING: VM_USER/VM_PASSWORD are not both set -- the 'Create instance' button will fail until they are." >&2
+        echo "         Export them in the shell running tilt (~/.bashrc is interactive-only and is not inherited)." >&2
+      fi
+      kubectl get crd nicomachines.infrastructure.cluster.x-k8s.io >/dev/null 2>&1 ||
+        echo "CAPNICo CRDs are not installed yet -- the 'capnico-provider' resource installs them %s."
+""" % crd_install_source
+
+    # No CWE wiring: this provider drives forge-vms through CAPNICo directly, so
+    # it adds no CWE resource deps or env overrides. It runs alongside the normal
+    # CWE stack without interacting with it.
+    return struct(
+        cwe_resource_deps = [],
+        cwe_env_overrides = {},
+        preflight_script = preflight_script,
+    )

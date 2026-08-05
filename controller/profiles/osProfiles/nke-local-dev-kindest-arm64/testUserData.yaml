@@ -1,0 +1,71 @@
+#cloud-config
+write_files:
+  - path: /etc/sysctl.d/60-custom.conf
+    owner: root:root
+    permissions: '0755'
+    content: |
+      net.ipv6.conf.all.disable_ipv6 = 1
+      net.ipv6.conf.default.disable_ipv6 = 1
+      net.ipv6.conf.lo.disable_ipv6 = 1
+  - path: /etc/spire-agent/agent.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      agent {
+          data_dir = "/var/lib/spire-agent"
+          log_level = "DEBUG"
+
+          server_address = "spire-server.example.com"
+          server_port = "9091"
+
+          trust_domain = "example.com"
+          trust_bundle_path = "/etc/spire-agent/initial-trust-bundle.pem"
+      }
+
+      plugins {
+          KeyManager "disk" {
+              plugin_data {
+                  directory = "/var/lib/spire-agent"
+              }
+          }
+
+          NodeAttestor "tpm" {
+              plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
+              plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
+              plugin_data {}
+          }
+
+          WorkloadAttestor "unix" {
+              plugin_data {}
+          }
+      }
+  - path: /etc/spire-agent/initial-trust-bundle.pem
+    owner: root:root
+    permissions: '0644'
+    content: |
+      -----BEGIN FAKE TEST-ONLY CERTIFICATE-----
+      MIICDzCCAbigAwIBAgIUTestCert1234567890ABCDEFGHIJK0wDQYJKoZIhvcNAQEL
+      BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMClRlc3QgU3RhdGUxDTALBgNVBAoM
+      BFRFU1QxEjAQBgNVBAMMCVRFU1QgT05MWTAeFw0yNTAxMDEwMDAwMDBaFw0yNjAx
+      MDEwMDAwMDBaMEUxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApUZXN0IFN0YXRlMQ0w
+      CwYDVQQKDARURVNUMRIwEAYDVQQDDAlURVNUIE9OTFkwXDANBgkqhkiG9w0BAQEF
+      AANLADBIAkEAm5Hta1234567890testdatafakecert1234567890ABCDEF123456
+      78901234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890QIDAQABMA0GCSqG
+      SIb3DQEBCwUAA0EATestSignature1234567890FakeDataNotRealCertificate123
+      -----END FAKE TEST-ONLY CERTIFICATE-----
+      -----BEGIN FAKE TEST-ONLY CERTIFICATE-----
+      MIICDzCCAbigAwIBAgIUTestCert0987654321ZYXWVUTSRQPONMLK0wDQYJKoZIhvcNAQEL
+      BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMClRlc3QgU3RhdGUxDTALBgNVBAoM
+      BFRFU1QxEjAQBgNVBAMMCVRFU1QgT05MWTAeFw0yNTAxMDIwMDAwMDBaFw0yNjAx
+      MDIwMDAwMDBaMEUxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApUZXN0IFN0YXRlMQ0w
+      CwYDVQQKDARURVNUMRIwEAYDVQQDDAlURVNUIE9OTFkwXDANBgkqhkiG9w0BAQEF
+      AANLADBIAkEAp8Jtb0987654321testdatafakecert0987654321ZYXWVUT987
+      65432109876543210ZYXWVUTSRQPONMLKJIHGFEDCBA0987654321QIDAQABMA0GCSqG
+      SIb3DQEBCwUAA0EATestSignature0987654321FakeDataNotRealCertificate987
+      -----END FAKE TEST-ONLY CERTIFICATE-----
+
+runcmd:
+  - systemctl restart spire-agent.service
+  - sysctl --system
+  - systemctl restart nke-agent.service
+  - systemctl restart procps

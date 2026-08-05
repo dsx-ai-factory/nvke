@@ -1,0 +1,293 @@
+// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+//
+// NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+// property and proprietary rights in and to this material, related
+// documentation and any modifications thereto. Any use, reproduction,
+// disclosure or distribution of this material and related documentation
+// without an express license agreement from NVIDIA CORPORATION or
+// its affiliates is strictly prohibited.
+
+package server
+
+import (
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/NVIDIA/nke/controller/api"
+	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/db"
+)
+
+func ptrBool(v bool) *bool { return &v }
+
+func ptrString(v string) *string { return &v }
+
+func TestApplyClusterDefaults(t *testing.T) {
+	svc := &clusterService{
+		teleportCfg: config.TeleportConfig{DefaultClusterEnabled: true},
+	}
+
+	t.Run("fills nil with default", func(t *testing.T) {
+		req := &api.CreateClusterRequest{}
+		cluster := &db.Cluster{}
+		require.NoError(t, svc.applyClusterDefaults(req, cluster))
+		assert.True(t, cluster.TeleportEnabled)
+	})
+
+	t.Run("preserves explicit false", func(t *testing.T) {
+		req := &api.CreateClusterRequest{TeleportEnabled: ptrBool(false)}
+		cluster := &db.Cluster{}
+		require.NoError(t, svc.applyClusterDefaults(req, cluster))
+		assert.False(t, cluster.TeleportEnabled)
+	})
+
+	t.Run("preserves explicit true", func(t *testing.T) {
+		svcOff := &clusterService{
+			teleportCfg: config.TeleportConfig{DefaultClusterEnabled: false},
+		}
+		req := &api.CreateClusterRequest{TeleportEnabled: ptrBool(true)}
+		cluster := &db.Cluster{TeleportEnabled: true}
+		require.NoError(t, svcOff.applyClusterDefaults(req, cluster))
+		assert.True(t, cluster.TeleportEnabled)
+	})
+}
+
+func TestApplyNodePoolDefaults(t *testing.T) {
+	svc := &nodePoolService{
+		teleportCfg: config.TeleportConfig{
+			DefaultCPPoolEnabled:     true,
+			DefaultWorkerPoolEnabled: false,
+		},
+	}
+	forgeCluster := dbClusterWithSiteID(uuid.New())
+
+	t.Run("CP pool nil gets CP default", func(t *testing.T) {
+		req := &api.CreateNodePoolRequest{ControlPlane: true}
+		svc.applyNodePoolDefaults(req, forgeCluster)
+		assert.NotNil(t, req.TeleportEnabled)
+		assert.True(t, *req.TeleportEnabled)
+	})
+
+	t.Run("worker pool nil gets worker default", func(t *testing.T) {
+		req := &api.CreateNodePoolRequest{ControlPlane: false}
+		svc.applyNodePoolDefaults(req, forgeCluster)
+		assert.NotNil(t, req.TeleportEnabled)
+		assert.False(t, *req.TeleportEnabled)
+	})
+
+	t.Run("explicit value preserved for CP", func(t *testing.T) {
+		req := &api.CreateNodePoolRequest{ControlPlane: true, TeleportEnabled: ptrBool(false)}
+		svc.applyNodePoolDefaults(req, forgeCluster)
+		assert.False(t, *req.TeleportEnabled)
+	})
+
+	t.Run("explicit value preserved for worker", func(t *testing.T) {
+		req := &api.CreateNodePoolRequest{ControlPlane: false, TeleportEnabled: ptrBool(true)}
+		svc.applyNodePoolDefaults(req, forgeCluster)
+		assert.True(t, *req.TeleportEnabled)
+	})
+}
+
+func TestDbClusterFromAPI_TeleportDefault(t *testing.T) {
+	baseReq := func(teleport *bool) *api.CreateClusterRequest {
+		return &api.CreateClusterRequest{
+			Name:                          "test",
+			OrgID:                         "org-1",
+			SiteID:                        uuid.New(),
+			VpcID:                         uuid.New(),
+			CniPlugin:                     "calico",
+			ControlPlaneKubernetesVersion: "1.30.0",
+			TeleportEnabled:               teleport,
+		}
+	}
+
+	tests := []struct {
+		name           string
+		reqTeleport    *bool
+		defaultEnabled bool
+		wantTeleport   bool
+	}{
+		{
+			name:           "nil request + default false => false",
+			reqTeleport:    nil,
+			defaultEnabled: false,
+			wantTeleport:   false,
+		},
+		{
+			name:           "nil request + default true => true",
+			reqTeleport:    nil,
+			defaultEnabled: true,
+			wantTeleport:   true,
+		},
+		{
+			name:           "explicit true + default false => true",
+			reqTeleport:    ptrBool(true),
+			defaultEnabled: false,
+			wantTeleport:   true,
+		},
+		{
+			name:           "explicit false + default true => false",
+			reqTeleport:    ptrBool(false),
+			defaultEnabled: true,
+			wantTeleport:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &clusterService{
+				teleportCfg: config.TeleportConfig{DefaultClusterEnabled: tt.defaultEnabled},
+			}
+			req := baseReq(tt.reqTeleport)
+			cluster, err := dbClusterFromAPI(req)
+			require.NoError(t, err)
+			require.NoError(t, svc.applyClusterDefaults(req, &cluster))
+			assert.Equal(t, tt.wantTeleport, cluster.TeleportEnabled)
+		})
+	}
+}
+
+func TestDbClusterFromAPI_CNIVersion(t *testing.T) {
+	baseReq := func(plugin string, cniVersion *string) *api.CreateClusterRequest {
+		return &api.CreateClusterRequest{
+			Name:                          "test",
+			OrgID:                         "org-1",
+			SiteID:                        uuid.New(),
+			VpcID:                         uuid.New(),
+			CniPlugin:                     plugin,
+			CniVersion:                    cniVersion,
+			ControlPlaneKubernetesVersion: "1.30.0",
+		}
+	}
+
+	tests := []struct {
+		name       string
+		plugin     string
+		cniVersion *string
+		want       string
+	}{
+		{
+			name:   "defaults calico",
+			plugin: string(db.CNICalico),
+			want:   db.DefaultCalicoCNIVersion,
+		},
+		{
+			name:   "defaults ovn",
+			plugin: string(db.CNIOvnKubernetes),
+			want:   db.DefaultOvnKubernetesCNIVersion,
+		},
+		{
+			name:       "preserves explicit value",
+			plugin:     string(db.CNICalico),
+			cniVersion: ptrString("3.31.5"),
+			want:       "3.31.5",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cluster, err := dbClusterFromAPI(baseReq(tt.plugin, tt.cniVersion))
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, cluster.CniVersion)
+		})
+	}
+}
+
+func TestAPIClusterFromDB_CNIVersionDefaultsOldRows(t *testing.T) {
+	got := apiClusterFromDB(&db.Cluster{
+		ID:                uuid.New(),
+		Name:              "test",
+		OrgID:             "org-1",
+		SiteID:            uuid.New(),
+		VpcID:             uuid.New(),
+		CniPlugin:         db.CNICalico,
+		KubernetesVersion: "1.30.0",
+	})
+
+	assert.Equal(t, db.DefaultCalicoCNIVersion, got.CniVersion)
+}
+
+func TestAPIClusterFromDB_CreatedAt(t *testing.T) {
+	createdAt := time.Date(2026, time.July, 29, 6, 20, 6, 0, time.UTC)
+
+	got := apiClusterFromDB(&db.Cluster{
+		ID:                uuid.New(),
+		Name:              "test",
+		CniPlugin:         db.CNICalico,
+		KubernetesVersion: "1.30.0",
+		CreatedAt:         createdAt,
+	})
+
+	assert.Equal(t, createdAt, got.CreatedAt)
+}
+
+func TestDbNodePoolFromAPI_TeleportDefault(t *testing.T) {
+	baseReq := func(teleport *bool) *api.CreateNodePoolRequest {
+		return &api.CreateNodePoolRequest{
+			ClusterID:        uuid.New(),
+			Name:             "test-pool",
+			NodeNamePrefix:   "test",
+			SubnetIDs:        []uuid.UUID{uuid.New()},
+			InstanceTypeID:   uuid.New(),
+			OSProfile:        "ubuntu",
+			ConfigProfile:    "default",
+			DesiredNodeCount: 1,
+			TeleportEnabled:  teleport,
+		}
+	}
+
+	tests := []struct {
+		name           string
+		reqTeleport    *bool
+		defaultEnabled bool
+		wantTeleport   bool
+	}{
+		{
+			name:           "nil request + default false => false",
+			reqTeleport:    nil,
+			defaultEnabled: false,
+			wantTeleport:   false,
+		},
+		{
+			name:           "nil request + default true => true",
+			reqTeleport:    nil,
+			defaultEnabled: true,
+			wantTeleport:   true,
+		},
+		{
+			name:           "explicit true + default false => true",
+			reqTeleport:    ptrBool(true),
+			defaultEnabled: false,
+			wantTeleport:   true,
+		},
+		{
+			name:           "explicit false + default true => false",
+			reqTeleport:    ptrBool(false),
+			defaultEnabled: true,
+			wantTeleport:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &nodePoolService{
+				teleportCfg: config.TeleportConfig{DefaultCPPoolEnabled: tt.defaultEnabled},
+			}
+			req := baseReq(tt.reqTeleport)
+			req.ControlPlane = true
+			svc.applyNodePoolDefaults(req, dbClusterWithSiteID(uuid.New()))
+			nodePool, err := dbNodePoolFromAPI(req, "1.30.0")
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantTeleport, nodePool.TeleportEnabled)
+		})
+	}
+}
+
+func dbClusterWithSiteID(siteID uuid.UUID) db.Cluster {
+	return db.Cluster{SiteID: siteID}
+}

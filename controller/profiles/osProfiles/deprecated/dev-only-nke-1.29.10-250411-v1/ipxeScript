@@ -1,0 +1,3 @@
+kernel https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/nke-machine/1.29.10-250411/nke_machine-1.29.10-250411-vmlinuz console=tty0 console=ttyS1,115200 ip=dhcp fb=false interface=ens5f0 url=https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/nke-machine/1.29.10-250411/nke_machine-1.29.10-250411.iso autoinstall ds=nocloud-net;s=${cloudinit-url} initrd=initrd.magic
+initrd https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/nke-machine/1.29.10-250411/nke_machine-1.29.10-250411-initrd
+boot

@@ -1,0 +1,13 @@
+#!ipxe
+set boot-loader https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/efi/aarch64/2026-05-06/1778078635/qcow-imager.efi
+set image-url https://d3mq564cn7sth7.cloudfront.net/nke-isos/qcow/images/24.04/aarch64/lvm/2026-05-06/778/nke-24.04-aarch64-lvm-2026-05-06-778.qcow2
+set disk-strategy {{ .DiskSelectionStrategy }}
+
+# You probably don't need to change these
+set console-config console=ttyAMA0,115200
+set kernel-params ip=dhcp fb=false pci=realloc=off loglevel=1 iommu=pt
+set luks-key luks.key=changeit
+set cloud-init-ds ds=nocloud-net;s=${cloudinit-url}
+
+chain ${boot-loader} ${console-config} ${kernel-params} ${luks-key} image_url=${image-url} disk_strategy=${disk-strategy} ${cloud-init-ds} update_grub_template=yes update_grub_cfg=yes
+boot

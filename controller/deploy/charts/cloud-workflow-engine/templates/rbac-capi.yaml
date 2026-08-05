@@ -1,0 +1,71 @@
+{{- if .Values.capi.rbac.create }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-capi
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - cluster.x-k8s.io
+    resources:
+      - machines
+      - clusters
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+  - apiGroups:
+      - infrastructure.cluster.x-k8s.io
+    resources:
+      - nicoclusters
+      - nicomachines
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    resourceNames:
+      - nicoclusters.infrastructure.cluster.x-k8s.io
+      - nicomachines.infrastructure.cluster.x-k8s.io
+    verbs:
+      - get
+  # Needed for cluster specific namespaces and bootstrap secrets
+  # ToDo: consider narrowing the scope of these permissions in future CAPI milestones
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+      - namespaces
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-capi
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cloud-workflow-engine.fullname" . }}-capi
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+{{- end }}

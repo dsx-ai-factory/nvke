@@ -1,0 +1,78 @@
+def _get_kind_cluster_name():
+    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "")
+    if kind_cluster_name != "":
+        return kind_cluster_name
+
+    current_context = k8s_context()
+    if current_context.startswith("kind-"):
+        return current_context[5:]
+
+    return "kind-cluster-name-not-set"
+
+
+def _capd_reboot_config_map_yaml(sleep_duration):
+    return """
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: capd-reboot-controller-config
+  namespace: capd-reboot-system
+data:
+  CAPD_REBOOT_CONTROLLER_SLEEP_DURATION: "%s"
+""" % sleep_duration
+
+
+def register(ctx):
+    provider_dir = ctx.provider_dir
+    kind_cluster_name = _get_kind_cluster_name()
+    sleep_duration = ctx.cfg.get("capd_reboot_controller_sleep_duration", "10s")
+    labels = ["1-infra"]
+
+    k8s_yaml(blob(_capd_reboot_config_map_yaml(sleep_duration)))
+    k8s_yaml(os.path.join(provider_dir, "deploy/k8s/capd-reboot-controller.yaml"))
+
+    k8s_resource(
+        labels=labels,
+        workload="capd-reboot-controller",
+        new_name="capd-reboot-controller",
+        objects=[
+          "capd-reboot-controller-config:configmap:capd-reboot-system",
+          "capd-reboot-system:namespace",
+          "capd-reboot-controller:serviceaccount:capd-reboot-system",
+          "capd-reboot-controller:clusterrole",
+          "capd-reboot-controller:clusterrolebinding",
+        ],
+        resource_deps=["check-management-cluster"],
+    )
+
+    custom_build(
+        ref="ko.local/capd-reboot-controller",
+        command=["bash", "-c", """
+          set -euo pipefail
+
+          if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+            export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+          fi
+
+          docker build -t "$EXPECTED_REF" -f "%s" "%s"
+          kind load docker-image --name "%s" "$EXPECTED_REF"
+        """ % (
+            os.path.join(provider_dir, "Dockerfile"),
+            provider_dir,
+            kind_cluster_name,
+        )],
+        deps=[
+          os.path.join(provider_dir, "cmd"),
+          os.path.join(provider_dir, "go.mod"),
+          os.path.join(provider_dir, "go.sum"),
+          os.path.join(provider_dir, "Dockerfile"),
+        ],
+        ignore=[
+          "**/__debug_bin*",
+        ],
+    )
+
+    return struct(
+        cwe_resource_deps=["capd-reboot-controller"],
+        cwe_env_overrides={},
+    )

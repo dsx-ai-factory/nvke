@@ -1,0 +1,121 @@
+#cloud-config
+hostname: spiffe-test-node
+preserve_hostname: false
+manage_etc_hosts: true
+ssh_pwauth: true
+package_update: true
+package_upgrade: false
+
+write_files:
+  - path: /etc/teleport.yaml
+    owner: root:root
+    permissions: '0600'
+    content: |
+      # Managed by NKE Cloud Workflow Engine — do not edit manually.
+      version: v3
+      teleport:
+        nodename: spiffe-test-node
+        data_dir: /var/lib/teleport
+        join_params:
+          token_name: nke-cwe-abcdef12-3456-7890-abcd-ef1234567890
+          method: tpm
+        proxy_server: nv-prd-dgxc.teleport.sh:443
+        log:
+          output: stderr
+          severity: INFO
+          format:
+            output: json
+        diag_addr: 127.0.0.1:3000
+      ssh_service:
+        enabled: "yes"
+        labels:
+          cluster: test-cluster-id
+          cluster-name: test-cluster
+          environment: staging
+          managed-by: nke-cloud-workflow-engine
+          node-id: abcdef12-3456-7890-abcd-ef1234567890
+          node-pool: test-nodepool-id
+          resource-group: nke
+          site: test-site-id
+
+      auth_service:
+        enabled: "no"
+      proxy_service:
+        enabled: "no"
+  - path: /etc/spire-agent/agent.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      agent {
+          data_dir = "/var/lib/spire-agent"
+          log_level = "DEBUG"
+
+          server_address = "spire-server.example.com"
+          server_port = "9091"
+
+          trust_domain = "example.com"
+          trust_bundle_path = "/etc/spire-agent/initial-trust-bundle.pem"
+      }
+
+      plugins {
+          KeyManager "disk" {
+              plugin_data {
+                  directory = "/var/lib/spire-agent"
+              }
+          }
+
+          NodeAttestor "tpm" {
+              plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
+              plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
+              plugin_data {}
+          }
+
+          WorkloadAttestor "unix" {
+              plugin_data {}
+          }
+      }
+  - path: /etc/spire-agent/initial-trust-bundle.pem
+    owner: root:root
+    permissions: '0644'
+    content: |
+      -----BEGIN FAKE TEST-ONLY CERTIFICATE-----
+      MIICDzCCAbigAwIBAgIUTestCert1234567890ABCDEFGHIJK0wDQYJKoZIhvcNAQEL
+      BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMClRlc3QgU3RhdGUxDTALBgNVBAoM
+      BFRFU1QxEjAQBgNVBAMMCVRFU1QgT05MWTAeFw0yNTAxMDEwMDAwMDBaFw0yNjAx
+      MDEwMDAwMDBaMEUxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApUZXN0IFN0YXRlMQ0w
+      CwYDVQQKDARURVNUMRIwEAYDVQQDDAlURVNUIE9OTFkwXDANBgkqhkiG9w0BAQEF
+      AANLADBIAkEAm5Hta1234567890testdatafakecert1234567890ABCDEF123456
+      78901234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890QIDAQABMA0GCSqG
+      SIb3DQEBCwUAA0EATestSignature1234567890FakeDataNotRealCertificate123
+      -----END FAKE TEST-ONLY CERTIFICATE-----
+      -----BEGIN FAKE TEST-ONLY CERTIFICATE-----
+      MIICDzCCAbigAwIBAgIUTestCert0987654321ZYXWVUTSRQPONMLK0wDQYJKoZIhvcNAQEL
+      BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMClRlc3QgU3RhdGUxDTALBgNVBAoM
+      BFRFU1QxEjAQBgNVBAMMCVRFU1QgT05MWTAeFw0yNTAxMDIwMDAwMDBaFw0yNjAx
+      MDIwMDAwMDBaMEUxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApUZXN0IFN0YXRlMQ0w
+      CwYDVQQKDARURVNUMRIwEAYDVQQDDAlURVNUIE9OTFkwXDANBgkqhkiG9w0BAQEF
+      AANLADBIAkEAp8Jtb0987654321testdatafakecert0987654321ZYXWVUT987
+      65432109876543210ZYXWVUTSRQPONMLKJIHGFEDCBA0987654321QIDAQABMA0GCSqG
+      SIb3DQEBCwUAA0EATestSignature0987654321FakeDataNotRealCertificate987
+      -----END FAKE TEST-ONLY CERTIFICATE-----
+
+runcmd:
+  - echo 'Starting Teleport installation at '$(date) >> /var/log/cloud-init-teleport.log
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y teleport-ent=18.6.4
+  - command -v teleport || { echo 'Teleport binary not found' >> /var/log/cloud-init-teleport.log; exit 1; }
+  - systemctl enable --now teleport >> /var/log/cloud-init-teleport.log 2>&1
+  - systemctl is-active --quiet teleport && echo 'Teleport service started successfully' >> /var/log/cloud-init-teleport.log || { echo 'Teleport service failed to start' >> /var/log/cloud-init-teleport.log; systemctl status teleport --no-pager >> /var/log/cloud-init-teleport.log; exit 1; }
+  - echo 'Teleport installation completed at '$(date) >> /var/log/cloud-init-teleport.log
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent=0.1.26 nke-kubeadm-distro-1.31.9 spire-agent
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-ovn-images-1.4.0
+  - printf 'AGENT_ARGS="--secure-server-port 15005"\n' > /etc/default/nke-agent
+  - sysctl --system
+  - systemctl daemon-reload
+  - systemctl restart nke-agent.service
+  - systemctl restart procps
+  - touch /run/cloud-init.done
+
+phone_home:
+    post: all
+    tries: 10
+    url: http://169.254.169.254:7777/latest/meta-data/phone_home

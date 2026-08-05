@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+server:
+  configMapsToMount: sprig
+  setConfigFilePath: true
+  config:
+    persistence:
+      driver: sql
+      default:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: postgres-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal
+          user: postgres
+          password: postgres
+          maxConns: 10
+          maxIdleConns: 5
+      visibility:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: postgres-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal_visibility
+          user: postgres
+          password: postgres
+          maxConns: 10
+          maxIdleConns: 5
+
+cassandra:
+  enabled: false
+
+mysql:
+  enabled: false
+
+postgresql:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+grafana:
+  enabled: false
+
+elasticsearch:
+  enabled: false
+
+schema:
+  createDatabase:
+    enabled: true
+  setup:
+    enabled: true
+  update:
+    enabled: true

@@ -1,0 +1,539 @@
+# Cloud Workflow Engine
+
+Orchestrate NKE cluster creation and lifecycle operations.
+
+## Tool Dependencies
+
+We use Flox to manage repo-scoped command line tools such as `go`, `make`, `kind`, `clusterctl`, `helm`, `ko`, `tilt`, `temporal`, and `spire-agent`, so you'll need to install Flox if you don't have it:
+```bash
+brew install flox colima
+```
+
+Then activate the Flox environment (this changes your `PATH` automatically, just within that terminal session):
+```bash
+flox activate
+```
+
+You'll want to ensure Flox is activated before running CLI commands related to this repo so you're using the pinned tool versions from this repository instead of whatever happens to be installed globally.
+
+**Note:** The development environment commands (`make local`, `make remote`, etc.) will automatically detect and use the flox environment if available, so you don't need to manually activate it for those commands.
+
+### Optional: Using direnv for automatic environment setup
+
+If you want to automatically activate the Flox environment and load personal environment variables when entering this directory, you can use [direnv](https://direnv.net/):
+
+```bash
+brew install direnv
+```
+
+Then follow the [direnv setup instructions](https://direnv.net/docs/hook.html) to hook it into your shell.
+
+Once installed, run `direnv allow` in this directory. Now whenever you `cd` into this directory, direnv will automatically:
+- Activate the Flox environment (no need to run `flox activate`)
+- Load any personal environment variables from `.env.local` (if it exists)
+
+To set up personal environment variables:
+```bash
+cp .env.local.example .env.local
+# edit .env.local for host-local workflows like `make run-local` and `make run-remote`
+```
+
+Then edit `.env.local` to add your personal settings for host-local CWE runs. This file is gitignored and won't be checked into the repository.
+
+### Go Private Module Configuration
+
+To download private dependencies from `gitlab-master.nvidia.com`, configure Go to use SSH authentication:
+
+```bash
+# Tell Go not to use public proxies for NVIDIA repos
+go env -w GOPRIVATE=gitlab-master.nvidia.com
+```
+
+This allows Go to use your SSH keys to authenticate when downloading private modules.
+
+### API module (for consumers)
+
+The `api/` directory is a separate Go module that other projects (e.g. controllers, infra) can depend on without pulling in the full CWE. It is versioned with semantic version tags `api/vX.Y.Z`, published automatically when `api/` changes on the default branch.
+
+To depend on a specific version:
+
+```bash
+go get github.com/NVIDIA/nke/controller/api@v0.0.1
+```
+
+Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
+
+**If you work in this repo (CWE):** You do not need to run `go get` when the API version changes. The root module uses a `replace` directive in `go.mod` that points to the local `./api` directory, so builds and tests always use the API code in this repository. The tagged versions are for external consumers (e.g. controllers, infra) that import the API as a dependency.
+
+## Choose a Development Path
+
+- `CAPI + Tilt (recommended)`: bring up a local Kind management cluster with CAPD, then run `tilt up` for an end-to-end local stack.
+- `Remote Colossus Tilt (forge-vms on Linux)`: edit on a Mac, Mutagen-sync to a Colossus (or other x86_64 Linux) host that runs Tilt with real KVM VMs — see [docs/remote-colossus-tilt.md](docs/remote-colossus-tilt.md).
+- `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`.
+- `UI-only development`: port-forward a live CWE deployment and run the local UI dev server against it.
+
+## CAPI + Tilt Development (Recommended)
+
+This is the recommended local workflow for developing against a Kind management cluster with CAPD.
+Tilt improves the Kubernetes inner dev loop: it rebuilds and redeploys services when code or manifests change, keeps a multi-service local stack coordinated in one place, and gives you a single UI for logs, status, port-forwards, and helper actions.
+
+Full forge-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM. If you edit on a Mac and run Tilt remotely, follow [Remote Colossus Tilt](docs/remote-colossus-tilt.md) instead of the Colima steps below. 
+
+### First Run
+
+1. Start Colima on macOS:
+
+```bash
+make colima-up
+
+# Set the Docker host this can be in your shell rc file for convenience or .env.local
+export DOCKER_HOST=unix://$HOME/.colima/default/docker.sock
+```
+
+`make colima-up` prepares the Colima VM for local Kind/CAPD development. It also
+ensures the vTPM proxy dependency (`tpm_vtpm_proxy`, exposed as `/dev/vtpmx`) is
+available for the TPM-backed Forge flow. On a fresh VM, the first run may take a
+little longer while that extra module package is installed.
+
+**macOS: reach the Kind Docker subnet directly**
+
+CAPD tenant clusters publish apiserver URLs on the Kind Docker bridge (for example
+`https://172.18.0.4:6443`). Those IPs are not reachable from the Mac host by default
+because Docker/Kind run inside the Colima VM. Install
+[`docker-mac-net-connect`](https://github.com/chipmk/docker-mac-net-connect) to get
+direct L3 access to container IPs, including Colima:
+
+```bash
+brew install chipmk/tap/docker-mac-net-connect
+sudo brew services start chipmk/tap/docker-mac-net-connect
+```
+
+Use v0.1.6 or newer (`brew info chipmk/tap/docker-mac-net-connect`) — earlier
+releases predate both Colima support and the fix for Docker Engine 28+'s stricter
+bridge-subnet filtering. Once the service is running it auto-detects the active
+Docker context, adds/removes routes as Docker networks come and go, and survives
+Mac reboots and Colima restarts without any manual `route` commands.
+
+2. Create the local Kind management cluster and install CAPI + CAPD:
+
+```bash
+make capd-up
+```
+
+3. Start Tilt:
+
+```bash
+# optional if your kind cluster name is not cwe-capi
+# export KIND_CLUSTER_NAME=<your-kind-cluster-name>
+
+# required for Forge/NGC-backed operations
+export FWE_API_KEY=${NGC_API_KEY}
+
+# optional: copy the committed defaults and edit if you want overrides
+cp .env.tilt.example .env.tilt
+
+tilt up
+```
+
+- Tilt only runs against the expected Kind context (`kind-${KIND_CLUSTER_NAME}` or the current `kind-*` context if `KIND_CLUSTER_NAME` is unset).
+- Plain `tilt up` keeps the default CAPD-oriented provider set.
+- If you want to enable NICo for the local dev flow, set `providers` in `tilt_config.json` to include `"capi_core"` and `"nico"`. This is also the local setup that enables the mock-backed Forge cluster path. Tilt expects `cluster-api-provider-nico` at `../cluster-api-provider-nico` by default. Override with `NICO_PROVIDER_REPO_DIR` if needed.
+- Tilt no longer hard-requires `FWE_API_KEY` just to start. When NICo is enabled and `FWE_API_KEY` is unset, the NICo provider forces Forge `test` mode for local development.
+- `.env.tilt` configures in-cluster CWE env overrides. Keep host-local settings in `.env.local`.
+- Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
+- CWE defaults to `SPIRE_SERVER_ADDRESS=host.docker.internal` and `SPIRE_SERVER_PORT=30440`. On Linux Docker, if `host.docker.internal` is not available, override `SPIRE_SERVER_ADDRESS` in `.env.tilt` to your host's gateway IP (for example: `ip -4 route show default | awk '{print $3}'`).
+
+### CAPNICo bare-VM flow (forge-vms)
+
+Boots a bare VM on the local `forge-vms` backend through the released CAPNICo
+provider chart (or, optionally, a controller built from a local checkout — see
+below). The flow runs alongside the normal full stack: `tilt up` still
+brings up postgres, temporal, spire, cert-manager and cwe, and the CAPNICo
+resources are added on top without wiring themselves into CWE.
+
+The usual full-stack prerequisites still apply.
+
+1. Bootstrap the management cluster. `make capd-up` works; if you only need CAPI
+   core (no CAPD infrastructure provider), use:
+
+```bash
+make capi-core-up
+```
+
+   `capi-core-up` downloads the pinned `clusterctl` into `.local/bin` if it is
+   not already on `PATH`, and pins the kube context to `kind-${KIND_CLUSTER_NAME}`.
+
+2. Put this in `tilt_config.json` (the file itself is gitignored):
+
+```json
+{
+  "providers": ["capi_core", "forge-vms", "nico-vm"]
+}
+```
+
+   `nico-vm` requires both `capi_core` and `forge-vms`, and is mutually
+   exclusive with `nico` (both install a CAPNICo controller into
+   `capnico-system` and own the `nico-credentials` secret).
+
+3. Export the environment Tilt does not inherit from `~/.bashrc`, then start:
+
+```bash
+export NGC_API_KEY=...     # pulls the CAPNICo chart + image from NGC
+export VM_USER=...         # bare-boot VM login user
+export VM_PASSWORD=...     # bare-boot VM login password (never committed)
+
+tilt up
+```
+
+4. Use the buttons on the `capnico-create-instance` resource in the Tilt UI to
+   create, inspect, tail the console log of, and delete a VM. They drive
+   `hack/capnico-create-instance.sh` and `hack/capnico-delete-instance.sh`,
+   which can also be run directly with the same environment variables.
+
+`helm`, `jq` and `curl` must be on `PATH`.
+
+#### Building CAPNICo from a local checkout instead of the chart
+
+To test controller changes, point the provider at a local checkout of
+[cluster-api-provider-nico](https://gitlab-master.nvidia.com/nke/cluster-api-provider-nico)
+with the optional `capnico_source_dir` key:
+
+```json
+{
+  "providers": ["capi_core", "forge-vms", "nico-vm"],
+  "capnico_source_dir": "../cluster-api-provider-nico"
+}
+```
+
+Relative paths resolve against the repo root, and `CAPNICO_SOURCE_DIR` in the
+environment overrides the config key for a one-off run. Leave the key out (the
+default) and the released chart is installed exactly as described above.
+
+In this mode the `capnico-provider` resource builds
+`cluster-api-provider-nico:local` from the checkout, loads it into the Kind
+cluster and applies `config/default` with `kubectl`; `helm`, `NGC_API_KEY` and
+the `nvcr-creds` pull secret are not used, and `docker` and `kind` must be on
+`PATH`. The build requires BuildKit (`docker buildx`) — the provider repo's
+`.dockerignore` excludes everything and re-includes sources, which the legacy
+builder ignores, making the build fail at `COPY api/ api/`. If `docker buildx
+version` fails, drop the
+[buildx release binary](https://github.com/docker/buildx/releases) at
+`~/.docker/cli-plugins/docker-buildx` (no root needed). Tilt watches the
+checkout, so saving a change there rebuilds and
+restarts the controller. Everything downstream — `capnico-credentials`, the
+`nico-credentials` secret and the VM buttons — is identical in both modes.
+
+### TPM support in Docker
+
+TPM is one of the node-attestation mechanisms CWE/NKE uses to establish SPIRE
+node identity for SPIFFE-enabled nodes. In the TPM mode, Forge exposes the
+node's EK certificate, CWE computes and persists the TPM EK pubhash, and SPIRE
+uses that TPM-shaped identity to reconcile the node's parent SPIFFE ID and
+related cluster entries.
+
+There are two attestation modes in the local cluster-create paths today:
+- `join-token`
+- `tpm`
+
+The CAPI cluster creation path supports both modes. The Forge-direct cluster
+creation path currently supports only TPM, so the Docker-based Forge flow keeps
+the same TPM-shaped contracts as a real Forge node and swaps only the physical
+TPM for a software-backed vTPM chain:
+
+1. `make colima-up` prepares the Colima VM kernel to expose `/dev/vtpmx` via
+   the `tpm_vtpm_proxy` module. That is the host-side bridge `swtpm` needs in
+   order to ask Linux for a real TPM device.
+2. Each local node container starts `swtpm --vtpm-proxy` through
+   `swtpm-local.service` in `hack/capd-kindest-node/Dockerfile`. That causes
+   the Colima VM kernel to allocate a vTPM-backed TPM device for that node,
+   which the image then mirrors into the container as `/dev/tpm0` (and
+   `/dev/tpmrm0` when available).
+3. `spire-agent` still uses the TPM attestor plugin against that Linux
+   TPM device, so the node-side SPIRE flow stays aligned with the normal
+   device-oriented attestation path.
+4. During the same startup sequence, `swtpm_setup` writes an EK certificate
+   under `/var/lib/swtpm`, and the node image normalizes it to
+   `/var/lib/swtpm/ek.cert`. `nico-mock` reads that file and returns it as the
+   Forge `tpmEkCertificate`, which lets CWE keep its normal TPM EK pubhash and
+   `ClusterStaticEntry` reconciliation logic.
+
+This is still lower fidelity than real hardware: the TPM is software-backed,
+the nodes are Docker containers, and Forge itself is mocked. The benefit is
+that CWE, SPIRE, and the local Forge-direct flow can keep exercising the same
+TPM-oriented contracts without introducing local-only branches in the
+production workflow/controller code.
+
+### Daily Use
+
+```bash
+tilt up
+```
+
+- Once Tilt is running:
+  - UI: http://localhost:8080
+  - Swagger: http://localhost:8080/api/docs
+  - Temporal UI: http://localhost:8081
+- CWE pod logs are available in the native `cwe` Tilt resource.
+- Use the Tilt buttons for the common local actions below.
+
+### Common Actions
+
+- Register the default site from the `cwe` Tilt resource.
+- Create a sample CAPD cluster from the `cwe` Tilt resource.
+- Register the mock site from the `cwe` Tilt resource when NICo is enabled.
+- Create a sample local Forge cluster from the `cwe` Tilt resource when NICo is enabled.
+- Create a sample local NICo cluster from the `cwe` Tilt resource when NICo is enabled.
+- Restart CWE from the `cwe` Tilt resource.
+- Show SPIRE entries or list connected SPIRE agents from the `spire-server` Tilt resource.
+
+CLI equivalents if you prefer:
+
+```bash
+# Register the default site
+./hack/register-default-site.sh
+
+# Create a sample CAPD cluster
+./hack/create-capd-cluster.sh
+
+# Upgrade a CAPD cluster (rebuilds cwe-capd-kindest-node:local for the target
+# kindest/node tag, then PATCHes controlPlaneKubernetesVersion + maxSurge)
+TARGET_VERSION=1.35.0 ./hack/capd-upgrade.sh
+# or: TARGET_VERSION=1.35.0 make capd-upgrade
+
+# Register the mock site used by the local Forge flow
+./hack/register-mock-site.sh
+
+# Wait a few seconds for the Forge site cache to sync before creating the cluster
+# so `create-forge-cluster` can see the newly registered site.
+
+# Create a sample local Forge cluster when NICo is enabled
+./hack/create-forge-cluster.sh
+
+# Create a sample local NICo cluster when NICo is enabled
+./hack/create-local-nico-cluster.sh
+
+# Create additional CAPD clusters by changing the cluster name or desired node count
+CLUSTER_NAME="my-cluster" CONTROL_PLANE_DESIRED_COUNT=3 WORKER_DESIRED_COUNT=3 ./hack/create-capd-cluster.sh
+
+# Show SPIRE server entries
+kubectl exec -n spire-server spire-server-0 -c spire-server -- bin/spire-server entry show
+
+# List connected SPIRE agents
+kubectl exec -n spire-server spire-server-0 -c spire-server -- bin/spire-server agent list
+```
+
+### Forge-backed NICo Flow
+
+This is a separate workflow from the normal daily Tilt loop. Use it when you want
+to exercise CAPNico against real Forge/NICo instead of the local mock-backed
+Forge flow that Tilt sets up by default.
+
+The helper script lives at `./hack/create-forge-nico-cluster.sh`. It assumes:
+
+- CWE is reachable through a port-forward to the in-cluster service
+- a provider-level NICo credentials Secret exists in the `cluster-api-provider-nico`
+  manager namespace (`capnico-system` by default)
+
+#### Provider-level credentials Secret
+
+`cluster-api-provider-nico` reads NICo credentials from a Secret in its own
+manager namespace; one Secret is shared by every `NicoCluster` the provider
+manages. See the [cluster-api-provider-nico
+README](https://gitlab-master.nvidia.com/nke/cluster-api-provider-nico#install)
+for the full set of keys.
+
+Pull the Forge tenant token from Vault and apply it as a Secret in the
+`capnico-system` namespace:
+
+```bash
+vault login -method=oidc -path=oidc role=ngc
+NICO_TOKEN="$(vault kv get -field=servicekey secrets/groups/nkek8s/ngc/forge-tenant-nke/forge-access-info)"
+
+kubectl create secret generic nico-credentials \
+  --namespace capnico-system \
+  --from-literal=endpoint=https://api.ngc.nvidia.com \
+  --from-literal=orgID=novxwn552ssc \
+  --from-literal=token="${NICO_TOKEN}" \
+  --from-literal=apiName=forge
+```
+
+`cluster-api-provider-nico` re-reads the Secret on every reconcile and rebuilds
+the NICo client whenever the Secret's `resourceVersion` changes, so any
+external rotation is picked up without restarting the manager.
+
+#### Creating a cluster
+
+```bash
+# Port forward the CWE API
+tsh login
+kubectl -n cloud-workflow-engine port-forward svc/cloud-workflow-engine 18080:8080
+
+# Create the Forge NICo cluster
+CWE_HTTP_PORT=18080 ./hack/create-forge-nico-cluster.sh
+```
+
+### Cleanup
+
+Delete the workload cluster before deleting the Kind management cluster so CAPD can clean up the Docker machines it created.
+
+`tilt down` is not the full teardown for this workflow. Tilt manages some resources natively, but this setup still relies on Helm installs, applied manifests, and other local actions that remain in the cluster after the Tilt session exits.
+
+```bash
+# Prefer deleting through CWE so its state is cleaned up too
+curl -X DELETE http://localhost:8080/api/clusters/<cluster-id>
+
+# Or delete all local workload clusters directly
+kubectl delete cluster --all --all-namespaces --wait=false
+
+# Then tear down the Kind management cluster
+make kind-down
+```
+
+### Nuclear Clean up
+Deleting the colima VM gets you back to a clean state.
+```bash
+make colima-clean
+```
+
+## Manual Local/Remote Worker Run
+
+**Quick Start**: See `Choose a Development Path` above if you want the recommended local CAPD/Tilt flow or the shorter `make run-local` / `make run-remote` path.
+
+The following are the individual manual steps if you prefer to run things yourself:
+
+Typically when running locally, use a local Temporal server for CWE workflows or connect to a remote Temporal deployment.
+
+Start a local temporal server for the CWE workflows (use `flox activate` to get the `temporal` CLI):
+```
+temporal server start-dev
+```
+
+And you'll need a local Postgres for CWE data:
+```
+docker run -d --name=cwe-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17.4
+```
+(If you ever want to start fresh with an empty database, remove the container with `docker rm -f cwe-postgres` and then start a new one)
+
+To use remote Temporal, set up your kubeconfig and SSH tunnel for the site-controller cluster, then run a port forward to the Temporal service (using non-default ports to avoid conflicts with local Temporal):
+```bash
+kubectl port-forward -n temporal svc/temporal-frontend 17233:7233
+```
+You'll probably also want the Temporal UI (open in browser at http://localhost:18233):
+```bash
+kubectl port-forward -n temporal svc/temporal-web 18233:8080
+```
+
+And now you're ready to build and run CWE:
+```bash
+TEMPORAL_HOST_PORT=localhost:17233 FWE_API_KEY=<NGC API KEY> go run ./cmd/worker/main.go
+```
+
+You should now see the UI at http://localhost:8080, and the Swagger UI at http://localhost:8080/api/docs
+
+## UI dev with API proxy
+If you're only working on the UI, it can save time to run the UI locally against the API of a live site, instead of running all of CWE locally. We have a separate command to facilitate this. To start, set up your SSH tunnel and port-forward for the site you're developing against:
+```
+kubectl port-forward -n cloud-workflow-engine deploy/cloud-workflow-engine 8080:8080
+```
+And then start the UI dev server with:
+```
+API_BASE_URL=http://localhost:8080/api go run cmd/ui-dev/main.go
+```
+By default the UI will be served at http://localhost:8081. Be careful when running like this, because anything you do will be happening in the real site.
+
+## Debugging
+
+### Local NICo/TPM Diagnostics
+
+The TPM architecture for the mock-backed NICo flow is described above in
+[TPM support in Docker](#tpm-support-in-docker). Use these checks when local
+NICo `NicoMachine` objects get past instance creation but remain
+`InstanceNotReady`, or when Docker node containers do not show `/dev/tpm0`.
+
+Check the CAP NICO and mock state first:
+
+```bash
+kubectl get nicomachine -A
+kubectl logs -n capnico-system deploy/controller-manager
+kubectl logs -n nico-mock deploy/mock
+docker ps --filter label=nvidia.com/nico-mock.managed=true
+```
+
+Check the Colima host-side vTPM proxy:
+
+```bash
+colima ssh -- sh -lc 'sysctl fs.inotify.max_user_instances; ls -l /dev/vtpmx'
+```
+
+Check a mock-backed node container:
+
+```bash
+docker exec <container> bash -lc 'systemctl status swtpm-local.service'
+docker exec <container> bash -lc 'journalctl -u swtpm-local.service --no-pager -n 80'
+docker exec <container> bash -lc 'ls -l /sys/class/misc/vtpmx/dev /dev/vtpmx /dev/tpm* /var/lib/swtpm/ek.cert 2>&1'
+```
+
+Interpret the results this way:
+
+- If Colima does not expose `/dev/vtpmx`, rerun `make colima-up`.
+- If host-side CAPD e2e tests fail with `no route to host` to a `172.18.0.x`
+  apiserver, confirm `docker-mac-net-connect` is installed and running
+  (`sudo brew services list | grep docker-mac-net-connect`). See [First
+  Run](#first-run).
+- If the node container does not expose `/sys/class/misc/vtpmx/dev`,
+  `swtpm-local.service` cannot create `/dev/vtpmx` or ask the kernel for
+  `/dev/tpm0`.
+- If `swtpm-local.service` fails, `spire-agent` usually fails by dependency.
+- If `/var/lib/swtpm/ek.cert` is missing, `nico-mock` reports the instance as
+  pending, and CAP NICO reports `InstanceNotReady`.
+- Existing `nico-local-*` Docker containers should be recreated after fixing
+  Colima or node-image TPM setup.
+
+### Cursor/VS Code with Tilt-Managed Dependencies
+
+Use this when you want to set breakpoints and step through CWE code while the rest of the stack (Temporal, Postgres, SPIRE) is managed by Tilt.
+
+**Prerequisites:** `tilt up` is running and all resources are healthy. Ensure `.env.local` has the Tilt-forwarded endpoints:
+
+```bash
+export TEMPORAL_HOST_PORT=localhost:7233
+export DB_CONNECTION_STRING="postgres://postgres:postgres@localhost:5432/cloud-workflow?sslmode=disable"
+export DB_MAX_OPEN_CONNECTIONS=12
+```
+
+**Recommended workflow (Cursor/VS Code):**
+
+1. Open **Run and Debug** in Cursor/VS Code (`Cmd+Shift+D`).
+2. Select **"Launch CWE (Tilt Local Debug)"**.
+3. Start debugging.
+4. When you are done debugging, re-enable the in-cluster `cwe` Tilt resource manually in the UI or with:
+
+```bash
+tilt trigger cwe
+```
+
+This shared debug configuration:
+- scales the in-cluster CWE deployment down to `0`
+- starts the local SPIRE agent
+- runs CWE locally under the debugger using `.env.local`
+- prevents Tilt from redeploying in-cluster CWE while the local debug session is active
+
+Set breakpoints in any `.go` file and they will be hit as Temporal dispatches workflows and activities.
+
+The shared debug workflow is checked into:
+- `.vscode/launch.json`
+- `.vscode/tasks.json`
+
+These are intended for repo-wide workflows. If you want personal debug variations, prefer a local untracked `*.code-workspace` file.
+
+## Contributing
+
+If you make a change to the OpenAPI spec, regenerate the generated Go files with:
+```bash
+make generate
+```
+
+Auto-update license header at the top of code files using:
+```bash
+make license
+```

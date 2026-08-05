@@ -1,0 +1,40 @@
+{{- if and .Values.etcdEncryptionKeyMigration.enabled .Values.etcdEncryptionKeyMigration.rbac.create }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-etcd-key-migration-source
+  namespace: {{ .Values.etcdEncryptionKeyMigration.legacyNamespace }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+rules:
+  # Scoped to the legacy namespace rather than a single resourceName: SWE names
+  # each cluster's key Secret etcd-encryption-key-<clusterID>, where clusterID is
+  # a runtime DB primary key not known at chart-render time (and a site may hold
+  # more than one such Secret). Kubernetes RBAC resourceNames cannot express a
+  # name prefix, so pinning it forced a hardcoded per-site value. This is a
+  # transitional migration Role — see https://jirasw.nvidia.com/browse/NKX-12736
+  # for the canonical-home follow-up that will retire it.
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-etcd-key-migration-source
+  namespace: {{ .Values.etcdEncryptionKeyMigration.legacyNamespace }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cloud-workflow-engine.fullname" . }}-etcd-key-migration-source
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+{{- end }}

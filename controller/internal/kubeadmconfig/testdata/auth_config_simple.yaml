@@ -1,0 +1,18 @@
+apiVersion: apiserver.config.k8s.io/v1
+jwt:
+- claimMappings:
+    groups: {}
+    uid: {}
+    username:
+      claim: sub
+      prefix: ""
+  issuer:
+    audiences:
+    - tenant-cluster-42
+    certificateAuthority: |-
+      -----BEGIN CERTIFICATE-----
+      ca
+      -----END CERTIFICATE-----
+    discoveryURL: https://10.0.0.10:30443/.well-known/openid-configuration
+    url: https://nke.site-controller.internal
+kind: AuthenticationConfiguration

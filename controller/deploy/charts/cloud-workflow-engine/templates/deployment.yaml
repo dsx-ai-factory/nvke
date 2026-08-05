@@ -1,0 +1,317 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}
+  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+  {{- $reloadSecrets := list }}
+  {{- if and .Values.secrets.forgeSecret.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
+  {{- $reloadSecrets = append $reloadSecrets (default (printf "%s-%s" (include "cloud-workflow-engine.fullname" .) "forge-creds") .Values.secrets.forgeSecretName) }}
+  {{- end }}
+  {{- if and .Values.secrets.dgxcTenantCredSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
+  {{- $reloadSecrets = append $reloadSecrets .Values.secrets.dgxcTenantCredSecretName }}
+  {{- end }}
+  {{- if and .Values.secrets.cnpgDbPasswordsSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
+  {{- $reloadSecrets = append $reloadSecrets .Values.secrets.cnpgDbPasswordsSecretName }}
+  {{- end }}
+  {{- if or .Values.deploymentAnnotations $reloadSecrets }}
+  annotations:
+    {{- with .Values.deploymentAnnotations }}
+    {{- tpl (toYaml .) $ | nindent 4 }}
+    {{- end }}
+    {{- if $reloadSecrets }}
+    secret.reloader.stakater.com/reload: {{ join "," $reloadSecrets | quote }}
+    {{- end }}
+  {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "cloud-workflow-engine.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "cloud-workflow-engine.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- with .Values.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}{{ with .Values.image.digest }}@{{ . }}{{ end }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metrics.port }}
+              protocol: TCP
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.spiffe.enabled }}
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+            {{- end }}
+            {{- if .Values.temporal.mtls.enabled }}
+            - name: temporal-client-certs
+              mountPath: {{ .Values.temporal.mtls.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.teleport.enabled }}
+            - name: teleport-identity
+              mountPath: /var/run/teleport
+              readOnly: true
+            {{- end }}
+            {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          env:
+            # Metrics server listen address (NKX-11690)
+            - name: METRICS_LISTEN_ADDRESS
+              value: {{ .Values.metrics.listenAddress | quote }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ETCD_ENCRYPTION_KEY_MIGRATION_DISABLED
+              value: {{ not .Values.etcdEncryptionKeyMigration.enabled | quote }}
+            - name: ETCD_ENCRYPTION_KEY_LEGACY_NAMESPACE
+              value: {{ .Values.etcdEncryptionKeyMigration.legacyNamespace | quote }}
+            - name: CSR_APPROVAL_CONTROLLER_ENABLED
+              value: {{ .Values.scheduledMaintenance.csrApproval.enabled | quote }}
+            - name: CSR_APPROVAL_INTERVAL
+              value: {{ .Values.scheduledMaintenance.csrApproval.interval | quote }}
+            - name: CERT_RENEWAL_CONTROLLER_ENABLED
+              value: {{ .Values.scheduledMaintenance.certRenewal.enabled | quote }}
+            - name: CERT_RENEWAL_INTERVAL
+              value: {{ .Values.scheduledMaintenance.certRenewal.interval | quote }}
+            - name: CERT_RENEWAL_THRESHOLD_DAYS
+              value: {{ .Values.scheduledMaintenance.certRenewal.thresholdDays | quote }}
+            - name: KUBEADM_IMAGE_REPOSITORY
+              value: {{ .Values.kubeadm.imageRepository | quote }}
+            {{- if .Values.cni.imageRegistry }}
+            - name: CNI_IMAGE_REGISTRY
+              value: {{ .Values.cni.imageRegistry | quote }}
+            {{- end }}
+            - name: TENANT_ACCESS_ENABLED
+              value: {{ .Values.tenantAccess.enabled | quote }}
+            - name: NKE_OIDC_AUTH_ENABLED
+              value: {{ .Values.nkeOIDCAuth.enabled | quote }}
+            {{- if .Values.nkeOIDCAuth.issuerURL }}
+            - name: NKE_OIDC_AUTH_ISSUER_URL
+              value: {{ .Values.nkeOIDCAuth.issuerURL | quote }}
+            {{- end }}
+            {{- if .Values.nkeOIDCAuth.discoveryURL }}
+            - name: NKE_OIDC_AUTH_DISCOVERY_URL
+              value: {{ .Values.nkeOIDCAuth.discoveryURL | quote }}
+            {{- end }}
+            {{- if .Values.nkeOIDCAuth.caBundleSecret.namespace }}
+            - name: NKE_OIDC_AUTH_CA_BUNDLE_SECRET_NAMESPACE
+              value: {{ .Values.nkeOIDCAuth.caBundleSecret.namespace | quote }}
+            {{- end }}
+            {{- if .Values.nkeOIDCAuth.caBundleSecret.name }}
+            - name: NKE_OIDC_AUTH_CA_BUNDLE_SECRET_NAME
+              value: {{ .Values.nkeOIDCAuth.caBundleSecret.name | quote }}
+            {{- end }}
+            {{- if .Values.nkeOIDCAuth.caBundleSecret.key }}
+            - name: NKE_OIDC_AUTH_CA_BUNDLE_SECRET_KEY
+              value: {{ .Values.nkeOIDCAuth.caBundleSecret.key | quote }}
+            {{- end }}
+            # DB
+            {{- if or .Values.secrets.createDbSecret .Values.secrets.dbSecretName }}
+            - name: DB_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-%s" (include "cloud-workflow-engine.fullname" .) "db")  .Values.secrets.dbSecretName}}
+                  key:  {{ default "database-connection-string" .Values.secrets.dbSecretKey }}
+            {{- else }}
+            - name: DB_CONNECTION_STRING
+              value: {{ printf "postgres://%s:%s@%s/%s?sslmode=%s" .Values.appDb.postgresUser (default "placeholder" .Values.appDb.postgresPassword) .Values.appDb.url .Values.appDb.dbName (default "disable" .Values.appDb.sslMode) | quote }}
+            {{- end }}
+            # forge apikey
+            {{- if .Values.secrets.forgeSecret.enabled }}
+            - name: FWE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ default (printf "%s-%s" (include "cloud-workflow-engine.fullname" .) "forge-creds") .Values.secrets.forgeSecretName }}
+                  key: {{ default "forge-api-key" .Values.secrets.forgeSecretKey }}
+            {{- end }}
+            # Temporal config
+            - name: TEMPORAL_HOST_PORT
+              value: "{{ .Values.temporal.host }}:{{ .Values.temporal.port }}"
+            - name: TEMPORAL_NAMESPACE
+              value: {{ .Values.temporal.cloudWorkflow.namespace }}
+            - name: TEMPORAL_TASK_QUEUE
+              value: {{ .Values.temporal.cloudWorkflow.queue }}
+            {{- if .Values.temporal.mtls.enabled }}
+            - name: TEMPORAL_MTLS_CA_CERT
+              value: {{ printf "%s/%s" .Values.temporal.mtls.mountPath .Values.temporal.mtls.caCertFile | quote }}
+            - name: TEMPORAL_MTLS_CLIENT_CERT
+              value: {{ printf "%s/%s" .Values.temporal.mtls.mountPath .Values.temporal.mtls.clientCertFile | quote }}
+            - name: TEMPORAL_MTLS_CLIENT_KEY
+              value: {{ printf "%s/%s" .Values.temporal.mtls.mountPath .Values.temporal.mtls.clientKeyFile | quote }}
+            - name: TEMPORAL_MTLS_SERVER_NAME
+              value: {{ .Values.temporal.mtls.serverName | quote }}
+            {{- end }}
+            - name: PROFILES_DIR
+              value: {{ .Values.profiles.path | quote }}
+            # SPIFFE/SPIRE config
+            - name: SPIFFE_ENABLED
+              value: {{ .Values.spiffe.enabled | quote }}
+            - name: SPIFFE_ENDPOINT_SOCKET
+              value: {{ .Values.spiffe.endpointSocket | quote }}
+            - name: SPIRE_SERVER_NAMESPACE
+              value: {{ .Values.spiffe.spire.serverNamespace | quote }}
+            - name: SPIRE_CLASS_NAME
+              value: {{ .Values.spiffe.spire.className | quote }}
+            - name: SPIRE_TPM_PUBHASHES_CONFIG_MAP_NAME
+              value: {{ .Values.spiffe.spire.tpmPubhashesConfigMapName | quote }}
+            - name: SPIRE_SERVER_ADDRESS
+              {{- if .Values.spiffe.spire.serverAddress }}
+              value: {{ .Values.spiffe.spire.serverAddress | quote }}
+              {{- else if .Values.spiffe.spire.serverAddressFrom }}
+              valueFrom:
+                {{- toYaml .Values.spiffe.spire.serverAddressFrom | nindent 16 }}
+              {{- else }}
+              {{- fail "Either spiffe.spire.serverAddress or spiffe.spire.serverAddressFrom must be set" }}
+              {{- end }}
+            - name: SPIRE_SERVER_PORT
+              value: {{ .Values.spiffe.spire.serverPort | quote }}
+            - name: SPIRE_JOIN_TOKEN_TTL
+              value: {{ .Values.spiffe.spire.joinTokenTTL | quote }}
+            {{- if .Values.capi.enabled }}
+            - name: ENABLE_CAPI
+              value: "true"
+            {{- end }}
+            {{- if .Values.capi.forgeCapiEnabled }}
+            - name: ENABLE_FORGE_CAPI
+              value: "true"
+            {{- end }}
+            # Teleport config
+            {{- if .Values.teleport.enabled }}
+            - name: TELEPORT_ENABLED
+              value: "true"
+            - name: TELEPORT_IDENTITY_FILE
+              value: {{ .Values.teleport.identityFile | quote }}
+            - name: TELEPORT_PROXY_ADDRESS
+              value: {{ .Values.teleport.proxyAddress | quote }}
+            - name: TELEPORT_ENVIRONMENT
+              value: {{ .Values.teleport.environment | quote }}
+            {{- end }}
+            {{- if .Values.secrets.dgxcTenantCredSecretName }}
+            - name: DGXC_TENANT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.dgxcTenantCredSecretName }}
+                  key: user
+                  optional: true
+            - name: DGXC_TENANT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.dgxcTenantCredSecretName }}
+                  key: password
+                  optional: true
+            {{- end }}
+            {{- if .Values.secrets.cnpgDbPasswordsSecretName }}
+            # CNPG database passwords. Required (optional=false): CWE fails
+            # closed at startup if these are unset (see
+            # cloud-workflow-engine!772 Validate()), so a missing key here
+            # should surface as a clear Kubernetes secretKeyRef error rather
+            # than a silently-empty env var and a confusing app-level failure.
+            - name: CNPG_SUPERUSER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.cnpgDbPasswordsSecretName }}
+                  key: CNPG_SUPERUSER_PASSWORD
+                  optional: false
+            - name: CNPG_CLOUD_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.cnpgDbPasswordsSecretName }}
+                  key: CNPG_CLOUD_PASSWORD
+                  optional: false
+            - name: CNPG_TEMPORAL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.cnpgDbPasswordsSecretName }}
+                  key: CNPG_TEMPORAL_PASSWORD
+                  optional: false
+            {{- end }}
+            {{- range .Values.env }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+      volumes:
+        {{- if .Values.spiffe.enabled }}
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+        {{- end }}
+        {{- if .Values.temporal.mtls.enabled }}
+        - name: temporal-client-certs
+          secret:
+            secretName: {{ required "temporal.mtls.secretName is required when temporal.mtls.enabled=true" .Values.temporal.mtls.secretName }}
+        {{- end }}
+        {{- if .Values.teleport.enabled }}
+        - name: teleport-identity
+          secret:
+            secretName: {{ .Values.teleport.identitySecretName }}
+        {{- end }}
+        {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

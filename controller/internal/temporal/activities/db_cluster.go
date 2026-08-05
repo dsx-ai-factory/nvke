@@ -1,0 +1,75 @@
+// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+//
+// NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+// property and proprietary rights in and to this material, related
+// documentation and any modifications thereto. Any use, reproduction,
+// disclosure or distribution of this material and related documentation
+// without an express license agreement from NVIDIA CORPORATION or
+// its affiliates is strictly prohibited.
+
+package activities
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	"github.com/google/uuid"
+	"go.temporal.io/sdk/temporal"
+
+	"github.com/NVIDIA/nke/controller/internal/db"
+)
+
+type ClusterConditionsUpdate struct {
+	ClusterID  uuid.UUID
+	Conditions ClusterConditions
+}
+
+type ClusterConditions struct {
+	Provisioning *ConditionUpdate `json:"provisioning,omitempty"`
+	Provisioned  *ConditionUpdate `json:"provisioned,omitempty"`
+	Deleting     *ConditionUpdate `json:"deleting,omitempty"`
+}
+
+// UpdateClusterConditions updates the conditions of a cluster in the database.
+func (a *Activities) UpdateClusterConditions(ctx context.Context, update ClusterConditionsUpdate) error {
+	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		// Get existing cluster
+		cluster, err := tx.GetCluster(ctx, update.ClusterID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				// This will not be resolved by retrying, so return a non-retryable temporal error
+				return temporal.NewNonRetryableApplicationError("cluster not found in database", "db.ErrNotFound", err)
+			}
+			return fmt.Errorf("failed to get cluster: %w", err)
+		}
+
+		updateCondition(&cluster.Conditions.Provisioning, update.Conditions.Provisioning)
+		updateCondition(&cluster.Conditions.Provisioned, update.Conditions.Provisioned)
+		updateCondition(&cluster.Conditions.Deleting, update.Conditions.Deleting)
+
+		// Update cluster with merged conditions
+		_, err = tx.UpdateCluster(ctx, &cluster)
+		if err != nil {
+			return fmt.Errorf("failed to update cluster conditions: %w", err)
+		}
+
+		return nil
+	})
+}
+
+// DeleteCluster deletes a cluster from the database.
+func (a *Activities) DeleteCluster(ctx context.Context, clusterID uuid.UUID) error {
+	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		if err := tx.DeleteVIPAllocationForCluster(ctx, clusterID); err != nil {
+			return fmt.Errorf("failed to delete VIP allocation: %w", err)
+		}
+
+		if err := tx.DeleteCluster(ctx, clusterID); err != nil {
+			return fmt.Errorf("failed to delete cluster from database: %w", err)
+		}
+
+		return nil
+	})
+}

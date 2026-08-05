@@ -1,0 +1,134 @@
+# Shared nke-system namespace and tenant RBAC ConfigMap.
+#
+# The nke-system namespace is created unconditionally (Prune=false): the CWE
+# controller that reconciles tenant access (NKX-12975) publishes per-cluster Secrets
+# (<cluster>-kubeconfig, <cluster>-cluster-trust-bundle) into it for every reconciled
+# cluster, so it must exist whenever that controller runs, independent of
+# tenantAccess.enabled and nkeOIDCAuth.enabled. Keeping it unconditional also means
+# a site that has published Secrets and is then disabled keeps them addressable.
+#
+# The nke-rbac ConfigMap (key manifest.yaml) is created only when OIDC is enabled:
+# that controller reads it and Server-Side-Applies the manifest directly into each
+# OIDC tenant cluster. It defines the SPIFFE identities allowed to call each tenant
+# API surface (nke:cwe).
+{{- if .Values.nkeSystemNamespace.create }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nke-system
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+{{- end }}
+{{- if .Values.nkeOIDCAuth.enabled }}
+{{- /*
+  spiffe.trustDomain builds the nke-service principals below. It must equal the
+  SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so these
+  RBAC subjects match the SPIFFE IDs the tenant apiserver actually sees; the deploy
+  layer stamps both from one ${ENV_NAME}.
+*/}}
+{{- if not .Values.spiffe.trustDomain }}
+{{- fail "spiffe.trustDomain must be set when nkeOIDCAuth.enabled is true (it must equal the SPIRE server's trust domain so nke-rbac principals match issued identities)" }}
+{{- end }}
+{{- /*
+  The tenant-access controller is the only thing that applies this ConfigMap into
+  tenant clusters and publishes the SPIRE exec-auth kubeconfig. With it disabled,
+  OIDC-enabled clusters would trust SPIRE JWTs while NKE holds neither RBAC nor a
+  kubeconfig there — dark, and silent. Fail the render instead.
+*/}}
+{{- if not .Values.tenantAccess.enabled }}
+{{- fail "tenantAccess.enabled must be true when nkeOIDCAuth.enabled is true (the tenant-access controller applies nke-rbac into tenant clusters and publishes their kubeconfig; without it OIDC auth is configured but unusable)" }}
+{{- end }}
+{{- $td := .Values.spiffe.trustDomain }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nke-rbac
+  namespace: nke-system
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+data:
+  manifest.yaml: |
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRole
+    metadata:
+      name: nke:cwe
+    rules:
+      - apiGroups: [""]
+        resources: ["nodes"]
+        verbs: ["get", "list", "watch", "patch", "update", "delete"]
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["list", "delete"]
+      - apiGroups: [""]
+        resources: ["pods/eviction"]
+        verbs: ["create"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: nke:cwe
+      namespace: kube-system
+    rules:
+      - apiGroups: [""]
+        resources: ["pods"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: [""]
+        resources: ["configmaps"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: [""]
+        resources: ["configmaps"]
+        resourceNames: ["kubeadm-config"]
+        verbs: ["update"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: nke:cwe
+      namespace: kube-node-lease
+    rules:
+      - apiGroups: ["coordination.k8s.io"]
+        resources: ["leases"]
+        verbs: ["get"]
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: nke:cwe
+    subjects:
+      - kind: User
+        name: spiffe://{{ $td }}/nke-service/cloud-workflow-engine
+        apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: ClusterRole
+      name: nke:cwe
+      apiGroup: rbac.authorization.k8s.io
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: nke:cwe
+      namespace: kube-system
+    subjects:
+      - kind: User
+        name: spiffe://{{ $td }}/nke-service/cloud-workflow-engine
+        apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: Role
+      name: nke:cwe
+      apiGroup: rbac.authorization.k8s.io
+    ---
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: nke:cwe
+      namespace: kube-node-lease
+    subjects:
+      - kind: User
+        name: spiffe://{{ $td }}/nke-service/cloud-workflow-engine
+        apiGroup: rbac.authorization.k8s.io
+    roleRef:
+      kind: Role
+      name: nke:cwe
+      apiGroup: rbac.authorization.k8s.io
+{{- end }}

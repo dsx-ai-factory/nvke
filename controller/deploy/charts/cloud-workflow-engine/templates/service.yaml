@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}
+  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- if .Values.service.labels }}
+    {{- toYaml .Values.service.labels | nindent 4 }}
+    {{- end }}
+  {{- if .Values.service.annotations }}
+  annotations:
+    {{- toYaml .Values.service.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: http
+      name: http
+      protocol: TCP
+    - port: {{ .Values.metrics.port }}
+      targetPort: metrics
+      name: metrics
+      protocol: TCP
+  selector:
+    {{- include "cloud-workflow-engine.selectorLabels" . | nindent 4 }}

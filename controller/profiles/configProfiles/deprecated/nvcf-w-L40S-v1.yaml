@@ -1,0 +1,45 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+hooks:
+  beforeJoinNode:
+    - runbook:
+        name: disable-ipv6-grub
+    - runbook:
+        name: disable-ipv6-sysctl
+  afterJoinNode:
+    - runbook:
+        name: enable-ipv4-forward
+    - runbook:
+        name: disable-swap
+    - runbook:
+        name: install-chrony
+    - runbook:
+        name: lvextend
+    - runbook:
+        name: kube-reserved-resources
+        env:
+          SYSTEM_RESERVED_MEM: 128Gi
+    - runbook:
+        name: configure-inotify
+    - runbook:
+        name: gpu-protect
+    - runbook:
+        name: gpu-protect-service
+    - runbook:
+        name: configure-gpu-display-mode
+        env:
+          GPU_DISPLAY_MODE: physical_display_enabled_8GB_bar1
+labels:
+  - nodeGroup=gpu
+  - nodeType=gpu
+  - nvca.nvcf.nvidia.io/schedule=true
+  - nvidia.com/gpu.workload.config=vm-passthrough
+  - nvidia.com/gxcache-client-inject=true

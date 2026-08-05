@@ -1,0 +1,31 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+controlPlane:
+  certificateKey: certkey123
+  localAPIEndpoint:
+    advertiseAddress: 10.0.0.2
+    bindPort: 6443
+discovery:
+  bootstrapToken:
+    apiServerEndpoint: 1.2.3.4:6443
+    caCertHashes:
+    - sha256:abc123
+    token: token123
+  timeout: 5m0s
+  tlsBootstrapToken: token123
+kind: JoinConfiguration
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+  kubeletExtraArgs:
+    node-ip: 10.0.0.2
+  name: cp-1
+  taints: null
+patches:
+  directory: /etc/kubernetes/patches
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+metricsBindAddress: 0.0.0.0:10249
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+serverTLSBootstrap: true

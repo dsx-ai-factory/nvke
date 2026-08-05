@@ -1,0 +1,83 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capd-reboot-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: capd-reboot-controller
+  namespace: capd-reboot-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: capd-reboot-controller
+rules:
+  - apiGroups: ["infrastructure.cluster.x-k8s.io"]
+    resources: ["dockermachines"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["machines"]
+    verbs: ["get", "list", "watch", "patch", "update"]
+  - apiGroups: ["cluster.x-k8s.io"]
+    resources: ["machines/status"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: capd-reboot-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: capd-reboot-controller
+subjects:
+  - kind: ServiceAccount
+    name: capd-reboot-controller
+    namespace: capd-reboot-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: capd-reboot-controller
+  namespace: capd-reboot-system
+  labels:
+    app.kubernetes.io/name: capd-reboot-controller
+    app.kubernetes.io/version: "dev"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: capd-reboot-controller
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: capd-reboot-controller
+        app.kubernetes.io/version: "dev"
+    spec:
+      serviceAccountName: capd-reboot-controller
+      containers:
+        - name: capd-reboot-controller
+          image: ko.local/capd-reboot-controller
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: capd-reboot-controller-config
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi

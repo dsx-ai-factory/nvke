@@ -1,0 +1,104 @@
+#cloud-config
+autoinstall:
+  version: 1
+  early-commands:
+      - |
+        TARGET_DISK=""
+        CANDIDATES=""
+        for disk in /dev/sd* /dev/nvme*; do
+          if [ -b "$disk" ]; then
+            # NO removable devices
+            if [ -f "/sys/block/${disk##*/}/removable" ] && [ "$(cat /sys/block/${disk##*/}/removable)" = "1" ]; then
+              continue
+            fi
+            DISK_SIZE_BYTES=$(blockdev --getsize64 "$disk")
+            DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
+            if [ "$DISK_SIZE_GB" -gt 100 ]; then
+              CANDIDATES="${CANDIDATES}${CANDIDATES:+ }$disk:$DISK_SIZE_GB"
+            fi
+          fi
+        done
+
+        # Select the smallest
+        if [ -n "$CANDIDATES" ]; then
+          TARGET_DISK=$(echo "$CANDIDATES" | tr ' ' '\n' | sort -t: -k2,2n | head -n1 | cut -d: -f1)
+        else
+          # If that didnt work, pick any non-removable disk randomly
+          ALL_DISKS=""
+          for disk in /dev/sd* /dev/nvme*; do
+            if [ -b "$disk" ]; then
+              if [ -f "/sys/block/${disk##*/}/removable" ] && [ "$(cat /sys/block/${disk##*/}/removable)" = "1" ]; then
+                continue
+              fi
+              ALL_DISKS="${ALL_DISKS}${ALL_DISKS:+ }$disk"
+            fi
+          done
+
+          if [ -z "$ALL_DISKS" ]; then
+            # Awww nuts!
+            echo "No suitable disk found for installation." >&2
+            exit 1
+          fi
+
+          TARGET_DISK=$(echo "$ALL_DISKS" | tr ' ' '\n' | shuf -n1)
+          echo "Warning: No disk >100GB found. Selecting disk randomly: $TARGET_DISK"
+        fi
+
+        # Replace placeholder in storage config
+        sed -i "s|path: /dev/target_disk_placeholder|path: ${TARGET_DISK}|" /autoinstall.yaml
+
+  storage:
+      layout:
+          name: lvm
+          match:
+              path: /dev/target_disk_placeholder
+
+  identity:
+    hostname: {{ .Hostname }}
+    username: {{ .Username }}
+    password: {{ .HashedPassword }}
+  packages:
+    - chrony
+  ntp:
+    enabled: true
+    ntp_client: chrony
+    servers:
+      - 129.6.15.32
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ""
+  locale: en_US
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+
+  late-commands:
+    - curtin in-target --target=/target -- sed -i 's|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX="ipv6.disable=1 console=ttyS1,115200"|' /etc/default/grub
+    - curtin in-target --target=/target -- update-grub
+
+  user-data:
+    write_files:
+      - path: /etc/sysctl.d/60-custom.conf
+        owner: root:root
+        permissions: '0755'
+        content: |
+          net.ipv6.conf.all.disable_ipv6 = 1
+          net.ipv6.conf.default.disable_ipv6 = 1
+          net.ipv6.conf.lo.disable_ipv6 = 1
+
+    runcmd:
+      - [sh, -c, "lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"]
+      - [sh, -c, "resize2fs /dev/mapper/ubuntu-vg-ubuntu-lv"]
+      - [sh, -c, "mkdir -m 755 /etc/apt/keyrings"]
+      - [sh, -c, "mkdir -p /etc/dgx/attestation"]
+      - [sh, -c, "echo \"SERVER=REPLACED-BY-SWE\" >> /etc/dgx/attestation/vars"]
+      - [sh, -c, "echo \"SAN_IP=$(hostname -I | cut -d' ' -f1)\" >> /etc/dgx/attestation/vars"]
+      - [sh, -c, "systemctl restart nke-attestation"]
+      - [sh, -c, "systemctl restart nke-agent"]
+      - [sh, -c, "sysctl -p"]
+      - [sh, -c, "systemctl restart procps"]
+      - [sh, -c, "chmod +x /usr/local/bin/fetch-and-import-images.sh"]
+      - [bash, -c, "/usr/local/bin/fetch-and-import-images.sh"]
+

@@ -1,0 +1,90 @@
+apiVersion: kubeadm.k8s.io/v1beta3
+bootstrapTokens:
+- groups:
+  - system:bootstrappers:kubeadm:default-node-token
+  token: abcdef.0123456789abcdef
+  ttl: 24h0m0s
+  usages:
+  - signing
+  - authentication
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: 192.168.1.10
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+  imagePullPolicy: IfNotPresent
+  kubeletExtraArgs:
+    node-ip: 192.168.1.10
+  name: node1
+  taints: null
+patches:
+  directory: /etc/kubernetes/patches
+skipPhases:
+- addon/kube-proxy
+---
+apiServer:
+  extraArgs:
+    audit-log-maxage: "30"
+    audit-log-maxbackup: "3"
+    audit-log-maxsize: "100"
+    audit-log-path: /var/log/kubernetes_audit/audit.log
+    audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
+    bind-address: 0.0.0.0
+    kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
+    profiling: "false"
+    shutdown-delay-duration: 10s
+    shutdown-send-retry-after: "true"
+    shutdown-watch-termination-grace-period: 20s
+  extraVolumes:
+  - hostPath: /var/log/kubernetes_audit
+    mountPath: /var/log/kubernetes_audit
+    name: audit-logs
+    pathType: DirectoryOrCreate
+  - hostPath: /etc/kubernetes/policies
+    mountPath: /etc/kubernetes/policies
+    name: audit-policies
+    pathType: DirectoryOrCreate
+    readOnly: true
+  timeoutForControlPlane: 4m0s
+apiVersion: kubeadm.k8s.io/v1beta3
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controlPlaneEndpoint: cluster.local:6443
+controllerManager:
+  extraArgs:
+    bind-address: 0.0.0.0
+    profiling: "false"
+dns: {}
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+      auto-compaction-retention: "1"
+      listen-metrics-urls: http://0.0.0.0:2381
+      quota-backend-bytes: "17179869184"
+imageRepository: registry.k8s.io
+kind: ClusterConfiguration
+kubernetesVersion: v1.28.0
+networking:
+  dnsDomain: cluster.local
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.96.0.0/12
+scheduler:
+  extraArgs:
+    bind-address: 0.0.0.0
+    profiling: "false"
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+metricsBindAddress: 0.0.0.0:10249
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+kubeReserved:
+  cpu: 1000m
+  ephemeral-storage: 1Gi
+  memory: 2Gi
+serverTLSBootstrap: true
+systemReserved:
+  memory: 16Gi

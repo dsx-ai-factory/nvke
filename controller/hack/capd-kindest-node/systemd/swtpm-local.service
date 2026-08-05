@@ -1,0 +1,21 @@
+# Bring the TPM path up before SPIRE or `nke-agent` starts.
+# The order matters because:
+#   - `spire-agent` needs `/dev/tpm0` or `/dev/tpmrm0` before the TPM attestor
+#     can complete node attestation
+#   - `nico-mock` only marks a container ready after the EK cert exists
+#   - `nke-agent` should not advertise a SPIFFE-enabled node until the SPIRE
+#     agent can actually come up successfully
+[Unit]
+Description=Local swtpm daemon
+After=network.target
+Before=spire-agent.service nke-agent.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/mkdir -p /var/lib/swtpm
+ExecStartPre=/usr/local/bin/local-init-tpm-state
+ExecStart=/usr/local/bin/local-start-vtpm-proxy
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,41 @@
+apiVersion: apiserver.config.k8s.io/v1
+jwt:
+- claimMappings:
+    groups:
+      claim: groups
+      prefix: 'ops:'
+    uid: {}
+    username:
+      claim: sub
+      prefix: ""
+  claimValidationRules:
+  - expression: claims.hd == 'example.com'
+    message: hosted domain must be example.com
+  issuer:
+    audienceMatchPolicy: MatchAny
+    audiences:
+    - cluster-a
+    - cluster-a-alt
+    certificateAuthority: |
+      -----BEGIN CERTIFICATE-----
+      issuer-one
+      -----END CERTIFICATE-----
+    discoveryURL: https://10.0.0.10:30443/.well-known/openid-configuration
+    url: https://issuer-one.example.com
+  userValidationRules:
+  - expression: '!user.username.startsWith(''system:'')'
+    message: system usernames are reserved
+- claimMappings:
+    groups: {}
+    uid: {}
+    username:
+      expression: claims.email
+  issuer:
+    audiences:
+    - cluster-b
+    certificateAuthority: |
+      -----BEGIN CERTIFICATE-----
+      issuer-two
+      -----END CERTIFICATE-----
+    url: https://issuer-two.example.com
+kind: AuthenticationConfiguration

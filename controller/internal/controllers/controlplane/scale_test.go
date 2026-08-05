@@ -1,0 +1,302 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+//
+// NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+// property and proprietary rights in and to this material, related
+// documentation and any modifications thereto. Any use, reproduction,
+// disclosure or distribution of this material and related documentation
+// without an express license agreement from NVIDIA CORPORATION or
+// its affiliates is strictly prohibited.
+
+package controlplane
+
+import (
+	"context"
+	"log/slog"
+	"testing"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
+
+	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/NVIDIA/nke/controller/internal/testutil"
+)
+
+func TestDeleteNode_UnhealthySkips(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	nodeSetID := uuid.New()
+	nodePoolID := uuid.New()
+	cluster := db.Cluster{
+		ID:                 clusterID,
+		ControlPlaneConfig: db.ControlPlaneConfig{MaxSurge: 1},
+	}
+	surgeNode := makeSurgeHealthyNode()
+	surgeNode.ClusterID = clusterID
+	poolNode := makePoolHealthyNode("pool-1", nodeSetID, nodePoolID)
+	poolNode.ClusterID = clusterID
+	pools := []db.NodePool{
+		{ClusterID: clusterID, ControlPlane: true, DesiredCount: 2, MaxSurge: 0},
+	}
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
+		return f.ClusterID != nil && *f.ClusterID == clusterID && f.ControlPlane != nil && *f.ControlPlane
+	})).Return([]db.Node{surgeNode, poolNode}, nil)
+	mockTx.On("ListNodePools", mock.Anything, mock.MatchedBy(func(f db.NodePoolFilters) bool {
+		return f.ClusterID != nil && *f.ClusterID == clusterID
+	})).Return(pools, nil)
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	got, err := r.deleteNode(context.Background(), cluster, surgeNode, "test", slog.Default())
+	require.Error(t, err)
+	assert.False(t, got)
+	assert.Contains(t, err.Error(), "not healthy")
+	mockTx.AssertExpectations(t)
+}
+
+func TestScaleDownSurgeNodes_SkipsWhenNotClusterLevelSurge(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	cluster := db.Cluster{
+		ID:                 clusterID,
+		ControlPlaneConfig: db.ControlPlaneConfig{MaxSurge: 1},
+	}
+	cpNodePools := []db.NodePool{
+		{ClusterID: clusterID, ControlPlane: true, DesiredCount: 2, MaxSurge: 1},
+	}
+
+	r := &reconciler{logger: slog.Default()}
+	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cpNodePools, slog.Default())
+	require.NoError(t, err)
+	assert.False(t, handled)
+}
+
+func TestScaleDownSurgeNodes_UnhealthySkips(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	nodeSetID := uuid.New()
+	nodePoolID := uuid.New()
+	cluster := db.Cluster{
+		ID:                 clusterID,
+		ControlPlaneConfig: db.ControlPlaneConfig{MaxSurge: 1},
+	}
+	surgeNode := makeSurgeHealthyNode()
+	surgeNode.ClusterID = clusterID
+	poolNode := makePoolHealthyNode("pool-1", nodeSetID, nodePoolID)
+	poolNode.ClusterID = clusterID
+	cpNodePools := []db.NodePool{
+		{ClusterID: clusterID, ControlPlane: true, DesiredCount: 2, MaxSurge: 0},
+	}
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
+		return f.ClusterID != nil && *f.ClusterID == clusterID && f.ControlPlane != nil && *f.ControlPlane
+	})).Return([]db.Node{surgeNode, poolNode}, nil)
+	mockTx.On("ListNodePools", mock.Anything, mock.MatchedBy(func(f db.NodePoolFilters) bool {
+		return f.ClusterID != nil && *f.ClusterID == clusterID
+	})).Return(cpNodePools, nil)
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cpNodePools, slog.Default())
+	require.Error(t, err)
+	assert.False(t, handled)
+	assert.Contains(t, err.Error(), "not healthy")
+	mockTx.AssertExpectations(t)
+}
+
+func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
+	t.Parallel()
+
+	mockTx := &testutil.MockTx{}
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+
+	cluster := db.Cluster{
+		ID: uuid.New(),
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID: uuid.Nil,
+		},
+	}
+
+	_, err := r.createPendingNode(
+		context.Background(),
+		cluster,
+		nil,
+	)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing control plane configuration ID")
+	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
+}
+
+func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	controlPlaneConfigID := uuid.New()
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+		return node.ClusterID == clusterID &&
+			node.ControlPlane &&
+			node.NodePoolID == uuid.Nil &&
+			node.NodeSetID == uuid.Nil &&
+			node.InstanceTypeID == uuid.Nil &&
+			node.ControlPlaneConfigurationID == controlPlaneConfigID
+	})).Return(db.Node{}, nil).Once()
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cluster := db.Cluster{
+		ID:   clusterID,
+		Name: "test-cluster",
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID: controlPlaneConfigID,
+		},
+	}
+
+	_, err := r.createPendingNode(context.Background(), cluster, nil)
+	require.NoError(t, err)
+	mockTx.AssertExpectations(t)
+}
+
+func TestReconcileControlPlaneScaleUp_FeatureFlagDisabled(t *testing.T) {
+	t.Parallel()
+
+	mockTx := &testutil.MockTx{}
+	r := &reconciler{
+		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: false},
+		db:     mockTx,
+		logger: slog.Default(),
+	}
+
+	cluster := db.Cluster{
+		ID: uuid.New(),
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID: uuid.New(),
+			DesiredCount:    3,
+		},
+	}
+	cp := &controlPlane{}
+
+	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp)
+	require.NoError(t, err)
+	mockTx.AssertNotCalled(t, "ListClusterNodeNames", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
+}
+
+func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	controlPlaneConfigID := uuid.New()
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{"existing-node"}, nil).Once()
+	mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+		return node.ClusterID == clusterID &&
+			node.NodePoolID == uuid.Nil &&
+			node.NodeSetID == uuid.Nil &&
+			node.ControlPlane &&
+			// The control-plane controller no longer stamps an instance type;
+			// the node scheduler selects it at schedule time.
+			node.InstanceTypeID == uuid.Nil &&
+			node.ControlPlaneConfigurationID == controlPlaneConfigID
+	})).Return(db.Node{}, nil).Twice()
+
+	r := &reconciler{
+		cfg: config.Config{
+			ProvisionControlPlaneWithControlPlaneController: true,
+		},
+		db:     mockTx,
+		logger: slog.Default(),
+	}
+
+	cluster := db.Cluster{
+		ID:     clusterID,
+		SiteID: uuid.New(),
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID: controlPlaneConfigID,
+			DesiredCount:    3,
+		},
+	}
+	// One existing no-nodepool control-plane node => deficit is 2.
+	cp := &controlPlane{
+		nodes: []db.Node{
+			{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, NodePoolID: uuid.Nil},
+		},
+	}
+
+	err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp)
+	require.NoError(t, err)
+	mockTx.AssertExpectations(t)
+}
+
+func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		desiredCount int
+		existing     int
+		wantCreated  int
+	}{
+		{name: "creates deficit nodes", desiredCount: 3, existing: 1, wantCreated: 2},
+		{name: "creates all when none exist", desiredCount: 2, existing: 0, wantCreated: 2},
+		{name: "no-op when at desired", desiredCount: 2, existing: 2, wantCreated: 0},
+		{name: "no-op when above desired", desiredCount: 1, existing: 3, wantCreated: 0},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			clusterID := uuid.New()
+			controlPlaneConfigID := uuid.New()
+
+			mockTx := &testutil.MockTx{}
+			if tc.wantCreated > 0 {
+				mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{}, nil).Once()
+				mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+					return node.ControlPlane &&
+						node.NodePoolID == uuid.Nil &&
+						node.NodeSetID == uuid.Nil &&
+						node.InstanceTypeID == uuid.Nil &&
+						node.ControlPlaneConfigurationID == controlPlaneConfigID
+				})).Return(db.Node{}, nil).Times(tc.wantCreated)
+			}
+
+			r := &reconciler{
+				cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+				db:     mockTx,
+				logger: slog.Default(),
+			}
+
+			cluster := db.Cluster{
+				ID:     clusterID,
+				SiteID: uuid.New(),
+				ControlPlaneConfig: db.ControlPlaneConfig{
+					ConfigurationID: controlPlaneConfigID,
+					DesiredCount:    tc.desiredCount,
+				},
+			}
+
+			nodes := make([]db.Node, 0, tc.existing)
+			for range tc.existing {
+				nodes = append(nodes, db.Node{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, NodePoolID: uuid.Nil})
+			}
+			cp := &controlPlane{nodes: nodes}
+
+			err := r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp)
+			require.NoError(t, err)
+			mockTx.AssertExpectations(t)
+			if tc.wantCreated == 0 {
+				mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
+			}
+		})
+	}
+}

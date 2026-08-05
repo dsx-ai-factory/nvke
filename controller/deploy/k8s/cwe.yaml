@@ -1,0 +1,132 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-workflow-engine
+  namespace: cloud-workflow-engine
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: cloud-workflow-engine-cluster-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: cloud-workflow-engine
+    namespace: cloud-workflow-engine
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-workflow-engine
+  namespace: cloud-workflow-engine
+  labels:
+    app.kubernetes.io/instance: cloud-workflow-engine
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/version: "dev"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: cloud-workflow-engine
+      app.kubernetes.io/name: cloud-workflow-engine
+  template:
+    metadata:
+      labels:
+        app: cloud-workflow-engine
+        app.kubernetes.io/instance: cloud-workflow-engine
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/version: "dev"
+        project: nke
+        team: nke
+    spec:
+      serviceAccountName: cloud-workflow-engine
+      initContainers:
+        - name: unpack-assets
+          image: docker.io/library/alpine:3.22
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              tar -xzf /assets/profiles.tgz -C /work
+              tar -xzf /assets/ui.tgz -C /work
+          volumeMounts:
+            - name: cwe-assets
+              mountPath: /assets
+            - name: cwe-runtime
+              mountPath: /work
+      containers:
+        - name: cloud-workflow-engine
+          image: ko.local/cwe
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: cwe-config
+          env:
+            - name: FWE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-workflow-engine-forge-creds
+                  key: forge-api-key
+                  optional: true
+            - name: DGXC_TENANT_USER
+              value: dgxc-admin # dev-only dummy value; used only with Tilt local workflow
+            - name: DGXC_TENANT_PASSWORD
+              value: Welcome123 # dev-only dummy value; used only with Tilt local workflow
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /api/version
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/version
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: cwe-runtime
+              mountPath: /work
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+      volumes:
+        - name: cwe-assets
+          configMap:
+            name: cwe-assets
+        - name: cwe-runtime
+          emptyDir: {}
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cloud-workflow-engine
+  namespace: cloud-workflow-engine
+spec:
+  selector:
+    app.kubernetes.io/instance: cloud-workflow-engine
+    app.kubernetes.io/name: cloud-workflow-engine
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

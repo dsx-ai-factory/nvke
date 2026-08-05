@@ -1,0 +1,343 @@
+---
+# Default values for cloud-workflow-engine.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+# This will set the replicaset count.
+# https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
+replicaCount: 1
+
+deploymentAnnotations: {}
+
+# This sets the container image.
+# https://kubernetes.io/docs/concepts/containers/images/
+image:
+  repository: nvcr.io/j7sbcjl3qgta/cloud-workflow-engine
+  # -- This sets the pull policy for images.
+  pullPolicy: IfNotPresent
+  # -- Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+  # -- Optional image digest (sha256:...). When set, the pod pulls by digest
+  # and the tag becomes informational only. Use this to pin an immutable image.
+  digest: ""
+
+# This is for the secrets for pulling an image from a private repository.
+# https://kubernetes.io/docs/tasks/configure-pod-container/pull-image-private-registry/
+imagePullSecrets:
+  - name: svc-nke-ngc-imagepull
+# This is to override the chart name.
+nameOverride: ""
+fullnameOverride: ""
+# -- Deploy into this namespace instead of the release namespace (umbrella use).
+namespaceOverride: ""
+
+nkeSystemNamespace:
+  # -- Create the shared nke-system namespace.
+  create: true
+
+# This section builds out the service account.
+# https://kubernetes.io/docs/concepts/security/service-accounts/
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # -- The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: cloud-workflow-engine
+
+# This is for setting Kubernetes Annotations to a Pod.
+# For more information checkout:
+# https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# This is for setting Kubernetes Labels to a Pod.
+# For more information checkout: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels:
+  app: cloud-workflow-engine
+  project: nke
+  team: nke
+
+podSecurityContext:
+  runAsNonRoot: true
+  # fsGroup: 2000
+
+securityContext:
+  readOnlyRootFilesystem: true
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# This is for setting up a service.
+# https://kubernetes.io/docs/concepts/services-networking/service/
+service:
+  # This sets the service type.
+  # https://kubernetes.io/docs/concepts/services-networking/service/#publishing-services-service-types
+  type: ClusterIP
+  # -- apiserver port
+  port: 8080
+  # -- Additional annotations for the service
+  annotations: {}
+  # -- Additional labels for the service
+  labels: {}
+
+metrics:
+  # -- Port for the dedicated Prometheus metrics server.
+  # Must match METRICS_LISTEN_ADDRESS in the container env.
+  port: 9090
+  # -- listenAddress controls which interface the metrics server binds.
+  # Set to 0.0.0.0:<port> when a NetworkPolicy is in place to restrict access.
+  listenAddress: "0.0.0.0:9090"
+  networkPolicy:
+    # -- enabled controls whether a NetworkPolicy is created to restrict metrics
+    # port access to the Prometheus and Alloy scraper namespaces.
+    enabled: true
+    # -- additionalNamespaces allows extra namespaces to scrape the metrics port.
+    additionalNamespaces: []
+
+# ServiceMonitor configuration for Prometheus monitoring
+serviceMonitor:
+  # -- Enable/disable ServiceMonitor creation. ANDed with the umbrella
+  # kill-switch `global.monitoring.enabled`, which is treated as true when
+  # unset so standalone installs are unaffected.
+  enabled: true
+  # -- Name of the ServiceMonitor
+  name: cloud-workflow-engine-metrics
+  # -- Additional labels for the ServiceMonitor
+  labels: {}
+  # -- Selector labels to match the service
+  matchLabels:
+    app.kubernetes.io/name: cloud-workflow-engine
+
+# This block is for setting up the ingress.
+# https://kubernetes.io/docs/concepts/services-networking/ingress/
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+# -- Additional environment variables to inject into the CWE container.
+env: []
+# - name: EXAMPLE
+#   value: example
+
+# This is to setup the liveness and readiness probes.
+# https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+livenessProbe:
+  null
+  # httpGet:
+  #   path: /
+  #   port: http
+readinessProbe:
+  null
+  # httpGet:
+  #   path: /
+  #   port: http
+
+# This section is for setting up autoscaling.
+# https://kubernetes.io/docs/concepts/workloads/autoscaling/
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# - name: foo
+#   secret:
+#     secretName: mysecret
+#     optional: false
+
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+# - name: foo
+#   mountPath: "/etc/foo"
+#   readOnly: true
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+capi:
+  # -- Enable Cluster API controllers in CWE.
+  enabled: false
+  # -- Enable the Forge-CAPI bridge controllers.
+  forgeCapiEnabled: false
+  rbac:
+    # -- Create RBAC for CWE to watch and patch CAPI/NICo resources.
+    create: false
+
+kubeadm:
+  # -- OCI registry kubeadm uses for control-plane component images.
+  imageRepository: registry.k8s.io
+
+cni:
+  # -- Optional OCI registry prefix for CNI component images. Empty uses chart defaults.
+  imageRegistry: ""
+
+tenantAccess:
+  # -- Publish each cluster's kubeconfig as a Secret in the nke-system namespace,
+  # and remove those Secrets during cluster teardown. Gates both the controller
+  # and its cleanup activity, and the Secret grant they depend on.
+  enabled: false
+
+nkeOIDCAuth:
+  # -- Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers.
+  enabled: false
+  # -- OIDC issuer URL trusted by tenant kube-apiservers.
+  issuerURL: ""
+  # -- Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers.
+  discoveryURL: ""
+  caBundleSecret:
+    # -- Namespace of the Secret containing the OIDC CA bundle.
+    namespace: ""
+    # -- Name of the Secret containing the OIDC CA bundle.
+    name: ""
+    # -- Key in the Secret containing the OIDC CA bundle.
+    key: ""
+
+scheduledMaintenance:
+  csrApproval:
+    # -- Enable CWE-owned periodic kubelet-serving CSR approval.
+    enabled: true
+    # -- Interval between CSR approval attempts for each cluster.
+    interval: 10m
+  certRenewal:
+    # -- Enable CWE-owned periodic Kubernetes control-plane certificate renewal.
+    enabled: true
+    # -- Interval between certificate renewal checks for each cluster.
+    interval: 12h
+    # -- Days before expiry that the runbook renews certificates.
+    thresholdDays: 30
+
+etcdEncryptionKeyMigration:
+  # -- Enable temporary RBAC for migrating etcd encryption key Secrets from SWE to CWE.
+  enabled: false
+  # -- Namespace containing legacy SWE-managed etcd encryption key Secrets. CWE
+  # derives each Secret name at runtime (etcd-encryption-key-<clusterID>), so no
+  # per-site Secret name is needed; the migration Role is scoped to this namespace.
+  legacyNamespace: site-workflow-engine
+  rbac:
+    # -- Create narrow RBAC for CWE to read legacy key Secrets and create destination key Secrets.
+    create: true
+
+secrets:
+  # -- Create the DB connection Secret from appDb values. Disabled by default;
+  # set true only when not using an external secret manager (e.g. Vault Secrets Operator).
+  # Requires appDb.postgresUser and appDb.postgresPassword to be explicitly configured.
+  createDbSecret: false
+  # -- If specified, secret is created with the name provided.
+  # Otherwise defaults to name based on fullname template.
+  dbSecretName: ""
+  # -- secretKey with db connectionString. If not specified, defaults to "database-connection-string"
+  dbSecretKey: ""
+  forgeSecret:
+    # -- Read FWE_API_KEY from a Kubernetes Secret.
+    enabled: true
+  # -- secret with forge-creds. If not specified, will default to secret with "<fulName>-forge-creds"
+  forgeSecretName: ""
+  # -- secretKey with forge-key. If not specified, will defaults to "forge-api-key"
+  forgeSecretKey: ""
+  # -- Name of the Kubernetes Secret (created out-of-band by Vault Secrets Operator)
+  # providing DGXC tenant credentials. Expected keys: user, password.
+  # When empty, DGXC_TENANT_USER and DGXC_TENANT_PASSWORD are not injected.
+  dgxcTenantCredSecretName: ""
+  # -- Name of the Kubernetes Secret (created out-of-band by Vault Secrets Operator)
+  # providing CNPG database passwords. Expected keys: CNPG_SUPERUSER_PASSWORD,
+  # CNPG_CLOUD_PASSWORD, CNPG_TEMPORAL_PASSWORD.
+  # When empty, CNPG_* env vars are not injected. When set, all three keys are
+  # required to exist in the named Secret.
+  cnpgDbPasswordsSecretName: ""
+
+appDb:
+  url: postgresql:5432
+  dbName: cloud-workflow
+  postgresUser: ""
+  postgresPassword: ""
+  # -- TLS mode for the DB connection string (e.g. disable, require, verify-full).
+  sslMode: ""
+
+temporal:
+  host: temporal-frontend.temporal.svc.cluster.local
+  port: 7233
+  publicTemporalHostPort: ""
+  mtls:
+    enabled: false
+    # -- Secret containing ca.crt, tls.crt, and tls.key for the Temporal client.
+    secretName: ""
+    mountPath: /var/secrets/temporal/certs/client
+    caCertFile: ca.crt
+    clientCertFile: tls.crt
+    clientKeyFile: tls.key
+    serverName: ""
+  cloudWorkflow:
+    namespace: cloud-workflow-engine
+    queue: cloud-workflow-engine-tasks
+
+profiles:
+  path: ""
+
+spiffe:
+  # -- Enable SPIFFE identity for mTLS to tenant clusters
+  enabled: false
+  endpointSocket: "unix:///spiffe-workload-api/spire-agent.sock"
+  # -- SPIRE trust domain. Required when nkeOIDCAuth.enabled is true: builds the
+  # nke:cwe SPIFFE subject ID in the nke-rbac ConfigMap. Must equal the
+  # SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the
+  # RBAC principals match issued identities.
+  trustDomain: ""
+  spire:
+    serverNamespace: "spire-server"
+    className: "spire-mgmt-spire"
+    tpmPubhashesConfigMapName: "tpm-pubhashes"
+    # -- SPIRE server address. When unset, serverAddressFrom is used.
+    serverAddress: ""
+    # -- Kubernetes valueFrom source for SPIRE server address when serverAddress is unset.
+    serverAddressFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+    serverPort: "30440"
+    # -- TTL used when creating SPIRE join tokens through the SPIRE server API.
+    joinTokenTTL: "1h"
+
+teleport:
+  # -- Enable Teleport identity for CWE to manage Teleport resources (tokens, nodes)
+  enabled: false
+  # -- Teleport proxy address (site-specific, must be set per environment)
+  proxyAddress: ""
+  # -- Teleport environment label: "prod" or "non-prod" (default: "non-prod")
+  environment: "non-prod"
+  # -- Path where the tbot identity file is mounted
+  identityFile: "/var/run/teleport/identity"
+  # -- Name of the Kubernetes secret containing the tbot identity (written by tbot output)
+  identitySecretName: "cloud-workflow-engine-teleport"

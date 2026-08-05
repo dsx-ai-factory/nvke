@@ -1,0 +1,145 @@
+// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+//
+// NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+// property and proprietary rights in and to this material, related
+// documentation and any modifications thereto. Any use, reproduction,
+// disclosure or distribution of this material and related documentation
+// without an express license agreement from NVIDIA CORPORATION or
+// its affiliates is strictly prohibited.
+
+package activities
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
+	"go.temporal.io/sdk/temporal"
+
+	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/NVIDIA/nke/controller/internal/metrics"
+	"github.com/NVIDIA/nke/controller/internal/runbook"
+)
+
+const (
+	runbookLogOutputLimit = 8192
+)
+
+type ExecuteHostRunbookInput struct {
+	HostID      uuid.UUID
+	RunbookName string
+	RunbookEnv  map[string]string
+	RunbookArgs []string
+	// ExpectedExitCodes lists acceptable process exit codes. If empty, the
+	// historical default of exit code 0 is used.
+	ExpectedExitCodes []int
+}
+
+type ExecuteHostRunbookResult struct {
+	Output       string
+	ErrorMessage string
+	ExitCode     int
+}
+
+func (a *Activities) ExecuteHostRunbook(ctx context.Context, input ExecuteHostRunbookInput) (ExecuteHostRunbookResult, error) {
+	node, err := a.db.GetNode(ctx, input.HostID)
+	if err != nil {
+		return ExecuteHostRunbookResult{}, fmt.Errorf("failed to get node %s: %w", input.HostID, err)
+	}
+
+	res, err := a.executeHostRunbook(ctx, input, node)
+
+	clusterName := ""
+	if cluster, clusterErr := a.db.GetCluster(ctx, node.ClusterID); clusterErr != nil {
+		activity.GetLogger(ctx).Debug("failed to resolve cluster name for runbook metric", "clusterID", node.ClusterID, "error", clusterErr)
+	} else {
+		clusterName = cluster.Name
+	}
+
+	metrics.RecordRunbookExecution(input.RunbookName, clusterName, node.Name, err)
+
+	return res, err
+}
+
+func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRunbookInput, node db.Node) (ExecuteHostRunbookResult, error) {
+	script, err := runbook.Script(input.RunbookName)
+	if err != nil {
+		return ExecuteHostRunbookResult{}, err
+	}
+	script, err = runbook.InjectEnvironment(input.RunbookEnv, script)
+	if err != nil {
+		return ExecuteHostRunbookResult{}, fmt.Errorf("failed to inject runbook environment: %w", err)
+	}
+
+	heartbeatCancel := startActivityHeartbeat(ctx)
+	defer heartbeatCancel()
+
+	//nolint:gocritic // gofail rewrites this commented block in instrumented builds.
+	// gofail: var CWERunbookWorkerCrash string
+	// if CWERunbookWorkerCrash == input.RunbookName {
+	// 	fmt.Println("cwe-gofail-runbook-worker-crash")
+	// 	select {}
+	// }
+
+	result, err := a.nodeAgentClient.ExecuteScript(ctx, node, input.RunbookName, script, input.RunbookArgs)
+	if err != nil {
+		return ExecuteHostRunbookResult{}, fmt.Errorf("failed to execute runbook %q on node %s: %w", input.RunbookName, node.Name, err)
+	}
+
+	// Preserve SWE behavior by default: SWE RunbookExecution.Finish translated any
+	// non-zero node-agent ExecuteScript exit code into ExecutionStatusFailed, which
+	// CWE surfaced as RunbookError.
+	if !isExpectedRunbookExitCode(int(result.GetExitCode()), input) {
+		output := result.GetOutput()
+		scriptError := result.GetErrorMessage()
+		errMessage := fmt.Sprintf("runbook %q on node %s exited %d", input.RunbookName, node.Name, result.GetExitCode())
+		activity.GetLogger(ctx).Error("runbook execution failed",
+			"runbookName", input.RunbookName,
+			"nodeName", node.Name,
+			"nodeID", node.ID,
+			"exitCode", result.GetExitCode(),
+			"expectedExitCodes", expectedRunbookExitCodes(input),
+			"output", truncateForLog(output, runbookLogOutputLimit),
+			"scriptError", truncateForLog(scriptError, runbookLogOutputLimit),
+		)
+		errDetails := map[string]string{
+			"output": output,
+			"error":  scriptError,
+		}
+		return ExecuteHostRunbookResult{}, temporal.NewApplicationError(errMessage, "RunbookError", errDetails)
+	}
+
+	return ExecuteHostRunbookResult{
+		Output:       result.GetOutput(),
+		ErrorMessage: result.GetErrorMessage(),
+		ExitCode:     int(result.GetExitCode()),
+	}, nil
+}
+
+func isExpectedRunbookExitCode(exitCode int, input ExecuteHostRunbookInput) bool {
+	for _, expected := range expectedRunbookExitCodes(input) {
+		if exitCode == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func expectedRunbookExitCodes(input ExecuteHostRunbookInput) []int {
+	if len(input.ExpectedExitCodes) == 0 {
+		return []int{0}
+	}
+	return input.ExpectedExitCodes
+}
+
+// truncateForLog keeps the tail of s, since a failing runbook's fatal error is
+// almost always the last thing printed. The full, untruncated output is still
+// preserved in the RunbookError details.
+func truncateForLog(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	return "..." + s[len(s)-limit:]
+}

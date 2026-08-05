@@ -1,0 +1,221 @@
+#cloud-config
+autoinstall:
+  version: 1
+  early-commands:
+      - |
+        TARGET_DISK=""
+        CANDIDATES=""
+        for disk in /dev/sd* /dev/nvme*; do
+          if [ -b "$disk" ]; then
+            # Only consider whole disks (skip partitions like /dev/nvme0n1p3)
+            if [ ! -d "/sys/block/${disk##*/}" ]; then
+              continue
+            fi
+            # NO removable devices
+            if [ -f "/sys/block/${disk##*/}/removable" ] && [ "$(cat /sys/block/${disk##*/}/removable)" = "1" ]; then
+              continue
+            fi
+            DISK_SIZE_BYTES=$(blockdev --getsize64 "$disk")
+            DISK_SIZE_GB=$((DISK_SIZE_BYTES / 1024 / 1024 / 1024))
+            if [ "$DISK_SIZE_GB" -gt 100 ]; then
+              CANDIDATES="${CANDIDATES}${CANDIDATES:+ }$disk:$DISK_SIZE_GB"
+            fi
+          fi
+        done
+
+        # Select by size (DiskSelectionStrategy: smallest(DISK_SORT_KEY="n") | largest(DISK_SORT_KEY="nr")); smallest is default.
+        DISK_SORT_KEY="n"
+        if [ -n "$CANDIDATES" ]; then
+          TARGET_DISK=$(echo "$CANDIDATES" | tr ' ' '\n' | sort -t: -k2,2${DISK_SORT_KEY} | head -n1 | cut -d: -f1)
+        else
+          # If that didnt work, pick any non-removable disk randomly
+          ALL_DISKS=""
+          for disk in /dev/sd* /dev/nvme*; do
+            if [ -b "$disk" ]; then
+              # Only consider whole disks (skip partitions like /dev/nvme0n1p3)
+              if [ ! -d "/sys/block/${disk##*/}" ]; then
+                continue
+              fi
+              if [ -f "/sys/block/${disk##*/}/removable" ] && [ "$(cat /sys/block/${disk##*/}/removable)" = "1" ]; then
+                continue
+              fi
+              ALL_DISKS="${ALL_DISKS}${ALL_DISKS:+ }$disk"
+            fi
+          done
+
+          if [ -z "$ALL_DISKS" ]; then
+            echo "No suitable disk found for installation." >&2
+            exit 1
+          fi
+
+          TARGET_DISK=$(echo "$ALL_DISKS" | tr ' ' '\n' | shuf -n1)
+          echo "Warning: No disk >100GB found. Selecting disk randomly: $TARGET_DISK"
+        fi
+
+        # Replace placeholder in storage config
+        sed -i "s|path: /dev/target_disk_placeholder|path: ${TARGET_DISK}|" /autoinstall.yaml
+
+  storage:
+      layout:
+          name: lvm
+          match:
+              path: /dev/target_disk_placeholder
+
+  identity:
+    hostname: spiffe-test-node
+    username: test-admin
+    password: $6$testsalt12345678$testHashTestHashTestHashTestHashTestHashTestHashTestHashTestHashTestHashTestHashABCD56
+  packages:
+    - chrony
+  ntp:
+    enabled: true
+    ntp_client: chrony
+    servers:
+      - 129.6.15.32
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ""
+  locale: en_US
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+
+  late-commands:
+    - curtin in-target --target=/target -- sed -i 's|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX="ipv6.disable=1 console=ttyS1,115200"|' /etc/default/grub
+    - curtin in-target --target=/target -- update-grub
+
+  user-data:
+    write_files:
+      - path: /etc/sysctl.d/60-custom.conf
+        owner: root:root
+        permissions: '0755'
+        content: |
+          net.ipv6.conf.all.disable_ipv6 = 1
+          net.ipv6.conf.default.disable_ipv6 = 1
+          net.ipv6.conf.lo.disable_ipv6 = 1
+      - path: /etc/teleport.yaml
+        owner: root:root
+        permissions: '0600'
+        content: |
+          # Managed by NKE Cloud Workflow Engine — do not edit manually.
+          version: v3
+          teleport:
+            nodename: spiffe-test-node
+            data_dir: /var/lib/teleport
+            join_params:
+              token_name: nke-cwe-abcdef12-3456-7890-abcd-ef1234567890
+              method: tpm
+            proxy_server: nv-prd-dgxc.teleport.sh:443
+            log:
+              output: stderr
+              severity: INFO
+              format:
+                output: json
+            diag_addr: 127.0.0.1:3000
+          ssh_service:
+            enabled: "yes"
+            labels:
+              cluster: test-cluster-id
+              cluster-name: test-cluster
+              environment: staging
+              managed-by: nke-cloud-workflow-engine
+              node-id: abcdef12-3456-7890-abcd-ef1234567890
+              node-pool: test-nodepool-id
+              resource-group: nke
+              site: test-site-id
+
+          auth_service:
+            enabled: "no"
+          proxy_service:
+            enabled: "no"
+      - path: /etc/spire-agent/agent.conf
+        owner: root:root
+        permissions: '0644'
+        content: |
+          agent {
+              data_dir = "/var/lib/spire-agent"
+              log_level = "DEBUG"
+
+              server_address = "spire-server.example.com"
+              server_port = "9091"
+
+              trust_domain = "example.com"
+              trust_bundle_path = "/etc/spire-agent/initial-trust-bundle.pem"
+          }
+
+          plugins {
+              KeyManager "disk" {
+                  plugin_data {
+                      directory = "/var/lib/spire-agent"
+                  }
+              }
+
+              NodeAttestor "tpm" {
+                  plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
+                  plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
+                  plugin_data {}
+              }
+
+              WorkloadAttestor "unix" {
+                  plugin_data {}
+              }
+          }
+      - path: /etc/spire-agent/initial-trust-bundle.pem
+        owner: root:root
+        permissions: '0644'
+        content: |
+          -----BEGIN FAKE TEST-ONLY CERTIFICATE-----
+          MIICDzCCAbigAwIBAgIUTestCert1234567890ABCDEFGHIJK0wDQYJKoZIhvcNAQEL
+          BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMClRlc3QgU3RhdGUxDTALBgNVBAoM
+          BFRFU1QxEjAQBgNVBAMMCVRFU1QgT05MWTAeFw0yNTAxMDEwMDAwMDBaFw0yNjAx
+          MDEwMDAwMDBaMEUxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApUZXN0IFN0YXRlMQ0w
+          CwYDVQQKDARURVNUMRIwEAYDVQQDDAlURVNUIE9OTFkwXDANBgkqhkiG9w0BAQEF
+          AANLADBIAkEAm5Hta1234567890testdatafakecert1234567890ABCDEF123456
+          78901234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890QIDAQABMA0GCSqG
+          SIb3DQEBCwUAA0EATestSignature1234567890FakeDataNotRealCertificate123
+          -----END FAKE TEST-ONLY CERTIFICATE-----
+          -----BEGIN FAKE TEST-ONLY CERTIFICATE-----
+          MIICDzCCAbigAwIBAgIUTestCert0987654321ZYXWVUTSRQPONMLK0wDQYJKoZIhvcNAQEL
+          BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMClRlc3QgU3RhdGUxDTALBgNVBAoM
+          BFRFU1QxEjAQBgNVBAMMCVRFU1QgT05MWTAeFw0yNTAxMDIwMDAwMDBaFw0yNjAx
+          MDIwMDAwMDBaMEUxCzAJBgNVBAYTAlVTMRMwEQYDVQQIDApUZXN0IFN0YXRlMQ0w
+          CwYDVQQKDARURVNUMRIwEAYDVQQDDAlURVNUIE9OTFkwXDANBgkqhkiG9w0BAQEF
+          AANLADBIAkEAp8Jtb0987654321testdatafakecert0987654321ZYXWVUT987
+          65432109876543210ZYXWVUTSRQPONMLKJIHGFEDCBA0987654321QIDAQABMA0GCSqG
+          SIb3DQEBCwUAA0EATestSignature0987654321FakeDataNotRealCertificate987
+          -----END FAKE TEST-ONLY CERTIFICATE-----
+
+    runcmd:
+      # Wait (up to 300s) for default IPv4 route to avoid early network race (bluefield DPU Race Condition).
+      - |
+          timeout 300s sh -c '
+            iface=""
+            until [ -n "$iface" ] && ip -4 -o addr show dev "$iface" | grep -q "inet "; do
+              iface=$(ip -4 route list default 2>/dev/null | head -n 1 | tr -s " " | cut -d" " -f5)
+              echo "waiting for IPv4 default route"
+              sleep 5
+            done
+            echo "IPv4 detected on $iface"
+          '
+      - lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
+      - resize2fs /dev/ubuntu-vg/ubuntu-lv
+      - mkdir -p -m 755 /etc/apt/keyrings
+      - sysctl --system
+      - [sh, -c, "echo 'Starting Teleport installation at '$(date) >> /var/log/cloud-init-teleport.log"]
+      - /usr/local/bin/fetch-and-install-bundle.sh https://d3mq564cn7sth7.cloudfront.net/nke_bundles/Ubuntu_22.04/x86_64/teleport_ent_v18.6.4-2_x86_64.tgz ./install.sh
+      - [sh, -c, "command -v teleport || { echo 'Teleport binary not found' >> /var/log/cloud-init-teleport.log; exit 1; }"]
+      - [sh, -c, "systemctl enable --now teleport >> /var/log/cloud-init-teleport.log 2>&1"]
+      - [sh, -c, "systemctl is-active --quiet teleport && echo 'Teleport service started successfully' >> /var/log/cloud-init-teleport.log || { echo 'Teleport service failed to start' >> /var/log/cloud-init-teleport.log; systemctl status teleport --no-pager >> /var/log/cloud-init-teleport.log; exit 1; }"]
+      - [sh, -c, "echo 'Teleport installation completed at '$(date) >> /var/log/cloud-init-teleport.log"]
+      - curl -fsSL -o /tmp/nke-kubeadm-osmo.deb https://d3mq564cn7sth7.cloudfront.net/staging/kubeadm-distros/nke-kubeadm-distro-osmo_1.31.9-1_amd64.deb
+      - apt-get install -y /tmp/nke-kubeadm-osmo.deb
+      - curl -fsSL -o /tmp/nke-agent.deb https://nke-dev.s3.us-west-2.amazonaws.com/nke_bundles/agent/nke-agent_0.1.14-6-geac0d61_amd64.deb
+      - apt-get install -y /tmp/nke-agent.deb
+      - [ /usr/local/bin/fetch-and-install-bundle.sh, "https://d3mq564cn7sth7.cloudfront.net/nke_bundles/Ubuntu_22.04/x86_64/ovn_1.4.0-2_x86_64.tgz", "./install.sh -i" ]
+      - /usr/local/bin/fetch-and-install-bundle.sh https://d3mq564cn7sth7.cloudfront.net/nke_bundles/Ubuntu_22.04/x86_64/spire_agent_v1.14.1_tpm_attestor_v1.9.0_x86_64.tgz ./install.sh
+      - printf 'AGENT_ARGS="--enable-spiffe --secure-server-port 15005"\n' > /etc/default/nke-agent
+      - systemctl daemon-reload
+      - systemctl restart nke-agent
+      - systemctl restart procps

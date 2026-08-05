@@ -1,0 +1,602 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# Development Environment Makefile
+# This file contains targets for managing the local and remote development environment
+
+SHELL := /bin/bash
+export SCRIPTS_DIR := $(shell pwd)/scripts
+export DEV_ENV_SCRIPT := $(SCRIPTS_DIR)/dev-env.sh
+
+# Teleport Configuration - Can be overridden via environment variables
+export TSH_PROXY ?= nv-prd-dgxc.teleport.sh:443
+# Target cluster for remote development (required for remote commands)
+# Example: TARGET_CLUSTER=nke-site-forge-az24-dev6
+export TARGET_CLUSTER ?=
+export TEMPORAL_FRONTEND_PORT ?= 17233
+export TEMPORAL_UI_PORT ?= 18233
+
+# SPIRE Configuration
+# SPIRE version to install via 'go install' (macOS has no pre-built binaries)
+# See https://github.com/spiffe/spire/releases
+export SPIRE_NAMESPACE ?= spire-server
+export SPIRE_SERVER_POD ?= spire-server-0
+export SPIRE_SERVER_PORT ?= 9091
+export SPIFFE_ENABLED ?= false
+
+# CAPD / Kind Configuration
+export COLIMA_PROFILE ?= default
+export COLIMA_DOCKER_HOST ?= unix://$(HOME)/.colima/$(COLIMA_PROFILE)/docker.sock
+export KIND_CLUSTER_NAME ?= cwe-capi
+export KIND_CLUSTER_CONFIG ?= hack/cwe-capi-kind.yaml
+export CAPI_CORE_VERSION ?= v1.12.3
+export CAPD_PROVIDER_VERSION ?= v1.12.3
+export DEFAULT_VIP_RANGE ?= 172.31.0.0/24
+
+# CAPD KinD custom node image (see hack/capd-kindest-node/Dockerfile)
+export CAPD_KINDEST_NODE_IMAGE ?= cwe-capd-kindest-node:local
+export CAPD_NODE_AGENT_LOCAL_BUILD ?= auto
+export NODE_AGENT_REPO_PATH ?= $(abspath ../node-agent)
+
+# Detect if we need to use flox for temporal CLI
+TEMPORAL_CMD := $(shell command -v temporal 2>/dev/null)
+ifeq ($(TEMPORAL_CMD),)
+  ifneq ($(shell command -v flox 2>/dev/null),)
+    TEMPORAL := flox activate -- temporal
+  else
+    TEMPORAL := temporal
+  endif
+else
+  TEMPORAL := temporal
+endif
+
+##@ Development Environment
+
+.PHONY: dev-check
+dev-check: ## Check if development prerequisites are installed
+	@echo "Checking development prerequisites..."
+	@command -v docker >/dev/null 2>&1 || { echo "❌ docker is required but not installed. Install with: brew install docker"; exit 1; }
+	@bash -c "source $(DEV_ENV_SCRIPT) && check_temporal_available"
+	@command -v kubectl >/dev/null 2>&1 || { echo "❌ kubectl is required for remote access. Install with: brew install kubectl"; exit 1; }
+	@command -v tsh >/dev/null 2>&1 || { echo "❌ tsh (Teleport) is required for remote access. Install with: brew install teleport"; exit 1; }
+	@command -v jq >/dev/null 2>&1 || { echo "❌ jq is required. Install with: brew install jq"; exit 1; }
+	@echo "✅ All prerequisites are installed"
+
+.PHONY: dev-postgres-start
+dev-postgres-start: ## Start local PostgreSQL container
+	@bash -c "source $(DEV_ENV_SCRIPT) && postgres_start"
+
+.PHONY: dev-postgres-stop
+dev-postgres-stop: ## Stop local PostgreSQL container
+	@bash -c "source $(DEV_ENV_SCRIPT) && postgres_stop"
+
+.PHONY: dev-postgres-clean
+dev-postgres-clean: ## Remove PostgreSQL container and data (fresh start)
+	@bash -c "source $(DEV_ENV_SCRIPT) && postgres_clean"
+
+.PHONY: dev-temporal-start
+dev-temporal-start: ## Start local Temporal server in background
+	@bash -c "source $(DEV_ENV_SCRIPT) && temporal_start"
+
+.PHONY: dev-temporal-stop
+dev-temporal-stop: ## Stop local Temporal server
+	@bash -c "source $(DEV_ENV_SCRIPT) && temporal_stop"
+
+.PHONY: dev-temporal-logs
+dev-temporal-logs: ## Show Temporal server logs
+	@tail -f /tmp/temporal-dev.log
+
+.PHONY: dev-tsh-status
+dev-tsh-status: ## Check Teleport authentication status
+	@bash -c "source $(DEV_ENV_SCRIPT) && tsh_check_status" || true
+
+.PHONY: dev-tsh-login
+dev-tsh-login: ## Login to Teleport (opens browser for auth)
+	@bash -c "source $(DEV_ENV_SCRIPT) && tsh_login '$(TSH_PROXY)'"
+
+.PHONY: dev-tsh-kube-login
+dev-tsh-kube-login: ## Login to Kubernetes cluster via Teleport
+	@bash -c "source $(DEV_ENV_SCRIPT) && tsh_kube_login '$(TARGET_CLUSTER)'"
+
+.PHONY: dev-tsh-logout
+dev-tsh-logout: ## Logout from Teleport
+	@echo "Logging out from Teleport..."
+	@tsh logout
+	@echo "✅ Logged out from Teleport"
+
+.PHONY: dev-remote-check
+dev-remote-check: ## Check if kubectl is configured and can access cluster
+	@bash -c "source $(DEV_ENV_SCRIPT) && remote_check"
+
+.PHONY: dev-remote-temporal-start
+dev-remote-temporal-start: dev-remote-check ## Start kubectl port-forward to remote Temporal
+	@bash -c "source $(DEV_ENV_SCRIPT) && remote_temporal_start '$(TEMPORAL_FRONTEND_PORT)' '$(TEMPORAL_UI_PORT)'"
+
+.PHONY: dev-remote-temporal-stop
+dev-remote-temporal-stop: ## Stop kubectl port-forward to remote Temporal
+	@bash -c "source $(DEV_ENV_SCRIPT) && remote_temporal_stop '$(TEMPORAL_FRONTEND_PORT)' '$(TEMPORAL_UI_PORT)'"
+
+.PHONY: dev-remote-temporal-logs
+dev-remote-temporal-logs: ## Show kubectl port-forward logs
+	@echo "=== Temporal Frontend Port-Forward Logs ==="
+	@tail -20 /tmp/kubectl-temporal-frontend.log 2>/dev/null || echo "No logs available"
+	@echo ""
+	@echo "=== Temporal UI Port-Forward Logs ==="
+	@tail -20 /tmp/kubectl-temporal-ui.log 2>/dev/null || echo "No logs available"
+
+.PHONY: dev-spire-start
+dev-spire-start: ## Setup and start local SPIRE agent
+	@bash -c "source $(DEV_ENV_SCRIPT) && spire_agent_start"
+
+.PHONY: dev-spire-stop
+dev-spire-stop: ## Stop local SPIRE agent
+	@bash -c "source $(DEV_ENV_SCRIPT) && spire_stop"
+
+.PHONY: dev-spire-clean
+dev-spire-clean: ## Clean up SPIRE local setup (config, data, logs)
+	@bash -c "source $(DEV_ENV_SCRIPT) && spire_clean"
+
+.PHONY: dev-spire-logs
+dev-spire-logs: ## Show SPIRE agent logs
+	@tail -f /tmp/spire-agent/agent.log
+
+.PHONY: dev-remote-connect
+dev-remote-connect: ## Connect to remote cluster via Teleport (usage: TARGET_CLUSTER=cluster-name make dev-remote-connect)
+	@bash -c "source $(DEV_ENV_SCRIPT) && validate_cluster_arg '$(TARGET_CLUSTER)'" || exit 1
+	@echo "🔐 Connecting to remote cluster via Teleport..."
+	@echo "Cluster: $(TARGET_CLUSTER)"
+	@echo "Proxy: $(TSH_PROXY)"
+	@echo ""
+	@$(MAKE) dev-tsh-login TSH_PROXY=$(TSH_PROXY)
+	@echo ""
+	@$(MAKE) dev-tsh-kube-login TARGET_CLUSTER=$(TARGET_CLUSTER)
+	@echo ""
+	@echo "✅ Successfully connected to $(TARGET_CLUSTER)"
+
+.PHONY: dev-start-local
+dev-start-local: dev-check dev-postgres-start dev-temporal-start ## Start local-only development (local Temporal)
+	@echo ""
+	@if [ "$(SPIFFE_ENABLED)" = "true" ]; then \
+		$(MAKE) dev-spire-start; \
+	else \
+		echo "ℹ️  Skipping SPIRE agent start (SPIFFE_ENABLED=false)"; \
+	fi
+	@echo ""
+	@echo "🚀 Local development environment is ready!"
+	@echo ""
+	@echo "📊 Local services running:"
+	@echo "  • PostgreSQL:      localhost:5432"
+	@echo "  • Temporal:        localhost:7233"
+	@echo "  • Temporal UI:     http://localhost:8233"
+	@echo ""
+	@echo "📝 Next steps:"
+	@echo "  To start CWE worker:"
+	@echo "     FWE_API_KEY=<your-key> make run"
+	@echo ""
+	@echo "  Or use the all-in-one command next time:"
+	@echo "     FWE_API_KEY=<your-key> make run-local"
+	@echo ""
+	@echo "  Once running, access:"
+	@echo "     • CWE UI:     http://localhost:8080"
+	@echo "     • Swagger:    http://localhost:8080/api/docs"
+	@echo "     • Temporal:   http://localhost:8233"
+	@echo ""
+	@echo "⚠️  Note: Using LOCAL Temporal"
+	@echo "    For remote access, use: FWE_API_KEY=<key> TARGET_CLUSTER=<cluster-name> make run-remote"
+
+.PHONY: dev-start-remote
+dev-start-remote: dev-check dev-postgres-start ## Start remote development (connect to remote Temporal via Teleport)
+	@bash -c "source $(DEV_ENV_SCRIPT) && validate_cluster_arg '$(TARGET_CLUSTER)'" || exit 1
+	@echo ""
+	@echo "🚀 Setting up remote development environment..."
+	@echo "Cluster: $(TARGET_CLUSTER)"
+	@echo ""
+	@$(MAKE) dev-remote-connect
+	@echo ""
+	@$(MAKE) dev-remote-temporal-start TEMPORAL_FRONTEND_PORT=$(TEMPORAL_FRONTEND_PORT) TEMPORAL_UI_PORT=$(TEMPORAL_UI_PORT)
+	@echo ""
+	@if [ "$(SPIFFE_ENABLED)" = "true" ]; then \
+		$(MAKE) dev-spire-start; \
+	else \
+		echo "ℹ️  Skipping SPIRE agent start (SPIFFE_ENABLED=false)"; \
+	fi
+	@echo ""
+	@echo "🎉 Remote development environment is ready!"
+	@echo ""
+	@echo "📊 Services running:"
+	@echo "  • PostgreSQL:          localhost:5432"
+	@echo "  • Remote Temporal:     localhost:$(TEMPORAL_FRONTEND_PORT) (via Teleport)"
+	@echo "  • Remote Temporal UI:  http://localhost:$(TEMPORAL_UI_PORT)"
+	@echo ""
+	@echo "📝 Next steps:"
+	@echo "  To start CWE worker with remote Temporal:"
+	@echo "     FWE_API_KEY=<your-key> TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT) make run"
+	@echo ""
+	@echo "  Or use the all-in-one command next time:"
+	@echo "     FWE_API_KEY=<your-key> TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
+	@echo ""
+	@echo "  Once running, access:"
+	@echo "     • CWE UI:           http://localhost:8080"
+	@echo "     • Swagger:          http://localhost:8080/api/docs"
+	@echo "     • Remote Temporal:  http://localhost:$(TEMPORAL_UI_PORT)"
+	@echo ""
+	@echo "✅ Connected to remote Temporal via Teleport"
+
+.PHONY: run-local
+run-local: dev-start-local ## Start local services and run CWE (sources .env.local if present)
+	@echo ""
+	@echo "🚀 Starting CWE worker..."
+	@bash -c '\
+		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
+		source $(DEV_ENV_SCRIPT) && validate_api_key "$${FWE_API_KEY:-$(FWE_API_KEY)}" "local" || exit 1; \
+		export FWE_API_KEY="$${FWE_API_KEY:-$(FWE_API_KEY)}"; \
+		echo ""; \
+		go run cmd/worker/main.go \
+	'
+
+.PHONY: run-remote
+run-remote: dev-start-remote ## Start remote services and run CWE (sources .env.local if present)
+	@echo ""
+	@echo "🚀 Starting CWE worker with remote Temporal..."
+	@bash -c '\
+		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
+		source $(DEV_ENV_SCRIPT) && validate_api_key "$${FWE_API_KEY:-$(FWE_API_KEY)}" "remote" || exit 1; \
+		export FWE_API_KEY="$${FWE_API_KEY:-$(FWE_API_KEY)}"; \
+		export TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT); \
+		echo ""; \
+		go run cmd/worker/main.go \
+	'
+
+.PHONY: dev-start
+dev-start: ## Start development environment (prompts for mode selection)
+	@echo "🛠️  CWE Development Environment Setup"
+	@echo ""
+	@echo "Choose your workflow:"
+	@echo ""
+	@echo "🚀 Setup + Run (all-in-one):"
+	@echo "  FWE_API_KEY=<key> make run-local                                        # Local mode"
+	@echo "  FWE_API_KEY=<key> TARGET_CLUSTER=<cluster-name> make run-remote        # Remote mode"
+	@echo ""
+	@echo "🔧 Setup only (run later):"
+	@echo "  make local                                      # Local mode"
+	@echo "  TARGET_CLUSTER=<cluster-name> make remote       # Remote mode"
+	@echo ""
+	@echo "Examples:"
+	@echo "  FWE_API_KEY=abc123 make run-local"
+	@echo "  FWE_API_KEY=abc123 TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
+
+.PHONY: dev-stop-local
+dev-stop-local: dev-temporal-stop dev-postgres-stop dev-spire-stop ## Stop local-only services
+	@echo "✅ Local development environment stopped"
+
+.PHONY: dev-stop-remote
+dev-stop-remote: dev-remote-temporal-stop dev-postgres-stop ## Stop remote services
+	@echo "✅ Remote development environment stopped"
+
+.PHONY: dev-stop
+dev-stop: ## Stop all development services (local and remote)
+	@echo "Stopping all development services..."
+	@$(MAKE) dev-temporal-stop 2>/dev/null || true
+	@$(MAKE) dev-remote-temporal-stop 2>/dev/null || true
+	@$(MAKE) dev-postgres-stop 2>/dev/null || true
+	@$(MAKE) dev-spire-stop 2>/dev/null || true
+	@echo "✅ All development services stopped"
+
+.PHONY: dev-restart-local
+dev-restart-local: dev-stop-local dev-start-local ## Restart local development environment
+
+.PHONY: dev-restart-remote
+dev-restart-remote: dev-stop-remote ## Restart remote development environment (usage: TARGET_CLUSTER=<name> make dev-restart-remote)
+	@$(MAKE) dev-start-remote
+
+.PHONY: dev-restart
+dev-restart: dev-stop ## Restart development environment (prompts for mode)
+	@echo "Stopped all services. Use 'make dev-start' to restart."
+
+.PHONY: dev-status
+dev-status: ## Check status of all development services
+	@bash -c "source $(DEV_ENV_SCRIPT) && print_status '$(TEMPORAL_FRONTEND_PORT)' '$(TEMPORAL_UI_PORT)' && spire_print_status"
+
+.PHONY: dev-clean
+dev-clean: dev-stop dev-postgres-clean dev-spire-clean ## Clean up all development resources
+	@echo "Cleaning up logs..."
+	@rm -f /tmp/temporal-dev.log /tmp/kubectl-temporal-frontend.log /tmp/kubectl-temporal-ui.log /tmp/kubectl-spire-server.log
+	@echo "✅ All development resources cleaned up"
+
+.PHONY: dev-logs
+dev-logs: ## Show logs from all development services
+	@echo "=== PostgreSQL Logs (last 20 lines) ==="
+	@docker logs cwe-postgres --tail 20 2>/dev/null || echo "PostgreSQL is not running"
+	@echo ""
+	@echo "=== Local Temporal Logs (last 20 lines) ==="
+	@tail -20 /tmp/temporal-dev.log 2>/dev/null || echo "Local Temporal is not running"
+	@echo ""
+	@echo "=== Remote Temporal Port-Forward Logs ==="
+	@$(MAKE) dev-remote-temporal-logs
+	@echo ""
+	@echo "=== SPIRE Server Port-Forward Logs ==="
+	@tail -20 /tmp/kubectl-spire-server.log 2>/dev/null || echo "SPIRE server port-forward is not running"
+	@echo ""
+	@echo "=== SPIRE Agent Logs ==="
+	@tail -20 /tmp/spire-agent/agent.log 2>/dev/null || echo "SPIRE agent is not running"
+
+.PHONY: dev-env-local
+dev-env-local: ## Print environment variables for local mode
+	@echo "# Local Development Mode Environment Variables"
+	@echo "export FWE_API_KEY=<your-ngc-api-key>"
+	@echo ""
+	@echo "# CWE will use local Temporal by default (localhost:7233)"
+
+.PHONY: dev-env-remote
+dev-env-remote: ## Print environment variables for remote mode
+	@echo "# Remote Development Mode Environment Variables"
+	@echo "export FWE_API_KEY=<your-ngc-api-key>"
+	@echo "export TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT)"
+	@echo ""
+	@echo "# Optional: Customize Teleport settings"
+	@echo "export TSH_PROXY=$(TSH_PROXY)"
+	@echo "export TARGET_CLUSTER=<cluster-name>"
+
+.PHONY: dev-mode
+dev-mode: ## Show which development mode is currently active
+	@echo "Current Development Mode:"
+	@echo ""
+	@MODE=$$(bash -c "source $(DEV_ENV_SCRIPT) && detect_mode"); \
+	if [ "$$MODE" = "local" ]; then \
+		echo "🏠 LOCAL MODE - Using local Temporal server"; \
+		echo "   Temporal: localhost:7233"; \
+		echo "   UI: http://localhost:8233"; \
+	elif [ "$$MODE" = "remote" ]; then \
+		echo "🌍 REMOTE MODE - Using remote Temporal via Teleport"; \
+		echo "   Temporal: localhost:$(TEMPORAL_FRONTEND_PORT)"; \
+		echo "   UI: http://localhost:$(TEMPORAL_UI_PORT)"; \
+	else \
+		echo "⚠️  NO MODE ACTIVE - No Temporal server detected"; \
+		echo ""; \
+		echo "Start with:"; \
+		echo "  make local   (local mode)"; \
+		echo "  TARGET_CLUSTER=<cluster-name> make remote  (remote mode)"; \
+	fi
+
+.PHONY: dev-clusters
+dev-clusters: ## List available clusters via Teleport
+	@echo "Checking Teleport authentication..."
+	@if ! tsh status > /dev/null 2>&1; then \
+		echo "❌ Not logged in to Teleport"; \
+		echo ""; \
+		echo "Login first with:"; \
+		echo "  make dev-tsh-login"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@echo "Available Kubernetes clusters:"
+	@echo ""
+	@tsh kube ls
+
+.PHONY: colima-up
+colima-up: ## Start Colima with CWE-friendly defaults
+	@./hack/colima-start.sh
+
+.PHONY: colima-down
+colima-down: ## Stop the Colima profile used for CAPD development. Does not delete the VM, so colima-up can bring it back up.
+	@echo "Stopping Colima profile '$(COLIMA_PROFILE)'..."
+	@colima stop --profile "$(COLIMA_PROFILE)"
+	@echo "✅ Colima stopped"
+
+.PHONY: colima-clean
+colima-clean: ## Clean up the Colima profile used for CAPD development. Deletes the VM.
+	@echo "Cleaning up Colima profile '$(COLIMA_PROFILE)'..."
+	@colima delete --profile "$(COLIMA_PROFILE)"
+	@echo "✅ Colima cleaned up"
+
+# kind-docker-host: on macOS use Colima's socket; on Linux use the default.
+kind-docker-host = $(if $(filter Darwin,$(shell uname -s)),DOCKER_HOST="$(COLIMA_DOCKER_HOST)")
+
+# Local tool bin dir (gitignored) plus the OS/arch slug used by CAPI release assets.
+LOCAL_BIN := $(CURDIR)/.local/bin
+clusterctl-os = $(shell uname -s | tr '[:upper:]' '[:lower:]')
+clusterctl-arch = $(if $(filter aarch64 arm64,$(shell uname -m)),arm64,amd64)
+
+.PHONY: kind-up
+kind-up: ## Create the local Kind management cluster for CAPD
+	@echo "Ensuring Kind management cluster '$(KIND_CLUSTER_NAME)' exists..."
+	@if $(kind-docker-host) kind get clusters | grep -Fx "$(KIND_CLUSTER_NAME)" >/dev/null; then \
+		echo "✅ Kind management cluster '$(KIND_CLUSTER_NAME)' already exists"; \
+	else \
+		$(kind-docker-host) kind create cluster --name "$(KIND_CLUSTER_NAME)" --config "$(KIND_CLUSTER_CONFIG)"; \
+	fi
+# `kind create cluster` switches contexts, the already-exists branch does not.
+# Everything downstream (clusterctl init, rollout status) targets the current
+# context, so pin it here rather than installing CAPI into whatever cluster the
+# developer last used.
+	@kubectl config use-context "kind-$(KIND_CLUSTER_NAME)" >/dev/null
+
+.PHONY: kind-down
+kind-down: ## Delete the local Kind management cluster for CAPD
+	@echo "Deleting Kind management cluster '$(KIND_CLUSTER_NAME)'..."
+	@$(kind-docker-host) kind delete cluster --name "$(KIND_CLUSTER_NAME)"
+	@echo "✅ Kind management cluster deleted"
+
+.PHONY: registry-mirror
+registry-mirror: ## Start Docker Hub and registry.k8s.io pull-through caches
+	@if $(kind-docker-host) docker inspect registry-mirror >/dev/null 2>&1; then \
+		if [ "$$($(kind-docker-host) docker inspect --format '{{.State.Running}}' registry-mirror)" = "true" ]; then \
+			echo "✅ Registry mirror already running"; \
+		else \
+			echo "Starting existing Docker Hub pull-through cache..."; \
+			$(kind-docker-host) docker start registry-mirror >/dev/null; \
+			echo "✅ Registry mirror started"; \
+		fi; \
+	else \
+		echo "Starting Docker Hub pull-through cache..."; \
+		$(kind-docker-host) docker run -d \
+			--name registry-mirror \
+			--restart=always \
+			-e REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io \
+			registry:2 >/dev/null && \
+		echo "✅ Registry mirror started"; \
+	fi
+	@$(kind-docker-host) docker network connect kind registry-mirror 2>/dev/null || true
+	@if $(kind-docker-host) docker inspect registry-k8s-mirror >/dev/null 2>&1; then \
+		if [ "$$($(kind-docker-host) docker inspect --format '{{.State.Running}}' registry-k8s-mirror)" = "true" ]; then \
+			echo "✅ registry.k8s.io mirror already running"; \
+		else \
+			echo "Starting existing registry.k8s.io pull-through cache..."; \
+			$(kind-docker-host) docker start registry-k8s-mirror >/dev/null; \
+			echo "✅ registry.k8s.io mirror started"; \
+		fi; \
+	else \
+		echo "Starting registry.k8s.io pull-through cache..."; \
+		$(kind-docker-host) docker run -d \
+			--name registry-k8s-mirror \
+			--restart=always \
+			-e REGISTRY_PROXY_REMOTEURL=https://registry.k8s.io \
+			registry:2 >/dev/null && \
+		echo "✅ registry.k8s.io mirror started"; \
+	fi
+	@$(kind-docker-host) docker network connect kind registry-k8s-mirror 2>/dev/null || true
+
+.PHONY: capd-up
+capd-up: kind-up clusterctl-install capd-image registry-mirror ## Bring up the local CAPD management cluster workflow (builds the CAPD node image first)
+	@echo "Installing CAPI core + CAPD providers..."
+	@PATH="$(LOCAL_BIN):$$PATH" $(kind-docker-host) CLUSTER_TOPOLOGY=true clusterctl init --core cluster-api:$(CAPI_CORE_VERSION) --infrastructure docker:$(CAPD_PROVIDER_VERSION)
+	@echo "Waiting for CAPI and CAPD controllers to be ready..."
+	@kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=120s
+	@kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=120s
+	@echo "✅ CAPD management cluster is ready"
+	@echo "Next step: tilt up"
+	@echo "The CAPD Tilt provider starts the kube-vip BGP peer by default"
+
+.PHONY: clusterctl-install
+clusterctl-install: ## Install the pinned clusterctl (CAPI_CORE_VERSION) into .local/bin unless the binary PATH would select already reports that exact version
+# Every consumer runs clusterctl with PATH="$(LOCAL_BIN):$$PATH", so a stale
+# .local/bin/clusterctl always shadows the system one. Probe the binary that
+# ordering actually selects and reuse it only on an exact version match;
+# anything else (missing, unparseable, mismatched) is replaced by the pin.
+	@set -euo pipefail; \
+	if [ -x "$(LOCAL_BIN)/clusterctl" ]; then \
+		effective="$(LOCAL_BIN)/clusterctl"; \
+	else \
+		effective="$$(command -v clusterctl 2>/dev/null || true)"; \
+	fi; \
+	found=""; \
+	if [ -n "$$effective" ]; then \
+		found="$$("$$effective" version -o short 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"; \
+	fi; \
+	if [ -n "$$effective" ] && [ "$$found" = "$(CAPI_CORE_VERSION)" ]; then \
+		echo "✅ clusterctl $(CAPI_CORE_VERSION) already available ($$effective)"; \
+	else \
+		if [ -z "$$effective" ]; then \
+			echo "clusterctl not found in $(LOCAL_BIN) or on PATH"; \
+		elif [ -z "$$found" ]; then \
+			echo "clusterctl at $$effective did not report a parseable version; replacing it"; \
+		else \
+			echo "clusterctl at $$effective reports $$found but $(CAPI_CORE_VERSION) is pinned; replacing it"; \
+		fi; \
+		echo "Downloading clusterctl $(CAPI_CORE_VERSION) to $(LOCAL_BIN)..."; \
+		mkdir -p "$(LOCAL_BIN)"; \
+		curl -fsSL --remove-on-error -o "$(LOCAL_BIN)/clusterctl.tmp" \
+			"https://github.com/kubernetes-sigs/cluster-api/releases/download/$(CAPI_CORE_VERSION)/clusterctl-$(clusterctl-os)-$(clusterctl-arch)" && \
+		chmod +x "$(LOCAL_BIN)/clusterctl.tmp" || { \
+			rm -f "$(LOCAL_BIN)/clusterctl.tmp"; \
+			echo "❌ failed to download clusterctl $(CAPI_CORE_VERSION) for $(clusterctl-os)-$(clusterctl-arch)" >&2; \
+			exit 1; \
+		}; \
+		got="$$("$(LOCAL_BIN)/clusterctl.tmp" version -o short 2>/dev/null | head -n1 | tr -d '[:space:]' || true)"; \
+		if [ "$$got" != "$(CAPI_CORE_VERSION)" ]; then \
+			rm -f "$(LOCAL_BIN)/clusterctl.tmp"; \
+			echo "❌ downloaded clusterctl $(CAPI_CORE_VERSION) reports '$$got'; refusing to install" >&2; \
+			exit 1; \
+		fi; \
+		mv "$(LOCAL_BIN)/clusterctl.tmp" "$(LOCAL_BIN)/clusterctl"; \
+		echo "✅ clusterctl $(CAPI_CORE_VERSION) installed to $(LOCAL_BIN)/clusterctl"; \
+	fi
+
+.PHONY: capi-core-up
+capi-core-up: kind-up clusterctl-install registry-mirror ## Bring up the Kind management cluster with CAPI core only (no infrastructure provider)
+	@if kubectl get deployment -n capi-system capi-controller-manager >/dev/null 2>&1; then \
+		echo "✅ CAPI core already installed"; \
+	else \
+		echo "Installing CAPI core + kubeadm bootstrap/control-plane providers..."; \
+		PATH="$(LOCAL_BIN):$$PATH" $(kind-docker-host) clusterctl init \
+			--core cluster-api:$(CAPI_CORE_VERSION) \
+			--bootstrap kubeadm:$(CAPI_CORE_VERSION) \
+			--control-plane kubeadm:$(CAPI_CORE_VERSION); \
+	fi
+	@echo "Waiting for cert-manager and CAPI controllers to be ready..."
+	@kubectl rollout status deployment/cert-manager -n cert-manager --timeout=180s
+	@kubectl rollout status deployment/cert-manager-webhook -n cert-manager --timeout=180s
+	@kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=180s
+	@kubectl rollout status deployment/capi-kubeadm-bootstrap-controller-manager -n capi-kubeadm-bootstrap-system --timeout=180s
+	@kubectl rollout status deployment/capi-kubeadm-control-plane-controller-manager -n capi-kubeadm-control-plane-system --timeout=180s
+	@echo "✅ CAPI core management cluster is ready (context kind-$(KIND_CLUSTER_NAME))"
+	@echo "Next step: tilt up"
+
+.PHONY: capd-bgp-up
+capd-bgp-up: kind-up ## Start the host-mode FRR BGP speaker manually
+	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/capd-bgp/up.sh $(if $(VERIFY),--verify,)
+
+.PHONY: capd-bgp-down
+capd-bgp-down: ## Stop the CAPD BGP speaker
+	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/capd-bgp/down.sh
+
+.PHONY: capd-bgp-verify
+capd-bgp-verify: ## Print FRR BGP peer and route state for local CAPD kube-vip tests
+	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/capd-bgp/verify-routes.sh
+
+.PHONY: capd-create-cluster
+capd-create-cluster: capd-bgp-up ## Create a local CAPD workload cluster with a stable kube-vip API endpoint
+	@cd "$(CURDIR)" && $(kind-docker-host) \
+		DEFAULT_VIP_RANGE="$(DEFAULT_VIP_RANGE)" \
+		CAPD_KINDEST_NODE_IMAGE="$(CAPD_KINDEST_NODE_IMAGE)" \
+		./hack/create-capd-cluster.sh
+
+.PHONY: capd-upgrade
+capd-upgrade: ## Rebuild CAPD node image for TARGET_VERSION and PATCH the cluster to upgrade (see hack/capd-upgrade.sh)
+	@cd "$(CURDIR)" && $(kind-docker-host) \
+		CAPD_KINDEST_NODE_IMAGE="$(CAPD_KINDEST_NODE_IMAGE)" \
+		CAPD_KINDEST_NODE_TAG="$(CAPD_KINDEST_NODE_TAG)" \
+		CLUSTER_NAME="$(or $(CLUSTER_NAME),capd)" \
+		CLUSTER_ID="$(CLUSTER_ID)" \
+		TARGET_VERSION="$(or $(TARGET_VERSION),1.35.0)" \
+		MAX_SURGE="$(or $(MAX_SURGE),1)" \
+		ENABLE_CP_NODE_RECYCLING="$(or $(ENABLE_CP_NODE_RECYCLING),true)" \
+		SKIP_IMAGE="$(or $(SKIP_IMAGE),false)" \
+		DRY_RUN="$(or $(DRY_RUN),false)" \
+		WAIT="$(or $(WAIT),false)" \
+		./hack/capd-upgrade.sh
+
+.PHONY: capd-kubeconfig
+capd-kubeconfig: ## Write CAPD workload kubeconfig for kubectl on this host (CLUSTER_NAME=capd OUTPUT=path ./hack/fetch-capd-kubeconfig.sh)
+	@cd "$(CURDIR)" && DOCKER_HOST="$(COLIMA_DOCKER_HOST)" ./hack/fetch-capd-kubeconfig.sh "$(or $(CLUSTER_NAME),capd)" $(if $(OUTPUT),"$(OUTPUT)",)
+
+.PHONY: capd-image
+capd-image: ## Build the custom CAPD node image for DockerMachine (hack/capd-kindest-node/Dockerfile; same Docker host as CAPD)
+	@cd "$(CURDIR)" && \
+		CAPD_KINDEST_NODE_IMAGE="$(CAPD_KINDEST_NODE_IMAGE)" \
+		CAPD_KINDEST_NODE_TAG="$(CAPD_KINDEST_NODE_TAG)" \
+		CAPD_NODE_AGENT_LOCAL_BUILD="$(CAPD_NODE_AGENT_LOCAL_BUILD)" \
+		NODE_AGENT_VERSION="$(NODE_AGENT_VERSION)" \
+		NODE_AGENT_REPO_PATH="$(NODE_AGENT_REPO_PATH)" \
+		CAPD_KINDEST_NODE_PLATFORM="$(CAPD_KINDEST_NODE_PLATFORM)" \
+		COLIMA_DOCKER_HOST="$(COLIMA_DOCKER_HOST)" \
+		bash ./hack/capd-kindest-node/build-image.sh
+
+# Aliases for convenience
+.PHONY: local remote
+local: dev-start-local   ## Alias for dev-start-local
+remote: dev-start-remote ## Alias for dev-start-remote (usage: TARGET_CLUSTER=<name> make remote)
+
+.PHONY: up down status restart clean
+up: dev-start          ## Alias for dev-start
+down: dev-stop         ## Alias for dev-stop
+status: dev-status     ## Alias for dev-status
+restart: dev-restart   ## Alias for dev-restart
+clean: dev-clean       ## Alias for dev-clean

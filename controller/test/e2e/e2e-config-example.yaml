@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# Sample E2E config for the NKE suite. Every field has a default, so a missing
+# file (or an empty one) runs zero-config against the current kube context. The
+# values below are the defaults; uncomment and edit as needed.
+#
+# Cluster shape (Kubernetes version, CNI plugin, name) and waiter timeouts live
+# in the test code, not here — this file only carries environment knobs.
+
+# kube:
+#   kubeconfig: ""   # "" -> default loading (KUBECONFIG / ~/.kube/config)
+#   context: ""      # "" -> current-context
+
+# cluster:
+#   capdNodeImage: "cwe-capd-kindest-node:local"   # CAPD backend only
+
+# lifecycle:
+#   skipDelete: false         # leave the tenant cluster running after the suite
+#   preserveOnFailure: false  # keep the cluster only when a spec fails
+#   reuseCluster: ""          # non-empty -> verify this existing cluster, skip create

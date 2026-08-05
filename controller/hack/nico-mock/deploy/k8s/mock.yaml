@@ -1,0 +1,75 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nico-mock
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock
+  namespace: nico-mock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mock
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mock
+    spec:
+      containers:
+        - name: mock
+          image: cwe-nico-mock:local
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NICO_MOCK_NODE_NETWORK
+              value: kind
+            - name: NICO_MOCK_NODE_IMAGE
+              value: cwe-capd-kindest-node:local
+          ports:
+            - containerPort: 8080
+              name: http
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: docker-socket
+              mountPath: /var/run/docker.sock
+      volumes:
+        - name: docker-socket
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mock
+  namespace: nico-mock
+spec:
+  selector:
+    app.kubernetes.io/name: mock
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

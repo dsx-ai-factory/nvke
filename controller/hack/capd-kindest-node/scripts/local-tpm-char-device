@@ -1,0 +1,31 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# These node containers do not run udev, so even when the Colima VM kernel
+# allocates `/dev/vtpmx` or `/dev/tpmN`, nothing populates the matching device
+# nodes inside the container automatically. Rebuild those nodes from the
+# kernel-assigned major/minor numbers exposed in sysfs.
+
+set -euo pipefail
+
+sysfs_dev="${1:?usage: local-tpm-char-device <sysfs-dev-path> <device-path>}"
+device_path="${2:?usage: local-tpm-char-device <sysfs-dev-path> <device-path>}"
+
+for _ in $(seq 1 50); do
+    [[ -r "${sysfs_dev}" ]] && break
+    sleep 0.1
+done
+
+if [[ ! -r "${sysfs_dev}" ]]; then
+    echo "device metadata not available at ${sysfs_dev}" >&2
+    exit 1
+fi
+
+major_minor="$(<"${sysfs_dev}")"
+major="${major_minor%%:*}"
+minor="${major_minor##*:}"
+
+rm -f "${device_path}"
+mknod "${device_path}" c "${major}" "${minor}"
+chmod 0600 "${device_path}"

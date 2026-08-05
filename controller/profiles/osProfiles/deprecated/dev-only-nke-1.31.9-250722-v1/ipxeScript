@@ -1,0 +1,3 @@
+kernel https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/nke/v1.31.9/2025.07.22/forge_nke-2025.07.22-vmlinuz console=tty0 console=ttyS1,115200 ip=dhcp fb=false interface=ens5f0 url=https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/nke/v1.31.9/2025.07.22/forge_nke-2025.07.22.iso autoinstall ds=nocloud-net;s=${cloudinit-url} initrd=initrd.magic
+initrd https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/nke/v1.31.9/2025.07.22/forge_nke-2025.07.22-initrd
+boot

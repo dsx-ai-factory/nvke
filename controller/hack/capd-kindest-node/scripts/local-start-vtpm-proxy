@@ -1,0 +1,52 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# Start a software TPM daemon backed by Linux's vTPM proxy driver.
+# Colima exposes `/dev/vtpmx` from the VM kernel, `swtpm --vtpm-proxy` asks
+# that kernel to allocate a real TPM device, and this helper mirrors that
+# assigned TPM into the container as `/dev/tpm0` (and `/dev/tpmrm0` when
+# available).
+#
+# When several local node containers boot at once they all share the host
+# `/sys/class/tpm` view, so parse `swtpm`'s stdout to discover the exact kernel
+# TPM allocated to this node before rebuilding the device nodes locally.
+
+set -euo pipefail
+
+state_dir=/var/lib/swtpm
+vtpmx_sysfs=/sys/class/misc/vtpmx/dev
+
+/usr/local/bin/local-tpm-char-device "${vtpmx_sysfs}" /dev/vtpmx
+
+mkdir -p "${state_dir}"
+rm -f /dev/tpm0 /dev/tpmrm0
+swtpm_output="$(
+    /usr/bin/swtpm chardev --vtpm-proxy --tpm2 --tpmstate dir="${state_dir}" --daemon 2>&1
+)"
+
+if [[ ! "${swtpm_output}" =~ New[[:space:]]TPM[[:space:]]device:[[:space:]](/dev/tpm[0-9]+) ]]; then
+    echo "failed to determine swtpm device from output: ${swtpm_output}" >&2
+    exit 1
+fi
+
+tpm_kernel_device="${BASH_REMATCH[1]}"
+tpm_device_name="${tpm_kernel_device##*/}"
+/usr/local/bin/local-tpm-char-device "/sys/class/tpm/${tpm_device_name}/dev" /dev/tpm0
+
+# Mirror the resource-manager device too when the kernel exposes one. SPIRE's
+# TPM client stack prefers `/dev/tpmrm0` when available because it provides the
+# kernel-managed session/resource path.
+for tpmrm_sysfs in \
+    "/sys/class/tpm/${tpm_device_name}/device/tpmrm/tpmrm*/dev" \
+    "/sys/class/tpm/${tpm_device_name}/device/tpmrm*/dev" \
+    "/sys/class/tpm/tpmrm${tpm_device_name#tpm}/dev"
+do
+    for resolved_tpmrm_sysfs in ${tpmrm_sysfs}; do
+        [[ -r "${resolved_tpmrm_sysfs}" ]] || continue
+        /usr/local/bin/local-tpm-char-device "${resolved_tpmrm_sysfs}" /dev/tpmrm0
+        exit 0
+    done
+done
+
+exit 0

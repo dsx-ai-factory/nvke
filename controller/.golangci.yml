@@ -1,0 +1,329 @@
+# // SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# // SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# // NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# // property and proprietary rights in and to this material, related
+# // documentation and any modifications thereto. Any use, reproduction,
+# // disclosure or distribution of this material and related documentation
+# // without an express license agreement from NVIDIA CORPORATION or
+# // its affiliates is strictly prohibited.
+
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/NVIDIA/nke/controller
+        - gitlab-master.nvidia.com
+    gofumpt:
+      extra-rules: true
+
+run:
+  timeout: 5m
+  allow-parallel-runners: true
+  concurrency: 8
+  go: ""
+  modules-download-mode: readonly
+
+output:
+  print-issued-lines: false
+  print-linter-name: true
+  sort-results: true
+
+linters:
+  default: none
+  disable:
+    # In many situations this looks weird.
+    - nlreturn
+    # Do not enforce dedicated test packages.
+    - testpackage
+    - wrapcheck
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - copyloopvar
+    - decorder
+    - depguard
+    - dogsled
+    - dupword
+    - durationcheck
+    - errcheck
+    - errchkjson
+    - errname
+    - errorlint
+    - exhaustive
+    - exhaustruct
+    - forbidigo
+    - forcetypeassert
+    - funlen
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecknoglobals
+    - gochecksumtype
+    - goconst
+    - gocritic
+    - godox
+    - goheader
+    - gomoddirectives
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - gosmopolitan
+    - govet
+    - grouper
+    - importas
+    - inamedparam
+    - ineffassign
+    - interfacebloat
+    - intrange
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - misspell
+    - musttag
+    - nakedret
+    - nilnil
+    - noctx
+    - nolintlint
+    - nonamedreturns
+    - prealloc
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - revive
+    - rowserrcheck
+    - sloglint
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - testableexamples
+    - testifylint
+    - thelper
+    - tparallel
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - varnamelen
+    - wastedassign
+    - whitespace
+    - zerologlint
+
+  settings:
+    gomoddirectives:
+      replace-local: true
+      replace-allow-list:
+        - gitlab-master.nvidia.com/nke/node-agent
+        - gitlab-master.nvidia.com/nvmetal/cloud-api-sdk-go
+        - sigs.k8s.io/controller-runtime
+    cyclop:
+      max-complexity: 15
+    depguard:
+      rules:
+        main:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: github.com/pkg/errors
+              desc: "use stdlib instead"
+    funlen:
+      # 500 sounds like a generous value for this check
+      lines: 500
+      statements: -1
+      # Let us devs write comments.
+      ignore-comments: true
+    goconst:
+      min-len: 2
+    gocritic:
+      enable-all: true
+      disabled-checks:
+        - rangeValCopy
+        - hugeParam
+        - exitAfterDefer
+        - unnamedResult
+        - paramTypeCombine
+    gocyclo:
+      min-complexity: 15
+    godox:
+      # Use TODO: to cause a lint error for things that should be done before merging.
+      # Use FIXME: to indicate things that should be done in a future MR.
+      # Example: FIXME: https://jirasw.nvidia.com/browse/NKE-1234
+      keywords:
+        - TODO
+    goheader:
+      template: |-
+        SPDX-FileCopyrightText: Copyright (c) {{MOD_YEAR-RANGE}} NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+        SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+
+        NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+        property and proprietary rights in and to this material, related
+        documentation and any modifications thereto. Any use, reproduction,
+        disclosure or distribution of this material and related documentation
+        without an express license agreement from NVIDIA CORPORATION or
+        its affiliates is strictly prohibited.
+    goimports:
+      # Might need customization per project
+      local-prefixes:
+        - github.com/NVIDIA/nke/controller
+        - gitlab-master.nvidia.com
+        - gitlab-master.nvidia.com/nke
+        - gitlab-master.nvidia.com/nke/nke-operator
+    govet:
+      enable-all: true
+      disable:
+        # it is usually better to group fields to make them understandable than saving bytes.
+        - fieldalignment
+    grouper:
+      const-require-grouping: true
+      import-require-grouping: true
+      var-require-grouping: false
+      var-require-single-var: true
+    misspell:
+      locale: US
+    tagalign:
+      align: false
+      # Sorting tags can enhance readability for elements grouped in the same structure, but might
+      # also be a pain for certain cases.
+      sort: true
+      strict: true
+      order:
+        # Make Kong tags happy.
+        - embed
+        - help
+        - name
+        - prefix
+        - envprefix
+        - enum
+        - env
+        - default
+    revive:
+      ignore-generated-header: true
+    varnamelen:
+      min-name-length: 1
+    wsl:
+      allow-assign-and-call: true
+      allow-assign-and-anything: true
+      # Some kubebuilder comments might need this.
+      allow-trailing-comment: false
+      allow-cuddle-declarations: true
+    exhaustruct:
+      # Ignore everything by default, enable where desired
+      exclude:
+        - '.*'
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      - path: '(.+)_test\.go'
+        linters:
+          - gochecknoglobals
+          - grouper
+          - gosec
+          - wrapcheck
+          - wsl
+          - goconst
+          - forcetypeassert
+          - gocyclo
+          - maintidx
+      - path: 'internal/temporal/workflows/.*'
+        linters:
+          # Temporal workflows use defer to check for errors, and it looks
+          # better a named returned parameter than other patterns.
+          - nakedret
+          - nonamedreturns
+      - text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
+        linters:
+          - govet
+      # Allow unused ctx parameters - common in handlers/callbacks that must match interface signatures
+      - text: 'unused-parameter.*ctx'
+        linters:
+          - revive
+      # Allow unused req parameters - common in API handlers
+      - text: 'unused-parameter.*req'
+        linters:
+          - revive
+      # Allow unused r (*http.Request) parameters - common in HTTP handlers
+      - text: 'unused-parameter.*\br\b'
+        linters:
+          - revive
+      # Allow unexported return types - internal implementation pattern
+      - text: 'unexported-return'
+        linters:
+          - revive
+      # Allow context not being first param in test helpers where *testing.T comes first
+      - path: '(.+)_test\.go'
+        text: 'context-as-argument'
+        linters:
+          - revive
+      # Allow import shadowing for common patterns like db, uuid
+      - text: 'importShadow'
+        linters:
+          - gocritic
+      # Migrations use required callback signatures
+      - path: 'internal/db/migrations/.*'
+        linters:
+          - revive
+      # Allow var-naming for generated API package
+      - path: 'api/.*'
+        text: 'var-naming'
+        linters:
+          - revive
+      # Allow var-naming for forge API package
+      - path: 'internal/providers/forge/api/.*'
+        text: 'var-naming'
+        linters:
+          - revive
+      # Allow var-naming for utils package
+      - path: 'internal/utils/.*'
+        text: 'var-naming'
+        linters:
+          - revive
+      # Allow stutter in type name ForgeProvider - it's clearer than just Provider
+      - text: 'type name will be used as forge.ForgeProvider'
+        linters:
+          - revive
+      # Allow stutter in the internal/rollout framework's established public API
+      # names. These are ported ~verbatim from the battle-tested SWE rollout
+      # engine and are used across the whole rollout stack (adapters, temporal,
+      # operations); the Rollout-prefixed names read clearer at cross-package
+      # call sites (e.g. rollout.RolloutSpec/RolloutError vs bare Spec/Error).
+      - text: 'type name will be used as rollout\.Rollout(Spec|Strategy|Error)'
+        linters:
+          - revive
+      - text: 'type name will be used as (dryrun\.DryRunOperation|kubevip\.KubeVipDrainRestoreGuard)'
+        linters:
+          - revive
+      # Allow unused orgID/siteID in test mock functions
+      - path: '(.+)_test\.go'
+        text: 'unused-parameter.*(orgID|siteID)'
+        linters:
+          - revive
+      # QF1008: embedded field selector style - keep explicit for clarity
+      - text: 'QF1008'
+        linters:
+          - staticcheck
+      # QF1006: lift into loop condition - current style is clearer
+      - text: 'QF1006'
+        linters:
+          - staticcheck
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

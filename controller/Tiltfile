@@ -1,0 +1,1082 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+load("ext://helm_resource", "helm_repo", "helm_resource")
+load("ext://restart_process", "custom_build_with_restart")
+load("ext://uibutton", "cmd_button", "text_input")
+
+# ---------------------------------------------------------------------------
+# Provider configuration
+# ---------------------------------------------------------------------------
+# Providers list supports strings and dicts:
+#   "capi_core"               -- built-in CAPI core support
+#   "capd"                    -- built-in CAPD support
+#   "nico"                    -- NCX Infra Controller support
+#   "capd-reboot-controller"  -- CAPD reboot dev controller provider
+#   "capi-syscmp"             -- CAPI system component addon provider
+#   "forge-vms"               -- Forge-compatible local VM provider
+#   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
+#   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
+# Default: ["capi_core", "capd", "capd-reboot-controller"]
+#
+# Provider interface
+# ------------------
+# Each provider must expose a `register` function in <provider_dir>/Tiltfile:
+#
+#   def register(ctx):
+#       ...
+#       return struct(cwe_resource_deps, cwe_env_overrides,
+#                     preflight_script=...)  # optional
+#
+# Input — ctx is a struct with:
+#   ctx.main_dir      (string)  Root directory of the main Tiltfile (config.main_dir).
+#   ctx.cfg           (dict)    Parsed tilt_config.json contents.
+#   ctx.kind_host_ip  (string)  IP reachable from inside Kind pods (e.g. Kind gateway).
+#   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
+#
+# Output — returned struct with:
+#   cwe_resource_deps  (list[string])  Tilt resource names CWE should depend on.
+#                                      Appended to the CWE k8s_resource resource_deps.
+#   cwe_env_overrides  (dict[string, string])  Env vars injected into CWE's chart
+#                                              values (e.g. FORGE_URL, FWE_API_KEY).
+#   preflight_script   (string, optional)      Bash fragment appended to the
+#                                              check-management-cluster preflight script.
+#                                              Use to assert provider-required tooling or
+#                                              CRDs are present in the cluster.
+#
+# Inside register(), the provider creates its own Tilt resources (local_resource,
+# helm_resource, etc.) and returns the struct to wire itself into CWE.
+
+# Built-in provider name -> directory (relative to config.main_dir).
+_builtin_provider_dirs = {
+    "capi_core": os.path.join(config.main_dir, "hack/capi-core-provider"),
+    "capd": os.path.join(config.main_dir, "hack/capd-provider"),
+    "nico": os.path.join(config.main_dir, "hack/nico-provider"),
+    "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
+    "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
+    "forge-vms": os.path.join(config.main_dir, "forge-vms"),
+    "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
+}
+
+_tilt_config = read_json("tilt_config.json", default={})
+cfg = _tilt_config
+# CI can preload immutable images into Kind and bypass the local Docker builds.
+# Local development keeps the existing build behavior when these are unset.
+CWE_IMAGE = cfg.get("cwe_image", "")
+SITE_CONTROLLER_VIP_OVERRIDE = cfg.get("site_controller_vip", "")
+
+_provider_entries = cfg.get("providers", [
+    "capi_core",
+    "capd",
+    "capd-reboot-controller",
+])
+
+if "nico" in _provider_entries and "capi_core" not in _provider_entries:
+    fail("Provider 'nico' requires 'capi_core' in the provider list.")
+
+if "capd" in _provider_entries and "capi_core" not in _provider_entries:
+    fail("Provider 'capd' requires 'capi_core' in the provider list.")
+
+if "capi-syscmp" in _provider_entries and "capi_core" not in _provider_entries:
+    fail("Provider 'capi-syscmp' requires 'capi_core' in the provider list.")
+
+if "nico-vm" in _provider_entries and "capi_core" not in _provider_entries:
+    fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
+
+# nico-vm points nico-credentials at the local forge-vms backend and its
+# credentials resource depends on the 'forge-vms' Tilt resource by name.
+if "nico-vm" in _provider_entries and "forge-vms" not in _provider_entries:
+    fail("Provider 'nico-vm' requires 'forge-vms' in the provider list: it points " +
+         "nico-credentials at the local forge-vms backend and depends on its Tilt resource.")
+
+# 'nico' and 'forge-vms' are mutually exclusive Forge backends for CWE: both set
+# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs forge-vms's
+# listener). Enable at most one. (capd is orthogonal and may accompany either.)
+if "nico" in _provider_entries and "forge-vms" in _provider_entries:
+    fail("Providers 'nico' and 'forge-vms' are mutually exclusive: both set CWE's FORGE_URL " +
+         "and bind host port 18080. Enable only one (capd may accompany either).")
+
+# 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
+# controller: both install one into the capnico-system namespace and own the
+# 'nico-credentials' secret it reads. Enable at most one.
+if "nico" in _provider_entries and "nico-vm" in _provider_entries:
+    fail("Providers 'nico' and 'nico-vm' are mutually exclusive: both install a CAPNICo " +
+         "controller into capnico-system and own the 'nico-credentials' secret. Enable only one.")
+
+CWE_NAMESPACE = "cloud-workflow-engine"
+TEMPORAL_NAMESPACE = "temporal"
+POSTGRES_NAMESPACE = "postgres"
+SPIRE_NAMESPACE = "spire-server"
+CWE_LOCAL_DEBUG_MARKER = ".tilt-cwe-debug-local"
+DEFAULT_SITE_ID = "00000000-0000-0000-0000-000000000000"
+CWE_HTTP_PORT = os.getenv("CWE_HTTP_PORT", "8080")
+CWE_TEMPORAL_UI_PORT = os.getenv("CWE_TEMPORAL_UI_PORT", "8081")
+
+# Tilt UI links open in the browser of whoever views the Tilt UI. When Tilt runs
+# on a remote host accessed via forwarded ports (e.g. Mutagen forwards a target
+# at +1000), set TILT_LINK_PORT_OFFSET so links point at the correct forwarded
+# port. Default 0 = local (links match the host's bind ports). This offsets only
+# the displayed link URLs, not the actual service bind / port-forward ports.
+LINK_PORT_OFFSET = int(os.getenv("TILT_LINK_PORT_OFFSET", "0"))
+
+def ui_link(port, path, name):
+    return link("http://localhost:%d%s" % (int(port) + LINK_PORT_OFFSET, path), name)
+
+# Pin chart versions to avoid surprise breakage from upstream releases.
+CHART_VERSION_POSTGRESQL = "18.5.15"
+CHART_VERSION_TEMPORAL = "0.74.0"
+CHART_VERSION_SPIRE_CRDS = "0.5.0"
+CHART_VERSION_CERT_MANAGER = "v1.20.2"
+
+def get_kind_cluster_name():
+    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "")
+    if kind_cluster_name != "":
+        return kind_cluster_name
+
+    current_context = k8s_context()
+    if current_context.startswith("kind-"):
+        return current_context[5:]
+
+    return "kind-cluster-name-not-set"
+
+KIND_CLUSTER_NAME_VALUE = get_kind_cluster_name()
+EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
+SPIRE_TRUST_DOMAIN = "%s.nke.local" % KIND_CLUSTER_NAME_VALUE
+NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
+
+# sha256 of /app/tpm_attestor_server inside ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0,
+# selected by host arch (kind pulls the Linux variant matching the host CPU). Override via env var
+# when bumping the image; recompute with:
+#   docker run --rm --entrypoint sha256sum ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0 /app/tpm_attestor_server
+def normalize_arch(arch):
+    if arch == "x86_64":
+        return "amd64"
+    if arch == "aarch64":
+        return "arm64"
+    return arch
+
+def local_arch():
+    docker_arch = str(local("docker version --format '{{.Server.Arch}}' 2>/dev/null || true", quiet=True, echo_off=True)).strip()
+    if docker_arch != "":
+        return normalize_arch(docker_arch)
+
+    return normalize_arch(str(local("uname -m", quiet=True, echo_off=True)).strip())
+
+def _spire_tpm_attestor_server_checksum():
+    override = os.getenv("SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM")
+    if override:
+        return override
+
+    arch = local_arch()
+    checksums = {
+        "amd64": "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc",
+        "arm64": "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16",
+    }
+    if arch not in checksums:
+        fail("unsupported host arch %r for SPIRE TPM attestor server; set SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM explicitly" % arch)
+    return checksums[arch]
+
+SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM = _spire_tpm_attestor_server_checksum()
+
+if k8s_context() != EXPECTED_K8S_CONTEXT:
+    fail("Tilt must run against kube context '%s', but the current context is '%s'" % (EXPECTED_K8S_CONTEXT, k8s_context()))
+
+allow_k8s_contexts(EXPECTED_K8S_CONTEXT)
+
+# Increase the timeout for k8s upsert operations to 15 minutes for large helm charts.
+update_settings(k8s_upsert_timeout_secs=900)
+
+def include_user_tilt_files():
+    if not os.path.exists("tilt.d"):
+        return
+
+    for f in listdir("tilt.d"):
+        if not (f.endswith(".tilt") or f.endswith(".star")):
+            continue
+        include(f)
+
+# ---------------------------------------------------------------------------
+# cert-manager — needed by the OIDC discovery provider to issue its TLS cert
+# from the long-lived NKE OIDC upstream CA (see deploy/k8s/oidc-upstream-ca.yaml).
+#
+# cert-manager is frequently already present out-of-band — most commonly
+# clusterctl installs its own copy when it initialises CAPI. We probe the
+# cluster at parse time and
+# branch:
+#   * absent                       -> install via helm (fresh)
+#   * present, helm-managed         -> keep the helm_resource so Tilt owns
+#                                      upgrades / value changes
+#   * present, not helm-managed     -> skip helm entirely; stand up a readiness
+#     (e.g. clusterctl)                gate under the same resource name so
+#                                      downstream deps stay wired
+#
+# Either way the resource is named "cert-manager" so dependents (spire-server,
+# oidc-ca-bootstrap) need no special-casing. If the cluster is unreachable at
+# parse time the probe reports "absent" and we fall back to the helm path —
+# the helm_resource depends on check-management-cluster, so nothing actually
+# runs until the cluster is up.
+# ---------------------------------------------------------------------------
+CERT_MANAGER_NAMESPACE = "cert-manager"
+
+def detect_cert_manager():
+    # Presence is checked via the CRD (namespace- and installer-agnostic).
+    # Ownership is checked via `helm status`, which is authoritative for
+    # "Tilt's helm can manage this release".
+    state = str(local(
+        """
+        if ! kubectl get crd certificates.cert-manager.io >/dev/null 2>&1; then
+          echo absent
+        elif helm status cert-manager -n %s >/dev/null 2>&1; then
+          echo helm
+        else
+          echo external
+        fi
+        """ % CERT_MANAGER_NAMESPACE,
+        quiet=True,
+        echo_off=True,
+    )).strip()
+    # Guard against unexpected output (e.g. unreachable cluster noise): default
+    # to the fresh-install path, matching prior behaviour.
+    if state not in ("absent", "helm", "external"):
+        return "absent"
+    return state
+
+# ---------------------------------------------------------------------------
+# Provider loading
+# ---------------------------------------------------------------------------
+
+# Host IP reachable from inside Kind pods. On macOS, host.docker.internal works.
+# On Linux with native Docker, use the Kind network gateway IP.
+_kind_host_ip = str(local(
+    "docker network inspect kind -f '{{range .IPAM.Config}}{{if .Gateway}}{{println .Gateway}}{{end}}{{end}}' 2>/dev/null | grep -v : | head -1 || echo host.docker.internal",
+    quiet=True,
+)).strip() or "host.docker.internal"
+
+# Tenants reach the management cluster's SPIRE + OIDC endpoints at this address
+# (the "fake site-controller VIP" in tilt). Linux and macOS need different
+# answers because Docker on macOS runs in a VM:
+#   * Linux native Docker: bind NodePorts on the kind bridge gateway via
+#     kubectl port-forward; tenants dial that IP.
+#   * macOS (Docker Desktop or Colima): CAPD tenant nodes are sibling
+#     containers on the same `kind` Docker network as the management node
+#     (named "<cluster>-control-plane" by Kind), so they can reach it
+#     directly by its own container IP — no VM-side proxying or host-side
+#     port-forward required. This sidesteps host.docker.internal entirely:
+#     under Docker Desktop it works but is unnecessary, and under Colima it
+#     resolves to a fixed VM-side gateway address whose port forwarder does
+#     not reliably forward the SPIRE OIDC NodePort back through it.
+#     host.docker.internal is kept only as a fallback for setups where the
+#     management node isn't a "<cluster>-control-plane" container on the
+#     `kind` network (e.g. non-CAPD backends).
+#   * CI: site_controller_vip may point directly at the Kind control-plane IP;
+#     CAPD machines share that Docker network and can use its NodePorts.
+_on_mac = str(local("uname -s", quiet=True, echo_off=True)).strip() == "Darwin"
+if SITE_CONTROLLER_VIP_OVERRIDE:
+    _kind_site_controller_vip = SITE_CONTROLLER_VIP_OVERRIDE
+elif _on_mac:
+    _management_node_ip = str(local(
+        "docker inspect --format '{{(index .NetworkSettings.Networks \"kind\").IPAddress}}' %s-control-plane 2>/dev/null || true" % KIND_CLUSTER_NAME_VALUE,
+        quiet=True,
+        echo_off=True,
+    )).strip()
+    _kind_site_controller_vip = _management_node_ip or "host.docker.internal"
+else:
+    _kind_site_controller_vip = _kind_host_ip
+
+# Collect integration points from all providers.
+_all_cwe_resource_deps = []
+# Default CWE env overrides applied before any provider overrides. Providers
+# can still .update() these if they need a different value.
+#
+# SPIRE_SERVER_ADDRESS: tenants reach the SPIRE server through the platform-
+# correct site-controller VIP, which CWE bakes into the spire-agent config it
+# generates for each tenant. The default in .env.tilt.example is
+# host.docker.internal, which only resolves on Docker Desktop; this override
+# makes the Linux native Docker path work too.
+_all_cwe_env_overrides = {
+    "SPIRE_SERVER_ADDRESS": _kind_site_controller_vip,
+}
+_all_preflight_fragments = []
+
+for _entry in _provider_entries:
+    if type(_entry) == "string":
+        _provider_name = _entry
+        _provider_dir = _builtin_provider_dirs.get(_provider_name, "")
+        if not _provider_dir:
+            fail("Unknown built-in provider '%s'. Use a dict entry for external providers." % _provider_name)
+    elif type(_entry) == "dict":
+        _provider_name = _entry.keys()[0]
+        _provider_dir = _entry[_provider_name]
+    else:
+        fail("Invalid provider entry: %s" % _entry)
+
+    _tiltfile_path = os.path.join(_provider_dir, "Tiltfile")
+    _symbols = load_dynamic(_tiltfile_path)
+    _result = _symbols["register"](struct(
+        main_dir     = config.main_dir,
+        cfg          = cfg,
+        kind_host_ip = _kind_host_ip,
+        provider_dir = _provider_dir,
+    ))
+    _all_cwe_resource_deps += _result.cwe_resource_deps
+    _all_cwe_env_overrides.update(_result.cwe_env_overrides)
+    if getattr(_result, "preflight_script", ""):
+        _all_preflight_fragments.append(_result.preflight_script)
+
+# ---------------------------------------------------------------------------
+# Preflight checks
+# ---------------------------------------------------------------------------
+#
+# Note: The label and button number prefix e.g. "1-my-button" are hacks to control the order of the resources and buttons in the Tilt UI.
+#
+
+_preflight_script = """
+      set -euo pipefail
+      kubectl cluster-info >/dev/null 2>&1 || {
+        echo "No reachable management cluster. Run 'make colima-up' and 'make capd-up' (or 'make capi-core-up') first." >&2
+        exit 1
+      }
+"""
+for _fragment in _all_preflight_fragments:
+    _preflight_script += _fragment
+_preflight_script += """
+      current_context="$(kubectl config current-context)"
+      kind_cluster_name="${KIND_CLUSTER_NAME:-}"
+      if [ -z "${kind_cluster_name}" ]; then
+        case "${current_context}" in
+          kind-*)
+            ;;
+          *)
+            echo "KIND_CLUSTER_NAME is not set and current context '${current_context}' is not a kind context." >&2
+            exit 1
+            ;;
+        esac
+      fi
+      command -v helm >/dev/null || {
+        echo "helm is required in PATH" >&2
+        exit 1
+      }
+"""
+if not CWE_IMAGE:
+    _preflight_script += """
+      command -v docker >/dev/null || {
+        echo "docker is required in PATH" >&2
+        exit 1
+      }
+      command -v go >/dev/null || {
+        echo "go is required in PATH (used for GOARCH detection)" >&2
+        exit 1
+      }
+"""
+_preflight_script += """
+      command -v kind >/dev/null || {
+        echo "kind is required in PATH" >&2
+        exit 1
+      }
+      echo "Management cluster and local tooling are ready"
+"""
+
+local_resource(
+    "check-management-cluster",
+    labels=["0-preflight"],
+    cmd=["bash", "-c", _preflight_script],
+    deps=[],
+)
+
+# ---------------------------------------------------------------------------
+# Infrastructure: PostgreSQL, Temporal, SPIRE
+# ---------------------------------------------------------------------------
+
+# Pull the postgres chart directly from the Bitnami OCI registry instead of
+# adding the classic HTTP repo. `helm repo add bitnami` downloads the full
+# index.yaml (tens of MB), which times out on slow networks; OCI fetches only
+# this one chart version.
+helm_resource(
+    "postgres",
+    "oci://registry-1.docker.io/bitnamicharts/postgresql",
+    labels=["1-infra"],
+    release_name="postgres",
+    namespace=POSTGRES_NAMESPACE,
+    deps=["deploy/helm-values/postgres.yaml"],
+    flags=[
+      "--create-namespace",
+      "--values", "deploy/helm-values/postgres.yaml",
+      "--version", CHART_VERSION_POSTGRESQL,
+      "--wait",
+      "--timeout", "10m",
+    ],
+    resource_deps=["check-management-cluster"],
+    port_forwards=[5432],
+)
+
+helm_repo(
+    "temporal",
+    "https://go.temporal.io/helm-charts",
+    labels=["1-infra"],
+    resource_name="temporal-repo",
+)
+
+helm_resource(
+    "temporal",
+    "temporal/temporal",
+    labels=["1-infra"],
+    release_name="temporal",
+    namespace=TEMPORAL_NAMESPACE,
+    deps=["deploy/helm-values/temporal.yaml"],
+    flags=[
+      "--create-namespace",
+      "--values", "deploy/helm-values/temporal.yaml",
+      "--version", CHART_VERSION_TEMPORAL,
+      "--wait",
+      "--timeout", "15m",
+    ],
+    resource_deps=["check-management-cluster", "temporal-repo", "postgres"],
+    links=[
+      ui_link(CWE_TEMPORAL_UI_PORT, "", "Temporal UI"),
+    ],
+)
+
+local_resource(
+    "port-forward-temporal-ui",
+    labels=["1-infra"],
+    serve_cmd="while true; do kubectl -n " + TEMPORAL_NAMESPACE + " port-forward svc/temporal-web " + CWE_TEMPORAL_UI_PORT + ":8080 || true; sleep 2; done",
+    resource_deps=["temporal"],
+    readiness_probe=probe(exec=exec_action(["nc", "-z", "localhost", CWE_TEMPORAL_UI_PORT]), period_secs=5, failure_threshold=2),
+    allow_parallel=True,
+)
+
+local_resource(
+    "port-forward-temporal-frontend",
+    labels=["1-infra"],
+    serve_cmd="while true; do kubectl -n " + TEMPORAL_NAMESPACE + " port-forward svc/temporal-frontend 7233:7233 || true; sleep 2; done",
+    resource_deps=["temporal"],
+    readiness_probe=probe(exec=exec_action(["nc", "-z", "localhost", "7233"]), period_secs=5, failure_threshold=2),
+    allow_parallel=True,
+)
+
+helm_repo(
+    "spiffe-hardened",
+    "https://spiffe.github.io/helm-charts-hardened/",
+    labels=["1-infra"],
+    resource_name="spiffe-hardened-repo",
+)
+
+# Local clone of the upstream spiffe-hardened/spire chart, pinned to a commit.
+# It exposes `global.spire.jwtIssuer` to the OIDC discovery provider — without
+# it the provider derives `iss` from the request's Host header and we end up
+# advertising `https://<ip>:30443` instead of the logical site-controller URL.
+#
+# The jwtIssuer support landed upstream in
+# https://github.com/spiffe/helm-charts-hardened/pull/829, but no release has
+# been cut yet. Rather than track the moving `main` branch (which could break
+# us on any upstream push), we pin an exact commit on main. Bump
+# SPIRE_CHART_REPO_COMMIT deliberately after re-testing; switch back to the
+# published Helm repo (`chart="spiffe-hardened/spire"`, pinned version) once a
+# release with the fix ships.
+#
+# Why a local clone and not a git URL via the helm-git plugin: the chart has
+# sibling `file://../spire-lib` dependencies that require the whole
+# helm-charts-hardened repo on disk during `helm dep build`. helm-git's
+# sparse checkout strips that.
+SPIRE_CHART_REPO_URL = "https://github.com/spiffe/helm-charts-hardened.git"
+# Pinned commit on main (spire chart 0.29.0). Bump only after re-testing.
+SPIRE_CHART_REPO_COMMIT = "585203462b6bc7aa06d67b3a153bfff7ff287173"
+_spire_chart_dir = os.path.join(config.main_dir, ".local/helm-charts/spire-hardened-upstream")
+
+local_resource(
+    "spire-chart-upstream",
+    labels=["1-infra"],
+    cmd=["bash", "-c", """
+      set -euo pipefail
+      target=%s
+      url=%s
+      commit=%s
+      # Fetch the pinned commit by SHA at depth 1 (GitHub allows want-by-SHA),
+      # then detach onto it. Works for both a fresh dir and an existing clone,
+      # and never depends on a branch tip that can move under us.
+      if [ ! -d "${target}/.git" ]; then
+        rm -rf "${target}"
+        mkdir -p "${target}"
+        git -C "${target}" init -q
+        git -C "${target}" remote add origin "${url}"
+      else
+        git -C "${target}" remote set-url origin "${url}"
+      fi
+      git -C "${target}" fetch --depth=1 origin "${commit}"
+      git -C "${target}" checkout -q --detach "${commit}"
+      # Materialise the chart's file://../spire-lib sibling and other deps
+      # into charts/spire/charts/ — required for `helm install` to find them.
+      helm dependency build "${target}/charts/spire" >/dev/null
+    """ % (_spire_chart_dir, SPIRE_CHART_REPO_URL, SPIRE_CHART_REPO_COMMIT)],
+    resource_deps=["check-management-cluster"],
+)
+
+helm_resource(
+    "spire-crds",
+    labels=["1-infra"],
+    chart="spiffe-hardened/spire-crds",
+    release_name="spire-crds",
+    namespace=SPIRE_NAMESPACE,
+    flags=[
+      "--create-namespace",
+      "--version", CHART_VERSION_SPIRE_CRDS,
+      "--wait",
+      "--timeout", "10m",
+    ],
+    pod_readiness="ignore",
+    resource_deps=["check-management-cluster", "spiffe-hardened-repo"],
+)
+
+
+
+_cert_manager_state = detect_cert_manager()
+
+if _cert_manager_state == "external":
+    print("cert-manager: detected out-of-band install (not helm-managed) — skipping helm install")
+    local_resource(
+        "cert-manager",
+        labels=["1-infra"],
+        cmd=["bash", "-c", """
+          set -euo pipefail
+          echo "cert-manager is installed out-of-band (not via helm); skipping helm install."
+          kubectl -n %s rollout status deploy/cert-manager --timeout=180s
+          kubectl -n %s rollout status deploy/cert-manager-webhook --timeout=180s
+          kubectl -n %s rollout status deploy/cert-manager-cainjector --timeout=180s
+        """ % (CERT_MANAGER_NAMESPACE, CERT_MANAGER_NAMESPACE, CERT_MANAGER_NAMESPACE)],
+        resource_deps=["check-management-cluster"],
+    )
+else:
+    helm_repo(
+        "jetstack",
+        "https://charts.jetstack.io",
+        labels=["1-infra"],
+        resource_name="jetstack-repo",
+    )
+
+    helm_resource(
+        "cert-manager",
+        "jetstack/cert-manager",
+        labels=["1-infra"],
+        release_name="cert-manager",
+        namespace=CERT_MANAGER_NAMESPACE,
+        deps=["deploy/helm-values/cert-manager.yaml"],
+        flags=[
+          "--create-namespace",
+          "--values", "deploy/helm-values/cert-manager.yaml",
+          "--version", CHART_VERSION_CERT_MANAGER,
+          "--wait",
+          "--timeout", "10m",
+        ],
+        resource_deps=["check-management-cluster", "jetstack-repo"],
+    )
+
+# SANs for the OIDC leaf serving cert. _kind_site_controller_vip is usually a
+# container IP (Linux's kind bridge gateway, or macOS's auto-detected
+# management node IP), which goes into ipAddresses; the host.docker.internal
+# fallback is a hostname and must be a dnsName instead. The provider matches
+# against the Host header / SNI, so every reachable identity must be present.
+def _looks_like_ipv4(value):
+    _parts = value.split(".")
+    if len(_parts) != 4:
+        return False
+    for _part in _parts:
+        if not _part.isdigit() or int(_part) > 255:
+            return False
+    return True
+
+_oidc_ip_sans = ["127.0.0.1", _kind_host_ip]
+_oidc_dns_sans = []
+# _kind_site_controller_vip may be an override, an auto-detected container
+# IP, or the host.docker.internal hostname fallback; classify generically by
+# shape rather than re-deriving which source it came from.
+if _looks_like_ipv4(_kind_site_controller_vip):
+    if _kind_site_controller_vip not in _oidc_ip_sans:
+        _oidc_ip_sans.append(_kind_site_controller_vip)
+else:
+    _oidc_dns_sans.append(_kind_site_controller_vip)
+
+_spire_set_string_flags = []
+for _i, _ip in enumerate(_oidc_ip_sans):
+    _spire_set_string_flags += [
+        "--set-string",
+        "spiffe-oidc-discovery-provider.tls.certManager.certificate.ipAddresses[%d]=%s" % (_i, _ip),
+    ]
+# Append the dynamic DNS SANs after the static dnsNames in spire.yaml
+# (indices 0..1: nke.site-controller.internal, localhost).
+_STATIC_DNS_NAME_COUNT = 2
+for _i, _name in enumerate(_oidc_dns_sans):
+    _spire_set_string_flags += [
+        "--set-string",
+        "spiffe-oidc-discovery-provider.tls.certManager.certificate.dnsNames[%d]=%s" % (_STATIC_DNS_NAME_COUNT + _i, _name),
+    ]
+
+# Dynamic entries for the provider's accepted-domains list. kube-apiserver
+# fetches the discovery URL by IP or hostname, and the provider rejects any
+# request whose Host header isn't on this list. Static entries
+# (nke.site-controller.internal, localhost, 127.0.0.1) live in spire.yaml.
+_oidc_dynamic_domains = [_kind_host_ip, _kind_site_controller_vip]
+
+# Append dynamic domains to the static list defined in spire.yaml. The static
+# list has indices 0..2; start the override list at index 3.
+_STATIC_ADDITIONAL_DOMAIN_COUNT = 3
+for _i, _domain in enumerate(_oidc_dynamic_domains):
+    _spire_set_string_flags += [
+        "--set-string",
+        "spiffe-oidc-discovery-provider.config.additionalDomains[%d]=%s" % (
+            _STATIC_ADDITIONAL_DOMAIN_COUNT + _i, _domain),
+    ]
+
+helm_resource(
+    "spire-server",
+    labels=["1-infra"],
+    chart=os.path.join(_spire_chart_dir, "charts/spire"),
+    release_name="spire",
+    namespace=SPIRE_NAMESPACE,
+    deps=["deploy/helm-values/spire.yaml"],
+    flags=[
+      "--create-namespace",
+      "--values", "deploy/helm-values/spire.yaml",
+      "--set-string", "global.spire.clusterName=%s" % KIND_CLUSTER_NAME_VALUE,
+      "--set-string", "global.spire.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
+      "--set-string", "global.spire.jwtIssuer=%s" % NKE_OIDC_ISSUER_URL,
+      "--set-string", "spire-server.adminIDs[0]=spiffe://%s/nke-service/cloud-workflow-engine" % SPIRE_TRUST_DOMAIN,
+      "--set-string", "spire-server.nodeAttestor.tpmDirect.checksum=%s" % SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM,
+      "--set-string", "spiffe-oidc-discovery-provider.config.jwksUri=https://%s:30443/keys" % _kind_site_controller_vip,
+    ] + _spire_set_string_flags + [
+      "--wait",
+      "--timeout", "15m",
+    ],
+    # spire-chart-upstream: chart source must exist before helm install.
+    resource_deps=["spire-chart-upstream", "spire-crds", "cert-manager", "oidc-upstream-ca-issuer", "oidc-upstream-ca-ready"],
+)
+
+k8s_yaml([
+    "deploy/k8s/oidc-upstream-ca.yaml",
+    "deploy/k8s/spire-server-nodeport.yaml",
+    "deploy/k8s/spire-oidc-provider-nodeport.yaml",
+    "deploy/k8s/spire-nke-services-spiffe-id.yaml",
+    "deploy/k8s/spire-tpm-pubhashes-configmap.yaml",
+])
+
+k8s_resource(
+    new_name="oidc-ca-bootstrap",
+    labels=["1-infra"],
+    objects=[
+        "oidc-ca-bootstrap:issuer",
+        "oidc-provider-upstream-ca:certificate",
+    ],
+    resource_deps=["cert-manager"],
+    pod_readiness="ignore",
+)
+
+k8s_resource(
+    new_name="oidc-upstream-ca-issuer",
+    labels=["1-infra"],
+    objects=["nke-oidc-upstream-ca:issuer"],
+    resource_deps=["oidc-ca-bootstrap"],
+    pod_readiness="ignore",
+)
+
+k8s_resource(
+    new_name="spire-oidc-provider-nodeport",
+    labels=["1-infra"],
+    objects=["spire-oidc-provider-np:service:spire-server"],
+    resource_deps=["spire-server"],
+    pod_readiness="ignore",
+)
+
+# Gate that flips to ready once cert-manager has issued the leaf serving
+# cert for the OIDC discovery provider. Anything that consumes the OIDC
+# cert (including the ConfigMap renderer below) depends on this
+# resource so it never runs while the Secret is missing.
+local_resource(
+    "oidc-upstream-ca-ready",
+    labels=["1-infra"],
+    cmd=["bash", "-c",
+         "kubectl -n " + SPIRE_NAMESPACE + " wait --for=condition=Ready " +
+         "certificate/oidc-provider-upstream-ca --timeout=180s"],
+    resource_deps=["oidc-ca-bootstrap"],
+)
+
+
+k8s_yaml("deploy/k8s/nke-system-namespace.yaml")
+
+k8s_resource(
+    new_name="nke-system-namespace",
+    labels=["1-infra"],
+    objects=["nke-system:namespace"],
+    resource_deps=["check-management-cluster"],
+    pod_readiness="ignore",
+)
+
+k8s_resource(
+    new_name="spire-server-nodeport",
+    labels=["1-infra"],
+    objects=["spire-server-np:service:spire-server"],
+    resource_deps=["spire-server"],
+    pod_readiness="ignore",
+)
+
+cmd_button(
+    "1-show-spire-entries",
+    argv=["bash", "-c", """
+      set -euo pipefail
+      kubectl exec -n """ + SPIRE_NAMESPACE + """ spire-server-0 -c spire-server -- bin/spire-server entry show
+    """],
+    resource="spire-server",
+    icon_name="visibility",
+    text="Show SPIRE entries",
+)
+
+cmd_button(
+    "2-agent-list",
+    argv=["bash", "-c", """
+    set -euo pipefail
+    kubectl exec -n """ + SPIRE_NAMESPACE + """ spire-server-0 -c spire-server -- bin/spire-server agent list
+    """],
+    resource="spire-server",
+    icon_name="visibility",
+    text="SPIRE agent list",
+)
+
+local_resource(
+    "port-forward-spire-server",
+    labels=["1-infra"],
+    serve_cmd="while true; do kubectl -n " + SPIRE_NAMESPACE + " port-forward svc/spire-server-np 30440:443 || true; sleep 2; done",
+    resource_deps=["spire-server"],
+    readiness_probe=probe(exec=exec_action(["nc", "-z", "localhost", "30440"]), period_secs=5, failure_threshold=2),
+    allow_parallel=True,
+)
+
+# Bind the SPIRE server and OIDC discovery NodePorts on the kind bridge
+# gateway IP. NodePort services bind on each kind node's container IP, not on
+# the gateway, so tenants dialing the gateway IP would otherwise hit nothing.
+# Linux only: on macOS the kind gateway IP doesn't exist on the host (it
+# lives inside the Docker VM) and `kubectl port-forward --address` would
+# fail to bind there anyway. It's also unnecessary on macOS: tenants dial
+# the management node's own container IP directly (see
+# _kind_site_controller_vip above), which already carries the NodePort. A
+# configured site_controller_vip (CI) points tenants directly at a Kind node
+# too, so the gateway forwards are unnecessary in that mode as well.
+if not _on_mac and not SITE_CONTROLLER_VIP_OVERRIDE:
+    local_resource(
+        "port-forward-spire-server-kind-gw",
+        labels=["1-infra"],
+        serve_cmd="while true; do kubectl -n %s port-forward --address %s svc/spire-server-np 30440:443 || true; sleep 2; done" % (SPIRE_NAMESPACE, _kind_host_ip),
+        resource_deps=["spire-server"],
+        readiness_probe=probe(exec=exec_action(["nc", "-z", _kind_host_ip, "30440"]), period_secs=5, failure_threshold=2),
+        allow_parallel=True,
+    )
+
+    local_resource(
+        "port-forward-spire-oidc-kind-gw",
+        labels=["1-infra"],
+        serve_cmd="while true; do kubectl -n %s port-forward --address %s svc/spire-oidc-provider-np 30443:443 || true; sleep 2; done" % (SPIRE_NAMESPACE, _kind_host_ip),
+        resource_deps=["spire-server"],
+        readiness_probe=probe(exec=exec_action(["nc", "-z", _kind_host_ip, "30443"]), period_secs=5, failure_threshold=2),
+        allow_parallel=True,
+    )
+
+k8s_resource(
+    new_name="spire-nke-services-spiffe-id",
+    labels=["1-infra"],
+    objects=["nke-service:clusterspiffeid"],
+    resource_deps=["spire-server"],
+    pod_readiness="ignore",
+)
+
+k8s_resource(
+    new_name="spire-tpm-pubhashes",
+    labels=["1-infra"],
+    objects=["tpm-pubhashes:configmap:spire-server"],
+    resource_deps=["spire-server"],
+    pod_readiness="ignore",
+)
+
+# ---------------------------------------------------------------------------
+# CWE
+# ---------------------------------------------------------------------------
+
+def parse_env_file(path):
+    values = {}
+    if not os.path.exists(path):
+        return values
+    for line in str(read_file(path)).split("\n"):
+        line = line.strip()
+        if line == "" or line.startswith("#"):
+            continue
+        parts = line.split("=", 1)
+        if len(parts) != 2:
+            continue
+        values[parts[0].strip()] = parts[1].strip()
+    return values
+
+_tilt_env = parse_env_file(".env.tilt")
+if not _tilt_env:
+    _tilt_env = parse_env_file(".env.tilt.example")
+_tilt_env.update(_all_cwe_env_overrides)
+
+_cwe_capi_enabled = _tilt_env.get("ENABLE_CAPI", "") == "true"
+_cwe_forge_capi_enabled = _tilt_env.get("ENABLE_FORGE_CAPI", "") == "true"
+_cwe_tenant_access_enabled = os.getenv(
+    "TENANT_ACCESS_ENABLED", _tilt_env.get("TENANT_ACCESS_ENABLED", "true")) == "true"
+_cwe_oidc_enabled = os.getenv(
+    "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
+
+_cwe_chart_extra_env_names = [
+    "TEMPORAL_UI_URL",
+    "CNPG_SUPERUSER_PASSWORD",
+    "CNPG_CLOUD_PASSWORD",
+    "CNPG_TEMPORAL_PASSWORD",
+    "CONTROLLER_MANAGER_POLLING_INTERVAL",
+    "CONTROLLER_MANAGER_INTERVAL",
+    "NODE_HEALTH_CHECK_POLLING_INTERVAL",
+    "NODE_HEALTH_CHECK_INTERVAL",
+    "NODE_REBOOT_POLLING_INTERVAL",
+    "LOG_LEVEL",
+    "FORGE_URL",
+    "FORGE_ENVIRONMENT",
+    "SPIRE_SERVER_API_ADDRESS",
+]
+_cwe_chart_extra_env = []
+for _name in _cwe_chart_extra_env_names:
+    if _name in _tilt_env:
+        _cwe_chart_extra_env.append({"name": _name, "value": _tilt_env[_name]})
+if _tilt_env.get("FWE_API_KEY", "") != "":
+    _cwe_chart_extra_env.append({
+        "name": "FWE_API_KEY",
+        "value": _tilt_env["FWE_API_KEY"],
+    })
+_cwe_chart_extra_env += [
+    {
+        "name": "UI_DIR",
+        "value": "/ui",
+    },
+    {
+        "name": "DGXC_TENANT_USER",
+        "value": _tilt_env.get("DGXC_TENANT_USER", "local-dev"),
+    },
+    {
+        "name": "DGXC_TENANT_PASSWORD",
+        "value": _tilt_env.get("DGXC_TENANT_PASSWORD", "local-dev"),
+    },
+]
+
+_cwe_chart_flags = [
+    "--create-namespace",
+    "--values", "hack/tilt-cwe-chart-values.yaml",
+    "--set", "capi.enabled=%s" % ("true" if _cwe_capi_enabled else "false"),
+    "--set", "capi.forgeCapiEnabled=%s" % ("true" if _cwe_forge_capi_enabled else "false"),
+    "--set", "capi.rbac.create=%s" % ("true" if _cwe_capi_enabled else "false"),
+    "--set", "tenantAccess.enabled=%s" % ("true" if _cwe_tenant_access_enabled else "false"),
+    "--set", "nkeOIDCAuth.enabled=%s" % ("true" if _cwe_oidc_enabled else "false"),
+    "--set-string", "nkeOIDCAuth.issuerURL=%s" % NKE_OIDC_ISSUER_URL,
+    "--set-string", "nkeOIDCAuth.discoveryURL=https://%s:30443/.well-known/openid-configuration" % _kind_site_controller_vip,
+    "--set-string", "nkeOIDCAuth.caBundleSecret.namespace=%s" % SPIRE_NAMESPACE,
+    "--set-string", "nkeOIDCAuth.caBundleSecret.name=oidc-provider-upstream-ca",
+    "--set-string", "nkeOIDCAuth.caBundleSecret.key=ca.crt",
+    "--set-string", "spiffe.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
+    "--set-string", "spiffe.spire.serverAddress=%s" % _tilt_env.get("SPIRE_SERVER_ADDRESS", _kind_site_controller_vip),
+    "--set-json", "env=%s" % encode_json(_cwe_chart_extra_env),
+    "--force",
+    "--wait",
+    "--timeout", "10m",
+]
+
+if CWE_IMAGE:
+    _image_parts = CWE_IMAGE.split(":")
+    if len(_image_parts) > 1:
+        _cwe_chart_flags += [
+            "--set-string", "image.repository=%s" % ":".join(_image_parts[:-1]),
+            "--set-string", "image.tag=%s" % _image_parts[-1],
+        ]
+    else:
+        _cwe_chart_flags += [
+            "--set-string", "image.repository=%s" % CWE_IMAGE,
+            "--set-string", "image.tag=latest",
+        ]
+
+_cwe_local_debug_active = os.path.exists(CWE_LOCAL_DEBUG_MARKER)
+_cwe_tilt_goarch = local_arch()
+_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace"] + _all_cwe_resource_deps
+if _cwe_oidc_enabled:
+    _cwe_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
+
+_cwe_image_deps = []
+_cwe_image_keys = []
+if not CWE_IMAGE and not _cwe_local_debug_active:
+    _cwe_image_deps = ["docker.local/cwe:tilt"]
+    _cwe_image_keys = [("image.repository", "image.tag")]
+    _cwe_resource_deps = ["cwe-compile"] + _cwe_resource_deps
+elif _cwe_local_debug_active:
+    print("Skipping in-cluster CWE image build while local CWE debug mode is active")
+
+_cwe_compile_script = """
+      set -euo pipefail
+      mkdir -p bin
+      CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
+""" % _cwe_tilt_goarch
+
+_cwe_build_script = """
+      set -euo pipefail
+
+      if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+        export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+      fi
+
+      mkdir -p bin
+      CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
+      tmp_dir="$(mktemp -d)"
+      trap 'rm -rf "${tmp_dir}"' EXIT
+      cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
+      mkdir -p "${tmp_dir}/bin"
+      cp bin/cloud-workflow-engine "${tmp_dir}/bin/cloud-workflow-engine"
+      cp -R profiles "${tmp_dir}/profiles"
+      cp -R ui "${tmp_dir}/ui"
+      docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
+""" % (_cwe_tilt_goarch, _cwe_tilt_goarch)
+
+if not CWE_IMAGE and not _cwe_local_debug_active:
+    local_resource(
+        "cwe-compile",
+        cmd=["bash", "-c", _cwe_compile_script],
+        labels=["3-cwe"],
+        deps=[
+          "cmd",
+          "internal",
+          "api",
+          "Makefile",
+          "Makefile.dev",
+          "go.mod",
+          "go.sum",
+        ],
+        ignore=[
+          "**/__debug_bin*",
+        ],
+    )
+
+helm_resource(
+    "cwe",
+    chart="deploy/charts/cloud-workflow-engine",
+    labels=["3-cwe"],
+    release_name="cwe",
+    namespace=CWE_NAMESPACE,
+    image_deps=_cwe_image_deps,
+    image_keys=_cwe_image_keys,
+    deps=[
+      ".env.tilt",
+      ".env.tilt.example",
+      "hack/tilt-cwe-chart-values.yaml",
+      "deploy/charts/cloud-workflow-engine",
+    ],
+    flags=_cwe_chart_flags,
+    resource_deps=_cwe_resource_deps,
+    port_forwards=[CWE_HTTP_PORT + ":8080"],
+    links=[
+      ui_link(CWE_HTTP_PORT, "", "CWE UI"),
+      ui_link(CWE_HTTP_PORT, "/api/docs", "Swagger Docs"),
+      ui_link(CWE_HTTP_PORT, "/metrics", "Metrics"),
+      ui_link(CWE_TEMPORAL_UI_PORT, "/namespaces/cloud-workflow-engine/workflows", "Temporal UI"),
+    ],
+)
+
+if not CWE_IMAGE and not _cwe_local_debug_active:
+    custom_build_with_restart(
+        ref="docker.local/cwe:tilt",
+        command=["bash", "-c", _cwe_build_script],
+        deps=[
+          "bin",
+          "profiles",
+          "ui",
+          "hack/Dockerfile.cwe.tilt",
+          "Makefile",
+          "Makefile.dev",
+          "go.mod",
+          "go.sum",
+        ],
+        entrypoint="/usr/local/bin/cloud-workflow-engine",
+        live_update=[
+          fall_back_on(["hack/Dockerfile.cwe.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
+          sync("bin/cloud-workflow-engine", "/usr/local/bin/cloud-workflow-engine"),
+          sync("profiles", "/profiles"),
+          sync("ui", "/ui"),
+        ],
+        trigger=["bin/cloud-workflow-engine"],
+        ignore=[
+          "**/__debug_bin*",
+        ],
+    )
+
+cmd_button(
+    "1-register-default-site",
+    argv=["bash", "-c", """
+      set -euo pipefail
+      API_URL="http://localhost:%s/api" \
+      DEFAULT_SITE_ID="%s" \
+      ./hack/register-default-site.sh
+    """ % (CWE_HTTP_PORT, DEFAULT_SITE_ID)],
+    resource="cwe",
+    icon_name="note_add",
+    text="Register default site",
+)
+
+cmd_button(
+    "2-create-sample-capd-cluster",
+    argv=["bash", "-c", """
+      set -euo pipefail
+      API_URL="http://localhost:%s/api/clusters" \
+      CLUSTER_NAME="${CLUSTER_NAME:-capd}" \
+      KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
+      CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-3}" \
+      WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
+      ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}" \
+      ./hack/create-capd-cluster.sh
+    """ % CWE_HTTP_PORT],
+    resource="cwe",
+    icon_name="add_box",
+    text="Create sample CAPD cluster",
+    inputs=[
+        text_input("CLUSTER_NAME", default="capd"),
+        text_input("KUBERNETES_VERSION", default="1.34.2"),
+        text_input("CONTROL_PLANE_DESIRED_COUNT", default="3"),
+        text_input("WORKER_DESIRED_COUNT", default="1"),
+        text_input("ETCD_ENCRYPTED", default="false"),
+    ],
+)
+
+cmd_button(
+    "3-restart-cwe",
+    argv=["bash", "-c", """
+      set -euo pipefail
+      kubectl -n """ + CWE_NAMESPACE + """ rollout restart deployment/cloud-workflow-engine
+      kubectl -n """ + CWE_NAMESPACE + """ rollout status deployment/cloud-workflow-engine --timeout=180s
+    """],
+    resource="cwe",
+    icon_name="restart_alt",
+    text="Restart CWE",
+)
+
+cmd_button(
+    "4-fetch-capd-kubeconfig",
+    argv=["bash", "-c", """
+      set -euo pipefail
+      CLUSTER_NAME="${CLUSTER_NAME:-capd}"
+      export DOCKER_HOST="${DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+      ./hack/fetch-capd-kubeconfig.sh "${CLUSTER_NAME}"
+    """],
+    resource="cwe",
+    icon_name="download",
+    text="Fetch CAPD workload kubeconfig",
+    inputs=[
+        text_input("CLUSTER_NAME", default="capd"),
+    ],
+)
+
+include_user_tilt_files()

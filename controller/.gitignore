@@ -1,0 +1,67 @@
+# Binaries for programs and plugins.
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin
+testbin/*
+Dockerfile.cross
+
+# Test binary, build with `go test -c`.
+*.test
+
+# Output of the go coverage tool, specifically when used with LiteIDE.
+*.out
+
+
+# editor and IDE paraphernalia.
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+.idea
+*.swp
+*.swo
+*~
+go.work
+go.work.sum
+*.code-workspace
+
+# goreleaser output folder.
+dist/
+
+# Generated CAPD workload kubeconfigs (hack/fetch-capd-kubeconfig.sh).
+workload-*.kubeconfig
+*.kubeconfig.local
+
+# Local development scripts, notes and other personal assets.
+.local/
+.env.local
+.env.tilt
+tilt.d/*
+!tilt.d/README.md
+.claude/settings.local.json
+CLAUDE.local.md
+e2e-config.yaml
+.cache/
+
+
+# Local cache of binary tools.
+bin/
+.go/
+
+# Coverage reports.
+coverage.txt
+cobertura.xml
+cover.html
+
+# CI: list of changed files for osProfiles URL validation (MR-only).
+profiles/osProfiles/.changed-files.txt
+
+# gitlab-ci-local
+.gitlab-ci-local/
+.claude
+tilt_config.json
+.codex
+.zed
+docs/superpowers/

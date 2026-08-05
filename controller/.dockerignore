@@ -1,0 +1,18 @@
+## To test dockerignore you can use - `rsync -avn . /dev/shm --exclude-from .dockerignore`
+## shows a list of all the files that will be included in the image
+## Ref - https://stackoverflow.com/questions/38946683/how-to-test-dockerignore-file
+
+
+# exclude bin and .git folders
+**/bin
+**/.git
+
+# ignore .gitlab-ci.yaml 
+.gitlab-ci.yml
+
+# ignore unwanted deploy dirs
+deploy/docker-compose
+deploy/kustomize
+
+# ignore markdown files
+*.md 

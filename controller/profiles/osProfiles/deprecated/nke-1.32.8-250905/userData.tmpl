@@ -1,0 +1,60 @@
+#cloud-config
+users:
+  - default
+  - name: dgxc-admin
+    gecos: dgxc-admin User
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: root
+    lock_passwd: true
+    ssh_authorized_keys:
+      - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINv5+icZTJryhU3fQX1i0XNiTRdao3UTe+9MchgzrTbi
+
+autoinstall:
+  version: 1
+  identity:
+    hostname: {{ .Hostname }}
+    password: {{ .HashedPassword }}
+    username: {{ .Username }}
+  packages:
+    - chrony
+  ntp:
+    enabled: true
+    ntp_client: chrony
+    servers:
+      - 129.6.15.32
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ""
+  locale: en_US
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+
+  late-commands:
+    - curtin in-target --target=/target -- sed -i 's|^GRUB_CMDLINE_LINUX=.*|GRUB_CMDLINE_LINUX="ipv6.disable=1 console=ttyS1,115200"|' /etc/default/grub
+    - curtin in-target --target=/target -- update-grub
+
+  user-data:
+    write_files:
+      - path: /etc/sysctl.d/60-custom.conf
+        owner: root:root
+        permissions: '0755'
+        content: |
+          net.ipv6.conf.all.disable_ipv6 = 1
+          net.ipv6.conf.default.disable_ipv6 = 1
+          net.ipv6.conf.lo.disable_ipv6 = 1
+
+    runcmd:
+      - [sh, -c, "lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"]
+      - [sh, -c, "resize2fs /dev/mapper/ubuntu-vg-ubuntu-lv"]
+      - [sh, -c, "mkdir -m 755 /etc/apt/keyrings"]
+      - [sh, -c, "mkdir -p /etc/dgx/attestation"]
+      - [sh, -c, "echo \"SERVER=REPLACED-BY-SWE\" >> /etc/dgx/attestation/vars"]
+      - [sh, -c, "echo \"SAN_IP=$(hostname -I | cut -d' ' -f1)\" >> /etc/dgx/attestation/vars"]
+      - [sh, -c, "systemctl restart nke-attestation"]
+      - [sh, -c, "systemctl restart nke-agent"]
+      - [sh, -c, "sysctl -p"]
+      - [sh, -c, "systemctl restart procps"]
+

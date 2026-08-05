@@ -1,0 +1,89 @@
+{{- if or .Values.nkeOIDCAuth.enabled .Values.tenantAccess.enabled }}
+# Site-controller RBAC for the CWE controller that reconciles tenant access
+# (NKX-12975): read the nke-rbac ConfigMap and publish/rotate/clean up the
+# per-cluster tenant-access Secrets (<cluster>-kubeconfig,
+# <cluster>-cluster-trust-bundle) in nke-system.
+#
+# The Secret grant follows tenantAccess.enabled, the same flag that gates the
+# controller and the teardown cleanup activity: without it, publishing and
+# revoking both fail Forbidden. The ConfigMap read follows nkeOIDCAuth.enabled
+# because only the OIDC branch of the controller reads nke-rbac.
+#
+# Namespace-scoped Role (tighter than a cluster-wide ClusterRole — CWE cannot touch
+# Secrets outside nke-system) bound to CWE's own ServiceAccount.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-nke-rbac
+  namespace: nke-system
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+rules:
+{{- if .Values.nkeOIDCAuth.enabled }}
+  # Read the nke-rbac ConfigMap the controller SSAs into tenant clusters.
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+{{- end }}
+{{- if .Values.tenantAccess.enabled }}
+  # Publish + rotate + clean up the per-cluster tenant-access Secrets.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-nke-rbac
+  namespace: nke-system
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cloud-workflow-engine.fullname" . }}-nke-rbac
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+{{- with .Values.nkeOIDCAuth.caBundleSecret }}
+{{- if and .namespace .name }}
+---
+# CWE reads the OIDC discovery provider's upstream CA at kubeadm-render time
+# (readOIDCCABundle) and embeds it into the tenant apiserver AuthenticationConfiguration.
+# resourceName-scoped `get` on the single CA Secret, in whatever namespace the CA lives
+# (spire-server for Forge). Wired to the same caBundleSecret values CWE reads, so the
+# grant can't drift from the target.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" $ }}-oidc-ca-read
+  namespace: {{ .namespace }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" $ | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames:
+      - {{ .name }}
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" $ }}-oidc-ca-read
+  namespace: {{ .namespace }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cloud-workflow-engine.fullname" $ }}-oidc-ca-read
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cloud-workflow-engine.serviceAccountName" $ }}
+    namespace: {{ include "cloud-workflow-engine.namespace" $ }}
+{{- end }}
+{{- end }}
+{{- end }}

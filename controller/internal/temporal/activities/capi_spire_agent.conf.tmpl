@@ -1,0 +1,38 @@
+agent {
+    data_dir = "/var/lib/spire-agent"
+    log_level = "DEBUG"
+
+    server_address = "{{ .ServerAddress }}"
+    server_port = "{{ .ServerPort }}"
+
+    trust_domain = "{{ .TrustDomain }}"
+    trust_bundle_path = "{{ .TrustBundlePath }}"
+{{- if .UseJoinToken }}
+
+    join_token = "{{ .SpireJoinToken }}"
+{{- end }}
+}
+
+plugins {
+    KeyManager "disk" {
+        plugin_data {
+            directory = "/var/lib/spire-agent"
+        }
+    }
+
+{{- if .UseJoinToken }}
+    NodeAttestor "join_token" {
+        plugin_data {}
+    }
+{{- else }}
+    NodeAttestor "tpm" {
+        plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
+        plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
+        plugin_data {}
+    }
+{{- end }}
+
+    WorkloadAttestor "unix" {
+        plugin_data {}
+    }
+}

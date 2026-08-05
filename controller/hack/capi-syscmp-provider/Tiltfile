@@ -1,0 +1,147 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+load("ext://helm_resource", "helm_resource")
+
+SYSCMP_PROVIDER_RESOURCE = "syscmp-provider"
+SYSCMP_PROVIDER_IMAGE = "cluster-api-addon-provider-syscmp:local"
+SYSCMP_PROVIDER_IMAGE_KEY = ("image.repository", "image.tag")
+SYSCMP_PROVIDER_NAMESPACE = "cluster-api-addon-provider-syscmp-system"
+SYSCMP_PROVIDER_RELEASE = "cluster-api-addon-provider-syscmp"
+
+
+def _get_kind_cluster_name():
+    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "")
+    if kind_cluster_name != "":
+        return kind_cluster_name
+
+    current_context = k8s_context()
+    if current_context.startswith("kind-"):
+        return current_context[5:]
+
+    fail("Unable to determine kind cluster name: set KIND_CLUSTER_NAME or use a 'kind-*' kube context (got '%s')." % current_context)
+
+def register(ctx):
+    provider_repo_dir = os.getenv(
+        "SYSCMP_PROVIDER_REPO_DIR",
+        os.path.join(ctx.main_dir, "..", "cluster-api-addon-provider-syscmp"),
+    )
+    system_package_registry = ctx.cfg.get(
+        "syscmp_system_package_registry",
+        "registry.registry.svc.cluster.local:5000",
+    )
+    kind_cluster_name = _get_kind_cluster_name()
+
+    if not os.path.exists(provider_repo_dir):
+        fail("SYSCMP_PROVIDER_REPO_DIR '%s' does not exist." % provider_repo_dir)
+
+    k8s_yaml(blob("""
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: registry
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: registry
+  template:
+    metadata:
+      labels:
+        app: registry
+    spec:
+      containers:
+        - name: registry
+          image: registry:2
+          ports:
+            - name: registry
+              containerPort: 5000
+          readinessProbe:
+            httpGet:
+              path: /v2/
+              port: registry
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/registry
+      volumes:
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: registry
+  namespace: registry
+spec:
+  selector:
+    app: registry
+  ports:
+    - name: registry
+      port: 5000
+      targetPort: registry
+"""))
+
+    k8s_resource(
+        workload="registry",
+        new_name="oci-registry",
+        labels=["1-infra"],
+        resource_deps=["check-management-cluster"],
+        port_forwards=["5001:5000"],
+    )
+
+    custom_build(
+        ref=SYSCMP_PROVIDER_IMAGE,
+        command=["bash", "-c", """
+          set -euo pipefail
+
+          image_ref="$(cd "%s" && GOWORK=off GOOS=linux GOARCH="$(go env GOARCH)" ko build --local --bare ./cmd)"
+          docker tag "${image_ref}" "$EXPECTED_REF"
+          kind load docker-image --name "%s" "$EXPECTED_REF"
+        """ % (provider_repo_dir, kind_cluster_name)],
+        deps=[
+          os.path.join(provider_repo_dir, "cmd"),
+          os.path.join(provider_repo_dir, "internal"),
+          os.path.join(provider_repo_dir, "api"),
+          os.path.join(provider_repo_dir, "go.mod"),
+          os.path.join(provider_repo_dir, "go.sum"),
+        ],
+        ignore=[
+          "**/__debug_bin*",
+        ],
+    )
+
+    helm_resource(
+        SYSCMP_PROVIDER_RESOURCE,
+        chart=os.path.join(provider_repo_dir, "chart"),
+        release_name=SYSCMP_PROVIDER_RELEASE,
+        namespace=SYSCMP_PROVIDER_NAMESPACE,
+        deps=[os.path.join(provider_repo_dir, "chart")],
+        flags=[
+          "--create-namespace",
+          "--set-string", "systemPackageRegistry=%s" % system_package_registry,
+          "--wait",
+          "--timeout", "5m",
+        ],
+        image_deps=[SYSCMP_PROVIDER_IMAGE],
+        image_keys=[SYSCMP_PROVIDER_IMAGE_KEY],
+        labels=["1-infra"],
+        resource_deps=["check-management-cluster", "oci-registry"],
+    )
+
+    return struct(
+        cwe_resource_deps=[SYSCMP_PROVIDER_RESOURCE],
+        cwe_env_overrides={},
+    )

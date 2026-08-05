@@ -1,0 +1,2 @@
+#!ipxe
+echo local-dev placeholder

@@ -1,0 +1,34 @@
+#cloud-config
+# Rendered from profiles/osProfiles/nke-260306-24.04-amd64-fde/userData.tmpl
+# Flags: TeleportEnabled=false, SpiffeEnabled=false, CalicoEnabled=false, OvnEnabled=true
+# Test user added for SSH verification.
+hostname: prod-cloudinit-test
+preserve_hostname: false
+manage_etc_hosts: true
+ssh_pwauth: true
+package_update: true
+package_upgrade: false
+
+users:
+  - name: testuser
+    plain_text_passwd: testpass
+    lock_passwd: false
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    shell: /bin/bash
+
+runcmd:
+  - echo prod-cloudinit-ok > /tmp/prod-cloudinit-marker
+  - /usr/local/bin/fetch-and-install-bundle.sh https://d3mq564cn7sth7.cloudfront.net/nke_bundles/Ubuntu_24.04/x86_64/kubeadm_v1.34.2-5_x86_64.tgz ./kubeadm-install.py
+  - DEBIAN_FRONTEND=noninteractive apt --fix-broken install -y
+  - /usr/local/bin/fetch-and-install-bundle.sh https://d3mq564cn7sth7.cloudfront.net/nke_bundles/Ubuntu_24.04/x86_64/ovn_1.4.0-2_x86_64.tgz ./install.sh -i
+  - echo SERVER=REPLACED-BY-SWE >> /etc/dgx/attestation/vars
+  - echo "SAN_IP=$(hostname -I | cut -d' ' -f1)" >> /etc/dgx/attestation/vars
+  - sysctl --system
+  - systemctl daemon-reload
+  - systemctl restart nke-agent.service
+  - systemctl restart procps
+
+phone_home:
+    post: all
+    tries: 10
+    url: http://169.254.169.254:7777/latest/meta-data/phone_home

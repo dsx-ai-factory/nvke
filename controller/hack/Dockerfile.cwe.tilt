@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.1.0@sha256:550fe75d87ed7a8a2312e27545a18ba21f93c75c68d13188baef1e7f6e77c8e8 AS spiffe-jwt-exec-auth
+
+FROM dockerhub.nvidia.com/alpine:3.21.7
+
+RUN apk add --update --no-cache \
+    ca-certificates \
+    bash \
+    bash-completion \
+    curl \
+    gcompat \
+    sed \
+    attr \
+    dialog \
+    grep \
+    util-linux \
+    findutils \
+    readline
+
+WORKDIR /
+COPY ./bin/cloud-workflow-engine /usr/local/bin/cloud-workflow-engine
+COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
+COPY ./profiles /profiles
+COPY ./ui /ui
+
+EXPOSE 8080
+
+CMD ["cloud-workflow-engine"]

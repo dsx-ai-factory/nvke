@@ -1,0 +1,52 @@
+#cloud-config
+write_files:
+  - path: /etc/sysctl.d/60-custom.conf
+    owner: root:root
+    permissions: '0755'
+    content: |
+      net.ipv6.conf.all.disable_ipv6 = 1
+      net.ipv6.conf.default.disable_ipv6 = 1
+      net.ipv6.conf.lo.disable_ipv6 = 1
+  - path: /etc/spire-agent/agent.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      agent {
+          data_dir = "/var/lib/spire-agent"
+          log_level = "DEBUG"
+
+          server_address = "{{ .SpireServerAddress }}"
+          server_port = "{{ .SpireServerPort }}"
+
+          trust_domain = "{{ .TrustDomain }}"
+          trust_bundle_path = "/etc/spire-agent/initial-trust-bundle.pem"
+      }
+
+      plugins {
+          KeyManager "disk" {
+              plugin_data {
+                  directory = "/var/lib/spire-agent"
+              }
+          }
+
+          NodeAttestor "tpm" {
+              plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
+              plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
+              plugin_data {}
+          }
+
+          WorkloadAttestor "unix" {
+              plugin_data {}
+          }
+      }
+  - path: /etc/spire-agent/initial-trust-bundle.pem
+    owner: root:root
+    permissions: '0644'
+    content: |
+{{ indent 6 .TrustBundle }}
+
+runcmd:
+  - systemctl restart spire-agent.service
+  - sysctl --system
+  - systemctl restart nke-agent.service
+  - systemctl restart procps

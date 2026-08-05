@@ -1,0 +1,25 @@
+---
+apiVersion: v2
+name: cloud-workflow-engine
+description: A Helm chart to deploy the cloud-workflow-engine service
+
+# A chart can be either an 'application' or a 'library' chart.
+#
+# Application charts are a collection of templates that can be packaged into versioned archives
+# to be deployed.
+#
+# Library charts provide useful utilities or functions for the chart developer. They're included as
+# a dependency of application charts to inject those utilities and functions into the rendering
+# pipeline. Library charts do not define any templates and therefore cannot be deployed.
+type: application
+
+# version and appVersion below are placeholders used only for local
+# `helm lint` / `helm template`. CI overrides both at package time from
+# BUILD_VERSION (git describe), so the chart is versioned in lockstep with the
+# image the same pipeline builds:
+#   --version <BUILD_VERSION without leading v>   (OCI-safe SemVer tag)
+#   --app-version <BUILD_VERSION>                 (drives image.tag)
+# See .gitlab/ci/publish.yml (publish-chart-nvcr).
+version: "0.0.0"
+
+appVersion: "0.0.0"

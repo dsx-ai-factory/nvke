@@ -1,0 +1,238 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+load("ext://uibutton", "cmd_button", "text_input")
+
+NICO_PROVIDER_RESOURCE = "nico-provider"
+NICO_KIND_NODE_IMAGE_RESOURCE = "nico-kind-node-image"
+NICO_PROVIDER_IMAGE = "cluster-api-provider-nico:local"
+NICO_PROVIDER_NAMESPACE = os.getenv("NICO_PROVIDER_NAMESPACE", "capnico-system")
+NICO_MOCK_IMAGE = "cwe-nico-mock:local"
+NICO_MOCK_HTTP_PORT = "18080"
+
+def _get_kind_cluster_name():
+    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "")
+    if kind_cluster_name != "":
+        return kind_cluster_name
+
+    current_context = k8s_context()
+    if current_context.startswith("kind-"):
+        return current_context[5:]
+
+    return "kind-cluster-name-not-set"
+
+def register(ctx):
+    # NICo cluster creation runs entirely against the in-cluster mock, so CWE
+    # must point at it regardless of whether the user happens to have a Forge
+    # API key in their shell. Forge cache-sync is orthogonal — pointing it at
+    # the mock keeps the cache hydrating against a known-empty responder
+    # instead of failing DNS/auth against real Forge.
+    #
+    # ENABLE_CAPI/ENABLE_FORGE_CAPI gate the CAPI controller-runtime manager
+    # and the Forge-CAPI bridge (NicoTpmSpiffeController) in CWE. Listing the
+    # nico provider implies both should be enabled. ENABLE_CAPI is set
+    # redundantly with the capi_core provider for self-containment; the main
+    # Tiltfile already enforces that capi_core is also listed.
+    cwe_env_overrides = {
+        "FORGE_ENVIRONMENT": "test",
+        "FORGE_URL": "http://mock.nico-mock.svc.cluster.local:8080",
+        "ENABLE_CAPI": "true",
+        "ENABLE_FORGE_CAPI": "true",
+    }
+
+    kind_cluster_name = _get_kind_cluster_name()
+    cwe_http_port = os.getenv("CWE_HTTP_PORT", "8080")
+    capd_kindest_node_image = os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local")
+    nico_provider_repo_dir = os.getenv("NICO_PROVIDER_REPO_DIR", os.path.join(ctx.main_dir, "..", "cluster-api-provider-nico"))
+    build_capd_kindest_node_image_script = os.path.join(ctx.main_dir, "hack", "capd-kindest-node", "build-image.sh")
+    mock_dir = os.path.join(ctx.main_dir, "hack", "nico-mock")
+    labels = ["2-nico"]
+
+    kind_node_image_script = """
+          set -euo pipefail
+
+          bash "%s"
+          kind load docker-image --name "%s" "%s"
+    """ % (
+        build_capd_kindest_node_image_script,
+        kind_cluster_name,
+        capd_kindest_node_image,
+    )
+
+    local_resource(
+        NICO_KIND_NODE_IMAGE_RESOURCE,
+        labels=labels,
+        cmd=["bash", "-c", kind_node_image_script],
+        resource_deps=["check-management-cluster"],
+        deps=[
+          build_capd_kindest_node_image_script,
+          "hack/capd-kindest-node/Dockerfile",
+          "hack/capd-kindest-node/scripts",
+          "hack/capd-kindest-node/systemd",
+        ],
+        allow_parallel=True,
+    )
+
+    nico_provider_script = """
+          set -euo pipefail
+          provider_repo_dir="%s"
+          provider_image="%s"
+          provider_namespace="%s"
+
+          if [ ! -d "${provider_repo_dir}" ]; then
+            echo "NICO_PROVIDER_REPO_DIR '${provider_repo_dir}' does not exist." >&2
+            exit 1
+          fi
+
+          if [ "$(uname -s)" = "Darwin" ]; then
+            export DOCKER_HOST="%s"
+          fi
+
+          echo "Building local NICo provider image..."
+          docker build -t "${provider_image}" "${provider_repo_dir}"
+          echo "Loading NICo provider image into kind..."
+          kind load docker-image "${provider_image}" --name "%s"
+          echo "Applying NICo provider manifests..."
+          kubectl apply -k "${provider_repo_dir}/config/default"
+          kubectl -n "${provider_namespace}" create secret generic nico-credentials \
+            --from-literal=endpoint="http://mock.nico-mock.svc.cluster.local:8080" \
+            --from-literal=orgID="local-dev-org" \
+            --from-literal=token="local-dev-token" \
+            --dry-run=client -o yaml | kubectl apply -f -
+          kubectl -n "${provider_namespace}" set image deployment/controller-manager manager="${provider_image}"
+          kubectl -n "${provider_namespace}" rollout restart deployment/controller-manager
+          kubectl -n "${provider_namespace}" rollout status deployment/controller-manager --timeout=120s
+    """ % (
+        nico_provider_repo_dir,
+        NICO_PROVIDER_IMAGE,
+        NICO_PROVIDER_NAMESPACE,
+        os.getenv("COLIMA_DOCKER_HOST", "unix://%s/.colima/default/docker.sock" % os.getenv("HOME", "~")),
+        kind_cluster_name,
+    )
+
+    local_resource(
+        NICO_PROVIDER_RESOURCE,
+        labels=labels,
+        cmd=["bash", "-c", nico_provider_script],
+        resource_deps=["check-management-cluster"],
+        deps=[
+          nico_provider_repo_dir,
+        ],
+        allow_parallel=True,
+    )
+
+    custom_build(
+        ref=NICO_MOCK_IMAGE,
+        command=["bash", "-c", """
+          set -euo pipefail
+
+          if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+            export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+          fi
+
+          docker build -t "$EXPECTED_REF" -f "%s" "%s"
+          kind load docker-image --name "%s" "$EXPECTED_REF"
+        """ % (
+            os.path.join(mock_dir, "Dockerfile"),
+            mock_dir,
+            kind_cluster_name,
+        )],
+        deps=[
+          os.path.join(mock_dir, "cmd"),
+          os.path.join(mock_dir, "go.mod"),
+          os.path.join(mock_dir, "go.sum"),
+          os.path.join(mock_dir, "Dockerfile"),
+        ],
+        ignore=[
+          "**/__debug_bin*",
+        ],
+    )
+
+    mock_yaml = str(read_file(os.path.join(mock_dir, "deploy", "k8s", "mock.yaml")))
+    mock_yaml = mock_yaml.replace(
+        "value: cwe-capd-kindest-node:local",
+        "value: %s" % capd_kindest_node_image,
+    )
+    k8s_yaml(blob(mock_yaml))
+
+    k8s_resource(
+        labels=labels,
+        workload="mock",
+        new_name="mock",
+        resource_deps=[
+          NICO_KIND_NODE_IMAGE_RESOURCE,
+          NICO_PROVIDER_RESOURCE,
+        ],
+        port_forwards=[NICO_MOCK_HTTP_PORT + ":8080"],
+        links=[
+          link("http://localhost:%s/healthz" % NICO_MOCK_HTTP_PORT, "Health"),
+        ],
+    )
+
+    cmd_button(
+        "3-register-mock-site",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          CWE_HTTP_PORT="%s" \
+          bash ./hack/register-mock-site.sh
+        """ % (cwe_http_port,)],
+        resource="cwe",
+        icon_name="add_box",
+        text="Register mock site",
+    )
+
+    cmd_button(
+        "4-create-sample-forge-cluster",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          CWE_HTTP_PORT="%s" \
+          CLUSTER_NAME="${CLUSTER_NAME:-forge}" \
+          KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
+          CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
+          WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}" \
+          bash ./hack/create-forge-cluster.sh
+        """ % (cwe_http_port,)],
+        resource="cwe",
+        icon_name="add_box",
+        text="Create sample Forge cluster",
+        inputs=[
+            text_input("CLUSTER_NAME", default="forge"),
+            text_input("KUBERNETES_VERSION", default="1.34.2"),
+            text_input("CONTROL_PLANE_DESIRED_COUNT", default="1"),
+            text_input("WORKER_DESIRED_COUNT", default="0"),
+        ],
+    )
+
+    cmd_button(
+        "5-create-sample-local-nico-cluster",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          CWE_HTTP_PORT="%s" \
+          CLUSTER_NAME="${CLUSTER_NAME:-nico-local}" \
+          KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
+          CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
+          WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}" \
+          ./hack/create-local-nico-cluster.sh
+        """ % (cwe_http_port,)],
+        resource="cwe",
+        icon_name="add_box",
+        text="Create sample local NICo cluster",
+        inputs=[
+            text_input("CLUSTER_NAME", default="nico-local"),
+            text_input("KUBERNETES_VERSION", default="1.34.2"),
+            text_input("CONTROL_PLANE_DESIRED_COUNT", default="1"),
+            text_input("WORKER_DESIRED_COUNT", default="0"),
+        ],
+    )
+
+    return struct(
+        cwe_resource_deps=["mock"],
+        cwe_env_overrides=cwe_env_overrides,
+    )

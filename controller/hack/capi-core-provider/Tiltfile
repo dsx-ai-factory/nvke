@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# capi-core provider: declares that the cluster has Cluster API core installed
+# and propagates ENABLE_CAPI=true into CWE so the controller-runtime manager
+# starts up and the CAPI core controllers (e.g. machine-spire-entry) get
+# registered.
+#
+# This provider has no Tilt resources of its own — it owns a preflight check
+# fragment (asserting that capi-controller-manager is deployed) and a CWE env
+# override.
+
+def register(ctx):
+    return struct(
+        cwe_resource_deps = [],
+        cwe_env_overrides = {
+            "ENABLE_CAPI": "true",
+        },
+        preflight_script = """
+      kubectl get deployment -n capi-system capi-controller-manager >/dev/null 2>&1 || {
+        echo "CAPI controllers are not installed in the current cluster. Run 'make capi-core-up' (or 'make capd-up') first." >&2
+        exit 1
+      }
+""",
+    )

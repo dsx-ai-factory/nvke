@@ -1,0 +1,9 @@
+#!/bin/sh
+# CAPD/KinD nodes share the Docker host kernel, whose config module is not
+# available inside the node container. Ignore only that local-only kubeadm
+# preflight failure during control-plane upgrade planning and application.
+if [ "$1" = "upgrade" ] && { [ "$2" = "plan" ] || [ "$2" = "apply" ]; }; then
+  exec /usr/bin/kubeadm.real "$@" --ignore-preflight-errors=SystemVerification
+fi
+
+exec /usr/bin/kubeadm.real "$@"

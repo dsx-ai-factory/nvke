@@ -1,0 +1,26 @@
+{{- if and .Values.serviceMonitor.enabled (dig "monitoring" "enabled" true (.Values.global | default dict)) }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Values.serviceMonitor.name }}
+  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  namespaceSelector:
+    matchNames:
+      - {{ include "cloud-workflow-engine.namespace" . }}
+  selector:
+    matchLabels:
+      {{- include "cloud-workflow-engine.selectorLabels" . | nindent 6 }}
+      {{- with .Values.serviceMonitor.matchLabels }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+{{- end }}

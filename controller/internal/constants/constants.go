@@ -1,0 +1,159 @@
+// SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+//
+// NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+// property and proprietary rights in and to this material, related
+// documentation and any modifications thereto. Any use, reproduction,
+// disclosure or distribution of this material and related documentation
+// without an express license agreement from NVIDIA CORPORATION or
+// its affiliates is strictly prohibited.
+
+package constants
+
+import (
+	"github.com/google/uuid"
+)
+
+const (
+	ProvisionClusterWorkflowPrefix     = "provision-cluster-"
+	TeardownClusterWorkflowPrefix      = "teardown-cluster-"
+	EnableEtcdEncryptionWorkflowPrefix = "enable-etcd-encryption-"
+	EnableOIDCWorkflowPrefix           = "enable-oidc-"
+
+	EtcdEncryptionKeySecretPrefix     = "etcd-encryption-key-"
+	EtcdEncryptionKeyFieldActive      = "active"
+	EtcdEncryptionKeyFieldActiveSince = "active-since"
+	EtcdEncryptionKeyFieldPending     = "pending"
+
+	ProvisionNodePoolWorkflowPrefix = "provision-node-pool-"
+	TeardownNodePoolWorkflowPrefix  = "teardown-node-pool-"
+
+	ProvisionNodeWorkflowPrefix = "provision-node-"
+	TeardownNodeWorkflowPrefix  = "teardown-node-"
+	PatchNodeWorkflowPrefix     = "patch-node-"
+
+	TeardownNodeWorkflowType         = "TeardownNode"
+	EnableEtcdEncryptionWorkflowType = "EnableEtcdEncryption"
+	EnableOIDCWorkflowType           = "EnableOIDC"
+
+	RecordNodePoolConfigChangeWorkflowType   = "RecordNodePoolConfigChange"
+	RecordNodePoolConfigChangeWorkflowPrefix = "record-node-pool-config-change-"
+
+	RebootNodeWorkflowPrefix       = "reboot-node-"
+	RebootNodeUptimeWorkflowPrefix = "reboot-node-uptime-"
+
+	ApplyK8sNodeConditionWorkflowPrefix = "apply-k8s-node-condition-"
+
+	UpgradeControlPlaneAddonsWorkflowPrefix = "kubeadm-upgrade-"
+	UpdateKubeadmCMWorkflowPrefix           = "update-kubeadm-configmap-"
+	ApproveNodeCSRsWorkflowPrefix           = "approve-node-csrs-"
+	RenewK8sCertsWorkflowPrefix             = "renew-k8s-certs-"
+
+	RebootNodeReasonProvisioningWorkflow = "provisioning-workflow"
+
+	MachineCapabilityTypeInfiniBand = "InfiniBand"
+	MachineCapabilityTypeNVLink     = "NVLink Interface"
+	MachineCapabilityTypeGPU        = "GPU"
+
+	MachineCapabilityDeviceTypeNVLink = "NVLink"
+
+	// NKE label keys for Forge instances
+	LabelKeyNodeID     = "nke.nvidia.com/node-id"
+	LabelKeyNodePoolID = "nke.nvidia.com/node-pool-id"
+	LabelKeyClusterID  = "nke.nvidia.com/cluster-id"
+	LabelKeyIPAddress  = "nke.nvidia.com/ip-address"
+	LabelKeySiteID     = "nke.nvidia.com/site-id"
+
+	// NKE label keys applied to Kubernetes node objects
+	LabelKeyMachineID = "nke.nvidia.com/machine-id"
+
+	// Forge topology label keys applied to Kubernetes node objects. These are
+	// deliberately distinct from the Forge-instance label keys above (LabelKey*)
+	// even where the string value matches (e.g. site-id): the two families target
+	// different objects (K8s node vs. Forge instance) and own separate
+	// deprecation contracts.
+	//
+	// NOTE: node.kubernetes.io/instance-type is intentionally NOT set here. The
+	// prod tenant Prometheus SLO rules (prometheus/slo.rules) exact-match
+	// instance_type="cpu" to exclude CPU nodes from GPU capacity/health math, and
+	// the Forge instance-type name (e.g. "cpu.t1") does not match "cpu". Leave the
+	// upstream/kubelet-provided value untouched.
+	LabelKeyNodeSiteID   = "nke.nvidia.com/site-id"
+	LabelKeyNodeSiteName = "nke.nvidia.com/site-name"
+	LabelKeyNodeVPCID    = "nke.nvidia.com/vpc-id"
+	LabelKeyNodeVPCName  = "nke.nvidia.com/vpc-name"
+
+	// NKE label keys for node remediation
+	LabelKeyNodeLabelReboot                = "nke.nvidia.com/reboot"
+	LabelKeyNodeLabelRebootStarted         = "nke.nvidia.com/reboot-started"
+	LabelKeyNodeLabelRebootAttempt         = "nke.nvidia.com/reboot-attempt"
+	LabelKeyNodeLabelLastCompletedReboot   = "nke.nvidia.com/last-completed-reboot"
+	LabelKeyNodeLabelRebootStatus          = "nke.nvidia.com/reboot-status"
+	LabelKeyNodeLabelRebootStatusTimestamp = "nke.nvidia.com/reboot-status-timestamp"
+	LabelKeyNodeLabelTerminate             = "nke.nvidia.com/terminate"
+	LabelKeyNodeLabelTerminateStatus       = "nke.nvidia.com/terminate-status"
+
+	// NKE label keys and values for cluster static entries
+	LabelKeyNkeManagedBy   = "nke.nvidia.com/managed-by"
+	LabelValueNkeManagedBy = "cloud-workflow-engine"
+
+	// NKE Field Managers for server-side apply
+	FieldManagerCWE                   = "cloud-workflow-engine"
+	FieldManagerCWERebootMachine      = "cloud-workflow-engine-reboot-machine"
+	FieldManagerCWEMachineHealthIssue = "cloud-workflow-engine-machine-health-issue"
+	FieldManagerNicoTpmSpiffe         = "nico-tpm-spiffe-controller"
+	FieldManagerMachineSpireEntry     = "machine-spire-entry-controller"
+
+	// Node annotations
+	NodeAnnotationKeyMachineHealthIssue = "nke.nvidia.com/machine-health-issue"
+
+	// CAPI Machine annotations
+	MachineAnnotationKeyHostID                  = "nke.nvidia.com/host-id"
+	MachineAnnotationKeyRebootCompleteTimestamp = "nke.nvidia.com/reboot-complete-timestamp"
+	MachineAnnotationKeyReboot                  = "nke.nvidia.com/reboot"
+	MachineAnnotationKeyMachineHealthIssue      = "nke.nvidia.com/machine-health-issue"
+	MachineAnnotationKeySpireAgentSpiffeIDPath  = "nke.nvidia.com/spire-agent-spiffe-id-path"
+
+	LabelValueTerminateStatusInProgress = "InProgress"
+	LabelValueTerminateStatusNotAllowed = "NotAllowed"
+
+	TaintEffectNoSchedule    = "NoSchedule"
+	TaintKeyMaintenance      = "nke.nvidia.com/maintenance"
+	TaintKeyNodeProvisioning = "nke.nvidia.com/provisioning"
+
+	// NKE Node Condition types
+	NodeConditionTypeNeedsRecycle = "nke.nvidia.com/NeedsRecycle"
+	NodeConditionTypeNeedsRepair  = "nke.nvidia.com/NeedsRepair"
+
+	// SPIFFE ID paths expected from SPIRE agents
+	TPMSpireAgentPath                = "/spire/agent/tpm/"
+	JoinTokenAlternateSpireAgentPath = "/join-token-spire-agent/host-id/" //nolint:gosec // This is a SPIFFE path prefix, not a credential.
+
+	CAPISpireAgentConfigPath = "/etc/spire-agent/agent.conf"
+	CAPISpireTrustBundlePath = "/etc/spire-agent/initial-trust-bundle.pem"
+)
+
+type RebootStatus string
+
+const (
+	RebootStatusInProgress             RebootStatus = "InProgress"
+	RebootStatusCompleted              RebootStatus = "Completed"
+	RebootStatusFailed                 RebootStatus = "Failed"
+	RebootStatusNotAllowed             RebootStatus = "NotAllowed"
+	RebootStatusCanceled               RebootStatus = "Canceled"
+	RebootStatusFailedInstanceNotFound RebootStatus = "FailedInstanceNotFound"
+)
+
+type NodeTaint struct {
+	Key    string
+	Value  string
+	Effect string
+}
+
+func NodeTaintProvisioning() NodeTaint {
+	return NodeTaint{Key: TaintKeyNodeProvisioning, Value: "true", Effect: TaintEffectNoSchedule}
+}
+
+func EtcdEncryptionKeySecretName(clusterID uuid.UUID) string {
+	return EtcdEncryptionKeySecretPrefix + clusterID.String()
+}

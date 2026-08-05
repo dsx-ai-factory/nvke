@@ -1,0 +1,70 @@
+{{- if .Values.spiffe.enabled }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-spire
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - spire.spiffe.io
+    resources:
+      - clusterstaticentries
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-spire
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "cloud-workflow-engine.fullname" . }}-spire
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-spire-tpm-pubhashes
+  namespace: {{ .Values.spiffe.spire.serverNamespace }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    resourceNames:
+      - {{ .Values.spiffe.spire.tpmPubhashesConfigMapName }}
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-spire-tpm-pubhashes
+  namespace: {{ .Values.spiffe.spire.serverNamespace }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "cloud-workflow-engine.fullname" . }}-spire-tpm-pubhashes
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+{{- end }}
