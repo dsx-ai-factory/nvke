@@ -2,14 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 navigation:
-  - section: Overview
-    contents:
-      - page: Overview
-        path: overview.md
-      - page: Key Concepts
-        path: concepts.md
-      - page: Architecture
-        path: architecture.md
+  - page: Overview
+    path: overview.md
+  - page: Key Concepts
+    path: concepts.md
+  - page: Architecture
+    path: architecture.md
 
   - section: Site Controller Bootstrap
     contents:
