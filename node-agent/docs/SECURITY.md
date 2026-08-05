@@ -16,7 +16,6 @@ The service:
 - initializes, joins, resets, and inspects Kubernetes nodes through `kubeadm`;
 - installs NKE bundles, Debian packages, apt repositories, and CNI components;
 - configures Kubernetes API/etcd encryption and rotates encryption keys;
-- converts bootstrap full-disk encryption to TPM-backed unlock;
 - changes control-plane static pod manifests and kube-vip state;
 - uploads files, executes scripts, and collects support bundles.
 

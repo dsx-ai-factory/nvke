@@ -445,28 +445,6 @@ func TestConcurrentStatusUpdates(t *testing.T) {
 	assert.Equal(t, numGoroutines, len(server.NodeStatus.Bundles))
 }
 
-func TestDiskEncryptionStatusStruct(t *testing.T) {
-	status := DiskEncryptionStatus{
-		EncryptedDeviceUUID:    "1234-5678-90ab",
-		KeylessEntryConfig:     "UUID=1234",
-		KeylessEntryEnabled:    true,
-		KeylessEntryConfigured: true,
-		TPMDecryptionEnabled:   false,
-		MasterKeyEnabled:       true,
-		ConfiguredPCRIds:       []string{"1", "4", "5", "7"},
-	}
-
-	data, err := json.Marshal(status)
-	assert.NoError(t, err)
-
-	var decoded DiskEncryptionStatus
-	err = json.Unmarshal(data, &decoded)
-	assert.NoError(t, err)
-	assert.Equal(t, status.EncryptedDeviceUUID, decoded.EncryptedDeviceUUID)
-	assert.Equal(t, status.KeylessEntryEnabled, decoded.KeylessEntryEnabled)
-	assert.Len(t, decoded.ConfiguredPCRIds, 4)
-}
-
 // ErrorMockPersister is a mock persister that returns an error
 type ErrorMockPersister struct {
 	mu      sync.Mutex
@@ -668,9 +646,6 @@ func TestPersistAndLoadRoundTrip(t *testing.T) {
 				Status:    "Success",
 			},
 		},
-		DiskEncryptionStatus: DiskEncryptionStatus{
-			KeylessEntryEnabled: true,
-		},
 		InstalledPackages: []InstalledDebPackage{
 			{Name: "curl", Version: "7.81.0-1", Status: "ii "},
 		},
@@ -693,18 +668,14 @@ func TestPersistAndLoadRoundTrip(t *testing.T) {
 	assert.Equal(t, originalStatus.Role, loaded.Role)
 	assert.Equal(t, len(originalStatus.Bundles), len(loaded.Bundles))
 	assert.Equal(t, len(originalStatus.Scripts), len(loaded.Scripts))
-	assert.Equal(t, originalStatus.DiskEncryptionStatus.KeylessEntryEnabled, loaded.DiskEncryptionStatus.KeylessEntryEnabled)
 	assert.Equal(t, originalStatus.InstalledPackages, loaded.InstalledPackages)
 }
 
 func TestCloneNodeStatusPreservesNonNilEmptySlices(t *testing.T) {
 	status := &NodeStatus{
-		CompletedPhases: []string{},
-		Bundles:         []Bundle{},
-		Scripts:         []Script{},
-		DiskEncryptionStatus: DiskEncryptionStatus{
-			ConfiguredPCRIds: []string{},
-		},
+		CompletedPhases:   []string{},
+		Bundles:           []Bundle{},
+		Scripts:           []Script{},
 		InstalledPackages: []InstalledDebPackage{},
 	}
 
@@ -713,7 +684,6 @@ func TestCloneNodeStatusPreservesNonNilEmptySlices(t *testing.T) {
 	assert.NotNil(t, statusCopy.CompletedPhases)
 	assert.NotNil(t, statusCopy.Bundles)
 	assert.NotNil(t, statusCopy.Scripts)
-	assert.NotNil(t, statusCopy.DiskEncryptionStatus.ConfiguredPCRIds)
 	assert.NotNil(t, statusCopy.InstalledPackages)
 }
 

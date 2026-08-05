@@ -120,44 +120,6 @@ func buildSpiffeMtlsConfig(ctx context.Context, socketPath string) (*tls.Config,
 	return tlsconfig.MTLSServerConfig(source, source, authorizer), nil
 }
 
-func checkKeylessEntryConfig() (string, error) {
-	// Check if the keyless entry configuration file exists
-	_, err := os.Stat("/etc/keyless-entry.conf")
-	if err != nil && errors.Is(err, os.ErrNotExist) {
-		slog.Info("keyless entry configuration file does not exist")
-		return "", nil
-	}
-	if err != nil {
-		slog.Error("failed to stat keyless entry configuration file", "err", err)
-		return "", err
-	}
-
-	// Read the keyless entry configuration file
-	file, _ := os.ReadFile("/etc/keyless-entry.conf")
-	return string(file), nil
-}
-
-// parseKeylessEntryConfig parses keyless entry data into the server state.
-func parseKeylessEntryConfig(serverState *server.NodeStatus) {
-	uuidCounter := 0
-	for _, line := range strings.Split(serverState.DiskEncryptionStatus.KeylessEntryConfig, "\n") {
-		if strings.Contains(line, "UUID=") {
-			serverState.DiskEncryptionStatus.EncryptedDeviceUUID = strings.Split(line, "UUID=")[1]
-			uuidCounter += 1
-		}
-		if strings.Contains(line, "configured = true") {
-			serverState.DiskEncryptionStatus.KeylessEntryConfigured = true
-		}
-
-		if strings.Contains(line, "enabled = true") {
-			serverState.DiskEncryptionStatus.KeylessEntryEnabled = true
-		}
-	}
-	if uuidCounter > 1 {
-		log.Fatal("ERROR: multiple UUIDs found in keyless entry configuration")
-	}
-}
-
 // newAuditLogInterceptor returns an interceptor that logs audit events using the provided logger.
 func newAuditLogInterceptor(logger *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
@@ -249,20 +211,8 @@ func RunNodeStartup(cfg AgentConfig) (*server.NodeAgentServer, error) {
 	slog.Info("running NodeStartup...")
 	agentServer := initializeNodeServer(cfg)
 
-	// check keyless-entry configuration, we want this on every reboot or restart of the service...
-	keylessEntryConfig, err := checkKeylessEntryConfig()
-	if err != nil {
-		log.Fatalf("failed to check keyless entry configuration: %v", err)
-	}
-
-	if keylessEntryConfig != "" {
-		slog.Info("keyless entry configuration", "config", keylessEntryConfig)
-		agentServer.NodeStatus.DiskEncryptionStatus.KeylessEntryConfig = keylessEntryConfig
-		parseKeylessEntryConfig(agentServer.NodeStatus)
-	}
-
 	cmd := exec.Command("swapoff", "-a")
-	_, err = cmd.CombinedOutput()
+	_, err := cmd.CombinedOutput()
 	if err != nil {
 		slog.Error("failed to disable swap", "err", err)
 	}

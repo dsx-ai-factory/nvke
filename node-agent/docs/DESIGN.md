@@ -33,8 +33,6 @@ API.**
 - **Kubernetes API/etcd secrets encryption at rest** — initialize, promote
   providers, key rotation, and object rewrite, all coordinated across control-plane
   nodes.
-- **Full disk encryption (FDE)** — convert a keyless-entry-bootstrapped LUKS root
-  device to TPM-backed unlock via clevis.
 - **Control-plane graceful shutdown / kube-vip drain & restore** — cordon this
   node's control-plane traffic without disrupting cluster availability.
 - **Node introspection & support** — status, node info, support-bundle collection,
@@ -159,7 +157,7 @@ Entry point: `cmd/agent/main.go`.
      (`UpdateState`); if the node already completed init/join, re-assert
      `registerNode: false` in the kubelet config (zombie-node prevention).
    - Detect architecture, run **mlx5 rescan** (DPU NIC bring-up) unless disabled.
-   - Parse keyless-entry FDE config, `swapoff -a`.
+   - `swapoff -a`.
 4. **`startSecureServer`** (goroutine):
    - Build gRPC server options: **audit-log unary interceptor** always;
      **SPIFFE mTLS creds** unless `--disable-mtls`.
@@ -196,7 +194,7 @@ The central type. It embeds the generated `UnimplementedNodeAgentServer` and hol
 
 The RPC surface is split across many files by capability domain: `agent.go`
 (kubeadm/bundles/scripts/upload core), `cni.go`, `etcd_encryption_*.go`,
-`disk_encryption.go`, `control_plane_graceful_shutdown.go`,
+`control_plane_graceful_shutdown.go`,
 `patch_apiserver_manifest.go`, `preflight.go`, `update_nke_rbac.go`,
 `operations.go` (async framework), `agent_deb.go` (apt).
 
@@ -346,9 +344,6 @@ Defined in `pkg/agent/proto/node_agent.proto`. Grouped conceptually:
 `StartK8sControlPlaneNodeGracefulShutdown` + `Get…Status`, `StartKubeVipRestore`,
 `PatchAPIServerManifest`.
 
-**Full disk encryption**
-`ConfigureTPMUnlockForFDE`.
-
 **Cluster RBAC**
 `UpdateNKERBAC`.
 
@@ -399,14 +394,8 @@ encryption) uses the async
 `StartEtcdEncryptionAtRestObjectsRewrite` / `GetEtcdEncryptionAtRestObjectsRewriteStatus`
 RPCs. All CP nodes must apply the same key.
 
-### 9.4 Full disk encryption (TPM)
-`ConfigureTPMUnlockForFDE` assumes a LUKS+LVM root bootstrapped with **keyless-entry**.
-It locates the encrypted root via `lsblk`, `clevis luks bind` to TPM2 PCRs
-(**hardcoded 1/4/5/7** regardless of request, to avoid PCRs that change on kernel
-updates), removes keyless-entry, adds a caller-supplied master key, and removes the
-well-known bootstrap key. One-way hardening; guarded against double-apply.
 
-### 9.5 Control-plane graceful shutdown & kube-vip
+### 9.4 Control-plane graceful shutdown & kube-vip
 `runK8sControlPlaneNodeGracefulShutdown`: resolve VIP (from kube-vip manifest or
 loopback) → stop kube-vip static pod (move manifest, wait for container exit via
 `crictl`) → close established remote `VIP:6443` sockets (`ss -K`) → remove VIP from
@@ -416,7 +405,7 @@ ARP/BGP-ECMP paths that would strand worker kubelets) → optionally stop kube-a
 the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts to
 `/etc/kubernetes/manifests` changes); restore verifies backup hashes for idempotence.
 
-### 9.6 Bundles / packages / collections
+### 9.5 Bundles / packages / collections
 - **Bundles:** semver-versioned tgz artifacts resolved through an index
   (`ubuntu_22/24_index.json`) from S3/HTTP or OCI; installed by running an install
   command; status tracked by `request_id`.
@@ -426,7 +415,7 @@ the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts t
   polled via `GetBundleStatus`.
 - Direction of travel: apt/OCI over legacy bundles/profiles.
 
-### 9.7 Support & scripts
+### 9.6 Support & scripts
 - `GetSupportBundle` gathers `state.json`, `nke-agent` journal, audit log, script
   log, dpkg inventory, and caller-requested absolute files into a tgz.
 - `ExecuteScript`/`StreamExecuteScript` run scripts (from `/usr/local/nke/user-scripts`
@@ -500,8 +489,6 @@ the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts t
 - **Bundles → apt migration** is in progress; tgz bundles remain for some flows.
 - **Dual auth primitives.** SPIFFE mTLS is wired in `main.go`; the file-backed
   token interceptor in `pkg/auth` is not the production path — clarify or remove.
-- **Hardcoded FDE PCRs (1/4/5/7)** ignore the request field; documented but worth
-  making explicit/validated.
 
 ---
 
@@ -515,7 +502,6 @@ the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts t
   by kubelet; the agent manipulates these by moving manifest files.
 - **bundle** — versioned tgz artifact + install command, resolved via an index.
 - **collection** — a list of bundles (`.json`) or apt packages (`.txt`) to install.
-- **keyless-entry** — bootstrap FDE unlock mechanism replaced by TPM unlock.
 - **secretbox** — XSalsa20-Poly1305 provider used for K8s API secrets encryption.
 
 ---

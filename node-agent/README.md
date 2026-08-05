@@ -68,7 +68,7 @@ gRPC reflection is enabled on the same port (useful with `grpcurl`).
 - **Kubeadm:** init, join, reset, preflight, join strings, kubeconfig
 - **CNI:** `InstallCNI` after packages are present; prefer `noCniInstall: true` on init for new orchestration (legacy in-init CNI remains when `noCniInstall` is false)
 - **Packages / collections:** apt packages, apt repos, bundles, collections
-- **Encryption:** Kubernetes API/etcd encryption-at-rest; TPM unlock for FDE
+- **Encryption:** Kubernetes API/etcd encryption-at-rest
 - **Control-plane ops:** graceful shutdown / kube-vip restore, apiserver manifest patch, NKE RBAC apply
 - **Utilities:** script execution, file upload, support bundle
 
@@ -111,7 +111,7 @@ More sample clients and manifests: [`samples/`](samples/) and [`sample-clients/`
 
 ## Encryption (sketch)
 
-API encryption and FDE are multi-step flows; see DESIGN.md and the proto comments.
+API encryption is a multi-step flow; see DESIGN.md and the proto comments.
 When posting example keys in docs or tickets, use clearly invalid material, e.g.:
 
 ```text

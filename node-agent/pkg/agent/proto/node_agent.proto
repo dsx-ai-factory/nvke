@@ -76,8 +76,6 @@ service NodeAgent {
 
   rpc GetKubeadmJoinString(KubeadmJoinStringRequest) returns (KubeadmJoinStringResponse) {}
 
-  rpc ConfigureTPMUnlockForFDE(ConfigureTPMUnlockForFDERequest) returns (ConfigureTPMUnlockForFDEResponse) {}
-
   rpc InitializeKubernetesAPIEncryption(InitializeKubernetesAPIEncryptionRequest) returns (InitializeKubernetesAPIEncryptionResponse) {}
 
   rpc RewriteKubernetesAPIObjects(RewriteKubernetesAPIObjectsRequest) returns (RewriteKubernetesAPIObjectsResponse) {}
@@ -586,17 +584,6 @@ message ExecuteScriptResponse {
   int32 exit_code = 3;
   string error_message = 4;
   string request_id = 5;
-}
-
-message ConfigureTPMUnlockForFDERequest {
-  string current_master_key = 1;
-  string new_master_key = 2;
-  repeated string pcrs = 3;
-}
-
-message ConfigureTPMUnlockForFDEResponse {
-  string status = 1;
-  string error_message = 3;
 }
 
 message InitializeKubernetesAPIEncryptionRequest {

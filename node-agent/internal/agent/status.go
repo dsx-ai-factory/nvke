@@ -39,7 +39,6 @@ type NodeStatus struct {
 	CNIPlugin        string `json:"cniPlugin"`
 	CNIPluginVersion string `json:"cniPluginVersion"`
 
-	DiskEncryptionStatus  DiskEncryptionStatus          `json:"diskEncryptionStatus"`
 	K8sAPIEncryption      K8sAPIEncryption              `json:"k8sAPIEncryption"`
 	K8sAPIRewrite         K8sAPIRewriteOperation        `json:"k8sAPIRewriteOperation"`
 	NodeAgentOperations   map[string]NodeAgentOperation `json:"nodeAgentOperations,omitempty"`
@@ -67,7 +66,6 @@ func cloneNodeStatus(status *NodeStatus) NodeStatus {
 	statusCopy.CompletedPhases = cloneStringSlice(status.CompletedPhases)
 	statusCopy.Bundles = cloneBundles(status.Bundles)
 	statusCopy.Scripts = cloneScripts(status.Scripts)
-	statusCopy.DiskEncryptionStatus.ConfiguredPCRIds = cloneStringSlice(status.DiskEncryptionStatus.ConfiguredPCRIds)
 	statusCopy.NodeAgentOperations = cloneNodeAgentOperations(status.NodeAgentOperations)
 	statusCopy.InstalledPackages = cloneInstalledDebPackages(status.InstalledPackages)
 	return statusCopy

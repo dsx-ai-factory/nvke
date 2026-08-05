@@ -3,12 +3,11 @@
 ## Project Overview
 
 The **NKE Node-Agent** lives at `node-agent/` in the [NVIDIA/nke](https://github.com/NVIDIA/nke) monorepo.
-It is a Go-based gRPC server (systemd service) that runs on Kubernetes nodes and provides remote management for Kubeadm, full disk encryption (FDE), and software package/bundle installation.
+It is a Go-based gRPC server (systemd service) that runs on Kubernetes nodes and provides remote management for Kubeadm and software package/bundle installation.
 
 **Primary use cases:**
 - Kubernetes cluster creation and management via Kubeadm (init, join, reset)
 - Node bootstrapping and software package/bundle installation
-- Full disk encryption with TPM unlock
 - Kubernetes API/etcd secrets encryption
 - mTLS via SPIFFE (SPIRE workload API)
 

@@ -32,7 +32,6 @@ const (
 	NodeAgent_UpdateNKERBAC_FullMethodName                                = "/proto.NodeAgent/UpdateNKERBAC"
 	NodeAgent_ExecuteScript_FullMethodName                                = "/proto.NodeAgent/ExecuteScript"
 	NodeAgent_GetKubeadmJoinString_FullMethodName                         = "/proto.NodeAgent/GetKubeadmJoinString"
-	NodeAgent_ConfigureTPMUnlockForFDE_FullMethodName                     = "/proto.NodeAgent/ConfigureTPMUnlockForFDE"
 	NodeAgent_InitializeKubernetesAPIEncryption_FullMethodName            = "/proto.NodeAgent/InitializeKubernetesAPIEncryption"
 	NodeAgent_RewriteKubernetesAPIObjects_FullMethodName                  = "/proto.NodeAgent/RewriteKubernetesAPIObjects"
 	NodeAgent_PromoteKubernetesAPIEncryptionProviders_FullMethodName      = "/proto.NodeAgent/PromoteKubernetesAPIEncryptionProviders"
@@ -122,7 +121,6 @@ type NodeAgentClient interface {
 	UpdateNKERBAC(ctx context.Context, in *UpdateNKERBACRequest, opts ...grpc.CallOption) (*UpdateNKERBACResponse, error)
 	ExecuteScript(ctx context.Context, in *ExecuteScriptRequest, opts ...grpc.CallOption) (*ExecuteScriptResponse, error)
 	GetKubeadmJoinString(ctx context.Context, in *KubeadmJoinStringRequest, opts ...grpc.CallOption) (*KubeadmJoinStringResponse, error)
-	ConfigureTPMUnlockForFDE(ctx context.Context, in *ConfigureTPMUnlockForFDERequest, opts ...grpc.CallOption) (*ConfigureTPMUnlockForFDEResponse, error)
 	InitializeKubernetesAPIEncryption(ctx context.Context, in *InitializeKubernetesAPIEncryptionRequest, opts ...grpc.CallOption) (*InitializeKubernetesAPIEncryptionResponse, error)
 	RewriteKubernetesAPIObjects(ctx context.Context, in *RewriteKubernetesAPIObjectsRequest, opts ...grpc.CallOption) (*RewriteKubernetesAPIObjectsResponse, error)
 	// PromoteKubernetesAPIEncryptionProviders reorders encryption providers from
@@ -347,16 +345,6 @@ func (c *nodeAgentClient) GetKubeadmJoinString(ctx context.Context, in *KubeadmJ
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KubeadmJoinStringResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_GetKubeadmJoinString_FullMethodName, in, out, cOpts...)
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (c *nodeAgentClient) ConfigureTPMUnlockForFDE(ctx context.Context, in *ConfigureTPMUnlockForFDERequest, opts ...grpc.CallOption) (*ConfigureTPMUnlockForFDEResponse, error) {
-	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ConfigureTPMUnlockForFDEResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_ConfigureTPMUnlockForFDE_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -714,7 +702,6 @@ type NodeAgentServer interface {
 	UpdateNKERBAC(context.Context, *UpdateNKERBACRequest) (*UpdateNKERBACResponse, error)
 	ExecuteScript(context.Context, *ExecuteScriptRequest) (*ExecuteScriptResponse, error)
 	GetKubeadmJoinString(context.Context, *KubeadmJoinStringRequest) (*KubeadmJoinStringResponse, error)
-	ConfigureTPMUnlockForFDE(context.Context, *ConfigureTPMUnlockForFDERequest) (*ConfigureTPMUnlockForFDEResponse, error)
 	InitializeKubernetesAPIEncryption(context.Context, *InitializeKubernetesAPIEncryptionRequest) (*InitializeKubernetesAPIEncryptionResponse, error)
 	RewriteKubernetesAPIObjects(context.Context, *RewriteKubernetesAPIObjectsRequest) (*RewriteKubernetesAPIObjectsResponse, error)
 	// PromoteKubernetesAPIEncryptionProviders reorders encryption providers from
@@ -850,9 +837,6 @@ func (UnimplementedNodeAgentServer) ExecuteScript(context.Context, *ExecuteScrip
 }
 func (UnimplementedNodeAgentServer) GetKubeadmJoinString(context.Context, *KubeadmJoinStringRequest) (*KubeadmJoinStringResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubeadmJoinString not implemented")
-}
-func (UnimplementedNodeAgentServer) ConfigureTPMUnlockForFDE(context.Context, *ConfigureTPMUnlockForFDERequest) (*ConfigureTPMUnlockForFDEResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ConfigureTPMUnlockForFDE not implemented")
 }
 func (UnimplementedNodeAgentServer) InitializeKubernetesAPIEncryption(context.Context, *InitializeKubernetesAPIEncryptionRequest) (*InitializeKubernetesAPIEncryptionResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method InitializeKubernetesAPIEncryption not implemented")
@@ -1169,24 +1153,6 @@ func _NodeAgent_GetKubeadmJoinString_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).GetKubeadmJoinString(ctx, req.(*KubeadmJoinStringRequest))
-	}
-	return interceptor(ctx, in, info, handler)
-}
-
-func _NodeAgent_ConfigureTPMUnlockForFDE_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ConfigureTPMUnlockForFDERequest)
-	if err := dec(in); err != nil {
-		return nil, err
-	}
-	if interceptor == nil {
-		return srv.(NodeAgentServer).ConfigureTPMUnlockForFDE(ctx, in)
-	}
-	info := &grpc.UnaryServerInfo{
-		Server:     srv,
-		FullMethod: NodeAgent_ConfigureTPMUnlockForFDE_FullMethodName,
-	}
-	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).ConfigureTPMUnlockForFDE(ctx, req.(*ConfigureTPMUnlockForFDERequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1692,10 +1658,6 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKubeadmJoinString",
 			Handler:    _NodeAgent_GetKubeadmJoinString_Handler,
-		},
-		{
-			MethodName: "ConfigureTPMUnlockForFDE",
-			Handler:    _NodeAgent_ConfigureTPMUnlockForFDE_Handler,
 		},
 		{
 			MethodName: "InitializeKubernetesAPIEncryption",
