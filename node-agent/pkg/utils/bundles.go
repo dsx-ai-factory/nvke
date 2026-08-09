@@ -520,3 +520,6 @@ func VerifyBundles(ctx context.Context, bundles []Bundle) error {
 	*/
 	return nil
 }
+
+// ciProbe is a temporary marker so the CI path filters select this
+// commit and every job runs. Remove before merge.
