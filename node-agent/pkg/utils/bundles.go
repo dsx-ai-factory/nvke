@@ -117,10 +117,15 @@ const (
 	// Consumers host their own indexes at these paths, or pass --index-file-url.
 	DefaultBundleIndexUbuntu22 = "nke_bundles/ubuntu_22_index.json"
 	DefaultBundleIndexUbuntu24 = "nke_bundles/ubuntu_24_index.json"
+
+	// ArchAarch64 is the arm64 label that uname reports.
+	ArchAarch64 = "aarch64"
+	// ArchArm64 is the arm64 label that Go reports.
+	ArchArm64 = "arm64"
 )
 
 var (
-	ArmArchLabels = []string{"arm64", "aarch64", "na"}
+	ArmArchLabels = []string{ArchArm64, ArchAarch64, "na"}
 	AmdArchLabels = []string{"amd64", "x86_64", "na"}
 )
 
@@ -176,7 +181,7 @@ func (idx Index) Find(name string, version *semver.Version, architecture string)
 
 	found := false
 	archLabels := AmdArchLabels
-	if architecture == "arm64" || architecture == "aarch64" {
+	if architecture == ArchArm64 || architecture == ArchAarch64 {
 		archLabels = ArmArchLabels
 	}
 
@@ -199,8 +204,8 @@ func GetMachineArchitecture() string {
 	switch runtime.GOARCH {
 	case "amd64":
 		return "x86_64"
-	case "arm64":
-		return "aarch64"
+	case ArchArm64:
+		return ArchAarch64
 	default:
 		// Return the original Go arch name for erything else: "arm", "386", etc.
 		return runtime.GOARCH
@@ -251,6 +256,8 @@ func GetBundleIndexPath() (string, error) {
 		return DefaultBundleIndexUbuntu22, nil
 	case OSVersionUbuntu24:
 		return DefaultBundleIndexUbuntu24, nil
+	case OSVersionUnsupported:
+		fallthrough
 	default:
 		return "", fmt.Errorf("unsupported OS version")
 	}
@@ -386,7 +393,7 @@ func downloadAndExtractFromHTTP(b *Bundle) (string, error) {
 	if err != nil {
 		return outputDir, fmt.Errorf("failed to download tgz: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		return outputDir, fmt.Errorf("bad response: %s", resp.Status)
@@ -400,10 +407,10 @@ func downloadAndExtractFromHTTP(b *Bundle) (string, error) {
 	}
 	defer os.Remove(tmpFile) // Clean up the archive file
 	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close() //nolint:errcheck
+		out.Close()
 		return outputDir, fmt.Errorf("failed to write temp archive: %w", err)
 	}
-	out.Close() //nolint:errcheck
+	out.Close()
 	// Extract the archive contents, stripping the top-level directory
 	cmd := exec.Command("tar", "-xzf", tmpFile, "--strip-components=1", "-C", outputDir)
 	cmd.Stdout = os.Stdout

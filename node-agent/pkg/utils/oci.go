@@ -298,8 +298,8 @@ func GetArchString() string {
 	switch arch {
 	case "x86_64":
 		return "amd64"
-	case "aarch64":
-		return "arm64"
+	case ArchAarch64:
+		return ArchArm64
 	default:
 		return arch
 	}

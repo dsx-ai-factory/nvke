@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Lint
+
+# Self-hosted runners do not pick up jobs from pull_request events, so pull
+# requests are tested through the pull-request/<number> branch instead.
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: golangci-lint
+    runs-on: linux-amd64-cpu16
+    if: github.repository == 'NVIDIA/nke'
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: node-agent/go.mod
+          cache: true
+
+      # node-agent is the only module that builds from public dependencies.
+      - name: Run golangci-lint
+        working-directory: node-agent
+        run: make lint

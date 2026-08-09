@@ -72,7 +72,7 @@ const (
 var DefaultTigeraVersion *semver.Version = semver.MustParse("3.30.1")
 
 type NodeStatusPersister interface {
-	Persist(*NodeStatus) error
+	Persist(status *NodeStatus) error
 	LoadFromStateFile() (*NodeStatus, error)
 }
 
@@ -639,9 +639,9 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 	s.mu.Unlock()
 
 	resp := &pb.KubeadmInitStatusResponse{
-		Status: string(s.NodeStatus.Status),
-		Phase:  string(s.NodeStatus.Phase),
-		Role:   string(s.NodeStatus.Role),
+		Status: s.NodeStatus.Status,
+		Phase:  s.NodeStatus.Phase,
+		Role:   s.NodeStatus.Role,
 	}
 
 	// Persist what we have so far
@@ -952,9 +952,9 @@ func (s *NodeAgentServer) GetKubeadmStatus(
 	s.mu.Unlock()
 	slog.Info("Returning KubeadmStatus", "status", statusCopy.Status, "phase", statusCopy.Phase, "cniInstallStatus", statusCopy.CNIPluginStatus, "currentMessage", statusCopy.CurrentMessage, "completedPhases", statusCopy.CompletedPhases, "agentVersion", statusCopy.AgentVersion)
 	return &pb.KubeadmStatusResponse{
-		KubeadmStatus:          string(statusCopy.Status),
-		KubeadmPhase:           string(statusCopy.Phase),
-		CniInstallStatus:       string(statusCopy.CNIPluginStatus),
+		KubeadmStatus:          statusCopy.Status,
+		KubeadmPhase:           statusCopy.Phase,
+		CniInstallStatus:       statusCopy.CNIPluginStatus,
 		KubeadmCurrentMessage:  statusCopy.CurrentMessage,
 		KubeadmCompletedPhases: statusCopy.CompletedPhases,
 		AgentVersion:           statusCopy.AgentVersion,
@@ -1070,7 +1070,8 @@ func (s *NodeAgentServer) runKubeadmPreflight(
 
 	configPath := fmt.Sprintf("/tmp/kubeadm-%s-preflight-config.yaml", phase)
 	if err := s.FileWriter.WriteFile(configPath, []byte(configYAML), 0o644); err != nil {
-		return &pb.KubeadmPreflightResponse{
+		// Reported to the caller in the response, like every other failure here.
+		return &pb.KubeadmPreflightResponse{ //nolint:nilerr
 			Status:       ErrorStatus,
 			ErrorMessage: "failed to write preflight config file",
 		}, nil
@@ -1426,10 +1427,10 @@ func (s *NodeAgentServer) executeScript(
 
 			response.ExitCode = int32(1)
 			response.Output = ""
-			response.Status = "error"
+			response.Status = ErrorStatus
 			response.ErrorMessage = errMsg
 
-			s.logScriptExecution("ExecuteScript", requestID, req, "error", 1, errMsg, "")
+			s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, 1, errMsg, "")
 			return response, nil
 		}
 	}
@@ -1452,22 +1453,22 @@ func (s *NodeAgentServer) executeScript(
 		s.addScript(script)
 
 		response.Output = string(output)
-		response.Status = "error"
+		response.Status = ErrorStatus
 		response.ExitCode = int32(exitCode)
 		response.ErrorMessage = err.Error()
 
-		s.logScriptExecution("ExecuteScript", requestID, req, "error", int32(exitCode), err.Error(), string(output))
+		s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, int32(exitCode), err.Error(), string(output))
 		return response, nil
 	}
 
 	response.ExitCode = int32(exitCode)
 	response.Output = string(output)
-	response.Status = "success"
+	response.Status = SuccessStatus
 	response.ErrorMessage = ""
 
 	script.Status = "Success"
 	s.addScript(script)
-	s.logScriptExecution("ExecuteScript", requestID, req, "success", int32(exitCode), "", string(output))
+	s.logScriptExecution("ExecuteScript", requestID, req, SuccessStatus, int32(exitCode), "", string(output))
 	return response, nil
 }
 
@@ -1513,7 +1514,7 @@ func (s *NodeAgentServer) UploadFileBundle(stream pb.NodeAgent_UploadFileBundleS
 			err,
 		)
 	}
-	defer outFile.Close() //nolint:errcheck
+	defer outFile.Close()
 
 	// Write the first chunk to the file
 	_, err = outFile.Write(firstChunk.Data)
@@ -1730,9 +1731,9 @@ func exitResult(cmdErr error) (int, string) {
 // errStatus returns "success" or "error" based on whether err is nil.
 func errStatus(err error) string {
 	if err != nil {
-		return "error"
+		return ErrorStatus
 	}
-	return "success"
+	return SuccessStatus
 }
 
 func (s *NodeAgentServer) SetUnsetIsMaster(
@@ -1818,9 +1819,9 @@ func (s *NodeAgentServer) processBundleInstall(
 	out, err := nkeutils.InstallBundle(bundle, s.Runner, s.BundleSource)
 	if err != nil {
 		slog.Error("failed to install bundle", "name", bundle.Name, "version", bundle.Version, "err", err)
-		bundleStatus.Status = "error"
+		bundleStatus.Status = ErrorStatus
 		bundleStatus.Error = fmt.Sprintf("failed to install %s bundle version %s @ %s: %v", bundle.Name, bundle.Version, time.Now().Format(time.RFC3339), err)
-		bundleStatus.Output = string(out)
+		bundleStatus.Output = out
 
 		if exitError, ok := err.(*exec.ExitError); ok {
 			bundleStatus.ExitCode = int32(exitError.ExitCode())
@@ -1828,7 +1829,7 @@ func (s *NodeAgentServer) processBundleInstall(
 		return err
 	}
 
-	bundleStatus.Status = "success"
+	bundleStatus.Status = SuccessStatus
 	slog.Info("bundle successfully installed", "name", bundle.Name, "version", bundle.Version)
 
 	return nil
