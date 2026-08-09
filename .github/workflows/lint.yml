@@ -42,3 +42,5 @@ jobs:
       - name: Run golangci-lint
         working-directory: node-agent
         run: make lint
+
+# ciProbe: temporary marker so the workflow path filters select this commit.
