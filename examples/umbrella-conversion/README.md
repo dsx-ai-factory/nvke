@@ -21,18 +21,32 @@ data/overlays/forge.yaml  leaf overlay, full stack
 data/overlays/forge-coexist.yaml
                           leaf overlay, controller layer only
 data/components/*/        per-component values (see Limitations)
-render.sh                 regenerates the output
-sample-output/            three representative rendered files
+render.sh                 regenerates generated/
+generated/                the rendered bundle, committed so it can be read
+                          without running anything:
+  app-of-apps.yaml          root Application
+  NNN-<component>/          one Application plus its values, per component
+  checksums.txt             closed-world inventory, 95 entries
+  data/                     the recipe, copied in by the bundler
+  README.md                 written by AICR, not by hand
 ```
+
+`generated/` is the full stack: 96 files, one root `app-of-apps.yaml` plus 30
+child Applications. The recipe declares 29 components; the thirtieth is
+`prometheus-adapter`, which the CLI adds on its own (see Limitations). `data/`
+appears twice — once as the authored source, once copied inside the bundle.
 
 ## Reproduce
 
 ```bash
-./render.sh                     # full stack  -> 31 Applications
+./render.sh                  # rewrites generated/ in place
+git diff --stat generated/   # empty means the recipe still produces the committed bundle
+aicr verify generated        # checks the bundle against checksums.txt
 ```
 
-Then swap the leaf overlay in `render.sh` for `forge-coexist.yaml` to get the
-reduced set.
+Swap the leaf overlay in `render.sh` to `data/overlays/forge-coexist.yaml` for
+the reduced set. That render is not committed; the wave numbers it produces are
+quoted below.
 
 ## What the conversion shows
 
@@ -47,12 +61,12 @@ parallel:
 |------|------------|
 | 1 | cert-manager, external-secrets, fluent-bit, gateway-api-crds, kubernetes-replicator, longhorn, nvault-k8s, reloader, skyhook-operator, spire-crds, teleport-kube-agent, zipkin |
 | 5 | cloudnative-pg, cluster-secrets, envoy-gateway, kube-prometheus-stack, nke-skyhooks, nke-spire, nke-storage, nke-teleport-apps, tbot |
-| 9 | cnpg-cloud, cnpg-site, cnpg-temporal, dgxc-alloy, l0-nke-monitor |
+| 9 | cnpg-cloud, cnpg-site, cnpg-temporal, dgxc-alloy, l0-nke-monitor, prometheus-adapter |
 | 13 | temporal |
 | 17 | cloud-workflow-engine, site-workflow-engine |
 
 **Ordering re-derives when the component set changes.** `forge-coexist.yaml`
-disables six components and renders 25 Applications instead of 31. Because
+disables six components and renders 24 child Applications instead of 30. Because
 `temporal` and `cloudnative-pg` are gone, the graph shortens on its own:
 `cnpg-*` moves from wave 9 to 1, `site-workflow-engine` from 17 to 5,
 `cloud-workflow-engine` from 17 to 9, and the five levels collapse to three.
@@ -65,8 +79,9 @@ coexistence profile and is an assumption everywhere else.
 
 **Namespace is a property of the deployment, not the chart.** Every component
 renders as its own Application with its own `destination.namespace` and
-`CreateNamespace=true`. See `sample-output/024-teleport-kube-agent/`, which
-lands in `dgxc-teleport` without the chart doing anything.
+`CreateNamespace=true`. See
+`generated/024-teleport-kube-agent/application.yaml`, which lands in
+`dgxc-teleport` without the chart doing anything.
 
 This matters because subcharts of a single Helm release share
 `.Release.Namespace`. That constraint is why several charts in the umbrella are
