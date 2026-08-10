@@ -1,0 +1,206 @@
+apiVersion: aicr.run/v1alpha2
+kind: ComponentRegistry
+components:
+  - name: cert-manager
+    displayName: cert-manager
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: cert-manager
+      defaultVersion: "v1.15.1"
+      defaultNamespace: cert-manager
+  - name: cloud-workflow-engine
+    displayName: cloud-workflow-engine
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: cloud-workflow-engine
+      defaultVersion: "0.0.620"
+      defaultNamespace: cloud-workflow-engine
+  - name: cloudnative-pg
+    displayName: cloudnative-pg
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: cloudnative-pg
+      defaultVersion: "0.22.1-nke.2"
+      defaultNamespace: cnpg-system
+  - name: cluster-secrets
+    displayName: cluster-secrets
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: cluster-secrets
+      defaultVersion: "0.3.0"
+      defaultNamespace: cluster-secrets
+  - name: cnpg-cloud
+    displayName: cnpg-cloud
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: cnpg-cluster
+      defaultVersion: "0.3.0"
+      defaultNamespace: cnpg-cloud
+  - name: cnpg-site
+    displayName: cnpg-site
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: cnpg-cluster
+      defaultVersion: "0.3.0"
+      defaultNamespace: cnpg-site
+  - name: cnpg-temporal
+    displayName: cnpg-temporal
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: cnpg-cluster
+      defaultVersion: "0.3.0"
+      defaultNamespace: cnpg-temporal
+  - name: dgxc-alloy
+    displayName: dgxc-alloy
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: dgxc-alloy
+      defaultVersion: "0.28.0-nke.1"
+      defaultNamespace: dgxc-alloy
+  - name: envoy-gateway
+    displayName: envoy-gateway
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: envoy-gateway
+      defaultVersion: "v1.8.2-nke.2"
+      defaultNamespace: envoy-gateway-system
+  - name: external-secrets
+    displayName: external-secrets
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: external-secrets
+      defaultVersion: "0.13.0-nke.1"
+      defaultNamespace: external-secrets
+  - name: fluent-bit
+    displayName: fluent-bit
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: fluent-bit
+      defaultVersion: "0.47.9-nke.1"
+      defaultNamespace: fluent-bit
+  - name: gateway-api-crds
+    displayName: gateway-api-crds
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: gateway-api-crds
+      defaultVersion: "0.1.0"
+      defaultNamespace: envoy-gateway-system
+  - name: kube-prometheus-stack
+    displayName: kube-prometheus-stack
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: kube-prometheus-stack
+      defaultVersion: "68.0.0"
+      defaultNamespace: monitoring
+  - name: kubernetes-replicator
+    displayName: kubernetes-replicator
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: kubernetes-replicator
+      defaultVersion: "2.10.2"
+      defaultNamespace: kubernetes-replicator
+  - name: l0-nke-monitor
+    displayName: l0-nke-monitor
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: l0-nke-monitor
+      defaultVersion: "0.1.1"
+      defaultNamespace: platform
+  - name: longhorn
+    displayName: longhorn
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: longhorn
+      defaultVersion: "1.10.1"
+      defaultNamespace: longhorn-system
+  - name: nke-skyhooks
+    displayName: nke-skyhooks
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: nke-skyhooks
+      defaultVersion: "0.1.1"
+      defaultNamespace: skyhook
+  - name: nke-spire
+    displayName: nke-spire
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: nke-spire
+      defaultVersion: "0.1.3"
+      defaultNamespace: spire-server
+  - name: nke-storage
+    displayName: nke-storage
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: nke-storage
+      defaultVersion: "0.4.0"
+      defaultNamespace: longhorn-system
+  - name: nke-teleport-apps
+    displayName: nke-teleport-apps
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: nke-teleport-apps
+      defaultVersion: "0.2.0"
+      defaultNamespace: dgxc-teleport
+  - name: nvault-k8s
+    displayName: nvault-k8s
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: nvault-k8s
+      defaultVersion: "1.1.0"
+      defaultNamespace: nvault-k8s
+  - name: reloader
+    displayName: reloader
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: reloader
+      defaultVersion: "2.2.9"
+      defaultNamespace: reloader
+  - name: site-workflow-engine
+    displayName: site-workflow-engine
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: site-workflow-engine
+      defaultVersion: "0.9.4"
+      defaultNamespace: site-workflow-engine
+  - name: skyhook-operator
+    displayName: skyhook-operator
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: skyhook-operator
+      defaultVersion: "v0.9.2-nke.2"
+      defaultNamespace: skyhook
+  - name: spire-crds
+    displayName: spire-crds
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: spire-crds
+      defaultVersion: "0.5.0"
+      defaultNamespace: spire-mgmt
+  - name: tbot
+    displayName: tbot
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: tbot
+      defaultVersion: "18.2.5-nke.1"
+      defaultNamespace: cloud-workflow-engine
+  - name: teleport-kube-agent
+    displayName: teleport-kube-agent
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: teleport-kube-agent
+      defaultVersion: "18.2.5-nke.1"
+      defaultNamespace: dgxc-teleport
+  - name: temporal
+    displayName: temporal
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: temporal
+      defaultVersion: "0.54.0"
+      defaultNamespace: temporal
+  - name: zipkin
+    displayName: zipkin
+    helm:
+      defaultRepository: oci://registry.example/nke-charts
+      defaultChart: zipkin
+      defaultVersion: "0.3.4"
+      defaultNamespace: zipkin

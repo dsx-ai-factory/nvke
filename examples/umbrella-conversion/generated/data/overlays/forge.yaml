@@ -1,0 +1,8 @@
+kind: RecipeMetadata
+apiVersion: aicr.run/v1alpha2
+metadata:
+  name: forge
+spec:
+  base: base
+  criteria:
+    service: forge

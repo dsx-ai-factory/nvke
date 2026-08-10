@@ -1,0 +1,24 @@
+# Mirrors profiles/forge-coexist.yaml: umbrella owns only the stateless
+# controller layer while the legacy app-of-apps still runs every requisite.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1alpha2
+metadata:
+  name: forge-coexist
+spec:
+  base: forge
+  criteria:
+    service: forge
+    platform: coexist
+  componentRefs:
+    - name: cert-manager
+      overrides: {enabled: false}
+    - name: cloudnative-pg
+      overrides: {enabled: false}
+    - name: longhorn
+      overrides: {enabled: false}
+    - name: temporal
+      overrides: {enabled: false}
+    - name: nke-spire
+      overrides: {enabled: false}
+    - name: kube-prometheus-stack
+      overrides: {enabled: false}

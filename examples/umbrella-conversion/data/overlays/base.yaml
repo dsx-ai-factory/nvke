@@ -1,0 +1,254 @@
+kind: RecipeMetadata
+apiVersion: aicr.run/v1alpha2
+metadata:
+  name: nke-site-controller
+spec:
+  constraints:
+    - name: K8s.server.version
+      value: ">= 1.34"
+  componentRefs:
+    - name: cert-manager
+      type: Helm
+      namespace: cert-manager
+      chart: cert-manager
+      source: oci://registry.example/nke-charts
+      version: "v1.15.1"
+      valuesFile: components/cert-manager/values.yaml
+    - name: cloud-workflow-engine
+      type: Helm
+      namespace: cloud-workflow-engine
+      chart: cloud-workflow-engine
+      source: oci://registry.example/nke-charts
+      version: "0.0.620"
+      valuesFile: components/cloud-workflow-engine/values.yaml
+      dependencyRefs:
+        - cnpg-cloud
+        - temporal
+        - nke-spire
+        - tbot
+    - name: cloudnative-pg
+      type: Helm
+      namespace: cnpg-system
+      chart: cloudnative-pg
+      source: oci://registry.example/nke-charts
+      version: "0.22.1-nke.2"
+      valuesFile: components/cloudnative-pg/values.yaml
+      dependencyRefs:
+        - cert-manager
+    - name: cluster-secrets
+      type: Helm
+      namespace: cluster-secrets
+      chart: cluster-secrets
+      source: oci://registry.example/nke-charts
+      version: "0.3.0"
+      valuesFile: components/cluster-secrets/values.yaml
+      dependencyRefs:
+        - external-secrets
+        - kubernetes-replicator
+    - name: cnpg-cloud
+      type: Helm
+      namespace: cnpg-cloud
+      chart: cnpg-cluster
+      source: oci://registry.example/nke-charts
+      version: "0.3.0"
+      valuesFile: components/cnpg-cloud/values.yaml
+      dependencyRefs:
+        - cloudnative-pg
+    - name: cnpg-site
+      type: Helm
+      namespace: cnpg-site
+      chart: cnpg-cluster
+      source: oci://registry.example/nke-charts
+      version: "0.3.0"
+      valuesFile: components/cnpg-site/values.yaml
+      dependencyRefs:
+        - cloudnative-pg
+    - name: cnpg-temporal
+      type: Helm
+      namespace: cnpg-temporal
+      chart: cnpg-cluster
+      source: oci://registry.example/nke-charts
+      version: "0.3.0"
+      valuesFile: components/cnpg-temporal/values.yaml
+      dependencyRefs:
+        - cloudnative-pg
+    - name: dgxc-alloy
+      type: Helm
+      namespace: dgxc-alloy
+      chart: dgxc-alloy
+      source: oci://registry.example/nke-charts
+      version: "0.28.0-nke.1"
+      valuesFile: components/dgxc-alloy/values.yaml
+      dependencyRefs:
+        - kube-prometheus-stack
+    - name: envoy-gateway
+      type: Helm
+      namespace: envoy-gateway-system
+      chart: envoy-gateway
+      source: oci://registry.example/nke-charts
+      version: "v1.8.2-nke.2"
+      valuesFile: components/envoy-gateway/values.yaml
+      dependencyRefs:
+        - gateway-api-crds
+        - cert-manager
+    - name: external-secrets
+      type: Helm
+      namespace: external-secrets
+      chart: external-secrets
+      source: oci://registry.example/nke-charts
+      version: "0.13.0-nke.1"
+      valuesFile: components/external-secrets/values.yaml
+    - name: fluent-bit
+      type: Helm
+      namespace: fluent-bit
+      chart: fluent-bit
+      source: oci://registry.example/nke-charts
+      version: "0.47.9-nke.1"
+      valuesFile: components/fluent-bit/values.yaml
+    - name: gateway-api-crds
+      type: Helm
+      namespace: envoy-gateway-system
+      chart: gateway-api-crds
+      source: oci://registry.example/nke-charts
+      version: "0.1.0"
+      valuesFile: components/gateway-api-crds/values.yaml
+    - name: kube-prometheus-stack
+      type: Helm
+      namespace: monitoring
+      chart: kube-prometheus-stack
+      source: oci://registry.example/nke-charts
+      version: "68.0.0"
+      valuesFile: components/kube-prometheus-stack/values.yaml
+      dependencyRefs:
+        - cert-manager
+    - name: kubernetes-replicator
+      type: Helm
+      namespace: kubernetes-replicator
+      chart: kubernetes-replicator
+      source: oci://registry.example/nke-charts
+      version: "2.10.2"
+      valuesFile: components/kubernetes-replicator/values.yaml
+    - name: l0-nke-monitor
+      type: Helm
+      namespace: platform
+      chart: l0-nke-monitor
+      source: oci://registry.example/nke-charts
+      version: "0.1.1"
+      valuesFile: components/l0-nke-monitor/values.yaml
+      dependencyRefs:
+        - kube-prometheus-stack
+    - name: longhorn
+      type: Helm
+      namespace: longhorn-system
+      chart: longhorn
+      source: oci://registry.example/nke-charts
+      version: "1.10.1"
+      valuesFile: components/longhorn/values.yaml
+    - name: nke-skyhooks
+      type: Helm
+      namespace: skyhook
+      chart: nke-skyhooks
+      source: oci://registry.example/nke-charts
+      version: "0.1.1"
+      valuesFile: components/nke-skyhooks/values.yaml
+      dependencyRefs:
+        - skyhook-operator
+    - name: nke-spire
+      type: Helm
+      namespace: spire-server
+      chart: nke-spire
+      source: oci://registry.example/nke-charts
+      version: "0.1.3"
+      valuesFile: components/nke-spire/values.yaml
+      dependencyRefs:
+        - cert-manager
+        - spire-crds
+    - name: nke-storage
+      type: Helm
+      namespace: longhorn-system
+      chart: nke-storage
+      source: oci://registry.example/nke-charts
+      version: "0.4.0"
+      valuesFile: components/nke-storage/values.yaml
+      dependencyRefs:
+        - longhorn
+    - name: nke-teleport-apps
+      type: Helm
+      namespace: dgxc-teleport
+      chart: nke-teleport-apps
+      source: oci://registry.example/nke-charts
+      version: "0.2.0"
+      valuesFile: components/nke-teleport-apps/values.yaml
+      dependencyRefs:
+        - teleport-kube-agent
+    - name: nvault-k8s
+      type: Helm
+      namespace: nvault-k8s
+      chart: nvault-k8s
+      source: oci://registry.example/nke-charts
+      version: "1.1.0"
+      valuesFile: components/nvault-k8s/values.yaml
+    - name: reloader
+      type: Helm
+      namespace: reloader
+      chart: reloader
+      source: oci://registry.example/nke-charts
+      version: "2.2.9"
+      valuesFile: components/reloader/values.yaml
+    - name: site-workflow-engine
+      type: Helm
+      namespace: site-workflow-engine
+      chart: site-workflow-engine
+      source: oci://registry.example/nke-charts
+      version: "0.9.4"
+      valuesFile: components/site-workflow-engine/values.yaml
+      dependencyRefs:
+        - cnpg-site
+        - temporal
+        - nke-spire
+    - name: skyhook-operator
+      type: Helm
+      namespace: skyhook
+      chart: skyhook-operator
+      source: oci://registry.example/nke-charts
+      version: "v0.9.2-nke.2"
+      valuesFile: components/skyhook-operator/values.yaml
+    - name: spire-crds
+      type: Helm
+      namespace: spire-mgmt
+      chart: spire-crds
+      source: oci://registry.example/nke-charts
+      version: "0.5.0"
+      valuesFile: components/spire-crds/values.yaml
+    - name: tbot
+      type: Helm
+      namespace: cloud-workflow-engine
+      chart: tbot
+      source: oci://registry.example/nke-charts
+      version: "18.2.5-nke.1"
+      valuesFile: components/tbot/values.yaml
+      dependencyRefs:
+        - teleport-kube-agent
+    - name: teleport-kube-agent
+      type: Helm
+      namespace: dgxc-teleport
+      chart: teleport-kube-agent
+      source: oci://registry.example/nke-charts
+      version: "18.2.5-nke.1"
+      valuesFile: components/teleport-kube-agent/values.yaml
+    - name: temporal
+      type: Helm
+      namespace: temporal
+      chart: temporal
+      source: oci://registry.example/nke-charts
+      version: "0.54.0"
+      valuesFile: components/temporal/values.yaml
+      dependencyRefs:
+        - cnpg-temporal
+    - name: zipkin
+      type: Helm
+      namespace: zipkin
+      chart: zipkin
+      source: oci://registry.example/nke-charts
+      version: "0.3.4"
+      valuesFile: components/zipkin/values.yaml
