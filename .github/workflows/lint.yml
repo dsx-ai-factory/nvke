@@ -21,7 +21,7 @@ concurrency:
 jobs:
   lint:
     name: golangci-lint
-    runs-on: linux-amd64-cpu16
+    runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
     timeout-minutes: 15
     permissions:
