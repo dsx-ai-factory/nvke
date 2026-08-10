@@ -20,22 +20,49 @@ into three categories:
 
 ## Setting up your development environment
 
+### Prerequisites
+
+- Go 1.24+ (`go version`)
+- [Flox](https://flox.dev/) for reproducible toolchains inside `controller/`
+- Docker (for local integration tests)
+- A running Temporal server (for controller development)
+
+### Clone and build
+
 ```bash
-# TODO: replace with your actual setup steps, e.g.:
-# git clone https://github.com/NVIDIA/nke.git
-# cd nke
-# pip install -e ".[dev]"     # Python
-# npm ci                      # Node
-# cmake -B build && cmake --build build  # C++
+git clone https://github.com/NVIDIA/nke.git
+cd nke
 ```
 
-To verify your setup, run the full test suite:
+**Controller (cloud-workflow-engine):**
 
 ```bash
-# TODO: replace with your actual test command, e.g.:
-# pytest tests/ -q            # Python
-# npm test                    # Node
-# ctest --test-dir build      # C++
+cd controller
+flox activate
+make build   # builds ./bin/cloud-workflow-engine
+make test    # unit tests with coverage
+make lint    # golangci-lint
+```
+
+**Agent (nke-agent):**
+
+```bash
+cd agent
+make build   # builds for amd64 and arm64
+make test    # unit tests
+make lint    # golangci-lint
+```
+
+### Running tests
+
+```bash
+# Unit tests (no external dependencies):
+cd controller && flox activate -- make test
+cd agent && make test
+
+# Integration tests (requires a running CWE deployment):
+cd controller/integration-test
+CWE_API_URL=http://localhost:8080/api go test -v -timeout=3h
 ```
 
 ## Code contributions
