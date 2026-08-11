@@ -1,51 +1,92 @@
 # Changelog
 
-All notable changes to nke are documented here.
-Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+**This file is generated — do not edit it by hand.** See `cliff.toml`.
 
 ## [Unreleased]
 
-### Changed
-
-- Code of Conduct upgraded from Contributor Covenant 1.4 to 2.1, adding the four-step Community Impact enforcement ladder
-
 ### Added
-- Root-level `docs/` directory with architecture overview and getting-started guide
-- `.github/CODEOWNERS` for automatic review assignment
-- `.github/workflows/lint.yml` — golangci-lint for the agent module
-- `.github/workflows/notices-check.yml` — fails when `THIRD_PARTY_NOTICES.md` is stale
-- `.github/workflows/image.yml` — multi-architecture container image build
-- `.github/workflows/release.yml` — creates the GitHub release for a tag
-- `SUPPORT.md` — contributor support channels
-- `GOVERNANCE.md` — project governance and decision-making
-- `MAINTAINERS.md` — current maintainers list
-- `RELEASE.md` — release process documentation
-- `AGENTS.md` — AI agent guide for the monorepo
-- `.github/ISSUE_TEMPLATE/documentation_request.yml` — issue form for documentation requests
-- `.github/workflows/govulncheck.yml` — reports Go vulnerabilities the agent module calls
-- `.github/workflows/codeql.yml` — CodeQL static analysis of the agent module
-- `.github/workflows/security-scan.yml` — Anchore/Grype dependency scan of the tree
-- `.github/workflows/secrets.yml` — gitleaks scan of the commits a pull request adds
-- `.github/actionlint.yaml` — self-hosted runner labels, so actionlint runs clean
 
-### Changed
-- `CONTRIBUTING.md` — replaced TODO placeholders with actual build/test commands
-- `SECURITY.md` — added GitHub private vulnerability reporting path
+- Import cloud-workflow-engine
 
 ### Fixed
-- Documentation paths left stale by the `node-agent/` → `agent/` rename, in
-  `docs/getting-started.md`, `docs/README.md`, `SUPPORT.md` and
-  `.github/dependabot.yml`
-- `docs/getting-started.md` — dropped the reference to `node-agent/integration-test/`,
-  a directory that does not exist in this repository
-- `docs/getting-started.md` — recorded that `controller/` cannot build outside the
-  NVIDIA network, and that the agent tests assume Linux
-- `docs/branch-protection-settings.md` — listed status checks from workflows that
-  were never added; replaced with the checks the current workflows report
-- `docs/README.md` and `docs/architecture.md` — both pointed at a
-  `controller/docs/DESIGN.md` that has never existed
 
----
+- *(auth)* Use constant-time comparison and correct gRPC status codes
+- *(lint)* Enable linters that were in both enable and disable lists
+- Address review feedback — rename node-agent to nke-agent in docs
+- Center agent/ label in architecture diagram
+- Correct diagram right-box width (off-by-one trailing space)
+- Correct diagram outer box width on lines 21-22
+- Use recursive glob so nested controller modules are covered
+- *(notices)* Pin collation so the generated file is the same everywhere
+- *(ci)* Make the SARIF uploads actually run
+- *(ci)* De-duplicate govulncheck SARIF tags before upload
+- Run the license header check instead of skipping it
 
-*Older history is tracked in git. Run `git log --oneline` for a full list of commits.*
+### Documentation
+
+- *(node-agent)* Replace SWE/CWE references with NKE controller
+- Add root-level docs/ directory with architecture and getting-started guides
+- Add root-level AGENTS.md for AI coding agent guidance
+- Add GOVERNANCE.md and MAINTAINERS.md
+- Adopt recommended public-facing SECURITY.md
+- Add SUPPORT.md
+- Fill in development setup in CONTRIBUTING.md
+- Replace the template README with a real one
+- Add THIRD_PARTY_NOTICES.md for the agent, with a generator and CI check
+- Route vulnerability reports to PSIRT and complete the security policy
+- Write a real root AGENTS.md
+- Add the root NOTICE and a THIRD_PARTY_NOTICES index
+- Correct the DCO sign-off instructions
+- Fix paths and check names that no longer match the repository
+- Add a documentation issue template
+- Adopt the Contributor Covenant 2.1 Code of Conduct
+- Generate CHANGELOG.md with git-cliff instead of by hand
+
+### Maintenance
+
+- NKX-14119 add Apache-2.0 LICENSE
+- Add OSS community health files (code of conduct, contributing, PR/issue templates)
+- Enable copy-pr-bot
+- Add golangci-lint workflow for node-agent
+- Add CHANGELOG.md, RELEASE.md, and automated release workflow
+- Add CODEOWNERS and branch protection settings guide
+- Add dependabot config for go monorepo
+- Raise PR limit, group all ecosystems, conventional-commit prefix
+- Bump the github-actions group with 2 updates
+- Fix CODEOWNERS to use @NVIDIA/nke-maintainer team
+- Split the Kubernetes stack into its own Dependabot group
+- Parameterize the container base image registry
+- Use the runner BuildKit config for the buildx builder
+- Add an image build check
+- Add DCO configuration and document sign-off
+- Fix the stale CODEOWNERS path and the phantom maintainer team
+- NKX-14119 add GitHub Actions license enforcement for cloud-workflow-engine
+- NKX-14119 use dynamic module discovery for license checks
+- NKX-14119 generalize release gate for all monorepo components
+- NKX-14119 ignore internal packages in go-licenses check
+- NKX-14119 fix go-licenses failures on stdlib and private deps
+- Add Apache-2.0 license headers and check to agent
+- Add govulncheck, CodeQL and Grype scans
+- Remove calico sample manifest from kubeadm-deploy
+- Remove legacy bundle-based CNI install path
+- Scan every pull request for committed secrets
+
+### Other
+
+- Initial commit
+- Add initial files from template
+- Add initial files from template
+- Migrate node-agent into the monorepo with GitHub module paths.
+- Slim the node-agent README and use clearly fake example secrets.
+- Remove full-disk encryption / TPM unlock from the node-agent.
+- Add component versioning and consumer-configurable artifact endpoints.
+- Rename node-agent to agent.
+- Point controller at the in-tree agent module.
+- Update CHANGELOG.md
+
+

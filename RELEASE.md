@@ -26,22 +26,32 @@ patch requires an immediate out-of-band release.
 
 ### 1. Update CHANGELOG.md
 
-Move entries from `[Unreleased]` to a new versioned section:
+`CHANGELOG.md` is generated from commit subjects by
+[git-cliff](https://git-cliff.org), configured in `cliff.toml`. **Do not edit it
+by hand.**
 
-```markdown
-## [v0.2.0] — 2026-08-07
+```bash
+# 1. Drop the pending [Unreleased] section. Without this, --prepend leaves it
+#    in place holding the same entries the new section just claimed, so the
+#    file lists everything twice and keeps a stale [Unreleased] forever.
+awk '/^## \[Unreleased\]/{s=1} /^## \[[0-9]/{s=0} !s' CHANGELOG.md > /tmp/cl && mv /tmp/cl CHANGELOG.md
 
-### Added
-...
-### Fixed
-...
+# 2. Prepend the new section. --prepend leaves published sections byte-identical;
+#    regenerating the whole file re-derives their dates and rewrites history.
+git-cliff --unreleased --tag v0.2.0 --prepend CHANGELOG.md
 ```
 
-Commit the changelog update:
+Run this in a **full clone**. On a shallow one git-cliff emits a near-empty
+section and exits 0, so nothing fails.
 
 ```bash
 git commit -s -m "chore: update CHANGELOG.md for v0.2.0"
 ```
+
+**The heading carries no `v` prefix.** Step 3 and
+`.github/workflows/release.yml` both read the section back by that heading, and
+neither fails when it does not match — they emit a fallback line — so a mismatch
+ships a release with no notes rather than an error.
 
 ### 2. Tag the release
 
@@ -55,7 +65,7 @@ git push upstream v0.2.0
 ```bash
 gh release create v0.2.0 \
   --title "v0.2.0" \
-  --notes-file <(sed -n '/^## \[v0.2.0\]/,/^## \[/{ /^## \[v0.2.0\]/d; /^## \[/d; p }' CHANGELOG.md)
+  --notes-file <(sed -n '/^## \[0.2.0\]/,/^## \[/{ /^## \[0.2.0\]/d; /^## \[/d; p }' CHANGELOG.md)
 ```
 
 Or use the GitHub UI: **Releases → Draft a new release → Choose tag → Generate release notes**.

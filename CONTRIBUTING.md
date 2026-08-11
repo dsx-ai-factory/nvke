@@ -227,6 +227,24 @@ Copilot, Cursor, etc.). When using AI assistance:
 - **Disclose in the PR** if a substantial portion of the change was AI-generated,
   so reviewers can calibrate their review depth.
 
+## Changelog
+
+**Do not edit `CHANGELOG.md`.** It is generated from commit subjects by
+[git-cliff](https://git-cliff.org), configured in `cliff.toml`, and a new
+section is prepended when a release is cut.
+
+Your commit subject is the changelog entry, so write it for a reader. The
+conventional-commit type picks the section: `feat` → Added, `refactor` →
+Changed, `fix` → Fixed, `perf` → Performance, `docs` → Documentation,
+`ci`/`build`/`chore`/`test`/`style` → Maintenance, `revert` → Reverted. A
+subject matching no type still appears, under Other. A breaking change — `!`
+after the type, or a `BREAKING CHANGE:` footer — is marked in the entry.
+
+This replaces the previous convention of adding an entry by hand in the same
+pull request. That did not scale: every open pull request appended to the same
+`### Added` list, so each conflicted with the next and whichever landed first
+forced a rebase on all the others.
+
 ## Code of Conduct
 
 All contributors are expected to follow our [Code of Conduct](CODE_OF_CONDUCT.md).

@@ -28,7 +28,13 @@ jobs:
       - name: Extract changelog section for this tag
         id: changelog
         run: |
-          TAG="${GITHUB_REF_NAME}"
+          # Strip a leading "v". CHANGELOG.md headings carry no prefix, which is
+          # the Keep a Changelog convention and what git-cliff emits, so reading
+          # the raw ref name would look for "## [v0.2.0]" and match nothing.
+          # This does not fail — the fallback below fires — so the release would
+          # ship a one-line body instead. cluster-api-provider-nico and
+          # cluster-api-addon-provider-syscmp already strip it.
+          TAG="${GITHUB_REF_NAME#v}"
           # Extract the section between this version header and the next one
           NOTES=$(awk "/^## \[${TAG}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
           if [ -z "$NOTES" ]; then

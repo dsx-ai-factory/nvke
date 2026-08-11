@@ -1,0 +1,127 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# git-cliff configuration — https://git-cliff.org/docs/configuration
+#
+# CHANGELOG.md is generated from the commit history rather than hand-written.
+# Hand-maintaining it did not scale: every open pull request appended to the
+# same `### Added` list, so each conflicted with the next and whichever landed
+# first forced a rebase on all the others.
+#
+# Cutting a release drops the pending [Unreleased] section and prepends the new
+# one. Both steps matter — see RELEASE.md for the exact commands.
+#
+# `--prepend` alone leaves [Unreleased] in place holding the same entries the
+# new section just claimed, so the file lists everything twice and keeps a
+# stale [Unreleased] below the releases forever.
+#
+# Regenerating the whole file instead is not idempotent: git-cliff stamps a
+# `--tag` section with the generation date and later re-derives it from the tag
+# commit date, so a second release silently rewrites the first and the
+# published GitHub release stops matching the file.
+#
+# This file is identical in NVIDIA/nke, cluster-api-provider-nico,
+# cluster-api-provider-launchlayer and cluster-api-addon-provider-syscmp.
+# Change it in all four or in none.
+
+[changelog]
+header = """
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+**This file is generated — do not edit it by hand.** See `cliff.toml`.
+
+"""
+
+# Only the commit subject is rendered, never the body. A body reaches this file
+# verbatim otherwise, and a body line beginning "## " — the first line of every
+# one of our pull request templates — becomes a heading that truncates the
+# release notes the workflows extract with awk, silently and without failing.
+#
+# The version heading carries no `v` prefix, which is the Keep a Changelog
+# convention. The release workflows read this file back with
+# `awk "/^## \\[${VERSION}\\]/"`, so the heading and the workflow must agree on
+# the prefix or the release ships an empty body.
+body = """
+{% if version %}\
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## [Unreleased]
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | striptags | trim | upper_first }}
+{% for commit in commits %}
+- {% if commit.breaking %}**BREAKING** {% endif %}\
+{% if commit.scope %}*({{ commit.scope }})* {% endif %}\
+{{ commit.message | split(pat="\n") | first | trim | upper_first }}\
+{% endfor %}
+{% endfor %}\n
+"""
+
+# No footer. It would sit inside the oldest section, so the awk extraction
+# hands it to GitHub as part of the release body — and for a first release it
+# would be the entire body.
+footer = ""
+
+trim = true
+
+[git]
+conventional_commits = true
+# Non-conventional subjects are kept and land in "Other" rather than being
+# dropped. Losing a real change because its subject was malformed is worse than
+# an untidy section.
+filter_unconventional = false
+split_commits = false
+
+commit_preprocessors = [
+    # Strip a trailing "(#123)" that squash merges append. Anchored to the end
+    # of a line: unanchored it also ate "(#8080)" out of
+    # "fix: reject port (#8080) style config values".
+    { pattern = '(?m)[ \t]+\(#[0-9]+\)$', replace = "" },
+]
+
+commit_parsers = [
+    # Skip merge commits by what they are, not by what they are called. A
+    # subject match on "^Merge " misses a merge whose subject is the pull
+    # request title, which is how syscmp ended up listing four changes twice.
+    { field = "merge_commit", pattern = "true", skip = true },
+    # The <!-- n --> prefix orders the sections; `striptags` removes it before
+    # rendering. Without it git-cliff sorts groups alphabetically, which puts
+    # Performance and Reverted after Other.
+    { message = "^feat", group = "<!-- 0 -->Added" },
+    { message = "^refactor", group = "<!-- 1 -->Changed" },
+    { message = "^fix", group = "<!-- 2 -->Fixed" },
+    { message = "^perf", group = "<!-- 3 -->Performance" },
+    { message = "^docs", group = "<!-- 4 -->Documentation" },
+    { message = "^(ci|build|chore|test|style)", group = "<!-- 5 -->Maintenance" },
+    # Case-insensitive and unanchored to the colon: `git revert` and GitHub's
+    # Revert button both write `Revert "feat: ..."`, which "^revert" missed
+    # entirely — those landed in Other and the Reverted section was reachable
+    # only by hand-typing "revert:".
+    { message = "(?i)^revert", group = "<!-- 6 -->Reverted" },
+    { message = ".*", group = "<!-- 7 -->Other" },
+]
+
+# Off, deliberately. It sounds right — keep breaking changes whatever the skip
+# rules say — but it overrides the merge_commit skip above, and git-cliff then
+# groups the escaped commit by its raw conventional type instead of running the
+# parsers. A breaking merge commit produced a stray "### Fix" section holding a
+# duplicate of a change already listed under Fixed. Breaking changes still
+# render as **BREAKING**; the only rule they no longer survive is the one that
+# drops merge commits, which is exactly what should drop them.
+protect_breaking_commits = false
+filter_commits = false
+
+# Anchored. Unanchored, "v[0-9].*" also matches a component tag such as
+# `agent/v0.1.30`, which would treat it as a repository release and file every
+# entry before it under a heading no release workflow reads. No repository here
+# has any tag yet, but nke's release.yml already triggers on `*/v[0-9]*`, so
+# component tags are the plan rather than a hypothetical.
+tag_pattern = "^v[0-9]"
+
+topo_order = false
+sort_commits = "oldest"
