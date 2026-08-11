@@ -1,7 +1,7 @@
 version: 2
 updates:
   # Go modules anywhere in the tree. This is a nested multi-module monorepo
-  # (node-agent, controller, controller/api, controller/forge-vms,
+  # (agent, controller, controller/api, controller/forge-vms,
   # controller/test/e2e, controller/hack/*, ...), so the recursive "/**/*" glob
   # is required — "/*" only matches depth-1 dirs and would miss the nested modules.
   # New components with their own go.mod are picked up automatically.
@@ -15,9 +15,36 @@ updates:
       prefix: "build"
       prefix-development: "build"
     groups:
+      # The Kubernetes staging modules — k8s.io/api, k8s.io/apimachinery,
+      # k8s.io/client-go, k8s.io/apiextensions-apiserver — are released in
+      # lockstep and only work as a matched set. k8s.io/api v0.36 removed
+      # autoscaling/v2beta1, autoscaling/v2beta2, networking/v1alpha1 and
+      # scheduling/v1alpha1; k8s.io/client-go one minor behind still imports
+      # those from its kubernetes/scheme package, so a mixed set does not
+      # resolve at all. Cluster API and controller-runtime are pinned to a
+      # Kubernetes minor in the same way.
+      #
+      # They get a group of their own so that failing to find a consistent set
+      # fails on its own, rather than taking every other dependency in the tree
+      # with it. Under a single "*" group, one unresolvable k8s bump aborted a
+      # grouped update covering 25 dependencies across four modules and left
+      # Dependabot Updates red on main:
+      #
+      #   k8s.io/api | dependency_file_not_resolvable
+      #     go: finding module for package k8s.io/api/autoscaling/v2beta1
+      #     github.com/NVIDIA/nke/controller/test/e2e/internal/kube imports
+      #       k8s.io/client-go/kubernetes/scheme imports
+      #       k8s.io/api/autoscaling/v2beta1
+      kubernetes:
+        patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
       go-dependencies:
         patterns:
           - "*"
+        exclude-patterns:
+          - "k8s.io/*"
+          - "sigs.k8s.io/*"
 
   # Dockerfiles anywhere in the tree (controller/, controller/hack/*, node-agent/, ...).
   - package-ecosystem: docker
