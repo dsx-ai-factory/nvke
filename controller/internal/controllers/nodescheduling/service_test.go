@@ -78,6 +78,12 @@ func TestUnit_ServiceScheduleForgeNodesLimitsByCapacityAndUpdatesUnschedulableNo
 
 	databaseTx := &testutil.MockTx{}
 	database := &testutil.MockDB{GetTx: func() db.Tx { return databaseTx }}
+	// The control-plane reservation reads site pools and pending control-plane
+	// nodes on every pass; empty results mean "no reservation", which is what
+	// these capacity tests assert against. Maybe() so tests that never reach
+	// the reservation still pass AssertExpectations.
+	database.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Maybe()
+	database.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil).Maybe()
 	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 	databaseTx.On("GetNodeForUpdate", mock.Anything, secondNodeID).Return(db.Node{
 		ID: secondNodeID,
@@ -108,7 +114,7 @@ func TestUnit_ServiceScheduleForgeNodesLimitsByCapacityAndUpdatesUnschedulableNo
 	result, err := service.ScheduleForgeNodes(ctx, slog.Default(), cluster, []db.Node{
 		{ID: firstNodeID, CreatedAt: createdAt},
 		{ID: secondNodeID, CreatedAt: createdAt},
-	}, instanceTypeID, ForgePlacementSpec{SubnetIDs: []uuid.UUID{subnetID}})
+	}, instanceTypeID, ForgePlacementSpec{SubnetIDs: []uuid.UUID{subnetID}}, ForgeScheduleOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 4*time.Minute, result.RequeueAfter)
 	database.AssertExpectations(t)
@@ -125,7 +131,7 @@ func TestUnit_ServiceScheduleForgeNodesRequeuesOnlyTemporaryForgeResourceErrors(
 	service := NewService(config.Config{ControllerManagerInterval: 4 * time.Minute}, slog.Default(), nil, nil, &fakeForgeReader{
 		instanceTypeErr: errors.New("cache expired"),
 	})
-	result, err := service.ScheduleForgeNodes(ctx, slog.Default(), cluster, []db.Node{{ID: nodeID}}, instanceTypeID, ForgePlacementSpec{})
+	result, err := service.ScheduleForgeNodes(ctx, slog.Default(), cluster, []db.Node{{ID: nodeID}}, instanceTypeID, ForgePlacementSpec{}, ForgeScheduleOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 4*time.Minute, result.RequeueAfter)
 
@@ -133,7 +139,7 @@ func TestUnit_ServiceScheduleForgeNodesRequeuesOnlyTemporaryForgeResourceErrors(
 		instanceType: instanceTypeWithUnusedUsable(1),
 		subnet:       subnet(uuid.New().String(), "not-a-cidr-prefix", 30),
 	})
-	result, err = service.ScheduleForgeNodes(ctx, slog.Default(), cluster, []db.Node{{ID: nodeID}}, instanceTypeID, ForgePlacementSpec{SubnetIDs: []uuid.UUID{uuid.New()}})
+	result, err = service.ScheduleForgeNodes(ctx, slog.Default(), cluster, []db.Node{{ID: nodeID}}, instanceTypeID, ForgePlacementSpec{SubnetIDs: []uuid.UUID{uuid.New()}}, ForgeScheduleOptions{})
 	require.Error(t, err)
 	require.Zero(t, result)
 	require.ErrorContains(t, err, "failed to parse forge subnet")

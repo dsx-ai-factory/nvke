@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 
 	"github.com/google/uuid"
 	"k8s.io/utils/ptr"
@@ -190,7 +189,8 @@ func (s *ControlPlaneNodeScheduler) scheduleForgeControlPlaneNodes(
 			node.InstanceTypeID = selected
 		}
 
-		nodeResult, err := s.service.ScheduleForgeNodes(ctx, logger, cluster, []db.Node{node}, node.InstanceTypeID, t.placement)
+		nodeResult, err := s.service.ScheduleForgeNodes(ctx, logger, cluster, []db.Node{node}, node.InstanceTypeID, t.placement,
+			nodescheduling.ForgeScheduleOptions{SchedulingControlPlane: true})
 		if err != nil {
 			logger.Error("Failed to schedule Forge control plane node",
 				"error", err, "nodeID", node.ID, "instanceTypeID", node.InstanceTypeID)
@@ -383,14 +383,5 @@ func (acct *controlPlaneCapacityAccount) reserve(
 }
 
 func forgeNetworkPlacementKey(placement nodescheduling.ForgePlacementSpec) string {
-	return fmt.Sprintf("%v|%v", sortedUUIDStrings(placement.SubnetIDs), sortedUUIDStrings(placement.VpcPrefixIDs))
-}
-
-func sortedUUIDStrings(ids []uuid.UUID) []string {
-	out := make([]string, len(ids))
-	for i, id := range ids {
-		out[i] = id.String()
-	}
-	slices.Sort(out)
-	return out
+	return nodescheduling.ForgeNetworkPlacementKey(placement)
 }
