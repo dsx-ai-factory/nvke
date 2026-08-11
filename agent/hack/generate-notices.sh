@@ -17,10 +17,24 @@
 
 set -euo pipefail
 
+# Byte-order collation, so the file is identical on every machine. Without this
+# `sort` follows the ambient locale: macOS collates case-insensitively and puts
+# github.com/beorn7 before github.com/NVIDIA, while Linux CI uses byte order and
+# puts uppercase first. The generated file is then valid on the machine that
+# wrote it and "stale" everywhere else, which makes the CI check unusable.
+export LC_ALL=C
+
 OUTPUT="${OUTPUT:-THIRD_PARTY_NOTICES.md}"
 GO_LICENSES="${GO_LICENSES:-./bin/go-licenses}"
 read -r -a PACKAGES <<<"${PACKAGES:-./cmd/...}"
-read -r -a PLATFORMS <<<"${PLATFORMS:-linux/amd64 linux/arm64}"
+
+# Accept commas as well as spaces. Several of these Makefiles already use
+# PLATFORMS for `docker buildx --platform`, which is comma-separated, and make
+# exports a command-line variable into every recipe. Without this, a single
+# `make notices PLATFORMS=linux/amd64,linux/arm64` would parse as one platform
+# with GOARCH "amd64,linux/arm64".
+PLATFORMS_IN="${PLATFORMS:-linux/amd64 linux/arm64}"
+read -r -a PLATFORMS <<<"${PLATFORMS_IN//,/ }"
 
 die() { echo "ERROR: $*" >&2; exit 1; }
 log() { echo "  $*" >&2; }

@@ -22,6 +22,7 @@ commands are not listed, because they are not distributed.
 
 | Package | License | Module |
 |---|---|---|
+| [github.com/Masterminds/semver/v3](https://github.com/Masterminds/semver/blob/v3.4.0/LICENSE.txt) | MIT | github.com/Masterminds/semver/v3@v3.4.0 |
 | [github.com/davecgh/go-spew/spew](https://github.com/davecgh/go-spew/blob/v1.1.1/LICENSE) | ISC | github.com/davecgh/go-spew@v1.1.1 |
 | [github.com/emicklei/go-restful/v3](https://github.com/emicklei/go-restful/blob/v3.11.0/LICENSE) | MIT | github.com/emicklei/go-restful/v3@v3.11.0 |
 | [github.com/fxamacker/cbor/v2](https://github.com/fxamacker/cbor/blob/v2.7.0/LICENSE) | MIT | github.com/fxamacker/cbor/v2@v2.7.0 |
@@ -39,7 +40,6 @@ commands are not listed, because they are not distributed.
 | [github.com/josharian/intern](https://github.com/josharian/intern/blob/v1.0.0/license.md) | MIT | github.com/josharian/intern@v1.0.0 |
 | [github.com/json-iterator/go](https://github.com/json-iterator/go/blob/v1.1.12/LICENSE) | MIT | github.com/json-iterator/go@v1.1.12 |
 | [github.com/mailru/easyjson](https://github.com/mailru/easyjson/blob/v0.7.7/LICENSE) | MIT | — |
-| [github.com/Masterminds/semver/v3](https://github.com/Masterminds/semver/blob/v3.4.0/LICENSE.txt) | MIT | github.com/Masterminds/semver/v3@v3.4.0 |
 | [github.com/modern-go/concurrent](https://github.com/modern-go/concurrent/blob/bacd9c7ef1dd/LICENSE) | Apache-2.0 | github.com/modern-go/concurrent@v0.0.0-20180306012644-bacd9c7ef1dd |
 | [github.com/modern-go/reflect2](https://github.com/modern-go/reflect2/blob/v1.0.2/LICENSE) | Apache-2.0 | github.com/modern-go/reflect2@v1.0.2 |
 | [github.com/munnerz/goautoneg](https://github.com/munnerz/goautoneg/blob/a7dc8b61c822/LICENSE) | BSD-3-Clause | github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822 |
@@ -82,6 +82,33 @@ commands are not listed, because they are not distributed.
 | [sigs.k8s.io/yaml/goyaml.v2](https://github.com/kubernetes-sigs/yaml/blob/v1.4.0/goyaml.v2/LICENSE) | Apache-2.0 | sigs.k8s.io/yaml@v1.4.0 |
 
 ## License Texts
+
+### github.com/Masterminds/semver/v3
+
+_MIT_
+
+```
+Copyright (C) 2014-2019, Matt Butcher and Matt Farina
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+```
 
 ### github.com/davecgh/go-spew/spew
 
@@ -1851,33 +1878,6 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-```
-
-### github.com/Masterminds/semver/v3
-
-_MIT_
-
-```
-Copyright (C) 2014-2019, Matt Butcher and Matt Farina
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 
 ```
 
