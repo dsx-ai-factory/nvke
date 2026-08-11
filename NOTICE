@@ -1,0 +1,15 @@
+NVIDIA Kubernetes Engine (nke)
+Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+
+This product includes software developed at NVIDIA CORPORATION.
+
+Licensed under the Apache License, Version 2.0. The full terms are in the
+LICENSE file at the root of this repository.
+
+This product links third-party software. The copyright notices and license
+terms of those dependencies are reproduced in full in:
+
+    agent/THIRD_PARTY_NOTICES.md
+
+THIRD_PARTY_NOTICES.md at the root of this repository indexes those files and
+records which components are covered.
