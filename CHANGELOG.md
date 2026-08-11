@@ -26,6 +26,8 @@ Versions follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `.github/workflows/govulncheck.yml` — reports Go vulnerabilities the agent module calls
 - `.github/workflows/codeql.yml` — CodeQL static analysis of the agent module
 - `.github/workflows/security-scan.yml` — Anchore/Grype dependency scan of the tree
+- `.github/workflows/secrets.yml` — gitleaks scan of the commits a pull request adds
+- `.github/actionlint.yaml` — self-hosted runner labels, so actionlint runs clean
 
 ### Changed
 - `CONTRIBUTING.md` — replaced TODO placeholders with actual build/test commands

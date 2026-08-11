@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# actionlint fails on any runs-on label it does not know. Without this file it
+# reports every workflow that uses a self-hosted runner as broken, which is all
+# of them except release.yml, and that makes it useless locally.
+
+self-hosted-runner:
+  labels:
+    - linux-amd64-cpu4
+    - linux-amd64-cpu8
+    - linux-amd64-cpu16
+    - linux-arm64-cpu16
