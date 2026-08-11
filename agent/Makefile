@@ -221,3 +221,37 @@ deb-arm64: build-arm64 ## Build the arm64 Debian package
 
 deb-all: deb-amd64 deb-arm64 ## Build all Debian packages
 debs: deb-all
+
+##@ Third-party notices
+
+# go-licenses is pinned here rather than taken from PATH so CI and a laptop
+# generate the same file. It installs into ./bin, not the shared GOBIN.
+GO_LICENSES_VERSION ?= v2.0.1
+
+# go-licenses embeds go/packages, and must be built with the *same* toolchain
+# that `go list` actually runs inside this module. A module's `go` directive can
+# make Go switch toolchains (GOTOOLCHAIN=auto), and on a mismatch go-licenses
+# reports every stdlib package as having no module info and emits nothing at
+# all. `go install pkg@version` deliberately ignores the current module, so the
+# toolchain has to be pinned explicitly rather than inherited.
+GO_TOOLCHAIN := $(shell go version | awk '{print $$3}')
+
+bin/go-licenses:
+	GOTOOLCHAIN=$(GO_TOOLCHAIN) GOBIN=$(CURDIR)/bin \
+		go install github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION)
+
+.PHONY: notices
+notices: bin/go-licenses ## Regenerate THIRD_PARTY_NOTICES.md.
+	@bash hack/generate-notices.sh
+
+.PHONY: notices-check
+notices-check: ## Verify THIRD_PARTY_NOTICES.md matches the dependency tree.
+	@echo "- Checking THIRD_PARTY_NOTICES.md is up to date..."
+	@# Cheap gate first, before spending minutes regenerating. git diff reports
+	@# nothing for an untracked path, so an uncommitted notices file would
+	@# otherwise pass silently.
+	@git ls-files --error-unmatch THIRD_PARTY_NOTICES.md >/dev/null 2>&1 \
+		|| { echo "ERROR: THIRD_PARTY_NOTICES.md is not tracked. Run 'make notices' and commit it."; exit 1; }
+	@$(MAKE) notices
+	@git diff --exit-code -- THIRD_PARTY_NOTICES.md \
+		|| { echo "ERROR: THIRD_PARTY_NOTICES.md is stale. Run 'make notices' and commit the change."; exit 1; }

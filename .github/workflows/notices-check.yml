@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Regenerates THIRD_PARTY_NOTICES.md and fails if it differs from the committed
+# copy, so a dependency change cannot land without refreshed attribution.
+#
+# Deliberately not filtered on changed paths. The inventory is the import
+# closure of the released commands, so it moves when an ordinary .go file
+# changes its imports, not only when go.mod moves. A path filter would pass
+# green while the committed file went stale, and the failure would then surface
+# on main rather than on the pull request that caused it.
+
+name: Third-Party Notices
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  notices-check:
+    name: Check THIRD_PARTY_NOTICES.md is up to date
+    runs-on: linux-amd64-cpu16
+    if: github.repository == 'NVIDIA/nke'
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: agent/go.mod
+          cache: true
+
+      # Only the agent module is covered today. The controller still depends on
+      # private gitlab-master.nvidia.com modules, so go-licenses cannot resolve
+      # its package graph without credentials. Add it here once it builds from
+      # public dependencies.
+      - name: Verify THIRD_PARTY_NOTICES.md is up to date
+        working-directory: agent
+        run: make notices-check
