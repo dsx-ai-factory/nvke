@@ -3,8 +3,8 @@ module github.com/NVIDIA/nke/controller/api
 go 1.25.12
 
 require (
-	github.com/getkin/kin-openapi v0.144.0
-	github.com/oapi-codegen/runtime v1.2.0
+	github.com/getkin/kin-openapi v0.146.0
+	github.com/oapi-codegen/runtime v1.6.0
 )
 
 require (
@@ -19,6 +19,5 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
-	github.com/stretchr/testify v1.11.1 // indirect
 	golang.org/x/text v0.39.0 // indirect
 )
