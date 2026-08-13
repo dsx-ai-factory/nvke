@@ -1,0 +1,173 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Agent Artifact NVCR
+
+# Publishes the nke-agent binaries to nvcr.io as OCI artifacts. This mirrors
+# agent-artifact.yml but targets NVCR for NGC cluster consumers that hold NGC
+# pull credentials but not GHCR credentials.
+#
+# The destination is not written here. It comes from the `nvcr` environment, so
+# no registry identifier lands in a tracked file of a repository that is
+# released publicly:
+#
+#   NVCR_NKE_AGENT           variable  nvcr.io/<org>/<team>/nke-agent
+#   NGC_REGISTRY_TOKEN_DSX   secret    NGC API key with write access on the team
+#
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "agent/v[0-9]+.[0-9]+.[0-9]+"
+      - "agent/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'NVIDIA/nke'
+    name: Publish binaries
+    runs-on: ubuntu-latest
+    environment: nvcr
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: 1.3.3
+
+      - name: Resolve version and tags
+        id: meta
+        shell: bash
+        env:
+          REPO: ${{ vars.NVCR_NKE_AGENT }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${REPO}" ]]; then
+            echo "::error::NVCR_NKE_AGENT is not set in the nvcr environment"
+            exit 1
+          fi
+
+          version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="${version#agent/}"
+
+          aliases=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            aliases+=("edge")
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            aliases+=("${GITHUB_REF_NAME#agent/}")
+          fi
+
+          {
+            echo "version=${version}"
+            echo "aliases=${aliases[*]}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${version} as: ${aliases[*]}"
+
+      - name: Build binaries
+        working-directory: agent
+        env:
+          CGO_ENABLED: "0"
+        run: make build-all VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Verify binaries
+        working-directory: agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            bin="bin/linux_${arch}/nke-agent"
+            file "${bin}"
+            case "${arch}" in
+              amd64) file "${bin}" | grep -q 'ELF 64-bit LSB .*x86-64' ;;
+              arm64) file "${bin}" | grep -q 'ELF 64-bit LSB .*ARM aarch64' ;;
+            esac
+            file "${bin}" | grep -q 'statically linked'
+          done
+
+      # `$oauthtoken` is NGC's literal username, not a shell variable reference.
+      - name: Log in to NVCR
+        shell: bash
+        env:
+          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
+        run: |
+          set -euo pipefail
+          echo "${NGC_TOKEN}" | oras login nvcr.io \
+            --username '$oauthtoken' --password-stdin
+
+      - name: Push per-architecture artifacts
+        working-directory: agent
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+          REPO: ${{ vars.NVCR_NKE_AGENT }}
+        run: |
+          set -euo pipefail
+          read -ra aliases <<< "${ALIASES}"
+
+          for arch in amd64 arm64; do
+            tags=""
+            for alias in "${aliases[@]}"; do
+              tags="${tags:+${tags},}${alias}-${arch}"
+            done
+
+            ( cd "bin/linux_${arch}" && oras push "${REPO}:${tags}" \
+                --artifact-type application/vnd.nvidia.nke.agent.v1 \
+                --artifact-platform "linux/${arch}" \
+                --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${VERSION}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nke-agent" \
+                nke-agent:application/octet-stream )
+          done
+
+      - name: Create multi-arch index
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+          REPO: ${{ vars.NVCR_NKE_AGENT }}
+        run: |
+          set -euo pipefail
+          read -ra aliases <<< "${ALIASES}"
+
+          for alias in "${aliases[@]}"; do
+            oras manifest index create "${REPO}:${alias}" \
+              --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.version=${VERSION}" \
+              "${alias}-amd64" "${alias}-arm64"
+          done
+
+      - name: Show published index
+        shell: bash
+        env:
+          REPO: ${{ vars.NVCR_NKE_AGENT }}
+        run: |
+          set -euo pipefail
+          oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
