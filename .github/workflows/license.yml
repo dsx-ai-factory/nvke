@@ -43,7 +43,7 @@ on:
 # gained a root go.work. GOWORK=off keeps it that way. It is also required:
 # the license-check job sets GOTOOLCHAIN=local itself, and the Go version
 # installed from a module's go.mod is older than the one go.work asks for, so
-# leaving the workspace on fails with "go.work requires go >= 1.25.12".
+# leaving the workspace on fails with "go.work requires go >= 1.26.0".
 # (Unlike the other workflows, this one pins setup-go v5.6.0, which does not
 # set GOTOOLCHAIN itself.)
 env:
@@ -57,7 +57,7 @@ jobs:
       modules: ${{ steps.find.outputs.modules }}
       header_modules: ${{ steps.find.outputs.header_modules }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Find Go modules
         id: find
@@ -100,9 +100,9 @@ jobs:
         module: ${{ fromJson(needs.discover-modules.outputs.modules) }}
       fail-fast: false
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: '${{ matrix.module }}/go.mod'
           cache: true
@@ -130,9 +130,9 @@ jobs:
         module: ${{ fromJson(needs.discover-modules.outputs.header_modules) }}
       fail-fast: false
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: '${{ matrix.module }}/go.mod'
           cache: true

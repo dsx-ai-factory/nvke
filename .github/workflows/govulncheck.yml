@@ -42,7 +42,7 @@ env:
   # gained a root go.work. GOWORK=off keeps it that way. It is also required:
   # actions/setup-go pins GOTOOLCHAIN=local, and the Go version installed from a
   # module's go.mod is older than the one go.work asks for, so leaving the
-  # workspace on fails with "go.work requires go >= 1.25.12".
+  # workspace on fails with "go.work requires go >= 1.26.0".
   GOWORK: "off"
 
 jobs:
