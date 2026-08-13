@@ -5,9 +5,9 @@
 
 # Must be at least the `go` directive in agent/go.mod. The official golang
 # images set GOTOOLCHAIN=local, so a lower tag does not download a newer
-# toolchain -- it fails with "go.mod requires go >= ...". 1.25.12 matches the
+# toolchain -- it fails with "go.mod requires go >= ...". 1.26.5 matches the
 # other Dockerfiles in this repository.
-FROM golang:1.25.12
+FROM golang:1.26.5
 
 # ------------------------------------------------------------
 # Environment setup
