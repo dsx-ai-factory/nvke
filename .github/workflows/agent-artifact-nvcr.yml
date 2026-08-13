@@ -108,13 +108,14 @@ jobs:
             file "${bin}" | grep -q 'statically linked'
           done
 
-      # `$oauthtoken` is NGC's literal username, not a shell variable reference.
+      # `$oauthtoken` is NGC's literal username, not a shell variable.
       - name: Log in to NVCR
         shell: bash
         env:
           NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
         run: |
           set -euo pipefail
+          # shellcheck disable=SC2016
           echo "${NGC_TOKEN}" | oras login nvcr.io \
             --username '$oauthtoken' --password-stdin
 
