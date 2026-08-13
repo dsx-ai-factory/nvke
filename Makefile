@@ -56,7 +56,7 @@ LICENSE_DESTS := controller/licenses \
                  controller/deploy/charts/cloud-workflow-engine
 
 .DEFAULT_GOAL := help
-.PHONY: help work work-sync work-check build clean licenses licenses-check
+.PHONY: help work work-sync work-check work-check-offline build clean licenses licenses-check
 
 help: ## Show the available targets.
 	@echo "Usage: make <target>"
@@ -157,6 +157,10 @@ work-check: ## Verify go.work and go.work.sum are complete and current.
 	@# its own shell and an exit in one does not stop the next. Drop the guard
 	@# when the repo goes public.
 	@#
+	@# Offline first: this needs no network, so it runs everywhere -- including on
+	@# a public runner and for an outside contributor's fork, where the guarded
+	@# block below cannot run at all.
+	@$(MAKE) --no-print-directory work-check-offline
 	@# Inside the guarded block: go work sync writes the workspace's selected
 	@# versions back into every go.mod; each module is tidied with the workspace
 	@# off to complete its go.sum; go.work.sum is rebuilt from scratch so it
@@ -188,6 +192,38 @@ work-check: ## Verify go.work and go.work.sum are complete and current.
 		echo "  github.com/NVIDIA/cluster-api-provider-nico is not fetchable from here"; \
 		echo "  (INTERNAL until open-sourced). The static checks above all passed."; \
 	fi
+
+# The assertions that need no network.
+#
+# Without this, a public runner reaches the guard below, finds
+# cluster-api-provider-nico unfetchable, prints the skip notice and reports
+# success -- having verified nothing about the vendor tree. That is the whole
+# check for every outside contributor and every fork pull request, and it stays
+# that way until the module is public.
+#
+# Go performs this comparison itself whenever it builds against a vendor tree:
+# it reads vendor/modules.txt, compares it with every module's go.mod, and
+# refuses to proceed on a mismatch. Asking `go list` for it makes the assertion
+# explicit, and GOPROXY=off guarantees no network is consulted -- so a pass here
+# means the tree really is self-consistent, not that a fetch quietly succeeded.
+#
+# This is the check that would have caught the 2026-08-13 breakage: main carried
+# a go.mod requiring k8s.io/api v0.36.3 while vendor/modules.txt still said
+# v0.35.3, and every build stopped.
+#
+# -mod=vendor is passed as a flag rather than through GOFLAGS, because setting
+# GOFLAGS here would discard whatever the caller already had in it. -C has to be
+# the first flag on the command line.
+work-check-offline: ## Verify vendor/ agrees with every go.mod. Needs no network.
+	@echo "- Checking vendor/ agrees with every go.mod (offline)..."
+	@for m in $(WORK_MODULES); do \
+		GOPROXY=off $(GO) list -C $$m -mod=vendor ./... >/dev/null \
+			|| { echo "ERROR: vendor/ is inconsistent with the workspace -- Go's own message is above."; \
+			     echo "  Detected from $$m; a root vendor tree is workspace-wide, so the module named"; \
+			     echo "  there is where it was noticed, not necessarily where it originates."; \
+			     echo "  Run 'make work-sync' and commit every file it changes."; exit 1; }; \
+	done
+	@echo "  vendor/ is consistent with every module."
 
 build: ## Build every workspace package, and the released commands into bin/.
 	@# Compile everything first. Building only ./cmd/... left controller/api and
