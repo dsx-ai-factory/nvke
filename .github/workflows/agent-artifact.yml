@@ -1,0 +1,213 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Agent Artifact
+
+# Publishes the nke-agent binaries to ghcr.io/nvidia/nke-agent as OCI
+# artifacts, joined by a multi-arch index:
+#
+#   ghcr.io/nvidia/nke-agent:v0.3.0            <- OCI image index
+#     |-- ...:v0.3.0-amd64   platform linux/amd64   layer: nke-agent
+#     `-- ...:v0.3.0-arm64   platform linux/arm64   layer: nke-agent
+#
+#   oras pull ghcr.io/nvidia/nke-agent:v0.3.0 --platform linux/arm64
+#
+# Not a container image. The agent runs on a node as a systemd unit with host
+# access, so there is nothing to gain from wrapping the binary in a runtime
+# base layer -- consumers want the executable itself, selected by platform.
+# The .deb built by `make deb-all` remains the install path on a node; this is
+# a registry-addressable source for the same binary.
+#
+# The artifacts are ordinary OCI image manifests carrying an artifactType and a
+# platform-bearing config, which is the shape every registry accepts, GHCR
+# included; --artifact-platform is what puts os/arch in the config, and it is
+# what `oras manifest index create` then reads to build the index.
+on:
+  push:
+    branches:
+      - main
+    # Component tags, per the monorepo convention in agent/Makefile: agent
+    # releases are tagged agent/vX.Y.Z, not a bare vX.Y.Z.
+    tags:
+      - "agent/v[0-9]+.[0-9]+.[0-9]+"
+      - "agent/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Never cancel a publish midway: the index is created from tags pushed
+  # earlier in the same job, and a half-published set would leave an index
+  # pointing at an architecture that is not there.
+  cancel-in-progress: false
+
+env:
+  REPO: ghcr.io/nvidia/nke-agent
+
+jobs:
+  publish:
+    if: github.repository == 'NVIDIA/nke'
+    name: Publish binaries
+    # Both architectures are produced by cross-compilation from one runner:
+    # the agent is pure Go with CGO disabled, so this needs no arm64 runner and
+    # no self-hosted capacity, in keeping with go-build.yml and license.yml.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # `git describe` below needs tags and history; the default shallow
+          # fetch has neither.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # go.work carries the highest Go version of any member module, so the
+      # toolchain it selects satisfies all of them.
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          # go.work.sum holds only the hashes NOT already in a member's go.sum,
+          # so the versions actually linked often appear in it zero times. Keyed
+          # on it alone, a dependency bump leaves the key unchanged and restores
+          # a stale cache.
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: 1.3.3
+
+      - name: Resolve version and tags
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The same value agent/Makefile derives, computed once here so the
+          # string stamped into the binary and the string in the registry tag
+          # cannot disagree. On an untagged commit this is v0.2.0-4-gdeadbee;
+          # with no agent/v* tag reachable at all, the short sha.
+          version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="${version#agent/}"
+
+          # A tag ref carries a slash (agent/v0.3.0), which is not legal in a
+          # registry tag, so the component prefix is stripped here too.
+          aliases=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            aliases+=("edge")
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            aliases+=("${GITHUB_REF_NAME#agent/}")
+          fi
+
+          {
+            echo "version=${version}"
+            echo "aliases=${aliases[*]}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${version} as: ${aliases[*]}"
+
+      # CGO_ENABLED=0 is set here rather than left to the toolchain default:
+      # the native amd64 build would otherwise link against the runner's libc
+      # while the cross-compiled arm64 build would not, and the agent has to be
+      # a static binary on both — it lands on nodes whose libc it never saw.
+      - name: Build binaries
+        working-directory: agent
+        env:
+          CGO_ENABLED: "0"
+        run: make build-all VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Verify binaries
+        working-directory: agent
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            bin="bin/linux_${arch}/nke-agent"
+            file "${bin}"
+            # A binary for the wrong architecture would push and index without
+            # complaint, and only fail on a node. Assert what was actually
+            # produced, and that it is static.
+            case "${arch}" in
+              amd64) file "${bin}" | grep -q 'ELF 64-bit LSB .*x86-64' ;;
+              arm64) file "${bin}" | grep -q 'ELF 64-bit LSB .*ARM aarch64' ;;
+            esac
+            file "${bin}" | grep -q 'statically linked'
+          done
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | oras login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      # --artifact-platform is still marked experimental in the ORAS CLI. It is
+      # load-bearing: without it the manifest has no platform in its config and
+      # `oras manifest index create` cannot tell the two apart.
+      - name: Push per-architecture artifacts
+        working-directory: agent
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+        run: |
+          set -euo pipefail
+          # Split the step output into an array explicitly rather than leaning
+          # on unquoted word-splitting.
+          read -ra aliases <<< "${ALIASES}"
+
+          for arch in amd64 arm64; do
+            # Comma-separated tag list: one push, every alias for this arch.
+            tags=""
+            for alias in "${aliases[@]}"; do
+              tags="${tags:+${tags},}${alias}-${arch}"
+            done
+
+            # Pushed from the binary's own directory so the layer's title
+            # annotation is "nke-agent" and not a path -- that title is the
+            # filename `oras pull` writes.
+            ( cd "bin/linux_${arch}" && oras push "${REPO}:${tags}" \
+                --artifact-type application/vnd.nvidia.nke.agent.v1 \
+                --artifact-platform "linux/${arch}" \
+                --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${VERSION}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nke-agent" \
+                nke-agent:application/octet-stream )
+          done
+
+      - name: Create multi-arch index
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+        run: |
+          set -euo pipefail
+          read -ra aliases <<< "${ALIASES}"
+
+          for alias in "${aliases[@]}"; do
+            oras manifest index create "${REPO}:${alias}" \
+              --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.version=${VERSION}" \
+              "${alias}-amd64" "${alias}-arm64"
+          done
+
+      # Proof in the log that the published index is what a consumer will
+      # resolve: two entries, one per platform.
+      - name: Show published index
+        shell: bash
+        run: |
+          set -euo pipefail
+          oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"

@@ -146,3 +146,19 @@ make setup-hooks    # monorepo-aware proto pre-commit hook
 
 Version comes from `git describe --match 'agent/v*'` (component-scoped tags;
 see [AGENTS.md](AGENTS.md)). Override with `VERSION=...` when needed.
+
+## Published binaries
+
+Every commit on `main` and every `agent/vX.Y.Z` tag publishes the binaries to
+`ghcr.io/nvidia/nke-agent` as OCI artifacts, joined by a multi-arch index
+(`.github/workflows/agent-artifact.yml`). Pull one by platform:
+
+```bash
+oras pull ghcr.io/nvidia/nke-agent:v0.3.0 --platform linux/arm64   # release
+oras pull ghcr.io/nvidia/nke-agent:edge   --platform linux/amd64   # tip of main
+```
+
+Tags are `edge`, `sha-<commit>`, and `vX.Y.Z`, each with `-amd64` / `-arm64`
+single-platform variants underneath. These are artifacts, not container images
+— the layer is the executable itself, so `docker pull` is not the way in. The
+`.deb` from `make deb-all` is still what a node installs.
