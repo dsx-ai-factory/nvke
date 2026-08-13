@@ -13,7 +13,7 @@
 //
 // `make work-full` adds them with the override that conflict needs, for work
 // inside NVIDIA. Do not commit the result. See docs/go-workspace.md.
-go 1.25.12
+go 1.26.0
 
 use (
 	./agent
