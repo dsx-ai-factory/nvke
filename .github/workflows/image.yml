@@ -86,16 +86,27 @@ jobs:
         shell: bash
         run: docker image inspect nke/nico-mock:ci --format 'built {{.RepoTags}} {{.Size}} bytes'
 
-# Not built here: controller/Dockerfile and controller/hack/Dockerfile.cwe.tilt.
-#
-# The controller image compiles the controller inside the build, and the
-# controller still depends on private gitlab-master.nvidia.com modules, so it
-# needs a `gitcreds` netrc secret mounted at build time (see
-# controller/Makefile DOCKER_BUILD_SECRET). Building it here would either leak
-# that requirement into a public-facing check or fail for anyone without the
-# secret. Once the controller builds from public dependencies, add it here and
-# drop this note. Dockerfile.cwe.tilt only copies a prebuilt binary, so it has
-# nothing to verify without a preceding build.
+      # A real end-to-end controller image build: it compiles the controller
+      # inside the build, resolving every dependency from the committed
+      # workspace vendor/ tree, so it needs no credentials. The context is the
+      # repository root because the controller is a workspace member (it needs
+      # go.work, vendor/ and the sibling modules). Verification only — the
+      # local tag is never pushed.
+      - name: Build controller image
+        shell: bash
+        run: |
+          docker buildx build \
+            --file controller/Dockerfile \
+            --tag nke/cloud-workflow-engine:ci \
+            --load \
+            .
+
+      - name: Show controller image
+        shell: bash
+        run: docker image inspect nke/cloud-workflow-engine:ci --format 'built {{.RepoTags}} {{.Size}} bytes'
+
+# Not built here: controller/hack/Dockerfile.cwe.tilt — it only copies a
+# prebuilt binary, so it has nothing to verify without a preceding build.
 #
 # Nothing is pushed. Publishing needs the GHCR-versus-NVCR decision settled
 # first.
