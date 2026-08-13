@@ -78,17 +78,19 @@ jobs:
           # floor, not a pin, and setup-go pins GOTOOLCHAIN=local to whatever it
           # installs -- so reading go.mod scans the OLDEST Go the module allows,
           # which is a toolchain nobody ships. agent/Dockerfile.nke-builder
-          # builds the released agent with golang:1.26.5.
+          # builds the released agent with golang:1.26.6.
           #
           # That gap is not cosmetic. On 2026-08-13 the floor was go 1.26.0, and
           # scanning it reported 16 reachable standard-library vulnerabilities,
           # every one of them "Fixed in: go1.26.1". The same scan on 1.26.5
           # reports none.
           #
-          # `stable` tracks the newest released Go, so the scan covers a
-          # toolchain at least as new as the one we ship, and picks up each
-          # security patch without an edit here.
-          go-version: stable
+          # `stable` tracks the newest released Go, but the setup-go manifest
+          # can lag a release by hours or days. Pinning the patch here and in
+          # the Dockerfiles keeps the scan and the shipped binary in sync, and
+          # means a new advisory is visible immediately rather than waiting for
+          # the manifest to catch up. Bump when the next patch ships.
+          go-version: "1.26.6"
           cache: true
           cache-dependency-path: ${{ env.GO_MODULE }}/go.sum
 
