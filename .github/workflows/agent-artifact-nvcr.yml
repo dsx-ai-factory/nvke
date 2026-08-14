@@ -11,8 +11,8 @@ name: Agent Artifact NVCR
 # so no registry identifier lands in a tracked file of a repository that is
 # released publicly:
 #
-#   NKE_NGC_ORG          variable  NGC org that owns the artifact
-#   NVCR_NKE_AUTH_TOKEN  secret    NGC API key with write access on that org
+#   NKE_NGC_ORG             variable  NGC org that owns the artifact
+#   NGC_REGISTRY_TOKEN_NKE  secret    NGC API key with write access on that org
 #
 # The repository is nvcr.io/<NKE_NGC_ORG>/nke-agent. Only the org varies, so the
 # environment carries the org rather than the whole reference, and the steps
@@ -119,7 +119,7 @@ jobs:
       - name: Log in to NVCR
         shell: bash
         env:
-          NGC_TOKEN: ${{ secrets.NVCR_NKE_AUTH_TOKEN }}
+          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
         run: |
           set -euo pipefail
           # shellcheck disable=SC2016
