@@ -56,6 +56,15 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 
 	mux := nethttp.NewServeMux()
 
+	// registerV2 registers a handler under both "carbide" and "forge" API
+	// names so that the NCX SDK's /v2/org/{org}/carbide/... paths are served
+	// alongside the existing /v2/org/{org}/forge/... paths.
+	registerV2 := func(mux *nethttp.ServeMux, method, suffix string, handler nethttp.HandlerFunc) {
+		for _, apiName := range []string{"carbide", "forge"} {
+			mux.HandleFunc(method+" /v2/org/{org}/"+apiName+"/"+suffix, handler)
+		}
+	}
+
 	// Health check - no auth required (handled by authMiddleware path check).
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
@@ -66,12 +75,12 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 	mux.HandleFunc("PATCH /v1/orgs/{orgId}/instances/{instanceId}", s.handlePatchInstance)
 	mux.HandleFunc("DELETE /v1/orgs/{orgId}/instances/{instanceId}", s.handleDeleteInstance)
 
-	// ── Instance CRUD ── v2 paths ────────────────────────────────────────
-	mux.HandleFunc("GET /v2/org/{org}/forge/instance", s.handleListInstances)
-	mux.HandleFunc("GET /v2/org/{org}/forge/instance/{instanceId}", s.handleGetInstance)
-	mux.HandleFunc("POST /v2/org/{org}/forge/instance", s.handleCreateInstance)
-	mux.HandleFunc("PATCH /v2/org/{org}/forge/instance/{instanceId}", s.handlePatchInstance)
-	mux.HandleFunc("DELETE /v2/org/{org}/forge/instance/{instanceId}", s.handleDeleteInstance)
+	// ── Instance CRUD ── v2 paths (carbide + forge) ──────────────────────
+	registerV2(mux, "GET", "instance", s.handleListInstances)
+	registerV2(mux, "GET", "instance/{instanceId}", s.handleGetInstance)
+	registerV2(mux, "POST", "instance", s.handleCreateInstance)
+	registerV2(mux, "PATCH", "instance/{instanceId}", s.handlePatchInstance)
+	registerV2(mux, "DELETE", "instance/{instanceId}", s.handleDeleteInstance)
 
 	// ── Static data endpoints ── v1 paths ────────────────────────────────
 	mux.HandleFunc("GET /v1/orgs/{orgId}/sites", s.handleListSites)
@@ -84,34 +93,34 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 	mux.HandleFunc("GET /v1/orgs/{orgId}/infiniband-partitions", s.handleListInfiniBandPartitions)
 	mux.HandleFunc("GET /v1/orgs/{orgId}/nvlink-logical-partitions", s.handleEmptyList)
 
-	// ── Static data endpoints ── v2 paths ────────────────────────────────
-	mux.HandleFunc("GET /v2/org/{org}/forge/site", s.handleListSites)
-	mux.HandleFunc("GET /v2/org/{org}/forge/vpc", s.handleListVPCs)
+	// ── Static data endpoints ── v2 paths (carbide + forge) ──────────────
+	registerV2(mux, "GET", "site", s.handleListSites)
+	registerV2(mux, "GET", "vpc", s.handleListVPCs)
 	// Single VPC lookup — CAPNICo reads VPC name for machine topology. Safe on
 	// the main mux: "vpc/{vpcId}" has no wildcard sibling under "vpc" (unlike
 	// the instance/type/{instanceTypeId} route below), so no ServeMux conflict.
-	mux.HandleFunc("GET /v2/org/{org}/forge/vpc/{vpcId}", s.handleGetVPC)
-	mux.HandleFunc("GET /v2/org/{org}/forge/subnet", s.handleListSubnets)
-	mux.HandleFunc("GET /v2/org/{org}/forge/vpc-prefix", s.handleListVPCPrefixes)
-	mux.HandleFunc("GET /v2/org/{org}/forge/instance/type", s.handleListInstanceTypes)
-	mux.HandleFunc("GET /v2/org/{org}/forge/sshkeygroup", s.handleListSSHKeyGroups)
-	mux.HandleFunc("GET /v2/org/{org}/forge/ipblock", s.handleListIPBlocks)
-	mux.HandleFunc("GET /v2/org/{org}/forge/infiniband-partition", s.handleListInfiniBandPartitions)
-	mux.HandleFunc("GET /v2/org/{org}/forge/nvlink-logical-partition", s.handleEmptyList)
+	registerV2(mux, "GET", "vpc/{vpcId}", s.handleGetVPC)
+	registerV2(mux, "GET", "subnet", s.handleListSubnets)
+	registerV2(mux, "GET", "vpc-prefix", s.handleListVPCPrefixes)
+	registerV2(mux, "GET", "instance/type", s.handleListInstanceTypes)
+	registerV2(mux, "GET", "sshkeygroup", s.handleListSSHKeyGroups)
+	registerV2(mux, "GET", "ipblock", s.handleListIPBlocks)
+	registerV2(mux, "GET", "infiniband-partition", s.handleListInfiniBandPartitions)
+	registerV2(mux, "GET", "nvlink-logical-partition", s.handleEmptyList)
 
-	// ── Tenant endpoints ── v2 paths ─────────────────────────────────────
+	// ── Tenant endpoints ── v2 paths (carbide + forge) ───────────────────
 	// CAPNICo resolves its tenant ID here before creating any instance.
-	mux.HandleFunc("GET /v2/org/{org}/forge/tenant/current", s.handleGetCurrentTenant)
+	registerV2(mux, "GET", "tenant/current", s.handleGetCurrentTenant)
 
 	// ── Diagnostics endpoints ───────────────────────────────────────────
 	mux.HandleFunc("GET /v1/orgs/{orgId}/instances/{instanceId}/diagnostics", s.handleListDiagnostics)
 	mux.HandleFunc("GET /v1/orgs/{orgId}/instances/{instanceId}/diagnostics/{itemId}", s.handleGetDiagnostic)
-	mux.HandleFunc("GET /v2/org/{org}/forge/instance/{instanceId}/diagnostics", s.handleListDiagnostics)
-	mux.HandleFunc("GET /v2/org/{org}/forge/instance/{instanceId}/diagnostics/{itemId}", s.handleGetDiagnostic)
+	registerV2(mux, "GET", "instance/{instanceId}/diagnostics", s.handleListDiagnostics)
+	registerV2(mux, "GET", "instance/{instanceId}/diagnostics/{itemId}", s.handleGetDiagnostic)
 
 	// ── Console log endpoints ───────────────────────────────────────────
 	mux.HandleFunc("GET /v1/orgs/{orgId}/instances/{instanceId}/console-log", s.handleConsoleLog)
-	mux.HandleFunc("GET /v2/org/{org}/forge/instance/{instanceId}/console-log", s.handleConsoleLog)
+	registerV2(mux, "GET", "instance/{instanceId}/console-log", s.handleConsoleLog)
 
 	// ── Server-scoped endpoints ─────────────────────────────────────────
 	mux.HandleFunc("GET /server/files-tree", s.handleFilesTree)
@@ -132,7 +141,7 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 	// ── Single instance type lookup ──────────────────────────────────────
 	// CAPNICo's create preflight fetches one instance type by ID with
 	// allocation stats (SDK InstanceTypeAPI.GetInstanceType). The route
-	// "GET /v2/org/{org}/forge/instance/type/{instanceTypeId}" cannot be
+	// "GET /v2/org/{org}/.../instance/type/{instanceTypeId}" cannot be
 	// registered on the main mux: Go 1.22's ServeMux rejects it because it
 	// overlaps the sibling 7-segment wildcard patterns
 	// ".../instance/{instanceId}/diagnostics" and ".../instance/{instanceId}/console-log"
@@ -143,7 +152,7 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 	// literal ".../instance/type/<id>", so real instance sub-routes still fall
 	// through to the main mux.
 	instanceTypeMux := nethttp.NewServeMux()
-	instanceTypeMux.HandleFunc("GET /v2/org/{org}/forge/instance/type/{instanceTypeId}", s.handleGetInstanceType)
+	registerV2(instanceTypeMux, "GET", "instance/type/{instanceTypeId}", s.handleGetInstanceType)
 
 	root := nethttp.HandlerFunc(func(w nethttp.ResponseWriter, r *nethttp.Request) {
 		if _, pattern := instanceTypeMux.Handler(r); pattern != "" {
