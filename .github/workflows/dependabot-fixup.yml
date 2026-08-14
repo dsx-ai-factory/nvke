@@ -47,6 +47,22 @@
 # Dependabot force-pushes when it rebases, which discards this commit. That is
 # handled rather than prevented: `synchronize` is in the trigger list, so the
 # force-push re-runs this workflow and the fixup is reapplied.
+#
+# THE ONE SECRET THIS JOB CARRIES
+#
+# NKE_INTERNAL_RO_TOKEN reads the internal module controller/go.mod depends on.
+# It is a fine-grained token scoped to Contents: read-only on that one
+# repository, so it cannot write anywhere, and it is exposed only to the
+# regeneration step -- see the comment on GIT_CONFIG_COUNT there.
+#
+# Note the ordering that makes this safe: GUARD 1 runs BEFORE the secret is in
+# scope, so by the time the token exists the branch has already been proven to
+# contain nothing but go.mod and go.sum changes. Keep it in that order.
+#
+# The token is a fine-grained PAT and therefore EXPIRES. When it does, every
+# Dependabot pull request starts failing on `make work-sync` with
+# `could not read Username for 'https://github.com'` again. That is the symptom
+# to recognise; the fix is to reissue the token, not to debug the bump.
 
 name: Dependabot Fixup
 
@@ -138,6 +154,36 @@ jobs:
           # than repairing it. auto lets Go fetch the newer toolchain so the
           # repair can happen, which is the whole point of this job.
           GOTOOLCHAIN: auto
+
+          # controller/go.mod requires github.com/NVIDIA/cluster-api-provider-nico,
+          # which is an internal repository. Every other job in this repository is
+          # offline -- a committed vendor/ tree means they never resolve a module --
+          # so this is the only job that reaches the network for the module graph,
+          # and it is the only one that needs credentials. #108 is the failure this
+          # fixes:
+          #
+          #   git ls-remote ... exit status 128:
+          #   fatal: could not read Username for 'https://github.com'
+          #
+          # GOPRIVATE keeps the internal path off proxy.golang.org and
+          # sum.golang.org, which cannot serve it in any case; the rewrite below is
+          # what gets git past the prompt.
+          GOPRIVATE: github.com/NVIDIA/*
+
+          # GIT_CONFIG_COUNT rather than `git config --global`. A global write
+          # would leave the token in ~/.gitconfig for every LATER step of this
+          # job, which is the same objection the header raises against leaving
+          # checkout credentials in .git/config. These variables are scoped to
+          # this step and touch no file on disk.
+          #
+          # The rewrite is scoped to github.com/NVIDIA/ rather than github.com/ so
+          # the token is not attached to requests for public modules. It also
+          # cannot capture the push in the final step: that URL carries its own
+          # userinfo, so it does not have the `https://github.com/NVIDIA/` prefix
+          # this matches on.
+          GIT_CONFIG_COUNT: 1
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.NKE_INTERNAL_RO_TOKEN }}@github.com/NVIDIA/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/NVIDIA/
         run: |
           set -euo pipefail
           # Regenerates go.work, go.work.sum, every module's go.mod and go.sum,
