@@ -26,7 +26,8 @@ IMG_NAME ?= nvcr.io/j7sbcjl3qgta/cloud-workflow-engine
 IMG_TAG ?= latest
 IMG ?= ${IMG_NAME}:${IMG_TAG}
 export NAME := cloud-workflow-engine
-BUILD_VERSION ?= "$(shell git describe --tags --dirty --match 'v[0-9]*' || echo "v0.0.0")"
+_BUILD_VERSION_RAW := $(shell git describe --tags --dirty --match 'controller/v[0-9]*' 2>/dev/null || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null || echo "v0.0.0")
+BUILD_VERSION ?= $(patsubst controller/%,%,$(_BUILD_VERSION_RAW))
 
 # Get the last git commit hash. If we are on CI depend on what it provides
 # else use git describe.

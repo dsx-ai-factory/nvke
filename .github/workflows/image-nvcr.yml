@@ -30,6 +30,9 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "controller/v[0-9]+.[0-9]+.[0-9]+"
+      - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
   workflow_dispatch: {}
 
 permissions: {}
@@ -102,7 +105,12 @@ jobs:
           fi
           IMAGE="nvcr.io/${NKE_NGC_ORG}/controller"
 
-          tags=("sha-${GITHUB_SHA}")
+          # Nearest controller/v* tag, prefix stripped: v0.1.0 on a release
+          # commit, v0.1.0-4-gabcdef between releases.
+          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="${version#controller/}"
+
+          tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             tags+=("edge")
           fi
@@ -174,7 +182,10 @@ jobs:
             exit 1
           fi
 
-          tags=("sha-${GITHUB_SHA}")
+          version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          version="${version#controller/}"
+
+          tags=("sha-${GITHUB_SHA}" "${version}")
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             tags+=("edge")
           fi

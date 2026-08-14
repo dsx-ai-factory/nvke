@@ -1,0 +1,109 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Chart Publish NVCR
+
+# Publishes the cloud-workflow-engine Helm chart to nvcr.io as an OCI artifact.
+# Mirrors chart-publish.yml but targets NVCR for NGC cluster consumers that
+# hold NGC pull credentials but not GHCR credentials.
+#
+# The destination org is not written here. It comes from the `nvcr` environment:
+#
+#   NKE_NGC_ORG              variable  NGC org id
+#   NGC_REGISTRY_TOKEN_NKE   secret    NGC API key with write access on the org
+#
+# The chart is pushed to nvcr.io/<NKE_NGC_ORG>/cloud-workflow-engine.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "controller/v[0-9]+.[0-9]+.[0-9]+"
+      - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CHART: controller/deploy/charts/cloud-workflow-engine
+
+jobs:
+  publish:
+    name: Publish chart
+    runs-on: ubuntu-latest
+    if: github.repository == 'NVIDIA/nke'
+    environment: nvcr
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.19.0
+
+      - name: Resolve version
+        id: meta
+        shell: bash
+        env:
+          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NKE_NGC_ORG}" ]]; then
+            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+            exit 1
+          fi
+          describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe="${describe#controller/}"
+          version="${describe#v}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "app_version=${describe}" >> "${GITHUB_OUTPUT}"
+          echo "repo=nvcr.io/${NKE_NGC_ORG}" >> "${GITHUB_OUTPUT}"
+          echo "Chart version: ${version}  appVersion: ${describe}  repo: nvcr.io/${NKE_NGC_ORG}"
+
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+        run: |
+          set -euo pipefail
+          helm package "${CHART}" \
+            --version "${VERSION}" \
+            --app-version "${APP_VERSION}" \
+            --destination "${RUNNER_TEMP}/chart-dist"
+          ls -lh "${RUNNER_TEMP}/chart-dist"
+
+      # $oauthtoken is NGC's literal username, not a shell variable.
+      - name: Log in to NVCR
+        shell: bash
+        env:
+          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+        run: |
+          set -euo pipefail
+          # shellcheck disable=SC2016
+          echo "${NGC_TOKEN}" | helm registry login nvcr.io \
+            --username '$oauthtoken' --password-stdin
+
+      - name: Push chart
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          REPO: ${{ steps.meta.outputs.repo }}
+        run: |
+          set -euo pipefail
+          helm push \
+            "${RUNNER_TEMP}/chart-dist/cloud-workflow-engine-${VERSION}.tgz" \
+            "oci://${REPO}"
+          echo "Pushed ${REPO}/cloud-workflow-engine:${VERSION}"

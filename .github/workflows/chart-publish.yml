@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Chart Publish
+
+# Packages the cloud-workflow-engine Helm chart and publishes it to
+# ghcr.io/nvidia/nke as an OCI artifact:
+#
+#   ghcr.io/nvidia/nke/cloud-workflow-engine:0.1.0          <- release tag
+#   ghcr.io/nvidia/nke/cloud-workflow-engine:0.1.0-4-gabc   <- main between tags
+#
+# Chart version: git describe output with the "controller/" prefix and leading
+# "v" stripped (OCI chart tags carry no "v" prefix by convention).
+# AppVersion: the same string with the leading "v" kept, which the deployment
+# template uses as the default image tag.
+#
+# The nvcr.io mirror lives in chart-publish-nvcr.yml; this workflow uses only
+# the GITHUB_TOKEN and needs no secrets or environments.
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "controller/v[0-9]+.[0-9]+.[0-9]+"
+      - "controller/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CHART: controller/deploy/charts/cloud-workflow-engine
+
+jobs:
+  publish:
+    name: Publish chart
+    runs-on: ubuntu-latest
+    if: github.repository == 'NVIDIA/nke'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.19.0
+
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Strip "controller/" prefix; keep "v" for appVersion, drop it for
+          # the chart version (OCI chart tags are plain semver without v).
+          describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          describe="${describe#controller/}"   # → v0.1.0 or v0.1.0-4-gabcdef
+          version="${describe#v}"              # → 0.1.0 or 0.1.0-4-gabcdef
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "app_version=${describe}" >> "${GITHUB_OUTPUT}"
+          echo "Chart version: ${version}  appVersion: ${describe}"
+
+      - name: Package
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+        run: |
+          set -euo pipefail
+          helm package "${CHART}" \
+            --version "${VERSION}" \
+            --app-version "${APP_VERSION}" \
+            --destination "${RUNNER_TEMP}/chart-dist"
+          ls -lh "${RUNNER_TEMP}/chart-dist"
+
+      - name: Log in to GHCR
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | helm registry login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Push chart
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          helm push \
+            "${RUNNER_TEMP}/chart-dist/cloud-workflow-engine-${VERSION}.tgz" \
+            oci://ghcr.io/nvidia/nke
+          echo "Pushed ghcr.io/nvidia/nke/cloud-workflow-engine:${VERSION}"
