@@ -158,12 +158,28 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 
 
 .PHONY: docker-build-local
-docker-build-local: ## Build the docker image for Cloud Workflow Engine
+docker-build-local: ## Build the controller image for amd64 and load it into the local daemon
 	@# The build context is the repository root: the controller is a member of
 	@# the root Go workspace, and the image build needs go.work, the committed
 	@# vendor/ tree, and the sibling modules. Every dependency comes from
 	@# vendor/, so the build needs no git credentials.
+	@# amd64 only because --load does not support multi-platform images.
+	@# Use docker-build-multiarch to build both architectures.
 	DOCKER_BUILDKIT=1 docker build -f Dockerfile --platform linux/amd64 \
+	  --progress=plain \
+	  --tag $(IMG_NAME):$(GIT_VERSION) \
+	  --tag $(IMG_NAME):$(BUILD_VERSION) \
+	  --tag $(IMG) \
+	  --build-arg BUILD_VERSION=${BUILD_VERSION} \
+	  --build-arg GIT_VERSION=${GIT_VERSION} \
+	  ..
+
+.PHONY: docker-build-multiarch
+docker-build-multiarch: ## Build the controller image for linux/amd64 and linux/arm64 (requires --push or --output)
+	@# Builds both architectures but does not load them into the local daemon.
+	@# To push: add --push and set IMG. To export: add --output type=oci,dest=cwe.tar.
+	docker buildx build -f Dockerfile \
+	  --platform linux/amd64,linux/arm64 \
 	  --progress=plain \
 	  --tag $(IMG_NAME):$(GIT_VERSION) \
 	  --tag $(IMG_NAME):$(BUILD_VERSION) \
