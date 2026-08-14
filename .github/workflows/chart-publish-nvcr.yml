@@ -67,9 +67,11 @@ jobs:
           describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           describe="${describe#controller/}"
           version="${describe#v}"
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "app_version=${describe}" >> "${GITHUB_OUTPUT}"
-          echo "repo=nvcr.io/${NKE_NGC_ORG}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "version=${version}"
+            echo "app_version=${describe}"
+            echo "repo=nvcr.io/${NKE_NGC_ORG}"
+          } >> "${GITHUB_OUTPUT}"
           echo "Chart version: ${version}  appVersion: ${describe}  repo: nvcr.io/${NKE_NGC_ORG}"
 
       - name: Package
