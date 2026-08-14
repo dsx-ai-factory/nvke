@@ -80,6 +80,13 @@ updates:
       docker-images:
         patterns:
           - "*"
+    ignore:
+      # Dependabot treats release-candidate Docker image tags (e.g.
+      # golang:1.27rc2) as newer than the latest stable release and proposes
+      # RC bumps before a stable release is available. Ignore them so updates
+      # only land on stable tags.
+      - dependency-name: "golang"
+        versions: ["*rc*"]
 
   # Shared GitHub Actions workflows (repo root). Inert until workflows land on
   # the default branch; kept here so updates start automatically once they do.
