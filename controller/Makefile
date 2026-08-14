@@ -188,6 +188,45 @@ docker-build-multiarch: ## Build the controller image for linux/amd64 and linux/
 	  --build-arg GIT_VERSION=${GIT_VERSION} \
 	  ..
 
+# Publish targets for pushing to an explicit registry (used by CI's
+# image-nvcr.yml). These deliberately do NOT use IMG_NAME/IMG: this OSS repo
+# must never default-push to the internal production image
+# (nvcr.io/j7sbcjl3qgta/cloud-workflow-engine, IMG_NAME above). The destination
+# has no default and must be passed explicitly via IMG_REPO, guarded by
+# check-img-repo below, so a bare invocation cannot clobber it.
+#
+# Local usage (push to a scratch repo you own):
+#   docker login nvcr.io
+#   make docker-push-arch IMG_REPO=nvcr.io/<org>/<team>/scratch PUSH_TAGS=dev-me ARCH=amd64
+IMG_REPO ?=
+PUSH_TAGS ?=
+ARCH ?= amd64
+BUILDX_EXTRA_ARGS ?=
+
+.PHONY: check-img-repo
+check-img-repo:
+	@test -n "$(IMG_REPO)" || { echo "ERROR: IMG_REPO must be set explicitly"; exit 1; }
+	@test -n "$(PUSH_TAGS)" || { echo "ERROR: PUSH_TAGS must be set"; exit 1; }
+
+.PHONY: docker-push-arch
+docker-push-arch: check-img-repo ## Build+push one arch to IMG_REPO, tags <t>-$(ARCH)
+	@# --provenance=false: the default provenance turns a single-arch push into an
+	@# OCI index, which breaks docker-manifest's imagetools create and the NGC UI.
+	docker buildx build -f Dockerfile \
+	  --platform linux/$(ARCH) --push --provenance=false --progress=plain \
+	  $(foreach t,$(PUSH_TAGS),--tag $(IMG_REPO):$(t)-$(ARCH)) \
+	  --build-arg BUILD_VERSION=${BUILD_VERSION} \
+	  --build-arg GIT_VERSION=${GIT_VERSION} \
+	  $(BUILDX_EXTRA_ARGS) \
+	  ..
+
+.PHONY: docker-manifest
+docker-manifest: check-img-repo ## Stitch <t>-amd64 + <t>-arm64 into <t> under IMG_REPO
+	@set -e; for t in $(PUSH_TAGS); do \
+	  docker buildx imagetools create -t "$(IMG_REPO):$$t" \
+	    "$(IMG_REPO):$$t-amd64" "$(IMG_REPO):$$t-arm64"; \
+	done
+
 ##@ Run
 
 .PHONY: run

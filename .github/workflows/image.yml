@@ -185,5 +185,5 @@ jobs:
 # Not built here: controller/hack/Dockerfile.cwe.tilt — it only copies a
 # prebuilt binary, so it has nothing to verify without a preceding build.
 #
-# Nothing is pushed. Publishing needs the GHCR-versus-NVCR decision settled
-# first.
+# Nothing is pushed here. Publishing the controller image to nvcr.io now lives
+# in image-nvcr.yml.

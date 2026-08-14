@@ -1,0 +1,202 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Image NVCR
+
+# Builds the cloud-workflow-engine controller image for linux/amd64 and
+# linux/arm64 and publishes a multi-arch manifest to nvcr.io. image.yml builds
+# the same image verify-only; this workflow is the one that pushes.
+#
+# The destination org is not written here. It comes from the `nvcr`
+# environment, so no registry identifier lands in a tracked file of a
+# repository that is released publicly. The image is pushed to
+# nvcr.io/<NKE_NGC_ORG>/controller:
+#
+#   NKE_NGC_ORG              variable  NGC org id
+#   NGC_REGISTRY_TOKEN_NKE   secret    NGC API key with write access on the org
+#
+# Tagging is deliberately conservative. This OSS build runs in parallel with the
+# internal nvcr image and is not yet qualified to take over from it, so there is
+# NO `latest` tag: only `sha-<commit>` (every build) and `edge` (main only). The
+# `edge` tag here is the unqualified parallel build, distinct from the internal
+# image. A push must be impossible to route to the internal default in
+# controller/Makefile (IMG_NAME); the make targets used below require IMG_REPO
+# to be passed explicitly and have no default, so this workflow can only ever
+# push to the destination resolved here.
+#
+# A workflow_dispatch from a non-main branch publishes only `sha-*` tags — a
+# safe smoke-test mode that never moves `edge`.
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.repository == 'NVIDIA/nke'
+    name: Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    environment: nvcr
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+          - arch: arm64
+            runner: linux-arm64-cpu16
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0          # git describe needs history and tags
+          persist-credentials: false
+
+      # The docker-container driver runs BuildKit in its own container, so it
+      # does not inherit the daemon's registry-mirror configuration. NVIDIA
+      # runners ship a prepopulated buildkitd.toml pointing at the local mirror;
+      # use it when present so base-image pulls are cached and not subject to
+      # Docker Hub rate limits.
+      - name: Detect runner BuildKit config
+        id: buildkit
+        shell: bash
+        run: |
+          if [[ -r /etc/buildkit/buildkitd.toml ]]; then
+            echo "config=/etc/buildkit/buildkitd.toml" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          buildkitd-config: ${{ steps.buildkit.outputs.config }}
+
+      # `$oauthtoken` is NGC's literal username, not a variable reference.
+      - name: Log in to NVCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: nvcr.io
+          username: "$oauthtoken"
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+
+      - name: Resolve destination and tags
+        id: meta
+        shell: bash
+        env:
+          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NKE_NGC_ORG}" ]]; then
+            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+            exit 1
+          fi
+          IMAGE="nvcr.io/${NKE_NGC_ORG}/controller"
+
+          tags=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            tags+=("edge")
+          fi
+
+          echo "image=${IMAGE}" >> "${GITHUB_OUTPUT}"
+          echo "push_tags=${tags[*]}" >> "${GITHUB_OUTPUT}"
+          echo "Publishing to ${IMAGE} as: ${tags[*]}"
+
+      - name: Build and push (${{ matrix.arch }})
+        shell: bash
+        env:
+          ARCH: ${{ matrix.arch }}
+          IMAGE: ${{ steps.meta.outputs.image }}
+          PUSH_TAGS: ${{ steps.meta.outputs.push_tags }}
+        run: |
+          set -euo pipefail
+          make -C controller docker-push-arch \
+            ARCH="${ARCH}" \
+            IMG_REPO="${IMAGE}" \
+            PUSH_TAGS="${PUSH_TAGS}" \
+            GIT_VERSION="${GITHUB_SHA}" \
+            BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
+
+  manifest:
+    if: github.repository == 'NVIDIA/nke'
+    name: Manifest
+    runs-on: linux-amd64-cpu8
+    needs: [build]
+    environment: nvcr
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # `$oauthtoken` is NGC's literal username, not a variable reference.
+      - name: Log in to NVCR
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: nvcr.io
+          username: "$oauthtoken"
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+
+      - name: Detect runner BuildKit config
+        id: buildkit
+        shell: bash
+        run: |
+          if [[ -r /etc/buildkit/buildkitd.toml ]]; then
+            echo "config=/etc/buildkit/buildkitd.toml" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        with:
+          buildkitd-config: ${{ steps.buildkit.outputs.config }}
+
+      - name: Resolve destination and tags
+        id: meta
+        shell: bash
+        env:
+          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NKE_NGC_ORG}" ]]; then
+            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+            exit 1
+          fi
+
+          tags=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            tags+=("edge")
+          fi
+
+          echo "image=nvcr.io/${NKE_NGC_ORG}/controller" >> "${GITHUB_OUTPUT}"
+          echo "push_tags=${tags[*]}" >> "${GITHUB_OUTPUT}"
+
+      - name: Create multi-arch manifests
+        shell: bash
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+          PUSH_TAGS: ${{ steps.meta.outputs.push_tags }}
+        run: |
+          set -euo pipefail
+          make -C controller docker-manifest \
+            IMG_REPO="${IMAGE}" \
+            PUSH_TAGS="${PUSH_TAGS}"
+
+      - name: Show published manifest
+        shell: bash
+        env:
+          IMAGE: ${{ steps.meta.outputs.image }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "${IMAGE}:sha-${GITHUB_SHA}"
