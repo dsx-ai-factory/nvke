@@ -7,12 +7,17 @@ name: Agent Artifact NVCR
 # agent-artifact.yml but targets NVCR for NGC cluster consumers that hold NGC
 # pull credentials but not GHCR credentials.
 #
-# The destination is not written here. It comes from the `nvcr` environment, so
-# no registry identifier lands in a tracked file of a repository that is
+# The destination is not written here. It is built from the `nvcr` environment,
+# so no registry identifier lands in a tracked file of a repository that is
 # released publicly:
 #
-#   NVCR_NKE_AGENT           variable  nvcr.io/<org>/<team>/nke-agent
-#   NGC_REGISTRY_TOKEN_DSX   secret    NGC API key with write access on the team
+#   NKE_NGC_ORG          variable  NGC org that owns the artifact
+#   NVCR_NKE_AUTH_TOKEN  secret    NGC API key with write access on that org
+#
+# The repository is nvcr.io/<NKE_NGC_ORG>/nke-agent. Only the org varies, so the
+# environment carries the org rather than the whole reference, and the steps
+# below share one resolved value via steps.meta.outputs.repo. An NKE-org path
+# has no team segment; compare cluster-api-provider-nico's NVCR_NKE_IMAGE.
 #
 on:
   push:
@@ -63,13 +68,14 @@ jobs:
         id: meta
         shell: bash
         env:
-          REPO: ${{ vars.NVCR_NKE_AGENT }}
+          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
         run: |
           set -euo pipefail
-          if [[ -z "${REPO}" ]]; then
-            echo "::error::NVCR_NKE_AGENT is not set in the nvcr environment"
+          if [[ -z "${NKE_NGC_ORG}" ]]; then
+            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
             exit 1
           fi
+          repo="nvcr.io/${NKE_NGC_ORG}/nke-agent"
 
           version="$(git describe --match 'agent/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           version="${version#agent/}"
@@ -82,10 +88,11 @@ jobs:
           fi
 
           {
+            echo "repo=${repo}"
             echo "version=${version}"
             echo "aliases=${aliases[*]}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Publishing ${version} as: ${aliases[*]}"
+          echo "Publishing ${repo} ${version} as: ${aliases[*]}"
 
       - name: Build binaries
         working-directory: agent
@@ -112,7 +119,7 @@ jobs:
       - name: Log in to NVCR
         shell: bash
         env:
-          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
+          NGC_TOKEN: ${{ secrets.NVCR_NKE_AUTH_TOKEN }}
         run: |
           set -euo pipefail
           # shellcheck disable=SC2016
@@ -125,7 +132,7 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           ALIASES: ${{ steps.meta.outputs.aliases }}
-          REPO: ${{ vars.NVCR_NKE_AGENT }}
+          REPO: ${{ steps.meta.outputs.repo }}
         run: |
           set -euo pipefail
           read -ra aliases <<< "${ALIASES}"
@@ -152,7 +159,7 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           ALIASES: ${{ steps.meta.outputs.aliases }}
-          REPO: ${{ vars.NVCR_NKE_AGENT }}
+          REPO: ${{ steps.meta.outputs.repo }}
         run: |
           set -euo pipefail
           read -ra aliases <<< "${ALIASES}"
@@ -168,7 +175,7 @@ jobs:
       - name: Show published index
         shell: bash
         env:
-          REPO: ${{ vars.NVCR_NKE_AGENT }}
+          REPO: ${{ steps.meta.outputs.repo }}
         run: |
           set -euo pipefail
           oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
