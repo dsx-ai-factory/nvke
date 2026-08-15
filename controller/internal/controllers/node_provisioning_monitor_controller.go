@@ -104,7 +104,12 @@ func (c *NodeProvisioningMonitorController) Reconcile(ctx context.Context, site 
 
 			logger.Warn("Recycling worker node stuck in provisioning")
 			reason := fmt.Sprintf("Node provisioning exceeded timeout of %s", c.cfg.NodeProvisioningTimeout)
-			err = nodes.DeleteWithTx(ctx, tx, dbNode.ID, nodes.WithReason(reason))
+			err = nodes.DeleteWithTx(ctx, tx, dbNode.ID,
+				nodes.WithReason(reason),
+				// Controller already filters pool/CP; skip live-API guard so recycle
+				// does not take the cluster row lock.
+				nodes.WithSkipLiveDeleteGuard(),
+			)
 			if err != nil {
 				return fmt.Errorf("failed to recycle node %s stuck provisioning: %w", dbNode.ID, err)
 			}

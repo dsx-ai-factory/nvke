@@ -55,7 +55,7 @@ func newHealthChecker(logger *slog.Logger, database db.DB, temporalClient client
 		logger: logger,
 		checks: []dependencyCheck{
 			{
-				name: "database",
+				name: databaseConst,
 				check: func(ctx context.Context) error {
 					if database == nil {
 						return errors.New("database is not configured")
@@ -64,7 +64,7 @@ func newHealthChecker(logger *slog.Logger, database db.DB, temporalClient client
 				},
 			},
 			{
-				name: "temporal",
+				name: temporal,
 				check: func(ctx context.Context) error {
 					if temporalClient == nil {
 						return errors.New("temporal client is not configured")
@@ -81,7 +81,7 @@ func newHealthChecker(logger *slog.Logger, database db.DB, temporalClient client
 
 func (h *healthChecker) healthz(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(healthResponse{Status: "ok"}); err != nil {
+	if err := json.NewEncoder(w).Encode(healthResponse{Status: okValue}); err != nil {
 		h.logger.Error("Failed to write /healthz response", "error", err)
 	}
 }
@@ -96,7 +96,7 @@ func (h *healthChecker) readyz(w http.ResponseWriter, r *http.Request) {
 	}
 
 	statusCode := http.StatusOK
-	if h.cached.Status != "ok" {
+	if h.cached.Status != okValue {
 		statusCode = http.StatusServiceUnavailable
 	}
 
@@ -123,13 +123,13 @@ func (h *healthChecker) runChecks(ctx context.Context) healthResponse {
 	}
 
 	response := healthResponse{
-		Status: "ok",
+		Status: okValue,
 		Checks: make(map[string]string, len(h.checks)),
 	}
 	for range h.checks {
 		result := <-results
 		if result.err == nil {
-			response.Checks[result.name] = "ok"
+			response.Checks[result.name] = okValue
 			continue
 		}
 

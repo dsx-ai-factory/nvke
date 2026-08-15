@@ -1,0 +1,16 @@
+# Sanitized fixture index for CWE tests / gofail e2e (NKX-13910).
+# Fleet metadata lives in nke-site-deploy/cwe-profiles.
+
+profiles:
+  test-fixture-amd64:
+    kubernetes_version: "1.31.0"
+    kubernetes_version_injected: true
+    architecture: amd64
+    build_date: "2026-01-01"
+    ubuntu_version: "24.04"
+  # Used by e2e/gofail SeedCWEGofailDB node pool/set rows.
+  test:
+    kubernetes_version: "1.30.0"
+    architecture: amd64
+    build_date: "2026-01-01"
+    ubuntu_version: "24.04"

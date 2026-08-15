@@ -53,7 +53,7 @@ func TestLabelNodePatchesTenantNodeDirectly(t *testing.T) {
 				Labels: map[string]string{
 					"keep":    "unchanged",
 					"replace": "old",
-					"delete":  "value",
+					"delete":  valueLabel,
 				},
 			},
 		}).
@@ -79,7 +79,7 @@ func TestLabelNodePatchesTenantNodeDirectly(t *testing.T) {
 	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
 	require.Equal(t, map[string]string{
 		"keep":    "unchanged",
-		"new":     "value",
+		"new":     valueLabel,
 		"replace": "new",
 	}, updated.Labels)
 	require.Equal(t, 1, provider.calls)

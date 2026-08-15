@@ -1,0 +1,31 @@
+! FRR config for kube-vip BGP testing on local container-based nodes.
+!
+! Passively accepts iBGP-like sessions from any node container on the kind
+! network (172.18.0.0/16 typically). NKE's stock kube-vip is configured with
+! BGP_AS=65100 (kube-vip local AS) and BGP_PEER_AS=4294967000 (Forge constant).
+! We mirror those here so the runbook test exercises the same AS pair as prod.
+!
+! Why "passive": kube-vip initiates the TCP session outbound to the peer.
+! FRR doesn't need to dial back. peer-group + listen range lets FRR accept
+! sessions from any source IP in 172.18.0.0/16 without enumerating each CP.
+!
+frr defaults traditional
+hostname bgp-containers
+log stdout
+no ipv6 forwarding
+!
+router bgp 4294967000
+ bgp router-id @ROUTER_ID@
+ no bgp default ipv4-unicast
+ no bgp ebgp-requires-policy
+ ! peer-group must exist before bgp listen range references it
+ neighbor KUBEVIP peer-group
+ neighbor KUBEVIP remote-as 65100
+ neighbor KUBEVIP passive
+ bgp listen range @LISTEN_RANGE@ peer-group KUBEVIP
+ !
+ address-family ipv4 unicast
+  neighbor KUBEVIP activate
+ exit-address-family
+exit
+!

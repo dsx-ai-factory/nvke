@@ -117,6 +117,11 @@ func (a *NodeScheduler) scheduleForgeNodes(
 	instanceTypeID uuid.UUID,
 	forgePlacement ForgePlacementSpec,
 ) error {
+	if cluster.ProviderType == db.ProviderTypeCAPI {
+		logger.Warn("Cluster is CAPI-backed, skipping forge-based scheduling", "clusterID", cluster.ID)
+		return nil
+	}
+
 	if len(pendingNodes) == 0 {
 		logger.Debug("No pending nodes to schedule")
 		return nil
@@ -191,7 +196,7 @@ func (a *NodeScheduler) scheduleForgeNodes(
 	return nil
 }
 
-func (a *NodeScheduler) scheduleNodePoolNodes(ctx context.Context, site db.Site, nodePool db.NodePool) error {
+func (a *NodeScheduler) scheduleNodePoolNodes(ctx context.Context, _ db.Site, nodePool db.NodePool) error {
 	// Note scheduling all the nodes in a node pool at once is not necessary, but it offers some benefits
 	// - When we are initially provisioning a large node pool it results in far fewer queries for cluster and nodePool.
 	// - Because there is no locking on the usable forge nodes, if we were to try to schedule more pending nodes than usable forge instances
@@ -220,18 +225,14 @@ func (a *NodeScheduler) scheduleNodePoolNodes(ctx context.Context, site db.Site,
 		return a.scheduleCapiInfraNodes(ctx, logger, pendingNodes)
 	}
 
-	if cluster.SiteID == uuid.Nil {
-		logger.Warn("Cluster has zero site ID, skipping forge-based scheduling", "clusterID", cluster.ID)
-		return nil
+	nicoNodePoolProvider, err := nodePool.NicoProvider()
+	if err != nil {
+		return err
 	}
 
-	if cluster.SiteID != site.ID {
-		return fmt.Errorf("cluster %s does not belong to site %s", cluster.ID, site.ID)
-	}
-
-	return a.scheduleForgeNodes(ctx, logger, cluster, pendingNodes, nodePool.InstanceTypeID, ForgePlacementSpec{
-		SubnetIDs:    nodePool.SubnetIDs,
-		VpcPrefixIDs: nodePool.VpcPrefixIDs,
+	return a.scheduleForgeNodes(ctx, logger, cluster, pendingNodes, nicoNodePoolProvider.InstanceTypeID, ForgePlacementSpec{
+		SubnetIDs:    nicoNodePoolProvider.SubnetIDs,
+		VpcPrefixIDs: nicoNodePoolProvider.VpcPrefixIDs,
 	})
 }
 
@@ -240,7 +241,11 @@ func pointerTo[T any](v T) *T {
 }
 
 func (a *NodeScheduler) getForgeResources(ctx context.Context, cluster db.Cluster, spec ForgePlacementSpec) (*forgesdk.InstanceType, int, error) {
-	forgeInstanceType, err := a.forgeProvider.GetInstanceTypeByID(ctx, cluster.OrgID, cluster.SiteID.String(), spec.InstanceTypeID.String())
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, 0, err
+	}
+	forgeInstanceType, err := a.forgeProvider.GetInstanceTypeByID(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), spec.InstanceTypeID.String())
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to get Forge instance type: %w", err)
 	}
@@ -258,8 +263,12 @@ func (a *NodeScheduler) getForgeResources(ctx context.Context, cluster db.Cluste
 
 // calculateAvailableNetworkCapacity calculates the number of instances that can be created in Forge based on IP availability (in subnets or VPC prefixes based on FNN enablement)
 func (a *NodeScheduler) calculateAvailableNetworkCapacity(ctx context.Context, cluster db.Cluster, spec ForgePlacementSpec) (int, error) {
-	siteID := cluster.SiteID.String()
-	instances, err := a.forgeProvider.GetInstances(ctx, cluster.OrgID, siteID)
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return 0, err
+	}
+	siteID := nicoProvider.SiteID.String()
+	instances, err := a.forgeProvider.GetInstances(ctx, nicoProvider.OrgID, siteID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to list Forge instances: %w", err)
 	}
@@ -268,7 +277,7 @@ func (a *NodeScheduler) calculateAvailableNetworkCapacity(ctx context.Context, c
 		totalAvailable := 0
 
 		for _, subnetID := range spec.SubnetIDs {
-			forgeSubnet, err := a.forgeProvider.GetSubnetByID(ctx, cluster.OrgID, siteID, subnetID.String())
+			forgeSubnet, err := a.forgeProvider.GetSubnetByID(ctx, nicoProvider.OrgID, siteID, subnetID.String())
 			if err != nil || forgeSubnet == nil {
 				return 0, fmt.Errorf("failed to get subnet %s: %w", subnetID.String(), err)
 			}
@@ -286,7 +295,7 @@ func (a *NodeScheduler) calculateAvailableNetworkCapacity(ctx context.Context, c
 			totalIPs := int(math.Pow(2, float64(32-*forgeSubnet.PrefixLength)))
 			usableIPs := max(0, totalIPs-3)
 
-			usedIPs := a.countUsedIPsInSubnet(instances, cluster.VpcID, forgeSubnet, parsedSubnet)
+			usedIPs := a.countUsedIPsInSubnet(instances, nicoProvider.VpcID, forgeSubnet, parsedSubnet)
 			available := max(0, usableIPs-usedIPs)
 			totalAvailable += available
 		}
@@ -296,7 +305,7 @@ func (a *NodeScheduler) calculateAvailableNetworkCapacity(ctx context.Context, c
 
 	instanceCapacity := 0
 	for _, vpcPrefixID := range spec.VpcPrefixIDs {
-		forgeVpcPrefix, err := a.forgeProvider.GetVpcPrefixByID(ctx, cluster.OrgID, siteID, vpcPrefixID.String())
+		forgeVpcPrefix, err := a.forgeProvider.GetVpcPrefixByID(ctx, nicoProvider.OrgID, siteID, vpcPrefixID.String())
 		if err != nil || forgeVpcPrefix == nil {
 			return 0, fmt.Errorf("failed to get vpc prefix %s: %w", vpcPrefixID.String(), err)
 		}
@@ -307,7 +316,7 @@ func (a *NodeScheduler) calculateAvailableNetworkCapacity(ctx context.Context, c
 
 		totalIPs := int(math.Pow(2, float64(32-*forgeVpcPrefix.PrefixLength)))
 
-		usedIPs := a.countUsedIPsInVPCPrefix(instances, cluster.VpcID, forgeVpcPrefix)
+		usedIPs := a.countUsedIPsInVPCPrefix(instances, nicoProvider.VpcID, forgeVpcPrefix)
 		available := max(0, totalIPs-usedIPs)
 		instanceCapacity += available / 2 // 2 IPs per instance in FNN
 	}

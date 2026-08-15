@@ -54,11 +54,10 @@ func TestCAPIClusterScaffoldController_Reconcile(t *testing.T) {
 	deletingCluster := scaffoldCluster(t, uuid.New(), siteID, "deleting-cluster")
 	deletingCluster.Conditions.Deleting = db.Condition{Status: db.ConditionStatusTrue}
 	emptyCluster := db.Cluster{
-		ID:               uuid.New(),
-		SiteID:           siteID,
-		Name:             "empty-cluster",
-		CapiInfraCluster: json.RawMessage(`{}`),
+		ID:   uuid.New(),
+		Name: "empty-cluster",
 	}
+	emptyCluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: json.RawMessage(`{}`)})
 	firstNode := joinedCPNode(firstNodeID, clusterID)
 	secondNode := joinedCPNode(secondNodeID, clusterID)
 
@@ -152,21 +151,12 @@ func TestCAPIClusterScaffoldController_Reconcile(t *testing.T) {
 func scaffoldCluster(t *testing.T, clusterID, siteID uuid.UUID, name string) db.Cluster {
 	t.Helper()
 
-	manifest, err := json.Marshal(map[string]any{
-		"apiVersion": nicov1.GroupVersion.String(),
-		"kind":       "NicoCluster",
-		"spec": map[string]any{
-			"siteID": siteID.String(),
-		},
-	})
-	require.NoError(t, err)
-
-	return db.Cluster{
-		ID:               clusterID,
-		SiteID:           siteID,
-		Name:             name,
-		CapiInfraCluster: manifest,
+	cluster := db.Cluster{
+		ID:   clusterID,
+		Name: name,
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: uuid.New()})
+	return cluster
 }
 
 func joinedCPNode(nodeID, clusterID uuid.UUID) db.Node {

@@ -47,18 +47,27 @@ type NodeProvisioningContext struct {
 }
 
 func ResolveClusterInfraMode(cluster db.Cluster, enableForgeCapi bool) (InfraMode, error) {
-	if cluster.SiteID == uuid.Nil {
-		if capi.IsEmptyManifest(cluster.CapiInfraCluster) {
-			return "", fmt.Errorf("cluster %s must define capiInfraCluster when siteID is the nil UUID", cluster.ID)
+	switch cluster.ProviderType {
+	case db.ProviderTypeCAPI:
+		provider, err := cluster.CAPIProvider()
+		if err != nil {
+			return "", err
 		}
-
+		if capi.IsEmptyManifest(provider.InfraCluster) {
+			return "", fmt.Errorf("cluster %s must define capiInfraCluster when provider type is %q", cluster.ID, db.ProviderTypeCAPI)
+		}
 		return InfraModeCAPI, nil
+	case db.ProviderTypeNico:
+		if _, err := cluster.NicoProvider(); err != nil {
+			return "", err
+		}
+		if enableForgeCapi {
+			return InfraModeCAPI, nil
+		}
+		return InfraModeForge, nil
+	default:
+		return "", fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
-	if enableForgeCapi && !capi.IsEmptyManifest(cluster.CapiInfraCluster) {
-		return InfraModeCAPI, nil
-	}
-
-	return InfraModeForge, nil
 }
 
 func ResolveNodeInfraMode(cluster db.Cluster, nodeSet *db.NodeSet, enableForgeCapi bool) (InfraMode, error) {
@@ -69,22 +78,30 @@ func ResolveNodeInfraMode(cluster db.Cluster, nodeSet *db.NodeSet, enableForgeCa
 		templateSource = fmt.Sprintf("node set %s", nodeSet.ID)
 	}
 
-	if cluster.SiteID == uuid.Nil {
-		if capi.IsEmptyManifest(cluster.CapiInfraCluster) {
-			return "", fmt.Errorf("cluster %s must define capiInfraCluster when siteID is the nil UUID", cluster.ID)
+	switch cluster.ProviderType {
+	case db.ProviderTypeCAPI:
+		provider, err := cluster.CAPIProvider()
+		if err != nil {
+			return "", err
+		}
+		if capi.IsEmptyManifest(provider.InfraCluster) {
+			return "", fmt.Errorf("cluster %s must define capiInfraCluster when provider type is %q", cluster.ID, db.ProviderTypeCAPI)
 		}
 		if capi.IsEmptyManifest(capiInfraMachineTemplate) {
 			return "", fmt.Errorf("%s must define capiInfraMachineTemplate because cluster %s is CAPI-backed", templateSource, cluster.ID)
 		}
-
 		return InfraModeCAPI, nil
+	case db.ProviderTypeNico:
+		if _, err := cluster.NicoProvider(); err != nil {
+			return "", err
+		}
+		if enableForgeCapi {
+			return InfraModeCAPI, nil
+		}
+		return InfraModeForge, nil
+	default:
+		return "", fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
-
-	if capi.ShouldUseCAPIForNodeProvisioning(enableForgeCapi, cluster) {
-		return InfraModeCAPI, nil
-	}
-
-	return InfraModeForge, nil
 }
 
 func (a *Activities) GetClusterProvisioningContext(ctx context.Context, clusterID uuid.UUID) (ClusterProvisioningContext, error) {

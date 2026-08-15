@@ -28,6 +28,8 @@ type Backend string
 const (
 	// BackendCAPD is the Cluster API Docker provider backend.
 	BackendCAPD Backend = "capd"
+	// BackendNicoContainers is the local CAPNico backend backed by Docker containers.
+	BackendNicoContainers Backend = "nico-containers"
 	// BackendForgeVMS is the local forge-vms Forge emulator backend.
 	BackendForgeVMS Backend = "forge-vms"
 )
@@ -38,10 +40,13 @@ type NodePoolSpec struct {
 	ControlPlane         bool
 	DesiredNodeCount     int
 	SystemReservedMemory string // optional, e.g. "1Gi"
+	KubeReservedMemory   string // optional, e.g. "250Mi"
 
-	// Forge-backed pool fields (BackendForgeVMS). UUIDs are parsed from these
-	// strings; OSProfile/ConfigProfile/DiskSelectionStrategy are passed through.
+	// Infrastructure-specific pool fields. Nico containers use InstanceTypeID,
+	// SubnetIDs, and SSHKeyGroupIDs; Forge VMs use InstanceTypeID,
+	// VpcPrefixIDs, SSHKeyGroupIDs, and the profile/disk fields.
 	InstanceTypeID        string
+	SubnetIDs             []string
 	VpcPrefixIDs          []string
 	SSHKeyGroupIDs        []string
 	OSProfile             string
@@ -51,9 +56,9 @@ type NodePoolSpec struct {
 
 // ControlPlane describes the control-plane pools plus cluster-wide knobs.
 type ControlPlane struct {
-	Pools          []NodePoolSpec
-	EtcdEncrypted  bool
-	DisableKubeVip bool
+	Pools           []NodePoolSpec
+	EtcdEncrypted   bool
+	ControlPlaneVIP string
 }
 
 // ClusterNetworkSpec describes the non-default network configuration to pass
@@ -77,9 +82,10 @@ type ClusterSpec struct {
 	Workers           []NodePoolSpec
 	Network           *ClusterNetworkSpec
 
-	// Forge-backed cluster fields (BackendForgeVMS).
+	// Infrastructure-specific cluster fields. Nico containers use SiteID and
+	// VpcID inside their CAPI manifests; Forge VMs use all three as API fields.
 	OrgID  string
-	SiteID string // registered (non-nil) Forge site
+	SiteID string
 	VpcID  string
 }
 
@@ -95,11 +101,123 @@ func buildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	switch spec.Backend {
 	case BackendCAPD:
 		return buildCAPDRequest(spec)
+	case BackendNicoContainers:
+		return buildNicoRequest(spec)
 	case BackendForgeVMS:
 		return buildForgeRequest(spec)
 	default:
 		return api.CreateClusterRequest{}, fmt.Errorf("unsupported backend %q", spec.Backend)
 	}
+}
+
+// buildNicoRequest builds a CAPI request whose infrastructure manifests are
+// consumed by CAPNico. The fixed mock identifiers are supplied by the caller
+// through spec so this builder remains independent of a particular test seed.
+func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+	siteID, err := uuid.Parse(spec.SiteID)
+	if err != nil {
+		return api.CreateClusterRequest{}, fmt.Errorf("parsing Nico site ID %q: %w", spec.SiteID, err)
+	}
+	vpcID, err := uuid.Parse(spec.VpcID)
+	if err != nil {
+		return api.CreateClusterRequest{}, fmt.Errorf("parsing Nico VPC ID %q: %w", spec.VpcID, err)
+	}
+	name := timestampedName(spec.Name)
+
+	req := api.CreateClusterRequest{
+		Name:                          name,
+		SiteID:                        uuid.Nil,
+		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
+		CniPlugin:                     spec.CNIPlugin,
+		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
+		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
+		CapiInfraCluster: map[string]any{
+			"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+			"kind":       "NicoCluster",
+			"metadata": map[string]any{
+				"name": name,
+			},
+			"spec": map[string]any{
+				"siteID": siteID.String(),
+			},
+		},
+	}
+	applyNetworkConfig(&req, spec.Network)
+
+	for _, ps := range orderedPools(spec) {
+		pool, err := buildNicoNodePool(req.Name, vpcID, ps)
+		if err != nil {
+			return api.CreateClusterRequest{}, fmt.Errorf("building Nico node pool %q: %w", ps.Name, err)
+		}
+		if req.NodePools == nil {
+			req.NodePools = &[]api.NodePoolCreateConfig{}
+		}
+		*req.NodePools = append(*req.NodePools, pool)
+	}
+
+	return req, nil
+}
+
+func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
+	instanceTypeID, err := uuid.Parse(spec.InstanceTypeID)
+	if err != nil {
+		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing instance type ID %q: %w", spec.InstanceTypeID, err)
+	}
+	subnetIDs, err := parseUUIDs(spec.SubnetIDs)
+	if err != nil {
+		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing subnet IDs: %w", err)
+	}
+	if len(subnetIDs) == 0 {
+		return api.NodePoolCreateConfig{}, fmt.Errorf("at least one subnet ID is required")
+	}
+	sshKeyGroupIDs, err := parseUUIDs(spec.SSHKeyGroupIDs)
+	if err != nil {
+		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing SSH key group IDs: %w", err)
+	}
+
+	interfaces := make([]map[string]any, 0, len(subnetIDs))
+	for _, subnetID := range subnetIDs {
+		interfaces = append(interfaces, map[string]any{"subnetID": subnetID.String()})
+	}
+	sshKeyGroups := make([]string, 0, len(sshKeyGroupIDs))
+	for _, sshKeyGroupID := range sshKeyGroupIDs {
+		sshKeyGroups = append(sshKeyGroups, sshKeyGroupID.String())
+	}
+	role := "worker"
+	if spec.ControlPlane {
+		role = "control-plane"
+	}
+
+	pool := api.NodePoolCreateConfig{
+		Name:                       spec.Name,
+		NodeNamePrefix:             spec.NodeNamePrefix,
+		ControlPlane:               spec.ControlPlane,
+		DesiredNodeCount:           spec.DesiredNodeCount,
+		SystemReservedMemory:       spec.SystemReservedMemory,
+		CapiSpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
+		CapiPreKubeadmCommands:     []string{},
+		CapiInfraMachineTemplate: map[string]any{
+			"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+			"kind":       "NicoMachineTemplate",
+			"metadata": map[string]any{
+				"name": fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
+			},
+			"spec": map[string]any{
+				"template": map[string]any{
+					"spec": map[string]any{
+						"vpcID":                   vpcID.String(),
+						"instanceTypeID":          instanceTypeID.String(),
+						"cloudInitInjectHostname": true,
+						"ipxeScript":              fmt.Sprintf("#!ipxe\necho local-nico-%s\n", role),
+						"sshKeyGroupIDs":          sshKeyGroups,
+						"interfaces":              interfaces,
+					},
+				},
+			},
+		},
+	}
+
+	return pool, nil
 }
 
 // buildCAPDRequest stamps the embedded CAPD skeletons with the values from spec
@@ -114,7 +232,7 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	req.ControlPlaneKubernetesVersion = spec.KubernetesVersion
 	req.CniPlugin = spec.CNIPlugin
 	req.EtcdEncrypted = spec.ControlPlane.EtcdEncrypted
-	req.DisableKubeVip = spec.ControlPlane.DisableKubeVip
+	req.ControlPlaneVIP = spec.ControlPlane.ControlPlaneVIP
 	applyNetworkConfig(&req, spec.Network)
 	if err := setMapPath(req.CapiInfraCluster, req.Name, "metadata", "name"); err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("setting infra cluster name: %w", err)
@@ -125,7 +243,10 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		if err != nil {
 			return api.CreateClusterRequest{}, fmt.Errorf("building node pool %q: %w", ps.Name, err)
 		}
-		req.NodePools = append(req.NodePools, pool)
+		if req.NodePools == nil {
+			req.NodePools = &[]api.NodePoolCreateConfig{}
+		}
+		*req.NodePools = append(*req.NodePools, pool)
 	}
 
 	return req, nil
@@ -143,6 +264,9 @@ func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateC
 	pool.DesiredNodeCount = spec.DesiredNodeCount
 	if spec.SystemReservedMemory != "" {
 		pool.SystemReservedMemory = spec.SystemReservedMemory
+	}
+	if spec.KubeReservedMemory != "" {
+		pool.KubeReservedMemory = spec.KubeReservedMemory
 	}
 	if err := setMapPath(pool.CapiInfraMachineTemplate, nodeImage, "spec", "template", "spec", "customImage"); err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("setting custom image: %w", err)
@@ -173,6 +297,7 @@ func buildForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
 		CniPlugin:                     spec.CNIPlugin,
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
+		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
 		TeleportEnabled:               &teleportDisabled,
 	}
 	applyNetworkConfig(&req, spec.Network)
@@ -182,7 +307,10 @@ func buildForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		if err != nil {
 			return api.CreateClusterRequest{}, fmt.Errorf("building node pool %q: %w", ps.Name, err)
 		}
-		req.NodePools = append(req.NodePools, pool)
+		if req.NodePools == nil {
+			req.NodePools = &[]api.NodePoolCreateConfig{}
+		}
+		*req.NodePools = append(*req.NodePools, pool)
 	}
 
 	return req, nil
@@ -227,6 +355,9 @@ func buildForgeNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 	if spec.SystemReservedMemory != "" {
 		pool.SystemReservedMemory = spec.SystemReservedMemory
 	}
+	if spec.KubeReservedMemory != "" {
+		pool.KubeReservedMemory = spec.KubeReservedMemory
+	}
 
 	return pool, nil
 }
@@ -254,6 +385,7 @@ func ForgeNodePoolRequest(clusterID uuid.UUID, spec NodePoolSpec) (api.CreateNod
 		ConfigProfile:         pool.ConfigProfile,
 		DiskSelectionStrategy: pool.DiskSelectionStrategy,
 		SystemReservedMemory:  pool.SystemReservedMemory,
+		KubeReservedMemory:    pool.KubeReservedMemory,
 	}, nil
 }
 

@@ -25,16 +25,20 @@ var (
 
 func TestInitConfigRender_Golden(t *testing.T) {
 	tests := []struct {
-		name       string
-		config     func() *InitConfig
-		wantConfig string
-		wantFiles  []fileFromFixture
+		name             string
+		config           func() *InitConfig
+		wantConfig       string
+		wantFiles        []fileFromFixture
+		wantKubeletPatch string
 	}{
 		{
 			name:       "base init config with explicit token",
 			wantConfig: "init_base.yaml",
 			config:     validInitConfig,
-			wantFiles:  []fileFromFixture{apiServerTerminationGracePatchFixture()},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
 		},
 		{
 			name:       "init config with encryption enabled",
@@ -44,7 +48,10 @@ func TestInitConfigRender_Golden(t *testing.T) {
 				cfg.EnableEncryption = true
 				return cfg
 			},
-			wantFiles: []fileFromFixture{apiServerTerminationGracePatchFixture()},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
 		},
 		{
 			name:       "init config with kube-proxy skipped",
@@ -54,7 +61,10 @@ func TestInitConfigRender_Golden(t *testing.T) {
 				cfg.SkipKubeProxy = true
 				return cfg
 			},
-			wantFiles: []fileFromFixture{apiServerTerminationGracePatchFixture()},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
 		},
 		{
 			name:       "init config with local-dev kube-proxy tuning",
@@ -64,7 +74,10 @@ func TestInitConfigRender_Golden(t *testing.T) {
 				cfg.KubeadmContainerMode = true
 				return cfg
 			},
-			wantFiles: []fileFromFixture{apiServerTerminationGracePatchFixture()},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
 		},
 		{
 			name:       "init config with custom image repository",
@@ -74,7 +87,38 @@ func TestInitConfigRender_Golden(t *testing.T) {
 				cfg.ImageRepository = "my-registry.example.com/k8s"
 				return cfg
 			},
-			wantFiles: []fileFromFixture{apiServerTerminationGracePatchFixture()},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
+		},
+		{
+			name:             "init config with custom system reserved memory",
+			wantConfig:       "init_base.yaml",
+			wantKubeletPatch: "kubelet_configuration_patch_32gi.yaml",
+			config: func() *InitConfig {
+				cfg := validInitConfig()
+				cfg.SystemReservedMemory = "32Gi"
+				return cfg
+			},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
+		},
+		{
+			name:             "init config with custom kube reserved memory",
+			wantConfig:       "init_base.yaml",
+			wantKubeletPatch: "kubelet_configuration_patch_250mi.yaml",
+			config: func() *InitConfig {
+				cfg := validInitConfig()
+				cfg.KubeReservedMemory = "250Mi"
+				return cfg
+			},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
 		},
 		{
 			name:       "init config with auth prerequisite file",
@@ -86,11 +130,12 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			},
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
 				{
 					path:           "/etc/kubernetes/oidc/auth-config.yaml",
 					goldenFilePath: "auth_config_simple.yaml",
 					mode:           0o600,
-					owner:          "root:root",
+					owner:          rootRoot,
 				},
 			},
 		},
@@ -104,11 +149,12 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			},
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
 				{
 					path:           "/etc/kubernetes/oidc/auth-config.yaml",
 					goldenFilePath: "auth_config_multi_provider.yaml",
 					mode:           0o600,
-					owner:          "root:root",
+					owner:          rootRoot,
 				},
 			},
 		},
@@ -123,11 +169,12 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			},
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
 				{
 					path:           "/etc/kubernetes/oidc/auth-config.yaml",
 					goldenFilePath: "auth_config_simple.yaml",
 					mode:           0o600,
-					owner:          "root:root",
+					owner:          rootRoot,
 				},
 			},
 		},
@@ -139,8 +186,13 @@ func TestInitConfigRender_Golden(t *testing.T) {
 			require.NoError(t, err)
 
 			assertGolden(t, tt.wantConfig, string(artifacts.ConfigYAML))
-			require.Len(t, artifacts.Files, len(tt.wantFiles))
-			for i, want := range tt.wantFiles {
+			kubeletPatch := tt.wantKubeletPatch
+			if kubeletPatch == "" {
+				kubeletPatch = "kubelet_configuration_patch.yaml"
+			}
+			wantFiles := append([]fileFromFixture{kubeletConfigurationPatchFixture(kubeletPatch)}, tt.wantFiles...)
+			require.Len(t, artifacts.Files, len(wantFiles))
+			for i, want := range wantFiles {
 				got := artifacts.Files[i]
 				assert.Equal(t, want.path, got.Path)
 				assert.Equal(t, want.mode, got.Mode)
@@ -170,9 +222,13 @@ func TestInitConfigRenderGeneratesMissingToken(t *testing.T) {
 
 	normalized := got[:matchIndices[4]] + "abcdef.0123456789abcdef" + got[matchIndices[5]:]
 	assertGolden(t, "init_base.yaml", normalized)
-	require.Len(t, artifacts.Files, 1)
-	assert.Equal(t, apiServerTerminationGracePatchFixture().path, artifacts.Files[0].Path)
-	assertGolden(t, apiServerTerminationGracePatchFixture().goldenFilePath, string(artifacts.Files[0].Content))
+	require.Len(t, artifacts.Files, 3)
+	assert.Equal(t, kubeletConfigurationPatchFixture("kubelet_configuration_patch.yaml").path, artifacts.Files[0].Path)
+	assertGolden(t, "kubelet_configuration_patch.yaml", string(artifacts.Files[0].Content))
+	assert.Equal(t, apiServerTerminationGracePatchFixture().path, artifacts.Files[1].Path)
+	assertGolden(t, apiServerTerminationGracePatchFixture().goldenFilePath, string(artifacts.Files[1].Content))
+	assert.Equal(t, apiServerAuditPolicyFixture().path, artifacts.Files[2].Path)
+	assertGolden(t, apiServerAuditPolicyFixture().goldenFilePath, string(artifacts.Files[2].Content))
 }
 
 func TestInitConfigRenderReturnsInvalidTokenError(t *testing.T) {

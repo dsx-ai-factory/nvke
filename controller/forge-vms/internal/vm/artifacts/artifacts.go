@@ -139,18 +139,33 @@ ethernets:
 		userDataPath,
 		metaDataPath,
 	}
+	var isoToolOut string
 	if out, err := exec.CommandContext(ctx, b.CloudLocalDSPath, cloudLocalDSArgs...).CombinedOutput(); err != nil {
-		// On macOS, fallback scripts may fail due to getopt incompatibilities.
-		// Build the NoCloud ISO directly with mkisofs as a robust fallback.
-		mkisofsErr := buildSeedISOWithMkisofs(ctx, in.WorkingDir, seedISOPath)
-		if mkisofsErr != nil {
+		isoToolOut = fmt.Sprintf("cloud-localds(%s) failed: %v; output: %s", b.CloudLocalDSPath, err, strings.TrimSpace(string(out)))
+	} else {
+		isoToolOut = fmt.Sprintf("cloud-localds(%s) succeeded; output: %q", b.CloudLocalDSPath, strings.TrimSpace(string(out)))
+	}
+
+	// Fall back to a direct ISO build whenever seed.iso is missing — whether
+	// cloud-localds errored (e.g. getopt incompatibilities on macOS) or exited 0
+	// without writing the file. The fallback picks whichever ISO tool is present.
+	if _, statErr := os.Stat(seedISOPath); statErr != nil {
+		if fbErr := buildSeedISO(ctx, in.WorkingDir, seedISOPath); fbErr != nil {
 			return BuildOutput{}, fmt.Errorf(
-				"cloud-localds failed: %w: %s; mkisofs fallback failed: %v",
-				err,
-				strings.TrimSpace(string(out)),
-				mkisofsErr,
+				"cloud-localds did not produce %s (%s); ISO fallback failed: %v; tools: [%s]",
+				seedISOPath, isoToolOut, fbErr, isoToolReport(b.CloudLocalDSPath),
 			)
 		}
+		isoToolOut += "; ISO fallback succeeded"
+	}
+
+	// Final check — the ISO must exist now (defends against a fallback that
+	// reports success but writes nothing).
+	if _, err := os.Stat(seedISOPath); err != nil {
+		return BuildOutput{}, fmt.Errorf(
+			"seed ISO not found at %s after build (iso-tool: %s; tools: [%s]): %w",
+			seedISOPath, isoToolOut, isoToolReport(b.CloudLocalDSPath), err,
+		)
 	}
 
 	return BuildOutput{
@@ -159,7 +174,40 @@ ethernets:
 	}, nil
 }
 
-func buildSeedISOWithMkisofs(ctx context.Context, workingDir, seedISOPath string) error {
+// isoToolReport returns a one-line summary of which ISO-building tools are
+// resolvable in PATH. Included in error messages to aid diagnosis on
+// environments where cloud-localds or mkisofs may not be installed.
+func isoToolReport(cloudLocalDSPath string) string {
+	resolve := func(name string) string {
+		if p, err := exec.LookPath(name); err == nil {
+			return p
+		}
+		return "missing"
+	}
+	return fmt.Sprintf("cloud-localds(%s)=%s mkisofs=%s genisoimage=%s",
+		cloudLocalDSPath,
+		resolve(cloudLocalDSPath),
+		resolve("mkisofs"),
+		resolve("genisoimage"),
+	)
+}
+
+// buildSeedISO builds the NoCloud seed ISO directly, using whichever ISO tool is
+// available — mkisofs or genisoimage (a drop-in fork sharing the same flags).
+// Used as a fallback when cloud-localds is unavailable or produces no output.
+// The tool preference matches the detection reported by isoToolReport.
+func buildSeedISO(ctx context.Context, workingDir, seedISOPath string) error {
+	isoTool := ""
+	for _, t := range []string{"mkisofs", "genisoimage"} {
+		if _, err := exec.LookPath(t); err == nil {
+			isoTool = t
+			break
+		}
+	}
+	if isoTool == "" {
+		return fmt.Errorf("no ISO build tool available (tried mkisofs, genisoimage)")
+	}
+
 	absWorkingDir, err := filepath.Abs(workingDir)
 	if err != nil {
 		return fmt.Errorf("failed to resolve working directory %q: %w", workingDir, err)
@@ -171,7 +219,7 @@ func buildSeedISOWithMkisofs(ctx context.Context, workingDir, seedISOPath string
 
 	cmd := exec.CommandContext(
 		ctx,
-		"mkisofs",
+		isoTool,
 		"-output", absSeedISOPath,
 		"-volid", "cidata",
 		"-joliet",
@@ -182,7 +230,7 @@ func buildSeedISOWithMkisofs(ctx context.Context, workingDir, seedISOPath string
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("mkisofs failed: %w: %s", err, strings.TrimSpace(string(out)))
+		return fmt.Errorf("%s failed: %w: %s", isoTool, err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

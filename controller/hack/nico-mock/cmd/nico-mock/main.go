@@ -20,8 +20,9 @@
 //   - Resource discovery is intentionally static: the mock exposes one site,
 //     one VPC, one subnet, one SSH key group, and one instance type unless a
 //     caller overrides those IDs on created instances.
-//   - State lives entirely in local Docker containers and labels, so there is
-//     no persistence beyond Docker and no multi-host coordination.
+//   - Instance identity and bootstrap state live in local Docker containers;
+//     labels applied after creation are process-local. There is no multi-host
+//     coordination.
 //   - User data handling is intentionally narrow: only `write_files` and string
 //     `runcmd` entries from cloud-config are applied.
 //   - TPM behavior is local-dev oriented: instance readiness is inferred from
@@ -82,6 +83,27 @@ const (
 	// this path. Reading the file directly lets the mock return Forge-compatible
 	// `tpmEkCertificate` data without duplicating TPM state outside the container.
 	tpmEKCertPath = "/var/lib/swtpm/ek.cert"
+
+	mockCloudInitStatusPath = "/var/lib/nico-mock-cloud-init/status"
+	statusUpdateTimeout     = 5 * time.Second
+	mockBootIDDir           = "/var/lib/nico-mock"
+	mockBootIDPath          = mockBootIDDir + "/boot-id"
+	mockNextBootIDPath      = mockBootIDDir + "/next-boot-id"
+
+	// Docker containers share the host kernel's boot ID. This wrapper gives each
+	// mock node a persistent boot ID and installs a staged replacement before
+	// kubelet starts, so restarting the container looks like a real reboot to
+	// Kubernetes. Docker reruns the wrapper on every container start.
+	mockNodeEntrypoint = `set -e
+mkdir -p ` + mockBootIDDir + `
+if [ -f ` + mockNextBootIDPath + ` ]; then
+  mv ` + mockNextBootIDPath + ` ` + mockBootIDPath + `
+fi
+if [ ! -f ` + mockBootIDPath + ` ]; then
+  cat /proc/sys/kernel/random/uuid > ` + mockBootIDPath + `
+fi
+mount --bind ` + mockBootIDPath + ` /proc/sys/kernel/random/boot_id
+exec /usr/local/bin/entrypoint /sbin/init`
 
 	labelManaged      = "nvidia.com/nico-mock.managed"
 	labelInstanceID   = "nvidia.com/nico-mock.instance-id"
@@ -151,8 +173,16 @@ type server struct {
 	// with unusedUsable==0 as InstanceTypeUnavailable, and unusedUsable>0 as
 	// available. The map is mutable at runtime via handleSetInstanceTypeCapacity
 	// so tests can flip a type's availability to exercise rotation/convergence.
+	//
+	// instanceTypeName maps an instance type ID to the display name returned in
+	// the InstanceType response. It is optional per ID (set via the ?name= query
+	// param on handleSetInstanceTypeCapacity); when unset the mock falls back to
+	// defaultInstanceTypeName so multiple registered types can be told apart in
+	// the API/UI. Both maps are guarded by mu.
 	mu                   sync.Mutex
 	instanceTypeCapacity map[string]int32
+	instanceTypeName     map[string]string
+	instanceLabels       map[string]map[string]string
 }
 
 func main() {
@@ -173,13 +203,19 @@ func main() {
 		instanceTypeCapacity: map[string]int32{
 			cfg.InstanceTypeID: int32(defaultInstanceTypeUnusedUsable),
 		},
+		instanceTypeName: map[string]string{
+			cfg.InstanceTypeID: defaultInstanceTypeName,
+		},
+		instanceLabels: map[string]map[string]string{},
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", s.handleHealthz)
 	// Test-only admin knob: set/clear an instance type's unusedUsable capacity at
 	// runtime, e.g. PUT /admin/instance-type/<id>?unusedUsable=0 to make a type
-	// exist-but-unavailable, or ?unusedUsable=32 to bring it back.
+	// exist-but-unavailable, or ?unusedUsable=32 to bring it back. An optional
+	// ?name=<display-name> sets the display name returned for that type so
+	// multiple registered types can be distinguished in the API/UI.
 	mux.HandleFunc("PUT /admin/instance-type/{instanceTypeId}", s.handleSetInstanceTypeCapacity)
 	s.registerAPIRoutes(mux)
 
@@ -225,6 +261,7 @@ func (s *server) registerAPIRoutes(mux *http.ServeMux) {
 	register(http.MethodGet, "instance/type", s.handleListInstanceTypes)
 	register(http.MethodGet, "instance/type/{instanceTypeId}", s.handleGetInstanceType)
 	register(http.MethodGet, "instance/{instanceID}", s.handleGetInstance)
+	register(http.MethodPatch, "instance/{instanceID}", s.handleUpdateInstance)
 	register(http.MethodDelete, "instance/{instanceID}", s.handleDeleteInstance)
 	register(http.MethodGet, "site", s.handleListSites)
 	register(http.MethodGet, "site/{siteID}", s.handleGetSite)
@@ -337,6 +374,10 @@ func (s *server) handleGetInstanceType(w http.ResponseWriter, r *http.Request) {
 // type exist-but-unavailable (InstanceTypeUnavailable); a positive value makes
 // it schedulable again, which is how the wrap-around convergence test brings a
 // previously-unavailable preferred type back.
+//
+// An optional ?name=<display-name> sets the display name returned for the type;
+// when present and non-empty it is stored, otherwise any existing name (or the
+// default fallback) is left in place. Only unusedUsable is required.
 func (s *server) handleSetInstanceTypeCapacity(w http.ResponseWriter, r *http.Request) {
 	instanceTypeID := strings.TrimSpace(r.PathValue("instanceTypeId"))
 	if instanceTypeID == "" {
@@ -352,12 +393,17 @@ func (s *server) handleSetInstanceTypeCapacity(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	name := strings.TrimSpace(r.URL.Query().Get("name"))
+
 	s.mu.Lock()
 	s.instanceTypeCapacity[instanceTypeID] = int32(unusedUsable)
+	if name != "" {
+		s.instanceTypeName[instanceTypeID] = name
+	}
 	s.mu.Unlock()
 
-	slog.Info("set instance type capacity", "instanceTypeID", instanceTypeID, "unusedUsable", unusedUsable)
-	writeJSON(w, http.StatusOK, map[string]any{"instanceTypeId": instanceTypeID, "unusedUsable": unusedUsable})
+	slog.Info("set instance type capacity", "instanceTypeID", instanceTypeID, "unusedUsable", unusedUsable, "name", name)
+	writeJSON(w, http.StatusOK, map[string]any{"instanceTypeId": instanceTypeID, "unusedUsable": unusedUsable, "name": name})
 }
 
 func (s *server) staticSite() nicosdk.Site {
@@ -412,7 +458,7 @@ func (s *server) staticSSHKeyGroup() nicosdk.SshKeyGroup {
 func (s *server) instanceType(id string, unusedUsable int32) nicosdk.InstanceType {
 	instanceType := nicosdk.NewInstanceType()
 	instanceType.SetId(id)
-	instanceType.SetName(defaultInstanceTypeName)
+	instanceType.SetName(s.instanceTypeDisplayName(id))
 	instanceType.SetSiteId(s.cfg.SiteID)
 
 	total := int32(defaultInstanceTypeTotal)
@@ -428,6 +474,18 @@ func (s *server) instanceType(id string, unusedUsable int32) nicosdk.InstanceTyp
 	instanceType.SetAllocationStats(*allocationStats)
 
 	return *instanceType
+}
+
+// instanceTypeDisplayName returns the registered display name for an instance
+// type ID, falling back to defaultInstanceTypeName when none was set. It takes
+// mu itself so callers can invoke it without holding the lock.
+func (s *server) instanceTypeDisplayName(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if name := strings.TrimSpace(s.instanceTypeName[id]); name != "" {
+		return name
+	}
+	return defaultInstanceTypeName
 }
 
 func (s *server) handleListInstances(w http.ResponseWriter, r *http.Request) {
@@ -494,6 +552,57 @@ func (s *server) handleCreateInstance(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, inst)
 }
 
+func (s *server) handleUpdateInstance(w http.ResponseWriter, r *http.Request) {
+	instanceID := strings.TrimSpace(r.PathValue("instanceID"))
+	if instanceID == "" {
+		http.NotFound(w, r)
+		return
+	}
+
+	var req nicosdk.InstanceUpdateRequest
+	if err := decodeJSONBody(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	containerID, err := s.findManagedContainerIDByInstanceID(r.Context(), instanceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if containerID == "" {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("instance %s not found", instanceID))
+		return
+	}
+
+	if req.GetTriggerReboot() {
+		stageBootID := "cat /proc/sys/kernel/random/uuid > " + mockNextBootIDPath
+		if _, err := runDocker(r.Context(), "exec", containerID, "/bin/sh", "-c", stageBootID); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("stage instance boot ID: %v", err))
+			return
+		}
+		if _, err := runDocker(r.Context(), "restart", "--time", "10", containerID); err != nil {
+			writeError(w, http.StatusInternalServerError, fmt.Sprintf("restart instance container: %v", err))
+			return
+		}
+		slog.Info("restarted mock instance container", "instanceID", instanceID, "containerID", containerID)
+	}
+	if req.HasLabels() {
+		// CAPNICo applies observed machine and topology labels after instance
+		// creation, once NICo has returned their IDs and names. Docker labels
+		// cannot be changed after container creation, so retain these updates in
+		// memory for subsequent instance responses.
+		s.setInstanceLabels(instanceID, req.GetLabels())
+	}
+
+	inst, err := s.loadInstance(r.Context(), containerID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, inst)
+}
+
 func (s *server) handleDeleteInstance(w http.ResponseWriter, r *http.Request) {
 	instanceID := strings.TrimSpace(r.PathValue("instanceID"))
 	if instanceID == "" {
@@ -531,6 +640,7 @@ func (s *server) handleDeleteInstance(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+	s.deleteInstanceLabels(instanceID)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -604,12 +714,13 @@ func (s *server) createInstance(ctx context.Context, req nicosdk.InstanceCreateR
 		"--env", "KUBECONFIG=/etc/kubernetes/admin.conf",
 		"--env", "KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=fuse-overlayfs",
 		"--volume", "/lib/modules:/lib/modules:ro",
+		"--entrypoint", "/bin/sh",
 		"--tty",
 	}
 	for key, value := range labels {
 		createArgs = append(createArgs, "--label", key+"="+value)
 	}
-	createArgs = append(createArgs, s.cfg.NodeImage)
+	createArgs = append(createArgs, s.cfg.NodeImage, "-c", mockNodeEntrypoint)
 
 	containerID, err := runDocker(ctx, createArgs...)
 	if err != nil {
@@ -761,7 +872,11 @@ func (s *server) loadInstance(ctx context.Context, containerID string) (*nicosdk
 	} else if len(sshKeyGroupIDs) > 0 {
 		inst.SetSshKeyGroupIds(sshKeyGroupIDs)
 	}
-	if instanceLabels := publicInstanceLabels(labels); len(instanceLabels) > 0 {
+	instanceLabels := publicInstanceLabels(labels)
+	if updatedLabels, ok := s.getInstanceLabels(instanceID); ok {
+		instanceLabels = updatedLabels
+	}
+	if len(instanceLabels) > 0 {
 		inst.SetLabels(instanceLabels)
 	}
 
@@ -835,6 +950,39 @@ func (s *server) removeNodeContainer(ctx context.Context, containerID string) er
 	return nil
 }
 
+func (s *server) setInstanceLabels(instanceID string, labels map[string]string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.instanceLabels == nil {
+		s.instanceLabels = map[string]map[string]string{}
+	}
+	s.instanceLabels[instanceID] = cloneStringMap(labels)
+}
+
+func (s *server) getInstanceLabels(instanceID string) (map[string]string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	labels, ok := s.instanceLabels[instanceID]
+	return cloneStringMap(labels), ok
+}
+
+func (s *server) deleteInstanceLabels(instanceID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.instanceLabels, instanceID)
+}
+
+func cloneStringMap(source map[string]string) map[string]string {
+	if source == nil {
+		return nil
+	}
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
+}
+
 // tpmEKCertificate returns the container's EK certificate in the same
 // base64-encoded DER form the higher layers expect from the real NICo/Forge
 // APIs. Each read shells into the container and base64-encodes the file at
@@ -878,51 +1026,87 @@ func instanceStatusForContainer(running bool, tpmEKCertificate string) nicosdk.I
 
 // applyCloudConfig implements the narrow cloud-config subset that local NICo
 // consumers depend on: `write_files` plus string-valued `runcmd` entries.
-func (s *server) applyCloudConfig(ctx context.Context, containerID, userData string) error {
+func (s *server) applyCloudConfig(ctx context.Context, containerID, userData string) (retErr error) {
+	// The node agent waits for cloud-init to finish before continuing bootstrap,
+	// so expose the progress of this synchronous mock implementation.
+	if err := s.writeMockCloudInitStatus(ctx, containerID, "running"); err != nil {
+		return fmt.Errorf("set mock cloud-init status to running: %w", err)
+	}
+	defer func() {
+		if retErr == nil {
+			return
+		}
+		statusCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), statusUpdateTimeout)
+		defer cancel()
+		if err := s.writeMockCloudInitStatus(statusCtx, containerID, "error"); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("set mock cloud-init status to error: %w", err))
+		}
+	}()
+
 	userData = strings.TrimSpace(userData)
-	if userData == "" {
-		return nil
-	}
+	if userData != "" {
+		userData = strings.TrimPrefix(userData, "#cloud-config\n")
+		userData = strings.TrimPrefix(userData, "#cloud-config\r\n")
 
-	userData = strings.TrimPrefix(userData, "#cloud-config\n")
-	userData = strings.TrimPrefix(userData, "#cloud-config\r\n")
+		var cfg cloudConfig
+		if err := yaml.Unmarshal([]byte(userData), &cfg); err != nil {
+			return fmt.Errorf("parse cloud-config userData: %w", err)
+		}
 
-	var cfg cloudConfig
-	if err := yaml.Unmarshal([]byte(userData), &cfg); err != nil {
-		return fmt.Errorf("parse cloud-config userData: %w", err)
-	}
-
-	for _, file := range cfg.WriteFiles {
-		if strings.TrimSpace(file.Path) == "" {
-			continue
-		}
-		if err := s.execInContainer(ctx, containerID, "mkdir", "-p", filepath.Dir(file.Path)); err != nil {
-			return fmt.Errorf("create directory for %s: %w", file.Path, err)
-		}
-		if err := s.copyFileToContainer(ctx, containerID, file.Path, file.Content); err != nil {
-			return fmt.Errorf("write %s: %w", file.Path, err)
-		}
-		if perms := strings.TrimSpace(file.Permissions); perms != "" {
-			if err := s.execInContainer(ctx, containerID, "chmod", perms, file.Path); err != nil {
-				return fmt.Errorf("chmod %s: %w", file.Path, err)
+		for _, file := range cfg.WriteFiles {
+			if strings.TrimSpace(file.Path) == "" {
+				continue
+			}
+			if err := s.execInContainer(ctx, containerID, "mkdir", "-p", filepath.Dir(file.Path)); err != nil {
+				return fmt.Errorf("create directory for %s: %w", file.Path, err)
+			}
+			if err := s.copyFileToContainer(ctx, containerID, file.Path, file.Content); err != nil {
+				return fmt.Errorf("write %s: %w", file.Path, err)
+			}
+			if perms := strings.TrimSpace(file.Permissions); perms != "" {
+				if err := s.execInContainer(ctx, containerID, "chmod", perms, file.Path); err != nil {
+					return fmt.Errorf("chmod %s: %w", file.Path, err)
+				}
+			}
+			if owner := strings.TrimSpace(file.Owner); owner != "" {
+				if err := s.execInContainer(ctx, containerID, "chown", owner, file.Path); err != nil {
+					return fmt.Errorf("chown %s: %w", file.Path, err)
+				}
 			}
 		}
-		if owner := strings.TrimSpace(file.Owner); owner != "" {
-			if err := s.execInContainer(ctx, containerID, "chown", owner, file.Path); err != nil {
-				return fmt.Errorf("chown %s: %w", file.Path, err)
+
+		for _, command := range cfg.RunCmd {
+			if strings.TrimSpace(command) == "" {
+				continue
+			}
+			if err := s.execInContainer(ctx, containerID, "sh", "-lc", command); err != nil {
+				return fmt.Errorf("run cloud-config command %q: %w", command, err)
 			}
 		}
 	}
 
-	for _, command := range cfg.RunCmd {
-		if strings.TrimSpace(command) == "" {
-			continue
-		}
-		if err := s.execInContainer(ctx, containerID, "sh", "-lc", command); err != nil {
-			return fmt.Errorf("run cloud-config command %q: %w", command, err)
-		}
+	if err := s.writeMockCloudInitStatus(ctx, containerID, "done"); err != nil {
+		return fmt.Errorf("set mock cloud-init status to done: %w", err)
 	}
+	return nil
+}
 
+// writeMockCloudInitStatus atomically updates the status read by the
+// cloud-init shim in mock NICo node containers.
+func (s *server) writeMockCloudInitStatus(ctx context.Context, containerID, status string) error {
+	const writeStatus = `set -eu
+status_dir=/var/lib/nico-mock-cloud-init
+mkdir -p "$status_dir"
+status_tmp="$status_dir/status.tmp.$$"
+trap 'rm -f "$status_tmp"' EXIT
+printf '%s\n' "$1" > "$status_tmp"
+chmod 0644 "$status_tmp"
+mv -f "$status_tmp" ` + mockCloudInitStatusPath + `
+trap - EXIT`
+
+	if err := s.execInContainer(ctx, containerID, "sh", "-c", writeStatus, "cloud-init-status", status); err != nil {
+		return fmt.Errorf("write %s: %w", mockCloudInitStatusPath, err)
+	}
 	return nil
 }
 

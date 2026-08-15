@@ -32,22 +32,29 @@ type Node struct {
 	// - worker nodes remain nodepool-managed with non-null node_pool_id/node_set_id
 	// Today active flows still create control-plane nodes with non-null node_pool_id/node_set_id;
 	// null values are reserved for the future no-nodepool control-plane path.
-	NodePoolID                  uuid.UUID      `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
-	NodeSetID                   uuid.UUID      `bun:"type:uuid,nullzero"`
-	ClusterID                   uuid.UUID      `bun:"type:uuid,notnull"`
-	ControlPlane                bool           `bun:"type:boolean,notnull,default:false"`
-	InstanceTypeID              uuid.UUID      `bun:"type:uuid,notnull"`
-	Name                        string         `bun:"type:text,notnull"`
-	ForgeInstanceID             string         `bun:"type:text,notnull"`
-	ForgeMachineID              string         `bun:"type:text,notnull"`
-	IP                          string         `bun:"type:text,notnull"`
-	TpmEKPubHash                string         `bun:"type:text,notnull,default:''"`
-	SpiffeEnabled               bool           `bun:"type:boolean,notnull,default:false"`
-	Conditions                  NodeConditions `bun:"type:jsonb"`
-	AgentVersion                string         `bun:"type:text,notnull,default:''"`
-	ControlPlaneConfigurationID uuid.UUID      `bun:"configuration_id,type:uuid,nullzero"`
-	CreatedAt                   time.Time      `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	UpdatedAt                   time.Time      `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	NodePoolID                  uuid.UUID         `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
+	NodeSetID                   uuid.UUID         `bun:"type:uuid,nullzero"`
+	ClusterID                   uuid.UUID         `bun:"type:uuid,notnull"`
+	ControlPlane                bool              `bun:"type:boolean,notnull,default:false"`
+	InstanceTypeID              uuid.UUID         `bun:"type:uuid,notnull"`
+	Name                        string            `bun:"type:text,notnull"`
+	ForgeInstanceID             string            `bun:"type:text,notnull"`
+	ForgeMachineID              string            `bun:"type:text,notnull"`
+	IP                          string            `bun:"type:text,notnull"`
+	TpmEKPubHash                string            `bun:"type:text,notnull,default:''"`
+	SpiffeEnabled               bool              `bun:"type:boolean,notnull,default:false"`
+	Conditions                  NodeConditions    `bun:"type:jsonb"`
+	AgentVersion                string            `bun:"type:text,notnull,default:''"`
+	ControlPlaneConfigurationID uuid.UUID         `bun:"configuration_id,type:uuid,nullzero"`
+	CreatedAt                   time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	UpdatedAt                   time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	Nico                        *NicoNodeProvider `bun:"nico,type:jsonb"`
+}
+
+type NicoNodeProvider struct {
+	ForgeInstanceID string    `json:"forge_instance_id,omitempty"`
+	ForgeMachineID  string    `json:"forge_machine_id,omitempty"`
+	InstanceTypeID  uuid.UUID `json:"instance_type_id,omitempty"`
 }
 
 // IsManagedByNodePool reports whether the node is managed by a node pool controller.
@@ -117,6 +124,28 @@ type NodeInfo struct {
 func (n *Node) BeforeUpdate() error {
 	n.UpdatedAt = time.Now()
 	return nil
+}
+
+func (n *Node) NicoProvider() (NicoNodeProvider, error) {
+	if n.Nico == nil {
+		return NicoNodeProvider{}, fmt.Errorf("%w: node %s nico", ErrMissingProviderPayload, n.ID)
+	}
+	return *n.Nico, nil
+}
+
+func (n *Node) SetNico(provider NicoNodeProvider) {
+	n.Nico = &provider
+	n.ForgeInstanceID = provider.ForgeInstanceID
+	n.ForgeMachineID = provider.ForgeMachineID
+	n.InstanceTypeID = provider.InstanceTypeID
+}
+
+func (n *Node) SyncProviderFields() {
+	n.Nico = &NicoNodeProvider{
+		ForgeInstanceID: n.ForgeInstanceID,
+		ForgeMachineID:  n.ForgeMachineID,
+		InstanceTypeID:  n.InstanceTypeID,
+	}
 }
 
 type NodeFilters struct {
@@ -340,11 +369,13 @@ func (q *queriesImpl) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (Node,
 }
 
 func (q *queriesImpl) CreateNode(ctx context.Context, node *Node) (Node, error) {
+	node.SyncProviderFields()
 	_, err := q.db.NewInsert().Model(node).Exec(ctx)
 	return *node, err
 }
 
 func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) {
+	node.SyncProviderFields()
 	res, err := q.db.NewUpdate().Model(node).WherePK().Exec(ctx)
 	if err != nil {
 		return Node{}, err
@@ -353,34 +384,29 @@ func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) 
 }
 
 func (q *queriesImpl) UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.UUID, forgeInstanceID, forgeMachineID, ip *string) error {
-	query := q.db.NewUpdate().
-		Model(&Node{}).
-		Set("updated_at = current_timestamp").
-		Where("id = ?", nodeID)
-
-	hasFieldUpdate := false
-	if forgeInstanceID != nil {
-		query = query.Set("forge_instance_id = ?", *forgeInstanceID)
-		hasFieldUpdate = true
-	}
-	if forgeMachineID != nil {
-		query = query.Set("forge_machine_id = ?", *forgeMachineID)
-		hasFieldUpdate = true
-	}
-	if ip != nil {
-		query = query.Set("ip = ?", *ip)
-		hasFieldUpdate = true
-	}
-
-	if !hasFieldUpdate {
+	if forgeInstanceID == nil && forgeMachineID == nil && ip == nil {
 		return nil
 	}
 
-	res, err := query.Exec(ctx)
-	if err != nil {
+	return q.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		qi := queriesImpl{db: tx}
+		node, err := qi.GetNodeForUpdate(ctx, nodeID)
+		if err != nil {
+			return err
+		}
+		if forgeInstanceID != nil {
+			node.ForgeInstanceID = *forgeInstanceID
+		}
+		if forgeMachineID != nil {
+			node.ForgeMachineID = *forgeMachineID
+		}
+		if ip != nil {
+			node.IP = *ip
+		}
+
+		_, err = qi.UpdateNode(ctx, &node)
 		return err
-	}
-	return notFoundErrIfNoRowsAffected(res)
+	})
 }
 
 func (q *queriesImpl) DeleteNode(ctx context.Context, id uuid.UUID) error {

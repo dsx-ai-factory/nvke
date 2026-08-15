@@ -10,8 +10,7 @@
 
 # syntax=docker/dockerfile:1
 # Base image registry. Defaults to Docker Hub so the image builds for anyone
-# with no NVIDIA network access. Internal builds override it, e.g.
-#   docker build --build-arg BASE_REGISTRY=dockerhub.nvidia.com .
+# with no NVIDIA network access. Internal builds can override it.
 ARG BASE_REGISTRY=docker.io
 
 FROM ${BASE_REGISTRY}/golang:1.26.6 AS builder

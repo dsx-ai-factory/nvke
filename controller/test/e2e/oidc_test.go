@@ -75,7 +75,7 @@ func verifyIdentity(ctx context.Context, test *tenantTest, id tenantauth.Identit
 	var authResult tenantauth.VerifyResult
 	Eventually(func() error {
 		var err error
-		authResult, err = tenantauth.VerifySPIREAuth(ctx, test.k8sClient, id, test.cluster.Name, []tenantauth.Check{listNodes, deleteNodes})
+		authResult, err = tenantauth.VerifySPIREAuth(ctx, test.k8sClient, id, test.cluster.Name, wantUser, []tenantauth.Check{listNodes, deleteNodes})
 		return err
 	}).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 

@@ -1,6 +1,6 @@
 # The Go workspace
 
-This repository holds seven Go modules. `go.work` at the root ties together all
+This repository holds eight Go modules. `go.work` at the root ties together all
 of them, so one `make build` covers the whole tree and one Go toolchain version
 applies across it.
 
@@ -15,6 +15,7 @@ when the first two go stale.
 | `controller/api` | yes | builds from public dependencies |
 | `controller/hack/capd-reboot-controller` | yes | builds from public dependencies |
 | `controller/hack/nico-mock` | yes | builds from public dependencies |
+| `controller/nkectl` | yes | builds from public dependencies |
 | `controller/test/e2e` | yes | builds from public dependencies |
 | `controller` | yes | public dependencies + one vendored INTERNAL module |
 | `controller/forge-vms` | yes | builds from public dependencies |
@@ -47,8 +48,8 @@ make build      # build the released commands into bin/
 make clean      # remove bin/
 ```
 
-`make build` produces `bin/agent`, `bin/capd-reboot-controller` and
-`bin/nico-mock`.
+`make build` produces `bin/agent`, `bin/capd-reboot-controller`,
+`bin/cloud-workflow-engine`, `bin/nico-mock`, and `bin/nkectl`.
 
 ## Keeping the workspace up to date
 

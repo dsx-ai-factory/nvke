@@ -41,6 +41,7 @@ type Engine struct {
 	store       *state.Store
 	logger      *slog.Logger
 	runtime     vm.Runtime
+	net         NetworkManager
 	artifacts   artifacts.Builder
 	bootPatcher *ipxe.BootPatcher
 	imageCache  *ipxe.ImageCache
@@ -55,32 +56,35 @@ type Engine struct {
 }
 
 func New(cfg config.Config, store *state.Store, logger *slog.Logger) *Engine {
+	rt := newRuntime(cfg)
+	patcher := &ipxe.BootPatcher{
+		Logger:      logger.With("component", "bootpatcher"),
+		CacheDir:    cfg.ImageCacheDirectory(),
+		DebugFSPath: findDebugFS(),
+		QEMUImgPath: cfg.QEMUImgPath,
+	}
 	return &Engine{
 		cfg:     cfg,
 		store:   store,
 		logger:  logger.With("component", "controller"),
-		runtime: newRuntime(cfg),
+		runtime: rt,
+		net:     newNetworkManager(cfg, rt),
 		artifacts: artifacts.Builder{
 			QEMUImgPath:      cfg.QEMUImgPath,
 			CloudLocalDSPath: cfg.CloudLocalDSPath,
 			BaseImage:        cfg.BaseImage,
 			MockMode:         cfg.EffectiveVMBackend() == config.VMBackendMock,
 		},
-		bootPatcher: &ipxe.BootPatcher{
-			Logger:      logger.With("component", "bootpatcher"),
-			CacheDir:    cfg.ImageCacheDirectory(),
-			DebugFSPath: findDebugFS(),
-			QEMUImgPath: cfg.QEMUImgPath,
-		},
-		imageCache: ipxe.NewImageCache(cfg.ImageCacheDirectory(), logger.With("component", "imagecache")),
-		taskCh:     make(chan string, cfg.ReconcileWorkers*16),
-		queued:     make(map[string]struct{}),
+		bootPatcher: patcher,
+		imageCache:  ipxe.NewImageCache(cfg.ImageCacheDirectory(), logger.With("component", "imagecache")),
+		taskCh:      make(chan string, cfg.ReconcileWorkers*16),
+		queued:      make(map[string]struct{}),
 	}
 }
 
 func (e *Engine) Start(ctx context.Context) error {
-	if err := e.runtime.EnsureBridge(ctx, e.cfg.BridgeName, e.cfg.BridgeCIDR); err != nil {
-		return fmt.Errorf("failed to ensure bridge %s: %w", e.cfg.BridgeName, err)
+	if err := e.net.EnsureSetup(ctx); err != nil {
+		return fmt.Errorf("network setup failed: %w", err)
 	}
 
 	// Detect VMs that exist in the hypervisor but not in the database.
@@ -140,6 +144,18 @@ func (e *Engine) detectOrphanedVMs(ctx context.Context) {
 
 func (e *Engine) Wait() {
 	e.wg.Wait()
+}
+
+// MetadataAddrs returns all addresses the metadata server should bind.
+func (e *Engine) MetadataAddrs() []string {
+	return e.net.MetadataAddrs()
+}
+
+// Teardown cleans up network-mode-specific resources. Call after Wait().
+func (e *Engine) Teardown(ctx context.Context) {
+	if err := e.net.Teardown(ctx); err != nil {
+		e.logger.Error("network teardown failed", "error", err)
+	}
 }
 
 func (e *Engine) dispatcher(ctx context.Context) {
@@ -336,7 +352,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWit
 
 	// Allocate IP or configure DHCP based on networking mode.
 	var firstIP string
-	if instance.UsesDHCP() && !e.artifacts.MockMode {
+	if e.net.NeedsDHCP(instance) && !e.artifacts.MockMode {
 		// DHCP: no IP yet. VM will get one from dnsmasq. Register MAC + host entry.
 		e.registerDHCPInstance(ctx, instance, in.Interfaces, nicMAC, log)
 	} else {
@@ -437,6 +453,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWit
 		InstanceID:  instance.ID,
 		DomainName:  domainName,
 		BridgeName:  e.cfg.BridgeName,
+		NetworkName: e.cfg.LibvirtNetwork,
 		VCPUs:       vCPUs,
 		MemoryMiB:   memoryMiB,
 		DiskPath:    artifactsOut.DiskPath,
@@ -534,9 +551,7 @@ func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInte
 			if err := e.store.UpdateInterfaceIPs(ctx, in.Interfaces[0].ID, []string{ip}); err != nil {
 				return fmt.Errorf("store lease IP: %w", err)
 			}
-			if err := writeDHCPHostEntry(e.cfg.DHCPHostsDir, instance.ID, nicMAC, instance.Name, ip); err != nil {
-				log.Warn("Failed to pin IP in DHCP host entry", "error", err, "ip", ip)
-			}
+			e.net.WriteReservation(instance.ID, nicMAC, instance.Name, ip, log)
 			log.Info("Confirmed VM IP from DHCP lease", "ip", ip, "mac", nicMAC)
 
 			if instance.PhoneHomeEnabled {
@@ -706,21 +721,15 @@ func (e *Engine) resolveBootImage(ctx context.Context, instance state.InstanceRo
 	return cachedImage, true, userData, nil
 }
 
-// registerDHCPInstance stores the MAC in the database and writes a dnsmasq
-// host entry so the VM can get an IP via DHCP. Called only for DHCP-mode
-// instances on real (non-mock) backends.
+// registerDHCPInstance stores the MAC in the database and writes a host
+// reservation if the active network mode requires it.
 func (e *Engine) registerDHCPInstance(ctx context.Context, instance state.InstanceRow, interfaces []state.InstanceInterfaceRow, nicMAC string, log *slog.Logger) {
 	if len(interfaces) > 0 {
 		if err := e.store.UpdateInterfaceMAC(ctx, interfaces[0].ID, nicMAC); err != nil {
 			log.Warn("Failed to store MAC in interface", "error", err)
 		}
 	}
-
-	if err := writeDHCPHostEntry(e.cfg.DHCPHostsDir, instance.ID, nicMAC, instance.Name, ""); err != nil {
-		log.Warn("Failed to write DHCP host entry", "error", err)
-	} else {
-		log.Info("Wrote DHCP host entry", "mac", nicMAC)
-	}
+	e.net.WriteReservation(instance.ID, nicMAC, instance.Name, "", log)
 }
 
 func firstInterfaceIP(interfaces []state.InstanceInterfaceRow) (string, error) {
@@ -804,16 +813,14 @@ func (e *Engine) resolveInstanceIPFromLease(ctx context.Context, instance state.
 		return ip, nil
 	}
 
-	// No IP yet — check DHCP lease file.
-	if e.cfg.DHCPLeaseFile == "" {
-		return "", fmt.Errorf("dhcp lease file is not configured and VM has no IP assigned by IPAM")
-	}
 	nicMAC := nicMACForInstance(instance.ID)
-	leaseIP, ok := readLeaseByMAC(e.cfg.DHCPLeaseFile, nicMAC)
-	if !ok {
-		return "", nil
+	leaseIP, ok, err := e.net.LookupLease(ctx, nicMAC)
+	if err != nil {
+		return "", fmt.Errorf("DHCP lease lookup failed: %w", err)
 	}
-
+	if !ok {
+		return "", nil // no lease yet; retry next tick
+	}
 	return leaseIP, nil
 }
 

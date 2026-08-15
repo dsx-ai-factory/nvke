@@ -216,7 +216,7 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 
 	machine, err := buildCAPIMachineForNode(createCtx.node, createCtx.nodeSet, createCtx.nodePool, createCtx.cluster, createCtx.namespace, bootstrapSecret.Name, clusterv1.ContractVersionedObjectReference{
 		APIGroup: nicov1.GroupVersion.Group,
-		Kind:     "NicoMachine",
+		Kind:     nicoMachineConst,
 		Name:     nicoMachine.Name,
 	})
 	if err != nil {
@@ -250,7 +250,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
@@ -535,7 +535,7 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        machineName,

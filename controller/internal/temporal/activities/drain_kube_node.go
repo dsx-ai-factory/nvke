@@ -188,7 +188,7 @@ func podsEligibleForEviction(pods []corev1.Pod) ([]corev1.Pod, error) {
 		}
 
 		controller := metav1.GetControllerOf(pod)
-		if controller != nil && controller.Kind == "DaemonSet" {
+		if controller != nil && controller.Kind == daemonSet {
 			continue
 		}
 		if controller == nil && pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
@@ -228,7 +228,7 @@ func listKubeNodePods(ctx context.Context, tenantClient client.Client, nodeName 
 }
 
 func labelDrainedKubeNode(ctx context.Context, tenantClient client.Client, node *corev1.Node) error {
-	if node.Labels[drainedNodeLabel] == "true" {
+	if node.Labels[drainedNodeLabel] == trueValue {
 		return nil
 	}
 
@@ -236,7 +236,7 @@ func labelDrainedKubeNode(ctx context.Context, tenantClient client.Client, node 
 	if node.Labels == nil {
 		node.Labels = make(map[string]string)
 	}
-	node.Labels[drainedNodeLabel] = "true"
+	node.Labels[drainedNodeLabel] = trueValue
 	if err := tenantClient.Patch(ctx, node, client.MergeFrom(before)); err != nil {
 		return fmt.Errorf("failed to label Kubernetes node %s as drained: %w", node.Name, err)
 	}

@@ -211,13 +211,12 @@ func (c *NodeSetController) createPendingNode(ctx context.Context, tx db.Tx, clu
 	}
 
 	dbNode := db.Node{
-		ClusterID:      cluster.ID,
-		NodePoolID:     nodePool.ID,
-		NodeSetID:      nodeSet.ID,
-		ControlPlane:   nodePool.ControlPlane,
-		InstanceTypeID: nodePool.InstanceTypeID,
-		Name:           naming.GenerateNodeName(existingNodeNames, cluster.Name, nodePool.NodeNamePrefix, seededRand.Intn),
-		SpiffeEnabled:  c.cfg.SpiffeEnabled,
+		ClusterID:     cluster.ID,
+		NodePoolID:    nodePool.ID,
+		NodeSetID:     nodeSet.ID,
+		ControlPlane:  nodePool.ControlPlane,
+		Name:          naming.GenerateNodeName(existingNodeNames, cluster.Name, nodePool.NodeNamePrefix, seededRand.Intn),
+		SpiffeEnabled: c.cfg.SpiffeEnabled,
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending node provisioning"),
 			Provisioning:            db.NewCondition(false, "Not yet provisioning"),
@@ -229,6 +228,15 @@ func (c *NodeSetController) createPendingNode(ctx context.Context, tx db.Tx, clu
 			KubernetesUnschedulable: db.NewCondition(false, "Status unknown"),
 			NodeAgentReady:          db.NewCondition(false, "Status unknown"),
 		},
+	}
+	if cluster.ProviderType == db.ProviderTypeNico {
+		nicoNodePoolProvider, err := nodePool.NicoProvider()
+		if err != nil {
+			return db.Node{}, err
+		}
+		dbNode.SetNico(db.NicoNodeProvider{
+			InstanceTypeID: nicoNodePoolProvider.InstanceTypeID,
+		})
 	}
 
 	createdNode, err := tx.CreateNode(ctx, &dbNode)

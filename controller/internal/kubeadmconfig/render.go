@@ -52,7 +52,16 @@ const (
 	defaultEncryptionConfigDirectory = "/etc/kubernetes/kube-api-encryption"
 	defaultOIDCConfigDirectory       = "/etc/kubernetes/oidc"
 	defaultAPIServerPatchFile        = defaultPatchesDirectory + "/kube-apiserver-base-graceful-shutdown+merge.yaml"
+	defaultKubeletPatchFile          = defaultPatchesDirectory + "/kubeletconfiguration0+merge.yaml"
+	defaultSystemReservedMemory      = "16Gi"
+	defaultKubeReservedMemory        = "2Gi"
 	defaultAPIServerTerminationGrace = 45
+)
+
+const (
+	const256Mi = "256Mi"
+	memoryKey  = "memory"
+	rootRoot   = "root:root"
 )
 
 func renderYAMLDocuments(documents ...any) ([]byte, error) {
@@ -106,11 +115,11 @@ func initKubeletConfiguration(containerMode bool) kubeletconfigv1beta1.KubeletCo
 		ServerTLSBootstrap: true,
 		KubeReserved: map[string]string{
 			"cpu":               "1000m",
-			"memory":            "2Gi",
+			memoryKey:           defaultKubeReservedMemory,
 			"ephemeral-storage": "1Gi",
 		},
 		SystemReserved: map[string]string{
-			"memory": "16Gi",
+			memoryKey: defaultSystemReservedMemory,
 		},
 	}
 	if containerMode {
@@ -126,11 +135,11 @@ func initKubeletConfiguration(containerMode bool) kubeletconfigv1beta1.KubeletCo
 		// so the node container's allocatable memory remains positive.
 		cfg.KubeReserved = map[string]string{
 			"cpu":               "100m",
-			"memory":            "256Mi",
-			"ephemeral-storage": "256Mi",
+			memoryKey:           const256Mi,
+			"ephemeral-storage": const256Mi,
 		}
 		cfg.SystemReserved = map[string]string{
-			"memory": "256Mi",
+			memoryKey: const256Mi,
 		}
 	}
 	return cfg
@@ -146,6 +155,8 @@ func joinKubeletConfiguration() kubeletconfigv1beta1.KubeletConfiguration {
 	}
 }
 
+// controlPlaneComponent returns ExtraArgs shared by all control-plane
+// components (currently kube-controller-manager and kube-scheduler).
 func controlPlaneComponent() kubeadmv1beta3.ControlPlaneComponent {
 	return kubeadmv1beta3.ControlPlaneComponent{
 		ExtraArgs: map[string]string{
@@ -153,6 +164,17 @@ func controlPlaneComponent() kubeadmv1beta3.ControlPlaneComponent {
 			"bind-address": defaultBindAddress,
 		},
 	}
+}
+
+// controllerManagerComponent extends controlPlaneComponent with flags that
+// are specific to kube-controller-manager and would be rejected by the
+// scheduler if included in the shared set.
+func controllerManagerComponent(extraArgs map[string]string) kubeadmv1beta3.ControlPlaneComponent {
+	cpc := controlPlaneComponent()
+	for k, v := range extraArgs {
+		cpc.ExtraArgs[k] = v
+	}
+	return cpc
 }
 
 func encryptionExtraArgs() (string, string) {
@@ -165,7 +187,7 @@ func apiServerTerminationGracePatch() File {
 	return File{
 		Path:  defaultAPIServerPatchFile,
 		Mode:  0o644,
-		Owner: "root:root",
+		Owner: rootRoot,
 		Content: []byte(fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata:
@@ -176,13 +198,37 @@ spec:
 	}
 }
 
+func kubeletConfigurationPatch(systemReservedMemory, kubeReservedMemory string) File {
+	if systemReservedMemory == "" {
+		systemReservedMemory = defaultSystemReservedMemory
+	}
+	if kubeReservedMemory == "" {
+		kubeReservedMemory = defaultKubeReservedMemory
+	}
+
+	return File{
+		Path:  defaultKubeletPatchFile,
+		Mode:  0o644,
+		Owner: rootRoot,
+		Content: []byte(fmt.Sprintf(`apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+kubeReserved:
+  cpu: "1000m"
+  memory: %q
+  ephemeral-storage: "1Gi"
+systemReserved:
+  memory: %q
+`, kubeReservedMemory, systemReservedMemory)),
+	}
+}
+
 // encryptionVolume mounts the parent directory, not the file itself.
 // A File-typed bind mount anchors to the file's inode, so tmp-file-
 // then-rename writes during key rotation either hit a stale inode or
 // EBUSY. Directory mounts follow the canonical dirent.
 func encryptionVolume() kubeadmv1beta3.HostPathMount {
 	return kubeadmv1beta3.HostPathMount{
-		Name:      "enc",
+		Name:      encryptionConfigVolumeName,
 		HostPath:  defaultEncryptionConfigDirectory,
 		MountPath: defaultEncryptionConfigDirectory,
 		PathType:  corev1.HostPathDirectoryOrCreate,

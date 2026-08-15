@@ -21,7 +21,7 @@ var (
 			Name: "cwe_teleport_tokens_created_total",
 			Help: "Total number of Teleport TPM join tokens created",
 		},
-		[]string{"site_id"},
+		[]string{siteIDLabel},
 	)
 
 	teleportTokenErrors = prometheus.NewCounterVec(
@@ -29,7 +29,7 @@ var (
 			Name: "cwe_teleport_token_errors_total",
 			Help: "Total number of Teleport token creation errors",
 		},
-		[]string{"site_id"},
+		[]string{siteIDLabel},
 	)
 
 	teleportRegistrationLatency = prometheus.NewHistogramVec(
@@ -38,7 +38,7 @@ var (
 			Help:    "Time from token creation to Teleport registration",
 			Buckets: []float64{60, 120, 300, 600, 900, 1200, 1800, 2400, 3600, 5400},
 		},
-		[]string{"site_id"},
+		[]string{siteIDLabel},
 	)
 
 	teleportTokensSkipped = prometheus.NewCounterVec(
@@ -46,7 +46,7 @@ var (
 			Name: "cwe_teleport_tokens_skipped_total",
 			Help: "Total number of token creations skipped (token recently created, still within refresh threshold)",
 		},
-		[]string{"site_id"},
+		[]string{siteIDLabel},
 	)
 
 	teleportConfirmations = prometheus.NewCounterVec(
@@ -54,7 +54,7 @@ var (
 			Name: "cwe_teleport_confirmations_total",
 			Help: "Total number of node registration confirmations (node appeared in Teleport)",
 		},
-		[]string{"site_id"},
+		[]string{siteIDLabel},
 	)
 
 	teleportDeconfirmations = prometheus.NewCounterVec(
@@ -62,7 +62,7 @@ var (
 			Name: "cwe_teleport_deconfirmations_total",
 			Help: "Total number of stale-node deconfirmations (anti-entropy corrections)",
 		},
-		[]string{"site_id"},
+		[]string{siteIDLabel},
 	)
 )
 

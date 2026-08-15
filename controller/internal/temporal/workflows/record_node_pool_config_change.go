@@ -35,6 +35,9 @@ type RecordNodePoolConfigChangeInput struct {
 	OldSystemReservedMemory string `json:"oldSystemReservedMemory"`
 	NewSystemReservedMemory string `json:"newSystemReservedMemory"`
 
+	OldKubeReservedMemory string `json:"oldKubeReservedMemory"`
+	NewKubeReservedMemory string `json:"newKubeReservedMemory"`
+
 	OldDiskSelectionStrategy string `json:"oldDiskSelectionStrategy"`
 	NewDiskSelectionStrategy string `json:"newDiskSelectionStrategy"`
 

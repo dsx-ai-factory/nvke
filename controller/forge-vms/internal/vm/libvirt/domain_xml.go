@@ -24,6 +24,7 @@ type DomainConfig struct {
 	OverlayPath string
 	SeedISOPath string
 	BridgeName  string
+	NetworkName string // optional; when set, attach to this libvirt network instead of BridgeName
 	NICMAC      string // optional; when set, pins the guest NIC MAC address
 	Arch        string // "x86_64" or "aarch64"; defaults to x86_64
 	UEFI        bool   // when true, uses OVMF firmware for UEFI boot
@@ -91,6 +92,15 @@ const domainTemplate = `<domain type='{{.DomainType}}'>
     </disk>
 {{- end}}
 {{- end}}
+{{- if .NetworkName}}
+    <interface type='network'>
+      <source network='{{.NetworkName}}'/>
+      <model type='virtio'/>
+{{- if .NICMAC}}
+      <mac address='{{.NICMAC}}'/>
+{{- end}}
+    </interface>
+{{- else}}
     <interface type='bridge'>
       <source bridge='{{.BridgeName}}'/>
       <model type='virtio'/>
@@ -98,6 +108,7 @@ const domainTemplate = `<domain type='{{.DomainType}}'>
       <mac address='{{.NICMAC}}'/>
 {{- end}}
     </interface>
+{{- end}}
     <serial type='pty'>
       <log file='{{.OverlayPath}}.ttyS0.log' append='off'/>
       <target port='0'/>

@@ -58,6 +58,7 @@ type Config struct {
 	DBPath                 string
 	VMBackend              string
 	LibvirtURI             string
+	LibvirtNetwork         string
 	QEMUSystemPath         string
 	BridgeName             string
 	BridgeCIDR             string
@@ -91,6 +92,12 @@ type Config struct {
 	DiagSSHUser            string
 	DiagSSHPassword        string
 }
+
+// UseLibvirtNetwork reports whether VMs should attach to a pre-existing
+// libvirt network (e.g. the "default" NAT network / virbr0) instead of
+// forge-vms creating and managing its own host bridge + dnsmasq + iptables.
+// Set via FORGE_VMS_LIBVIRT_NETWORK; empty preserves the legacy bridge mode.
+func (c Config) UseLibvirtNetwork() bool { return c.LibvirtNetwork != "" }
 
 func Parse(logger *slog.Logger) (Config, error) {
 	readinessProbeInterval, err := envOrDefaultDuration("FORGE_VMS_READINESS_PROBE_INTERVAL", "3s")
@@ -158,6 +165,7 @@ func Parse(logger *slog.Logger) (Config, error) {
 		DBPath:                 envOrDefault("FORGE_VMS_DB_PATH", "./var/forge-vms.db"),
 		VMBackend:              envOrDefault("FORGE_VMS_VM_BACKEND", "auto"),
 		LibvirtURI:             envOrDefault("FORGE_VMS_LIBVIRT_URI", "qemu:///session"),
+		LibvirtNetwork:         os.Getenv("FORGE_VMS_LIBVIRT_NETWORK"),
 		QEMUSystemPath:         os.Getenv("FORGE_VMS_QEMU_SYSTEM_PATH"),
 		BridgeName:             envOrDefault("FORGE_VMS_BRIDGE_NAME", "cwebr0"),
 		BridgeCIDR:             os.Getenv("FORGE_VMS_BRIDGE_CIDR"),
@@ -235,6 +243,9 @@ func (c Config) Validate() error {
 	}
 	if backend == VMBackendDarwinQEMU && strings.TrimSpace(c.EffectiveQEMUSystemPath()) == "" {
 		return fmt.Errorf("FORGE_VMS_QEMU_SYSTEM_PATH is required for %q backend", VMBackendDarwinQEMU)
+	}
+	if c.UseLibvirtNetwork() && backend != VMBackendLibvirt {
+		return fmt.Errorf("FORGE_VMS_LIBVIRT_NETWORK is only supported with the %q backend (effective backend is %q)", VMBackendLibvirt, backend)
 	}
 	if c.ReadinessProbeInterval <= 0 {
 		return fmt.Errorf("FORGE_VMS_READINESS_PROBE_INTERVAL must be > 0")

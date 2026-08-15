@@ -62,6 +62,21 @@ type Collector struct {
 	nodeLifecycleElapsedSecsDesc *prometheus.Desc
 }
 
+// Prometheus label names, shared across the metric descriptors below.
+const (
+	labelTenantCluster     = "tenant_cluster"
+	labelNode              = "node"
+	labelStatus            = "status"
+	labelNodePoolID        = "node_pool_id"
+	labelNodePoolName      = "node_pool_name"
+	labelOSProfile         = "os_profile"
+	labelConfigProfile     = "config_profile"
+	labelKubernetesVersion = "kubernetes_version"
+	labelTeleportEnabled   = "teleport_enabled"
+	labelCreatedAt         = "created_at"
+	labelUpdatedAt         = "updated_at"
+)
+
 func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 	return &Collector{
 		logger: logger,
@@ -71,10 +86,10 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"Status of a node condition",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
-				"tenant_cluster",
-				"node",
+				labelTenantCluster,
+				labelNode,
 				"condition",
-				"status",
+				labelStatus,
 			},
 			nil, // no const labels
 		),
@@ -83,9 +98,9 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"Desired count of nodes in the node pool",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
-				"tenant_cluster",
-				"node_pool_id",
-				"node_pool_name",
+				labelTenantCluster,
+				labelNodePoolID,
+				labelNodePoolName,
 			},
 			nil,
 		),
@@ -94,9 +109,9 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"Actual count of nodes in the node pool",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
-				"tenant_cluster",
-				"node_pool_id",
-				"node_pool_name",
+				labelTenantCluster,
+				labelNodePoolID,
+				labelNodePoolName,
 			},
 			nil,
 		),
@@ -105,9 +120,9 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"Count of pending nodes in the node pool",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
-				"tenant_cluster",
-				"node_pool_id",
-				"node_pool_name",
+				labelTenantCluster,
+				labelNodePoolID,
+				labelNodePoolName,
 			},
 			nil,
 		),
@@ -115,9 +130,9 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"cwe_node_pool_deprecated_count",
 			"Count of nodes in deprecated node sets",
 			[]string{
-				"tenant_cluster",
-				"node_pool_id",
-				"node_pool_name",
+				labelTenantCluster,
+				labelNodePoolID,
+				labelNodePoolName,
 			},
 			nil,
 		),
@@ -125,16 +140,16 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"cwe_node_info",
 			"Information about a node",
 			[]string{
-				"tenant_cluster",
+				labelTenantCluster,
 				"node_pool",
 				"node_set_id",
-				"node",
+				labelNode,
 				"ip",
 				"agent_version",
 				"spiffe_enabled",
 				"forge_machine_id",
-				"os_profile",
-				"config_profile",
+				labelOSProfile,
+				labelConfigProfile,
 			},
 			nil,
 		),
@@ -148,13 +163,13 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 				"vpc_id",
 				"cni_plugin",
 				"etcd_encrypted",
-				"kubernetes_version",
+				labelKubernetesVersion,
 				"control_plane_vip",
 				"enable_cp_node_recycling",
-				"teleport_enabled",
-				"status",
-				"created_at",
-				"updated_at",
+				labelTeleportEnabled,
+				labelStatus,
+				labelCreatedAt,
+				labelUpdatedAt,
 			},
 			nil,
 		),
@@ -166,7 +181,7 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 				"cluster_id",
 				"name",
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
-				"tenant_cluster",
+				labelTenantCluster,
 				"org_id",
 				"site_id",
 				"vpc_id",
@@ -178,22 +193,23 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 				"infiniband_partition_id",
 				"nvlink_logical_partition_id",
 				"ssh_key_group_ids",
-				"os_profile",
-				"config_profile",
+				labelOSProfile,
+				labelConfigProfile,
 				"system_reserved_memory",
+				"kube_reserved_memory",
 				"control_plane",
 				"node_labels",
-				"status",
-				"created_at",
-				"updated_at",
-				"kubernetes_version",
+				labelStatus,
+				labelCreatedAt,
+				labelUpdatedAt,
+				labelKubernetesVersion,
 				"desired_count",
 				"auto_provision_disabled",
 				"max_surge",
 				"current_node_set_id",
 				"auto_mode_disabled",
 				"recycle_budget",
-				"teleport_enabled",
+				labelTeleportEnabled,
 				"disk_selection_strategy",
 			},
 			nil,
@@ -203,20 +219,21 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"Information about a node set",
 			[]string{
 				// "tenant_cluster" instead of "cluster" to avoid label collision with the site controller cluster where we're running
-				"tenant_cluster",
-				"node_pool_name",
+				labelTenantCluster,
+				labelNodePoolName,
 				"id",
-				"node_pool_id",
+				labelNodePoolID,
 				"desired_count",
-				"os_profile",
-				"config_profile",
-				"kubernetes_version",
+				labelOSProfile,
+				labelConfigProfile,
+				labelKubernetesVersion,
 				"system_reserved_memory",
+				"kube_reserved_memory",
 				"subnet_ids",
 				"vpc_prefix_ids",
-				"created_at",
-				"updated_at",
-				"teleport_enabled",
+				labelCreatedAt,
+				labelUpdatedAt,
+				labelTeleportEnabled,
 				"disk_selection_strategy",
 			},
 			nil,
@@ -225,8 +242,8 @@ func NewCollector(logger *slog.Logger, db db.DB) *Collector {
 			"cwe_node_lifecycle_elapsed_seconds",
 			"Seconds elapsed since a node entered its current lifecycle state (pending, provisioning, deleting, or markedForRecycling)",
 			[]string{
-				"tenant_cluster",
-				"node",
+				labelTenantCluster,
+				labelNode,
 				"node_type",
 				"state",
 			},
@@ -365,10 +382,17 @@ func (c *Collector) collectClusterNodePoolAndNodeSetInfo(ctx context.Context, ch
 
 	for _, cluster := range clusters {
 		clusterCtx := clusterInfoContext{
-			Name:   cluster.Name,
-			OrgID:  cluster.OrgID,
-			SiteID: cluster.SiteID.String(),
-			VpcID:  cluster.VpcID.String(),
+			Name: cluster.Name,
+		}
+		if cluster.ProviderType == db.ProviderTypeNico {
+			provider, err := cluster.NicoProvider()
+			if err != nil {
+				c.logger.Error("failed to resolve NICo provider for cluster info metrics", "error", err, "cluster", cluster.Name)
+				continue
+			}
+			clusterCtx.OrgID = provider.OrgID
+			clusterCtx.SiteID = provider.SiteID.String()
+			clusterCtx.VpcID = provider.VpcID.String()
 		}
 
 		c.emitClusterInfo(ch, &clusterCtx, cluster)
@@ -418,6 +442,28 @@ func (c *Collector) emitClusterInfo(ch chan<- prometheus.Metric, ctx *clusterInf
 }
 
 func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterInfoContext, nodePool db.NodePool) {
+	subnetIDs := ""
+	vpcPrefixIDs := ""
+	instanceTypeID := uuid.Nil.String()
+	infinibandPartitionID := ""
+	nvLinkLogicalPartitionID := ""
+	sshKeyGroupIDs := ""
+	osProfile := ""
+	configProfile := ""
+	diskSelectionStrategy := ""
+
+	if nicoNodePoolProvider, err := nodePool.NicoProvider(); err == nil {
+		subnetIDs = uuidSliceToString(nicoNodePoolProvider.SubnetIDs)
+		vpcPrefixIDs = uuidSliceToString(nicoNodePoolProvider.VpcPrefixIDs)
+		instanceTypeID = nicoNodePoolProvider.InstanceTypeID.String()
+		infinibandPartitionID = optionalUUID(nicoNodePoolProvider.InfinibandPartitionID)
+		nvLinkLogicalPartitionID = optionalUUID(nicoNodePoolProvider.NvLinkLogicalPartitionID)
+		sshKeyGroupIDs = uuidSliceToString(nicoNodePoolProvider.SSHKeyGroupIDs)
+		osProfile = nicoNodePoolProvider.OSProfile
+		configProfile = nicoNodePoolProvider.ConfigProfile
+		diskSelectionStrategy = string(nicoNodePoolProvider.DiskSelectionStrategy)
+	}
+
 	ch <- prometheus.MustNewConstMetric(
 		c.nodePoolInfoDesc,
 		prometheus.GaugeValue,
@@ -430,16 +476,17 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 		ctx.SiteID,
 		ctx.VpcID,
 		nodePool.NodeNamePrefix,
-		uuidSliceToString(nodePool.SubnetIDs),
-		uuidSliceToString(nodePool.VpcPrefixIDs),
-		nodePool.InstanceTypeID.String(),
+		subnetIDs,
+		vpcPrefixIDs,
+		instanceTypeID,
 		optionalString(nodePool.Description),
-		optionalUUID(nodePool.InfinibandPartitionID),
-		optionalUUID(nodePool.NvLinkLogicalPartitionID),
-		uuidSliceToString(nodePool.SSHKeyGroupIDs),
-		nodePool.OSProfile,
-		nodePool.ConfigProfile,
+		infinibandPartitionID,
+		nvLinkLogicalPartitionID,
+		sshKeyGroupIDs,
+		osProfile,
+		configProfile,
 		nodePool.SystemReservedMemory,
+		nodePool.KubeReservedMemory,
 		strconv.FormatBool(nodePool.ControlPlane),
 		strings.Join(nodePool.NodeLabels, ","),
 		getNodePoolStatus(nodePool),
@@ -453,7 +500,7 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 		strconv.FormatBool(nodePool.AutoModeDisabled),
 		strconv.Itoa(nodePool.RecycleBudget),
 		strconv.FormatBool(nodePool.TeleportEnabled),
-		string(nodePool.DiskSelectionStrategy),
+		diskSelectionStrategy,
 	)
 }
 
@@ -471,6 +518,7 @@ func (c *Collector) emitNodeSetInfo(ch chan<- prometheus.Metric, ctx *nodeSetPar
 		nodeSet.ConfigProfile,
 		nodeSet.KubernetesVersion,
 		nodeSet.SystemReservedMemory,
+		nodeSet.KubeReservedMemory,
 		uuidSliceToString(nodeSet.SubnetIDs),
 		uuidSliceToString(nodeSet.VpcPrefixIDs),
 		nodeSet.CreatedAt.UTC().Format(time.RFC3339),

@@ -25,7 +25,10 @@ import (
 	"strings"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klabels "k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -106,10 +109,47 @@ func (f *TenantClientFactory) GetClient(ctx context.Context, clusterName string)
 	if err != nil {
 		return nil, err
 	}
+	return newTenantClient(restConfig, clusterName)
+}
 
+// GetAdminClient returns a tenant client from the CAPI admin kubeconfig.
+// Post-ready probes use it to create short-lived workloads without widening the
+// production CWE SPIFFE identity's permissions solely for test setup.
+func (f *TenantClientFactory) GetAdminClient(ctx context.Context, clusterName string) (client.Client, error) {
+	clusterName = strings.TrimSpace(clusterName)
+	if clusterName == "" {
+		return nil, errors.New("cluster name is required")
+	}
+
+	secretNamespace := "cluster-" + clusterName
+	secretName := clusterName + "-kubeconfig"
+	secret, err := f.coreClient.Secrets(secretNamespace).Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("getting CAPI admin kubeconfig secret %s/%s: %w", secretNamespace, secretName, err)
+	}
+	kubeconfig, ok := secret.Data[tenantKubeconfigKey]
+	if !ok || len(kubeconfig) == 0 {
+		return nil, fmt.Errorf("CAPI admin kubeconfig secret %s/%s has no non-empty %q key", secretNamespace, secretName, tenantKubeconfigKey)
+	}
+
+	restConfig, err := clientcmd.RESTConfigFromKubeConfig(kubeconfig)
+	if err != nil {
+		return nil, fmt.Errorf("parsing CAPI admin kubeconfig for %q: %w", clusterName, err)
+	}
+	return newTenantClient(restConfig, clusterName)
+}
+
+func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client, error) {
 	scheme := runtime.NewScheme()
-	if schemeErr := corev1.AddToScheme(scheme); schemeErr != nil {
-		return nil, fmt.Errorf("registering core/v1 tenant scheme: %w", schemeErr)
+	for name, addToScheme := range map[string]func(*runtime.Scheme) error{
+		"apps/v1":         appsv1.AddToScheme,
+		"coordination/v1": coordinationv1.AddToScheme,
+		"core/v1":         corev1.AddToScheme,
+		"policy/v1":       policyv1.AddToScheme,
+	} {
+		if err := addToScheme(scheme); err != nil {
+			return nil, fmt.Errorf("registering %s tenant scheme: %w", name, err)
+		}
 	}
 
 	tenantClient, err := client.New(restConfig, client.Options{Scheme: scheme})

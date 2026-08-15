@@ -1,0 +1,17 @@
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# AICR's embedded wildcard overlay adds prometheus-adapter to every recipe.
+# The NKE management stack intentionally does not include the embedded GPU
+# runtime/monitoring base, so replace that overlay with a no-op in this
+# isolated external catalog.
+kind: RecipeMetadata
+apiVersion: aicr.run/v1alpha2
+metadata:
+  name: monitoring-hpa
+
+spec:
+  base: base
+  criteria:
+    intent: any
+  componentRefs: []

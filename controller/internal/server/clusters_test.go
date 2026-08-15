@@ -79,11 +79,18 @@ type clusterService interface {
 // newTestClusterService creates a clusterService with a nodePoolService that has a mock forge provider
 // The getSiteByIDFunc is optional - if nil, GetSiteByID will return an error if called
 func newTestClusterService(logger *slog.Logger, mockDB *mockDB, getSiteByIDFunc func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error)) clusterService {
+	return newTestClusterServiceWithControlPlaneController(logger, mockDB, getSiteByIDFunc, false)
+}
+
+// newTestClusterServiceWithControlPlaneController builds a clusterService with the
+// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER feature flag set to
+// useControlPlaneController.
+func newTestClusterServiceWithControlPlaneController(logger *slog.Logger, mockDB *mockDB, getSiteByIDFunc func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error), useControlPlaneController bool) clusterService {
 	mockForge := &mockForgeProvider{
 		getSiteByIDFunc: getSiteByIDFunc,
 	}
-	nodePoolService := server.NewNodePoolService(logger, mockDB, mockForge, config.TeleportConfig{})
-	return server.NewClusterService(logger, mockDB, nodePoolService, mockForge, config.TeleportConfig{}, false, false)
+	nodePoolService := server.NewNodePoolService(logger, mockDB, mockForge, config.TeleportConfig{}, useControlPlaneController)
+	return server.NewClusterService(logger, mockDB, nodePoolService, mockForge, config.TeleportConfig{}, false, false, useControlPlaneController)
 }
 
 func discardLogger() *slog.Logger {
@@ -239,11 +246,12 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:                     "ovn-kubernetes",
 				ControlPlaneKubernetesVersion: "1.29.0",
+				ControlPlaneVIP:               "172.31.1.10",
 				Network: &api.ClusterNetworkCreateConfig{
 					PodCIDR:     "10.233.65.7/18",
 					ServiceCIDR: "10.233.1.5/18",
 				},
-				NodePools: []api.NodePoolCreateConfig{
+				NodePools: &[]api.NodePoolCreateConfig{
 					{
 						Name:             "cp",
 						NodeNamePrefix:   "cp-prefix",
@@ -268,53 +276,21 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				},
 			},
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetSite", mock.Anything, siteID, true).Return(db.Site{
-					ID:        siteID,
-					VIPRanges: []string{"172.31.1.0/24"},
-				}, nil)
-
 				tx.On("CreateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
 					return c.Name == "test-cluster" &&
 						c.OrgID == orgID &&
 						c.PodCIDR == "10.233.64.0/18" &&
-						c.ServiceCIDR == "10.233.0.0/18"
+						c.ServiceCIDR == "10.233.0.0/18" &&
+						c.ControlPlaneVIP == "172.31.1.10"
 				})).Return(db.Cluster{
-					ID:          clusterID,
-					OrgID:       orgID,
-					SiteID:      siteID,
-					Name:        "test-cluster",
-					PodCIDR:     "10.233.64.0/18",
-					ServiceCIDR: "10.233.0.0/18",
+					ID:              clusterID,
+					OrgID:           orgID,
+					SiteID:          siteID,
+					Name:            "test-cluster",
+					PodCIDR:         "10.233.64.0/18",
+					ServiceCIDR:     "10.233.0.0/18",
+					ControlPlaneVIP: "172.31.1.10",
 				}, nil)
-
-				otherClusterID := uuid.New()
-				tx.On("ListVIPAllocations", mock.Anything, &siteID).Return([]db.VIPAllocation{
-					{
-						SiteID:         siteID,
-						VIP:            "172.31.1.0",
-						AllocationType: "cluster",
-						ClusterID:      &otherClusterID,
-						CreatedAt:      time.Now(),
-					},
-					{
-						SiteID:         siteID,
-						VIP:            "172.31.1.1",
-						AllocationType: "siteController",
-						ClusterID:      nil,
-						CreatedAt:      time.Now(),
-					},
-				}, nil)
-
-				tx.On("CreateVIPAllocation", mock.Anything, mock.MatchedBy(func(va *db.VIPAllocation) bool {
-					return va.SiteID == siteID &&
-						va.VIP == "172.31.1.2" &&
-						va.AllocationType == "cluster" &&
-						*va.ClusterID == clusterID
-				})).Return(db.VIPAllocation{}, nil)
-
-				tx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-					return c.ID == clusterID && c.ControlPlaneVIP == "172.31.1.2"
-				})).Return(db.Cluster{ID: clusterID}, nil)
 
 				tx.On("CreateWorkflowOutboxEntry", mock.Anything, "ProvisionCluster", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
 					m, ok := input.(map[string]interface{})
@@ -355,7 +331,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:                     "calico",
 				ControlPlaneKubernetesVersion: "1.29.0",
-				NodePools: []api.NodePoolCreateConfig{
+				NodePools: &[]api.NodePoolCreateConfig{
 					{
 						Name:             "cp",
 						NodeNamePrefix:   "cp-prefix",
@@ -380,16 +356,12 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				},
 			},
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetSite", mock.Anything, siteID, true).Return(db.Site{
-					ID:        siteID,
-					VIPRanges: []string{"172.31.1.0/24"},
-				}, nil)
-
 				tx.On("CreateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
 					return c.Name == "test-cluster-vpc" &&
 						c.OrgID == orgID &&
 						c.PodCIDR == "192.168.0.0/16" &&
-						c.ServiceCIDR == "10.96.0.0/12"
+						c.ServiceCIDR == "10.96.0.0/12" &&
+						c.ControlPlaneVIP == ""
 				})).Return(db.Cluster{
 					ID:          clusterID,
 					OrgID:       orgID,
@@ -398,35 +370,6 @@ func TestClusterService_CreateCluster(t *testing.T) {
 					PodCIDR:     "192.168.0.0/16",
 					ServiceCIDR: "10.96.0.0/12",
 				}, nil)
-
-				otherClusterID := uuid.New()
-				tx.On("ListVIPAllocations", mock.Anything, &siteID).Return([]db.VIPAllocation{
-					{
-						SiteID:         siteID,
-						VIP:            "172.31.1.0",
-						AllocationType: "cluster",
-						ClusterID:      &otherClusterID,
-						CreatedAt:      time.Now(),
-					},
-					{
-						SiteID:         siteID,
-						VIP:            "172.31.1.1",
-						AllocationType: "siteController",
-						ClusterID:      nil,
-						CreatedAt:      time.Now(),
-					},
-				}, nil)
-
-				tx.On("CreateVIPAllocation", mock.Anything, mock.MatchedBy(func(va *db.VIPAllocation) bool {
-					return va.SiteID == siteID &&
-						va.VIP == "172.31.1.2" &&
-						va.AllocationType == "cluster" &&
-						*va.ClusterID == clusterID
-				})).Return(db.VIPAllocation{}, nil)
-
-				tx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-					return c.ID == clusterID && c.ControlPlaneVIP == "172.31.1.2"
-				})).Return(db.Cluster{ID: clusterID}, nil)
 
 				tx.On("CreateWorkflowOutboxEntry", mock.Anything, "ProvisionCluster", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
 					m, ok := input.(map[string]interface{})
@@ -467,7 +410,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:                     "calico",
 				ControlPlaneKubernetesVersion: "1.29.0",
-				NodePools: []api.NodePoolCreateConfig{
+				NodePools: &[]api.NodePoolCreateConfig{
 					{
 						Name:             "cp",
 						NodeNamePrefix:   "cp-prefix",
@@ -482,11 +425,6 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				},
 			},
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetSite", mock.Anything, siteID, true).Return(db.Site{
-					ID:        siteID,
-					VIPRanges: []string{"192.168.1.0/24"},
-				}, nil)
-
 				tx.On("CreateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
 					return c.Name == "test-cluster" && c.OrgID == orgID
 				})).Return(db.Cluster{}, db.ErrClusterNameNotUnique)
@@ -497,49 +435,6 @@ func TestClusterService_CreateCluster(t *testing.T) {
 			responseErrorContains: "A cluster already exists with the name \\\"test-cluster\\\"",
 		},
 		{
-			name: "no VIP ranges available",
-			request: api.CreateClusterRequest{
-				Name:                          "test-cluster",
-				OrgID:                         testOrgID,
-				SiteID:                        siteID,
-				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
-				CniPlugin:                     "calico",
-				ControlPlaneKubernetesVersion: "1.29.0",
-				NodePools: []api.NodePoolCreateConfig{
-					{
-						Name:             "cp",
-						NodeNamePrefix:   "cp-prefix",
-						SubnetIDs:        []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")},
-						InstanceTypeID:   uuid.MustParse("550e8400-e29b-41d4-a716-446655440004"),
-						SSHKeyGroupIDs:   &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-						OSProfile:        "ubuntu",
-						ConfigProfile:    "default",
-						ControlPlane:     true,
-						DesiredNodeCount: 1,
-					},
-				},
-			},
-			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetSite", mock.Anything, siteID, true).Return(db.Site{
-					ID:        siteID,
-					VIPRanges: []string{},
-				}, nil)
-
-				tx.On("CreateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-					return c.Name == "test-cluster" && c.OrgID == orgID
-				})).Return(db.Cluster{
-					ID:     clusterID,
-					OrgID:  orgID,
-					SiteID: siteID,
-					Name:   "test-cluster",
-				}, nil)
-
-				tx.On("ListVIPAllocations", mock.Anything, &siteID).Return([]db.VIPAllocation{}, nil)
-			},
-			wantError:     true,
-			errorContains: "no available VIPs in any of the provided ranges",
-		},
-		{
 			name: "missing control plane",
 			request: api.CreateClusterRequest{
 				Name:                          "test-cluster",
@@ -548,7 +443,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:                     "calico",
 				ControlPlaneKubernetesVersion: "1.29.0",
-				NodePools:                     []api.NodePoolCreateConfig{},
+				NodePools:                     &[]api.NodePoolCreateConfig{},
 			},
 			wantResponseError:     true,
 			responseStatus:        http.StatusBadRequest,
@@ -563,7 +458,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:                     "calico",
 				ControlPlaneKubernetesVersion: "1.29.0",
-				NodePools: []api.NodePoolCreateConfig{
+				NodePools: &[]api.NodePoolCreateConfig{
 					{
 						Name:             "cp",
 						NodeNamePrefix:   "cp-prefix",
@@ -578,10 +473,6 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				},
 			},
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetSite", mock.Anything, siteID, true).Return(db.Site{
-					ID:        siteID,
-					VIPRanges: []string{"192.168.1.0/24"},
-				}, nil)
 				tx.On("CreateCluster", mock.Anything, mock.Anything).Return(db.Cluster{}, errors.New("create cluster error"))
 			},
 			wantError: true,
@@ -595,7 +486,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:                     "calico",
 				ControlPlaneKubernetesVersion: "1.29.0",
-				NodePools: []api.NodePoolCreateConfig{
+				NodePools: &[]api.NodePoolCreateConfig{
 					{
 						DesiredNodeCount: 1,
 					},
@@ -614,7 +505,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				VpcID:                         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:                     "calico",
 				ControlPlaneKubernetesVersion: "1.29.0",
-				NodePools: []api.NodePoolCreateConfig{
+				NodePools: &[]api.NodePoolCreateConfig{
 					{
 						DesiredNodeCount: 1,
 						ControlPlane:     true,
@@ -636,7 +527,12 @@ func TestClusterService_CreateCluster(t *testing.T) {
 			// Only mock if the request has node pools that would trigger validation
 			var service clusterService
 
-			if len(tt.request.NodePools) > 0 {
+			var requestNodePools []api.NodePoolCreateConfig
+			if tt.request.NodePools != nil {
+				requestNodePools = *tt.request.NodePools
+			}
+
+			if len(requestNodePools) > 0 {
 				// Validation is called inside createInitialNodePools, which happens after the cluster is created
 				// So we need to mock GetCluster with the clusterID that will be returned from CreateCluster
 				// But validation happens before CreateCluster completes, so we need to mock it with the expected clusterID
@@ -649,7 +545,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 
 				// Determine if native networking should be enabled based on whether node pools use VpcPrefixIDs
 				hasVpcPrefixIDs := false
-				for _, np := range tt.request.NodePools {
+				for _, np := range requestNodePools {
 					if len(np.VpcPrefixIDs) > 0 {
 						hasVpcPrefixIDs = true
 						break
@@ -725,7 +621,7 @@ func TestClusterService_CreateClusterRejectsInsufficientPodCIDRCapacity(t *testi
 				PodCIDR:     "10.240.0.0/23",
 				ServiceCIDR: "10.120.0.0/24",
 			},
-			NodePools: []api.NodePoolCreateConfig{{
+			NodePools: &[]api.NodePoolCreateConfig{{
 				Name:             "cp",
 				NodeNamePrefix:   "cp-prefix",
 				SubnetIDs:        []uuid.UUID{uuid.New()},
@@ -748,26 +644,8 @@ func TestClusterService_CreateClusterRejectsInsufficientPodCIDRCapacity(t *testi
 
 func TestClusterService_CreateClusterRejectsControlPlaneVIPOverlap(t *testing.T) {
 	siteID := uuid.New()
-	clusterID := uuid.New()
 	subnetID := uuid.New()
 	mockDB := &mockDB{MockTx: &mockTx{}}
-	mockDB.MockTx.On("GetSite", mock.Anything, siteID, true).Return(db.Site{
-		ID:        siteID,
-		VIPRanges: []string{"192.168.1.0/24"},
-	}, nil)
-	mockDB.MockTx.On("CreateCluster", mock.Anything, mock.Anything).Return(db.Cluster{
-		ID:          clusterID,
-		OrgID:       testOrgID,
-		SiteID:      siteID,
-		Name:        "test-cluster",
-		PodCIDR:     "192.168.0.0/16",
-		ServiceCIDR: "10.96.0.0/12",
-	}, nil)
-	mockDB.MockTx.On("ListVIPAllocations", mock.Anything, &siteID).Return([]db.VIPAllocation{}, nil)
-	mockDB.MockTx.On("CreateVIPAllocation", mock.Anything, mock.MatchedBy(func(allocation *db.VIPAllocation) bool {
-		return allocation.VIP == "192.168.1.0" && allocation.ClusterID != nil && *allocation.ClusterID == clusterID
-	})).Return(db.VIPAllocation{}, nil)
-	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 	service := newTestClusterService(discardLogger(), mockDB, nil)
 	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
@@ -778,7 +656,8 @@ func TestClusterService_CreateClusterRejectsControlPlaneVIPOverlap(t *testing.T)
 			VpcID:                         uuid.New(),
 			CniPlugin:                     "calico",
 			ControlPlaneKubernetesVersion: "1.29.0",
-			NodePools: []api.NodePoolCreateConfig{{
+			ControlPlaneVIP:               "192.168.1.10",
+			NodePools: &[]api.NodePoolCreateConfig{{
 				Name:             "cp",
 				NodeNamePrefix:   "cp",
 				SubnetIDs:        []uuid.UUID{subnetID},
@@ -794,11 +673,9 @@ func TestClusterService_CreateClusterRejectsControlPlaneVIPOverlap(t *testing.T)
 
 	badRequest, ok := resp.(api.CreateCluster400JSONResponse)
 	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
-	assert.Contains(t, badRequest.Message, "control-plane VIP")
+	assert.Contains(t, badRequest.Message, "controlPlaneVIP")
 	assert.Contains(t, badRequest.Message, "network.podCIDR")
-	mockDB.MockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-	mockDB.AssertExpectations(t)
-	mockDB.MockTx.AssertExpectations(t)
+	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
 }
 
 func TestClusterService_CreateClusterRejectsCustomNetworkForCalico(t *testing.T) {
@@ -817,7 +694,7 @@ func TestClusterService_CreateClusterRejectsCustomNetworkForCalico(t *testing.T)
 				PodCIDR:     "10.240.0.0/16",
 				ServiceCIDR: "10.120.0.0/16",
 			},
-			NodePools: []api.NodePoolCreateConfig{{
+			NodePools: &[]api.NodePoolCreateConfig{{
 				Name:             "cp",
 				NodeNamePrefix:   "cp",
 				SubnetIDs:        []uuid.UUID{uuid.New()},
@@ -851,7 +728,7 @@ func TestClusterService_CreateClusterRejectsForgeNetworkOverlapBeforeTransaction
 			Network: &api.ClusterNetworkCreateConfig{
 				PodCIDR: "172.20.0.0/16",
 			},
-			NodePools: []api.NodePoolCreateConfig{{
+			NodePools: &[]api.NodePoolCreateConfig{{
 				Name:             "cp",
 				NodeNamePrefix:   "cp",
 				SubnetIDs:        []uuid.UUID{uuid.New()},
@@ -1096,10 +973,12 @@ func defaultAPIControlPlaneConfig() *api.ControlPlaneConfig {
 	maxSurge := 0
 	prefs := []openapi_types.UUID{}
 	provisioningMonitorDisabled := false
+	teleportEnabled := false
 	return &api.ControlPlaneConfig{
 		MaxSurge:                    &maxSurge,
 		InstanceTypePreference:      &prefs,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
+		TeleportEnabled:             &teleportEnabled,
 	}
 }
 
@@ -2038,7 +1917,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsPodCIDRCapacityE
 		MaxSurge:     1,
 	}}, nil).Once()
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterServiceWithControlPlaneController(discardLogger(), mockDB, nil, true)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body: &api.UpdateClusterRequest{

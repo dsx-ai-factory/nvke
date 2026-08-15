@@ -12,13 +12,9 @@ package activities
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
-	"go.temporal.io/sdk/temporal"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kubeadmconfig"
 )
 
@@ -39,19 +35,10 @@ type MergeOIDCKubeadmConfigResult struct {
 // MergeOIDCKubeadmConfig reads the tenant kubeadm-config, merges the OIDC
 // apiserver settings into its ClusterConfiguration, and writes it back only when
 // the merge changed something. It is idempotent: a cluster already carrying the
-// settings is a no-op (Changed=false). The tenant client is built from the
-// admin.conf fetched from a control-plane agent (GetKubeconfig), which is
-// the reliable source; the cluster row's own Kubeconfig field is often empty.
+// settings is a no-op (Changed=false). The injected provider supplies the
+// long-lived shared tenant client.
 func (a *Activities) MergeOIDCKubeadmConfig(ctx context.Context, input MergeOIDCKubeadmConfigInput) (MergeOIDCKubeadmConfigResult, error) {
-	cluster, err := a.db.GetCluster(ctx, input.ClusterID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return MergeOIDCKubeadmConfigResult{}, temporal.NewNonRetryableApplicationError("cluster not found in database", "db.ErrNotFound", err)
-		}
-		return MergeOIDCKubeadmConfigResult{}, fmt.Errorf("failed to get cluster %s: %w", input.ClusterID, err)
-	}
-
-	tenantClient, err := a.tenantClientForCluster(ctx, cluster)
+	tenantClient, err := a.tenantClientForClusterID(ctx, input.ClusterID)
 	if err != nil {
 		return MergeOIDCKubeadmConfigResult{}, err
 	}

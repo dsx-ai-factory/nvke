@@ -37,7 +37,8 @@ appDb:
   url: postgres-postgresql.postgres.svc.cluster.local:5432
   dbName: cloud-workflow
   postgresUser: postgres
-  postgresPassword: postgres
+  # postgresPassword is supplied by the Tiltfile from CNPG_SUPERUSER_PASSWORD —
+  # do not hardcode it here.
   sslMode: disable
 
 secrets:
@@ -51,6 +52,12 @@ temporal:
 
 profiles:
   path: /profiles
+  # Exercise the fleet profiles.image materialize path (NKX-13910). Tilt builds
+  # docker.local/cwe-profiles:tilt from the sibling nke-site-deploy tree.
+  image:
+    enabled: true
+    repository: docker.local/cwe-profiles
+    tag: tilt
 
 spiffe:
   enabled: true

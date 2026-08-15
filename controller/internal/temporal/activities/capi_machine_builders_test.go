@@ -34,11 +34,15 @@ func TestCAPIMachineBuilders_BuildCAPIBootstrapSecret(t *testing.T) {
 	assert.Equal(t, "worker-0-bootstrap-data", secret.Name)
 	assert.Equal(t, "capi-cluster-a", secret.Namespace)
 	assert.Equal(t, "cluster-a", secret.Labels["cluster.x-k8s.io/cluster-name"])
-	assert.Equal(t, []byte("user-data"), secret.Data["value"])
+	assert.Equal(t, []byte("user-data"), secret.Data[valueLabel])
 }
 
 func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
-	nodeID := uuid.New()
+	nodeID := uuid.MustParse("60000000-0000-0000-0000-000000000001")
+	nodeSetID := uuid.MustParse("60000000-0000-0000-0000-000000000002")
+	controlPlaneNodeID := uuid.MustParse("60000000-0000-0000-0000-000000000003")
+	controlPlaneNodeSetID := uuid.MustParse("60000000-0000-0000-0000-000000000004")
+	missingVersionNodeSetID := uuid.MustParse("60000000-0000-0000-0000-000000000005")
 	bootstrapSecretName := "worker-0-bootstrap-data"
 
 	type parameters struct {
@@ -59,7 +63,7 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 				Name: "worker-0",
 			},
 			nodeSet: db.NodeSet{
-				ID:                uuid.New(),
+				ID:                nodeSetID,
 				KubernetesVersion: "1.32.1",
 			},
 			cluster: db.Cluster{
@@ -71,11 +75,11 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 		},
 		"falls back to cluster version": {
 			node: db.Node{
-				ID:   uuid.New(),
+				ID:   controlPlaneNodeID,
 				Name: "cp-0",
 			},
 			nodeSet: db.NodeSet{
-				ID: uuid.New(),
+				ID: controlPlaneNodeSetID,
 			},
 			nodePool: db.NodePool{
 				ControlPlane: true,
@@ -93,7 +97,7 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 				Name: "worker-0",
 			},
 			nodeSet: db.NodeSet{
-				ID: uuid.New(),
+				ID: missingVersionNodeSetID,
 			},
 			cluster: db.Cluster{
 				Name: "cluster-a",
@@ -128,7 +132,7 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation])
 			assert.Equal(t, params.wantVersion, machine.Spec.Version)
 			assert.Equal(t, params.bootstrapSecret, *machine.Spec.Bootstrap.DataSecretName)
-			assert.Equal(t, "NicoMachine", machine.Spec.InfrastructureRef.Kind)
+			assert.Equal(t, nicoMachineConst, machine.Spec.InfrastructureRef.Kind)
 			if params.wantControlPlane {
 				assert.Contains(t, machine.Labels, "cluster.x-k8s.io/control-plane")
 			}
@@ -145,13 +149,18 @@ func TestBuildNicoInstanceLabels(t *testing.T) {
 	vpcID := uuid.MustParse("abababab-cdcd-efef-0101-232323232323")
 	nodePoolID := uuid.MustParse("99999999-8888-7777-6666-555555555555")
 
-	labels := buildNicoInstanceLabels(
+	labels, err := buildNicoInstanceLabels(
 		db.Node{
 			ID:             nodeID,
-			ForgeMachineID: "machine-abc123",
+			ForgeMachineID: "legacy-machine",
+			Nico: &db.NicoNodeProvider{
+				ForgeMachineID: "machine-abc123",
+			},
 		},
 		db.Cluster{
-			ID:     clusterID,
+			ID: clusterID,
+		},
+		db.NicoClusterProvider{
 			SiteID: siteID,
 			VpcID:  vpcID,
 		},
@@ -159,6 +168,7 @@ func TestBuildNicoInstanceLabels(t *testing.T) {
 		"Forge VMs Site",
 		"Mock VPC",
 	)
+	require.NoError(t, err)
 
 	assert.Equal(t, nodeID.String(), labels[constants.LabelKeyNodeID])
 	assert.Equal(t, clusterID.String(), labels[constants.LabelKeyClusterID])

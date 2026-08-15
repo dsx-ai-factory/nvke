@@ -263,21 +263,24 @@ kubernetesVersion: v1.31.4
 func TestMergeOIDCIntoClusterConfiguration_PreservesShape(t *testing.T) {
 	t.Run("v1beta3 stays a map", func(t *testing.T) {
 		merged, _, err := MergeOIDCIntoClusterConfiguration([]byte(
-			"apiVersion: kubeadm.k8s.io/v1beta3\nkind: ClusterConfiguration\napiServer:\n  extraArgs:\n    profiling: \"false\"\n"))
+			"apiVersion: kubeadm.k8s.io/v1beta3\nkind: ClusterConfiguration\napiServer:\n  extraArgs:\n    profiling: \"false\"\n",
+		))
 		require.NoError(t, err)
 		_, ok := apiServerField(t, merged, "extraArgs").(map[string]any)
 		assert.True(t, ok, "v1beta3 extraArgs must remain a map")
 	})
 	t.Run("v1beta3 absent extraArgs added as a map", func(t *testing.T) {
 		merged, _, err := MergeOIDCIntoClusterConfiguration([]byte(
-			"apiVersion: kubeadm.k8s.io/v1beta3\nkind: ClusterConfiguration\n"))
+			"apiVersion: kubeadm.k8s.io/v1beta3\nkind: ClusterConfiguration\n",
+		))
 		require.NoError(t, err)
 		_, ok := apiServerField(t, merged, "extraArgs").(map[string]any)
 		assert.True(t, ok, "an absent v1beta3 extraArgs must be added as a map")
 	})
 	t.Run("v1beta4 stays a list", func(t *testing.T) {
 		merged, _, err := MergeOIDCIntoClusterConfiguration([]byte(
-			"apiVersion: kubeadm.k8s.io/v1beta4\nkind: ClusterConfiguration\n"))
+			"apiVersion: kubeadm.k8s.io/v1beta4\nkind: ClusterConfiguration\n",
+		))
 		require.NoError(t, err)
 		_, ok := apiServerField(t, merged, "extraArgs").([]any)
 		assert.True(t, ok, "v1beta4 extraArgs must be a list")
@@ -409,4 +412,111 @@ func TestOIDCVolume_V1beta3AndV1beta4Converge(t *testing.T) {
 	v4, err := yaml.Marshal(authenticationConfigVolumeV1beta4())
 	require.NoError(t, err)
 	assert.Equal(t, string(v3), string(v4))
+}
+
+func TestMergeEncryptionIntoClusterConfiguration_PreservesShapeAndIsIdempotent(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "v1beta3 map",
+			input: `apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: v1.31.4
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+      quota-backend-bytes: "17179869184"
+apiServer:
+  extraArgs:
+    audit-log-path: /var/log/kubernetes/audit.log
+`,
+		},
+		{
+			name: "v1beta4 list",
+			input: `apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v1.31.4
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+    - name: quota-backend-bytes
+      value: "17179869184"
+apiServer:
+  extraArgs:
+  - name: audit-log-path
+    value: /var/log/kubernetes/audit.log
+`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			merged, changed, err := MergeEncryptionIntoClusterConfiguration([]byte(tc.input))
+			require.NoError(t, err)
+			assert.True(t, changed)
+
+			configPath, ok := findArg(t, merged, encryptionProviderConfigFlagName)
+			require.True(t, ok)
+			assert.Equal(t, defaultEncryptionConfigPath, configPath)
+			reload, ok := findArg(t, merged, encryptionProviderConfigReloadFlagName)
+			require.True(t, ok)
+			assert.Equal(t, "true", reload)
+			volume, ok := findVolume(t, merged, encryptionConfigVolumeName)
+			require.True(t, ok)
+			assert.Equal(t, defaultEncryptionConfigDirectory, volume["hostPath"])
+			assert.Equal(t, defaultEncryptionConfigDirectory, volume["mountPath"])
+			assert.Equal(t, true, volume["readOnly"])
+
+			quota, err := EtcdQuotaFromClusterConfiguration(merged)
+			require.NoError(t, err)
+			assert.Equal(t, EtcdQuotaBackendBytes, quota)
+
+			second, secondChanged, err := MergeEncryptionIntoClusterConfiguration(merged)
+			require.NoError(t, err)
+			assert.False(t, secondChanged)
+			assert.Equal(t, string(merged), string(second))
+		})
+	}
+}
+
+func TestEncryptionVolume_V1beta3AndV1beta4Converge(t *testing.T) {
+	v3, err := yaml.Marshal(encryptionVolume())
+	require.NoError(t, err)
+	v4, err := yaml.Marshal(encryptionVolumeV1beta4())
+	require.NoError(t, err)
+	assert.Equal(t, string(v3), string(v4))
+}
+
+func TestEtcdQuotaFromClusterConfiguration_ErrorsWhenMissing(t *testing.T) {
+	_, err := EtcdQuotaFromClusterConfiguration([]byte(`apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+`))
+	require.ErrorContains(t, err, "quota-backend-bytes not found")
+}
+
+func TestSetKubernetesVersionInClusterConfiguration(t *testing.T) {
+	const input = `apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+kubernetesVersion: v1.30.9
+`
+
+	updated, changed, err := SetKubernetesVersionInClusterConfiguration([]byte(input), "1.31.4")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Contains(t, string(updated), "kubernetesVersion: v1.31.4")
+
+	second, secondChanged, err := SetKubernetesVersionInClusterConfiguration(updated, "v1.31.4")
+	require.NoError(t, err)
+	assert.False(t, secondChanged)
+	assert.Equal(t, string(updated), string(second))
+
+	_, _, err = SetKubernetesVersionInClusterConfiguration([]byte(input), "v1.31")
+	require.ErrorContains(t, err, "expected X.Y.Z")
 }

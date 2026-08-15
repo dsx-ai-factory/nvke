@@ -41,6 +41,12 @@ func rewriteAPIProxyRequest(r *httputil.ProxyRequest, apiBaseURL *url.URL) {
 
 // Serve the UI locally, and proxy API requests to the backing API at the address specified in the API_BASE_URL env var.
 // Useful when developing the UI locally while using the API of a remote CWE instance.
+// sanitizeForLog strips CR/LF from operator-supplied values so they cannot forge
+// additional log entries.
+func sanitizeForLog(v string) string {
+	return strings.NewReplacer("\n", "", "\r", "").Replace(v)
+}
+
 func main() {
 	uiPort := os.Getenv("UI_PORT")
 	if uiPort == "" {
@@ -67,7 +73,8 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("Serving UI at http://%s and proxying API requests to %s", srv.Addr, apiBaseURL)
+	//nolint:gosec // G706: values are passed through sanitizeForLog, which strips CR/LF; gosec's taint analysis does not model the sanitizer.
+	log.Printf("Serving UI at http://%s and proxying API requests to %s", sanitizeForLog(srv.Addr), sanitizeForLog(apiBaseURL))
 
 	log.Fatal(srv.ListenAndServe())
 }

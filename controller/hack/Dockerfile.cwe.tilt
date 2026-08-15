@@ -34,7 +34,10 @@ RUN apk add --update --no-cache \
 WORKDIR /
 COPY ./bin/cloud-workflow-engine /usr/local/bin/cloud-workflow-engine
 COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
-COPY ./profiles /profiles
+# OS/config profiles are supplied at runtime via PROFILES_DIR (chart mount /
+# nke-site-deploy ConfigMap unpack). Keep the mount point; do not bake content.
+# Non-archive Tilt builds append a COPY of ./profiles after this line.
+RUN mkdir -p /profiles
 COPY ./ui /ui
 
 EXPOSE 8080

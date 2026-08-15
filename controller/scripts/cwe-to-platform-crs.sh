@@ -140,7 +140,7 @@ for cluster_id in "${CLUSTER_IDS[@]}"; do
     vpc_id=$(uuid_from_json "$(echo "$cluster_json" | jq -c '.vpcID')")
     control_plane_k8s_version=$(echo "$cluster_json" | jq -r '.controlPlaneKubernetesVersion')
     cni_plugin=$(normalize_cni "$(echo "$cluster_json" | jq -r '.cniPlugin')")
-    disable_kube_vip=$(echo "$cluster_json" | jq -r '.disableKubeVip // false')
+    control_plane_vip=$(echo "$cluster_json" | jq -r '.controlPlaneVIP // empty')
     enable_cp_recycling=$(echo "$cluster_json" | jq -r '.enableCPNodeRecycling // false')
 
     # Forge site name and nativeNetworking from Forge API (same for all clusters in site)
@@ -227,9 +227,12 @@ spec:
     name: ${forge_vpc_name}
   controlPlaneKubernetesVersion: \"${control_plane_k8s_version}\"
   cniPlugin: ${cni_plugin}
-  disableKubeVip: ${disable_kube_vip}
   enableCPNodeRecycling: ${enable_cp_recycling}
 "
+    if [[ -n "$control_plane_vip" ]]; then
+        cluster_spec+="  controlPlaneVIP: \"${control_plane_vip}\"
+"
+    fi
     write_file "$OUTPUT_DIR/nke-cluster-${cluster_name}.yaml" "apiVersion: ${API_GROUP}/${API_VERSION}
 kind: NKECluster
 metadata:

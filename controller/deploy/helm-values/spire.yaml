@@ -27,6 +27,17 @@ spire-server:
     - spiffe://example.org/nke-service/cloud-workflow-engine
   controllerManager:
     className: spire-mgmt-spire
+    identities:
+      clusterSPIFFEIDs:
+        default:
+          # CWE workloads use the dedicated nke-service identity deployed by
+          # Tilt. Keep the fallback from racing it during pod reconciliation.
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - cloud-workflow-engine
   nodeAttestor:
     tpmDirect:
       enabled: true

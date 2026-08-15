@@ -27,7 +27,7 @@ const (
 	authenticationConfigurationKind        = "AuthenticationConfiguration"
 	defaultOIDCAuthConfigPath              = "/etc/kubernetes/oidc/auth-config.yaml"
 	defaultPrerequisiteFileMode     uint32 = 0o600
-	defaultPrerequisiteFileOwner           = "root:root"
+	defaultPrerequisiteFileOwner           = rootRoot
 
 	// OIDC username identity is the SPIRE JWT-SVID subject (the bare SPIFFE ID),
 	// which is what rbac.yaml binds as kind:User with no prefix.

@@ -182,8 +182,36 @@ func (c *Client) UpdateNodePoolDesiredCount(ctx context.Context, id openapi_type
 	return resp.JSON200, nil
 }
 
-func (c *Client) DeleteNode(ctx context.Context, id openapi_types.UUID) error {
-	resp, err := c.api.DeleteNodeWithResponse(ctx, id, api.DeleteNodeRequest{})
+// DeleteNodeOption configures the DeleteNode request body, mirroring the
+// force-unreachable / etcd-override controls exposed on the DeleteNode API
+// (NKX-13160). The etcd overrides only take effect when the CWE under test has
+// ALLOW_ETCD_SAFETY_OVERRIDES enabled; otherwise the API rejects them with a 400.
+type DeleteNodeOption func(*api.DeleteNodeRequest)
+
+// WithForceUnreachable tolerates best-effort drain / graceful-shutdown failures
+// for a node whose kubelet/agent is unresponsive.
+func WithForceUnreachable() DeleteNodeOption {
+	return func(r *api.DeleteNodeRequest) { r.ForceUnreachable = true }
+}
+
+// WithAllowSingleVoter overrides the etcd safety check that blocks a removal
+// which would leave a single-voter cluster (single-node control-plane rotation).
+func WithAllowSingleVoter() DeleteNodeOption {
+	return func(r *api.DeleteNodeRequest) { r.AllowSingleVoter = true }
+}
+
+// WithAllowQuorumLoss overrides the etcd safety check that blocks a removal
+// which would break etcd quorum.
+func WithAllowQuorumLoss() DeleteNodeOption {
+	return func(r *api.DeleteNodeRequest) { r.AllowQuorumLoss = true }
+}
+
+func (c *Client) DeleteNode(ctx context.Context, id openapi_types.UUID, opts ...DeleteNodeOption) error {
+	req := api.DeleteNodeRequest{}
+	for _, opt := range opts {
+		opt(&req)
+	}
+	resp, err := c.api.DeleteNodeWithResponse(ctx, id, req)
 	if err != nil {
 		return fmt.Errorf("deleting node %s: %w", id, err)
 	}

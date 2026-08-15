@@ -60,6 +60,9 @@ func (r *reconciler) remediateMachines(ctx context.Context, cluster db.Cluster, 
 	if err := nodes.DeleteWithTx(ctx, r.db, nodeToRemediate.ID,
 		nodes.WithReason("Control plane node remediation"),
 		nodes.WithAllowCPNode(true),
+		// Controllers enforce their own preconditions; skip the live-API guard
+		// (also avoids SELECT FOR UPDATE, which SQLite unit tests cannot run).
+		nodes.WithSkipLiveDeleteGuard(),
 	); err != nil {
 		return false, fmt.Errorf("deleting node %s (%s) marked for remediation: %w", nodeToRemediate.ID, nodeToRemediate.Name, err)
 	}

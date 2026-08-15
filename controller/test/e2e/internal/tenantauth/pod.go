@@ -33,6 +33,7 @@ const (
 	podGenerateName       = "e2e-verify-"
 	downloadContainerName = "download"
 	verifyContainerName   = "verify"
+	expectedUsernameEnv   = "EXPECTED_USERNAME"
 
 	// downloadScript fetches and sha256-verifies the exec plugin into the
 	// shared binary volume.
@@ -46,19 +47,26 @@ install -m 0755 k8s-spiffe-workload-jwt-exec-auth ` + pluginInstallPath + `
 `
 
 	// verifyScript self-fetches the published kubeconfig with the pod's own SA
-	// token, then runs auth whoami + can-i (which trigger the exec plugin / a
-	// real JWT-SVID) and finally a real `kubectl get nodes` list call. An empty
-	// whoami, a "no" result, or a failed list is a reported fact, not a script
-	// failure. The parseable lines are written to /dev/termination-log so the
-	// host can read them from the Pod object (a controller-runtime client cannot
-	// stream logs).
+	// token, then waits for the pod-specific SPIFFE registration before running
+	// can-i and a real `kubectl get nodes` list call. An empty whoami, a "no"
+	// result, or a failed list is a reported fact, not a script failure. The
+	// parseable lines are written to /dev/termination-log so the host can read
+	// them from the Pod object (a controller-runtime client cannot stream logs).
 	verifyScript = `set -e
 kubectl get secret -n nke-system "${CLUSTER}-kubeconfig" \
   -o go-template='{{ index .data "value" | base64decode }}' > /work/kubeconfig
 KC="--kubeconfig /work/kubeconfig"
 set +e
 exec > /dev/termination-log
-echo "WHOAMI $(kubectl $KC auth whoami -o jsonpath='{.status.userInfo.username}' 2>/dev/null)"
+attempt=0
+username=
+while [ "$attempt" -lt 12 ]; do
+  attempt=$((attempt + 1))
+  username=$(kubectl $KC auth whoami -o jsonpath='{.status.userInfo.username}' 2>/dev/null)
+  [ "$username" = "$EXPECTED_USERNAME" ] && break
+  [ "$attempt" -lt 12 ] && sleep 5
+done
+echo "WHOAMI $username"
 for c in "$@"; do
   verb=${c%%:*}; rest=${c#*:}; res=${rest%%:*}; ns=${rest##*:}
   case "$ns" in
@@ -73,8 +81,8 @@ if kubectl $KC get nodes >/dev/null 2>&1; then echo "LISTNODES ok"; else echo "L
 )
 
 // buildPod assembles the verifier Pod for identity id against clusterName,
-// passing the encoded checks as args to the verify container.
-func buildPod(id Identity, clusterName string, checks []Check) *corev1.Pod {
+// passing the expected username and encoded checks to the verify container.
+func buildPod(id Identity, clusterName, expectedUsername string, checks []Check) *corev1.Pod {
 	automount := true
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -111,6 +119,7 @@ func buildPod(id Identity, clusterName string, checks []Check) *corev1.Pod {
 					Command: append([]string{"sh", "-c", verifyScript, "verify"}, encodeChecks(checks)...),
 					Env: []corev1.EnvVar{
 						{Name: "CLUSTER", Value: clusterName},
+						{Name: expectedUsernameEnv, Value: expectedUsername},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{Name: "binary", MountPath: "/opt/spiffe/bin"},

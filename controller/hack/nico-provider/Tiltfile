@@ -14,6 +14,7 @@ NICO_PROVIDER_RESOURCE = "nico-provider"
 NICO_KIND_NODE_IMAGE_RESOURCE = "nico-kind-node-image"
 NICO_PROVIDER_IMAGE = "cluster-api-provider-nico:local"
 NICO_PROVIDER_NAMESPACE = os.getenv("NICO_PROVIDER_NAMESPACE", "capnico-system")
+NICO_PROVIDER_REBOOT_ANNOTATION = "nke.nvidia.com/reboot"
 NICO_MOCK_IMAGE = "cwe-nico-mock:local"
 NICO_MOCK_HTTP_PORT = "18080"
 
@@ -51,6 +52,7 @@ def register(ctx):
     cwe_http_port = os.getenv("CWE_HTTP_PORT", "8080")
     capd_kindest_node_image = os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local")
     nico_provider_repo_dir = os.getenv("NICO_PROVIDER_REPO_DIR", os.path.join(ctx.main_dir, "..", "cluster-api-provider-nico"))
+    nico_provider_config_dir = os.path.join(ctx.provider_dir, "config")
     build_capd_kindest_node_image_script = os.path.join(ctx.main_dir, "hack", "capd-kindest-node", "build-image.sh")
     mock_dir = os.path.join(ctx.main_dir, "hack", "nico-mock")
     labels = ["2-nico"]
@@ -83,6 +85,7 @@ def register(ctx):
     nico_provider_script = """
           set -euo pipefail
           provider_repo_dir="%s"
+          provider_config_dir="%s"
           provider_image="%s"
           provider_namespace="%s"
 
@@ -100,7 +103,15 @@ def register(ctx):
           echo "Loading NICo provider image into kind..."
           kind load docker-image "${provider_image}" --name "%s"
           echo "Applying NICo provider manifests..."
-          kubectl apply -k "${provider_repo_dir}/config/default"
+          # Make CAPNICo watch the same CAPI Machine reboot annotation CWE
+          # writes. Render the container-specific flag into the Deployment
+          # before applying it so Kubernetes sees one desired configuration.
+          render_dir="$(mktemp -d)"
+          trap 'rm -rf "${render_dir}"' EXIT
+          cp -R "${provider_config_dir}/." "${render_dir}/"
+          ln -s "${provider_repo_dir}/config/default" "${render_dir}/capnico-base"
+          kubectl kustomize "${render_dir}" --load-restrictor=LoadRestrictionsNone \
+            | kubectl apply -f -
           kubectl -n "${provider_namespace}" create secret generic nico-credentials \
             --from-literal=endpoint="http://mock.nico-mock.svc.cluster.local:8080" \
             --from-literal=orgID="local-dev-org" \
@@ -111,6 +122,7 @@ def register(ctx):
           kubectl -n "${provider_namespace}" rollout status deployment/controller-manager --timeout=120s
     """ % (
         nico_provider_repo_dir,
+        nico_provider_config_dir,
         NICO_PROVIDER_IMAGE,
         NICO_PROVIDER_NAMESPACE,
         os.getenv("COLIMA_DOCKER_HOST", "unix://%s/.colima/default/docker.sock" % os.getenv("HOME", "~")),
@@ -124,6 +136,7 @@ def register(ctx):
         resource_deps=["check-management-cluster"],
         deps=[
           nico_provider_repo_dir,
+          nico_provider_config_dir,
         ],
         allow_parallel=True,
     )

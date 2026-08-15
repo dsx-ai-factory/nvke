@@ -11,11 +11,9 @@
 package capi
 
 import (
-	"github.com/google/uuid"
-
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
 func ShouldUseCAPIForNodeProvisioning(enableForgeCapi bool, cluster db.Cluster) bool {
-	return enableForgeCapi || cluster.SiteID == uuid.Nil
+	return enableForgeCapi || cluster.ProviderType == db.ProviderTypeCAPI
 }

@@ -1,0 +1,99 @@
+#!/usr/bin/env python3
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+
+"""Adapt kubeadm configuration for container-based nodes.
+
+Node containers share their Docker host's swap state and host-wide sysctls,
+while kubeadm's defaults assume a standalone machine. This script applies
+container-sized kubelet reservations, permits inherited host swap, and stops
+kube-proxy from changing the host's conntrack sysctl. It preserves existing
+KubeletConfiguration and KubeProxyConfiguration documents, or appends minimal
+documents when the caller did not provide them.
+"""
+
+import sys
+
+import yaml
+
+
+def find_or_append_document(
+    documents: list,
+    api_version: str,
+    kind: str,
+) -> dict:
+    matches = [
+        document
+        for document in documents
+        if isinstance(document, dict)
+        and document.get("apiVersion") == api_version
+        and document.get("kind") == kind
+    ]
+    if len(matches) > 1:
+        raise ValueError(f"expected at most one {kind} document, found {len(matches)}")
+
+    if matches:
+        return matches[0]
+
+    document = {"apiVersion": api_version, "kind": kind}
+    documents.append(document)
+    return document
+
+
+def get_mapping(document: dict, field: str, kind: str) -> dict:
+    value = document.setdefault(field, {})
+    if not isinstance(value, dict):
+        raise ValueError(f"{kind}.{field} must be a mapping")
+    return value
+
+
+def main() -> int:
+    if len(sys.argv) != 3:
+        print(f"usage: {sys.argv[0]} INPUT OUTPUT", file=sys.stderr)
+        return 2
+
+    input_path, output_path = sys.argv[1:]
+    with open(input_path, encoding="utf-8") as source:
+        documents = list(yaml.safe_load_all(source))
+
+    kubelet = find_or_append_document(
+        documents,
+        "kubelet.config.k8s.io/v1beta1",
+        "KubeletConfiguration",
+    )
+    kubelet["failSwapOn"] = False
+    kube_reserved = get_mapping(kubelet, "kubeReserved", "KubeletConfiguration")
+    kube_reserved.update(
+        {
+            "cpu": "100m",
+            "memory": "256Mi",
+            "ephemeral-storage": "256Mi",
+        }
+    )
+    system_reserved = get_mapping(kubelet, "systemReserved", "KubeletConfiguration")
+    system_reserved["memory"] = "256Mi"
+
+    kubeproxy = find_or_append_document(
+        documents,
+        "kubeproxy.config.k8s.io/v1alpha1",
+        "KubeProxyConfiguration",
+    )
+    conntrack = get_mapping(kubeproxy, "conntrack", "KubeProxyConfiguration")
+    conntrack["maxPerCore"] = 0
+
+    with open(output_path, "w", encoding="utf-8") as destination:
+        yaml.safe_dump_all(
+            documents,
+            destination,
+            explicit_start=True,
+            sort_keys=False,
+        )
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except (OSError, ValueError, yaml.YAMLError) as error:
+        print(f"update kubeadm config for containers: {error}", file=sys.stderr)
+        raise SystemExit(1) from error

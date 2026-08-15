@@ -49,23 +49,24 @@ type VerifyResult struct {
 }
 
 // VerifySPIREAuth runs one credential pod as id (namespace + service account)
-// that mints a real JWT-SVID and runs checks against the tenant clusterName,
-// then returns the parsed facts. The pod writes its parseable output to the
+// that waits for expectedUsername, mints a real JWT-SVID, and runs checks
+// against the tenant clusterName. The pod writes its parseable output to the
 // verify container's termination message, which is read back from the Pod
 // object.
 //
 // A non-nil error indicates infra failure (pod Failed, couldn't read the
 // result); an empty whoami or a "no" result is a reported fact for the caller
 // to assert, not an error.
-func VerifySPIREAuth(ctx context.Context, c client.Client, id Identity, clusterName string, checks []Check) (VerifyResult, error) {
-	pod := buildPod(id, clusterName, checks)
+func VerifySPIREAuth(ctx context.Context, c client.Client, id Identity, clusterName, expectedUsername string, checks []Check) (VerifyResult, error) {
+	pod := buildPod(id, clusterName, expectedUsername, checks)
 	finished, verifyMsg, err := kube.RunPod(ctx, c, pod, verifyContainerName, podTimeout)
 	if err != nil && finished != nil && finished.Status.Phase == corev1.PodFailed {
 		return VerifyResult{}, fmt.Errorf(
 			"verifier pod %s/%s failed (phase=%s); init %q message: %q; %q message: %q",
 			id.Namespace, finished.Name, finished.Status.Phase,
 			downloadContainerName, kube.TerminatedMessage(finished, downloadContainerName),
-			verifyContainerName, verifyMsg)
+			verifyContainerName, verifyMsg,
+		)
 	}
 	if err != nil {
 		return VerifyResult{}, err

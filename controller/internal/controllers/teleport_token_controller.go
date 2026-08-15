@@ -284,6 +284,10 @@ func (c *TeleportTokenController) createTokenForNode(ctx context.Context, node d
 		"tokenName", tokenName,
 		"expiresAt", expiresAt,
 	)
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return err
+	}
 
 	token := teleport.ProvisionToken{
 		Name:       tokenName,
@@ -291,7 +295,7 @@ func (c *TeleportTokenController) createTokenForNode(ctx context.Context, node d
 		Expiry:     expiresAt,
 		JoinMethod: teleport.JoinMethodTPM,
 		Labels: map[string]string{
-			teleport.LabelSite:                  cluster.SiteID.String(),
+			teleport.LabelSite:                  nicoProvider.SiteID.String(),
 			teleport.LabelNKESiteControllerName: c.cfg.NKESiteControllerName,
 			teleport.LabelCluster:               cluster.ID.String(),
 			teleport.LabelClusterName:           cluster.Name,

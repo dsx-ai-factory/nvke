@@ -37,9 +37,14 @@ const (
 	CWEGofailWorkerBinaryEnv = "CWE_GOFAIL_E2E_WORKER_BINARY"
 	CWEGofailFailpointName   = "CWERunbookWorkerCrash"
 	CWEGofailWorkerCrashLine = "cwe-gofail-runbook-worker-crash"
-	cweWorkerReadyTimeout    = 20 * time.Second
-	cweGofailRequestTimeout  = 5 * time.Second
-	cweWorkerReadyLog        = "Starting Temporal worker"
+
+	// CWEGofailExecutionErrorFailpoint fails the named runbook immediately
+	// instead of hanging it, for scenarios about retry budgets rather than
+	// heartbeat loss.
+	CWEGofailExecutionErrorFailpoint = "CWERunbookExecutionError"
+	cweWorkerReadyTimeout            = 20 * time.Second
+	cweGofailRequestTimeout          = 5 * time.Second
+	cweWorkerReadyLog                = "Starting Temporal worker"
 )
 
 var (
@@ -111,6 +116,12 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 	require.NotEmpty(t, cfg.DBConnectionString)
 	require.NotEmpty(t, cfg.KubeconfigPath)
 	require.NotEmpty(t, cfg.NodeAgentPort)
+	// Fleet profiles are no longer baked into the worker binary (NKX-13910). Point
+	// migrations that load osProfiles/metadata.yaml at the sanitized fixtures tree.
+	profilesDir := filepath.Join(RepoRoot(t), "test", "fixtures", "profiles")
+	_, err := os.Stat(filepath.Join(profilesDir, "osProfiles", "metadata.yaml"))
+	require.NoError(t, err, "expected fixture OS profile metadata under %s", profilesDir)
+
 	env := []string{
 		"DB_CONNECTION_STRING=" + cfg.DBConnectionString,
 		"DB_MAX_OPEN_CONNECTIONS=4",
@@ -120,6 +131,7 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 		"TEMPORAL_HOST_PORT=" + cfg.TemporalHostPort,
 		"TEMPORAL_NAMESPACE=" + cfg.Namespace,
 		"TEMPORAL_TASK_QUEUE=" + cfg.TaskQueue,
+		"PROFILES_DIR=" + profilesDir,
 		"CONTROLLER_MANAGER_DISABLED=true",
 		"NODE_HEALTH_CHECK_DISABLED=true",
 		"SPIFFE_ENABLED=false",

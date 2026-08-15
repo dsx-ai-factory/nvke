@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
@@ -116,6 +118,8 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 	if err != nil {
 		return KubeadmJoinResult{}, err
 	}
+	joinConfig.SystemReservedMemory = nodePool.SystemReservedMemory
+	joinConfig.KubeReservedMemory = nodePool.KubeReservedMemory
 
 	if node.ControlPlane && cluster.OIDCAuthEnabled {
 		joinConfig.AuthenticationConfig, err = a.buildOIDCAuthenticationConfig(ctx, cluster.Name)
@@ -143,7 +147,7 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 	}
 
 	if node.ControlPlane {
-		if err := a.validateEtcdQuota(ctx, cluster.ID); err != nil {
+		if err := a.validateEtcdQuota(ctx, cluster); err != nil {
 			return KubeadmJoinResult{}, err
 		}
 	}
@@ -207,10 +211,10 @@ func (a *Activities) findJoinedControlPlaneNode(ctx context.Context, clusterID u
 	return db.Node{}, fmt.Errorf("no joined control-plane node found for cluster %s", clusterID)
 }
 
-func (a *Activities) validateEtcdQuota(ctx context.Context, clusterID uuid.UUID) error {
+func (a *Activities) validateEtcdQuota(ctx context.Context, cluster db.Cluster) error {
 	controlPlane := true
 	cpNodes, err := a.db.ListNodes(ctx, db.NodeFilters{
-		ClusterID:    &clusterID,
+		ClusterID:    &cluster.ID,
 		ControlPlane: &controlPlane,
 	})
 	if err != nil {
@@ -227,8 +231,13 @@ func (a *Activities) validateEtcdQuota(ctx context.Context, clusterID uuid.UUID)
 		return fmt.Errorf("no joined control-plane nodes found for etcd quota validation")
 	}
 
+	tenantClient, err := a.tenantClientForCluster(ctx, cluster)
+	if err != nil {
+		return err
+	}
+
 	for _, node := range joinedCPNodes {
-		quota, err := a.extractEtcdQuotaFromNode(ctx, node.ID)
+		quota, err := extractEtcdQuotaFromNode(ctx, tenantClient, node.Name)
 		if err != nil {
 			return err
 		}
@@ -237,7 +246,7 @@ func (a *Activities) validateEtcdQuota(ctx context.Context, clusterID uuid.UUID)
 		}
 	}
 
-	quota, err := a.extractKubeadmConfigEtcdQuota(ctx, joinedCPNodes[0].ID)
+	quota, err := kubeadmconfig.EtcdQuotaInClusterConfiguration(ctx, tenantClient)
 	if err != nil {
 		return fmt.Errorf("failed to extract quota from kubeadm-config: %w", err)
 	}
@@ -248,34 +257,38 @@ func (a *Activities) validateEtcdQuota(ctx context.Context, clusterID uuid.UUID)
 	return nil
 }
 
-func (a *Activities) extractEtcdQuotaFromNode(ctx context.Context, nodeID uuid.UUID) (string, error) {
-	result, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
-		HostID:      nodeID,
-		RunbookName: "manifest-etcd-quota",
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to extract etcd quota from node %s: %w", nodeID, err)
+func extractEtcdQuotaFromNode(ctx context.Context, tenantClient client.Client, nodeName string) (string, error) {
+	var pod corev1.Pod
+	if err := tenantClient.Get(ctx, client.ObjectKey{Namespace: kubeSystem, Name: "etcd-" + nodeName}, &pod); err != nil {
+		return "", fmt.Errorf("failed to get etcd mirror Pod for node %s: %w", nodeName, err)
 	}
-	quota := strings.TrimSpace(result.Output)
-	if quota == "" {
-		return "", fmt.Errorf("empty quota-backend-bytes returned on node %s", nodeID)
+
+	quota, err := etcdQuotaFromPod(pod)
+	if err != nil {
+		return "", fmt.Errorf("failed to extract etcd quota from node %s: %w", nodeName, err)
 	}
 	return quota, nil
 }
 
-func (a *Activities) extractKubeadmConfigEtcdQuota(ctx context.Context, nodeID uuid.UUID) (string, error) {
-	result, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
-		HostID:      nodeID,
-		RunbookName: "kubeadm-etcd-quota",
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to extract kubeadm-config etcd quota from node %s: %w", nodeID, err)
+func etcdQuotaFromPod(pod corev1.Pod) (string, error) {
+	for _, container := range pod.Spec.Containers {
+		if container.Name != etcdConst {
+			continue
+		}
+		args := make([]string, 0, len(container.Command)+len(container.Args))
+		args = append(args, container.Command...)
+		args = append(args, container.Args...)
+		for i, arg := range args {
+			if quota, ok := strings.CutPrefix(arg, "--quota-backend-bytes="); ok && quota != "" {
+				return quota, nil
+			}
+			if arg == "--quota-backend-bytes" && i+1 < len(args) && args[i+1] != "" {
+				return args[i+1], nil
+			}
+		}
+		return "", fmt.Errorf("quota-backend-bytes not found in etcd container command")
 	}
-	quota := strings.TrimSpace(result.Output)
-	if quota == "" {
-		return "", fmt.Errorf("empty quota-backend-bytes returned from kubeadm-config")
-	}
-	return quota, nil
+	return "", fmt.Errorf("etcd container not found")
 }
 
 func validateEtcdQuotaValue(nodeName, quota string) error {

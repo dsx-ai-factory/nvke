@@ -66,10 +66,10 @@ func TestIsOperationalPath(t *testing.T) {
 		path        string
 		operational bool
 	}{
-		{"/healthz", true},
+		{healthz, true},
 		{"/healthz/live", true},
 		{"/readyz", true},
-		{"/metrics", true},
+		{metrics, true},
 		{"/metrics/cadvisor", true},
 		{"/health", false},
 		{"/healthzBackup", false},
@@ -172,7 +172,7 @@ func TestManagedByMiddleware(t *testing.T) {
 			name:               "enforce mode - health check allowed without header",
 			enforce:            true,
 			method:             http.MethodGet,
-			path:               "/healthz",
+			path:               healthz,
 			managedByHeader:    "",
 			expectedStatusCode: http.StatusOK,
 		},
@@ -180,7 +180,7 @@ func TestManagedByMiddleware(t *testing.T) {
 			name:               "enforce mode - metrics allowed without header",
 			enforce:            true,
 			method:             http.MethodGet,
-			path:               "/metrics",
+			path:               metrics,
 			managedByHeader:    "",
 			expectedStatusCode: http.StatusOK,
 		},

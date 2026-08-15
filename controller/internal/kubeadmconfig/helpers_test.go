@@ -42,6 +42,24 @@ func apiServerTerminationGracePatchFixture() fileFromFixture {
 		path:           "/etc/kubernetes/patches/kube-apiserver-base-graceful-shutdown+merge.yaml",
 		goldenFilePath: "kube_apiserver_termination_grace_patch.yaml",
 		mode:           0o644,
+		owner:          rootRoot,
+	}
+}
+
+func apiServerAuditPolicyFixture() fileFromFixture {
+	return fileFromFixture{
+		path:           "/etc/kubernetes/policies/audit-policy.yaml",
+		goldenFilePath: "audit_policy.yaml",
+		mode:           0o644,
+		owner:          "root:root",
+	}
+}
+
+func kubeletConfigurationPatchFixture(goldenFile string) fileFromFixture {
+	return fileFromFixture{
+		path:           "/etc/kubernetes/patches/kubeletconfiguration0+merge.yaml",
+		goldenFilePath: goldenFile,
+		mode:           0o644,
 		owner:          "root:root",
 	}
 }

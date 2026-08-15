@@ -134,6 +134,139 @@ func TestTeardownNodeHooksSkippedWhenConfigProfileOmitted(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
+// NKX-13160: teardown hooks execute as cluster runbooks, so they must never be
+// dispatched to the node being removed — on a force-delete that node is exactly
+// the unreachable one.
+func TestTeardownNodeHooksExcludeTargetNodeAsExecutor(t *testing.T) {
+	database, res := setupTestDB(t, seedOpts{
+		clusterProvisioned: true,
+		cpNodeJoined:       true,
+	})
+
+	env, a := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{})
+
+	var hookInputs []activities.ExecuteClusterRunbookInput
+	env.OnActivity(a.ExecuteClusterRunbook, mock.Anything, mock.MatchedBy(func(input activities.ExecuteClusterRunbookInput) bool {
+		return input.RunbookName == beforeRemoveNodeRunbook || input.RunbookName == afterRemoveNodeRunbook
+	})).Return(func(_ context.Context, input activities.ExecuteClusterRunbookInput) (activities.ExecuteClusterRunbookResult, error) {
+		hookInputs = append(hookInputs, input)
+		return activities.ExecuteClusterRunbookResult{}, nil
+	}, nil).Twice()
+
+	env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+		NodeID:      res.nodeID,
+		AllowCPNode: true,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Len(t, hookInputs, 2)
+	for _, input := range hookInputs {
+		require.NotNil(t, input.ExcludeNodeID, "hook %s must exclude the target node", input.RunbookName)
+		require.Equal(t, res.nodeID, *input.ExcludeNodeID)
+		require.NotContains(t, input.RunbookEnv, "FORCE_UNREACHABLE",
+			"hook %s must not advertise force mode on a normal teardown", input.RunbookName)
+	}
+}
+
+// NKX-13160: with no surviving joined CP there is no executor for the hooks —
+// the only candidate would be the node under teardown. Same skip as the
+// live-removal path (NKX-13735).
+func TestTeardownNodeHooksSkippedWhenNoSurvivingJoinedCP(t *testing.T) {
+	database, res := setupTestDB(t, seedOpts{
+		clusterProvisioned:        true,
+		onlyJoinedCPUnderTeardown: true,
+	})
+
+	env, _ := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{
+		omitClusterRunbookMock: true,
+	})
+
+	// ExecuteClusterRunbook is NOT mocked — if the workflow calls it,
+	// the test fails with an unexpected activity call.
+	env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+		NodeID:      res.nodeID,
+		AllowCPNode: true,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+}
+
+// NKX-13160: a failing teardown hook must stall a normal teardown (the hooks
+// protect data) but must not stall a force-delete, where the hook's waits can
+// never be satisfied because the node is gone.
+func TestTeardownNodeHookFailureToleratedOnlyWhenForceUnreachable(t *testing.T) {
+	tests := []struct {
+		name             string
+		forceUnreachable bool
+		wantErr          bool
+	}{
+		{name: "hook failure fails teardown", forceUnreachable: false, wantErr: true},
+		{name: "hook failure tolerated when force unreachable", forceUnreachable: true, wantErr: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			database, res := setupTestDB(t, seedOpts{
+				clusterProvisioned: true,
+				cpNodeJoined:       true,
+			})
+
+			env, a := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{})
+
+			var hookEnvs []map[string]string
+			env.OnActivity(a.ExecuteClusterRunbook, mock.Anything, mock.MatchedBy(func(input activities.ExecuteClusterRunbookInput) bool {
+				return input.RunbookName == beforeRemoveNodeRunbook || input.RunbookName == afterRemoveNodeRunbook
+			})).Return(func(_ context.Context, input activities.ExecuteClusterRunbookInput) (activities.ExecuteClusterRunbookResult, error) {
+				hookEnvs = append(hookEnvs, input.RunbookEnv)
+				return activities.ExecuteClusterRunbookResult{}, errors.New("PVCs still exist: node is unreachable")
+			}, nil).Maybe()
+
+			if !tt.forceUnreachable {
+				// The normal path retries the hook forever on purpose, so the
+				// workflow never finishes on its own. Bound the test explicitly
+				// rather than leaning on the harness' own execution timeout:
+				// cancel after an hour of skipped time and assert the teardown
+				// was still stuck in the hook.
+				env.RegisterDelayedCallback(env.CancelWorkflow, time.Hour)
+			}
+
+			env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+				NodeID:           res.nodeID,
+				AllowCPNode:      true,
+				ForceUnreachable: tt.forceUnreachable,
+			})
+
+			require.True(t, env.IsWorkflowCompleted())
+			if tt.wantErr {
+				require.Error(t, env.GetWorkflowError())
+				// Retries are unbounded without force_unreachable: the hook was
+				// still being attempted when the cancel landed, well past the
+				// force-delete budget.
+				require.Greater(t, len(hookEnvs), forceUnreachableHookMaxAttempts,
+					"the normal path must keep retrying a failing hook instead of giving up")
+				for _, hookEnv := range hookEnvs {
+					require.NotContains(t, hookEnv, "FORCE_UNREACHABLE",
+						"hooks must not be told the node is unreachable on a normal teardown")
+				}
+
+				return
+			}
+
+			require.NoError(t, env.GetWorkflowError())
+			// Both hooks ran and gave up: the retry budget must be bounded, or
+			// the tolerate branch is unreachable and the workflow spins forever.
+			require.Len(t, hookEnvs, 2*forceUnreachableHookMaxAttempts,
+				"each hook should be attempted exactly forceUnreachableHookMaxAttempts times")
+			for _, hookEnv := range hookEnvs {
+				require.Equal(t, "true", hookEnv["FORCE_UNREACHABLE"],
+					"hooks must be told the node is unreachable so they can skip dead-node waits")
+			}
+		})
+	}
+}
+
 func TestTeardownNodeDrainAndRunbookActivitiesHaveHeartbeatTimeout(t *testing.T) {
 	database, res := setupTestDB(t, seedOpts{
 		clusterProvisioned: true,
@@ -206,7 +339,7 @@ func TestTeardownNodeSkipRemoveFromClusterResetsOnly(t *testing.T) {
 	env.OnActivity(a.KubeadmReset, mock.Anything, mock.MatchedBy(func(input activities.KubeadmResetInput) bool {
 		return input.NodeID == res.nodeID &&
 			len(input.SkipPhases) == 1 &&
-			input.SkipPhases[0] == "remove-etcd-member"
+			input.SkipPhases[0] == removeEtcdMember
 	})).Return(activities.KubeadmResetResult{}, nil).Once()
 	env.OnActivity(a.DeleteForgeInstance, mock.Anything, mock.Anything).Return(activities.DeleteForgeInstanceResult{}, nil).Once()
 
@@ -242,7 +375,7 @@ func TestTeardownNodeSkipsLiveRemovalWhenNoSurvivingJoinedCP(t *testing.T) {
 	env.OnActivity(a.KubeadmReset, mock.Anything, mock.MatchedBy(func(input activities.KubeadmResetInput) bool {
 		return input.NodeID == res.nodeID &&
 			len(input.SkipPhases) == 1 &&
-			input.SkipPhases[0] == "remove-etcd-member"
+			input.SkipPhases[0] == removeEtcdMember
 	})).Return(activities.KubeadmResetResult{}, nil).Once()
 	env.OnActivity(a.DeleteForgeInstance, mock.Anything, mock.Anything).Return(activities.DeleteForgeInstanceResult{}, nil).Once()
 
@@ -269,6 +402,49 @@ func TestTeardownNodeSkipsLiveRemovalWhenNoSurvivingJoinedCP(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
 	require.Empty(t, runbookNames, "etcd removal must not run without a surviving joined CP")
+	require.NotContains(t, activityNames, "DeleteKubeNode")
+
+	_, err := database.GetNode(context.Background(), res.nodeID)
+	require.ErrorIs(t, err, db.ErrNotFound, "node record should be deleted after infrastructure teardown")
+}
+
+// NKX-14107: the only joined CP peer is itself being torn down, so it cannot be
+// relied on to serve the tenant API or execute runbooks. A check that only reads
+// Joined treats the doomed peer as a survivor, drains through it,
+// and fails terminally once its instance is gone.
+func TestTeardownNodeSkipsLiveRemovalWhenOnlySurvivingCPIsDeleting(t *testing.T) {
+	database, res := setupTestDB(t, seedOpts{
+		clusterProvisioned:  true,
+		cpNodeJoined:        true,
+		survivingCPDeleting: true,
+		workerNodePool:      true,
+		omitConfigProfile:   true,
+	})
+
+	env, a := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{
+		omitClusterRunbookMock:      true,
+		omitKubeadmResetMock:        true,
+		omitDeleteForgeInstanceMock: true,
+	})
+	env.OnActivity(a.KubeadmReset, mock.Anything, mock.MatchedBy(func(input activities.KubeadmResetInput) bool {
+		return input.NodeID == res.nodeID && len(input.SkipPhases) == 0
+	})).Return(activities.KubeadmResetResult{}, nil).Once()
+	env.OnActivity(a.DeleteForgeInstance, mock.Anything, mock.Anything).Return(activities.DeleteForgeInstanceResult{}, nil).Once()
+
+	var activityNames []string
+	env.SetOnActivityStartedListener(func(activityInfo *activity.Info, _ context.Context, _ converter.EncodedValues) {
+		activityNames = append(activityNames, activityInfo.ActivityType.Name)
+	})
+
+	env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+		NodeID: res.nodeID,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+	require.NotContains(t, activityNames, "DrainKubeNode",
+		"must not drain through a control plane that is itself being torn down")
 	require.NotContains(t, activityNames, "DeleteKubeNode")
 
 	_, err := database.GetNode(context.Background(), res.nodeID)
@@ -454,6 +630,7 @@ type seedOpts struct {
 	clusterProvisioned        bool
 	cpNodeJoined              bool
 	onlyJoinedCPUnderTeardown bool // primary node is the sole joined CP; no surviving peer
+	survivingCPDeleting       bool // the peer CP is joined but is itself being torn down
 	workerNodePool            bool
 	configProfileName         string
 	omitConfigProfile         bool
@@ -600,6 +777,12 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 	// A separate surviving joined CP keeps the tenant API reachable and serves
 	// as the runbook executor when the node under teardown is removed.
 	if opts.cpNodeJoined && !opts.onlyJoinedCPUnderTeardown {
+		peerConditions := db.NodeConditions{
+			Joined: db.NewCondition(true, "Joined"),
+		}
+		if opts.survivingCPDeleting {
+			peerConditions.Deleting = db.NewCondition(true, "Node deletion in progress")
+		}
 		_, err = database.CreateNode(ctx, &db.Node{
 			ID:         uuid.New(),
 			ClusterID:  clusterID,
@@ -607,9 +790,7 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 			NodeSetID:  nodeSetID,
 			Name:       "cp-node",
 			IP:         "10.0.0.2",
-			Conditions: db.NodeConditions{
-				Joined: db.NewCondition(true, "Joined"),
-			},
+			Conditions: peerConditions,
 		})
 		require.NoError(t, err)
 	}

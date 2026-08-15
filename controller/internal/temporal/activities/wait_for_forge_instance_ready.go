@@ -56,10 +56,6 @@ func (a *Activities) waitForForgeInstanceReady(
 		return nil, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	if node.ForgeInstanceID == "" {
-		return nil, fmt.Errorf("node %s has no Forge instance ID", input.NodeID)
-	}
-
 	_, nodePool, err := nodes.GetNodeContext(ctx, a.db, node)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node context: %w", err)
@@ -70,15 +66,28 @@ func (a *Activities) waitForForgeInstanceReady(
 		return nil, fmt.Errorf("failed to get cluster: %w", err)
 	}
 
+	nicoClusterProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
+	nicoNodeProvider, err := node.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	if nicoNodeProvider.ForgeInstanceID == "" {
+		return nil, fmt.Errorf("node %s has no Forge instance ID", input.NodeID)
+	}
+
 	logger.Info("Waiting for Forge instance to be ready",
 		"clusterID", cluster.ID,
 		"nodePoolID", nodePool.ID,
 		"nodeID", input.NodeID,
 		"nodeName", node.Name,
-		"forgeMachineID", node.ForgeMachineID,
+		"forgeMachineID", nicoNodeProvider.ForgeMachineID,
 	)
 
-	cachedInstance, err := a.forgeProvider.GetInstanceByID(ctx, cluster.OrgID, cluster.SiteID.String(), node.ForgeInstanceID)
+	cachedInstance, err := a.forgeProvider.GetInstanceByID(ctx, nicoClusterProvider.OrgID, nicoClusterProvider.SiteID.String(), nicoNodeProvider.ForgeInstanceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cached instance: %w", err)
 	}
@@ -102,11 +111,11 @@ func (a *Activities) waitForForgeInstanceReady(
 		"nodePoolID", nodePool.ID,
 		"nodeID", input.NodeID,
 		"nodeName", node.Name,
-		"forgeMachineID", node.ForgeMachineID,
+		"forgeMachineID", nicoNodeProvider.ForgeMachineID,
 		"ip", ipAddress,
 	)
 
-	if err := a.addLabelToInstance(ctx, cluster.OrgID, node.ForgeInstanceID, ipAddress, input.NodeID); err != nil {
+	if err := a.addLabelToInstance(ctx, nicoClusterProvider.OrgID, nicoNodeProvider.ForgeInstanceID, ipAddress, input.NodeID); err != nil {
 		// opportunistic labeling, log error but continue
 		logger.Error("Failed to add ip address label to Forge instance", "error", err)
 	}

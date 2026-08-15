@@ -47,9 +47,9 @@ func isExemptPath(path string) bool {
 // Callers must pass an already-cleaned path (e.g. via path.Clean) so that dot-segments
 // or duplicate slashes cannot bypass this check.
 func isOperationalPath(path string) bool {
-	return path == "/healthz" || strings.HasPrefix(path, "/healthz/") ||
+	return path == healthz || strings.HasPrefix(path, "/healthz/") ||
 		path == "/readyz" || strings.HasPrefix(path, "/readyz/") ||
-		path == "/metrics" || strings.HasPrefix(path, "/metrics/")
+		path == metrics || strings.HasPrefix(path, "/metrics/")
 }
 
 // isMutatingMethod reports whether the HTTP method mutates server state and is therefore

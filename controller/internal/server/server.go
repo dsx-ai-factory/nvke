@@ -86,10 +86,14 @@ func NewServer(
 
 	m.HandleFunc("GET /api/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		resp := map[string]string{
+		resp := map[string]any{
 			"version":           version.Version,
 			"temporalUIURL":     temporalUIURL(cfg),
 			"temporalNamespace": cfg.TemporalNamespace,
+			// Exposes the control-plane-controller provisioning feature flag so the
+			// UI can switch between cluster-level control plane config mode and the
+			// legacy control-plane node-pool mode. The server validates regardless.
+			"provisionControlPlaneWithControlPlaneController": cfg.UseControlPlaneControllerForControlPlane(),
 		}
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			logger.Error("Failed to write /api/version response", "error", err)
@@ -160,14 +164,14 @@ func handleError(w http.ResponseWriter, logger *slog.Logger, message string, sta
 }
 
 func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, forgeProvider *forge.ForgeProvider, temporalClient client.Client) *serverImpl {
-	nodePoolService := NewNodePoolService(logger, database, forgeProvider, cfg.Teleport)
+	nodePoolService := NewNodePoolService(logger, database, forgeProvider, cfg.Teleport, cfg.UseControlPlaneControllerForControlPlane())
 
 	return &serverImpl{
 		siteService:          *NewSiteService(logger, database, forgeProvider),
-		clusterService:       *NewClusterService(logger, database, nodePoolService, forgeProvider, cfg.Teleport, cfg.EnableForgeCapi, cfg.NkeOIDCAuth.Enabled),
+		clusterService:       *NewClusterService(logger, database, nodePoolService, forgeProvider, cfg.Teleport, cfg.EnableForgeCapi, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database, temporalClient),
+		nodeService:          *NewNodeService(logger, database, temporalClient, cfg.AllowEtcdSafetyOverrides),
 		osProfileService:     *NewOSProfileService(cfg, logger),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 		forgeService:         *NewForgeService(cfg, logger, forgeProvider),

@@ -43,12 +43,12 @@ func (s *nodeSetService) GetNodePoolConfigHistory(ctx context.Context, req api.G
 		switch {
 		case err != nil:
 			s.logger.Warn("failed to query Temporal config history, falling back to NodeSet query",
-				"nodePoolID", req.NodePoolID, "error", err)
+				nodePoolIDConst, req.NodePoolID, "error", err)
 		case len(changes) > 0:
 			return api.GetNodePoolConfigHistory200JSONResponse{Changes: changes}, nil
 		default:
 			s.logger.Debug("Temporal returned no config history, falling back to NodeSet query",
-				"nodePoolID", req.NodePoolID)
+				nodePoolIDConst, req.NodePoolID)
 		}
 	}
 
@@ -137,6 +137,9 @@ func nodePoolConfigChangeInput(old, updated db.NodePool) (workflows.RecordNodePo
 		OldSystemReservedMemory: old.SystemReservedMemory,
 		NewSystemReservedMemory: updated.SystemReservedMemory,
 
+		OldKubeReservedMemory: old.KubeReservedMemory,
+		NewKubeReservedMemory: updated.KubeReservedMemory,
+
 		OldDiskSelectionStrategy: string(old.DiskSelectionStrategy),
 		NewDiskSelectionStrategy: string(updated.DiskSelectionStrategy),
 
@@ -210,6 +213,7 @@ func configDiffFromInput(input workflows.RecordNodePoolConfigChangeInput) []api.
 	addIfChanged("configProfile", input.OldConfigProfile, input.NewConfigProfile)
 	addIfChanged("kubernetesVersion", input.OldKubernetesVersion, input.NewKubernetesVersion)
 	addIfChanged("systemReservedMemory", input.OldSystemReservedMemory, input.NewSystemReservedMemory)
+	addIfChanged("kubeReservedMemory", input.OldKubeReservedMemory, input.NewKubeReservedMemory)
 	addIfChanged("diskSelectionStrategy", input.OldDiskSelectionStrategy, input.NewDiskSelectionStrategy)
 	addIfChanged("capiSpireAttestationMethod", input.OldCapiSpireAttestationMethod, input.NewCapiSpireAttestationMethod)
 	addJSONIfChanged("teleportEnabled", input.OldTeleportEnabled, input.NewTeleportEnabled)
@@ -281,6 +285,7 @@ func nodeSetConfigDiff(prev, curr *db.NodeSet) []api.NodePoolConfigField {
 	addIfChanged("configProfile", prev.ConfigProfile, curr.ConfigProfile)
 	addIfChanged("kubernetesVersion", prev.KubernetesVersion, curr.KubernetesVersion)
 	addIfChanged("systemReservedMemory", prev.SystemReservedMemory, curr.SystemReservedMemory)
+	addIfChanged("kubeReservedMemory", prev.KubeReservedMemory, curr.KubeReservedMemory)
 	addIfChanged("diskSelectionStrategy", string(prev.DiskSelectionStrategy), string(curr.DiskSelectionStrategy))
 	addIfChanged("capiSpireAttestationMethod", string(prev.CapiSpireAttestationMethod), string(curr.CapiSpireAttestationMethod))
 	addJSONIfChanged("teleportEnabled", marshalField(prev.TeleportEnabled), marshalField(curr.TeleportEnabled))

@@ -36,4 +36,4 @@ var OpenapiYAML string
 // `go run` (not PATH) so CI images without gofumpt installed still work; keep
 // the version in sync with the gofumpt that golangci-lint bundles and with the
 // `fmt` target in the root Makefile.
-//go:generate go run mvdan.cc/gofumpt@v0.9.2 -w -extra models.gen.go server.gen.go client.gen.go
+//go:generate go run mvdan.cc/gofumpt@v0.11.0 -w -extra models.gen.go server.gen.go client.gen.go

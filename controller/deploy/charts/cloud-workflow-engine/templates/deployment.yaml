@@ -6,6 +6,7 @@ metadata:
   labels:
     {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
   {{- $reloadSecrets := list }}
+  {{- $reloadConfigMaps := list }}
   {{- if and .Values.secrets.forgeSecret.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
   {{- $reloadSecrets = append $reloadSecrets (default (printf "%s-%s" (include "cloud-workflow-engine.fullname" .) "forge-creds") .Values.secrets.forgeSecretName) }}
   {{- end }}
@@ -15,13 +16,16 @@ metadata:
   {{- if and .Values.secrets.cnpgDbPasswordsSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
   {{- $reloadSecrets = append $reloadSecrets .Values.secrets.cnpgDbPasswordsSecretName }}
   {{- end }}
-  {{- if or .Values.deploymentAnnotations $reloadSecrets }}
+  {{- if or .Values.deploymentAnnotations $reloadSecrets $reloadConfigMaps }}
   annotations:
     {{- with .Values.deploymentAnnotations }}
     {{- tpl (toYaml .) $ | nindent 4 }}
     {{- end }}
     {{- if $reloadSecrets }}
     secret.reloader.stakater.com/reload: {{ join "," $reloadSecrets | quote }}
+    {{- end }}
+    {{- if $reloadConfigMaps }}
+    configmap.reloader.stakater.com/reload: {{ join "," $reloadConfigMaps | quote }}
     {{- end }}
   {{- end }}
 spec:
@@ -57,6 +61,42 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- end }}
+      {{- $profilesImage := "" }}
+      {{- if .Values.profiles.image.enabled }}
+      {{- if not .Values.profiles.path }}
+      {{- fail "profiles.path is required when profiles.image.enabled=true" }}
+      {{- end }}
+      {{- $profilesImage = required "profiles.image.repository is required when profiles.image.enabled=true" .Values.profiles.image.repository }}
+      {{- if .Values.profiles.image.digest }}
+      {{- $profilesImage = printf "%s@%s" $profilesImage .Values.profiles.image.digest }}
+      {{- else if .Values.profiles.image.tag }}
+      {{- $profilesImage = printf "%s:%s" $profilesImage .Values.profiles.image.tag }}
+      {{- else }}
+      {{- fail "profiles.image.digest or profiles.image.tag is required when profiles.image.enabled=true" }}
+      {{- end }}
+      {{- end }}
+      {{- if or .Values.profiles.image.enabled .Values.additionalInitContainers }}
+      initContainers:
+        {{- if .Values.profiles.image.enabled }}
+        - name: materialize-profiles
+          image: {{ $profilesImage | quote }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -eu
+              # Image content is at /profiles. Mount emptyDir elsewhere so we
+              # do not hide the source tree, then copy into the shared volume.
+              # The app container mounts the same volume at profiles.path.
+              cp -a /profiles/. /profiles-out/
+          volumeMounts:
+            - name: profiles
+              mountPath: /profiles-out
+        {{- end }}
+        {{- with .Values.additionalInitContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           {{- with .Values.command }}
@@ -89,6 +129,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.profiles.image.enabled }}
+            - name: profiles
+              mountPath: {{ .Values.profiles.path | quote }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.spiffe.enabled }}
             - name: spiffe-workload-api
               mountPath: /spiffe-workload-api
@@ -115,10 +160,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            - name: ETCD_ENCRYPTION_KEY_MIGRATION_DISABLED
-              value: {{ not .Values.etcdEncryptionKeyMigration.enabled | quote }}
-            - name: ETCD_ENCRYPTION_KEY_LEGACY_NAMESPACE
-              value: {{ .Values.etcdEncryptionKeyMigration.legacyNamespace | quote }}
             - name: CSR_APPROVAL_CONTROLLER_ENABLED
               value: {{ .Values.scheduledMaintenance.csrApproval.enabled | quote }}
             - name: CSR_APPROVAL_INTERVAL
@@ -137,6 +178,8 @@ spec:
             {{- end }}
             - name: TENANT_ACCESS_ENABLED
               value: {{ .Values.tenantAccess.enabled | quote }}
+            - name: ALLOW_ETCD_SAFETY_OVERRIDES
+              value: {{ .Values.nodeTeardown.allowEtcdSafetyOverrides | quote }}
             - name: NKE_OIDC_AUTH_ENABLED
               value: {{ .Values.nkeOIDCAuth.enabled | quote }}
             {{- if .Values.nkeOIDCAuth.issuerURL }}
@@ -284,6 +327,10 @@ spec:
               value: {{ .value | quote }}
             {{- end }}
       volumes:
+        {{- if .Values.profiles.image.enabled }}
+        - name: profiles
+          emptyDir: {}
+        {{- end }}
         {{- if .Values.spiffe.enabled }}
         - name: spiffe-workload-api
           csi:

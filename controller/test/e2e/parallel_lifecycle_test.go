@@ -90,7 +90,9 @@ var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure
 					time.Sleep(parallelClusterStagger)
 				}
 
-				spec := forgeSpec(test.cfg, fmt.Sprintf("%s-par%d", clusterNamePrefix, i), shape)
+				parallelShape := shape
+				parallelShape.controlPlaneVIP = forgeControlPlaneVIPAtOffset(i)
+				spec := forgeSpec(test.cfg, fmt.Sprintf("%s-par%d", clusterNamePrefix, i), parallelShape)
 				spec.Name = fmt.Sprintf("%s-%s", spec.Name, spec.Backend) // CreateCluster appends a timestamp
 
 				By(fmt.Sprintf("Creating parallel cluster %d (%s)", i, shape.cniPlugin))

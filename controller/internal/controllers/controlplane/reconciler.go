@@ -45,6 +45,12 @@ func newReconciler(
 }
 
 func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
+	// The TeardownCluster workflow deletes CP nodes for a deleting cluster;
+	// reconciling scale-up here would keep recreating them and deadlock teardown.
+	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		return nil
+	}
+
 	controlPlane, err := readControlPlane(ctx, r.db, cluster.ID)
 	if err != nil {
 		return fmt.Errorf("reading control plane: %w", err)

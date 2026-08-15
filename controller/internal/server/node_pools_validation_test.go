@@ -26,7 +26,7 @@ import (
 )
 
 func TestValidateCreateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividually(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{})
+	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
 	t.Run("instanceTypeID", func(t *testing.T) {
 		err := service.validateCreateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.Nil}, &api.CreateNodePoolRequest{
@@ -72,7 +72,7 @@ func TestValidateCreateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividuall
 }
 
 func TestValidateCreateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividually(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{})
+	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
 	t.Run("empty capiInfraMachineTemplate", func(t *testing.T) {
 		err := service.validateCreateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.New()}, &api.CreateNodePoolRequest{
@@ -100,7 +100,7 @@ func TestValidateCreateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividuall
 }
 
 func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividually(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{})
+	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
 	t.Run("explicit empty subnetIDs", func(t *testing.T) {
 		err := service.validateUpdateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.Nil}, &api.UpdateNodePoolRequest{
@@ -129,7 +129,7 @@ func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividuall
 }
 
 func TestValidateUpdateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividually(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{})
+	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
 	t.Run("capiBootstrapFiles", func(t *testing.T) {
 		err := service.validateUpdateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.New()}, &api.UpdateNodePoolRequest{
@@ -159,7 +159,7 @@ func TestValidateUpdatedNodePool_CAPIRequiresEmptyDiskSelectionStrategy(t *testi
 }
 
 func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{})
+	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 	clusterName := "runtime-dgxc-k8s-forge-ytl-dev1"
 
 	t.Run("accepts short prefix", func(t *testing.T) {
@@ -199,16 +199,17 @@ func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {
 
 func TestValidateCreateClusterRequest_NodeNamePrefixLength(t *testing.T) {
 	clusterName := "runtime-dgxc-k8s-forge-ytl-dev1"
+	svc := clusterService{}
 
 	t.Run("rejects cluster name too long for generated node names", func(t *testing.T) {
-		err := validateCreateClusterRequestFields(&api.CreateClusterRequest{
+		err := svc.validateCreateClusterRequestFields(&api.CreateClusterRequest{
 			Name:                          strings.Repeat("a", naming.MaxGeneratedNodeNameLength),
 			OrgID:                         "test-org",
 			SiteID:                        uuid.New(),
 			VpcID:                         uuid.New(),
 			CniPlugin:                     "calico",
 			ControlPlaneKubernetesVersion: "1.29.0",
-			NodePools: []api.NodePoolCreateConfig{
+			NodePools: &[]api.NodePoolCreateConfig{
 				{
 					Name:             "cp",
 					NodeNamePrefix:   "cp",
@@ -230,14 +231,14 @@ func TestValidateCreateClusterRequest_NodeNamePrefixLength(t *testing.T) {
 	})
 
 	t.Run("rejects embedded node pool with prefix too long for cluster name", func(t *testing.T) {
-		err := validateCreateClusterRequestFields(&api.CreateClusterRequest{
+		err := svc.validateCreateClusterRequestFields(&api.CreateClusterRequest{
 			Name:                          clusterName,
 			OrgID:                         "test-org",
 			SiteID:                        uuid.New(),
 			VpcID:                         uuid.New(),
 			CniPlugin:                     "calico",
 			ControlPlaneKubernetesVersion: "1.29.0",
-			NodePools: []api.NodePoolCreateConfig{
+			NodePools: &[]api.NodePoolCreateConfig{
 				{
 					Name:             "cp",
 					NodeNamePrefix:   "runtime-dgxc-k8s-forge-ytl-dev1-cp",

@@ -107,6 +107,8 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		SkipKubeProxy:         cluster.CniPlugin == db.CNIOvnKubernetes,
 		EnableEncryption:      cluster.EtcdEncrypted,
 		KubeadmContainerMode:  kubeadmContainerMode,
+		SystemReservedMemory:  nodePool.SystemReservedMemory,
+		KubeReservedMemory:    nodePool.KubeReservedMemory,
 	}
 	if cluster.OIDCAuthEnabled {
 		initConfig.AuthenticationConfig, err = a.buildOIDCAuthenticationConfig(ctx, cluster.Name)

@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/NVIDIA/nke/controller/forge-vms/internal/bgp"
 	"github.com/NVIDIA/nke/controller/forge-vms/internal/cloudinit"
@@ -98,22 +99,10 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 		log.Info("Console SSH server started", "port", consoleSSHPort)
 	}
 
-	// Metadata servers (moved from engine — they are long-running servers,
-	// not reconciliation concerns).
-	var metadataCancel context.CancelFunc
-	var metadataWg *sync.WaitGroup
-	if cfg.EffectiveVMBackend() != config.VMBackendMock {
-		metadataServer := cloudinit.NewMetadataServer(
-			logger.With("component", "cloud-init-metadata"),
-			store,
-			filepath.Join(filepath.Dir(cfg.DBPath), "instances"),
-		)
-		metadataCancel, metadataWg = startMetadataServers(ctx, cfg, metadataServer.Handler(), logger)
-	}
-
-	// BGP speaker (started at app level alongside metadata servers).
+	// BGP speaker. Skipped in libvirt-network mode: it installs host routes
+	// and needs the forge-vms bridge + iptables redirect.
 	var bgpSpeaker *bgp.Speaker
-	if cfg.BGPEnabled && cfg.EffectiveVMBackend() != config.VMBackendMock {
+	if cfg.BGPEnabled && !cfg.UseLibvirtNetwork() && cfg.EffectiveVMBackend() != config.VMBackendMock {
 		gw, gwErr := netutil.GatewayIP(cfg.BridgeCIDR)
 		if gwErr != nil {
 			store.Close()
@@ -142,6 +131,23 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 	if err := engine.Start(ctx); err != nil {
 		store.Close()
 		return nil, fmt.Errorf("start lifecycle engine: %w", err)
+	}
+
+	// Metadata servers. Started after engine.Start() so that libvirt-network
+	// mode's EnsureSetup has already queried the gateway (MetadataAddr needs it).
+	var metadataCancel context.CancelFunc
+	var metadataWg *sync.WaitGroup
+	if cfg.EffectiveVMBackend() != config.VMBackendMock {
+		metadataServer := cloudinit.NewMetadataServer(
+			logger.With("component", "cloud-init-metadata"),
+			store,
+			filepath.Join(filepath.Dir(cfg.DBPath), "instances"),
+		)
+		var metaErr error
+		metadataCancel, metadataWg, metaErr = startMetadataServers(ctx, engine.MetadataAddrs(), metadataServer.Handler(), logger)
+		if metaErr != nil {
+			return nil, fmt.Errorf("start metadata servers: %w", metaErr)
+		}
 	}
 
 	// Promtail targets writer (opt-in via FORGE_VMS_PROMTAIL_TARGETS_FILE).
@@ -194,6 +200,10 @@ func (a *App) Close() {
 	}
 	// 3. Wait for engine reconcile workers to drain
 	a.Engine.Wait()
+	// 3.5. Clean up network-mode-specific resources (e.g. libvirt DNS host entry)
+	teardownCtx, teardownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer teardownCancel()
+	a.Engine.Teardown(teardownCtx)
 	// 4. Stop console SSH
 	if a.ConsoleSSH != nil {
 		a.ConsoleSSH.Wait()
@@ -202,14 +212,19 @@ func (a *App) Close() {
 	_ = a.Store.Close()
 }
 
-// startMetadataServers starts the cloud-init metadata HTTP listeners.
-// - 169.254.169.254:7777 — EC2-style metadata (fallback datasource)
-// - {bridge_gateway}:7777 — Forge-compatible NoCloud via DNS
-func startMetadataServers(ctx context.Context, cfg config.Config, handler http.Handler, logger *slog.Logger) (context.CancelFunc, *sync.WaitGroup) {
+// startMetadataServers starts the cloud-init metadata HTTP listeners on the
+// addresses the active NetworkManager reports via MetadataAddrs() (e.g.
+// 169.254.169.254:7777 + {bridge_gw}:7777 in bridge mode, or {libvirt_gw}:80 in
+// libvirt-network mode). At least one address must bind: if every one fails,
+// cloud-init has no reachable datasource and the VMs would never receive their
+// seed, so this returns an error and Setup fails fast rather than coming up
+// silently without a metadata server.
+func startMetadataServers(ctx context.Context, addrs []string, handler http.Handler, logger *slog.Logger) (context.CancelFunc, *sync.WaitGroup, error) {
 	metaCtx, metaCancel := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 
-	startHTTPListener := func(addr string) {
+	bound := 0
+	for _, addr := range addrs {
 		lc := net.ListenConfig{
 			Control: func(_, _ string, c syscall.RawConn) error {
 				return c.Control(func(fd uintptr) {
@@ -220,8 +235,9 @@ func startMetadataServers(ctx context.Context, cfg config.Config, handler http.H
 		listener, err := lc.Listen(metaCtx, "tcp", addr)
 		if err != nil {
 			logger.Warn("Could not start metadata listener", "listenAddr", addr, "error", err)
-			return
+			continue
 		}
+		bound++
 		server := &http.Server{Handler: handler}
 		logger.Info("Cloud-init metadata server started", "listenAddr", addr)
 		wg.Add(1)
@@ -239,13 +255,11 @@ func startMetadataServers(ctx context.Context, cfg config.Config, handler http.H
 		}()
 	}
 
-	// Primary: link-local Ec2 metadata (fallback datasource)
-	startHTTPListener("169.254.169.254:7777")
-
-	// Secondary: bridge gateway for Forge-compatible NoCloud
-	if gw, err := netutil.GatewayIP(cfg.BridgeCIDR); err == nil {
-		startHTTPListener(net.JoinHostPort(gw, "7777"))
+	if len(addrs) > 0 && bound == 0 {
+		metaCancel()
+		wg.Wait()
+		return nil, nil, fmt.Errorf("no cloud-init metadata listener could bind (tried %v)", addrs)
 	}
 
-	return metaCancel, &wg
+	return metaCancel, &wg, nil
 }

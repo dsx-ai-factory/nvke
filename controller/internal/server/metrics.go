@@ -22,7 +22,7 @@ import (
 // /metrics endpoint on cfg.MetricsListenAddress (default: 127.0.0.1:9090).
 func NewMetricsServer(cfg config.Config) *http.Server {
 	mux := http.NewServeMux()
-	mux.Handle("/metrics", promhttp.Handler())
+	mux.Handle(metrics, promhttp.Handler())
 	return &http.Server{
 		Addr:              cfg.MetricsListenAddress,
 		Handler:           mux,

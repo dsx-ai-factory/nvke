@@ -1,6 +1,6 @@
 module github.com/NVIDIA/nke/controller/hack/nico-mock
 
-go 1.25.12
+go 1.26.5
 
 require (
 	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0

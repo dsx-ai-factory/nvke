@@ -1,0 +1,41 @@
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+kind: RecipeMetadata
+apiVersion: aicr.run/v1alpha2
+metadata:
+  name: base
+
+spec:
+  componentRefs:
+    - name: cert-manager
+      valuesFile: components/cert-manager/values.yaml
+
+    - name: spire-crds
+      manifestFiles:
+        - components/spire/manifests/namespaces.yaml
+
+    - name: spire
+      valuesFile: components/spire/values.yaml
+      dependencyRefs:
+        - cert-manager
+        - spire-crds
+
+    - name: postgresql
+      valuesFile: components/postgresql/values.yaml
+      manifestFiles:
+        - components/postgresql/manifests/postgresql.yaml
+
+    - name: temporal
+      valuesFile: components/temporal/values.yaml
+      dependencyRefs:
+        - postgresql
+
+    - name: controller
+      valuesFile: components/controller/values.yaml
+      manifestFiles:
+        - components/controller/manifests/controller.yaml
+      dependencyRefs:
+        - postgresql
+        - temporal
+        - spire

@@ -22,6 +22,11 @@ const SPIRE_ATTESTATION_METHOD_JOIN_TOKEN = 'joinToken';
 let editClusterInstanceTypePreferences = [];
 let editClusterInstanceTypeDragIndex = null;
 
+// Ordered control-plane instance-type preference list for the create-cluster form
+// (cluster-level-CP / cpControllerMode).
+let createClusterCPInstanceTypePreferences = [];
+let createClusterCPInstanceTypeDragIndex = null;
+
 function moveEditClusterInstanceTypePreference(fromIndex, toIndex) {
     if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
         return;
@@ -558,14 +563,55 @@ function renderClusterDetails() {
         },
         { label: 'Teleport Enabled', value: details.teleportEnabled ? 'Yes' : 'No' },
         ...(details.controlPlaneConfig ? [
+            ...(details.controlPlaneConfig.desiredCount !== undefined ? [
+                { label: 'Desired CP Count', value: details.controlPlaneConfig.desiredCount },
+            ] : []),
             { label: 'Cluster Max Surge', value: details.controlPlaneConfig.maxSurge ?? 0 },
             { label: 'Control Plane Provisioning Monitor', value: details.controlPlaneConfig.provisioningMonitorDisabled ? 'Paused' : 'Active' },
+            ...(details.controlPlaneConfig.teleportEnabled !== undefined ? [
+                { label: 'Control Plane Teleport', value: details.controlPlaneConfig.teleportEnabled ? 'Enabled' : 'Disabled' },
+            ] : []),
+            ...(details.controlPlaneConfig.systemReservedMemory ? [
+                { label: 'Control Plane System Reserved Memory', value: details.controlPlaneConfig.systemReservedMemory },
+            ] : []),
+            ...(Array.isArray(details.controlPlaneConfig.nodeLabels) && details.controlPlaneConfig.nodeLabels.length > 0 ? [
+                { label: 'Control Plane Node Labels', value: details.controlPlaneConfig.nodeLabels.join(', ') },
+            ] : []),
         ] : []),
         ...(forgeNodePoolsEnabled && details.controlPlaneConfig ? [
             {
                 label: 'Control Plane Instance Types',
                 instanceTypePreference: details.controlPlaneConfig.instanceTypePreference,
             },
+            ...(details.controlPlaneConfig.osProfile ? [
+                { label: 'Control Plane OS Profile', value: details.controlPlaneConfig.osProfile },
+            ] : []),
+            ...(details.controlPlaneConfig.configProfile ? [
+                { label: 'Control Plane Config Profile', value: details.controlPlaneConfig.configProfile },
+            ] : []),
+            ...(Array.isArray(details.controlPlaneConfig.subnetIDs) && details.controlPlaneConfig.subnetIDs.length > 0 ? [
+                { label: 'Control Plane Subnets', value: details.controlPlaneConfig.subnetIDs.map(resolveSubnetName).join(', ') },
+            ] : []),
+            ...(Array.isArray(details.controlPlaneConfig.vpcPrefixIDs) && details.controlPlaneConfig.vpcPrefixIDs.length > 0 ? [
+                { label: 'Control Plane VPC Prefixes', value: details.controlPlaneConfig.vpcPrefixIDs.map(resolveVpcPrefixName).join(', ') },
+            ] : []),
+            ...(Array.isArray(details.controlPlaneConfig.sshKeyGroupIDs) && details.controlPlaneConfig.sshKeyGroupIDs.length > 0 ? [
+                { label: 'Control Plane SSH Key Groups', value: resolveSSHKeyGroupNames(details.controlPlaneConfig.sshKeyGroupIDs) },
+            ] : []),
+        ] : []),
+        ...(details.controlPlaneConfig ? [
+            ...(hasRenderableManifest(details.controlPlaneConfig.capiInfraMachineTemplate) ? [
+                { label: 'Control Plane Infra Machine Template', manifest: details.controlPlaneConfig.capiInfraMachineTemplate },
+            ] : []),
+            ...(details.controlPlaneConfig.capiSpireAttestationMethod ? [
+                { label: 'Control Plane SPIRE Attestation Method', value: formatSpireAttestationMethod(details.controlPlaneConfig.capiSpireAttestationMethod) },
+            ] : []),
+            ...(Array.isArray(details.controlPlaneConfig.capiBootstrapFiles) && details.controlPlaneConfig.capiBootstrapFiles.length > 0 ? [
+                { label: 'Control Plane Bootstrap Files', manifest: details.controlPlaneConfig.capiBootstrapFiles },
+            ] : []),
+            ...(Array.isArray(details.controlPlaneConfig.capiPreKubeadmCommands) && details.controlPlaneConfig.capiPreKubeadmCommands.length > 0 ? [
+                { label: 'Control Plane Pre-Kubeadm Commands', manifest: details.controlPlaneConfig.capiPreKubeadmCommands },
+            ] : []),
         ] : []),
         ...(hasRenderableManifest(details.capiInfraCluster) ? [
             { label: 'Infra Cluster', manifest: details.capiInfraCluster },
@@ -970,6 +1016,7 @@ function renderNodePool(nodePool) {
         { label: 'Config Profile', value: nodePool.configProfile },
         { label: 'Kubernetes Version', value: nodePool.kubernetesVersion },
         { label: 'System Reserved Memory', value: nodePool.systemReservedMemory },
+        { label: 'Kube Reserved Memory', value: nodePool.kubeReservedMemory || 'Default' },
         ...infraProviderFields,
     ];
 
@@ -1169,6 +1216,7 @@ function renderNodeSet(nodeSet) {
         { label: 'Config Profile', value: nodeSet.configProfile },
         { label: 'Kubernetes Version', value: nodeSet.kubernetesVersion },
         { label: 'System Reserved Memory', value: nodeSet.systemReservedMemory },
+        { label: 'Kube Reserved Memory', value: nodeSet.kubeReservedMemory || 'Default' },
         ...(nodeSetUsesCAPI(nodeSet) ? [
             { label: 'Infra Machine Template', manifest: nodeSet.capiInfraMachineTemplate },
             ...(Array.isArray(nodeSet.capiBootstrapFiles) && nodeSet.capiBootstrapFiles.length > 0
@@ -1581,11 +1629,20 @@ async function showCreateClusterModal(preSelectedSiteID = null) {
     await setupClusterOptionDropdowns(preSelectedSiteID);
     populateCNIPluginDropdown();
 
+    setupCreateClusterCPSection();
+
     const nodePoolsList = document.getElementById('create-cluster-nodepools-list');
     nodePoolsList.innerHTML = '';
 
-    addNodePoolConfig('control-plane', 3, true, 'cp');
-    addNodePoolConfig('worker', 0, false, 'w');
+    if (state.cpControllerMode) {
+        // Cluster-level-CP mode: the control plane is configured via the dedicated
+        // Control Plane section (controlPlaneConfig); the node-pool editor only
+        // produces worker pools.
+        addNodePoolConfig('worker', 0, false, 'w');
+    } else {
+        addNodePoolConfig('control-plane', 3, true, 'cp');
+        addNodePoolConfig('worker', 0, false, 'w');
+    }
 
     handleInfrastructureProviderChange();
 }
@@ -1802,6 +1859,19 @@ function handleInfrastructureProviderChange() {
         }
     });
 
+    // Cluster-level Control Plane section (cpControllerMode only): show it and toggle
+    // its Forge-only / CAPI-only fields to match the selected infrastructure provider.
+    const cpSection = document.getElementById('create-cluster-cp-section');
+    if (cpSection) {
+        if (state.cpControllerMode) {
+            cpSection.style.display = showSiteDetails ? '' : 'none';
+            applyForgeFieldVisibility(cpSection, !isCAPICluster);
+            applyCAPIFieldVisibility(cpSection, isCAPICluster);
+        } else {
+            cpSection.style.display = 'none';
+        }
+    }
+
     updateClusterManifestRequirement();
 }
 
@@ -1990,6 +2060,10 @@ async function setupClusterOptionDropdowns(preSelectedSiteID = null) {
         const vpcSelect = document.getElementById('vpc-id-select');
         
         resetNodePoolDependentFields();
+        if (state.cpControllerMode) {
+            resetCreateClusterCPForgeFields();
+            resetCreateClusterCPSubnetFields();
+        }
         
         vpcSelect.innerHTML = '<option value="">Select a VPC</option>';
         vpcSelect.disabled = !this.value;
@@ -2019,6 +2093,9 @@ async function setupClusterOptionDropdowns(preSelectedSiteID = null) {
 
                 // Update node pools with site-specific data
                 updateNodePoolsWithForgeData(forgeData);
+                if (state.cpControllerMode) {
+                    populateCreateClusterCPForgeData(forgeData);
+                }
                 
             } catch (error) {
                 console.error('Error fetching VPCs and site data:', error);
@@ -2031,11 +2108,17 @@ async function setupClusterOptionDropdowns(preSelectedSiteID = null) {
         const orgSelect = document.getElementById('org-id-select');
         
         resetNodePoolSubnetFields();
+        if (state.cpControllerMode) {
+            resetCreateClusterCPSubnetFields();
+        }
 
         if (this.value && preSelectedSiteID && orgSelect.value) {
             try {
                 const forgeData = await loadForgeData(orgSelect.value, preSelectedSiteID, this.value);
                 updateNodePoolsWithSubnetData(forgeData.subnets, forgeData.vpcPrefixes, forgeData.instances);
+                if (state.cpControllerMode) {
+                    updateCreateClusterCPSubnetData(forgeData.subnets, forgeData.vpcPrefixes, forgeData.instances);
+                }
             } catch (error) {
                 console.error('Error fetching subnets/VPC prefixes and instances:', error);
             }
@@ -2218,7 +2301,7 @@ function getVpcIdValue() {
 }
 
 // Helper function to generate HTML for node pool form fields
-function _generateNodePoolFormFieldsHTML(idPrefix, namePrefixValue = '', desiredNodeCountValue = 0, isControlPlaneChecked = false, descriptionValue = '', autoProvisionDisabledValue = false, nameValue = '', systemReservedMemoryValue = '', autoModeDisabledValue = false, recycleBudgetValue = 0, diskSelectionStrategyValue = 'smallest', isCAPICluster = createClusterUsesCAPIInfrastructure(), capiSpireAttestationMethodValue = SPIRE_ATTESTATION_METHOD_TPM, capiBootstrapFilesValue = '', capiPreKubeadmCommandsValue = '') {
+function _generateNodePoolFormFieldsHTML(idPrefix, namePrefixValue = '', desiredNodeCountValue = 0, isControlPlaneChecked = false, descriptionValue = '', autoProvisionDisabledValue = false, nameValue = '', systemReservedMemoryValue = '', autoModeDisabledValue = false, recycleBudgetValue = 0, diskSelectionStrategyValue = 'smallest', isCAPICluster = createClusterUsesCAPIInfrastructure(), capiSpireAttestationMethodValue = SPIRE_ATTESTATION_METHOD_TPM, capiBootstrapFilesValue = '', capiPreKubeadmCommandsValue = '', kubeReservedMemoryValue = '') {
     const controlPlaneCheckedAttr = isControlPlaneChecked ? 'checked' : '';
     const autoProvisionDisabledAttr = autoProvisionDisabledValue ? 'checked' : '';
     const autoModeDisabledAttr = autoModeDisabledValue ? 'checked' : '';
@@ -2247,7 +2330,7 @@ function _generateNodePoolFormFieldsHTML(idPrefix, namePrefixValue = '', desired
             <label for="${idPrefix}name">Name:</label>
             <input type="text" id="${idPrefix}name" value="${nameValue}" placeholder="Enter a name for this node pool" required>
         </div>
-        <div class="form-group control-plane-group">
+        <div class="form-group control-plane-group"${state.cpControllerMode ? ' style="display: none;"' : ''}>
             <label for="${idPrefix}control-plane">Control Plane:</label>
             <div class="checkbox-input-container">
                 <input type="checkbox" id="${idPrefix}control-plane" ${controlPlaneCheckedAttr}>
@@ -2330,6 +2413,10 @@ function _generateNodePoolFormFieldsHTML(idPrefix, namePrefixValue = '', desired
         <div class="form-group">
             <label for="${idPrefix}system-reserved-memory">System Reserved Memory:</label>
             <input type="text" id="${idPrefix}system-reserved-memory" value="${systemReservedMemoryValue}" placeholder="Optional (default: 16Gi)" pattern="^[0-9]+(Gi|Mi|G|M)$" title="Optional. Memory value with unit (e.g., 16Gi, 128Gi, 256Gi). Defaults to 16Gi if not specified.">
+        </div>
+        <div class="form-group">
+            <label for="${idPrefix}kube-reserved-memory">Kube Reserved Memory:</label>
+            <input type="text" id="${idPrefix}kube-reserved-memory" value="${kubeReservedMemoryValue}" placeholder="Optional (default: 2Gi)" pattern="^[0-9]+(Gi|Mi|G|M)$" title="Optional. Memory value with unit (e.g., 2Gi, 250Mi). Uses the kubelet configuration patch default (2Gi) if not specified.">
         </div>
         <div class="form-group ssh-key-groups-form-group forge-only-field">
             <label for="${idPrefix}ssh-key-groups-container">SSH Key Groups:</label>
@@ -2554,7 +2641,7 @@ function getCreateClusterFormData() {
     const cniVersion = document.getElementById('cni-version').value.trim();
     const podCIDR = document.getElementById('pod-cidr').value.trim();
     const serviceCIDR = document.getElementById('service-cidr').value.trim();
-    const disableKubeVip = document.getElementById('disable-kube-vip').checked;
+    const controlPlaneVIP = document.getElementById('control-plane-vip').value.trim();
     const disableEtcdEncryption = document.getElementById('disable-etcd-encryption').checked;
 
     const nodePools = [];
@@ -2578,6 +2665,7 @@ function getCreateClusterFormData() {
         const osProfile = document.getElementById(`nodepool-${idx}-os-profile`).value;
         const configProfile = document.getElementById(`nodepool-${idx}-config-profile`).value;
         const systemReservedMemory = document.getElementById(`nodepool-${idx}-system-reserved-memory`).value;
+        const kubeReservedMemory = document.getElementById(`nodepool-${idx}-kube-reserved-memory`).value;
 
         const sshKeyGroupCheckboxes = document.querySelectorAll(`#nodepool-${idx}-ssh-key-groups-container input[type="checkbox"]:checked`);
         const sshKeyGroups = isCAPICluster ? [] : Array.from(sshKeyGroupCheckboxes).map(cb => cb.value);
@@ -2609,7 +2697,11 @@ function getCreateClusterFormData() {
         }
         
         const desiredNodeCount = parseInt(document.getElementById(`nodepool-${idx}-desired-node-count`).value, 10) || 0;
-        const isControlPlane = document.getElementById(`nodepool-${idx}-control-plane`).checked;
+        // In cpControllerMode the create form only produces worker pools; the control
+        // plane is configured via the cluster-level controlPlaneConfig instead.
+        const isControlPlane = state.cpControllerMode
+            ? false
+            : document.getElementById(`nodepool-${idx}-control-plane`).checked;
         const autoProvisionDisabled = document.getElementById(`nodepool-${idx}-auto-provision-disabled`).checked;
         const autoModeDisabled = document.getElementById(`nodepool-${idx}-auto-mode-disabled`).checked;
         const recycleBudget = parseInt(document.getElementById(`nodepool-${idx}-recycle-budget`).value, 10) || 0;
@@ -2622,6 +2714,7 @@ function getCreateClusterFormData() {
             description: description || undefined,
             configProfile: configProfile || undefined,
             systemReservedMemory: systemReservedMemory || undefined,
+            kubeReservedMemory: kubeReservedMemory || undefined,
             desiredNodeCount: desiredNodeCount,
             controlPlane: isControlPlane,
             autoProvisionDisabled: autoProvisionDisabled,
@@ -2658,14 +2751,32 @@ function getCreateClusterFormData() {
         throw new Error('CAPI infra cluster is required for CAPI-backed clusters');
     }
 
-    const hasControlPlane = nodePools.some(pool => pool.controlPlane);
-    if (!hasControlPlane && nodePools.length > 0) {
-        nodePools[0].controlPlane = true;
+    // In legacy mode a cluster must have a control-plane node pool; default the first
+    // pool to control plane if none was flagged. In cpControllerMode the control plane
+    // comes from the cluster-level controlPlaneConfig, so all node pools stay workers.
+    if (!state.cpControllerMode) {
+        const hasControlPlane = nodePools.some(pool => pool.controlPlane);
+        if (!hasControlPlane && nodePools.length > 0) {
+            nodePools[0].controlPlane = true;
+        }
     }
 
     const effectivePodCIDR = podCIDR || DEFAULT_CLUSTER_POD_CIDR;
     const podCIDRCapacity = podCIDRNodeBlockCapacity(effectivePodCIDR);
-    const desiredNodes = nodePools.reduce((total, nodePool) => total + nodePool.desiredNodeCount, 0);
+    let desiredNodes = nodePools.reduce((total, nodePool) => total + nodePool.desiredNodeCount, 0);
+    // In cpControllerMode the control-plane nodes come from controlPlaneConfig (not a node
+    // pool), so include their desired count in the pod-CIDR capacity check.
+    if (state.cpControllerMode) {
+        const cpDesiredCount = parseInt(document.getElementById('cp-config-desired-count')?.value, 10);
+        const cpMaxSurge = parseInt(document.getElementById('cp-config-max-surge')?.value, 10);
+        if (!Number.isNaN(cpDesiredCount) && cpDesiredCount > 0) {
+            desiredNodes += cpDesiredCount;
+        }
+        // CP surge nodes also consume pod-CIDR blocks, so count them here.
+        if (!Number.isNaN(cpMaxSurge) && cpMaxSurge > 0) {
+            desiredNodes += cpMaxSurge;
+        }
+    }
     const requiredNodeBlocks = desiredNodes + MINIMUM_POD_CIDR_HEADROOM;
     if (podCIDRCapacity !== null && podCIDRCapacity < requiredNodeBlocks) {
         throw new Error(
@@ -2680,12 +2791,14 @@ function getCreateClusterFormData() {
         controlPlaneKubernetesVersion,
         cniPlugin,
         etcdEncrypted: !disableEtcdEncryption,
-        disableKubeVip,
         nodePools
     };
 
     if (cniVersion) {
         result.cniVersion = cniVersion;
+    }
+    if (controlPlaneVIP) {
+        result.controlPlaneVIP = controlPlaneVIP;
     }
 
     // Only include orgID, siteID, and vpcID when they are set.
@@ -2709,6 +2822,12 @@ function getCreateClusterFormData() {
         if (serviceCIDR) {
             result.network.serviceCIDR = serviceCIDR;
         }
+    }
+
+    // Cluster-level-CP mode: attach the top-level controlPlaneConfig (the server
+    // provisions the control plane from this instead of a controlPlane node pool).
+    if (state.cpControllerMode) {
+        result.controlPlaneConfig = getCreateClusterControlPlaneConfigData(isCAPICluster);
     }
 
     return result;
@@ -2909,6 +3028,684 @@ function removeEditClusterInstanceTypePreference(index) {
     renderEditClusterInstanceTypePreferenceList();
 }
 
+// === CLUSTER-LEVEL CONTROL PLANE (cpControllerMode) SHARED HELPERS ===
+
+// Parse a node-labels text input (newline and/or comma separated "key=value" entries)
+// into an ordered array of strings, dropping blanks.
+function parseNodeLabelsInput(text) {
+    if (!text) {
+        return [];
+    }
+    return text
+        .split(/[\n,]+/)
+        .map((label) => label.trim())
+        .filter((label) => label.length > 0);
+}
+
+// Render a node-labels array back into the multiline text input representation.
+function formatNodeLabelsForInput(labels) {
+    return Array.isArray(labels) ? labels.join('\n') : '';
+}
+
+// === CREATE-CLUSTER CONTROL PLANE INSTANCE TYPE PREFERENCE ===
+
+function moveCreateClusterCPInstanceTypePreference(fromIndex, toIndex) {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
+        return;
+    }
+    if (fromIndex >= createClusterCPInstanceTypePreferences.length || toIndex >= createClusterCPInstanceTypePreferences.length) {
+        return;
+    }
+    const [item] = createClusterCPInstanceTypePreferences.splice(fromIndex, 1);
+    createClusterCPInstanceTypePreferences.splice(toIndex, 0, item);
+    renderCreateClusterCPInstanceTypePreferenceList();
+}
+
+function moveCreateClusterCPInstanceTypePreferenceUp(index) {
+    if (index <= 0) {
+        return;
+    }
+    moveCreateClusterCPInstanceTypePreference(index, index - 1);
+}
+
+function moveCreateClusterCPInstanceTypePreferenceDown(index) {
+    if (index >= createClusterCPInstanceTypePreferences.length - 1) {
+        return;
+    }
+    moveCreateClusterCPInstanceTypePreference(index, index + 1);
+}
+
+function addCreateClusterCPInstanceTypePreference() {
+    const select = document.getElementById('cp-config-instance-type-add');
+    if (!select || !select.value) {
+        return;
+    }
+    if (createClusterCPInstanceTypePreferences.includes(select.value)) {
+        return;
+    }
+    createClusterCPInstanceTypePreferences.push(select.value);
+    select.value = '';
+    renderCreateClusterCPInstanceTypePreferenceList();
+}
+
+function removeCreateClusterCPInstanceTypePreference(index) {
+    createClusterCPInstanceTypePreferences.splice(index, 1);
+    renderCreateClusterCPInstanceTypePreferenceList();
+}
+
+function populateCreateClusterCPInstanceTypeSelect(instanceTypes) {
+    const select = document.getElementById('cp-config-instance-type-add');
+    if (!select) {
+        return;
+    }
+    select.innerHTML = '<option value="">Select an instance type to add</option>';
+    const list = instanceTypes || [];
+    for (const instanceType of list) {
+        const option = document.createElement('option');
+        option.value = instanceType.id;
+        option.textContent = instanceType.name + formatInstanceTypeAvailabilitySuffix(instanceType);
+        select.appendChild(option);
+    }
+    select.disabled = list.length === 0;
+}
+
+function renderCreateClusterCPInstanceTypePreferenceList() {
+    const list = document.getElementById('cp-config-instance-type-list');
+    if (!list) {
+        return;
+    }
+    list.innerHTML = '';
+    if (createClusterCPInstanceTypePreferences.length === 0) {
+        const emptyItem = document.createElement('li');
+        emptyItem.textContent = 'No instance types configured';
+        list.appendChild(emptyItem);
+        return;
+    }
+    createClusterCPInstanceTypePreferences.forEach((instanceTypeID, index) => {
+        const item = document.createElement('li');
+        item.className = 'edit-cluster-instance-type-item';
+        item.draggable = true;
+        item.dataset.index = String(index);
+
+        const dragHandle = document.createElement('span');
+        dragHandle.className = 'edit-cluster-instance-type-drag-handle';
+        dragHandle.textContent = '⋮⋮';
+        dragHandle.title = 'Drag to reorder';
+        dragHandle.setAttribute('aria-hidden', 'true');
+
+        const label = document.createElement('span');
+        label.className = 'edit-cluster-instance-type-label';
+        label.textContent = `${index + 1}. ${resolveInstanceTypeName(instanceTypeID)}`;
+
+        const actions = document.createElement('div');
+        actions.className = 'edit-cluster-instance-type-actions';
+
+        const upButton = document.createElement('button');
+        upButton.type = 'button';
+        upButton.className = 'edit-cluster-instance-type-reorder';
+        upButton.textContent = '↑';
+        upButton.title = 'Move up';
+        upButton.disabled = index === 0;
+        upButton.onclick = () => moveCreateClusterCPInstanceTypePreferenceUp(index);
+
+        const downButton = document.createElement('button');
+        downButton.type = 'button';
+        downButton.className = 'edit-cluster-instance-type-reorder';
+        downButton.textContent = '↓';
+        downButton.title = 'Move down';
+        downButton.disabled = index === createClusterCPInstanceTypePreferences.length - 1;
+        downButton.onclick = () => moveCreateClusterCPInstanceTypePreferenceDown(index);
+
+        const removeButton = document.createElement('button');
+        removeButton.type = 'button';
+        removeButton.textContent = 'Remove';
+        removeButton.className = 'edit-cluster-instance-type-remove';
+        removeButton.onclick = () => removeCreateClusterCPInstanceTypePreference(index);
+
+        actions.appendChild(upButton);
+        actions.appendChild(downButton);
+        actions.appendChild(removeButton);
+
+        item.appendChild(dragHandle);
+        item.appendChild(label);
+        item.appendChild(actions);
+
+        item.addEventListener('dragstart', (event) => {
+            createClusterCPInstanceTypeDragIndex = index;
+            item.classList.add('dragging');
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', String(index));
+        });
+
+        item.addEventListener('dragend', () => {
+            createClusterCPInstanceTypeDragIndex = null;
+            item.classList.remove('dragging');
+            list.querySelectorAll('.edit-cluster-instance-type-item.drag-over').forEach((el) => {
+                el.classList.remove('drag-over');
+            });
+        });
+
+        item.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            if (createClusterCPInstanceTypeDragIndex !== null && createClusterCPInstanceTypeDragIndex !== index) {
+                item.classList.add('drag-over');
+            }
+        });
+
+        item.addEventListener('dragleave', () => {
+            item.classList.remove('drag-over');
+        });
+
+        item.addEventListener('drop', (event) => {
+            event.preventDefault();
+            item.classList.remove('drag-over');
+            const fromIndex = createClusterCPInstanceTypeDragIndex;
+            if (fromIndex === null || fromIndex === index) {
+                return;
+            }
+            moveCreateClusterCPInstanceTypePreference(fromIndex, index);
+            createClusterCPInstanceTypeDragIndex = null;
+        });
+
+        list.appendChild(item);
+    });
+}
+
+// === CREATE-CLUSTER CONTROL PLANE SECTION SETUP / POPULATION ===
+
+// Reset the create-cluster Control Plane section to defaults. Called when the modal opens.
+function setupCreateClusterCPSection() {
+    const section = document.getElementById('create-cluster-cp-section');
+    if (!section) {
+        return;
+    }
+
+    createClusterCPInstanceTypePreferences = [];
+
+    const desiredCount = document.getElementById('cp-config-desired-count');
+    if (desiredCount) desiredCount.value = 3;
+    const maxSurge = document.getElementById('cp-config-max-surge');
+    if (maxSurge) maxSurge.value = 0;
+    const teleport = document.getElementById('cp-config-teleport-enabled');
+    if (teleport) teleport.checked = false;
+    const provisioningMonitor = document.getElementById('cp-config-provisioning-monitor-disabled');
+    if (provisioningMonitor) provisioningMonitor.checked = false;
+    const systemReservedMemory = document.getElementById('cp-config-system-reserved-memory');
+    if (systemReservedMemory) systemReservedMemory.value = '';
+    const nodeLabels = document.getElementById('cp-config-node-labels');
+    if (nodeLabels) nodeLabels.value = '';
+    const spireMethod = document.getElementById('cp-config-capi-spire-attestation-method');
+    if (spireMethod) spireMethod.value = SPIRE_ATTESTATION_METHOD_TPM;
+    ['cp-config-capi-infra-machine-template-yaml', 'cp-config-capi-bootstrap-files-yaml', 'cp-config-capi-pre-kubeadm-commands-yaml'].forEach((id) => {
+        const el = document.getElementById(id);
+        if (el) el.value = '';
+    });
+
+    populateCreateClusterCPProfileSelects();
+    populateCreateClusterCPInstanceTypeSelect([]);
+    renderCreateClusterCPInstanceTypePreferenceList();
+    resetCreateClusterCPForgeFields();
+    resetCreateClusterCPSubnetFields();
+}
+
+function populateCreateClusterCPProfileSelects() {
+    const osSelect = document.getElementById('cp-config-os-profile');
+    if (osSelect) {
+        osSelect.innerHTML = '<option value="">Select an OS profile</option>';
+        for (const profile of state.osProfiles || []) {
+            const option = document.createElement('option');
+            option.value = profile.name;
+            option.textContent = profile.name;
+            osSelect.appendChild(option);
+        }
+    }
+    const configSelect = document.getElementById('cp-config-config-profile');
+    if (configSelect) {
+        configSelect.innerHTML = '<option value="">Select a config profile</option>';
+        for (const profile of state.configProfiles || []) {
+            const option = document.createElement('option');
+            option.value = profile.name;
+            option.textContent = profile.name;
+            configSelect.appendChild(option);
+        }
+    }
+}
+
+function resetCreateClusterCPForgeFields() {
+    // Clear the tenant-scoped preference state so a create payload can't retain
+    // stale instanceTypePreference IDs from a previously selected tenant/site.
+    createClusterCPInstanceTypePreferences = [];
+    createClusterCPInstanceTypeDragIndex = null;
+
+    const sshContainer = document.getElementById('cp-config-ssh-key-groups-container');
+    if (sshContainer) {
+        sshContainer.innerHTML = '<div class="empty-text">Select SSH key groups</div>';
+        sshContainer.classList.add('disabled');
+        sshContainer.title = 'You must select a tenant first';
+    }
+    populateCreateClusterCPInstanceTypeSelect([]);
+    renderCreateClusterCPInstanceTypePreferenceList();
+}
+
+function resetCreateClusterCPSubnetFields() {
+    const subnetsContainer = document.getElementById('cp-config-subnets-container');
+    if (subnetsContainer) {
+        subnetsContainer.innerHTML = '<div class="empty-text">Select subnets</div>';
+        subnetsContainer.classList.add('disabled');
+        subnetsContainer.title = 'You must select a VPC first';
+    }
+}
+
+// Populate tenant-scoped forge data (instance types for the preference picker, SSH key groups).
+function populateCreateClusterCPForgeData(forgeData) {
+    if (!forgeData) {
+        return;
+    }
+
+    populateCreateClusterCPInstanceTypeSelect(forgeData.instanceTypes || []);
+
+    const sshContainer = document.getElementById('cp-config-ssh-key-groups-container');
+    if (sshContainer) {
+        const groups = forgeData.sshKeyGroups || [];
+        sshContainer.innerHTML = '';
+        if (groups.length === 0) {
+            sshContainer.innerHTML = '<div class="empty-text">No SSH key groups available</div>';
+            sshContainer.classList.add('disabled');
+        } else {
+            sshContainer.classList.remove('disabled');
+            sshContainer.title = '';
+            groups.forEach((group) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'ssh-key-group-item';
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.id = `cp-config-ssh-key-group-${group.id}`;
+                checkbox.value = group.id;
+                checkbox.name = 'cp-config-ssh-key-groups';
+
+                const label = document.createElement('label');
+                label.htmlFor = checkbox.id;
+                label.textContent = group.name;
+
+                itemDiv.appendChild(checkbox);
+                itemDiv.appendChild(label);
+                sshContainer.appendChild(itemDiv);
+            });
+        }
+    }
+}
+
+// Populate VPC-scoped forge data (subnets or VPC prefixes, depending on native networking).
+function updateCreateClusterCPSubnetData(subnets, vpcPrefixes, instances) {
+    const subnetsContainer = document.getElementById('cp-config-subnets-container');
+    if (!subnetsContainer) {
+        return;
+    }
+
+    const isNativeNetworkingEnabled = getSelectedSiteNativeNetworking();
+    const itemsToShow = isNativeNetworkingEnabled ? (vpcPrefixes || []) : (subnets || []);
+    const labelText = isNativeNetworkingEnabled ? 'VPC Prefixes' : 'Subnets';
+    const emptyText = isNativeNetworkingEnabled ? 'VPC prefixes' : 'subnets';
+    const checkboxNameSuffix = isNativeNetworkingEnabled ? 'vpc-prefixes' : 'subnets';
+    const tempForgeData = { subnets, instances };
+
+    const labelElement = document.getElementById('cp-config-subnets-label');
+    if (labelElement) {
+        labelElement.textContent = labelText + ':';
+    }
+
+    subnetsContainer.innerHTML = '';
+    if (itemsToShow.length === 0) {
+        subnetsContainer.innerHTML = `<div class="empty-text">No ${emptyText} available</div>`;
+        subnetsContainer.classList.add('disabled');
+        return;
+    }
+
+    subnetsContainer.classList.remove('disabled');
+    subnetsContainer.title = '';
+    itemsToShow.forEach((item) => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'subnet-item';
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `cp-config-${checkboxNameSuffix}-${item.id}`;
+        checkbox.value = item.id;
+        checkbox.name = `cp-config-${checkboxNameSuffix}`;
+
+        let availability = { available: -1, total: '?' };
+        let availabilityText = '';
+        if (isNativeNetworkingEnabled) {
+            availability = calculateVpcPrefixIpAvailability(item.id, tempForgeData);
+        } else {
+            availability = calculateSubnetAvailability(item.id, tempForgeData);
+        }
+        if (availability.total !== '?') {
+            availabilityText = ` (${availability.available}/${availability.total} IPs available)`;
+        }
+
+        const label = document.createElement('label');
+        label.htmlFor = checkbox.id;
+        label.textContent = item.name + availabilityText;
+
+        itemDiv.appendChild(checkbox);
+        itemDiv.appendChild(label);
+        subnetsContainer.appendChild(itemDiv);
+    });
+}
+
+// Build the cluster-level controlPlaneConfig payload (CreateClusterControlPlaneConfig).
+// Only fields the user actually set are included; blank optional fields are omitted.
+function getCreateClusterControlPlaneConfigData(isCAPICluster) {
+    const desiredCountRaw = document.getElementById('cp-config-desired-count').value;
+    const desiredCount = parseInt(desiredCountRaw, 10);
+    if (Number.isNaN(desiredCount) || desiredCount < 1) {
+        throw new Error('Control plane desired count must be an integer of at least 1');
+    }
+
+    const config = { desiredCount };
+
+    const maxSurge = parseInt(document.getElementById('cp-config-max-surge').value, 10);
+    if (!Number.isNaN(maxSurge)) {
+        config.maxSurge = maxSurge;
+    }
+
+    if (document.getElementById('cp-config-teleport-enabled').checked) {
+        config.teleportEnabled = true;
+    }
+    if (document.getElementById('cp-config-provisioning-monitor-disabled').checked) {
+        config.provisioningMonitorDisabled = true;
+    }
+
+    const systemReservedMemory = document.getElementById('cp-config-system-reserved-memory').value.trim();
+    if (systemReservedMemory) {
+        config.systemReservedMemory = systemReservedMemory;
+    }
+
+    const nodeLabels = parseNodeLabelsInput(document.getElementById('cp-config-node-labels').value);
+    if (nodeLabels.length > 0) {
+        config.nodeLabels = nodeLabels;
+    }
+
+    if (isCAPICluster) {
+        const capiInfraMachineTemplate = parseYAMLManifestToJSONObject(
+            document.getElementById('cp-config-capi-infra-machine-template-yaml').value,
+            'Control plane CAPI infra machine template'
+        );
+        if (!capiInfraMachineTemplate) {
+            throw new Error('Control plane requires a CAPI infra machine template for CAPI-backed clusters');
+        }
+        config.capiInfraMachineTemplate = capiInfraMachineTemplate;
+        config.capiSpireAttestationMethod = getSpireAttestationMethodFromInput(
+            document.getElementById('cp-config-capi-spire-attestation-method')
+        );
+        const capiBootstrapFiles = parseCapiBootstrapFilesInput(
+            document.getElementById('cp-config-capi-bootstrap-files-yaml').value,
+            'Control plane CAPI bootstrap files'
+        );
+        if (capiBootstrapFiles.length > 0) {
+            config.capiBootstrapFiles = capiBootstrapFiles;
+        }
+        const capiPreKubeadmCommands = parseCapiPreKubeadmCommandsInput(
+            document.getElementById('cp-config-capi-pre-kubeadm-commands-yaml').value,
+            'Control plane CAPI pre-kubeadm commands'
+        );
+        if (capiPreKubeadmCommands.length > 0) {
+            config.capiPreKubeadmCommands = capiPreKubeadmCommands;
+        }
+    } else {
+        const osProfile = document.getElementById('cp-config-os-profile').value;
+        if (osProfile) {
+            config.osProfile = osProfile;
+        }
+        const configProfile = document.getElementById('cp-config-config-profile').value;
+        if (configProfile) {
+            config.configProfile = configProfile;
+        }
+
+        const isNativeNetworkingEnabled = getSelectedSiteNativeNetworking();
+        const selectedNetworkIDs = Array.from(
+            document.querySelectorAll('#cp-config-subnets-container input[type="checkbox"]:checked')
+        ).map((cb) => cb.value);
+        if (isNativeNetworkingEnabled) {
+            if (selectedNetworkIDs.length > 0) {
+                config.vpcPrefixIDs = selectedNetworkIDs;
+            }
+        } else if (selectedNetworkIDs.length > 0) {
+            config.subnetIDs = selectedNetworkIDs;
+        }
+
+        const sshKeyGroupIDs = Array.from(
+            document.querySelectorAll('#cp-config-ssh-key-groups-container input[type="checkbox"]:checked')
+        ).map((cb) => cb.value);
+        if (sshKeyGroupIDs.length > 0) {
+            config.sshKeyGroupIDs = sshKeyGroupIDs;
+        }
+
+        if (createClusterCPInstanceTypePreferences.length > 0) {
+            config.instanceTypePreference = [...createClusterCPInstanceTypePreferences];
+        }
+    }
+
+    return config;
+}
+
+// === EDIT-CLUSTER EXPANDED CONTROL PLANE EDITORS (cpControllerMode) ===
+
+function clusterSiteUsesNativeNetworking(details) {
+    const forgeSite = (state.forgeSites || []).find((fs) => fs.id === details.siteID);
+    return forgeSite?.capabilities?.nativeNetworking || false;
+}
+
+function buildEditClusterCPMultiselect(container, items, selectedIDs, idPrefix, name, emptyLabel, itemClassName) {
+    if (!container) {
+        return;
+    }
+    const selected = new Set(selectedIDs || []);
+    container.innerHTML = '';
+    if (!items || items.length === 0) {
+        container.innerHTML = `<div class="empty-text">${emptyLabel}</div>`;
+        container.classList.add('disabled');
+        return;
+    }
+    container.classList.remove('disabled');
+    container.title = '';
+    items.forEach((item) => {
+        const itemDiv = document.createElement('div');
+        if (itemClassName) {
+            itemDiv.className = itemClassName;
+        }
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.id = `${idPrefix}-${item.id}`;
+        checkbox.value = item.id;
+        checkbox.name = name;
+        checkbox.checked = selected.has(item.id);
+        const label = document.createElement('label');
+        label.htmlFor = checkbox.id;
+        label.textContent = item.name;
+        itemDiv.appendChild(checkbox);
+        itemDiv.appendChild(label);
+        container.appendChild(itemDiv);
+    });
+}
+
+// Populate the expanded cluster-level CP editors from the cluster's controlPlaneConfig.
+// Only shown/populated in cpControllerMode; legacy mode keeps just the existing
+// maxSurge / instanceTypePreference / provisioningMonitorDisabled editor.
+function populateEditClusterCPExpandedFields(details, cpConfig) {
+    const group = document.getElementById('edit-cluster-cp-expanded-group');
+    if (!group) {
+        return;
+    }
+    if (!state.cpControllerMode) {
+        group.style.display = 'none';
+        return;
+    }
+    group.style.display = '';
+
+    const isCAPICluster = clusterUsesCAPIInfrastructure(details);
+    const forgeData = state.selectedClusterForgeData || {};
+
+    document.getElementById('edit-cluster-cp-desired-count').value = cpConfig.desiredCount ?? '';
+    document.getElementById('edit-cluster-cp-teleport-enabled').checked = !!cpConfig.teleportEnabled;
+    document.getElementById('edit-cluster-cp-system-reserved-memory').value = cpConfig.systemReservedMemory || '';
+    document.getElementById('edit-cluster-cp-node-labels').value = formatNodeLabelsForInput(cpConfig.nodeLabels);
+
+    const osSelect = document.getElementById('edit-cluster-cp-os-profile');
+    osSelect.innerHTML = '<option value="">Select an OS profile</option>';
+    for (const profile of state.osProfiles || []) {
+        const option = document.createElement('option');
+        option.value = profile.name;
+        option.textContent = profile.name;
+        osSelect.appendChild(option);
+    }
+    osSelect.value = cpConfig.osProfile || '';
+
+    const configSelect = document.getElementById('edit-cluster-cp-config-profile');
+    configSelect.innerHTML = '<option value="">Select a config profile</option>';
+    for (const profile of state.configProfiles || []) {
+        const option = document.createElement('option');
+        option.value = profile.name;
+        option.textContent = profile.name;
+        configSelect.appendChild(option);
+    }
+    configSelect.value = cpConfig.configProfile || '';
+
+    const isNative = clusterSiteUsesNativeNetworking(details);
+    const subnetsLabel = document.getElementById('edit-cluster-cp-subnets-label');
+    const subnetsContainer = document.getElementById('edit-cluster-cp-subnets-container');
+    if (isNative) {
+        if (subnetsLabel) subnetsLabel.textContent = 'VPC Prefixes:';
+        buildEditClusterCPMultiselect(subnetsContainer, forgeData.vpcPrefixes, cpConfig.vpcPrefixIDs, 'edit-cluster-cp-vpc-prefix', 'edit-cluster-cp-vpc-prefixes', 'No VPC prefixes available', 'subnet-item');
+    } else {
+        if (subnetsLabel) subnetsLabel.textContent = 'Subnets:';
+        buildEditClusterCPMultiselect(subnetsContainer, forgeData.subnets, cpConfig.subnetIDs, 'edit-cluster-cp-subnet', 'edit-cluster-cp-subnets', 'No subnets available', 'subnet-item');
+    }
+
+    buildEditClusterCPMultiselect(
+        document.getElementById('edit-cluster-cp-ssh-key-groups-container'),
+        forgeData.sshKeyGroups,
+        cpConfig.sshKeyGroupIDs,
+        'edit-cluster-cp-ssh-key-group',
+        'edit-cluster-cp-ssh-key-groups',
+        'No SSH key groups available',
+        'ssh-key-group-item'
+    );
+
+    document.getElementById('edit-cluster-cp-capi-infra-machine-template-yaml').value =
+        hasRenderableManifest(cpConfig.capiInfraMachineTemplate) ? formatManifestForDisplay(cpConfig.capiInfraMachineTemplate) : '';
+    document.getElementById('edit-cluster-cp-capi-spire-attestation-method').value =
+        normalizeSpireAttestationMethod(cpConfig.capiSpireAttestationMethod);
+    document.getElementById('edit-cluster-cp-capi-bootstrap-files-yaml').value =
+        (Array.isArray(cpConfig.capiBootstrapFiles) && cpConfig.capiBootstrapFiles.length > 0) ? formatManifestForDisplay(cpConfig.capiBootstrapFiles) : '';
+    document.getElementById('edit-cluster-cp-capi-pre-kubeadm-commands-yaml').value =
+        (Array.isArray(cpConfig.capiPreKubeadmCommands) && cpConfig.capiPreKubeadmCommands.length > 0) ? formatManifestForDisplay(cpConfig.capiPreKubeadmCommands) : '';
+
+    applyForgeFieldVisibility(group, !isCAPICluster);
+    applyCAPIFieldVisibility(group, isCAPICluster);
+}
+
+// Read the expanded CP editors and return only the fields that changed relative to the
+// current controlPlaneConfig, to merge into the PATCH controlPlaneConfig payload.
+function getEditClusterCPExpandedUpdates(details, cpConfig) {
+    const updates = {};
+    if (!state.cpControllerMode) {
+        return updates;
+    }
+
+    const isCAPICluster = clusterUsesCAPIInfrastructure(details);
+
+    const desiredCountRaw = document.getElementById('edit-cluster-cp-desired-count').value;
+    if (desiredCountRaw !== '' && desiredCountRaw !== null) {
+        const desiredCount = parseInt(desiredCountRaw, 10);
+        if (Number.isNaN(desiredCount) || desiredCount < 1) {
+            throw new Error('Control plane desired count must be an integer of at least 1');
+        }
+        if (desiredCount !== (cpConfig.desiredCount ?? null)) {
+            updates.desiredCount = desiredCount;
+        }
+    }
+
+    const teleportEnabled = document.getElementById('edit-cluster-cp-teleport-enabled').checked;
+    if (teleportEnabled !== !!cpConfig.teleportEnabled) {
+        updates.teleportEnabled = teleportEnabled;
+    }
+
+    const systemReservedMemory = document.getElementById('edit-cluster-cp-system-reserved-memory').value.trim();
+    if (systemReservedMemory !== (cpConfig.systemReservedMemory || '')) {
+        updates.systemReservedMemory = systemReservedMemory;
+    }
+
+    const nodeLabels = parseNodeLabelsInput(document.getElementById('edit-cluster-cp-node-labels').value);
+    if (JSON.stringify(nodeLabels) !== JSON.stringify(cpConfig.nodeLabels || [])) {
+        updates.nodeLabels = nodeLabels;
+    }
+
+    if (isCAPICluster) {
+        const capiInfraMachineTemplate = parseYAMLManifestToJSONObject(
+            document.getElementById('edit-cluster-cp-capi-infra-machine-template-yaml').value,
+            'Control plane CAPI infra machine template'
+        );
+        if (capiInfraMachineTemplate !== undefined &&
+            JSON.stringify(capiInfraMachineTemplate) !== JSON.stringify(cpConfig.capiInfraMachineTemplate || null)) {
+            updates.capiInfraMachineTemplate = capiInfraMachineTemplate;
+        }
+        const capiSpireAttestationMethod = getSpireAttestationMethodFromInput(
+            document.getElementById('edit-cluster-cp-capi-spire-attestation-method')
+        );
+        if (capiSpireAttestationMethod !== normalizeSpireAttestationMethod(cpConfig.capiSpireAttestationMethod)) {
+            updates.capiSpireAttestationMethod = capiSpireAttestationMethod;
+        }
+        const capiBootstrapFiles = parseCapiBootstrapFilesInput(
+            document.getElementById('edit-cluster-cp-capi-bootstrap-files-yaml').value,
+            'Control plane CAPI bootstrap files'
+        );
+        if (JSON.stringify(capiBootstrapFiles) !== JSON.stringify(cpConfig.capiBootstrapFiles || [])) {
+            updates.capiBootstrapFiles = capiBootstrapFiles;
+        }
+        const capiPreKubeadmCommands = parseCapiPreKubeadmCommandsInput(
+            document.getElementById('edit-cluster-cp-capi-pre-kubeadm-commands-yaml').value,
+            'Control plane CAPI pre-kubeadm commands'
+        );
+        if (JSON.stringify(capiPreKubeadmCommands) !== JSON.stringify(cpConfig.capiPreKubeadmCommands || [])) {
+            updates.capiPreKubeadmCommands = capiPreKubeadmCommands;
+        }
+    } else {
+        const osProfile = document.getElementById('edit-cluster-cp-os-profile').value;
+        if (osProfile !== (cpConfig.osProfile || '')) {
+            updates.osProfile = osProfile;
+        }
+        const configProfile = document.getElementById('edit-cluster-cp-config-profile').value;
+        if (configProfile !== (cpConfig.configProfile || '')) {
+            updates.configProfile = configProfile;
+        }
+
+        const isNative = clusterSiteUsesNativeNetworking(details);
+        const selectedNetworkIDs = Array.from(
+            document.querySelectorAll('#edit-cluster-cp-subnets-container input[type="checkbox"]:checked')
+        ).map((cb) => cb.value);
+        if (isNative) {
+            if (JSON.stringify(selectedNetworkIDs) !== JSON.stringify(cpConfig.vpcPrefixIDs || [])) {
+                updates.vpcPrefixIDs = selectedNetworkIDs;
+            }
+        } else if (JSON.stringify(selectedNetworkIDs) !== JSON.stringify(cpConfig.subnetIDs || [])) {
+            updates.subnetIDs = selectedNetworkIDs;
+        }
+
+        const sshKeyGroupIDs = Array.from(
+            document.querySelectorAll('#edit-cluster-cp-ssh-key-groups-container input[type="checkbox"]:checked')
+        ).map((cb) => cb.value);
+        if (JSON.stringify(sshKeyGroupIDs) !== JSON.stringify(cpConfig.sshKeyGroupIDs || [])) {
+            updates.sshKeyGroupIDs = sshKeyGroupIDs;
+        }
+    }
+
+    return updates;
+}
+
 function showEditClusterModal() {
     if (!state.selectedClusterDetails) {
         alert('Please select a cluster first');
@@ -2939,6 +3736,13 @@ function showEditClusterModal() {
     editClusterInstanceTypePreferences = [...(cpConfig.instanceTypePreference || [])];
     renderEditClusterInstanceTypePreferenceList();
     populateEditClusterInstanceTypeSelect();
+    // instanceTypePreference is Forge-only, so hide the legacy editor for CAPI
+    // clusters (matching the create flow's .forge-only-field gating).
+    const instanceTypeGroup = document.getElementById('edit-cluster-instance-type-group');
+    if (instanceTypeGroup) {
+        instanceTypeGroup.style.display = clusterUsesCAPIInfrastructure(details) ? 'none' : '';
+    }
+    populateEditClusterCPExpandedFields(details, cpConfig);
     document.getElementById('edit-cluster-error').style.display = 'none';
     document.getElementById('edit-cluster-loading').style.display = 'none';
     modal.style.display = 'block';
@@ -2983,6 +3787,13 @@ async function submitEditCluster() {
     const currentProvisioningMonitorDisabled = currentCpConfig.provisioningMonitorDisabled || false;
     const provisioningMonitorDisabledChanged = requestedProvisioningMonitorDisabled !== currentProvisioningMonitorDisabled;
     
+    // The edit modal saves via a plain button, so the min/max on the max-surge
+    // input is never enforced as native form validation. Reject an out-of-range
+    // value here before it can be merged into the PATCH and rejected by the API.
+    if (!Number.isNaN(requestedMaxSurge) && (requestedMaxSurge < 0 || requestedMaxSurge > 1)) {
+        renderEditClusterError('Cluster max surge must be 0 or 1');
+        return;
+    }
     if (versionProvided && !/^\d+\.\d+\.\d+$/.test(newVersion)) {
         renderEditClusterError('Invalid version format. Use X.Y.Z (e.g., 1.31.9)');
         return;
@@ -3015,13 +3826,16 @@ async function submitEditCluster() {
         if (provisioningMonitorDisabledChanged) {
             cpConfigUpdates.provisioningMonitorDisabled = requestedProvisioningMonitorDisabled;
         }
+        // Merge the expanded cluster-level CP editors (cpControllerMode only). Returns an
+        // empty object in legacy mode or when nothing changed.
+        Object.assign(cpConfigUpdates, getEditClusterCPExpandedUpdates(state.selectedClusterDetails, currentCpConfig));
         if (Object.keys(cpConfigUpdates).length > 0) {
             updates.controlPlaneConfig = cpConfigUpdates;
         }
 
         await updateCluster(state.selectedClusterDetails.id, updates);
 
-        const cpConfigChanged = maxSurgeChanged || instancePrefsChanged || provisioningMonitorDisabledChanged;
+        const cpConfigChanged = Object.keys(cpConfigUpdates).length > 0;
         const controlPlaneSettingsChanged = cpNodeRecyclingChanged || cpConfigChanged;
         if (!versionChanged && !controlPlaneSettingsChanged && !versionProvided && !etcdEncryptionChanged) {
             showToast('No changes to apply', 'success');
@@ -3284,6 +4098,7 @@ async function showEditNodePoolModal(nodePoolID) {
     document.getElementById('edit-nodepool-desired-count').value = nodePool.desiredNodeCount || 0;
     document.getElementById('edit-nodepool-auto-provision-disabled').checked = nodePool.autoProvisionDisabled || false;
     document.getElementById('edit-nodepool-system-reserved-memory').value = nodePool.systemReservedMemory;
+    document.getElementById('edit-nodepool-kube-reserved-memory').value = nodePool.kubeReservedMemory || '';
     document.getElementById('edit-nodepool-auto-mode-disabled').checked = nodePool.autoModeDisabled || false;
     document.getElementById('edit-nodepool-recycle-budget').value = nodePool.recycleBudget || 0;
     const isCAPICluster = clusterUsesCAPIInfrastructure(state.selectedClusterDetails);
@@ -3507,6 +4322,7 @@ async function handleEditNodePoolFormSubmit() {
     const osProfile = document.getElementById('edit-nodepool-os-profile').value;
     const configProfile = document.getElementById('edit-nodepool-config-profile').value;
     const systemReservedMemory = document.getElementById('edit-nodepool-system-reserved-memory').value;
+    const kubeReservedMemory = document.getElementById('edit-nodepool-kube-reserved-memory').value;
     const isCAPICluster = clusterUsesCAPIInfrastructure(state.selectedClusterDetails);
     let capiInfraMachineTemplate;
     let capiSpireAttestationMethod;
@@ -3549,6 +4365,7 @@ async function handleEditNodePoolFormSubmit() {
         recycleBudget: recycleBudget,
         configProfile: configProfile,
         systemReservedMemory: systemReservedMemory || undefined,
+        kubeReservedMemory: kubeReservedMemory || undefined,
     };
     if (isCAPICluster) {
         payload.capiInfraMachineTemplate = capiInfraMachineTemplate;
@@ -3776,7 +4593,12 @@ function showDeleteNodeModal(nodeID, nodeName) {
     document.getElementById('delete-node-summary').value = '';
     document.getElementById('delete-node-details').value = '';
     document.getElementById('machine-health-issue-fields').style.display = 'none';
-    
+
+    document.getElementById('delete-node-force-unreachable').checked = false;
+    document.getElementById('delete-node-allow-single-voter').checked = false;
+    document.getElementById('delete-node-allow-quorum-loss').checked = false;
+    document.getElementById('force-unreachable-fields').style.display = 'none';
+
     document.getElementById('delete-node-modal').style.display = 'block';
     document.getElementById('delete-node-error').style.display = 'none';
     document.getElementById('delete-node-loading').style.display = 'none';
@@ -3793,6 +4615,19 @@ function toggleMachineHealthIssueFields() {
         document.getElementById('delete-node-category').value = '';
         document.getElementById('delete-node-summary').value = '';
         document.getElementById('delete-node-details').value = '';
+    }
+}
+
+function toggleForceUnreachableFields() {
+    const checkbox = document.getElementById('delete-node-force-unreachable');
+    const fieldsContainer = document.getElementById('force-unreachable-fields');
+
+    if (checkbox.checked) {
+        fieldsContainer.style.display = 'block';
+    } else {
+        fieldsContainer.style.display = 'none';
+        document.getElementById('delete-node-allow-single-voter').checked = false;
+        document.getElementById('delete-node-allow-quorum-loss').checked = false;
     }
 }
 
@@ -3857,6 +4692,7 @@ function getCreateNodePoolFormData() {
     const osProfile = document.getElementById('nodepool-os-profile').value;
     const configProfile = document.getElementById('nodepool-config-profile').value;
     const systemReservedMemory = document.getElementById('nodepool-system-reserved-memory').value;
+    const kubeReservedMemory = document.getElementById('nodepool-kube-reserved-memory').value;
 
     const sshKeyGroupCheckboxes = document.querySelectorAll('#nodepool-ssh-key-groups-container input[type="checkbox"]:checked');
     const sshKeyGroups = isCAPICluster ? [] : Array.from(sshKeyGroupCheckboxes).map(cb => cb.value);
@@ -3876,6 +4712,7 @@ function getCreateNodePoolFormData() {
         description: description || undefined,
         configProfile: configProfile,
         systemReservedMemory: systemReservedMemory || undefined,
+        kubeReservedMemory: kubeReservedMemory || undefined,
         desiredNodeCount: desiredNodeCount,
         controlPlane: isControlPlane,
         autoProvisionDisabled: autoProvisionDisabled,
@@ -4204,35 +5041,49 @@ async function handleDeleteNode() {
     if (!nodeId) return;
     
     const flagForRepair = document.getElementById('delete-node-flag-for-repair').checked;
+    const forceUnreachable = document.getElementById('delete-node-force-unreachable').checked;
+    const allowSingleVoter = forceUnreachable && document.getElementById('delete-node-allow-single-voter').checked;
+    const allowQuorumLoss = forceUnreachable && document.getElementById('delete-node-allow-quorum-loss').checked;
     let requestBody = null;
-    
+
     if (flagForRepair) {
         const category = document.getElementById('delete-node-category').value;
         const summary = document.getElementById('delete-node-summary').value.trim();
         const details = document.getElementById('delete-node-details').value.trim();
-        
+
         if (!category) {
             renderDeleteNodeError('Please select an issue category');
             return;
         }
-        
+
         if (!summary) {
             renderDeleteNodeError('Please provide an issue summary');
             return;
         }
-        
+
         requestBody = {
             machineHealthIssue: {
                 category: category,
                 summary: summary
             }
         };
-        
+
         if (details) {
             requestBody.machineHealthIssue.details = details;
         }
     }
-    
+
+    if (forceUnreachable || allowSingleVoter || allowQuorumLoss) {
+        requestBody = requestBody || {};
+        requestBody.forceUnreachable = forceUnreachable;
+        if (allowSingleVoter) {
+            requestBody.allowSingleVoter = true;
+        }
+        if (allowQuorumLoss) {
+            requestBody.allowQuorumLoss = true;
+        }
+    }
+
     try {
         renderDeleteNodeLoading();
         await deleteNode(nodeId, requestBody);
@@ -4354,6 +5205,7 @@ const CONFIG_FIELD_LABELS = {
     configProfile:              'Config Profile',
     kubernetesVersion:          'Kubernetes Version',
     systemReservedMemory:       'System Reserved Memory',
+    kubeReservedMemory:         'Kube Reserved Memory',
     diskSelectionStrategy:      'Disk Selection Strategy',
     teleportEnabled:            'Teleport',
     subnetIDs:                  'Subnets',

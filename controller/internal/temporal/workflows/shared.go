@@ -22,6 +22,11 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
+const (
+	// runbookEnvTrue is the value runbooks expect for a boolean environment flag.
+	runbookEnvTrue = "true"
+)
+
 // Add ActivityOptions to the context, tuned for database interactions that should be fast.
 // Indefinite retry with backoff to handle transient database errors.
 func withDBOptions(ctx workflow.Context) workflow.Context {

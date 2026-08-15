@@ -10,7 +10,8 @@
 #
 # Notes:
 #   - Defaults to the cpu4-mem6gb seed instance type. The kubelet reservations are
-#     fixed (kubeReserved 2Gi via kube-reserved-resources.sh + systemReserved below),
+#     fixed by CWE's generated kubeadm patch (kubeReserved 2Gi plus the
+#     systemReservedMemory below),
 #     so ~3Gi is carved off regardless of node size. On a 4Gi node that leaves only
 #     ~700Mi allocatable -> the control plane exceeds it -> kubelet reports
 #     MemoryPressure and tags the node NoSchedule (which, among other things, blocks

@@ -3,7 +3,8 @@
 #
 # Unit-test lane for the controller modules. Until this existed, agent-test.yml
 # was the only workflow that ran `go test` anywhere in the repository, so
-# controller/, controller/forge-vms/ and controller/hack/nico-mock/ were
+# controller/, controller/forge-vms/, controller/hack/nico-mock/, and nkectl
+# were
 # compiled, linted, vetted, CodeQL-scanned and govulncheck-scanned -- and never
 # tested. A test suite nothing runs reads as coverage in review and provides
 # none.
@@ -77,6 +78,8 @@ jobs:
             run: make test
           # No Makefile in this module.
           - module: controller/hack/nico-mock
+            run: go test ./...
+          - module: controller/nkectl
             run: go test ./...
     steps:
       - name: Checkout

@@ -17,6 +17,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
+const (
+	tenantClusterLabel = "tenant_cluster"
+	clusterIDLabel     = "cluster_id"
+	nodePoolIDLabel    = "node_pool_id"
+	nodeTypeLabel      = "node_type"
+	resultLabel        = "result"
+	siteIDLabel        = "site_id"
+)
+
 var (
 	provisionDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -25,7 +34,7 @@ var (
 				"Query by result label to compare happy/unhappy paths, or omit it to see combined.",
 			Buckets: []float64{30, 60, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200},
 		},
-		[]string{"tenant_cluster", "node_type", "result"},
+		[]string{tenantClusterLabel, nodeTypeLabel, resultLabel},
 	)
 
 	provisionPhaseDurationHistogram = prometheus.NewHistogramVec(
@@ -34,7 +43,7 @@ var (
 			Help:    "Duration of individual phases within node provisioning",
 			Buckets: []float64{30, 60, 120, 300, 600, 900, 1200, 1800, 2700, 3600},
 		},
-		[]string{"tenant_cluster", "node_type", "phase"},
+		[]string{tenantClusterLabel, nodeTypeLabel, "phase"},
 	)
 
 	provisionResultCounter = prometheus.NewCounterVec(
@@ -42,7 +51,7 @@ var (
 			Name: "cwe_node_provision_total",
 			Help: "Total number of node provision workflow completions",
 		},
-		[]string{"tenant_cluster", "node_type", "result"},
+		[]string{tenantClusterLabel, nodeTypeLabel, resultLabel},
 	)
 
 	teardownDurationHistogram = prometheus.NewHistogramVec(
@@ -52,7 +61,7 @@ var (
 				"Query by result label to compare happy/unhappy paths, or omit it to see combined.",
 			Buckets: []float64{30, 60, 120, 300, 600, 900, 1200, 1800, 2700},
 		},
-		[]string{"tenant_cluster", "node_type", "result"},
+		[]string{tenantClusterLabel, nodeTypeLabel, resultLabel},
 	)
 
 	teardownPhaseDurationHistogram = prometheus.NewHistogramVec(
@@ -61,7 +70,7 @@ var (
 			Help:    "Duration of individual phases within node teardown",
 			Buckets: []float64{15, 30, 60, 120, 300, 600, 900, 1200},
 		},
-		[]string{"tenant_cluster", "node_type", "phase"},
+		[]string{tenantClusterLabel, nodeTypeLabel, "phase"},
 	)
 
 	teardownResultCounter = prometheus.NewCounterVec(
@@ -69,7 +78,7 @@ var (
 			Name: "cwe_node_teardown_total",
 			Help: "Total number of node teardown workflow completions",
 		},
-		[]string{"tenant_cluster", "node_type", "result"},
+		[]string{tenantClusterLabel, nodeTypeLabel, resultLabel},
 	)
 )
 

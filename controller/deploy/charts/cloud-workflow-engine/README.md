@@ -8,6 +8,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| additionalInitContainers | list | `[]` | Additional init containers on the output Deployment definition, rendered ahead of the app container. |
 | affinity | object | `{}` |  |
 | appDb.dbName | string | `"cloud-workflow"` |  |
 | appDb.postgresPassword | string | `"postgres"` |  |
@@ -22,9 +23,6 @@ A Helm chart to deploy the cloud-workflow-engine service
 | capi.rbac.create | bool | `false` | Create RBAC for CWE to watch and patch CAPI/NICo resources. |
 | cni.imageRegistry | string | `""` | Optional OCI registry prefix for CNI component images. Empty uses chart defaults. |
 | env | list | `[]` | Additional environment variables to inject into the CWE container. |
-| etcdEncryptionKeyMigration.enabled | bool | `false` | Enable temporary RBAC for migrating etcd encryption key Secrets from SWE to CWE. |
-| etcdEncryptionKeyMigration.legacyNamespace | string | `"site-workflow-engine"` | Namespace containing legacy SWE-managed etcd encryption key Secrets. |
-| etcdEncryptionKeyMigration.rbac.create | bool | `true` | Create narrow RBAC for CWE to read legacy key Secrets and create destination key Secrets. |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"Always"` | This sets the pull policy for images. |
 | image.repository | string | `"nvcr.io/j7sbcjl3qgta/cloud-workflow-engine"` |  |
@@ -51,6 +49,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | nkeOIDCAuth.caBundleSecret.namespace | string | `""` | Namespace of the Secret containing the OIDC CA bundle. |
 | nkeOIDCAuth.discoveryURL | string | `""` | Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers. |
 | nkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers. |
+| nodeTeardown.allowEtcdSafetyOverrides | bool | `false` | Allow the DeleteNode API to accept the dangerous etcd safety overrides (allowQuorumLoss / allowSingleVoter). Disabled by default so production site controllers reject them; enable on development site controllers that need manual single-node control-plane rotation (NKX-13160). |
 | nkeOIDCAuth.issuerURL | string | `""` | OIDC issuer URL trusted by tenant kube-apiservers. |
 | deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`; when the Forge Secret is enabled, the chart adds a default Reloader annotation unless one is provided) |
 | podAnnotations | object | `{}` |  |
@@ -58,7 +57,11 @@ A Helm chart to deploy the cloud-workflow-engine service
 | podLabels.project | string | `"nke"` |  |
 | podLabels.team | string | `"nke"` |  |
 | podSecurityContext.runAsNonRoot | bool | `true` |  |
-| profiles.path | string | `""` |  |
+| profiles.path | string | `""` | Directory mounted/read as PROFILES_DIR |
+| profiles.image.enabled | bool | `false` | Copy `/profiles` from a content image into profiles.path |
+| profiles.image.repository | string | `"nvcr.io/j7sbcjl3qgta/cwe-profiles"` | Profiles content image repository |
+| profiles.image.tag | string | `""` | Image tag (used when digest is empty) |
+| profiles.image.digest | string | `""` | Image digest pin (preferred; e.g. `sha256:…`) |
 | readinessProbe | object | `{}` |  |
 | replicaCount | int | `1` |  |
 | resources | object | `{}` |  |

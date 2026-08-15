@@ -26,7 +26,7 @@
 #                     NGC_API_KEY, and creates the nvcr-creds pull secret.
 #   source            Set 'capnico_source_dir' in tilt_config.json (or export
 #                     CAPNICO_SOURCE_DIR, which wins) to a local checkout of
-#                     https://gitlab-master.nvidia.com/nke/cluster-api-provider-nico.
+#                     https://github.com/NVIDIA/cluster-api-provider-nico.
 #                     Builds the controller image from that checkout, loads it
 #                     into kind and applies config/default. No helm, no NGC
 #                     credentials and no pull secret: the image is already in
@@ -50,7 +50,7 @@ CAPNICO_HELM_REPO_URL = "https://helm.ngc.nvidia.com/0837451325059433/components
 # 'nico' provider uses -- the two providers are mutually exclusive, so they can
 # never race over it.
 CAPNICO_SOURCE_IMAGE = "cluster-api-provider-nico:local"
-CAPNICO_SOURCE_REPO_URL = "https://gitlab-master.nvidia.com/nke/cluster-api-provider-nico"
+CAPNICO_SOURCE_REPO_URL = "https://github.com/NVIDIA/cluster-api-provider-nico"
 
 # forge-vms tenant/auth (see forge-vms/internal/seed/default-seed.yaml).
 FORGE_VMS_ORG_ID = "novxwn552ssc"

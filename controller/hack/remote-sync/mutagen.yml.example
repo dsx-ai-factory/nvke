@@ -48,6 +48,12 @@ sync:
   agent:
     alpha: "__LOCAL_NKE_ROOT__/agent"
     beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/agent"
+  nke-site-deploy:
+    alpha: "__LOCAL_NKE_ROOT__/nke-site-deploy"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/nke-site-deploy"
+  forge-console:
+    alpha: "__LOCAL_NKE_ROOT__/forge-console"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/forge-console"
 
 forward:
   tilt:
@@ -71,6 +77,9 @@ forward:
   grafana:
     source: "tcp:localhost:4000"
     destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:3000"
+  forge-console:
+    source: "tcp:localhost:9090"
+    destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:8090"
   # kube-api is managed by ../fetch-kubeconfig.sh --update-mutagen <alias>
   # (remote kind API port is dynamic). Example after first run:
   # kube-api:

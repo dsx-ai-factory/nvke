@@ -236,7 +236,7 @@ func (s *nodeService) fetchNodeActivityHistory(ctx context.Context, workflowID, 
 				ScheduledTime:  pa.firstScheduledAt,
 				CloseTime:      &closeTime,
 				DurationMs:     durationMs,
-				Status:         "Failed",
+				Status:         failedValue,
 				FailureMessage: &failMsg,
 			})
 			delete(pendingByScheduleID, attrs.GetScheduledEventId())
@@ -265,7 +265,7 @@ func (s *nodeService) fetchNodeActivityHistory(ctx context.Context, workflowID, 
 				ScheduledTime:  pa.firstScheduledAt,
 				CloseTime:      &closeTime,
 				DurationMs:     durationMs,
-				Status:         "Failed",
+				Status:         failedValue,
 				FailureMessage: &msg,
 			})
 			delete(pendingByScheduleID, attrs.GetScheduledEventId())
@@ -317,7 +317,7 @@ func temporalWorkflowStatusToString(status enums.WorkflowExecutionStatus) string
 	case enums.WORKFLOW_EXECUTION_STATUS_COMPLETED:
 		return "Completed"
 	case enums.WORKFLOW_EXECUTION_STATUS_FAILED:
-		return "Failed"
+		return failedValue
 	case enums.WORKFLOW_EXECUTION_STATUS_CANCELED:
 		return "Canceled"
 	case enums.WORKFLOW_EXECUTION_STATUS_TERMINATED:

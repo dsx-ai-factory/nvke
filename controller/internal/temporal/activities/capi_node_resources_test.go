@@ -54,7 +54,7 @@ func TestFirstInfrastructureRefIPAddress_NicoMachine(t *testing.T) {
 		WithObjects(&nicov1.NicoMachine{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: nicov1.GroupVersion.String(),
-				Kind:       "NicoMachine",
+				Kind:       nicoMachineConst,
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "worker-0",
@@ -77,7 +77,7 @@ func TestFirstInfrastructureRefIPAddress_NicoMachine(t *testing.T) {
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: nicov1.GroupVersion.Group,
-				Kind:     "NicoMachine",
+				Kind:     nicoMachineConst,
 				Name:     "worker-0",
 			},
 		},
@@ -89,13 +89,14 @@ func TestFirstInfrastructureRefIPAddress_NicoMachine(t *testing.T) {
 
 func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *testing.T) {
 	ctx := context.Background()
-	nodeID := uuid.New()
-	clusterID := uuid.New()
-	nodePoolID := uuid.New()
-	nodeSetID := uuid.New()
-	instanceTypeID := uuid.New()
-	vpcID := uuid.New()
-	vpcPrefixID := uuid.New()
+	nodeID := uuid.MustParse("70000000-0000-0000-0000-000000000001")
+	clusterID := uuid.MustParse("70000000-0000-0000-0000-000000000002")
+	nodePoolID := uuid.MustParse("70000000-0000-0000-0000-000000000003")
+	nodeSetID := uuid.MustParse("70000000-0000-0000-0000-000000000004")
+	instanceTypeID := uuid.MustParse("70000000-0000-0000-0000-000000000005")
+	vpcID := uuid.MustParse("70000000-0000-0000-0000-000000000006")
+	vpcPrefixID := uuid.MustParse("70000000-0000-0000-0000-000000000007")
+	siteID := uuid.MustParse("70000000-0000-0000-0000-000000000008")
 	namespace := "cluster-cluster-a"
 	node := db.Node{
 		ID:           nodeID,
@@ -104,6 +105,7 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 		ClusterID:    clusterID,
 		Name:         "worker-0",
 		TpmEKPubHash: "tpm-hash",
+		Nico:         &db.NicoNodeProvider{},
 	}
 	nodeSet := db.NodeSet{
 		ID:                         nodeSetID,
@@ -114,18 +116,19 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 		CapiSpireAttestationMethod: db.SpireAttestationMethodTPM,
 	}
 	nodePool := db.NodePool{
-		ID:             nodePoolID,
-		ClusterID:      clusterID,
+		ID:        nodePoolID,
+		ClusterID: clusterID,
+	}
+	nodePool.SetNico(db.NicoNodePoolProvider{
 		InstanceTypeID: instanceTypeID,
 		VpcPrefixIDs:   []uuid.UUID{vpcPrefixID},
-	}
+	})
 	cluster := db.Cluster{
 		ID:        clusterID,
 		Name:      "cluster-a",
-		SiteID:    uuid.New(),
-		VpcID:     vpcID,
 		CniPlugin: db.CNICalico,
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID})
 	k8sClient := newCAPIMachineCreateClient(t)
 	a := &Activities{
 		cfg:       testTemplateLessForgeCAPICfg(t),
@@ -146,7 +149,7 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 	require.NoError(t, k8sClient.List(ctx, machineList, client.InNamespace(namespace)))
 	require.Len(t, machineList.Items, 1)
 	assert.Equal(t, node.Name, machineList.Items[0].Name)
-	assert.Equal(t, "NicoMachine", machineList.Items[0].Spec.InfrastructureRef.Kind)
+	assert.Equal(t, nicoMachineConst, machineList.Items[0].Spec.InfrastructureRef.Kind)
 
 	nicoMachineList := &nicov1.NicoMachineList{}
 	require.NoError(t, k8sClient.List(ctx, nicoMachineList, client.InNamespace(namespace)))
@@ -158,14 +161,15 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 	require.NoError(t, k8sClient.List(ctx, secretList, client.InNamespace(namespace)))
 	require.Len(t, secretList.Items, 1)
 	assert.Equal(t, "worker-0-bootstrap-data", secretList.Items[0].Name)
-	assert.Contains(t, string(secretList.Items[0].Data["value"]), "worker-0")
+	assert.Contains(t, string(secretList.Items[0].Data[valueLabel]), "worker-0")
 }
 
 func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
-	nodeID := uuid.New()
-	clusterID := uuid.New()
-	firstVpcPrefixID := uuid.New()
-	secondVpcPrefixID := uuid.New()
+	nodeID := uuid.MustParse("71000000-0000-0000-0000-000000000001")
+	clusterID := uuid.MustParse("71000000-0000-0000-0000-000000000002")
+	firstVpcPrefixID := uuid.MustParse("71000000-0000-0000-0000-000000000003")
+	secondVpcPrefixID := uuid.MustParse("71000000-0000-0000-0000-000000000004")
+	nodeInstanceTypeID := uuid.MustParse("71000000-0000-0000-0000-000000000005")
 	exhaustionMessage := "VPC Prefix " + firstVpcPrefixID.String() +
 		" does not have enough IP addresses: 1 of 2 IP addresses remain available, " +
 		"but the 1 interface(s) in this request require 2 IP addresses"
@@ -174,7 +178,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		ClusterID:      clusterID,
 		ControlPlane:   true,
 		Name:           "worker-0",
-		InstanceTypeID: uuid.New(),
+		InstanceTypeID: nodeInstanceTypeID,
 	}
 	cluster := db.Cluster{
 		ID:   clusterID,
@@ -225,7 +229,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 	})
 
 	t.Run("stamps effective instance type for a templateless node without a type", func(t *testing.T) {
-		instanceTypeID := uuid.New()
+		instanceTypeID := uuid.MustParse("71000000-0000-0000-0000-000000000006")
 		typelessNode := db.Node{
 			ID:           nodeID,
 			ClusterID:    clusterID,
@@ -297,7 +301,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 func testInfrastructureRef() clusterv1.ContractVersionedObjectReference {
 	return clusterv1.ContractVersionedObjectReference{
 		APIGroup: "infrastructure.cluster.x-k8s.io",
-		Kind:     "NicoMachine",
+		Kind:     nicoMachineConst,
 		Name:     "worker-0",
 	}
 }
@@ -306,7 +310,7 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -315,7 +319,7 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: nicov1.GroupVersion.Group,
-				Kind:     "NicoMachine",
+				Kind:     nicoMachineConst,
 				Name:     "worker-0",
 			},
 		},
@@ -342,7 +346,7 @@ func testNicoMachineForRotation(params nicoMachineRotationParameters) *nicov1.Ni
 	return &nicov1.NicoMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: nicov1.GroupVersion.String(),
-			Kind:       "NicoMachine",
+			Kind:       nicoMachineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "worker-0",
@@ -483,7 +487,7 @@ func testCAPINicoMachine() *clusterv1.Machine {
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: nicov1.GroupVersion.Group,
-				Kind:     "NicoMachine",
+				Kind:     nicoMachineConst,
 				Name:     "worker-0",
 			},
 		},

@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
@@ -46,8 +45,12 @@ type NodeTPMEKPubController struct {
 	cfg           config.Config
 	db            db.DB
 	logger        *slog.Logger
-	forgeProvider *forge.ForgeProvider
+	forgeProvider nodeTPMForgeProvider
 	k8sClient     client.Client
+}
+
+type nodeTPMForgeProvider interface {
+	GetInstanceByID(ctx context.Context, orgID, siteID, instanceID string) (*forgeapi.Instance, error)
 }
 
 func NewNodeTPMEKPubController(
@@ -110,8 +113,8 @@ func (c *NodeTPMEKPubController) reconcileNodeEKPub(ctx context.Context, node db
 		}
 	}
 
-	// Newly provisioned CAPNICo nodes must keep node.forge_instance_id empty for this flow to work as intended. This makes
-	// the Forge fallback a no-op while their NicoMachine is being created. Adopted Forge nodes may retain node.forge_instance_id;
+	// Newly provisioned CAPNICo nodes must keep node.nico.forge_instance_id empty for this flow to work as intended. This makes
+	// the Forge fallback a no-op while their NicoMachine is being created. Adopted Forge nodes may retain node.nico.forge_instance_id;
 	// once their NicoMachine exists, its status takes precedence.
 	// FIXME: https://jirasw.nvidia.com/browse/NKX-13411 - Remove the Forge fallback once this is implemented;
 	// and report a per-node error when the expected NicoMachine is missing after migration.
@@ -135,14 +138,25 @@ func (c *NodeTPMEKPubController) getNicoMachine(ctx context.Context, node db.Nod
 }
 
 func (c *NodeTPMEKPubController) reconcileForgeNodeEKPub(ctx context.Context, node db.Node, cluster db.Cluster) error {
-	if node.ForgeInstanceID == "" {
+	if cluster.ProviderType != db.ProviderTypeNico {
 		return nil
 	}
-	if cluster.SiteID == uuid.Nil || cluster.OrgID == "" {
+	nicoClusterProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return err
+	}
+	if nicoClusterProvider.OrgID == "" {
+		return nil
+	}
+	nicoNodeProvider, err := node.NicoProvider()
+	if err != nil {
+		return err
+	}
+	if nicoNodeProvider.ForgeInstanceID == "" {
 		return nil
 	}
 
-	forgeInstance, err := c.forgeProvider.GetInstanceByID(ctx, cluster.OrgID, cluster.SiteID.String(), node.ForgeInstanceID)
+	forgeInstance, err := c.forgeProvider.GetInstanceByID(ctx, nicoClusterProvider.OrgID, nicoClusterProvider.SiteID.String(), nicoNodeProvider.ForgeInstanceID)
 	if err != nil {
 		return fmt.Errorf("failed to get forge instance for node: %s (%s): %w", node.ID, node.Name, err)
 	}
@@ -151,7 +165,7 @@ func (c *NodeTPMEKPubController) reconcileForgeNodeEKPub(ctx context.Context, no
 		c.logger.Debug("Forge instance is not ready, TPM EK public key hash is not available yet",
 			"nodeName", node.Name,
 			"nodeID", node.ID,
-			"forgeInstanceID", node.ForgeInstanceID,
+			"forgeInstanceID", nicoNodeProvider.ForgeInstanceID,
 			"forgeInstanceStatus", ptr.Deref(forgeInstance.Status, ""),
 		)
 		return nil

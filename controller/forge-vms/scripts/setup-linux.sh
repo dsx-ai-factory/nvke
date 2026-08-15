@@ -401,6 +401,20 @@ if [ -f "$DNSMASQ_PID" ]; then
     sudo rm -f "$DNSMASQ_PID"
 fi
 
+# Host firewalls commonly default INPUT to DROP. Allow only the services that
+# forge-vms exposes to guests on its dedicated bridge.
+ensure_bridge_input_rule() {
+    if ! sudo iptables -C INPUT -i "$BRIDGE_NAME" "$@" -j ACCEPT 2>/dev/null; then
+        sudo iptables -I INPUT -i "$BRIDGE_NAME" "$@" -j ACCEPT
+        info "INPUT rule added on $BRIDGE_NAME: $*"
+    fi
+}
+ensure_bridge_input_rule -p udp --dport 67
+ensure_bridge_input_rule -p udp --dport 53
+ensure_bridge_input_rule -p tcp --dport 53
+ensure_bridge_input_rule -p tcp --dport 7777
+ensure_bridge_input_rule -p tcp --dport 10179
+
 info "Starting dnsmasq DHCP+DNS server on $BRIDGE_NAME..."
 # DNS is enabled so VMs can resolve carbide-pxe.forge to the bridge gateway.
 # Production images have seedfrom: http://carbide-pxe.forge/api/v0/cloud-init/

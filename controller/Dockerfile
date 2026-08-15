@@ -70,29 +70,16 @@ WORKDIR /
 COPY --from=builder /workspace/controller/bin/cloud-workflow-engine /usr/local/bin/cloud-workflow-engine
 COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
 
-COPY ./controller/profiles /profiles
+# OS/config profiles are operator-supplied at runtime (PROFILES_DIR), not baked
+# into the image.
+RUN mkdir -p /profiles
 COPY ./controller/ui /ui
 
-# The image is a redistribution of this work and of every dependency linked into
-# the binary, so it carries their terms. /licenses is where image tooling and Red
-# Hat certification look. Copied from the build context rather than the builder
-# stage, so a change here cannot be masked by a stale build layer.
-#
-# The build context is the repository root (the controller is a workspace
-# member), so the root LICENSE and NOTICE are directly reachable — no copies
-# needed for the image. controller/licenses/ still exists for the Helm chart;
-# `make licenses` writes it and `make licenses-check` fails when it drifts.
-#
-# THIRD_PARTY_NOTICES.md is deliberately absent. The root file is an index that
-# states it does not cover controller/, so shipping it here would assert
-# attribution this image does not have.
+# Include both the project license and generated dependency notices.
 COPY LICENSE NOTICE /licenses/
+COPY ./controller/THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
-#
-# image.source is what links a published package back to this repository. GHCR
-# reads it to attach the package to the repo page, and a reader who finds the
-# image before the source has no other way back.
 LABEL org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="cloud-workflow-engine" \
       org.opencontainers.image.source="https://github.com/NVIDIA/nke" \

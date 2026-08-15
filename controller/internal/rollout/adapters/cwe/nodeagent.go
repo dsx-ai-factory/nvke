@@ -79,7 +79,7 @@ func isNilDatabase(database db.DB) bool {
 		kind == reflect.Func ||
 		kind == reflect.Interface ||
 		kind == reflect.Map ||
-		kind == reflect.Ptr ||
+		kind == reflect.Pointer ||
 		kind == reflect.Slice
 	return nilable && value.IsNil()
 }

@@ -11,11 +11,28 @@
 # When several local node containers boot at once they all share the host
 # `/sys/class/tpm` view, so parse `swtpm`'s stdout to discover the exact kernel
 # TPM allocated to this node before rebuilding the device nodes locally.
+#
+# IMPORTANT — per-node TPM isolation (local-dev only):
+# These node containers run `--privileged`, so the Colima VM's `/dev` and its
+# `/sys/class/tpm` are shared into every node. `/sys/class/tpm` therefore lists
+# EVERY co-located node's swtpm (e.g. tpm3, tpm4, tpm5). The SPIRE TPM attestor
+# discovers a device by scanning `/sys/class/tpm`, picking the lowest `tpmN`
+# entry, and opening `/dev/<name>`. Because that lowest entry is the same in
+# every container, all spire-agents would open the SAME node's swtpm and
+# collapse onto a single TPM identity (and crash outright when the picked
+# `/dev/<name>` node happens to be missing locally). To keep each node bound to
+# its OWN swtpm regardless of device ordering, we remove any foreign/stale TPM
+# device nodes and (re)create every `/dev/tpmN` / `/dev/tpmrmN` name that the
+# attestor might select as an alias for THIS node's own swtpm major/minor.
 
 set -euo pipefail
 
 state_dir=/var/lib/swtpm
 vtpmx_sysfs=/sys/class/misc/vtpmx/dev
+
+# The Linux TPM chardev driver exposes the kernel resource-manager device for
+# tpmN at minor (N + TPM_NUM_DEVICES); TPM_NUM_DEVICES is 65536 upstream.
+tpm_num_devices=65536
 
 /usr/local/bin/local-tpm-char-device "${vtpmx_sysfs}" /dev/vtpmx
 
@@ -32,21 +49,47 @@ fi
 
 tpm_kernel_device="${BASH_REMATCH[1]}"
 tpm_device_name="${tpm_kernel_device##*/}"
-/usr/local/bin/local-tpm-char-device "/sys/class/tpm/${tpm_device_name}/dev" /dev/tpm0
+own_sysfs_dev="/sys/class/tpm/${tpm_device_name}/dev"
 
-# Mirror the resource-manager device too when the kernel exposes one. SPIRE's
-# TPM client stack prefers `/dev/tpmrm0` when available because it provides the
-# kernel-managed session/resource path.
-for tpmrm_sysfs in \
-    "/sys/class/tpm/${tpm_device_name}/device/tpmrm/tpmrm*/dev" \
-    "/sys/class/tpm/${tpm_device_name}/device/tpmrm*/dev" \
-    "/sys/class/tpm/tpmrm${tpm_device_name#tpm}/dev"
-do
-    for resolved_tpmrm_sysfs in ${tpmrm_sysfs}; do
-        [[ -r "${resolved_tpmrm_sysfs}" ]] || continue
-        /usr/local/bin/local-tpm-char-device "${resolved_tpmrm_sysfs}" /dev/tpmrm0
-        exit 0
-    done
+for _ in $(seq 1 50); do
+    [[ -r "${own_sysfs_dev}" ]] && break
+    sleep 0.1
+done
+if [[ ! -r "${own_sysfs_dev}" ]]; then
+    echo "own TPM device metadata not available at ${own_sysfs_dev}" >&2
+    exit 1
+fi
+
+own_major_minor="$(<"${own_sysfs_dev}")"
+own_major="${own_major_minor%%:*}"
+own_minor="${own_major_minor##*:}"
+own_rm_minor=$((own_minor + tpm_num_devices))
+
+make_char_node() {
+    local path="$1" major="$2" minor="$3"
+    rm -f "${path}"
+    mknod "${path}" c "${major}" "${minor}"
+    chmod 0600 "${path}"
+}
+
+# Drop every TPM device node that may have leaked in from the shared VM `/dev`
+# (including other nodes' swtpm devices) so nothing foreign is left behind.
+rm -f /dev/tpm[0-9]* /dev/tpmrm[0-9]*
+
+# Canonical own device (direct + kernel resource-manager). SPIRE prefers
+# `/dev/tpmrm0` when present; both alias this node's own swtpm.
+make_char_node /dev/tpm0 "${own_major}" "${own_minor}"
+make_char_node /dev/tpmrm0 "${own_major}" "${own_rm_minor}"
+
+# Alias every `tpmN` name the attestor might select (from the shared
+# `/sys/class/tpm`) to THIS node's own swtpm, so device ordering can never
+# route this node's attestation at another node's TPM.
+for sysfs_entry in /sys/class/tpm/tpm[0-9]*; do
+    [[ -e "${sysfs_entry}" ]] || continue
+    name="$(basename "${sysfs_entry}")"
+    idx="${name#tpm}"
+    make_char_node "/dev/${name}" "${own_major}" "${own_minor}"
+    make_char_node "/dev/tpmrm${idx}" "${own_major}" "${own_rm_minor}"
 done
 
 exit 0

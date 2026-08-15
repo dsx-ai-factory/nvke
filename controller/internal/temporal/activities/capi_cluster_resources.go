@@ -32,7 +32,11 @@ func (a *Activities) ApplyCAPIClusterResources(ctx context.Context, input ApplyC
 	if err != nil {
 		return fmt.Errorf("failed to get cluster: %w", err)
 	}
-	if capi.IsEmptyManifest(cluster.CapiInfraCluster) {
+	manifest, err := capi.ClusterScaffoldManifest(cluster)
+	if err != nil {
+		return err
+	}
+	if capi.IsEmptyManifest(manifest) {
 		return nil
 	}
 
@@ -49,7 +53,11 @@ func (a *Activities) ApplyCAPIClusterKubeconfigSecret(ctx context.Context, input
 	if err != nil {
 		return fmt.Errorf("failed to get cluster: %w", err)
 	}
-	if capi.IsEmptyManifest(cluster.CapiInfraCluster) {
+	manifest, err := capi.ClusterScaffoldManifest(cluster)
+	if err != nil {
+		return err
+	}
+	if capi.IsEmptyManifest(manifest) {
 		return nil
 	}
 
@@ -81,13 +89,17 @@ func (a *Activities) DeleteCAPIClusterResources(ctx context.Context, input Delet
 	if err != nil {
 		return fmt.Errorf("failed to get cluster: %w", err)
 	}
-	if capi.IsEmptyManifest(cluster.CapiInfraCluster) {
+	manifest, err := capi.ClusterScaffoldManifest(cluster)
+	if err != nil {
+		return err
+	}
+	if capi.IsEmptyManifest(manifest) {
 		return nil
 	}
 
 	namespace := capi.ClusterNamespace(cluster.Name)
 
-	infraCluster, err := capi.ParseManifest(cluster.CapiInfraCluster)
+	infraCluster, err := capi.ParseManifest(manifest)
 	if err != nil {
 		return fmt.Errorf("failed to parse infra cluster manifest for cluster %s: %w", cluster.Name, err)
 	}

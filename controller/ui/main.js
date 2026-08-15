@@ -36,6 +36,12 @@ const state = {
     expandedSites: new Set(),
     temporalUIURL: '',
     temporalNamespace: 'cloud-workflow-engine',
+
+    // Server feature flag: when true, the cluster control plane is provisioned by the
+    // control-plane controller via a cluster-level controlPlaneConfig (no control-plane
+    // node pool). When false (default / legacy), the control plane is a node pool with
+    // controlPlane: true. Sourced once from GET /api/version.
+    cpControllerMode: false,
 };
 
 // === PAGE LOAD ===
@@ -474,6 +480,7 @@ async function loadInfo() {
         }
         state.temporalUIURL = info.temporalUIURL || '';
         state.temporalNamespace = info.temporalNamespace || 'cloud-workflow-engine';
+        state.cpControllerMode = info.provisionControlPlaneWithControlPlaneController === true;
     } catch (error) {
         console.warn('Failed to load server info:', error);
     }

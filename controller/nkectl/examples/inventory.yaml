@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+#
+# NVIDIA CORPORATION, its affiliates and licensors retain all intellectual
+# property and proprietary rights in and to this material, related
+# documentation and any modifications thereto. Any use, reproduction,
+# disclosure or distribution of this material and related documentation
+# without an express license agreement from NVIDIA CORPORATION or
+# its affiliates is strictly prohibited.
+
+# Example inventory file for: nkectl bootstrap site -i <inventory-file>
+#
+# The inventory describes the pre-provisioned nodes and the vanilla Kubernetes
+# cluster to build on them. nkectl loads and validates this file before it
+# dispatches any work, so a typo or a missing field fails fast with a clear
+# error. See docs/inventory-spec.md for the full field reference.
+
+# Name of the Kubernetes cluster to create (lowercase RFC 1123 label).
+clusterName: "nke-site"
+
+cluster:
+  # First control-plane node — kubeadm init runs here.
+  initNode:
+    name: "node1"
+    ip: "10.0.0.1"
+
+  # Remaining nodes. In M0 every node joins as a control-plane node.
+  # Omit or leave empty for a single-node cluster.
+  joinNodes:
+    - name: "node2"
+      ip: "10.0.0.2"
+    - name: "node3"
+      ip: "10.0.0.3"
+
+  # Kubernetes version to install — plain semantic version, no leading "v".
+  k8sVersion: "1.32.0"
+
+  # CNI plugin: "calico" or "ovn-kubernetes".
+  cniName: "calico"
+  # Optional CNI plugin version. Empty uses the node-agent's built-in default.
+  cniVersion: "3.31.4"
+
+  # Pod network CIDR. Multiple CIDRs may be given as a comma-separated string.
+  podCidr: "10.100.0.0/16"
+  # Service network CIDR.
+  serviceCidr: "10.200.0.0/16"
+
+  # Optional: gRPC port nke-agent listens on. Defaults to "50051".
+  # nodeAgentPort: "15005"
+
+  # Optional kubelet reservations applied before kubeadm init/join.
+  kubeletConfig:
+    systemReservedMemory: "16Gi"
+
+# Container registry for the bootstrap engine image and chart. The version
+# (image/chart tag) is baked into the nkectl build, so it is not set here.
+registry:
+  # OCI repository holding the bootstrap engine image and chart.
+  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
+  # Bootstrap engine chart name within bootstrapRepo.
+  bootstrapChart: "cloud-workflow-engine"
+  # Optional registry credential. Prefer leaving this empty and supplying the
+  # secret at runtime via --registry-api-key or the REGISTRY_API_KEY env var so
+  # the file can be committed safely. It is never defaulted.
+  # apiKey: ""

@@ -22,13 +22,18 @@ import (
 )
 
 // MachineHealthIssue is our own type to avoid exposing the forgesdk dependency. It's a thin wrapper around the forgesdk.MachineHealthIssue.
+const (
+	otherValue = "Other"
+	hardware   = "Hardware"
+)
+
 type MachineHealthIssue struct {
 	Category string  `json:"category"`
 	Summary  string  `json:"summary"`
 	Details  *string `json:"details,omitempty"`
 }
 
-var validCategories = []string{"Hardware", "Network", "Performance", "Other"} //nolint:gochecknoglobals //local
+var validCategories = []string{hardware, "Network", "Performance", otherValue} //nolint:gochecknoglobals //local
 
 func isValidCategory(category string) bool {
 	return slices.Contains(validCategories, category)
@@ -110,7 +115,7 @@ func NewMachineHealthIssueFromJSON(data []byte) (*MachineHealthIssue, error) {
 	}
 
 	if !isValidCategory(m.Category) {
-		m.Category = "Other"
+		m.Category = otherValue
 	}
 
 	switch {

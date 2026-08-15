@@ -35,10 +35,15 @@ const (
 // DefaultObjectsToEncrypt returns the resource list used by the brownfield
 // enablement workflow. Keep this explicit so an agent default change cannot
 // silently change CWE behavior.
+const (
+	configmaps = "configmaps"
+	secrets    = "secrets"
+)
+
 func DefaultObjectsToEncrypt() []string {
 	return []string{
-		"secrets",
-		"configmaps",
+		secrets,
+		configmaps,
 		"persistentvolumeclaims",
 		"persistentvolumes",
 		"serviceaccounts",

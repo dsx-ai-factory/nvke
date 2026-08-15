@@ -1,0 +1,13 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: controller-manager
+  namespace: capnico-system
+spec:
+  template:
+    spec:
+      containers:
+        - name: manager
+          args:
+            - --leader-elect
+            - --reboot-annotation=nke.nvidia.com/reboot

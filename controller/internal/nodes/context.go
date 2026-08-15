@@ -80,6 +80,7 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		DiskSelectionStrategy:      diskSelectionStrategy,
 		ConfigProfile:              snapshotCfg.ConfigProfile,
 		SystemReservedMemory:       snapshotCfg.SystemReservedMemory,
+		KubeReservedMemory:         snapshotCfg.KubeReservedMemory,
 		SubnetIDs:                  append([]uuid.UUID(nil), snapshotCfg.SubnetIDs...),
 		VpcPrefixIDs:               append([]uuid.UUID(nil), snapshotCfg.VpcPrefixIDs...),
 		KubernetesVersion:          snapshotCfg.KubernetesVersion,
@@ -95,23 +96,38 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		ClusterID:                   cluster.ID,
 		Name:                        "control-plane-config",
 		NodeNamePrefix:              "cp",
-		SubnetIDs:                   append([]uuid.UUID(nil), snapshotCfg.SubnetIDs...),
-		VpcPrefixIDs:                append([]uuid.UUID(nil), snapshotCfg.VpcPrefixIDs...),
 		InstanceTypeID:              node.InstanceTypeID,
-		SSHKeyGroupIDs:              append([]uuid.UUID(nil), snapshotCfg.SSHKeyGroupIDs...),
-		OSProfile:                   snapshotCfg.OSProfile,
-		ConfigProfile:               snapshotCfg.ConfigProfile,
-		SystemReservedMemory:        snapshotCfg.SystemReservedMemory,
 		ControlPlane:                true,
 		NodeLabels:                  append([]string(nil), snapshotCfg.NodeLabels...),
 		KubernetesVersion:           snapshotCfg.KubernetesVersion,
 		MaxSurge:                    cluster.ControlPlaneConfig.MaxSurge,
+		SystemReservedMemory:        snapshotCfg.SystemReservedMemory,
+		KubeReservedMemory:          snapshotCfg.KubeReservedMemory,
 		TeleportEnabled:             snapshotCfg.TeleportEnabled,
 		ProvisioningMonitorDisabled: snapshotCfg.ProvisioningMonitorDisabled,
-		CapiInfraMachineTemplate:    template,
-		CapiBootstrapFiles:          append([]db.CloudInitFile(nil), snapshotCfg.CapiBootstrapFiles...),
-		CapiPreKubeadmCommands:      append([]string(nil), snapshotCfg.CapiPreKubeadmCommands...),
-		CapiSpireAttestationMethod:  snapshotCfg.CapiSpireAttestationMethod,
+	}
+
+	// Populate provider payloads from the snapshot. New snapshot rows carry typed
+	// Nico/Capi providers; SetNico/SetCapi also sync the legacy flat columns so
+	// any code still reading them gets consistent values.
+	if snapshotCfg.Nico != nil {
+		nodePool.SetNico(db.NicoNodePoolProvider{
+			InstanceTypeID:        node.InstanceTypeID,
+			SubnetIDs:             append([]uuid.UUID(nil), snapshotCfg.Nico.SubnetIDs...),
+			VpcPrefixIDs:          append([]uuid.UUID(nil), snapshotCfg.Nico.VpcPrefixIDs...),
+			SSHKeyGroupIDs:        append([]uuid.UUID(nil), snapshotCfg.Nico.SSHKeyGroupIDs...),
+			OSProfile:             snapshotCfg.Nico.OSProfile,
+			ConfigProfile:         snapshotCfg.Nico.ConfigProfile,
+			DiskSelectionStrategy: snapshotCfg.Nico.DiskSelectionStrategy,
+		})
+	}
+	if snapshotCfg.Capi != nil {
+		nodePool.SetCapi(db.CAPINodePoolProvider{
+			InfraMachineTemplate:   template,
+			SpireAttestationMethod: snapshotCfg.Capi.SpireAttestationMethod,
+			BootstrapFiles:         append([]db.CloudInitFile(nil), snapshotCfg.Capi.BootstrapFiles...),
+			PreKubeadmCommands:     append([]string(nil), snapshotCfg.Capi.PreKubeadmCommands...),
+		})
 	}
 
 	return nodeSet, nodePool

@@ -26,12 +26,15 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/naming"
+	"github.com/NVIDIA/nke/controller/internal/nodes"
 )
 
 var (
-	errClusterNotFound  = errors.New("cluster not found")
-	errClusterDeleting  = errors.New("cluster is deleting")
-	errNodePoolDeleting = errors.New("node pool is deleting")
+	errClusterNotFound                = nodes.ErrClusterNotFound
+	errClusterDeleting                = nodes.ErrClusterDeleting
+	errNodePoolDeleting               = nodes.ErrNodePoolDeleting
+	errNodeDeleting                   = nodes.ErrNodeDeleting
+	errControlPlaneNodePoolNotAllowed = errors.New("control-plane node pools are not allowed when control-plane controller provisioning is enabled; configure the control plane via the cluster-level controlPlaneConfig")
 )
 
 type badRequestError struct {
@@ -60,14 +63,20 @@ type nodePoolService struct {
 	db            db.DB
 	forgeProvider nodePoolForgeProvider
 	teleportCfg   config.TeleportConfig
+	// useControlPlaneController mirrors the CWE feature flag
+	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true,
+	// control-plane node pools are rejected on create/update because the control
+	// plane is provisioned from the cluster-level controlPlaneConfig instead.
+	useControlPlaneController bool
 }
 
-func NewNodePoolService(logger *slog.Logger, database db.DB, forgeProvider nodePoolForgeProvider, teleportCfg config.TeleportConfig) *nodePoolService {
+func NewNodePoolService(logger *slog.Logger, database db.DB, forgeProvider nodePoolForgeProvider, teleportCfg config.TeleportConfig, useControlPlaneController bool) *nodePoolService {
 	return &nodePoolService{
-		logger:        logger,
-		db:            database,
-		forgeProvider: forgeProvider,
-		teleportCfg:   teleportCfg,
+		logger:                    logger,
+		db:                        database,
+		forgeProvider:             forgeProvider,
+		teleportCfg:               teleportCfg,
+		useControlPlaneController: useControlPlaneController,
 	}
 }
 
@@ -111,6 +120,10 @@ func (s *nodePoolService) CreateNodePool(
 			return api.CreateNodePool400JSONResponse{Message: "Cluster not found"}, nil
 		}
 		return nil, fmt.Errorf("failed to get cluster: %w", err)
+	}
+
+	if s.useControlPlaneController && req.Body.ControlPlane {
+		return api.CreateNodePool400JSONResponse{Message: errControlPlaneNodePoolNotAllowed.Error()}, nil
 	}
 
 	if err := s.validateCreateNodePoolRequest(ctx, cluster, req.Body); err != nil {
@@ -163,7 +176,7 @@ func (s *nodePoolService) CreateNodePool(
 			return fmt.Errorf("failed to list node pools for pod CIDR capacity validation: %w", err)
 		}
 		nodePools = append(nodePools, dbNodePool)
-		if err := validateStoredPodCIDRCapacity(cluster, nodePools); err != nil {
+		if err := validateStoredPodCIDRCapacity(cluster, podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, cluster, nodePools)); err != nil {
 			return newBadRequestErrorf("%s", err)
 		}
 
@@ -174,7 +187,7 @@ func (s *nodePoolService) CreateNodePool(
 
 		workflowID := constants.ProvisionNodePoolWorkflowPrefix + createdNodePool.ID.String()
 		_, err = tx.CreateWorkflowOutboxEntry(ctx, "ProvisionNodePool", workflowID, map[string]interface{}{
-			"nodePoolID": createdNodePool.ID,
+			nodePoolIDConst: createdNodePool.ID,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create workflow outbox entry: %w", err)
@@ -218,6 +231,31 @@ func validateForgeDiskSelectionStrategy(s api.DiskSelectionStrategyCreate) error
 		return fmt.Errorf("invalid diskSelectionStrategy: %q", s)
 	}
 
+	return nil
+}
+
+// validateForgeNativeNetworking enforces the subnet vs VPC-prefix rules that
+// depend on whether the Forge site has native networking enabled. fieldPrefix
+// is prepended to the field names in error messages (e.g. "controlPlaneConfig.")
+// so callers can scope the message to their request shape.
+func validateForgeNativeNetworking(nativeNetworkingEnabled bool, subnetIDs, vpcPrefixIDs []uuid.UUID, fieldPrefix string) error {
+	hasSubnetIDs := len(subnetIDs) > 0
+	hasVpcPrefixIDs := len(vpcPrefixIDs) > 0
+	if nativeNetworkingEnabled {
+		if !hasVpcPrefixIDs {
+			return fmt.Errorf("%svpcPrefixIDs is required when the site has native networking enabled", fieldPrefix)
+		}
+		if hasSubnetIDs {
+			return fmt.Errorf("%ssubnetIDs should not be provided when the site has native networking enabled", fieldPrefix)
+		}
+		return nil
+	}
+	if !hasSubnetIDs {
+		return fmt.Errorf("%ssubnetIDs is required when the site does not have native networking enabled", fieldPrefix)
+	}
+	if hasVpcPrefixIDs {
+		return fmt.Errorf("%svpcPrefixIDs should not be provided when the site does not have native networking enabled", fieldPrefix)
+	}
 	return nil
 }
 
@@ -394,23 +432,8 @@ func (s *nodePoolService) validateCreateForgeNodePoolRequest(
 	capabilities := forgeSite.GetCapabilities()
 	isNativeNetworkingEnabled := capabilities.GetNativeNetworking()
 
-	hasSubnetIDs := len(req.SubnetIDs) > 0
-	hasVpcPrefixIDs := len(req.VpcPrefixIDs) > 0
-
-	if isNativeNetworkingEnabled {
-		if !hasVpcPrefixIDs {
-			return fmt.Errorf("vpcPrefixIDs is required when the site has native networking enabled")
-		}
-		if hasSubnetIDs {
-			return fmt.Errorf("subnetIDs should not be provided when the site has native networking enabled")
-		}
-	} else {
-		if !hasSubnetIDs {
-			return fmt.Errorf("subnetIDs is required when the site does not have native networking enabled")
-		}
-		if hasVpcPrefixIDs {
-			return fmt.Errorf("vpcPrefixIDs should not be provided when the site does not have native networking enabled")
-		}
+	if err := validateForgeNativeNetworking(isNativeNetworkingEnabled, req.SubnetIDs, req.VpcPrefixIDs, ""); err != nil {
+		return err
 	}
 
 	return nil
@@ -433,32 +456,17 @@ func (s *nodePoolService) DeleteNodePool(
 	req api.DeleteNodePoolRequestObject,
 ) (api.DeleteNodePoolResponseObject, error) {
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		dbNodePool, err := tx.GetNodePool(ctx, req.NodePoolID)
-		if err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				return err
-			}
-			return fmt.Errorf("failed to get node pool: %w", err)
-		}
-
-		dbNodePool.Conditions.Deleting = db.NewCondition(true, "Node pool deletion in progress")
-
-		if _, err := tx.UpdateNodePool(ctx, &dbNodePool); err != nil {
-			return fmt.Errorf("failed to update node pool: %w", err)
-		}
-
-		workflowID := constants.TeardownNodePoolWorkflowPrefix + dbNodePool.ID.String()
-		_, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownNodePool", workflowID, map[string]interface{}{
-			"nodePoolID": dbNodePool.ID,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create workflow outbox entry: %w", err)
-		}
-
-		return nil
+		return nodes.DeleteNodePoolWithTx(ctx, tx, req.NodePoolID)
 	})
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
+		if errors.Is(err, errClusterDeleting) || errors.Is(err, errNodePoolDeleting) {
+			// Teardown already in progress via cluster delete or a prior pool delete.
+			return api.DeleteNodePool202Response{}, nil
+		}
+		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNodePool) {
+			return api.DeleteNodePool400JSONResponse{Message: err.Error()}, nil
+		}
+		if errors.Is(err, db.ErrNotFound) || errors.Is(err, errClusterNotFound) {
 			return api.DeleteNodePool404Response{}, nil
 		}
 		return nil, err
@@ -485,6 +493,10 @@ func (s *nodePoolService) UpdateNodePool(
 			return errNodePoolDeleting
 		}
 
+		if s.useControlPlaneController && dbNodePool.ControlPlane {
+			return &badRequestError{message: errControlPlaneNodePoolNotAllowed.Error()}
+		}
+
 		cluster, err := tx.GetClusterForUpdate(ctx, dbNodePool.ClusterID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
@@ -502,7 +514,7 @@ func (s *nodePoolService) UpdateNodePool(
 			if err != nil {
 				return fmt.Errorf("failed to list node pools for pod CIDR capacity validation: %w", err)
 			}
-			previousRequiredNodeBlocks = requiredPodCIDRNodeBlocks(nodePools, cluster.ControlPlaneConfig.MaxSurge)
+			previousRequiredNodeBlocks = requiredPodCIDRNodeBlocks(podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, cluster, nodePools), cluster.ControlPlaneConfig.MaxSurge)
 		}
 
 		if err := s.validateUpdateNodePoolRequest(ctx, cluster, req.Body); err != nil {
@@ -531,8 +543,9 @@ func (s *nodePoolService) UpdateNodePool(
 			if !found {
 				return fmt.Errorf("node pool %s is missing from cluster %s", dbNodePool.ID, cluster.ID)
 			}
-			if requiredPodCIDRNodeBlocks(nodePools, cluster.ControlPlaneConfig.MaxSurge) > previousRequiredNodeBlocks {
-				if err := validateStoredPodCIDRCapacity(cluster, nodePools); err != nil {
+			augmentedNodePools := podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, cluster, nodePools)
+			if requiredPodCIDRNodeBlocks(augmentedNodePools, cluster.ControlPlaneConfig.MaxSurge) > previousRequiredNodeBlocks {
+				if err := validateStoredPodCIDRCapacity(cluster, augmentedNodePools); err != nil {
 					return newBadRequestErrorf("%s", err)
 				}
 			}
@@ -648,6 +661,9 @@ func applyUpdateNodePoolRequest(dbNodePool *db.NodePool, req *api.UpdateNodePool
 
 	if req.SystemReservedMemory != nil {
 		dbNodePool.SystemReservedMemory = *req.SystemReservedMemory
+	}
+	if req.KubeReservedMemory != nil {
+		dbNodePool.KubeReservedMemory = *req.KubeReservedMemory
 	}
 	if req.RecycleBudget != nil {
 		dbNodePool.RecycleBudget = *req.RecycleBudget
@@ -814,6 +830,10 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 	if dbNodePool.MaxSurge > 0 {
 		maxSurge = &dbNodePool.MaxSurge
 	}
+	var kubeReservedMemory *string
+	if dbNodePool.KubeReservedMemory != "" {
+		kubeReservedMemory = &dbNodePool.KubeReservedMemory
+	}
 	capiInfraMachineTemplate, err := objectFromRawManifest(dbNodePool.CapiInfraMachineTemplate)
 	if err != nil {
 		capiInfraMachineTemplate = nil
@@ -838,6 +858,7 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		ConfigProfile:               dbNodePool.ConfigProfile,
 		KubernetesVersion:           dbNodePool.KubernetesVersion,
 		SystemReservedMemory:        &dbNodePool.SystemReservedMemory,
+		KubeReservedMemory:          kubeReservedMemory,
 		ControlPlane:                dbNodePool.ControlPlane,
 		NodeLabels:                  dbNodePool.NodeLabels,
 		SSHKeyGroupIDs:              dbNodePool.SSHKeyGroupIDs,
@@ -923,6 +944,7 @@ func dbNodePoolFromAPI(req *api.CreateNodePoolRequest, kubernetesVersion string)
 		ConfigProfile:            req.ConfigProfile,
 		KubernetesVersion:        kubernetesVersion,
 		SystemReservedMemory:     req.SystemReservedMemory,
+		KubeReservedMemory:       req.KubeReservedMemory,
 		ControlPlane:             req.ControlPlane,
 		NodeLabels:               nodeLabels,
 		Conditions: db.NodePoolConditions{

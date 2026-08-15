@@ -73,13 +73,19 @@ data:
       - apiGroups: [""]
         resources: ["pods"]
         verbs: ["get", "list", "watch"]
+      # node-local-dns install (NKX-13737, InstallKubeLocalDNS) server-side-applies
+      # a ServiceAccount, two Services, a ConfigMap, and a DaemonSet into kube-system
+      # as the SPIFFE tenant client; SSA is a PATCH on objects that may not pre-exist,
+      # so create + patch (with update/get for the apply round-trip) are required. The
+      # install path never enumerates these objects, so list/watch are omitted. The
+      # broad configmaps verbs here subsume the former kubeadm-config resourceName
+      # update rule.
       - apiGroups: [""]
-        resources: ["configmaps"]
-        verbs: ["get", "list", "watch"]
-      - apiGroups: [""]
-        resources: ["configmaps"]
-        resourceNames: ["kubeadm-config"]
-        verbs: ["update"]
+        resources: ["serviceaccounts", "services", "configmaps"]
+        verbs: ["get", "create", "patch", "update"]
+      - apiGroups: ["apps"]
+        resources: ["daemonsets"]
+        verbs: ["get", "create", "patch", "update"]
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: Role

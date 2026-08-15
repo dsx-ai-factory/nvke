@@ -224,7 +224,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodePools", mock.Anything, tt.filters).Return(tt.dbNodePools, tt.dbError)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{})
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
 
 			resp, err := service.ListNodePools(context.Background(), api.ListNodePoolsRequestObject{
 				Params: api.ListNodePoolsParams{
@@ -474,7 +474,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, mockForge, config.TeleportConfig{})
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, mockForge, config.TeleportConfig{}, false)
 
 			resp, err := service.CreateNodePool(context.Background(), api.CreateNodePoolRequestObject{
 				Body: &tt.request,
@@ -577,7 +577,7 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNodePool", mock.Anything, tt.nodePoolID).Return(tt.dbNodePool, tt.dbError)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{})
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
 
 			resp, err := service.GetNodePool(context.Background(), api.GetNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,
@@ -1117,7 +1117,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 				},
 			}
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, mockForge, config.TeleportConfig{})
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, mockForge, config.TeleportConfig{}, false)
 
 			resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,
@@ -1180,7 +1180,7 @@ func TestNodePoolService_UpdateNodePool_RejectsPodCIDRCapacityExceeded(t *testin
 	}}, nil)
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{})
+	service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
 	resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{
 		NodePoolID: nodePoolID,
 		Body: &api.UpdateNodePoolRequest{
@@ -1197,23 +1197,30 @@ func TestNodePoolService_UpdateNodePool_RejectsPodCIDRCapacityExceeded(t *testin
 
 func TestNodePoolService_DeleteNodePool(t *testing.T) {
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+	otherCPPoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440010")
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
+	joinedCPNodeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440020")
 	tests := []struct {
 		name             string
 		nodePoolID       uuid.UUID
 		setupMockCalls   func(*mockTx)
 		wantError        bool
+		want400          bool
 		want404          bool
+		want400Contains  string
 		verifyConditions func(t *testing.T, conditions db.NodePoolConditions)
 	}{
 		{
-			name:       "success",
+			name:       "success worker pool",
 			nodePoolID: nodePoolID,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
-					ControlPlane: true,
+					ControlPlane: false,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
 				}, nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(n *db.NodePool) bool {
 					return n.ID == nodePoolID && n.Conditions.Deleting.Status == db.ConditionStatusTrue
@@ -1230,10 +1237,105 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 			},
 		},
 		{
+			name:       "success control-plane pool when another joined CP remains",
+			nodePoolID: nodePoolID,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:           nodePoolID,
+					ClusterID:    clusterID,
+					ControlPlane: true,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+				}, nil)
+				controlPlane := true
+				tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.NodePool{
+					{ID: nodePoolID, ControlPlane: true},
+					{ID: otherCPPoolID, ControlPlane: true},
+				}, nil)
+				tx.On("ListNodes", mock.Anything, db.NodeFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.Node{
+					{
+						ID:           joinedCPNodeID,
+						NodePoolID:   otherCPPoolID,
+						ControlPlane: true,
+						Conditions: db.NodeConditions{
+							Joined: db.NewCondition(true, "joined"),
+						},
+					},
+				}, nil)
+				tx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(n *db.NodePool) bool {
+					return n.ID == nodePoolID && n.Conditions.Deleting.Status == db.ConditionStatusTrue
+				})).Return(db.NodePool{}, nil)
+				tx.On("CreateWorkflowOutboxEntry", mock.Anything, "TeardownNodePool", mock.Anything,
+					mock.MatchedBy(func(input interface{}) bool {
+						m, ok := input.(map[string]interface{})
+						return ok && m["nodePoolID"] == nodePoolID
+					})).Return(db.WorkflowOutbox{}, nil)
+			},
+		},
+		{
+			name:       "reject last joined control-plane pool",
+			nodePoolID: nodePoolID,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:           nodePoolID,
+					ClusterID:    clusterID,
+					ControlPlane: true,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+				}, nil)
+				controlPlane := true
+				tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.NodePool{
+					{ID: nodePoolID, ControlPlane: true},
+				}, nil)
+				tx.On("ListNodes", mock.Anything, db.NodeFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.Node{
+					{
+						ID:           joinedCPNodeID,
+						NodePoolID:   nodePoolID,
+						ControlPlane: true,
+						Conditions: db.NodeConditions{
+							Joined: db.NewCondition(true, "joined"),
+						},
+					},
+				}, nil)
+			},
+			want400:         true,
+			want400Contains: "last joined control-plane node pool",
+		},
+		{
+			name:       "noop while cluster deleting",
+			nodePoolID: nodePoolID,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:        nodePoolID,
+					ClusterID: clusterID,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+					Conditions: db.ClusterConditions{
+						Deleting: db.NewCondition(true, "deleting"),
+					},
+				}, nil)
+			},
+		},
+		{
 			name:       "not found",
 			nodePoolID: nodePoolID,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound)
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound)
 			},
 			want404: true,
 		},
@@ -1250,7 +1352,7 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{})
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
 
 			resp, err := service.DeleteNodePool(context.Background(), api.DeleteNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,
@@ -1258,6 +1360,12 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 
 			if tt.wantError {
 				assert.Error(t, err)
+				return
+			}
+			if tt.want400 {
+				require.IsType(t, api.DeleteNodePool400JSONResponse{}, resp)
+				badRequest := resp.(api.DeleteNodePool400JSONResponse)
+				assert.Contains(t, badRequest.Message, tt.want400Contains)
 				return
 			}
 			if tt.want404 {

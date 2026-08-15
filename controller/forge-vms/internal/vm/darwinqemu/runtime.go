@@ -263,6 +263,13 @@ func (r *darwinQEMU) ListMachines(_ context.Context) ([]string, error) {
 	return machines, nil
 }
 
+// LookupDHCPLease is unsupported on the darwin/vmnet backend (it relies on
+// vmnet's external DHCP, not a libvirt network). libvirt-network mode is
+// Linux-only, so this is never called here.
+func (r *darwinQEMU) LookupDHCPLease(context.Context, string, string) (string, bool, error) {
+	return "", false, nil
+}
+
 // --- process helpers ---
 
 // stopVMProcesses tears down the vmnet-client process group (which includes

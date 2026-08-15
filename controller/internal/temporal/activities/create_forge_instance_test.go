@@ -28,6 +28,26 @@ import (
 
 const testNodeID = "abcdef12-3456-7890-abcd-ef1234567890"
 
+// osProfilesDir resolves the OS profiles tree used by profile-rendering tests.
+// Production profiles live in nke-site-deploy (NKX-13910). Resolution order:
+// CWE_PROFILES_DIR, sibling nke-site-deploy checkout, in-repo fixtures.
+func osProfilesDir(t *testing.T) string {
+	t.Helper()
+	if dir := os.Getenv("CWE_PROFILES_DIR"); dir != "" {
+		return path.Join(dir, "osProfiles")
+	}
+	sibling := "../../../nke-site-deploy/cwe-profiles/profiles/osProfiles"
+	if _, err := os.Stat(sibling); err == nil {
+		return sibling
+	}
+	fixture := "../../../test/fixtures/profiles/osProfiles"
+	if _, err := os.Stat(fixture); err == nil {
+		return fixture
+	}
+	t.Skip("no OS profiles available; set CWE_PROFILES_DIR to nke-site-deploy/cwe-profiles/*/profiles")
+	return ""
+}
+
 const trustBundle = `-----BEGIN FAKE TEST-ONLY CERTIFICATE-----
 MIICDzCCAbigAwIBAgIUTestCert1234567890ABCDEFGHIJK0wDQYJKoZIhvcNAQEL
 BQAwRTELMAkGA1UEBhMCVVMxEzARBgNVBAgMClRlc3QgU3RhdGUxDTALBgNVBAoM
@@ -55,14 +75,15 @@ func TestGetIpxeScript(t *testing.T) {
 		db.DiskSelectionStrategyLargest,
 	}
 
-	profiles, err := os.ReadDir("../../../profiles/osProfiles")
+	profilesRoot := osProfilesDir(t)
+	profiles, err := os.ReadDir(profilesRoot)
 	require.NoError(t, err)
 
 	for _, profile := range profiles {
 		if !profile.IsDir() || profile.Name() == "deprecated" {
 			continue
 		}
-		profilePath := path.Join("../../../profiles/osProfiles", profile.Name())
+		profilePath := path.Join(profilesRoot, profile.Name())
 
 		ipxeBytes, err := os.ReadFile(path.Join(profilePath, "ipxeScript"))
 		if os.IsNotExist(err) {
@@ -145,13 +166,14 @@ func TestGetUserData(t *testing.T) {
 		CniPlugin: db.CNIOvnKubernetes,
 	}
 
-	profiles, err := os.ReadDir("../../../profiles/osProfiles")
+	profilesRoot := osProfilesDir(t)
+	profiles, err := os.ReadDir(profilesRoot)
 	require.NoError(t, err)
 	for _, profile := range profiles {
 		if !profile.IsDir() {
 			continue
 		}
-		profilePath := path.Join("../../../profiles/osProfiles", profile.Name())
+		profilePath := path.Join(profilesRoot, profile.Name())
 
 		// If the profile has a testUserData.yaml file - test it
 		testDataFilePath := path.Join(profilePath, "testUserData.yaml")
@@ -191,7 +213,8 @@ func TestGetUserData(t *testing.T) {
 }
 
 func TestActiveOSProfileTemplatesDoNotUseLegacyAttestationVars(t *testing.T) {
-	profiles, err := os.ReadDir("../../../profiles/osProfiles")
+	profilesRoot := osProfilesDir(t)
+	profiles, err := os.ReadDir(profilesRoot)
 	require.NoError(t, err)
 
 	for _, profile := range profiles {
@@ -199,7 +222,7 @@ func TestActiveOSProfileTemplatesDoNotUseLegacyAttestationVars(t *testing.T) {
 			continue
 		}
 
-		templatePath := path.Join("../../../profiles/osProfiles", profile.Name(), "userData.tmpl")
+		templatePath := path.Join(profilesRoot, profile.Name(), "userData.tmpl")
 		templateData, err := os.ReadFile(templatePath)
 		require.NoError(t, err, "reading active OS profile %s", profile.Name())
 
@@ -225,9 +248,12 @@ func TestGetUserDataTemplatedCNIImagePackage(t *testing.T) {
 		return testDgxcTenantHashedPasswd, nil
 	}
 
+	fixtureProfile := "../../../test/fixtures/profiles/osProfiles/test-fixture-amd64"
+	require.DirExists(t, fixtureProfile)
+
 	userData, err := activities.getUserData(
 		context.Background(),
-		"../../../profiles/osProfiles/nke-260611-24.04-amd64-fde",
+		fixtureProfile,
 		db.Node{Name: "calico-node"},
 		"",
 		"1.31.9",
@@ -242,7 +268,7 @@ func TestGetUserDataTemplatedCNIImagePackage(t *testing.T) {
 
 	userData, err = activities.getUserData(
 		context.Background(),
-		"../../../profiles/osProfiles/nke-260611-24.04-amd64-fde",
+		fixtureProfile,
 		db.Node{Name: "ovn-node"},
 		"",
 		"1.31.9",
@@ -273,10 +299,11 @@ func TestBuildTeleportLabels(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			node := db.Node{ID: nodeID, Name: "my-node-01"}
-			cluster := db.Cluster{ID: clusterID, SiteID: siteID, Name: "test-cluster"}
+			cluster := db.Cluster{ID: clusterID, Name: "test-cluster"}
+			nicoProvider := db.NicoClusterProvider{SiteID: siteID}
 			nodePool := db.NodePool{ID: nodePoolID, ControlPlane: tt.controlPlane}
 
-			got := buildTeleportLabels(node, cluster, nodePool.ID, nodePool.ControlPlane, "test-site", "staging")
+			got := buildTeleportLabels(node, cluster, nicoProvider, nodePool.ID, nodePool.ControlPlane, "test-site", "staging")
 
 			assert.Contains(t, got, "node-role: "+tt.wantRole+"\n")
 			assert.Contains(t, got, "node-name: my-node-01\n")
@@ -294,9 +321,10 @@ func TestBuildTeleportLabels(t *testing.T) {
 
 	t.Run("nil node pool id", func(t *testing.T) {
 		node := db.Node{ID: nodeID, Name: "my-node-01"}
-		cluster := db.Cluster{ID: clusterID, SiteID: siteID, Name: "test-cluster"}
+		cluster := db.Cluster{ID: clusterID, Name: "test-cluster"}
+		nicoProvider := db.NicoClusterProvider{SiteID: siteID}
 
-		got := buildTeleportLabels(node, cluster, uuid.Nil, false, "test-site", "staging")
+		got := buildTeleportLabels(node, cluster, nicoProvider, uuid.Nil, false, "test-site", "staging")
 
 		assert.NotContains(t, got, "node-pool:")
 		assert.NotContains(t, got, uuid.Nil.String())

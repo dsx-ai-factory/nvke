@@ -91,3 +91,7 @@ func (r *MockRuntime) ListMachines(_ context.Context) ([]string, error) {
 }
 
 func (r *MockRuntime) TPMEKCert(context.Context, string) (string, error) { return "", nil }
+
+func (r *MockRuntime) LookupDHCPLease(context.Context, string, string) (string, bool, error) {
+	return "", false, nil
+}

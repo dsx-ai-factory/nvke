@@ -10,11 +10,11 @@
 
 // Package v1beta4 contains local copies of the kubeadm v1beta4 config structs,
 // tracking the upstream kubeadm file as closely as practical. Only the
-// ClusterConfiguration subtree is copied: the brownfield OIDC write-back reads
-// and rewrites that persisted document, and a typed round-trip drops any field
-// absent from these structs — so this copy must stay faithful to upstream. The
-// greenfield path renders InitConfiguration/JoinConfiguration in v1beta3, which
-// is why only ClusterConfiguration is needed here.
+// ClusterConfiguration subtree is copied: brownfield kubeadm-config reconciliation
+// reads and rewrites that persisted document, and a typed round-trip drops any
+// field absent from these structs — so this copy must stay faithful to upstream.
+// The greenfield path renders InitConfiguration/JoinConfiguration in v1beta3,
+// which is why only ClusterConfiguration is needed here.
 //
 // Source:
 //

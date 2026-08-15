@@ -1,0 +1,10 @@
+# Config profile fixture for the gofail teardown-hook e2e (NKX-14344).
+#
+# Mirrors the shape of the real site-controller profile (nke-cp-sc-v5 in
+# nke-site-deploy), which runs evict-cnpg-node before a node is removed. The
+# e2e points the CWERunbookExecutionError failpoint at this runbook to model a
+# hook that can never succeed against an unreachable node.
+hooks:
+  beforeRemoveNode:
+    - runbook:
+        name: evict-cnpg-node

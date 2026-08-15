@@ -64,7 +64,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 			CniPlugin:                     "calico",
 			EtcdEncrypted:                 false,
 			ControlPlaneKubernetesVersion: "1.29.7", // overridden per case
-			NodePools: []api.NodePoolCreateConfig{
+			NodePools: &[]api.NodePoolCreateConfig{
 				{
 					Name:             "cp",
 					NodeNamePrefix:   "cp-prefix",
@@ -152,7 +152,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 			CniPlugin:                     "calico",
 			EtcdEncrypted:                 false,
 			ControlPlaneKubernetesVersion: "1.29.7",
-			NodePools: []api.NodePoolCreateConfig{
+			NodePools: &[]api.NodePoolCreateConfig{
 				{
 					Name:             "cp",
 					NodeNamePrefix:   "cp-prefix",
@@ -235,7 +235,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 			CniPlugin:                     "calico",
 			EtcdEncrypted:                 false,
 			ControlPlaneKubernetesVersion: "1.29.7",
-			NodePools: []api.NodePoolCreateConfig{
+			NodePools: &[]api.NodePoolCreateConfig{
 				{
 					Name:             "cp",
 					NodeNamePrefix:   "cp-prefix",
@@ -291,6 +291,84 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 			})
 		}
 	})
+
+	t.Run("controlPlaneVIP", func(t *testing.T) {
+		mockDB := &testutil.MockDB{}
+		mockDB.MockTx = &testutil.MockTx{}
+		mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
+		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+		handler := newTestServerWithValidator(t, mockDB)
+
+		siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
+		vpcID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
+		instanceTypeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")
+		subnetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
+
+		baseBody := api.CreateClusterRequest{
+			Name:                          "test-cluster",
+			OrgID:                         testOrgID,
+			SiteID:                        siteID,
+			VpcID:                         vpcID,
+			CniPlugin:                     "calico",
+			EtcdEncrypted:                 false,
+			ControlPlaneKubernetesVersion: "1.29.7",
+			NodePools: &[]api.NodePoolCreateConfig{
+				{
+					Name:             "cp",
+					NodeNamePrefix:   "cp-prefix",
+					InstanceTypeID:   instanceTypeID,
+					OSProfile:        "ubuntu",
+					ConfigProfile:    "default",
+					ControlPlane:     true,
+					DesiredNodeCount: 1,
+					SubnetIDs:        []uuid.UUID{subnetID},
+				},
+			},
+		}
+
+		tests := []struct {
+			name         string
+			vip          string
+			expectReject bool
+		}{
+			{"omitted VIP", "", false},
+			{"valid VIP", "172.31.0.10", false},
+			{"invalid VIP", "not-an-ip", true},
+			{"IPv6 VIP", "2001:db8::1", true},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				body := baseBody
+				body.ControlPlaneVIP = tt.vip
+
+				bodyBytes, err := json.Marshal(body)
+				require.NoError(t, err)
+
+				req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/clusters", bytes.NewReader(bodyBytes))
+				req.Header.Set("Content-Type", "application/json")
+
+				rr := httptest.NewRecorder()
+				handler.ServeHTTP(rr, req)
+
+				if tt.expectReject {
+					assert.Equal(t, http.StatusBadRequest, rr.Code, "expected middleware to reject invalid controlPlaneVIP")
+					bodyStr := rr.Body.String()
+					assert.True(t,
+						strings.Contains(bodyStr, "controlPlaneVIP") ||
+							strings.Contains(bodyStr, "format") ||
+							strings.Contains(bodyStr, "request body"),
+						"invalid controlPlaneVIP rejection should reference the offending field or format; got %d: %s", rr.Code, bodyStr)
+				} else {
+					bodyStr := rr.Body.String()
+					isValidationError := rr.Code == http.StatusBadRequest &&
+						(strings.Contains(bodyStr, "controlPlaneVIP") || strings.Contains(bodyStr, "request body"))
+					assert.False(t, isValidationError, "valid controlPlaneVIP should not be rejected by OpenAPI validator; got %d: %s", rr.Code, bodyStr)
+				}
+			})
+		}
+	})
 }
 
 // TestOpenAPIValidator_UpdateCluster verifies that the OpenAPI request validator
@@ -300,7 +378,7 @@ func TestOpenAPIValidator_UpdateCluster(t *testing.T) {
 		handler := newTestServerWithValidator(t, &testutil.MockDB{})
 		clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 
-		req := httptest.NewRequest(
+		req := httptest.NewRequestWithContext(t.Context(),
 			http.MethodPatch,
 			"/api/clusters/"+clusterID.String(),
 			bytes.NewReader([]byte(`{"network":{"podCIDR":"10.233.64.0/18"}}`)),

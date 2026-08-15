@@ -43,7 +43,6 @@ type ControllerManager struct {
 	nodeSetController            *NodeSetController
 	nodeScheduler                *NodeScheduler
 	nodeProvisioningMonitor      *NodeProvisioningMonitorController
-	etcdKeyMigrationController   *EtcdEncryptionKeyMigrationController
 	capiClusterScaffold          *CAPIClusterScaffoldController
 	autoModeController           *AutoModeController
 	controlPlaneController       *controlplane.Controller
@@ -106,7 +105,6 @@ func NewControllerManager(
 		nodeSetController:            NewNodeSetController(cfg, controllerManagerLogger, dbInstance),
 		nodeScheduler:                NewNodeScheduler(cfg, controllerManagerLogger, dbInstance, cweTemporalClient, forgeProvider),
 		nodeProvisioningMonitor:      NewNodeProvisioningMonitorController(cfg, controllerManagerLogger, dbInstance),
-		etcdKeyMigrationController:   NewEtcdEncryptionKeyMigrationController(cfg, controllerManagerLogger, dbInstance, k8sClient),
 		capiClusterScaffold:          capiClusterScaffold,
 		autoModeController:           NewAutoModeController(cfg, controllerManagerLogger, dbInstance),
 		controlPlaneController:       controlplane.NewController(cfg, logger, dbInstance, cweTemporalClient),
@@ -232,11 +230,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	if err := a.nodeHealthController.Reconcile(ctx, site); err != nil {
 		// Log errors but continue processing the other controllers.
 		a.logger.Error("Failed to reconcile node health", "error", err, "siteID", site.ID.String())
-	}
-
-	if err := a.etcdKeyMigrationController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile etcd encryption key migration", "error", err, "siteID", site.ID.String())
 	}
 
 	if err := a.controlPlaneController.Reconcile(ctx, site); err != nil {

@@ -8,6 +8,7 @@
 // without an express license agreement from NVIDIA CORPORATION or
 // its affiliates is strictly prohibited.
 
+//nolint:goconst // Migrations are immutable historical snapshots; extracting shared constants would couple applied migrations to values that change later.
 package migrations
 
 import (

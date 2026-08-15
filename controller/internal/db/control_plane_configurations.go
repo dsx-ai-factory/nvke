@@ -31,22 +31,94 @@ import (
 // inside ControlPlaneConfiguration.Config JSONB rather than mapped to columns
 // on the clusters table.
 type ControlPlaneConfigSpec struct {
-	InstanceTypePreference          []uuid.UUID            `json:"instance_type_preference" bun:"-"`
-	InfraMachineTemplatePreferences []json.RawMessage      `json:"infra_machine_template_preferences,omitempty" bun:"-"`
-	SubnetIDs                       []uuid.UUID            `json:"subnet_ids,omitempty" bun:"-"`
-	VpcPrefixIDs                    []uuid.UUID            `json:"vpc_prefix_ids,omitempty" bun:"-"`
-	OSProfile                       string                 `json:"os_profile" bun:"-"`
-	DiskSelectionStrategy           DiskSelectionStrategy  `json:"disk_selection_strategy,omitempty" bun:"-"`
-	ConfigProfile                   string                 `json:"config_profile" bun:"-"`
-	SystemReservedMemory            string                 `json:"system_reserved_memory,omitempty" bun:"-"`
-	SSHKeyGroupIDs                  []uuid.UUID            `json:"ssh_key_group_ids,omitempty" bun:"-"`
-	NodeLabels                      []string               `json:"node_labels,omitempty" bun:"-"`
-	TeleportEnabled                 bool                   `json:"teleport_enabled,omitempty" bun:"-"`
-	ProvisioningMonitorDisabled     bool                   `json:"provisioning_monitor_disabled,omitempty" bun:"-"`
-	KubernetesVersion               string                 `json:"kubernetes_version,omitempty" bun:"-"`
-	CapiSpireAttestationMethod      SpireAttestationMethod `json:"capi_spire_attestation_method,omitempty" bun:"-"`
-	CapiBootstrapFiles              []CloudInitFile        `json:"capi_bootstrap_files,omitempty" bun:"-"`
-	CapiPreKubeadmCommands          []string               `json:"capi_pre_kubeadm_commands,omitempty" bun:"-"`
+	InstanceTypePreference          []uuid.UUID               `json:"instance_type_preference" bun:"-"`
+	InfraMachineTemplatePreferences []json.RawMessage         `json:"infra_machine_template_preferences,omitempty" bun:"-"`
+	SubnetIDs                       []uuid.UUID               `json:"subnet_ids,omitempty" bun:"-"`
+	VpcPrefixIDs                    []uuid.UUID               `json:"vpc_prefix_ids,omitempty" bun:"-"`
+	OSProfile                       string                    `json:"os_profile" bun:"-"`
+	DiskSelectionStrategy           DiskSelectionStrategy     `json:"disk_selection_strategy,omitempty" bun:"-"`
+	ConfigProfile                   string                    `json:"config_profile" bun:"-"`
+	SystemReservedMemory            string                    `json:"system_reserved_memory,omitempty" bun:"-"`
+	KubeReservedMemory              string                    `json:"kube_reserved_memory,omitempty" bun:"-"`
+	SSHKeyGroupIDs                  []uuid.UUID               `json:"ssh_key_group_ids,omitempty" bun:"-"`
+	NodeLabels                      []string                  `json:"node_labels,omitempty" bun:"-"`
+	TeleportEnabled                 bool                      `json:"teleport_enabled,omitempty" bun:"-"`
+	ProvisioningMonitorDisabled     bool                      `json:"provisioning_monitor_disabled,omitempty" bun:"-"`
+	KubernetesVersion               string                    `json:"kubernetes_version,omitempty" bun:"-"`
+	CapiSpireAttestationMethod      SpireAttestationMethod    `json:"capi_spire_attestation_method,omitempty" bun:"-"`
+	CapiBootstrapFiles              []CloudInitFile           `json:"capi_bootstrap_files,omitempty" bun:"-"`
+	CapiPreKubeadmCommands          []string                  `json:"capi_pre_kubeadm_commands,omitempty" bun:"-"`
+	Nico                            *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
+	Capi                            *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
+}
+
+type NicoControlPlaneProvider struct {
+	InstanceTypePreference []uuid.UUID           `json:"instance_type_preference,omitempty"`
+	SubnetIDs              []uuid.UUID           `json:"subnet_ids,omitempty"`
+	VpcPrefixIDs           []uuid.UUID           `json:"vpc_prefix_ids,omitempty"`
+	OSProfile              string                `json:"os_profile,omitempty"`
+	DiskSelectionStrategy  DiskSelectionStrategy `json:"disk_selection_strategy,omitempty"`
+	ConfigProfile          string                `json:"config_profile,omitempty"`
+	SSHKeyGroupIDs         []uuid.UUID           `json:"ssh_key_group_ids,omitempty"`
+}
+
+type CAPIControlPlaneProvider struct {
+	InfraMachineTemplatePreferences []json.RawMessage      `json:"infra_machine_template_preferences,omitempty"`
+	SpireAttestationMethod          SpireAttestationMethod `json:"spire_attestation_method,omitempty"`
+	BootstrapFiles                  []CloudInitFile        `json:"bootstrap_files,omitempty"`
+	PreKubeadmCommands              []string               `json:"pre_kubeadm_commands,omitempty"`
+}
+
+func (c *ControlPlaneConfigSpec) SetNico(provider NicoControlPlaneProvider) {
+	c.Nico = cloneNicoControlPlaneProvider(&provider)
+	c.InstanceTypePreference = append([]uuid.UUID(nil), provider.InstanceTypePreference...)
+	c.SubnetIDs = append([]uuid.UUID(nil), provider.SubnetIDs...)
+	c.VpcPrefixIDs = append([]uuid.UUID(nil), provider.VpcPrefixIDs...)
+	c.OSProfile = provider.OSProfile
+	c.DiskSelectionStrategy = provider.DiskSelectionStrategy
+	c.ConfigProfile = provider.ConfigProfile
+	c.SSHKeyGroupIDs = append([]uuid.UUID(nil), provider.SSHKeyGroupIDs...)
+}
+
+func (c *ControlPlaneConfigSpec) SetCapi(provider CAPIControlPlaneProvider) {
+	c.Capi = cloneCAPIControlPlaneProvider(&provider)
+	c.InfraMachineTemplatePreferences = cloneRawMessages(provider.InfraMachineTemplatePreferences)
+	c.CapiSpireAttestationMethod = provider.SpireAttestationMethod
+	c.CapiBootstrapFiles = append([]CloudInitFile(nil), provider.BootstrapFiles...)
+	c.CapiPreKubeadmCommands = append([]string(nil), provider.PreKubeadmCommands...)
+}
+
+func (c *ControlPlaneConfigSpec) SyncProviderFields(providerType ProviderType) {
+	c.Nico = nil
+	c.Capi = nil
+
+	switch providerType {
+	case ProviderTypeNico:
+		c.Nico = &NicoControlPlaneProvider{
+			InstanceTypePreference: append([]uuid.UUID(nil), c.InstanceTypePreference...),
+			SubnetIDs:              append([]uuid.UUID(nil), c.SubnetIDs...),
+			VpcPrefixIDs:           append([]uuid.UUID(nil), c.VpcPrefixIDs...),
+			OSProfile:              c.OSProfile,
+			DiskSelectionStrategy:  c.DiskSelectionStrategy,
+			ConfigProfile:          c.ConfigProfile,
+			SSHKeyGroupIDs:         append([]uuid.UUID(nil), c.SSHKeyGroupIDs...),
+		}
+	case ProviderTypeCAPI:
+		c.Capi = &CAPIControlPlaneProvider{
+			InfraMachineTemplatePreferences: cloneRawMessages(c.InfraMachineTemplatePreferences),
+			SpireAttestationMethod:          c.CapiSpireAttestationMethod,
+			BootstrapFiles:                  append([]CloudInitFile(nil), c.CapiBootstrapFiles...),
+			PreKubeadmCommands:              append([]string(nil), c.CapiPreKubeadmCommands...),
+		}
+	}
+}
+
+func (c ControlPlaneConfigSpec) NicoControlPlaneProvider() *NicoControlPlaneProvider {
+	return cloneNicoControlPlaneProvider(c.Nico)
+}
+
+func (c ControlPlaneConfigSpec) CAPIControlPlaneProvider() *CAPIControlPlaneProvider {
+	return cloneCAPIControlPlaneProvider(c.Capi)
 }
 
 // ControlPlaneConfig is the cluster control plane configuration shape used by
@@ -105,7 +177,36 @@ func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out.NodeLabels = append([]string(nil), cfg.NodeLabels...)
 	out.CapiBootstrapFiles = append([]CloudInitFile(nil), cfg.CapiBootstrapFiles...)
 	out.CapiPreKubeadmCommands = append([]string(nil), cfg.CapiPreKubeadmCommands...)
+	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
+	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
 	return out
+}
+
+func cloneNicoControlPlaneProvider(provider *NicoControlPlaneProvider) *NicoControlPlaneProvider {
+	if provider == nil {
+		return nil
+	}
+	return &NicoControlPlaneProvider{
+		InstanceTypePreference: append([]uuid.UUID(nil), provider.InstanceTypePreference...),
+		SubnetIDs:              append([]uuid.UUID(nil), provider.SubnetIDs...),
+		VpcPrefixIDs:           append([]uuid.UUID(nil), provider.VpcPrefixIDs...),
+		OSProfile:              provider.OSProfile,
+		DiskSelectionStrategy:  provider.DiskSelectionStrategy,
+		ConfigProfile:          provider.ConfigProfile,
+		SSHKeyGroupIDs:         append([]uuid.UUID(nil), provider.SSHKeyGroupIDs...),
+	}
+}
+
+func cloneCAPIControlPlaneProvider(provider *CAPIControlPlaneProvider) *CAPIControlPlaneProvider {
+	if provider == nil {
+		return nil
+	}
+	return &CAPIControlPlaneProvider{
+		InfraMachineTemplatePreferences: cloneRawMessages(provider.InfraMachineTemplatePreferences),
+		SpireAttestationMethod:          provider.SpireAttestationMethod,
+		BootstrapFiles:                  append([]CloudInitFile(nil), provider.BootstrapFiles...),
+		PreKubeadmCommands:              append([]string(nil), provider.PreKubeadmCommands...),
+	}
 }
 
 func cloneRawMessages(in []json.RawMessage) []json.RawMessage {
@@ -262,6 +363,7 @@ func createControlPlaneConfigRowIfChanged(
 	snapshotCfg ControlPlaneConfigSpec,
 	opts CreateControlPlaneConfigRowOpts,
 ) error {
+	snapshotCfg.SyncProviderFields(cluster.ProviderType)
 	current := ControlPlaneConfigSpec{}
 	if cluster.ControlPlaneConfig.ConfigurationID != uuid.Nil {
 		row, err := q.GetControlPlaneConfiguration(ctx, cluster.ControlPlaneConfig.ConfigurationID)

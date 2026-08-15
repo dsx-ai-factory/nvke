@@ -46,31 +46,31 @@ func NewTeleportCollector(logger *slog.Logger, db db.DB) *TeleportCollector {
 		clusterEnabledDesc: prometheus.NewDesc(
 			"cwe_teleport_cluster_enabled",
 			"Whether Teleport is enabled on the cluster (1=enabled, 0=disabled)",
-			[]string{"site_id", "cluster_id", "cluster_name"},
+			[]string{siteIDLabel, clusterIDLabel, "cluster_name"},
 			nil,
 		),
 		nodePoolEnabledDesc: prometheus.NewDesc(
 			"cwe_teleport_node_pool_enabled",
 			"Whether Teleport is enabled on the node pool (1=enabled, 0=disabled)",
-			[]string{"site_id", "cluster_id", "node_pool_id", "node_pool_name"},
+			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel, "node_pool_name"},
 			nil,
 		),
 		nodesEligibleDesc: prometheus.NewDesc(
 			"cwe_teleport_nodes_eligible",
 			"Count of nodes eligible for Teleport registration",
-			[]string{"site_id", "cluster_id", "node_pool_id"},
+			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel},
 			nil,
 		),
 		nodesRegisteredDesc: prometheus.NewDesc(
 			"cwe_teleport_nodes_registered",
 			"Count of nodes registered with Teleport",
-			[]string{"site_id", "cluster_id", "node_pool_id"},
+			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel},
 			nil,
 		),
 		nodesPendingDesc: prometheus.NewDesc(
 			"cwe_teleport_nodes_pending",
 			"Count of eligible nodes not yet registered with Teleport",
-			[]string{"site_id", "cluster_id", "node_pool_id"},
+			[]string{siteIDLabel, clusterIDLabel, nodePoolIDLabel},
 			nil,
 		),
 	}

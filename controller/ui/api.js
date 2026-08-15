@@ -12,10 +12,54 @@
 
 const API_BASE_URL = '/api';
 
+/**
+ * @typedef {Object} CloudInitFile
+ * @property {string} path
+ * @property {string} content
+ * @property {string} [owner]
+ * @property {string} [permissions]
+ */
+
+/**
+ * Cluster-level control-plane config sent on POST /api/clusters when the server's
+ * provisionControlPlaneWithControlPlaneController flag is enabled (cpControllerMode).
+ * Only fields the user set are included; blank optional fields are omitted.
+ * @typedef {Object} CreateClusterControlPlaneConfig
+ * @property {number} desiredCount Required, >= 1.
+ * @property {string[]} [instanceTypePreference] Ordered instance-type UUIDs (Forge; index 0 = highest priority).
+ * @property {string[]} [subnetIDs] Forge, site without native networking.
+ * @property {string[]} [vpcPrefixIDs] Forge, site with native networking.
+ * @property {string} [osProfile] Forge.
+ * @property {string} [configProfile] Forge.
+ * @property {string} [systemReservedMemory] e.g. "16Gi".
+ * @property {string[]} [sshKeyGroupIDs] Forge.
+ * @property {string[]} [nodeLabels] e.g. "key=value".
+ * @property {boolean} [teleportEnabled]
+ * @property {number} [maxSurge] 0 or 1.
+ * @property {boolean} [provisioningMonitorDisabled]
+ * @property {Object} [capiInfraMachineTemplate] CAPI-only manifest.
+ * @property {("tpm"|"joinToken")} [capiSpireAttestationMethod] CAPI-only.
+ * @property {CloudInitFile[]} [capiBootstrapFiles] CAPI-only.
+ * @property {string[]} [capiPreKubeadmCommands] CAPI-only.
+ */
+
+/**
+ * Cluster-level control-plane config patch sent on PATCH /api/clusters/{id}. Accepts the
+ * same spec fields as CreateClusterControlPlaneConfig (all optional here) plus the
+ * previously-supported maxSurge / instanceTypePreference / provisioningMonitorDisabled.
+ * Only changed fields are included.
+ * @typedef {Partial<CreateClusterControlPlaneConfig>} UpdateClusterControlPlaneConfig
+ */
+
 function asArray(value) {
     return Array.isArray(value) ? value : [];
 }
 
+/**
+ * GET /api/version. Response includes "version", "temporalUIURL", "temporalNamespace",
+ * and the boolean "provisionControlPlaneWithControlPlaneController" feature flag that
+ * toggles the UI between legacy (control-plane node pool) and cluster-level-CP modes.
+ */
 async function getVersion() {
     const response = await fetch(`${API_BASE_URL}/version`);
 
@@ -363,6 +407,13 @@ async function getForgeInstances(orgID, siteID, vpcID) {
     return asArray(body.instances);
 }
 
+/**
+ * POST /api/clusters. `clusterData` is passed through as the request body. In
+ * cpControllerMode it additionally carries a top-level `controlPlaneConfig`
+ * (CreateClusterControlPlaneConfig) and no control-plane node pool; in legacy mode the
+ * control plane is a node pool with controlPlane: true and no controlPlaneConfig is sent.
+ * @param {Object & { controlPlaneConfig?: CreateClusterControlPlaneConfig }} clusterData
+ */
 async function createCluster(clusterData) {
     const response = await fetch(`${API_BASE_URL}/clusters`, {
         method: 'POST',
@@ -407,6 +458,14 @@ async function deleteCluster(clusterId) {
     }
 }
 
+/**
+ * PATCH /api/clusters/{id}. `updates` is passed through as the request body. Its optional
+ * `controlPlaneConfig` (UpdateClusterControlPlaneConfig) carries only the changed
+ * cluster-level control-plane fields; expanded spec fields are only populated in
+ * cpControllerMode, preserving legacy behavior otherwise.
+ * @param {string} clusterId
+ * @param {Object & { controlPlaneConfig?: UpdateClusterControlPlaneConfig }} updates
+ */
 async function updateCluster(clusterId, updates) {
     const response = await fetch(`${API_BASE_URL}/clusters/${clusterId}`, {
         method: 'PATCH',

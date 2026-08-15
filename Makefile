@@ -26,6 +26,7 @@ WORK_MODULES := agent \
                 controller/forge-vms \
                 controller/hack/capd-reboot-controller \
                 controller/hack/nico-mock \
+                controller/nkectl \
                 controller/test/e2e
 
 # Modules whose commands `build` can compile with `go build -o bin/ ./cmd/...`,
@@ -40,7 +41,8 @@ WORK_MODULES := agent \
 # Makefile and the container image.
 CMD_MODULES := agent \
                controller/hack/capd-reboot-controller \
-               controller/hack/nico-mock
+               controller/hack/nico-mock \
+               controller/nkectl
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
 CWE_BIN_NAME ?= cloud-workflow-engine

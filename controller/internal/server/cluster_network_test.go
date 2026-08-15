@@ -236,6 +236,27 @@ func TestRequiredPodCIDRNodeBlocks(t *testing.T) {
 	assert.Equal(t, 6, requiredPodCIDRNodeBlocks(nodePools, 1))
 }
 
+func TestPodCIDRNodePoolsWithClusterCP(t *testing.T) {
+	nodePools := []db.NodePool{{DesiredCount: 3, MaxSurge: 1}}
+	cluster := db.Cluster{ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3, MaxSurge: 1}}
+
+	// Flag off: node pools are returned unchanged, matching origin behavior.
+	assert.Equal(t, nodePools, podCIDRNodePoolsWithClusterCP(false, cluster, nodePools))
+
+	// Flag on: a synthetic control-plane pool carries the cluster-level desired
+	// count (MaxSurge stays zero because CP surge is supplied via clusterMaxSurge).
+	augmented := podCIDRNodePoolsWithClusterCP(true, cluster, nodePools)
+	assert.Len(t, augmented, len(nodePools)+1)
+	cp := augmented[len(augmented)-1]
+	assert.True(t, cp.ControlPlane)
+	assert.Equal(t, 3, cp.DesiredCount)
+	assert.Equal(t, 0, cp.MaxSurge)
+
+	// 3 worker + 3 CP desired = 6 nodes; headroom = max(1, clusterMaxSurge=1 +
+	// worker surge=1 + CP surge=0) = 2, so 8 blocks.
+	assert.Equal(t, 8, requiredPodCIDRNodeBlocks(augmented, cluster.ControlPlaneConfig.MaxSurge))
+}
+
 func TestResolvedClusterNetworkValidateControlPlaneVIP(t *testing.T) {
 	network, err := resolveClusterNetwork(&api.ClusterNetworkCreateConfig{
 		PodCIDR:     "10.232.64.0/18,10.233.64.0/18",
@@ -243,7 +264,10 @@ func TestResolvedClusterNetworkValidateControlPlaneVIP(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	require.ErrorContains(t, network.validateControlPlaneVIP("2001:db8::1"), "IPv4")
+	require.ErrorContains(t, network.validateControlPlaneVIP("10.233.64.10"), "controlPlaneVIP")
 	require.ErrorContains(t, network.validateControlPlaneVIP("10.233.64.10"), "network.podCIDR")
+	require.ErrorContains(t, network.validateControlPlaneVIP("10.233.0.10"), "controlPlaneVIP")
 	require.ErrorContains(t, network.validateControlPlaneVIP("10.233.0.10"), "network.serviceCIDR")
 	assert.NoError(t, network.validateControlPlaneVIP("172.31.0.10"))
 }
@@ -294,7 +318,7 @@ func TestValidateSelectedForgeNetworkCIDRs(t *testing.T) {
 	err = service.validateSelectedForgeNetworkCIDRs(context.Background(), &api.CreateClusterRequest{
 		OrgID:  "test-org",
 		SiteID: uuid.New(),
-		NodePools: []api.NodePoolCreateConfig{{
+		NodePools: &[]api.NodePoolCreateConfig{{
 			SubnetIDs: []uuid.UUID{subnetID},
 		}},
 	}, network)
@@ -307,7 +331,7 @@ func TestValidateSelectedForgeNetworkCIDRs(t *testing.T) {
 	err = service.validateSelectedForgeNetworkCIDRs(context.Background(), &api.CreateClusterRequest{
 		OrgID:  "test-org",
 		SiteID: uuid.New(),
-		NodePools: []api.NodePoolCreateConfig{{
+		NodePools: &[]api.NodePoolCreateConfig{{
 			VpcPrefixIDs: []uuid.UUID{vpcPrefixID},
 		}},
 	}, network)
@@ -321,7 +345,7 @@ func TestValidateSelectedForgeNetworkCIDRs(t *testing.T) {
 	err = service.validateSelectedForgeNetworkCIDRs(context.Background(), &api.CreateClusterRequest{
 		OrgID:  "test-org",
 		SiteID: uuid.New(),
-		NodePools: []api.NodePoolCreateConfig{{
+		NodePools: &[]api.NodePoolCreateConfig{{
 			SubnetIDs: []uuid.UUID{subnetID},
 		}},
 	}, network)

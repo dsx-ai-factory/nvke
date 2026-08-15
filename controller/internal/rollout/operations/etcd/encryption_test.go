@@ -140,7 +140,7 @@ func TestInitializeOperationReadsKeyAtApplyTimeAndKeepsItOutOfPayload(t *testing
 
 	op := NewInitializeOperation(
 		WithEncryptionKeyReader(reader),
-		WithObjectsToEncrypt([]string{"secrets", "configmaps"}),
+		WithObjectsToEncrypt([]string{secrets, configmaps}),
 	)
 	op.nodeAgentClientDialer = func(_ context.Context, dialedNode rollout.Node) (nodeAgentEncryptionClient, func(), error) {
 		dialedNodeID = dialedNode.ID()
@@ -160,7 +160,7 @@ func TestInitializeOperationReadsKeyAtApplyTimeAndKeepsItOutOfPayload(t *testing
 	assert.Equal(t, 1, reader.calls)
 	require.NotNil(t, client.initializeRequest)
 	assert.Equal(t, "key-read-inside-activity", client.initializeRequest.GetEncryptionKey())
-	assert.Equal(t, []string{"secrets", "configmaps"}, client.initializeRequest.GetObjectsToEncrypt())
+	assert.Equal(t, []string{secrets, configmaps}, client.initializeRequest.GetObjectsToEncrypt())
 	assert.Equal(t, node.ID(), dialedNodeID)
 	assert.True(t, cleanupCalled)
 }
@@ -202,7 +202,7 @@ func TestDefaultObjectsToEncryptReturnsCopy(t *testing.T) {
 	require.NotEmpty(t, first)
 	first[0] = "mutated"
 
-	assert.Equal(t, "secrets", DefaultObjectsToEncrypt()[0])
+	assert.Equal(t, secrets, DefaultObjectsToEncrypt()[0])
 }
 
 func TestPromoteDialFailureReturnsFailedRestored(t *testing.T) {

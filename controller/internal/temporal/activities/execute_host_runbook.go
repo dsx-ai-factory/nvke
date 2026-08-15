@@ -83,6 +83,16 @@ func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRu
 	// 	select {}
 	// }
 
+	// Fails the named runbook without hanging, so e2e scenarios about retry
+	// budgets and failure tolerance do not have to wait out a heartbeat timeout
+	// per attempt. Models a runbook that cannot succeed — e.g. a teardown hook
+	// waiting on a node whose kubelet is gone (NKX-14344).
+	// gofail: var CWERunbookExecutionError string
+	// if CWERunbookExecutionError == input.RunbookName {
+	// 	fmt.Println("cwe-gofail-runbook-execution-error")
+	// 	return ExecuteHostRunbookResult{}, fmt.Errorf("gofail: injected failure for runbook %q", input.RunbookName)
+	// }
+
 	result, err := a.nodeAgentClient.ExecuteScript(ctx, node, input.RunbookName, script, input.RunbookArgs)
 	if err != nil {
 		return ExecuteHostRunbookResult{}, fmt.Errorf("failed to execute runbook %q on node %s: %w", input.RunbookName, node.Name, err)

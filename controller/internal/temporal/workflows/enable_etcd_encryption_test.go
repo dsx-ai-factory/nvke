@@ -48,10 +48,11 @@ func TestEnableEtcdEncryptionWorkflow_CompletesThroughRolloutExecutor(t *testing
 				Phase:       activities.EtcdEncryptionOperationPhaseSucceeded,
 			}, nil
 		}).Once()
-	env.OnActivity(a.ExecuteHostRunbook, mock.Anything,
-		mock.MatchedBy(func(input activities.ExecuteHostRunbookInput) bool {
-			return input.HostID == nodeID && input.RunbookName == etcdEncryptionConfigRunbook && len(input.RunbookEnv) == 0
-		})).Return(activities.ExecuteHostRunbookResult{}, nil).Once()
+	env.OnActivity(
+		a.MergeEtcdEncryptionKubeadmConfig,
+		mock.Anything,
+		activities.KubeadmConfigClusterInput{ClusterID: clusterID},
+	).Return(activities.MergeEtcdEncryptionKubeadmConfigResult{Changed: true}, nil).Once()
 	env.OnActivity(a.FinalizePendingEtcdEncryptionKey, mock.Anything, activities.EtcdEncryptionClusterInput{ClusterID: clusterID}).
 		Return(nil).Once()
 	env.OnActivity(a.CompleteEtcdEncryption, mock.Anything, activities.CompleteEtcdEncryptionInput{ClusterID: clusterID}).
@@ -162,11 +163,11 @@ func expectEtcdEncryptionPreparation(
 	env.OnActivity(a.ValidateEtcdEncryptionHealth, mock.Anything,
 		activities.ValidateEtcdEncryptionHealthInput{ClusterID: clusterID, ExpectedNodeIDs: []uuid.UUID{nodeID}}).
 		Return(nil).Once()
-	env.OnActivity(a.ExecuteHostRunbook, mock.Anything,
-		mock.MatchedBy(func(input activities.ExecuteHostRunbookInput) bool {
-			return input.HostID == nodeID && input.RunbookName == etcdEncryptionConfigRunbook &&
-				input.RunbookEnv[etcdEncryptionValidateOnlyEnv] == "true"
-		})).Return(activities.ExecuteHostRunbookResult{}, nil).Once()
+	env.OnActivity(
+		a.ValidateEtcdEncryptionKubeadmConfig,
+		mock.Anything,
+		activities.KubeadmConfigClusterInput{ClusterID: clusterID},
+	).Return(nil).Once()
 	env.OnActivity(rollouttemporal.ActivityLoadClusterForRollout, mock.Anything,
 		&rollouttemporal.LoadClusterForRolloutRequest{ClusterID: clusterID}).
 		Return(&rollouttemporal.LoadClusterForRolloutResponse{

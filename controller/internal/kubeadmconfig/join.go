@@ -54,6 +54,12 @@ type JoinConfig struct {
 	// KubeadmContainerMode enables workarounds for kubeadm running inside a
 	// container-backed node, such as CAPD DockerMachine nodes.
 	KubeadmContainerMode bool
+	// SystemReservedMemory is the memory reserved for system processes by the
+	// kubelet configuration patch. It defaults to 16Gi when empty.
+	SystemReservedMemory string
+	// KubeReservedMemory is the memory reserved for Kubernetes processes by the
+	// kubelet configuration patch. It defaults to 2Gi when empty.
+	KubeReservedMemory string
 }
 
 // NewJoinConfigFromString parses the join configuration from a kubeadm join string.
@@ -154,10 +160,15 @@ func (config *JoinConfig) Render() (*BootstrapArtifacts, error) {
 
 	artifacts := &BootstrapArtifacts{
 		ConfigYAML: configYAML,
+		Files:      []File{kubeletConfigurationPatch(config.SystemReservedMemory, config.KubeReservedMemory)},
 	}
 
 	if config.ControlPlane {
-		artifacts.Files = append(artifacts.Files, apiServerTerminationGracePatch())
+		artifacts.Files = append(
+			artifacts.Files,
+			apiServerTerminationGracePatch(),
+			apiServerAuditPolicyFile(),
+		)
 	}
 	if config.ControlPlane && config.AuthenticationConfig != nil {
 		file, fileErr := GenerateAPIServerAuthenticationConfig(config.AuthenticationConfig)

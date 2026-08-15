@@ -358,7 +358,7 @@ func newMachineForProviderIDTest() *clusterv1.Machine {
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      providerIDTestNodeName,
@@ -389,7 +389,7 @@ func newNicoMachineForProviderIDTest(providerID, ownerMachineName string) *nicov
 		isController := true
 		nicoMachine.OwnerReferences = []metav1.OwnerReference{{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 			Name:       ownerMachineName,
 			Controller: &isController,
 		}}

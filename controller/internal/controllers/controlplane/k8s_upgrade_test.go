@@ -47,7 +47,7 @@ func TestUpdateNodePoolKubeVersion_EmptyOSProfile(t *testing.T) {
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 	err := r.updateNodePoolKubeVersion(
 		context.Background(),
-		db.Cluster{KubernetesVersion: "1.35.0"},
+		db.Cluster{KubernetesVersion: "1.35.0", ProviderType: db.ProviderTypeCAPI},
 		nodePool{NodePool: storedPool},
 	)
 

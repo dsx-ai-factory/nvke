@@ -114,9 +114,70 @@ make test-e2e
 make test-e2e-happy-path
 make test-e2e-capd
 make test-e2e-forge-vms
-make test-e2e ARGS='--label-filter="forge-vms && os-profiles && lifecycle"'
+make test-e2e-forge-vms-os-profiles
 make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 ```
+
+### OS profile provisioning matrix
+
+The `forge-vms && os-profiles` matrix gives each supported active OS profile an
+isolated sanity lifecycle: create a one-control-plane/one-worker tenant cluster,
+wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
+reads active profile names, architectures, and Kubernetes versions from fleet
+OS profile metadata (NKX-13910). Resolution order:
+
+1. `$CWE_PROFILES_DIR/osProfiles/metadata.yaml`
+2. `$PROFILES_DIR/osProfiles/metadata.yaml`
+3. sibling `../nke-site-deploy/cwe-profiles/profiles/osProfiles/metadata.yaml`
+
+If fleet metadata is unavailable, forge-vms matrix table entries are skipped at
+suite init (no panic) so CAPD and other label filters can still run.
+
+Profiles with an embedded Kubernetes version use that version for their
+cluster; version-injected profiles use the suite default.
+
+Run the complete matrix with a longer suite timeout because entries run
+sequentially:
+
+```bash
+make test-e2e-forge-vms-os-profiles
+```
+
+Every entry also carries its full profile name as a label, so a new or failing
+profile can be validated independently:
+
+```bash
+make test-e2e ARGS='--label-filter="os-profiles && nke-260625-24.04-x86-fde"'
+```
+
+When adding an OS profile:
+
+1. Add its directory and active metadata entry under
+   `nke-site-deploy/cwe-profiles/profiles/osProfiles/`.
+2. For an amd64 tenant profile, no separate e2e list update is required; the
+   matrix includes it automatically.
+3. If forge-vms cannot support it, add it to
+   `forgeVMSOSProfileExclusions` in `test/e2e/os_profile_matrix_test.go` with
+   the concrete reason and an owning follow-up ticket when one can remove the
+   limitation.
+4. Run the focused matrix test and then the new profile's label before running
+   the complete matrix.
+
+The current exclusions are:
+
+- arm64 images because forge-vms provisions x86_64 VMs;
+- the arm64 `nke-local-dev-kindest` placeholder because it is not a tenant OS
+  profile; and
+- legacy autoinstall profiles whose iPXE scripts boot a kernel, initrd, and ISO
+  directly. forge-vms currently requires a `chain` to `qcow-imager.efi` with an
+  `image_url` pointing to a qcow2 artifact.
+
+Use the `nke-forge-vms-*` profiles for the emulator's normal control-plane and
+worker defaults, or for an emulator-specific compatibility scenario such as
+the old node-agent profile. Use production `nke-*` profiles as explicit worker
+profiles when validating the real image, iPXE, cloud-init, or node-agent
+artifacts that tenant clusters consume. The matrix uses the 2 GiB forge-vms
+instance type with explicit kube and system memory reservations.
 
 The happy-path targets run create/readiness/delete for the selected backend(s)
 and intentionally exclude scale, upgrade, and reboot validations

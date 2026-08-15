@@ -441,12 +441,13 @@ func TestActivities_RotateNicoMachineInstanceType(t *testing.T) {
 	thirdInstanceTypeID := uuid.New()
 	missingInstanceTypeID := uuid.New()
 	configurationID := uuid.New()
+	clusterID := uuid.New()
 	unavailableMessage := "instance type has no available capacity"
 
 	type parameters struct {
 		node               *db.Node
 		instanceTypeID     string
-		preference         []uuid.UUID
+		controlPlaneConfig db.ControlPlaneConfigSpec
 		wantInstanceTypeID string
 		wantErrorContains  []string
 	}
@@ -454,6 +455,7 @@ func TestActivities_RotateNicoMachineInstanceType(t *testing.T) {
 	controlPlaneNode := func() *db.Node {
 		return &db.Node{
 			ID:                          uuid.New(),
+			ClusterID:                   clusterID,
 			ControlPlane:                true,
 			ControlPlaneConfigurationID: configurationID,
 			InstanceTypeID:              firstInstanceTypeID,
@@ -464,27 +466,34 @@ func TestActivities_RotateNicoMachineInstanceType(t *testing.T) {
 		"rotates NicoMachine spec to next preferred instance type without touching node db": {
 			node:               controlPlaneNode(),
 			instanceTypeID:     firstInstanceTypeID.String(),
-			preference:         []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID, thirdInstanceTypeID},
+			controlPlaneConfig: nicoControlPlaneConfigSpec([]uuid.UUID{firstInstanceTypeID, secondInstanceTypeID, thirdInstanceTypeID}),
 			wantInstanceTypeID: secondInstanceTypeID.String(),
 		},
 		"wraps back to the most preferred type when the list is exhausted": {
 			node:               controlPlaneNode(),
 			instanceTypeID:     secondInstanceTypeID.String(),
-			preference:         []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID},
+			controlPlaneConfig: nicoControlPlaneConfigSpec([]uuid.UUID{firstInstanceTypeID, secondInstanceTypeID}),
 			wantInstanceTypeID: firstInstanceTypeID.String(),
 		},
 		"retries the same type in place for a single-entry preference": {
 			node:               controlPlaneNode(),
 			instanceTypeID:     firstInstanceTypeID.String(),
-			preference:         []uuid.UUID{firstInstanceTypeID},
+			controlPlaneConfig: nicoControlPlaneConfigSpec([]uuid.UUID{firstInstanceTypeID}),
 			wantInstanceTypeID: firstInstanceTypeID.String(),
 		},
 		"errors when current instance type is not in preference": {
 			node:               controlPlaneNode(),
 			instanceTypeID:     missingInstanceTypeID.String(),
-			preference:         []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID},
+			controlPlaneConfig: nicoControlPlaneConfigSpec([]uuid.UUID{firstInstanceTypeID, secondInstanceTypeID}),
 			wantInstanceTypeID: missingInstanceTypeID.String(),
 			wantErrorContains:  []string{"is not in configured instance type preference"},
+		},
+		"errors when pinned control plane config has only legacy flat fields": {
+			node:               controlPlaneNode(),
+			instanceTypeID:     firstInstanceTypeID.String(),
+			controlPlaneConfig: db.ControlPlaneConfigSpec{InstanceTypePreference: []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID}},
+			wantInstanceTypeID: firstInstanceTypeID.String(),
+			wantErrorContains:  []string{"nico control-plane provider payload is required"},
 		},
 		"no-op when node has no pinned control plane configuration": {
 			node: &db.Node{
@@ -493,7 +502,6 @@ func TestActivities_RotateNicoMachineInstanceType(t *testing.T) {
 				InstanceTypeID: firstInstanceTypeID,
 			},
 			instanceTypeID:     firstInstanceTypeID.String(),
-			preference:         []uuid.UUID{firstInstanceTypeID, secondInstanceTypeID},
 			wantInstanceTypeID: firstInstanceTypeID.String(),
 		},
 	}
@@ -516,7 +524,7 @@ func TestActivities_RotateNicoMachineInstanceType(t *testing.T) {
 				mockDB.On("GetControlPlaneConfiguration", mock.Anything, params.node.ControlPlaneConfigurationID).
 					Return(db.ControlPlaneConfiguration{
 						ID:     configurationID,
-						Config: db.ControlPlaneConfigSpec{InstanceTypePreference: params.preference},
+						Config: params.controlPlaneConfig,
 					}, nil)
 			}
 			a := &Activities{db: mockDB, k8sClient: k8sClient}
@@ -553,6 +561,7 @@ func TestActivities_SeedControlPlaneInstanceType(t *testing.T) {
 	second := uuid.New()
 	persisted := uuid.New()
 	configurationID := uuid.New()
+	clusterID := uuid.New()
 
 	type parameters struct {
 		node               db.Node
@@ -564,14 +573,14 @@ func TestActivities_SeedControlPlaneInstanceType(t *testing.T) {
 
 	tests := map[string]parameters{
 		"seeds first preference for a type-less control plane node": {
-			node:               db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: configurationID},
+			node:               db.Node{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, ControlPlaneConfigurationID: configurationID},
 			nodePool:           db.NodePool{},
 			preference:         []uuid.UUID{preferred, second},
 			expectDBLookup:     true,
 			wantInstanceTypeID: preferred,
 		},
 		"keeps an already-resolved instance type": {
-			node:               db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: configurationID},
+			node:               db.Node{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, ControlPlaneConfigurationID: configurationID},
 			nodePool:           db.NodePool{InstanceTypeID: persisted},
 			expectDBLookup:     false,
 			wantInstanceTypeID: persisted,
@@ -583,7 +592,7 @@ func TestActivities_SeedControlPlaneInstanceType(t *testing.T) {
 			wantInstanceTypeID: uuid.Nil,
 		},
 		"stays nil when the pinned preference is empty": {
-			node:               db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: configurationID},
+			node:               db.Node{ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, ControlPlaneConfigurationID: configurationID},
 			nodePool:           db.NodePool{},
 			preference:         nil,
 			expectDBLookup:     true,
@@ -595,17 +604,22 @@ func TestActivities_SeedControlPlaneInstanceType(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
+			nodePool := params.nodePool
+			nodePool.SetNico(db.NicoNodePoolProvider{
+				InstanceTypeID: nodePool.InstanceTypeID,
+			})
+
 			mockDB := &testutil.MockDB{}
 			if params.expectDBLookup {
 				mockDB.On("GetControlPlaneConfiguration", mock.Anything, params.node.ControlPlaneConfigurationID).
 					Return(db.ControlPlaneConfiguration{
 						ID:     configurationID,
-						Config: db.ControlPlaneConfigSpec{InstanceTypePreference: params.preference},
+						Config: nicoControlPlaneConfigSpec(params.preference),
 					}, nil).Once()
 			}
 			a := &Activities{db: mockDB}
 
-			createCtx := &capiMachineCreateContext{node: params.node, nodePool: params.nodePool}
+			createCtx := &capiMachineCreateContext{node: params.node, nodePool: nodePool}
 			require.NoError(t, a.seedControlPlaneInstanceType(context.Background(), createCtx))
 
 			assert.Equal(t, params.wantInstanceTypeID, createCtx.nodePool.InstanceTypeID)
@@ -614,5 +628,14 @@ func TestActivities_SeedControlPlaneInstanceType(t *testing.T) {
 			}
 			mockDB.AssertExpectations(t)
 		})
+	}
+}
+
+func nicoControlPlaneConfigSpec(instanceTypePreference []uuid.UUID) db.ControlPlaneConfigSpec {
+	return db.ControlPlaneConfigSpec{
+		Nico: &db.NicoControlPlaneProvider{
+			InstanceTypePreference: append([]uuid.UUID(nil), instanceTypePreference...),
+		},
+		InstanceTypePreference: append([]uuid.UUID(nil), instanceTypePreference...),
 	}
 }

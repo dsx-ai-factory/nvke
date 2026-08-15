@@ -29,6 +29,22 @@ func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T
 	infinibandPartitionID := uuid.New()
 	nvLinkLogicalPartitionID := uuid.New()
 
+	controlPlaneNodePool := db.NodePool{ControlPlane: true}
+	controlPlaneNodePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID: controlPlaneInstanceTypeID,
+		SSHKeyGroupIDs: []uuid.UUID{uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")},
+		SubnetIDs:      []uuid.UUID{controlPlaneSubnetID},
+	})
+
+	workerNodePool := db.NodePool{ID: workerNodePoolID}
+	workerNodePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID:           workerInstanceTypeID,
+		SSHKeyGroupIDs:           []uuid.UUID{uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")},
+		VpcPrefixIDs:             []uuid.UUID{workerVpcPrefixID},
+		InfinibandPartitionID:    &infinibandPartitionID,
+		NvLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
+	})
+
 	type parameters struct {
 		createCtx *capiMachineCreateContext
 		want      templateLessForgeCAPINodeConfig
@@ -44,12 +60,7 @@ func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T
 					KubernetesVersion:     "1.32.1",
 					TeleportEnabled:       true,
 				},
-				nodePool: db.NodePool{
-					InstanceTypeID: controlPlaneInstanceTypeID,
-					SSHKeyGroupIDs: []uuid.UUID{uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")},
-					SubnetIDs:      []uuid.UUID{controlPlaneSubnetID},
-					ControlPlane:   true,
-				},
+				nodePool: controlPlaneNodePool,
 				cluster: db.Cluster{
 					ControlPlaneConfig: db.ControlPlaneConfig{
 						ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
@@ -86,14 +97,7 @@ func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T
 					KubernetesVersion:     "1.33.0",
 					TeleportEnabled:       true,
 				},
-				nodePool: db.NodePool{
-					ID:                       workerNodePoolID,
-					InstanceTypeID:           workerInstanceTypeID,
-					SSHKeyGroupIDs:           []uuid.UUID{uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")},
-					VpcPrefixIDs:             []uuid.UUID{workerVpcPrefixID},
-					InfinibandPartitionID:    &infinibandPartitionID,
-					NvLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
-				},
+				nodePool: workerNodePool,
 			},
 			want: templateLessForgeCAPINodeConfig{
 				osProfile:                "worker-os",
@@ -124,6 +128,14 @@ func TestNicoMachineBuilders_ControlPlaneConfigPinning(t *testing.T) {
 	pinnedSubnetID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000001")
 	pinnedSSHKeyGroupID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000002")
 
+	// Synthetic no-nodepool control-plane context from nodes.GetNodeContext.
+	nodePool := db.NodePool{ID: uuid.Nil, ControlPlane: true}
+	nodePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID: controlPlaneInstanceTypeID,
+		SSHKeyGroupIDs: []uuid.UUID{pinnedSSHKeyGroupID},
+		SubnetIDs:      []uuid.UUID{pinnedSubnetID},
+	})
+
 	createCtx := &capiMachineCreateContext{
 		node: db.Node{
 			InstanceTypeID: controlPlaneInstanceTypeID,
@@ -135,14 +147,7 @@ func TestNicoMachineBuilders_ControlPlaneConfigPinning(t *testing.T) {
 			KubernetesVersion:     "1.33.7",
 			TeleportEnabled:       true,
 		},
-		nodePool: db.NodePool{
-			// Synthetic no-nodepool control-plane context from nodes.GetNodeContext.
-			ID:             uuid.Nil,
-			InstanceTypeID: controlPlaneInstanceTypeID,
-			SSHKeyGroupIDs: []uuid.UUID{pinnedSSHKeyGroupID},
-			SubnetIDs:      []uuid.UUID{pinnedSubnetID},
-			ControlPlane:   true,
-		},
+		nodePool: nodePool,
 		cluster: db.Cluster{
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
@@ -175,10 +180,30 @@ func TestNicoMachineBuilders_ValidateTemplateLessForgeCAPINodeConfig(t *testing.
 		wantErrContain string
 	}
 
+	requiresOSProfilePool := db.NodePool{}
+	requiresOSProfilePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID: uuid.New(),
+		SubnetIDs:      []uuid.UUID{uuid.New()},
+	})
+
+	requiresInstanceTypePool := db.NodePool{}
+	requiresInstanceTypePool.SetNico(db.NicoNodePoolProvider{
+		SubnetIDs: []uuid.UUID{uuid.New()},
+	})
+
+	requiresNetworkPool := db.NodePool{}
+	requiresNetworkPool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID: uuid.New(),
+	})
+
+	emptyNicoPool := db.NodePool{}
+	emptyNicoPool.SetNico(db.NicoNodePoolProvider{})
+
 	tests := map[string]parameters{
 		"fails fast when resolved context is missing": {
 			createCtx: &capiMachineCreateContext{
-				node: db.Node{InstanceTypeID: uuid.New()},
+				node:     db.Node{InstanceTypeID: uuid.New()},
+				nodePool: emptyNicoPool,
 			},
 			wantErrContain: "resolved node context is incomplete",
 		},
@@ -187,10 +212,7 @@ func TestNicoMachineBuilders_ValidateTemplateLessForgeCAPINodeConfig(t *testing.
 				nodeSet: db.NodeSet{
 					KubernetesVersion: "1.33.0",
 				},
-				nodePool: db.NodePool{
-					InstanceTypeID: uuid.New(),
-					SubnetIDs:      []uuid.UUID{uuid.New()},
-				},
+				nodePool: requiresOSProfilePool,
 			},
 			wantErrContain: "nodeSet.osProfile",
 		},
@@ -200,9 +222,7 @@ func TestNicoMachineBuilders_ValidateTemplateLessForgeCAPINodeConfig(t *testing.
 					OSProfile:         "cp-os",
 					KubernetesVersion: "1.33.0",
 				},
-				nodePool: db.NodePool{
-					SubnetIDs: []uuid.UUID{uuid.New()},
-				},
+				nodePool: requiresInstanceTypePool,
 			},
 			wantErrContain: "nodePool.instanceTypeID",
 		},
@@ -212,9 +232,7 @@ func TestNicoMachineBuilders_ValidateTemplateLessForgeCAPINodeConfig(t *testing.
 					OSProfile:         "cp-os",
 					KubernetesVersion: "1.33.0",
 				},
-				nodePool: db.NodePool{
-					InstanceTypeID: uuid.New(),
-				},
+				nodePool: requiresNetworkPool,
 			},
 			wantErrContain: "nodePool.subnetIDs|vpcPrefixIDs",
 		},

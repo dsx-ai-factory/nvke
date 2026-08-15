@@ -11,7 +11,7 @@
 # and could not build on a public runner. #76 replaced that SDK with the public
 # ncx-infra-controller-rest, so the whole workspace builds from public
 # dependencies now, and the build step is `make build` -- which compiles every
-# package in all seven modules.
+# package in all eight modules.
 #
 # One database rather than a matrix, deliberately. CodeQL produces a single
 # database per run and uploads it under one category, so a matrix would need a
@@ -60,11 +60,11 @@ jobs:
         with:
           # Pin the version the Dockerfiles build with. Not go-version-file: a
           # go directive is a floor, so it installs the oldest Go a module
-          # allows -- and these seven floors range from 1.25.4 to 1.26.4, while
-          # go.work asks for 1.26.4. setup-go pins GOTOOLCHAIN=local, so reading
+          # allows -- and these eight floors range from 1.25.4 to 1.26.5, while
+          # go.work asks for 1.26.5. setup-go pins GOTOOLCHAIN=local, so reading
           # agent/go.mod (1.26.0) would fail outright against the workspace:
           #
-          #   go: go.work requires go >= 1.26.4
+          #   go: go.work requires go >= 1.26.5
           #       (running go 1.26.0; GOTOOLCHAIN=local)
           #
           # Not `stable` either: setup-go resolves it from GitHub's manifest,
@@ -90,7 +90,7 @@ jobs:
         #   CodeQL detected code written in Go but this run didn't build any of
         #   it, or CodeQL could not process any of it.
         #
-        # even though every module compiled and all three binaries were linked.
+        # even though every module compiled and all five binaries were linked.
         # A green build step is not evidence CodeQL saw it.
         #
         # `cd` into each module instead, which is the shape that worked when

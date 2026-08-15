@@ -108,6 +108,26 @@ func TestPrependBootcmd(t *testing.T) {
 		}
 	})
 
+	t.Run("cloud-config with bootcmd", func(t *testing.T) {
+		userData := "#cloud-config\nbootcmd:\n  - echo original\nruncmd:\n  - echo hello\n"
+		result := PrependBootcmd(userData, bootcmd)
+
+		if got := strings.Count(result, "\nbootcmd:"); got != 1 {
+			t.Errorf("expected one bootcmd key, got %d:\n%s", got, result)
+		}
+		if strings.Contains(result, "original_bootcmd:") {
+			t.Errorf("unexpected invalid original_bootcmd key:\n%s", result)
+		}
+		generatedIndex := strings.Index(result, "update-grub")
+		originalIndex := strings.Index(result, "echo original")
+		if generatedIndex == -1 || originalIndex == -1 || generatedIndex > originalIndex {
+			t.Errorf("expected generated commands before original commands:\n%s", result)
+		}
+		if !strings.Contains(result, "runcmd:") {
+			t.Error("expected original runcmd preserved")
+		}
+	})
+
 	t.Run("empty bootcmd", func(t *testing.T) {
 		userData := "#cloud-config\nruncmd:\n  - echo hello\n"
 		result := PrependBootcmd(userData, "")

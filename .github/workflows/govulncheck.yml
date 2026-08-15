@@ -25,13 +25,14 @@
 # -- does this code CALL a vulnerable symbol? govulncheck exits 3 for that, 0
 # when clean.
 #
-# That set is zero for six of the seven modules, measured on 2026-08-13, so the
-# gate costs nothing to switch on there. It is also the set that matters.
+# That set was zero for six of the seven modules present on 2026-08-13. The
+# matrix now also discovers the imported nkectl module. It is also the set that
+# matters.
 # GO-2026-6061 was reachable from cmd/agent/main.go through
 # agent.startSecureServer to grpc.Server.Serve, and it reached main behind a
 # green check because this job reported it without failing on it. See #89.
 #
-# The seventh is controller/forge-vms, and it is waived rather than gated:
+# controller/forge-vms is waived rather than gated:
 #
 #   GO-2026-4736  github.com/osrg/gobgp/v3 v3.37.0  Fixed in: N/A
 #
@@ -126,7 +127,7 @@ jobs:
       actions: read          # upload-sarif reads the workflow run
       security-events: write
     strategy:
-      # One vulnerable module must not hide the state of the other six.
+      # One vulnerable module must not hide the state of the others.
       fail-fast: false
       matrix:
         module: ${{ fromJson(needs.discover-modules.outputs.modules) }}
@@ -140,7 +141,7 @@ jobs:
           # Pin the version the Dockerfiles build with, so the scan reports on
           # the toolchain we ship. Not go-version-file: a go directive is a
           # floor, so it scans the oldest Go allowed -- and this workspace's
-          # floors range from 1.25.4 to 1.26.4, which would give seven modules
+          # floors range from 1.25.4 to 1.26.5, which would give eight modules
           # five different answers to the same question. Not `stable`: setup-go
           # resolves it from GitHub's manifest, which lags, so it can be older
           # than what we ship. Keep this in step with the Dockerfiles.

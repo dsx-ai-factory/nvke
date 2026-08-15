@@ -127,7 +127,9 @@ type Cluster struct {
 	CreatedAt time.Time `json:"createdAt"`
 
 	// Conditions Conditions representing various aspects of the Cluster's state
-	Conditions         ClusterConditions   `json:"conditions"`
+	Conditions ClusterConditions `json:"conditions"`
+
+	// ControlPlaneConfig Cluster-level control plane configuration.
 	ControlPlaneConfig *ControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 	Network            ClusterNetwork      `json:"network"`
 
@@ -192,17 +194,112 @@ type ConfigProfile struct {
 	Name string `json:"name"`
 }
 
-// ControlPlaneConfig defines model for ControlPlaneConfig.
+// ControlPlaneConfig Cluster-level control plane configuration.
 type ControlPlaneConfig struct {
+	// CapiBootstrapFiles Custom cloud-init `write_files` entries for CAPI-backed control plane nodes.
+	CapiBootstrapFiles []CloudInitFile `json:"capiBootstrapFiles,omitempty"`
+
+	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes. Present only for CAPI-backed clusters.
+	CapiInfraMachineTemplate map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
+
+	// CapiPreKubeadmCommands Custom cloud-init `runcmd` entries for CAPI-backed control plane nodes.
+	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
+
+	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	CapiSpireAttestationMethod *SpireAttestationMethod `json:"capiSpireAttestationMethod,omitempty"`
+
+	// ConfigProfile The name of the config profile used by control plane nodes.
+	ConfigProfile string `json:"configProfile,omitempty"`
+
+	// ConfigurationID The ID of the current control plane configuration snapshot revision.
+	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
+
+	// DesiredCount The desired number of cluster-level control plane nodes.
+	DesiredCount int `json:"desiredCount,omitempty"`
+
 	// InstanceTypePreference Ordered Forge instance type IDs for cluster-level control plane provisioning.
+	// Index 0 is the highest priority; provisioning tries each instance type in order.
 	InstanceTypePreference *[]openapi_types.UUID `json:"instanceTypePreference,omitempty"`
 
 	// MaxSurge Cluster-level surge capacity for control plane nodes during upgrades.
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
+	// NodeLabels A list of labels applied to control plane nodes.
+	NodeLabels []string `json:"nodeLabels,omitempty"`
+
+	// OSProfile The name of the OS profile used by Forge-backed control plane nodes. Empty for CAPI-backed clusters.
+	OSProfile string `json:"osProfile,omitempty"`
+
 	// ProvisioningMonitorDisabled When true, the timeout-based provisioning monitor is paused for cluster-level
 	// control plane nodes.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
+
+	// SSHKeyGroupIDs The IDs of the SSH key groups used for control plane nodes.
+	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
+
+	// SubnetIDs The IDs of the subnets used for control plane nodes. Present when the site does not have native networking enabled.
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// SystemReservedMemory The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
+	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
+
+	// TeleportEnabled Whether Teleport SSH enrollment is enabled for control plane nodes.
+	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
+
+	// VpcPrefixIDs The IDs of the VPC prefixes used for control plane nodes. Present when the site has native networking enabled.
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
+// CreateClusterControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
+type CreateClusterControlPlaneConfig struct {
+	// CapiBootstrapFiles Additional cloud-init `write_files` entries for CAPI-backed control plane nodes. Must be omitted for Forge clusters.
+	CapiBootstrapFiles []CloudInitFile `json:"capiBootstrapFiles,omitempty"`
+
+	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource for control plane nodes. Required for CAPI clusters, must be omitted for Forge clusters.
+	CapiInfraMachineTemplate map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
+
+	// CapiPreKubeadmCommands Additional cloud-init `runcmd` entries for CAPI-backed control plane nodes. Must be omitted for Forge clusters.
+	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
+
+	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
+
+	// ConfigProfile The name of the config profile for control plane nodes. Required for Forge clusters.
+	ConfigProfile string `json:"configProfile,omitempty"`
+
+	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
+	DesiredCount int `json:"desiredCount"`
+
+	// InstanceTypePreference Ordered Forge instance type IDs for cluster-level control plane provisioning.
+	// Index 0 is the highest priority. Forge-backed clusters only.
+	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
+
+	// MaxSurge Cluster-level surge capacity for control plane nodes during upgrades (max 1).
+	MaxSurge *int `json:"maxSurge,omitempty"`
+
+	// NodeLabels A list of labels to apply to control plane nodes.
+	NodeLabels []string `json:"nodeLabels,omitempty"`
+
+	// OSProfile The name of the OS profile for Forge-backed control plane nodes. Required for Forge clusters, must be omitted for CAPI clusters.
+	OSProfile string `json:"osProfile,omitempty"`
+
+	// ProvisioningMonitorDisabled When true, the timeout-based provisioning monitor is paused for control plane nodes.
+	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
+
+	// SSHKeyGroupIDs The IDs of the SSH key groups for control plane nodes. Forge clusters only.
+	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
+
+	// SubnetIDs The IDs of the subnets to use for control plane nodes. Forge clusters without native networking. Either subnetIDs or vpcPrefixIDs must be provided for Forge clusters.
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// SystemReservedMemory The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
+	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
+
+	// TeleportEnabled Whether Teleport SSH enrollment is enabled for control plane nodes. When omitted, the server-side default for the site is applied.
+	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
+
+	// VpcPrefixIDs The IDs of the VPC prefixes to use for control plane nodes. Forge clusters with native networking. Either subnetIDs or vpcPrefixIDs must be provided for Forge clusters.
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
 // CreateClusterRequest defines model for CreateClusterRequest.
@@ -238,14 +335,23 @@ type CreateClusterRequest struct {
 	// EtcdEncrypted Enable or disable etcd encryption for the cluster
 	EtcdEncrypted bool `json:"etcdEncrypted"`
 
-	// DisableKubeVip Don't configure Kube-VIP for the cluster control plane. This field is intended for development and testing purposes only and should not be used in production environments.
-	DisableKubeVip bool `json:"disableKubeVip,omitempty"`
+	// ControlPlaneVIP Optional kube-vip control-plane VIP desired state. When provided,
+	// CWE stores this address on the cluster and configures kube-vip
+	// during provisioning. When omitted, CWE stores no control-plane VIP,
+	// skips kube-vip configuration, and kubeadm uses the first control-plane
+	// node IP as the API server endpoint. Callers are responsible for
+	// choosing a non-conflicting VIP. Omit this field to skip kube-vip;
+	// an explicit empty string is rejected.
+	ControlPlaneVIP string `json:"controlPlaneVIP,omitempty"`
 
 	// TeleportEnabled Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
 	// NodePools The initial set of node pools to create for the cluster
-	NodePools []NodePoolCreateConfig `json:"nodePools"`
+	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
+
+	// ControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
+	ControlPlaneConfig *CreateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
 	// Network Non-default pod or service CIDRs are supported only with the ovn-kubernetes CNI plugin.
 	Network *ClusterNetworkCreateConfig `json:"network,omitempty"`
@@ -285,6 +391,9 @@ type CreateNodePoolRequest struct {
 
 	// SystemReservedMemory The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
+
+	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). When unset, the kubelet configuration patch uses its default (2Gi).
+	KubeReservedMemory string `json:"kubeReservedMemory,omitempty"`
 
 	// ControlPlane Whether the nodes in this pool should be added as Kubernetes control plane nodes
 	ControlPlane bool `json:"controlPlane,omitempty"`
@@ -358,6 +467,27 @@ type CreateVIPAllocationRequestAllocationType string
 
 // DeleteNodeRequest defines model for DeleteNodeRequest.
 type DeleteNodeRequest struct {
+	// AllowQuorumLoss Override the etcd member-removal safety check that blocks a removal which
+	// would break etcd quorum. Dangerous — only for control-plane node removal
+	// when quorum loss is understood and acceptable. Requires the server to have
+	// etcd safety overrides enabled (ALLOW_ETCD_SAFETY_OVERRIDES); otherwise the
+	// request is rejected.
+	AllowQuorumLoss bool `json:"allowQuorumLoss,omitempty"`
+
+	// AllowSingleVoter Override the etcd member-removal safety check that blocks a removal which
+	// would leave a single-voter etcd cluster. Intended for manual single-node
+	// control-plane rotation on development sites. Requires the server to have
+	// etcd safety overrides enabled (ALLOW_ETCD_SAFETY_OVERRIDES); otherwise the
+	// request is rejected.
+	AllowSingleVoter bool `json:"allowSingleVoter,omitempty"`
+
+	// ForceUnreachable Treat the node as unreachable. Best-effort graceful steps (drain, graceful
+	// shutdown) are still attempted, but their failures are logged and tolerated
+	// instead of failing the teardown. Use when a node's kubelet/node-agent is
+	// unresponsive and a normal delete would hang. This does not tolerate
+	// control-plane etcd member-removal failures; use allowQuorumLoss /
+	// allowSingleVoter to override those etcd safety checks.
+	ForceUnreachable   bool                `json:"forceUnreachable,omitempty"`
 	MachineHealthIssue *MachineHealthIssue `json:"machineHealthIssue,omitempty"`
 }
 
@@ -767,6 +897,9 @@ type NodePool struct {
 	// SystemReservedMemory The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
 	SystemReservedMemory *string `json:"systemReservedMemory,omitempty"`
 
+	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Empty when the kubelet configuration patch uses its default (2Gi).
+	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`
+
 	// ControlPlane Whether the nodes in this pool are control plane nodes
 	ControlPlane bool `json:"controlPlane"`
 
@@ -898,6 +1031,9 @@ type NodePoolCreateConfig struct {
 	// SystemReservedMemory The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
 
+	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). When unset, the kubelet configuration patch uses its default (2Gi).
+	KubeReservedMemory string `json:"kubeReservedMemory,omitempty"`
+
 	// ControlPlane Whether the nodes in this pool should be added as Kubernetes control plane nodes
 	ControlPlane bool `json:"controlPlane,omitempty"`
 
@@ -973,6 +1109,9 @@ type NodeSet struct {
 	// ID The ID of the node set
 	ID openapi_types.UUID `json:"id"`
 
+	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Empty when the kubelet configuration patch uses its default (2Gi).
+	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`
+
 	// KubernetesVersion The version of Kubernetes for nodes in the node set
 	KubernetesVersion string `json:"kubernetesVersion"`
 
@@ -1024,14 +1163,54 @@ type SpireAttestationMethodCreate string
 
 // UpdateClusterControlPlaneConfig defines model for UpdateClusterControlPlaneConfig.
 type UpdateClusterControlPlaneConfig struct {
+	// CapiBootstrapFiles Replace the cloud-init `write_files` entries for CAPI-backed control plane nodes.
+	CapiBootstrapFiles *[]CloudInitFile `json:"capiBootstrapFiles,omitempty"`
+
+	// CapiInfraMachineTemplate Replace the CAPI infrastructure MachineTemplate manifest for control plane nodes. CAPI clusters only.
+	CapiInfraMachineTemplate *map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
+
+	// CapiPreKubeadmCommands Replace the cloud-init `runcmd` entries for CAPI-backed control plane nodes.
+	CapiPreKubeadmCommands *[]string `json:"capiPreKubeadmCommands,omitempty"`
+
+	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
+
+	// ConfigProfile Set the config profile for control plane nodes.
+	ConfigProfile *string `json:"configProfile,omitempty"`
+
+	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
+	DesiredCount *int `json:"desiredCount,omitempty"`
+
 	// InstanceTypePreference Replace the ordered Forge instance type preference list for cluster-level control plane nodes.
+	// Index 0 is the highest priority.
 	InstanceTypePreference *[]openapi_types.UUID `json:"instanceTypePreference,omitempty"`
 
 	// MaxSurge Set cluster-level max surge.
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
+	// NodeLabels Replace the labels applied to control plane nodes.
+	NodeLabels *[]string `json:"nodeLabels,omitempty"`
+
+	// OSProfile Set the OS profile for Forge-backed control plane nodes.
+	OSProfile *string `json:"osProfile,omitempty"`
+
 	// ProvisioningMonitorDisabled Pause or resume the provisioning monitor for cluster-level control plane nodes.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
+
+	// SSHKeyGroupIDs Replace the SSH key groups used for control plane nodes. Forge clusters only.
+	SSHKeyGroupIDs *[]openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
+
+	// SubnetIDs Replace the subnet IDs used for control plane nodes. Forge clusters without native networking.
+	SubnetIDs *[]openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// SystemReservedMemory Set the reserved system memory for control plane nodes (e.g., "16Gi").
+	SystemReservedMemory *string `json:"systemReservedMemory,omitempty"`
+
+	// TeleportEnabled Enable or disable Teleport SSH enrollment for control plane nodes.
+	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
+
+	// VpcPrefixIDs Replace the VPC prefix IDs used for control plane nodes. Forge clusters with native networking.
+	VpcPrefixIDs *[]openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
 // UpdateClusterRequest defines model for UpdateClusterRequest.
@@ -1114,6 +1293,9 @@ type UpdateNodePoolRequest struct {
 
 	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
 	DiskSelectionStrategy *DiskSelectionStrategy `json:"diskSelectionStrategy,omitempty"`
+
+	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Set an empty value to restore the kubelet configuration patch default (2Gi).
+	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`
 
 	// KubernetesVersion Target Kubernetes version for worker node upgrade (must be greater than current version).
 	// Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).

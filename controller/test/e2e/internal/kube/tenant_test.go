@@ -25,9 +25,13 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -263,6 +267,37 @@ func TestTenantRESTConfigPreservesAdminCredentials(t *testing.T) {
 	}
 }
 
+func TestGetAdminClientReadsCAPIKubeconfigAndRegistersVerifierSchemes(t *testing.T) {
+	factory := newTestTenantClientFactory(t, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "cluster-tenant-a", Name: "tenant-a-kubeconfig"},
+		Data:       map[string][]byte{tenantKubeconfigKey: testClientKubeconfig(t)},
+	})
+
+	tenantClient, err := factory.GetAdminClient(context.Background(), "tenant-a")
+	if err != nil {
+		t.Fatalf("GetAdminClient() error = %v", err)
+	}
+	for _, gvk := range []schema.GroupVersionKind{
+		appsv1.SchemeGroupVersion.WithKind("ReplicaSet"),
+		coordinationv1.SchemeGroupVersion.WithKind("Lease"),
+		corev1.SchemeGroupVersion.WithKind("Pod"),
+		policyv1.SchemeGroupVersion.WithKind("PodDisruptionBudget"),
+	} {
+		if !tenantClient.Scheme().Recognizes(gvk) {
+			t.Errorf("GetAdminClient() scheme does not recognize %s", gvk)
+		}
+	}
+}
+
+func TestGetAdminClientReportsMissingCAPIKubeconfig(t *testing.T) {
+	factory := newTestTenantClientFactory(t)
+
+	_, err := factory.GetAdminClient(context.Background(), "tenant-a")
+	if err == nil || !strings.Contains(err.Error(), "getting CAPI admin kubeconfig secret cluster-tenant-a/tenant-a-kubeconfig") {
+		t.Fatalf("GetAdminClient() error = %v, want contextual Secret error", err)
+	}
+}
+
 func TestSPIREAudience(t *testing.T) {
 	tests := map[string]struct {
 		env     []clientcmdapi.ExecEnvVar
@@ -488,6 +523,24 @@ func testAdminKubeconfig(t *testing.T) []byte {
 		ClientCertificateData: []byte("admin-certificate"),
 		ClientKeyData:         []byte("admin-key"),
 	}
+	config.Contexts["tenant"] = &clientcmdapi.Context{Cluster: "tenant", AuthInfo: "admin"}
+	config.CurrentContext = "tenant"
+
+	kubeconfig, err := clientcmd.Write(*config)
+	if err != nil {
+		t.Fatalf("clientcmd.Write() error = %v", err)
+	}
+	return kubeconfig
+}
+
+func testClientKubeconfig(t *testing.T) []byte {
+	t.Helper()
+	config := clientcmdapi.NewConfig()
+	config.Clusters["tenant"] = &clientcmdapi.Cluster{
+		Server:                "https://tenant.example:6443",
+		InsecureSkipTLSVerify: true,
+	}
+	config.AuthInfos["admin"] = &clientcmdapi.AuthInfo{Token: "test-token"}
 	config.Contexts["tenant"] = &clientcmdapi.Context{Cluster: "tenant", AuthInfo: "admin"}
 	config.CurrentContext = "tenant"
 

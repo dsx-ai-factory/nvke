@@ -28,7 +28,7 @@ import (
 )
 
 func (a *Activities) shouldRotateNicoMachineNetworkCandidate(ctx context.Context, machine *clusterv1.Machine) (bool, error) {
-	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != "NicoMachine" {
+	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != nicoMachineConst {
 		return false, nil
 	}
 
@@ -160,7 +160,7 @@ func (a *Activities) rotateNicoMachineSubnet(ctx context.Context, nicoMachine *n
 // creating any backing instance, so rotation is an in-place Spec.InstanceTypeID
 // patch with nothing to tear down.
 func (a *Activities) shouldRotateNicoMachineInstanceType(ctx context.Context, machine *clusterv1.Machine) (bool, error) {
-	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != "NicoMachine" {
+	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != nicoMachineConst {
 		return false, nil
 	}
 
@@ -262,7 +262,11 @@ func (a *Activities) controlPlaneInstanceTypePreference(ctx context.Context, nod
 	if err != nil {
 		return nil, fmt.Errorf("failed to get control plane configuration %s: %w", node.ControlPlaneConfigurationID, err)
 	}
-	return row.Config.InstanceTypePreference, nil
+	nico := row.Config.NicoControlPlaneProvider()
+	if nico == nil {
+		return nil, fmt.Errorf("nico control-plane provider payload is required")
+	}
+	return nico.InstanceTypePreference, nil
 }
 
 // seedControlPlaneInstanceType fills the initial instance type for a templateless
@@ -272,7 +276,11 @@ func (a *Activities) controlPlaneInstanceTypePreference(ctx context.Context, nod
 // the rest in place. No-op for nodes that already carry a type or that carry no
 // control-plane preference.
 func (a *Activities) seedControlPlaneInstanceType(ctx context.Context, createCtx *capiMachineCreateContext) error {
-	if createCtx.nodePool.InstanceTypeID != uuid.Nil {
+	nicoNodePoolProvider, err := createCtx.nodePool.NicoProvider()
+	if err != nil {
+		return err
+	}
+	if nicoNodePoolProvider.InstanceTypeID != uuid.Nil {
 		return nil
 	}
 	preference, err := a.controlPlaneInstanceTypePreference(ctx, createCtx.node)
@@ -282,7 +290,8 @@ func (a *Activities) seedControlPlaneInstanceType(ctx context.Context, createCtx
 	if len(preference) == 0 {
 		return nil
 	}
-	createCtx.nodePool.InstanceTypeID = preference[0]
+	nicoNodePoolProvider.InstanceTypeID = preference[0]
+	createCtx.nodePool.SetNico(nicoNodePoolProvider)
 	return nil
 }
 

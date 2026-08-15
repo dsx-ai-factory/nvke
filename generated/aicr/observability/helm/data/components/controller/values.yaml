@@ -1,0 +1,15 @@
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+image:
+  repository: ghcr.io/nvidia/nke-controller
+  tag: 0.0.0-dev
+  digest: ""
+  pullPolicy: IfNotPresent
+databaseURL: postgres://postgres:postgres@postgresql.postgresql.svc.cluster.local:5432/controller?sslmode=disable
+databasePassword: postgres
+temporalAddress: temporal-frontend.temporal.svc.cluster.local:7233
+profilesDirectory: /profiles
+spiffe:
+  enabled: true
+  endpointSocket: unix:///spiffe-workload-api/spire-agent.sock

@@ -1,9 +1,98 @@
-#!/bin/sh
-# CAPD/KinD nodes share the Docker host kernel, whose config module is not
-# available inside the node container. Ignore only that local-only kubeadm
-# preflight failure during control-plane upgrade planning and application.
-if [ "$1" = "upgrade" ] && { [ "$2" = "plan" ] || [ "$2" = "apply" ]; }; then
-  exec /usr/bin/kubeadm.real "$@" --ignore-preflight-errors=SystemVerification
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+
+# This is the kubeadm entrypoint for container-based Kubernetes nodes. These
+# nodes share their Docker host's kernel and host-wide sysctls, while kubeadm's
+# defaults assume a standalone machine. For full init, the wrapper adapts the
+# cluster's kubelet and kube-proxy configuration. For full init, join, and
+# upgrade operations, it also relaxes the one preflight check that cannot work
+# from inside the container. Other kubeadm commands are passed through unchanged.
+
+set -euo pipefail
+
+readonly real_kubeadm=/usr/bin/kubeadm.real
+readonly config_editor=/usr/local/sbin/update-kubeadm-config-for-containers
+
+temporary_config=""
+cleanup() {
+  if [[ -n "${temporary_config}" ]]; then
+    rm -f "${temporary_config}"
+  fi
+}
+trap cleanup EXIT
+
+needs_container_workarounds=false
+case "${1:-}" in
+  init)
+    # Commands such as `init phase upload-certs` operate on an existing
+    # cluster and do not accept the full init configuration or preflight flag.
+    if [[ "${2:-}" != phase ]]; then
+      needs_container_workarounds=true
+    fi
+    ;;
+  join)
+    needs_container_workarounds=true
+    ;;
+  upgrade)
+    case "${2:-}" in
+      plan|apply|node)
+        needs_container_workarounds=true
+        ;;
+    esac
+    ;;
+esac
+
+if [[ "${needs_container_workarounds}" == false ]]; then
+  exec "${real_kubeadm}" "$@"
 fi
 
-exec /usr/bin/kubeadm.real "$@"
+args=("$@")
+# Container nodes cannot load or inspect the Docker host's kernel config, so
+# kubeadm's SystemVerification check produces a false failure. Ignore only that
+# check and retain all other preflight validation.
+args+=(--ignore-preflight-errors=SystemVerification)
+
+if [[ "${1:-}" == init ]]; then
+  config_index=-1
+  config_path=""
+  for ((i = 1; i < ${#args[@]}; i++)); do
+    case "${args[i]}" in
+      --config)
+        if ((i + 1 >= ${#args[@]})); then
+          echo "kubeadm wrapper: --config requires a path" >&2
+          exit 1
+        fi
+        config_index=$((i + 1))
+        config_path="${args[i + 1]}"
+        break
+        ;;
+      --config=*)
+        config_index=${i}
+        config_path="${args[i]#--config=}"
+        break
+        ;;
+    esac
+  done
+
+  if [[ -z "${config_path}" ]]; then
+    echo "kubeadm wrapper: container kubeadm init requires --config" >&2
+    exit 1
+  fi
+
+  temporary_config="$(mktemp /run/kubeadm-container-config.XXXXXX.yaml)"
+  chmod 0600 "${temporary_config}"
+  "${config_editor}" "${config_path}" "${temporary_config}"
+
+  if [[ "${args[config_index]}" == --config=* ]]; then
+    args[config_index]="--config=${temporary_config}"
+  else
+    args[config_index]="${temporary_config}"
+  fi
+fi
+
+set +e
+"${real_kubeadm}" "${args[@]}"
+status=$?
+set -e
+exit "${status}"

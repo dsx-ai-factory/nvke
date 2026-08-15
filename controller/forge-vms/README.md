@@ -100,6 +100,51 @@ VIP    172.31.0.0/24:  CWE allocates cluster VIPs; reached via BGP /32 routes
 
 On startup the speaker installs a covering `blackhole` route for the VIP range (so traffic for a VIP that no CP is currently announcing is dropped locally rather than leaking to the host default route), plus a more-specific `/32` ECMP route per announced VIP. The Tiltfile sets `FORGE_VMS_VIP_CIDR`, registers the CWE site with it, and passes it as the speaker's allowlist; the layout is printed at `tilt up` time.
 
+### Libvirt-Network Mode
+
+For shared hosts where forge-vms must not create host networking of its own — most notably a hostNetwork Kubernetes pod.
+
+By default forge-vms **owns its networking**: `scripts/setup-linux.sh` creates the `cwebr0` bridge, runs a dnsmasq for DHCP, installs iptables MASQUERADE, and forge-vms runs a BGP speaker. That is ideal on a dedicated host (Colossus, a laptop). It is unsafe where forge-vms shares a host's network namespace with other workloads — most notably a **hostNetwork Kubernetes pod** (e.g. a shared GitLab libvirt runner), where a created bridge / iptables rule / dnsmasq leaks onto the node and can break neighbouring jobs or require a reboot.
+
+**Libvirt-network mode** flips this: forge-vms attaches each VM to a **pre-existing libvirt network** (e.g. the stock `default` / `virbr0` NAT network) instead of building its own. forge-vms adds zero host networking, so nothing can leak. Enable it by setting `FORGE_VMS_LIBVIRT_NETWORK=<network-name>` (empty — the default — keeps the legacy `cwebr0` behavior).
+
+| | Default (`cwebr0`) mode | Libvirt-network mode |
+|---|---|---|
+| Bridge + NAT | forge-vms creates `cwebr0` + iptables MASQUERADE (`setup-linux.sh`) | uses the libvirt network's own bridge + NAT; no bridge/iptables created |
+| DHCP | forge-vms's own dnsmasq + lease file | libvirt's dnsmasq; leases read via `virsh net-dhcp-leases` |
+| Domain XML | `<interface>` on `cwebr0` | `<interface type='network'><source network='…'/>` |
+| Metadata server | NoCloud/EC2 server serves user-data + `phone_home` | **none on the VM's network** → drive readiness by SSH, not `phone_home` |
+| BGP / VIPs | speaker installs host routes for kube-vip VIPs | **auto-skipped** when `FORGE_VMS_LIBVIRT_NETWORK` is set (`app.go`) |
+| libvirt URI | `qemu:///session` (user session) | **`qemu:///system`** — the pre-existing network is system-owned |
+
+**Requirements when enabling it:**
+
+- `FORGE_VMS_LIBVIRT_URI=qemu:///system` — the stock `default`/`virbr0` network is owned by the **system** libvirtd. In a runner pod, the system socket is already bind-mounted (`/run/libvirt/libvirt-sock`).
+- VM disk images + seed ISOs must live on a path the **system** libvirtd can read (e.g. `/var/lib/libvirt/images`) — a pod-local path (`/builds`, `/tmp`) is invisible to a daemon in another mount namespace.
+- The base image must boot with **DHCP** (the libvirt network runs the DHCP server); network mode forces DHCP regardless of iPXE presence.
+- `FORGE_VMS_BGP_ENABLED=false` is **optional** — BGP is auto-skipped in this mode — but setting it makes intent explicit.
+
+**Readiness (no `phone_home`).** Because there is no forge-vms metadata server on the VM's network, cloud-init's `phone_home` can't report back. Drive readiness by **SSH-probing port 22** (fires early in boot) and then polling whatever agent the VM runs. The NKE cluster-bringup driver does exactly this: SSH-probe, then a `WaitForAgent` gRPC poll on the nke-agent port.
+
+**Host prep — `scripts/setup-libvirt-network.sh`.** The network-mode counterpart to `setup-linux.sh`. It (1) ensures the target libvirt network is active, and (2) exempts intra-subnet (VM↔VM) traffic from MASQUERADE by inserting a `RETURN` at the top of the nat `POSTROUTING` chain. Some hosts SNAT inter-VM traffic to the node's own IP — e.g. **AWS EKS via the VPC CNI `AWS-SNAT-CHAIN`**, which masquerades anything not bound for the VPC CIDR. That rewritten source IP breaks IP-bound peer TLS: etcd control-plane joins fail with `"<node-ip>" does not match any of DNSNames [...]`. The `RETURN` preserves the real VM source IPs for VM↔VM traffic while leaving VM→internet NAT intact. The subnet is derived from the network's own XML (not hardcoded), the rule is idempotent, and `--cleanup` removes it (call that from a CI `after_script` so it always runs).
+
+```bash
+# set up (CI before_script): ensure the network is up + add the no-masquerade rule
+scripts/setup-libvirt-network.sh --network default
+
+# run forge-vms attached to that network
+FORGE_VMS_LIBVIRT_NETWORK=default \
+FORGE_VMS_LIBVIRT_URI=qemu:///system \
+FORGE_VMS_BGP_ENABLED=false \
+FORGE_VMS_BASE_IMAGE=/var/lib/libvirt/images/noble-server-cloudimg-amd64.img \
+  forge-vms serve
+
+# tear down (CI after_script): remove the rule
+scripts/setup-libvirt-network.sh --network default --cleanup
+```
+
+> This is how the NKE kubeadm `cluster-bringup` test runs its 4-VM HA cluster on the shared GitLab libvirt runner. The kubeadm repo wraps the above in `tests/cluster-bringup/scripts/setup-gitlab-runner.sh`.
+
 ### CIDR ranges
 
 Ranges used by a forge-vms deployment and the tenant clusters it creates — keep them mutually non-overlapping.
@@ -311,6 +356,7 @@ All configuration is via environment variables. The server fails fast on invalid
 
 | Variable                    | Default                             | Description                                      |
 | --------------------------- | ----------------------------------- | ------------------------------------------------ |
+| `FORGE_VMS_LIBVIRT_NETWORK` | *(unset)*                           | If set, attach VMs to this pre-existing libvirt network instead of creating `cwebr0`. Requires `FORGE_VMS_LIBVIRT_URI=qemu:///system`. See [Libvirt-Network Mode](#libvirt-network-mode). |
 | `FORGE_VMS_BRIDGE_NAME`     | `cwebr0`                            | Network bridge name                              |
 | `FORGE_VMS_BRIDGE_CIDR`     | `172.30.0.0/24`                     | Bridge subnet (auto-detected on macOS via vmnet) |
 | `FORGE_VMS_DHCP_HOSTS_DIR`  | `/var/lib/forge-vms/dhcp-hosts`     | dnsmasq hosts directory                          |

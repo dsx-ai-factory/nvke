@@ -58,7 +58,9 @@ controlPlaneEndpoint: cluster.local:6443
 controllerManager:
   extraArgs:
     bind-address: 0.0.0.0
+    large-cluster-size-threshold: "50"
     profiling: "false"
+    secondary-node-eviction-rate: "0"
 dns: {}
 etcd:
   local:

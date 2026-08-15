@@ -79,7 +79,8 @@ func waitForClusterProvisioning(ctx workflow.Context, nodePoolID uuid.UUID) erro
 		activities.WaitForParentClusterProvisionedInput{
 			NodePoolID:                           nodePoolID,
 			NodePoolProvisioningConditionMessage: "Waiting for cluster provisioning",
-		}).Get(ctx, nil); err != nil {
+		},
+	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to wait for cluster provisioning: %w", err)
 	}
 
@@ -108,7 +109,7 @@ func markNodePoolAsProvisioned(ctx workflow.Context, nodePoolID uuid.UUID) error
 		Conditions: activities.NodePoolConditions{
 			Provisioning: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusFalse,
-				Message: "Provisioning completed",
+				Message: provisioningCompleted,
 			},
 			Provisioned: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusTrue,

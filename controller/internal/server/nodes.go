@@ -28,13 +28,19 @@ type nodeService struct {
 	logger         *slog.Logger
 	db             db.DB
 	temporalClient client.Client
+
+	// allowEtcdSafetyOverrides gates the dangerous etcd member-removal overrides
+	// (allowQuorumLoss / allowSingleVoter) on DeleteNode. When false, requests that
+	// set either override are rejected with a 400 (NKX-13160).
+	allowEtcdSafetyOverrides bool
 }
 
-func NewNodeService(logger *slog.Logger, database db.DB, temporalClient client.Client) *nodeService {
+func NewNodeService(logger *slog.Logger, database db.DB, temporalClient client.Client, allowEtcdSafetyOverrides bool) *nodeService {
 	return &nodeService{
-		logger:         logger,
-		db:             database,
-		temporalClient: temporalClient,
+		logger:                   logger,
+		db:                       database,
+		temporalClient:           temporalClient,
+		allowEtcdSafetyOverrides: allowEtcdSafetyOverrides,
 	}
 }
 
@@ -81,15 +87,41 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 		}
 	}
 
+	var forceUnreachable, allowQuorumLoss, allowSingleVoter bool
+	if req.Body != nil {
+		forceUnreachable = req.Body.ForceUnreachable
+		allowQuorumLoss = req.Body.AllowQuorumLoss
+		allowSingleVoter = req.Body.AllowSingleVoter
+	}
+
+	// The etcd safety overrides can break etcd quorum or leave a single-voter
+	// cluster, so they are gated behind a server-side flag (NKX-13160). Reject
+	// rather than silently ignore, so operators get clear feedback.
+	if (allowQuorumLoss || allowSingleVoter) && !s.allowEtcdSafetyOverrides {
+		return api.DeleteNode400JSONResponse{
+			Message: "etcd safety overrides (allowQuorumLoss/allowSingleVoter) are disabled on this server; set ALLOW_ETCD_SAFETY_OVERRIDES to enable them",
+		}, nil
+	}
+
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		return nodes.DeleteWithTx(ctx, tx, req.NodeID,
 			nodes.WithReason("API"),
 			nodes.WithAllowCPNode(true),
 			nodes.WithMachineHealthIssue(machineHealthIssue),
+			nodes.WithForceUnreachable(forceUnreachable),
+			nodes.WithAllowQuorumLoss(allowQuorumLoss),
+			nodes.WithAllowSingleVoter(allowSingleVoter),
 		)
 	})
 	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
+		if errors.Is(err, errClusterDeleting) || errors.Is(err, errNodePoolDeleting) || errors.Is(err, errNodeDeleting) {
+			// Teardown already in progress via cluster, pool, or a prior node delete.
+			return api.DeleteNode202Response{}, nil
+		}
+		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNode) {
+			return api.DeleteNode400JSONResponse{Message: err.Error()}, nil
+		}
+		if errors.Is(err, db.ErrNotFound) || errors.Is(err, errClusterNotFound) {
 			return api.DeleteNode404Response{}, nil
 		}
 		return nil, err

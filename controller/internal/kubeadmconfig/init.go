@@ -25,7 +25,9 @@ import (
 )
 
 const (
-	EtcdQuotaBackendBytes = "17179869184" // 16 GB
+	EtcdQuotaBackendBytes            = "17179869184" // 16 GB
+	DefaultSecondaryNodeEvictionRate = "0"
+	DefaultLargeClusterSizeThreshold = "50"
 )
 
 // InitConfig represents the configuration for kubeadm init.
@@ -52,9 +54,26 @@ type InitConfig struct {
 	// KubeadmContainerMode enables workarounds for kubeadm running inside a
 	// container-backed node, such as CAPD DockerMachine nodes.
 	KubeadmContainerMode bool
+	// SystemReservedMemory is the memory reserved for system processes by the
+	// kubelet configuration patch. It defaults to 16Gi when empty.
+	SystemReservedMemory string
+	// KubeReservedMemory is the memory reserved for Kubernetes processes by the
+	// kubelet configuration patch. It defaults to 2Gi when empty.
+	KubeReservedMemory string
 	// AuthenticationConfig configures the authentication-config flag in the
 	// api server and generates the proper AuthenticationConfig file for OIDC.
 	AuthenticationConfig *OIDCAuthenticationConfig
+	// SecondaryNodeEvictionRate sets the kube-controller-manager
+	// --secondary-node-eviction-rate flag, which controls the pod eviction
+	// rate when a zone is unhealthy (≥55% of nodes NotReady). Defaults to "0"
+	// to stop evictions during zone-wide events on single-zone NKE clusters.
+	SecondaryNodeEvictionRate string
+	// LargeClusterSizeThreshold sets the kube-controller-manager
+	// --large-cluster-size-threshold flag. Clusters at or below this size
+	// get a hardcoded eviction rate of 0 during zone-wide events, bypassing
+	// --secondary-node-eviction-rate entirely. Defaults to "50" (upstream
+	// default).
+	LargeClusterSizeThreshold string
 }
 
 // Render generates the bootstrap artifacts for kubeadm init.
@@ -78,6 +97,12 @@ func (config *InitConfig) Render() (*BootstrapArtifacts, error) {
 	if cfg.EtcdQuotaBackendBytes == "" {
 		cfg.EtcdQuotaBackendBytes = EtcdQuotaBackendBytes
 	}
+	if cfg.SecondaryNodeEvictionRate == "" {
+		cfg.SecondaryNodeEvictionRate = DefaultSecondaryNodeEvictionRate
+	}
+	if cfg.LargeClusterSizeThreshold == "" {
+		cfg.LargeClusterSizeThreshold = DefaultLargeClusterSizeThreshold
+	}
 
 	initConfig, err := initConfiguration(&cfg)
 	if err != nil {
@@ -96,7 +121,11 @@ func (config *InitConfig) Render() (*BootstrapArtifacts, error) {
 
 	artifacts := &BootstrapArtifacts{
 		ConfigYAML: configYAML,
-		Files:      []File{apiServerTerminationGracePatch()},
+		Files: []File{
+			kubeletConfigurationPatch(cfg.SystemReservedMemory, cfg.KubeReservedMemory),
+			apiServerTerminationGracePatch(),
+			apiServerAuditPolicyFile(),
+		},
 	}
 
 	if cfg.AuthenticationConfig != nil {
@@ -233,9 +262,12 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 			APIVersion: kubeadmv1beta3.APIVersion,
 			Kind:       kubeadmv1beta3.ClusterConfigurationKind,
 		},
-		APIServer:            apiServer,
-		CertificatesDir:      defaultCertificatesDir,
-		ControllerManager:    controlPlaneComponent(),
+		APIServer:       apiServer,
+		CertificatesDir: defaultCertificatesDir,
+		ControllerManager: controllerManagerComponent(map[string]string{
+			"secondary-node-eviction-rate": config.SecondaryNodeEvictionRate,
+			"large-cluster-size-threshold": config.LargeClusterSizeThreshold,
+		}),
 		ControlPlaneEndpoint: config.APIServerEndpoint,
 		ClusterName:          defaultClusterName,
 		Etcd: kubeadmv1beta3.Etcd{

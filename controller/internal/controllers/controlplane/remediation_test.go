@@ -464,6 +464,7 @@ func TestCanStartRemediation(t *testing.T) {
 		{
 			name: "accounts for surge when deprecated nodes exist",
 			controlPlane: func() *controlPlane {
+				//nolint:prealloc // exact-capacity literal is deliberate: the slice is also appended to below, and spare capacity would alias the shared backing array.
 				currentNodes := []db.Node{nodeToRemove, makeHealthyNode("healthy-1", currentNodeSetID)}
 				deprecatedNodes := []db.Node{makeHealthyNode("deprecated-1", deprecatedNodeSetID)}
 				return &controlPlane{
@@ -487,6 +488,7 @@ func TestCanStartRemediation(t *testing.T) {
 		{
 			name: "can remediate during upgrade when size equals expected with surge",
 			controlPlane: func() *controlPlane {
+				//nolint:prealloc // exact-capacity literal is deliberate: the slice is also appended to below, and spare capacity would alias the shared backing array.
 				currentNodes := []db.Node{nodeToRemove, makeHealthyNode("healthy-1", currentNodeSetID), makeHealthyNode("healthy-2", currentNodeSetID)}
 				deprecatedNodes := []db.Node{makeHealthyNode("deprecated-1", deprecatedNodeSetID)}
 				return &controlPlane{
@@ -510,6 +512,7 @@ func TestCanStartRemediation(t *testing.T) {
 		{
 			name: "multiple node pools - both must satisfy expected count",
 			controlPlane: func() *controlPlane {
+				//nolint:prealloc // exact-capacity literal is deliberate: the slice is also appended to below, and spare capacity would alias the shared backing array.
 				pool1Nodes := []db.Node{nodeToRemove, makeHealthyNode("pool1-healthy-1", currentNodeSetID)}
 				pool2Nodes := []db.Node{makeHealthyNode("pool2-healthy-1", deprecatedNodeSetID)}
 				return &controlPlane{

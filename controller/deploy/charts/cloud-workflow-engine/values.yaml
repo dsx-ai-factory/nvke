@@ -169,6 +169,13 @@ autoscaling:
   targetCPUUtilizationPercentage: 80
   # targetMemoryUtilizationPercentage: 80
 
+# -- Additional init containers on the output Deployment definition, rendered
+# ahead of the app container.
+additionalInitContainers: []
+# - name: wait-for-db
+#   image: busybox
+#   command: ['sh', '-c', 'until nc -z db 5432; do sleep 2; done']
+
 # Additional volumes on the output Deployment definition.
 volumes: []
 # - name: foo
@@ -226,6 +233,13 @@ nkeOIDCAuth:
     # -- Key in the Secret containing the OIDC CA bundle.
     key: ""
 
+nodeTeardown:
+  # -- Allow the DeleteNode API to accept the dangerous etcd safety overrides
+  # (allowQuorumLoss / allowSingleVoter). Disabled by default so production site
+  # controllers reject them; enable on development site controllers that need
+  # manual single-node control-plane rotation (NKX-13160).
+  allowEtcdSafetyOverrides: false
+
 scheduledMaintenance:
   csrApproval:
     # -- Enable CWE-owned periodic kubelet-serving CSR approval.
@@ -239,17 +253,6 @@ scheduledMaintenance:
     interval: 12h
     # -- Days before expiry that the runbook renews certificates.
     thresholdDays: 30
-
-etcdEncryptionKeyMigration:
-  # -- Enable temporary RBAC for migrating etcd encryption key Secrets from SWE to CWE.
-  enabled: false
-  # -- Namespace containing legacy SWE-managed etcd encryption key Secrets. CWE
-  # derives each Secret name at runtime (etcd-encryption-key-<clusterID>), so no
-  # per-site Secret name is needed; the migration Role is scoped to this namespace.
-  legacyNamespace: site-workflow-engine
-  rbac:
-    # -- Create narrow RBAC for CWE to read legacy key Secrets and create destination key Secrets.
-    create: true
 
 secrets:
   # -- Create the DB connection Secret from appDb values. Disabled by default;
@@ -305,7 +308,17 @@ temporal:
     queue: cloud-workflow-engine-tasks
 
 profiles:
+  # Directory CWE reads OS/config profiles from (PROFILES_DIR).
+  # When image.enabled is true, an initContainer copies /profiles from the
+  # profiles content image into an emptyDir mounted at this path.
   path: ""
+  image:
+    # Materialize fleet profiles from an OCI image (built from nke-site-deploy
+    # cwe-profiles/). Prefer digest pins so Deployment rolls on profile changes.
+    enabled: false
+    repository: nvcr.io/j7sbcjl3qgta/cwe-profiles
+    tag: ""
+    digest: ""
 
 spiffe:
   # -- Enable SPIFFE identity for mTLS to tenant clusters

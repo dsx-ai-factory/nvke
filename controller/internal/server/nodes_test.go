@@ -200,7 +200,7 @@ func TestNodeService_ListNodes(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodes", mock.Anything, tt.filters).Return(tt.dbNodes, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
 
 			resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{
 				Params: api.ListNodesParams{
@@ -275,7 +275,7 @@ func TestNodeService_GetNode(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNode", mock.Anything, tt.nodeID).Return(tt.dbNode, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
 
 			resp, err := service.GetNode(context.Background(), api.GetNodeRequestObject{
 				NodeID: tt.nodeID,
@@ -300,22 +300,32 @@ func TestNodeService_GetNode(t *testing.T) {
 
 func TestNodeService_DeleteNode(t *testing.T) {
 	nodeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	tests := []struct {
-		name               string
-		nodeID             uuid.UUID
-		machineHealthIssue *api.MachineHealthIssue
-		setupMockCalls     func(*mockTx)
-		wantError          bool
-		want400            bool
-		want404            bool
-		verifyConditions   func(t *testing.T, conditions db.NodeConditions)
+		name                     string
+		nodeID                   uuid.UUID
+		machineHealthIssue       *api.MachineHealthIssue
+		forceUnreachable         bool
+		allowQuorumLoss          bool
+		allowSingleVoter         bool
+		allowEtcdSafetyOverrides bool
+		setupMockCalls           func(*mockTx)
+		wantError                bool
+		want400                  bool
+		want400Contains          string
+		want404                  bool
+		verifyConditions         func(t *testing.T, conditions db.NodeConditions)
 	}{
 		{
 			name:   "success",
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
-					ID: nodeID,
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
 				}, nil)
 				tx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
 					return n.ID == nodeID && n.Conditions.Deleting.Status == db.ConditionStatusTrue
@@ -338,6 +348,131 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			want404: true,
 		},
 		{
+			name:   "reject last joined control-plane node",
+			nodeID: nodeID,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
+					ID:           nodeID,
+					ClusterID:    clusterID,
+					ControlPlane: true,
+					Conditions: db.NodeConditions{
+						Joined: db.NewCondition(true, "joined"),
+					},
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+				}, nil)
+				controlPlane := true
+				tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.NodePool{}, nil)
+				tx.On("ListNodes", mock.Anything, db.NodeFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.Node{
+					{
+						ID:           nodeID,
+						ClusterID:    clusterID,
+						ControlPlane: true,
+						Conditions: db.NodeConditions{
+							Joined: db.NewCondition(true, "joined"),
+						},
+					},
+				}, nil)
+			},
+			want400:         true,
+			want400Contains: "last joined control-plane node",
+		},
+		{
+			name:   "success control-plane node when another joined CP remains",
+			nodeID: nodeID,
+			setupMockCalls: func(tx *mockTx) {
+				otherCP := uuid.MustParse("550e8400-e29b-41d4-a716-446655440021")
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
+					ID:           nodeID,
+					ClusterID:    clusterID,
+					ControlPlane: true,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+				}, nil)
+				controlPlane := true
+				tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.NodePool{}, nil)
+				tx.On("ListNodes", mock.Anything, db.NodeFilters{
+					ClusterID:    &clusterID,
+					ControlPlane: &controlPlane,
+				}).Return([]db.Node{
+					{
+						ID:           otherCP,
+						ClusterID:    clusterID,
+						ControlPlane: true,
+						Conditions: db.NodeConditions{
+							Joined: db.NewCondition(true, "joined"),
+						},
+					},
+				}, nil)
+				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(db.Node{}, nil)
+				tx.On("CreateWorkflowOutboxEntry", mock.Anything, constants.TeardownNodeWorkflowType, mock.Anything, mock.MatchedBy(func(input workflows.TeardownNodeInput) bool {
+					return input.NodeID == nodeID
+				})).Return(db.WorkflowOutbox{}, nil)
+			},
+		},
+		{
+			name:   "noop while cluster deleting",
+			nodeID: nodeID,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+					Conditions: db.ClusterConditions{
+						Deleting: db.NewCondition(true, "deleting"),
+					},
+				}, nil)
+			},
+		},
+		{
+			name:   "noop while node already deleting",
+			nodeID: nodeID,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+					Conditions: db.NodeConditions{
+						Deleting: db.NewCondition(true, "deleting"),
+					},
+				}, nil)
+			},
+		},
+		{
+			name:   "noop while parent node pool deleting",
+			nodeID: nodeID,
+			setupMockCalls: func(tx *mockTx) {
+				nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440030")
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
+					ID:         nodeID,
+					ClusterID:  clusterID,
+					NodePoolID: nodePoolID,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+				}, nil)
+				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:        nodePoolID,
+					ClusterID: clusterID,
+					Conditions: db.NodePoolConditions{
+						Deleting: db.NewCondition(true, "deleting"),
+					},
+				}, nil)
+			},
+		},
+		{
 			name:   "success with machine health issue",
 			nodeID: nodeID,
 			machineHealthIssue: &api.MachineHealthIssue{
@@ -346,7 +481,11 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			},
 			setupMockCalls: func(tx *mockTx) {
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
-					ID: nodeID,
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
 				}, nil)
 				tx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
 					return n.ID == nodeID && n.Conditions.Deleting.Status == db.ConditionStatusTrue
@@ -381,6 +520,53 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			},
 			want400: true,
 		},
+		{
+			name:             "success with force unreachable (no etcd overrides, no gate needed)",
+			nodeID:           nodeID,
+			forceUnreachable: true,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil)
+				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(db.Node{}, nil)
+				tx.On("CreateWorkflowOutboxEntry", mock.Anything, constants.TeardownNodeWorkflowType, mock.Anything, workflows.TeardownNodeInput{
+					NodeID:           nodeID,
+					Reason:           "API",
+					AllowCPNode:      true,
+					ForceUnreachable: true,
+				}).Return(db.WorkflowOutbox{}, nil)
+			},
+		},
+		{
+			name:                     "success single-voter rotation with override enabled",
+			nodeID:                   nodeID,
+			forceUnreachable:         true,
+			allowSingleVoter:         true,
+			allowEtcdSafetyOverrides: true,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil)
+				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(db.Node{}, nil)
+				tx.On("CreateWorkflowOutboxEntry", mock.Anything, constants.TeardownNodeWorkflowType, mock.Anything, workflows.TeardownNodeInput{
+					NodeID:           nodeID,
+					Reason:           "API",
+					AllowCPNode:      true,
+					ForceUnreachable: true,
+					AllowSingleVoter: true,
+				}).Return(db.WorkflowOutbox{}, nil)
+			},
+		},
+		{
+			name:             "Bad request - single-voter override rejected when gate disabled",
+			nodeID:           nodeID,
+			allowSingleVoter: true,
+			want400:          true,
+		},
+		{
+			name:            "Bad request - quorum-loss override rejected when gate disabled",
+			nodeID:          nodeID,
+			allowQuorumLoss: true,
+			want400:         true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -394,12 +580,15 @@ func TestNodeService_DeleteNode(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, tt.allowEtcdSafetyOverrides)
 
 			var body *api.DeleteNodeJSONRequestBody
-			if tt.machineHealthIssue != nil {
+			if tt.machineHealthIssue != nil || tt.forceUnreachable || tt.allowQuorumLoss || tt.allowSingleVoter {
 				body = &api.DeleteNodeJSONRequestBody{
 					MachineHealthIssue: tt.machineHealthIssue,
+					ForceUnreachable:   tt.forceUnreachable,
+					AllowQuorumLoss:    tt.allowQuorumLoss,
+					AllowSingleVoter:   tt.allowSingleVoter,
 				}
 			}
 
@@ -425,7 +614,11 @@ func TestNodeService_DeleteNode(t *testing.T) {
 				return
 			}
 			if tt.want400 {
-				assert.IsType(t, api.DeleteNode400JSONResponse{}, resp)
+				require.IsType(t, api.DeleteNode400JSONResponse{}, resp)
+				if tt.want400Contains != "" {
+					badRequest := resp.(api.DeleteNode400JSONResponse)
+					assert.Contains(t, badRequest.Message, tt.want400Contains)
+				}
 				return
 			}
 			if tt.want404 {
@@ -449,7 +642,7 @@ func TestNodeService_GetNodeHistory(t *testing.T) {
 		mockDB := &mockDB{}
 		mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID}, nil)
 
-		service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
+		service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
 		resp, err := service.GetNodeHistory(context.Background(), api.GetNodeHistoryRequestObject{
 			NodeID: nodeID,
 		})
@@ -466,7 +659,7 @@ func TestNodeService_GetNodeHistory(t *testing.T) {
 		mockDB := &mockDB{}
 		mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, db.ErrNotFound)
 
-		service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
+		service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
 		resp, err := service.GetNodeHistory(context.Background(), api.GetNodeHistoryRequestObject{
 			NodeID: nodeID,
 		})

@@ -24,13 +24,13 @@ WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
 ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}"
 # DockerMachine base image (build with: make capd-image). Same default as CAPD_KINDEST_NODE_IMAGE in Makefile.dev.
 CAPD_KINDEST_NODE_IMAGE="${CAPD_KINDEST_NODE_IMAGE:-cwe-capd-kindest-node:local}"
-CAPD_BGP_CONTAINER_NAME="${CAPD_BGP_CONTAINER_NAME:-capd-tor}"
+BGP_CONTAINERS_CONTAINER_NAME="${BGP_CONTAINERS_CONTAINER_NAME:-bgp-containers}"
 
 die() { echo "[create-capd-cluster] ERROR: $*" >&2; exit 1; }
 
-detect_capd_bgp() {
+detect_bgp_containers() {
   if command -v docker >/dev/null 2>&1 && \
-      docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${CAPD_BGP_CONTAINER_NAME}"; then
+      docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "${BGP_CONTAINERS_CONTAINER_NAME}"; then
     echo true
   else
     echo false
@@ -38,16 +38,14 @@ detect_capd_bgp() {
 }
 
 case "${CAPD_ENABLE_KUBE_VIP:-}" in
-  "") CAPD_ENABLE_KUBE_VIP="$(detect_capd_bgp)" ;;
+  "") CAPD_ENABLE_KUBE_VIP="$(detect_bgp_containers)" ;;
   true|false) ;;
   *) die "CAPD_ENABLE_KUBE_VIP must be true or false" ;;
 esac
 
 if [[ "${CAPD_ENABLE_KUBE_VIP}" == "true" ]]; then
-  DISABLE_KUBE_VIP=false
-  CONTROL_PLANE_VIP_FIELD=$(printf ',\n      "controlPlaneVIP": "%s"' "${CONTROL_PLANE_VIP}")
+  CONTROL_PLANE_VIP_FIELD=$(printf ',\n  "controlPlaneVIP": "%s"' "${CONTROL_PLANE_VIP}")
 else
-  DISABLE_KUBE_VIP=true
   CONTROL_PLANE_VIP_FIELD=""
 fi
 
@@ -61,7 +59,7 @@ fi
 if [[ "${CAPD_ENABLE_KUBE_VIP}" == "true" ]]; then
   echo "Creating CAPD cluster with kube-vip enabled: vipRange=${DEFAULT_VIP_RANGE}, controlPlaneVIP=${CONTROL_PLANE_VIP}" >&2
 else
-  echo "Creating CAPD cluster with kube-vip disabled; start capd-bgp first or set CAPD_ENABLE_KUBE_VIP=true to enable it." >&2
+  echo "Creating CAPD cluster with kube-vip disabled; start bgp-containers first or set CAPD_ENABLE_KUBE_VIP=true to enable it." >&2
 fi
 
 BODY=$(cat <<EOF
@@ -70,8 +68,7 @@ BODY=$(cat <<EOF
   "siteID": "${DEFAULT_SITE_ID}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
-  "etcdEncrypted": ${ETCD_ENCRYPTED},
-  "disableKubeVip": ${DISABLE_KUBE_VIP},
+  "etcdEncrypted": ${ETCD_ENCRYPTED}${CONTROL_PLANE_VIP_FIELD},
   "nodePools": [
     {
       "name": "control-plane",
@@ -81,7 +78,7 @@ BODY=$(cat <<EOF
       "controlPlane": true,
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
-      "recycleBudget": 0${CONTROL_PLANE_VIP_FIELD},
+      "recycleBudget": 0,
       "capiInfraMachineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
         "kind": "DockerMachineTemplate",

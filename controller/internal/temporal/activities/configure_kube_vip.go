@@ -90,9 +90,16 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 
 	// When FNN (Forge Native Networking) is enabled in the site we want to query the DPU ASN from the Forge Metadata Service (FMDS).
 	// We know FNN is enabled when the node pool has VPC prefixes instead of subnets.
+	// CAPI clusters do not use Nico provider payloads or VPC prefixes, so skip the check for them.
 	bgpPeerAS := "4294967000"
-	if len(nodePool.VpcPrefixIDs) > 0 {
-		bgpPeerAS = "FROM_FMDS"
+	if nodePool.Nico != nil {
+		nicoNodePoolProvider, err := nodePool.NicoProvider()
+		if err != nil {
+			return ConfigureKubeVipResult{}, err
+		}
+		if len(nicoNodePoolProvider.VpcPrefixIDs) > 0 {
+			bgpPeerAS = "FROM_FMDS"
+		}
 	}
 
 	logger.Info("Configuring kube-vip on control plane node",

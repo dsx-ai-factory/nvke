@@ -57,12 +57,10 @@ func (te *collectorTestEnv) createCluster(ctx context.Context, t *testing.T, nam
 	t.Helper()
 	cluster := db.Cluster{
 		ID:                uuid.New(),
-		SiteID:            te.site.ID,
 		Name:              name,
-		OrgID:             "test-org",
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.31.0",
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: te.site.ID, VpcID: uuid.New()})
 	created, err := te.database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 	return created
@@ -71,18 +69,19 @@ func (te *collectorTestEnv) createCluster(ctx context.Context, t *testing.T, nam
 func (te *collectorTestEnv) createNodePool(ctx context.Context, t *testing.T, cluster db.Cluster, name string) db.NodePool {
 	t.Helper()
 	np := db.NodePool{
-		ID:             uuid.New(),
-		ClusterID:      cluster.ID,
-		Name:           name,
-		NodeNamePrefix: "n",
-		ControlPlane:   false,
-		SubnetIDs:      []uuid.UUID{uuid.New()},
-		VpcPrefixIDs:   []uuid.UUID{uuid.New()},
-		InstanceTypeID: uuid.New(),
-		SSHKeyGroupIDs: []uuid.UUID{},
-		OSProfile:      "test-os",
-		ConfigProfile:  "test-config",
-		NodeLabels:     []string{},
+		ID:                 uuid.New(),
+		ClusterID:          cluster.ID,
+		Name:               name,
+		NodeNamePrefix:     "n",
+		ControlPlane:       false,
+		SubnetIDs:          []uuid.UUID{uuid.New()},
+		VpcPrefixIDs:       []uuid.UUID{uuid.New()},
+		InstanceTypeID:     uuid.New(),
+		SSHKeyGroupIDs:     []uuid.UUID{},
+		OSProfile:          "test-os",
+		ConfigProfile:      "test-config",
+		KubeReservedMemory: "250Mi",
+		NodeLabels:         []string{},
 	}
 	created, err := te.database.CreateNodePool(ctx, &np)
 	require.NoError(t, err)
@@ -97,6 +96,7 @@ func (te *collectorTestEnv) createNodeSet(ctx context.Context, t *testing.T, np 
 		OSProfile:            "test-os",
 		ConfigProfile:        "test-config",
 		SystemReservedMemory: "16Gi",
+		KubeReservedMemory:   "250Mi",
 		SubnetIDs:            []uuid.UUID{uuid.New()},
 		VpcPrefixIDs:         []uuid.UUID{uuid.New()},
 	}
@@ -166,10 +166,12 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		require.Len(t, f.GetMetric(), 1)
 
 		labels := labelsAsMap(f.GetMetric()[0])
+		nicoProvider, err := cluster.NicoProvider()
+		require.NoError(t, err)
 		assert.Equal(t, "info-cluster", labels["name"])
-		assert.Equal(t, cluster.OrgID, labels["org_id"])
-		assert.Equal(t, cluster.SiteID.String(), labels["site_id"])
-		assert.Equal(t, cluster.VpcID.String(), labels["vpc_id"])
+		assert.Equal(t, nicoProvider.OrgID, labels["org_id"])
+		assert.Equal(t, nicoProvider.SiteID.String(), labels["site_id"])
+		assert.Equal(t, nicoProvider.VpcID.String(), labels["vpc_id"])
 	})
 
 	t.Run("emits one cwe_nodepool_info per node pool with cluster and pool labels", func(t *testing.T) {
@@ -193,9 +195,12 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		assert.Equal(t, "np-cluster", labels["tenant_cluster"])
 		assert.Equal(t, np.ID.String(), labels["id"])
 		assert.Equal(t, cluster.ID.String(), labels["cluster_id"])
-		assert.Equal(t, cluster.OrgID, labels["org_id"])
-		assert.Equal(t, cluster.SiteID.String(), labels["site_id"])
-		assert.Equal(t, cluster.VpcID.String(), labels["vpc_id"])
+		nicoProvider, err := cluster.NicoProvider()
+		require.NoError(t, err)
+		assert.Equal(t, nicoProvider.OrgID, labels["org_id"])
+		assert.Equal(t, nicoProvider.SiteID.String(), labels["site_id"])
+		assert.Equal(t, nicoProvider.VpcID.String(), labels["vpc_id"])
+		assert.Equal(t, "250Mi", labels["kube_reserved_memory"])
 	})
 
 	t.Run("emits one cwe_nodeset_info per node set with cluster and node pool names", func(t *testing.T) {
@@ -220,6 +225,7 @@ func TestUnit_Collector_ClusterNodePoolNodeSetInfo(t *testing.T) {
 		assert.Equal(t, "ns-pool", labels["node_pool_name"])
 		assert.Equal(t, ns.ID.String(), labels["id"])
 		assert.Equal(t, np.ID.String(), labels["node_pool_id"])
+		assert.Equal(t, "250Mi", labels["kube_reserved_memory"])
 	})
 
 	t.Run("emits correct count of info metrics for multiple clusters pools and sets", func(t *testing.T) {

@@ -151,6 +151,7 @@ func TestIsControlPlaneHealthy_WithSurgeThreshold(t *testing.T) {
 	poolsThree := []db.NodePool{
 		{ClusterID: clusterID, ControlPlane: true, DesiredCount: 3, MaxSurge: 0},
 	}
+	//nolint:prealloc // exact-capacity literal is deliberate: the slice is also appended to below, and spare capacity would alias the shared backing array.
 	healthyNodesThree := []db.Node{
 		makeHealthyNode("cp-1", nodeSetID),
 		makeHealthyNode("cp-2", nodeSetID),

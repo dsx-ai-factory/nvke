@@ -72,9 +72,9 @@ func (a *Activities) triggerNodePoolTeardownNodes(
 		for _, node := range nodes {
 			workflowID := constants.TeardownNodeWorkflowPrefix + node.ID.String()
 			if _, err = tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, map[string]interface{}{
-				"nodeID":                node.ID,
-				"skipRemoveFromCluster": input.SkipRemoveFromCluster,
-				"allowCPNode":           true,
+				"nodeID":                   node.ID,
+				skipRemoveFromClusterParam: input.SkipRemoveFromCluster,
+				"allowCPNode":              true,
 			}); err != nil {
 				return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 			}

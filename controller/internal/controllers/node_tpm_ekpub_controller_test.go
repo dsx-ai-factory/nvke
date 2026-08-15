@@ -28,43 +28,89 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
-func TestReconcileForgeNodeEKPub_NoNodePoolSkipsWithoutForgeInstance(t *testing.T) {
-	ctx := context.Background()
-	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
-		(*db.Cluster)(nil),
-		(*db.Node)(nil),
-	)
-	database := db.NewDB(bunDB)
+func TestReconcileForgeNodeEKPub(t *testing.T) {
+	pending := forgeapi.INSTANCESTATUS_PENDING
 
-	site := db.Site{ID: uuid.New(), VIPRanges: []string{}}
-	_, err := database.RegisterSite(ctx, &site)
-	require.NoError(t, err)
-
-	cluster := db.Cluster{
-		ID:                uuid.New(),
-		SiteID:            site.ID,
-		Name:              "tpm-cluster",
-		OrgID:             "test-org",
-		VpcID:             uuid.New(),
-		KubernetesVersion: "1.31.0",
+	type parameters struct {
+		node           db.Node
+		cluster        db.Cluster
+		forgeProvider  *recordingNodeTPMForgeProvider
+		wantOrgID      string
+		wantSiteID     string
+		wantInstanceID string
 	}
-	_, err = database.CreateCluster(ctx, &cluster)
-	require.NoError(t, err)
 
-	node := db.Node{
-		ID:           uuid.New(),
-		ClusterID:    cluster.ID,
-		ControlPlane: true,
-		Name:         "cp-no-pool",
-		IP:           "10.0.0.1",
+	clusterID := uuid.MustParse("40000000-0000-0000-0000-000000000001")
+	emptyForgeNodeID := uuid.MustParse("40000000-0000-0000-0000-000000000002")
+	payloadNodeID := uuid.MustParse("40000000-0000-0000-0000-000000000003")
+	siteID := uuid.MustParse("40000000-0000-0000-0000-000000000004")
+	vpcID := uuid.MustParse("40000000-0000-0000-0000-000000000005")
+	tests := map[string]parameters{
+		"skips without forge instance": {
+			node: db.Node{
+				ID:           emptyForgeNodeID,
+				ClusterID:    clusterID,
+				ControlPlane: true,
+				Name:         "cp-no-pool",
+				IP:           "10.0.0.1",
+				Nico:         &db.NicoNodeProvider{},
+			},
+			cluster: db.Cluster{
+				ID:           clusterID,
+				ProviderType: db.ProviderTypeNico,
+				Nico: &db.NicoClusterProvider{
+					OrgID:  "org-1",
+					SiteID: siteID,
+					VpcID:  vpcID,
+				},
+			},
+			forgeProvider: &recordingNodeTPMForgeProvider{
+				instance: &forgeapi.Instance{Status: &pending},
+			},
+		},
+		"uses nico node provider": {
+			node: db.Node{
+				ID:              payloadNodeID,
+				ClusterID:       clusterID,
+				Name:            "worker-0",
+				ForgeInstanceID: "legacy-instance",
+				Nico: &db.NicoNodeProvider{
+					ForgeInstanceID: "payload-instance",
+				},
+			},
+			cluster: db.Cluster{
+				ID:           clusterID,
+				ProviderType: db.ProviderTypeNico,
+				Nico: &db.NicoClusterProvider{
+					OrgID:  "org-1",
+					SiteID: siteID,
+					VpcID:  vpcID,
+				},
+			},
+			forgeProvider: &recordingNodeTPMForgeProvider{
+				instance: &forgeapi.Instance{Status: &pending},
+			},
+			wantOrgID:      "org-1",
+			wantSiteID:     siteID.String(),
+			wantInstanceID: "payload-instance",
+		},
 	}
-	_, err = database.CreateNode(ctx, &node)
-	require.NoError(t, err)
 
-	controller := NewNodeTPMEKPubController(config.Config{}, database, slog.New(slog.NewTextHandler(os.Stdout, nil)), nil, nil)
-	err = controller.reconcileForgeNodeEKPub(ctx, node, cluster)
-	require.NoError(t, err)
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			controller := &NodeTPMEKPubController{
+				logger:        slog.New(slog.NewTextHandler(os.Stdout, nil)),
+				forgeProvider: params.forgeProvider,
+			}
+
+			err := controller.reconcileForgeNodeEKPub(context.Background(), params.node, params.cluster)
+
+			require.NoError(t, err)
+			assert.Equal(t, params.wantOrgID, params.forgeProvider.orgID)
+			assert.Equal(t, params.wantSiteID, params.forgeProvider.siteID)
+			assert.Equal(t, params.wantInstanceID, params.forgeProvider.instanceID)
+		})
+	}
 }
 
 func TestIsForgeInstanceAvailable(t *testing.T) {
@@ -75,6 +121,20 @@ func TestIsForgeInstanceAvailable(t *testing.T) {
 	assert.False(t, isForgeInstanceAvailable(&forgeapi.Instance{Status: &pending}))
 	assert.False(t, isForgeInstanceAvailable(&forgeapi.Instance{}))
 	assert.False(t, isForgeInstanceAvailable(nil))
+}
+
+type recordingNodeTPMForgeProvider struct {
+	orgID      string
+	siteID     string
+	instanceID string
+	instance   *forgeapi.Instance
+}
+
+func (p *recordingNodeTPMForgeProvider) GetInstanceByID(_ context.Context, orgID, siteID, instanceID string) (*forgeapi.Instance, error) {
+	p.orgID = orgID
+	p.siteID = siteID
+	p.instanceID = instanceID
+	return p.instance, nil
 }
 
 func TestIsNicoMachineAvailable(t *testing.T) {
@@ -102,9 +162,10 @@ func TestIsNicoMachineAvailable(t *testing.T) {
 func TestReconcileNicoNodeEKPub_PersistsHashWhenReady(t *testing.T) {
 	ctx := context.Background()
 
-	clusterID := uuid.New()
+	clusterID := uuid.MustParse("41000000-0000-0000-0000-000000000001")
+	nodeID := uuid.MustParse("41000000-0000-0000-0000-000000000002")
 	node := db.Node{
-		ID:        uuid.New(),
+		ID:        nodeID,
 		ClusterID: clusterID,
 		Name:      "worker-0",
 	}
@@ -163,23 +224,28 @@ func TestReconcileNicoNodeEKPub_SkipsWhenNotReady(t *testing.T) {
 	)
 	database := db.NewDB(bunDB)
 
-	site := db.Site{ID: uuid.New(), VIPRanges: []string{}}
+	siteID := uuid.MustParse("42000000-0000-0000-0000-000000000001")
+	clusterID := uuid.MustParse("42000000-0000-0000-0000-000000000002")
+	vpcID := uuid.MustParse("42000000-0000-0000-0000-000000000003")
+	nodeID := uuid.MustParse("42000000-0000-0000-0000-000000000004")
+
+	site := db.Site{ID: siteID, VIPRanges: []string{}}
 	_, err := database.RegisterSite(ctx, &site)
 	require.NoError(t, err)
 
 	cluster := db.Cluster{
-		ID:                uuid.New(),
+		ID:                clusterID,
 		SiteID:            site.ID,
 		Name:              "capi-cluster",
 		OrgID:             "test-org",
-		VpcID:             uuid.New(),
+		VpcID:             vpcID,
 		KubernetesVersion: "1.31.0",
 	}
 	_, err = database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
 	node := db.Node{
-		ID:        uuid.New(),
+		ID:        nodeID,
 		ClusterID: cluster.ID,
 		Name:      "worker-0",
 	}

@@ -154,7 +154,7 @@ func (r *reconciler) isK8sVersionUpgradeNeeded(
 			logger.Info("NodePool needs upgrade",
 				"nodePoolID", nodePool.ID,
 				"nodePoolName", nodePool.Name,
-				"currentNodePoolOSProfile", nodePool.OSProfile,
+				"currentNodePoolOSProfile", nodePoolOSProfileForLog(nodePool.NodePool),
 				"currentVersion", nodePool.KubernetesVersion,
 				"targetVersion", cluster.KubernetesVersion,
 			)
@@ -177,7 +177,7 @@ func (r *reconciler) updateNodePoolsKubeVersion(
 		nplogger := logger.With(
 			"nodePoolID", nodePool.ID,
 			"nodePoolName", nodePool.Name,
-			"nodePoolOSProfile", nodePool.OSProfile,
+			"nodePoolOSProfile", nodePoolOSProfileForLog(nodePool.NodePool),
 			"nodePoolKubernetesVersion", nodePool.KubernetesVersion,
 			"targetVersion", cluster.KubernetesVersion,
 		)
@@ -408,7 +408,7 @@ func (r *reconciler) updateNodePoolKubeVersion(
 	logger.Info("Kubernetes version mismatch detected - updating NodePool KubernetesVersion and/or OSProfile",
 		"targetVersion", cluster.KubernetesVersion,
 		"nodePoolKubernetesVersion", nodePool.KubernetesVersion,
-		"nodePoolOSProfile", nodePool.OSProfile,
+		"nodePoolOSProfile", nodePoolOSProfileForLog(nodePool.NodePool),
 	)
 
 	np, err := r.db.GetNodePool(ctx, nodePool.ID)
@@ -416,12 +416,15 @@ func (r *reconciler) updateNodePoolKubeVersion(
 		return fmt.Errorf("failed to get node pool: %w", err)
 	}
 
-	// CAPD/CAPI node pools can have an empty OSProfile; drive upgrades via KubernetesVersion only.
-	if nodePool.OSProfile == "" {
-		logger.Info("NodePool OSProfile is empty; updating KubernetesVersion only")
-		np.KubernetesVersion = cluster.KubernetesVersion
-	} else {
-		kubeVersionInjected, err := utils.IsKubernetesVersionInjected(r.cfg.ProfilesDir, nodePool.OSProfile)
+	switch cluster.ProviderType {
+	case db.ProviderTypeNico:
+		nicoNodePoolProvider, err := np.NicoProvider()
+		if err != nil {
+			return err
+		}
+		osProfile := nicoNodePoolProvider.OSProfile
+
+		kubeVersionInjected, err := utils.IsKubernetesVersionInjected(r.cfg.ProfilesDir, osProfile)
 		if err != nil {
 			return fmt.Errorf("failed to get NodePool KubernetesVersion injection status for NodePool %s: %w", nodePool.ID, err)
 		}
@@ -434,7 +437,7 @@ func (r *reconciler) updateNodePoolKubeVersion(
 		} else {
 			logger.Info("KubernetesVersion is not injected at provisioning time in NodePool - resolving new OSProfile", "nodePoolKubernetesVersion", nodePool.KubernetesVersion)
 			// Pass current profile name to preserve architecture, variant, and os_version
-			newOSProfile, err := r.resolveOSProfile(cluster.KubernetesVersion, nodePool.OSProfile)
+			newOSProfile, err := r.resolveOSProfile(cluster.KubernetesVersion, osProfile)
 			if err != nil {
 				return fmt.Errorf("failed to resolve OSProfile: %w", err)
 			}
@@ -442,6 +445,14 @@ func (r *reconciler) updateNodePoolKubeVersion(
 			np.OSProfile = newOSProfile
 			np.KubernetesVersion = cluster.KubernetesVersion
 		}
+
+	case db.ProviderTypeCAPI:
+		// CAPI clusters do not use an OSProfile; drive upgrades via KubernetesVersion only.
+		logger.Info("CAPI cluster; updating KubernetesVersion only")
+		np.KubernetesVersion = cluster.KubernetesVersion
+
+	default:
+		return fmt.Errorf("unsupported provider type %q for NodePool KubernetesVersion upgrade", cluster.ProviderType)
 	}
 
 	_, err = r.db.UpdateNodePool(ctx, &np)
@@ -455,6 +466,16 @@ func (r *reconciler) updateNodePoolKubeVersion(
 	)
 
 	return nil
+}
+
+// nodePoolOSProfileForLog returns the OSProfile from the Nico provider payload
+// for use in log attributes. Returns "" for CAPI pools (no OSProfile) or on error.
+func nodePoolOSProfileForLog(nodePool db.NodePool) string {
+	nicoNodePoolProvider, err := nodePool.NicoProvider()
+	if err != nil {
+		return ""
+	}
+	return nicoNodePoolProvider.OSProfile
 }
 
 // upgradeAddons runs kubeadm upgrade apply on a control plane node to upgrade add-ons

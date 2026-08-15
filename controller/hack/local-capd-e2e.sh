@@ -47,9 +47,9 @@ collect_diagnostics() {
   mkdir -p "${state_dir}"
   docker ps -a --no-trunc >"${state_dir}/docker-ps.txt" 2>&1
   docker system df >"${state_dir}/docker-system-df.txt" 2>&1
-  docker logs capd-tor >"${state_dir}/capd-bgp.log" 2>&1
-  docker exec capd-tor vtysh -c 'show bgp summary' >"${state_dir}/capd-bgp-summary.txt" 2>&1
-  docker exec capd-tor vtysh -c 'show bgp ipv4 unicast' >"${state_dir}/capd-bgp-routes.txt" 2>&1
+  docker logs bgp-containers >"${state_dir}/bgp-containers.log" 2>&1
+  docker exec bgp-containers vtysh -c 'show bgp summary' >"${state_dir}/bgp-containers-summary.txt" 2>&1
+  docker exec bgp-containers vtysh -c 'show bgp ipv4 unicast' >"${state_dir}/bgp-containers-routes.txt" 2>&1
   if [[ "${management_ready}" == true ]]; then
     kubectl get nodes -o wide >"${state_dir}/management-nodes.txt" 2>&1
     kubectl get pods -A -o wide >"${state_dir}/management-pods.txt" 2>&1
@@ -91,6 +91,17 @@ done
 
 [[ "$(uname -s)" == Darwin ]] || fail "this entrypoint currently supports macOS with Colima"
 
+# The Tiltfile refuses to render without these (no defaults). Check here too so
+# the failure is visible on the console instead of buried in tilt.log. Values
+# may come from the shell environment or .env.tilt.
+if [[ ! -f "${repo_root}/.env.tilt" ]]; then
+  for var in DGXC_TENANT_USER DGXC_TENANT_PASSWORD CNPG_SUPERUSER_PASSWORD \
+    CNPG_CLOUD_PASSWORD CNPG_TEMPORAL_PASSWORD; do
+    [[ -n "${!var:-}" ]] || \
+      fail "${var} is required: export it or create .env.tilt from .env.tilt.example"
+  done
+fi
+
 : "${COLIMA_PROFILE:=default}"
 : "${COLIMA_CPUS:=10}"
 : "${COLIMA_MEMORY_GIB:=24}"
@@ -130,10 +141,10 @@ make -C "${repo_root}" capd-up
 if [[ -f "${tilt_config}" ]]; then
   cp "${tilt_config}" "${tilt_config_backup}"
   had_tilt_config=true
-  jq '. + {providers: ["capi_core", "capd"]}' \
+  jq '. + {providers: ["capi_core", "bgp-containers", "capd"]}' \
     "${tilt_config_backup}" >"${tilt_config}"
 else
-  jq -n '{providers: ["capi_core", "capd"]}' >"${tilt_config}"
+  jq -n '{providers: ["capi_core", "bgp-containers", "capd"]}' >"${tilt_config}"
 fi
 tilt_config_staged=true
 

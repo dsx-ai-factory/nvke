@@ -172,6 +172,41 @@ func (r *virsh) ListMachines(ctx context.Context) ([]string, error) {
 	return machines, nil
 }
 
+// LookupDHCPLease queries the libvirt network's DHCP leases and returns the
+// IPv4 address currently assigned to the given MAC. Used in libvirt-network
+// mode, where libvirt's own dnsmasq (not forge-vms) hands out addresses.
+// virsh renders the lease table as:
+//
+//	Expiry Time   MAC address   Protocol   IP address           Hostname   Client ID
+//	...           00:52:...     ipv4       192.168.122.45/24    host       ...
+func (r *virsh) LookupDHCPLease(ctx context.Context, network, mac string) (string, bool, error) {
+	out, err := r.runVirsh(ctx, "net-dhcp-leases", network)
+	if err != nil {
+		return "", false, fmt.Errorf("virsh net-dhcp-leases %s failed: %w", network, err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		hasMAC := false
+		for _, f := range fields {
+			if strings.EqualFold(f, mac) {
+				hasMAC = true
+				break
+			}
+		}
+		if !hasMAC {
+			continue
+		}
+		// The IP column is rendered as "192.168.122.45/24" — find it by
+		// parsing rather than relying on a fixed column index.
+		for _, f := range fields {
+			if ip, _, perr := net.ParseCIDR(f); perr == nil && ip.To4() != nil {
+				return ip.String(), true, nil
+			}
+		}
+	}
+	return "", false, nil
+}
+
 func (r *virsh) runVirsh(ctx context.Context, args ...string) (string, error) {
 	finalArgs := make([]string, 0, len(args)+2)
 	if r.uri != "" {
@@ -233,6 +268,7 @@ func renderDomainXML(spec vm.InstanceSpec, arch, domainUUID string, tpmEnabled b
 		OverlayPath: spec.DiskPath,
 		SeedISOPath: spec.SeedISOPath,
 		BridgeName:  spec.BridgeName,
+		NetworkName: spec.NetworkName,
 		NICMAC:      spec.NICMAC,
 		Arch:        arch,
 		UEFI:        spec.UEFI,

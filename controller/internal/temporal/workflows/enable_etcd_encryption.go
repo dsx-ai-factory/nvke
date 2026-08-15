@@ -30,8 +30,6 @@ import (
 const (
 	etcdEncryptionFailureMessage = "Etcd encryption enablement failed"
 
-	etcdEncryptionConfigRunbook       = "kubeadm-config-api-encryption"
-	etcdEncryptionValidateOnlyEnv     = "KUBEADM_CONFIG_API_ENCRYPTION_VALIDATE_ONLY"
 	minEtcdEncryptionNodeAgentVersion = "v0.1.26"
 
 	etcdRewriteInitialPollInterval = 30 * time.Second
@@ -55,7 +53,7 @@ func EnableEtcdEncryption(ctx workflow.Context, input EnableEtcdEncryptionInput)
 		// both sides is by re-running the workflow. EnsurePendingEtcdEncryptionKey
 		// reuses the existing key, Initialize and Promote converge when replayed, a
 		// new workflow run uses a fresh rewrite ID and re-establishes the completion
-		// labels needed by Remove, and the kubeadm-config runbook is idempotent. The
+		// labels needed by Remove, and the kubeadm-config merge is idempotent. The
 		// API clears UpdateFailed before starting the next attempt, so a retry is
 		// always permitted. Here we only clear the in-progress condition (on a
 		// disconnected context so it still runs if the workflow is being canceled)
@@ -93,12 +91,7 @@ func enableEtcdEncryption(ctx workflow.Context, input EnableEtcdEncryptionInput)
 	if err := validateEtcdEncryptionHealth(ctx, input.ClusterID, plan.NodeIDs); err != nil {
 		return err
 	}
-	if err := executeEtcdEncryptionRunbook(
-		ctx,
-		plan.ExecutorNodeID,
-		etcdEncryptionConfigRunbook,
-		map[string]string{etcdEncryptionValidateOnlyEnv: "true"},
-	); err != nil {
+	if err := validateEtcdEncryptionKubeadmConfig(ctx, input.ClusterID); err != nil {
 		return err
 	}
 
@@ -145,7 +138,7 @@ func enableEtcdEncryption(ctx workflow.Context, input EnableEtcdEncryptionInput)
 		return err
 	}
 
-	if err := executeEtcdEncryptionRunbook(ctx, plan.ExecutorNodeID, etcdEncryptionConfigRunbook, nil); err != nil {
+	if err := mergeEtcdEncryptionKubeadmConfig(ctx, input.ClusterID); err != nil {
 		return err
 	}
 	if err := workflow.ExecuteActivity(
@@ -235,19 +228,26 @@ func validateEtcdEncryptionHealth(ctx workflow.Context, clusterID uuid.UUID, nod
 	return nil
 }
 
-func executeEtcdEncryptionRunbook(
-	ctx workflow.Context,
-	nodeID uuid.UUID,
-	runbookName string,
-	runbookEnv map[string]string,
-) error {
+func validateEtcdEncryptionKubeadmConfig(ctx workflow.Context, clusterID uuid.UUID) error {
 	var a *activities.Activities
 	if err := workflow.ExecuteActivity(
-		withEtcdEncryptionRunbookOptions(ctx),
-		a.ExecuteHostRunbook,
-		activities.ExecuteHostRunbookInput{HostID: nodeID, RunbookName: runbookName, RunbookEnv: runbookEnv},
+		withEtcdEncryptionOptions(ctx),
+		a.ValidateEtcdEncryptionKubeadmConfig,
+		activities.KubeadmConfigClusterInput{ClusterID: clusterID},
 	).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to execute %s runbook: %w", runbookName, err)
+		return fmt.Errorf("failed to validate API encryption in kubeadm-config: %w", err)
+	}
+	return nil
+}
+
+func mergeEtcdEncryptionKubeadmConfig(ctx workflow.Context, clusterID uuid.UUID) error {
+	var a *activities.Activities
+	if err := workflow.ExecuteActivity(
+		withEtcdEncryptionOptions(ctx),
+		a.MergeEtcdEncryptionKubeadmConfig,
+		activities.KubeadmConfigClusterInput{ClusterID: clusterID},
+	).Get(ctx, nil); err != nil {
+		return fmt.Errorf("failed to merge API encryption into kubeadm-config: %w", err)
 	}
 	return nil
 }
@@ -337,23 +337,6 @@ func validateEtcdEncryptionRewriteOperation(
 func withEtcdEncryptionOptions(ctx workflow.Context) workflow.Context {
 	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    10 * time.Second,
-			MaximumInterval:    time.Minute,
-			BackoffCoefficient: 2,
-			MaximumAttempts:    3,
-		},
-	})
-}
-
-// withEtcdEncryptionRunbookOptions matches withEtcdEncryptionOptions but adds a
-// HeartbeatTimeout so a hung ExecuteHostRunbook activity (which heartbeats
-// internally) is detected promptly rather than only at StartToCloseTimeout. This
-// mirrors the runbook activity options used elsewhere (see UpdateKubeadmConfigMap).
-func withEtcdEncryptionRunbookOptions(ctx workflow.Context) workflow.Context {
-	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
-		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    10 * time.Second,
 			MaximumInterval:    time.Minute,

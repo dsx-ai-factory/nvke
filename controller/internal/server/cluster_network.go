@@ -245,12 +245,15 @@ func (n resolvedClusterNetwork) overlappingCIDR(prefix netip.Prefix) (string, ne
 func (n resolvedClusterNetwork) validateControlPlaneVIP(vip string) error {
 	addr, err := netip.ParseAddr(vip)
 	if err != nil {
-		return fmt.Errorf("invalid allocated control-plane VIP %q: %w", vip, err)
+		return fmt.Errorf("invalid controlPlaneVIP %q: %w", vip, err)
+	}
+	if !addr.Is4() {
+		return fmt.Errorf("invalid controlPlaneVIP %q: must be an IPv4 address", vip)
 	}
 	for _, podPrefix := range n.podCIDRPrefixes {
 		if podPrefix.Contains(addr) {
 			return newBadRequestErrorf(
-				"allocated control-plane VIP %q overlaps %s %q",
+				"controlPlaneVIP %q overlaps %s %q",
 				vip,
 				"network.podCIDR",
 				podPrefix,
@@ -259,7 +262,7 @@ func (n resolvedClusterNetwork) validateControlPlaneVIP(vip string) error {
 	}
 	if n.serviceCIDR.Contains(addr) {
 		return newBadRequestErrorf(
-			"allocated control-plane VIP %q overlaps %s %q",
+			"controlPlaneVIP %q overlaps %s %q",
 			vip,
 			"network.serviceCIDR",
 			n.serviceCIDR,
@@ -282,9 +285,15 @@ func (s *clusterService) validateSelectedForgeNetworkCIDRs(
 
 	subnetIDs := make([]uuid.UUID, 0)
 	vpcPrefixIDs := make([]uuid.UUID, 0)
-	for _, nodePool := range req.NodePools {
-		subnetIDs = append(subnetIDs, nodePool.SubnetIDs...)
-		vpcPrefixIDs = append(vpcPrefixIDs, nodePool.VpcPrefixIDs...)
+	if req.NodePools != nil {
+		for _, nodePool := range *req.NodePools {
+			subnetIDs = append(subnetIDs, nodePool.SubnetIDs...)
+			vpcPrefixIDs = append(vpcPrefixIDs, nodePool.VpcPrefixIDs...)
+		}
+	}
+	if s.useControlPlaneController && req.ControlPlaneConfig != nil {
+		subnetIDs = append(subnetIDs, req.ControlPlaneConfig.SubnetIDs...)
+		vpcPrefixIDs = append(vpcPrefixIDs, req.ControlPlaneConfig.VpcPrefixIDs...)
 	}
 	return validateForgeNetworkIDs(
 		ctx,

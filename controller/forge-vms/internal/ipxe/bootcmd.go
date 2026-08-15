@@ -107,9 +107,14 @@ func PrependBootcmd(userData, bootcmdYAML string) string {
 	if strings.HasPrefix(userData, "#cloud-config") {
 		// Check if userData already has bootcmd
 		if strings.Contains(userData, "\nbootcmd:") {
-			// Already has bootcmd - prepend our commands into the existing section
-			// For simplicity, we insert our bootcmd before the existing one
-			return strings.Replace(userData, "\nbootcmd:", "\n"+bootcmdYAML+"# Original bootcmd below (merged):\noriginal_bootcmd:", 1)
+			// Replace the existing key with the generated section. The existing
+			// sequence items remain attached to that same bootcmd key.
+			return strings.Replace(
+				userData,
+				"\nbootcmd:",
+				"\n"+strings.TrimSuffix(bootcmdYAML, "\n"),
+				1,
+			)
 		}
 		// Insert bootcmd after the #cloud-config line
 		parts := strings.SplitN(userData, "\n", 2)

@@ -6,7 +6,7 @@
 ##
 ## -------------------------------------------------------------------
 # Flox manifest version managed by Flox CLI
-version = 1
+schema-version = "1.11.0"
 
 
 ## Install Packages --------------------------------------------------
@@ -18,8 +18,10 @@ version = 1
 go = { pkg-path = "go", version = "1.25" }
 oapi-codegen = { pkg-path = "oapi-codegen", version = "2.4.1", pkg-group = "oapi-codegen" }
 gnumake.pkg-path = "gnumake"
+gnumake.outputs = "all"
 temporal-cli.pkg-path = "temporal-cli"
 spire-agent.pkg-path = "spire-agent"
+spire-agent.outputs = "all"
 kind.pkg-path = "kind"
 clusterctl.pkg-path = "clusterctl"
 kubernetes-helm.pkg-path = "kubernetes-helm"

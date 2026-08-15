@@ -95,7 +95,8 @@ func Execute(
 		return phaseFailedResult(
 			rollout.PhaseMinHealthyReplicas, "",
 			fmt.Errorf("infeasible minHealthyReplicas: MinHealthy=%d > control-plane count %d",
-				spec.MinHealthyReplicas.MinHealthy, len(cpNodes))), nil
+				spec.MinHealthyReplicas.MinHealthy, len(cpNodes)),
+		), nil
 	}
 
 	// 1. SatisfactionChecker (may short-circuit to AlreadySatisfied).
@@ -166,12 +167,14 @@ func runSatisfactionCheck(
 	).Get(ctx, &resp); err != nil {
 		return phaseFailedResult(
 			rollout.PhaseSatisfactionCheck, "",
-			fmt.Errorf("is_satisfied dispatch: %w", err)), true
+			fmt.Errorf("is_satisfied dispatch: %w", err),
+		), true
 	}
 	if resp.IsSatErr != "" {
 		return phaseFailedResult(
 			rollout.PhaseSatisfactionCheck, "",
-			errors.New(resp.IsSatErr)), true
+			errors.New(resp.IsSatErr),
+		), true
 	}
 	if resp.Satisfied {
 		return rollout.Result{Status: rollout.ResultAlreadySatisfied}, true
@@ -192,7 +195,8 @@ func runValidator(
 	).Get(ctx, nil); err != nil {
 		return phaseFailedResult(
 			rollout.PhaseValidate, "",
-			fmt.Errorf("validate: %w", err)), true
+			fmt.Errorf("validate: %w", err),
+		), true
 	}
 	return rollout.Result{}, false
 }
@@ -212,7 +216,8 @@ func runClusterPreflights(
 		).Get(ctx, nil); err != nil {
 			return phaseFailedResult(
 				rollout.PhaseClusterPreflight, ref.Name,
-				fmt.Errorf("cluster preflight %q: %w", ref.Name, err)), true
+				fmt.Errorf("cluster preflight %q: %w", ref.Name, err),
+			), true
 		}
 	}
 	return rollout.Result{}, false
@@ -233,12 +238,14 @@ func buildApplyToNodePayload(
 	).Get(ctx, &resp); err != nil {
 		return nil, phaseFailedResult(
 			rollout.PhaseBuildApplyToNodePayload, "",
-			fmt.Errorf("build_apply_to_node_payload dispatch: %w", err)), true
+			fmt.Errorf("build_apply_to_node_payload dispatch: %w", err),
+		), true
 	}
 	if resp.BuildErr != "" {
 		return nil, phaseFailedResult(
 			rollout.PhaseBuildApplyToNodePayload, "",
-			errors.New(resp.BuildErr)), true
+			errors.New(resp.BuildErr),
+		), true
 	}
 	return resp.Payload, rollout.Result{}, false
 }
@@ -559,14 +566,16 @@ func openClusterGuards(
 		).Get(ctx, &resp); err != nil {
 			r := phaseFailedResult(
 				rollout.PhaseClusterGuard, ref.Name,
-				fmt.Errorf("cluster guard %q PreRollout dispatch: %w", ref.Name, err))
+				fmt.Errorf("cluster guard %q PreRollout dispatch: %w", ref.Name, err),
+			)
 			return opened, &r
 		}
 		opened = append(opened, openedClusterGuardRecord{Ref: ref, State: resp.State})
 		if resp.PreRolloutErr != "" {
 			r := phaseFailedResult(
 				rollout.PhaseClusterGuard, ref.Name,
-				errors.New(resp.PreRolloutErr))
+				errors.New(resp.PreRolloutErr),
+			)
 			return opened, &r
 		}
 	}

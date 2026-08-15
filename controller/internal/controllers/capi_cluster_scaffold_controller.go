@@ -58,7 +58,13 @@ func (c *CAPIClusterScaffoldController) Reconcile(ctx context.Context, site db.S
 			c.logger.Debug("Cluster is deleting, skipping CAPI cluster scaffold reconciliation", "clusterID", cluster.ID, "clusterName", cluster.Name)
 			continue
 		}
-		if capi.IsEmptyManifest(cluster.CapiInfraCluster) {
+		manifest, err := capi.ClusterScaffoldManifest(cluster)
+		if err != nil {
+			c.logger.Error("Failed to resolve CAPI cluster scaffold manifest", "error", err, "clusterID", cluster.ID, "clusterName", cluster.Name)
+			reconcileErrs = append(reconcileErrs, err)
+			continue
+		}
+		if capi.IsEmptyManifest(manifest) {
 			continue
 		}
 

@@ -10,7 +10,8 @@
 
 auth:
   username: postgres
-  password: postgres
+  # password is supplied by the Tiltfile from CNPG_SUPERUSER_PASSWORD — do not
+  # hardcode it here.
   database: postgres
 
 primary:

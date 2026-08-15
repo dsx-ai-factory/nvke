@@ -55,6 +55,7 @@ func TestGetNodeContext_NoNodePoolControlPlane(t *testing.T) {
 			OSProfile:                   "os",
 			DiskSelectionStrategy:       "",
 			ConfigProfile:               "cfg",
+			KubeReservedMemory:          "250Mi",
 			TeleportEnabled:             true,
 			ProvisioningMonitorDisabled: true,
 		},
@@ -86,6 +87,8 @@ func TestGetNodeContext_NoNodePoolControlPlane(t *testing.T) {
 	assert.True(t, nodePool.TeleportEnabled)
 	assert.True(t, nodePool.ProvisioningMonitorDisabled)
 	assert.Equal(t, instanceTypeID, nodePool.InstanceTypeID)
+	assert.Equal(t, "250Mi", nodeSet.KubeReservedMemory)
+	assert.Equal(t, "250Mi", nodePool.KubeReservedMemory)
 }
 
 func TestControlPlaneConfigNodeContext_UsesSnapshotDiskStrategy(t *testing.T) {
@@ -102,8 +105,11 @@ func TestControlPlaneConfigNodeContext_UsesSnapshotDiskStrategy(t *testing.T) {
 		OSProfile:             "os",
 		ConfigProfile:         "cfg",
 		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
+		KubeReservedMemory:    "250Mi",
 	}
 
-	nodeSet, _ := nodes.ControlPlaneConfigNodeContext(cluster, node, snapshotCfg)
+	nodeSet, nodePool := nodes.ControlPlaneConfigNodeContext(cluster, node, snapshotCfg)
 	assert.Equal(t, db.DiskSelectionStrategyLargest, nodeSet.DiskSelectionStrategy)
+	assert.Equal(t, "250Mi", nodeSet.KubeReservedMemory)
+	assert.Equal(t, "250Mi", nodePool.KubeReservedMemory)
 }

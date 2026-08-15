@@ -46,15 +46,24 @@ RUN set -eux; \
     chmod 0755 /usr/local/sbin/reboot-shim; \
     ln -sf /usr/local/sbin/reboot-shim /sbin/reboot
 
-# CAPD/KinD nodes use the Docker host kernel, but its config module is not
-# available inside the node container. Wrap kubeadm so only upgrade plan/apply
-# ignore that local-only SystemVerification failure.
-COPY scripts/kubeadm-systemverification-shim /usr/local/sbin/
+# Install a kubeadm wrapper that applies container-node configuration on the
+# fly, then delegates to the real kubeadm binary.
+COPY scripts/kubeadm-systemverification-shim scripts/update-kubeadm-config-for-containers /usr/local/sbin/
 RUN set -eux; \
-    chmod 0755 /usr/local/sbin/kubeadm-systemverification-shim; \
+    chmod 0755 \
+      /usr/local/sbin/kubeadm-systemverification-shim \
+      /usr/local/sbin/update-kubeadm-config-for-containers; \
     test -x /usr/bin/kubeadm; \
     mv /usr/bin/kubeadm /usr/bin/kubeadm.real; \
     ln -s /usr/local/sbin/kubeadm-systemverification-shim /usr/bin/kubeadm
+
+# node-agent uses `cloud-init status` as its bootstrap completion contract.
+# Mock NICo simulates cloud init by creating files and executing commands
+# directly through docker after the container starts. It creates a text file
+# with the state of this process. Our cloud-init mock script just prints this
+# state so the node-agent can perform its check.
+COPY scripts/cloud-init-status-shim /usr/local/bin/cloud-init
+RUN chmod 0755 /usr/local/bin/cloud-init
 
 # nke-agent CNI install runs scripts that expect `python` on PATH. CWE's
 # kubeadm config runbooks also require PyYAML. The local TPM workflow

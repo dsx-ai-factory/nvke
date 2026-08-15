@@ -83,6 +83,28 @@ func newSchedulerForSelection() (*NodeScheduler, *testutil.MockTx, *testutil.Moc
 	return scheduler, mockTx, mockDB
 }
 
+func schedulerNicoCluster(cluster db.Cluster) db.Cluster {
+	if cluster.OrgID == "" {
+		cluster.OrgID = "org-1"
+	}
+	if cluster.SiteID == uuid.Nil {
+		cluster.SiteID = uuid.New()
+	}
+	if cluster.VpcID == uuid.Nil {
+		cluster.VpcID = uuid.New()
+	}
+	cluster.ProviderType = db.ProviderTypeNico
+	cluster.Nico = &db.NicoClusterProvider{OrgID: cluster.OrgID, SiteID: cluster.SiteID, VpcID: cluster.VpcID}
+	return cluster
+}
+
+func schedulerCAPICluster(cluster db.Cluster) db.Cluster {
+	cluster.SiteID = uuid.Nil
+	cluster.ProviderType = db.ProviderTypeCAPI
+	cluster.Capi = &db.CAPIClusterProvider{InfraCluster: cluster.CapiInfraCluster}
+	return cluster
+}
+
 // stubPinnedNodeContext makes nodes.GetNodeContext resolve a control-plane node
 // pinned to cfgID: GetControlPlaneConfiguration returns a snapshot carrying the
 // given placement/template, and GetCluster (also read by GetNodeContext for
@@ -94,12 +116,12 @@ func stubPinnedNodeContext(mockDB *testutil.MockDB, cfgID uuid.UUID, spec db.Con
 		Return(db.ControlPlaneConfiguration{ID: cfgID, Config: spec}, nil).Maybe()
 }
 
-func TestSelectControlPlaneInstanceType_CAPDUsesFirstPreference(t *testing.T) {
+func TestSelectControlPlaneInstanceType_CAPIUsesFirstPreference(t *testing.T) {
 	t.Parallel()
 
 	typeA := uuid.New()
 	typeB := uuid.New()
-	cluster := db.Cluster{SiteID: uuid.Nil}
+	cluster := schedulerCAPICluster(db.Cluster{})
 
 	scheduler := &NodeScheduler{logger: slog.Default()}
 	acct := newControlPlaneCapacityAccount(scheduler, cluster, nil, slog.Default())
@@ -112,13 +134,28 @@ func TestSelectControlPlaneInstanceType_CAPDUsesFirstPreference(t *testing.T) {
 func TestSelectControlPlaneInstanceType_EmptyPreference(t *testing.T) {
 	t.Parallel()
 
-	cluster := db.Cluster{SiteID: uuid.New()}
+	cluster := schedulerNicoCluster(db.Cluster{})
 	scheduler := &NodeScheduler{logger: slog.Default()}
 	acct := newControlPlaneCapacityAccount(scheduler, cluster, nil, slog.Default())
 
 	_, err := scheduler.selectControlPlaneInstanceType(context.Background(), cluster, nil, ForgePlacementSpec{}, acct)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no instance type preference configured")
+}
+
+func TestNicoControlPlaneInstanceTypePreference_RequiresProviderPayload(t *testing.T) {
+	t.Parallel()
+
+	instanceTypeID := uuid.New()
+
+	got, err := nicoControlPlaneInstanceTypePreference(nicoControlPlaneConfigSpec([]uuid.UUID{instanceTypeID}))
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{instanceTypeID}, got)
+
+	_, err = nicoControlPlaneInstanceTypePreference(db.ControlPlaneConfigSpec{
+		InstanceTypePreference: []uuid.UUID{instanceTypeID},
+	})
+	require.ErrorContains(t, err, "nico control-plane provider payload is required")
 }
 
 // TestPersistControlPlaneInstanceType_KeepsExistingStickyType verifies the
@@ -143,17 +180,69 @@ func TestPersistControlPlaneInstanceType_KeepsExistingStickyType(t *testing.T) {
 	mockTx.AssertExpectations(t)
 }
 
-// TestScheduleForgeControlPlaneNodes_SiteLessClusterIsSkipped asserts the
-// defensive guard: a site-less cluster has no Forge capacity to query and is
-// skipped without touching the DB.
-func TestScheduleForgeControlPlaneNodes_SiteLessClusterIsSkipped(t *testing.T) {
+// TestScheduleForgeControlPlaneNodes_NonNicoClusterIsSkipped asserts the
+// defensive guard: only NICo-backed clusters use direct Forge scheduling.
+func TestScheduleForgeControlPlaneNodes_NonNicoClusterIsSkipped(t *testing.T) {
 	t.Parallel()
 
 	scheduler, mockTx, mockDB := newSchedulerForSelection()
-	cluster := db.Cluster{ID: uuid.New(), SiteID: uuid.Nil}
+	cluster := schedulerCAPICluster(db.Cluster{ID: uuid.New()})
 	node := db.Node{ID: uuid.New(), ControlPlane: true}
 
 	require.NoError(t, scheduler.scheduleForgeControlPlaneNodes(context.Background(), slog.Default(), cluster, []db.Node{node}))
+	mockDB.AssertNotCalled(t, "GetCluster", mock.Anything, mock.Anything)
+	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+}
+
+func TestScheduleControlPlaneNodesForCluster_NoPendingNodesReturns(t *testing.T) {
+	t.Parallel()
+
+	scheduler, mockTx, mockDB := newSchedulerForSelection()
+	cluster := db.Cluster{ID: uuid.New(), ProviderType: db.ProviderType("")}
+
+	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(filters db.NodeFilters) bool {
+		return filters.ClusterID != nil && *filters.ClusterID == cluster.ID &&
+			filters.ControlPlane != nil && *filters.ControlPlane &&
+			filters.Pending != nil && *filters.Pending
+	})).Return([]db.Node{}, nil).Once()
+
+	require.NoError(t, scheduler.scheduleControlPlaneNodesForCluster(context.Background(), db.Site{ID: uuid.New()}, cluster))
+	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+	mockDB.AssertExpectations(t)
+}
+
+func TestScheduleNodePoolNodes_CAPIClusterStartsProvisionNode(t *testing.T) {
+	t.Parallel()
+
+	scheduler, temporalClient, mockTx, mockDB := newCapiScheduler()
+	cluster := schedulerCAPICluster(db.Cluster{ID: uuid.New()})
+	nodePool := db.NodePool{ID: uuid.New(), ClusterID: cluster.ID}
+	node := db.Node{ID: uuid.New(), NodePoolID: nodePool.ID}
+
+	mockDB.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
+	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(filters db.NodeFilters) bool {
+		return filters.NodePoolID != nil && *filters.NodePoolID == nodePool.ID &&
+			filters.Pending != nil && *filters.Pending
+	})).Return([]db.Node{node}, nil).Once()
+	expectProvisionNodeStart(temporalClient, node.ID).Once()
+
+	require.NoError(t, scheduler.scheduleNodePoolNodes(context.Background(), db.Site{ID: uuid.New()}, nodePool))
+	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+	mockDB.AssertExpectations(t)
+	temporalClient.AssertExpectations(t)
+}
+
+func TestScheduleForgeNodes_CAPIClusterIsSkipped(t *testing.T) {
+	t.Parallel()
+
+	scheduler, mockTx, mockDB := newSchedulerForSelection()
+	cluster := schedulerCAPICluster(db.Cluster{ID: uuid.New()})
+	node := db.Node{ID: uuid.New()}
+
+	require.NoError(t, scheduler.scheduleForgeNodes(context.Background(), slog.Default(), cluster, []db.Node{node}, uuid.New(), ForgePlacementSpec{}))
 	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 }
@@ -169,7 +258,7 @@ func TestScheduleForgeControlPlaneNodes_SkipsNodeWithUnresolvedContext(t *testin
 	mockDB.On("GetCluster", mock.Anything, cErr).Return(db.Cluster{}, errors.New("context lookup failed"))
 
 	node := db.Node{ID: uuid.New(), ClusterID: cErr, ControlPlane: true}
-	cluster := db.Cluster{ID: uuid.New(), SiteID: uuid.New()}
+	cluster := schedulerNicoCluster(db.Cluster{ID: uuid.New()})
 
 	require.NoError(t, scheduler.scheduleForgeControlPlaneNodes(context.Background(), slog.Default(), cluster, []db.Node{node}))
 	mockDB.AssertExpectations(t)
@@ -212,7 +301,7 @@ func TestScheduleControlPlaneNodes_CapiTemplatelessProvisionsWithoutForgePrechec
 	stubPinnedNodeContext(mockDB, cfgID, db.ControlPlaneConfigSpec{SubnetIDs: []uuid.UUID{subnetID}})
 
 	site := db.Site{ID: uuid.New()}
-	cluster := db.Cluster{
+	cluster := schedulerNicoCluster(db.Cluster{
 		ID:     uuid.New(),
 		SiteID: site.ID,
 		ControlPlaneConfig: db.ControlPlaneConfig{
@@ -221,7 +310,7 @@ func TestScheduleControlPlaneNodes_CapiTemplatelessProvisionsWithoutForgePrechec
 				InstanceTypePreference: []uuid.UUID{typeA},
 			},
 		},
-	}
+	})
 	node := db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: cfgID}
 
 	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{cluster}, nil)
@@ -255,7 +344,7 @@ func TestScheduleControlPlaneNodes_CapiTemplateBackedProvisionsWithoutSelection(
 	})
 
 	site := db.Site{ID: uuid.New()}
-	cluster := db.Cluster{
+	cluster := schedulerNicoCluster(db.Cluster{
 		ID:     uuid.New(),
 		SiteID: site.ID,
 		ControlPlaneConfig: db.ControlPlaneConfig{
@@ -264,7 +353,7 @@ func TestScheduleControlPlaneNodes_CapiTemplateBackedProvisionsWithoutSelection(
 				InstanceTypePreference: []uuid.UUID{uuid.New()},
 			},
 		},
-	}
+	})
 	node := db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: cfgID}
 
 	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{cluster}, nil)
@@ -277,59 +366,6 @@ func TestScheduleControlPlaneNodes_CapiTemplateBackedProvisionsWithoutSelection(
 	// ProvisionNode still starts (InstanceTypeID stays unset).
 	assert.Equal(t, uuid.Nil, node.InstanceTypeID)
 	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
-	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
-	temporalClient.AssertExpectations(t)
-}
-
-func TestScheduleControlPlaneNodes_SiteMismatchSkipsClusterSchedulesOthers(t *testing.T) {
-	t.Parallel()
-
-	cfgID := uuid.New()
-	subnetID := uuid.New()
-
-	scheduler, temporalClient, mockTx, mockDB := newCapiScheduler()
-	// Template-backed context so the good cluster provisions without any Forge
-	// instance-type selection (no Forge provider is wired).
-	stubPinnedNodeContext(mockDB, cfgID, db.ControlPlaneConfigSpec{
-		SubnetIDs:                       []uuid.UUID{subnetID},
-		InfraMachineTemplatePreferences: []json.RawMessage{dockerMachineTemplateManifest},
-	})
-
-	site := db.Site{ID: uuid.New()}
-	newControlPlaneConfig := func() db.ControlPlaneConfig {
-		return db.ControlPlaneConfig{
-			ConfigurationID: cfgID,
-			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-				InstanceTypePreference: []uuid.UUID{uuid.New()},
-			},
-		}
-	}
-
-	// Malformed cluster: belongs to a different site than the one being scheduled.
-	// It must be logged and skipped, not abort the whole pass.
-	badCluster := db.Cluster{ID: uuid.New(), SiteID: uuid.New(), ControlPlaneConfig: newControlPlaneConfig()}
-	badNode := db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: cfgID}
-	// Well-formed cluster: must still be scheduled after the bad one is skipped.
-	goodCluster := db.Cluster{ID: uuid.New(), SiteID: site.ID, ControlPlaneConfig: newControlPlaneConfig()}
-	goodNode := db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: cfgID}
-
-	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{badCluster, goodCluster}, nil)
-	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == badCluster.ID
-	})).Return([]db.Node{badNode}, nil)
-	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == goodCluster.ID
-	})).Return([]db.Node{goodNode}, nil)
-	expectProvisionNodeStart(temporalClient, goodNode.ID).Once()
-
-	// Best-effort: the pass still returns nil even though one cluster failed.
-	require.NoError(t, scheduler.scheduleControlPlaneNodes(context.Background(), site))
-
-	// The malformed cluster never provisions; the good cluster does.
-	temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(opts client.StartWorkflowOptions) bool {
-		return opts.ID == constants.ProvisionNodeWorkflowPrefix+badNode.ID.String()
-	}), mock.Anything, mock.Anything)
-	mockDB.AssertExpectations(t)
 	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	temporalClient.AssertExpectations(t)
 }
@@ -350,7 +386,7 @@ func TestScheduleControlPlaneNodes_CapiTemplatelessDoesNotTouchExistingType(t *t
 	stubPinnedNodeContext(mockDB, cfgID, db.ControlPlaneConfigSpec{SubnetIDs: []uuid.UUID{subnetID}})
 
 	site := db.Site{ID: uuid.New()}
-	cluster := db.Cluster{
+	cluster := schedulerNicoCluster(db.Cluster{
 		ID:     uuid.New(),
 		SiteID: site.ID,
 		ControlPlaneConfig: db.ControlPlaneConfig{
@@ -359,7 +395,7 @@ func TestScheduleControlPlaneNodes_CapiTemplatelessDoesNotTouchExistingType(t *t
 				InstanceTypePreference: []uuid.UUID{typeB, typeA},
 			},
 		},
-	}
+	})
 	node := db.Node{ID: uuid.New(), ControlPlane: true, ControlPlaneConfigurationID: cfgID, InstanceTypeID: typeA}
 
 	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{cluster}, nil)
@@ -387,7 +423,7 @@ func TestControlPlaneCapacityAccount_ReserveDebitsBothLedgers(t *testing.T) {
 	placement := ForgePlacementSpec{SubnetIDs: []uuid.UUID{subnetID}}
 	placementKey := forgeNetworkPlacementKey(placement)
 
-	cluster := db.Cluster{ID: uuid.New(), SiteID: uuid.New()}
+	cluster := schedulerNicoCluster(db.Cluster{ID: uuid.New()})
 	scheduler := &NodeScheduler{logger: slog.Default()}
 	acct := newControlPlaneCapacityAccount(scheduler, cluster, nil, slog.Default())
 
@@ -400,4 +436,13 @@ func TestControlPlaneCapacityAccount_ReserveDebitsBothLedgers(t *testing.T) {
 
 	assert.Equal(t, 2, acct.forgeRemaining[typeA], "sticky reserve must debit the Forge compute ledger")
 	assert.Equal(t, 4, acct.networkRemaining[placementKey], "sticky reserve must debit the network ledger")
+}
+
+func nicoControlPlaneConfigSpec(instanceTypePreference []uuid.UUID) db.ControlPlaneConfigSpec {
+	return db.ControlPlaneConfigSpec{
+		Nico: &db.NicoControlPlaneProvider{
+			InstanceTypePreference: append([]uuid.UUID(nil), instanceTypePreference...),
+		},
+		InstanceTypePreference: append([]uuid.UUID(nil), instanceTypePreference...),
+	}
 }

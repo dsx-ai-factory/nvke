@@ -8,7 +8,7 @@
 // without an express license agreement from NVIDIA CORPORATION or
 // its affiliates is strictly prohibited.
 
-package common //nolint:revive // package name matches controllers/common directory
+package common
 
 import (
 	"context"
@@ -31,8 +31,12 @@ func GetForgeInstanceType(
 	if instanceTypeID == uuid.Nil {
 		return nil, nil //nolint:nilnil // no Forge lookup for nil instance type
 	}
-	if cluster.SiteID == uuid.Nil {
+	if cluster.ProviderType != db.ProviderTypeNico {
 		return nil, nil //nolint:nilnil // local/CAPI clusters have no Forge site
+	}
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, err
 	}
 	if forgeProvider == nil {
 		return nil, fmt.Errorf("forge provider is nil")
@@ -40,8 +44,8 @@ func GetForgeInstanceType(
 
 	instanceType, err := forgeProvider.GetInstanceTypeByID(
 		ctx,
-		cluster.OrgID,
-		cluster.SiteID.String(),
+		nicoProvider.OrgID,
+		nicoProvider.SiteID.String(),
 		instanceTypeID.String(),
 	)
 	if err != nil {

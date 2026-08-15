@@ -48,6 +48,19 @@ sleep 1
 
 sudo mkdir -p "$HOSTS_DIR"
 
+# Host firewalls commonly default INPUT to DROP. Allow only the services that
+# forge-vms exposes to guests on its dedicated bridge.
+ensure_bridge_input_rule() {
+    if ! sudo iptables -C INPUT -i "$BRIDGE" "$@" -j ACCEPT 2>/dev/null; then
+        sudo iptables -I INPUT -i "$BRIDGE" "$@" -j ACCEPT
+    fi
+}
+ensure_bridge_input_rule -p udp --dport 67
+ensure_bridge_input_rule -p udp --dport 53
+ensure_bridge_input_rule -p tcp --dport 53
+ensure_bridge_input_rule -p tcp --dport 7777
+ensure_bridge_input_rule -p tcp --dport 10179
+
 # Detect the host's upstream DNS servers. Prefer resolvectl (systemd-resolved),
 # fall back to /etc/resolv.conf non-loopback entries. Avoids hardcoding 8.8.8.8,
 # which is blocked on networks that enforce internal DNS (e.g. corporate environments).

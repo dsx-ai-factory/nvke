@@ -1,0 +1,10 @@
+#cloud-config
+hostname: {{ .Hostname }}
+preserve_hostname: false
+package_update: true
+package_upgrade: false
+
+runcmd:
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-agent=0.1.26 nke-kubeadm-distro-{{ trimPrefix .KubernetesVersion "v" }} spire-agent
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y {{ .CNIImagePackage }}
+  - touch /run/cloud-init.done

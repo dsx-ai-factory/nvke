@@ -30,6 +30,10 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/constants"
 )
 
+const (
+	machineConst = "Machine"
+)
+
 type NicoTpmSpiffeController struct {
 	cfg       config.Config
 	k8sClient client.Client
@@ -102,7 +106,7 @@ func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Reques
 	applyMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      machine.Name,
@@ -139,6 +143,13 @@ func (c *NicoTpmSpiffeController) reconcileTpmPubhashesConfigmap(ctx context.Con
 		if !nicoMachine.DeletionTimestamp.IsZero() {
 			continue
 		}
+		skip, err := c.shouldSkipTPMPubhash(ctx, nicoMachine)
+		if err != nil {
+			return err
+		}
+		if skip {
+			continue
+		}
 		data[nicoMachine.Status.TpmEkPubHash] = fmt.Sprintf("%s=%s", constants.LabelKeyNkeManagedBy, constants.FieldManagerNicoTpmSpiffe)
 	}
 
@@ -160,4 +171,17 @@ func (c *NicoTpmSpiffeController) reconcileTpmPubhashesConfigmap(ctx context.Con
 	}
 
 	return nil
+}
+
+func (c *NicoTpmSpiffeController) shouldSkipTPMPubhash(ctx context.Context, nicoMachine nicov1.NicoMachine) (bool, error) {
+	machine, err := util.GetOwnerMachine(ctx, c.k8sClient, nicoMachine.ObjectMeta)
+	if err != nil {
+		return false, fmt.Errorf("failed to get owner machine for NicoMachine %s/%s: %w", nicoMachine.Namespace, nicoMachine.Name, err)
+	}
+	if machine == nil {
+		return false, nil
+	}
+
+	spireAgentIDPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]
+	return spireAgentIDPath != "" && !strings.HasPrefix(spireAgentIDPath, constants.TPMSpireAgentPath), nil
 }

@@ -11,7 +11,6 @@
 package controllers
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -98,6 +97,8 @@ func recordNodePoolConfigChange(ctx context.Context, tx db.Tx, prevNodeSet, curr
 
 		"oldSystemReservedMemory": prevNodeSet.SystemReservedMemory,
 		"newSystemReservedMemory": currentNodeSet.SystemReservedMemory,
+		"oldKubeReservedMemory":   prevNodeSet.KubeReservedMemory,
+		"newKubeReservedMemory":   currentNodeSet.KubeReservedMemory,
 
 		"oldDiskSelectionStrategy": prevNodeSet.DiskSelectionStrategy,
 		"newDiskSelectionStrategy": currentNodeSet.DiskSelectionStrategy,
@@ -151,58 +152,17 @@ func (a *NodePoolController) reconcileNodePool(ctx context.Context, nodePool db.
 			}
 		}
 
-		// Create a new NodeSet if the NodePool's configuration has changed.
-		configChanged := nodePool.CurrentNodeSetID == nil ||
-			nodePool.OSProfile != currentNodeSet.OSProfile ||
-			nodePool.KubernetesVersion != currentNodeSet.KubernetesVersion ||
-			nodePool.ConfigProfile != currentNodeSet.ConfigProfile ||
-			!bytes.Equal(nodePool.CapiInfraMachineTemplate, currentNodeSet.CapiInfraMachineTemplate) ||
-			nodePool.CapiSpireAttestationMethod != currentNodeSet.CapiSpireAttestationMethod ||
-			!cloudInitFilesEqual(nodePool.CapiBootstrapFiles, currentNodeSet.CapiBootstrapFiles) ||
-			!slices.Equal(nodePool.CapiPreKubeadmCommands, currentNodeSet.CapiPreKubeadmCommands) ||
-			nodePool.SystemReservedMemory != currentNodeSet.SystemReservedMemory ||
-			nodePool.TeleportEnabled != currentNodeSet.TeleportEnabled ||
-			nodePool.DiskSelectionStrategy != currentNodeSet.DiskSelectionStrategy ||
-			!uuidSlicesSetEqual(nodePool.SubnetIDs, currentNodeSet.SubnetIDs) ||
-			!uuidSlicesSetEqual(nodePool.VpcPrefixIDs, currentNodeSet.VpcPrefixIDs)
-
-		if configChanged {
-			// Capture previous state before currentNodeSet is overwritten below.
-			prevNodeSet := currentNodeSet
-
-			currentNodeSet, err = tx.CreateNodeSet(ctx, &db.NodeSet{
-				ID:                         uuid.New(),
-				NodePoolID:                 nodePool.ID,
-				OSProfile:                  nodePool.OSProfile,
-				ConfigProfile:              nodePool.ConfigProfile,
-				CapiInfraMachineTemplate:   nodePool.CapiInfraMachineTemplate,
-				CapiSpireAttestationMethod: nodePool.CapiSpireAttestationMethod,
-				CapiBootstrapFiles:         slices.Clone(nodePool.CapiBootstrapFiles),
-				CapiPreKubeadmCommands:     slices.Clone(nodePool.CapiPreKubeadmCommands),
-				KubernetesVersion:          nodePool.KubernetesVersion,
-				SystemReservedMemory:       nodePool.SystemReservedMemory,
-				TeleportEnabled:            nodePool.TeleportEnabled,
-				DiskSelectionStrategy:      nodePool.DiskSelectionStrategy,
-				SubnetIDs:                  slices.Clone(nodePool.SubnetIDs),
-				VpcPrefixIDs:               slices.Clone(nodePool.VpcPrefixIDs),
-			})
-			if err != nil {
-				return fmt.Errorf("failed to create node set: %w", err)
-			}
-
-			// Update the node pool's current node set ID to the new node set
-			nodePool.CurrentNodeSetID = &currentNodeSet.ID
-			nodePool, err = tx.UpdateNodePool(ctx, &nodePool)
-			if err != nil {
-				return fmt.Errorf("failed to update node pool: %w", err)
-			}
-			logger.Info("Created new current node set",
-				"nodeSetID", currentNodeSet.ID,
-				"desiredCount", 0)
-
-			if err := recordNodePoolConfigChange(ctx, tx, prevNodeSet, currentNodeSet); err != nil {
-				return err
-			}
+		// Nico and CAPI are mutually exclusive — exactly one is set per pool.
+		switch {
+		case nodePool.Nico != nil:
+			nodePool, currentNodeSet, err = a.createNicoNodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
+		case nodePool.Capi != nil:
+			nodePool, currentNodeSet, err = a.createCAPINodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
+		default:
+			err = fmt.Errorf("node pool %s has no provider payload: expected exactly one of Nico or CAPI to be set", nodePool.ID)
+		}
+		if err != nil {
+			return err
 		}
 
 		nodeSets, err := tx.ListNodeSets(ctx, db.NodeSetFilters{NodePoolID: &nodePool.ID})
@@ -280,36 +240,91 @@ func (a *NodePoolController) reconcileNodePool(ctx context.Context, nodePool db.
 	})
 }
 
-// uuidSlicesSetEqual reports whether a and b contain the same set of UUIDs (order-independent).
-// nil and empty slice are treated as the same set.
-func uuidSlicesSetEqual(a, b []uuid.UUID) bool {
-	toSet := func(s []uuid.UUID) map[uuid.UUID]struct{} {
-		out := make(map[uuid.UUID]struct{})
-		for _, id := range s {
-			out[id] = struct{}{}
-		}
-		return out
+// createNicoNodeSetIfChanged compares the pool's Nico provider and common fields
+// against the current NodeSet, and creates a new NodeSet when anything has changed.
+func (a *NodePoolController) createNicoNodeSetIfChanged(
+	ctx context.Context, tx db.Tx,
+	nodePool db.NodePool, currentNodeSet db.NodeSet,
+	logger *slog.Logger,
+) (db.NodePool, db.NodeSet, error) {
+	nicoNodePoolProvider, _ := nodePool.NicoProvider()
+	currentNicoNodePoolProvider, _ := currentNodeSet.NicoProvider()
+
+	configChanged := nodePool.CurrentNodeSetID == nil ||
+		nodePool.KubernetesVersion != currentNodeSet.KubernetesVersion ||
+		nodePool.SystemReservedMemory != currentNodeSet.SystemReservedMemory ||
+		nodePool.KubeReservedMemory != currentNodeSet.KubeReservedMemory ||
+		nodePool.TeleportEnabled != currentNodeSet.TeleportEnabled ||
+		!nicoNodePoolProvider.Equal(currentNicoNodePoolProvider)
+	if !configChanged {
+		return nodePool, currentNodeSet, nil
 	}
-	setA := toSet(a)
-	setB := toSet(b)
-	if len(setA) != len(setB) {
-		return false
-	}
-	for id := range setA {
-		if _, ok := setB[id]; !ok {
-			return false
-		}
-	}
-	return true
+	newNodeSet := buildBaseNodeSet(nodePool)
+	newNodeSet.SetNico(nicoNodePoolProvider)
+	return applyNewNodeSet(ctx, tx, nodePool, currentNodeSet, newNodeSet, logger)
 }
 
-func cloudInitFilesEqual(a, b []db.CloudInitFile) bool {
-	return slices.EqualFunc(a, b, cloudInitFileEqual)
+// createCAPINodeSetIfChanged compares the pool's CAPI provider and common fields
+// against the current NodeSet, and creates a new NodeSet when anything has changed.
+func (a *NodePoolController) createCAPINodeSetIfChanged(
+	ctx context.Context, tx db.Tx,
+	nodePool db.NodePool, currentNodeSet db.NodeSet,
+	logger *slog.Logger,
+) (db.NodePool, db.NodeSet, error) {
+	capiNodePoolProvider, _ := nodePool.CAPIProvider()
+	currentCapiNodePoolProvider, _ := currentNodeSet.CAPIProvider()
+
+	configChanged := nodePool.CurrentNodeSetID == nil ||
+		nodePool.KubernetesVersion != currentNodeSet.KubernetesVersion ||
+		nodePool.SystemReservedMemory != currentNodeSet.SystemReservedMemory ||
+		nodePool.KubeReservedMemory != currentNodeSet.KubeReservedMemory ||
+		nodePool.TeleportEnabled != currentNodeSet.TeleportEnabled ||
+		!capiNodePoolProvider.Equal(currentCapiNodePoolProvider)
+	if !configChanged {
+		return nodePool, currentNodeSet, nil
+	}
+	newNodeSet := buildBaseNodeSet(nodePool)
+	newNodeSet.SetCapi(capiNodePoolProvider)
+	return applyNewNodeSet(ctx, tx, nodePool, currentNodeSet, newNodeSet, logger)
 }
 
-func cloudInitFileEqual(a, b db.CloudInitFile) bool {
-	return a.Path == b.Path &&
-		a.Owner == b.Owner &&
-		a.Permissions == b.Permissions &&
-		a.Content == b.Content
+// buildBaseNodeSet returns a new NodeSet pre-populated with the provider-independent
+// fields from the node pool. The caller must call SetNico or SetCapi before persisting.
+func buildBaseNodeSet(nodePool db.NodePool) *db.NodeSet {
+	return &db.NodeSet{
+		ID:                   uuid.New(),
+		NodePoolID:           nodePool.ID,
+		KubernetesVersion:    nodePool.KubernetesVersion,
+		SystemReservedMemory: nodePool.SystemReservedMemory,
+		KubeReservedMemory:   nodePool.KubeReservedMemory,
+		TeleportEnabled:      nodePool.TeleportEnabled,
+		// SubnetIDs and VpcPrefixIDs are copied from the legacy NodePool columns
+		// to satisfy the DB notnull constraint. These legacy flat fields will be
+		// deprecated once all consumers read from the typed provider payloads.
+		SubnetIDs:    slices.Clone(nodePool.SubnetIDs),
+		VpcPrefixIDs: slices.Clone(nodePool.VpcPrefixIDs),
+	}
+}
+
+// applyNewNodeSet persists the new NodeSet, updates the pool's current NodeSet pointer,
+// and records the config change. Shared by createNicoNodeSetIfChanged and createCAPINodeSetIfChanged.
+func applyNewNodeSet(
+	ctx context.Context, tx db.Tx,
+	nodePool db.NodePool, prevNodeSet db.NodeSet, newNodeSet *db.NodeSet,
+	logger *slog.Logger,
+) (db.NodePool, db.NodeSet, error) {
+	currentNodeSet, err := tx.CreateNodeSet(ctx, newNodeSet)
+	if err != nil {
+		return nodePool, db.NodeSet{}, fmt.Errorf("failed to create node set: %w", err)
+	}
+	nodePool.CurrentNodeSetID = &currentNodeSet.ID
+	nodePool, err = tx.UpdateNodePool(ctx, &nodePool)
+	if err != nil {
+		return nodePool, currentNodeSet, fmt.Errorf("failed to update node pool: %w", err)
+	}
+	logger.Info("Created new current node set", "nodeSetID", currentNodeSet.ID, "desiredCount", 0)
+	if err := recordNodePoolConfigChange(ctx, tx, prevNodeSet, currentNodeSet); err != nil {
+		return nodePool, currentNodeSet, err
+	}
+	return nodePool, currentNodeSet, nil
 }

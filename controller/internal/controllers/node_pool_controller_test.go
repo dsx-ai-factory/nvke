@@ -12,6 +12,7 @@ package controllers_test
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -78,26 +79,26 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		subnetID := mustParse("550e8400-e29b-41d4-a716-446655440003")
 		newNodeSetID := mustParse("550e8400-e29b-41d4-a716-446655440004")
 		pool := db.NodePool{
-			ID:            poolID,
-			ClusterID:     clusterID,
-			Name:          "worker",
+			ID:           poolID,
+			ClusterID:    clusterID,
+			Name:         "worker",
+			DesiredCount: 2,
+			Conditions:   db.NodePoolConditions{},
+		}
+		pool.SetNico(db.NicoNodePoolProvider{
 			OSProfile:     osProfile,
 			ConfigProfile: configProfile,
-			DesiredCount:  2,
 			SubnetIDs:     []uuid.UUID{subnetID},
 			VpcPrefixIDs:  []uuid.UUID{},
-			Conditions:    db.NodePoolConditions{},
-		}
+		})
+		nicoNodePoolProvider, _ := pool.NicoProvider()
 		newNodeSet := db.NodeSet{
 			ID:                   newNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            pool.SubnetIDs,
-			VpcPrefixIDs:         pool.VpcPrefixIDs,
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 		}
+		newNodeSet.SetNico(nicoNodePoolProvider)
 		poolWithCurrent := pool
 		poolWithCurrent.CurrentNodeSetID = &newNodeSetID
 
@@ -138,11 +139,13 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 			ID:                    mustParse("550e8400-e29b-41d4-a716-446655440001"),
 			ClusterID:             mustParse("550e8400-e29b-41d4-a716-446655440002"),
 			Name:                  "worker",
-			OSProfile:             osProfile,
-			ConfigProfile:         configProfile,
 			AutoProvisionDisabled: true,
 			Conditions:            db.NodePoolConditions{},
 		}
+		pool.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+		})
 
 		mockDB := &testutil.MockDB{}
 		mockTx := &testutil.MockTx{}
@@ -164,15 +167,17 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 
 	t.Run("skips_when_pool_deleting", func(t *testing.T) {
 		pool := db.NodePool{
-			ID:            mustParse("550e8400-e29b-41d4-a716-446655440001"),
-			ClusterID:     mustParse("550e8400-e29b-41d4-a716-446655440002"),
-			Name:          "worker",
-			OSProfile:     osProfile,
-			ConfigProfile: configProfile,
+			ID:        mustParse("550e8400-e29b-41d4-a716-446655440001"),
+			ClusterID: mustParse("550e8400-e29b-41d4-a716-446655440002"),
+			Name:      "worker",
 			Conditions: db.NodePoolConditions{
 				Deleting: db.Condition{Status: db.ConditionStatusTrue},
 			},
 		}
+		pool.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+		})
 
 		mockDB := &testutil.MockDB{}
 		mockTx := &testutil.MockTx{}
@@ -200,27 +205,28 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 			ID:                   poolID,
 			ClusterID:            mustParse("550e8400-e29b-41d4-a716-446655440004"),
 			Name:                 "worker",
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
 			DesiredCount:         3,
 			CurrentNodeSetID:     &currentNodeSetID,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{},
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "",
 			Conditions:           db.NodePoolConditions{},
 		}
+		pool.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+			SubnetIDs:     []uuid.UUID{subnetID},
+			VpcPrefixIDs:  []uuid.UUID{},
+		})
+		nicoNodePoolProvider, _ := pool.NicoProvider()
+		// Current NodeSet matches pool config exactly — no drift expected.
 		currentNodeSet := db.NodeSet{
 			ID:                   currentNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{},
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "",
 		}
+		currentNodeSet.SetNico(nicoNodePoolProvider)
 
 		mockDB := &testutil.MockDB{}
 		mockTx := &testutil.MockTx{}
@@ -260,34 +266,38 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 			ID:               poolID,
 			ClusterID:        mustParse("550e8400-e29b-41d4-a716-446655440006"),
 			Name:             "worker",
-			OSProfile:        osProfile,
-			ConfigProfile:    configProfile,
 			DesiredCount:     2,
 			CurrentNodeSetID: &oldNodeSetID,
-			SubnetIDs:        []uuid.UUID{newSubnet},
-			VpcPrefixIDs:     []uuid.UUID{},
 			Conditions:       db.NodePoolConditions{},
 		}
+		pool.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+			SubnetIDs:     []uuid.UUID{newSubnet},
+			VpcPrefixIDs:  []uuid.UUID{},
+		})
+		nicoNodePoolProvider, _ := pool.NicoProvider()
+		// Old NodeSet has the previous subnet — this is what triggers drift.
 		oldNodeSet := db.NodeSet{
 			ID:                   oldNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{oldSubnet},
-			VpcPrefixIDs:         []uuid.UUID{},
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 		}
+		oldNodeSet.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+			SubnetIDs:     []uuid.UUID{oldSubnet},
+			VpcPrefixIDs:  []uuid.UUID{},
+		})
+		// New NodeSet matches the pool's current Nico provider.
 		newNodeSet := db.NodeSet{
 			ID:                   newNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{newSubnet},
-			VpcPrefixIDs:         []uuid.UUID{},
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 		}
+		newNodeSet.SetNico(nicoNodePoolProvider)
 		poolWithNewCurrent := pool
 		poolWithNewCurrent.CurrentNodeSetID = &newNodeSetID
 
@@ -318,7 +328,6 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		cfg := config.Config{ProfilesDir: profilesDir}
 		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
 
-		// Use GetTx so the callback always receives mockTx (avoids nil receiver when MockTx field is not reliable).
 		mockDB.GetTx = func() db.Tx { return mockTx }
 		err := npc.Reconcile(ctx, site)
 		require.NoError(t, err)
@@ -337,36 +346,40 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 			ID:               poolID,
 			ClusterID:        mustParse("550e8400-e29b-41d4-a716-446655440007"),
 			Name:             "worker",
-			OSProfile:        osProfile,
-			ConfigProfile:    configProfile,
 			DesiredCount:     2,
 			CurrentNodeSetID: &oldNodeSetID,
-			SubnetIDs:        []uuid.UUID{subnetID},
-			VpcPrefixIDs:     []uuid.UUID{newVpcPrefix},
 			Conditions:       db.NodePoolConditions{},
 		}
+		pool.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+			SubnetIDs:     []uuid.UUID{subnetID},
+			VpcPrefixIDs:  []uuid.UUID{newVpcPrefix},
+		})
+		nicoNodePoolProvider, _ := pool.NicoProvider()
+		// Old NodeSet has the previous VPC prefix — this is what triggers drift.
 		oldNodeSet := db.NodeSet{
 			ID:                   oldNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{oldVpcPrefix},
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "",
 		}
+		oldNodeSet.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+			SubnetIDs:     []uuid.UUID{subnetID},
+			VpcPrefixIDs:  []uuid.UUID{oldVpcPrefix},
+		})
+		// New NodeSet matches the pool's current Nico provider.
 		newNodeSet := db.NodeSet{
 			ID:                   newNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{newVpcPrefix},
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "",
 		}
+		newNodeSet.SetNico(nicoNodePoolProvider)
 		poolWithNewCurrent := pool
 		poolWithNewCurrent.CurrentNodeSetID = &newNodeSetID
 
@@ -413,39 +426,36 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 			ID:                   poolID,
 			ClusterID:            mustParse("550e8400-e29b-41d4-a716-446655440005"),
 			Name:                 "worker",
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
 			DesiredCount:         2,
 			CurrentNodeSetID:     &currentNodeSetID,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{},
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "v1.30.0",
 			Conditions:           db.NodePoolConditions{},
 		}
+		pool.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+			SubnetIDs:     []uuid.UUID{subnetID},
+			VpcPrefixIDs:  []uuid.UUID{},
+		})
+		nicoNodePoolProvider, _ := pool.NicoProvider()
+		// Both NodeSets share the same Nico config; only KubernetesVersion differs.
 		currentNodeSet := db.NodeSet{
 			ID:                   currentNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{},
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "v1.30.0",
 		}
-		// oldNodeSet has an outdated k8s version and is non-current.
+		currentNodeSet.SetNico(nicoNodePoolProvider)
 		oldNodeSet := db.NodeSet{
 			ID:                   oldNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{},
 			DesiredCount:         2,
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "v1.29.0",
 		}
+		oldNodeSet.SetNico(nicoNodePoolProvider)
 		mockDB := &testutil.MockDB{}
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
@@ -481,27 +491,28 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 			ID:                   poolID,
 			ClusterID:            mustParse("550e8400-e29b-41d4-a716-446655440004"),
 			Name:                 "worker",
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
 			DesiredCount:         5,
 			CurrentNodeSetID:     &currentNodeSetID,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{},
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "",
 			Conditions:           db.NodePoolConditions{},
 		}
+		pool.SetNico(db.NicoNodePoolProvider{
+			OSProfile:     osProfile,
+			ConfigProfile: configProfile,
+			SubnetIDs:     []uuid.UUID{subnetID},
+			VpcPrefixIDs:  []uuid.UUID{},
+		})
+		nicoNodePoolProvider, _ := pool.NicoProvider()
+		// Current NodeSet matches pool config exactly — only DesiredCount needs updating.
 		currentNodeSet := db.NodeSet{
 			ID:                   currentNodeSetID,
 			NodePoolID:           poolID,
-			OSProfile:            osProfile,
-			ConfigProfile:        configProfile,
-			SubnetIDs:            []uuid.UUID{subnetID},
-			VpcPrefixIDs:         []uuid.UUID{},
 			DesiredCount:         0,
 			SystemReservedMemory: "16Gi",
 			KubernetesVersion:    "",
 		}
+		currentNodeSet.SetNico(nicoNodePoolProvider)
 
 		mockDB := &testutil.MockDB{}
 		mockTx := &testutil.MockTx{}
@@ -528,4 +539,69 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
 	})
+}
+
+func TestNodePoolController_ReconcileCAPIInfraTemplateChange(t *testing.T) {
+	ctx := context.Background()
+	site := db.Site{ID: mustParse("550e8400-e29b-41d4-a716-446655440000")}
+	poolID := mustParse("550e8400-e29b-41d4-a716-446655440001")
+	oldNodeSetID := mustParse("550e8400-e29b-41d4-a716-446655440002")
+	newNodeSetID := mustParse("550e8400-e29b-41d4-a716-446655440003")
+	oldTemplate := json.RawMessage(`{"kind":"OldMachineTemplate"}`)
+	newTemplate := json.RawMessage(`{"kind":"NewMachineTemplate"}`)
+	pool := db.NodePool{
+		ID:               poolID,
+		ClusterID:        mustParse("550e8400-e29b-41d4-a716-446655440004"),
+		Name:             "worker",
+		DesiredCount:     2,
+		CurrentNodeSetID: &oldNodeSetID,
+		Conditions:       db.NodePoolConditions{},
+	}
+	pool.SetCapi(db.CAPINodePoolProvider{
+		InfraMachineTemplate:   newTemplate,
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		PreKubeadmCommands:     []string{},
+	})
+	capiNodePoolProvider, err := pool.CAPIProvider()
+	require.NoError(t, err)
+
+	oldNodeSet := db.NodeSet{ID: oldNodeSetID, NodePoolID: poolID}
+	oldNodeSet.SetCapi(db.CAPINodePoolProvider{
+		InfraMachineTemplate:   oldTemplate,
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		PreKubeadmCommands:     []string{},
+	})
+	newNodeSet := db.NodeSet{ID: newNodeSetID, NodePoolID: poolID}
+	newNodeSet.SetCapi(capiNodePoolProvider)
+	poolWithNewCurrent := pool
+	poolWithNewCurrent.CurrentNodeSetID = &newNodeSetID
+
+	mockDB := &testutil.MockDB{}
+	mockTx := &testutil.MockTx{}
+	mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
+	mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
+		return ns.NodePoolID == poolID && string(ns.CapiInfraMachineTemplate) == string(newTemplate)
+	})).Return(newNodeSet, nil)
+	mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
+		return np.CurrentNodeSetID != nil && *np.CurrentNodeSetID == newNodeSetID
+	})).Return(poolWithNewCurrent, nil)
+	mockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil)
+	mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{oldNodeSet, newNodeSet}, nil).Once()
+	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil)
+	mockTx.On("DeleteNodeSet", mock.Anything, oldNodeSetID).Return(nil)
+	updatedNewSet := newNodeSet
+	updatedNewSet.DesiredCount = 2
+	mockTx.On("UpdateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
+		return ns.ID == newNodeSetID && ns.DesiredCount == 2
+	})).Return(updatedNewSet, nil)
+
+	profilesDir := setupProfilesDir(t, "test-os-profile", "test-config-profile")
+	npc := controllers.NewNodePoolController(config.Config{ProfilesDir: profilesDir}, slog.Default(), mockDB)
+	mockDB.GetTx = func() db.Tx { return mockTx }
+
+	require.NoError(t, npc.Reconcile(ctx, site))
+	mockDB.AssertExpectations(t)
+	mockTx.AssertExpectations(t)
 }

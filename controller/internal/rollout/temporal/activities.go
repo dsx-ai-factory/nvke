@@ -269,7 +269,8 @@ func (a *Activities) ClusterPreflight(ctx context.Context, req *ClusterPreflight
 	fn, ok := a.registry.LookupClusterPreflight(req.PreflightName)
 	if !ok {
 		return toTemporalActivityError(
-			fmt.Errorf("cluster preflight %q: %w", req.PreflightName, errPreflightNotRegistered))
+			fmt.Errorf("cluster preflight %q: %w", req.PreflightName, errPreflightNotRegistered),
+		)
 	}
 	cluster, err := a.loadCluster(ctx, req.ClusterID)
 	if err != nil {
@@ -282,7 +283,8 @@ func (a *Activities) RunNodePreflight(ctx context.Context, req *NodePreflightReq
 	fn, ok := a.registry.LookupNodePreflight(req.PreflightName)
 	if !ok {
 		return toTemporalActivityError(
-			fmt.Errorf("node preflight %q: %w", req.PreflightName, errPreflightNotRegistered))
+			fmt.Errorf("node preflight %q: %w", req.PreflightName, errPreflightNotRegistered),
+		)
 	}
 	cluster, err := a.loadCluster(ctx, req.ClusterID)
 	if err != nil {

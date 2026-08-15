@@ -78,6 +78,10 @@ func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) 
 		Return(activities.TriggerClusterTeardownNodePoolsResult{}, nil)
 	env.OnActivity(a.WaitForClusterNodePoolsDeleted, mock.Anything, mock.Anything).
 		Return(activities.WaitForClusterNodePoolsDeletedResult{}, nil)
+	env.OnActivity(a.TriggerClusterTeardownControlPlaneNodes, mock.Anything, mock.Anything).
+		Return(activities.TriggerClusterTeardownControlPlaneNodesResult{}, nil)
+	env.OnActivity(a.WaitForClusterControlPlaneNodesDeleted, mock.Anything, mock.Anything).
+		Return(activities.WaitForClusterControlPlaneNodesDeletedResult{}, nil)
 	env.OnActivity(a.DeleteEtcdEncryptionKeySecret, mock.Anything, mock.Anything).Return(nil)
 
 	env.OnActivity(a.DeleteCluster, mock.Anything, mock.Anything).

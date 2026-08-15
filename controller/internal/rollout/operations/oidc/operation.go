@@ -49,6 +49,10 @@ const (
 // capabilities. It is intentionally not a SatisfactionChecker: "already enabled"
 // is tracked on the cluster row, which the framework Cluster does not expose, so
 // the consumer workflow short-circuits before invoking the rollout.
+const (
+	nameLabel = "name"
+)
+
 type EnableOIDCOperation struct {
 	nodeAgentClientDialer nodeAgentClientDialer
 	k8sClient             client.Client
@@ -402,8 +406,8 @@ func buildDisablePatchRequest(a authConfigArtifact) (*nkeproto.PatchAPIServerMan
 // true, deletes) the auth-config hostPath volume and its read-only mount on the
 // kube-apiserver container. Emitted as JSON, which is valid strategic-merge input.
 func oidcVolumeMountSMP(dir string, del bool) ([]byte, error) {
-	mount := map[string]any{"name": kubeadmconfig.AuthConfigVolumeName, "mountPath": dir}
-	volume := map[string]any{"name": kubeadmconfig.AuthConfigVolumeName}
+	mount := map[string]any{nameLabel: kubeadmconfig.AuthConfigVolumeName, "mountPath": dir}
+	volume := map[string]any{nameLabel: kubeadmconfig.AuthConfigVolumeName}
 	if del {
 		mount["$patch"] = "delete"
 		volume["$patch"] = "delete"
@@ -414,7 +418,7 @@ func oidcVolumeMountSMP(dir string, del bool) ([]byte, error) {
 	return json.Marshal(map[string]any{
 		"spec": map[string]any{
 			"containers": []any{map[string]any{
-				"name":         "kube-apiserver",
+				nameLabel:      "kube-apiserver",
 				"volumeMounts": []any{mount},
 			}},
 			"volumes": []any{volume},

@@ -15,4 +15,10 @@ deploy/docker-compose
 deploy/kustomize
 
 # ignore markdown files
-*.md 
+*.md
+
+# ...except the third-party notices, which must ship with the image: the image
+# is the distributed artifact, and Apache-2.0 4(d) and the MIT/BSD "include
+# this notice in all copies" clauses attach to the thing distributed, not to
+# this repo. Negation must stay after the *.md rule above to take effect.
+!THIRD_PARTY_NOTICES.md

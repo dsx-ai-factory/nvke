@@ -56,7 +56,23 @@ func (a *Activities) deleteForgeInstance(ctx context.Context, input DeleteForgeI
 		return DeleteForgeInstanceResult{}, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	if node.ForgeInstanceID == "" {
+	clusterID := node.ClusterID
+	nodePoolID := node.NodePoolID
+
+	cluster, err := a.db.GetCluster(ctx, clusterID)
+	if err != nil {
+		return DeleteForgeInstanceResult{}, fmt.Errorf("failed to get cluster: %w", err)
+	}
+	nicoClusterProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return DeleteForgeInstanceResult{}, err
+	}
+	nicoNodeProvider, err := node.NicoProvider()
+	if err != nil {
+		return DeleteForgeInstanceResult{}, err
+	}
+
+	if nicoNodeProvider.ForgeInstanceID == "" {
 		logger.Info("ForgeInstanceID is empty, skipping forge instance deletion",
 			"nodeID", input.NodeID,
 			"nodeName", node.Name,
@@ -65,28 +81,20 @@ func (a *Activities) deleteForgeInstance(ctx context.Context, input DeleteForgeI
 		return DeleteForgeInstanceResult{}, nil
 	}
 
-	clusterID := node.ClusterID
-	nodePoolID := node.NodePoolID
-
-	cluster, err := a.db.GetCluster(ctx, clusterID)
-	if err != nil {
-		return DeleteForgeInstanceResult{}, fmt.Errorf("failed to get cluster: %w", err)
-	}
-
 	logger.Info("Deleting Forge instance",
 		"clusterID", cluster.ID,
 		"nodePoolID", nodePoolID,
 		"nodeID", input.NodeID,
 		"nodeName", node.Name,
-		"forgeInstanceID", node.ForgeInstanceID,
-		"forgeMachineID", node.ForgeMachineID,
+		"forgeInstanceID", nicoNodeProvider.ForgeInstanceID,
+		"forgeMachineID", nicoNodeProvider.ForgeMachineID,
 		"machineHealthIssue", input.MachineHealthIssue,
 	)
 
 	// Perform the delete operation
 	// If input.MachineHealthIssue is not nil, it signals to Forge to flag the instance for repair.
 	// See https://nvmetal.gitlab-master-pages.nvidia.com/carbide/breakfix_integration/breakfix_integration.html#what-happens-when-you-report-issues
-	err = a.forgeProvider.DeleteInstance(ctx, cluster.OrgID, node.ForgeInstanceID, input.MachineHealthIssue)
+	err = a.forgeProvider.DeleteInstance(ctx, nicoClusterProvider.OrgID, nicoNodeProvider.ForgeInstanceID, input.MachineHealthIssue)
 	if err != nil {
 		// Bad Request - Should not be retried
 		if errors.Is(err, forge.ErrBadRequest) {
@@ -105,12 +113,12 @@ func (a *Activities) deleteForgeInstance(ctx context.Context, input DeleteForgeI
 		"nodePoolID", nodePoolID,
 		"nodeID", input.NodeID,
 		"nodeName", node.Name,
-		"forgeInstanceID", node.ForgeInstanceID,
-		"forgeMachineID", node.ForgeMachineID,
+		"forgeInstanceID", nicoNodeProvider.ForgeInstanceID,
+		"forgeMachineID", nicoNodeProvider.ForgeMachineID,
 	)
 
 	return DeleteForgeInstanceResult{
-		InstanceID:   node.ForgeInstanceID,
+		InstanceID:   nicoNodeProvider.ForgeInstanceID,
 		InstanceName: node.Name,
 		InstanceIP:   node.IP,
 	}, nil

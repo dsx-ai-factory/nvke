@@ -259,7 +259,8 @@ func applyRebootLabelsAndSetNodeCondition(ctx workflow.Context, input RebootNode
 			NodeID:                        input.NodeID,
 			Labels:                        labels,
 			NodeRebootingConditionMessage: "Labeling node",
-		}).Get(ctx, nil); err != nil {
+		},
+	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to apply label to node: %w", err)
 	}
 
@@ -285,7 +286,8 @@ func getNode(ctx workflow.Context, nodeID uuid.UUID) (corev1.Node, error) {
 		activities.GetKubeNodeInput{
 			NodeID:                        nodeID,
 			NodeRebootingConditionMessage: "Getting node info",
-		}).Get(ctx, &result); err != nil {
+		},
+	).Get(ctx, &result); err != nil {
 		return corev1.Node{}, fmt.Errorf("failed to get node bootID: %w", err)
 	}
 
@@ -353,7 +355,8 @@ func forgeHardRebootNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt i
 		activities.ForgeRebootNodeInput{
 			NodeID:                        nodeID,
 			NodeRebootingConditionMessage: fmt.Sprintf("Hard rebooting node via Forge (attempt: %d)", rebootAttempt),
-		}).Get(ctx, &result); err != nil {
+		},
+	).Get(ctx, &result); err != nil {
 		return time.Time{}, fmt.Errorf("failed to forge reboot node: %w", err)
 	}
 
@@ -385,7 +388,8 @@ func waitForNodeReboot(ctx workflow.Context, input RebootNodeInput, rebootAttemp
 			CheckRebootCompleteAnnotation: true,
 			AnnotationAfterTime:           annotationAfterTime,
 			PollingInterval:               input.PollingInterval,
-		}).Get(ctx, nil); err != nil {
+		},
+	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to wait for node reboot: %w", err)
 	}
 
@@ -410,7 +414,8 @@ func applyCAPIMachineRebootAnnotation(ctx workflow.Context, nodeID uuid.UUID) (t
 		a.ApplyCAPIMachineRebootAnnotation,
 		activities.ApplyCAPIMachineRebootAnnotationInput{
 			NodeID: nodeID,
-		}).Get(ctx, &result); err != nil {
+		},
+	).Get(ctx, &result); err != nil {
 		return time.Time{}, fmt.Errorf("failed to apply capi machine reboot annotation: %w", err)
 	}
 
@@ -434,7 +439,8 @@ func deleteCAPIMachineRebootAnnotation(ctx workflow.Context, nodeID uuid.UUID) e
 		a.DeleteCAPIMachineRebootAnnotation,
 		activities.DeleteCAPIMachineRebootAnnotationInput{
 			NodeID: nodeID,
-		}).Get(ctx, nil); err != nil {
+		},
+	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to delete capi machine reboot annotation: %w", err)
 	}
 

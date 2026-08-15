@@ -164,6 +164,30 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 	mockTx.AssertExpectations(t)
 }
 
+func TestReconcile_SkipsClusterBeingDeleted(t *testing.T) {
+	t.Parallel()
+
+	mockTx := &testutil.MockTx{}
+	r := &reconciler{
+		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:     mockTx,
+		logger: slog.Default(),
+	}
+
+	cluster := db.Cluster{
+		ID:                 uuid.New(),
+		ControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3, ConfigurationID: uuid.New()},
+	}
+	cluster.Conditions.Deleting = db.NewCondition(true, "cluster teardown in progress")
+
+	err := r.reconcile(context.Background(), cluster)
+	require.NoError(t, err)
+	// The teardown workflow owns CP node deletion; the reconciler must not read or
+	// (re)create nodes for a cluster being torn down.
+	mockTx.AssertNotCalled(t, "ListNodes", mock.Anything, mock.Anything)
+	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
+}
+
 func TestReconcileControlPlaneScaleUp_FeatureFlagDisabled(t *testing.T) {
 	t.Parallel()
 

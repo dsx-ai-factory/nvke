@@ -27,8 +27,10 @@ On the Mac you need:
 - `yq` (for `fetch-kubeconfig.sh --update-mutagen`)
 - An SSH config Host alias that reaches the box (e.g. `colossus`)
 - Local checkouts of at least: `cloud-workflow-engine`,
-  `cluster-api-provider-nico`, `agent` (sibling layout under one parent
-  dir is assumed)
+  `cluster-api-provider-nico`, `agent`, `nke-site-deploy`, and `forge-console`
+  (sibling layout under one parent dir is assumed; `nke-site-deploy` supplies
+  `cwe-profiles` for the Tilt profiles image; `forge-console` is loaded by CWE
+  Tilt from `../forge-console` or `FORGE_CONSOLE_DIR`)
 
 ## Mental model
 
@@ -92,6 +94,8 @@ Default template syncs:
 - `cloud-workflow-engine`
 - `cluster-api-provider-nico`
 - `agent`
+- `nke-site-deploy` (fleet `cwe-profiles` for `docker.local/cwe-profiles:tilt`)
+- `forge-console` (external repo; CWE Tilt loads it as a provider)
 
 Ignored on both sides (built/managed on the target): `bin/`, `var/`, `.dev/`,
 `logs/`, `release/`, `images/`, `.gocache/`, `.gomodcache/`, `.cache/`,
@@ -103,11 +107,11 @@ Uniform per-target offset so remotes coexist with a local Mac Tilt stack (which
 uses 3000 / 3100 / 8080 / 8081 / 18080 / 10350). Convention: **+1000 per
 target**.
 
-| target           | CWE   | TemporalUI | TemporalFE | Postgres | forge-vms | Grafana | Tilt  |
-| ---------------- | ----- | ---------- | ---------- | -------- | --------- | ------- | ----- |
-| local Mac (+0)   | 8080  | 8081       | 7233       | 5432     | 18080     | 3000    | 10350 |
-| colossus (+1000) | 9080  | 9081       | 8233       | 6432     | 19080     | 4000    | 11350 |
-| next (+2000)     | 10080 | 10081      | 9233       | 7432     | 20080     | 5000    | 12350 |
+| target           | CWE   | TemporalUI | TemporalFE | Postgres | forge-vms | forge-console | Grafana | Tilt  |
+| ---------------- | ----- | ---------- | ---------- | -------- | --------- | ------------- | ------- | ----- |
+| local Mac (+0)   | 8080  | 8081       | 7233       | 5432     | 18080     | 8090          | 3000    | 10350 |
+| colossus (+1000) | 9080  | 9081       | 8233       | 6432     | 19080     | 9090          | 4000    | 11350 |
+| next (+2000)     | 10080 | 10081      | 9233       | 7432     | 20080     | 10090         | 5000    | 12350 |
 
 The remote still binds the standard ports; only the Mac listener ports are
 offset. Verify free ports with `lsof -nP -iTCP:<port> -sTCP:LISTEN` (note macOS
@@ -119,6 +123,7 @@ AirPlay may own 5000).
 - CWE UI: http://localhost:9080 (Swagger: `/api/docs`)
 - Temporal UI: http://localhost:9081
 - forge-vms UI: http://localhost:19080/ui/
+- forge-console UI: http://localhost:9090
 - Grafana: http://localhost:4000
 - Temporal frontend (gRPC / `temporal` CLI): `localhost:8233`
 - Postgres: `localhost:6432`

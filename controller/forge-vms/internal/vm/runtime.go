@@ -39,6 +39,15 @@ type Runtime interface {
 	// but not in the database.
 	ListMachines(ctx context.Context) ([]string, error)
 
+	// LookupDHCPLease returns the IPv4 address the hypervisor's DHCP server
+	// has leased to the given MAC on the named network. Used only in
+	// libvirt-network mode, where libvirt's own dnsmasq assigns addresses.
+	// Return semantics:
+	//   (ip, true, nil)    — lease found
+	//   ("", false, nil)   — no lease yet (caller retries) or backend unsupported
+	//   ("", false, err)   — lookup command failed
+	LookupDHCPLease(ctx context.Context, network, mac string) (string, bool, error)
+
 	// TPMEKCert returns the base64-encoded TPM Endorsement Key certificate
 	// for the given machine. Return semantics:
 	//   ("", nil)   — no TPM configured for this backend
@@ -52,6 +61,7 @@ type InstanceSpec struct {
 	InstanceID  string
 	DomainName  string
 	BridgeName  string
+	NetworkName string // when set, attach to this libvirt network instead of BridgeName
 	VCPUs       int
 	MemoryMiB   int
 	DiskPath    string

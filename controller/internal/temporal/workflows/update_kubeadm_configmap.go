@@ -27,16 +27,11 @@ type UpdateKubeadmConfigMapInput struct {
 }
 
 type UpdateKubeadmConfigMapResult struct {
-	// NodeID is the control plane node the runbook ran on.
-	NodeID uuid.UUID `json:"nodeID"`
-	// NodeName is the name of the control plane node the runbook ran on.
-	NodeName string `json:"nodeName"`
-	// Output is the stdout from the runbook execution.
-	Output string `json:"output"`
+	Changed bool `json:"changed"`
 }
 
-// UpdateKubeadmConfigMap runs the embedded update-kubeadm-k8s-version runbook
-// on a healthy control plane node vian agent ExecuteScript.
+// UpdateKubeadmConfigMap updates the tenant's kubeadm ClusterConfiguration
+// through the injected long-lived tenant client.
 func UpdateKubeadmConfigMap(ctx workflow.Context, input UpdateKubeadmConfigMapInput) (UpdateKubeadmConfigMapResult, error) {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Updating kubeadm ConfigMap",
@@ -47,7 +42,6 @@ func UpdateKubeadmConfigMap(ctx workflow.Context, input UpdateKubeadmConfigMapIn
 
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval: 30 * time.Second,
 			MaximumInterval: 2 * time.Minute,
@@ -55,16 +49,13 @@ func UpdateKubeadmConfigMap(ctx workflow.Context, input UpdateKubeadmConfigMapIn
 		},
 	}
 
-	var result activities.ExecuteClusterRunbookResult
+	var result activities.UpdateKubeadmKubernetesVersionResult
 	if err := workflow.ExecuteActivity(
 		workflow.WithActivityOptions(ctx, activityOptions),
-		a.ExecuteClusterRunbook,
-		activities.ExecuteClusterRunbookInput{
-			ClusterID:   input.ClusterID,
-			RunbookName: "update-kubeadm-k8s-version",
-			RunbookEnv: map[string]string{
-				"KUBERNETES_VERSION": input.KubernetesVersion,
-			},
+		a.UpdateKubeadmKubernetesVersion,
+		activities.UpdateKubeadmKubernetesVersionInput{
+			ClusterID:         input.ClusterID,
+			KubernetesVersion: input.KubernetesVersion,
 		},
 	).Get(ctx, &result); err != nil {
 		return UpdateKubeadmConfigMapResult{}, fmt.Errorf("failed to update kubeadm ConfigMap: %w", err)
@@ -73,12 +64,9 @@ func UpdateKubeadmConfigMap(ctx workflow.Context, input UpdateKubeadmConfigMapIn
 	logger.Info("Updated kubeadm ConfigMap",
 		"clusterID", input.ClusterID,
 		"kubernetesVersion", input.KubernetesVersion,
-		"nodeID", result.NodeID,
-		"nodeName", result.NodeName)
+		"changed", result.Changed)
 
 	return UpdateKubeadmConfigMapResult{
-		NodeID:   result.NodeID,
-		NodeName: result.NodeName,
-		Output:   result.Output,
+		Changed: result.Changed,
 	}, nil
 }

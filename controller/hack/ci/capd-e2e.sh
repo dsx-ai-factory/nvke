@@ -27,6 +27,7 @@ BUNDLE_DIR="${TMP_DIR}/bundles"
 SOURCE_ARCHIVE="${TMP_DIR}/cwe-source.tgz"
 E2E_BIN="${TMP_DIR}/cwe-e2e.test"
 E2E_CONFIG="${TMP_DIR}/e2e-config.json"
+CWE_PROFILES_DOCKER_CONFIG_DIR="${TMP_DIR}/cwe-profiles-docker-config"
 
 log() {
   printf '[capd-e2e] %s\n' "$*"
@@ -70,9 +71,9 @@ collect_diagnostics() {
   docker network ls >"${STATE_DIR}/docker-networks.txt" 2>&1
   docker logs "${KIND_CLUSTER_NAME}-control-plane" >"${STATE_DIR}/kind-control-plane.log" 2>&1
   docker logs "${BUNDLE_MIRROR_NAME}" >"${STATE_DIR}/bundle-mirror.log" 2>&1
-  docker logs capd-tor >"${STATE_DIR}/capd-bgp.log" 2>&1
-  docker exec capd-tor vtysh -c 'show bgp summary' >"${STATE_DIR}/capd-bgp-summary.txt" 2>&1
-  docker exec capd-tor vtysh -c 'show bgp ipv4 unicast' >"${STATE_DIR}/capd-bgp-routes.txt" 2>&1
+  docker logs bgp-containers >"${STATE_DIR}/bgp-containers.log" 2>&1
+  docker exec bgp-containers vtysh -c 'show bgp summary' >"${STATE_DIR}/bgp-containers-summary.txt" 2>&1
+  docker exec bgp-containers vtysh -c 'show bgp ipv4 unicast' >"${STATE_DIR}/bgp-containers-routes.txt" 2>&1
 
   mkdir -p "${STATE_DIR}/nodes"
   while IFS= read -r node_name; do
@@ -102,8 +103,8 @@ collect_diagnostics() {
   fi
 
   docker rm -f "${RUNNER_NAME}" >/dev/null 2>&1
-  docker stop --time 10 capd-tor >/dev/null 2>&1
-  docker rm -f capd-tor >/dev/null 2>&1
+  docker stop --time 10 bgp-containers >/dev/null 2>&1
+  docker rm -f bgp-containers >/dev/null 2>&1
   docker rm -f "${BUNDLE_MIRROR_NAME}" "${BUNDLE_LOADER_NAME}" >/dev/null 2>&1
   kind delete cluster --name "${KIND_CLUSTER_NAME}" >/dev/null 2>&1 || true
   docker volume rm "${STATE_VOLUME}" >/dev/null 2>&1
@@ -121,12 +122,26 @@ mkdir -p "${STATE_DIR}"
 : "${CAPI_CORE_VERSION:?CAPI_CORE_VERSION is required}"
 : "${CAPD_PROVIDER_VERSION:?CAPD_PROVIDER_VERSION is required}"
 : "${CLUSTERCTL_SHA256:?CLUSTERCTL_SHA256 is required}"
+: "${CWE_PROFILES_IMAGE:?CWE_PROFILES_IMAGE is required}"
+: "${NVCR_NKE_AUTH_TOKEN:?NVCR_NKE_AUTH_TOKEN is required}"
 : "${TILT_VERSION:?TILT_VERSION is required}"
 : "${TILT_SHA256:?TILT_SHA256 is required}"
 
 CWE_IMAGE="${CWE_IMAGE:-cwe-mr:${CI_COMMIT_SHORT_SHA:-local}}"
 CWE_BUILD_VERSION="${CWE_BUILD_VERSION:-mr-${CI_COMMIT_SHORT_SHA:-local}}"
+CWE_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
 GITCREDS_FILE="${TMP_DIR}/gitcreds"
+
+log "pulling fleet-pinned cwe-profiles image"
+mkdir -p "${CWE_PROFILES_DOCKER_CONFIG_DIR}"
+printf '%s' "${NVCR_NKE_AUTH_TOKEN}" | \
+  DOCKER_CONFIG="${CWE_PROFILES_DOCKER_CONFIG_DIR}" \
+  docker login nvcr.io -u '$oauthtoken' --password-stdin
+DOCKER_CONFIG="${CWE_PROFILES_DOCKER_CONFIG_DIR}" \
+  docker pull --platform linux/amd64 "${CWE_PROFILES_IMAGE}"
+docker tag "${CWE_PROFILES_IMAGE}" "${CWE_PROFILES_TILT_IMAGE}"
+printf '%s\n' "${CWE_PROFILES_IMAGE}" >"${STATE_DIR}/cwe-profiles-image-ref.txt"
+docker image inspect "${CWE_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-profiles-image.json"
 
 log "building MR image ${CWE_IMAGE} for the AMD64 CAPD runner"
 printf 'machine %s\nlogin gitlab-ci-token\npassword %s\n' \
@@ -253,6 +268,7 @@ kind create cluster \
   --config hack/cwe-capi-kind.yaml \
   --wait 5m
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
+kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
 kind get kubeconfig --internal --name "${KIND_CLUSTER_NAME}" >"${MANAGEMENT_KUBECONFIG}"
 
 log "starting the CAPD bundle mirror on the Kind Docker network"
@@ -324,7 +340,7 @@ jq -n \
   --arg cwe_image "${CWE_IMAGE}" \
   --arg site_controller_vip "${management_vip}" \
   '{
-    providers: ["capi_core", "capd", "capd-reboot-controller"],
+    providers: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"],
     cwe_image: $cwe_image,
     site_controller_vip: $site_controller_vip
   }' >"${TMP_DIR}/tilt_config.json"
@@ -350,8 +366,10 @@ docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 log "deploying the management plane with Tilt"
 runner_exec env \
   KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+  CWE_PROFILES_PRELOADED=true \
   TENANT_ACCESS_ENABLED="${TENANT_ACCESS_ENABLED:-true}" \
   NKE_OIDC_AUTH_ENABLED="${NKE_OIDC_AUTH_ENABLED:-true}" \
+  CWE_PROFILES_DIR=/workspace/cloud-workflow-engine/test/fixtures/profiles \
   TILT_DISABLE_ANALYTICS=1 \
   bash -lc '
     set -euo pipefail

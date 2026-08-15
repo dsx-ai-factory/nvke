@@ -3073,6 +3073,7 @@ func (r CreateNodePoolClientResponse) StatusCode() int {
 type DeleteNodePoolClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	JSON400      *GenericError
 }
 
 // Status returns HTTPResponse.Status
@@ -4540,6 +4541,15 @@ func ParseDeleteNodePoolClientResponse(rsp *http.Response) (*DeleteNodePoolClien
 	response := &DeleteNodePoolClientResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 	}
 
 	return response, nil

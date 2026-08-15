@@ -16,7 +16,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"regexp"
 	"slices"
 	"strings"
@@ -36,6 +35,17 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/naming"
 )
 
+const (
+	clusterIDConst  = "clusterID"
+	databaseConst   = "database"
+	failedValue     = "Failed"
+	healthz         = "/healthz"
+	metrics         = "/metrics"
+	nodePoolIDConst = "nodePoolID"
+	okValue         = "ok"
+	temporal        = "temporal"
+)
+
 var (
 	errSiteNotRegistered                        = errors.New("site is not registered")
 	errVersionSkewViolation                     = errors.New("version skew policy violation")
@@ -50,6 +60,7 @@ var (
 	errOIDCWithKubernetesUpgrade                = errors.New("cannot enable OIDC authentication and update the Kubernetes version in the same request")
 	errOIDCWithEtcdEncryption                   = errors.New("cannot enable OIDC authentication and etcd encryption in the same request")
 	errClusterMaxSurgeTooHigh                   = errors.New("maxSurge should be max 1 for cluster-level control plane config")
+	errControlPlaneConfigNotEnabled             = errors.New("cluster-level controlPlaneConfig requires control-plane controller provisioning to be enabled; configure the control plane via a control-plane node pool")
 	cniVersionPattern                           = regexp.MustCompile(`^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$`)
 )
 
@@ -79,6 +90,14 @@ type clusterService struct {
 	teleportCfg          config.TeleportConfig
 	enableForgeCapi      bool
 	oidcAuthEnabled      bool
+	// useControlPlaneController mirrors the CWE feature flag
+	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
+	// cluster-level controlPlaneConfig is authoritative: it is required on
+	// create, control-plane node pools are rejected, and the config is persisted
+	// as cluster-level desiredCount + a control plane config snapshot. When
+	// false, the control plane is provisioned from a control-plane node pool and
+	// supplying controlPlaneConfig.desiredCount/spec is rejected.
+	useControlPlaneController bool
 }
 
 func NewClusterService(
@@ -89,15 +108,17 @@ func NewClusterService(
 	teleportCfg config.TeleportConfig,
 	enableForgeCapi bool,
 	oidcAuthEnabled bool,
+	useControlPlaneController bool,
 ) *clusterService {
 	return &clusterService{
-		logger:               logger,
-		db:                   database,
-		nodePoolService:      nodePoolService,
-		forgeNetworkProvider: forgeNetworkProvider,
-		teleportCfg:          teleportCfg,
-		enableForgeCapi:      enableForgeCapi,
-		oidcAuthEnabled:      oidcAuthEnabled,
+		logger:                    logger,
+		db:                        database,
+		nodePoolService:           nodePoolService,
+		forgeNetworkProvider:      forgeNetworkProvider,
+		teleportCfg:               teleportCfg,
+		enableForgeCapi:           enableForgeCapi,
+		oidcAuthEnabled:           oidcAuthEnabled,
+		useControlPlaneController: useControlPlaneController,
 	}
 }
 
@@ -164,18 +185,6 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 
 	var createdCluster db.Cluster
 	err = s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		// Lock site to allocate VIP for the cluster.
-		// Without locking the site, two concurrent cluster create transactions could try to add the same VIP, resulting in one of
-		// them failing. With the lock, one transaction will wait for the other to finish, so they will choose different VIP values.
-		lockForUpdate := true
-		site, err := tx.GetSite(ctx, req.Body.SiteID, lockForUpdate)
-		if err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				return errSiteNotRegistered
-			}
-			return fmt.Errorf("failed to get site: %w", err)
-		}
-
 		dbCluster, err := dbClusterFromAPI(req.Body)
 		if err != nil {
 			return fmt.Errorf("failed to convert cluster request: %w", err)
@@ -186,36 +195,52 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 		dbCluster.PodCIDR = network.podCIDR
 		dbCluster.ServiceCIDR = network.serviceCIDR.String()
 
+		// In control-plane controller provisioning mode the cluster-level control
+		// plane config is authoritative. Persist the desired count and max surge as
+		// columns up front; the config snapshot row is created after the cluster row
+		// exists (it needs the cluster ID).
+		if s.useControlPlaneController && req.Body.ControlPlaneConfig != nil {
+			dbCluster.ControlPlaneConfig.DesiredCount = req.Body.ControlPlaneConfig.DesiredCount
+			if req.Body.ControlPlaneConfig.MaxSurge != nil {
+				dbCluster.ControlPlaneConfig.MaxSurge = *req.Body.ControlPlaneConfig.MaxSurge
+			}
+		}
+
 		createdCluster, err = tx.CreateCluster(ctx, &dbCluster)
 		if err != nil {
 			return fmt.Errorf("failed to create cluster: %w", err)
 		}
 
-		// Only skip VIP allocation if explicitly disabled
-		if !req.Body.DisableKubeVip {
-			vip, err := allocateVIP(ctx, tx, site, createdCluster)
-			if err != nil {
-				return fmt.Errorf("failed to allocate a VIP: %w", err)
+		if s.useControlPlaneController && req.Body.ControlPlaneConfig != nil {
+			spec := controlPlaneConfigSpecFromCreateAPI(
+				req.Body.ControlPlaneConfig,
+				createdCluster.KubernetesVersion,
+				s.teleportCfg.NodePoolTeleportDefault(true),
+				req.Body.SiteID != uuid.Nil,
+			)
+			if err := db.CreateControlPlaneConfigRowIfChanged(ctx, tx, &createdCluster, spec, db.CreateControlPlaneConfigRowOpts{
+				ChangeReason: "cluster create controlPlaneConfig",
+			}); err != nil {
+				return fmt.Errorf("failed to create initial control plane configuration: %w", err)
 			}
-			if err := network.validateControlPlaneVIP(vip); err != nil {
-				return err
-			}
-
-			createdCluster.ControlPlaneVIP = vip
 			if _, err := tx.UpdateCluster(ctx, &createdCluster); err != nil {
-				return fmt.Errorf("failed to update cluster: %w", err)
+				return fmt.Errorf("failed to persist cluster control plane configuration: %w", err)
 			}
 		}
 
 		workflowID := constants.ProvisionClusterWorkflowPrefix + createdCluster.ID.String()
 		_, err = tx.CreateWorkflowOutboxEntry(ctx, "ProvisionCluster", workflowID, map[string]interface{}{
-			"clusterID": createdCluster.ID,
+			clusterIDConst: createdCluster.ID,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create workflow outbox entry for cluster: %w", err)
 		}
 
-		if err := s.createInitialNodePools(ctx, tx, createdCluster, req.Body.NodePools); err != nil {
+		var initialNodePools []api.NodePoolCreateConfig
+		if req.Body.NodePools != nil {
+			initialNodePools = *req.Body.NodePools
+		}
+		if err := s.createInitialNodePools(ctx, tx, createdCluster, initialNodePools); err != nil {
 			return fmt.Errorf("failed to create initial node pools and nodes: %w", err)
 		}
 
@@ -246,7 +271,7 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	ctx context.Context,
 	req *api.CreateClusterRequest,
 ) (resolvedClusterNetwork, error) {
-	if err := validateCreateClusterRequestFields(req); err != nil {
+	if err := s.validateCreateClusterRequestFields(req); err != nil {
 		return resolvedClusterNetwork{}, newBadRequestErrorf("%s", err)
 	}
 	network, err := resolveClusterNetwork(req.Network)
@@ -254,11 +279,29 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 		return resolvedClusterNetwork{}, newBadRequestErrorf("%s", err)
 	}
 	desiredNodes := 0
-	for _, nodePool := range req.NodePools {
-		desiredNodes += nodePool.DesiredNodeCount
+	if req.NodePools != nil {
+		for _, nodePool := range *req.NodePools {
+			desiredNodes += nodePool.DesiredNodeCount
+		}
 	}
-	if err := validatePodCIDRCapacity(network.podCIDRPrefixes, desiredNodes, 0); err != nil {
+	cpSurge := 0
+	// Include the cluster-level control plane node count (and its surge) in the
+	// pod-CIDR capacity check when the control plane is provisioned from the
+	// cluster-level controlPlaneConfig rather than a node pool.
+	if s.useControlPlaneController && req.ControlPlaneConfig != nil {
+		desiredNodes += req.ControlPlaneConfig.DesiredCount
+		if req.ControlPlaneConfig.MaxSurge != nil {
+			cpSurge = *req.ControlPlaneConfig.MaxSurge
+		}
+	}
+	if err := validatePodCIDRCapacity(network.podCIDRPrefixes, desiredNodes, cpSurge); err != nil {
 		return resolvedClusterNetwork{}, newBadRequestErrorf("%s", err)
+	}
+	controlPlaneVIP := strings.TrimSpace(req.ControlPlaneVIP)
+	if controlPlaneVIP != "" {
+		if err := network.validateControlPlaneVIP(controlPlaneVIP); err != nil {
+			return resolvedClusterNetwork{}, newBadRequestErrorf("%s", err)
+		}
 	}
 
 	// Validate selected infrastructure network CIDRs before opening the database transaction.
@@ -267,6 +310,21 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	// provider-specific machine templates, so their infrastructure networks are not resolved here.
 	if err := s.validateSelectedForgeNetworkCIDRs(ctx, req, network); err != nil {
 		return resolvedClusterNetwork{}, err
+	}
+
+	// When the control plane is configured at the cluster level for a Forge
+	// cluster, enforce the same subnet/VPC-prefix native-networking rules used
+	// for node pools.
+	if s.useControlPlaneController && req.ControlPlaneConfig != nil && req.SiteID != uuid.Nil {
+		if err := s.validateControlPlaneForgeNetworking(
+			ctx,
+			req.OrgID,
+			req.SiteID,
+			req.ControlPlaneConfig.SubnetIDs,
+			req.ControlPlaneConfig.VpcPrefixIDs,
+		); err != nil {
+			return resolvedClusterNetwork{}, err
+		}
 	}
 
 	return network, nil
@@ -286,7 +344,7 @@ func forgeCAPINicoClusterManifest(siteID uuid.UUID) ([]byte, error) {
 	return json.Marshal(nicoCluster)
 }
 
-func validateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
+func (s *clusterService) validateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
 	if err := naming.ValidateClusterNameForNodeNaming(req.Name); err != nil {
 		return err
 	}
@@ -297,18 +355,35 @@ func validateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
 		)
 	}
 
-	// Validate that at least one control plane node is specified
-	controlPlaneNodeCount := 0
-	for _, nodePool := range req.NodePools {
-		if nodePool.ControlPlane {
-			controlPlaneNodeCount += nodePool.DesiredNodeCount
+	var nodePools []api.NodePoolCreateConfig
+	if req.NodePools != nil {
+		nodePools = *req.NodePools
+	}
+	isCAPICluster := req.SiteID == uuid.Nil
+
+	if s.useControlPlaneController {
+		// Cluster-level control plane config is authoritative: control-plane node
+		// pools are rejected and the control plane is described by controlPlaneConfig.
+		if err := validateCreateClusterLevelControlPlane(req, nodePools, isCAPICluster); err != nil {
+			return err
+		}
+	} else {
+		// Legacy mode: the control plane is provided via a control-plane node pool,
+		// and a cluster-level controlPlaneConfig is not accepted.
+		if req.ControlPlaneConfig != nil {
+			return errControlPlaneConfigNotEnabled
+		}
+		controlPlaneNodeCount := 0
+		for _, nodePool := range nodePools {
+			if nodePool.ControlPlane {
+				controlPlaneNodeCount += nodePool.DesiredNodeCount
+			}
+		}
+		if controlPlaneNodeCount == 0 {
+			return fmt.Errorf("cluster must have at least one control plane node")
 		}
 	}
-	if controlPlaneNodeCount == 0 {
-		return fmt.Errorf("cluster must have at least one control plane node")
-	}
 
-	isCAPICluster := req.SiteID == uuid.Nil
 	hasCAPIInfraCluster := !isEmptyManifestObject(req.CapiInfraCluster)
 
 	if isCAPICluster {
@@ -347,7 +422,7 @@ func validateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
 		}
 	}
 
-	for _, nodePool := range req.NodePools {
+	for _, nodePool := range nodePools {
 		if err := naming.ValidateNodeNamePrefix(req.Name, nodePool.NodeNamePrefix); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePool.Name, err)
 		}
@@ -372,6 +447,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			OSProfile:                   nodePoolConfig.OSProfile,
 			ConfigProfile:               nodePoolConfig.ConfigProfile,
 			SystemReservedMemory:        nodePoolConfig.SystemReservedMemory,
+			KubeReservedMemory:          nodePoolConfig.KubeReservedMemory,
 			NodeLabels:                  nodePoolConfig.NodeLabels,
 			ControlPlane:                nodePoolConfig.ControlPlane,
 			DesiredNodeCount:            nodePoolConfig.DesiredNodeCount,
@@ -406,7 +482,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 
 		nodePoolWorkflowID := constants.ProvisionNodePoolWorkflowPrefix + createdNodePool.ID.String()
 		_, err = tx.CreateWorkflowOutboxEntry(ctx, "ProvisionNodePool", nodePoolWorkflowID, map[string]interface{}{
-			"nodePoolID": createdNodePool.ID,
+			nodePoolIDConst: createdNodePool.ID,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create workflow outbox entry for node pool: %w", err)
@@ -516,7 +592,7 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 				db.SetUpdateInProgress(&dbCluster, db.OperationTypeEtcdEncryption, "enabling etcd encryption", time.Now().UTC())
 				workflowID := constants.EnableEtcdEncryptionWorkflowPrefix + dbCluster.ID.String()
 				if _, err := tx.CreateWorkflowOutboxEntry(ctx, constants.EnableEtcdEncryptionWorkflowType, workflowID, map[string]interface{}{
-					"clusterID": dbCluster.ID,
+					clusterIDConst: dbCluster.ID,
 				}); err != nil {
 					return fmt.Errorf("failed to create workflow outbox entry for etcd encryption: %w", err)
 				}
@@ -529,22 +605,8 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 
 		if req.Body.ControlPlaneConfig != nil ||
 			(req.Body.ControlPlaneKubernetesVersion != nil && *req.Body.ControlPlaneKubernetesVersion != "") {
-			previousMaxSurge := dbCluster.ControlPlaneConfig.MaxSurge
-			if err := applyClusterControlPlaneConfigUpdate(ctx, tx, &dbCluster, req.Body.ControlPlaneConfig); err != nil {
+			if err := s.applyControlPlaneConfigUpdateWithCIDRCheck(ctx, tx, &dbCluster, req.Body.ControlPlaneConfig); err != nil {
 				return err
-			}
-			if req.Body.ControlPlaneConfig != nil && req.Body.ControlPlaneConfig.MaxSurge != nil {
-				clusterID := dbCluster.ID
-				nodePools, err := tx.ListNodePools(ctx, db.NodePoolFilters{ClusterID: &clusterID})
-				if err != nil {
-					return fmt.Errorf("failed to list node pools for pod CIDR capacity validation: %w", err)
-				}
-				if requiredPodCIDRNodeBlocks(nodePools, dbCluster.ControlPlaneConfig.MaxSurge) >
-					requiredPodCIDRNodeBlocks(nodePools, previousMaxSurge) {
-					if err := validateStoredPodCIDRCapacity(dbCluster, nodePools); err != nil {
-						return newBadRequestErrorf("%s", err)
-					}
-				}
 			}
 		}
 
@@ -579,7 +641,7 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 	}
 	response := api.UpdateCluster200JSONResponse(apiClusterFromDB(&updatedCluster))
 	s.logger.Info("UpdateCluster response",
-		"clusterID", req.ClusterID,
+		clusterIDConst, req.ClusterID,
 		"response", response,
 	)
 	return response, nil
@@ -616,7 +678,8 @@ func isUpdateClusterClientError(err error) bool {
 		errors.Is(err, errOIDCDuringDeletion) ||
 		errors.Is(err, errOIDCWithKubernetesUpgrade) ||
 		errors.Is(err, errOIDCWithEtcdEncryption) ||
-		errors.Is(err, errClusterMaxSurgeTooHigh)
+		errors.Is(err, errClusterMaxSurgeTooHigh) ||
+		errors.Is(err, errControlPlaneConfigNotEnabled)
 }
 
 func hasNonEtcdEncryptionMutation(req *api.UpdateClusterRequest) bool {
@@ -626,7 +689,65 @@ func hasNonEtcdEncryptionMutation(req *api.UpdateClusterRequest) bool {
 		req.ControlPlaneConfig != nil
 }
 
-func applyClusterControlPlaneConfigUpdate(ctx context.Context, tx db.Tx, cluster *db.Cluster, req *api.UpdateClusterControlPlaneConfig) error {
+// podCIDRNodePoolsWithClusterCP returns nodePools augmented, when control-plane
+// controller provisioning is enabled, with a synthetic control-plane pool that
+// carries the cluster-level ControlPlaneConfig.DesiredCount. In that mode the
+// control plane is not a node pool, so this is how its nodes enter the pod-CIDR
+// capacity accounting. CP MaxSurge is supplied separately as the clusterMaxSurge
+// argument to the capacity helpers, so the synthetic pool leaves MaxSurge zero to
+// avoid double-counting.
+func podCIDRNodePoolsWithClusterCP(useControlPlaneController bool, cluster db.Cluster, nodePools []db.NodePool) []db.NodePool {
+	if !useControlPlaneController {
+		return nodePools
+	}
+	return append(append([]db.NodePool(nil), nodePools...), db.NodePool{
+		ControlPlane: true,
+		DesiredCount: cluster.ControlPlaneConfig.DesiredCount,
+	})
+}
+
+// applyControlPlaneConfigUpdateWithCIDRCheck applies the control-plane config
+// update and, when the caller supplied a controlPlaneConfig, re-runs pod-CIDR
+// capacity validation if the control-plane surge or cluster-level desired count
+// grew.
+func (s *clusterService) applyControlPlaneConfigUpdateWithCIDRCheck(
+	ctx context.Context,
+	tx db.Tx,
+	cluster *db.Cluster,
+	cpConfig *api.UpdateClusterControlPlaneConfig,
+) error {
+	// Snapshot the pre-update cluster so we can compare capacity before vs after.
+	// Safe as a shallow copy: we only read the scalar MaxSurge / DesiredCount.
+	previousCluster := *cluster
+	if err := s.applyClusterControlPlaneConfigUpdate(ctx, tx, cluster, cpConfig); err != nil {
+		return err
+	}
+	if cpConfig == nil {
+		return nil
+	}
+
+	if cluster.ControlPlaneConfig.DesiredCount == previousCluster.ControlPlaneConfig.DesiredCount &&
+		cluster.ControlPlaneConfig.MaxSurge == previousCluster.ControlPlaneConfig.MaxSurge {
+		return nil
+	}
+
+	clusterID := cluster.ID
+	nodePools, err := tx.ListNodePools(ctx, db.NodePoolFilters{ClusterID: &clusterID})
+	if err != nil {
+		return fmt.Errorf("failed to list node pools for pod CIDR capacity validation: %w", err)
+	}
+	currentNodePools := podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, *cluster, nodePools)
+	previousNodePools := podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, previousCluster, nodePools)
+	if requiredPodCIDRNodeBlocks(currentNodePools, cluster.ControlPlaneConfig.MaxSurge) >
+		requiredPodCIDRNodeBlocks(previousNodePools, previousCluster.ControlPlaneConfig.MaxSurge) {
+		if err := validateStoredPodCIDRCapacity(*cluster, currentNodePools); err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
+	}
+	return nil
+}
+
+func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Context, tx db.Tx, cluster *db.Cluster, req *api.UpdateClusterControlPlaneConfig) error {
 	if req == nil {
 		req = &api.UpdateClusterControlPlaneConfig{}
 	}
@@ -644,12 +765,38 @@ func applyClusterControlPlaneConfigUpdate(ctx context.Context, tx db.Tx, cluster
 	// cluster control-plane version selected in this PATCH.
 	controlPlaneConfigSpec.KubernetesVersion = cluster.KubernetesVersion
 	if req.InstanceTypePreference != nil {
+		if err := validateInstanceTypePreferenceIDs(*req.InstanceTypePreference); err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
 		controlPlaneConfigSpec.InstanceTypePreference = dedupeUUIDsPreserveOrder(
 			uuidSliceFromAPI(*req.InstanceTypePreference),
 		)
 	}
 	if req.ProvisioningMonitorDisabled != nil {
 		controlPlaneConfigSpec.ProvisioningMonitorDisabled = *req.ProvisioningMonitorDisabled
+	}
+
+	// desiredCount and the full control-plane spec are only honored in
+	// control-plane controller provisioning mode. In legacy mode the control
+	// plane is defined by control-plane node pools, so these updates are rejected.
+	if hasClusterLevelControlPlaneUpdate(req) {
+		if !s.useControlPlaneController {
+			return errControlPlaneConfigNotEnabled
+		}
+		if err := s.applyClusterLevelControlPlaneSpecUpdate(ctx, cluster, req, &controlPlaneConfigSpec); err != nil {
+			return err
+		}
+	}
+
+	// A PATCH must not clear a required field or persist a spec that create would
+	// reject (Forge instanceTypePreference/osProfile/configProfile or the CAPI
+	// capiInfraMachineTemplate). instanceTypePreference is merged above and is not
+	// covered by hasClusterLevelControlPlaneUpdate, so gate on it explicitly;
+	// maxSurge- and k8s-version-only updates leave these fields untouched.
+	if s.useControlPlaneController && (hasClusterLevelControlPlaneUpdate(req) || req.InstanceTypePreference != nil) {
+		if err := validateMergedClusterControlPlaneSpec(*cluster, controlPlaneConfigSpec); err != nil {
+			return err
+		}
 	}
 
 	// Diff the entire spec against the current row and create a new row only
@@ -662,8 +809,118 @@ func applyClusterControlPlaneConfigUpdate(ctx context.Context, tx db.Tx, cluster
 	return nil
 }
 
+// hasClusterLevelControlPlaneUpdate reports whether the update touches any of the
+// cluster-level control plane fields that require control-plane controller
+// provisioning (i.e. everything beyond the legacy maxSurge / instanceTypePreference
+// / provisioningMonitorDisabled knobs).
+func hasClusterLevelControlPlaneUpdate(req *api.UpdateClusterControlPlaneConfig) bool {
+	return req.DesiredCount != nil ||
+		req.SubnetIDs != nil ||
+		req.VpcPrefixIDs != nil ||
+		req.OSProfile != nil ||
+		req.ConfigProfile != nil ||
+		req.SystemReservedMemory != nil ||
+		req.SSHKeyGroupIDs != nil ||
+		req.NodeLabels != nil ||
+		req.TeleportEnabled != nil ||
+		req.CapiInfraMachineTemplate != nil ||
+		req.CapiSpireAttestationMethod != "" ||
+		req.CapiBootstrapFiles != nil ||
+		req.CapiPreKubeadmCommands != nil
+}
+
+// applyClusterLevelControlPlaneSpecUpdate merges the supplied cluster-level control
+// plane fields onto spec and desiredCount onto the cluster. desiredCount may go up
+// or down; node teardown on scale-down is the control-plane controller's job.
+func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
+	ctx context.Context,
+	cluster *db.Cluster,
+	req *api.UpdateClusterControlPlaneConfig,
+	spec *db.ControlPlaneConfigSpec,
+) error {
+	isForge := cluster.SiteID != uuid.Nil
+
+	if req.DesiredCount != nil {
+		if *req.DesiredCount < 1 {
+			return newBadRequestErrorf("controlPlaneConfig.desiredCount must be at least 1")
+		}
+		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
+	}
+
+	if req.SubnetIDs != nil {
+		spec.SubnetIDs = uuidSliceDedupe(uuidSliceFromAPI(*req.SubnetIDs))
+	}
+	if req.VpcPrefixIDs != nil {
+		spec.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(*req.VpcPrefixIDs))
+	}
+	if req.OSProfile != nil {
+		spec.OSProfile = *req.OSProfile
+	}
+	if req.ConfigProfile != nil {
+		spec.ConfigProfile = *req.ConfigProfile
+	}
+	if req.SystemReservedMemory != nil {
+		spec.SystemReservedMemory = *req.SystemReservedMemory
+	}
+	if req.SSHKeyGroupIDs != nil {
+		spec.SSHKeyGroupIDs = uuidSliceDedupe(uuidSliceFromAPI(*req.SSHKeyGroupIDs))
+	}
+	if req.NodeLabels != nil {
+		spec.NodeLabels = append([]string(nil), *req.NodeLabels...)
+	}
+	if req.TeleportEnabled != nil {
+		spec.TeleportEnabled = *req.TeleportEnabled
+	}
+	if req.CapiSpireAttestationMethod != "" {
+		spec.CapiSpireAttestationMethod = db.SpireAttestationMethod(req.CapiSpireAttestationMethod)
+	}
+	if req.CapiBootstrapFiles != nil {
+		spec.CapiBootstrapFiles = dbCloudInitFilesFromAPI(*req.CapiBootstrapFiles)
+	}
+	if req.CapiPreKubeadmCommands != nil {
+		spec.CapiPreKubeadmCommands = append([]string(nil), *req.CapiPreKubeadmCommands...)
+	}
+	if req.CapiInfraMachineTemplate != nil {
+		if isEmptyManifestObject(*req.CapiInfraMachineTemplate) {
+			spec.InfraMachineTemplatePreferences = nil
+		} else {
+			raw, err := rawManifestFromObject(*req.CapiInfraMachineTemplate)
+			if err != nil {
+				return newBadRequestErrorf("failed to convert capiInfraMachineTemplate: %v", err)
+			}
+			if err := validateCAPIInfrastructureManifest(*req.CapiInfraMachineTemplate); err != nil {
+				return newBadRequestErrorf("invalid capiInfraMachineTemplate: %s", err)
+			}
+			spec.InfraMachineTemplatePreferences = []json.RawMessage{raw}
+		}
+	}
+
+	// Forge native-networking rules need a live site lookup, so re-check them only
+	// when the caller changed the subnet/VPC-prefix selection.
+	if isForge && (req.SubnetIDs != nil || req.VpcPrefixIDs != nil) {
+		if err := s.validateControlPlaneForgeNetworking(ctx, cluster.OrgID, cluster.SiteID, spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func uuidSliceFromAPI(ids []openapi_types.UUID) []uuid.UUID {
 	return append([]uuid.UUID(nil), ids...)
+}
+
+// validateInstanceTypePreferenceIDs rejects a nil (all-zero) UUID in the
+// instanceTypePreference list. A nil ID is never a valid instance type and would
+// otherwise be silently dropped by dedupeUUIDsPreserveOrder, leaving the control
+// plane with fewer instance types than requested (or none at all).
+func validateInstanceTypePreferenceIDs(ids []openapi_types.UUID) error {
+	for _, id := range ids {
+		if id == uuid.Nil {
+			return fmt.Errorf("controlPlaneConfig.instanceTypePreference contains an invalid nil instance type ID")
+		}
+	}
+	return nil
 }
 
 // dedupeUUIDsPreserveOrder removes duplicate UUIDs while preserving first-seen order, skipping uuid.Nil.
@@ -689,11 +946,36 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 	prefs := make([]openapi_types.UUID, len(cfg.InstanceTypePreference))
 	copy(prefs, cfg.InstanceTypePreference)
 	provisioningMonitorDisabled := cfg.ProvisioningMonitorDisabled
-	return &api.ControlPlaneConfig{
+	teleportEnabled := cfg.TeleportEnabled
+	out := &api.ControlPlaneConfig{
+		ConfigurationID:             cfg.ConfigurationID,
+		DesiredCount:                cfg.DesiredCount,
 		MaxSurge:                    &maxSurge,
 		InstanceTypePreference:      &prefs,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
+		SubnetIDs:                   append([]openapi_types.UUID(nil), cfg.SubnetIDs...),
+		VpcPrefixIDs:                append([]openapi_types.UUID(nil), cfg.VpcPrefixIDs...),
+		OSProfile:                   cfg.OSProfile,
+		ConfigProfile:               cfg.ConfigProfile,
+		SystemReservedMemory:        cfg.SystemReservedMemory,
+		SSHKeyGroupIDs:              append([]openapi_types.UUID(nil), cfg.SSHKeyGroupIDs...),
+		NodeLabels:                  append([]string(nil), cfg.NodeLabels...),
+		TeleportEnabled:             &teleportEnabled,
+		CapiSpireAttestationMethod:  apiSpireAttestationMethodFromDB(cfg.CapiSpireAttestationMethod),
+		CapiPreKubeadmCommands:      append([]string(nil), cfg.CapiPreKubeadmCommands...),
 	}
+	if files := apiCloudInitFilesFromDB(cfg.CapiBootstrapFiles); files != nil {
+		out.CapiBootstrapFiles = *files
+	}
+	// The cluster-level control plane snapshot stores CAPI machine templates in
+	// InfraMachineTemplatePreferences; surface the first one as the response's
+	// single capiInfraMachineTemplate object.
+	if len(cfg.InfraMachineTemplatePreferences) > 0 {
+		if obj, err := objectFromRawManifest(cfg.InfraMachineTemplatePreferences[0]); err == nil && len(obj) > 0 {
+			out.CapiInfraMachineTemplate = obj
+		}
+	}
+	return out
 }
 
 func validateEtcdEncryptionCanStart(cluster db.Cluster) error {
@@ -741,7 +1023,7 @@ func enqueueOIDCEnablement(ctx context.Context, tx db.Tx, req *api.UpdateCluster
 	db.SetUpdateInProgress(cluster, db.OperationTypeOIDCEnable, "enabling OIDC authentication", time.Now().UTC())
 	workflowID := constants.EnableOIDCWorkflowPrefix + cluster.ID.String()
 	if _, err := tx.CreateWorkflowOutboxEntry(ctx, constants.EnableOIDCWorkflowType, workflowID, map[string]interface{}{
-		"clusterID": cluster.ID,
+		clusterIDConst: cluster.ID,
 	}); err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry for OIDC enablement: %w", err)
 	}
@@ -794,7 +1076,7 @@ func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteCluste
 
 		workflowID := constants.TeardownClusterWorkflowPrefix + dbCluster.ID.String()
 		_, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownCluster", workflowID, map[string]interface{}{
-			"clusterID": dbCluster.ID,
+			clusterIDConst: dbCluster.ID,
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create workflow outbox entry: %w", err)
@@ -890,6 +1172,7 @@ func dbClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 		cniVersion = strings.TrimSpace(*req.CniVersion)
 	}
 	cniPlugin := db.CniPlugin(req.CniPlugin)
+	controlPlaneVIP := strings.TrimSpace(req.ControlPlaneVIP)
 
 	return db.Cluster{
 		Name:              req.Name,
@@ -900,6 +1183,7 @@ func dbClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 		CniVersion:        db.EffectiveCNIVersion(cniPlugin, cniVersion),
 		EtcdEncrypted:     req.EtcdEncrypted,
 		KubernetesVersion: req.ControlPlaneKubernetesVersion,
+		ControlPlaneVIP:   controlPlaneVIP,
 		TeleportEnabled:   teleportEnabled,
 
 		CapiInfraCluster: capiInfraCluster,
@@ -911,66 +1195,6 @@ func dbClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 			ControlPlaneUpgrading: db.NewCondition(false, "No upgrade in progress"),
 		},
 	}, nil
-}
-
-func allocateVIP(ctx context.Context, tx db.Tx, site db.Site, cluster db.Cluster) (string, error) {
-	vipAllocations, err := tx.ListVIPAllocations(ctx, &site.ID)
-	if err != nil {
-		return "", fmt.Errorf("failed to list existing VIP allocations: %w", err)
-	}
-
-	vip, err := nextAvailableVipFromRanges(site.VIPRanges, vipAllocations)
-	if err != nil {
-		return "", err
-	}
-
-	if _, err := tx.CreateVIPAllocation(ctx, &db.VIPAllocation{
-		SiteID:         site.ID,
-		VIP:            vip,
-		AllocationType: string(api.VIPAllocationAllocationTypeCluster),
-		ClusterID:      &cluster.ID,
-	}); err != nil {
-		return "", fmt.Errorf("failed to create VIP allocation: %w", err)
-	}
-
-	return vip, nil
-}
-
-func nextAvailableVipFromRanges(vipRanges []string, vipAllocations []db.VIPAllocation) (string, error) {
-	if len(vipRanges) == 0 {
-		return "", fmt.Errorf("no available VIPs in any of the provided ranges")
-	}
-
-	existingVIPs := make(map[string]bool)
-	for _, vip := range vipAllocations {
-		existingVIPs[vip.VIP] = true
-	}
-
-	// Try each range in order
-	for _, vipRange := range vipRanges {
-		prefix, err := netip.ParsePrefix(vipRange)
-		if err != nil {
-			return "", fmt.Errorf("failed to parse VIP range %s: %w", vipRange, err)
-		}
-
-		candidateIP := prefix.Addr()
-		for {
-			// Ensure the candidate IP is within the current subnet
-			if !prefix.Contains(candidateIP) {
-				break // Move to next range
-			}
-
-			// If this IP isn't already allocated, use it
-			if !existingVIPs[candidateIP.String()] {
-				return candidateIP.String(), nil
-			}
-
-			// Try the next IP
-			candidateIP = candidateIP.Next()
-		}
-	}
-
-	return "", fmt.Errorf("no available VIPs in any of the provided ranges")
 }
 
 func ValidateKubernetesVersionSkewWithControlPlane(currentVersion, newVersion string) error {

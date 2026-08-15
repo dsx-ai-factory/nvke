@@ -15,15 +15,24 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	spirev1alpha1 "github.com/spiffe/spire-controller-manager/api/v1alpha1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
+)
+
+const (
+	clusterStaticEntryKind = "ClusterStaticEntry"
+	unixRootSelector       = "unix:uid:0"
 )
 
 // NodeClusterStaticEntryController is responsible for reconciling Node TPM ClusterStaticEntries.
@@ -85,16 +94,27 @@ func (c *NodeClusterStaticEntryController) reconcileClusterStaticEntries(ctx con
 
 	// Ensure that we have a ClusterStaticEntry for each node.
 	for _, node := range nodes {
+		name := fmt.Sprintf("host-%s", node.ID.String())
 		if node.TpmEKPubHash == "" {
 			// Note this will also result in the ClusterStaticEntry being deleted if it existed previously.
 			c.logger.Debug("Node has no TPM EK public key hash", "nodeID", node.ID, "nodeName", node.Name)
 			continue
 		}
 
-		name := fmt.Sprintf("host-%s", node.ID.String())
-		desiredEntryNames[name] = struct{}{}
+		skip, err := c.shouldSkipTPMClusterStaticEntry(ctx, node)
+		if err != nil {
+			desiredEntryNames[name] = struct{}{}
+			errs = append(errs, fmt.Errorf("failed to resolve SPIRE attestation ownership for node %s (%s): %w", node.ID, node.Name, err))
+			continue
+		}
+		if skip {
+			c.logger.Debug("Skipping node TPM cluster static entry for non-TPM CAPI machine",
+				"nodeID", node.ID, "nodeName", node.Name)
+			continue
+		}
 
-		err := c.applyClusterStaticEntry(ctx, name, siteID, node)
+		desiredEntryNames[name] = struct{}{}
+		err = c.applyClusterStaticEntry(ctx, name, siteID, node)
 		if err != nil {
 			// Collect errors but continue reconciling the other nodes.
 			errs = append(errs, fmt.Errorf("failed to apply cluster static entry: %s: %w", name, err))
@@ -117,6 +137,30 @@ func (c *NodeClusterStaticEntryController) reconcileClusterStaticEntries(ctx con
 	return errors.Join(errs...)
 }
 
+func (c *NodeClusterStaticEntryController) shouldSkipTPMClusterStaticEntry(ctx context.Context, node db.Node) (bool, error) {
+	cluster, err := c.db.GetCluster(ctx, node.ClusterID)
+	if err != nil {
+		return false, err
+	}
+	if cluster.ProviderType != db.ProviderTypeCAPI {
+		return false, nil
+	}
+
+	machine := &clusterv1.Machine{}
+	if err := c.k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: capi.ClusterNamespace(cluster.Name),
+		Name:      node.Name,
+	}, machine); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, fmt.Errorf("failed to find CAPI machine for node %s", node.Name)
+		}
+		return false, err
+	}
+
+	spireAgentIDPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]
+	return spireAgentIDPath != "" && !strings.HasPrefix(spireAgentIDPath, constants.TPMSpireAgentPath), nil
+}
+
 // This uses the server-side apply API, so it will create if not exists, update if different.
 // We don't do any client-side diffing or checking before applying.
 // See: https://kubernetes.io/blog/2022/10/20/advanced-server-side-apply/#reconstructive-controllers
@@ -124,7 +168,7 @@ func (c *NodeClusterStaticEntryController) applyClusterStaticEntry(ctx context.C
 	cse := &spirev1alpha1.ClusterStaticEntry{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: spirev1alpha1.SchemeGroupVersion.String(),
-			Kind:       "ClusterStaticEntry",
+			Kind:       clusterStaticEntryKind,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name,
@@ -136,7 +180,7 @@ func (c *NodeClusterStaticEntryController) applyClusterStaticEntry(ctx context.C
 		Spec: spirev1alpha1.ClusterStaticEntrySpec{
 			ClassName: c.cfg.SpireClassName,
 			ParentID:  node.GetTPMSpiffeID(c.trustDomain), // e.g. spiffe://nke-site-forge-az24-dev7.nke.nvidia.com/spire/agent/tpm/<pubhash>
-			Selectors: []string{"unix:uid:0"},
+			Selectors: []string{unixRootSelector},
 			SPIFFEID:  node.GetSpiffeID(c.trustDomain), // e.g. spiffe://nke-site-forge-az24-dev7.nke.nvidia.com/host/<node-id>
 		},
 	}

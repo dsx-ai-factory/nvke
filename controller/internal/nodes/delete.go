@@ -25,6 +25,7 @@ import (
 type DeleteOptions struct {
 	SkipRemoveFromCluster bool
 	Reason                string
+	skipLiveDeleteGuard   bool
 
 	// ForceUnreachable treats the target node as potentially unreachable during
 	// live-cluster removal. The workflow still attempts drain and graceful cleanup, but
@@ -49,6 +50,14 @@ type DeleteOptions struct {
 func WithReason(reason string) DeleteOpt {
 	return func(o *DeleteOptions) {
 		o.Reason = reason
+	}
+}
+
+// WithSkipLiveDeleteGuard bypasses the live API deletion policy. Callers must
+// enforce their own deletion safety invariants before using this option.
+func WithSkipLiveDeleteGuard() DeleteOpt {
+	return func(o *DeleteOptions) {
+		o.skipLiveDeleteGuard = true
 	}
 }
 
@@ -132,12 +141,26 @@ func Delete(ctx context.Context, database db.DB, nodeID uuid.UUID, opts ...Delet
 // DeleteWithTx marks a node for deletion using the provided transaction.
 // Callers already inside RunInTx should use this to avoid nested transactions.
 func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...DeleteOpt) error {
-	dbNode, err := tx.GetNodeForUpdate(ctx, nodeID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return fmt.Errorf("node not found for deletion: %w", err)
+	options := DeleteOptions{}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	var dbNode db.Node
+	var err error
+	if options.skipLiveDeleteGuard {
+		dbNode, err = tx.GetNodeForUpdate(ctx, nodeID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				return fmt.Errorf("node not found for deletion: %w", err)
+			}
+			return fmt.Errorf("failed to get node: %w", err)
 		}
-		return fmt.Errorf("failed to get node: %w", err)
+	} else {
+		dbNode, err = guardLiveNodeDelete(ctx, tx, nodeID)
+		if err != nil {
+			return err
+		}
 	}
 
 	dbNode.Conditions.Deleting = db.NewCondition(true, "Node deletion in progress")
@@ -148,16 +171,43 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 
 	workflowID := constants.TeardownNodeWorkflowPrefix + dbNode.ID.String()
 
-	options := DeleteOptions{}
-
-	for _, opt := range opts {
-		opt(&options)
-	}
-
 	input := options.toWorkflowInput()
 	input.NodeID = dbNode.ID
 
 	if _, err = tx.CreateWorkflowOutboxEntry(ctx, constants.TeardownNodeWorkflowType, workflowID, input); err != nil {
+		return fmt.Errorf("failed to create workflow outbox entry: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteNodePool marks a node pool for deletion inside a database transaction.
+func DeleteNodePool(ctx context.Context, database db.DB, nodePoolID uuid.UUID) error {
+	return database.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		return DeleteNodePoolWithTx(ctx, tx, nodePoolID)
+	})
+}
+
+// DeleteNodePoolWithTx marks a node pool for deletion using the provided
+// transaction. Callers already inside RunInTx should use this to avoid nested
+// transactions. It enforces the live delete guard (cluster lock + last joined
+// control-plane check) before marking the pool deleting.
+func DeleteNodePoolWithTx(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID) error {
+	dbNodePool, err := guardLiveNodePoolDelete(ctx, tx, nodePoolID)
+	if err != nil {
+		return err
+	}
+
+	dbNodePool.Conditions.Deleting = db.NewCondition(true, "Node pool deletion in progress")
+
+	if _, err := tx.UpdateNodePool(ctx, &dbNodePool); err != nil {
+		return fmt.Errorf("failed to update node pool: %w", err)
+	}
+
+	workflowID := constants.TeardownNodePoolWorkflowPrefix + dbNodePool.ID.String()
+	if _, err = tx.CreateWorkflowOutboxEntry(ctx, "TeardownNodePool", workflowID, map[string]interface{}{
+		"nodePoolID": dbNodePool.ID,
+	}); err != nil {
 		return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 	}
 

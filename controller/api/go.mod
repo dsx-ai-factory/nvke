@@ -1,6 +1,6 @@
 module github.com/NVIDIA/nke/controller/api
 
-go 1.25.12
+go 1.26.5
 
 require (
 	github.com/getkin/kin-openapi v0.146.0

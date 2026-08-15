@@ -149,7 +149,8 @@ func TestDelete(t *testing.T) {
 			}
 
 			// Execute Delete
-			err := nodes.DeleteWithTx(ctx, mockTx, tt.nodeID, tt.opts...)
+			opts := append([]nodes.DeleteOpt{nodes.WithSkipLiveDeleteGuard()}, tt.opts...)
+			err := nodes.DeleteWithTx(ctx, mockTx, tt.nodeID, opts...)
 
 			if tt.wantErr != nil {
 				require.ErrorIs(t, err, tt.wantErr)

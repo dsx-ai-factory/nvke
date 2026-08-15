@@ -19,6 +19,7 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/NVIDIA/nke/controller
+        - gitlab-master.nvidia.com
     gofumpt:
       extra-rules: true
 
@@ -77,7 +78,7 @@ linters:
     - godox
     - goheader
     - gomoddirectives
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
     - gosmopolitan
@@ -182,6 +183,7 @@ linters:
       # Might need customization per project
       local-prefixes:
         - github.com/NVIDIA/nke/controller
+        - gitlab-master.nvidia.com
     govet:
       enable-all: true
       disable:

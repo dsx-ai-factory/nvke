@@ -40,7 +40,7 @@ func TestHealthzAlwaysHealthyWithoutDependencyChecks(t *testing.T) {
 	}})
 
 	rr := httptest.NewRecorder()
-	hc.healthz(rr, httptest.NewRequest(http.MethodGet, "/healthz", http.NoBody))
+	hc.healthz(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, healthz, http.NoBody))
 
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
@@ -58,8 +58,8 @@ func TestReadyzReportsDependencyResults(t *testing.T) {
 		{
 			name: "all checks pass",
 			checks: []dependencyCheck{
-				{name: "database", check: func(context.Context) error { return nil }},
-				{name: "temporal", check: func(context.Context) error { return nil }},
+				{name: databaseConst, check: func(context.Context) error { return nil }},
+				{name: temporal, check: func(context.Context) error { return nil }},
 			},
 			expectedStatus: http.StatusOK,
 			expectedBody:   `{"status":"ok","checks":{"database":"ok","temporal":"ok"}}`,
@@ -67,8 +67,8 @@ func TestReadyzReportsDependencyResults(t *testing.T) {
 		{
 			name: "one check fails",
 			checks: []dependencyCheck{
-				{name: "database", check: func(context.Context) error { return nil }},
-				{name: "temporal", check: func(context.Context) error { return errors.New("frontend unavailable") }},
+				{name: databaseConst, check: func(context.Context) error { return nil }},
+				{name: temporal, check: func(context.Context) error { return errors.New("frontend unavailable") }},
 			},
 			expectedStatus: http.StatusServiceUnavailable,
 			expectedBody:   `{"status":"unavailable","checks":{"database":"ok","temporal":"frontend unavailable"}}`,
@@ -80,7 +80,7 @@ func TestReadyzReportsDependencyResults(t *testing.T) {
 			hc := testHealthChecker(tt.checks)
 			rr := httptest.NewRecorder()
 
-			hc.readyz(rr, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
+			hc.readyz(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", http.NoBody))
 
 			assert.Equal(t, tt.expectedStatus, rr.Code)
 			assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
@@ -102,7 +102,7 @@ func TestReadyzTimesOutDependencyCheck(t *testing.T) {
 	rr := httptest.NewRecorder()
 
 	started := time.Now()
-	hc.readyz(rr, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
+	hc.readyz(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", http.NoBody))
 	elapsed := time.Since(started)
 
 	assert.Equal(t, http.StatusServiceUnavailable, rr.Code)
@@ -124,14 +124,14 @@ func TestReadyzCachesCheckResultUntilTTLExpires(t *testing.T) {
 
 	for range 3 {
 		rr := httptest.NewRecorder()
-		hc.readyz(rr, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
+		hc.readyz(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", http.NoBody))
 		require.Equal(t, http.StatusOK, rr.Code)
 	}
 	assert.Equal(t, int32(1), calls.Load())
 
 	time.Sleep(2 * cacheTTL)
 	rr := httptest.NewRecorder()
-	hc.readyz(rr, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
+	hc.readyz(rr, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", http.NoBody))
 	require.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, int32(2), calls.Load())
 }
@@ -151,12 +151,12 @@ func TestServerHealthEndpoints(t *testing.T) {
 	require.NoError(t, err)
 
 	healthRR := httptest.NewRecorder()
-	srv.Handler.ServeHTTP(healthRR, httptest.NewRequest(http.MethodGet, "/healthz", http.NoBody))
+	srv.Handler.ServeHTTP(healthRR, httptest.NewRequestWithContext(t.Context(), http.MethodGet, healthz, http.NoBody))
 	assert.Equal(t, http.StatusOK, healthRR.Code)
 	assert.JSONEq(t, `{"status":"ok"}`, healthRR.Body.String())
 
 	readyRR := httptest.NewRecorder()
-	srv.Handler.ServeHTTP(readyRR, httptest.NewRequest(http.MethodGet, "/readyz", http.NoBody))
+	srv.Handler.ServeHTTP(readyRR, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/readyz", http.NoBody))
 	assert.Equal(t, http.StatusServiceUnavailable, readyRR.Code)
 	assert.JSONEq(t,
 		`{"status":"unavailable","checks":{"database":"ok","temporal":"temporal client is not configured"}}`,

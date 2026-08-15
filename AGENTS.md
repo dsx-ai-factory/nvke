@@ -41,7 +41,7 @@ no credentials and no network:
 GOPROXY=off make build
 ```
 
-compiles all seven modules and links three binaries. `GOPROXY=off` is not a
+compiles all eight modules and links five binaries. `GOPROXY=off` is not a
 suggestion to copy — it is how you can tell nothing is being fetched.
 
 This changed in #76, which replaced the internal carbide SDK

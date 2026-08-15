@@ -12,6 +12,7 @@ package kubeadmconfig
 
 import (
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,6 +38,11 @@ const (
 	// auth-config directory. Shared for the same convergence reason as
 	// AuthConfigFlagName.
 	AuthConfigVolumeName = "oidc-auth-config"
+
+	encryptionProviderConfigFlagName       = "encryption-provider-config"
+	encryptionProviderConfigReloadFlagName = "encryption-provider-config-automatic-reload"
+	encryptionConfigVolumeName             = "enc"
+	etcdQuotaBackendBytesFlagName          = "quota-backend-bytes"
 )
 
 // MergeOIDCIntoClusterConfiguration takes the kubeadm ClusterConfiguration YAML
@@ -59,32 +65,46 @@ const (
 // Returns an error for malformed YAML, an unexpected document kind, or an
 // unsupported apiVersion.
 func MergeOIDCIntoClusterConfiguration(clusterConfigYAML []byte) ([]byte, bool, error) {
+	apiVersion, err := clusterConfigurationAPIVersion(clusterConfigYAML)
+	if err != nil {
+		return nil, false, err
+	}
+
+	switch apiVersion {
+	case kubeadmv1beta3.APIVersion:
+		return mergeOIDCV1beta3(clusterConfigYAML)
+	case kubeadmv1beta4.APIVersion:
+		return mergeOIDCV1beta4(clusterConfigYAML)
+	default:
+		panic("clusterConfigurationAPIVersion returned an unsupported apiVersion")
+	}
+}
+
+func clusterConfigurationAPIVersion(clusterConfigYAML []byte) (string, error) {
 	var meta metav1.TypeMeta
 	if err := yaml.Unmarshal(clusterConfigYAML, &meta); err != nil {
-		return nil, false, fmt.Errorf("parsing ClusterConfiguration YAML: %w", err)
+		return "", fmt.Errorf("parsing ClusterConfiguration YAML: %w", err)
 	}
 	// The kubeadm apiVersion group is shared by ClusterConfiguration,
 	// InitConfiguration, and JoinConfiguration, so gate on Kind too: a document of
 	// another kind would otherwise pass the version switch and be silently
 	// truncated by the typed round-trip instead of failing fast.
 	if meta.Kind != kubeadmv1beta3.ClusterConfigurationKind {
-		return nil, false, fmt.Errorf("unsupported kubeadm document kind %q (want %q)",
+		return "", fmt.Errorf("unsupported kubeadm document kind %q (want %q)",
 			meta.Kind, kubeadmv1beta3.ClusterConfigurationKind)
 	}
 	switch meta.APIVersion {
-	case kubeadmv1beta3.APIVersion:
-		return mergeV1beta3(clusterConfigYAML)
-	case kubeadmv1beta4.APIVersion:
-		return mergeV1beta4(clusterConfigYAML)
+	case kubeadmv1beta3.APIVersion, kubeadmv1beta4.APIVersion:
+		return meta.APIVersion, nil
 	default:
-		return nil, false, fmt.Errorf("unsupported kubeadm ClusterConfiguration apiVersion %q (want %s or %s)",
+		return "", fmt.Errorf("unsupported kubeadm ClusterConfiguration apiVersion %q (want %s or %s)",
 			meta.APIVersion, kubeadmv1beta3.APIVersion, kubeadmv1beta4.APIVersion)
 	}
 }
 
-// mergeV1beta3 applies the OIDC arg (map-shaped extraArgs) and volume to a
+// mergeOIDCV1beta3 applies the OIDC arg (map-shaped extraArgs) and volume to a
 // v1beta3 ClusterConfiguration.
-func mergeV1beta3(clusterConfigYAML []byte) ([]byte, bool, error) {
+func mergeOIDCV1beta3(clusterConfigYAML []byte) ([]byte, bool, error) {
 	var cc kubeadmv1beta3.ClusterConfiguration
 	if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
 		return nil, false, fmt.Errorf("parsing v1beta3 ClusterConfiguration: %w", err)
@@ -99,9 +119,9 @@ func mergeV1beta3(clusterConfigYAML []byte) ([]byte, bool, error) {
 	return marshalMerged(cc, argChanged || volChanged)
 }
 
-// mergeV1beta4 applies the OIDC arg (list-shaped extraArgs) and volume to a
+// mergeOIDCV1beta4 applies the OIDC arg (list-shaped extraArgs) and volume to a
 // v1beta4 ClusterConfiguration.
-func mergeV1beta4(clusterConfigYAML []byte) ([]byte, bool, error) {
+func mergeOIDCV1beta4(clusterConfigYAML []byte) ([]byte, bool, error) {
 	var cc kubeadmv1beta4.ClusterConfiguration
 	if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
 		return nil, false, fmt.Errorf("parsing v1beta4 ClusterConfiguration: %w", err)
@@ -114,6 +134,158 @@ func mergeV1beta4(clusterConfigYAML []byte) ([]byte, bool, error) {
 	cc.APIServer.ExtraVolumes = vols
 
 	return marshalMerged(cc, argChanged || volChanged)
+}
+
+// MergeEncryptionIntoClusterConfiguration returns the kubeadm
+// ClusterConfiguration with the same API encryption flags and volume used by
+// the greenfield kubeadm renderer. Both supported kubeadm API shapes are
+// preserved, and a configuration already at the desired state is a no-op.
+func MergeEncryptionIntoClusterConfiguration(clusterConfigYAML []byte) ([]byte, bool, error) {
+	apiVersion, err := clusterConfigurationAPIVersion(clusterConfigYAML)
+	if err != nil {
+		return nil, false, err
+	}
+
+	switch apiVersion {
+	case kubeadmv1beta3.APIVersion:
+		var cc kubeadmv1beta3.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return nil, false, fmt.Errorf("parsing v1beta3 ClusterConfiguration: %w", err)
+		}
+
+		configPath, automaticReload := encryptionExtraArgs()
+		args, configChanged := setArgV1beta3(
+			cc.APIServer.ExtraArgs,
+			encryptionProviderConfigFlagName,
+			configPath,
+		)
+		args, reloadChanged := setArgV1beta3(
+			args,
+			encryptionProviderConfigReloadFlagName,
+			automaticReload,
+		)
+		cc.APIServer.ExtraArgs = args
+		volumes, volumeChanged := upsertVolumeV1beta3(cc.APIServer.ExtraVolumes, encryptionVolume())
+		cc.APIServer.ExtraVolumes = volumes
+
+		return marshalMerged(cc, configChanged || reloadChanged || volumeChanged)
+	case kubeadmv1beta4.APIVersion:
+		var cc kubeadmv1beta4.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return nil, false, fmt.Errorf("parsing v1beta4 ClusterConfiguration: %w", err)
+		}
+
+		configPath, automaticReload := encryptionExtraArgs()
+		args, configChanged := upsertArgV1beta4(
+			cc.APIServer.ExtraArgs,
+			encryptionProviderConfigFlagName,
+			configPath,
+		)
+		args, reloadChanged := upsertArgV1beta4(
+			args,
+			encryptionProviderConfigReloadFlagName,
+			automaticReload,
+		)
+		cc.APIServer.ExtraArgs = args
+		volumes, volumeChanged := upsertVolumeV1beta4(cc.APIServer.ExtraVolumes, encryptionVolumeV1beta4())
+		cc.APIServer.ExtraVolumes = volumes
+
+		return marshalMerged(cc, configChanged || reloadChanged || volumeChanged)
+	default:
+		panic("clusterConfigurationAPIVersion returned an unsupported apiVersion")
+	}
+}
+
+// EtcdQuotaFromClusterConfiguration returns the local-etcd
+// quota-backend-bytes value from a persisted kubeadm ClusterConfiguration.
+func EtcdQuotaFromClusterConfiguration(clusterConfigYAML []byte) (string, error) {
+	apiVersion, err := clusterConfigurationAPIVersion(clusterConfigYAML)
+	if err != nil {
+		return "", err
+	}
+
+	switch apiVersion {
+	case kubeadmv1beta3.APIVersion:
+		var cc kubeadmv1beta3.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return "", fmt.Errorf("parsing v1beta3 ClusterConfiguration: %w", err)
+		}
+		if cc.Etcd.Local != nil {
+			if quota := cc.Etcd.Local.ExtraArgs[etcdQuotaBackendBytesFlagName]; quota != "" {
+				return quota, nil
+			}
+		}
+	case kubeadmv1beta4.APIVersion:
+		var cc kubeadmv1beta4.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return "", fmt.Errorf("parsing v1beta4 ClusterConfiguration: %w", err)
+		}
+		if cc.Etcd.Local != nil {
+			for _, arg := range cc.Etcd.Local.ExtraArgs {
+				if arg.Name == etcdQuotaBackendBytesFlagName && arg.Value != "" {
+					return arg.Value, nil
+				}
+			}
+		}
+	default:
+		panic("clusterConfigurationAPIVersion returned an unsupported apiVersion")
+	}
+
+	return "", fmt.Errorf("%s not found in local etcd extraArgs", etcdQuotaBackendBytesFlagName)
+}
+
+// SetKubernetesVersionInClusterConfiguration sets kubernetesVersion to a
+// normalized v-prefixed X.Y.Z value while preserving the document's kubeadm API
+// shape. It rejects the same non-release formats as the replaced runbook.
+func SetKubernetesVersionInClusterConfiguration(clusterConfigYAML []byte, version string) ([]byte, bool, error) {
+	normalized, err := normalizeKubernetesVersion(version)
+	if err != nil {
+		return nil, false, err
+	}
+	apiVersion, err := clusterConfigurationAPIVersion(clusterConfigYAML)
+	if err != nil {
+		return nil, false, err
+	}
+
+	switch apiVersion {
+	case kubeadmv1beta3.APIVersion:
+		var cc kubeadmv1beta3.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return nil, false, fmt.Errorf("parsing v1beta3 ClusterConfiguration: %w", err)
+		}
+		changed := cc.KubernetesVersion != normalized
+		cc.KubernetesVersion = normalized
+		return marshalMerged(cc, changed)
+	case kubeadmv1beta4.APIVersion:
+		var cc kubeadmv1beta4.ClusterConfiguration
+		if err := yaml.Unmarshal(clusterConfigYAML, &cc); err != nil {
+			return nil, false, fmt.Errorf("parsing v1beta4 ClusterConfiguration: %w", err)
+		}
+		changed := cc.KubernetesVersion != normalized
+		cc.KubernetesVersion = normalized
+		return marshalMerged(cc, changed)
+	default:
+		panic("clusterConfigurationAPIVersion returned an unsupported apiVersion")
+	}
+}
+
+func normalizeKubernetesVersion(version string) (string, error) {
+	version = strings.TrimPrefix(version, "v")
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid Kubernetes version %q: expected X.Y.Z or vX.Y.Z", version)
+	}
+	for _, part := range parts {
+		if part == "" {
+			return "", fmt.Errorf("invalid Kubernetes version %q: expected X.Y.Z or vX.Y.Z", version)
+		}
+		for _, char := range part {
+			if char < '0' || char > '9' {
+				return "", fmt.Errorf("invalid Kubernetes version %q: expected X.Y.Z or vX.Y.Z", version)
+			}
+		}
+	}
+	return "v" + version, nil
 }
 
 func marshalMerged(cc any, changed bool) ([]byte, bool, error) {
@@ -191,6 +363,16 @@ func authenticationConfigVolumeV1beta4() kubeadmv1beta4.HostPathMount {
 		Name:      AuthConfigVolumeName,
 		HostPath:  defaultOIDCConfigDirectory,
 		MountPath: defaultOIDCConfigDirectory,
+		PathType:  corev1.HostPathDirectoryOrCreate,
+		ReadOnly:  true,
+	}
+}
+
+func encryptionVolumeV1beta4() kubeadmv1beta4.HostPathMount {
+	return kubeadmv1beta4.HostPathMount{
+		Name:      encryptionConfigVolumeName,
+		HostPath:  defaultEncryptionConfigDirectory,
+		MountPath: defaultEncryptionConfigDirectory,
 		PathType:  corev1.HostPathDirectoryOrCreate,
 		ReadOnly:  true,
 	}

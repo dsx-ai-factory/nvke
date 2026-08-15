@@ -5,7 +5,7 @@
 Cloud Workflow Engine (CWE) orchestrates NKE (NVIDIA Kubernetes Engine) cluster creation and lifecycle operations. The system uses Temporal for workflow orchestration and provides a REST API for cluster management operations.
 
 ### Key Technologies
-- **Language**: Go 1.25+
+- **Language**: Go 1.26+
 - **Workflow Engine**: Temporal
 - **Database**: PostgreSQL with Bun ORM
 - **API**: OpenAPI 3.0 with oapi-codegen for Go server/client generation
@@ -15,8 +15,12 @@ Cloud Workflow Engine (CWE) orchestrates NKE (NVIDIA Kubernetes Engine) cluster 
 
 Before running any CLI commands, activate the Flox environment:
 ```bash
-flox activate
+test "$(flox --version)" = "$(cat .flox-cli-version)" && flox activate
 ```
+
+Do not activate the environment with a different Flox CLI version. The version
+is pinned in `.flox-cli-version`, and `.envrc` skips automatic activation on a
+mismatch so a local CLI cannot rewrite the tracked manifest and lockfile.
 
 For non-interactive one-shot commands, prefer running them through Flox directly instead of assuming shell state persists:
 ```bash
@@ -137,7 +141,7 @@ Key configuration (see `internal/config/config.go` for full list):
 | `DB_CONNECTION_STRING` | `postgres://...` | PostgreSQL connection string |
 | `TEMPORAL_HOST_PORT` | `localhost:7233` | Temporal server for CWE workflows |
 | `FWE_API_KEY` | (required) | NGC API key for Forge API |
-| `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles |
+| `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles (fleet content supplied at runtime from nke-site-deploy; see NKX-13910) |
 | `SPIFFE_ENDPOINT_SOCKET` | (optional) | SPIRE agent socket path for SPIFFE identity (e.g., `unix:///tmp/spire-agent/agent.sock`) |
 
 ## Local Development
@@ -223,6 +227,10 @@ CI pipeline (`.gitlab/ci/`) handles the whole chain:
    `main` pipeline, which auto-bumps the environment templates to the new
    `BUILD_VERSION`. Those templates are the source of truth ArgoCD rolls out
    to the site-controller fleet.
+
+`forge-console` (UI + `/api/forge/*`) lives in `nke/forge-console` and publishes
+its own image/chart + `FORGE_CONSOLE_CHART_VERSION` bump. Local Tilt loads it
+from `../forge-console` or `FORGE_CONSOLE_DIR`.
 
 Because the environment templates auto-bump to latest on every merge, MR
 review is the gate: feature branches must be well tested before merge. To

@@ -21,10 +21,11 @@ import (
 
 func TestJoinConfigRender_Golden(t *testing.T) {
 	tests := []struct {
-		name       string
-		config     func() *JoinConfig
-		wantConfig string
-		wantFiles  []fileFromFixture
+		name             string
+		config           func() *JoinConfig
+		wantConfig       string
+		wantFiles        []fileFromFixture
+		wantKubeletPatch string
 	}{
 		{
 			name:       "worker join config with provisioning taint",
@@ -35,7 +36,10 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			name:       "control-plane join config without encryption",
 			wantConfig: "join_control_plane.yaml",
 			config:     validControlPlaneJoinConfig,
-			wantFiles:  []fileFromFixture{apiServerTerminationGracePatchFixture()},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
 		},
 		{
 			name:       "control-plane join includes auth prerequisite file",
@@ -47,11 +51,12 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			},
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
 				{
 					path:           "/etc/kubernetes/oidc/auth-config.yaml",
 					goldenFilePath: "auth_config_simple.yaml",
 					mode:           0o600,
-					owner:          "root:root",
+					owner:          rootRoot,
 				},
 			},
 		},
@@ -65,11 +70,12 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			},
 			wantFiles: []fileFromFixture{
 				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
 				{
 					path:           "/etc/kubernetes/oidc/auth-config.yaml",
 					goldenFilePath: "auth_config_multi_provider.yaml",
 					mode:           0o600,
-					owner:          "root:root",
+					owner:          rootRoot,
 				},
 			},
 		},
@@ -81,6 +87,26 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			config: func() *JoinConfig {
 				cfg := validWorkerJoinConfig()
 				cfg.AuthenticationConfig = testAuthenticationConfig()
+				return cfg
+			},
+		},
+		{
+			name:             "worker join with custom system reserved memory",
+			wantConfig:       "join_worker.yaml",
+			wantKubeletPatch: "kubelet_configuration_patch_32gi.yaml",
+			config: func() *JoinConfig {
+				cfg := validWorkerJoinConfig()
+				cfg.SystemReservedMemory = "32Gi"
+				return cfg
+			},
+		},
+		{
+			name:             "worker join with custom kube reserved memory",
+			wantConfig:       "join_worker.yaml",
+			wantKubeletPatch: "kubelet_configuration_patch_250mi.yaml",
+			config: func() *JoinConfig {
+				cfg := validWorkerJoinConfig()
+				cfg.KubeReservedMemory = "250Mi"
 				return cfg
 			},
 		},
@@ -102,8 +128,13 @@ func TestJoinConfigRender_Golden(t *testing.T) {
 			require.NoError(t, err)
 
 			assertGolden(t, tt.wantConfig, string(artifacts.ConfigYAML))
-			require.Len(t, artifacts.Files, len(tt.wantFiles))
-			for i, want := range tt.wantFiles {
+			kubeletPatch := tt.wantKubeletPatch
+			if kubeletPatch == "" {
+				kubeletPatch = "kubelet_configuration_patch.yaml"
+			}
+			wantFiles := append([]fileFromFixture{kubeletConfigurationPatchFixture(kubeletPatch)}, tt.wantFiles...)
+			require.Len(t, artifacts.Files, len(wantFiles))
+			for i, want := range wantFiles {
 				got := artifacts.Files[i]
 				assert.Equal(t, want.path, got.Path)
 				assert.Equal(t, want.mode, got.Mode)

@@ -68,10 +68,21 @@ func (a *Activities) forgeRebootNode(ctx context.Context, input ForgeRebootNodeI
 	if err != nil {
 		return ForgeRebootNodeResult{}, fmt.Errorf("failed to get cluster: %w", err)
 	}
+	nicoClusterProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return ForgeRebootNodeResult{}, err
+	}
+	nicoNodeProvider, err := node.NicoProvider()
+	if err != nil {
+		return ForgeRebootNodeResult{}, err
+	}
+	if nicoNodeProvider.ForgeInstanceID == "" {
+		return ForgeRebootNodeResult{}, fmt.Errorf("node %s has no Forge instance ID", input.NodeID)
+	}
 
 	// trigger the instance reboot
 	rebootStartedTime := time.Now().UTC()
-	updatedInstance, err := a.forgeProvider.TriggerInstanceReboot(ctx, cluster.OrgID, node.ForgeInstanceID)
+	updatedInstance, err := a.forgeProvider.TriggerInstanceReboot(ctx, nicoClusterProvider.OrgID, nicoNodeProvider.ForgeInstanceID)
 	if err != nil {
 		// Handle scenario where node is not found in forge (happens if node is deleted outside of CWE)
 		if errors.Is(err, forge.ErrInstanceNotFound) {
@@ -93,6 +104,6 @@ func (a *Activities) forgeRebootNode(ctx context.Context, input ForgeRebootNodeI
 		return ForgeRebootNodeResult{}, fmt.Errorf("failed to trigger instance reboot: %w", err)
 	}
 
-	logger.Info("Forge instance reboot initiated", "nodeID", input.NodeID, "name", updatedInstance.Name, "forgeMachineID", node.ForgeMachineID)
+	logger.Info("Forge instance reboot initiated", "nodeID", input.NodeID, "name", updatedInstance.Name, "forgeMachineID", nicoNodeProvider.ForgeMachineID)
 	return ForgeRebootNodeResult{RebootStartedTime: rebootStartedTime}, nil
 }

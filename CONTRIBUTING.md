@@ -37,10 +37,10 @@ cd nke
 **Everything that builds publicly, in one command:**
 
 ```bash
-make build   # builds bin/agent, bin/capd-reboot-controller, bin/nico-mock
+make build   # builds agent, controller, nkectl, and helper binaries
 ```
 
-The repository holds seven Go modules, and `go.work` ties together **all seven**.
+The repository holds eight Go modules, and `go.work` ties together **all eight**.
 `make build` compiles every one of them, so you do not need to build any module
 from its own directory. `controller/` and `controller/forge-vms` used to be
 outside the workspace because they needed `gitlab-master.nvidia.com`; #76

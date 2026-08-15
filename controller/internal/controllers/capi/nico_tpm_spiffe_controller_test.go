@@ -35,7 +35,7 @@ func TestNicoTpmSpiffeControllerReconcileAggregatesPubhashesAndAnnotatesMachine(
 	currentMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -91,7 +91,7 @@ func TestNicoTpmSpiffeControllerReconcilePreservesExistingNonTPMSpiffePath(t *te
 	currentMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -114,7 +114,7 @@ func TestNicoTpmSpiffeControllerReconcilePreservesExistingNonTPMSpiffePath(t *te
 	})
 	require.NoError(t, err)
 
-	assertConfigMapEntries(t, controller, "hash-current")
+	assertConfigMapEntries(t, controller)
 	assertMachineAnnotated(t, controller, currentMachine, joinTokenSpiffePath)
 }
 
@@ -122,7 +122,7 @@ func TestNicoTpmSpiffeControllerReconcileSkipsMachineAnnotationWhenRequestedMach
 	currentMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -172,7 +172,7 @@ func newNicoMachineForTest(name, tpmEkPubHash string, deleting bool, ownerMachin
 		isController := true
 		nicoMachine.OwnerReferences = []metav1.OwnerReference{{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Machine",
+			Kind:       machineConst,
 			Name:       ownerMachineName,
 			Controller: &isController,
 		}}
@@ -223,6 +223,9 @@ func assertConfigMapEntries(t *testing.T, controller *NicoTpmSpiffeController, h
 		expectedData[hash] = constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerNicoTpmSpiffe
 	}
 
+	if len(expectedData) == 0 && len(configMap.Data) == 0 {
+		return
+	}
 	require.Equal(t, expectedData, configMap.Data)
 }
 

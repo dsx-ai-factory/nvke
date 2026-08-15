@@ -54,7 +54,7 @@ func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
 	labels, labelsErr := getNodeMetricLabels(ctx, input.NodeID)
 	if labelsErr != nil {
 		logger.Warn("failed to get node metric labels, metrics will use unknown", "error", labelsErr)
-		labels = nodeMetricLabels{ClusterName: "unknown", NodeType: "unknown"}
+		labels = nodeMetricLabels{ClusterName: unknownValue, NodeType: unknownValue}
 	}
 
 	nodeCtx, err := getNodeProvisioningContext(ctx, input.NodeID)
@@ -255,14 +255,6 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activ
 		recordPhase("reboot", rebootStart, workflow.Now(ctx))
 	}
 
-	if err := executeKubeadmPatches(ctx, input.NodeID); err != nil {
-		return fmt.Errorf("failed to execute kubeadm-patches: %w", err)
-	}
-
-	if err := configureApiserverAuditPolicy(ctx, input.NodeID); err != nil {
-		return fmt.Errorf("failed to configure API server audit policy: %w", err)
-	}
-
 	if err := markNodeAsReadyToJoin(ctx, input.NodeID); err != nil {
 		return fmt.Errorf("failed to mark node as ready to join: %w", err)
 	}
@@ -355,7 +347,8 @@ func provisionForgeInstance(ctx workflow.Context, nodeID uuid.UUID) error {
 		a.CreateForgeInstance,
 		activities.CreateForgeInstanceInput{
 			NodeID: nodeID,
-		}).Get(ctx, &createInstanceResponse); err != nil {
+		},
+	).Get(ctx, &createInstanceResponse); err != nil {
 		return fmt.Errorf("failed to create Forge instance: %w", err)
 	}
 
@@ -391,7 +384,8 @@ func waitForForgeInstance(ctx workflow.Context, nodeID uuid.UUID) error {
 		activities.WaitForForgeInstanceReadyInput{
 			NodeID:                           nodeID,
 			NodeProvisioningConditionMessage: "Waiting for Forge instance to be ready",
-		}).Get(ctx, &waitForForgeInstanceReadyResponse); err != nil {
+		},
+	).Get(ctx, &waitForForgeInstanceReadyResponse); err != nil {
 		return fmt.Errorf("failed to wait for Forge instance to be ready: %w", err)
 	}
 
@@ -462,7 +456,8 @@ func waitForNodePreflight(ctx workflow.Context, nodeID uuid.UUID) error {
 		activities.NodePreflightInput{
 			NodeID:                           nodeID,
 			NodeProvisioningConditionMessage: "Waiting for node preflight to succeed",
-		}).Get(ctx, nil); err != nil {
+		},
+	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to wait for node preflight to succeed: %w", err)
 	}
 
@@ -548,83 +543,10 @@ func runHooks(ctx workflow.Context, nodeID uuid.UUID, hookType HookType, configP
 				RunbookEnv:  hook.Runbook.Env,
 
 				NodeProvisioningConditionMessage: fmt.Sprintf("Executing %s runbook %s", string(hookType), hook.Runbook.Name),
-			}).Get(ctx, nil); err != nil {
+			},
+		).Get(ctx, nil); err != nil {
 			return fmt.Errorf("failed to run %s runbook %s: %w", hookType, hook.Runbook.Name, err)
 		}
-	}
-
-	return nil
-}
-
-func executeKubeadmPatches(ctx workflow.Context, nodeID uuid.UUID) error {
-	var a *activities.Activities
-
-	var nodePool db.NodePool
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNodePoolForNode, nodeID).Get(ctx, &nodePool); err != nil {
-		return fmt.Errorf("failed to get node pool: %w", err)
-	}
-
-	execRunbookActivityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 35 * time.Minute,
-		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval: 1 * time.Minute,
-			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 0, // Retry indefinitely
-		},
-	}
-
-	runbookEnv := map[string]string{
-		"SYSTEM_RESERVED_MEM": nodePool.SystemReservedMemory,
-	}
-
-	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, execRunbookActivityOptions),
-		a.ExecuteNodeRunbookHook,
-		activities.ExecuteNodeRunbookHookInput{
-			NodeID:      nodeID,
-			RunbookName: "kubeadm-patches",
-			RunbookEnv:  runbookEnv,
-
-			NodeProvisioningConditionMessage: "Executing kubeadm-patches runbook",
-		}).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to run kubeadm-patches runbook: %w", err)
-	}
-
-	return nil
-}
-
-func configureApiserverAuditPolicy(ctx workflow.Context, nodeID uuid.UUID) error {
-	var a *activities.Activities
-
-	var nodePool db.NodePool
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNodePoolForNode, nodeID).Get(ctx, &nodePool); err != nil {
-		return fmt.Errorf("failed to get node pool: %w", err)
-	}
-
-	if !nodePool.ControlPlane {
-		return nil
-	}
-
-	execRunbookActivityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 35 * time.Minute,
-		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval: 1 * time.Minute,
-			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 0, // Retry indefinitely
-		},
-	}
-
-	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, execRunbookActivityOptions),
-		a.ExecuteNodeRunbookHook,
-		activities.ExecuteNodeRunbookHookInput{
-			NodeID:                           nodeID,
-			RunbookName:                      "configure-apiserver-audit-policy",
-			NodeProvisioningConditionMessage: "Configuring API server audit policy",
-		}).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to run configure-apiserver-audit-policy runbook: %w", err)
 	}
 
 	return nil
@@ -653,7 +575,8 @@ func configureCNIPrerequisites(ctx workflow.Context, nodeID uuid.UUID) error {
 			activities.ExecuteHostRunbookInput{
 				HostID:      nodeID,
 				RunbookName: "configure-openvswitch",
-			}).Get(ctx, nil); err != nil {
+			},
+		).Get(ctx, nil); err != nil {
 			return fmt.Errorf("failed to run configure-openvswitch runbook: %w", err)
 		}
 	}
@@ -682,7 +605,8 @@ func waitForNodePoolProvisioning(ctx workflow.Context, nodeID uuid.UUID) error {
 		activities.WaitForParentNodePoolProvisionedInput{
 			NodeID:                           nodeID,
 			NodeProvisioningConditionMessage: "Waiting for parent node pool to be provisioned",
-		}).Get(ctx, nil); err != nil {
+		},
+	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to wait for node's parent node pool to be provisioned: %w", err)
 	}
 
@@ -759,8 +683,17 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 	// Label the node with its Forge/Carbide machine ID so the machine identity
 	// is discoverable directly on the K8s node object. Skipped when the node has
 	// no machine ID (e.g. non-Forge / CAPD-only nodes).
-	if node.ForgeMachineID != "" {
-		labels = append(labels, constants.LabelKeyMachineID+"="+node.ForgeMachineID)
+	if cluster.ProviderType == db.ProviderTypeNico {
+		if _, err := cluster.NicoProvider(); err != nil {
+			return err
+		}
+		nicoNodeProvider, err := node.NicoProvider()
+		if err != nil {
+			return err
+		}
+		if nicoNodeProvider.ForgeMachineID != "" {
+			labels = append(labels, constants.LabelKeyMachineID+"="+nicoNodeProvider.ForgeMachineID)
+		}
 	}
 
 	// If the cluster is using ovn cni, add zone-name label 'k8s.ovn.org/zone-name=<node-name>'
@@ -836,7 +769,8 @@ func configureKubeVip(ctx workflow.Context, nodeID uuid.UUID) error {
 			NodeID:                           nodeID,
 			ConfigureSuperAdmin:              true,
 			NodeProvisioningConditionMessage: "Configuring kube-vip",
-		}).Get(ctx, nil); err != nil {
+		},
+	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to configure kube-vip: %w", err)
 	}
 
@@ -893,7 +827,7 @@ func markNodeAsProvisioned(ctx workflow.Context, nodeID uuid.UUID) error {
 		Conditions: activities.NodeConditions{
 			Provisioning: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusFalse,
-				Message: "Provisioning completed",
+				Message: provisioningCompleted,
 			},
 			Provisioned: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusTrue,

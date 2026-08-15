@@ -48,10 +48,14 @@ func (a *Activities) buildNicoMachineForNode(ctx context.Context, createCtx *cap
 	if err != nil {
 		return nil, err
 	}
+	nicoProvider, err := createCtx.cluster.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
 
 	var instanceType GetInstanceTypeOutput
 	if provisioningConfig.infinibandPartitionID != nil || provisioningConfig.nvLinkLogicalPartitionID != nil {
-		instanceType, err = a.getInstanceType(ctx, createCtx.cluster.OrgID, createCtx.cluster.SiteID.String(), provisioningConfig.instanceTypeID)
+		instanceType, err = a.getInstanceType(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), provisioningConfig.instanceTypeID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get instance type: %w", err)
 		}
@@ -76,15 +80,21 @@ func (a *Activities) buildNicoMachineForNode(ctx context.Context, createCtx *cap
 	// payload, so resolve the VPC name here when the Forge cache is available.
 	vpcName := ""
 	if a.forgeProvider != nil {
-		vpcName = a.resolveVPCName(ctx, createCtx.cluster.OrgID, createCtx.cluster.SiteID.String(), createCtx.cluster.VpcID.String())
+		vpcName = a.resolveVPCName(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), nicoProvider.VpcID.String())
+	}
+
+	instanceLabels, err := buildNicoInstanceLabels(createCtx.node, createCtx.cluster, nicoProvider, provisioningConfig.nodePoolID, a.cfg.NKESiteControllerName, vpcName)
+	if err != nil {
+		return nil, err
 	}
 
 	nicoMachine, err := buildNicoMachine(
 		createCtx.node,
 		createCtx.cluster,
+		nicoProvider,
 		createCtx.namespace,
 		createCtx.nodePool.ControlPlane,
-		buildNicoInstanceLabels(createCtx.node, createCtx.cluster, provisioningConfig.nodePoolID, a.cfg.NKESiteControllerName, vpcName),
+		instanceLabels,
 		provisioningConfig.instanceTypeID,
 		provisioningConfig.sshKeyGroupIDs,
 		provisioningConfig.subnetIDs,
@@ -107,7 +117,10 @@ func (a *Activities) renderTemplateLessForgeCAPIBootstrapUserData(ctx context.Co
 	}
 
 	osProfileDir := path.Join(a.cfg.ProfilesDir, "osProfiles", provisioningConfig.osProfile)
-	teleportCfg := a.nicoMachineTeleportConfig(createCtx, provisioningConfig.teleportEnabled, provisioningConfig.nodePoolID, provisioningConfig.isControlPlaneRole)
+	teleportCfg, err := a.nicoMachineTeleportConfig(createCtx, provisioningConfig.teleportEnabled, provisioningConfig.nodePoolID, provisioningConfig.isControlPlaneRole)
+	if err != nil {
+		return "", err
+	}
 	userData, err := a.getUserData(ctx, osProfileDir, createCtx.node, provisioningConfig.diskSelectionStrategy, provisioningConfig.kubernetesVersion, teleportCfg, createCtx.cluster)
 	if err != nil {
 		return "", fmt.Errorf("failed to get user data for OS profile %s: %w", provisioningConfig.osProfile, err)
@@ -121,7 +134,11 @@ func resolveTemplateLessForgeCAPINodeConfig(createCtx *capiMachineCreateContext)
 }
 
 func resolveTemplateLessForgeNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool) (templateLessForgeCAPINodeConfig, error) {
-	if err := validateResolvedTemplateLessForgeNodeContext(nodeSet, nodePool); err != nil {
+	nicoNodePoolProvider, err := nodePool.NicoProvider()
+	if err != nil {
+		return templateLessForgeCAPINodeConfig{}, err
+	}
+	if err := validateResolvedTemplateLessForgeNodeContext(nodeSet, nicoNodePoolProvider); err != nil {
 		return templateLessForgeCAPINodeConfig{}, err
 	}
 
@@ -130,14 +147,14 @@ func resolveTemplateLessForgeNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool
 		diskSelectionStrategy:    nodeSet.DiskSelectionStrategy,
 		kubernetesVersion:        nodeSet.KubernetesVersion,
 		teleportEnabled:          nodeSet.TeleportEnabled,
-		instanceTypeID:           nodePool.InstanceTypeID,
-		sshKeyGroupIDs:           nodePool.SSHKeyGroupIDs,
-		subnetIDs:                nodePool.SubnetIDs,
-		vpcPrefixIDs:             nodePool.VpcPrefixIDs,
+		instanceTypeID:           nicoNodePoolProvider.InstanceTypeID,
+		sshKeyGroupIDs:           nicoNodePoolProvider.SSHKeyGroupIDs,
+		subnetIDs:                nicoNodePoolProvider.SubnetIDs,
+		vpcPrefixIDs:             nicoNodePoolProvider.VpcPrefixIDs,
 		nodePoolID:               nodePool.ID,
 		isControlPlaneRole:       nodePool.ControlPlane,
-		infinibandPartitionID:    nodePool.InfinibandPartitionID,
-		nvLinkLogicalPartitionID: nodePool.NvLinkLogicalPartitionID,
+		infinibandPartitionID:    nicoNodePoolProvider.InfinibandPartitionID,
+		nvLinkLogicalPartitionID: nicoNodePoolProvider.NvLinkLogicalPartitionID,
 	}
 
 	if provisioningConfig.osProfile == "" {
@@ -153,7 +170,7 @@ func resolveTemplateLessForgeNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool
 	return provisioningConfig, nil
 }
 
-func validateResolvedTemplateLessForgeNodeContext(nodeSet db.NodeSet, nodePool db.NodePool) error {
+func validateResolvedTemplateLessForgeNodeContext(nodeSet db.NodeSet, nicoProvider db.NicoNodePoolProvider) error {
 	missingFields := make([]string, 0, 4)
 
 	if nodeSet.OSProfile == "" {
@@ -162,10 +179,10 @@ func validateResolvedTemplateLessForgeNodeContext(nodeSet db.NodeSet, nodePool d
 	if nodeSet.KubernetesVersion == "" {
 		missingFields = append(missingFields, "nodeSet.kubernetesVersion")
 	}
-	if nodePool.InstanceTypeID == uuid.Nil {
+	if nicoProvider.InstanceTypeID == uuid.Nil {
 		missingFields = append(missingFields, "nodePool.instanceTypeID")
 	}
-	if len(nodePool.SubnetIDs) == 0 && len(nodePool.VpcPrefixIDs) == 0 {
+	if len(nicoProvider.SubnetIDs) == 0 && len(nicoProvider.VpcPrefixIDs) == 0 {
 		missingFields = append(missingFields, "nodePool.subnetIDs|vpcPrefixIDs")
 	}
 
@@ -176,9 +193,13 @@ func validateResolvedTemplateLessForgeNodeContext(nodeSet db.NodeSet, nodePool d
 	return nil
 }
 
-func (a *Activities) nicoMachineTeleportConfig(createCtx *capiMachineCreateContext, teleportEnabled bool, nodePoolID uuid.UUID, isControlPlaneRole bool) *TeleportUserDataConfig {
+func (a *Activities) nicoMachineTeleportConfig(createCtx *capiMachineCreateContext, teleportEnabled bool, nodePoolID uuid.UUID, isControlPlaneRole bool) (*TeleportUserDataConfig, error) {
 	if !a.cfg.Teleport.Enabled || !createCtx.cluster.TeleportEnabled || !teleportEnabled {
-		return nil
+		return &TeleportUserDataConfig{}, nil
+	}
+	nicoProvider, err := createCtx.cluster.NicoProvider()
+	if err != nil {
+		return nil, err
 	}
 
 	return &TeleportUserDataConfig{
@@ -186,13 +207,14 @@ func (a *Activities) nicoMachineTeleportConfig(createCtx *capiMachineCreateConte
 		TokenName:    teleport.TPMTokenName(createCtx.node.ID),
 		ProxyAddress: a.cfg.Teleport.ProxyAddress,
 		JoinMethod:   string(teleport.JoinMethodTPM),
-		Labels:       buildTeleportLabels(createCtx.node, createCtx.cluster, nodePoolID, isControlPlaneRole, a.cfg.NKESiteControllerName, a.cfg.Teleport.Environment),
-	}
+		Labels:       buildTeleportLabels(createCtx.node, createCtx.cluster, nicoProvider, nodePoolID, isControlPlaneRole, a.cfg.NKESiteControllerName, a.cfg.Teleport.Environment),
+	}, nil
 }
 
 func buildNicoMachine(
 	node db.Node,
 	cluster db.Cluster,
+	nicoProvider db.NicoClusterProvider,
 	namespace string,
 	controlPlane bool,
 	instanceLabels map[string]string,
@@ -213,7 +235,7 @@ func buildNicoMachine(
 	return &nicov1.NicoMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: nicov1.GroupVersion.String(),
-			Kind:       "NicoMachine",
+			Kind:       nicoMachineConst,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
@@ -221,7 +243,7 @@ func buildNicoMachine(
 			Labels:    labels,
 		},
 		Spec: nicov1.NicoMachineSpec{
-			VPCID:                cluster.VpcID.String(),
+			VPCID:                nicoProvider.VpcID.String(),
 			InstanceTypeID:       instanceTypeID.String(),
 			Interfaces:           interfaces,
 			InfinibandInterfaces: infinibandInterfaces,
@@ -237,18 +259,23 @@ func buildNicoMachine(
 // buildNicoInstanceLabels builds the labels CWE can know before CAPNICo creates
 // the backing VM. CAPNICo adds the machine-id later because Forge only returns
 // that value after instance creation.
-func buildNicoInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID, siteName, vpcName string) map[string]string {
+func buildNicoInstanceLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, siteName, vpcName string) (map[string]string, error) {
+	nicoNodeProvider, err := node.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
+
 	labels := map[string]string{
 		constants.LabelKeyNodeID:     node.ID.String(),
 		constants.LabelKeyClusterID:  cluster.ID.String(),
-		constants.LabelKeyNodeSiteID: cluster.SiteID.String(),
-		constants.LabelKeyNodeVPCID:  cluster.VpcID.String(),
+		constants.LabelKeyNodeSiteID: nicoProvider.SiteID.String(),
+		constants.LabelKeyNodeVPCID:  nicoProvider.VpcID.String(),
 	}
 	if nodePoolID != uuid.Nil {
 		labels[constants.LabelKeyNodePoolID] = nodePoolID.String()
 	}
-	if node.ForgeMachineID != "" {
-		labels[constants.LabelKeyMachineID] = node.ForgeMachineID
+	if nicoNodeProvider.ForgeMachineID != "" {
+		labels[constants.LabelKeyMachineID] = nicoNodeProvider.ForgeMachineID
 	}
 	if name := kube.NormalizeLabelValue(siteName); name != "" {
 		labels[constants.LabelKeyNodeSiteName] = name
@@ -256,7 +283,7 @@ func buildNicoInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.U
 	if name := kube.NormalizeLabelValue(vpcName); name != "" {
 		labels[constants.LabelKeyNodeVPCName] = name
 	}
-	return labels
+	return labels, nil
 }
 
 func buildNicoMachineInterfaces(subnetIDs, vpcPrefixIDs []uuid.UUID) ([]nicov1.NicoMachineInterface, error) {

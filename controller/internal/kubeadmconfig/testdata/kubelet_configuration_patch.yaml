@@ -1,0 +1,8 @@
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+kubeReserved:
+  cpu: "1000m"
+  memory: "2Gi"
+  ephemeral-storage: "1Gi"
+systemReserved:
+  memory: "16Gi"

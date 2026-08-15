@@ -57,7 +57,7 @@ func (a *NodeScheduler) scheduleControlPlaneNodes(ctx context.Context, site db.S
 
 // scheduleControlPlaneNodesForCluster schedules the control plane controller managed control-plane
 // nodes of a single cluster
-func (a *NodeScheduler) scheduleControlPlaneNodesForCluster(ctx context.Context, site db.Site, cluster db.Cluster) error {
+func (a *NodeScheduler) scheduleControlPlaneNodesForCluster(ctx context.Context, _ db.Site, cluster db.Cluster) error {
 	controlPlanePending, err := a.listManagedControlPlanePending(ctx, cluster)
 	if err != nil {
 		a.logger.Error("Failed to list pending control plane nodes", "error", err, "clusterID", cluster.ID)
@@ -65,16 +65,6 @@ func (a *NodeScheduler) scheduleControlPlaneNodesForCluster(ctx context.Context,
 	}
 	if len(controlPlanePending) == 0 {
 		return nil
-	}
-
-	// Guard against a cluster that does not belong to the site being scheduled
-	// (e.g. a stale/mis-filtered ListClusters result). Log and count it as a
-	// per-cluster failure so the pass skips it without provisioning any of its
-	// nodes and without aborting the other clusters.
-	if cluster.SiteID != site.ID {
-		a.logger.Error("Skipping control plane scheduling for cluster that does not belong to site",
-			"clusterID", cluster.ID, "clusterSiteID", cluster.SiteID, "siteID", site.ID)
-		return fmt.Errorf("cluster %s does not belong to site %s", cluster.ID, site.ID)
 	}
 
 	logger := a.logger.With("clusterID", cluster.ID, "controlPlanePending", len(controlPlanePending))
@@ -123,9 +113,9 @@ func (a *NodeScheduler) scheduleForgeControlPlaneNodes(
 	cluster db.Cluster,
 	pending []db.Node,
 ) error {
-	// A nil SiteID routes to the CAPI path, so this guard is defensive.
-	if cluster.SiteID == uuid.Nil {
-		logger.Warn("Cluster has zero site ID, skipping no-nodepool control plane scheduling")
+	if cluster.ProviderType != db.ProviderTypeNico {
+		logger.Warn("Cluster is not NICo-backed, skipping forge-based control-plane scheduling",
+			"clusterID", cluster.ID, "providerType", cluster.ProviderType)
 		return nil
 	}
 
@@ -227,10 +217,9 @@ func (a *NodeScheduler) assignControlPlaneInstanceType(
 
 // selectControlPlaneInstanceType picks the highest-preference instance type that
 // has both Forge instance capacity and network (IP) capacity remaining in the
-// current pass, decrementing the in-pass accounting on success. Site-less
-// clusters (no Forge site) have unbounded capacity and always resolve to the
-// first preference. An empty preference list is a real error; a fully-queried
-// preference with no remaining capacity returns uuid.Nil without error.
+// current pass, decrementing the in-pass accounting on success. An empty
+// preference list is a real error; a fully-queried preference with no remaining
+// capacity returns uuid.Nil without error.
 func (a *NodeScheduler) selectControlPlaneInstanceType(
 	ctx context.Context,
 	cluster db.Cluster,
@@ -242,9 +231,9 @@ func (a *NodeScheduler) selectControlPlaneInstanceType(
 		return uuid.Nil, fmt.Errorf("no instance type preference configured for control-plane scheduling")
 	}
 
-	// Site-less clusters (in practice CAPI-routed) have no Forge capacity to
+	// Non-NICo clusters (in practice CAPI-routed) have no Forge capacity to
 	// query: treat as unbounded and pick the highest preference.
-	if cluster.SiteID == uuid.Nil {
+	if cluster.ProviderType != db.ProviderTypeNico {
 		return preference[0], nil
 	}
 
@@ -275,13 +264,21 @@ func (a *NodeScheduler) resolveControlPlaneInstanceTypePreference(
 ) ([]uuid.UUID, error) {
 	cfgID := node.ControlPlaneConfigurationID
 	if cfgID == uuid.Nil || cfgID == cluster.ControlPlaneConfig.ConfigurationID {
-		return cluster.ControlPlaneConfig.InstanceTypePreference, nil
+		return nicoControlPlaneInstanceTypePreference(cluster.ControlPlaneConfig.ControlPlaneConfigSpec)
 	}
 	row, err := a.db.GetControlPlaneConfiguration(ctx, cfgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get control plane configuration snapshot %s: %w", cfgID, err)
 	}
-	return row.Config.InstanceTypePreference, nil
+	return nicoControlPlaneInstanceTypePreference(row.Config)
+}
+
+func nicoControlPlaneInstanceTypePreference(cfg db.ControlPlaneConfigSpec) ([]uuid.UUID, error) {
+	nico := cfg.NicoControlPlaneProvider()
+	if nico == nil {
+		return nil, fmt.Errorf("nico control-plane provider payload is required")
+	}
+	return nico.InstanceTypePreference, nil
 }
 
 // persistControlPlaneInstanceType stamps the selected instance type onto the

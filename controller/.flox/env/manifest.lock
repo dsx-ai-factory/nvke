@@ -1,13 +1,14 @@
 {
   "lockfile-version": 1,
   "manifest": {
-    "version": 1,
+    "schema-version": "1.11.0",
     "install": {
       "clusterctl": {
         "pkg-path": "clusterctl"
       },
       "gnumake": {
-        "pkg-path": "gnumake"
+        "pkg-path": "gnumake",
+        "outputs": "all"
       },
       "go": {
         "pkg-path": "go",
@@ -28,7 +29,8 @@
         "version": "2.4.1"
       },
       "spire-agent": {
-        "pkg-path": "spire-agent"
+        "pkg-path": "spire-agent",
+        "outputs": "all"
       },
       "temporal-cli": {
         "pkg-path": "temporal-cli"

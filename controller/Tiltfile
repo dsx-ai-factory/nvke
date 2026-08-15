@@ -17,15 +17,24 @@ load("ext://uibutton", "cmd_button", "text_input")
 # ---------------------------------------------------------------------------
 # Providers list supports strings and dicts:
 #   "capi_core"               -- built-in CAPI core support
+#   "bgp-containers"          -- shared BGP router and default-site VIP pool for container nodes
 #   "capd"                    -- built-in CAPD support
 #   "nico"                    -- NCX Infra Controller support
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
 #   "forge-vms"               -- Forge-compatible local VM provider
 #   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
+#   "forge-console"           -- Forge UI + /api/forge/* (external repo; see below)
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
-# Default: ["capi_core", "capd", "capd-reboot-controller"]
+# Default: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]
 #
+# forge-console lives in gitlab nke/forge-console (sibling checkout). Resolution
+# order when the built-in name is used:
+#   1. FORGE_CONSOLE_DIR env (absolute or relative path to that repo)
+#   2. ../forge-console next to this repo (common local layout)
+# Override with a dict entry if the checkout is elsewhere:
+#   {"forge-console": "/path/to/forge-console"}
+
 # Provider interface
 # ------------------
 # Each provider must expose a `register` function in <provider_dir>/Tiltfile:
@@ -54,15 +63,23 @@ load("ext://uibutton", "cmd_button", "text_input")
 # Inside register(), the provider creates its own Tilt resources (local_resource,
 # helm_resource, etc.) and returns the struct to wire itself into CWE.
 
-# Built-in provider name -> directory (relative to config.main_dir).
+# Built-in provider name -> directory (relative to config.main_dir, or absolute).
+def _resolve_forge_console_dir():
+    override = os.getenv("FORGE_CONSOLE_DIR", "").strip()
+    if override:
+        return os.path.abspath(override)
+    return os.path.abspath(os.path.join(config.main_dir, "..", "forge-console"))
+
 _builtin_provider_dirs = {
     "capi_core": os.path.join(config.main_dir, "hack/capi-core-provider"),
+    "bgp-containers": os.path.join(config.main_dir, "hack/bgp-containers"),
     "capd": os.path.join(config.main_dir, "hack/capd-provider"),
     "nico": os.path.join(config.main_dir, "hack/nico-provider"),
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "forge-vms": os.path.join(config.main_dir, "forge-vms"),
     "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
+    "forge-console": _resolve_forge_console_dir(),
 }
 
 _tilt_config = read_json("tilt_config.json", default={})
@@ -74,6 +91,7 @@ SITE_CONTROLLER_VIP_OVERRIDE = cfg.get("site_controller_vip", "")
 
 _provider_entries = cfg.get("providers", [
     "capi_core",
+    "bgp-containers",
     "capd",
     "capd-reboot-controller",
 ])
@@ -318,6 +336,13 @@ for _entry in _provider_entries:
         fail("Invalid provider entry: %s" % _entry)
 
     _tiltfile_path = os.path.join(_provider_dir, "Tiltfile")
+    if not os.path.exists(_tiltfile_path):
+        fail(
+            "Provider '%s' Tiltfile not found at %s. For forge-console, clone " % (_provider_name, _tiltfile_path) +
+            "nke/forge-console as a sibling of cloud-workflow-engine, set " +
+            "FORGE_CONSOLE_DIR, or use a dict entry " +
+            '{"forge-console": "/path/to/forge-console"}.'
+        )
     _symbols = load_dynamic(_tiltfile_path)
     _result = _symbols["register"](struct(
         main_dir     = config.main_dir,
@@ -329,6 +354,56 @@ for _entry in _provider_entries:
     _all_cwe_env_overrides.update(_result.cwe_env_overrides)
     if getattr(_result, "preflight_script", ""):
         _all_preflight_fragments.append(_result.preflight_script)
+
+# ---------------------------------------------------------------------------
+# Local environment / required credentials
+# ---------------------------------------------------------------------------
+#
+# Parsed here rather than in the CWE section below because the postgres and
+# temporal charts also consume CNPG_SUPERUSER_PASSWORD.
+
+def parse_env_file(path):
+    values = {}
+    if not os.path.exists(path):
+        return values
+    for line in str(read_file(path)).split("\n"):
+        line = line.strip()
+        if line == "" or line.startswith("#"):
+            continue
+        parts = line.split("=", 1)
+        if len(parts) != 2:
+            continue
+        values[parts[0].strip()] = parts[1].strip()
+    return values
+
+_tilt_env = parse_env_file(".env.tilt")
+if not _tilt_env:
+    _tilt_env = parse_env_file(".env.tilt.example")
+_tilt_env.update(_all_cwe_env_overrides)
+
+# Credentials with no defaults anywhere in the repo. The developer supplies each
+# one via .env.tilt or the shell environment; `tilt up` fails fast rather than
+# standing the stack up on placeholder credentials (NKX-11689). CNPG_SITE_PASSWORD
+# is deliberately absent — it is consumed by site-workflow-engine, not CWE.
+_required_cred_names = [
+    "DGXC_TENANT_USER",
+    "DGXC_TENANT_PASSWORD",
+    "CNPG_SUPERUSER_PASSWORD",
+    "CNPG_CLOUD_PASSWORD",
+    "CNPG_TEMPORAL_PASSWORD",
+]
+_required_creds = {}
+for _name in _required_cred_names:
+    _required_creds[_name] = os.getenv(_name, _tilt_env.get(_name, "")).strip()
+_missing_creds = [_name for _name in _required_cred_names if _required_creds[_name] == ""]
+if _missing_creds:
+    fail("Missing required credential(s): %s. Set them in .env.tilt or export them before `tilt up` — there are no defaults (see .env.tilt.example)." % ", ".join(_missing_creds))
+
+# CNPG_SUPERUSER_PASSWORD is the single source of truth for the local postgres
+# superuser: it provisions the bitnami postgres chart, authenticates temporal
+# against it, and is what CWE substitutes into DB_CONNECTION_STRING at startup
+# (config.EffectiveDBConnectionString).
+_postgres_superuser_password = _required_creds["CNPG_SUPERUSER_PASSWORD"]
 
 # ---------------------------------------------------------------------------
 # Preflight checks
@@ -408,6 +483,7 @@ helm_resource(
     flags=[
       "--create-namespace",
       "--values", "deploy/helm-values/postgres.yaml",
+      "--set-string", "auth.password=%s" % _postgres_superuser_password,
       "--version", CHART_VERSION_POSTGRESQL,
       "--wait",
       "--timeout", "10m",
@@ -433,6 +509,8 @@ helm_resource(
     flags=[
       "--create-namespace",
       "--values", "deploy/helm-values/temporal.yaml",
+      "--set-string", "server.config.persistence.default.sql.password=%s" % _postgres_superuser_password,
+      "--set-string", "server.config.persistence.visibility.sql.password=%s" % _postgres_superuser_password,
       "--version", CHART_VERSION_TEMPORAL,
       "--wait",
       "--timeout", "15m",
@@ -804,25 +882,6 @@ k8s_resource(
 # CWE
 # ---------------------------------------------------------------------------
 
-def parse_env_file(path):
-    values = {}
-    if not os.path.exists(path):
-        return values
-    for line in str(read_file(path)).split("\n"):
-        line = line.strip()
-        if line == "" or line.startswith("#"):
-            continue
-        parts = line.split("=", 1)
-        if len(parts) != 2:
-            continue
-        values[parts[0].strip()] = parts[1].strip()
-    return values
-
-_tilt_env = parse_env_file(".env.tilt")
-if not _tilt_env:
-    _tilt_env = parse_env_file(".env.tilt.example")
-_tilt_env.update(_all_cwe_env_overrides)
-
 _cwe_capi_enabled = _tilt_env.get("ENABLE_CAPI", "") == "true"
 _cwe_forge_capi_enabled = _tilt_env.get("ENABLE_FORGE_CAPI", "") == "true"
 _cwe_tenant_access_enabled = os.getenv(
@@ -832,9 +891,6 @@ _cwe_oidc_enabled = os.getenv(
 
 _cwe_chart_extra_env_names = [
     "TEMPORAL_UI_URL",
-    "CNPG_SUPERUSER_PASSWORD",
-    "CNPG_CLOUD_PASSWORD",
-    "CNPG_TEMPORAL_PASSWORD",
     "CONTROLLER_MANAGER_POLLING_INTERVAL",
     "CONTROLLER_MANAGER_INTERVAL",
     "NODE_HEALTH_CHECK_POLLING_INTERVAL",
@@ -843,6 +899,7 @@ _cwe_chart_extra_env_names = [
     "LOG_LEVEL",
     "FORGE_URL",
     "FORGE_ENVIRONMENT",
+    "LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP",
     "SPIRE_SERVER_API_ADDRESS",
 ]
 _cwe_chart_extra_env = []
@@ -859,19 +916,14 @@ _cwe_chart_extra_env += [
         "name": "UI_DIR",
         "value": "/ui",
     },
-    {
-        "name": "DGXC_TENANT_USER",
-        "value": _tilt_env.get("DGXC_TENANT_USER", "local-dev"),
-    },
-    {
-        "name": "DGXC_TENANT_PASSWORD",
-        "value": _tilt_env.get("DGXC_TENANT_PASSWORD", "local-dev"),
-    },
 ]
+for _name in _required_cred_names:
+    _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
 
 _cwe_chart_flags = [
     "--create-namespace",
     "--values", "hack/tilt-cwe-chart-values.yaml",
+    "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "capi.enabled=%s" % ("true" if _cwe_capi_enabled else "false"),
     "--set", "capi.forgeCapiEnabled=%s" % ("true" if _cwe_forge_capi_enabled else "false"),
     "--set", "capi.rbac.create=%s" % ("true" if _cwe_capi_enabled else "false"),
@@ -885,7 +937,6 @@ _cwe_chart_flags = [
     "--set-string", "spiffe.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
     "--set-string", "spiffe.spire.serverAddress=%s" % _tilt_env.get("SPIRE_SERVER_ADDRESS", _kind_site_controller_vip),
     "--set-json", "env=%s" % encode_json(_cwe_chart_extra_env),
-    "--force",
     "--wait",
     "--timeout", "10m",
 ]
@@ -924,6 +975,42 @@ _cwe_compile_script = """
       CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
 """ % _cwe_tilt_goarch
 
+_cwe_profiles_dir = os.getenv("CWE_PROFILES_DIR", "../nke-site-deploy/cwe-profiles/profiles")
+_cwe_profiles_preloaded = os.getenv("CWE_PROFILES_PRELOADED", "false") == "true"
+# Starlark's os.path has exists/join but not isdir.
+if not _cwe_profiles_preloaded and not os.path.exists(_cwe_profiles_dir):
+    fail("CWE profiles not found at %s (set CWE_PROFILES_DIR). Fleet profiles live in nke-site-deploy (NKX-13910)." % _cwe_profiles_dir)
+
+_cwe_profiles_context = os.path.dirname(_cwe_profiles_dir)
+_cwe_profiles_dockerfile = os.path.join(_cwe_profiles_context, "Dockerfile")
+
+# Match hack/tilt-cwe-chart-values.yaml: when profiles.image is on, skip baking
+# profiles into the Tilt CWE image and skip live_update sync into the read-only mount.
+_cwe_profiles_image_enabled = True
+
+if _cwe_profiles_image_enabled:
+    if _cwe_profiles_preloaded:
+        print("Using preloaded docker.local/cwe-profiles:tilt image")
+    else:
+        _cwe_image_deps = _cwe_image_deps + ["docker.local/cwe-profiles:tilt"]
+        _cwe_image_keys = _cwe_image_keys + [("profiles.image.repository", "profiles.image.tag")]
+        if not os.path.exists(_cwe_profiles_dockerfile):
+            fail("CWE profiles Dockerfile not found at %s" % _cwe_profiles_dockerfile)
+        custom_build(
+            ref="docker.local/cwe-profiles:tilt",
+            command=[
+                "bash", "-c",
+                """
+                set -euo pipefail
+                if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+                  export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+                fi
+                docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
+                """ % (_cwe_tilt_goarch, _cwe_profiles_dockerfile, _cwe_profiles_context),
+            ],
+            deps=[_cwe_profiles_dir, _cwe_profiles_dockerfile],
+        )
+
 _cwe_build_script = """
       set -euo pipefail
 
@@ -938,10 +1025,34 @@ _cwe_build_script = """
       cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
       mkdir -p "${tmp_dir}/bin"
       cp bin/cloud-workflow-engine "${tmp_dir}/bin/cloud-workflow-engine"
-      cp -R profiles "${tmp_dir}/profiles"
       cp -R ui "${tmp_dir}/ui"
       docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_cwe_tilt_goarch, _cwe_tilt_goarch)
+
+if not _cwe_profiles_image_enabled:
+    _cwe_build_script = """
+      set -euo pipefail
+
+      if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+        export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+      fi
+
+      mkdir -p bin
+      CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
+      tmp_dir="$(mktemp -d)"
+      trap 'rm -rf "${tmp_dir}"' EXIT
+      cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
+      # Bake profiles into the image when profiles.image materialize is off.
+      awk '1; /^RUN mkdir -p [/]profiles$/ {print "COPY ./profiles /profiles"}' \
+        "${tmp_dir}/Dockerfile" > "${tmp_dir}/Dockerfile.new"
+      mv "${tmp_dir}/Dockerfile.new" "${tmp_dir}/Dockerfile"
+      mkdir -p "${tmp_dir}/bin"
+      cp bin/cloud-workflow-engine "${tmp_dir}/bin/cloud-workflow-engine"
+      mkdir -p "${tmp_dir}/profiles"
+      cp -a "%s/." "${tmp_dir}/profiles/"
+      cp -R ui "${tmp_dir}/ui"
+      docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
+""" % (_cwe_tilt_goarch, _cwe_profiles_dir, _cwe_tilt_goarch)
 
 if not CWE_IMAGE and not _cwe_local_debug_active:
     local_resource(
@@ -988,26 +1099,33 @@ helm_resource(
 )
 
 if not CWE_IMAGE and not _cwe_local_debug_active:
+    # When profiles.image is enabled, /profiles is an emptyDir filled by the
+    # materialize initContainer (read-only on the app container). Do not
+    # live_update sync into that mount.
+    _cwe_live_update = [
+      fall_back_on(["hack/Dockerfile.cwe.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
+      sync("bin/cloud-workflow-engine", "/usr/local/bin/cloud-workflow-engine"),
+      sync("ui", "/ui"),
+    ]
+    _cwe_build_deps = [
+      "bin",
+      "ui",
+      "hack/Dockerfile.cwe.tilt",
+      "Makefile",
+      "Makefile.dev",
+      "go.mod",
+      "go.sum",
+    ]
+    if not _cwe_profiles_image_enabled:
+        _cwe_live_update.insert(-1, sync(_cwe_profiles_dir, "/profiles"))
+        _cwe_build_deps.append(_cwe_profiles_dir)
+
     custom_build_with_restart(
         ref="docker.local/cwe:tilt",
         command=["bash", "-c", _cwe_build_script],
-        deps=[
-          "bin",
-          "profiles",
-          "ui",
-          "hack/Dockerfile.cwe.tilt",
-          "Makefile",
-          "Makefile.dev",
-          "go.mod",
-          "go.sum",
-        ],
+        deps=_cwe_build_deps,
         entrypoint="/usr/local/bin/cloud-workflow-engine",
-        live_update=[
-          fall_back_on(["hack/Dockerfile.cwe.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
-          sync("bin/cloud-workflow-engine", "/usr/local/bin/cloud-workflow-engine"),
-          sync("profiles", "/profiles"),
-          sync("ui", "/ui"),
-        ],
+        live_update=_cwe_live_update,
         trigger=["bin/cloud-workflow-engine"],
         ignore=[
           "**/__debug_bin*",

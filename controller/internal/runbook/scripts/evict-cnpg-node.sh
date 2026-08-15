@@ -38,6 +38,16 @@
 #
 # The reclaim-local-pvs-cnpg runbook handles PV recovery when the node
 # rejoins the cluster.
+#
+# FORCE_UNREACHABLE=true (exported by CWE when the operator force-deletes an
+# unreachable node) switches the runbook to best-effort. Every hard failure
+# below is a wait on the target node: its pods will not terminate because the
+# kubelet is gone, so the PVC-protection finalizer never clears, the primary
+# cannot be switched over gracefully, and the cluster never reports the ready
+# instance the dead node used to hold. Blocking teardown on those waits is
+# what the force-delete path exists to break out of, so in force mode they
+# degrade to warnings and pods are deleted with --force --grace-period=0.
+# CWE's own force-drain removes whatever this runbook leaves behind.
 
 set -euo pipefail
 
@@ -47,6 +57,23 @@ CNPG_NAMESPACES=("cnpg-cloud" "cnpg-temporal" "cnpg-site")
 SWITCHOVER_TIMEOUT="${SWITCHOVER_TIMEOUT:-120}"
 POD_DELETE_TIMEOUT="${POD_DELETE_TIMEOUT:-120}"
 HEALTHY_TIMEOUT="${HEALTHY_TIMEOUT:-300}"
+FORCE_UNREACHABLE="${FORCE_UNREACHABLE:-false}"
+
+# abort_unless_forced fails the eviction with the given message, unless the
+# operator declared the node unreachable — then it warns and returns non-zero
+# so the caller can skip the rest of the namespace. Callers must guard the
+# call (`abort_unless_forced "..." || return 0`) because of `set -e`.
+abort_unless_forced() {
+  local msg=$1
+
+  if [[ "$FORCE_UNREACHABLE" == "true" ]]; then
+    echo "Warning: $msg; continuing due to FORCE_UNREACHABLE." >&2
+    return 1
+  fi
+
+  echo "Error: $msg" >&2
+  exit 1
+}
 
 main() {
   local node_name=$1
@@ -356,7 +383,7 @@ evict_namespace() {
     # Failing here ensures CWE retries until recovery completes rather than
     # proceeding with the teardown while databases are degraded.
     if [[ -n "$effective_instances" ]]; then
-      wait_for_healthy "$ns" "$cluster_name" "$effective_instances"
+      wait_for_healthy "$ns" "$cluster_name" "$effective_instances" || return 0
     fi
     return
   fi
@@ -372,8 +399,7 @@ evict_namespace() {
     -o jsonpath='{.status.readyInstances}' 2>/dev/null || echo "0")
 
   if [[ -z "$current_primary" || -z "$original_instances" ]]; then
-    echo "Error: could not read cluster status for $cluster_name in $ns" >&2
-    exit 1
+    abort_unless_forced "could not read cluster status for $cluster_name in $ns" || return 0
   fi
 
   # Verify the cluster is healthy before making changes. A degraded cluster
@@ -410,7 +436,7 @@ evict_namespace() {
     echo "Checking for stuck join jobs..."
 
     if cleanup_stuck_joins "$ns" "$cluster_name" "$node_name"; then
-      wait_for_healthy "$ns" "$cluster_name" "$effective_instances"
+      wait_for_healthy "$ns" "$cluster_name" "$effective_instances" || return 0
 
       # Re-read state after recovery.
       current_primary=$(kubectl get clusters.postgresql.cnpg.io "$cluster_name" -n "$ns" \
@@ -421,9 +447,8 @@ evict_namespace() {
       pod_count=$(echo "$pods_on_node" | wc -w | tr -d ' ')
       echo "After recovery: $pod_count pod(s) on $node_name in $ns: $pods_on_node"
     else
-      echo "Error: $cluster_name in $ns is not healthy and no stuck join jobs found." >&2
-      echo "Resolve the unhealthy cluster before removing this node." >&2
-      exit 1
+      abort_unless_forced "$cluster_name in $ns is not healthy and no stuck join jobs found;\
+ resolve the unhealthy cluster before removing this node" || return 0
     fi
   fi
   echo "Cluster $cluster_name in $ns is healthy ($ready_instances/$effective_instances ready)."
@@ -439,9 +464,8 @@ evict_namespace() {
     echo "All instances are on $node_name in $ns, moving one replica off..."
 
     if [[ $original_instances -lt 2 ]]; then
-      echo "Error: cannot evict single-instance cluster $cluster_name in $ns" >&2
-      echo "All instances are on the target node and there are no replicas to migrate." >&2
-      exit 1
+      abort_unless_forced "cannot evict single-instance cluster $cluster_name in $ns;\
+ all instances are on the target node and there are no replicas to migrate" || return 0
     fi
 
     # Pick a non-primary replica to move off the target node.
@@ -454,12 +478,11 @@ evict_namespace() {
     done
 
     if [[ -z "$replica_to_move" ]]; then
-      echo "Error: could not find a non-primary replica to move in $ns" >&2
-      exit 1
+      abort_unless_forced "could not find a non-primary replica to move in $ns" || return 0
     fi
 
-    force_delete_pods "$ns" "$cluster_name" "$node_name" "$replica_to_move"
-    wait_for_healthy "$ns" "$cluster_name" "$effective_instances"
+    force_delete_pods "$ns" "$cluster_name" "$node_name" "$replica_to_move" || return 0
+    wait_for_healthy "$ns" "$cluster_name" "$effective_instances" || return 0
 
     # Re-read state after migration.
     pods_on_node=$(get_pods_on_node "$ns" "$cluster_name" "$node_name")
@@ -481,7 +504,9 @@ evict_namespace() {
 
   if [[ "$primary_node" == "$node_name" ]]; then
     echo "Primary $current_primary in $ns is on target node, initiating switchover..."
-    switchover_primary "$ns" "$cluster_name" "$current_primary" "$node_name"
+    # In force mode a failed switchover is not fatal: the primary's node is gone,
+    # so CNPG's own failover is what will promote a replica.
+    switchover_primary "$ns" "$cluster_name" "$current_primary" "$node_name" || true
   else
     echo "Primary $current_primary in $ns is on $primary_node (not target node)."
   fi
@@ -496,8 +521,8 @@ evict_namespace() {
 
   # Force-delete all remaining pods on the target and their PVCs. The node
   # is cordoned so CNPG will recreate them on other available nodes.
-  force_delete_pods "$ns" "$cluster_name" "$node_name" "$pods_on_node"
-  wait_for_healthy "$ns" "$cluster_name" "$effective_instances"
+  force_delete_pods "$ns" "$cluster_name" "$node_name" "$pods_on_node" || return 0
+  wait_for_healthy "$ns" "$cluster_name" "$effective_instances" || return 0
 
   echo "Eviction complete for $ns."
 }
@@ -533,9 +558,19 @@ force_delete_pods() {
     done
   fi
 
+  # A graceful delete waits for the kubelet to confirm termination. On an
+  # unreachable node that confirmation never arrives: the pod object lingers in
+  # Terminating and keeps the PVC-protection finalizer set, so the PVC wait below
+  # can never be satisfied. --force removes the pod object from the API server
+  # without waiting for the kubelet, which releases the finalizer.
+  local -a delete_opts=(--grace-period=30 --wait=false)
+  if [[ "$FORCE_UNREACHABLE" == "true" ]]; then
+    delete_opts=(--force --grace-period=0 --wait=false)
+  fi
+
   echo "Deleting pods: $pods_to_delete"
   for pod in $pods_to_delete; do
-    kubectl delete pod "$pod" -n "$ns" --grace-period=30 --wait=false 2>/dev/null || true
+    kubectl delete pod "$pod" -n "$ns" "${delete_opts[@]}" 2>/dev/null || true
   done
 
   # Wait for PVCs to be fully removed (confirms pods terminated and
@@ -561,8 +596,7 @@ force_delete_pods() {
       elapsed=$((elapsed + 5))
     done
 
-    echo "Error: PVCs still exist after ${POD_DELETE_TIMEOUT}s in $ns: $remaining" >&2
-    exit 1
+    abort_unless_forced "PVCs still exist after ${POD_DELETE_TIMEOUT}s in $ns: $remaining" || return 1
   fi
 }
 
@@ -576,8 +610,7 @@ switchover_primary() {
   target_instance=$(get_pods_off_node "$ns" "$cluster_name" "$node_name" | awk '{print $1}')
 
   if [[ -z "$target_instance" ]]; then
-    echo "Error: no candidate instance for switchover in $ns" >&2
-    exit 1
+    abort_unless_forced "no candidate instance for switchover in $ns" || return 1
   fi
 
   echo "Switching primary from $current_primary to $target_instance in $ns..."
@@ -600,8 +633,7 @@ switchover_primary() {
     elapsed=$((elapsed + 5))
   done
 
-  echo "Error: switchover did not complete within ${SWITCHOVER_TIMEOUT}s for $ns" >&2
-  exit 1
+  abort_unless_forced "switchover did not complete within ${SWITCHOVER_TIMEOUT}s for $ns" || return 1
 }
 
 wait_for_healthy() {
@@ -626,8 +658,7 @@ wait_for_healthy() {
     elapsed=$((elapsed + 10))
   done
 
-  echo "Error: $cluster_name in $ns did not reach healthy state within ${HEALTHY_TIMEOUT}s" >&2
-  exit 1
+  abort_unless_forced "$cluster_name in $ns did not reach healthy state within ${HEALTHY_TIMEOUT}s" || return 1
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

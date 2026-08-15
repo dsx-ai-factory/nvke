@@ -19,7 +19,7 @@ GOBIN = $(shell go env GOPATH)/bin
 endif
 
 GOLANGCI_LINT_REPO	?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-GOLANGCI_LINT_VERSION	?= v2.7.2
+GOLANGCI_LINT_VERSION	?= v2.12.2
 
 # Image URL to use all building/pushing image targets
 IMG_NAME ?= nvcr.io/j7sbcjl3qgta/cloud-workflow-engine
@@ -49,11 +49,11 @@ help: ## Display this help.
 .PHONY: lint
 lint: ## Lint source files.
 	go install $(GOLANGCI_LINT_REPO)@$(GOLANGCI_LINT_VERSION)
-	$(GOBIN)/golangci-lint run --timeout 20m --max-same-issues 0 --max-issues-per-linter 0 ./...
+	$(GOBIN)/golangci-lint run --timeout 20m --concurrency 4 --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 .PHONY: license
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@v1.1.1 -f ./hack/boilerplate.addlicense.txt -ignore '.local/**' -ignore 'hack/**' -ignore 'profiles/osProfiles/**/testUserData.yaml' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'forge-vms/ui/vendor/**' -ignore 'forge-vms/test/integration/testutil/testdata/**' -ignore 'forge-vms/.dev/**' -ignore 'deploy/charts/**' .
+	go run github.com/google/addlicense@v1.1.1 -f ./hack/boilerplate.addlicense.txt -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'forge-vms/ui/vendor/**' -ignore 'forge-vms/test/integration/testutil/testdata/**' -ignore 'forge-vms/.dev/**' -ignore 'deploy/charts/**' .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check
@@ -89,8 +89,8 @@ build:
 
 .PHONY: fmt
 fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).
-	go run mvdan.cc/gofumpt@v0.9.2 -w -extra .
-	go run golang.org/x/tools/cmd/goimports@v0.36.0 -w -local github.com/NVIDIA/nke/controller .
+	go run mvdan.cc/gofumpt@v0.11.0 -w -extra .
+	go run golang.org/x/tools/cmd/goimports@v0.48.0 -w -local github.com/NVIDIA/nke/controller,gitlab-master.nvidia.com .
 
 .PHONY: test
 test: ## Execute unit tests (excludes integration tests).
@@ -138,6 +138,10 @@ test-e2e-capd-local: ## Bootstrap Colima and run all CAPD e2e tests with local C
 test-e2e-forge-vms: ## Run Forge VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="forge-vms && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
+.PHONY: test-e2e-forge-vms-os-profiles
+test-e2e-forge-vms-os-profiles: ## Run the opt-in Forge VMs OS profile provisioning matrix
+	$(MAKE) test-e2e E2E_TIMEOUT=6h ARGS='--label-filter="forge-vms && os-profiles"'
+
 .PHONY: e2e-gofail
 e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 	@bash -euo pipefail -c '\
@@ -151,7 +155,7 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 		go build -tags gofail -o "$(CWE_GOFAIL_E2E_WORKER_BINARY)" ./cmd/worker; \
 		TEMPORAL_CLI_DOWNLOAD_DIR="$(TEMPORAL_CLI_DOWNLOAD_DIR)" \
 			CWE_GOFAIL_E2E_WORKER_BINARY="$(CWE_GOFAIL_E2E_WORKER_BINARY)" \
-			go test -v -tags gofail ./e2e/gofail -run TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout -count=1; \
+			go test -v -tags gofail ./e2e/gofail -timeout 30m -count=1; \
 		cleanup; \
 		trap - EXIT; \
 		test -z "$$(find . -name "*.fail.go" -print)" \
@@ -237,3 +241,62 @@ run: ## Runs the worker.
 .PHONY: debug
 debug: ## Runs the worker with the delve debugger (attach on :12345).
 	dlv debug --headless --listen=:12345 ./cmd/worker/main.go
+
+GO_LICENSES_VERSION ?= v2.0.1
+# Installed into ./bin rather than the shared GOBIN so a stale global binary
+# cannot leak in — see the toolchain note below for why that matters.
+GO_LICENSES         ?= $(CURDIR)/bin/go-licenses
+
+# go-licenses embeds golang.org/x/tools/go/packages and must be built with the
+# SAME toolchain that `go list` runs inside this module. A module's `go`
+# directive can make Go switch toolchains (GOTOOLCHAIN=auto), and on a mismatch
+# go-licenses reports every stdlib package as "does not have module info" and
+# produces nothing at all — a failure that reads like a broken generator rather
+# than a stale binary. `go install pkg@version` deliberately ignores the current
+# module, so the toolchain has to be pinned explicitly rather than inherited.
+GO_TOOLCHAIN := $(shell go version | awk '{print $$3}')
+
+$(GO_LICENSES):
+	@echo "Installing go-licenses $(GO_LICENSES_VERSION) (toolchain $(GO_TOOLCHAIN))..."
+	@GOTOOLCHAIN=$(GO_TOOLCHAIN) GOBIN=$(CURDIR)/bin \
+		go install github.com/google/go-licenses/v2@$(GO_LICENSES_VERSION)
+
+# Permissive licenses approved for redistribution. Matches the allowlist used by
+# NVIDIA/aicr. A dependency introducing anything else - copyleft in particular -
+# fails the check and needs a conscious decision rather than silent acceptance.
+#
+# This is a local pre-flight, not the gate of record. CI enforces dependency
+# licenses in the security stage via the shared go-license-checks job
+# (nke/gitlab-ci-cd, templates/security/go-license-checks.gitlab-ci.yml), which
+# runs over ./... rather than just the shipped binary. The two differ in shape:
+# CI denies by license *type* (restricted, reciprocal, forbidden, unknown) while
+# this allows by license *name*, which is the stricter test on the packages it
+# covers. Both pass on the current dependency set. Run this before pushing to
+# catch a bad dependency without waiting for the pipeline.
+ALLOWED_LICENSES ?= MIT,BSD-2-Clause,BSD-3-Clause,Apache-2.0,ISC,Zlib
+
+.PHONY: license-policy-check
+license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses an approved license.
+	@echo "Checking dependency licenses against $(ALLOWED_LICENSES)..."
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker \
+		--allowed_licenses=$(ALLOWED_LICENSES) \
+		--ignore=$$(go list -m),gitlab-master.nvidia.com
+
+.PHONY: notices
+notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker binary.
+	@GO_LICENSES="$(GO_LICENSES)" ./hack/generate-notices
+
+# Not declared as depending on `notices`: the tracked-file gate below is cheap
+# and must run before spending minutes regenerating.
+.PHONY: notices-check
+notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date.
+	@# git diff reports nothing for an untracked path, so without this an
+	@# uncommitted or accidentally-removed notices file would pass silently.
+	@git ls-files --error-unmatch THIRD_PARTY_NOTICES.md > /dev/null 2>&1 \
+		|| { echo "THIRD_PARTY_NOTICES.md is not tracked by git. Run 'make notices' and commit it."; exit 1; }
+	@$(MAKE) --no-print-directory notices
+	@if ! git diff --exit-code -- THIRD_PARTY_NOTICES.md > /dev/null 2>&1; then \
+		echo "THIRD_PARTY_NOTICES.md is out of date. Please run 'make notices' locally and commit the changes."; \
+		git diff --name-only -- THIRD_PARTY_NOTICES.md; \
+		exit 1; \
+	fi

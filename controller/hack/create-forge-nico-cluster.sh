@@ -43,7 +43,6 @@ BODY=$(cat <<EOF
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "ovn-kubernetes",
   "etcdEncrypted": false,
-  "disableKubeVip": true,
   "nodePools": [
     {
       "name": "control-plane",

@@ -28,7 +28,27 @@ const (
 	ConstraintClustersNameUnique = "clusters_name_unique"
 )
 
-var ErrClusterNameNotUnique = errors.New("cluster name not unique")
+var (
+	ErrClusterNameNotUnique   = errors.New("cluster name not unique")
+	ErrMissingProviderPayload = errors.New("missing provider payload")
+)
+
+type ProviderType string
+
+const (
+	ProviderTypeNico ProviderType = "nico"
+	ProviderTypeCAPI ProviderType = "capi"
+)
+
+type NicoClusterProvider struct {
+	OrgID  string    `json:"org_id,omitempty"`
+	SiteID uuid.UUID `json:"site_id,omitempty"`
+	VpcID  uuid.UUID `json:"vpc_id,omitempty"`
+}
+
+type CAPIClusterProvider struct {
+	InfraCluster json.RawMessage `json:"infra_cluster,omitempty"`
+}
 
 type Cluster struct {
 	ID                    uuid.UUID `bun:"type:uuid,pk,default:gen_random_uuid()"`
@@ -47,7 +67,10 @@ type Cluster struct {
 	ServiceCIDR           string    `bun:"service_cidr,type:text,notnull,default:'10.96.0.0/12'"`
 	OIDCAuthEnabled       bool      `bun:"type:boolean,notnull,default:false"`
 
-	CapiInfraCluster json.RawMessage `bun:"type:jsonb,notnull,default:'{}'"`
+	CapiInfraCluster json.RawMessage      `bun:"type:jsonb,notnull,default:'{}'"`
+	ProviderType     ProviderType         `bun:"provider_type,type:text,notnull"`
+	Nico             *NicoClusterProvider `bun:"nico,type:jsonb"`
+	Capi             *CAPIClusterProvider `bun:"capi,type:jsonb"`
 
 	// ControlPlaneConfig keeps the API/business shape while persisting these
 	// fields as real DB columns on clusters (configuration_id, cp_desired_count,
@@ -59,51 +82,130 @@ type Cluster struct {
 	UpdatedAt  time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
 }
 
-// ControlPlaneConfigFromNodePool copies the legacy control-plane node pool row into ControlPlaneConfig.
+func (c *Cluster) NicoProvider() (NicoClusterProvider, error) {
+	if c.ProviderType != ProviderTypeNico {
+		return NicoClusterProvider{}, fmt.Errorf("cluster %s provider type is %q, not %q", c.ID, c.ProviderType, ProviderTypeNico)
+	}
+	if c.Nico == nil {
+		return NicoClusterProvider{}, fmt.Errorf("%w: cluster %s nico", ErrMissingProviderPayload, c.ID)
+	}
+	return *c.Nico, nil
+}
+
+func (c *Cluster) CAPIProvider() (CAPIClusterProvider, error) {
+	if c.ProviderType != ProviderTypeCAPI {
+		return CAPIClusterProvider{}, fmt.Errorf("cluster %s provider type is %q, not %q", c.ID, c.ProviderType, ProviderTypeCAPI)
+	}
+	if c.Capi == nil {
+		return CAPIClusterProvider{}, fmt.Errorf("%w: cluster %s capi", ErrMissingProviderPayload, c.ID)
+	}
+	return CAPIClusterProvider{
+		InfraCluster: cloneRawMessage(c.Capi.InfraCluster),
+	}, nil
+}
+
+func (c *Cluster) SetNicoProvider(provider NicoClusterProvider) {
+	c.ProviderType = ProviderTypeNico
+	c.Nico = &provider
+	c.Capi = nil
+	c.OrgID = provider.OrgID
+	c.SiteID = provider.SiteID
+	c.VpcID = provider.VpcID
+}
+
+func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
+	c.ProviderType = ProviderTypeCAPI
+	c.Nico = nil
+	c.Capi = &CAPIClusterProvider{
+		InfraCluster: cloneRawMessage(provider.InfraCluster),
+	}
+	c.CapiInfraCluster = cloneRawMessage(provider.InfraCluster)
+}
+
+func (c *Cluster) SyncProviderFields() {
+	c.Nico = nil
+	c.Capi = nil
+	if c.SiteID == uuid.Nil {
+		c.ProviderType = ProviderTypeCAPI
+		c.Capi = &CAPIClusterProvider{
+			InfraCluster: cloneRawMessage(c.CapiInfraCluster),
+		}
+		return
+	}
+
+	c.ProviderType = ProviderTypeNico
+	c.Nico = &NicoClusterProvider{
+		OrgID:  c.OrgID,
+		SiteID: c.SiteID,
+		VpcID:  c.VpcID,
+	}
+}
+
+func cloneRawMessage(raw json.RawMessage) json.RawMessage {
+	if raw == nil {
+		return nil
+	}
+	return append(json.RawMessage(nil), raw...)
+}
+
+// ControlPlaneConfigFromNodePool copies a control-plane node pool into ControlPlaneConfig.
+// Provider payloads (Nico/CAPI) are stored in the spec via SetNico/SetCapi, which also
+// keeps the legacy flat columns in sync.
 // Returns nil if np is nil or not a control-plane pool.
 func ControlPlaneConfigFromNodePool(np *NodePool) *ControlPlaneConfig {
 	if np == nil || !np.ControlPlane {
 		return nil
 	}
-	infraPrefs := []json.RawMessage{}
-	if len(np.CapiInfraMachineTemplate) > 0 {
-		infraPrefs = append(infraPrefs, append(json.RawMessage(nil), np.CapiInfraMachineTemplate...))
-	}
-	instPref := orderedInstanceTypePreferences([]NodePool{*np})
-	files := make([]CloudInitFile, len(np.CapiBootstrapFiles))
-	copy(files, np.CapiBootstrapFiles)
-	pre := make([]string, len(np.CapiPreKubeadmCommands))
-	copy(pre, np.CapiPreKubeadmCommands)
-	subnets := make([]uuid.UUID, len(np.SubnetIDs))
-	copy(subnets, np.SubnetIDs)
-	prefixes := make([]uuid.UUID, len(np.VpcPrefixIDs))
-	copy(prefixes, np.VpcPrefixIDs)
-	keys := make([]uuid.UUID, len(np.SSHKeyGroupIDs))
-	copy(keys, np.SSHKeyGroupIDs)
+
 	labels := make([]string, len(np.NodeLabels))
 	copy(labels, np.NodeLabels)
 
-	return &ControlPlaneConfig{
+	cfg := &ControlPlaneConfig{
 		DesiredCount: np.DesiredCount,
 		ControlPlaneConfigSpec: ControlPlaneConfigSpec{
-			InstanceTypePreference:          instPref,
-			InfraMachineTemplatePreferences: infraPrefs,
-			SubnetIDs:                       subnets,
-			VpcPrefixIDs:                    prefixes,
-			OSProfile:                       np.OSProfile,
-			DiskSelectionStrategy:           np.DiskSelectionStrategy,
-			ConfigProfile:                   np.ConfigProfile,
-			SystemReservedMemory:            np.SystemReservedMemory,
-			SSHKeyGroupIDs:                  keys,
-			NodeLabels:                      labels,
-			TeleportEnabled:                 np.TeleportEnabled,
-			ProvisioningMonitorDisabled:     np.ProvisioningMonitorDisabled,
-			KubernetesVersion:               np.KubernetesVersion,
-			CapiSpireAttestationMethod:      np.CapiSpireAttestationMethod,
-			CapiBootstrapFiles:              files,
-			CapiPreKubeadmCommands:          pre,
+			NodeLabels:                  labels,
+			SystemReservedMemory:        np.SystemReservedMemory,
+			KubeReservedMemory:          np.KubeReservedMemory,
+			TeleportEnabled:             np.TeleportEnabled,
+			ProvisioningMonitorDisabled: np.ProvisioningMonitorDisabled,
+			KubernetesVersion:           np.KubernetesVersion,
 		},
 	}
+
+	if np.Nico != nil {
+		nicoNodePoolProvider, err := np.NicoProvider()
+		if err != nil {
+			return nil
+		}
+		cfg.SetNico(NicoControlPlaneProvider{
+			InstanceTypePreference: orderedInstanceTypePreferences([]NodePool{*np}),
+			SubnetIDs:              nicoNodePoolProvider.SubnetIDs,
+			VpcPrefixIDs:           nicoNodePoolProvider.VpcPrefixIDs,
+			OSProfile:              nicoNodePoolProvider.OSProfile,
+			DiskSelectionStrategy:  nicoNodePoolProvider.DiskSelectionStrategy,
+			ConfigProfile:          nicoNodePoolProvider.ConfigProfile,
+			SSHKeyGroupIDs:         nicoNodePoolProvider.SSHKeyGroupIDs,
+		})
+	}
+
+	if np.Capi != nil {
+		capiNodePoolProvider, err := np.CAPIProvider()
+		if err != nil {
+			return nil
+		}
+		infraPrefs := []json.RawMessage{}
+		if len(capiNodePoolProvider.InfraMachineTemplate) > 0 {
+			infraPrefs = append(infraPrefs, append(json.RawMessage(nil), capiNodePoolProvider.InfraMachineTemplate...))
+		}
+		cfg.SetCapi(CAPIControlPlaneProvider{
+			InfraMachineTemplatePreferences: infraPrefs,
+			SpireAttestationMethod:          capiNodePoolProvider.SpireAttestationMethod,
+			BootstrapFiles:                  capiNodePoolProvider.BootstrapFiles,
+			PreKubeadmCommands:              capiNodePoolProvider.PreKubeadmCommands,
+		})
+	}
+
+	return cfg
 }
 
 // MergeControlPlaneConfigFromNodePools builds one cluster-level control_plane_config from every
@@ -149,10 +251,26 @@ func MergeControlPlaneConfigFromNodePools(pools []NodePool) *ControlPlaneConfig 
 		desired += p.DesiredCount
 		tele = tele || p.TeleportEnabled
 		provisioningMonitorDisabled = provisioningMonitorDisabled || p.ProvisioningMonitorDisabled
-		infraPref = appendUniqueManifests(infraPref, infraSeen, p.CapiInfraMachineTemplate)
-		subnets = appendUniqueUUIDs(subnets, subSeen, p.SubnetIDs)
-		vpcPrefixes = appendUniqueUUIDs(vpcPrefixes, pfxSeen, p.VpcPrefixIDs)
-		sshKeys = appendUniqueUUIDs(sshKeys, keySeen, p.SSHKeyGroupIDs)
+
+		var infraTemplate json.RawMessage
+		if p.Capi != nil {
+			if capiNodePoolProvider, err := p.CAPIProvider(); err == nil {
+				infraTemplate = capiNodePoolProvider.InfraMachineTemplate
+			}
+		}
+		infraPref = appendUniqueManifests(infraPref, infraSeen, infraTemplate)
+
+		var subnetIDs, vpcPrefixIDs, sshKeyGroupIDs []uuid.UUID
+		if p.Nico != nil {
+			if nicoNodePoolProvider, err := p.NicoProvider(); err == nil {
+				subnetIDs = nicoNodePoolProvider.SubnetIDs
+				vpcPrefixIDs = nicoNodePoolProvider.VpcPrefixIDs
+				sshKeyGroupIDs = nicoNodePoolProvider.SSHKeyGroupIDs
+			}
+		}
+		subnets = appendUniqueUUIDs(subnets, subSeen, subnetIDs)
+		vpcPrefixes = appendUniqueUUIDs(vpcPrefixes, pfxSeen, vpcPrefixIDs)
+		sshKeys = appendUniqueUUIDs(sshKeys, keySeen, sshKeyGroupIDs)
 		for _, l := range p.NodeLabels {
 			if _, ok := labelSeen[l]; !ok {
 				labelSeen[l] = struct{}{}
@@ -167,16 +285,33 @@ func MergeControlPlaneConfigFromNodePools(pools []NodePool) *ControlPlaneConfig 
 	}
 
 	cfg.DesiredCount = desired
-	cfg.InstanceTypePreference = instPref
-	cfg.InfraMachineTemplatePreferences = infraPref
-	cfg.SubnetIDs = subnets
-	cfg.VpcPrefixIDs = vpcPrefixes
-	cfg.SSHKeyGroupIDs = sshKeys
 	cfg.NodeLabels = labels
 	cfg.TeleportEnabled = tele
 	cfg.ProvisioningMonitorDisabled = provisioningMonitorDisabled
 	if k8sVer != "" {
 		cfg.KubernetesVersion = k8sVer
+	}
+
+	// Rebuild provider payloads with aggregated list fields, preserving scalar
+	// fields (OSProfile, ConfigProfile, etc.) already set from the primary pool.
+	if cfg.Nico != nil {
+		cfg.SetNico(NicoControlPlaneProvider{
+			InstanceTypePreference: instPref,
+			SubnetIDs:              subnets,
+			VpcPrefixIDs:           vpcPrefixes,
+			SSHKeyGroupIDs:         sshKeys,
+			OSProfile:              cfg.Nico.OSProfile,
+			DiskSelectionStrategy:  cfg.Nico.DiskSelectionStrategy,
+			ConfigProfile:          cfg.Nico.ConfigProfile,
+		})
+	}
+	if cfg.Capi != nil {
+		cfg.SetCapi(CAPIControlPlaneProvider{
+			InfraMachineTemplatePreferences: infraPref,
+			SpireAttestationMethod:          cfg.Capi.SpireAttestationMethod,
+			BootstrapFiles:                  cfg.Capi.BootstrapFiles,
+			PreKubeadmCommands:              cfg.Capi.PreKubeadmCommands,
+		})
 	}
 
 	return cfg
@@ -208,18 +343,23 @@ func appendUniqueManifests(dst []json.RawMessage, seen map[string]struct{}, raw 
 func orderedInstanceTypePreferences(pools []NodePool) []uuid.UUID {
 	// Pools are passed in newest-first order. Traverse in reverse so the oldest
 	// control-plane pool has the highest instance type preference.
+	// Only Nico pools carry an InstanceTypeID; CAPI pools are skipped.
 	seen := make(map[uuid.UUID]struct{})
 	instPref := make([]uuid.UUID, 0, len(pools))
 	for i := len(pools) - 1; i >= 0; i-- {
 		p := pools[i]
-		if !p.ControlPlane || p.InstanceTypeID == uuid.Nil {
+		if !p.ControlPlane || p.Nico == nil {
 			continue
 		}
-		if _, ok := seen[p.InstanceTypeID]; ok {
+		nicoNodePoolProvider, err := p.NicoProvider()
+		if err != nil || nicoNodePoolProvider.InstanceTypeID == uuid.Nil {
 			continue
 		}
-		seen[p.InstanceTypeID] = struct{}{}
-		instPref = append(instPref, p.InstanceTypeID)
+		if _, ok := seen[nicoNodePoolProvider.InstanceTypeID]; ok {
+			continue
+		}
+		seen[nicoNodePoolProvider.InstanceTypeID] = struct{}{}
+		instPref = append(instPref, nicoNodePoolProvider.InstanceTypeID)
 	}
 	return instPref
 }
@@ -378,6 +518,7 @@ func (q *queriesImpl) GetClusterForUpdate(ctx context.Context, id uuid.UUID) (Cl
 }
 
 func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
+	cluster.SyncProviderFields()
 	_, err := q.db.NewInsert().Model(cluster).Exec(ctx)
 	if err != nil {
 		if isViolationOfConstraint(err, ConstraintClustersNameUnique) {
@@ -389,6 +530,7 @@ func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Clus
 }
 
 func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
+	cluster.SyncProviderFields()
 	res, err := q.db.NewUpdate().Model(cluster).WherePK().Exec(ctx)
 	if err != nil {
 		return Cluster{}, err
@@ -399,6 +541,28 @@ func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Clus
 func (q *queriesImpl) DeleteCluster(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.NewDelete().Model(&Cluster{}).Where("id = ?", id).Exec(ctx)
 	return err
+}
+
+func (q *queriesImpl) providerTypeForCluster(ctx context.Context, clusterID uuid.UUID) (ProviderType, error) {
+	var cluster Cluster
+	err := q.db.NewSelect().
+		Model(&cluster).
+		Column("provider_type", "site_id").
+		Where("id = ?", clusterID).
+		Scan(ctx)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if cluster.ProviderType != "" {
+		return cluster.ProviderType, nil
+	}
+	if cluster.SiteID == uuid.Nil {
+		return ProviderTypeCAPI, nil
+	}
+	return ProviderTypeNico, nil
 }
 
 func (q *queriesImpl) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error {

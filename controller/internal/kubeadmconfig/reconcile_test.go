@@ -102,3 +102,62 @@ func TestEnsureOIDCInClusterConfiguration_Errors(t *testing.T) {
 		assert.False(t, changed)
 	})
 }
+
+func TestValidateAndEnsureEncryptionInClusterConfiguration(t *testing.T) {
+	const base = `apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+apiServer:
+  extraArgs:
+    profiling: "false"
+`
+	c := fake.NewClientBuilder().WithObjects(kubeadmConfigCM(base)).Build()
+
+	require.NoError(t, ValidateEncryptionInClusterConfiguration(context.Background(), c))
+	assert.Equal(t, base, readClusterConfig(t, c), "validation must not update the ConfigMap")
+
+	changed, err := EnsureEncryptionInClusterConfiguration(context.Background(), c)
+	require.NoError(t, err)
+	assert.True(t, changed)
+
+	merged, _, err := MergeEncryptionIntoClusterConfiguration([]byte(base))
+	require.NoError(t, err)
+	assert.Equal(t, string(merged), readClusterConfig(t, c))
+
+	changed, err = EnsureEncryptionInClusterConfiguration(context.Background(), c)
+	require.NoError(t, err)
+	assert.False(t, changed)
+}
+
+func TestEtcdQuotaInClusterConfiguration(t *testing.T) {
+	const config = `apiVersion: kubeadm.k8s.io/v1beta4
+kind: ClusterConfiguration
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+    - name: quota-backend-bytes
+      value: "17179869184"
+`
+	c := fake.NewClientBuilder().WithObjects(kubeadmConfigCM(config)).Build()
+
+	quota, err := EtcdQuotaInClusterConfiguration(context.Background(), c)
+	require.NoError(t, err)
+	assert.Equal(t, EtcdQuotaBackendBytes, quota)
+}
+
+func TestEnsureKubernetesVersionInClusterConfiguration(t *testing.T) {
+	const config = `apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+kubernetesVersion: v1.30.9
+`
+	c := fake.NewClientBuilder().WithObjects(kubeadmConfigCM(config)).Build()
+
+	changed, err := EnsureKubernetesVersionInClusterConfiguration(context.Background(), c, "1.31.4")
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Contains(t, readClusterConfig(t, c), "kubernetesVersion: v1.31.4")
+
+	changed, err = EnsureKubernetesVersionInClusterConfiguration(context.Background(), c, "v1.31.4")
+	require.NoError(t, err)
+	assert.False(t, changed)
+}

@@ -93,6 +93,10 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 	if len(capiInfraMachineTemplate) > 0 {
 		capiInfraMachineTemplatePtr = &capiInfraMachineTemplate
 	}
+	var kubeReservedMemory *string
+	if dbNodeSet.KubeReservedMemory != "" {
+		kubeReservedMemory = &dbNodeSet.KubeReservedMemory
+	}
 
 	return api.NodeSet{
 		ID:                    dbNodeSet.ID,
@@ -101,6 +105,7 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 		OSProfile:             dbNodeSet.OSProfile,
 		ConfigProfile:         dbNodeSet.ConfigProfile,
 		SystemReservedMemory:  dbNodeSet.SystemReservedMemory,
+		KubeReservedMemory:    kubeReservedMemory,
 		KubernetesVersion:     dbNodeSet.KubernetesVersion,
 		TeleportEnabled:       &dbNodeSet.TeleportEnabled,
 		DiskSelectionStrategy: api.DiskSelectionStrategy(dbNodeSet.DiskSelectionStrategy),

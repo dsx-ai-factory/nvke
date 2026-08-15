@@ -68,7 +68,19 @@ func (c *Controller) Reconcile(ctx context.Context, site db.Site) error {
 
 func (c *Controller) reconcileClusterInTransaction(ctx context.Context, cluster db.Cluster) error {
 	return c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		// Re-read under a row lock: the cluster was listed outside any transaction,
+		// so the reconciler could otherwise act on a stale snapshot and race the
+		// teardown workflow (e.g. re-provision CP nodes for a cluster being deleted).
+		// GetClusterForUpdate refreshes the snapshot and serializes against teardown
+		// for the duration of this transaction.
+		lockedCluster, err := tx.GetClusterForUpdate(ctx, cluster.ID)
+		if err != nil {
+			return fmt.Errorf("locking cluster %s for reconcile: %w", cluster.ID, err)
+		}
+		if lockedCluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
+			return nil
+		}
 		reconciler := newReconciler(c.cfg, c.logger, tx, c.cweTemporalClient)
-		return reconciler.reconcile(ctx, cluster)
+		return reconciler.reconcile(ctx, lockedCluster)
 	})
 }

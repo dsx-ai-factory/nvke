@@ -92,6 +92,13 @@ type Config struct {
 	// This can act as an emergency switch to disable node health checks
 	NodeHealthCheckDisabled bool `env:"NODE_HEALTH_CHECK_DISABLED" default:"false"`
 
+	// AllowEtcdSafetyOverrides gates the dangerous etcd member-removal safety
+	// overrides (allowQuorumLoss / allowSingleVoter) on the DeleteNode API. It is
+	// disabled by default so production site controllers reject these overrides;
+	// enable it on development site controllers that need manual single-node
+	// control-plane rotation (NKX-13160).
+	AllowEtcdSafetyOverrides bool `env:"ALLOW_ETCD_SAFETY_OVERRIDES" default:"false"`
+
 	// NodeHealthCheckTimeout is the timeout for a cluster's node health check reconcile
 	NodeHealthCheckTimeout time.Duration `env:"NODE_HEALTH_CHECK_TIMEOUT" default:"2m"`
 
@@ -257,6 +264,17 @@ type Config struct {
 	// Requires EnableCapi=true.
 	EnableForgeCapi bool `env:"ENABLE_FORGE_CAPI" default:"false"`
 
+	// LocalDevForceDockerMachineBootstrap forces every node through the
+	// DockerMachine bootstrap/preflight + container-mode kubeadm contract
+	// (the /run/cluster-api/bootstrap-success.complete sentinel) regardless of
+	// its CAPI infra machine template.
+	//
+	// LOCAL-DEV ONLY: the local nico-mock flow provisions nodes as bare Docker
+	// containers with no real cloud-init, so the normal cloud-init-based
+	// bootstrap never signals completion. This flag must NEVER be set in a real
+	// environment; doing so would misroute production nodes to the DinD contract.
+	LocalDevForceDockerMachineBootstrap bool `env:"LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP" default:"false"`
+
 	// ProvisionControlPlaneWithControlPlaneController routes control-plane node
 	// provisioning through the control-plane controller, which creates no-nodepool
 	// control-plane nodes. When enabled, the node set controller stops creating
@@ -267,14 +285,6 @@ type Config struct {
 
 	// PodNamespace is the namespace the CWE worker runs in.
 	PodNamespace string `env:"POD_NAMESPACE" default:"cloud-workflow-engine"`
-
-	// EtcdEncryptionKeyMigrationDisabled disables migration of legacy Kubernetes
-	// API encryption-at-rest key Secrets.
-	EtcdEncryptionKeyMigrationDisabled bool `env:"ETCD_ENCRYPTION_KEY_MIGRATION_DISABLED" default:"false"`
-
-	// EtcdEncryptionKeyLegacyNamespace is the namespace containing legacy
-	// Kubernetes API encryption-at-rest key Secrets.
-	EtcdEncryptionKeyLegacyNamespace string `env:"ETCD_ENCRYPTION_KEY_LEGACY_NAMESPACE"`
 
 	// KubeadmImageRepository is the OCI registry kubeadm uses for control-plane
 	// component images. Set KUBEADM_IMAGE_REPOSITORY to redirect to a local mirror

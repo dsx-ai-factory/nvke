@@ -63,6 +63,13 @@ func teardownCluster(ctx workflow.Context, input TeardownClusterInput) error {
 		return fmt.Errorf("failed to teardown worker nodes: %w", err)
 	}
 
+	// Control-plane-controller-managed CP nodes aren't owned by a node pool, so
+	// teardownNodePools misses them. Delete them before DeleteCluster or the nodes
+	// foreign key blocks cluster deletion and the workflow retries forever.
+	if err := teardownControlPlaneNodes(ctx, input.ClusterID); err != nil {
+		return fmt.Errorf("failed to teardown control-plane nodes: %w", err)
+	}
+
 	if err := deleteEtcdEncryptionKeySecret(ctx, input.ClusterID); err != nil {
 		return fmt.Errorf("failed to delete etcd encryption key secret: %w", err)
 	}
@@ -147,6 +154,44 @@ func teardownNodePools(ctx workflow.Context, clusterID uuid.UUID) error {
 		},
 	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to monitor node pools deletion: %w", err)
+	}
+
+	return nil
+}
+
+func teardownControlPlaneNodes(ctx workflow.Context, clusterID uuid.UUID) error {
+	var a *activities.Activities
+
+	if err := workflow.ExecuteActivity(
+		withDBOptions(ctx),
+		a.TriggerClusterTeardownControlPlaneNodes,
+		activities.TriggerClusterTeardownControlPlaneNodesInput{
+			ClusterID:                       clusterID,
+			ClusterDeletingConditionMessage: "Tearing down control-plane nodes",
+		},
+	).Get(ctx, nil); err != nil {
+		return fmt.Errorf("failed to trigger teardown of cluster control-plane nodes: %w", err)
+	}
+
+	// Monitor the database until all cluster-level control-plane nodes are deleted.
+	waitOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: 20 * time.Minute,
+		HeartbeatTimeout:    2 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: time.Second,
+			MaximumInterval: time.Minute,
+			MaximumAttempts: 0,
+		},
+	}
+	if err := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, waitOptions),
+		a.WaitForClusterControlPlaneNodesDeleted,
+		activities.WaitForClusterControlPlaneNodesDeletedInput{
+			ClusterID:                       clusterID,
+			ClusterDeletingConditionMessage: "Waiting for control-plane nodes to be deleted",
+		},
+	).Get(ctx, nil); err != nil {
+		return fmt.Errorf("failed to monitor control-plane nodes deletion: %w", err)
 	}
 
 	return nil

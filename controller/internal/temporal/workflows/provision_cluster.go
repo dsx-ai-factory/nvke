@@ -23,6 +23,12 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
+const (
+	provisioningCompleted = "Provisioning completed"
+	removeEtcdMember      = "remove-etcd-member"
+	unknownValue          = "unknown"
+)
+
 type ProvisionClusterInput struct {
 	ClusterID uuid.UUID
 }
@@ -256,7 +262,6 @@ func installKubeLocalDNS(ctx workflow.Context, clusterID uuid.UUID) error {
 
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 10 * time.Minute,
-		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval: 1 * time.Minute,
 			MaximumInterval: 5 * time.Minute,
@@ -266,11 +271,9 @@ func installKubeLocalDNS(ctx workflow.Context, clusterID uuid.UUID) error {
 
 	if err := workflow.ExecuteActivity(
 		workflow.WithActivityOptions(ctx, activityOptions),
-		a.ExecuteClusterRunbookHook,
-		activities.ExecuteClusterRunbookHookInput{
+		a.InstallKubeLocalDNS,
+		activities.InstallKubeLocalDNSInput{
 			ClusterID:                           clusterID,
-			HookPhase:                           "post-create",
-			RunbookName:                         "install-kube-local-dns",
 			ClusterProvisioningConditionMessage: "Installing kube-local DNS",
 		},
 	).Get(ctx, nil); err != nil {
@@ -302,7 +305,7 @@ func markClusterAsProvisioned(ctx workflow.Context, clusterID uuid.UUID) error {
 		Conditions: activities.ClusterConditions{
 			Provisioning: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusFalse,
-				Message: "Provisioning completed",
+				Message: provisioningCompleted,
 			},
 			Provisioned: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusTrue,

@@ -9,9 +9,11 @@ We use Flox to manage repo-scoped command line tools such as `go`, `make`, `kind
 brew install flox colima
 ```
 
+The supported Flox CLI version is pinned in `.flox-cli-version`. If your installed version differs, install the pinned release using the [official Flox installation instructions](https://flox.dev/docs/install-flox/install). The direnv integration refuses to auto-activate a different version so it cannot migrate tracked environment files unexpectedly.
+
 Then activate the Flox environment (this changes your `PATH` automatically, just within that terminal session):
 ```bash
-flox activate
+test "$(flox --version)" = "$(cat .flox-cli-version)" && flox activate
 ```
 
 You'll want to ensure Flox is activated before running CLI commands related to this repo so you're using the pinned tool versions from this repository instead of whatever happens to be installed globally.
@@ -131,7 +133,7 @@ make capd-up
 # required for Forge/NGC-backed operations
 export FWE_API_KEY=${NGC_API_KEY}
 
-# optional: copy the committed defaults and edit if you want overrides
+# required: copy the template and fill in the credentials it declares
 cp .env.tilt.example .env.tilt
 
 tilt up
@@ -140,8 +142,10 @@ tilt up
 - Tilt only runs against the expected Kind context (`kind-${KIND_CLUSTER_NAME}` or the current `kind-*` context if `KIND_CLUSTER_NAME` is unset).
 - Plain `tilt up` keeps the default CAPD-oriented provider set.
 - If you want to enable NICo for the local dev flow, set `providers` in `tilt_config.json` to include `"capi_core"` and `"nico"`. This is also the local setup that enables the mock-backed Forge cluster path. Tilt expects `cluster-api-provider-nico` at `../cluster-api-provider-nico` by default. Override with `NICO_PROVIDER_REPO_DIR` if needed.
+- The `forge-console` provider lives in [nke/forge-console](https://gitlab-master.nvidia.com/nke/forge-console). Clone it as a sibling of this repo (`../forge-console`), set `FORGE_CONSOLE_DIR`, or pass `{"forge-console": "/path/to/forge-console"}` in `providers`. Image/chart publish and site-deploy bumps happen from that repo, not from CWE.
 - Tilt no longer hard-requires `FWE_API_KEY` just to start. When NICo is enabled and `FWE_API_KEY` is unset, the NICo provider forces Forge `test` mode for local development.
 - `.env.tilt` configures in-cluster CWE env overrides. Keep host-local settings in `.env.local`.
+- `DGXC_TENANT_USER`, `DGXC_TENANT_PASSWORD`, `CNPG_SUPERUSER_PASSWORD`, `CNPG_CLOUD_PASSWORD`, and `CNPG_TEMPORAL_PASSWORD` have no defaults — set them in `.env.tilt` or export them, or `tilt up` fails with the list of what is missing. `CNPG_SUPERUSER_PASSWORD` is what the local postgres chart is installed with, so changing it after the first `tilt up` requires deleting the postgres PVC.
 - Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
 - CWE defaults to `SPIRE_SERVER_ADDRESS=host.docker.internal` and `SPIRE_SERVER_PORT=30440`. On Linux Docker, if `host.docker.internal` is not available, override `SPIRE_SERVER_ADDRESS` in `.env.tilt` to your host's gateway IP (for example: `ip -4 route show default | awk '{print $3}'`).
 

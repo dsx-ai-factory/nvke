@@ -44,8 +44,6 @@ const (
 )
 
 func TestResources_ApplyClusterScaffold(t *testing.T) {
-	nicoClusterManifest := testNicoClusterManifest(t)
-
 	type parameters struct {
 		cluster         db.Cluster
 		wantNicoCluster bool
@@ -53,7 +51,7 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 
 	tests := map[string]parameters{
 		"applies namespace CAPI cluster and NicoCluster": {
-			cluster:         testCluster(nicoClusterManifest),
+			cluster:         testCluster(),
 			wantNicoCluster: true,
 		},
 	}
@@ -78,9 +76,56 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 			assert.Equal(t, params.cluster.Name, clusterObj.Spec.InfrastructureRef.Name)
 
 			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Name: namespace}, &corev1.Namespace{}))
-			assert.Equal(t, params.wantNicoCluster, hasNicoCluster(ctx, t, k8sClient, namespace, params.cluster.Name))
+			assert.Equal(t, params.wantNicoCluster, hasNicoCluster(ctx, t, k8sClient, namespace, params.cluster.Name, params.cluster.Nico.SiteID.String()))
 		})
 	}
+}
+
+func TestResources_ClusterScaffoldManifest(t *testing.T) {
+	t.Run("capi provider uses provider payload", func(t *testing.T) {
+		want := json.RawMessage(`{"kind":"ForgeCluster"}`)
+		cluster := db.Cluster{
+			ID:               uuid.New(),
+			ProviderType:     db.ProviderTypeCAPI,
+			Capi:             &db.CAPIClusterProvider{InfraCluster: want},
+			CapiInfraCluster: json.RawMessage(`{"kind":"LegacyStale"}`),
+		}
+
+		got, err := capi.ClusterScaffoldManifest(cluster)
+		require.NoError(t, err)
+		require.JSONEq(t, string(want), string(got))
+	})
+
+	t.Run("nico provider builds NicoCluster manifest from provider payload", func(t *testing.T) {
+		siteID := uuid.New()
+		cluster := db.Cluster{
+			ID:               uuid.New(),
+			ProviderType:     db.ProviderTypeNico,
+			Nico:             &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: uuid.New()},
+			CapiInfraCluster: json.RawMessage(`{"kind":"LegacyStale"}`),
+		}
+
+		got, err := capi.ClusterScaffoldManifest(cluster)
+		require.NoError(t, err)
+
+		obj, err := capi.ParseManifest(got)
+		require.NoError(t, err)
+		assert.Equal(t, nicov1.GroupVersion.String(), obj.GetAPIVersion())
+		assert.Equal(t, testNicoClusterKind, obj.GetKind())
+		gotSiteID, found, err := unstructured.NestedString(obj.Object, "spec", "siteID")
+		require.NoError(t, err)
+		require.True(t, found)
+		assert.Equal(t, siteID.String(), gotSiteID)
+	})
+
+	t.Run("unsupported provider errors", func(t *testing.T) {
+		_, err := capi.ClusterScaffoldManifest(db.Cluster{
+			ID:           uuid.New(),
+			ProviderType: db.ProviderType("unknown"),
+		})
+		require.Error(t, err)
+		require.Contains(t, err.Error(), "unsupported provider type")
+	})
 }
 
 func TestIsDockerMachineTemplate(t *testing.T) {
@@ -117,8 +162,6 @@ func TestIsDockerMachineTemplate(t *testing.T) {
 }
 
 func TestResources_ApplyClusterKubeconfigSecret(t *testing.T) {
-	nicoClusterManifest := testNicoClusterManifest(t)
-
 	type parameters struct {
 		cluster            db.Cluster
 		existingObjects    []client.Object
@@ -127,7 +170,7 @@ func TestResources_ApplyClusterKubeconfigSecret(t *testing.T) {
 		wantKubeconfigData []byte
 	}
 
-	cluster := testCluster(nicoClusterManifest)
+	cluster := testCluster()
 	namespace := capi.ClusterNamespace(cluster.Name)
 
 	tests := map[string]parameters{
@@ -246,6 +289,19 @@ func TestResources_ParseManifest(t *testing.T) {
 
 func TestProvisioning_ShouldUseCAPIForNodeProvisioning(t *testing.T) {
 	siteID := uuid.New()
+	vpcID := uuid.New()
+	nicoCluster := db.Cluster{
+		OrgID:        "org-1",
+		SiteID:       siteID,
+		VpcID:        vpcID,
+		ProviderType: db.ProviderTypeNico,
+		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
+	}
+	capiCluster := db.Cluster{
+		SiteID:       uuid.Nil,
+		ProviderType: db.ProviderTypeCAPI,
+		Capi:         &db.CAPIClusterProvider{},
+	}
 
 	type parameters struct {
 		enableForgeCapi bool
@@ -254,18 +310,22 @@ func TestProvisioning_ShouldUseCAPIForNodeProvisioning(t *testing.T) {
 	}
 
 	tests := map[string]parameters{
-		"uses template-less forge CAPI when flag is enabled for forge site cluster": {
+		"uses CAPI path when flag is enabled for nico cluster": {
 			enableForgeCapi: true,
-			cluster:         db.Cluster{SiteID: siteID},
+			cluster:         nicoCluster,
 			want:            true,
 		},
 		"keeps forge direct path when flag is disabled for forge site cluster": {
-			cluster: db.Cluster{SiteID: siteID},
+			cluster: nicoCluster,
 			want:    false,
 		},
 		"uses CAPI for CAPI-backed cluster without site": {
-			cluster: db.Cluster{SiteID: uuid.Nil},
+			cluster: capiCluster,
 			want:    true,
+		},
+		"does not infer CAPI path from nil site ID": {
+			cluster: db.Cluster{ProviderType: db.ProviderTypeNico, SiteID: uuid.Nil},
+			want:    false,
 		},
 	}
 
@@ -279,7 +339,7 @@ func TestProvisioning_ShouldUseCAPIForNodeProvisioning(t *testing.T) {
 	}
 }
 
-func hasNicoCluster(ctx context.Context, t *testing.T, k8sClient client.Client, namespace, name string) bool {
+func hasNicoCluster(ctx context.Context, t *testing.T, k8sClient client.Client, namespace, name, wantSiteID string) bool {
 	t.Helper()
 
 	nicoCluster := &unstructured.Unstructured{}
@@ -293,16 +353,23 @@ func hasNicoCluster(ctx context.Context, t *testing.T, k8sClient client.Client, 
 	siteID, found, err := unstructured.NestedString(nicoCluster.Object, "spec", "siteID")
 	require.NoError(t, err)
 	require.True(t, found)
-	assert.Equal(t, testNicoClusterSiteID, siteID)
+	assert.Equal(t, wantSiteID, siteID)
 	return true
 }
 
-func testCluster(manifest json.RawMessage) db.Cluster {
-	return db.Cluster{
-		ID:               uuid.New(),
-		Name:             testClusterName,
-		CapiInfraCluster: manifest,
+func testCluster() db.Cluster {
+	siteID := uuid.New()
+	vpcID := uuid.New()
+	cluster := db.Cluster{
+		ID:           uuid.New(),
+		Name:         testClusterName,
+		OrgID:        "org-1",
+		SiteID:       siteID,
+		VpcID:        vpcID,
+		ProviderType: db.ProviderTypeNico,
+		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}
+	return cluster
 }
 
 func testNicoClusterManifest(t *testing.T) json.RawMessage {

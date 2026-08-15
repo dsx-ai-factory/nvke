@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,6 +41,15 @@ const (
 	etcdDryRunExitCodeSafe   = 0
 	etcdDryRunExitCodeQuorum = 2
 	etcdDryRunExitCodeVoter  = 3
+
+	// forceUnreachableHookMaxAttempts bounds teardown-hook retries when the node
+	// is being force-deleted as unreachable, so a hook that can never succeed
+	// against a dead node fails fast instead of retrying forever.
+	forceUnreachableHookMaxAttempts = 3
+
+	// forceUnreachableRunbookEnvKey is exported to teardown hook runbooks when
+	// the operator has declared the node unreachable.
+	forceUnreachableRunbookEnvKey = "FORCE_UNREACHABLE"
 )
 
 // NewMachineHealthIssueFromJSON creates a MachineHealthIssue from JSON data,
@@ -58,7 +68,7 @@ func TeardownNode(ctx workflow.Context, input TeardownNodeInput) error {
 	labels, labelsErr := getNodeMetricLabels(ctx, input.NodeID)
 	if labelsErr != nil {
 		logger.Warn("failed to get node metric labels, metrics will use unknown", "error", labelsErr)
-		labels = nodeMetricLabels{ClusterName: "unknown", NodeType: "unknown"}
+		labels = nodeMetricLabels{ClusterName: unknownValue, NodeType: unknownValue}
 	}
 
 	// Check if node is a CP node
@@ -185,7 +195,7 @@ func resetNodeForClusterTeardown(ctx workflow.Context, input TeardownNodeInput) 
 // cluster: run configured remove-node hooks, drain the node, remove control-plane
 // etcd membership when needed, delete the kube Node object, and reset kubeadm.
 func removeNodeFromLiveCluster(ctx workflow.Context, input TeardownNodeInput) error {
-	if err := runTeardownHooks(ctx, input.NodeID, BeforeRemoveNode); err != nil {
+	if err := runTeardownHooks(ctx, input, BeforeRemoveNode); err != nil {
 		return fmt.Errorf("failed to run beforeRemoveNode hooks: %w", err)
 	}
 
@@ -193,7 +203,7 @@ func removeNodeFromLiveCluster(ctx workflow.Context, input TeardownNodeInput) er
 		return fmt.Errorf("failed to remove node from cluster: %w", err)
 	}
 
-	if err := runTeardownHooks(ctx, input.NodeID, AfterRemoveNode); err != nil {
+	if err := runTeardownHooks(ctx, input, AfterRemoveNode); err != nil {
 		return fmt.Errorf("failed to run afterRemoveNode hooks: %w", err)
 	}
 
@@ -258,10 +268,12 @@ func removeNodeFromCluster(ctx workflow.Context, input TeardownNodeInput) error 
 	return nil
 }
 
-// hasJoinedControlPlaneNodeExcluding reports whether any joined control-plane
-// node exists in the cluster other than excludeNodeID. The target cannot keep
-// the tenant API available or serve as the etcd-removal runbook executor while
-// it is being removed.
+// hasJoinedControlPlaneNodeExcluding reports whether a joined control-plane node
+// other than excludeNodeID survives the current teardown. The target cannot keep
+// the tenant API available or serve as the etcd-removal runbook executor while it
+// is being removed.
+//
+// A node already marked Deleting does not count as a survivor and can't be relied on.
 func hasJoinedControlPlaneNodeExcluding(ctx workflow.Context, clusterID, excludeNodeID uuid.UUID) (bool, error) {
 	var a *activities.Activities
 
@@ -272,6 +284,9 @@ func hasJoinedControlPlaneNodeExcluding(ctx workflow.Context, clusterID, exclude
 
 	for _, cpNode := range cpNodes {
 		if cpNode.ID == excludeNodeID {
+			continue
+		}
+		if cpNode.Conditions.Deleting.Status == db.ConditionStatusTrue {
 			continue
 		}
 		if cpNode.Conditions.Joined.Status == db.ConditionStatusTrue {
@@ -428,7 +443,7 @@ func attemptKubeadmReset(ctx workflow.Context, nodeID uuid.UUID, isControlPlane 
 		// CWE handles etcd member removal explicitly for live CP teardown, and skips it
 		// entirely for whole-cluster teardown, so kubeadm reset must not run its own
 		// remove-etcd-member phase.
-		skipPhases = []string{"remove-etcd-member"}
+		skipPhases = []string{removeEtcdMember}
 	}
 
 	logger.Info("Attempting best effort kubeadm reset", "nodeID", nodeID, "skipPhases", skipPhases)
@@ -596,8 +611,11 @@ func teardownForgeInstance(ctx workflow.Context, nodeID uuid.UUID, machineHealth
 	return nil
 }
 
-func runTeardownHooks(ctx workflow.Context, nodeID uuid.UUID, hookType HookType) error {
+func runTeardownHooks(ctx workflow.Context, input TeardownNodeInput, hookType HookType) error {
 	var a *activities.Activities
+
+	logger := workflow.GetLogger(ctx)
+	nodeID := input.NodeID
 
 	var configProfile activities.ConfigProfile
 	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNodeConfigProfile, activities.GetNodeConfigProfileInput{
@@ -632,35 +650,41 @@ func runTeardownHooks(ctx workflow.Context, nodeID uuid.UUID, hookType HookType)
 		return fmt.Errorf("failed to get cluster for node: %w", err)
 	}
 
-	// If the cluster was never provisioned and no control plane node has ever joined,
-	// there is no Kubernetes API server to run kubectl against — skip the hooks.
-	if cluster.Conditions.Provisioned.Status != db.ConditionStatusTrue {
-		var cpNodes []db.Node
-		if err := workflow.ExecuteActivity(withDBOptions(ctx), a.ListControlPlaneNodes, cluster.ID).Get(ctx, &cpNodes); err != nil {
-			return fmt.Errorf("failed to list control plane nodes: %w", err)
-		}
-		hasJoinedCP := false
-		for _, cpNode := range cpNodes {
-			if cpNode.Conditions.Joined.Status == db.ConditionStatusTrue {
-				hasJoinedCP = true
-				break
-			}
-		}
-		if !hasJoinedCP {
-			logger := workflow.GetLogger(ctx)
-			logger.Info("Skipping teardown hooks: cluster was never provisioned and no control plane nodes are joined",
-				"hookType", hookType, "nodeID", nodeID)
-			return nil
-		}
+	// Teardown hooks run as cluster runbooks, which need a joined control-plane
+	// node other than the target to execute them: the target is being removed and,
+	// when it is the unreachable node an operator is force-deleting, dispatching
+	// the hook to it wedges the teardown. Same reasoning as the live-removal skip
+	// in removeNodeFromCluster (NKX-13735); this also covers the never-provisioned
+	// cluster, where no API server ever existed to run kubectl against.
+	hasSurvivingJoinedCP, err := hasJoinedControlPlaneNodeExcluding(ctx, cluster.ID, nodeID)
+	if err != nil {
+		return err
+	}
+	if !hasSurvivingJoinedCP {
+		logger.Info("Skipping teardown hooks: no surviving joined control plane node to execute them",
+			"hookType", hookType, "nodeID", nodeID, "clusterID", cluster.ID)
+		return nil
 	}
 
+	// The default policy retries a failing hook forever. That is the right
+	// behavior for a healthy node — the hooks protect data (CNPG switchover,
+	// Longhorn replica migration) and must not be skipped silently. But when the
+	// operator has declared the node unreachable, the hooks' own waits can never
+	// be satisfied: evict-cnpg-node blocks on PVCs whose owning pod will never
+	// terminate because the kubelet is gone. Bound the retries so the tolerate
+	// branch below is actually reachable instead of the workflow spinning
+	// forever (NKX-13160).
+	maximumAttempts := int32(0)
+	if input.ForceUnreachable {
+		maximumAttempts = forceUnreachableHookMaxAttempts
+	}
 	execRunbookActivityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 35 * time.Minute,
 		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval: 1 * time.Minute,
 			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 0,
+			MaximumAttempts: maximumAttempts,
 		},
 	}
 
@@ -672,16 +696,40 @@ func runTeardownHooks(ctx workflow.Context, nodeID uuid.UUID, hookType HookType)
 			workflow.WithActivityOptions(ctx, execRunbookActivityOptions),
 			a.ExecuteClusterRunbook,
 			activities.ExecuteClusterRunbookInput{
-				ClusterID:   cluster.ID,
-				RunbookName: hook.Runbook.Name,
-				RunbookEnv:  hook.Runbook.Env,
-				RunbookArgs: []string{node.Name},
-			}).Get(ctx, nil); err != nil {
+				ClusterID:     cluster.ID,
+				RunbookName:   hook.Runbook.Name,
+				RunbookEnv:    teardownHookRunbookEnv(hook.Runbook.Env, input.ForceUnreachable),
+				RunbookArgs:   []string{node.Name},
+				ExcludeNodeID: &nodeID,
+			},
+		).Get(ctx, nil); err != nil {
+			if input.ForceUnreachable {
+				logger.Warn("teardown hook runbook failed, continuing due to force_unreachable",
+					"hookType", hookType, "runbook", hook.Runbook.Name, "nodeID", nodeID, "error", err)
+				continue
+			}
 			return fmt.Errorf("failed to run %s runbook %s: %w", hookType, hook.Runbook.Name, err)
 		}
 	}
 
 	return nil
+}
+
+// teardownHookRunbookEnv returns the environment for a teardown hook runbook,
+// adding FORCE_UNREACHABLE when the operator has declared the node unreachable
+// so hooks can take a dead-node code path instead of waiting on the target. The
+// hook's configured environment is copied rather than mutated: it is owned by
+// the cached config profile and shared across executions.
+func teardownHookRunbookEnv(hookEnv map[string]string, forceUnreachable bool) map[string]string {
+	if !forceUnreachable {
+		return hookEnv
+	}
+
+	env := make(map[string]string, len(hookEnv)+1)
+	maps.Copy(env, hookEnv)
+	env[forceUnreachableRunbookEnvKey] = runbookEnvTrue
+
+	return env
 }
 
 func updateNodeDeletingMessage(ctx workflow.Context, nodeID uuid.UUID, message string) error {
@@ -719,7 +767,8 @@ func tryApplyNodeTerminatingLabels(ctx workflow.Context, input TeardownNodeInput
 		activities.LabelNodeInput{
 			NodeID: input.NodeID,
 			Labels: labels,
-		}).Get(ctx, nil)
+		},
+	).Get(ctx, nil)
 
 	if err != nil {
 		logger.Warn("failed to apply label to node", "error", err)

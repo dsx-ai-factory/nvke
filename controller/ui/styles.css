@@ -619,6 +619,140 @@ input[type="checkbox"] {
     min-width: 80px;
 }
 
+/* Create-cluster Control Plane section (cluster-level control-plane config).
+   Mirrors the vertical-stacked layout of the edit-cluster CP config group. */
+.create-cluster-cp-section {
+    border: 1px solid #444;
+    padding: 15px;
+    margin-bottom: 15px;
+    border-radius: 4px;
+}
+
+.create-cluster-cp-section .form-group {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch !important;
+    padding-right: 0;
+    margin-bottom: 12px;
+}
+
+.create-cluster-cp-section .form-group label {
+    width: 100%;
+    text-align: left;
+    margin-bottom: 5px;
+    margin-right: 0;
+}
+
+.create-cluster-cp-section .form-group > input[type="number"],
+.create-cluster-cp-section .form-group > input[type="text"],
+.create-cluster-cp-section .form-group > select,
+.create-cluster-cp-section .form-group > textarea {
+    width: 100%;
+    flex: none;
+    align-self: stretch;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.create-cluster-cp-section #cp-config-desired-count,
+.create-cluster-cp-section #cp-config-max-surge {
+    max-width: 120px;
+}
+
+.create-cluster-cp-section .form-group .help-text {
+    display: block;
+    margin-left: 0;
+    width: 100%;
+    margin-top: 5px;
+    font-size: 0.85em;
+    color: #999;
+    font-style: italic;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #333;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-list li.edit-cluster-instance-type-item {
+    cursor: grab;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-list li.edit-cluster-instance-type-item.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-list li.edit-cluster-instance-type-item.drag-over {
+    border-top: 2px solid var(--nvidia-green);
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-drag-handle {
+    flex-shrink: 0;
+    color: #888;
+    user-select: none;
+    font-size: 14px;
+    line-height: 1;
+    cursor: grab;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-label {
+    flex: 1;
+    min-width: 0;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-reorder {
+    padding: 2px 8px;
+    font-size: 12px;
+    min-width: auto;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    width: 100%;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-row select {
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.create-cluster-cp-section .edit-cluster-instance-type-row .add-btn {
+    flex-shrink: 0;
+    min-width: 80px;
+}
+
+/* Expanded cluster-level CP editors in the edit-cluster modal (cpControllerMode). */
+#edit-cluster-modal #edit-cluster-cp-expanded-group .edit-cluster-instance-type-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
 .nodepool-config {
     border: 1px solid #444;
     padding: 15px;
@@ -661,6 +795,10 @@ input[type="checkbox"] {
 #create-cluster-modal .form-group label {
     min-width: 200px;
     font-weight: 500;
+    /* Allow long labels (e.g. "Pod CIDR (OVN-Kubernetes only):") to wrap
+       within the fixed-width column instead of overflowing behind the input. */
+    white-space: normal;
+    line-height: 1.25;
 }
 
 #create-cluster-modal .pod-cidr-input-group {

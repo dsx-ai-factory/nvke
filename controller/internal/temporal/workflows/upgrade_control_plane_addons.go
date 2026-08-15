@@ -70,8 +70,8 @@ func UpgradeControlPlaneAddons(ctx workflow.Context, input UpgradeControlPlaneAd
 			RunbookName: "upgrade-kubelet-kubeadm",
 			RunbookEnv: map[string]string{
 				"VERSION":              input.KubernetesVersion,
-				"IS_MASTER":            "true",
-				"KUBEADM_UPGRADE_ONLY": "true",
+				"IS_MASTER":            runbookEnvTrue,
+				"KUBEADM_UPGRADE_ONLY": runbookEnvTrue,
 			},
 		},
 	).Get(ctx, &result); err != nil {

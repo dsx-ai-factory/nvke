@@ -34,9 +34,9 @@ func TestParseReadyzVerbose(t *testing.T) {
 		wantSawAny  bool
 	}{
 		{name: "all healthy", stdout: "[+]ping ok\n[+]etcd ok\nreadyz check passed", wantFailing: nil, wantSawAny: true},
-		{name: "one failing", stdout: "[+]ping ok\n[-]etcd failed: connection refused\nreadyz check failed", wantFailing: []string{"etcd"}, wantSawAny: true},
-		{name: "multiple failing", stdout: "[+]ping\n[-]etcd failed: x\n[-]log stale", wantFailing: []string{"etcd", "log"}, wantSawAny: true},
-		{name: "failing no trailer", stdout: "[-]etcd", wantFailing: []string{"etcd"}, wantSawAny: true},
+		{name: "one failing", stdout: "[+]ping ok\n[-]etcd failed: connection refused\nreadyz check failed", wantFailing: []string{etcdConst}, wantSawAny: true},
+		{name: "multiple failing", stdout: "[+]ping\n[-]etcd failed: x\n[-]log stale", wantFailing: []string{etcdConst, "log"}, wantSawAny: true},
+		{name: "failing no trailer", stdout: "[-]etcd", wantFailing: []string{etcdConst}, wantSawAny: true},
 		{name: "empty fails closed", stdout: "", wantFailing: nil, wantSawAny: false},
 		{name: "garbled fails closed", stdout: "Unauthorized\nsome error text", wantFailing: nil, wantSawAny: false},
 	}

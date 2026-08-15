@@ -1,6 +1,0 @@
-#!ipxe
-set base-url https://nke-dev.s3.us-west-2.amazonaws.com/BaseOS-images/nke/v1.31.6/2025.10.29/forge_nke-2025.10.29
-
-kernel ${base-url}-vmlinuz console=tty0 console=ttyS1,115200 ip=dhcp fb=false interface=ens5f0 url=${base-url}.iso autoinstall ds=nocloud-net;s=${cloudinit-url} initrd=initrd.magic
-initrd ${base-url}-initrd
-boot

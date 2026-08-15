@@ -42,22 +42,25 @@ func TestNodeSetController_ControlPlaneProvisioningGate(t *testing.T) {
 		ClusterID:             clusterID,
 		ControlPlane:          true,
 		NodeNamePrefix:        "cp",
-		InstanceTypeID:        instanceTypeID,
 		CurrentNodeSetID:      &nodeSetID,
 		AutoProvisionDisabled: false,
 		Conditions:            db.NodePoolConditions{},
 	}
+	baseNodePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID: instanceTypeID,
+	})
 	baseNodeSet := db.NodeSet{
 		ID:           nodeSetID,
 		NodePoolID:   nodePoolID,
 		DesiredCount: 1,
 	}
 	baseCluster := db.Cluster{
-		ID:     clusterID,
-		Name:   "test-cluster",
-		SiteID: site.ID,
-		OrgID:  "test-org",
-		VpcID:  uuid.New(),
+		ID:           clusterID,
+		Name:         "test-cluster",
+		SiteID:       site.ID,
+		OrgID:        "test-org",
+		VpcID:        uuid.New(),
+		ProviderType: db.ProviderTypeNico,
 	}
 
 	t.Run("flag_off_node_set_controller_creates_control_plane_node", func(t *testing.T) {

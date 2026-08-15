@@ -28,6 +28,7 @@ spec:
       labels:
         app.kubernetes.io/name: mock
     spec:
+      serviceAccountName: default
       containers:
         - name: mock
           image: cwe-nico-mock:local

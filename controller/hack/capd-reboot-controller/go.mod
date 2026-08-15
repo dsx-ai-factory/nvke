@@ -1,6 +1,6 @@
 module github.com/NVIDIA/nke/controller/hack/capd-reboot-controller
 
-go 1.26.0
+go 1.26.5
 
 require (
 	k8s.io/apimachinery v0.36.3

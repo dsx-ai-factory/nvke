@@ -158,23 +158,34 @@ func NewDBClusterTenantClientProvider(
 }
 
 func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, cluster db.Cluster) (client.Client, error) {
-	if cluster.SiteID == uuid.Nil {
-		if capi.IsEmptyManifest(cluster.CapiInfraCluster) {
-			return nil, fmt.Errorf("cluster %s must define capiInfraCluster when siteID is the nil UUID", cluster.ID)
+	switch cluster.ProviderType {
+	case db.ProviderTypeCAPI:
+		provider, err := cluster.CAPIProvider()
+		if err != nil {
+			return nil, err
+		}
+		if capi.IsEmptyManifest(provider.InfraCluster) {
+			return nil, fmt.Errorf("cluster %s must define capiInfraCluster when provider type is %q", cluster.ID, db.ProviderTypeCAPI)
 		}
 
 		return p.clientForCAPICluster(ctx, cluster)
-	}
+	case db.ProviderTypeNico:
+		if _, err := cluster.NicoProvider(); err != nil {
+			return nil, err
+		}
 
-	if p.tenantAccessEnabled {
-		return p.clientFromTenantAccessSecret(ctx, cluster)
-	}
+		if p.tenantAccessEnabled {
+			return p.clientFromTenantAccessSecret(ctx, cluster)
+		}
 
-	nodes, err := p.database.ListNodes(ctx, db.NodeFilters{ClusterID: &cluster.ID})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list nodes for cluster %s: %w", cluster.ID, err)
+		nodes, err := p.database.ListNodes(ctx, db.NodeFilters{ClusterID: &cluster.ID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to list nodes for cluster %s: %w", cluster.ID, err)
+		}
+		return p.clientFromControlPlaneNodeAgent(ctx, cluster, nodes)
+	default:
+		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
-	return p.clientFromControlPlaneNodeAgent(ctx, cluster, nodes)
 }
 
 func (p *DBClusterTenantClientProvider) clientForCAPICluster(ctx context.Context, cluster db.Cluster) (client.Client, error) {

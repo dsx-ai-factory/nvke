@@ -217,30 +217,34 @@ func (a *Activities) topologyLabels(ctx context.Context, node db.Node, nodePool 
 		return nil, fmt.Errorf("failed to get cluster: %w", err)
 	}
 
-	orgID := cluster.OrgID
-	siteID := cluster.SiteID.String()
-
-	var labels []string
-
-	if cluster.SiteID != uuid.Nil {
-		labels = append(labels, constants.LabelKeyNodeSiteID+"="+cluster.SiteID.String())
-
-		if site, err := a.forgeProvider.GetSiteByID(ctx, orgID, siteID); err != nil {
-			logger.Warn("skipping site-name label: failed to resolve site",
-				"nodeID", node.ID, "siteID", siteID, "error", err)
-		} else if name := kube.NormalizeLabelValue(site.GetName()); name != "" {
-			labels = append(labels, constants.LabelKeyNodeSiteName+"="+name)
-		}
+	if cluster.ProviderType != db.ProviderTypeNico {
+		return nil, nil
 	}
 
-	if cluster.VpcID != uuid.Nil {
-		labels = append(labels, constants.LabelKeyNodeVPCID+"="+cluster.VpcID.String())
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
+	orgID := nicoProvider.OrgID
+	siteID := nicoProvider.SiteID.String()
+	labels := []string{constants.LabelKeyNodeSiteID + "=" + siteID}
 
-		if name := a.resolveVPCName(ctx, orgID, siteID, cluster.VpcID.String()); name != "" {
+	if site, err := a.forgeProvider.GetSiteByID(ctx, orgID, siteID); err != nil {
+		logger.Warn("skipping site-name label: failed to resolve site",
+			"nodeID", node.ID, "siteID", siteID, "error", err)
+	} else if name := kube.NormalizeLabelValue(site.GetName()); name != "" {
+		labels = append(labels, constants.LabelKeyNodeSiteName+"="+name)
+	}
+
+	if nicoProvider.VpcID != uuid.Nil {
+		vpcID := nicoProvider.VpcID.String()
+		labels = append(labels, constants.LabelKeyNodeVPCID+"="+vpcID)
+
+		if name := a.resolveVPCName(ctx, orgID, siteID, vpcID); name != "" {
 			labels = append(labels, constants.LabelKeyNodeVPCName+"="+name)
 		} else {
 			logger.Warn("skipping vpc-name label: vpc not resolved",
-				"nodeID", node.ID, "vpcID", cluster.VpcID.String())
+				"nodeID", node.ID, "vpcID", vpcID)
 		}
 	}
 

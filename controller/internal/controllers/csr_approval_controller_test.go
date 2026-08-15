@@ -81,7 +81,8 @@ type mockWorkflowStarter struct {
 }
 
 func (m *mockWorkflowStarter) ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
-	callArgs := []interface{}{ctx, options, workflow}
+	callArgs := make([]interface{}, 0, 3+len(args))
+	callArgs = append(callArgs, ctx, options, workflow)
 	callArgs = append(callArgs, args...)
 	ret := m.Called(callArgs...)
 	run, _ := ret.Get(0).(client.WorkflowRun)

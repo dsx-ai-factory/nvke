@@ -180,11 +180,15 @@ func (a *Activities) createForgeInstanceWithLockHeld(
 	if err != nil {
 		return nil, err
 	}
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
 
 	osProfileDir := path.Join(a.cfg.ProfilesDir, "osProfiles", provisioningConfig.osProfile)
 
 	// Setup the tenant ID
-	tenantID, err := a.getTenantID(cluster.OrgID)
+	tenantID, err := a.getTenantID(nicoProvider.OrgID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tenant ID: %w", err)
 	}
@@ -192,7 +196,7 @@ func (a *Activities) createForgeInstanceWithLockHeld(
 
 	var instanceType GetInstanceTypeOutput
 	if provisioningConfig.infinibandPartitionID != nil || provisioningConfig.nvLinkLogicalPartitionID != nil {
-		instanceType, err = a.getInstanceType(ctx, cluster.OrgID, cluster.SiteID.String(), provisioningConfig.instanceTypeID)
+		instanceType, err = a.getInstanceType(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), provisioningConfig.instanceTypeID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get instance type: %w", err)
 		}
@@ -251,7 +255,7 @@ func (a *Activities) createForgeInstanceWithLockHeld(
 			TokenName:    teleport.TPMTokenName(node.ID),
 			ProxyAddress: a.cfg.Teleport.ProxyAddress,
 			JoinMethod:   string(teleport.JoinMethodTPM),
-			Labels:       buildTeleportLabels(node, cluster, provisioningConfig.nodePoolID, provisioningConfig.isControlPlaneRole, siteName, a.cfg.Teleport.Environment),
+			Labels:       buildTeleportLabels(node, cluster, nicoProvider, provisioningConfig.nodePoolID, provisioningConfig.isControlPlaneRole, siteName, a.cfg.Teleport.Environment),
 		}
 	}
 	userData, err := a.getUserData(ctx, osProfileDir, node, provisioningConfig.diskSelectionStrategy, provisioningConfig.kubernetesVersion, teleportCfg, cluster)
@@ -271,7 +275,7 @@ func (a *Activities) createForgeInstanceWithLockHeld(
 	newInstance.SetName(node.Name)
 	newInstance.SetDescription("Managed by NKE")
 	newInstance.SetInstanceTypeId(provisioningConfig.instanceTypeID.String())
-	newInstance.SetVpcId(cluster.VpcID.String())
+	newInstance.SetVpcId(nicoProvider.VpcID.String())
 	forgeLabels := map[string]string{
 		constants.LabelKeyNodeID:    node.ID.String(),
 		constants.LabelKeyClusterID: cluster.ID.String(),
@@ -313,6 +317,10 @@ func (a *Activities) tryCreateInstanceWithVpcPrefixes(
 	cluster db.Cluster,
 ) (*forgesdk.Instance, error) {
 	logger := activity.GetLogger(ctx)
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
 	var lastErr error
 
 	for i, vpcPrefixID := range vpcPrefixIDs {
@@ -329,13 +337,13 @@ func (a *Activities) tryCreateInstanceWithVpcPrefixes(
 			{VpcPrefixId: forgesdk.PtrString(vpcPrefixIDStr)},
 		})
 
-		createInstanceResponse, err := a.forgeProvider.CreateInstance(ctx, cluster.OrgID, newInstance)
+		createInstanceResponse, err := a.forgeProvider.CreateInstance(ctx, nicoProvider.OrgID, newInstance)
 		if err != nil {
 			lastErr = err
 
 			// Handle scenario where instance gets created in forge, but response doesn't make it back to CWE.
 			if errors.Is(err, forge.ErrInstanceAlreadyExists) {
-				return a.findInstance(ctx, cluster.OrgID, node.Name, cluster.SiteID.String(), node.ID)
+				return a.findInstance(ctx, nicoProvider.OrgID, node.Name, nicoProvider.SiteID.String(), node.ID)
 			}
 
 			// Handle scenario where the VPC prefix has no available IP addresses by continuing to the next VPC prefix.
@@ -379,6 +387,10 @@ func (a *Activities) tryCreateInstanceWithSubnets(
 	cluster db.Cluster,
 ) (*forgesdk.Instance, error) {
 	logger := activity.GetLogger(ctx)
+	nicoProvider, err := cluster.NicoProvider()
+	if err != nil {
+		return nil, err
+	}
 	var lastErr error
 
 	for i, subnetID := range subnetIDs {
@@ -395,13 +407,13 @@ func (a *Activities) tryCreateInstanceWithSubnets(
 			{SubnetId: forgesdk.PtrString(subnetIDStr)},
 		})
 
-		createInstanceResponse, err := a.forgeProvider.CreateInstance(ctx, cluster.OrgID, newInstance)
+		createInstanceResponse, err := a.forgeProvider.CreateInstance(ctx, nicoProvider.OrgID, newInstance)
 		if err != nil {
 			lastErr = err
 
 			// Handle scenario where instance gets created in forge, but response doesn't make it back to CWE.
 			if errors.Is(err, forge.ErrInstanceAlreadyExists) {
-				return a.findInstance(ctx, cluster.OrgID, node.Name, cluster.SiteID.String(), node.ID)
+				return a.findInstance(ctx, nicoProvider.OrgID, node.Name, nicoProvider.SiteID.String(), node.ID)
 			}
 
 			// Handle scenario where the subnet has no available IP addresses by continuing to the next subnet.
@@ -618,12 +630,12 @@ func cniImagePackageName(plugin db.CniPlugin, version string) (string, error) {
 
 // buildTeleportLabels constructs YAML-formatted label lines for the Teleport config in userData.
 // Output is "key: value" per line (no leading indent); the template applies indentation.
-func buildTeleportLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID, controlPlane bool, siteName, environment string) string {
+func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment string) string {
 	labels := map[string]string{
 		teleport.LabelNodeID:                node.ID.String(),
 		teleport.LabelNodeName:              node.Name,
 		teleport.LabelNodeRole:              teleport.NodeRoleLabel(controlPlane),
-		teleport.LabelSite:                  cluster.SiteID.String(),
+		teleport.LabelSite:                  nicoProvider.SiteID.String(),
 		teleport.LabelNKESiteControllerName: siteName,
 		teleport.LabelCluster:               cluster.ID.String(),
 		teleport.LabelClusterName:           cluster.Name,

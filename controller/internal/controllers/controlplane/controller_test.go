@@ -164,6 +164,10 @@ func (d sqliteCompatDB) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (db.
 	return d.DB.GetNode(ctx, id)
 }
 
+func (d sqliteCompatDB) GetClusterForUpdate(ctx context.Context, id uuid.UUID) (db.Cluster, error) {
+	return d.DB.GetCluster(ctx, id)
+}
+
 func (d sqliteCompatDB) RunInTx(ctx context.Context, fn func(ctx context.Context, tx db.Tx) error) error {
 	return d.DB.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		return fn(ctx, sqliteCompatTx{Tx: tx})
@@ -176,6 +180,10 @@ type sqliteCompatTx struct {
 
 func (tx sqliteCompatTx) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (db.Node, error) {
 	return tx.Tx.GetNode(ctx, id)
+}
+
+func (tx sqliteCompatTx) GetClusterForUpdate(ctx context.Context, id uuid.UUID) (db.Cluster, error) {
+	return tx.Tx.GetCluster(ctx, id)
 }
 
 // newControllerTest creates a new test environment with a site, cluster, and control plane.

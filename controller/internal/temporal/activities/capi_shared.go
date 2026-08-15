@@ -25,6 +25,16 @@ import (
 )
 
 func (a *Activities) isDockerMachineBackedNode(ctx context.Context, _ db.Cluster, node db.Node) (bool, error) {
+	// LOCAL-DEV ONLY: the local nico-mock flow provisions nodes as bare Docker
+	// containers with no real cloud-init, so force them through the
+	// DockerMachine bootstrap/preflight (bootstrap-success sentinel) +
+	// container-mode kubeadm contract. This flag must NEVER be set in a real
+	// environment; when it is off the normal IsDockerMachineTemplate path below
+	// is unchanged.
+	if a.cfg.LocalDevForceDockerMachineBootstrap {
+		return true, nil
+	}
+
 	// GetNodeContext resolves the effective template for both node shapes we can
 	// see here: nodepool-managed nodes (from their node set) and control-plane
 	// nodes (from their pinned snapshot / cluster config). It errors on a

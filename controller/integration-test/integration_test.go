@@ -30,7 +30,7 @@ type IntegrationTestConfig struct {
 	CreateClusterRequestPath  string `env:"CREATE_CLUSTER_REQUEST_PATH" envDefault:"testdata/default/create-cluster-request.json"`
 	CreateNodePoolRequestPath string `env:"CREATE_NODE_POOL_REQUEST_PATH" envDefault:"testdata/default/create-nodepool-request.json"`
 	SkipCleanup               bool   `env:"SKIP_CLEANUP" envDefault:"false"`
-	DisableKubeVip            bool   `env:"DISABLE_KUBE_VIP" envDefault:"false"`
+	ControlPlaneVIP           string `env:"CONTROL_PLANE_VIP"`
 }
 
 type IntegrationTestSuite struct {
@@ -125,7 +125,9 @@ func (s *IntegrationTestSuite) createCluster(t *testing.T, ctx context.Context) 
 
 	createReq := s.createClusterRequest
 	createReq.Name = fmt.Sprintf("%s-%s", s.createClusterRequest.Name, timestamp)
-	createReq.DisableKubeVip = s.config.DisableKubeVip
+	if s.config.ControlPlaneVIP != "" {
+		createReq.ControlPlaneVIP = s.config.ControlPlaneVIP
+	}
 
 	t.Logf("Creating cluster: %s", createReq.Name)
 

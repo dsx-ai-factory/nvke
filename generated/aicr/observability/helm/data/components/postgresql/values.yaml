@@ -1,0 +1,13 @@
+# Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+image:
+  repository: docker.io/library/postgres
+  tag: "17.4"
+  digest: sha256:304ab813518754228f9f792f79d6da36359b82d8ecf418096c636725f8c930ad
+  pullPolicy: IfNotPresent
+auth:
+  username: postgres
+  password: postgres
+storage:
+  size: 1Gi

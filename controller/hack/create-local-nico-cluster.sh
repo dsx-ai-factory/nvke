@@ -34,7 +34,6 @@ BODY=$(cat <<EOF
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
   "etcdEncrypted": false,
-  "disableKubeVip": true,
   "nodePools": [
     {
       "name": "control-plane",
@@ -71,7 +70,10 @@ BODY=$(cat <<EOF
         }
       },
       "capiSpireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
-      "capiPreKubeadmCommands": []
+      "capiPreKubeadmCommands": [
+        "mkdir -p /run/cluster-api",
+        "echo success > /run/cluster-api/bootstrap-success.complete"
+      ]
     },
     {
       "name": "worker",
@@ -108,7 +110,10 @@ BODY=$(cat <<EOF
         }
       },
       "capiSpireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
-      "capiPreKubeadmCommands": []
+      "capiPreKubeadmCommands": [
+        "mkdir -p /run/cluster-api",
+        "echo success > /run/cluster-api/bootstrap-success.complete"
+      ]
     }
   ],
   "capiInfraCluster": {

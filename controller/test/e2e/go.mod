@@ -1,6 +1,6 @@
 module github.com/NVIDIA/nke/controller/test/e2e
 
-go 1.26.0
+go 1.26.5
 
 require (
 	github.com/NVIDIA/nke/controller/api v0.0.0-00010101000000-000000000000

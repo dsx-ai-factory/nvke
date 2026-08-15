@@ -156,10 +156,109 @@
                     </div>
                 </div>
                 <div class="form-group">
-                    <label for="disable-kube-vip">Disable Kube-VIP:</label>
-                    <div class="checkbox-with-label">
-                        <input type="checkbox" id="disable-kube-vip">
-                        <span class="checkbox-label">dev/test only</span>
+                    <label for="control-plane-vip">Control Plane VIP:</label>
+                    <input type="text" id="control-plane-vip" placeholder="Optional kube-vip address">
+                </div>
+
+                <div id="create-cluster-cp-section" class="create-cluster-cp-section" style="display: none;">
+                    <div class="nodepools-header">
+                        <h3>Control Plane</h3>
+                    </div>
+                    <div class="form-group">
+                        <label for="cp-config-desired-count">Desired CP Count:</label>
+                        <input type="number" id="cp-config-desired-count" min="1" step="1" value="3">
+                        <span class="help-text">Number of control plane nodes to provision (must be at least 1).</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="cp-config-max-surge">Cluster Max Surge:</label>
+                        <input type="number" id="cp-config-max-surge" min="0" max="1" step="1" value="0">
+                        <span class="help-text">Used for cluster-level surge during upgrade (0 or 1).</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="cp-config-teleport-enabled">Enable Teleport:</label>
+                        <div class="checkbox-input-container">
+                            <input type="checkbox" id="cp-config-teleport-enabled">
+                            <span class="help-text">Enroll control plane nodes into Teleport.</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="cp-config-provisioning-monitor-disabled">Pause Provisioning Monitor:</label>
+                        <div class="checkbox-input-container">
+                            <input type="checkbox" id="cp-config-provisioning-monitor-disabled">
+                            <span class="help-text">When paused, control plane nodes stuck in provisioning are not auto-recycled.</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="cp-config-system-reserved-memory">System Reserved Memory:</label>
+                        <input type="text" id="cp-config-system-reserved-memory" placeholder="Optional (default: 16Gi)" pattern="^$|^[0-9]+(Gi|Mi|G|M)$" title="Optional. Memory value with unit (e.g., 16Gi, 128Gi). Defaults to 16Gi if not specified.">
+                    </div>
+                    <div class="form-group">
+                        <label for="cp-config-node-labels">Node Labels:</label>
+                        <textarea id="cp-config-node-labels" placeholder="One key=value per line (or comma-separated), e.g. team=platform"></textarea>
+                        <span class="help-text">Optional. Additional labels applied to control plane nodes, on top of any set by the config profile. One <code>key=value</code> per line.</span>
+                    </div>
+                    <div class="form-group forge-only-field">
+                        <label for="cp-config-os-profile">OS Profile:</label>
+                        <select id="cp-config-os-profile">
+                            <option value="">Select an OS profile</option>
+                        </select>
+                    </div>
+                    <div class="form-group forge-only-field">
+                        <label for="cp-config-config-profile">Config Profile:</label>
+                        <select id="cp-config-config-profile">
+                            <option value="">Select a config profile</option>
+                        </select>
+                    </div>
+                    <div class="form-group subnets-form-group forge-only-field">
+                        <label id="cp-config-subnets-label" for="cp-config-subnets-container">Subnets:</label>
+                        <div id="cp-config-subnets-container" class="custom-multiselect-container disabled" title="You must select a VPC first">
+                            <div class="empty-text">Select subnets</div>
+                        </div>
+                    </div>
+                    <div class="form-group ssh-key-groups-form-group forge-only-field">
+                        <label for="cp-config-ssh-key-groups-container">SSH Key Groups:</label>
+                        <div id="cp-config-ssh-key-groups-container" class="custom-multiselect-container disabled" title="You must select a tenant first">
+                            <div class="empty-text">Select SSH key groups</div>
+                        </div>
+                    </div>
+                    <div class="form-group forge-only-field">
+                        <label for="cp-config-instance-type-add">Control Plane Instance Type Preference:</label>
+                        <div class="edit-cluster-instance-type-row">
+                            <select id="cp-config-instance-type-add">
+                                <option value="">Select an instance type to add</option>
+                            </select>
+                            <button type="button" id="cp-config-instance-type-add-btn" class="add-btn" onclick="addCreateClusterCPInstanceTypePreference()" title="Add instance type">Add</button>
+                        </div>
+                        <ul id="cp-config-instance-type-list" class="edit-cluster-instance-type-list"></ul>
+                        <span class="help-text">Ordered preference list for control plane provisioning (index 0 = highest priority).</span>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="cp-config-capi-infra-machine-template-yaml">Infra Machine Template:</label>
+                        <textarea id="cp-config-capi-infra-machine-template-yaml" class="manifest-textarea" placeholder="Paste infra machine template manifest as YAML"></textarea>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="cp-config-capi-spire-attestation-method">SPIRE Attestation Method:</label>
+                        <div class="input-area-content">
+                            <select id="cp-config-capi-spire-attestation-method">
+                                <option value="tpm">TPM</option>
+                                <option value="joinToken">Join Token</option>
+                            </select>
+                            <span class="help-text">Join token is insecure and intended for dev/test only.</span>
+                        </div>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="cp-config-capi-bootstrap-files-yaml">Bootstrap Files:</label>
+                        <div class="input-area-content">
+                            <textarea id="cp-config-capi-bootstrap-files-yaml" class="manifest-textarea" placeholder="Paste bootstrap files as a YAML array of CloudInitFile objects"></textarea>
+                            <span class="help-text">Additional cloud-init write_files entries for CAPI-backed control plane nodes.</span>
+                        </div>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="cp-config-capi-pre-kubeadm-commands-yaml">Pre-Kubeadm Commands:</label>
+                        <div class="input-area-content">
+                            <textarea id="cp-config-capi-pre-kubeadm-commands-yaml" class="manifest-textarea" placeholder="Paste pre-kubeadm commands as a YAML array of strings"></textarea>
+                            <span class="help-text">Additional cloud-init runcmd entries that run before kubeadm.</span>
+                        </div>
                     </div>
                 </div>
 
@@ -251,7 +350,7 @@
                     </div>
                     <span class="help-text">When paused, cluster-level control plane nodes stuck in provisioning will not be auto-recycled by the timeout monitor.</span>
                 </div>
-                <div class="form-group">
+                <div class="form-group forge-only-field" id="edit-cluster-instance-type-group">
                     <label for="edit-cluster-instance-type-add" class="edit-cluster-version-label">Control Plane Instance Type Preference:</label>
                     <div class="edit-cluster-instance-type-row">
                         <select id="edit-cluster-instance-type-add">
@@ -261,6 +360,73 @@
                     </div>
                     <ul id="edit-cluster-instance-type-list" class="edit-cluster-instance-type-list"></ul>
                     <span class="help-text">Ordered preference list for control plane provisioning.</span>
+                </div>
+                <div id="edit-cluster-cp-expanded-group" style="display: none;">
+                    <div class="form-group">
+                        <label for="edit-cluster-cp-desired-count">Desired CP Count:</label>
+                        <input type="number" id="edit-cluster-cp-desired-count" min="1" step="1">
+                        <span class="help-text">Number of control plane nodes to provision (must be at least 1).</span>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-cluster-cp-teleport-enabled">Enable Teleport:</label>
+                        <div class="checkbox-with-label">
+                            <input type="checkbox" id="edit-cluster-cp-teleport-enabled">
+                            <span class="checkbox-label">Enroll control plane nodes into Teleport</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-cluster-cp-system-reserved-memory">System Reserved Memory:</label>
+                        <input type="text" id="edit-cluster-cp-system-reserved-memory" placeholder="Optional (default: 16Gi)" pattern="^$|^[0-9]+(Gi|Mi|G|M)$" title="Optional. Memory value with unit (e.g., 16Gi, 128Gi).">
+                    </div>
+                    <div class="form-group">
+                        <label for="edit-cluster-cp-node-labels">Node Labels:</label>
+                        <textarea id="edit-cluster-cp-node-labels" placeholder="One key=value per line (or comma-separated), e.g. team=platform"></textarea>
+                        <span class="help-text">Optional. Additional labels applied to control plane nodes, on top of any set by the config profile. One key=value per line.</span>
+                    </div>
+                    <div class="form-group forge-only-field">
+                        <label for="edit-cluster-cp-os-profile">OS Profile:</label>
+                        <select id="edit-cluster-cp-os-profile">
+                            <option value="">Select an OS profile</option>
+                        </select>
+                    </div>
+                    <div class="form-group forge-only-field">
+                        <label for="edit-cluster-cp-config-profile">Config Profile:</label>
+                        <select id="edit-cluster-cp-config-profile">
+                            <option value="">Select a config profile</option>
+                        </select>
+                    </div>
+                    <div class="form-group subnets-form-group forge-only-field">
+                        <label id="edit-cluster-cp-subnets-label" for="edit-cluster-cp-subnets-container">Subnets:</label>
+                        <div id="edit-cluster-cp-subnets-container" class="custom-multiselect-container disabled">
+                            <div class="empty-text">No subnets available</div>
+                        </div>
+                    </div>
+                    <div class="form-group ssh-key-groups-form-group forge-only-field">
+                        <label for="edit-cluster-cp-ssh-key-groups-container">SSH Key Groups:</label>
+                        <div id="edit-cluster-cp-ssh-key-groups-container" class="custom-multiselect-container disabled">
+                            <div class="empty-text">No SSH key groups available</div>
+                        </div>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="edit-cluster-cp-capi-infra-machine-template-yaml">Infra Machine Template:</label>
+                        <textarea id="edit-cluster-cp-capi-infra-machine-template-yaml" class="manifest-textarea" placeholder="Paste infra machine template manifest as YAML"></textarea>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="edit-cluster-cp-capi-spire-attestation-method">SPIRE Attestation Method:</label>
+                        <select id="edit-cluster-cp-capi-spire-attestation-method">
+                            <option value="tpm">TPM</option>
+                            <option value="joinToken">Join Token</option>
+                        </select>
+                        <span class="help-text">Join token is insecure and intended for dev/test only.</span>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="edit-cluster-cp-capi-bootstrap-files-yaml">Bootstrap Files:</label>
+                        <textarea id="edit-cluster-cp-capi-bootstrap-files-yaml" class="manifest-textarea" placeholder="Paste bootstrap files as a YAML array of CloudInitFile objects"></textarea>
+                    </div>
+                    <div class="form-group capi-only-field" style="display: none;">
+                        <label for="edit-cluster-cp-capi-pre-kubeadm-commands-yaml">Pre-Kubeadm Commands:</label>
+                        <textarea id="edit-cluster-cp-capi-pre-kubeadm-commands-yaml" class="manifest-textarea" placeholder="Paste pre-kubeadm commands as a YAML array of strings"></textarea>
+                    </div>
                 </div>
             </div>
             <div id="edit-cluster-loading" class="modal-loading" style="display: none;"></div>
@@ -319,6 +485,38 @@
                 <div class="form-group">
                     <label for="delete-node-details">Details: <span style="visibility: hidden;">*</span></label>
                     <textarea id="delete-node-details" rows="3" placeholder="Detailed information helpful for diagnosis (e.g., The node reboot completed at 12:51Z and it started reporting XID 79 at 14:09Z)" style="width: 100%; resize: vertical;"></textarea>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px; margin-bottom: 20px;">
+                <div style="display: flex; align-items: flex-start;">
+                    <input type="checkbox" id="delete-node-force-unreachable" onchange="toggleForceUnreachableFields()" style="margin-top: 2px;">
+                    <label for="delete-node-force-unreachable" style="margin-left: 8px; font-weight: 500; cursor: pointer; user-select: none;">
+                        Force delete (node is unreachable)
+                    </label>
+                </div>
+                <p style="margin: 6px 0 0 26px; font-size: 12px; color: #999;">
+                    Tolerate drain / graceful-shutdown failures when the node's kubelet or agent is unresponsive and a normal delete would hang.
+                </p>
+            </div>
+
+            <div id="force-unreachable-fields" style="display: none; padding: 16px; background: #3a2a2a; border-radius: 4px; margin-bottom: 16px;">
+                <p style="margin: 0 0 12px; font-size: 13px; color: #e0b0b0;">
+                    <strong>Danger:</strong> etcd safety overrides can break etcd quorum. Only needed for control-plane node removal
+                    (e.g. single-node control-plane rotation on a dev site). The server must have
+                    <code>ALLOW_ETCD_SAFETY_OVERRIDES</code> enabled or the request is rejected.
+                </p>
+                <div style="display: flex; align-items: flex-start; margin-bottom: 8px;">
+                    <input type="checkbox" id="delete-node-allow-single-voter" style="margin-top: 2px;">
+                    <label for="delete-node-allow-single-voter" style="margin-left: 8px; cursor: pointer; user-select: none;">
+                        Allow single-voter etcd cluster (single-node control-plane rotation)
+                    </label>
+                </div>
+                <div style="display: flex; align-items: flex-start;">
+                    <input type="checkbox" id="delete-node-allow-quorum-loss" style="margin-top: 2px;">
+                    <label for="delete-node-allow-quorum-loss" style="margin-left: 8px; cursor: pointer; user-select: none;">
+                        Allow etcd quorum loss
+                    </label>
                 </div>
             </div>
 
@@ -464,6 +662,10 @@
             <div class="form-group">
                 <label for="edit-nodepool-system-reserved-memory">System Reserved Memory:</label>
                 <input type="text" id="edit-nodepool-system-reserved-memory" placeholder="Optional (default: 16Gi)" pattern="^[0-9]+(Gi|Mi|G|M)$" title="Optional. Memory value with unit (e.g., 16Gi, 128Gi, 256Gi). Defaults to 16Gi if not specified.">
+            </div>
+            <div class="form-group">
+                <label for="edit-nodepool-kube-reserved-memory">Kube Reserved Memory:</label>
+                <input type="text" id="edit-nodepool-kube-reserved-memory" placeholder="Optional (default: 2Gi)" pattern="^[0-9]+(Gi|Mi|G|M)$" title="Optional. Memory value with unit (e.g., 2Gi, 250Mi). Uses the kubeadm-patches default if not specified.">
             </div>
             <div id="edit-nodepool-error" class="error-message" style="display:none;"></div>
             <div id="edit-nodepool-loading" class="loading-message" style="display:none;"></div>

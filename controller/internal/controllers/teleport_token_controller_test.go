@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/uptrace/bun"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -35,6 +36,7 @@ import (
 // Site -> Cluster (teleport_enabled) -> NodePool -> NodeSet (teleport_enabled)
 type testEnv struct {
 	database db.DB
+	bunDB    *bun.DB
 	site     db.Site
 	cluster  db.Cluster
 	nodePool db.NodePool
@@ -124,6 +126,7 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 
 	return &testEnv{
 		database: database,
+		bunDB:    bunDB,
 		site:     site,
 		cluster:  cluster,
 		nodePool: nodePool,
@@ -645,18 +648,20 @@ func TestCreateTokenForNode(t *testing.T) {
 			ClusterID:              uuid.New(), // Non-existent Cluster
 			Name:                   "orphan-pool",
 			NodeNamePrefix:         "test",
-			SubnetIDs:              []uuid.UUID{uuid.New()},
-			VpcPrefixIDs:           []uuid.UUID{uuid.New()},
-			InstanceTypeID:         uuid.New(),
-			SSHKeyGroupIDs:         []uuid.UUID{},
-			OSProfile:              "test-os",
-			ConfigProfile:          "test-config",
-			CapiBootstrapFiles:     []db.CloudInitFile{},
-			CapiPreKubeadmCommands: []string{},
 			NodeLabels:             []string{},
 			SystemReservedMemory:   "16Gi",
+			CapiBootstrapFiles:     []db.CloudInitFile{},
+			CapiPreKubeadmCommands: []string{},
 		}
-		_, err := te.database.CreateNodePool(ctx, &orphanPool)
+		orphanPool.SetNico(db.NicoNodePoolProvider{
+			InstanceTypeID: uuid.New(),
+			SSHKeyGroupIDs: []uuid.UUID{},
+			SubnetIDs:      []uuid.UUID{uuid.New()},
+			VpcPrefixIDs:   []uuid.UUID{uuid.New()},
+			OSProfile:      "test-os",
+			ConfigProfile:  "test-config",
+		})
+		_, err := te.bunDB.NewInsert().Model(&orphanPool).Exec(ctx)
 		require.NoError(t, err)
 
 		node := db.Node{

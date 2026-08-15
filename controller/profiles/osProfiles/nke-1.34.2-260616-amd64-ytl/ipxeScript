@@ -1,6 +1,0 @@
-#!ipxe
-set base-url https://d3mq564cn7sth7.cloudfront.net/nke-isos/nke_base/24.04/2025.12.12-amd64/nke_base-2025.12.12-amd64
-
-kernel ${base-url}-vmlinuz console=tty0 console=ttyS1,115200 ip=dhcp fb=false interface=ens5f0 url=${base-url}.iso autoinstall ds=nocloud-net;s=${cloudinit-url} initrd=initrd.magic
-initrd ${base-url}-initrd
-boot

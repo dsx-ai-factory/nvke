@@ -8,6 +8,8 @@
 # without an express license agreement from NVIDIA CORPORATION or
 # its affiliates is strictly prohibited.
 
+# The two sql.password fields below are supplied by the Tiltfile from
+# CNPG_SUPERUSER_PASSWORD — do not hardcode them here.
 server:
   configMapsToMount: sprig
   setConfigFilePath: true
@@ -22,7 +24,6 @@ server:
           port: 5432
           database: temporal
           user: postgres
-          password: postgres
           maxConns: 10
           maxIdleConns: 5
       visibility:
@@ -33,7 +34,6 @@ server:
           port: 5432
           database: temporal_visibility
           user: postgres
-          password: postgres
           maxConns: 10
           maxIdleConns: 5
 

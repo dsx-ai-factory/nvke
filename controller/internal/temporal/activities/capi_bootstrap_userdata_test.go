@@ -41,7 +41,7 @@ func TestRenderCAPIBootstrapUserData_TPMAttestor(t *testing.T) {
 	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), db.NodeSet{
 		CapiSpireAttestationMethod: db.SpireAttestationMethodTPM,
 		CapiBootstrapFiles: []db.CloudInitFile{
-			{Path: "/etc/custom.conf", Owner: "root:root", Permissions: "0600", Content: "hello"},
+			{Path: "/etc/custom.conf", Owner: rootRoot, Permissions: "0600", Content: "hello"},
 		},
 		CapiPreKubeadmCommands: []string{"echo before kubeadm"},
 	}, "")

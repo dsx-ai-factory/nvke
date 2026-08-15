@@ -95,7 +95,6 @@ BODY=$(cat <<EOF
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
   "etcdEncrypted": false,
-  "disableKubeVip": true,
   "teleportEnabled": false,
   "nodePools": [
     {

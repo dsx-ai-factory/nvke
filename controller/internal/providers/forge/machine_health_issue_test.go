@@ -72,7 +72,7 @@ func TestNewMachineHealthIssueFromJSON_Valid(t *testing.T) {
 			name: "hardware_with_details",
 			json: `{"category":"Hardware","summary":"GPU thermal trip","details":"slot 3 ECC error"}`,
 			want: &MachineHealthIssue{
-				Category: "Hardware",
+				Category: hardware,
 				Summary:  "GPU thermal trip",
 				Details:  strPtr("slot 3 ECC error"),
 			},
@@ -99,7 +99,7 @@ func TestNewMachineHealthIssueFromJSON_Valid(t *testing.T) {
 			name: "leading_trailing_whitespace_on_payload",
 			json: "  \n{\"category\":\"Other\",\"summary\":\"Manual flag\"}  ",
 			want: &MachineHealthIssue{
-				Category: "Other",
+				Category: otherValue,
 				Summary:  "Manual flag",
 				Details:  nil,
 			},
@@ -130,7 +130,7 @@ func TestNewMachineHealthIssueFromJSON_Defaulting(t *testing.T) {
 			name: "invalid_category_defaults_to_other",
 			json: `{"category":"NotARealCategory","summary":"Something wrong"}`,
 			want: &MachineHealthIssue{
-				Category: "Other",
+				Category: otherValue,
 				Summary:  "Something wrong",
 				Details:  nil,
 			},
@@ -139,7 +139,7 @@ func TestNewMachineHealthIssueFromJSON_Defaulting(t *testing.T) {
 			name: "empty_summary_gets_default",
 			json: `{"category":"Hardware","summary":""}`,
 			want: &MachineHealthIssue{
-				Category: "Hardware",
+				Category: hardware,
 				Summary:  defaultSummary,
 				Details:  nil,
 			},
@@ -148,7 +148,7 @@ func TestNewMachineHealthIssueFromJSON_Defaulting(t *testing.T) {
 			name: "empty_object_both_fields_defaulted",
 			json: `{}`,
 			want: &MachineHealthIssue{
-				Category: "Other",
+				Category: otherValue,
 				Summary:  defaultSummary,
 				Details:  nil,
 			},
@@ -157,7 +157,7 @@ func TestNewMachineHealthIssueFromJSON_Defaulting(t *testing.T) {
 			name: "missing_keys_both_defaulted",
 			json: `{"details":"note only"}`,
 			want: &MachineHealthIssue{
-				Category: "Other",
+				Category: otherValue,
 				Summary:  defaultSummary,
 				Details:  strPtr("note only"),
 			},
@@ -191,27 +191,27 @@ func TestNewMachineHealthIssueFromJSON_LengthConstraints(t *testing.T) {
 		{
 			name: "one_char_summary_gets_default",
 			json: `{"category":"Hardware","summary":"x"}`,
-			want: &MachineHealthIssue{Category: "Hardware", Summary: defaultSummary},
+			want: &MachineHealthIssue{Category: hardware, Summary: defaultSummary},
 		},
 		{
 			name: "summary_at_max_256_is_kept",
 			json: `{"category":"Hardware","summary":"` + truncatedSummary + `"}`,
-			want: &MachineHealthIssue{Category: "Hardware", Summary: truncatedSummary},
+			want: &MachineHealthIssue{Category: hardware, Summary: truncatedSummary},
 		},
 		{
 			name: "summary_over_256_is_truncated",
 			json: `{"category":"Hardware","summary":"` + longSummary + `"}`,
-			want: &MachineHealthIssue{Category: "Hardware", Summary: truncatedSummary},
+			want: &MachineHealthIssue{Category: hardware, Summary: truncatedSummary},
 		},
 		{
 			name: "details_over_256_is_truncated",
 			json: `{"category":"Hardware","summary":"disk failure","details":"` + longDetails + `"}`,
-			want: &MachineHealthIssue{Category: "Hardware", Summary: "disk failure", Details: strPtr(truncatedDetails)},
+			want: &MachineHealthIssue{Category: hardware, Summary: "disk failure", Details: strPtr(truncatedDetails)},
 		},
 		{
 			name: "one_char_details_is_dropped",
 			json: `{"category":"Hardware","summary":"disk failure","details":"x"}`,
-			want: &MachineHealthIssue{Category: "Hardware", Summary: "disk failure", Details: nil},
+			want: &MachineHealthIssue{Category: hardware, Summary: "disk failure", Details: nil},
 		},
 	}
 	for _, tt := range tests {

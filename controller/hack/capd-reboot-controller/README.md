@@ -12,6 +12,7 @@ If you override `providers` in `tilt_config.json`, include the provider entry ex
 {
   "providers": [
     "capi_core",
+    "bgp-containers",
     "capd",
     {
       "capd-reboot-controller": "./hack/capd-reboot-controller"

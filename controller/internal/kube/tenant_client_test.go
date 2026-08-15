@@ -116,6 +116,7 @@ func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyCAPISecret(t *testi
 		Name:             "test-cluster",
 		CapiInfraCluster: []byte(`{"kind":"test"}`),
 	}
+	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: cluster.CapiInfraCluster})
 	capiCluster := newCAPIClusterForTenantClientProviderTest()
 	capiCluster.Namespace = capi.ClusterNamespace(cluster.Name)
 	kubeconfigSecret := capikubeconfig.GenerateSecret(capiCluster, nil)
@@ -128,6 +129,19 @@ func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyCAPISecret(t *testi
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrTenantClientNotReady)
+}
+
+func TestDBClusterTenantClientProviderErrorsForUnsupportedProviderType(t *testing.T) {
+	cluster := db.Cluster{
+		ID:           uuid.New(),
+		Name:         "test-cluster",
+		ProviderType: db.ProviderType("unknown"),
+	}
+	provider := NewDBClusterTenantClientProvider(nil, nil, nil, false)
+
+	_, err := provider.ClientForDBCluster(context.Background(), cluster)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unsupported provider type")
 }
 
 func TestDBClusterTenantClientProviderSharesClientByCluster(t *testing.T) {
@@ -273,11 +287,12 @@ users:
 }
 
 func newSiteDBClusterForTenantClientProviderTest() db.Cluster {
-	return db.Cluster{
-		ID:     uuid.New(),
-		Name:   "tenant-a",
-		SiteID: uuid.New(),
+	cluster := db.Cluster{
+		ID:   uuid.New(),
+		Name: "tenant-a",
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-1", SiteID: uuid.New(), VpcID: uuid.New()})
+	return cluster
 }
 
 func newPublishedTenantKubeconfigSecret(clusterName string) *corev1.Secret {

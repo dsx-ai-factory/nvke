@@ -137,6 +137,15 @@ func (m *MockDB) GetNodePool(ctx context.Context, id uuid.UUID) (db.NodePool, er
 	return v, args.Error(1)
 }
 
+func (m *MockDB) GetNodeSet(ctx context.Context, id uuid.UUID) (db.NodeSet, error) {
+	args := m.Called(ctx, id)
+	v, ok := args.Get(0).(db.NodeSet)
+	if !ok {
+		return db.NodeSet{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockDB) ListNodes(ctx context.Context, filters db.NodeFilters) ([]db.Node, error) {
 	args := m.Called(ctx, filters)
 	v, ok := args.Get(0).([]db.Node)

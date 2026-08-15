@@ -45,6 +45,7 @@ func TestGetNodePoolConfigHistory(t *testing.T) {
 		ConfigProfile:          "nvcf-cp-v3",
 		KubernetesVersion:      "1.34.2",
 		SystemReservedMemory:   "16Gi",
+		KubeReservedMemory:     "2Gi",
 		DiskSelectionStrategy:  db.DiskSelectionStrategySmallest,
 		TeleportEnabled:        false,
 		SubnetIDs:              []uuid.UUID{},
@@ -190,6 +191,7 @@ func TestGetNodePoolConfigHistory(t *testing.T) {
 				ns2 := makeNodeSet(nodeSetID2, t2, func(ns *db.NodeSet) {
 					ns.KubernetesVersion = "1.35.0"
 					ns.SystemReservedMemory = "32Gi"
+					ns.KubeReservedMemory = "250Mi"
 				})
 				m.On("ListNodeSets", mock.Anything, db.NodeSetFilters{NodePoolID: &nodePoolID}).Return([]db.NodeSet{ns1, ns2}, nil)
 			},
@@ -200,10 +202,11 @@ func TestGetNodePoolConfigHistory(t *testing.T) {
 				require.NoError(t, json.NewDecoder(res.Body).Decode(&body))
 				require.Len(t, body.Changes, 2)
 				fields := body.Changes[1].ChangedFields
-				require.Len(t, fields, 2)
-				fieldNames := []string{fields[0].Field, fields[1].Field}
+				require.Len(t, fields, 3)
+				fieldNames := []string{fields[0].Field, fields[1].Field, fields[2].Field}
 				assert.Contains(t, fieldNames, "kubernetesVersion")
 				assert.Contains(t, fieldNames, "systemReservedMemory")
+				assert.Contains(t, fieldNames, "kubeReservedMemory")
 			},
 		},
 		{

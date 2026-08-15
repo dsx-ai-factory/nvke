@@ -472,7 +472,7 @@ capd-up: kind-up clusterctl-install capd-image registry-mirror ## Bring up the l
 	@kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=120s
 	@echo "✅ CAPD management cluster is ready"
 	@echo "Next step: tilt up"
-	@echo "The CAPD Tilt provider starts the kube-vip BGP peer by default"
+	@echo "The bgp-containers Tilt provider starts the kube-vip BGP peer by default"
 
 .PHONY: clusterctl-install
 clusterctl-install: ## Install the pinned clusterctl (CAPI_CORE_VERSION) into .local/bin unless the binary PATH would select already reports that exact version
@@ -539,20 +539,20 @@ capi-core-up: kind-up clusterctl-install registry-mirror ## Bring up the Kind ma
 	@echo "✅ CAPI core management cluster is ready (context kind-$(KIND_CLUSTER_NAME))"
 	@echo "Next step: tilt up"
 
-.PHONY: capd-bgp-up
-capd-bgp-up: kind-up ## Start the host-mode FRR BGP speaker manually
-	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/capd-bgp/up.sh $(if $(VERIFY),--verify,)
+.PHONY: bgp-containers-up
+bgp-containers-up: kind-up ## Start the host-mode FRR BGP speaker manually
+	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/bgp-containers/up.sh $(if $(VERIFY),--verify,)
 
-.PHONY: capd-bgp-down
-capd-bgp-down: ## Stop the CAPD BGP speaker
-	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/capd-bgp/down.sh
+.PHONY: bgp-containers-down
+bgp-containers-down: ## Stop the container-node BGP speaker
+	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/bgp-containers/down.sh
 
-.PHONY: capd-bgp-verify
-capd-bgp-verify: ## Print FRR BGP peer and route state for local CAPD kube-vip tests
-	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/capd-bgp/verify-routes.sh
+.PHONY: bgp-containers-verify
+bgp-containers-verify: ## Print FRR BGP peer and route state for local container-node kube-vip tests
+	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/bgp-containers/verify-routes.sh
 
 .PHONY: capd-create-cluster
-capd-create-cluster: capd-bgp-up ## Create a local CAPD workload cluster with a stable kube-vip API endpoint
+capd-create-cluster: bgp-containers-up ## Create a local CAPD workload cluster with a stable kube-vip API endpoint
 	@cd "$(CURDIR)" && $(kind-docker-host) \
 		DEFAULT_VIP_RANGE="$(DEFAULT_VIP_RANGE)" \
 		CAPD_KINDEST_NODE_IMAGE="$(CAPD_KINDEST_NODE_IMAGE)" \

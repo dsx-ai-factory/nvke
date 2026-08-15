@@ -1,0 +1,37 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+
+# This mocks `cloud-init status` so the node agent can run the same
+# checks it runs in production images.
+# Since we don't actually run cloud-init in container backed nodes,
+# cloud-init will never report done. Instead, we let the higher level
+# orchestrator that simulates cloud-init (in our case, mock-nico)
+# write a status file to track the progress of the simulated cloud-init
+# process. From this script we just read that file and print it
+# following the `cloud-init status` contract.
+
+set -eu
+
+if [ "$#" -ne 1 ] || [ "$1" != "status" ]; then
+    echo "only 'cloud-init status' is supported" >&2
+    exit 2
+fi
+
+status_file="${NICO_MOCK_CLOUD_INIT_STATUS_FILE:-/var/lib/nico-mock-cloud-init/status}"
+
+if [ -e "$status_file" ]; then
+    state="$(cat "$status_file" 2>/dev/null)" || state=error
+else
+    state=running
+fi
+
+case "$state" in
+    running|done|error)
+        printf 'status: %s\n' "$state"
+        ;;
+    *)
+        # Fail closed through the same output contract consumed by node-agent.
+        printf 'status: error\n'
+        ;;
+esac

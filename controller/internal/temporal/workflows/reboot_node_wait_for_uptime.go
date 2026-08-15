@@ -111,7 +111,8 @@ func softRebootNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, m
 		activities.SoftRebootNodeInput{
 			NodeID:                        nodeID,
 			NodeRebootingConditionMessage: fmt.Sprintf("Soft rebooting node (attempt: %d)", rebootAttempt),
-		}).Get(ctx, nil)
+		},
+	).Get(ctx, nil)
 }
 
 func waitForNodeUpTime(ctx workflow.Context, nodeID uuid.UUID, after time.Time, timeout time.Duration) (activities.WaitForNodeUptimeResult, error) {
