@@ -84,7 +84,7 @@ commands are not listed, because they are not distributed.
 | [oras.land/oras-go/v2](https://github.com/oras-project/oras-go/blob/v2.6.2/LICENSE) | Apache-2.0 | oras.land/oras-go/v2@v2.6.2 |
 | [sigs.k8s.io/json](https://github.com/kubernetes-sigs/json/blob/2d320260d730/LICENSE) | Apache-2.0 / BSD-3-Clause | sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730 |
 | [sigs.k8s.io/randfill](https://github.com/kubernetes-sigs/randfill/blob/v1.0.0/LICENSE) | Apache-2.0 | sigs.k8s.io/randfill@v1.0.0 |
-| [sigs.k8s.io/structured-merge-diff/v6](https://github.com/kubernetes-sigs/structured-merge-diff/blob/v6.3.3/LICENSE) | Apache-2.0 | — |
+| [sigs.k8s.io/structured-merge-diff/v6](https://github.com/kubernetes-sigs/structured-merge-diff/blob/v6.4.0/LICENSE) | Apache-2.0 | — |
 | [sigs.k8s.io/yaml](https://github.com/kubernetes-sigs/yaml/blob/v1.6.0/LICENSE) | Apache-2.0 / BSD-3-Clause / MIT | sigs.k8s.io/yaml@v1.6.0 |
 
 ## License Texts
