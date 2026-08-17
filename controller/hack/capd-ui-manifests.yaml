@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Copy/paste these YAML snippets into the CWE UI for a CAPD-backed cluster.
+# Copy/paste these YAML snippets into the forge-console UI for a CAPD-backed cluster.
 # Paste the DockerCluster manifest into the cluster infrastructure manifest field.
 # Paste the DockerMachineTemplate manifest into a node pool infrastructure machine template field.
 # Paste the pre-kubeadm commands into the node pool pre-kubeadm commands field.

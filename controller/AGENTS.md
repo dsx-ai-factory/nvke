@@ -87,8 +87,7 @@ All Go files must have the NVIDIA proprietary license header. Run `make license`
 │   ├── server.gen.go       # Generated server interfaces
 │   └── client.gen.go       # Generated client
 ├── cmd/
-│   ├── worker/             # Main CWE worker entrypoint
-│   └── ui-dev/             # UI development proxy server
+│   └── worker/             # Main CWE worker entrypoint
 ├── docs/                   # Developer guides (e.g. remote Colossus Tilt)
 ├── hack/
 │   └── remote-sync/        # Mutagen templates for Mac→Linux Tilt
@@ -105,7 +104,6 @@ All Go files must have the NVIDIA proprietary license header. Run `make license`
 ├── profiles/
 │   ├── configProfiles/     # Kubernetes config profiles (YAML)
 │   └── osProfiles/         # OS provisioning profiles
-├── ui/                     # Static UI files (HTML, JS, CSS)
 └── integration-test/       # End-to-end integration tests
 ```
 
@@ -157,15 +155,7 @@ Mac while Tilt/forge-vms runs on a Colossus (or other x86_64 Linux) host, see
  ```bash
  TEMPORAL_HOST_PORT=localhost:7233 FWE_API_KEY=<NGC_API_KEY> go run ./cmd/worker/main.go
  ```
-4. Access UI at http://localhost:8080, Swagger UI at http://localhost:8080/api/docs
-
-### UI-Only Development
-To develop UI against a remote CWE deployment:
-```bash
-kubectl port-forward -n cloud-workflow-engine deploy/cloud-workflow-engine 8080:8080
-API_BASE_URL=http://localhost:8080/api go run cmd/ui-dev/main.go
-```
-UI served at http://localhost:8081.
+4. Access Swagger UI at http://localhost:8080/api/docs. The cluster management UI is served by forge-console.
 
 ### SPIRE Integration for Local Development
 

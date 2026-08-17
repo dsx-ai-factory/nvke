@@ -77,13 +77,12 @@ func (e *updateInProgressError) Error() string {
 }
 
 type clusterService struct {
-	logger               *slog.Logger
-	db                   db.DB
-	nodePoolService      *nodePoolService
-	forgeNetworkProvider forgeClusterNetworkProvider
-	teleportCfg          config.TeleportConfig
-	enableForgeCapi      bool
-	oidcAuthEnabled      bool
+	logger          *slog.Logger
+	db              db.DB
+	nodePoolService *nodePoolService
+	teleportCfg     config.TeleportConfig
+	enableForgeCapi bool
+	oidcAuthEnabled bool
 	// useControlPlaneController mirrors the CWE feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
 	// cluster-level controlPlaneConfig is authoritative: it is required on
@@ -98,7 +97,6 @@ func NewClusterService(
 	logger *slog.Logger,
 	database db.DB,
 	nodePoolService *nodePoolService,
-	forgeNetworkProvider forgeClusterNetworkProvider,
 	teleportCfg config.TeleportConfig,
 	enableForgeCapi bool,
 	oidcAuthEnabled bool,
@@ -108,7 +106,6 @@ func NewClusterService(
 		logger:                    logger,
 		db:                        database,
 		nodePoolService:           nodePoolService,
-		forgeNetworkProvider:      forgeNetworkProvider,
 		teleportCfg:               teleportCfg,
 		enableForgeCapi:           enableForgeCapi,
 		oidcAuthEnabled:           oidcAuthEnabled,
@@ -296,14 +293,6 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 		if err := network.validateControlPlaneVIP(controlPlaneVIP); err != nil {
 			return resolvedClusterNetwork{}, newBadRequestErrorf("%s", err)
 		}
-	}
-
-	// Validate selected infrastructure network CIDRs before opening the database transaction.
-	// This covers Forge-scoped clusters provisioned directly or through CAPNICo because both
-	// paths use the same top-level subnet and VPC-prefix IDs. Generic CAPI clusters provide
-	// provider-specific machine templates, so their infrastructure networks are not resolved here.
-	if err := s.validateSelectedForgeNetworkCIDRs(ctx, req, network); err != nil {
-		return resolvedClusterNetwork{}, err
 	}
 
 	// When the control plane is configured at the cluster level for a Forge

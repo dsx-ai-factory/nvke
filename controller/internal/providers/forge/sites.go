@@ -11,7 +11,6 @@ import (
 
 	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	forgeapi "github.com/NVIDIA/nke/controller/internal/providers/forge/api"
 )
@@ -56,12 +55,20 @@ func (p *ForgeProvider) GetSiteByID(ctx context.Context, orgID, siteID string) (
 	return nil, fmt.Errorf("site %s not found", siteID)
 }
 
-func getTenants(dockerTest bool) []api.ForgeTenant {
+// forgeTenant is the internal tenant lookup used by GetSites. It is not part of
+// the CWE OpenAPI surface (forge-console owns /forge/tenants).
+type forgeTenant struct {
+	ID    uuid.UUID
+	OrgID string
+	Name  string
+}
+
+func getTenants(dockerTest bool) []forgeTenant {
 	tenants := forgeapi.GetTenants(dockerTest)
-	response := make([]api.ForgeTenant, 0, len(tenants))
+	response := make([]forgeTenant, 0, len(tenants))
 
 	for _, tenant := range tenants {
-		response = append(response, api.ForgeTenant{
+		response = append(response, forgeTenant{
 			ID:    uuid.MustParse(tenant.GetId()),
 			OrgID: tenant.GetOrg(),
 			Name:  tenant.GetOrgDisplayName(),
@@ -71,7 +78,7 @@ func getTenants(dockerTest bool) []api.ForgeTenant {
 	return response
 }
 
-func findTenantByOrgID(orgID string, dockerTest bool) (*api.ForgeTenant, error) {
+func findTenantByOrgID(orgID string, dockerTest bool) (*forgeTenant, error) {
 	for _, tenant := range getTenants(dockerTest) {
 		if tenant.OrgID == orgID {
 			return &tenant, nil

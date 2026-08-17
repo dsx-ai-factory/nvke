@@ -388,7 +388,8 @@ func statusError(jwksURL string, status int) error {
 		return fmt.Errorf(
 			"JWKS fetch from %s returned %d: the endpoint refused this service's credential. "+
 				"If this is the cluster's own JWKS, its ServiceAccount needs the "+
-				"system:service-account-issuer-discovery ClusterRole", jwksURL, status)
+				"system:service-account-issuer-discovery ClusterRole", jwksURL, status,
+		)
 	default:
 		return fmt.Errorf("JWKS fetch from %s returned unexpected status %d", jwksURL, status)
 	}

@@ -13,18 +13,20 @@ API_GROUP="compute.private.x-dgxc.nvidia.com"
 API_VERSION="v1alpha1"
 
 usage() {
-    echo "Usage: $0 --cwe-api-url <url> --namespace <ns> [--output-dir <dir>] [--dry-run] [--apply]"
+    echo "Usage: $0 --cwe-api-url <url> --forge-api-url <url> --namespace <ns> [--output-dir <dir>] [--dry-run] [--apply]"
     echo ""
     echo "Options:"
-    echo "  --cwe-api-url URL  CWE API base (e.g. http://localhost:8080 with: kubectl port-forward -n cloud-workflow-engine svc/cloud-workflow-engine 8080:8080)"
-    echo "  --namespace NS     Platform namespace for CRs (target; may differ from CWE/site)"
-    echo "  --output-dir DIR  Output directory (default: ./output/<forgeVPC.name>)"
-    echo "  --dry-run          Print YAML only, do not write or apply"
-    echo "  --apply            After generating, apply CRs (kubeconfig = platform API)"
+    echo "  --cwe-api-url URL     CWE API base (e.g. http://localhost:8080 with: kubectl port-forward -n cloud-workflow-engine svc/cloud-workflow-engine 8080:8080)"
+    echo "  --forge-api-url URL   forge-console API base for /forge/* metadata (e.g. http://localhost:8090)"
+    echo "  --namespace NS        Platform namespace for CRs (target; may differ from CWE/site)"
+    echo "  --output-dir DIR      Output directory (default: ./output/<forgeVPC.name>)"
+    echo "  --dry-run             Print YAML only, do not write or apply"
+    echo "  --apply               After generating, apply CRs (kubeconfig = platform API)"
     exit 1
 }
 
 CWE_API_URL=""
+FORGE_API_URL=""
 NAMESPACE_ARG=""
 OUTPUT_DIR=""
 DRY_RUN=false
@@ -33,6 +35,7 @@ APPLY=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --cwe-api-url) CWE_API_URL="${2%/}"; shift 2 ;;
+        --forge-api-url) FORGE_API_URL="${2%/}"; shift 2 ;;
         --namespace)   NAMESPACE_ARG="$2"; shift 2 ;;
         --output-dir)  OUTPUT_DIR="$2"; shift 2 ;;
         --dry-run)     DRY_RUN=true; shift ;;
@@ -42,8 +45,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$CWE_API_URL" ]] || [[ -z "$NAMESPACE_ARG" ]]; then
-    echo "Error: --cwe-api-url and --namespace are required"
+if [[ -z "$CWE_API_URL" ]] || [[ -z "$FORGE_API_URL" ]] || [[ -z "$NAMESPACE_ARG" ]]; then
+    echo "Error: --cwe-api-url, --forge-api-url, and --namespace are required"
     usage
 fi
 
@@ -56,6 +59,11 @@ fi
 API="$CWE_API_URL"
 if [[ "$API" != */api ]]; then
     API="${CWE_API_URL}/api"
+fi
+
+FORGE_API="$FORGE_API_URL"
+if [[ "$FORGE_API" != */api ]]; then
+    FORGE_API="${FORGE_API}/api"
 fi
 
 # ---------- Resolve list of cluster IDs (all clusters on CWE) ----------
@@ -76,9 +84,18 @@ echo "Found ${#CLUSTER_IDS[@]} cluster(s) on CWE"
 
 namespace="$NAMESPACE_ARG"
 
-# ---------- Fetch Forge tenants (orgs) from CWE API (same source as CWE UI) ----------
-TENANTS_JSON=$(curl -sS "${API}/forge/tenants" 2>/dev/null || echo '{"tenants":[]}')
-TENANTS_JSON=$(echo "$TENANTS_JSON" | jq -c '.tenants // []')
+# ---------- Fetch Forge site metadata from forge-console ----------
+# forge-console is single-org/site: GET /forge/site returns the configured site
+# (including orgID/name). Tenants list and /forge/sites?orgID= no longer exist.
+FORGE_SITE_JSON=$(curl -sS "${FORGE_API}/forge/site" 2>/dev/null || echo '{}')
+FORGE_ORG_ID=$(echo "$FORGE_SITE_JSON" | jq -r '.orgID // empty')
+FORGE_SITE_NAME=$(echo "$FORGE_SITE_JSON" | jq -r '.name // empty')
+FORGE_SITE_NATIVE=$(echo "$FORGE_SITE_JSON" | jq -r '.capabilities.nativeNetworking // false')
+FORGE_TENANT_NAME=$(echo "$FORGE_SITE_JSON" | jq -r '.name // empty')
+if [[ -z "$FORGE_ORG_ID" ]]; then
+    echo "Error: failed to fetch Forge site metadata from ${FORGE_API}/forge/site"
+    exit 1
+fi
 
 # Track written VPC and site names so we only emit each once
 WRITTEN_VPC_NAMES=()
@@ -143,22 +160,21 @@ for cluster_id in "${CLUSTER_IDS[@]}"; do
     control_plane_vip=$(echo "$cluster_json" | jq -r '.controlPlaneVIP // empty')
     enable_cp_recycling=$(echo "$cluster_json" | jq -r '.enableCPNodeRecycling // false')
 
-    # Forge site name and nativeNetworking from Forge API (same for all clusters in site)
-    sites_json=$(curl -sS "${API}/forge/sites?orgID=${org_id}" 2>/dev/null || echo '{"sites":[]}')
-    forge_site_name=$(echo "$sites_json" | jq -r --arg id "$site_id" '(.sites // [])[] | select(.id == $id) | .name // empty')
-    forge_site_native_networking=$(echo "$sites_json" | jq -r --arg id "$site_id" '(.sites // [])[] | select(.id == $id) | .capabilities.nativeNetworking // false')
+    # Forge site name and nativeNetworking from forge-console /forge/site
+    forge_site_name="$FORGE_SITE_NAME"
+    forge_site_native_networking="$FORGE_SITE_NATIVE"
     if [[ -z "$forge_site_name" ]]; then
         forge_site_name="site-${site_id:0:8}"
     fi
 
-    forge_vpc_name=$(echo "$(curl -sS "${API}/forge/vpcs?orgID=${org_id}&siteID=${site_id}" 2>/dev/null || echo '{"vpcs":[]}')" | jq -r --arg id "$vpc_id" '(.vpcs // [])[] | select(.id == $id) | .name // empty')
+    forge_vpc_name=$(echo "$(curl -sS "${FORGE_API}/forge/vpcs" 2>/dev/null || echo '{"vpcs":[]}')" | jq -r --arg id "$vpc_id" '(.vpcs // [])[] | select(.id == $id) | .name // empty')
     if [[ -z "$forge_vpc_name" ]]; then
         forge_vpc_name="vpc-${vpc_id:0:8}"
     fi
 
     if [[ "$first_cluster" == true ]]; then
-        # Forge tenant: use name from CWE API /forge/tenants if found for this org, else namespace
-        forge_tenant_name=$(echo "$TENANTS_JSON" | jq -r --arg oid "$org_id" '.[] | select(.orgID == $oid) | .name // empty')
+        # Forge tenant: forge-console is single-org; prefer site metadata, else namespace
+        forge_tenant_name="$FORGE_TENANT_NAME"
         [[ -z "$forge_tenant_name" ]] && forge_tenant_name="$namespace"
         forge_tenant_id="$org_id"
         forge_site_id="$site_id"

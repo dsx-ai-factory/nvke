@@ -905,12 +905,6 @@ if _tilt_env.get("FWE_API_KEY", "") != "":
         "name": "FWE_API_KEY",
         "value": _tilt_env["FWE_API_KEY"],
     })
-_cwe_chart_extra_env += [
-    {
-        "name": "UI_DIR",
-        "value": "/ui",
-    },
-]
 for _name in _required_cred_names:
     _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
 
@@ -1023,7 +1017,6 @@ _cwe_build_script = """
       cp hack/Dockerfile.cwe.tilt "${tmp_dir}/Dockerfile"
       mkdir -p "${tmp_dir}/bin"
       cp bin/cloud-workflow-engine "${tmp_dir}/bin/cloud-workflow-engine"
-      cp -R ui "${tmp_dir}/ui"
       docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_cwe_tilt_goarch, _cwe_tilt_goarch)
 
@@ -1048,7 +1041,6 @@ if not _cwe_profiles_image_enabled:
       cp bin/cloud-workflow-engine "${tmp_dir}/bin/cloud-workflow-engine"
       mkdir -p "${tmp_dir}/profiles"
       cp -a "%s/." "${tmp_dir}/profiles/"
-      cp -R ui "${tmp_dir}/ui"
       docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_cwe_tilt_goarch, _cwe_profiles_dir, _cwe_tilt_goarch)
 
@@ -1089,7 +1081,6 @@ helm_resource(
     resource_deps=_cwe_resource_deps,
     port_forwards=[CWE_HTTP_PORT + ":8080"],
     links=[
-      ui_link(CWE_HTTP_PORT, "", "CWE UI"),
       ui_link(CWE_HTTP_PORT, "/api/docs", "Swagger Docs"),
       ui_link(CWE_HTTP_PORT, "/metrics", "Metrics"),
       ui_link(CWE_TEMPORAL_UI_PORT, "/namespaces/cloud-workflow-engine/workflows", "Temporal UI"),
@@ -1103,11 +1094,9 @@ if not CWE_IMAGE and not _cwe_local_debug_active:
     _cwe_live_update = [
       fall_back_on(["hack/Dockerfile.cwe.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
       sync("bin/cloud-workflow-engine", "/usr/local/bin/cloud-workflow-engine"),
-      sync("ui", "/ui"),
     ]
     _cwe_build_deps = [
       "bin",
-      "ui",
       "hack/Dockerfile.cwe.tilt",
       "Makefile",
       "Makefile.dev",

@@ -66,7 +66,6 @@ COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload
 # OS/config profiles are operator-supplied at runtime (PROFILES_DIR), not baked
 # into the image.
 RUN mkdir -p /profiles
-COPY ./controller/ui /ui
 
 # Include both the project license and generated dependency notices.
 COPY LICENSE NOTICE /licenses/

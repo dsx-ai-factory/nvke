@@ -4,16 +4,12 @@
 package server
 
 import (
-	"context"
 	"net/netip"
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -263,84 +259,4 @@ func TestResolvedClusterNetworkValidateControlPlaneVIP(t *testing.T) {
 	require.ErrorContains(t, network.validateControlPlaneVIP("10.233.0.10"), "controlPlaneVIP")
 	require.ErrorContains(t, network.validateControlPlaneVIP("10.233.0.10"), "network.serviceCIDR")
 	assert.NoError(t, network.validateControlPlaneVIP("172.31.0.10"))
-}
-
-type fakeForgeClusterNetworkProvider struct {
-	subnet    *forgesdk.Subnet
-	vpcPrefix *forgesdk.VpcPrefix
-}
-
-func (f *fakeForgeClusterNetworkProvider) GetSubnetByIDFromAPI(
-	_ context.Context,
-	_, _, _ string,
-) (*forgesdk.Subnet, error) {
-	return f.subnet, nil
-}
-
-func (f *fakeForgeClusterNetworkProvider) GetVpcPrefixByIDFromAPI(
-	_ context.Context,
-	_, _, _ string,
-) (*forgesdk.VpcPrefix, error) {
-	return f.vpcPrefix, nil
-}
-
-func TestValidateSelectedForgeNetworkCIDRs(t *testing.T) {
-	network, err := resolveClusterNetwork(&api.ClusterNetworkCreateConfig{
-		PodCIDR:     "10.233.64.0/18",
-		ServiceCIDR: "10.233.0.0/18",
-	})
-	require.NoError(t, err)
-
-	t.Run("skips generic CAPI cluster without Forge provider", func(t *testing.T) {
-		service := &clusterService{}
-		err := service.validateSelectedForgeNetworkCIDRs(context.Background(), &api.CreateClusterRequest{
-			SiteID: uuid.Nil,
-		}, network)
-		assert.NoError(t, err)
-	})
-
-	subnetID := uuid.New()
-	vpcPrefixID := uuid.New()
-
-	overlappingSubnet := forgesdk.NewSubnet()
-	overlappingSubnet.SetIpv4Prefix("10.233.64.0")
-	overlappingSubnet.SetPrefixLength(24)
-	service := &clusterService{
-		forgeNetworkProvider: &fakeForgeClusterNetworkProvider{subnet: overlappingSubnet},
-	}
-	err = service.validateSelectedForgeNetworkCIDRs(context.Background(), &api.CreateClusterRequest{
-		OrgID:  "test-org",
-		SiteID: uuid.New(),
-		NodePools: &[]api.NodePoolCreateConfig{{
-			SubnetIDs: []uuid.UUID{subnetID},
-		}},
-	}, network)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "overlaps selected Forge subnet")
-
-	overlappingVpcPrefix := forgesdk.NewVpcPrefix()
-	overlappingVpcPrefix.SetPrefix("10.233.0.0/24")
-	service.forgeNetworkProvider = &fakeForgeClusterNetworkProvider{vpcPrefix: overlappingVpcPrefix}
-	err = service.validateSelectedForgeNetworkCIDRs(context.Background(), &api.CreateClusterRequest{
-		OrgID:  "test-org",
-		SiteID: uuid.New(),
-		NodePools: &[]api.NodePoolCreateConfig{{
-			VpcPrefixIDs: []uuid.UUID{vpcPrefixID},
-		}},
-	}, network)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "overlaps selected Forge VPC prefix")
-
-	safeSubnet := forgesdk.NewSubnet()
-	safeSubnet.SetIpv4Prefix("172.20.0.0")
-	safeSubnet.SetPrefixLength(16)
-	service.forgeNetworkProvider = &fakeForgeClusterNetworkProvider{subnet: safeSubnet}
-	err = service.validateSelectedForgeNetworkCIDRs(context.Background(), &api.CreateClusterRequest{
-		OrgID:  "test-org",
-		SiteID: uuid.New(),
-		NodePools: &[]api.NodePoolCreateConfig{{
-			SubnetIDs: []uuid.UUID{subnetID},
-		}},
-	}, network)
-	assert.NoError(t, err)
 }

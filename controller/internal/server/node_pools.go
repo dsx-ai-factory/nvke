@@ -48,7 +48,6 @@ type forgeSiteGetter interface {
 
 type nodePoolForgeProvider interface {
 	forgeSiteGetter
-	forgeClusterNetworkProvider
 }
 
 type nodePoolService struct {
@@ -121,27 +120,6 @@ func (s *nodePoolService) CreateNodePool(
 
 	if err := s.validateCreateNodePoolRequest(ctx, cluster, req.Body); err != nil {
 		return api.CreateNodePool400JSONResponse{Message: err.Error()}, nil
-	}
-	if !clusterIsCAPIBacked(cluster) {
-		network, err := resolveStoredClusterNetwork(cluster)
-		if err != nil {
-			return nil, fmt.Errorf("invalid stored cluster network: %w", err)
-		}
-		if err := validateForgeNetworkIDs(
-			ctx,
-			s.forgeProvider,
-			cluster.OrgID,
-			cluster.SiteID,
-			req.Body.SubnetIDs,
-			req.Body.VpcPrefixIDs,
-			network,
-		); err != nil {
-			var badRequestErr *badRequestError
-			if errors.As(err, &badRequestErr) {
-				return api.CreateNodePool400JSONResponse{Message: badRequestErr.Error()}, nil
-			}
-			return nil, err
-		}
 	}
 
 	var createdNodePool db.NodePool
@@ -554,25 +532,6 @@ func (s *nodePoolService) UpdateNodePool(
 				if err := validateStoredPodCIDRCapacity(cluster, augmentedNodePools); err != nil {
 					return newBadRequestErrorf("%s", err)
 				}
-			}
-		}
-		if !clusterIsCAPIBacked(cluster) &&
-			req.Body != nil &&
-			(req.Body.SubnetIDs != nil || req.Body.VpcPrefixIDs != nil) {
-			network, err := resolveStoredClusterNetwork(cluster)
-			if err != nil {
-				return fmt.Errorf("invalid stored cluster network: %w", err)
-			}
-			if err := validateForgeNetworkIDs(
-				ctx,
-				s.forgeProvider,
-				cluster.OrgID,
-				cluster.SiteID,
-				dbNodePool.SubnetIDs,
-				dbNodePool.VpcPrefixIDs,
-				network,
-			); err != nil {
-				return err
 			}
 		}
 

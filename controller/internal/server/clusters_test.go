@@ -46,21 +46,6 @@ func (m *mockForgeProvider) GetSiteByID(ctx context.Context, orgID, siteID strin
 	return nil, errors.New("GetSiteByID not mocked")
 }
 
-func (m *mockForgeProvider) GetSubnetByIDFromAPI(_ context.Context, _, _, subnetID string) (*forgesdk.Subnet, error) {
-	subnet := forgesdk.NewSubnet()
-	subnet.SetId(subnetID)
-	subnet.SetIpv4Prefix("172.20.0.0")
-	subnet.SetPrefixLength(16)
-	return subnet, nil
-}
-
-func (m *mockForgeProvider) GetVpcPrefixByIDFromAPI(_ context.Context, _, _, vpcPrefixID string) (*forgesdk.VpcPrefix, error) {
-	vpcPrefix := forgesdk.NewVpcPrefix()
-	vpcPrefix.SetId(vpcPrefixID)
-	vpcPrefix.SetPrefix("172.20.0.0/16")
-	return vpcPrefix, nil
-}
-
 type clusterService interface {
 	ListClusters(ctx context.Context, req api.ListClustersRequestObject) (api.ListClustersResponseObject, error)
 	CreateCluster(ctx context.Context, req api.CreateClusterRequestObject) (api.CreateClusterResponseObject, error)
@@ -83,7 +68,7 @@ func newTestClusterServiceWithControlPlaneController(logger *slog.Logger, mockDB
 		getSiteByIDFunc: getSiteByIDFunc,
 	}
 	nodePoolService := server.NewNodePoolService(logger, mockDB, mockForge, config.TeleportConfig{}, useControlPlaneController)
-	return server.NewClusterService(logger, mockDB, nodePoolService, mockForge, config.TeleportConfig{}, false, false, useControlPlaneController)
+	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, false, useControlPlaneController)
 }
 
 func discardLogger() *slog.Logger {
@@ -704,40 +689,6 @@ func TestClusterService_CreateClusterRejectsCustomNetworkForCalico(t *testing.T)
 	badRequest, ok := resp.(api.CreateCluster400JSONResponse)
 	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
 	assert.Contains(t, badRequest.Message, "custom pod or service CIDRs require CNI plugin \"ovn-kubernetes\"")
-	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
-}
-
-func TestClusterService_CreateClusterRejectsForgeNetworkOverlapBeforeTransaction(t *testing.T) {
-	mockDB := &mockDB{}
-	service := newTestClusterService(discardLogger(), mockDB, nil)
-	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
-		Body: &api.CreateClusterRequest{
-			Name:                          "test-cluster",
-			OrgID:                         testOrgID,
-			SiteID:                        uuid.New(),
-			VpcID:                         uuid.New(),
-			CniPlugin:                     "ovn-kubernetes",
-			ControlPlaneKubernetesVersion: "1.29.0",
-			Network: &api.ClusterNetworkCreateConfig{
-				PodCIDR: "172.20.0.0/16",
-			},
-			NodePools: &[]api.NodePoolCreateConfig{{
-				Name:             "cp",
-				NodeNamePrefix:   "cp",
-				SubnetIDs:        []uuid.UUID{uuid.New()},
-				InstanceTypeID:   uuid.New(),
-				OSProfile:        "ubuntu",
-				ConfigProfile:    "default",
-				ControlPlane:     true,
-				DesiredNodeCount: 1,
-			}},
-		},
-	})
-	require.NoError(t, err)
-
-	badRequest, ok := resp.(api.CreateCluster400JSONResponse)
-	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
-	assert.Contains(t, badRequest.Message, "overlaps selected Forge subnet")
 	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
 }
 

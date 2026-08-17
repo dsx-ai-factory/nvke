@@ -4,14 +4,9 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"net/netip"
 	"strings"
-
-	"github.com/google/uuid"
-
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -26,11 +21,6 @@ const (
 	podCIDRNodePrefixBits     = 24
 	minimumPodCIDRHeadroom    = 1
 )
-
-type forgeClusterNetworkProvider interface {
-	GetSubnetByIDFromAPI(ctx context.Context, orgID, siteID, subnetID string) (*forgesdk.Subnet, error)
-	GetVpcPrefixByIDFromAPI(ctx context.Context, orgID, siteID, vpcPrefixID string) (*forgesdk.VpcPrefix, error)
-}
 
 type resolvedClusterNetwork struct {
 	podCIDR         string
@@ -223,18 +213,6 @@ func isContainedInPrivateAddressSpace(prefix netip.Prefix) bool {
 	return false
 }
 
-func (n resolvedClusterNetwork) overlappingCIDR(prefix netip.Prefix) (string, netip.Prefix, bool) {
-	for _, podPrefix := range n.podCIDRPrefixes {
-		if podPrefix.Overlaps(prefix) {
-			return "network.podCIDR", podPrefix, true
-		}
-	}
-	if n.serviceCIDR.Overlaps(prefix) {
-		return "network.serviceCIDR", n.serviceCIDR, true
-	}
-	return "", netip.Prefix{}, false
-}
-
 func (n resolvedClusterNetwork) validateControlPlaneVIP(vip string) error {
 	addr, err := netip.ParseAddr(vip)
 	if err != nil {
@@ -262,133 +240,4 @@ func (n resolvedClusterNetwork) validateControlPlaneVIP(vip string) error {
 		)
 	}
 	return nil
-}
-
-func (s *clusterService) validateSelectedForgeNetworkCIDRs(
-	ctx context.Context,
-	req *api.CreateClusterRequest,
-	network resolvedClusterNetwork,
-) error {
-	if req.SiteID == uuid.Nil {
-		return nil
-	}
-	if s.forgeNetworkProvider == nil {
-		return fmt.Errorf("forge network provider is not configured")
-	}
-
-	subnetIDs := make([]uuid.UUID, 0)
-	vpcPrefixIDs := make([]uuid.UUID, 0)
-	if req.NodePools != nil {
-		for _, nodePool := range *req.NodePools {
-			subnetIDs = append(subnetIDs, nodePool.SubnetIDs...)
-			vpcPrefixIDs = append(vpcPrefixIDs, nodePool.VpcPrefixIDs...)
-		}
-	}
-	if s.useControlPlaneController && req.ControlPlaneConfig != nil {
-		subnetIDs = append(subnetIDs, req.ControlPlaneConfig.SubnetIDs...)
-		vpcPrefixIDs = append(vpcPrefixIDs, req.ControlPlaneConfig.VpcPrefixIDs...)
-	}
-	return validateForgeNetworkIDs(
-		ctx,
-		s.forgeNetworkProvider,
-		req.OrgID,
-		req.SiteID,
-		subnetIDs,
-		vpcPrefixIDs,
-		network,
-	)
-}
-
-func validateForgeNetworkIDs(
-	ctx context.Context,
-	provider forgeClusterNetworkProvider,
-	orgID string,
-	siteID uuid.UUID,
-	subnetIDs []uuid.UUID,
-	vpcPrefixIDs []uuid.UUID,
-	network resolvedClusterNetwork,
-) error {
-	seenSubnets := make(map[uuid.UUID]struct{})
-	seenVpcPrefixes := make(map[uuid.UUID]struct{})
-	for _, subnetID := range subnetIDs {
-		if _, seen := seenSubnets[subnetID]; seen {
-			continue
-		}
-		seenSubnets[subnetID] = struct{}{}
-
-		subnet, err := provider.GetSubnetByIDFromAPI(ctx, orgID, siteID.String(), subnetID.String())
-		if err != nil {
-			return fmt.Errorf("failed to get Forge subnet %s: %w", subnetID, err)
-		}
-		prefix, err := forgeSubnetIPv4Prefix(subnet)
-		if err != nil {
-			return fmt.Errorf("invalid Forge subnet %s: %w", subnetID, err)
-		}
-		if field, clusterPrefix, overlaps := network.overlappingCIDR(prefix); overlaps {
-			return newBadRequestErrorf(
-				"%s %q overlaps selected Forge subnet %s CIDR %q",
-				field,
-				clusterPrefix,
-				subnetID,
-				prefix,
-			)
-		}
-	}
-
-	for _, vpcPrefixID := range vpcPrefixIDs {
-		if _, seen := seenVpcPrefixes[vpcPrefixID]; seen {
-			continue
-		}
-		seenVpcPrefixes[vpcPrefixID] = struct{}{}
-
-		vpcPrefix, err := provider.GetVpcPrefixByIDFromAPI(ctx, orgID, siteID.String(), vpcPrefixID.String())
-		if err != nil {
-			return fmt.Errorf("failed to get Forge VPC prefix %s: %w", vpcPrefixID, err)
-		}
-		prefix, err := forgeVpcPrefix(vpcPrefix)
-		if err != nil {
-			return fmt.Errorf("invalid Forge VPC prefix %s: %w", vpcPrefixID, err)
-		}
-		if field, clusterPrefix, overlaps := network.overlappingCIDR(prefix); overlaps {
-			return newBadRequestErrorf(
-				"%s %q overlaps selected Forge VPC prefix %s CIDR %q",
-				field,
-				clusterPrefix,
-				vpcPrefixID,
-				prefix,
-			)
-		}
-	}
-	return nil
-}
-
-func forgeSubnetIPv4Prefix(subnet *forgesdk.Subnet) (netip.Prefix, error) {
-	ip, ipSet := subnet.GetIpv4PrefixOk()
-	prefixLength, prefixLengthSet := subnet.GetPrefixLengthOk()
-	if !ipSet || !prefixLengthSet {
-		return netip.Prefix{}, fmt.Errorf("IPv4 prefix or prefix length is not set")
-	}
-	prefix, err := netip.ParsePrefix(fmt.Sprintf("%s/%d", *ip, *prefixLength))
-	if err != nil {
-		return netip.Prefix{}, err
-	}
-	if !prefix.Addr().Is4() {
-		return netip.Prefix{}, fmt.Errorf("%q is not an IPv4 prefix", prefix)
-	}
-	return prefix.Masked(), nil
-}
-
-func forgeVpcPrefix(vpcPrefix *forgesdk.VpcPrefix) (netip.Prefix, error) {
-	value, set := vpcPrefix.GetPrefixOk()
-	if !set {
-		return netip.Prefix{}, fmt.Errorf("prefix is not set")
-	}
-	prefix, err := netip.ParsePrefix(*value)
-	if err != nil {
-		return netip.Prefix{}, err
-	}
-	if !prefix.Addr().Is4() {
-		return netip.Prefix{}, fmt.Errorf("%q is not an IPv4 prefix", prefix)
-	}
-	return prefix.Masked(), nil
 }

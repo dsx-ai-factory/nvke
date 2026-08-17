@@ -283,7 +283,8 @@ func (c *Config) Validate() error {
 			return fmt.Errorf(
 				"issuers[%d] (%s): issuer override audiences is present but empty; remove the key to use "+
 					"the deployment-wide audiences. An empty list disables the audience check rather than failing it",
-				i, strings.TrimSpace(iss.Name))
+				i, strings.TrimSpace(iss.Name),
+			)
 		}
 	}
 	return nil
@@ -373,7 +374,8 @@ func (a *Admit) validate() error {
 		return errors.New(
 			"must not set both serviceAccounts and spiffe on one issuer: the two are alternatives and either " +
 				"match admits, so neither restricts the other. An issuer mints one shape of identity; " +
-				"give it the one rule kind that matches")
+				"give it the one rule kind that matches",
+		)
 	}
 	for i, r := range a.ServiceAccounts {
 		// Ordered so the most specific message wins: empty, then padded, then
@@ -435,7 +437,8 @@ func (s *SPIFFERule) validate() error {
 	// is to admit nobody, so a bad value here would be a silent deny-all.
 	if _, err := spiffeid.TrustDomainFromString(td); err != nil {
 		return fmt.Errorf(
-			"trustDomain %q is not a valid SPIFFE trust domain, so it would admit nobody: %w", td, err)
+			"trustDomain %q is not a valid SPIFFE trust domain, so it would admit nobody: %w", td, err,
+		)
 	}
 
 	if len(s.PathPrefixes) == 0 {
@@ -457,7 +460,8 @@ func (s *SPIFFERule) validate() error {
 		if p != "/" && strings.TrimRight(p, "/") == "" {
 			return fmt.Errorf(
 				"pathPrefixes[%d] %q is nothing but slashes, which would admit every workload in trust domain %q; "+
-					"write exactly \"/\" if admitting the whole trust domain is what you mean", i, p, td)
+					"write exactly \"/\" if admitting the whole trust domain is what you mean", i, p, td,
+			)
 		}
 	}
 	return nil
@@ -525,7 +529,8 @@ func validateAudience(aud string, issuerURLs map[string]struct{}) error {
 	if strings.Contains(aud, "*") {
 		return fmt.Errorf(
 			"%q contains a wildcard; audiences are compared literally, so this would match no token at all. "+
-				"Name each accepted audience in full", aud)
+				"Name each accepted audience in full", aud,
+		)
 	}
 
 	norm := foldForClashCheck(aud)

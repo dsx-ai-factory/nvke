@@ -109,8 +109,6 @@ func NewServer(
 	m.HandleFunc("GET "+healthz, hc.healthz)
 	m.HandleFunc("GET "+readyz, hc.readyz)
 
-	m.Handle("/", http.FileServer(http.Dir(cfg.UIDir)))
-
 	// Apply middleware chain: logging -> managed-by check -> main handler
 	handler := loggingMiddleware(m, logger)
 	handler = managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(handler)
@@ -173,13 +171,13 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, forge
 
 	return &serverImpl{
 		siteService:          *NewSiteService(logger, database, forgeProvider),
-		clusterService:       *NewClusterService(logger, database, nodePoolService, forgeProvider, cfg.Teleport, cfg.EnableForgeCapi, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
+		clusterService:       *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.EnableForgeCapi, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
 		nodeService:          *NewNodeService(logger, database, temporalClient, cfg.AllowEtcdSafetyOverrides),
 		osProfileService:     *NewOSProfileService(cfg, logger),
 		configProfileService: *NewConfigProfileService(cfg, logger),
-		forgeService:         *NewForgeService(cfg, logger, forgeProvider),
+		cniPluginsService:    *NewCNIPluginsService(),
 	}
 }
 
@@ -191,7 +189,7 @@ type serverImpl struct {
 	nodeService
 	osProfileService
 	configProfileService
-	forgeService
+	cniPluginsService
 }
 
 // temporalUIURL returns the Temporal Web UI base URL to surface in the version

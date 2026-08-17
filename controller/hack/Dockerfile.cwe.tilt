@@ -31,7 +31,6 @@ COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload
 # nke-site-deploy ConfigMap unpack). Keep the mount point; do not bake content.
 # Non-archive Tilt builds append a COPY of ./profiles after this line.
 RUN mkdir -p /profiles
-COPY ./ui /ui
 
 EXPOSE 8080
 

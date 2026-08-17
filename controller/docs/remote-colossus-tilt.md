@@ -120,7 +120,7 @@ AirPlay may own 5000).
 **colossus (+1000) URLs:**
 
 - Tilt UI: http://localhost:11350
-- CWE UI: http://localhost:9080 (Swagger: `/api/docs`)
+- CWE Swagger: http://localhost:9080/api/docs
 - Temporal UI: http://localhost:9081
 - forge-vms UI: http://localhost:19080/ui/
 - forge-console UI: http://localhost:9090

@@ -108,9 +108,6 @@ type Config struct {
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
 
-	// UIDir is the directory from which to serve static files for the UI
-	UIDir string `env:"UI_DIR" default:"./ui"`
-
 	// NodeRebootInitialTimeout is the initial timeout for the node reboot workflow.
 	NodeRebootInitialTimeout time.Duration `env:"NODE_REBOOT_INITIAL_TIMEOUT" default:"30m"`
 

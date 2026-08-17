@@ -434,18 +434,8 @@ And now you're ready to build and run CWE:
 TEMPORAL_HOST_PORT=localhost:17233 FWE_API_KEY=<NGC API KEY> go run ./cmd/worker/main.go
 ```
 
-You should now see the UI at http://localhost:8080, and the Swagger UI at http://localhost:8080/api/docs
-
-## UI dev with API proxy
-If you're only working on the UI, it can save time to run the UI locally against the API of a live site, instead of running all of CWE locally. We have a separate command to facilitate this. To start, set up your SSH tunnel and port-forward for the site you're developing against:
-```
-kubectl port-forward -n cloud-workflow-engine deploy/cloud-workflow-engine 8080:8080
-```
-And then start the UI dev server with:
-```
-API_BASE_URL=http://localhost:8080/api go run cmd/ui-dev/main.go
-```
-By default the UI will be served at http://localhost:8081. Be careful when running like this, because anything you do will be happening in the real site.
+You should now see the Swagger UI at http://localhost:8080/api/docs.
+The cluster management UI is served by forge-console (Tilt: http://localhost:8090).
 
 ## Debugging
 

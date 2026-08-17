@@ -30,6 +30,20 @@ import (
 
 func ptrString(v string) *string { return &v }
 
+// stubOpenAPICreateClusterTx stubs the tx methods a forge create reaches after
+// OpenAPI validation. Forge network CIDR overlap is checked in forge-console
+// now, so valid requests proceed into RunInTx and need these stubs.
+func stubOpenAPICreateClusterTx(mockDB *testutil.MockDB) {
+	mockDB.MockTx.On("CreateCluster", mock.Anything, mock.Anything).Return(
+		db.Cluster{ID: uuid.New(), Name: "test-cluster", KubernetesVersion: "1.29.7"},
+		nil,
+	).Maybe()
+	mockDB.MockTx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		db.WorkflowOutbox{},
+		nil,
+	).Maybe()
+}
+
 // TestOpenAPIValidator_CreateCluster verifies that the OpenAPI request validator
 // middleware accepts or rejects create-cluster requests based on request schema.
 func TestOpenAPIValidator_CreateCluster(t *testing.T) {
@@ -41,6 +55,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 		mockDB.MockTx.On("GetSite", mock.Anything, mock.Anything, mock.Anything).Return(
 			db.Site{}, db.ErrNotFound,
 		).Maybe()
+		stubOpenAPICreateClusterTx(mockDB)
 
 		handler := newTestServerWithValidator(t, mockDB)
 
@@ -129,6 +144,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 		mockDB.MockTx.On("GetSite", mock.Anything, mock.Anything, mock.Anything).Return(
 			db.Site{}, db.ErrNotFound,
 		).Maybe()
+		stubOpenAPICreateClusterTx(mockDB)
 
 		handler := newTestServerWithValidator(t, mockDB)
 
@@ -212,6 +228,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 		mockDB.MockTx.On("GetSite", mock.Anything, mock.Anything, mock.Anything).Return(
 			db.Site{}, db.ErrNotFound,
 		).Maybe()
+		stubOpenAPICreateClusterTx(mockDB)
 
 		handler := newTestServerWithValidator(t, mockDB)
 
@@ -511,14 +528,19 @@ func TestStdServerErrorStatus_MalformedPathUUID(t *testing.T) {
 // newTestServerWithValidator builds an HTTP handler with the same OpenAPI validator
 // middleware as production. The caller must configure mockDB (GetTx, RunInTx, and
 // any tx method mocks) as needed; invalid requests are rejected by the validator.
+// When MockTx is set, CreateCluster path stubs are installed so valid forge
+// creates (no longer blocked by CWE Forge CIDR overlap checks) do not panic.
 func newTestServerWithValidator(t *testing.T, mockDB *testutil.MockDB) http.Handler {
 	t.Helper()
+
+	if mockDB != nil && mockDB.MockTx != nil {
+		stubOpenAPICreateClusterTx(mockDB)
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	cfg := config.Config{
 		FWEAPIKey:            "test-key",
-		UIDir:                "./ui",
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}
