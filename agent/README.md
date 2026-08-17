@@ -147,7 +147,9 @@ make setup-hooks    # monorepo-aware proto pre-commit hook
 Version comes from `git describe --match 'agent/v*'` (component-scoped tags;
 see [AGENTS.md](AGENTS.md)). Override with `VERSION=...` when needed.
 
-## Published binaries
+## Published artifacts
+
+### Binaries (GHCR)
 
 Every commit on `main` and every `agent/vX.Y.Z` tag publishes the binaries to
 `ghcr.io/nvidia/nke-agent` as OCI artifacts, joined by a multi-arch index
@@ -160,5 +162,17 @@ oras pull ghcr.io/nvidia/nke-agent:edge   --platform linux/amd64   # tip of main
 
 Tags are `edge`, `sha-<commit>`, and `vX.Y.Z`, each with `-amd64` / `-arm64`
 single-platform variants underneath. These are artifacts, not container images
-— the layer is the executable itself, so `docker pull` is not the way in. The
-`.deb` from `make deb-all` is still what a node installs.
+— the layer is the executable itself, so `docker pull` is not the way in.
+
+### Debian packages (apt intake)
+
+Every `agent/vX.Y.Z` tag also builds native amd64 and arm64 `.deb`s and uploads
+them to the apt-publisher S3 intake (`.github/workflows/agent-deb-publish.yml`,
+via `scripts/upload-s3-apt-intake.sh`). That is what a node installs; the OCI
+binary above is the same executable without the packaging/systemd unit.
+
+The intake destination comes from the GitHub `apt-intake` environment
+(`APT_INTAKE_S3_URI`, `APT_INTAKE_AWS_ROLE_ARN`, …) — nothing bucket-specific
+is committed here. Once apt-publisher is pointed at that intake, cut over from
+the previous GitLab package source.
+

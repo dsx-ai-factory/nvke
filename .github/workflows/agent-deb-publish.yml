@@ -1,0 +1,232 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Builds the nke-agent .debs on an agent/v* tag and uploads them to the
+# apt-publisher S3 intake. deb.yml exercises the same packaging path on every
+# agent change and throws the packages away; this workflow is the release side.
+#
+# Layout written by agent/scripts/upload-s3-apt-intake.sh (consumed by
+# nke/packages/apt-publisher):
+#
+#   <intake>/<project>/releases/<tag>/<distro>/<arch>/<filename>
+#   <prefix>/<project>/index.json
+#
+# The destination is not written here. It comes from the `apt-intake`
+# environment, so no bucket name lands in a tracked file of a repository that
+# is released publicly:
+#
+#   APT_INTAKE_S3_URI       variable  e.g. s3://example-bucket/nke-packages
+#   APT_INTAKE_PROJECT      variable  optional; default nke-agent
+#   APT_INTAKE_AWS_ROLE_ARN variable  IAM role assumed via OIDC to write intake
+#   APT_INTAKE_AWS_REGION   variable  optional; default us-west-2
+#
+# Both architectures are built natively (amd64 on ubuntu-24.04, arm64 on
+# ubuntu-24.04-arm) for the same reason as deb.yml: cross-compiling flips CGO
+# off and produces a static binary that still claims Depends: libc6. A single
+# publish job then uploads both packages once so the shared index.json merge
+# cannot race with itself.
+
+name: Agent Deb Publish
+
+on:
+  push:
+    tags:
+      - "agent/v[0-9]+.[0-9]+.[0-9]+"
+      - "agent/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so any workflow merge-gate.yml calls would
+  # share a group with its siblings and cancel them.
+  group: Agent Deb Publish-${{ github.ref }}
+  # Never cancel a publish midway: a half-written index.json leaves apt-publisher
+  # with a partial release.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the ${{ matrix.arch }} package
+    runs-on: ${{ matrix.runner }}
+    if: github.repository == 'NVIDIA/nke'
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # DEB_VERSION comes from `git describe --match 'agent/v*'`; a shallow
+          # clone would stamp the wrong version into a release package.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Install the Debian packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fakeroot dpkg-dev
+          dpkg-deb --version | head -1
+
+      - name: Build the package
+        working-directory: agent
+        run: make deb-${{ matrix.arch }}
+
+      - name: Inspect what was produced
+        working-directory: agent
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(bin/*.deb)
+          if [ ${#debs[@]} -ne 1 ]; then
+            echo "::error::expected exactly 1 package from 'make deb-${{ matrix.arch }}', found ${#debs[@]}"
+            printf '    %s\n' "${debs[@]}"
+            exit 1
+          fi
+          deb="${debs[0]}"
+
+          echo "::group::${deb}"
+          dpkg-deb -I "$deb"
+          dpkg-deb -c "$deb"
+          echo "::endgroup::"
+
+          pkg=$(dpkg-deb -f "$deb" Package)
+          ver=$(dpkg-deb -f "$deb" Version)
+          arch=$(dpkg-deb -f "$deb" Architecture)
+
+          [ "$pkg" = "nke-agent" ] \
+            || { echo "::error::${deb}: Package is '${pkg}', expected 'nke-agent'"; exit 1; }
+
+          case "$ver" in
+            [0-9]*) ;;
+            *) echo "::error::${deb}: Version '${ver}' does not start with a digit"; exit 1 ;;
+          esac
+
+          [ "$arch" = "${{ matrix.arch }}" ] \
+            || { echo "::error::${deb}: Architecture is '${arch}', expected '${{ matrix.arch }}'"; exit 1; }
+
+          contents=$(dpkg-deb -c "$deb")
+          printf '%s\n' "$contents" | grep -q './usr/local/bin/nke-agent' \
+            || { echo "::error::${deb}: does not contain /usr/local/bin/nke-agent"; exit 1; }
+          printf '%s\n' "$contents" | grep -q './etc/systemd/system/.*\.service' \
+            || { echo "::error::${deb}: contains no systemd unit"; exit 1; }
+
+          dpkg-deb --fsys-tarfile "$deb" | tar -xO ./usr/local/bin/nke-agent > /tmp/nke-agent
+          linkage=$(file -b /tmp/nke-agent)
+          echo "  linkage: ${linkage}"
+          case "$linkage" in
+            *"dynamically linked"*) ;;
+            *) echo "::error::${deb}: the binary is not dynamically linked, so this build was not native and 'Depends: libc6' is wrong for it: ${linkage}"; exit 1 ;;
+          esac
+
+          echo "OK  ${deb}  package=${pkg} version=${ver} arch=${arch}"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: agent-deb-${{ matrix.arch }}
+          path: agent/bin/*.deb
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Upload to apt intake
+    needs: [build]
+    if: github.repository == 'NVIDIA/nke'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: apt-intake
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: agent-deb-*
+          merge-multiple: true
+          path: agent/bin
+
+      - name: Resolve intake release
+        id: meta
+        shell: bash
+        env:
+          APT_INTAKE_S3_URI: ${{ vars.APT_INTAKE_S3_URI }}
+          APT_INTAKE_PROJECT: ${{ vars.APT_INTAKE_PROJECT }}
+          APT_INTAKE_AWS_ROLE_ARN: ${{ vars.APT_INTAKE_AWS_ROLE_ARN }}
+          APT_INTAKE_AWS_REGION: ${{ vars.APT_INTAKE_AWS_REGION }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${APT_INTAKE_S3_URI}" ]]; then
+            echo "::error::APT_INTAKE_S3_URI is not set in the apt-intake environment"
+            exit 1
+          fi
+          if [[ -z "${APT_INTAKE_AWS_ROLE_ARN}" ]]; then
+            echo "::error::APT_INTAKE_AWS_ROLE_ARN is not set in the apt-intake environment"
+            exit 1
+          fi
+
+          project="${APT_INTAKE_PROJECT:-nke-agent}"
+          region="${APT_INTAKE_AWS_REGION:-us-west-2}"
+
+          # Tag refs are agent/vX.Y.Z; the intake release key and apt-publisher
+          # expect the unprefixed form (vX.Y.Z), matching DEB_VERSION's source.
+          ref="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            release="${ref#agent/}"
+          else
+            # workflow_dispatch on a branch: still stamp a discoverable key.
+            release="sha-${GITHUB_SHA:0:12}"
+          fi
+
+          {
+            echo "s3_uri=${APT_INTAKE_S3_URI}"
+            echo "project=${project}"
+            echo "role_arn=${APT_INTAKE_AWS_ROLE_ARN}"
+            echo "region=${region}"
+            echo "release=${release}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${project} release ${release} to ${APT_INTAKE_S3_URI}"
+
+          echo "::group::packages"
+          ls -la agent/bin/*.deb
+          echo "::endgroup::"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e6de054238d6b7531b4efff3b6587d9aade6a06c # v6.2.3
+        with:
+          role-to-assume: ${{ steps.meta.outputs.role_arn }}
+          aws-region: ${{ steps.meta.outputs.region }}
+
+      - name: Upload to S3 apt intake
+        working-directory: agent
+        env:
+          APT_INTAKE_S3_URI: ${{ steps.meta.outputs.s3_uri }}
+          APT_INTAKE_PROJECT: ${{ steps.meta.outputs.project }}
+          APT_INTAKE_RELEASE: ${{ steps.meta.outputs.release }}
+          ASSETS_DIR: bin
+        run: ./scripts/upload-s3-apt-intake.sh

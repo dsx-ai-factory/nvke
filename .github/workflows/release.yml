@@ -85,12 +85,25 @@ jobs:
     needs: [license-checks]
     if: ${{ contains(github.ref_name, '/') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
     permissions:
-      contents: read   # raise to write when this job actually publishes
+      contents: read
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      # TODO: add component-specific publish steps (NKX-14116)
-      - run: echo "Publish placeholder — implement per component as part of NKX-14116"
+      # Component publish lives in dedicated workflows so each component can
+      # own its runners, secrets and artifact shape. agent/v* .debs go through
+      # agent-deb-publish.yml (S3 apt intake); binaries through
+      # agent-artifact.yml / agent-artifact-nvcr.yml. This job only records
+      # which path fired so a component tag never looks like a no-op release.
+      - name: Route component publish
+        run: |
+          set -euo pipefail
+          case "${GITHUB_REF_NAME}" in
+            agent/v*)
+              echo "Agent tag ${GITHUB_REF_NAME}:"
+              echo "  - .debs  → Agent Deb Publish (apt-intake S3)"
+              echo "  - binary → Agent Artifact / Agent Artifact NVCR"
+              ;;
+            *)
+              echo "::warning::No component publish workflow for '${GITHUB_REF_NAME}' yet (NKX-14116)."
+              ;;
+          esac
