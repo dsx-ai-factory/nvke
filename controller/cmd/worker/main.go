@@ -26,7 +26,6 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/sync/errgroup"
-	ctrl "sigs.k8s.io/controller-runtime"
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
@@ -34,6 +33,8 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/db/migrations"
 	"github.com/NVIDIA/nke/controller/internal/dbmetrics"
@@ -115,7 +116,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	dbInstance := db.NewDB(bunDB)
+	dbInstance := dbwrapper.New(db.NewDB(bunDB), dbLogger)
 
 	dbMetricsLogger := logger.With("logger", "db-metrics")
 	dbMetricsCollector := dbmetrics.NewCollector(dbMetricsLogger, dbInstance)
@@ -141,16 +142,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	var k8sControllerManager ctrl.Manager
-	logger.Info("CAPI controller-runtime manager configuration", "enableCapi", cfg.EnableCapi, "enableForgeCapi", cfg.EnableForgeCapi)
-	if cfg.EnableCapi {
-		controllerRuntimeLogger := logger.With("logger", "controller-runtime")
-		k8sControllerManager, err = kube.NewRuntimeManager(controllerRuntimeLogger, spirev1alpha1.AddToScheme, nicov1.AddToScheme)
-		if err != nil {
-			logger.Error("Failed to create Kubernetes controller manager", "error", err)
+	controllerRuntimeLogger := logger.With("logger", "controller-runtime")
+	k8sControllerManager, err := kube.NewRuntimeManager(controllerRuntimeLogger, spirev1alpha1.AddToScheme, nicov1.AddToScheme)
+	if err != nil {
+		logger.Error("Failed to create Kubernetes controller manager", "error", err)
+		os.Exit(1)
+	}
+
+	enableNodeProvisioningMonitor := cfg.NodeProvisioningTimeout > 0
+	if enableNodeProvisioningMonitor {
+		nodeProvisioningMonitorController := nodeprovisioningmonitor.NewController(
+			cfg,
+			logger.With("logger", "node-provisioning-monitor"),
+			dbInstance,
+		)
+		if err := nodeProvisioningMonitorController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up node provisioning monitor controller", "error", err)
 			os.Exit(1)
 		}
+	}
 
+	logger.Info("controller-runtime manager configuration", "enableCapi", cfg.EnableCapi, "enableForgeCapi", cfg.EnableForgeCapi, "enableNodeProvisioningMonitor", enableNodeProvisioningMonitor)
+	if cfg.EnableCapi {
 		machineSpireEntryController := capi.NewMachineSpireEntryController(
 			cfg,
 			k8sControllerManager.GetClient(),
@@ -321,19 +334,17 @@ func main() {
 		})
 	}
 
-	if cfg.EnableCapi {
-		g.Go(func() error {
-			logger.Info("Starting Kubernetes controller-runtime manager")
-			err := k8sControllerManager.Start(ctx)
-			if err != nil {
-				logger.Error("Kubernetes controller-runtime manager stopped unexpectedly", "error", err)
-				// Cancel root context so the shutdown goroutine runs HTTP Shutdown and stops
-				// other services; otherwise errgroup.Wait would block forever on ListenAndServe.
-				stop()
-			}
-			return err
-		})
-	}
+	g.Go(func() error {
+		logger.Info("Starting Kubernetes controller-runtime manager")
+		err := k8sControllerManager.Start(ctx)
+		if err != nil {
+			logger.Error("Kubernetes controller-runtime manager stopped unexpectedly", "error", err)
+			// Cancel root context so the shutdown goroutine runs HTTP Shutdown and stops
+			// other services; otherwise errgroup.Wait would block forever on ListenAndServe.
+			stop()
+		}
+		return err
+	})
 
 	// Start the forge provider cache engine
 	g.Go(func() error {

@@ -149,6 +149,7 @@ func (n *Node) SyncProviderFields() {
 }
 
 type NodeFilters struct {
+	ID                 *uuid.UUID
 	ClusterID          *uuid.UUID
 	NodePoolID         *uuid.UUID
 	NodeSetID          *uuid.UUID
@@ -217,6 +218,9 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 		Join("LEFT JOIN node_pools np ON np.id = COALESCE(nps.node_pool_id, node.node_pool_id)").
 		Join("LEFT JOIN clusters c ON c.id = COALESCE(np.cluster_id, node.cluster_id)")
 
+	if filters.ID != nil {
+		query = query.Where("node.id = ?", filters.ID)
+	}
 	if filters.NodePoolID != nil {
 		query = query.Where("COALESCE(nps.node_pool_id, node.node_pool_id) = ?", filters.NodePoolID)
 	}

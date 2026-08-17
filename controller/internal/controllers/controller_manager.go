@@ -42,7 +42,6 @@ type ControllerManager struct {
 	nodePoolController           *NodePoolController
 	nodeSetController            *NodeSetController
 	nodeScheduler                *NodeScheduler
-	nodeProvisioningMonitor      *NodeProvisioningMonitorController
 	capiClusterScaffold          *CAPIClusterScaffoldController
 	autoModeController           *AutoModeController
 	controlPlaneController       *controlplane.Controller
@@ -104,7 +103,6 @@ func NewControllerManager(
 		nodePoolController:           NewNodePoolController(cfg, controllerManagerLogger, dbInstance),
 		nodeSetController:            NewNodeSetController(cfg, controllerManagerLogger, dbInstance),
 		nodeScheduler:                NewNodeScheduler(cfg, controllerManagerLogger, dbInstance, cweTemporalClient, forgeProvider),
-		nodeProvisioningMonitor:      NewNodeProvisioningMonitorController(cfg, controllerManagerLogger, dbInstance),
 		capiClusterScaffold:          capiClusterScaffold,
 		autoModeController:           NewAutoModeController(cfg, controllerManagerLogger, dbInstance),
 		controlPlaneController:       controlplane.NewController(cfg, logger, dbInstance, cweTemporalClient),
@@ -257,11 +255,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	if err := a.nodeScheduler.Schedule(ctx, site); err != nil {
 		// Log errors but continue processing the other controllers.
 		a.logger.Error("Failed to schedule nodes", "error", err, "siteID", site.ID.String())
-	}
-
-	if err := a.nodeProvisioningMonitor.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile node provisioning monitor", "error", err, "siteID", site.ID.String())
 	}
 
 	if err := a.autoModeController.Reconcile(ctx, site); err != nil {

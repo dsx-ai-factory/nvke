@@ -17,7 +17,11 @@ rules:
       - infrastructure.cluster.x-k8s.io
     resources:
       - dockerclusters
+      - dockerclustertemplates
       - dockermachines
+      - dockermachinetemplates
+      - dockermachinepools
+      - dockermachinepooltemplates
     verbs:
       - create
       - delete
@@ -31,7 +35,11 @@ rules:
       - customresourcedefinitions
     resourceNames:
       - dockerclusters.infrastructure.cluster.x-k8s.io
+      - dockerclustertemplates.infrastructure.cluster.x-k8s.io
       - dockermachines.infrastructure.cluster.x-k8s.io
+      - dockermachinetemplates.infrastructure.cluster.x-k8s.io
+      - dockermachinepools.infrastructure.cluster.x-k8s.io
+      - dockermachinepooltemplates.infrastructure.cluster.x-k8s.io
     verbs:
       - get
 ---

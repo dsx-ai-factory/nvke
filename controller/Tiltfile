@@ -376,9 +376,9 @@ def parse_env_file(path):
         values[parts[0].strip()] = parts[1].strip()
     return values
 
-_tilt_env = parse_env_file(".env.tilt")
+_tilt_env = parse_env_file(os.path.join(config.main_dir, ".env.tilt"))
 if not _tilt_env:
-    _tilt_env = parse_env_file(".env.tilt.example")
+    _tilt_env = parse_env_file(os.path.join(config.main_dir, ".env.tilt.example"))
 _tilt_env.update(_all_cwe_env_overrides)
 
 # Credentials with no defaults anywhere in the repo. The developer supplies each
@@ -895,6 +895,7 @@ _cwe_chart_extra_env_names = [
     "CONTROLLER_MANAGER_INTERVAL",
     "NODE_HEALTH_CHECK_POLLING_INTERVAL",
     "NODE_HEALTH_CHECK_INTERVAL",
+    "NODE_PROVISIONING_TIMEOUT",
     "NODE_REBOOT_POLLING_INTERVAL",
     "LOG_LEVEL",
     "FORGE_URL",
@@ -975,11 +976,15 @@ _cwe_compile_script = """
       CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
 """ % _cwe_tilt_goarch
 
-_cwe_profiles_dir = os.getenv("CWE_PROFILES_DIR", "../nke-site-deploy/cwe-profiles/profiles")
+_cwe_profiles_dir = os.getenv("CWE_PROFILES_DIR", _tilt_env.get("CWE_PROFILES_DIR", "")).strip()
+if _cwe_profiles_dir == "":
+    _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, "..", "..", "nke-site-deploy", "cwe-profiles", "profiles"))
+elif not _cwe_profiles_dir.startswith("/"):
+    _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, _cwe_profiles_dir))
 _cwe_profiles_preloaded = os.getenv("CWE_PROFILES_PRELOADED", "false") == "true"
 # Starlark's os.path has exists/join but not isdir.
 if not _cwe_profiles_preloaded and not os.path.exists(_cwe_profiles_dir):
-    fail("CWE profiles not found at %s (set CWE_PROFILES_DIR). Fleet profiles live in nke-site-deploy (NKX-13910)." % _cwe_profiles_dir)
+    fail("CWE profiles not found at %s (set CWE_PROFILES_DIR). Fleet profiles live in nke-site-deploy." % _cwe_profiles_dir)
 
 _cwe_profiles_context = os.path.dirname(_cwe_profiles_dir)
 _cwe_profiles_dockerfile = os.path.join(_cwe_profiles_context, "Dockerfile")
