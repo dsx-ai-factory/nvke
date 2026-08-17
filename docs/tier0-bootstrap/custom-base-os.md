@@ -2,11 +2,11 @@
 
 If you need to bootstrap a tier-0 cluster on a **vanilla Ubuntu image** (rather than a pre-built NKE node image), you can add the necessary installation steps to your cloud-init configuration.
 
-Before proceeding, prepare your deploy repository and credentials as described in [Configuration](configuration.md) and [Deploy Repository](deploy-repository.md).
+Before proceeding, write your [inventory file](configuration.md) so it can be placed on the init node by cloud-init.
 
 ## Cloud-Init Example
 
-Below is a complete cloud-init configuration for bootstrapping a tier-0 cluster on a custom base OS. This installs Kubernetes components, `nke-agent`, and the `tier0-bootstrap` tool, then starts the bootstrap service.
+Below is a complete cloud-init configuration for bootstrapping a tier-0 cluster on a custom base OS. This installs Kubernetes components, `nke-agent`, and `nkectl`, then runs the bootstrap on first boot.
 
 ```yaml
 #cloud-config
@@ -43,14 +43,29 @@ autoinstall:
     - curtin in-target --target=/target -- update-grub
   user-data:
     write_files:
-      # Bootstrap configuration and secrets
-      - path: /etc/default/tier0-bootstrap
+      # nkectl inventory file (init node only — omit on join nodes)
+      - path: /etc/nkectl/inventory.yaml
         owner: root:root
-        permissions: '0644'
+        permissions: '0640'
         content: |
-          NGC_API_KEY=<your-ngc-api-key>
-          FORGE_API_KEY=<your-api-key>
-          TIER0_BOOTSTRAP_EXTRA_ARGS=--join-nodes "ctrl-2:10.0.0.11,ctrl-3:10.0.0.12" --argocd-repo "url=<site-deploy-repo>,token=<site-token>,path=<deploy-path>" --auto-install
+          clusterName: "nke-site"
+          cluster:
+            initNode:
+              name: "ctrl-1"
+              ip: "10.0.0.10"
+            joinNodes:
+              - name: "ctrl-2"
+                ip: "10.0.0.11"
+              - name: "ctrl-3"
+                ip: "10.0.0.12"
+            k8sVersion: "1.32.0"
+            cniName: "calico"
+            podCidr: "10.100.0.0/16"
+            serviceCidr: "10.200.0.0/16"
+            nodeAgentPort: "15005"
+          registry:
+            bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
+            bootstrapChart: "cloud-workflow-engine"
     runcmd:
       # Expand root LVM volume
       - [sh, -c, "lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"]
@@ -59,9 +74,9 @@ autoinstall:
       - [sh, -c, "sysctl -p"]
       - [sh, -c, "systemctl restart procps"]
 
-      # Install Kubernetes components (replace v1.31 with your target minor version)
-      - [sh, -c, "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"]
-      - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list"]
+      # Install Kubernetes components (replace v1.32 with your target minor version)
+      - [sh, -c, "curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.32/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg"]
+      - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.32/deb/ /' | tee /etc/apt/sources.list.d/kubernetes.list"]
       - [sh, -c, "apt-get update"]
       - [sh, -c, "apt-get install -y kubelet kubeadm kubectl"]
       - [sh, -c, "apt-mark hold kubelet kubeadm kubectl"]
@@ -72,18 +87,22 @@ autoinstall:
       - [sh, -c, "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nke/apt nke-noble main' | tee /etc/apt/sources.list.d/nke-apt.list"]
       - [sh, -c, "apt-get update"]
       - [sh, -c, "apt-get install -y nke-agent"]
+      - [sh, -c, "echo 'AGENT_ARGS=\"--disable-mtls --secure-server-port 15005\"' > /etc/default/nke-agent"]
+      - [sh, -c, "systemctl restart nke-agent"]
 
       # TODO: Replace with real release URL once the repo is public.
-      # Download and install tier0-bootstrap (init node only)
-      - [sh, -c, "curl -fsSL https://github.com/NVIDIA/nke/releases/latest/download/bootstrap-installer.sh | bash"]
-      - [sh, -c, "systemctl start tier0-bootstrap"]
+      # Download and install nkectl (init node only)
+      - [sh, -c, "curl -fsSL -o /usr/local/bin/nkectl https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-amd64 && chmod +x /usr/local/bin/nkectl"]
+
+      # Run bootstrap (init node only)
+      - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nkectl bootstrap site -i /etc/nkectl/inventory.yaml >> /var/log/nkectl-bootstrap.log 2>&1"]
 ```
 
 ## Key Components
 
 - **Kubernetes Installation**: Adds the Kubernetes apt repository and installs kubelet, kubeadm, and kubectl. Marks packages held to prevent automatic upgrades.
-- **nke-agent**: Installed from the NKE apt repository. Provides cluster join capabilities via gRPC; the bootstrap tool calls it to run `kubeadm init/join`.
-- **tier0-bootstrap**: Only include on the **init node**. Omit these last two lines for **join nodes**.
+- **nke-agent**: Installed from the NKE apt repository; configured with `--disable-mtls` and `--secure-server-port 15005` for pre-provisioned node bootstrap.
+- **nkectl**: Only installed on the **init node**. Omit the nkectl download and bootstrap runcmd lines for **join nodes**.
 
 ## Init Node vs Join Nodes
 
@@ -91,21 +110,19 @@ autoinstall:
 |---|---|---|
 | Kubernetes packages | ✓ | ✓ |
 | nke-agent | ✓ | ✓ |
-| `/etc/default/tier0-bootstrap` with `--join-nodes` | ✓ | ✗ |
-| `bootstrap-installer.sh` + `systemctl start tier0-bootstrap` | ✓ | ✗ |
+| `/etc/nkectl/inventory.yaml` | ✓ | ✗ |
+| `nkectl` download + bootstrap run | ✓ | ✗ |
 
-For join nodes:
-- Include the `write_files` section **only** if you need other configuration
-- Remove the `--join-nodes` arg from `TIER0_BOOTSTRAP_EXTRA_ARGS`
-- Remove the two bootstrap installer lines from `runcmd`
+For join nodes, omit the `write_files` section and the last two `runcmd` lines (nkectl download and bootstrap run).
 
 ## Customizing
 
-- Update `--join-nodes` with your actual node names and IPs
-- Replace `&lt;site-deploy-repo&gt;`, `&lt;site-token&gt;`, and `&lt;deploy-path&gt;` with your repository details (see [Configuration — argocd.repos](configuration.md#argocdrepos))
-- Update the Kubernetes repository minor version to match `cluster.k8sVersion` in your bootstrap config
+- Update `cluster.joinNodes` with your actual node names and IPs
+- Set `registry.bootstrapRepo` and `registry.bootstrapChart` to your CWE registry path
+- Supply `REGISTRY_API_KEY` via your secrets management (not hardcoded in cloud-init)
+- Update the Kubernetes repository minor version to match `cluster.k8sVersion` in the inventory
 - Update hostnames, passwords, and SSH authorized keys for your environment
 
 > **Ensure `/etc/apt/keyrings` exists** before installing Kubernetes packages — the `mkdir` step above creates it.
 
-See the [reference repository](deploy-repository.md#reference-repository) for a ready-to-use deploy repo containing the minimum required Application manifests.
+Bootstrap logs land at `/var/log/nkectl-bootstrap.log` on the init node.

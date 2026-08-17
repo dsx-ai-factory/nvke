@@ -1,64 +1,49 @@
-# Tier-0 Bootstrap
+# Site Controller Bootstrap
 
 ## Overview
 
-This guide walks you through deploying a self-managing tier-0 site controller cluster — the Kubernetes control plane that runs NKE's workflow engines, databases, and security services.
+This guide walks you through deploying a self-managing site controller cluster — the Kubernetes control plane that runs NKE's workflow engine, databases, and security services.
 
-The process involves:
+The process has three steps:
 
-1. Preparing your [configuration](configuration.md) (ArgoCD repositories, secrets, cluster settings)
-2. Provisioning nodes (via [cloud-init / Forge UI](custom-base-os.md) or [pre-provisioned nodes](pre-provisioned-nodes.md))
-3. [Downloading and installing](installation.md) `tier0-bootstrap`, then running it on the init node to trigger bootstrap
+1. [Prepare nodes](pre-provisioned-nodes.md#step-1-prepare-all-nodes) — install `nke-agent` and Kubernetes components
+2. [Write an inventory file](configuration.md) — declare your nodes, versions, and registry
+3. [Run `nkectl bootstrap site`](pre-provisioned-nodes.md#step-2-run-bootstrap) — bootstrap the cluster
 
-**Total time**: Approximately 60–90 minutes after starting the bootstrap.
-
-> **NKE team bringing up an NKE-operated Site Controller on Forge?**
-> Use the `self-bootstrap` CLI guide instead. `self-bootstrap` wraps the steps on this page with Forge API instance creation and SSH-driven provisioning. External users should continue with this guide.
+**Total time**: Approximately 30–45 minutes for cluster bring-up, plus time to deploy the NKE services stack afterward.
 
 ## What Happens During Bootstrap
 
+`nkectl` loads and validates the inventory, then dispatches init and join workflows over `nke-agent`'s gRPC API. Each node receives `kubeadm` instructions from the agent — no SSH required.
+
 ```mermaid
 sequenceDiagram
-    participant Node as Bootstrap Node
-    participant Kind as Ephemeral Cluster
-    participant Tier0 as Tier-0 Cluster
-    participant Argo as ArgoCD
-    participant Git as Git Repos
+    participant Op as Operator
+    participant Ctl as nkectl (init node)
+    participant Init as nke-agent (init node)
+    participant Join as nke-agent (join nodes)
+    participant K8s as Kubernetes Cluster
 
-    Node->>Node: Load config (YAML + env vars + CLI flags)
-    Node->>Kind: Create ephemeral bootstrap cluster
-    Kind->>Tier0: Provision tier-0 cluster via nkecli
-    Node->>Node: Setup local storage
-    Kind->>Tier0: Install ArgoCD
-    Kind->>Git: Clone deploy repos, render templates, discover items
-    Git-->>Tier0: Apply deploy items (templates, manifests, ArgoCD apps)
-    Tier0->>Argo: Sync all applications
-    Kind->>Tier0: Migrate bootstrap data to production DB
-    Tier0->>Tier0: Cluster is now self-managing
+    Op->>Ctl: nkectl bootstrap site -i inventory.yaml
+    Ctl->>Ctl: Load and validate inventory
+    Ctl->>Init: ExecuteKubeadmInit (gRPC)
+    Init->>K8s: kubeadm init
+    K8s-->>Ctl: Join strings
+    Ctl->>Join: ExecuteKubeadmJoin (gRPC, parallel)
+    Join->>K8s: kubeadm join
+    K8s-->>Op: Cluster ready
 ```
 
-## Configuration Flow
+## After Bootstrap
 
-`tier0-bootstrap` accepts configuration from multiple sources with clear precedence:
+Once the cluster is up, deploy the NKE services (CWE, Temporal, CNPG) via your GitOps tooling. See [Deploy Repository](deploy-repository.md) for the ArgoCD application structure.
 
-```mermaid
-flowchart LR
-    A[YAML Config File] --> D[Merged Config]
-    B[Environment Variables] --> D
-    C[CLI Flags] --> D
-    D --> E[Clone deploy repos]
-    E --> F[Process deploy items in order]
-    F --> G[template: render .yaml.tmpl & apply]
-    F --> H[manifest: kubectl apply]
-    F --> I[argocd: create ArgoCD Application]
-```
-
-See [Configuration](configuration.md) for details on setting up repositories, secrets, and deploy manifests.
+If you are running a self-managed site (with NICo as the infrastructure provider), keep `nkectl` available for subsequent operations.
 
 ## Next Steps
 
-- [Installation](installation.md) — download and install `tier0-bootstrap`
-- [Configuration](configuration.md) — full config file reference
-- [Deploy Repository](deploy-repository.md) — structure your ArgoCD deploy repo
-- [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — bootstrap on nodes you've already set up
-- [Custom Base OS](custom-base-os.md) — bootstrap on vanilla Ubuntu via cloud-init
+- [Installation](installation.md) — download and install `nkectl`
+- [Configuration](configuration.md) — write your site inventory file
+- [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap
+- [Custom Base OS](custom-base-os.md) — cloud-init based node preparation
+- [Deploy Repository](deploy-repository.md) — post-bootstrap NKE services deployment

@@ -1,6 +1,8 @@
 # Deploy Repository
 
-This page describes how to structure a deploy repository for use with `tier0-bootstrap`. A deploy repository contains everything needed to bootstrap an NKE site controller cluster: namespaces, secrets, ArgoCD applications, and plain Kubernetes manifests.
+> **Note:** The deploy repository is a **post-bootstrap concern**. `nkectl bootstrap site` brings up the Kubernetes cluster; deploying NKE's services (CWE, Temporal, CNPG) onto that cluster via ArgoCD is a separate subsequent step. This page describes that second step.
+
+A deploy repository contains the ArgoCD Application manifests, secrets, and Kubernetes manifests that deploy the NKE services stack onto a freshly bootstrapped site controller cluster.
 
 ## Reference Repository
 

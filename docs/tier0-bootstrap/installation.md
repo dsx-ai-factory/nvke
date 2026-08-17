@@ -1,40 +1,46 @@
-# Download and Install
+# Download and Install nkectl
 
-`tier0-bootstrap` is distributed as a tarball. A bootstrap installer script automates downloading the correct architecture-specific tarball, extracting the binaries, and installing the systemd service.
+`nkectl` is the NKE control-plane CLI. You use it to validate and bootstrap a site controller cluster from a declarative inventory file.
 
-## Installing with the Bootstrap Installer Script
+## Download
 
-The installer script detects the system architecture and downloads the appropriate tarball (x86_64 or aarch64).
-
-> **TODO:** Replace with real release URL once the repo is public and CI publishes release artifacts.
+> **TODO:** Replace with the published release URL once CI publishes `nkectl` release artifacts.
 
 ```bash
-curl -fsSL https://github.com/NVIDIA/nke/releases/latest/download/bootstrap-installer.sh | sudo bash
+# linux/amd64
+curl -fsSL -o nkectl \
+  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-amd64
+chmod +x nkectl
+sudo mv nkectl /usr/local/bin/
 ```
-
-The installer will:
-
-1. Download the architecture-specific tarball
-2. Extract the `tier0-bootstrap` and `nkecli` binaries to the system PATH
-3. Install the `tier0-bootstrap` systemd service unit
-4. Install the bundled configuration template
-
-After installation, the `tier0-bootstrap` binary is available system-wide.
-
-## Verifying the Installation
 
 ```bash
-tier0-bootstrap version
+# linux/arm64
+curl -fsSL -o nkectl \
+  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-arm64
+chmod +x nkectl
+sudo mv nkectl /usr/local/bin/
 ```
 
-## Network Requirements
+## Verify
 
-The node must be able to reach the artifact host to download bootstrap artifacts. For nodes provisioned behind NAT, ensure outbound HTTPS to `github.com` and the NGC registry (`nvcr.io`, `helm.ngc.nvidia.com`) is permitted.
+```bash
+nkectl version
+```
+
+## Build from Source
+
+If you prefer to build from the monorepo:
+
+```bash
+git clone https://github.com/NVIDIA/nke.git
+cd nke
+make build          # links all binaries including nkectl into bin/
+```
+
+The binary lands at `bin/nkectl`.
 
 ## Next Steps
 
-Once the tool is installed on the init node, you can run the bootstrap process. See:
-
-- [Custom Base OS](custom-base-os.md) — cloud-init based automated bootstrap on vanilla Ubuntu
-- [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — manually running the bootstrap CLI on nodes you've already set up
-- [Configuration](configuration.md) — full set of available options
+- [Configuration](configuration.md) — write your site inventory file
+- [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap

@@ -19,9 +19,9 @@ What you get after bootstrap depends on whether your environment includes a [NVI
 
 **Example (unmanaged):** A team bootstraps Kubernetes on nodes in an environment with no NICo. They get a working cluster but should not expect NKE day-2 features.
 
-## What `tier0-bootstrap` Does
+## What `nkectl bootstrap site` Does
 
-`tier0-bootstrap` has one job on pre-provisioned nodes: turn your prepared nodes into a **Kubernetes cluster**. It does not install your site stack, GitOps controller, or application workloads.
+`nkectl bootstrap site` has one job on pre-provisioned nodes: turn your prepared nodes into a **Kubernetes cluster**. It does not install your site stack, GitOps controller, or application workloads.
 
 After bootstrap completes:
 
@@ -103,37 +103,24 @@ sudo apt-get install -y openvswitch-switch
 
 On the **init node only**:
 
+1. [Install `nkectl`](installation.md).
+2. Write your [inventory file](configuration.md).
+3. Run bootstrap:
+
 ```bash
-# TODO: Replace with real release URL once the repo is public.
-curl -fsSL https://github.com/NVIDIA/nke/releases/latest/download/bootstrap-installer.sh | sudo bash
+# Validate the inventory first (no nodes touched)
+nkectl bootstrap site -i inventory.yaml --dry-run
 
-# Set credentials
-export NGC_API_KEY="<your-ngc-api-key>"
-export FORGE_API_KEY="<your-api-key>"    # Omit if using baremetalMode
-
-# Set join nodes (omit for single-node cluster)
-export JOIN_NODES="<node-name-1>:<node-1-ip>,<node-name-2>:<node-2-ip>"
-export AUTO_INSTALL=true
-
-# Bootstrap the Kubernetes cluster
-tier0-bootstrap run --config /opt/nke/config/tier0-bootstrap.yaml \
-  --to-step step08b-untaint-control-plane
+# Run bootstrap
+REGISTRY_API_KEY="<your-registry-api-key>" \
+  nkectl bootstrap site -i inventory.yaml
 ```
 
-`tier0-bootstrap` will:
-
-1. Create an ephemeral Kind cluster
-2. Provision the tier-0 Kubernetes cluster across all nodes using `nke-agent` gRPC
-3. Untaint control-plane nodes so workloads can schedule
+`nkectl` dispatches kubeadm init and join over `nke-agent` gRPC. No SSH, no ephemeral Kind cluster.
 
 **Duration**: Approximately **30–45 minutes**
 
-`--to-step step08b-untaint-control-plane` stops bootstrap once all nodes have joined. Steps after that (local storage setup, ArgoCD bring-up, data migration) are skipped — see [What happens next](#what-happens-next).
-
-> **Keep the Kind cluster until self-managed ingestion completes.**
-> Stopping at `step08b-untaint-control-plane` skips teardown, so the ephemeral Kind cluster (`nke-bootstrap`) remains on the init node. **Self-managed sites:** keep the Kind cluster until NKE and NICo ingestion finishes. **Unmanaged sites:** delete it immediately after bootstrap: `kind delete cluster --name nke-bootstrap`.
-
-> **Do NOT run bootstrap on join nodes** — they are configured automatically by the init node.
+> **Do NOT run bootstrap on join nodes** — they are joined automatically via gRPC from the init node.
 
 ## Step 3: Verify the Cluster
 
@@ -154,30 +141,11 @@ All nodes should show `Ready` status.
 
 **Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NKE site-controller installation is required.
 
-## Built-in ArgoCD Provisioning (Legacy)
-
-Earlier `tier0-bootstrap` releases could install ArgoCD and apply deploy-repository manifests in the same run. This path remains for compatibility, but **new self-bootstrap consumers should not use it**. Install your SBOM and GitOps tooling after cluster creation instead.
-
-To use the legacy path, omit `--to-step` and pass deploy repositories:
-
-```bash
-tier0-bootstrap run --config /opt/nke/config/tier0-bootstrap.yaml \
-  --argocd-repo "url=<site-deploy-repo>,token=<site-token>,path=<deploy-path>"
-```
-
-This adds roughly 30–45 minutes on top of cluster provisioning. After completion, verify ArgoCD:
-
-```bash
-sudo kubectl get applications -n argocd --kubeconfig /etc/kubernetes/admin.conf
-```
-
-All applications should be `Healthy` and `Synced`.
-
 ## Important Notes
 
-- **Join nodes don't need the bootstrap installer** — only the init node runs it
-- **`nke-agent` must be running** — verify `systemctl status nke-agent` on all nodes before starting bootstrap
-- **Network connectivity** — init node must reach join nodes on port 15005 (gRPC)
+- **Join nodes don't need `nkectl`** — only the init node runs it
+- **`nke-agent` must be running on all nodes** — verify `systemctl status nke-agent` before starting bootstrap
+- **Network connectivity** — init node must reach join nodes on the configured gRPC port (default `50051`)
 - **Hostnames and IPs** — use actual hostnames and IPs that nodes use to communicate with each other
 - **User permissions** — commands must run with `sudo` or as root
 
