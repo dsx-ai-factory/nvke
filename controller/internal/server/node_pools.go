@@ -481,6 +481,27 @@ func (s *nodePoolService) UpdateNodePool(
 ) (api.UpdateNodePoolResponseObject, error) {
 	var updatedNodePool db.NodePool
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		// Read the pool without a lock first, solely to learn its cluster, then
+		// lock the cluster before the node-pool row. This matches the global
+		// cluster-first lock order (see internal/nodes/control_plane_delete.go)
+		// so this update cannot deadlock with the live-delete guards or the
+		// control-plane reconcile transaction.
+		unlockedNodePool, err := tx.GetNodePool(ctx, req.NodePoolID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				return err
+			}
+			return fmt.Errorf("failed to get node pool: %w", err)
+		}
+
+		cluster, err := tx.GetClusterForUpdate(ctx, unlockedNodePool.ClusterID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				return errClusterNotFound
+			}
+			return fmt.Errorf("failed to get cluster: %w", err)
+		}
+
 		dbNodePool, err := tx.GetNodePoolForUpdate(ctx, req.NodePoolID)
 		if err != nil {
 			if errors.Is(err, db.ErrNotFound) {
@@ -495,14 +516,6 @@ func (s *nodePoolService) UpdateNodePool(
 
 		if s.useControlPlaneController && dbNodePool.ControlPlane {
 			return &badRequestError{message: errControlPlaneNodePoolNotAllowed.Error()}
-		}
-
-		cluster, err := tx.GetClusterForUpdate(ctx, dbNodePool.ClusterID)
-		if err != nil {
-			if errors.Is(err, db.ErrNotFound) {
-				return errClusterNotFound
-			}
-			return fmt.Errorf("failed to get cluster: %w", err)
 		}
 		capacityCanIncrease := req.Body != nil &&
 			(req.Body.DesiredNodeCount != nil || req.Body.MaxSurge != nil)

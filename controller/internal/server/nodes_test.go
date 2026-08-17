@@ -320,6 +320,10 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			name:   "success",
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
 					ID:        nodeID,
 					ClusterID: clusterID,
@@ -343,7 +347,7 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			name:   "not found",
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{}, db.ErrNotFound)
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, db.ErrNotFound)
 			},
 			want404: true,
 		},
@@ -351,6 +355,10 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			name:   "reject last joined control-plane node",
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
 					ID:           nodeID,
 					ClusterID:    clusterID,
@@ -389,6 +397,10 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
 				otherCP := uuid.MustParse("550e8400-e29b-41d4-a716-446655440021")
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
 					ID:           nodeID,
 					ClusterID:    clusterID,
@@ -425,7 +437,7 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			name:   "noop while cluster deleting",
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
 					ID:        nodeID,
 					ClusterID: clusterID,
 				}, nil)
@@ -441,6 +453,13 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			name:   "noop while node already deleting",
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID,
+				}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
 					ID:        nodeID,
 					ClusterID: clusterID,
@@ -455,6 +474,10 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			nodeID: nodeID,
 			setupMockCalls: func(tx *mockTx) {
 				nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440030")
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
 					ID:         nodeID,
 					ClusterID:  clusterID,
@@ -480,6 +503,10 @@ func TestNodeService_DeleteNode(t *testing.T) {
 				Summary:  "Node removed due to hardware failure",
 			},
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+					ID:        nodeID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{
 					ID:        nodeID,
 					ClusterID: clusterID,
@@ -525,6 +552,7 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			nodeID:           nodeID,
 			forceUnreachable: true,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
 				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil)
 				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(db.Node{}, nil)
@@ -543,6 +571,7 @@ func TestNodeService_DeleteNode(t *testing.T) {
 			allowSingleVoter:         true,
 			allowEtcdSafetyOverrides: true,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
 				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
 				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil)
 				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(db.Node{}, nil)

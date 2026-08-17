@@ -8,7 +8,7 @@ During the open-source migration, **GitLab remains the writable source of truth*
 | --- | --- |
 | Upstream | https://gitlab-master.nvidia.com/nke/cloud-workflow-engine |
 | Branch | `main` |
-| Last imported revision | `fa91e66f` (`v0.0.650-7-gfa91e66f`) |
+| Last imported revision | `9ede170b` (`v0.0.650-14-g9ede170b`) |
 | Destination | `controller/` in https://github.com/NVIDIA/nke |
 
 ## Transforms applied after upstream import

@@ -1,0 +1,100 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+
+package config
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"gopkg.in/yaml.v3"
+)
+
+// SiteConfig holds connection details for one site controller.
+// Auth is intentionally minimal for now — the design for how nkectl
+// authenticates with CWE is an open question being discussed with the team.
+type SiteConfig struct {
+	URL string `yaml:"url"`
+}
+
+// Config is the top-level nkectl config file.
+type Config struct {
+	Sites       map[string]SiteConfig `yaml:"sites"`
+	CurrentSite string                `yaml:"current-site"`
+}
+
+// ConfigDir returns the directory where nkectl stores its config.
+// Respects $XDG_CONFIG_HOME; defaults to ~/.config/nkectl.
+func ConfigDir() (string, error) {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "nkectl"), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".config", "nkectl"), nil
+}
+
+func configPath() (string, error) {
+	dir, err := ConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "config.yaml"), nil
+}
+
+// Load reads the config file. Returns an empty Config if the file does not exist.
+func Load() (*Config, error) {
+	path, err := configPath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return &Config{Sites: map[string]SiteConfig{}}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
+	}
+	if cfg.Sites == nil {
+		cfg.Sites = map[string]SiteConfig{}
+	}
+	return &cfg, nil
+}
+
+// Save writes the config to disk.
+func (c *Config) Save() error {
+	dir, err := ConfigDir()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	data, err := yaml.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("marshaling config: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), data, 0o600); err != nil {
+		return fmt.Errorf("writing config: %w", err)
+	}
+	return nil
+}
+
+// CurrentSiteConfig returns the SiteConfig for the active site.
+func (c *Config) CurrentSiteConfig() (SiteConfig, error) {
+	if c.CurrentSite == "" {
+		return SiteConfig{}, fmt.Errorf("no site configured: run 'nkectl config set-site' first")
+	}
+	site, ok := c.Sites[c.CurrentSite]
+	if !ok {
+		return SiteConfig{}, fmt.Errorf("site %q not found in config", c.CurrentSite)
+	}
+	return site, nil
+}

@@ -790,10 +790,8 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 				SubnetIDs: []openapi_types.UUID{subnetID1},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
-					ID:        nodePoolID,
-					ClusterID: clusterID,
-				}, nil)
+				// Cluster-first order: the cluster lock fails before the pool
+				// row is locked, so GetNodePoolForUpdate is never reached.
 				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)
 			},
 			wantResponseType: api.UpdateNodePool404Response{},
@@ -1036,10 +1034,8 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 				VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
-					ID:        nodePoolID,
-					ClusterID: clusterID,
-				}, nil)
+				// Cluster-first order: the cluster lock fails before the pool
+				// row is locked, so GetNodePoolForUpdate is never reached.
 				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)
 			},
 			wantResponseType: api.UpdateNodePool404Response{},
@@ -1092,6 +1088,14 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			if tt.setupMockDB != nil {
 				tt.setupMockDB(mockDB, mockDB.MockTx)
 			}
+			// Unlocked read used to learn the pool's cluster before taking the
+			// cluster-first lock order. UpdateNodePool always performs this
+			// pre-read first, so require it (Once) rather than Maybe so a
+			// regression that drops it fails the test.
+			mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+				ID:        nodePoolID,
+				ClusterID: clusterID,
+			}, nil).Once()
 			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Maybe().Return(db.Cluster{
 				ID:          clusterID,
 				OrgID:       testOrgID,
@@ -1158,6 +1162,10 @@ func TestNodePoolService_UpdateNodePool_RejectsPodCIDRCapacityExceeded(t *testin
 	desiredNodeCount := 2
 
 	mockDB := &mockDB{MockTx: &mockTx{}}
+	mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+		ID:        nodePoolID,
+		ClusterID: clusterID,
+	}, nil)
 	mockDB.MockTx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
 		ID:           nodePoolID,
 		ClusterID:    clusterID,
@@ -1214,6 +1222,10 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 			name:       "success worker pool",
 			nodePoolID: nodePoolID,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:        nodePoolID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
@@ -1240,6 +1252,10 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 			name:       "success control-plane pool when another joined CP remains",
 			nodePoolID: nodePoolID,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:        nodePoolID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
@@ -1283,6 +1299,10 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 			name:       "reject last joined control-plane pool",
 			nodePoolID: nodePoolID,
 			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
+					ID:        nodePoolID,
+					ClusterID: clusterID,
+				}, nil)
 				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
@@ -1319,7 +1339,7 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 			name:       "noop while cluster deleting",
 			nodePoolID: nodePoolID,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
 					ID:        nodePoolID,
 					ClusterID: clusterID,
 				}, nil)
@@ -1335,7 +1355,7 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 			name:       "not found",
 			nodePoolID: nodePoolID,
 			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound)
+				tx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound)
 			},
 			want404: true,
 		},

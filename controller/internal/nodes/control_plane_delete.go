@@ -40,11 +40,30 @@ var (
 	ErrNodeDeleting = errors.New("node is deleting")
 )
 
-// guardLiveNodeDelete locks the node (and cluster) for the remainder of the
-// transaction and rejects deletes that race teardown or would remove the last
-// joined control plane. Callers must finish marking the node deleting before
-// committing so the cluster lock serializes concurrent live deletes.
+// guardLiveNodeDelete locks the cluster row first and then the node row for the
+// remainder of the transaction, rejecting deletes that race teardown or would
+// remove the last joined control plane. Cluster-first ordering matches the
+// control-plane reconcile transaction (cluster then node), so the two cannot
+// deadlock. Callers must finish marking the node deleting before committing so
+// the cluster lock serializes concurrent live deletes.
 func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.Node, error) {
+	// Read the node without a lock first, solely to learn its cluster so we can
+	// take the cluster lock before the node lock (global cluster-first order).
+	node, err := tx.GetNode(ctx, nodeID)
+	if err != nil {
+		return db.Node{}, fmt.Errorf("failed to get node: %w", err)
+	}
+
+	// Cluster FOR UPDATE is the shared mutex for live deletes: it serializes
+	// concurrent last-CP races (two txs each thinking the other survives) and
+	// must stay held through the caller's mark-deleting/commit. It also rejects
+	// when cluster teardown already owns the cluster (ErrClusterDeleting).
+	if err := lockClusterForLiveDelete(ctx, tx, node.ClusterID); err != nil {
+		return db.Node{}, err
+	}
+
+	// Re-read the node FOR UPDATE under the cluster lock for the authoritative
+	// row; re-check Deleting on it in case it changed since the unlocked read.
 	dbNode, err := tx.GetNodeForUpdate(ctx, nodeID)
 	if err != nil {
 		return db.Node{}, fmt.Errorf("failed to get node: %w", err)
@@ -52,14 +71,6 @@ func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.No
 
 	if dbNode.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		return db.Node{}, ErrNodeDeleting
-	}
-
-	// Cluster FOR UPDATE is the shared mutex for live deletes: it serializes
-	// concurrent last-CP races (two txs each thinking the other survives) and
-	// must stay held through the caller's mark-deleting/commit. It also rejects
-	// when cluster teardown already owns the cluster (ErrClusterDeleting).
-	if err := lockClusterForLiveDelete(ctx, tx, dbNode.ClusterID); err != nil {
-		return db.Node{}, err
 	}
 
 	// Check pool deleting under the cluster lock so a concurrent pool delete
@@ -90,6 +101,22 @@ func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID) (db.No
 // the last joined control plane. Callers must finish marking the pool deleting
 // before committing so the cluster lock serializes concurrent live deletes.
 func guardLiveNodePoolDelete(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID) (db.NodePool, error) {
+	// Read the pool without a lock first, solely to learn its cluster so we can
+	// take the cluster lock before the pool lock (global cluster-first order).
+	nodePool, err := tx.GetNodePool(ctx, nodePoolID)
+	if err != nil {
+		return db.NodePool{}, fmt.Errorf("failed to get node pool: %w", err)
+	}
+
+	// Same cluster-row mutex as guardLiveNodeDelete: serialize last-CP races and
+	// reject deletes once cluster teardown is in progress. Lock is held until
+	// this transaction commits after the caller marks the pool deleting.
+	if err := lockClusterForLiveDelete(ctx, tx, nodePool.ClusterID); err != nil {
+		return db.NodePool{}, err
+	}
+
+	// Re-read the pool FOR UPDATE under the cluster lock for the authoritative
+	// row; re-check Deleting on it in case it changed since the unlocked read.
 	dbNodePool, err := tx.GetNodePoolForUpdate(ctx, nodePoolID)
 	if err != nil {
 		return db.NodePool{}, fmt.Errorf("failed to get node pool: %w", err)
@@ -97,13 +124,6 @@ func guardLiveNodePoolDelete(ctx context.Context, tx db.Tx, nodePoolID uuid.UUID
 
 	if dbNodePool.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		return db.NodePool{}, ErrNodePoolDeleting
-	}
-
-	// Same cluster-row mutex as guardLiveNodeDelete: serialize last-CP races and
-	// reject deletes once cluster teardown is in progress. Lock is held until
-	// this transaction commits after the caller marks the pool deleting.
-	if err := lockClusterForLiveDelete(ctx, tx, dbNodePool.ClusterID); err != nil {
-		return db.NodePool{}, err
 	}
 
 	if dbNodePool.ControlPlane {
