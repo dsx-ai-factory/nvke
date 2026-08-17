@@ -7,12 +7,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v4"
 
 	"github.com/NVIDIA/nke/controller/internal/runbook"
 )
@@ -169,93 +167,32 @@ func TestGetConfigProfile(t *testing.T) {
 	})
 }
 
-// Config profiles reference runbooks by name, so validate that those names
-// resolve to embedded scripts at test time instead of failing at runtime.
-//
-// Current profiles validate all hooks; deprecated profiles validate teardown
-// hooks only, matching getConfigProfile's compatibility intent.
-func TestConfigProfileRunbookReferencesAreEmbedded(t *testing.T) {
-	configProfileRunbooks := referencedRunbooksFromConfigProfiles(t)
-	for name := range configProfileRunbooks {
-		_, err := runbook.Script(name)
-		require.NoError(t, err, "config-profile referenced runbook %q is not embedded", name)
-	}
+// Config profiles and their lifecycle runbooks are one external runtime bundle,
+// so validate the configured source when it is available.
+func TestConfigProfileRunbookReferencesArePackaged(t *testing.T) {
+	profilesDir := profilesDirForTest(t)
+	runbooksDir := filepath.Join(filepath.Dir(profilesDir), "runbooks")
+
+	require.NoError(t, runbook.ValidateProfileReferences(profilesDir, runbooksDir))
 }
 
-func referencedRunbooksFromConfigProfiles(t *testing.T) map[string]struct{} {
-	t.Helper()
-
-	runbooks := map[string]struct{}{}
-	configProfilesDir := configProfilesDirForTest(t)
-	err := filepath.WalkDir(configProfilesDir, func(profilePath string, d os.DirEntry, err error) error {
-		require.NoError(t, err)
-		if d.IsDir() {
-			return nil
-		}
-		if filepath.Ext(profilePath) != ".yaml" {
-			return nil
-		}
-
-		profileBytes, err := os.ReadFile(profilePath)
-		require.NoError(t, err)
-
-		var profile ConfigProfile
-		require.NoError(t, yaml.Unmarshal(profileBytes, &profile), "failed to unmarshal %s", profilePath)
-
-		relPath, err := filepath.Rel(configProfilesDir, profilePath)
-		require.NoError(t, err)
-		isDeprecated := strings.HasPrefix(relPath, "deprecated"+string(filepath.Separator))
-
-		if !isDeprecated {
-			for _, hook := range profile.Hooks.BeforeJoinNode {
-				addHookRunbook(runbooks, hook)
-			}
-			for _, hook := range profile.Hooks.AfterJoinNode {
-				addHookRunbook(runbooks, hook)
-			}
-		}
-
-		// Deprecated profiles may still need to run teardown hooks.
-		for _, hook := range profile.Hooks.BeforeRemoveNode {
-			addHookRunbook(runbooks, hook)
-		}
-		for _, hook := range profile.Hooks.AfterRemoveNode {
-			addHookRunbook(runbooks, hook)
-		}
-
-		return nil
-	})
-	require.NoError(t, err)
-
-	return runbooks
-}
-
-func addHookRunbook(runbooks map[string]struct{}, hook *HookSpec) {
-	if hook == nil || hook.Runbook == nil || hook.Runbook.Name == "" {
-		return
-	}
-	runbooks[hook.Runbook.Name] = struct{}{}
-}
-
-// configProfilesDirForTest resolves fleet config profiles (NKX-13910 moved them
-// to nke-site-deploy). Order: CWE_PROFILES_DIR, sibling checkout, in-repo
-// fixtures. osProfilesDir in this package already resolves in that order.
-func configProfilesDirForTest(t *testing.T) string {
+// profilesDirForTest resolves fleet profiles and their sibling runbooks.
+// Order: CWE_PROFILES_DIR, sibling checkout, in-repo fixtures.
+func profilesDirForTest(t *testing.T) string {
 	t.Helper()
 	if dir := os.Getenv("CWE_PROFILES_DIR"); dir != "" {
-		return filepath.Join(dir, "configProfiles")
+		return dir
 	}
-	sibling := filepath.Join(repoRoot(t), "..", "nke-site-deploy", "cwe-profiles", "0.1.0", "profiles", "configProfiles")
+	sibling := filepath.Join(repoRoot(t), "..", "nke-site-deploy", "cwe-profiles", "0.1.0", "profiles")
 	if _, err := os.Stat(sibling); err == nil {
 		return sibling
 	}
-	// Fixtures last, so a real fleet tree wins when present. Without them CI
-	// matched no candidate and every test reaching here skipped.
-	fixture := filepath.Join(repoRoot(t), "test", "fixtures", "profiles", "configProfiles")
+	// Fixtures last, so a real fleet tree wins when present.
+	fixture := filepath.Join(repoRoot(t), "test", "fixtures", "profiles")
 	if _, err := os.Stat(fixture); err == nil {
 		return fixture
 	}
-	t.Skip("production config profiles moved to nke-site-deploy; set CWE_PROFILES_DIR to run")
+	t.Skip("production profiles moved to nke-site-deploy; set CWE_PROFILES_DIR to run")
 	return ""
 }
 

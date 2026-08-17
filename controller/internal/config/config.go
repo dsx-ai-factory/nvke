@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -107,6 +108,11 @@ type Config struct {
 
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
+
+	// RunbooksDir is the optional directory containing config-profile hook scripts.
+	// When omitted, hook execution looks under ProfilesDir/runbooks before falling
+	// back to controller-owned embedded runbooks.
+	RunbooksDir string `env:"RUNBOOKS_DIR"`
 
 	// NodeRebootInitialTimeout is the initial timeout for the node reboot workflow.
 	NodeRebootInitialTimeout time.Duration `env:"NODE_REBOOT_INITIAL_TIMEOUT" default:"30m"`
@@ -425,6 +431,14 @@ func (c *TeleportConfig) Validate() error {
 // controller path.
 func (c Config) UseControlPlaneControllerForControlPlane() bool {
 	return c.ProvisionControlPlaneWithControlPlaneController
+}
+
+// EffectiveRunbooksDir returns the configured profile-hook runbook directory.
+func (c Config) EffectiveRunbooksDir() string {
+	if c.RunbooksDir != "" {
+		return c.RunbooksDir
+	}
+	return filepath.Join(c.ProfilesDir, "runbooks")
 }
 
 // ParseConfigFromEnv parses configuration from environment variables and validates it.

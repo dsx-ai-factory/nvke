@@ -970,11 +970,14 @@ elif not _cwe_profiles_dir.startswith("/"):
     _cwe_profiles_dir = os.path.abspath(os.path.join(config.main_dir, _cwe_profiles_dir))
 _cwe_profiles_preloaded = os.getenv("CWE_PROFILES_PRELOADED", "false") == "true"
 # Starlark's os.path has exists/join but not isdir.
+if not _cwe_profiles_preloaded and not _cwe_profiles_dir:
+    fail("CWE_PROFILES_DIR must point to an external profiles directory")
 if not _cwe_profiles_preloaded and not os.path.exists(_cwe_profiles_dir):
     fail("CWE profiles not found at %s. Set CWE_PROFILES_DIR to a profiles tree; the in-repo fixture is controller/test/fixtures/profiles and the fleet profiles live in nke-site-deploy." % _cwe_profiles_dir)
 
 _cwe_profiles_context = os.path.dirname(_cwe_profiles_dir)
 _cwe_profiles_dockerfile = os.path.join(_cwe_profiles_context, "Dockerfile")
+_cwe_profiles_runbooks_dir = os.path.join(_cwe_profiles_context, "runbooks")
 
 # Match hack/tilt-cwe-chart-values.yaml: when profiles.image is on, skip baking
 # profiles into the Tilt CWE image and skip live_update sync into the read-only mount.
@@ -988,6 +991,8 @@ if _cwe_profiles_image_enabled:
         _cwe_image_keys = _cwe_image_keys + [("profiles.image.repository", "profiles.image.tag")]
         if not os.path.exists(_cwe_profiles_dockerfile):
             fail("CWE profiles Dockerfile not found at %s" % _cwe_profiles_dockerfile)
+        if not os.path.exists(_cwe_profiles_runbooks_dir):
+            fail("CWE profile runbooks not found at %s" % _cwe_profiles_runbooks_dir)
         custom_build(
             ref="docker.local/cwe-profiles:tilt",
             command=[
@@ -1000,7 +1005,7 @@ if _cwe_profiles_image_enabled:
                 docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
                 """ % (_cwe_tilt_goarch, _cwe_profiles_dockerfile, _cwe_profiles_context),
             ],
-            deps=[_cwe_profiles_dir, _cwe_profiles_dockerfile],
+            deps=[_cwe_profiles_dir, _cwe_profiles_runbooks_dir, _cwe_profiles_dockerfile],
         )
 
 _cwe_build_script = """

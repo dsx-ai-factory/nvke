@@ -42,6 +42,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/metrics"
 	"github.com/NVIDIA/nke/controller/internal/otelx"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge"
+	"github.com/NVIDIA/nke/controller/internal/runbook"
 	"github.com/NVIDIA/nke/controller/internal/server"
 	"github.com/NVIDIA/nke/controller/internal/spiffe"
 	"github.com/NVIDIA/nke/controller/internal/teleport"
@@ -78,6 +79,13 @@ func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel,
 	}))
+
+	if cfg.RunbooksDir != "" {
+		if err := runbook.ValidateProfileReferences(cfg.ProfilesDir, cfg.EffectiveRunbooksDir()); err != nil {
+			logger.Error("Invalid config-profile runbook bundle", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	if _, err := maxprocs.Set(maxprocs.Logger(func(message string, args ...interface{}) {
 		logger.Info(fmt.Sprintf(message, args...))

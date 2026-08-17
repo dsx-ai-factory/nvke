@@ -1,14 +1,16 @@
-# Profiles moved (NKX-13910)
+# External profiles
 
 Fleet OS and config profiles no longer ship in this repository or the CWE
-container image. They live in **nke-site-deploy** and are mounted at runtime:
+container image. An external profile source packages and mounts them at runtime:
 
-- Editable tree: `nke-site-deploy/cwe-profiles/profiles/`
-- Delivery: OCI image `nvcr.io/j7sbcjl3qgta/cwe-profiles` (initContainer `cp`
-  into `PROFILES_DIR`)
+- Profile content is mounted at `PROFILES_DIR`.
+- Profile-hook scripts are mounted at `RUNBOOKS_DIR`.
+- The configured OCI content image provides both directories as one versioned
+  runtime bundle.
 
-For local Tilt, point `CWE_PROFILES_DIR` at that tree (see Tiltfile); Tilt
-builds `docker.local/cwe-profiles:tilt` from the sibling Dockerfile.
+For local Tilt, point `CWE_PROFILES_DIR` at the external bundle's `profiles/`
+directory (see Tiltfile). Tilt builds `docker.local/cwe-profiles:tilt` from the
+Dockerfile and `runbooks/` directory alongside it.
 Unit tests and gofail e2e use `test/fixtures/profiles` (including
 `osProfiles/metadata.yaml` for DB migrations that load profile metadata).
-Optionally use a sibling site-deploy checkout for fuller profile coverage.
+Set `CWE_PROFILES_DIR` to exercise the full external profile bundle.

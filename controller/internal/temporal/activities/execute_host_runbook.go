@@ -57,7 +57,7 @@ func (a *Activities) ExecuteHostRunbook(ctx context.Context, input ExecuteHostRu
 }
 
 func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRunbookInput, node db.Node) (ExecuteHostRunbookResult, error) {
-	script, err := runbook.Script(input.RunbookName)
+	script, err := runbook.Script(a.cfg.EffectiveRunbooksDir(), input.RunbookName)
 	if err != nil {
 		return ExecuteHostRunbookResult{}, err
 	}
