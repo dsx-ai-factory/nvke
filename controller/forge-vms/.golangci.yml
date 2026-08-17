@@ -27,7 +27,6 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/NVIDIA/nke/controller
-        - gitlab-master.nvidia.com
     gofumpt:
       extra-rules: true
 

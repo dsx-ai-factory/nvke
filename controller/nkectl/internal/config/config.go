@@ -24,9 +24,9 @@ type Config struct {
 	CurrentSite string                `yaml:"current-site"`
 }
 
-// ConfigDir returns the directory where nkectl stores its config.
+// Dir returns the directory where nkectl stores its config.
 // Respects $XDG_CONFIG_HOME; defaults to ~/.config/nkectl.
-func ConfigDir() (string, error) {
+func Dir() (string, error) {
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
 		return filepath.Join(xdg, "nkectl"), nil
 	}
@@ -38,7 +38,7 @@ func ConfigDir() (string, error) {
 }
 
 func configPath() (string, error) {
-	dir, err := ConfigDir()
+	dir, err := Dir()
 	if err != nil {
 		return "", err
 	}
@@ -70,7 +70,7 @@ func Load() (*Config, error) {
 
 // Save writes the config to disk.
 func (c *Config) Save() error {
-	dir, err := ConfigDir()
+	dir, err := Dir()
 	if err != nil {
 		return err
 	}

@@ -7,8 +7,9 @@ import (
 	"context"
 	"fmt"
 
-	api "github.com/NVIDIA/nke/controller/api"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+
+	api "github.com/NVIDIA/nke/controller/api"
 )
 
 // ListClusters returns all clusters on the site controller.
