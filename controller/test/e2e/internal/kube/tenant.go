@@ -19,6 +19,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	certificatesv1 "k8s.io/api/certificates/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	policyv1 "k8s.io/api/policy/v1"
@@ -135,10 +136,11 @@ func (f *TenantClientFactory) GetAdminClient(ctx context.Context, clusterName st
 func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client, error) {
 	scheme := runtime.NewScheme()
 	for name, addToScheme := range map[string]func(*runtime.Scheme) error{
-		"apps/v1":         appsv1.AddToScheme,
-		"coordination/v1": coordinationv1.AddToScheme,
-		"core/v1":         corev1.AddToScheme,
-		"policy/v1":       policyv1.AddToScheme,
+		"apps/v1":                appsv1.AddToScheme,
+		"certificates.k8s.io/v1": certificatesv1.AddToScheme,
+		"coordination/v1":        coordinationv1.AddToScheme,
+		"core/v1":                corev1.AddToScheme,
+		"policy/v1":              policyv1.AddToScheme,
 	} {
 		if err := addToScheme(scheme); err != nil {
 			return nil, fmt.Errorf("registering %s tenant scheme: %w", name, err)

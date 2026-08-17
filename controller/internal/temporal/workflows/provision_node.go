@@ -264,11 +264,6 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activ
 		recordPhase("join", joinStart, workflow.Now(ctx))
 		return fmt.Errorf("failed to join node: %w", err)
 	}
-
-	if err := approveNodeCsr(ctx, input.NodeID); err != nil {
-		recordPhase("join", joinStart, workflow.Now(ctx))
-		return fmt.Errorf("failed to approve CSR for node: %w", err)
-	}
 	recordPhase("join", joinStart, workflow.Now(ctx))
 
 	postJoinStart := workflow.Now(ctx)
@@ -714,32 +709,6 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		return fmt.Errorf("failed to label node: %w", err)
 	}
 
-	return nil
-}
-
-func approveNodeCsr(ctx workflow.Context, nodeID uuid.UUID) error {
-	var a *activities.Activities
-
-	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 16 * time.Minute, // INITIAL_CSR_WAIT_TIMEOUT_SECONDS is set to 900 (15 mins in runbook vars) given kubelet creates them every 15 mins. adding a min for buffer
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval: 1 * time.Minute,
-			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 0, // Retry indefinitely
-		},
-	}
-
-	err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, activityOptions),
-		a.ApproveNodeCSR,
-		activities.ApproveNodeCSRInput{
-			NodeID:                           nodeID,
-			NodeProvisioningConditionMessage: "Approving node CSR",
-		},
-	).Get(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to approve node CSR: %w", err)
-	}
 	return nil
 }
 

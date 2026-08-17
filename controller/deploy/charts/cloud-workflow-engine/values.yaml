@@ -271,7 +271,7 @@ tenantAccess:
   # -- Publish each cluster's kubeconfig as a Secret in the nke-system namespace,
   # and remove those Secrets during cluster teardown. Gates both the controller
   # and its cleanup activity, and the Secret grant they depend on.
-  enabled: false
+  enabled: true
 
 nkeOIDCAuth:
   # -- Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers.
@@ -296,11 +296,6 @@ nodeTeardown:
   allowEtcdSafetyOverrides: false
 
 scheduledMaintenance:
-  csrApproval:
-    # -- Enable CWE-owned periodic kubelet-serving CSR approval.
-    enabled: true
-    # -- Interval between CSR approval attempts for each cluster.
-    interval: 10m
   certRenewal:
     # -- Enable CWE-owned periodic Kubernetes control-plane certificate renewal.
     enabled: true

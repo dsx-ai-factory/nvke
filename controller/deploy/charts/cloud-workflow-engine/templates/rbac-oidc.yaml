@@ -1,13 +1,11 @@
-{{- if or .Values.nkeOIDCAuth.enabled .Values.tenantAccess.enabled }}
 # Site-controller RBAC for the CWE controller that reconciles tenant access
-# (NKX-12975): read the nke-rbac ConfigMap and publish/rotate/clean up the
-# per-cluster tenant-access Secrets (<cluster>-kubeconfig,
-# <cluster>-cluster-trust-bundle) in nke-system.
+# and starts tenant controller managers from the per-cluster kubeconfig Secrets
+# in nke-system.
 #
-# The Secret grant follows tenantAccess.enabled, the same flag that gates the
-# controller and the teardown cleanup activity: without it, publishing and
-# revoking both fail Forbidden. The ConfigMap read follows nkeOIDCAuth.enabled
-# because only the OIDC branch of the controller reads nke-rbac.
+# Secret read access is unconditional because the tenant manager lifecycle is
+# always active. Secret mutation follows tenantAccess.enabled, the same flag
+# that gates publishing and teardown cleanup. ConfigMap read access follows
+# nkeOIDCAuth.enabled because only the OIDC branch reads nke-rbac.
 #
 # Namespace-scoped Role (tighter than a cluster-wide ClusterRole — CWE cannot touch
 # Secrets outside nke-system) bound to CWE's own ServiceAccount.
@@ -19,6 +17,10 @@ metadata:
   labels:
     {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
 rules:
+  # Discover tenant kubeconfig creation, rotation, and deletion.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
 {{- if .Values.nkeOIDCAuth.enabled }}
   # Read the nke-rbac ConfigMap the controller SSAs into tenant clusters.
   - apiGroups: [""]
@@ -29,7 +31,7 @@ rules:
   # Publish + rotate + clean up the per-cluster tenant-access Secrets.
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["get", "list", "create", "update", "patch", "delete"]
+    verbs: ["create", "update", "patch", "delete"]
 {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -84,6 +86,5 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "cloud-workflow-engine.serviceAccountName" $ }}
     namespace: {{ include "cloud-workflow-engine.namespace" $ }}
-{{- end }}
 {{- end }}
 {{- end }}

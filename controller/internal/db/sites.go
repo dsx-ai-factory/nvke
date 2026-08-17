@@ -23,7 +23,6 @@ type Site struct {
 	ID                 uuid.UUID  `bun:"type:uuid,pk"`
 	VIPRanges          []string   `bun:"type:text[],notnull"`
 	NextReconcileDue   *time.Time `bun:"type:timestamptz"`
-	NextCSRApprovalDue *time.Time `bun:"type:timestamptz"`
 	NextCertRenewalDue *time.Time `bun:"type:timestamptz"`
 	CreatedAt          time.Time  `bun:"type:timestamptz,notnull,default:current_timestamp"`
 }
@@ -37,14 +36,13 @@ type VIPAllocation struct {
 	CreatedAt      time.Time  `bun:"type:timestamptz,notnull,default:current_timestamp"`
 }
 
-type SiteQueries interface { //nolint:interfacebloat // data access methods
+type SiteQueries interface {
 	ListSites(ctx context.Context) ([]Site, error)
 	GetSite(ctx context.Context, id uuid.UUID, lockForUpdate bool) (Site, error)
 	RegisterSite(ctx context.Context, site *Site) (Site, error)
 
 	ListSitesDueForReconcile(ctx context.Context, batchSize int) ([]Site, error)
 	UpdateSiteReconcileDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error
-	UpdateSiteNextCSRApprovalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error
 	UpdateSiteNextCertRenewalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error
 
 	ListVIPAllocations(ctx context.Context, siteID *uuid.UUID) ([]VIPAllocation, error)
@@ -125,19 +123,6 @@ func (q *queriesImpl) UpdateSiteReconcileDue(ctx context.Context, siteID uuid.UU
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update site reconcile due: %w", err)
-	}
-
-	return nil
-}
-
-func (q *queriesImpl) UpdateSiteNextCSRApprovalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {
-	_, err := q.db.NewUpdate().
-		Model(&Site{}).
-		Set("next_csr_approval_due = ?", nextDue).
-		Where("id = ?", siteID).
-		Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to update site next CSR approval due: %w", err)
 	}
 
 	return nil

@@ -329,7 +329,7 @@ func temporalWorkflowStatusToString(status enums.WorkflowExecutionStatus) string
 // activityDisplaySuffix returns an optional " - detail" suffix appended to an
 // activity's display name to disambiguate otherwise-identical entries. For
 // runbook hook activities it decodes the RunbookName from the scheduled input
-// payload (e.g. "Execute Node Runbook Hook - approve-latest-node-csr"). It is
+// payload (e.g. "Execute Node Runbook Hook - configure-inotify"). It is
 // best-effort: on any decode failure it returns an empty string.
 func activityDisplaySuffix(name string, input *commonpb.Payloads) string {
 	if !runbookHookActivities[shortActivityName(name)] || input == nil {

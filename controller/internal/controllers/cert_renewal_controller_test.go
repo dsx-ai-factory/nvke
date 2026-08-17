@@ -80,3 +80,33 @@ func TestCertRenewalControllerReconcile(t *testing.T) {
 		temporalClient.AssertNotCalled(t, "ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	})
 }
+
+type mockWorkflowStarter struct {
+	mock.Mock
+}
+
+func (m *mockWorkflowStarter) ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
+	callArgs := make([]interface{}, 0, 3+len(args))
+	callArgs = append(callArgs, ctx, options, workflow)
+	callArgs = append(callArgs, args...)
+	ret := m.Called(callArgs...)
+	run, _ := ret.Get(0).(client.WorkflowRun)
+	return run, ret.Error(1)
+}
+
+type mockWorkflowRun struct {
+	id    string
+	runID string
+}
+
+func (m mockWorkflowRun) GetID() string {
+	return m.id
+}
+
+func (m mockWorkflowRun) GetRunID() string {
+	return m.runID
+}
+
+func (m mockWorkflowRun) Get(_ context.Context, _ interface{}) error {
+	return nil
+}

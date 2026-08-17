@@ -25,6 +25,10 @@ type CertRenewalController struct {
 	cweTemporalClient workflowStarter
 }
 
+type workflowStarter interface {
+	ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error)
+}
+
 func NewCertRenewalController(cfg config.Config, logger *slog.Logger, dbInstance db.DB, cweTemporalClient workflowStarter) *CertRenewalController {
 	return &CertRenewalController{
 		cfg:               cfg,
@@ -79,4 +83,8 @@ func (c *CertRenewalController) Reconcile(ctx context.Context, site db.Site) err
 	}
 
 	return nil
+}
+
+func maintenanceDue(nextDue *time.Time, now time.Time) bool {
+	return nextDue == nil || !nextDue.After(now)
 }

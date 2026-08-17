@@ -36,7 +36,6 @@ type ControllerManager struct {
 	autoModeController           *AutoModeController
 	controlPlaneController       *controlplane.Controller
 	nodeHealthController         *nodehealth.Controller
-	csrApprovalController        *CSRApprovalController
 	certRenewalController        *CertRenewalController
 	nodeTPMEKPubController       *NodeTPMEKPubController
 	clusterStaticEntryController *NodeClusterStaticEntryController
@@ -89,7 +88,6 @@ func NewControllerManager(
 		autoModeController:           NewAutoModeController(cfg, controllerManagerLogger, dbInstance),
 		controlPlaneController:       controlplane.NewController(cfg, logger, dbInstance, cweTemporalClient),
 		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
-		csrApprovalController:        NewCSRApprovalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
 		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
 		nodeTPMEKPubController:       NewNodeTPMEKPubController(cfg, dbInstance, controllerManagerLogger, forgeProvider, k8sClient),
 		clusterStaticEntryController: clusterStaticEntryController,
@@ -257,11 +255,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 		}
 	} else {
 		a.logger.Debug("SPIFFE is disabled, skipping tpm pubhashes configmap reconciliation")
-	}
-
-	if err := a.csrApprovalController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile CSR approval", "error", err, "siteID", site.ID.String())
 	}
 
 	if err := a.certRenewalController.Reconcile(ctx, site); err != nil {

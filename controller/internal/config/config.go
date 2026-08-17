@@ -144,12 +144,6 @@ type Config struct {
 	// ControllerManagerInterval is the interval between reconciliation runs for a site
 	ControllerManagerInterval time.Duration `env:"CONTROLLER_MANAGER_INTERVAL" default:"2m"`
 
-	// CSRApprovalControllerEnabled enables CWE-owned periodic kubelet-serving CSR approval.
-	CSRApprovalControllerEnabled bool `env:"CSR_APPROVAL_CONTROLLER_ENABLED" default:"true"`
-
-	// CSRApprovalInterval is the interval between CSR approval attempts for each cluster.
-	CSRApprovalInterval time.Duration `env:"CSR_APPROVAL_INTERVAL" default:"10m"`
-
 	// CertRenewalControllerEnabled enables CWE-owned periodic Kubernetes control-plane certificate renewal.
 	CertRenewalControllerEnabled bool `env:"CERT_RENEWAL_CONTROLLER_ENABLED" default:"true"`
 
@@ -294,7 +288,7 @@ type Config struct {
 
 	// TenantAccessEnabled controls whether the TenantAccessController publishes
 	// each cluster's admin kubeconfig into the tenant-access Secret plane.
-	TenantAccessEnabled bool `env:"TENANT_ACCESS_ENABLED" default:"false"`
+	TenantAccessEnabled bool `env:"TENANT_ACCESS_ENABLED" default:"true"`
 
 	// Tracing configures OpenTelemetry distributed tracing. When Enabled and
 	// Endpoint are set, CWE exports OTLP gRPC spans. Endpoint and related OTEL_*

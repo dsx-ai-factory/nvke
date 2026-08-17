@@ -193,7 +193,6 @@ func NewWorker(
 	w.RegisterWorkflow(workflows.RecordNodePoolConfigChange)
 	w.RegisterWorkflow(workflows.UpgradeControlPlaneAddons)
 	w.RegisterWorkflow(workflows.UpdateKubeadmConfigMap)
-	w.RegisterWorkflow(workflows.ApproveNodeCSRs)
 	w.RegisterWorkflow(workflows.RenewK8sCerts)
 
 	// Rollout subsystem. One Registry backs the activity-side dispatch used by

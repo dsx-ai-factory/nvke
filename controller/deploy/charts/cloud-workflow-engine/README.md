@@ -95,8 +95,6 @@ A Helm chart to deploy the cloud-workflow-engine service
 | scheduledMaintenance.certRenewal.enabled | bool | `true` | Enable CWE-owned periodic Kubernetes control-plane certificate renewal. |
 | scheduledMaintenance.certRenewal.interval | string | `"12h"` | Interval between certificate renewal checks for each cluster. |
 | scheduledMaintenance.certRenewal.thresholdDays | int | `30` | Days before expiry that the runbook renews certificates. |
-| scheduledMaintenance.csrApproval.enabled | bool | `true` | Enable CWE-owned periodic kubelet-serving CSR approval. |
-| scheduledMaintenance.csrApproval.interval | string | `"10m"` | Interval between CSR approval attempts for each cluster. |
 | spiffe.enabled | bool | `false` | Enable SPIFFE identity for mTLS to tenant clusters |
 | spiffe.endpointSocket | string | `"unix:///spiffe-workload-api/spire-agent.sock"` |  |
 | spiffe.spire.className | string | `"spire-mgmt-spire"` |  |
@@ -119,7 +117,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | temporal.mtls.mountPath | string | `"/var/secrets/temporal/certs/client"` | Mount path for the Temporal client certificate secret. |
 | temporal.port | int | `7233` |  |
 | temporal.publicTemporalHostPort | string | `""` |  |
-| tenantAccess.enabled | bool | `false` | Publish each cluster's kubeconfig as a Secret in the nke-system namespace, and remove those Secrets during cluster teardown. Gates both the controller and its cleanup activity, and the Secret grant they depend on. |
+| tenantAccess.enabled | bool | `true` | Publish each cluster's kubeconfig as a Secret in the nke-system namespace, and remove those Secrets during cluster teardown. Gates both the controller and its cleanup activity, and the Secret grant they depend on. |
 | tolerations | list | `[]` |  |
 | volumeMounts | list | `[]` |  |
 | volumes | list | `[]` |  |

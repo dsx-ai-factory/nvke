@@ -30,6 +30,8 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeset"
+	"github.com/NVIDIA/nke/controller/internal/controllers/tenant"
+	"github.com/NVIDIA/nke/controller/internal/controllers/tenant/csr"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenantaccess"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/db/migrations"
@@ -206,7 +208,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("controller-runtime manager configuration", "enableCapi", cfg.EnableCapi, "enableForgeCapi", cfg.EnableForgeCapi, "enableNodeProvisioningMonitor", enableNodeProvisioningMonitor, "enableTenantAccess", cfg.TenantAccessEnabled)
+	logger.Info("Kubernetes controller-runtime manager configuration",
+		"enableCapi", cfg.EnableCapi,
+		"enableForgeCapi", cfg.EnableForgeCapi,
+		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
+		"enableTenantAccess", cfg.TenantAccessEnabled)
 	if cfg.EnableCapi {
 		machineSpireEntryController := capi.NewMachineSpireEntryController(
 			cfg,
@@ -232,7 +238,7 @@ func main() {
 
 			nicoProviderIDController := capi.NewNicoProviderIDController(
 				k8sControllerManager.GetClient(),
-				kube.NewCAPIKubeconfigTenantClientProvider(k8sControllerManager.GetClient()),
+				kube.NewCAPIKubeconfigTenantClientProvider(k8sControllerManager.GetAPIReader()),
 				logger.With("logger", "nico-provider-id-controller"),
 			)
 			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
@@ -240,6 +246,31 @@ func main() {
 				os.Exit(1)
 			}
 		}
+	}
+
+	tenantManagerSet, err := tenant.NewManagerSet(
+		ctx,
+		logger.With("logger", "tenant-controller-manager-set"),
+		tenant.NewManagerFactory(
+			logger.With("logger", "tenant-controller-runtime"),
+			csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
+		),
+		tenant.DefaultManagerSetOptions(),
+	)
+	if err != nil {
+		logger.Error("Failed to create tenant controller manager set", "error", err)
+		os.Exit(1)
+	}
+	defer tenantManagerSet.Shutdown()
+
+	tenantSecretReconciler := tenant.NewSecretReconciler(
+		dbInstance,
+		k8sControllerManager.GetClient(),
+		tenantManagerSet,
+	)
+	if err := tenantSecretReconciler.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up tenant manager Secret reconciler", "error", err)
+		os.Exit(1)
 	}
 
 	var teleportClient teleport.Client

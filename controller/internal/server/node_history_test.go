@@ -37,8 +37,8 @@ func TestActivityDisplaySuffix(t *testing.T) {
 		{
 			name:     "node runbook hook appends runbook name",
 			activity: activityExecuteNodeRunbookHook,
-			input:    mustPayloads(t, runbookInput{RunbookName: "approve-latest-node-csr", HookPhase: "post-provision"}),
-			want:     " - approve-latest-node-csr",
+			input:    mustPayloads(t, runbookInput{RunbookName: "configure-inotify", HookPhase: "post-provision"}),
+			want:     " - configure-inotify",
 		},
 		{
 			name:     "cluster runbook hook appends runbook name",
@@ -86,10 +86,10 @@ func TestActivityDisplaySuffix(t *testing.T) {
 func TestActivityDisplayNameWithSuffix(t *testing.T) {
 	t.Parallel()
 
-	input := mustPayloads(t, struct{ RunbookName string }{RunbookName: "approve-latest-node-csr"})
+	input := mustPayloads(t, struct{ RunbookName string }{RunbookName: "configure-inotify"})
 	name := activityExecuteNodeRunbookHook
 	got := activityDisplayName(name) + activityDisplaySuffix(name, input)
-	want := "Execute Node Runbook Hook - approve-latest-node-csr"
+	want := "Execute Node Runbook Hook - configure-inotify"
 	if got != want {
 		t.Errorf("display name = %q, want %q", got, want)
 	}

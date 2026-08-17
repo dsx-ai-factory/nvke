@@ -111,11 +111,6 @@ func (m *MockDB) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Contex
 	return args.Error(0)
 }
 
-func (m *MockDB) UpdateSiteNextCSRApprovalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {
-	args := m.Called(ctx, siteID, nextDue)
-	return args.Error(0)
-}
-
 func (m *MockDB) UpdateSiteNextCertRenewalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {
 	args := m.Called(ctx, siteID, nextDue)
 	return args.Error(0)
@@ -324,11 +319,6 @@ func (m *MockTx) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Clu
 		return db.Cluster{}, args.Error(1)
 	}
 	return v, args.Error(1)
-}
-
-func (m *MockTx) UpdateSiteNextCSRApprovalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {
-	args := m.Called(ctx, siteID, nextDue)
-	return args.Error(0)
 }
 
 func (m *MockTx) UpdateSiteNextCertRenewalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {

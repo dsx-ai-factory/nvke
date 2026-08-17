@@ -80,6 +80,9 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 				validatePostReadyClusterState(&test)
 				validatePostReadyNodeOperations(&test)
 			}
+			if spec.validate.csrApproval {
+				validateKubeletServingCSRApproval(&test)
+			}
 			if spec.validate.etcdEncryption {
 				validateEtcdEncryption(&test)
 			}
@@ -179,7 +182,7 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{scale: true, reboot: true, postReadyChecks: true},
+		validate: validations{scale: true, reboot: true, postReadyChecks: true, csrApproval: true},
 	}),
 	Entry("nico-containers", Ordered, ContinueOnFailure, Label("nico-containers", "happy-path"), testSpec{
 		buildSpec: nicoSpec,
@@ -323,6 +326,9 @@ type validations struct {
 	// postReadyChecks verifies intended cluster state after the initial CAPD
 	// cluster and all desired nodes are Ready.
 	postReadyChecks bool
+	// csrApproval rotates a Ready worker's kubelet serving certificate and
+	// verifies that the tenant CSR controller approves and obtains a new one.
+	csrApproval bool
 	// scale exercises control-plane and worker node pool scale-up and scale-down.
 	scale bool
 	// reboot applies nke.nvidia.com/reboot to a worker and waits for remediation.

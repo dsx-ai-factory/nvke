@@ -39,7 +39,6 @@ const (
 
 	UpgradeControlPlaneAddonsWorkflowPrefix = "kubeadm-upgrade-"
 	UpdateKubeadmCMWorkflowPrefix           = "update-kubeadm-configmap-"
-	ApproveNodeCSRsWorkflowPrefix           = "approve-node-csrs-"
 	RenewK8sCertsWorkflowPrefix             = "renew-k8s-certs-"
 
 	RebootNodeReasonProvisioningWorkflow = "provisioning-workflow"
