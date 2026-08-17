@@ -48,8 +48,6 @@ my-deploy-repo/
 │   │   └── application.yaml
 │   ├── cnpg-temporal/                   # argocd: PostgreSQL for Temporal
 │   │   └── application.yaml
-│   ├── site-workflow-engine/            # argocd: SWE
-│   │   └── application.yaml
 │   └── ...
 ```
 
@@ -72,8 +70,6 @@ items:
   - name: cnpg-temporal
     type: argocd
   - name: temporal
-    type: argocd
-  - name: site-workflow-engine
     type: argocd
   - name: cloud-workflow-engine
     type: argocd
@@ -120,21 +116,21 @@ Single-source example (inline Helm values):
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: site-workflow-engine
+  name: cloud-workflow-engine
   namespace: argocd
 spec:
   project: default
   destination:
-    namespace: site-workflow-engine
+    namespace: cloud-workflow-engine
     server: https://kubernetes.default.svc
   source:
     repoURL: https://helm.ngc.nvidia.com/j7sbcjl3qgta
-    chart: site-workflow-engine
-    targetRevision: "0.3.0"
+    chart: cloud-workflow-engine
+    targetRevision: "0.1.0"
     helm:
       values: |
         app:
-          image: nvcr.io/j7sbcjl3qgta/site-workflow-engine:v0.0.314
+          image: nvcr.io/j7sbcjl3qgta/cloud-workflow-engine:v0.1.0
   syncPolicy:
     automated: {}
     syncOptions:
@@ -234,8 +230,6 @@ Each node in `.Cluster.JoinNodes`:
 | Expression | Type | Description |
 |------------|------|-------------|
 | `.Registry.NGCAPIKey` | string | NGC API key |
-| `.Registry.SWEImageRepo` | string | SWE container image repository |
-| `.Registry.SWEImageTag` | string | SWE container image tag |
 
 ### `.ArgoCD`
 

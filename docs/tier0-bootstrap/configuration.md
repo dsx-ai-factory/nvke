@@ -167,20 +167,6 @@ registry:
   ngcApiKey: "nvapi-xxxxxxxxxxxx"
 ```
 
-### `registry.sweImageRepo`
-
-<kbd>SWE_IMAGE_REPO</kbd>
-
-**Type:** string  
-**Default:** `nvcr.io/j7sbcjl3qgta/site-workflow-engine`
-
-### `registry.sweImageTag`
-
-<kbd>SWE_IMAGE_TAG</kbd>
-
-**Type:** string  
-**Default:** The binary's own git commit hash
-
 ---
 
 ## `argocd`
@@ -208,11 +194,11 @@ ArgoCD deployment settings and git repositories. This is the primary configurati
 ArgoCD child applications that must reach `Synced` + `Healthy` for bootstrap to succeed. Applications not in this list are deployed but are non-blocking.
 
 **Type:** comma-separated string  
-**Default:** `cloud-workflow-engine,site-workflow-engine`
+**Default:** `cloud-workflow-engine`
 
 ```yaml
 argocd:
-  requiredApps: "cloud-workflow-engine,site-workflow-engine"
+  requiredApps: "cloud-workflow-engine"
 ```
 
 ### `argocd.repos`
@@ -298,8 +284,6 @@ items:
     type: argocd
   - name: temporal
     type: argocd
-  - name: site-workflow-engine
-    type: argocd
 ```
 
 | Field | Required | Description |
@@ -323,10 +307,8 @@ An NKE site controller cluster requires the following ArgoCD Applications:
 | Application | NGC Chart | Sync Wave | Description |
 |-------------|-----------|-----------|-------------|
 | `cnpg-temporal` | `cnpg-cluster` | 40 | PostgreSQL for Temporal |
-| `cnpg-site` | `cnpg-cluster` | 40 | PostgreSQL for site-workflow-engine |
 | `cnpg-cloud` | `cnpg-cluster` | 40 | PostgreSQL for cloud-workflow-engine |
 | `temporal` | `temporal` | 50 | Temporal workflow orchestration |
-| `site-workflow-engine` | `site-workflow-engine` | 60 | Site Workflow Engine |
 | `cloud-workflow-engine` | `cloud-workflow-engine` | 60 | Cloud Workflow Engine |
 
 > **TODO:** Confirm `j7sbcjl3qgta` is the final public NGC org for NKE Helm charts and container images. Update all `helm.ngc.nvidia.com/j7sbcjl3qgta` and `nvcr.io/j7sbcjl3qgta` references if the org changes.
@@ -346,13 +328,13 @@ Each `application.yaml` must be a valid `argoproj.io/v1alpha1` Application manif
 | `spec.source.repoURL` | Must match a URL that has a corresponding ArgoCD repo secret |
 | `spec.destination.server` | Typically `https://kubernetes.default.svc` |
 
-Example (`site-workflow-engine/application.yaml`):
+Example (`cloud-workflow-engine/application.yaml`):
 
 ```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: site-workflow-engine
+  name: cloud-workflow-engine
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "60"
@@ -361,20 +343,20 @@ metadata:
 spec:
   project: default
   destination:
-    namespace: site-workflow-engine
+    namespace: cloud-workflow-engine
     server: https://kubernetes.default.svc
   source:
     repoURL: https://helm.ngc.nvidia.com/j7sbcjl3qgta
-    chart: site-workflow-engine
-    targetRevision: "0.3.0"
+    chart: cloud-workflow-engine
+    targetRevision: "0.1.0"
     helm:
       values: |
         app:
-          image: nvcr.io/j7sbcjl3qgta/site-workflow-engine:v0.0.314
+          image: nvcr.io/j7sbcjl3qgta/cloud-workflow-engine:v0.1.0
           imagePullSecret: ngc-registry-nke-imagepull
         appDb:
-          url: cnpg-site-rw.cnpg-site.svc.cluster.local:5432
-          postgresPassword: <site-rw-password>
+          url: cnpg-cloud-rw.cnpg-cloud.svc.cluster.local:5432
+          postgresPassword: <cloud-rw-password>
         temporal:
           url: temporal-frontend.temporal.svc.cluster.local:7233
   syncPolicy:
@@ -407,8 +389,6 @@ deploy/reference/
     ├── nke-storage/
     │   ├── storage-classes.yaml
     │   └── persistent-volumes.yaml
-    ├── site-workflow-engine/
-    │   └── application.yaml
     └── temporal/
         └── application.yaml
 ```
@@ -433,7 +413,7 @@ argocd:
 When adapting the reference manifests:
 
 - **Chart versions** (`spec.source.targetRevision`) — pin to versions you've tested
-- **Container image tags** — SWE and CWE image tags in their respective Helm values
+- **Container image tags** — CWE image tag in its Helm values
 - **Database storage** — adjust `storageClass` and `size` for your storage backend
 - **Database credentials** — override the default passwords for production via CNPG secrets
 - **Cluster instances** — CNPG `cluster.instances` (3 for HA, 1 for single-node)

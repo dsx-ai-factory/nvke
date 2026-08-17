@@ -31,7 +31,7 @@ You don't run `kubeadm` directly. NKE runs it for you. But understanding what it
 
 ## Helm
 
-Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NKE's own services (CWE, SWE, Temporal, CloudNative-PG) are deployed as Helm charts from the NGC Helm registry.
+Helm is the package manager for Kubernetes. Applications are packaged as *charts* — versioned bundles of Kubernetes manifests with templated configuration. NKE's own services (CWE, Temporal, CloudNative-PG) are deployed as Helm charts from the NGC Helm registry.
 
 When you configure a deploy repository for `tier0-bootstrap`, you write ArgoCD Application manifests that point at Helm charts and supply values.
 
@@ -53,7 +53,7 @@ NKE uses ArgoCD to manage the site controller stack. `tier0-bootstrap` installs 
 
 Temporal is a durable workflow orchestration platform. It executes long-running, fault-tolerant workflows — like "provision a three-node cluster" or "upgrade 200 worker nodes one at a time" — and automatically retries failed steps without losing progress.
 
-NKE's Site Workflow Engine (SWE) and Cloud Workflow Engine (CWE) are Temporal workers. When you provision a tenant cluster through NKE, CWE submits a workflow to Temporal that drives the full lifecycle. If a step fails mid-way, Temporal resumes from that point rather than starting over.
+NKE's Cloud Workflow Engine (CWE) is a Temporal worker. When you provision a tenant cluster through NKE, CWE submits a workflow to Temporal that drives the full lifecycle. If a step fails mid-way, Temporal resumes from that point rather than starting over.
 
 Operators can port-forward Temporal's web UI to inspect running workflows or diagnose failures.
 
@@ -63,7 +63,7 @@ Operators can port-forward Temporal's web UI to inspect running workflows or dia
 
 ## CloudNative-PG (CNPG)
 
-CloudNative-PG is a Kubernetes operator for running PostgreSQL. NKE deploys three CNPG clusters on the site controller — one each for SWE, CWE, and Temporal — rather than running standalone database processes. CNPG handles HA failover, backup, and certificate management.
+CloudNative-PG is a Kubernetes operator for running PostgreSQL. NKE deploys CNPG clusters on the site controller for CWE and Temporal rather than running standalone database processes. CNPG handles HA failover, backup, and certificate management.
 
 You configure database credentials in `tier0-bootstrap`'s config file. CNPG creates and manages the actual PostgreSQL instances.
 

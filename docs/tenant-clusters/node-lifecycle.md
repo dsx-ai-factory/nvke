@@ -67,7 +67,7 @@ Two approaches:
 
 2. **Via `nke-cli`** — connect to the cluster and use the node termination command.
 
-If the node is still present in Kubernetes but is already gone from CWE and SWE, it is a Kubernetes-only zombie node. Remove it manually:
+If the node is still present in Kubernetes but is already gone from CWE, it is a Kubernetes-only zombie node. Remove it manually:
 
 ```bash
 kubectl delete node <node-name>
@@ -85,9 +85,9 @@ kubectl delete node <node-name>
 
 - Check `nke-agent` on the node: `systemctl status nke-agent`
 - Verify network connectivity from the site controller to the node on port 15005 (gRPC)
-- Check SWE workflow logs in the Temporal UI (port-forward `temporal-web` in the site controller cluster)
+- Check CWE workflow logs in the Temporal UI (port-forward `temporal-web` in the site controller cluster)
 
 **Node shows Ready in Kubernetes but NKE considers it unhealthy:**
 
 - NKE tracks node state in its own database. Check CWE UI for the node's recorded state.
-- SWE reconciles the node's Kubernetes state with NKE's records; check SWE logs if there's a discrepancy.
+- CWE reconciles the node's Kubernetes state with NKE's records; check CWE logs if there's a discrepancy.
