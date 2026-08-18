@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 
@@ -34,8 +36,8 @@ import (
 )
 
 const (
-	beforeRemoveNodeRunbook = "delete-longhorn-node"
-	afterRemoveNodeRunbook  = "evict-cnpg-node"
+	beforeRemoveNodeRunbook = "evict-cnpg-node"
+	afterRemoveNodeRunbook  = "delete-longhorn-node"
 )
 
 func TestTeardownNodeHooksSkippedWhenClusterNeverProvisioned(t *testing.T) {
@@ -76,6 +78,18 @@ func TestTeardownNodeHooksRunWhenClusterProvisioned(t *testing.T) {
 		return input.RunbookName == afterRemoveNodeRunbook
 	})).Return(activities.ExecuteClusterRunbookResult{}, nil).Once()
 
+	var teardownSteps []string
+	env.SetOnActivityStartedListener(func(activityInfo *activity.Info, _ context.Context, args converter.EncodedValues) {
+		if activityInfo.ActivityType.Name != "ExecuteClusterRunbook" {
+			teardownSteps = append(teardownSteps, activityInfo.ActivityType.Name)
+			return
+		}
+
+		var input activities.ExecuteClusterRunbookInput
+		require.NoError(t, args.Get(&input))
+		teardownSteps = append(teardownSteps, input.RunbookName)
+	})
+
 	env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
 		NodeID:      res.nodeID,
 		AllowCPNode: true,
@@ -84,6 +98,21 @@ func TestTeardownNodeHooksRunWhenClusterProvisioned(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	env.AssertExpectations(t)
+
+	beforeHookIndex := slices.Index(teardownSteps, beforeRemoveNodeRunbook)
+	infraDeletionIndex := slices.Index(teardownSteps, "DeleteForgeInstance")
+	kubeNodeDeletionIndex := slices.Index(teardownSteps, "DeleteKubeNode")
+	afterHookIndex := slices.Index(teardownSteps, afterRemoveNodeRunbook)
+	require.NotEqual(t, -1, beforeHookIndex)
+	require.NotEqual(t, -1, infraDeletionIndex)
+	require.NotEqual(t, -1, kubeNodeDeletionIndex)
+	require.NotEqual(t, -1, afterHookIndex)
+	require.Less(t, beforeHookIndex, infraDeletionIndex,
+		"CNPG eviction must complete before infrastructure deletion")
+	require.Less(t, infraDeletionIndex, kubeNodeDeletionIndex,
+		"infrastructure deletion must complete before Kubernetes node deletion")
+	require.Less(t, kubeNodeDeletionIndex, afterHookIndex,
+		"Longhorn cleanup must run after Kubernetes node deletion")
 }
 
 func TestTeardownNodeHooksRunWhenNotProvisionedButCPJoined(t *testing.T) {
@@ -614,6 +643,129 @@ func TestTeardownNodeWorkerPoolSkipsEtcdRemoval(t *testing.T) {
 	require.True(t, drainInput.ForceDrainOnFailure, "worker drains must preserve force-delete fallback")
 }
 
+func TestTeardownNodeDeletesInfrastructureBeforeKubeNode(t *testing.T) {
+	tests := []struct {
+		name                  string
+		infraMode             activities.InfraMode
+		infraDeletionActivity string
+	}{
+		{
+			name:                  "forge",
+			infraMode:             activities.InfraModeForge,
+			infraDeletionActivity: "DeleteForgeInstance",
+		},
+		{
+			name:                  "capi",
+			infraMode:             activities.InfraModeCAPI,
+			infraDeletionActivity: "DeleteCAPIMachineForNode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			database, res := setupTestDB(t, seedOpts{
+				clusterProvisioned: true,
+				cpNodeJoined:       true,
+				omitConfigProfile:  true,
+			})
+
+			env, _ := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{
+				infraMode: tt.infraMode,
+				kubeadmResetErr: temporal.NewNonRetryableApplicationError(
+					"node-agent unavailable",
+					"NodeAgentUnavailable",
+					nil,
+				),
+				deleteKubeNodeErr: errors.New("tenant API unavailable"),
+			})
+
+			var activityNames []string
+			env.SetOnActivityStartedListener(func(activityInfo *activity.Info, _ context.Context, _ converter.EncodedValues) {
+				activityNames = append(activityNames, activityInfo.ActivityType.Name)
+			})
+
+			env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+				NodeID:      res.nodeID,
+				AllowCPNode: true,
+			})
+
+			require.True(t, env.IsWorkflowCompleted())
+			require.ErrorContains(t, env.GetWorkflowError(), "tenant API unavailable")
+
+			infraDeletionIndex := slices.Index(activityNames, tt.infraDeletionActivity)
+			kubeadmResetIndex := slices.Index(activityNames, "KubeadmReset")
+			kubeNodeDeletionIndex := slices.Index(activityNames, "DeleteKubeNode")
+			require.NotEqual(t, -1, infraDeletionIndex, "infrastructure deletion activity should run")
+			require.NotEqual(t, -1, kubeadmResetIndex, "kubeadm reset activity should run")
+			require.NotEqual(t, -1, kubeNodeDeletionIndex, "Kubernetes node deletion activity should run")
+			require.Less(t, kubeadmResetIndex, infraDeletionIndex,
+				"best-effort kubeadm reset must run before infrastructure deletion")
+			require.Less(t, infraDeletionIndex, kubeNodeDeletionIndex,
+				"infrastructure deletion must complete before Kubernetes node deletion starts")
+
+			_, err := database.GetNode(context.Background(), res.nodeID)
+			require.NoError(t, err, "failed Kubernetes cleanup should retain the node row for retry and diagnosis")
+		})
+	}
+}
+
+func TestTeardownNodeDoesNotDeleteKubeNodeWhenInfrastructureDeletionFails(t *testing.T) {
+	tests := []struct {
+		name                  string
+		infraMode             activities.InfraMode
+		infraDeletionActivity string
+	}{
+		{
+			name:                  "forge",
+			infraMode:             activities.InfraModeForge,
+			infraDeletionActivity: "DeleteForgeInstance",
+		},
+		{
+			name:                  "capi",
+			infraMode:             activities.InfraModeCAPI,
+			infraDeletionActivity: "DeleteCAPIMachineForNode",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			database, res := setupTestDB(t, seedOpts{
+				clusterProvisioned: true,
+				cpNodeJoined:       true,
+				omitConfigProfile:  true,
+			})
+
+			env, _ := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{
+				infraMode: tt.infraMode,
+				infraDeletionErr: temporal.NewNonRetryableApplicationError(
+					"provider deletion failed",
+					"ProviderDeletionFailed",
+					nil,
+				),
+			})
+
+			var activityNames []string
+			env.SetOnActivityStartedListener(func(activityInfo *activity.Info, _ context.Context, _ converter.EncodedValues) {
+				activityNames = append(activityNames, activityInfo.ActivityType.Name)
+			})
+
+			env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+				NodeID:      res.nodeID,
+				AllowCPNode: true,
+			})
+
+			require.True(t, env.IsWorkflowCompleted())
+			require.ErrorContains(t, env.GetWorkflowError(), "provider deletion failed")
+			require.Contains(t, activityNames, tt.infraDeletionActivity)
+			require.NotContains(t, activityNames, "DeleteKubeNode",
+				"Kubernetes node deletion must wait for infrastructure deletion to complete")
+
+			_, err := database.GetNode(context.Background(), res.nodeID)
+			require.NoError(t, err, "failed infrastructure deletion should retain the node row for retry and diagnosis")
+		})
+	}
+}
+
 // --- helpers ---
 
 var testHooksConfig = fmt.Sprintf(`
@@ -802,6 +954,10 @@ type workflowEnvOpts struct {
 	etcdDryRunExitCode          *int
 	failDrainActivity           bool
 	failGracefulShutdownStart   bool
+	deleteKubeNodeErr           error
+	kubeadmResetErr             error
+	infraMode                   activities.InfraMode
+	infraDeletionErr            error
 	omitClusterRunbookMock      bool
 	omitKubeadmResetMock        bool
 	omitDeleteForgeInstanceMock bool
@@ -834,7 +990,7 @@ func setupWorkflowEnv(t *testing.T, database db.DB, profilesDir string, opts wor
 		drainErr = errors.New("node unreachable")
 	}
 	env.OnActivity(a.DrainKubeNode, mock.Anything, mock.Anything).Return(drainErr).Maybe()
-	env.OnActivity(a.DeleteKubeNode, mock.Anything, mock.Anything).Return(nil).Maybe()
+	env.OnActivity(a.DeleteKubeNode, mock.Anything, mock.Anything).Return(opts.deleteKubeNodeErr).Maybe()
 	if !opts.omitClusterRunbookMock {
 		env.OnActivity(a.ExecuteClusterRunbook, mock.Anything, mock.MatchedBy(func(input activities.ExecuteClusterRunbookInput) bool {
 			return input.RunbookName != beforeRemoveNodeRunbook && input.RunbookName != afterRemoveNodeRunbook
@@ -848,13 +1004,21 @@ func setupWorkflowEnv(t *testing.T, database db.DB, profilesDir string, opts wor
 		nil,
 	).Maybe()
 	if !opts.omitKubeadmResetMock {
-		env.OnActivity(a.KubeadmReset, mock.Anything, mock.Anything).Return(activities.KubeadmResetResult{}, nil).Maybe()
+		env.OnActivity(a.KubeadmReset, mock.Anything, mock.Anything).
+			Return(activities.KubeadmResetResult{}, opts.kubeadmResetErr).Maybe()
 	}
-	if !opts.omitDeleteForgeInstanceMock {
-		env.OnActivity(a.DeleteForgeInstance, mock.Anything, mock.Anything).Return(activities.DeleteForgeInstanceResult{}, nil).Maybe()
+	if opts.infraMode == activities.InfraModeCAPI {
+		env.OnActivity(a.DeleteCAPIMachineForNode, mock.Anything, mock.Anything).Return(opts.infraDeletionErr).Maybe()
+	} else if !opts.omitDeleteForgeInstanceMock {
+		env.OnActivity(a.DeleteForgeInstance, mock.Anything, mock.Anything).
+			Return(activities.DeleteForgeInstanceResult{}, opts.infraDeletionErr).Maybe()
+	}
+	infraMode := opts.infraMode
+	if infraMode == "" {
+		infraMode = activities.InfraModeForge
 	}
 	env.OnActivity(a.GetNodeProvisioningContext, mock.Anything, mock.Anything).Return(activities.NodeProvisioningContext{
-		InfraMode: activities.InfraModeForge,
+		InfraMode: infraMode,
 	}, nil).Maybe()
 	env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.Anything).Return(nil).Maybe()
 	env.OnRequestCancelExternalWorkflow(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()

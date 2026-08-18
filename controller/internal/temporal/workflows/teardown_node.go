@@ -146,7 +146,8 @@ func teardownNode(ctx workflow.Context, input TeardownNodeInput, labels nodeMetr
 	}
 
 	clusterRemoveStart := workflow.Now(ctx)
-	if err := removeNodeFromKubernetes(ctx, input); err != nil {
+	needsKubeCleanup, err := prepareNodeForInfrastructureDeletion(ctx, input)
+	if err != nil {
 		recordPhase("cluster_remove", clusterRemoveStart, workflow.Now(ctx))
 		return fmt.Errorf("failed to run cluster cleanup phase: %w", err)
 	}
@@ -160,6 +161,15 @@ func teardownNode(ctx workflow.Context, input TeardownNodeInput, labels nodeMetr
 	}
 	recordPhase(infraPhase, infraDeleteStart, workflow.Now(ctx))
 
+	if needsKubeCleanup {
+		if err := deleteKubeNode(ctx, input); err != nil {
+			return fmt.Errorf("failed to complete cluster cleanup phase: failed to delete kube node: %w", err)
+		}
+		if err := runTeardownHooks(ctx, input, AfterRemoveNode); err != nil {
+			return fmt.Errorf("failed to complete cluster cleanup phase: failed to run afterRemoveNode hooks: %w", err)
+		}
+	}
+
 	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.DeleteNode, input.NodeID).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to delete node: %w", err)
 	}
@@ -167,12 +177,85 @@ func teardownNode(ctx workflow.Context, input TeardownNodeInput, labels nodeMetr
 	return nil
 }
 
-func removeNodeFromKubernetes(ctx workflow.Context, input TeardownNodeInput) error {
+// prepareNodeForInfrastructureDeletion runs the steps that require the target
+// machine to still exist. Its result reports whether Kubernetes cleanup must run
+// after the provider deletes the machine.
+func prepareNodeForInfrastructureDeletion(
+	ctx workflow.Context,
+	input TeardownNodeInput,
+) (bool, error) {
 	if input.SkipRemoveFromCluster {
-		return resetNodeForClusterTeardown(ctx, input)
+		return false, resetNodeForClusterTeardown(ctx, input)
 	}
 
-	return removeNodeFromLiveCluster(ctx, input)
+	if err := runTeardownHooks(ctx, input, BeforeRemoveNode); err != nil {
+		return false, fmt.Errorf("failed to run beforeRemoveNode hooks: %w", err)
+	}
+
+	logger := workflow.GetLogger(ctx)
+
+	var a *activities.Activities
+
+	var node db.Node
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNode, input.NodeID).Get(ctx, &node); err != nil {
+		return false, fmt.Errorf("failed to get node: %w", err)
+	}
+
+	var cluster db.Cluster
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetClusterForNode, input.NodeID).Get(ctx, &cluster); err != nil {
+		return false, fmt.Errorf("failed to get cluster: %w", err)
+	}
+
+	var nodePool db.NodePool
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNodePoolForNode, input.NodeID).Get(ctx, &nodePool); err != nil {
+		return false, fmt.Errorf("failed to get node pool: %w", err)
+	}
+	isControlPlane := nodePool.ControlPlane
+
+	// Live-cluster removal requires a surviving joined control-plane node: direct
+	// tenant API drain/delete calls need a reachable API server, and etcd member
+	// removal still executes as a runbook with ExcludeNodeID=self. When no such
+	// peer exists — e.g. tearing down the last joined CP, or a never-provisioned
+	// cluster — skip the live-cluster steps and fall through to local kubeadm reset.
+	hasSurvivingJoinedCP, err := hasJoinedControlPlaneNodeExcluding(ctx, cluster.ID, input.NodeID)
+	if err != nil {
+		return false, err
+	}
+	if !hasSurvivingJoinedCP {
+		logger.Info("Skipping Kubernetes node removal: no surviving joined control plane nodes available",
+			"nodeID", input.NodeID, "clusterID", cluster.ID)
+		attemptKubeadmReset(ctx, input.NodeID, isControlPlane)
+		return false, nil
+	}
+
+	if err := drainNode(ctx, input, node, isControlPlane); err != nil {
+		return false, fmt.Errorf("failed to drain node: %w", err)
+	}
+
+	if isControlPlane {
+		if err := validateControlPlaneEtcdMemberRemoval(ctx, input, cluster.ID, node); err != nil {
+			return false, fmt.Errorf("failed to validate etcd member removal for control-plane node: %w", err)
+		}
+
+		logger.Info("Start and wait for control-plane graceful shutdown", "nodeID", input.NodeID, "nodeName", node.Name)
+		if err := waitForControlPlaneGracefulShutdown(ctx, input); err != nil {
+			if input.ForceUnreachable {
+				logger.Warn("control-plane graceful shutdown failed, continuing due to force_unreachable", "error", err)
+			} else {
+				return false, fmt.Errorf("failed to wait for control-plane graceful shutdown: %w", err)
+			}
+		}
+
+		if err := removeControlPlaneEtcdMember(ctx, input, cluster.ID, node); err != nil {
+			return false, fmt.Errorf("failed to remove etcd member for control-plane node: %w", err)
+		}
+	}
+
+	// Give kubeadm a bounded, best-effort chance to clean the machine before
+	// deleting it. Its failure must not prevent the subsequent provider deletion.
+	attemptKubeadmReset(ctx, input.NodeID, isControlPlane)
+
+	return true, nil
 }
 
 // resetNodeForClusterTeardown handles the node-local reset for whole-cluster teardown.
@@ -184,83 +267,6 @@ func resetNodeForClusterTeardown(ctx workflow.Context, input TeardownNodeInput) 
 	isControlPlane, err := isControlPlaneNode(ctx, input.NodeID)
 	if err != nil {
 		return fmt.Errorf("failed to check if node is a control-plane node: %w", err)
-	}
-
-	attemptKubeadmReset(ctx, input.NodeID, isControlPlane)
-
-	return nil
-}
-
-// removeNodeFromLiveCluster removes a single node from a still-running Kubernetes
-// cluster: run configured remove-node hooks, drain the node, remove control-plane
-// etcd membership when needed, delete the kube Node object, and reset kubeadm.
-func removeNodeFromLiveCluster(ctx workflow.Context, input TeardownNodeInput) error {
-	if err := runTeardownHooks(ctx, input, BeforeRemoveNode); err != nil {
-		return fmt.Errorf("failed to run beforeRemoveNode hooks: %w", err)
-	}
-
-	if err := removeNodeFromCluster(ctx, input); err != nil {
-		return fmt.Errorf("failed to remove node from cluster: %w", err)
-	}
-
-	if err := runTeardownHooks(ctx, input, AfterRemoveNode); err != nil {
-		return fmt.Errorf("failed to run afterRemoveNode hooks: %w", err)
-	}
-
-	return nil
-}
-
-// removeNodeFromCluster is the CWE-native implementation of SWE RemoveSiteNode's
-// live-cluster removal sequence.
-func removeNodeFromCluster(ctx workflow.Context, input TeardownNodeInput) error {
-	logger := workflow.GetLogger(ctx)
-
-	var a *activities.Activities
-
-	var node db.Node
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNode, input.NodeID).Get(ctx, &node); err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
-	}
-
-	var cluster db.Cluster
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetClusterForNode, input.NodeID).Get(ctx, &cluster); err != nil {
-		return fmt.Errorf("failed to get cluster: %w", err)
-	}
-
-	var nodePool db.NodePool
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNodePoolForNode, input.NodeID).Get(ctx, &nodePool); err != nil {
-		return fmt.Errorf("failed to get node pool: %w", err)
-	}
-	isControlPlane := nodePool.ControlPlane
-
-	// Live-cluster removal requires a surviving joined control-plane node: direct
-	// tenant API drain/delete calls need a reachable API server, and etcd member
-	// removal still executes as a runbook with ExcludeNodeID=self. When no such
-	// peer exists — e.g. tearing down the last joined CP, or a never-provisioned
-	// cluster — skip the live-cluster steps and fall through to local kubeadm reset.
-	hasSurvivingJoinedCP, err := hasJoinedControlPlaneNodeExcluding(ctx, cluster.ID, input.NodeID)
-	if err != nil {
-		return err
-	}
-	if !hasSurvivingJoinedCP {
-		logger.Info("Skipping Kubernetes node removal: no surviving joined control plane nodes available",
-			"nodeID", input.NodeID, "clusterID", cluster.ID)
-		attemptKubeadmReset(ctx, input.NodeID, isControlPlane)
-		return nil
-	}
-
-	if err := drainNode(ctx, input, node, isControlPlane); err != nil {
-		return fmt.Errorf("failed to drain node: %w", err)
-	}
-
-	if isControlPlane {
-		if err := removeEtcdMemberForControlPlaneNode(ctx, input, cluster.ID, node); err != nil {
-			return fmt.Errorf("failed to remove etcd member for control plane node: %w", err)
-		}
-	}
-
-	if err := deleteKubeNode(ctx, input, node); err != nil {
-		return fmt.Errorf("failed to delete kube node: %w", err)
 	}
 
 	attemptKubeadmReset(ctx, input.NodeID, isControlPlane)
@@ -332,11 +338,11 @@ func drainNode(ctx workflow.Context, input TeardownNodeInput, node db.Node, isCo
 	return nil
 }
 
-func deleteKubeNode(ctx workflow.Context, input TeardownNodeInput, node db.Node) error {
+func deleteKubeNode(ctx workflow.Context, input TeardownNodeInput) error {
 	logger := workflow.GetLogger(ctx)
 	var a *activities.Activities
 
-	logger.Info("Deleting kube node", "nodeID", input.NodeID, "nodeName", node.Name)
+	logger.Info("Deleting kube node", "nodeID", input.NodeID)
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 1 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
@@ -354,14 +360,13 @@ func deleteKubeNode(ctx workflow.Context, input TeardownNodeInput, node db.Node)
 		return fmt.Errorf("failed to delete Kubernetes node: %w", err)
 	}
 
-	logger.Info("Kube node deleted successfully", "nodeID", input.NodeID, "nodeName", node.Name)
+	logger.Info("Kube node deleted successfully", "nodeID", input.NodeID)
 	return nil
 }
 
-func removeEtcdMemberForControlPlaneNode(ctx workflow.Context, input TeardownNodeInput, clusterID uuid.UUID, node db.Node) error {
+func validateControlPlaneEtcdMemberRemoval(ctx workflow.Context, input TeardownNodeInput, clusterID uuid.UUID, node db.Node) error {
 	logger := workflow.GetLogger(ctx)
 
-	// First execute the etcd-member-remove dry run to determine if the etcd member can be removed safely.
 	logger.Info("Executing etcd member removal dry-run", "nodeID", input.NodeID, "nodeName", node.Name)
 
 	expectedExitCodes := []int{etcdDryRunExitCodeSafe, etcdDryRunExitCodeQuorum, etcdDryRunExitCodeVoter}
@@ -393,19 +398,12 @@ func removeEtcdMemberForControlPlaneNode(ctx workflow.Context, input TeardownNod
 		return fmt.Errorf("etcd member removal dry-run returned unexpected exit code %d: %s; %s", dryRunResult.ExitCode, dryRunResult.Output, dryRunResult.ErrorMessage)
 	}
 	logger.Info("Etcd member removal dry-run completed successfully", "nodeID", input.NodeID, "nodeName", node.Name, "exitCode", dryRunResult.ExitCode, "output", dryRunResult.Output, "errorOutput", dryRunResult.ErrorMessage)
+	return nil
+}
 
-	// Then start and wait for the control-plane graceful shutdown through the agent.
-	// If the agent version supports graceful shutdown (>= v0.1.22).
-	logger.Info("Start and wait for control-plane graceful shutdown", "nodeID", input.NodeID, "nodeName", node.Name)
-	if err := waitForControlPlaneGracefulShutdown(ctx, input); err != nil {
-		if input.ForceUnreachable {
-			logger.Warn("control-plane graceful shutdown failed, continuing due to force_unreachable", "error", err)
-		} else {
-			return fmt.Errorf("failed to wait for control-plane graceful shutdown: %w", err)
-		}
-	}
+func removeControlPlaneEtcdMember(ctx workflow.Context, input TeardownNodeInput, clusterID uuid.UUID, node db.Node) error {
+	logger := workflow.GetLogger(ctx)
 
-	// Finally, remove the etcd member from the etcd cluster.
 	etcdRemoveArgs := []string{node.Name}
 	if input.AllowQuorumLoss {
 		etcdRemoveArgs = append(etcdRemoveArgs, "--allow-quorum-loss")
@@ -415,7 +413,7 @@ func removeEtcdMemberForControlPlaneNode(ctx workflow.Context, input TeardownNod
 	}
 
 	logger.Info("Removing etcd member", "nodeID", input.NodeID, "nodeName", node.Name, "etcdRemoveArgs", etcdRemoveArgs)
-	_, err = executeTeardownClusterRunbook(ctx, defaultTeardownRunbookTimeout, activities.ExecuteClusterRunbookInput{
+	_, err := executeTeardownClusterRunbook(ctx, defaultTeardownRunbookTimeout, activities.ExecuteClusterRunbookInput{
 		ClusterID:     clusterID,
 		RunbookName:   runbookEtcdMemberRemove,
 		RunbookArgs:   etcdRemoveArgs,
@@ -654,8 +652,8 @@ func runTeardownHooks(ctx workflow.Context, input TeardownNodeInput, hookType Ho
 	// node other than the target to execute them: the target is being removed and,
 	// when it is the unreachable node an operator is force-deleting, dispatching
 	// the hook to it wedges the teardown. Same reasoning as the live-removal skip
-	// in removeNodeFromCluster (NKX-13735); this also covers the never-provisioned
-	// cluster, where no API server ever existed to run kubectl against.
+	// in prepareNodeForInfrastructureDeletion; this also covers the
+	// never-provisioned cluster, where no API server ever existed to run kubectl against.
 	hasSurvivingJoinedCP, err := hasJoinedControlPlaneNodeExcluding(ctx, cluster.ID, nodeID)
 	if err != nil {
 		return err
