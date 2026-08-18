@@ -31,6 +31,12 @@ service NodeAgent {
   // restore the service before returning a structured failure outcome.
   rpc ReconfigureKubeletAPIServer(ReconfigureKubeletAPIServerRequest) returns (ReconfigureKubeletAPIServerResponse) {}
 
+  // KubeadmUpgradeApply upgrades the Kubernetes control plane and its add-ons
+  // to target_version. The request is accepted only on a control-plane node.
+  // Retrying the same target is safe because kubeadm upgrade apply is
+  // idempotent and is run again to finish any incomplete add-on convergence.
+  rpc KubeadmUpgradeApply(KubeadmUpgradeApplyRequest) returns (KubeadmUpgradeApplyResponse) {}
+
   // StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
   // control-plane node graceful shutdown operation. The operation_id is an
   // idempotency key; retrying with the same operation_id returns the existing
@@ -1000,4 +1006,22 @@ message ReconfigureKubeletAPIServerResponse {
   Outcome outcome = 1;
   // Populated only on FAILED_* outcomes.
   string error_message = 2;
+}
+
+message KubeadmUpgradeApplyRequest {
+  // Semantic Kubernetes version without a leading "v", for example 1.34.2.
+  string target_version = 1;
+}
+
+message KubeadmUpgradeApplyResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_APPLIED = 1;
+  }
+
+  Outcome outcome = 1;
+  // Canonical Kubernetes version with a leading "v".
+  string target_version = 2;
+  string plan_output = 3;
+  string apply_output = 4;
 }
