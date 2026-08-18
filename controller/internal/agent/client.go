@@ -13,7 +13,9 @@ import (
 	"github.com/spiffe/go-spiffe/v2/spiffetls/tlsconfig"
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
@@ -26,6 +28,8 @@ type Client interface {
 	GetKubeconfig(ctx context.Context, node db.Node) (string, error)
 	GetAgentVersion(ctx context.Context, node db.Node) (string, error)
 	GetKubeadmStatus(ctx context.Context, node db.Node) (*nkeproto.KubeadmStatusResponse, error)
+	ScheduleNodeReboot(ctx context.Context, node db.Node) (*nkeproto.ScheduleNodeRebootResponse, error)
+	GetNodeBootInfo(ctx context.Context, node db.Node) (*nkeproto.GetNodeBootInfoResponse, error)
 	ExecuteKubeadmInit(ctx context.Context, node db.Node, req *nkeproto.KubeadmInitRequest) (*nkeproto.KubeadmInitStatusResponse, error)
 	ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinRequest) (*nkeproto.KubeadmJoinStatusResponse, error)
 	ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nkeproto.KubeadmResetRequest) (*nkeproto.KubeadmResetStatusResponse, error)
@@ -167,6 +171,42 @@ func (c *NodeAgentClient) GetKubeadmStatus(ctx context.Context, node db.Node) (*
 	resp, err := nkeproto.NewNodeAgentClient(conn).GetKubeadmStatus(ctx, &nkeproto.KubeadmStatusRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kubeadm status from node agent for node %s: %w", node.Name, err)
+	}
+
+	return resp, nil
+}
+
+func (c *NodeAgentClient) ScheduleNodeReboot(ctx context.Context, node db.Node) (*nkeproto.ScheduleNodeRebootResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for reboot on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nkeproto.NewNodeAgentClient(conn).ScheduleNodeReboot(ctx, &nkeproto.ScheduleNodeRebootRequest{})
+	if status.Code(err) == codes.Unimplemented {
+		return nil, fmt.Errorf("node agent on node %s does not support ScheduleNodeReboot; upgrade the node agent before retrying: %w", node.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to schedule reboot on node %s: %w", node.Name, err)
+	}
+
+	return resp, nil
+}
+
+func (c *NodeAgentClient) GetNodeBootInfo(ctx context.Context, node db.Node) (*nkeproto.GetNodeBootInfoResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for boot info on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nkeproto.NewNodeAgentClient(conn).GetNodeBootInfo(ctx, &nkeproto.GetNodeBootInfoRequest{})
+	if status.Code(err) == codes.Unimplemented {
+		return nil, fmt.Errorf("node agent on node %s does not support GetNodeBootInfo; upgrade the node agent before retrying: %w", node.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get boot info from node %s: %w", node.Name, err)
 	}
 
 	return resp, nil

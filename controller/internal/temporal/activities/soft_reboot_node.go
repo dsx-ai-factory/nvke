@@ -39,13 +39,19 @@ func (a *Activities) softRebootNode(ctx context.Context, input SoftRebootNodeInp
 
 	logger.Info("Soft rebooting node", "nodeID", input.NodeID)
 
-	// The reboot runbook triggers reboot in background and exits immediately without waiting for the reboot to complete.
-	_, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
-		HostID:      input.NodeID,
-		RunbookName: "reboot",
-	})
+	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
-		return SoftRebootNodeResult{}, fmt.Errorf("failed to execute reboot runbook: %w", err)
+		return SoftRebootNodeResult{}, fmt.Errorf("failed to get node %s: %w", input.NodeID, err)
+	}
+
+	// The agent starts reboot as a detached process, so this call does not wait
+	// for the reboot to complete or require the connection to survive it.
+	response, err := a.nodeAgentClient.ScheduleNodeReboot(ctx, node)
+	if err != nil {
+		return SoftRebootNodeResult{}, fmt.Errorf("failed to schedule soft reboot on node %s: %w", node.Name, err)
+	}
+	if response.GetPackageLocksTimedOut() {
+		logger.Warn("Package-manager lock wait timed out; reboot was scheduled", "nodeID", node.ID, "nodeName", node.Name)
 	}
 
 	return SoftRebootNodeResult{}, nil

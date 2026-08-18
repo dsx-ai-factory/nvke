@@ -6,7 +6,6 @@ package activities
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,16 +61,16 @@ func (a *Activities) waitForNodeUptime(ctx context.Context, input WaitForNodeUpt
 		case <-ctx.Done():
 			return WaitForNodeUptimeResult{}, fmt.Errorf("context canceled while waiting for node reboot: %w", ctx.Err())
 		case <-time.After(sleepDuration):
-			// While the node is booting the uptime runbook actually completes,
+			// While the node is booting the boot-info RPC actually completes,
 			// but returns network errors for ~2 minutes, until the node is fully booted and ready.
-			// This sleep exists to rate limit the number of runbook executions during this time.
+			// This sleep exists to rate limit the number of RPCs during this time.
 			// It also smooths out the first check if it occurs before the node actually starts rebooting.
 		}
 
 		bootTime, err := a.getBootTime(ctx, input.NodeID)
 		if err != nil {
-			// It is normal for the uptime runbook execution to return errors during the early phases of the node reboot.
-			logger.Debug("Uptime runbook execution returned error, this is likely normal", "nodeID", input.NodeID, "error", err)
+			// It is normal for the boot-info RPC to return errors during the early phases of the node reboot.
+			logger.Debug("Boot-info RPC returned error, this is likely normal", "nodeID", input.NodeID, "error", err)
 			continue
 		}
 
@@ -88,41 +87,18 @@ func (a *Activities) waitForNodeUptime(ctx context.Context, input WaitForNodeUpt
 }
 
 func (a *Activities) getBootTime(ctx context.Context, nodeID uuid.UUID) (time.Time, error) {
-	result, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
-		HostID:      nodeID, // Same as node ID by convention
-		RunbookName: "uptime",
-	})
+	node, err := a.db.GetNode(ctx, nodeID)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to execute uptime runbook: %w", err)
+		return time.Time{}, fmt.Errorf("failed to get node %s: %w", nodeID, err)
 	}
 
-	bootTime, err := a.parseBootTime(result.Output)
+	result, err := a.nodeAgentClient.GetNodeBootInfo(ctx, node)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse boot time result: %w", err)
+		return time.Time{}, fmt.Errorf("failed to get boot info from node %s: %w", node.Name, err)
+	}
+	if result.GetBootTimeUnixSeconds() <= 0 {
+		return time.Time{}, fmt.Errorf("node %s returned an invalid boot time %d", node.Name, result.GetBootTimeUnixSeconds())
 	}
 
-	return bootTime, nil
-}
-
-func (a *Activities) parseBootTime(output string) (time.Time, error) {
-	// Parse the Boot Time line from the uptime runbook output
-	// Expected format: "Boot Time: 2025-01-16T14:30:45Z"
-	bootTimeLine := ""
-	for _, line := range strings.Split(output, "\n") {
-		if strings.HasPrefix(line, "Boot Time: ") {
-			bootTimeLine = strings.TrimPrefix(line, "Boot Time: ")
-			break
-		}
-	}
-	if bootTimeLine == "" {
-		return time.Time{}, fmt.Errorf("failed to find Boot Time line in output: %s", output)
-	}
-
-	// Parse the ISO 8601 timestamp
-	bootTime, err := time.Parse(time.RFC3339, bootTimeLine)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse Boot Time timestamp '%s': %w", bootTimeLine, err)
-	}
-
-	return bootTime.UTC(), nil
+	return time.Unix(result.GetBootTimeUnixSeconds(), 0).UTC(), nil
 }

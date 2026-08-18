@@ -39,8 +39,8 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 	// - [dgxc-janitor](https://gitlab-master.nvidia.com/dgxcloud/mk8s/k8s-addons/dgxc-janitor)
 	// Please discuss any label or workflow changes with [#dgxc-gpu-node-resilience](https://nvidia.enterprise.slack.com/archives/C08E8U45VV4)
 	//
-	// Forge label-driven reboots try SoftRebootNode (in-guest reboot runbook) first and
-	// fall back to Forge TriggerInstanceReboot only if the runbook cannot be executed.
+	// Forge label-driven reboots try SoftRebootNode (in-guest node-agent RPC) first and
+	// fall back to Forge TriggerInstanceReboot only if the RPC cannot be executed.
 	// Hard Forge reboot is out-of-band (no guest sync/unmount); see NKX-13717 / NKX-13323.
 	// CAPI path is unchanged.
 
@@ -309,7 +309,7 @@ func rebootCAPINode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, r
 	return applyCAPIMachineRebootAnnotation(ctx, nodeID)
 }
 
-// rebootForgeNode tries the in-guest reboot runbook first; if that fails, falls back to Forge API.
+// rebootForgeNode tries the in-guest node-agent RPC first; if that fails, falls back to Forge API.
 func rebootForgeNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int) (time.Time, error) {
 	logger := workflow.GetLogger(ctx)
 	rebootStartedTime := workflow.Now(ctx).UTC()
