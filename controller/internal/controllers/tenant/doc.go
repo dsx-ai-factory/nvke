@@ -95,6 +95,52 @@
 // A failed initial or replacement start is retried with backoff. CWE shutdown
 // stops every manager and does not restart them.
 //
+// # Scaling, limitations, and future direction
+//
+// The initial implementation keeps all tenant control loops in one CWE process.
+// ManagerSet creates one controller-runtime Manager for every active tenant
+// cluster. Each manager has its own REST client, cache, CSR informer, work queue,
+// and controller goroutines connected to that tenant cluster.
+//
+// The startup semaphore limits how many managers connect concurrently; it does
+// not limit the number of running managers. Client QPS and burst settings limit
+// requests to each tenant API server, but aggregate connections, goroutines, and
+// cache memory still grow linearly with the number of tenant clusters. The
+// initial sizing target is 20 active tenant managers; this is not an enforced
+// capacity limit or an HA guarantee. Per-manager metrics and health listeners
+// are currently disabled.
+//
+// Increasing the CWE Deployment replica count is not a supported way to scale
+// this subsystem. Tenant-manager leader election and distributed ownership are
+// disabled, so every CWE replica would observe the same access Secrets and
+// start another manager for every tenant cluster, duplicating watches and
+// reconciliation.
+//
+// Future scale-out requires assigning each tenant cluster to exactly one active
+// controller owner. Two candidate models are:
+//
+//   - Per-cluster workload: create a dedicated pod for each tenant cluster. The
+//     pod runs one manager and provides strong failure isolation and independent
+//     resource limits, at the cost of one Kubernetes workload per cluster and
+//     additional scheduling, rollout, and garbage-collection machinery.
+//   - Sharded, multiplexed workers: assign disjoint sets of tenant clusters to a
+//     bounded pool of controller pods. Cluster-specific watch sources enqueue a
+//     typed key containing both cluster UUID and object identity into a shared
+//     work queue, and the reconciler selects the corresponding tenant client.
+//     This uses fewer pods and provides shared backpressure, but requires
+//     distributed ownership, dynamic source lifecycle management, and careful
+//     isolation of failures between clusters.
+//
+// A controller-runtime Manager's normal cache and client are bound to one
+// rest.Config. Multiplexing therefore cannot make one ordinary cache watch
+// several tenant clusters: it still needs a distinct client and watch/cache
+// source for each cluster. It reduces manager and worker duplication, but does
+// not remove the linear number of tenant API-server watches.
+//
+// Either scale-out model must add ownership fencing, failure reassignment,
+// per-cluster observability, and capacity testing before the single-process
+// assumption can be removed.
+//
 // Bootstrap ordering
 //
 //	initial control-plane kube-vip and kubeadm initialization complete
