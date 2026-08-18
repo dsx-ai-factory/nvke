@@ -435,7 +435,6 @@ TEMPORAL_HOST_PORT=localhost:17233 FWE_API_KEY=<NGC API KEY> go run ./cmd/worker
 ```
 
 You should now see the Swagger UI at http://localhost:8080/api/docs.
-The cluster management UI is served by forge-console (Tilt: http://localhost:8090).
 
 ## Debugging
 

@@ -211,7 +211,7 @@ main() {
     [[ "${DRY_RUN}" == "true" ]] && { log "DRY_RUN: skip WAIT"; return; }
     wait_for_upgrade "${cluster_id}"
   else
-    log "upgrade requested. Watch progress in the forge-console UI or re-run with WAIT=true"
+    log "upgrade requested. Re-run with WAIT=true to block until the cluster is Ready"
   fi
 }
 

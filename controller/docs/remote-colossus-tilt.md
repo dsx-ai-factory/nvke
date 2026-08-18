@@ -123,7 +123,6 @@ AirPlay may own 5000).
 - CWE Swagger: http://localhost:9080/api/docs
 - Temporal UI: http://localhost:9081
 - forge-vms UI: http://localhost:19080/ui/
-- forge-console UI: http://localhost:9090
 - Grafana: http://localhost:4000
 - Temporal frontend (gRPC / `temporal` CLI): `localhost:8233`
 - Postgres: `localhost:6432`
