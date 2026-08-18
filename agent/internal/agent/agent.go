@@ -102,6 +102,9 @@ type NodeAgentServer struct {
 	drainKubeVipPollInterval      time.Duration       // overrides kube-vip drain polling in tests
 	drainKubeVipSocketQuietWindow time.Duration       // overrides kube-vip socket quiet window in tests
 	staticPodStartTimeout         time.Duration       // overrides static-pod restore timeout in tests
+	rebootLockPollInterval        time.Duration       // overrides the package-lock poll interval in tests
+	rebootLockWaitTimeout         time.Duration       // overrides the package-lock wait timeout in tests
+	now                           func() time.Time    // overrides wall-clock reads in tests
 	clientRegistry                kubernetesClientRegistry
 
 	BundleServerURL string
