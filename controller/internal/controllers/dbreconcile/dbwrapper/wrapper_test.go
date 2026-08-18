@@ -231,6 +231,195 @@ func TestUnit_DBDoesNotEnqueueNodeAfterFailedTx(t *testing.T) {
 	database.MockTx.AssertExpectations(t)
 }
 
+func TestUnit_DBEnqueuesNodePool(t *testing.T) {
+	t.Run("after_create", func(t *testing.T) {
+		nodePool := db.NodePool{ID: uuid.New()}
+		database := &testutil.MockDB{}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+		database.On("CreateNodePool", mock.Anything, &nodePool).Return(nodePool, nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		created, err := wrapper.CreateNodePool(context.Background(), &nodePool)
+
+		require.NoError(t, err)
+		assert.Equal(t, nodePool, created)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePool.ID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+	})
+
+	t.Run("after_update", func(t *testing.T) {
+		nodePool := db.NodePool{ID: uuid.New()}
+		database := &testutil.MockDB{}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+		database.On("UpdateNodePool", mock.Anything, &nodePool).Return(nodePool, nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		updated, err := wrapper.UpdateNodePool(context.Background(), &nodePool)
+
+		require.NoError(t, err)
+		assert.Equal(t, nodePool, updated)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePool.ID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+	})
+
+	t.Run("after_delete", func(t *testing.T) {
+		nodePoolID := uuid.New()
+		database := &testutil.MockDB{}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil)
+		database.On("DeleteNodePool", mock.Anything, nodePoolID).Return(nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.DeleteNodePool(context.Background(), nodePoolID)
+
+		require.NoError(t, err)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePoolID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+	})
+}
+
+func TestUnit_DBEnqueuesNodePoolAfterCommittedTransaction(t *testing.T) {
+	t.Run("after_create", func(t *testing.T) {
+		nodePool := db.NodePool{ID: uuid.New()}
+		database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+		database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		database.MockTx.On("CreateNodePool", mock.Anything, &nodePool).Return(nodePool, nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+			_, err := tx.CreateNodePool(ctx, &nodePool)
+			return err
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePool.ID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+		database.MockTx.AssertExpectations(t)
+	})
+
+	t.Run("after_update", func(t *testing.T) {
+		nodePool := db.NodePool{ID: uuid.New()}
+		database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+		database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		database.MockTx.On("UpdateNodePool", mock.Anything, &nodePool).Return(nodePool, nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+			_, err := tx.UpdateNodePool(ctx, &nodePool)
+			return err
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePool.ID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+		database.MockTx.AssertExpectations(t)
+	})
+
+	t.Run("after_delete", func(t *testing.T) {
+		nodePoolID := uuid.New()
+		database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil)
+		database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		database.MockTx.On("DeleteNodePool", mock.Anything, nodePoolID).Return(nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+			return tx.DeleteNodePool(ctx, nodePoolID)
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePoolID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+		database.MockTx.AssertExpectations(t)
+	})
+}
+
+func TestUnit_DBDoesNotEnqueueNodePool(t *testing.T) {
+	t.Run("after_failed_transaction", func(t *testing.T) {
+		nodePool := db.NodePool{ID: uuid.New()}
+		wantErr := errors.New("tx failed")
+		database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil)
+		database.On("RunInTx", mock.Anything, mock.Anything).Return(wantErr)
+		database.MockTx.On("UpdateNodePool", mock.Anything, &nodePool).Return(nodePool, nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+			_, err := tx.UpdateNodePool(ctx, &nodePool)
+			return err
+		})
+
+		require.ErrorIs(t, err, wantErr)
+		assertQueueEmpty(t, queue)
+		database.AssertExpectations(t)
+		database.MockTx.AssertExpectations(t)
+	})
+
+	t.Run("after_deleting_node_without_node_pool_id", func(t *testing.T) {
+		node := db.Node{ID: uuid.New()}
+		database := &testutil.MockDB{}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+		database.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+		database.On("DeleteNode", mock.Anything, node.ID).Return(nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.DeleteNode(context.Background(), node.ID)
+
+		require.NoError(t, err)
+		assertQueueEmpty(t, queue)
+		database.AssertExpectations(t)
+	})
+}
+
+func TestUnit_DBEnqueuesParentNodePoolAfterNodeDelete(t *testing.T) {
+	t.Run("top_level", func(t *testing.T) {
+		nodePool := db.NodePool{ID: uuid.New()}
+		node := db.Node{ID: uuid.New(), NodePoolID: nodePool.ID}
+		database := &testutil.MockDB{}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+		database.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+		database.On("DeleteNode", mock.Anything, node.ID).Return(nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.DeleteNode(context.Background(), node.ID)
+
+		require.NoError(t, err)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePool.ID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+	})
+
+	t.Run("transactional", func(t *testing.T) {
+		nodePool := db.NodePool{ID: uuid.New()}
+		node := db.Node{ID: uuid.New(), NodePoolID: nodePool.ID}
+		database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+		database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+		database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		database.MockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+		database.MockTx.On("DeleteNode", mock.Anything, node.ID).Return(nil)
+		wrapper := New(database, slog.Default())
+		queue := startNodePoolSource(t, wrapper)
+
+		err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+			return tx.DeleteNode(ctx, node.ID)
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, dbreconcile.NodePoolKey(nodePool.ID), getQueueItem(t, queue))
+		database.AssertExpectations(t)
+		database.MockTx.AssertExpectations(t)
+	})
+}
+
 func TestUnit_DBNodeSourceSeedsNodes(t *testing.T) {
 	first := db.Node{ID: uuid.New()}
 	second := db.Node{ID: uuid.New()}
@@ -246,6 +435,24 @@ func TestUnit_DBNodeSourceSeedsNodes(t *testing.T) {
 	assert.ElementsMatch(t, []dbreconcile.Key{
 		dbreconcile.NodeKey(first.ID),
 		dbreconcile.NodeKey(second.ID),
+	}, []dbreconcile.Key{
+		getQueueItem(t, queue),
+		getQueueItem(t, queue),
+	})
+	database.AssertExpectations(t)
+}
+
+func TestUnit_DBNodePoolSourceSeedsNodePools(t *testing.T) {
+	first := db.NodePool{ID: uuid.New()}
+	second := db.NodePool{ID: uuid.New()}
+	database := &testutil.MockDB{}
+	database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{first, second}, nil)
+	wrapper := New(database, slog.Default())
+	queue := startNodePoolSource(t, wrapper)
+
+	assert.ElementsMatch(t, []dbreconcile.Key{
+		dbreconcile.NodePoolKey(first.ID),
+		dbreconcile.NodePoolKey(second.ID),
 	}, []dbreconcile.Key{
 		getQueueItem(t, queue),
 		getQueueItem(t, queue),
@@ -274,6 +481,16 @@ func startNodeSource(t *testing.T, wrapper *DB, filters db.NodeFilters) workqueu
 	t.Helper()
 
 	source := wrapper.NodeSource(filters)
+	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
+	t.Cleanup(queue.ShutDown)
+	require.NoError(t, source.Start(context.Background(), queue))
+	return queue
+}
+
+func startNodePoolSource(t *testing.T, wrapper *DB) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
+	t.Helper()
+
+	source := wrapper.NodePoolSource(db.NodePoolFilters{})
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	require.NoError(t, source.Start(context.Background(), queue))

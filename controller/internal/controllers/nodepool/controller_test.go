@@ -8,7 +8,7 @@
 // without an express license agreement from NVIDIA CORPORATION or
 // its affiliates is strictly prohibited.
 
-package controllers_test
+package nodepool_test
 
 import (
 	"context"
@@ -24,13 +24,15 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/controllers"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
-func TestNewNodePoolController(t *testing.T) {
-	npc := controllers.NewNodePoolController(config.Config{}, slog.Default(), nil)
+func TestUnit_NewController(t *testing.T) {
+	npc := nodepool.NewController(config.Config{}, slog.Default(), nil)
 	assert.NotNil(t, npc)
 }
 
@@ -51,26 +53,27 @@ func setupProfilesDir(t *testing.T, osProfile, configProfile string) string {
 	return dir
 }
 
-func TestNodePoolController_Reconcile(t *testing.T) {
+func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 	ctx := context.Background()
-	siteID := mustParse("550e8400-e29b-41d4-a716-446655440000")
-	site := db.Site{ID: siteID}
 	osProfile := "test-os-profile"
 	configProfile := "test-config-profile"
 
-	t.Run("no_node_pools", func(t *testing.T) {
+	t.Run("node_pool_not_found", func(t *testing.T) {
+		poolID := mustParse("550e8400-e29b-41d4-a716-446655440001")
 		mockDB := &testutil.MockDB{}
-		mockDB.On("ListNodePools", mock.Anything, mock.MatchedBy(func(f db.NodePoolFilters) bool {
-			return f.SiteID != nil && *f.SiteID == siteID
-		})).Return([]db.NodePool{}, nil)
+		mockTx := &testutil.MockTx{}
+		mockDB.MockTx = mockTx
+		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(db.NodePool{}, db.ErrNotFound)
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
+		mockTx.AssertExpectations(t)
 	})
 
 	t.Run("creates_node_set_when_none", func(t *testing.T) {
@@ -106,9 +109,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			return ns.NodePoolID == poolID && ns.OSProfile == osProfile && ns.ConfigProfile == configProfile
 		})).Return(newNodeSet, nil)
@@ -126,17 +129,18 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
 	})
 
 	t.Run("skips_when_auto_provision_disabled", func(t *testing.T) {
+		poolID := mustParse("550e8400-e29b-41d4-a716-446655440001")
 		pool := db.NodePool{
-			ID:                    mustParse("550e8400-e29b-41d4-a716-446655440001"),
+			ID:                    poolID,
 			ClusterID:             mustParse("550e8400-e29b-41d4-a716-446655440002"),
 			Name:                  "worker",
 			AutoProvisionDisabled: true,
@@ -151,14 +155,14 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertNotCalled(t, "GetNodeSet", mock.Anything, mock.Anything)
@@ -166,8 +170,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 	})
 
 	t.Run("skips_when_pool_deleting", func(t *testing.T) {
+		poolID := mustParse("550e8400-e29b-41d4-a716-446655440001")
 		pool := db.NodePool{
-			ID:        mustParse("550e8400-e29b-41d4-a716-446655440001"),
+			ID:        poolID,
 			ClusterID: mustParse("550e8400-e29b-41d4-a716-446655440002"),
 			Name:      "worker",
 			Conditions: db.NodePoolConditions{
@@ -183,14 +188,14 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertNotCalled(t, "GetNodeSet", mock.Anything, mock.Anything)
@@ -232,9 +237,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("GetNodeSet", mock.Anything, currentNodeSetID).Return(currentNodeSet, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{currentNodeSet}, nil).Once()
 		// ListNodes is only called for non-current node sets; with a single (current) set it is not called
@@ -246,9 +251,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
@@ -304,9 +309,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockDB := &testutil.MockDB{}
 		mockTx := &testutil.MockTx{}
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			return ns.NodePoolID == poolID && len(ns.SubnetIDs) == 1 && ns.SubnetIDs[0] == newSubnet
@@ -326,10 +331,10 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
 		mockDB.GetTx = func() db.Tx { return mockTx }
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
@@ -387,9 +392,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 			return ns.NodePoolID == poolID && len(ns.VpcPrefixIDs) == 1 && ns.VpcPrefixIDs[0] == newVpcPrefix
@@ -409,9 +414,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
@@ -460,9 +465,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("GetNodeSet", mock.Anything, currentNodeSetID).Return(currentNodeSet, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{currentNodeSet, oldNodeSet}, nil).Once()
 		mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil)
@@ -475,9 +480,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
@@ -518,9 +523,9 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 		mockTx := &testutil.MockTx{}
 		mockDB.MockTx = mockTx
 
-		mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
+		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("GetNodeSet", mock.Anything, currentNodeSetID).Return(currentNodeSet, nil)
 		mockTx.On("ListNodeSets", mock.Anything, mock.Anything).Return([]db.NodeSet{currentNodeSet}, nil).Once()
 		// ListNodes is only called for non-current node sets; with a single (current) set it is not called
@@ -532,18 +537,17 @@ func TestNodePoolController_Reconcile(t *testing.T) {
 
 		profilesDir := setupProfilesDir(t, osProfile, configProfile)
 		cfg := config.Config{ProfilesDir: profilesDir}
-		npc := controllers.NewNodePoolController(cfg, slog.Default(), mockDB)
+		npc := nodepool.NewController(cfg, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 
-		err := npc.Reconcile(ctx, site)
+		_, err := npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
 		require.NoError(t, err)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
 	})
 }
 
-func TestNodePoolController_ReconcileCAPIInfraTemplateChange(t *testing.T) {
+func TestUnit_NodePoolControllerReconcileCAPIInfraTemplateChange(t *testing.T) {
 	ctx := context.Background()
-	site := db.Site{ID: mustParse("550e8400-e29b-41d4-a716-446655440000")}
 	poolID := mustParse("550e8400-e29b-41d4-a716-446655440001")
 	oldNodeSetID := mustParse("550e8400-e29b-41d4-a716-446655440002")
 	newNodeSetID := mustParse("550e8400-e29b-41d4-a716-446655440003")
@@ -578,8 +582,8 @@ func TestNodePoolController_ReconcileCAPIInfraTemplateChange(t *testing.T) {
 
 	mockDB := &testutil.MockDB{}
 	mockTx := &testutil.MockTx{}
-	mockDB.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{pool}, nil)
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 	mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 	mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
 		return ns.NodePoolID == poolID && string(ns.CapiInfraMachineTemplate) == string(newTemplate)
@@ -598,10 +602,11 @@ func TestNodePoolController_ReconcileCAPIInfraTemplateChange(t *testing.T) {
 	})).Return(updatedNewSet, nil)
 
 	profilesDir := setupProfilesDir(t, "test-os-profile", "test-config-profile")
-	npc := controllers.NewNodePoolController(config.Config{ProfilesDir: profilesDir}, slog.Default(), mockDB)
+	npc := nodepool.NewController(config.Config{ProfilesDir: profilesDir}, slog.Default(), dbwrapper.New(mockDB, slog.Default()))
 	mockDB.GetTx = func() db.Tx { return mockTx }
 
-	require.NoError(t, npc.Reconcile(ctx, site))
+	_, err = npc.Reconcile(ctx, dbreconcile.NodePoolKey(poolID))
+	require.NoError(t, err)
 	mockDB.AssertExpectations(t)
 	mockTx.AssertExpectations(t)
 }

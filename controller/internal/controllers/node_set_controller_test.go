@@ -13,6 +13,8 @@ package controllers_test
 import (
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -24,6 +26,17 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
+
+func setupProfilesDir(t *testing.T, osProfile, configProfile string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "osProfiles", osProfile), 0o755))
+	configPath := filepath.Join(dir, "configProfiles", configProfile+".yaml")
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte(""), 0o644))
+	return dir
+}
 
 func TestNodeSetController_ControlPlaneProvisioningGate(t *testing.T) {
 	t.Parallel()

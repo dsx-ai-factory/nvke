@@ -34,6 +34,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/db/migrations"
@@ -160,6 +161,16 @@ func main() {
 			logger.Error("Failed to set up node provisioning monitor controller", "error", err)
 			os.Exit(1)
 		}
+	}
+
+	nodePoolController := nodepool.NewController(
+		cfg,
+		logger.With("logger", "node-pool-controller"),
+		dbInstance,
+	)
+	if err := nodePoolController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up node pool controller", "error", err)
+		os.Exit(1)
 	}
 
 	logger.Info("controller-runtime manager configuration", "enableCapi", cfg.EnableCapi, "enableForgeCapi", cfg.EnableForgeCapi, "enableNodeProvisioningMonitor", enableNodeProvisioningMonitor)

@@ -8,41 +8,55 @@
 // without an express license agreement from NVIDIA CORPORATION or
 // its affiliates is strictly prohibited.
 
-package controllers
+package nodepool
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
 
 	"github.com/google/uuid"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
-// NodePoolController is responsible for reconciling node pools.
-type NodePoolController struct {
+// Controller is responsible for reconciling node pools.
+type Controller struct {
 	cfg    config.Config
-	db     db.DB
+	db     *dbwrapper.DB
 	logger *slog.Logger
 }
 
-func NewNodePoolController(
+func NewController(
 	cfg config.Config,
 	logger *slog.Logger,
-	dbInstance db.DB,
-) *NodePoolController {
-	return &NodePoolController{
+	dbInstance *dbwrapper.DB,
+) *Controller {
+	return &Controller{
 		cfg:    cfg,
 		db:     dbInstance,
 		logger: logger,
 	}
 }
 
-// Reconcile NodePools, for each NodePool:
+func (a *Controller) SetupWithManager(mgr manager.Manager) error {
+	return dbreconcile.SetupController(
+		mgr,
+		"node-pool-controller",
+		a,
+		a.db.NodePoolSource(db.NodePoolFilters{}),
+	)
+}
+
+// Reconcile a NodePool:
 // - Create a new Current NodeSet If:
 //   - A current NodeSet doesn't exist.
 //   - The NodePool's OSProfile or ConfigProfile has changed.
@@ -52,21 +66,20 @@ func NewNodePoolController(
 //     less the actual node count of nodes assigned to non-current NodeSets.
 //   - Delete non-current NodeSets when their actual node count is 0.
 //   - Update the DesiredCount of non-current NodeSets to 0.
-func (a *NodePoolController) Reconcile(ctx context.Context, site db.Site) error {
-	nodePools, err := a.db.ListNodePools(ctx, db.NodePoolFilters{SiteID: &site.ID})
-	if err != nil {
-		return fmt.Errorf("failed to list node pools: %w", err)
-	}
-
-	for _, nodePool := range nodePools {
-		if err := a.reconcileNodePool(ctx, nodePool); err != nil {
-			// Log errors but continue processing the other node pools.
-			a.logger.Error("Failed to reconcile node pool", "error", err, "nodePoolID", nodePool.ID)
-			continue
+func (a *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
+	err := a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		nodePool, err := tx.GetNodePoolForUpdate(ctx, key.ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				a.logger.Debug("Node pool not found, skipping reconciliation", "nodePoolID", key.ID)
+				return nil
+			}
+			return fmt.Errorf("failed to get node pool: %w", err)
 		}
-	}
 
-	return nil
+		return a.reconcileNodePool(ctx, tx, nodePool)
+	})
+	return reconcile.Result{}, err
 }
 
 // recordNodePoolConfigChange emits an audit record via the outbox capturing the before/after
@@ -123,126 +136,124 @@ func recordNodePoolConfigChange(ctx context.Context, tx db.Tx, prevNodeSet, curr
 	return nil
 }
 
-func (a *NodePoolController) reconcileNodePool(ctx context.Context, nodePool db.NodePool) error {
-	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		logger := a.logger.With(
-			"nodePoolID", nodePool.ID,
-			"nodePoolDesiredCount", nodePool.DesiredCount,
-			"maxSurge", nodePool.MaxSurge,
-		)
+func (a *Controller) reconcileNodePool(ctx context.Context, tx db.Tx, nodePool db.NodePool) error {
+	logger := a.logger.With(
+		"nodePoolID", nodePool.ID,
+		"nodePoolDesiredCount", nodePool.DesiredCount,
+		"maxSurge", nodePool.MaxSurge,
+	)
 
-		var err error
+	var err error
 
-		if nodePool.AutoProvisionDisabled {
-			logger.Debug("Node pool has auto-provision disabled, skipping node pool reconciliation")
-			return nil
-		}
-
-		// If the node pool is deleting, skip reconciliation.
-		if nodePool.Conditions.Deleting.Status == db.ConditionStatusTrue {
-			logger.Debug("Node pool is deleting, skipping node pool reconciliation")
-			return nil
-		}
-
-		var currentNodeSet db.NodeSet
-		if nodePool.CurrentNodeSetID != nil {
-			currentNodeSet, err = tx.GetNodeSet(ctx, *nodePool.CurrentNodeSetID)
-			if err != nil {
-				return fmt.Errorf("failed to get current node set: %w", err)
-			}
-		}
-
-		// Nico and CAPI are mutually exclusive — exactly one is set per pool.
-		switch {
-		case nodePool.Nico != nil:
-			nodePool, currentNodeSet, err = a.createNicoNodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
-		case nodePool.Capi != nil:
-			nodePool, currentNodeSet, err = a.createCAPINodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
-		default:
-			err = fmt.Errorf("node pool %s has no provider payload: expected exactly one of Nico or CAPI to be set", nodePool.ID)
-		}
-		if err != nil {
-			return err
-		}
-
-		nodeSets, err := tx.ListNodeSets(ctx, db.NodeSetFilters{NodePoolID: &nodePool.ID})
-		if err != nil {
-			return fmt.Errorf("failed to list node sets: %w", err)
-		}
-
-		// Set the desiredNodeCount of every non-current NodeSet to 0.
-		// And count the number of nodes in non-current node sets.
-		nodesInNonCurrentNodeSets := 0
-		for _, nodeSet := range nodeSets {
-			if nodeSet.ID == currentNodeSet.ID {
-				// This is the current node set, so we don't need to do anything other than reset the currentNodeSet.
-				currentNodeSet = nodeSet
-				continue
-			}
-
-			// If we wanted to be strict about NodePoolController only interacting with NodeSets we could
-			// Add an ActualCount field to NodeSet, and have NodeSet Controller update it (similar to status in k8s)
-			//    - However that is essentially Len(nodes where NodeSetID = xx).
-			nodeSetNodes, err := tx.ListNodes(ctx, db.NodeFilters{NodeSetID: &nodeSet.ID})
-			if err != nil {
-				return fmt.Errorf("failed to list nodes: %w", err)
-			}
-
-			nodesInNonCurrentNodeSets += len(nodeSetNodes)
-
-			// If there are no nodes in the non-current node set, delete it.
-			// Else set the desired count to 0.
-			if len(nodeSetNodes) == 0 {
-				if err := tx.DeleteNodeSet(ctx, nodeSet.ID); err != nil {
-					return fmt.Errorf("failed to delete non-current node set: %w", err)
-				}
-				logger.Info("Deleted non-current node set", "nodeSetID", nodeSet.ID)
-			} else {
-				nodeSet.DesiredCount = 0
-				if _, err := tx.UpdateNodeSet(ctx, &nodeSet); err != nil {
-					return fmt.Errorf("failed to update non-current node set: %w", err)
-				}
-				logger.Debug("Updated non-current node set desired count", "nodeSetID", nodeSet.ID, "desiredCount", nodeSet.DesiredCount)
-			}
-		}
-
-		// Calculate surge nodes for migration
-		// Only surge when there are deprecated nodes to migrate, enabling faster rollout
-		// Cap surge to the number of deprecated nodes (no point surging more than what we're migrating)
-		surgeNodes := min(nodePool.MaxSurge, nodesInNonCurrentNodeSets)
-
-		// Set the desired count of the current nodeSet to be the desired count of the node pool
-		// less the actual node count of nodes assigned to non-current NodeSets,
-		// plus surge nodes for migration.
-		//
-		// Even though the desired count for a non-current node set is 0,
-		// we still need to account for the actual nodes that exist in the non-current node sets
-		// so that we don't over-provision the current node set.
-		// This will be re-calculated as nodes are de-provisioned or deleted from the non-current node sets.
-		currentNodeSetDesiredCount := max(0, nodePool.DesiredCount-nodesInNonCurrentNodeSets+surgeNodes)
-
-		// Cap the desired count to never exceed nodePool.DesiredCount
-		// This prevents creating extra surge nodes after all non-current nodes are deleted
-		// if there are any race conditions, the current node set desired count will be adjusted to the node pool desired count.
-		// Example: nodePool.DesiredCount=2, nodesInNonCurrentNodeSets=0, surge=1 → cap 3 to 2
-		currentNodeSetDesiredCount = min(currentNodeSetDesiredCount, nodePool.DesiredCount)
-
-		if currentNodeSet.DesiredCount != currentNodeSetDesiredCount {
-			currentNodeSet.DesiredCount = currentNodeSetDesiredCount
-			if _, err := tx.UpdateNodeSet(ctx, &currentNodeSet); err != nil {
-				return fmt.Errorf("failed to update current node set: %w", err)
-			}
-
-			logger.Info("Updated current node set desired count", "nodeSetID", currentNodeSet.ID, "desiredCount", currentNodeSet.DesiredCount, "nodesInNonCurrentNodeSets", nodesInNonCurrentNodeSets)
-		}
-
+	if nodePool.AutoProvisionDisabled {
+		logger.Debug("Node pool has auto-provision disabled, skipping node pool reconciliation")
 		return nil
-	})
+	}
+
+	// If the node pool is deleting, skip reconciliation.
+	if nodePool.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		logger.Debug("Node pool is deleting, skipping node pool reconciliation")
+		return nil
+	}
+
+	var currentNodeSet db.NodeSet
+	if nodePool.CurrentNodeSetID != nil {
+		currentNodeSet, err = tx.GetNodeSet(ctx, *nodePool.CurrentNodeSetID)
+		if err != nil {
+			return fmt.Errorf("failed to get current node set: %w", err)
+		}
+	}
+
+	// Nico and CAPI are mutually exclusive — exactly one is set per pool.
+	switch {
+	case nodePool.Nico != nil:
+		nodePool, currentNodeSet, err = a.createNicoNodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
+	case nodePool.Capi != nil:
+		nodePool, currentNodeSet, err = a.createCAPINodeSetIfChanged(ctx, tx, nodePool, currentNodeSet, logger)
+	default:
+		err = fmt.Errorf("node pool %s has no provider payload: expected exactly one of Nico or CAPI to be set", nodePool.ID)
+	}
+	if err != nil {
+		return err
+	}
+
+	nodeSets, err := tx.ListNodeSets(ctx, db.NodeSetFilters{NodePoolID: &nodePool.ID})
+	if err != nil {
+		return fmt.Errorf("failed to list node sets: %w", err)
+	}
+
+	// Set the desiredNodeCount of every non-current NodeSet to 0.
+	// And count the number of nodes in non-current node sets.
+	nodesInNonCurrentNodeSets := 0
+	for _, nodeSet := range nodeSets {
+		if nodeSet.ID == currentNodeSet.ID {
+			// This is the current node set, so we don't need to do anything other than reset the currentNodeSet.
+			currentNodeSet = nodeSet
+			continue
+		}
+
+		// If we wanted to be strict about NodePoolController only interacting with NodeSets we could
+		// Add an ActualCount field to NodeSet, and have NodeSet Controller update it (similar to status in k8s)
+		//    - However that is essentially Len(nodes where NodeSetID = xx).
+		nodeSetNodes, err := tx.ListNodes(ctx, db.NodeFilters{NodeSetID: &nodeSet.ID})
+		if err != nil {
+			return fmt.Errorf("failed to list nodes: %w", err)
+		}
+
+		nodesInNonCurrentNodeSets += len(nodeSetNodes)
+
+		// If there are no nodes in the non-current node set, delete it.
+		// Else set the desired count to 0.
+		if len(nodeSetNodes) == 0 {
+			if err := tx.DeleteNodeSet(ctx, nodeSet.ID); err != nil {
+				return fmt.Errorf("failed to delete non-current node set: %w", err)
+			}
+			logger.Info("Deleted non-current node set", "nodeSetID", nodeSet.ID)
+		} else {
+			nodeSet.DesiredCount = 0
+			if _, err := tx.UpdateNodeSet(ctx, &nodeSet); err != nil {
+				return fmt.Errorf("failed to update non-current node set: %w", err)
+			}
+			logger.Debug("Updated non-current node set desired count", "nodeSetID", nodeSet.ID, "desiredCount", nodeSet.DesiredCount)
+		}
+	}
+
+	// Calculate surge nodes for migration
+	// Only surge when there are deprecated nodes to migrate, enabling faster rollout
+	// Cap surge to the number of deprecated nodes (no point surging more than what we're migrating)
+	surgeNodes := min(nodePool.MaxSurge, nodesInNonCurrentNodeSets)
+
+	// Set the desired count of the current nodeSet to be the desired count of the node pool
+	// less the actual node count of nodes assigned to non-current NodeSets,
+	// plus surge nodes for migration.
+	//
+	// Even though the desired count for a non-current node set is 0,
+	// we still need to account for the actual nodes that exist in the non-current node sets
+	// so that we don't over-provision the current node set.
+	// This will be re-calculated as nodes are de-provisioned or deleted from the non-current node sets.
+	currentNodeSetDesiredCount := max(0, nodePool.DesiredCount-nodesInNonCurrentNodeSets+surgeNodes)
+
+	// Cap the desired count to never exceed nodePool.DesiredCount
+	// This prevents creating extra surge nodes after all non-current nodes are deleted
+	// if there are any race conditions, the current node set desired count will be adjusted to the node pool desired count.
+	// Example: nodePool.DesiredCount=2, nodesInNonCurrentNodeSets=0 → cap 3 to 2
+	currentNodeSetDesiredCount = min(currentNodeSetDesiredCount, nodePool.DesiredCount)
+
+	if currentNodeSet.DesiredCount != currentNodeSetDesiredCount {
+		currentNodeSet.DesiredCount = currentNodeSetDesiredCount
+		if _, err := tx.UpdateNodeSet(ctx, &currentNodeSet); err != nil {
+			return fmt.Errorf("failed to update current node set: %w", err)
+		}
+
+		logger.Info("Updated current node set desired count", "nodeSetID", currentNodeSet.ID, "desiredCount", currentNodeSet.DesiredCount, "nodesInNonCurrentNodeSets", nodesInNonCurrentNodeSets)
+	}
+
+	return nil
 }
 
 // createNicoNodeSetIfChanged compares the pool's Nico provider and common fields
 // against the current NodeSet, and creates a new NodeSet when anything has changed.
-func (a *NodePoolController) createNicoNodeSetIfChanged(
+func (a *Controller) createNicoNodeSetIfChanged(
 	ctx context.Context, tx db.Tx,
 	nodePool db.NodePool, currentNodeSet db.NodeSet,
 	logger *slog.Logger,
@@ -266,7 +277,7 @@ func (a *NodePoolController) createNicoNodeSetIfChanged(
 
 // createCAPINodeSetIfChanged compares the pool's CAPI provider and common fields
 // against the current NodeSet, and creates a new NodeSet when anything has changed.
-func (a *NodePoolController) createCAPINodeSetIfChanged(
+func (a *Controller) createCAPINodeSetIfChanged(
 	ctx context.Context, tx db.Tx,
 	nodePool db.NodePool, currentNodeSet db.NodeSet,
 	logger *slog.Logger,

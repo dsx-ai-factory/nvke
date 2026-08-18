@@ -59,6 +59,24 @@ func (m *MockDB) DeleteNodePool(ctx context.Context, nodePoolID uuid.UUID) error
 	return args.Error(0)
 }
 
+func (m *MockDB) CreateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
+	args := m.Called(ctx, nodePool)
+	v, ok := args.Get(0).(db.NodePool)
+	if !ok {
+		return db.NodePool{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockDB) UpdateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
+	args := m.Called(ctx, nodePool)
+	v, ok := args.Get(0).(db.NodePool)
+	if !ok {
+		return db.NodePool{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockDB) ListClusters(ctx context.Context, filters db.ClusterFilters) ([]db.Cluster, error) {
 	args := m.Called(ctx, filters)
 	v, ok := args.Get(0).([]db.Cluster)
@@ -189,6 +207,11 @@ func (m *MockDB) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error)
 		return db.Node{}, args.Error(1)
 	}
 	return v, args.Error(1)
+}
+
+func (m *MockDB) DeleteNode(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
 }
 
 func (m *MockDB) ListNodeSets(ctx context.Context, filters db.NodeSetFilters) ([]db.NodeSet, error) {
@@ -356,6 +379,11 @@ func (m *MockTx) UpdateNodePool(ctx context.Context, nodePool *db.NodePool) (db.
 	return v, args.Error(1)
 }
 
+func (m *MockTx) DeleteNodePool(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func (m *MockTx) GetNodeSet(ctx context.Context, id uuid.UUID) (db.NodeSet, error) {
 	args := m.Called(ctx, id)
 	v, ok := args.Get(0).(db.NodeSet)
@@ -449,6 +477,11 @@ func (m *MockTx) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error)
 		return db.Node{}, args.Error(1)
 	}
 	return v, args.Error(1)
+}
+
+func (m *MockTx) DeleteNode(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
 }
 
 func (m *MockDB) ListNodeConditions(ctx context.Context) ([]db.NodeConditionStatus, error) {
