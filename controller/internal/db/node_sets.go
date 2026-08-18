@@ -116,6 +116,7 @@ func (n *NodeSet) SyncProviderFields(providerType ProviderType) {
 }
 
 type NodeSetFilters struct {
+	NodeSetID  *uuid.UUID
 	NodePoolID *uuid.UUID
 	SiteID     *uuid.UUID
 }
@@ -137,6 +138,9 @@ func (q *queriesImpl) ListNodeSets(ctx context.Context, filters NodeSetFilters) 
 
 	if filters.NodePoolID != nil {
 		query = query.Where("node_set.node_pool_id = ?", filters.NodePoolID)
+	}
+	if filters.NodeSetID != nil {
+		query = query.Where("node_set.id = ?", filters.NodeSetID)
 	}
 
 	if filters.SiteID != nil {

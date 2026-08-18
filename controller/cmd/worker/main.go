@@ -29,6 +29,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodeset"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/db/migrations"
 	"github.com/NVIDIA/nke/controller/internal/dbmetrics"
@@ -154,6 +155,16 @@ func main() {
 	k8sControllerManager, err := kube.NewRuntimeManager(controllerRuntimeLogger, spirev1alpha1.AddToScheme, nicov1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)
+		os.Exit(1)
+	}
+
+	nodeSetController := nodeset.NewController(
+		cfg,
+		logger.With("logger", "node-set-controller"),
+		dbInstance,
+	)
+	if err := nodeSetController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up node set controller", "error", err)
 		os.Exit(1)
 	}
 

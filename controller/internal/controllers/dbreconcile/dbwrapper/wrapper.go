@@ -31,6 +31,11 @@ type nodePoolSourceRegistration struct {
 	enqueuer Enqueuer
 }
 
+type nodeSetSourceRegistration struct {
+	filters  db.NodeSetFilters
+	enqueuer Enqueuer
+}
+
 type DB struct {
 	db.DB
 
@@ -38,6 +43,7 @@ type DB struct {
 	lock            sync.RWMutex
 	nodeSources     []nodeSourceRegistration
 	nodePoolSources []nodePoolSourceRegistration
+	nodeSetSources  []nodeSetSourceRegistration
 }
 
 func New(database db.DB, logger *slog.Logger) *DB {
@@ -84,6 +90,23 @@ func (w *DB) NodePoolSource(filters db.NodePoolFilters) *dbsource.Source[dbrecon
 	return nodePoolSource
 }
 
+func (w *DB) NodeSetSource(filters db.NodeSetFilters) *dbsource.Source[dbreconcile.Key] {
+	nodeSetSource := dbsource.NewSource[dbreconcile.Key](
+		dbsource.DefaultBufferSize,
+		nodeSetEventSource{
+			queries: w,
+			filters: filters,
+		},
+	)
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.nodeSetSources = append(w.nodeSetSources, nodeSetSourceRegistration{
+		filters:  filters,
+		enqueuer: nodeSetSource,
+	})
+	return nodeSetSource
+}
+
 func (w *DB) CreateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
 	created, err := w.DB.CreateNodePool(ctx, nodePool)
 	if err != nil {
@@ -124,6 +147,9 @@ func (w *DB) CreateNode(ctx context.Context, node *db.Node) (db.Node, error) {
 	if err := w.enqueueNode(ctx, created.ID); err != nil {
 		return created, err
 	}
+	if err := w.enqueueNodeSetForNode(ctx, created); err != nil {
+		return created, err
+	}
 	return created, nil
 }
 
@@ -139,20 +165,47 @@ func (w *DB) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error) {
 }
 
 func (w *DB) DeleteNode(ctx context.Context, nodeID uuid.UUID) error {
-	nodePoolID, err := w.nodePoolIDForNode(ctx, nodeID)
+	node, exists, err := w.nodeForDelete(ctx, nodeID)
 	if err != nil {
 		return err
 	}
 	if err := w.DB.DeleteNode(ctx, nodeID); err != nil {
 		return err
 	}
-	if nodePoolID == uuid.Nil {
+	if !exists {
 		return nil
 	}
-	if err := w.enqueueNodePool(ctx, nodePoolID); err != nil {
+	if node.NodePoolID != uuid.Nil {
+		if err := w.enqueueNodePool(ctx, node.NodePoolID); err != nil {
+			return err
+		}
+	}
+	if err := w.enqueueNodeSetForNode(ctx, node); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (w *DB) CreateNodeSet(ctx context.Context, nodeSet *db.NodeSet) (db.NodeSet, error) {
+	created, err := w.DB.CreateNodeSet(ctx, nodeSet)
+	if err != nil {
+		return created, err
+	}
+	if err := w.enqueueNodeSet(ctx, created.ID); err != nil {
+		return created, err
+	}
+	return created, nil
+}
+
+func (w *DB) UpdateNodeSet(ctx context.Context, nodeSet *db.NodeSet) (db.NodeSet, error) {
+	updated, err := w.DB.UpdateNodeSet(ctx, nodeSet)
+	if err != nil {
+		return updated, err
+	}
+	if err := w.enqueueNodeSet(ctx, updated.ID); err != nil {
+		return updated, err
+	}
+	return updated, nil
 }
 
 func (w *DB) RunInTx(ctx context.Context, fn func(ctx context.Context, tx db.Tx) error) error {
@@ -173,6 +226,11 @@ func (w *DB) RunInTx(ctx context.Context, fn func(ctx context.Context, tx db.Tx)
 	for _, nodePoolID := range tx.nodePoolIDs {
 		if err := w.enqueueNodePool(ctx, nodePoolID); err != nil {
 			w.logger.Warn("Failed to enqueue node pool after committed transaction", "nodePoolID", nodePoolID, "error", err)
+		}
+	}
+	for _, nodeSetID := range tx.nodeSetIDs {
+		if err := w.enqueueNodeSet(ctx, nodeSetID); err != nil {
+			w.logger.Warn("Failed to enqueue node set after committed transaction", "nodeSetID", nodeSetID, "error", err)
 		}
 	}
 	return nil
@@ -215,6 +273,36 @@ func (w *DB) enqueueNodePool(ctx context.Context, nodePoolID uuid.UUID) error {
 	return nil
 }
 
+func (w *DB) enqueueNodeSet(ctx context.Context, nodeSetID uuid.UUID) error {
+	if nodeSetID == uuid.Nil {
+		return nil
+	}
+
+	sources := func() []nodeSetSourceRegistration {
+		w.lock.RLock()
+		defer w.lock.RUnlock()
+		return append([]nodeSetSourceRegistration(nil), w.nodeSetSources...)
+	}()
+
+	for _, source := range sources {
+		matches, err := w.nodeSetMatchesFilters(ctx, nodeSetID, source.filters)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			continue
+		}
+		if err := source.enqueuer.Enqueue(ctx, dbreconcile.NodeSetKey(nodeSetID)); err != nil {
+			return fmt.Errorf("failed to enqueue node set %s: %w", nodeSetID, err)
+		}
+	}
+	return nil
+}
+
+func (w *DB) enqueueNodeSetForNode(ctx context.Context, node db.Node) error {
+	return w.enqueueNodeSet(ctx, node.NodeSetID)
+}
+
 func (w *DB) nodeMatchesFilters(ctx context.Context, nodeID uuid.UUID, filters db.NodeFilters) (bool, error) {
 	filters.ID = &nodeID
 	nodes, err := w.DB.ListNodes(ctx, filters)
@@ -224,13 +312,23 @@ func (w *DB) nodeMatchesFilters(ctx context.Context, nodeID uuid.UUID, filters d
 	return len(nodes) > 0, nil
 }
 
-func (w *DB) nodePoolIDForNode(ctx context.Context, nodeID uuid.UUID) (uuid.UUID, error) {
+func (w *DB) nodeSetMatchesFilters(ctx context.Context, nodeSetID uuid.UUID, filters db.NodeSetFilters) (bool, error) {
+	nodeSetFilters := filters
+	nodeSetFilters.NodeSetID = &nodeSetID
+	nodeSets, err := w.DB.ListNodeSets(ctx, nodeSetFilters)
+	if err != nil {
+		return false, fmt.Errorf("failed to list node sets for DB reconcile source filters: %w", err)
+	}
+	return len(nodeSets) > 0, nil
+}
+
+func (w *DB) nodeForDelete(ctx context.Context, nodeID uuid.UUID) (db.Node, bool, error) {
 	node, err := w.DB.GetNodeForUpdate(ctx, nodeID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
-			return uuid.Nil, nil
+			return db.Node{}, false, nil
 		}
-		return uuid.Nil, fmt.Errorf("failed to get node %s before DB reconcile delete: %w", nodeID, err)
+		return db.Node{}, false, fmt.Errorf("failed to get node %s before DB reconcile delete: %w", nodeID, err)
 	}
-	return node.NodePoolID, nil
+	return node, true, nil
 }

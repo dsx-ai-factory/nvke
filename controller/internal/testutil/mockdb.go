@@ -157,6 +157,29 @@ func (m *MockDB) GetNodeSet(ctx context.Context, id uuid.UUID) (db.NodeSet, erro
 	return v, args.Error(1)
 }
 
+func (m *MockDB) CreateNodeSet(ctx context.Context, nodeSet *db.NodeSet) (db.NodeSet, error) {
+	args := m.Called(ctx, nodeSet)
+	v, ok := args.Get(0).(db.NodeSet)
+	if !ok {
+		return db.NodeSet{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockDB) UpdateNodeSet(ctx context.Context, nodeSet *db.NodeSet) (db.NodeSet, error) {
+	args := m.Called(ctx, nodeSet)
+	v, ok := args.Get(0).(db.NodeSet)
+	if !ok {
+		return db.NodeSet{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockDB) DeleteNodeSet(ctx context.Context, id uuid.UUID) error {
+	args := m.Called(ctx, id)
+	return args.Error(0)
+}
+
 func (m *MockDB) ListNodes(ctx context.Context, filters db.NodeFilters) ([]db.Node, error) {
 	args := m.Called(ctx, filters)
 	v, ok := args.Get(0).([]db.Node)

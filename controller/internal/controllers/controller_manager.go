@@ -32,7 +32,6 @@ type ControllerManager struct {
 	db     db.DB
 	stopCh chan struct{}
 
-	nodeSetController            *NodeSetController
 	nodeScheduler                *NodeScheduler
 	capiClusterScaffold          *CAPIClusterScaffoldController
 	autoModeController           *AutoModeController
@@ -92,7 +91,6 @@ func NewControllerManager(
 		logger:                       controllerManagerLogger,
 		db:                           dbInstance,
 		stopCh:                       make(chan struct{}),
-		nodeSetController:            NewNodeSetController(cfg, controllerManagerLogger, dbInstance),
 		nodeScheduler:                NewNodeScheduler(cfg, controllerManagerLogger, dbInstance, cweTemporalClient, forgeProvider),
 		capiClusterScaffold:          capiClusterScaffold,
 		autoModeController:           NewAutoModeController(cfg, controllerManagerLogger, dbInstance),
@@ -224,11 +222,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	if err := a.controlPlaneController.Reconcile(ctx, site); err != nil {
 		// Log errors but continue processing the other controllers.
 		a.logger.Error("Failed to reconcile control plane", "error", err, "siteID", site.ID.String())
-	}
-
-	if err := a.nodeSetController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile node sets", "error", err, "siteID", site.ID.String())
 	}
 
 	if a.capiClusterScaffold != nil {

@@ -470,6 +470,214 @@ func TestUnit_DBNodeSourceReturnsErrorWhenEnqueueContextCancels(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestUnit_DBNodeSetSource(t *testing.T) {
+	type parameters struct {
+		run func(*testing.T, *testutil.MockDB, db.NodeSetFilters)
+	}
+
+	tests := map[string]parameters{
+		"seeds matching node sets": {
+			run: func(t *testing.T, database *testutil.MockDB, filters db.NodeSetFilters) {
+				t.Helper()
+
+				first := db.NodeSet{ID: uuid.New()}
+				second := db.NodeSet{ID: uuid.New()}
+				database.On("ListNodeSets", mock.Anything, filters).Return([]db.NodeSet{first, second}, nil)
+				wrapper := New(database, slog.Default())
+				queue := startNodeSetSource(t, wrapper, filters)
+				assert.ElementsMatch(t, []dbreconcile.Key{
+					dbreconcile.NodeSetKey(first.ID),
+					dbreconcile.NodeSetKey(second.ID),
+				}, []dbreconcile.Key{
+					getQueueItem(t, queue),
+					getQueueItem(t, queue),
+				})
+			},
+		},
+		"returns enqueue error when context cancels": {
+			run: func(t *testing.T, database *testutil.MockDB, filters db.NodeSetFilters) {
+				t.Helper()
+
+				nodeSet := db.NodeSet{ID: uuid.New()}
+				database.On("ListNodeSets", mock.Anything, filters).Return([]db.NodeSet{nodeSet}, nil)
+				source := nodeSetEventSource{queries: database, filters: filters}
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+
+				err := source.Start(ctx, func(context.Context, dbreconcile.Key) error {
+					return ctx.Err()
+				})
+
+				require.Error(t, err)
+				require.ErrorContains(t, err, "failed to enqueue node set")
+			},
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			filters := db.NodeSetFilters{NodePoolID: ptr.To(uuid.New())}
+			database := &testutil.MockDB{}
+
+			params.run(t, database, filters)
+
+			database.AssertExpectations(t)
+		})
+	}
+}
+
+func TestUnit_DBNodeSetEnqueue(t *testing.T) {
+	type parameters struct {
+		setup       func(*testutil.MockDB, db.NodeSet, db.Node)
+		run         func(*testing.T, context.Context, *DB, db.NodeSet, db.Node) error
+		wantEnqueue bool
+	}
+
+	tests := map[string]parameters{
+		"node set create enqueues node set": {
+			setup: func(database *testutil.MockDB, nodeSet db.NodeSet, _ db.Node) {
+				liveFilters := db.NodeSetFilters{NodeSetID: &nodeSet.ID}
+				database.On("CreateNodeSet", mock.Anything, &nodeSet).Return(nodeSet, nil)
+				database.On("ListNodeSets", mock.Anything, liveFilters).Return([]db.NodeSet{nodeSet}, nil)
+			},
+			run: func(t *testing.T, ctx context.Context, wrapper *DB, nodeSet db.NodeSet, _ db.Node) error {
+				t.Helper()
+
+				created, err := wrapper.CreateNodeSet(ctx, &nodeSet)
+				assert.Equal(t, nodeSet, created)
+				return err
+			},
+			wantEnqueue: true,
+		},
+		"node set update enqueues node set": {
+			setup: func(database *testutil.MockDB, nodeSet db.NodeSet, _ db.Node) {
+				liveFilters := db.NodeSetFilters{NodeSetID: &nodeSet.ID}
+				database.On("UpdateNodeSet", mock.Anything, &nodeSet).Return(nodeSet, nil)
+				database.On("ListNodeSets", mock.Anything, liveFilters).Return([]db.NodeSet{nodeSet}, nil)
+			},
+			run: func(t *testing.T, ctx context.Context, wrapper *DB, nodeSet db.NodeSet, _ db.Node) error {
+				t.Helper()
+
+				updated, err := wrapper.UpdateNodeSet(ctx, &nodeSet)
+				assert.Equal(t, nodeSet, updated)
+				return err
+			},
+			wantEnqueue: true,
+		},
+		"node delete enqueues node set": {
+			setup: func(database *testutil.MockDB, nodeSet db.NodeSet, node db.Node) {
+				liveFilters := db.NodeSetFilters{NodeSetID: &nodeSet.ID}
+				database.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+				database.On("DeleteNode", mock.Anything, node.ID).Return(nil)
+				database.On("ListNodeSets", mock.Anything, liveFilters).Return([]db.NodeSet{nodeSet}, nil)
+			},
+			run: func(_ *testing.T, ctx context.Context, wrapper *DB, _ db.NodeSet, node db.Node) error {
+				return wrapper.DeleteNode(ctx, node.ID)
+			},
+			wantEnqueue: true,
+		},
+		"node update does not enqueue node set": {
+			setup: func(database *testutil.MockDB, _ db.NodeSet, node db.Node) {
+				database.On("UpdateNode", mock.Anything, &node).Return(node, nil)
+			},
+			run: func(t *testing.T, ctx context.Context, wrapper *DB, _ db.NodeSet, node db.Node) error {
+				t.Helper()
+
+				updated, err := wrapper.UpdateNode(ctx, &node)
+				assert.Equal(t, node, updated)
+				return err
+			},
+			wantEnqueue: false,
+		},
+		"node set delete does not enqueue node set": {
+			setup: func(database *testutil.MockDB, nodeSet db.NodeSet, _ db.Node) {
+				database.On("DeleteNodeSet", mock.Anything, nodeSet.ID).Return(nil)
+			},
+			run: func(_ *testing.T, ctx context.Context, wrapper *DB, nodeSet db.NodeSet, _ db.Node) error {
+				return wrapper.DeleteNodeSet(ctx, nodeSet.ID)
+			},
+			wantEnqueue: false,
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			nodeSet := db.NodeSet{ID: uuid.New()}
+			node := db.Node{ID: uuid.New(), NodeSetID: nodeSet.ID}
+			database := &testutil.MockDB{}
+			database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
+			params.setup(database, nodeSet, node)
+			wrapper := New(database, slog.Default())
+			queue := startNodeSetSource(t, wrapper, db.NodeSetFilters{})
+
+			err := params.run(t, context.Background(), wrapper, nodeSet, node)
+
+			require.NoError(t, err)
+			if params.wantEnqueue {
+				assert.Equal(t, dbreconcile.NodeSetKey(nodeSet.ID), getQueueItem(t, queue))
+			} else {
+				assertQueueEmpty(t, queue)
+			}
+			database.AssertExpectations(t)
+		})
+	}
+}
+
+func TestUnit_DBNodeSetEnqueueAfterTransaction(t *testing.T) {
+	type parameters struct {
+		run         func(context.Context, db.Tx, db.NodeSet) error
+		txErr       error
+		wantEnqueue bool
+	}
+
+	tests := map[string]parameters{
+		"successful node set update enqueues node set": {
+			run: func(ctx context.Context, tx db.Tx, nodeSet db.NodeSet) error {
+				_, err := tx.UpdateNodeSet(ctx, &nodeSet)
+				return err
+			},
+			wantEnqueue: true,
+		},
+		"failed transaction does not enqueue node set": {
+			run: func(ctx context.Context, tx db.Tx, nodeSet db.NodeSet) error {
+				_, err := tx.UpdateNodeSet(ctx, &nodeSet)
+				return err
+			},
+			txErr: errors.New("tx failed"),
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			nodeSet := db.NodeSet{ID: uuid.New()}
+			liveFilters := db.NodeSetFilters{NodeSetID: &nodeSet.ID}
+			database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+			database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
+			database.On("RunInTx", mock.Anything, mock.Anything).Return(params.txErr)
+			database.MockTx.On("UpdateNodeSet", mock.Anything, &nodeSet).Return(nodeSet, nil)
+			if params.wantEnqueue {
+				database.On("ListNodeSets", mock.Anything, liveFilters).Return([]db.NodeSet{nodeSet}, nil)
+			}
+			wrapper := New(database, slog.Default())
+			queue := startNodeSetSource(t, wrapper, db.NodeSetFilters{})
+
+			err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+				return params.run(ctx, tx, nodeSet)
+			})
+
+			if params.txErr != nil {
+				require.ErrorIs(t, err, params.txErr)
+				assertQueueEmpty(t, queue)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, dbreconcile.NodeSetKey(nodeSet.ID), getQueueItem(t, queue))
+			}
+			database.AssertExpectations(t)
+			database.MockTx.AssertExpectations(t)
+		})
+	}
+}
+
 func startNodeSource(t *testing.T, wrapper *DB, filters db.NodeFilters) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
@@ -484,6 +692,16 @@ func startNodePoolSource(t *testing.T, wrapper *DB) workqueue.TypedRateLimitingI
 	t.Helper()
 
 	source := wrapper.NodePoolSource(db.NodePoolFilters{})
+	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
+	t.Cleanup(queue.ShutDown)
+	require.NoError(t, source.Start(context.Background(), queue))
+	return queue
+}
+
+func startNodeSetSource(t *testing.T, wrapper *DB, filters db.NodeSetFilters) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
+	t.Helper()
+
+	source := wrapper.NodeSetSource(filters)
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	require.NoError(t, source.Start(context.Background(), queue))

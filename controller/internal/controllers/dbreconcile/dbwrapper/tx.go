@@ -16,6 +16,7 @@ type reconcileTx struct {
 	db.Tx
 	nodeIDs     []uuid.UUID
 	nodePoolIDs []uuid.UUID
+	nodeSetIDs  []uuid.UUID
 }
 
 func (tx *reconcileTx) CreateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
@@ -50,6 +51,7 @@ func (tx *reconcileTx) CreateNode(ctx context.Context, node *db.Node) (db.Node, 
 		return created, err
 	}
 	tx.nodeIDs = append(tx.nodeIDs, created.ID)
+	tx.appendNodeSetID(created.NodeSetID)
 	return created, nil
 }
 
@@ -77,5 +79,31 @@ func (tx *reconcileTx) DeleteNode(ctx context.Context, nodeID uuid.UUID) error {
 	if nodePoolID != uuid.Nil {
 		tx.nodePoolIDs = append(tx.nodePoolIDs, nodePoolID)
 	}
+	tx.appendNodeSetID(node.NodeSetID)
 	return nil
+}
+
+func (tx *reconcileTx) CreateNodeSet(ctx context.Context, nodeSet *db.NodeSet) (db.NodeSet, error) {
+	created, err := tx.Tx.CreateNodeSet(ctx, nodeSet)
+	if err != nil {
+		return created, err
+	}
+	tx.appendNodeSetID(created.ID)
+	return created, nil
+}
+
+func (tx *reconcileTx) UpdateNodeSet(ctx context.Context, nodeSet *db.NodeSet) (db.NodeSet, error) {
+	updated, err := tx.Tx.UpdateNodeSet(ctx, nodeSet)
+	if err != nil {
+		return updated, err
+	}
+	tx.appendNodeSetID(updated.ID)
+	return updated, nil
+}
+
+func (tx *reconcileTx) appendNodeSetID(id uuid.UUID) {
+	if id == uuid.Nil {
+		return
+	}
+	tx.nodeSetIDs = append(tx.nodeSetIDs, id)
 }
