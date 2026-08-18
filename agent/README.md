@@ -168,7 +168,8 @@ single-platform variants underneath. These are artifacts, not container images
 
 Every `agent/vX.Y.Z` tag also builds native amd64 and arm64 `.deb`s and uploads
 them to the apt-publisher S3 intake (`.github/workflows/agent-deb-publish.yml`,
-via `scripts/upload-s3-apt-intake.sh`). That is what a node installs; the OCI
+via `scripts/upload-s3-apt-intake.sh`). The same packages are attached as assets
+on the GitHub Release for that tag. Apt remains the node install path; the OCI
 binary above is the same executable without the packaging/systemd unit.
 
 The intake destination comes from the GitHub `apt-intake` environment

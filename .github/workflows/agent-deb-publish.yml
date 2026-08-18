@@ -1,8 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Builds the nke-agent .debs on an agent/v* tag and uploads them to the
-# apt-publisher S3 intake. deb.yml exercises the same packaging path on every
+# Builds the nke-agent .debs on an agent/v* tag, uploads them to the
+# apt-publisher S3 intake, and attaches both packages as assets on a GitHub
+# Release for that tag. deb.yml exercises the same packaging path on every
 # agent change and throws the packages away; this workflow is the release side.
 #
 # Layout written by agent/scripts/upload-s3-apt-intake.sh (consumed by
@@ -24,7 +25,8 @@
 # ubuntu-24.04-arm) for the same reason as deb.yml: cross-compiling flips CGO
 # off and produces a static binary that still claims Depends: libc6. A single
 # publish job then uploads both packages once so the shared index.json merge
-# cannot race with itself.
+# cannot race with itself. The GitHub Release job runs in parallel with S3
+# publish and does not touch apt intake.
 
 name: Agent Deb Publish
 
@@ -230,3 +232,60 @@ jobs:
           APT_INTAKE_RELEASE: ${{ steps.meta.outputs.release }}
           ASSETS_DIR: bin
         run: ./scripts/upload-s3-apt-intake.sh
+
+  # Separate from apt intake so the release job does not need the apt-intake
+  # environment or id-token. Runs only on agent/v* tag pushes (not branch
+  # workflow_dispatch). make_latest stays false so a component release never
+  # becomes the repository "latest" over a bare vX.Y.Z release.
+  github-release:
+    name: Attach debs to GitHub Release
+    needs: [build]
+    if: >-
+      github.repository == 'NVIDIA/nke' &&
+      startsWith(github.ref, 'refs/tags/agent/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: agent-deb-*
+          merge-multiple: true
+          path: agent/bin
+
+      - name: Inspect packages
+        id: meta
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(agent/bin/*.deb)
+          if [ ${#debs[@]} -ne 2 ]; then
+            echo "::error::expected exactly 2 packages (amd64 + arm64), found ${#debs[@]}"
+            printf '    %s\n' "${debs[@]}"
+            exit 1
+          fi
+          ls -la "${debs[@]}"
+
+          # Tag is agent/vX.Y.Z; title uses "agent vX.Y.Z" to match AGENTS.md.
+          version="${GITHUB_REF_NAME#agent/}"
+          {
+            echo "version=${version}"
+            echo "release_name=agent ${version}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.meta.outputs.release_name }}
+          body: |
+            nke-agent ${{ steps.meta.outputs.version }} Debian packages (amd64 and arm64).
+
+            Apt install path is the apt-publisher intake from this same workflow; these assets are the same `.deb`s attached for direct download.
+          files: agent/bin/*.deb
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
+          make_latest: false
+          generate_release_notes: false
