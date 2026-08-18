@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+# SPDX-License-Identifier: Apache-2.0
 
 # This mocks `cloud-init status` so the node agent can run the same
 # checks it runs in production images.

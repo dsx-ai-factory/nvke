@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+# SPDX-License-Identifier: Apache-2.0
 #
 # Generate or resync platform CRs from the CWE API.
 # Fetches all clusters and node pools from CWE, generates ForgeTenant, ForgeSite,

@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+# SPDX-License-Identifier: Apache-2.0
 #
 # Start a software TPM daemon backed by Linux's vTPM proxy driver.
 # Colima exposes `/dev/vtpmx` from the VM kernel, `swtpm --vtpm-proxy` asks

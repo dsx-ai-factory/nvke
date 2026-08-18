@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+# SPDX-License-Identifier: Apache-2.0
 #
 # CAPD workload kubeconfig for local Mac/Colima: CWE uses namespace cluster-<name>
 # (internal/capi/naming.go). Pulls admin.conf from a CAPD control-plane container, or

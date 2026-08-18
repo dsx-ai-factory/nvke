@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-# SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+# SPDX-License-Identifier: Apache-2.0
 #
 # Leave an EK certificate on disk for Forge/NICo-style APIs. `nico-mock`
 # reads `/var/lib/swtpm/ek.cert` directly and returns it via
