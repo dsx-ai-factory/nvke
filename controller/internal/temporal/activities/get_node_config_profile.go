@@ -60,7 +60,10 @@ func (a *Activities) GetNodeConfigProfile(ctx context.Context, input GetNodeConf
 	if err != nil {
 		return ConfigProfile{}, fmt.Errorf("failed to get node context: %w", err)
 	}
-	configProfileName := nodeSet.ConfigProfile
+	configProfileName := ""
+	if nicoNodeSetProvider, err := nodeSet.NicoProvider(); err == nil {
+		configProfileName = nicoNodeSetProvider.ConfigProfile
+	}
 
 	configProfile, missing, err := getConfigProfile(a.cfg.ProfilesDir, configProfileName)
 	if err != nil {

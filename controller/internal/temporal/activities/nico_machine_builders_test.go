@@ -54,12 +54,17 @@ func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T
 		"control plane uses resolved node context for config": {
 			createCtx: &capiMachineCreateContext{
 				node: db.Node{InstanceTypeID: controlPlaneInstanceTypeID, ControlPlane: true},
-				nodeSet: db.NodeSet{
-					OSProfile:             "cp-os",
-					DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
-					KubernetesVersion:     "1.32.1",
-					TeleportEnabled:       true,
-				},
+				nodeSet: func() db.NodeSet {
+					nodeSet := db.NodeSet{
+						KubernetesVersion: "1.32.1",
+						TeleportEnabled:   true,
+					}
+					nodeSet.SetNico(db.NicoNodePoolProvider{
+						OSProfile:             "cp-os",
+						DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+					})
+					return nodeSet
+				}(),
 				nodePool: controlPlaneNodePool,
 				cluster: db.Cluster{
 					ControlPlaneConfig: db.ControlPlaneConfig{
@@ -91,12 +96,17 @@ func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T
 				node: db.Node{
 					NodePoolID: workerNodePoolID,
 				},
-				nodeSet: db.NodeSet{
-					OSProfile:             "worker-os",
-					DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
-					KubernetesVersion:     "1.33.0",
-					TeleportEnabled:       true,
-				},
+				nodeSet: func() db.NodeSet {
+					nodeSet := db.NodeSet{
+						KubernetesVersion: "1.33.0",
+						TeleportEnabled:   true,
+					}
+					nodeSet.SetNico(db.NicoNodePoolProvider{
+						OSProfile:             "worker-os",
+						DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
+					})
+					return nodeSet
+				}(),
 				nodePool: workerNodePool,
 			},
 			want: templateLessForgeCAPINodeConfig{
@@ -136,17 +146,21 @@ func TestNicoMachineBuilders_ControlPlaneConfigPinning(t *testing.T) {
 		SubnetIDs:      []uuid.UUID{pinnedSubnetID},
 	})
 
+	nodeSet := db.NodeSet{
+		KubernetesVersion: "1.33.7",
+		TeleportEnabled:   true,
+	}
+	nodeSet.SetNico(db.NicoNodePoolProvider{
+		OSProfile:             "cp-os-a",
+		DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
+	})
+
 	createCtx := &capiMachineCreateContext{
 		node: db.Node{
 			InstanceTypeID: controlPlaneInstanceTypeID,
 			ControlPlane:   true,
 		},
-		nodeSet: db.NodeSet{
-			OSProfile:             "cp-os-a",
-			DiskSelectionStrategy: db.DiskSelectionStrategyLargest,
-			KubernetesVersion:     "1.33.7",
-			TeleportEnabled:       true,
-		},
+		nodeSet:  nodeSet,
 		nodePool: nodePool,
 		cluster: db.Cluster{
 			ControlPlaneConfig: db.ControlPlaneConfig{
@@ -202,36 +216,45 @@ func TestNicoMachineBuilders_ValidateTemplateLessForgeCAPINodeConfig(t *testing.
 	tests := map[string]parameters{
 		"fails fast when resolved context is missing": {
 			createCtx: &capiMachineCreateContext{
-				node:     db.Node{InstanceTypeID: uuid.New()},
+				node: db.Node{InstanceTypeID: uuid.New()},
+				nodeSet: func() db.NodeSet {
+					nodeSet := db.NodeSet{}
+					nodeSet.SetNico(db.NicoNodePoolProvider{})
+					return nodeSet
+				}(),
 				nodePool: emptyNicoPool,
 			},
 			wantErrContain: "resolved node context is incomplete",
 		},
 		"requires os profile": {
 			createCtx: &capiMachineCreateContext{
-				nodeSet: db.NodeSet{
-					KubernetesVersion: "1.33.0",
-				},
+				nodeSet: func() db.NodeSet {
+					nodeSet := db.NodeSet{KubernetesVersion: "1.33.0"}
+					nodeSet.SetNico(db.NicoNodePoolProvider{})
+					return nodeSet
+				}(),
 				nodePool: requiresOSProfilePool,
 			},
 			wantErrContain: "nodeSet.osProfile",
 		},
 		"requires instance type": {
 			createCtx: &capiMachineCreateContext{
-				nodeSet: db.NodeSet{
-					OSProfile:         "cp-os",
-					KubernetesVersion: "1.33.0",
-				},
+				nodeSet: func() db.NodeSet {
+					nodeSet := db.NodeSet{KubernetesVersion: "1.33.0"}
+					nodeSet.SetNico(db.NicoNodePoolProvider{OSProfile: "cp-os"})
+					return nodeSet
+				}(),
 				nodePool: requiresInstanceTypePool,
 			},
 			wantErrContain: "nodePool.instanceTypeID",
 		},
 		"requires network candidates": {
 			createCtx: &capiMachineCreateContext{
-				nodeSet: db.NodeSet{
-					OSProfile:         "cp-os",
-					KubernetesVersion: "1.33.0",
-				},
+				nodeSet: func() db.NodeSet {
+					nodeSet := db.NodeSet{KubernetesVersion: "1.33.0"}
+					nodeSet.SetNico(db.NicoNodePoolProvider{OSProfile: "cp-os"})
+					return nodeSet
+				}(),
 				nodePool: requiresNetworkPool,
 			},
 			wantErrContain: "nodePool.subnetIDs|vpcPrefixIDs",

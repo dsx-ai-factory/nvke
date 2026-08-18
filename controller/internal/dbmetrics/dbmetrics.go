@@ -505,6 +505,20 @@ func (c *Collector) emitNodePoolInfo(ch chan<- prometheus.Metric, ctx *clusterIn
 }
 
 func (c *Collector) emitNodeSetInfo(ch chan<- prometheus.Metric, ctx *nodeSetParentContext, nodeSet db.NodeSet) {
+	subnetIDs := ""
+	vpcPrefixIDs := ""
+	osProfile := ""
+	configProfile := ""
+	diskSelectionStrategy := ""
+
+	if nicoNodeSetProvider, err := nodeSet.NicoProvider(); err == nil {
+		subnetIDs = uuidSliceToString(nicoNodeSetProvider.SubnetIDs)
+		vpcPrefixIDs = uuidSliceToString(nicoNodeSetProvider.VpcPrefixIDs)
+		osProfile = nicoNodeSetProvider.OSProfile
+		configProfile = nicoNodeSetProvider.ConfigProfile
+		diskSelectionStrategy = string(nicoNodeSetProvider.DiskSelectionStrategy)
+	}
+
 	ch <- prometheus.MustNewConstMetric(
 		c.nodeSetInfoDesc,
 		prometheus.GaugeValue,
@@ -514,17 +528,17 @@ func (c *Collector) emitNodeSetInfo(ch chan<- prometheus.Metric, ctx *nodeSetPar
 		nodeSet.ID.String(),
 		nodeSet.NodePoolID.String(),
 		strconv.Itoa(nodeSet.DesiredCount),
-		nodeSet.OSProfile,
-		nodeSet.ConfigProfile,
+		osProfile,
+		configProfile,
 		nodeSet.KubernetesVersion,
 		nodeSet.SystemReservedMemory,
 		nodeSet.KubeReservedMemory,
-		uuidSliceToString(nodeSet.SubnetIDs),
-		uuidSliceToString(nodeSet.VpcPrefixIDs),
+		subnetIDs,
+		vpcPrefixIDs,
 		nodeSet.CreatedAt.UTC().Format(time.RFC3339),
 		nodeSet.UpdatedAt.UTC().Format(time.RFC3339),
 		strconv.FormatBool(nodeSet.TeleportEnabled),
-		string(nodeSet.DiskSelectionStrategy),
+		diskSelectionStrategy,
 	)
 }
 

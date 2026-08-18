@@ -68,27 +68,42 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 	if len(snapshotCfg.InfraMachineTemplatePreferences) > 0 {
 		template = append(json.RawMessage(nil), snapshotCfg.InfraMachineTemplatePreferences[0]...)
 	}
-	diskSelectionStrategy := snapshotCfg.DiskSelectionStrategy
-	if diskSelectionStrategy == "" {
-		// default to smallest disk for control plane
-		diskSelectionStrategy = db.DiskSelectionStrategySmallest
+
+	// default to smallest disk for control plane
+	nicoDiskSelectionStrategy := db.DiskSelectionStrategySmallest
+	if cluster.ProviderType == db.ProviderTypeNico &&
+		snapshotCfg.Nico != nil &&
+		snapshotCfg.Nico.DiskSelectionStrategy != "" {
+		nicoDiskSelectionStrategy = snapshotCfg.Nico.DiskSelectionStrategy
 	}
+
 	nodeSet := db.NodeSet{
-		ID:                         uuid.Nil,
-		NodePoolID:                 uuid.Nil,
-		OSProfile:                  snapshotCfg.OSProfile,
-		DiskSelectionStrategy:      diskSelectionStrategy,
-		ConfigProfile:              snapshotCfg.ConfigProfile,
-		SystemReservedMemory:       snapshotCfg.SystemReservedMemory,
-		KubeReservedMemory:         snapshotCfg.KubeReservedMemory,
-		SubnetIDs:                  append([]uuid.UUID(nil), snapshotCfg.SubnetIDs...),
-		VpcPrefixIDs:               append([]uuid.UUID(nil), snapshotCfg.VpcPrefixIDs...),
-		KubernetesVersion:          snapshotCfg.KubernetesVersion,
-		TeleportEnabled:            snapshotCfg.TeleportEnabled,
-		CapiInfraMachineTemplate:   template,
-		CapiBootstrapFiles:         append([]db.CloudInitFile(nil), snapshotCfg.CapiBootstrapFiles...),
-		CapiPreKubeadmCommands:     append([]string(nil), snapshotCfg.CapiPreKubeadmCommands...),
-		CapiSpireAttestationMethod: snapshotCfg.CapiSpireAttestationMethod,
+		ID:                   uuid.Nil,
+		NodePoolID:           uuid.Nil,
+		SystemReservedMemory: snapshotCfg.SystemReservedMemory,
+		KubeReservedMemory:   snapshotCfg.KubeReservedMemory,
+		KubernetesVersion:    snapshotCfg.KubernetesVersion,
+		TeleportEnabled:      snapshotCfg.TeleportEnabled,
+	}
+
+	// Populate provider payloads from the snapshot, mirroring the nodePool population below,
+	// so downstream strict-getter reads on this synthetic NodeSet succeed.
+	if snapshotCfg.Nico != nil {
+		nodeSet.SetNico(db.NicoNodePoolProvider{
+			SubnetIDs:             append([]uuid.UUID(nil), snapshotCfg.Nico.SubnetIDs...),
+			VpcPrefixIDs:          append([]uuid.UUID(nil), snapshotCfg.Nico.VpcPrefixIDs...),
+			OSProfile:             snapshotCfg.Nico.OSProfile,
+			ConfigProfile:         snapshotCfg.Nico.ConfigProfile,
+			DiskSelectionStrategy: nicoDiskSelectionStrategy,
+		})
+	}
+	if snapshotCfg.Capi != nil {
+		nodeSet.SetCapi(db.CAPINodePoolProvider{
+			InfraMachineTemplate:   template,
+			SpireAttestationMethod: snapshotCfg.Capi.SpireAttestationMethod,
+			BootstrapFiles:         append([]db.CloudInitFile(nil), snapshotCfg.Capi.BootstrapFiles...),
+			PreKubeadmCommands:     append([]string(nil), snapshotCfg.Capi.PreKubeadmCommands...),
+		})
 	}
 
 	nodePool := db.NodePool{
@@ -118,7 +133,7 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 			SSHKeyGroupIDs:        append([]uuid.UUID(nil), snapshotCfg.Nico.SSHKeyGroupIDs...),
 			OSProfile:             snapshotCfg.Nico.OSProfile,
 			ConfigProfile:         snapshotCfg.Nico.ConfigProfile,
-			DiskSelectionStrategy: snapshotCfg.Nico.DiskSelectionStrategy,
+			DiskSelectionStrategy: nicoDiskSelectionStrategy,
 		})
 	}
 	if snapshotCfg.Capi != nil {

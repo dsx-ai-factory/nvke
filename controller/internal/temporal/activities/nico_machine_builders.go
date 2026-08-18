@@ -138,13 +138,17 @@ func resolveTemplateLessForgeNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool
 	if err != nil {
 		return templateLessForgeCAPINodeConfig{}, err
 	}
-	if err := validateResolvedTemplateLessForgeNodeContext(nodeSet, nicoNodePoolProvider); err != nil {
+	nicoNodeSetProvider, err := nodeSet.NicoProvider()
+	if err != nil {
+		return templateLessForgeCAPINodeConfig{}, err
+	}
+	if err := validateResolvedTemplateLessForgeNodeContext(nodeSet, nicoNodeSetProvider, nicoNodePoolProvider); err != nil {
 		return templateLessForgeCAPINodeConfig{}, err
 	}
 
 	provisioningConfig := templateLessForgeCAPINodeConfig{
-		osProfile:                nodeSet.OSProfile,
-		diskSelectionStrategy:    nodeSet.DiskSelectionStrategy,
+		osProfile:                nicoNodeSetProvider.OSProfile,
+		diskSelectionStrategy:    nicoNodeSetProvider.DiskSelectionStrategy,
 		kubernetesVersion:        nodeSet.KubernetesVersion,
 		teleportEnabled:          nodeSet.TeleportEnabled,
 		instanceTypeID:           nicoNodePoolProvider.InstanceTypeID,
@@ -170,10 +174,10 @@ func resolveTemplateLessForgeNodeConfig(nodeSet db.NodeSet, nodePool db.NodePool
 	return provisioningConfig, nil
 }
 
-func validateResolvedTemplateLessForgeNodeContext(nodeSet db.NodeSet, nicoProvider db.NicoNodePoolProvider) error {
+func validateResolvedTemplateLessForgeNodeContext(nodeSet db.NodeSet, nicoNodeSetProvider, nicoProvider db.NicoNodePoolProvider) error {
 	missingFields := make([]string, 0, 4)
 
-	if nodeSet.OSProfile == "" {
+	if nicoNodeSetProvider.OSProfile == "" {
 		missingFields = append(missingFields, "nodeSet.osProfile")
 	}
 	if nodeSet.KubernetesVersion == "" {

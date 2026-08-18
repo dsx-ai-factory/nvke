@@ -37,7 +37,8 @@ type provisioningFallback interface {
 // NicoMachine spec. Template-backed nodes render from their pinned
 // InfraMachineTemplate and have no rotation fallback, so nil is returned.
 func (a *Activities) provisioningFallbackFor(nodeSet db.NodeSet) provisioningFallback {
-	if capi.IsEmptyManifest(nodeSet.CapiInfraMachineTemplate) {
+	capiNodeSetProvider, err := nodeSet.CAPIProvider()
+	if err != nil || capi.IsEmptyManifest(capiNodeSetProvider.InfraMachineTemplate) {
 		return &nextInstanceTypeFallback{a: a}
 	}
 	return nil

@@ -93,13 +93,17 @@ func (a *Activities) labelNode(ctx context.Context, input LabelNodeInput) (Label
 
 	// If AddConfigProfileLabels is true, add labels from config profile
 	if input.AddConfigProfileLabels {
-		configProfile, missing, err := getConfigProfile(a.cfg.ProfilesDir, nodeSet.ConfigProfile)
+		configProfileName := ""
+		if nicoNodeSetProvider, err := nodeSet.NicoProvider(); err == nil {
+			configProfileName = nicoNodeSetProvider.ConfigProfile
+		}
+		configProfile, missing, err := getConfigProfile(a.cfg.ProfilesDir, configProfileName)
 		if err != nil {
 			return LabelNodeResult{}, fmt.Errorf("failed to get config profile: %w", err)
 		}
 		if missing {
 			logger.Warn("config profile file not found, treating as empty (profile retired)",
-				"configProfile", nodeSet.ConfigProfile)
+				"configProfile", configProfileName)
 		}
 		labels = append(labels, configProfile.Labels...)
 	}

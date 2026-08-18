@@ -133,9 +133,15 @@ func (a *NodeScheduler) scheduleForgeControlPlaneNodes(
 				"nodeID", node.ID, "clusterID", cluster.ID, "error", err)
 			continue
 		}
+		nicoNodeSetProvider, err := nodeSet.NicoProvider()
+		if err != nil {
+			logger.Error("Skipping control plane node with unresolved node set provider",
+				"nodeID", node.ID, "clusterID", cluster.ID, "error", err)
+			continue
+		}
 		targets = append(targets, nodePlacement{node: node, placement: ForgePlacementSpec{
-			SubnetIDs:    append([]uuid.UUID(nil), nodeSet.SubnetIDs...),
-			VpcPrefixIDs: append([]uuid.UUID(nil), nodeSet.VpcPrefixIDs...),
+			SubnetIDs:    append([]uuid.UUID(nil), nicoNodeSetProvider.SubnetIDs...),
+			VpcPrefixIDs: append([]uuid.UUID(nil), nicoNodeSetProvider.VpcPrefixIDs...),
 		}})
 	}
 

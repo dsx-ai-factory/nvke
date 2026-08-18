@@ -87,12 +87,13 @@ func TestResolveNodeInfraMode(t *testing.T) {
 	nodeSetID := uuid.New()
 
 	t.Run("capi node set when machine template is present", func(t *testing.T) {
+		nodeSet := db.NodeSet{ID: nodeSetID}
+		nodeSet.SetCapi(db.CAPINodePoolProvider{
+			InfraMachineTemplate: json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeMachineTemplate"}`),
+		})
 		mode, err := ResolveNodeInfraMode(
 			capiCluster(clusterID, json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeCluster"}`)),
-			&db.NodeSet{
-				ID:                       nodeSetID,
-				CapiInfraMachineTemplate: json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeMachineTemplate"}`),
-			},
+			&nodeSet,
 			false,
 		)
 		require.NoError(t, err)
@@ -139,12 +140,11 @@ func TestResolveNodeInfraMode(t *testing.T) {
 	})
 
 	t.Run("errors when capi-backed cluster omits machine template", func(t *testing.T) {
+		nodeSet := db.NodeSet{ID: nodeSetID}
+		nodeSet.SetCapi(db.CAPINodePoolProvider{InfraMachineTemplate: json.RawMessage(`{}`)})
 		_, err := ResolveNodeInfraMode(
 			capiCluster(clusterID, json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeCluster"}`)),
-			&db.NodeSet{
-				ID:                       nodeSetID,
-				CapiInfraMachineTemplate: json.RawMessage(`{}`),
-			},
+			&nodeSet,
 			false,
 		)
 		require.Error(t, err)
@@ -180,12 +180,13 @@ func TestResolveNodeInfraMode(t *testing.T) {
 				},
 			},
 		}
+		nodeSet := db.NodeSet{ID: uuid.Nil}
+		nodeSet.SetCapi(db.CAPINodePoolProvider{
+			InfraMachineTemplate: json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeMachineTemplate"}`),
+		})
 		mode, err := ResolveNodeInfraMode(
 			cluster,
-			&db.NodeSet{
-				ID:                       uuid.Nil,
-				CapiInfraMachineTemplate: json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeMachineTemplate"}`),
-			},
+			&nodeSet,
 			false,
 		)
 		require.NoError(t, err)

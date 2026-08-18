@@ -224,6 +224,12 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 		wantErrorContains []string
 	}
 
+	nicoNodeSet := func(subnetIDs, vpcPrefixIDs []uuid.UUID) db.NodeSet {
+		var nodeSet db.NodeSet
+		nodeSet.SetNico(db.NicoNodePoolProvider{SubnetIDs: subnetIDs, VpcPrefixIDs: vpcPrefixIDs})
+		return nodeSet
+	}
+
 	tests := map[string]parameters{
 		"rotates vpc prefix to next candidate": {
 			nicoMachine: testNicoMachineForRotation(nicoMachineRotationParameters{
@@ -234,9 +240,7 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 				ObservedGeneration: 1,
 				Message:            vpcPrefixExhaustionMessage,
 			}),
-			nodeSet: db.NodeSet{
-				VpcPrefixIDs: []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID},
-			},
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
 			wantVpcPrefixID: secondVpcPrefixID.String(),
 		},
 		"rotates subnet to next candidate": {
@@ -248,9 +252,7 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 				ObservedGeneration: 1,
 				Message:            subnetExhaustionMessage,
 			}),
-			nodeSet: db.NodeSet{
-				SubnetIDs: []uuid.UUID{firstSubnetID, secondSubnetID},
-			},
+			nodeSet:      nicoNodeSet([]uuid.UUID{firstSubnetID, secondSubnetID}, nil),
 			wantSubnetID: secondSubnetID.String(),
 		},
 		"ignores vpc prefix when no vpc prefix candidates are configured": {
@@ -262,6 +264,7 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 				ObservedGeneration: 1,
 				Message:            vpcPrefixExhaustionMessage,
 			}),
+			nodeSet:         nicoNodeSet(nil, nil),
 			wantVpcPrefixID: firstVpcPrefixID.String(),
 		},
 		"ignores subnet when no subnet candidates are configured": {
@@ -273,6 +276,7 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 				ObservedGeneration: 1,
 				Message:            subnetExhaustionMessage,
 			}),
+			nodeSet:      nicoNodeSet(nil, nil),
 			wantSubnetID: firstSubnetID.String(),
 		},
 		"errors when vpc prefix is not configured candidate": {
@@ -284,9 +288,7 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 				ObservedGeneration: 1,
 				Message:            vpcPrefixExhaustionMessage,
 			}),
-			nodeSet: db.NodeSet{
-				VpcPrefixIDs: []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID},
-			},
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
 			wantVpcPrefixID: missingVpcPrefixID.String(),
 			wantErrorContains: []string{
 				"current NicoMachine VPC prefix",
@@ -302,9 +304,7 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 				ObservedGeneration: 1,
 				Message:            subnetExhaustionMessage,
 			}),
-			nodeSet: db.NodeSet{
-				SubnetIDs: []uuid.UUID{firstSubnetID, secondSubnetID},
-			},
+			nodeSet:      nicoNodeSet([]uuid.UUID{firstSubnetID, secondSubnetID}, nil),
 			wantSubnetID: secondSubnetID.String(),
 			wantErrorContains: []string{
 				"all 2 subnets are exhausted",
@@ -319,9 +319,7 @@ func TestActivities_RotateNicoMachineNetworkCandidate(t *testing.T) {
 				ObservedGeneration: 1,
 				Message:            vpcPrefixExhaustionMessage,
 			}),
-			nodeSet: db.NodeSet{
-				VpcPrefixIDs: []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID},
-			},
+			nodeSet:         nicoNodeSet(nil, []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID}),
 			wantVpcPrefixID: secondVpcPrefixID.String(),
 			wantErrorContains: []string{
 				"all 2 VPC prefixes are exhausted",

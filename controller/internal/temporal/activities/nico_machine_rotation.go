@@ -71,20 +71,25 @@ func (a *Activities) rotateNicoMachineNetworkCandidate(ctx context.Context, node
 		return nil
 	}
 
+	nicoNodeSetProvider, err := nodeSet.NicoProvider()
+	if err != nil {
+		return err
+	}
+
 	currentInterface := nicoMachine.Spec.Interfaces[0]
 	// Template-backed CAPI owns its network config inside the infra template; CWE only
 	// rotates candidates when the template-less Forge-CAPI path supplied them.
 	if currentInterface.VPCPrefixID != "" {
-		if len(nodeSet.VpcPrefixIDs) == 0 {
+		if len(nicoNodeSetProvider.VpcPrefixIDs) == 0 {
 			return nil
 		}
-		return a.rotateNicoMachineVpcPrefix(ctx, nicoMachine, nodeSet.VpcPrefixIDs)
+		return a.rotateNicoMachineVpcPrefix(ctx, nicoMachine, nicoNodeSetProvider.VpcPrefixIDs)
 	}
 	if currentInterface.SubnetID != "" {
-		if len(nodeSet.SubnetIDs) == 0 {
+		if len(nicoNodeSetProvider.SubnetIDs) == 0 {
 			return nil
 		}
-		return a.rotateNicoMachineSubnet(ctx, nicoMachine, nodeSet.SubnetIDs)
+		return a.rotateNicoMachineSubnet(ctx, nicoMachine, nicoNodeSetProvider.SubnetIDs)
 	}
 
 	return nil

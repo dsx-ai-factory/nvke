@@ -92,7 +92,8 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 		namespace: namespace,
 	}
 
-	if capi.IsEmptyManifest(nodeSet.CapiInfraMachineTemplate) {
+	capiNodeSetProvider, err := nodeSet.CAPIProvider()
+	if err != nil || capi.IsEmptyManifest(capiNodeSetProvider.InfraMachineTemplate) {
 		if !a.cfg.EnableForgeCapi {
 			return fmt.Errorf("capiInfraMachineTemplate is empty for node set %s", nodeSet.ID)
 		}
@@ -104,7 +105,11 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 }
 
 func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context, createCtx *capiMachineCreateContext) error {
-	templateObj, err := capi.ParseManifest(createCtx.nodeSet.CapiInfraMachineTemplate)
+	capiNodeSetProvider, err := createCtx.nodeSet.CAPIProvider()
+	if err != nil {
+		return fmt.Errorf("failed to read node set capi provider: %w", err)
+	}
+	templateObj, err := capi.ParseManifest(capiNodeSetProvider.InfraMachineTemplate)
 	if err != nil {
 		return fmt.Errorf("failed to parse capiInfraMachineTemplate: %w", err)
 	}
@@ -172,7 +177,11 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 }
 
 func (a *Activities) createCAPISpireJoinToken(ctx context.Context, createCtx *capiMachineCreateContext) (string, string, error) {
-	if createCtx.nodeSet.CapiSpireAttestationMethod != db.SpireAttestationMethodJoinToken {
+	capiNodeSetProvider, err := createCtx.nodeSet.CAPIProvider()
+	if err != nil {
+		return "", "", fmt.Errorf("failed to read node set capi provider: %w", err)
+	}
+	if capiNodeSetProvider.SpireAttestationMethod != db.SpireAttestationMethodJoinToken {
 		return "", "", nil
 	}
 

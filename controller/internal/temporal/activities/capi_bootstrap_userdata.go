@@ -78,7 +78,12 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	nodeSet db.NodeSet,
 	spireJoinToken string,
 ) (string, error) {
-	if nodeSet.CapiSpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
+	capiNodeSetProvider, err := nodeSet.CAPIProvider()
+	if err != nil {
+		return "", fmt.Errorf("failed to read node set capi provider: %w", err)
+	}
+
+	if capiNodeSetProvider.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
 		return "", fmt.Errorf("spire join token is required when capiSpireAttestationMethod is joinToken")
 	}
 
@@ -87,8 +92,8 @@ func (a *Activities) renderCAPIBootstrapUserData(
 		return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
 	}
 
-	files := make([]capiCloudInitFile, 0, len(nodeSet.CapiBootstrapFiles)+2)
-	for _, file := range nodeSet.CapiBootstrapFiles {
+	files := make([]capiCloudInitFile, 0, len(capiNodeSetProvider.BootstrapFiles)+2)
+	for _, file := range capiNodeSetProvider.BootstrapFiles {
 		files = append(files, capiCloudInitFile{
 			Path:        file.Path,
 			Owner:       file.Owner,
@@ -108,7 +113,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			Owner:       rootRoot,
 			Permissions: "0644",
 			Content: buildCAPISpireAgentConfig(
-				nodeSet.CapiSpireAttestationMethod,
+				capiNodeSetProvider.SpireAttestationMethod,
 				a.cfg.SpireServerAddress,
 				a.cfg.SpireServerPort,
 				trustDomain,
@@ -119,7 +124,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 
 	userData := capiCloudInitConfig{
 		WriteFiles: files,
-		RunCmd:     append([]string(nil), nodeSet.CapiPreKubeadmCommands...),
+		RunCmd:     append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
 	}
 
 	yamlBytes, err := yaml.Marshal(userData)

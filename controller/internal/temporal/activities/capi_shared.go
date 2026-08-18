@@ -24,7 +24,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/nodes"
 )
 
-func (a *Activities) isDockerMachineBackedNode(ctx context.Context, _ db.Cluster, node db.Node) (bool, error) {
+func (a *Activities) isDockerMachineBackedNode(ctx context.Context, cluster db.Cluster, node db.Node) (bool, error) {
 	// LOCAL-DEV ONLY: the local nico-mock flow provisions nodes as bare Docker
 	// containers with no real cloud-init, so force them through the
 	// DockerMachine bootstrap/preflight (bootstrap-success sentinel) +
@@ -33,6 +33,10 @@ func (a *Activities) isDockerMachineBackedNode(ctx context.Context, _ db.Cluster
 	// is unchanged.
 	if a.cfg.LocalDevForceDockerMachineBootstrap {
 		return true, nil
+	}
+
+	if cluster.ProviderType != db.ProviderTypeCAPI {
+		return false, nil
 	}
 
 	// GetNodeContext resolves the effective template for both node shapes we can
@@ -44,11 +48,16 @@ func (a *Activities) isDockerMachineBackedNode(ctx context.Context, _ db.Cluster
 		return false, fmt.Errorf("failed to resolve node context: %w", err)
 	}
 
-	if capi.IsEmptyManifest(nodeSet.CapiInfraMachineTemplate) {
+	capiNodeSetProvider, err := nodeSet.CAPIProvider()
+	if err != nil {
 		return false, nil
 	}
 
-	isDockerMachineTemplate, err := capi.IsDockerMachineTemplate(nodeSet.CapiInfraMachineTemplate)
+	if capi.IsEmptyManifest(capiNodeSetProvider.InfraMachineTemplate) {
+		return false, nil
+	}
+
+	isDockerMachineTemplate, err := capi.IsDockerMachineTemplate(capiNodeSetProvider.InfraMachineTemplate)
 	if err != nil {
 		return false, fmt.Errorf("failed to inspect CAPI infra machine template: %w", err)
 	}

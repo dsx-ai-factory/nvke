@@ -38,13 +38,15 @@ func TestRenderCAPIBootstrapUserData_TPMAttestor(t *testing.T) {
 		},
 	}
 
-	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), db.NodeSet{
-		CapiSpireAttestationMethod: db.SpireAttestationMethodTPM,
-		CapiBootstrapFiles: []db.CloudInitFile{
+	var nodeSet db.NodeSet
+	nodeSet.SetCapi(db.CAPINodePoolProvider{
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		BootstrapFiles: []db.CloudInitFile{
 			{Path: "/etc/custom.conf", Owner: rootRoot, Permissions: "0600", Content: "hello"},
 		},
-		CapiPreKubeadmCommands: []string{"echo before kubeadm"},
-	}, "")
+		PreKubeadmCommands: []string{"echo before kubeadm"},
+	})
+	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
 	require.NoError(t, err)
 
 	assert.Contains(t, userData, "#cloud-config\n")
@@ -74,9 +76,9 @@ func TestRenderCAPIBootstrapUserData_JoinTokenAttestor(t *testing.T) {
 		},
 	}
 
-	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), db.NodeSet{
-		CapiSpireAttestationMethod: db.SpireAttestationMethodJoinToken,
-	}, "join-token-123")
+	var nodeSet db.NodeSet
+	nodeSet.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: db.SpireAttestationMethodJoinToken})
+	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "join-token-123")
 	require.NoError(t, err)
 
 	assert.Contains(t, userData, `join_token = "join-token-123"`)
@@ -87,8 +89,8 @@ func TestRenderCAPIBootstrapUserData_JoinTokenAttestor(t *testing.T) {
 func TestRenderCAPIBootstrapUserData_JoinTokenRequiresToken(t *testing.T) {
 	activities := &Activities{cfg: config.Config{}}
 
-	_, err := activities.renderCAPIBootstrapUserData(context.Background(), db.NodeSet{
-		CapiSpireAttestationMethod: db.SpireAttestationMethodJoinToken,
-	}, "")
+	var nodeSet db.NodeSet
+	nodeSet.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: db.SpireAttestationMethodJoinToken})
+	_, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
 	require.EqualError(t, err, "spire join token is required when capiSpireAttestationMethod is joinToken")
 }

@@ -71,13 +71,6 @@ func ResolveClusterInfraMode(cluster db.Cluster, enableForgeCapi bool) (InfraMod
 }
 
 func ResolveNodeInfraMode(cluster db.Cluster, nodeSet *db.NodeSet, enableForgeCapi bool) (InfraMode, error) {
-	capiInfraMachineTemplate := []byte("{}")
-	templateSource := "resolved node context"
-	if nodeSet != nil {
-		capiInfraMachineTemplate = nodeSet.CapiInfraMachineTemplate
-		templateSource = fmt.Sprintf("node set %s", nodeSet.ID)
-	}
-
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
 		provider, err := cluster.CAPIProvider()
@@ -86,6 +79,17 @@ func ResolveNodeInfraMode(cluster db.Cluster, nodeSet *db.NodeSet, enableForgeCa
 		}
 		if capi.IsEmptyManifest(provider.InfraCluster) {
 			return "", fmt.Errorf("cluster %s must define capiInfraCluster when provider type is %q", cluster.ID, db.ProviderTypeCAPI)
+		}
+
+		capiInfraMachineTemplate := []byte("{}")
+		templateSource := "resolved node context"
+		if nodeSet != nil {
+			capiNodeSetProvider, err := nodeSet.CAPIProvider()
+			if err != nil {
+				return "", fmt.Errorf("failed to read node set capi provider: %w", err)
+			}
+			capiInfraMachineTemplate = capiNodeSetProvider.InfraMachineTemplate
+			templateSource = fmt.Sprintf("node set %s", nodeSet.ID)
 		}
 		if capi.IsEmptyManifest(capiInfraMachineTemplate) {
 			return "", fmt.Errorf("%s must define capiInfraMachineTemplate because cluster %s is CAPI-backed", templateSource, cluster.ID)
@@ -137,7 +141,14 @@ func (a *Activities) GetNodeProvisioningContext(ctx context.Context, nodeID uuid
 	if err != nil {
 		return NodeProvisioningContext{}, fmt.Errorf("failed to resolve node context: %w", err)
 	}
-	configProfile := nodeSet.ConfigProfile
+	configProfile := ""
+	if nodeSet.Nico != nil {
+		nicoNodeSetProvider, err := nodeSet.NicoProvider()
+		if err != nil {
+			return NodeProvisioningContext{}, fmt.Errorf("failed to read node set nico provider: %w", err)
+		}
+		configProfile = nicoNodeSetProvider.ConfigProfile
+	}
 
 	infraMode, err := ResolveNodeInfraMode(cluster, &nodeSet, a.cfg.EnableForgeCapi)
 	if err != nil {

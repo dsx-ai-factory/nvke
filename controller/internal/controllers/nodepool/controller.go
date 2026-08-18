@@ -92,6 +92,13 @@ func recordNodePoolConfigChange(ctx context.Context, tx db.Tx, prevNodeSet, curr
 		prevNodeSetID = &prevNodeSet.ID
 	}
 
+	// Best-effort reads for audit only: missing payloads yield zero values rather than
+	// failing NodeSet creation. Exactly one of Nico/CAPI is set per NodeSet in practice.
+	prevNicoNodeSetProvider, _ := prevNodeSet.NicoProvider()
+	currentNicoNodeSetProvider, _ := currentNodeSet.NicoProvider()
+	prevCapiNodeSetProvider, _ := prevNodeSet.CAPIProvider()
+	currentCapiNodeSetProvider, _ := currentNodeSet.CAPIProvider()
+
 	auditID := constants.RecordNodePoolConfigChangeWorkflowPrefix +
 		currentNodeSet.NodePoolID.String() + "-" + currentNodeSet.ID.String()
 	if _, err := tx.CreateWorkflowOutboxEntry(ctx, constants.RecordNodePoolConfigChangeWorkflowType, auditID, map[string]interface{}{
@@ -99,11 +106,11 @@ func recordNodePoolConfigChange(ctx context.Context, tx db.Tx, prevNodeSet, curr
 		"newNodeSetID":  currentNodeSet.ID,
 		"prevNodeSetID": prevNodeSetID,
 
-		"oldOSProfile": prevNodeSet.OSProfile,
-		"newOSProfile": currentNodeSet.OSProfile,
+		"oldOSProfile": prevNicoNodeSetProvider.OSProfile,
+		"newOSProfile": currentNicoNodeSetProvider.OSProfile,
 
-		"oldConfigProfile": prevNodeSet.ConfigProfile,
-		"newConfigProfile": currentNodeSet.ConfigProfile,
+		"oldConfigProfile": prevNicoNodeSetProvider.ConfigProfile,
+		"newConfigProfile": currentNicoNodeSetProvider.ConfigProfile,
 
 		"oldKubernetesVersion": prevNodeSet.KubernetesVersion,
 		"newKubernetesVersion": currentNodeSet.KubernetesVersion,
@@ -113,23 +120,23 @@ func recordNodePoolConfigChange(ctx context.Context, tx db.Tx, prevNodeSet, curr
 		"oldKubeReservedMemory":   prevNodeSet.KubeReservedMemory,
 		"newKubeReservedMemory":   currentNodeSet.KubeReservedMemory,
 
-		"oldDiskSelectionStrategy": prevNodeSet.DiskSelectionStrategy,
-		"newDiskSelectionStrategy": currentNodeSet.DiskSelectionStrategy,
+		"oldDiskSelectionStrategy": prevNicoNodeSetProvider.DiskSelectionStrategy,
+		"newDiskSelectionStrategy": currentNicoNodeSetProvider.DiskSelectionStrategy,
 
-		"oldCapiSpireAttestationMethod": prevNodeSet.CapiSpireAttestationMethod,
-		"newCapiSpireAttestationMethod": currentNodeSet.CapiSpireAttestationMethod,
+		"oldCapiSpireAttestationMethod": prevCapiNodeSetProvider.SpireAttestationMethod,
+		"newCapiSpireAttestationMethod": currentCapiNodeSetProvider.SpireAttestationMethod,
 
 		"oldTeleportEnabled": prevNodeSet.TeleportEnabled,
 		"newTeleportEnabled": currentNodeSet.TeleportEnabled,
 
-		"oldSubnetIDs": prevNodeSet.SubnetIDs,
-		"newSubnetIDs": currentNodeSet.SubnetIDs,
+		"oldSubnetIDs": prevNicoNodeSetProvider.SubnetIDs,
+		"newSubnetIDs": currentNicoNodeSetProvider.SubnetIDs,
 
-		"oldVpcPrefixIDs": prevNodeSet.VpcPrefixIDs,
-		"newVpcPrefixIDs": currentNodeSet.VpcPrefixIDs,
+		"oldVpcPrefixIDs": prevNicoNodeSetProvider.VpcPrefixIDs,
+		"newVpcPrefixIDs": currentNicoNodeSetProvider.VpcPrefixIDs,
 
-		"oldCapiPreKubeadmCommands": prevNodeSet.CapiPreKubeadmCommands,
-		"newCapiPreKubeadmCommands": currentNodeSet.CapiPreKubeadmCommands,
+		"oldCapiPreKubeadmCommands": prevCapiNodeSetProvider.PreKubeadmCommands,
+		"newCapiPreKubeadmCommands": currentCapiNodeSetProvider.PreKubeadmCommands,
 	}); err != nil {
 		return fmt.Errorf("failed to create config change audit entry: %w", err)
 	}

@@ -108,13 +108,14 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 		Nico:         &db.NicoNodeProvider{},
 	}
 	nodeSet := db.NodeSet{
-		ID:                         nodeSetID,
-		NodePoolID:                 nodePoolID,
-		OSProfile:                  "test-os",
-		DiskSelectionStrategy:      db.DiskSelectionStrategySmallest,
-		KubernetesVersion:          "1.32.1",
-		CapiSpireAttestationMethod: db.SpireAttestationMethodTPM,
+		ID:                nodeSetID,
+		NodePoolID:        nodePoolID,
+		KubernetesVersion: "1.32.1",
 	}
+	nodeSet.SetNico(db.NicoNodePoolProvider{
+		OSProfile:             "test-os",
+		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+	})
 	nodePool := db.NodePool{
 		ID:        nodePoolID,
 		ClusterID: clusterID,
@@ -186,10 +187,12 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
 				KubernetesVersion: "1.32.1",
-				VpcPrefixIDs:      []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID},
 			},
 		},
 	}
+	cluster.ControlPlaneConfig.ControlPlaneConfigSpec.SetNico(db.NicoControlPlaneProvider{
+		VpcPrefixIDs: []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID},
+	})
 
 	t.Run("persists existing machine IP without rotating stale NicoMachine exhaustion", func(t *testing.T) {
 		k8sClient := newCAPIMachineReadyClient(t,
