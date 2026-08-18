@@ -52,6 +52,10 @@ type FakeClient struct {
 	StartKubeVIPRestoreCalls                []uuid.UUID
 	StartKubeVIPRestoreIDs                  []string
 	ExecuteScriptNames                      []string
+	KubeadmUpgradeApplyCalls                []uuid.UUID
+	KubeadmUpgradeApplyRequests             []*nkeproto.KubeadmUpgradeApplyRequest
+	KubeadmUpgradeApplyResponse             *nkeproto.KubeadmUpgradeApplyResponse
+	KubeadmUpgradeApplyError                error
 
 	// ExecuteScriptHook, when set, produces the response for ExecuteScript calls,
 	// letting tests drive per-node script output (e.g. /readyz probes).
@@ -151,6 +155,12 @@ func (f *FakeClient) ReconfigureKubeletAPIServer(_ context.Context, node db.Node
 		return &nkeproto.ReconfigureKubeletAPIServerResponse{}, f.ReconfigureKubeletAPIServerErr
 	}
 	return f.ReconfigureKubeletAPIServerResponse, f.ReconfigureKubeletAPIServerErr
+}
+
+func (f *FakeClient) KubeadmUpgradeApply(_ context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error) {
+	f.KubeadmUpgradeApplyCalls = append(f.KubeadmUpgradeApplyCalls, node.ID)
+	f.KubeadmUpgradeApplyRequests = append(f.KubeadmUpgradeApplyRequests, req)
+	return f.KubeadmUpgradeApplyResponse, f.KubeadmUpgradeApplyError
 }
 
 func (f *FakeClient) ExecuteNodePreflight(_ context.Context, _ db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error) {

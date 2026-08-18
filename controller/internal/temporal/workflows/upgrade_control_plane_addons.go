@@ -20,23 +20,19 @@ type UpgradeControlPlaneAddonsInput struct {
 }
 
 type UpgradeControlPlaneAddonsResult struct {
-	// NodeID is the control plane node the runbook ran on.
+	// NodeID is the control plane node the kubeadm upgrade ran on.
 	NodeID uuid.UUID `json:"nodeID"`
-	// NodeName is the name of the control plane node the runbook ran on.
+	// NodeName is the name of the control plane node the kubeadm upgrade ran on.
 	NodeName string `json:"nodeName"`
-	// Output is the stdout from the runbook execution.
+	// Output is the stdout from kubeadm plan and apply.
 	Output string `json:"output"`
 }
 
-// UpgradeControlPlaneAddons runs the embedded upgrade-kubelet-kubeadm runbook on a
-// healthy control plane node via node-agent ExecuteScript to upgrade cluster add-ons
-// (kube-proxy, CoreDNS) to the target Kubernetes version, then re-applies NKE DNS
-// overlays via InstallKubeLocalDNS.
-//
-// It runs kubeadm in KUBEADM_UPGRADE_ONLY mode: only `kubeadm upgrade apply` is
-// executed (kubelet is upgraded separately via the OS profile). `kubeadm upgrade
-// apply` is idempotent for an already-applied version, so the activity is safe to
-// retry both within this workflow and across control-plane reconciles.
+// UpgradeControlPlaneAddons runs kubeadm upgrade apply through the node agent on
+// a healthy control-plane node to upgrade cluster add-ons (kube-proxy, CoreDNS)
+// to the target Kubernetes version, then re-applies NKE DNS overlays via
+// InstallKubeLocalDNS. The kubelet is upgraded separately through node
+// replacement, and kubeadm upgrade apply is safe to retry.
 func UpgradeControlPlaneAddons(ctx workflow.Context, input UpgradeControlPlaneAddonsInput) (UpgradeControlPlaneAddonsResult, error) {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Upgrading control plane add-ons",
@@ -55,18 +51,13 @@ func UpgradeControlPlaneAddons(ctx workflow.Context, input UpgradeControlPlaneAd
 		},
 	}
 
-	var result activities.ExecuteClusterRunbookResult
+	var result activities.KubeadmUpgradeApplyResult
 	if err := workflow.ExecuteActivity(
 		workflow.WithActivityOptions(ctx, activityOptions),
-		a.ExecuteClusterRunbook,
-		activities.ExecuteClusterRunbookInput{
-			ClusterID:   input.ClusterID,
-			RunbookName: "upgrade-kubelet-kubeadm",
-			RunbookEnv: map[string]string{
-				"VERSION":              input.KubernetesVersion,
-				"IS_MASTER":            runbookEnvTrue,
-				"KUBEADM_UPGRADE_ONLY": runbookEnvTrue,
-			},
+		a.KubeadmUpgradeApply,
+		activities.KubeadmUpgradeApplyInput{
+			ClusterID:         input.ClusterID,
+			KubernetesVersion: input.KubernetesVersion,
 		},
 	).Get(ctx, &result); err != nil {
 		return UpgradeControlPlaneAddonsResult{}, fmt.Errorf("failed to upgrade control plane add-ons: %w", err)

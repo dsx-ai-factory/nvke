@@ -34,6 +34,7 @@ type Client interface {
 	ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinRequest) (*nkeproto.KubeadmJoinStatusResponse, error)
 	ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nkeproto.KubeadmResetRequest) (*nkeproto.KubeadmResetStatusResponse, error)
 	ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nkeproto.ReconfigureKubeletAPIServerRequest) (*nkeproto.ReconfigureKubeletAPIServerResponse, error)
+	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error)
 	ExecuteNodePreflight(ctx context.Context, node db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error)
 	GetKubeadmJoinString(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
 	UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
@@ -284,6 +285,20 @@ func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node 
 	resp, err := nkeproto.NewNodeAgentClient(conn).ReconfigureKubeletAPIServer(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconfigure kubelet API server on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+func (c *NodeAgentClient) KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for kubeadm upgrade on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nkeproto.NewNodeAgentClient(conn).KubeadmUpgradeApply(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply kubeadm upgrade on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }
