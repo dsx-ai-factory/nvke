@@ -17,6 +17,7 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 : "${CAPD_KINDEST_NODE_TAG:=v1.34.8}"
 : "${CAPD_NODE_AGENT_LOCAL_BUILD:=auto}"
 : "${CAPD_SPIRE_ATTESTATION_METHOD:=tpm}"
+: "${CAPD_CNI_MANIFESTS_DEB_PATH:=}"
 : "${NODE_AGENT_REPO_PATH:=${repo_root}/../agent}"
 : "${BUNDLE_SERVER_URL:=https://d3mq564cn7sth7.cloudfront.net/}"
 : "${INDEX_FILE_URL:=${BUNDLE_SERVER_URL%/}/nke_bundles/Ubuntu_24.04/index.json}"
@@ -81,6 +82,18 @@ trap 'rm -rf "${build_context}"' EXIT
 cp "${script_dir}/Dockerfile" "${build_context}/Dockerfile"
 cp -R "${script_dir}/scripts" "${build_context}/scripts"
 cp -R "${script_dir}/systemd" "${build_context}/systemd"
+
+# A local CAPD run may inject a manifests deb built from public CNI sources.
+# Keep it optional so ordinary local image builds and published-agent builds
+# retain their existing inputs. The Dockerfile scans this always-present
+# scripts directory, which also keeps direct Dockerfile validation working.
+if [[ -n "${CAPD_CNI_MANIFESTS_DEB_PATH}" ]]; then
+  if [[ ! -f "${CAPD_CNI_MANIFESTS_DEB_PATH}" ]]; then
+    echo "CAPD_CNI_MANIFESTS_DEB_PATH does not exist: ${CAPD_CNI_MANIFESTS_DEB_PATH}" >&2
+    exit 1
+  fi
+  cp "${CAPD_CNI_MANIFESTS_DEB_PATH}" "${build_context}/scripts/cni-manifests.deb"
+fi
 
 should_build_local_node_agent() {
   case "${CAPD_NODE_AGENT_LOCAL_BUILD}" in

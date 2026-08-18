@@ -84,6 +84,20 @@ RUN set -eux; \
       xxd; \
     rm -rf /var/lib/apt/lists/*
 
+# Local CAPD E2E may supply a CNI manifests deb through build-image.sh. The
+# scripts directory is always present, so this remains a no-op for callers that
+# do not provide one while keeping Dockerfile-only validation buildable.
+COPY scripts /tmp/capd-node-scripts
+RUN set -eux; \
+    for deb in /tmp/capd-node-scripts/*.deb; do \
+      [ -f "${deb}" ] || continue; \
+      package="$(dpkg-deb --field "${deb}" Package)"; \
+      version="$(dpkg-deb --field "${deb}" Version)"; \
+      dpkg -i "${deb}"; \
+      test "$(dpkg-query --show --showformat='${Version}' "${package}")" = "${version}"; \
+    done; \
+    rm -rf /tmp/capd-node-scripts
+
 # Docker build has no systemd as PID 1; agent-installer.sh still lays out units and binaries
 # but may exit non-zero when enabling services. Enable/disable is done in a final RUN
 # with SYSTEMD_OFFLINE=1 (see below). The build helper resolves the selected

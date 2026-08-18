@@ -21,6 +21,7 @@ BGP_RESOURCE = "bgp-containers"
 def register(ctx):
     cwe_port = os.getenv("CWE_HTTP_PORT", "8080")
     vip_range = ctx.cfg.get("bgp_containers_vip_range", DEFAULT_VIP_RANGE)
+    container_name = ctx.cfg.get("bgp_containers_container_name", BGP_RESOURCE)
     cwe_resource_deps = []
     bgp_dir = os.path.join(ctx.main_dir, "hack", "bgp-containers")
 
@@ -29,7 +30,12 @@ def register(ctx):
     if ctx.cfg.get("bgp_containers_enabled", True):
         local_resource(
             BGP_RESOURCE,
-            cmd=["bash", os.path.join(bgp_dir, "up.sh")],
+            cmd=[
+                "env",
+                "CONTAINER_NAME=" + container_name,
+                "bash",
+                os.path.join(bgp_dir, "up.sh"),
+            ],
             deps=[
                 os.path.join(bgp_dir, "up.sh"),
                 os.path.join(bgp_dir, "down.sh"),

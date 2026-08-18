@@ -18,6 +18,22 @@
 # invalidate the layer cache on every local rebuild.
 bin/
 **/bin/
+release/
+**/release/
+agent/build/deb/
+agent/build/deb_amd64/
+agent/build/deb_arm64/
+
+# Local test state and reports. E2E diagnostics may contain short-lived
+# bootstrap credentials and must never enter an image layer or BuildKit cache.
+.local/
+**/.local/
+*.kubeconfig
+**/*.kubeconfig
+coverage.txt
+**/coverage.txt
+cobertura.xml
+**/cobertura.xml
 
 # Editor and OS files.
 .idea/

@@ -184,6 +184,7 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 		shape: clusterShape{
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneVIP:   capdControlPlaneVIP,
 		},
 		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{scale: true, reboot: true, postReadyChecks: true},
@@ -465,6 +466,7 @@ const (
 	defaultKubernetesVersion = "1.34.2"
 	CNIPluginCalico          = "calico"
 	CNIPluginOVN             = "ovn-kubernetes"
+	capdControlPlaneVIP      = "172.31.1.1"
 
 	forgeMultiPodCIDR        = "10.250.0.0/23,10.252.0.0/22"
 	forgeMultiPodServiceCIDR = "10.130.0.0/16"
@@ -479,10 +481,27 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpe
 		CNIPlugin:         defaultString(shape.cniPlugin, CNIPluginCalico),
 		CAPDNodeImage:     cfg.Cluster.CAPDNodeImage,
 		ControlPlane: nke.ControlPlane{
-			Pools:         capdNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp"),
-			EtcdEncrypted: shape.etcdEncrypted,
+			Pools:           capdNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp"),
+			EtcdEncrypted:   shape.etcdEncrypted,
+			ControlPlaneVIP: shape.controlPlaneVIP,
 		},
 		Workers: capdNodePoolSpecs(shape.workerPools, "worker", "w"),
+	}
+}
+
+func TestUnit_CAPDSpecControlPlaneVIP(t *testing.T) {
+	tests := map[string]string{
+		"explicit VIP": capdControlPlaneVIP,
+		"empty VIP":    "",
+	}
+
+	for name, wantVIP := range tests {
+		t.Run(name, func(t *testing.T) {
+			spec := capdSpec(config.Config{}, "capd-test", clusterShape{controlPlaneVIP: wantVIP})
+			if spec.ControlPlane.ControlPlaneVIP != wantVIP {
+				t.Fatalf("ControlPlaneVIP = %q, want %q", spec.ControlPlane.ControlPlaneVIP, wantVIP)
+			}
+		})
 	}
 }
 
