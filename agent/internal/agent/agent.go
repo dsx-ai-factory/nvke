@@ -270,7 +270,8 @@ func (s *NodeAgentServer) setIndexURL(indexFileURL string) error {
 	}
 
 	if s.BundleServerURL == "" {
-		return fmt.Errorf("bundle server URL is required to derive the default index path")
+		// Bundle source is optional (apt repos are preferred). Leave the index unset.
+		return nil
 	}
 
 	rel, err := nkeutils.GetBundleIndexPath()
@@ -300,14 +301,21 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 		_ = f.Close()
 	}
 
-	// Parse the bundle source URL to determine if it's OCI or HTTP
-	bundleSource, err := nkeutils.ParseBundleSourceURI(bundleServerURL)
-	if err != nil {
-		slog.Error("failed to parse bundle source URL", "url", bundleServerURL, "err", err)
-		panic(fmt.Sprintf("failed to parse bundle source URL: %v", err))
+	// Bundle source is optional. Prefer apt repos; keep HTTP/OCI bundle install when configured.
+	var bundleSource *nkeutils.BundleSource
+	parsedBundleURL := ""
+	if strings.TrimSpace(bundleServerURL) == "" {
+		slog.Warn("bundle-server-url not set; InstallBundle and InstallCollection(.json) are unavailable until configured — prefer apt repos via ConfigureAptRepo/InstallPackages")
+	} else {
+		var parseErr error
+		bundleSource, parseErr = nkeutils.ParseBundleSourceURI(bundleServerURL)
+		if parseErr != nil {
+			slog.Warn("failed to parse bundle source URL; continuing without bundle support", "url", bundleServerURL, "err", parseErr)
+		} else {
+			parsedBundleURL = bundleSource.URL
+			slog.Info("parsed bundle source", "type", bundleSource.Type.String(), "url", bundleSource.URL, "originalURI", bundleSource.OriginalURI)
+		}
 	}
-
-	slog.Info("parsed bundle source", "type", bundleSource.Type.String(), "url", bundleSource.URL, "originalURI", bundleSource.OriginalURI)
 
 	clientRegistry := k8s.NewClientRegistry(KubeConfig)
 	server := &NodeAgentServer{
@@ -315,7 +323,7 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 		FileWriter:       &nkeutils.OSFileWriter{},
 		Persister:        &JSONFilePersister{Path: StateFile},
 		BundleSource:     bundleSource,
-		BundleServerURL:  bundleSource.URL,
+		BundleServerURL:  parsedBundleURL,
 		CniImageRegistry: cniImageRegistry,
 		kubeadmFileOps:   newDefaultFileOps(),
 		clientRegistry:   clientRegistry,
@@ -328,11 +336,8 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 	}
 
 	slog.Info("calling setIndexURL with argument", "INDEX_FILE_URL", indexFileURL)
-	err = server.setIndexURL(indexFileURL)
-	if err != nil {
-		slog.Error("failed to set index url for bundle server", "ERR", err.Error())
-		slog.Error("won't start agent without valid index")
-		panic(fmt.Sprintf("failed to set index url: %v", err))
+	if err := server.setIndexURL(indexFileURL); err != nil {
+		slog.Warn("failed to set index url for bundle server; continuing without bundle index", "err", err)
 	}
 
 	state, err := server.Persister.LoadFromStateFile()
@@ -1714,6 +1719,9 @@ func (s *NodeAgentServer) InstallBundle(
 	req *pb.InstallBundleRequest,
 ) (*pb.InstallBundleResponse, error) {
 	defer logRPCSpan(ctx, "InstallBundle")()
+	if s.BundleIndexFile == "" {
+		return nil, status.Errorf(codes.FailedPrecondition, "bundle index not configured: set --bundle-server-url or --index-file-url (prefer apt repos via ConfigureAptRepo/InstallPackages)")
+	}
 	if len(req.InstallArgs) == 0 {
 		return nil, fmt.Errorf("InstallArgs cannot be empty")
 	}
@@ -1836,13 +1844,18 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 		return nil, status.Errorf(codes.InvalidArgument, "collectionURL is required")
 	}
 
+	isJSONCollection := strings.HasSuffix(strings.ToLower(req.CollectionURL), ".json")
+	if isJSONCollection && s.BundleIndexFile == "" {
+		return nil, status.Errorf(codes.FailedPrecondition, "bundle index not configured: set --bundle-server-url or --index-file-url (prefer apt repos via ConfigureAptRepo/InstallPackages)")
+	}
+
 	requestID := generateRequestID()
 	slog.InfoContext(ctx, "Installing collection", "collection_url", req.GetCollectionURL(), "request_id", requestID)
 	defer s.PersistNodeStatus()
 
 	// Route by file suffix: .json -> bundles, .txt -> apt packages
 	switch {
-	case strings.HasSuffix(strings.ToLower(req.CollectionURL), ".json"):
+	case isJSONCollection:
 		profile := nkeutils.Profile{}
 		if err := nkeutils.FetchJSON(ctx, req.CollectionURL, &profile); err != nil {
 			slog.Error("failed to fetch collection", "url", req.CollectionURL, "err", err)

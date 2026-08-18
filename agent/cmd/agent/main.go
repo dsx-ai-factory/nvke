@@ -248,7 +248,7 @@ func main() {
 	bundleServerURL := flag.String(
 		"bundle-server-url",
 		envOr("NKE_BUNDLE_SERVER_URL", ""),
-		"Bundle source URL (required). Supports http://, https://, file://, or oci://. Also set via NKE_BUNDLE_SERVER_URL. Example: https://artifacts.example.com/ or oci://registry.example.com/nke/bundles",
+		"Optional bundle source URL for InstallBundle/InstallCollection(.json). Supports http://, https://, file://, or oci://. Also set via NKE_BUNDLE_SERVER_URL. Prefer apt repos when unset. Example: https://artifacts.example.com/ or oci://registry.example.com/nke/bundles",
 	)
 	indexFileURL := flag.String(
 		"index-file-url",
@@ -265,10 +265,6 @@ func main() {
 	if *versionFlag {
 		fmt.Printf("NKE Agent Version: %s\n", VERSION)
 		os.Exit(0)
-	}
-
-	if strings.TrimSpace(*bundleServerURL) == "" {
-		log.Fatal("bundle-server-url is required (flag --bundle-server-url or env NKE_BUNDLE_SERVER_URL); see config.env.example")
 	}
 
 	auditFile, err := os.OpenFile(*auditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

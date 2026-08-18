@@ -41,7 +41,7 @@ Important flags (also settable via env; see `AGENT_ARGS`):
 
 | Flag | Notes |
 |------|--------|
-| `--bundle-server-url` | **Required.** Bundle source (`https://`, `http://`, `file://`, or `oci://`). Also `NKE_BUNDLE_SERVER_URL`. |
+| `--bundle-server-url` | Optional. Bundle source for InstallBundle (`https://`, `http://`, `file://`, or `oci://`). Also `NKE_BUNDLE_SERVER_URL`. Prefer apt when unset. |
 | `--index-file-url` | Optional absolute index URL (`NKE_BUNDLE_INDEX_URL`); otherwise derived from the bundle server + OS |
 | `--cni-image-registry` | Optional OCI prefix for CNI helm `global.registry` (`NKE_CNI_IMAGE_REGISTRY`) |
 | `--disable-mtls` | Plaintext gRPC (**development only**) |
@@ -52,14 +52,19 @@ Important flags (also settable via env; see `AGENT_ARGS`):
 Example:
 
 ```bash
+# Apt-first (no bundle server required)
+AGENT_ARGS="--disable-mtls"
+
+# Optional: enable legacy HTTP/OCI bundle installs
 AGENT_ARGS="--bundle-server-url https://artifacts.example.com/ --disable-mtls"
 # OCI bundles:
 # AGENT_ARGS="--bundle-server-url oci://registry.example.com/nke/bundles --disable-mtls"
 ```
 
-There is no built-in artifact host; consumers must point the agent at their own
-S3/HTTP or OCI layout. Index entries use paths relative to the bundle server URL
-(for example `nke_bundles/Ubuntu_24.04/kubeadm_v1.30.0.tgz`).
+There is no built-in artifact host. When using bundles, consumers must point the
+agent at their own S3/HTTP or OCI layout. Index entries use paths relative to
+the bundle server URL (for example
+`nke_bundles/Ubuntu_24.04/kubeadm_v1.30.0.tgz`).
 
 gRPC reflection is enabled on the same port (useful with `grpcurl`).
 

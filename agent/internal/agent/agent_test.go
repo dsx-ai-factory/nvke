@@ -1384,3 +1384,52 @@ func TestUpdateNKERBACPreconditions(t *testing.T) {
 		require.ErrorContains(t, err, "update NKE RBAC: initializing Kubernetes client")
 	})
 }
+
+func TestSetIndexURLOptionalBundleServer(t *testing.T) {
+	t.Run("empty bundle server and empty index leaves index unset", func(t *testing.T) {
+		server := &NodeAgentServer{}
+		err := server.setIndexURL("")
+		assert.NoError(t, err)
+		assert.Empty(t, server.BundleIndexFile)
+	})
+
+	t.Run("explicit index url is kept without bundle server", func(t *testing.T) {
+		server := &NodeAgentServer{}
+		err := server.setIndexURL("https://example.com/custom_index.json")
+		assert.NoError(t, err)
+		assert.Equal(t, "https://example.com/custom_index.json", server.BundleIndexFile)
+	})
+}
+
+func TestInstallBundleRequiresIndex(t *testing.T) {
+	server := &NodeAgentServer{
+		NodeStatus: &NodeStatus{Architecture: "amd64"},
+	}
+
+	resp, err := server.InstallBundle(context.Background(), &pb.InstallBundleRequest{
+		Name:        "kubeadm",
+		Version:     "1.30.0",
+		InstallArgs: []string{"./install.sh"},
+	})
+
+	assert.Nil(t, resp)
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.Contains(t, err.Error(), "bundle index not configured")
+}
+
+func TestInstallCollectionJSONRequiresIndex(t *testing.T) {
+	server := &NodeAgentServer{
+		NodeStatus: &NodeStatus{Architecture: "amd64"},
+	}
+
+	resp, err := server.InstallCollection(context.Background(), &pb.InstallCollectionRequest{
+		CollectionURL: "https://example.com/collection.json",
+	})
+
+	assert.Nil(t, resp)
+	require.Error(t, err)
+	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	assert.Contains(t, err.Error(), "bundle index not configured")
+}
+

@@ -153,8 +153,10 @@ Entry point: `cmd/agent/main.go`.
    (`/var/log/nke-execute-scripts.log`).
 3. **`RunNodeStartup`** → `NewNodeAgentServer`:
    - Ensure `/var/lib/nke` and `state.json` exist (never truncate existing state).
-   - Parse the bundle source URI (HTTP/S3/`file://`/`oci://`).
-   - Resolve the bundle index file (Ubuntu 22 vs 24) unless overridden.
+   - Optionally parse the bundle source URI (HTTP/S3/`file://`/`oci://`). When
+     unset or invalid, log a warning and continue — apt is preferred.
+   - Resolve the bundle index file (Ubuntu 22 vs 24) when a bundle source is set,
+     unless overridden by `--index-file-url`.
    - Load persisted `NodeStatus` from `state.json`; normalize legacy values
      (`UpdateState`); if the node already completed init/join, re-assert
      `registerNode: false` in the kubelet config (zombie-node prevention).
