@@ -17,6 +17,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -31,7 +32,10 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	scheme := runtime.NewScheme()
 	require.NoError(t, appsv1.AddToScheme(scheme))
 	require.NoError(t, corev1.AddToScheme(scheme))
-	tenantClient := fake.NewClientBuilder().WithScheme(scheme).Build()
+	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		newCoreDNSDeployment(),
+		newKubeDNSService(),
+	).Build()
 	provider := &fakeTenantClientProvider{tenantClient: tenantClient}
 	a := &Activities{db: database, tenantClientProvider: provider}
 
@@ -57,7 +61,9 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		Namespace: metav1.NamespaceSystem,
 		Name:      "node-local-dns",
 	}, &configMap))
-	require.Contains(t, configMap.Data["Corefile"], "bind 169.254.20.10 10.96.0.10")
+	require.Contains(t, configMap.Data["Corefile"], "health :8080")
+	require.NotContains(t, configMap.Data["Corefile"], "bind ")
+	require.NotContains(t, configMap.Data["Corefile"], "169.254.20.10")
 
 	var daemonSet appsv1.DaemonSet
 	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
@@ -65,6 +71,16 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		Name:      "node-local-dns",
 	}, &daemonSet))
 	require.Contains(t, daemonSet.Spec.Template.Spec.Containers[0].Image, "registry.k8s.io/dns/k8s-dns-node-cache:")
+	require.Equal(t, dnsRoleClusterDNS, daemonSet.Spec.Template.Labels[dnsRoleLabelKey])
+	require.False(t, daemonSet.Spec.Template.Spec.HostNetwork)
+	require.Equal(t, []string{
+		"-localip", "0.0.0.0",
+		"-conf", "/etc/Corefile",
+		"-upstreamsvc", "kube-dns-upstream",
+		"-setupinterface=false",
+		"-setupiptables=false",
+	}, daemonSet.Spec.Template.Spec.Containers[0].Args)
+	require.Empty(t, daemonSet.Spec.Template.Spec.Containers[0].LivenessProbe.HTTPGet.Host)
 
 	var metricsService corev1.Service
 	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
@@ -73,8 +89,64 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	}, &metricsService))
 	require.Equal(t, corev1.ClusterIPNone, metricsService.Spec.ClusterIP)
 
+	var kubeDNSMetrics corev1.Service
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      "kube-dns-metrics",
+	}, &kubeDNSMetrics))
+	require.Equal(t, map[string]string{"k8s-app": "kube-dns"}, kubeDNSMetrics.Spec.Selector)
+	require.Equal(t, "9153", kubeDNSMetrics.Annotations[prometheusPortAnnotation])
+
+	var coreDNS appsv1.Deployment
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      coreDNSName,
+	}, &coreDNS))
+	require.Equal(t, dnsRoleClusterDNS, coreDNS.Spec.Template.Labels[dnsRoleLabelKey])
+
+	var kubeDNS corev1.Service
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      kubeDNSServiceName,
+	}, &kubeDNS))
+	require.Equal(t, map[string]string{dnsRoleLabelKey: dnsRoleClusterDNS}, kubeDNS.Spec.Selector)
+	require.Equal(t, preferLocalAnnotationVal, kubeDNS.Annotations[preferLocalAnnotationKey])
+	require.NotContains(t, kubeDNS.Annotations, prometheusPortAnnotation)
+	require.NotContains(t, kubeDNS.Annotations, prometheusScrapeAnnot)
+	for _, port := range kubeDNS.Spec.Ports {
+		require.NotEqual(t, metricsPortName, port.Name)
+	}
+
 	require.Equal(t, 2, provider.calls)
 	require.Equal(t, cluster, provider.cluster)
+	database.AssertExpectations(t)
+}
+
+func TestInstallKubeLocalDNSLabelsCoreDNSDaemonSet(t *testing.T) {
+	cluster := db.Cluster{ID: uuid.New(), Name: "cluster-a"}
+	database := &testutil.MockDB{}
+	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		newCoreDNSDaemonSet(),
+		newKubeDNSService(),
+	).Build()
+	a := &Activities{
+		db:                   database,
+		tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient},
+	}
+
+	require.NoError(t, executeInstallKubeLocalDNSActivity(t, a, InstallKubeLocalDNSInput{ClusterID: cluster.ID}))
+
+	var coreDNS appsv1.DaemonSet
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      coreDNSName,
+	}, &coreDNS))
+	require.Equal(t, dnsRoleClusterDNS, coreDNS.Spec.Template.Labels[dnsRoleLabelKey])
 	database.AssertExpectations(t)
 }
 
@@ -104,4 +176,59 @@ func executeInstallKubeLocalDNSActivity(t *testing.T, a *Activities, input Insta
 
 	_, err := env.ExecuteActivity(a.InstallKubeLocalDNS, input)
 	return err
+}
+
+func newCoreDNSDeployment() *appsv1.Deployment {
+	return &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      coreDNSName,
+			Namespace: metav1.NamespaceSystem,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"k8s-app": "kube-dns"},
+				},
+			},
+		},
+	}
+}
+
+func newCoreDNSDaemonSet() *appsv1.DaemonSet {
+	return &appsv1.DaemonSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      coreDNSName,
+			Namespace: metav1.NamespaceSystem,
+		},
+		Spec: appsv1.DaemonSetSpec{
+			Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"k8s-app": "kube-dns"}},
+			Template: corev1.PodTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"k8s-app": "kube-dns"},
+				},
+			},
+		},
+	}
+}
+
+func newKubeDNSService() *corev1.Service {
+	return &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      kubeDNSServiceName,
+			Namespace: metav1.NamespaceSystem,
+			Annotations: map[string]string{
+				prometheusPortAnnotation: "9153",
+				prometheusScrapeAnnot:    "true",
+			},
+		},
+		Spec: corev1.ServiceSpec{
+			Selector: map[string]string{"k8s-app": "kube-dns"},
+			Ports: []corev1.ServicePort{
+				{Name: "dns", Port: 53, Protocol: corev1.ProtocolUDP, TargetPort: intstr.FromInt(53)},
+				{Name: "dns-tcp", Port: 53, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(53)},
+				{Name: metricsPortName, Port: 9153, Protocol: corev1.ProtocolTCP, TargetPort: intstr.FromInt(9153)},
+			},
+		},
+	}
 }

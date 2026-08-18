@@ -29,8 +29,9 @@ type UpgradeControlPlaneAddonsResult struct {
 }
 
 // UpgradeControlPlaneAddons runs the embedded upgrade-kubelet-kubeadm runbook on a
-// healthy control plane node vian agent ExecuteScript to upgrade cluster add-ons
-// (kube-proxy, CoreDNS) to the target Kubernetes version.
+// healthy control plane node via node-agent ExecuteScript to upgrade cluster add-ons
+// (kube-proxy, CoreDNS) to the target Kubernetes version, then re-applies NKE DNS
+// overlays via InstallKubeLocalDNS.
 //
 // It runs kubeadm in KUBEADM_UPGRADE_ONLY mode: only `kubeadm upgrade apply` is
 // executed (kubelet is upgraded separately via the OS profile). `kubeadm upgrade
@@ -76,6 +77,26 @@ func UpgradeControlPlaneAddons(ctx workflow.Context, input UpgradeControlPlaneAd
 		"kubernetesVersion", input.KubernetesVersion,
 		"nodeID", result.NodeID,
 		"nodeName", result.NodeName)
+
+	// kubeadm upgrade apply can rewrite CoreDNS / kube-dns; re-apply NKE DNS
+	// overlays (node-local-dns, prefer-local annotations, dns-role labels).
+	dnsActivityOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 30 * time.Second,
+			MaximumInterval: 2 * time.Minute,
+			MaximumAttempts: 3,
+		},
+	}
+	if err := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, dnsActivityOptions),
+		a.InstallKubeLocalDNS,
+		activities.InstallKubeLocalDNSInput{
+			ClusterID: input.ClusterID,
+		},
+	).Get(ctx, nil); err != nil {
+		return UpgradeControlPlaneAddonsResult{}, fmt.Errorf("failed to reconcile kube-local DNS after addon upgrade: %w", err)
+	}
 
 	return UpgradeControlPlaneAddonsResult{
 		NodeID:   result.NodeID,
