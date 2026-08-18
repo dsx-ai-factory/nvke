@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Masterminds/semver/v3"
 	"github.com/stretchr/testify/assert"
@@ -58,6 +59,52 @@ type MockRunner struct {
 	Err      error
 	Runners  []runner
 	RunCalls int
+}
+
+type concurrentScriptRunner struct {
+	started chan struct{}
+	release <-chan struct{}
+
+	mu    sync.Mutex
+	paths []string
+}
+
+func (r *concurrentScriptRunner) Run(
+	name string,
+	args []string,
+	opts *nkeutils.CommandOptions,
+) ([]byte, error) {
+	r.mu.Lock()
+	r.paths = append(r.paths, name)
+	r.mu.Unlock()
+
+	r.started <- struct{}{}
+	<-r.release
+
+	return (&nkeutils.ExecRunner{}).Run(name, args, opts)
+}
+
+func (r *concurrentScriptRunner) RunSplitOutput(
+	name string,
+	args []string,
+	opts *nkeutils.CommandOptions,
+) (nkeutils.CommandOutput, error) {
+	output, err := r.Run(name, args, opts)
+	return nkeutils.CommandOutput{Stdout: output}, err
+}
+
+func (r *concurrentScriptRunner) RunDetached(
+	string,
+	[]string,
+	*nkeutils.CommandOptions,
+) error {
+	return errors.New("detached execution is not supported")
+}
+
+func (r *concurrentScriptRunner) Paths() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.paths...)
 }
 
 type (
@@ -794,6 +841,182 @@ func (m *mockStreamServer) SendHeader(metadata.MD) error { return nil }
 func (m *mockStreamServer) SetTrailer(metadata.MD)       {}
 func (m *mockStreamServer) SendMsg(interface{}) error    { return nil }
 func (m *mockStreamServer) RecvMsg(interface{}) error    { return nil }
+
+func TestScriptResolution(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(*testing.T)
+	}{
+		{
+			name: "isolates concurrent inline script contents",
+			run: func(t *testing.T) {
+				tmpDir := t.TempDir()
+				started := make(chan struct{}, 2)
+				release := make(chan struct{})
+				released := false
+				defer func() {
+					if !released {
+						close(release)
+					}
+				}()
+
+				runner := &concurrentScriptRunner{
+					started: started,
+					release: release,
+				}
+				server := &NodeAgentServer{
+					Runner:     runner,
+					Persister:  &MockPersister{},
+					NodeStatus: &NodeStatus{},
+				}
+
+				type executionResult struct {
+					want     string
+					response *pb.ExecuteScriptResponse
+					err      error
+				}
+				results := make(chan executionResult, 2)
+				for _, nodeName := range []string{"node-a", "node-b"} {
+					nodeName := nodeName
+					go func() {
+						response, err := server.ExecuteScript(context.Background(), &pb.ExecuteScriptRequest{
+							ScriptName: "configure-node",
+							ScriptPath: tmpDir,
+							ScriptContents: fmt.Sprintf(
+								"#!/bin/sh\nNODE_NAME=%s\nprintf '%%s\\n' \"$NODE_NAME\"\n",
+								nodeName,
+							),
+						})
+						results <- executionResult{want: nodeName, response: response, err: err}
+					}()
+				}
+
+				for range 2 {
+					select {
+					case <-started:
+					case <-time.After(5 * time.Second):
+						t.Fatal("timed out waiting for concurrent scripts to start")
+					}
+				}
+				close(release)
+				released = true
+
+				for range 2 {
+					result := <-results
+					require.NoError(t, result.err)
+					require.NotNil(t, result.response)
+					assert.Equal(t, result.want+"\n", result.response.GetOutput())
+					assert.Equal(t, SuccessStatus, result.response.GetStatus())
+				}
+
+				paths := runner.Paths()
+				require.Len(t, paths, 2)
+				assert.NotEqual(t, paths[0], paths[1])
+				for _, path := range paths {
+					assert.NoFileExists(t, path)
+				}
+
+				require.Len(t, server.NodeStatus.Scripts, 2)
+				for _, script := range server.NodeStatus.Scripts {
+					assert.Equal(t, "configure-node", script.Name)
+				}
+			},
+		},
+		{
+			name: "preserves named on-host script path",
+			run: func(t *testing.T) {
+				tmpDir := t.TempDir()
+				scriptPath := filepath.Join(tmpDir, "existing-script")
+				require.NoError(t, os.WriteFile(scriptPath, []byte("#!/bin/sh\n"), 0o755))
+
+				resolvedPath, cleanup, err := resolveScript(&pb.ExecuteScriptRequest{
+					ScriptName: filepath.Base(scriptPath),
+					ScriptPath: tmpDir,
+				}, "request-id")
+				require.NoError(t, err)
+				assert.Equal(t, scriptPath, resolvedPath)
+
+				cleanup()
+				assert.FileExists(t, scriptPath)
+			},
+		},
+		{
+			name: "records inline script resolution failure in history",
+			run: func(t *testing.T) {
+				scriptDir := filepath.Join(t.TempDir(), "not-a-directory")
+				require.NoError(t, os.WriteFile(scriptDir, []byte("contents"), 0o600))
+
+				runner := &MockRunner{}
+				server := &NodeAgentServer{
+					Runner:     runner,
+					Persister:  &MockPersister{},
+					NodeStatus: &NodeStatus{},
+				}
+				response, err := server.ExecuteScript(context.Background(), &pb.ExecuteScriptRequest{
+					ScriptName:     "inline-script",
+					ScriptPath:     scriptDir,
+					ScriptContents: "#!/bin/sh\n",
+				})
+				require.NoError(t, err)
+				require.NotNil(t, response)
+				assert.Equal(t, ErrorStatus, response.GetStatus())
+				assert.Contains(t, response.GetErrorMessage(), "failed to create script directory")
+				assert.Zero(t, runner.RunCalls)
+
+				require.Len(t, server.NodeStatus.Scripts, 1)
+				assert.Equal(t, "inline-script", server.NodeStatus.Scripts[0].Name)
+				assert.Equal(t, "Error", server.NodeStatus.Scripts[0].Status)
+				assert.Equal(t, response.GetErrorMessage(), server.NodeStatus.Scripts[0].Error)
+			},
+		},
+		{
+			name: "streams inline contents and removes temporary script",
+			run: func(t *testing.T) {
+				tmpDir := t.TempDir()
+				server := &NodeAgentServer{}
+				stream := &mockStreamServer{ctxFunc: context.Background}
+				err := server.StreamExecuteScript(&pb.ExecuteScriptRequest{
+					ScriptName:     "stream-inline",
+					ScriptPath:     tmpDir,
+					ScriptContents: "#!/bin/sh\nprintf 'streamed\\n'\n",
+				}, stream)
+				require.NoError(t, err)
+
+				var output string
+				for _, chunk := range stream.chunks {
+					output += chunk.GetOutput()
+				}
+				assert.Contains(t, output, "streamed")
+
+				entries, err := os.ReadDir(tmpDir)
+				require.NoError(t, err)
+				assert.Empty(t, entries)
+			},
+		},
+		{
+			name: "returns internal status for streaming resolution failure",
+			run: func(t *testing.T) {
+				scriptDir := filepath.Join(t.TempDir(), "not-a-directory")
+				require.NoError(t, os.WriteFile(scriptDir, []byte("contents"), 0o600))
+
+				server := &NodeAgentServer{}
+				stream := &mockStreamServer{ctxFunc: context.Background}
+				err := server.StreamExecuteScript(&pb.ExecuteScriptRequest{
+					ScriptName:     "inline-script",
+					ScriptPath:     scriptDir,
+					ScriptContents: "#!/bin/sh\n",
+				}, stream)
+				require.Error(t, err)
+				assert.Equal(t, codes.Internal, status.Code(err))
+				assert.Contains(t, err.Error(), "failed to resolve script")
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, test.run)
+	}
+}
 
 // TestStreamExecuteScript_ExitCodeRace verifies that StreamExecuteScript
 // returns the correct non-zero exit code. The bug: cmd.Wait() is called

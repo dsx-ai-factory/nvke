@@ -1340,31 +1340,26 @@ func (s *NodeAgentServer) executeScript(
 		ExecutedAt: time.Now().Format(time.RFC3339),
 	}
 
-	// Just incase the directory doesn't exist since this is a newer feature...
-	_ = os.MkdirAll(UserScriptsDir, 0o755)
-	if req.ScriptContents != "" {
-		if err := os.WriteFile("/usr/local/nke/user-scripts/"+req.ScriptName, []byte(req.ScriptContents), 0o755); err != nil {
-			errMsg := fmt.Sprintf("failed to write script: %s", err)
+	scriptPath, cleanup, err := resolveScript(req, requestID)
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to write script: %s", err)
 
-			script.Status = "Error"
-			script.Error = errMsg
-			script.Output = errMsg
+		script.Status = "Error"
+		script.Error = errMsg
+		script.Output = errMsg
+		s.addScript(script)
 
-			response.ExitCode = int32(1)
-			response.Output = ""
-			response.Status = ErrorStatus
-			response.ErrorMessage = errMsg
+		response.ExitCode = int32(1)
+		response.Output = ""
+		response.Status = ErrorStatus
+		response.ErrorMessage = errMsg
 
-			s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, 1, errMsg, "")
-			return response, nil
-		}
+		s.logScriptExecution("ExecuteScript", requestID, req, ErrorStatus, 1, errMsg, "")
+		return response, nil
 	}
-	scriptPath := "/usr/local/nke/user-scripts/"
-	if req.ScriptPath != "" {
-		scriptPath = req.ScriptPath
-	}
+	defer cleanup()
 
-	output, err := s.Runner.Run(scriptPath+req.ScriptName, req.Args, &nkeutils.CommandOptions{})
+	output, err := s.Runner.Run(scriptPath, req.Args, &nkeutils.CommandOptions{})
 	exitCode := 0
 	if err != nil {
 		if exitError, ok := err.(*exec.ExitError); ok {
@@ -1543,10 +1538,16 @@ func (s *NodeAgentServer) StreamExecuteScript(
 	requestID := generateRequestID()
 	s.logScriptExecution("StreamExecuteScript_start", requestID, req, "start", 0, "", "")
 
-	scriptPath, err := resolveScript(req)
+	scriptPath, cleanup, err := resolveScript(req, requestID)
 	if err != nil {
-		return err
+		slog.ErrorContext(stream.Context(), "failed to resolve script",
+			"requestID", requestID,
+			"scriptName", req.ScriptName,
+			"err", err,
+		)
+		return status.Errorf(codes.Internal, "failed to resolve script: %v", err)
 	}
+	defer cleanup()
 
 	// Run the command, streaming output to the gRPC stream as it arrives.
 	cmdErr := streamCommand(stream, scriptPath, req.Args...)
@@ -1559,24 +1560,51 @@ func (s *NodeAgentServer) StreamExecuteScript(
 	})
 }
 
-// resolveScript returns the path to the script to execute, writing it
-// to disk first if ScriptContents is provided.
-func resolveScript(req *pb.ExecuteScriptRequest) (string, error) {
+// resolveScript returns the path to the script to execute. Inline script
+// contents are written to a unique temporary path so concurrent requests with
+// the same logical script name cannot overwrite each other.
+func resolveScript(req *pb.ExecuteScriptRequest, requestID string) (string, func(), error) {
 	baseDir := UserScriptsDir
 	if req.ScriptPath != "" {
 		baseDir = req.ScriptPath
 	}
-	scriptPath := filepath.Join(baseDir, req.ScriptName)
 
-	if req.ScriptContents != "" {
-		if err := os.MkdirAll(UserScriptsDir, 0o755); err != nil {
-			return "", fmt.Errorf("failed to create script directory: %w", err)
-		}
-		if err := os.WriteFile(scriptPath, []byte(req.ScriptContents), 0o755); err != nil {
-			return "", fmt.Errorf("failed to write script: %w", err)
+	if req.ScriptContents == "" {
+		return filepath.Join(baseDir, req.ScriptName), func() {}, nil
+	}
+
+	if err := os.MkdirAll(baseDir, 0o755); err != nil {
+		return "", nil, fmt.Errorf("failed to create script directory: %w", err)
+	}
+
+	pattern := fmt.Sprintf(".%s-%s-*", filepath.Base(req.ScriptName), requestID)
+	scriptFile, err := os.CreateTemp(baseDir, pattern)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temporary script: %w", err)
+	}
+	scriptPath := scriptFile.Name()
+	cleanup := func() {
+		if err := os.Remove(scriptPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			slog.Warn("failed to remove temporary script", "path", scriptPath, "err", err)
 		}
 	}
-	return scriptPath, nil
+
+	if err := scriptFile.Chmod(0o755); err != nil {
+		_ = scriptFile.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("failed to make temporary script executable: %w", err)
+	}
+	if _, err := scriptFile.WriteString(req.ScriptContents); err != nil {
+		_ = scriptFile.Close()
+		cleanup()
+		return "", nil, fmt.Errorf("failed to write temporary script: %w", err)
+	}
+	if err := scriptFile.Close(); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("failed to close temporary script: %w", err)
+	}
+
+	return scriptPath, cleanup, nil
 }
 
 // streamCommand starts a command and streams its stdout/stderr to the gRPC
