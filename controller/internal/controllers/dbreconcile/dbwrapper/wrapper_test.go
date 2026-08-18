@@ -18,6 +18,7 @@ import (
 	"k8s.io/utils/ptr"
 
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	dbsource "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/source"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
@@ -101,6 +102,49 @@ func TestUnit_DBEnqueuesNodeUpdateWhenSourceFiltersMatch(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, node, updated)
 	assert.Equal(t, dbreconcile.NodeKey(node.ID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+}
+
+func TestUnit_DBClusterForNodeSourceEnqueuesOwningClusterAfterUpdate(t *testing.T) {
+	node := db.Node{ID: uuid.New(), ClusterID: uuid.New()}
+	filters := db.NodeFilters{ControlPlane: ptr.To(true), Joined: ptr.To(true)}
+	liveFilters := filters
+	liveFilters.ID = &node.ID
+	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+	database.On("ListNodes", mock.Anything, filters).Return([]db.Node{}, nil).Once()
+	database.On("ListNodes", mock.Anything, liveFilters).Return([]db.Node{node}, nil).Once()
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	database.MockTx.On("UpdateNode", mock.Anything, &node).Return(node, nil)
+	wrapper := New(database, slog.Default())
+	source := wrapper.ClusterForNodeSource(filters)
+	queue := startSource(t, source)
+
+	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+		_, err := tx.UpdateNode(ctx, &node)
+		return err
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, dbreconcile.ClusterKey(node.ClusterID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+	database.MockTx.AssertExpectations(t)
+}
+
+func TestUnit_DBClusterSourceEnqueuesClusterAfterUpdate(t *testing.T) {
+	cluster := db.Cluster{ID: uuid.New()}
+	liveFilters := db.ClusterFilters{ID: &cluster.ID}
+	database := &testutil.MockDB{}
+	database.On("ListClusters", mock.Anything, db.ClusterFilters{}).Return([]db.Cluster{}, nil).Once()
+	database.On("ListClusters", mock.Anything, liveFilters).Return([]db.Cluster{cluster}, nil).Once()
+	database.On("UpdateCluster", mock.Anything, &cluster).Return(cluster, nil)
+	wrapper := New(database, slog.Default())
+	queue := startClusterSource(t, wrapper, db.ClusterFilters{}, 0)
+
+	updated, err := wrapper.UpdateCluster(context.Background(), &cluster)
+
+	require.NoError(t, err)
+	assert.Equal(t, cluster, updated)
+	assert.Equal(t, dbreconcile.ClusterKey(cluster.ID), getQueueItem(t, queue))
 	database.AssertExpectations(t)
 }
 
@@ -191,6 +235,9 @@ func TestUnit_DBDoesNotFailSuccessfulTxWhenPostCommitNodeEnqueueFails(t *testing
 	wrapper := New(database, slog.Default())
 	wrapper.nodeSources = append(wrapper.nodeSources, nodeSourceRegistration{
 		enqueuer: errorEnqueuer{err: wantErr},
+		keyFor: func(node db.Node) dbreconcile.Key {
+			return dbreconcile.NodeKey(node.ID)
+		},
 	})
 
 	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
@@ -453,6 +500,36 @@ func TestUnit_DBNodePoolSourceSeedsNodePools(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestUnit_DBClusterSourceResyncsClusters(t *testing.T) {
+	cluster := db.Cluster{ID: uuid.New()}
+	database := &testutil.MockDB{}
+	database.On("ListClusters", mock.Anything, db.ClusterFilters{}).Return([]db.Cluster{cluster}, nil).Twice()
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	events := make(chan dbreconcile.Key, 2)
+	source := clusterEventSource{
+		queries:        database,
+		resyncInterval: 10 * time.Millisecond,
+		logger:         slog.New(slog.DiscardHandler),
+	}
+
+	require.NoError(t, source.Start(ctx, func(_ context.Context, key dbreconcile.Key) error {
+		events <- key
+		return nil
+	}))
+
+	for range 2 {
+		select {
+		case key := <-events:
+			assert.Equal(t, dbreconcile.ClusterKey(cluster.ID), key)
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for cluster source resync")
+		}
+	}
+	cancel()
+	database.AssertExpectations(t)
+}
+
 func TestUnit_DBNodeSourceReturnsErrorWhenEnqueueContextCancels(t *testing.T) {
 	node := db.Node{ID: uuid.New()}
 	database := &testutil.MockDB{}
@@ -681,7 +758,23 @@ func TestUnit_DBNodeSetEnqueueAfterTransaction(t *testing.T) {
 func startNodeSource(t *testing.T, wrapper *DB, filters db.NodeFilters) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	source := wrapper.NodeSource(filters)
+	return startSource(t, wrapper.NodeSource(filters))
+}
+
+func startClusterSource(
+	t *testing.T,
+	wrapper *DB,
+	filters db.ClusterFilters,
+	resyncInterval time.Duration,
+) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
+	t.Helper()
+
+	return startSource(t, wrapper.ClusterSource(filters, resyncInterval))
+}
+
+func startSource(t *testing.T, source *dbsource.Source[dbreconcile.Key]) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
+	t.Helper()
+
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	require.NoError(t, source.Start(context.Background(), queue))

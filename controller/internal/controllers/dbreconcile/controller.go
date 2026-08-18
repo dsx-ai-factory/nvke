@@ -12,9 +12,19 @@ import (
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-func SetupController(mgr manager.Manager, name string, reconciler reconcile.TypedReconciler[Key], source crsource.TypedSource[Key]) error {
-	if source == nil {
+func SetupController(
+	mgr manager.Manager,
+	name string,
+	reconciler reconcile.TypedReconciler[Key],
+	sources ...crsource.TypedSource[Key],
+) error {
+	if len(sources) == 0 {
 		return fmt.Errorf("must specify Source for DB reconciler")
+	}
+	for _, source := range sources {
+		if source == nil {
+			return fmt.Errorf("must specify Source for DB reconciler")
+		}
 	}
 
 	ctrl, err := controller.NewTyped[Key](name, mgr, controller.TypedOptions[Key]{
@@ -24,5 +34,10 @@ func SetupController(mgr manager.Manager, name string, reconciler reconcile.Type
 		return err
 	}
 
-	return ctrl.Watch(source)
+	for _, source := range sources {
+		if err := ctrl.Watch(source); err != nil {
+			return err
+		}
+	}
+	return nil
 }

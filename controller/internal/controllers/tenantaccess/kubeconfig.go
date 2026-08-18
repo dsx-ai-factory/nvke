@@ -23,10 +23,8 @@ const (
 	// probeTimeout bounds a single control-plane node GetKubeconfig probe so one
 	// stalled node cannot hold up this reconcile or the other nodes' probes.
 	//
-	// The controller-manager hands every controller the long-lived loop context and
-	// runs them sequentially, one site at a time, so an unbounded probe against an
-	// unreachable agent stalls reconciliation for the whole fleet until the
-	// process exits.
+	// An unbounded probe against an unreachable agent would otherwise occupy a
+	// controller-runtime worker indefinitely.
 	probeTimeout = 10 * time.Second
 
 	// tenantRequestTimeout bounds every request the controller makes against a

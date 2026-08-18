@@ -88,6 +88,24 @@ func (m *MockDB) GetCluster(ctx context.Context, id uuid.UUID) (db.Cluster, erro
 	return v, args.Error(1)
 }
 
+func (m *MockDB) CreateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
+	args := m.Called(ctx, cluster)
+	v, ok := args.Get(0).(db.Cluster)
+	if !ok {
+		return db.Cluster{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockDB) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
+	args := m.Called(ctx, cluster)
+	v, ok := args.Get(0).(db.Cluster)
+	if !ok {
+		return db.Cluster{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockDB) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error {
 	args := m.Called(ctx, clusterID)
 	return args.Error(0)

@@ -158,6 +158,7 @@ type NodeFilters struct {
 	//   - false: not definitely true (includes 'False', 'Unknown', and missing/NULL)
 	Pending                 *bool
 	Provisioning            *bool
+	Joined                  *bool
 	Deleting                *bool
 	KubernetesReady         *bool
 	KubernetesUnschedulable *bool
@@ -246,6 +247,9 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 	}
 	if filters.Provisioning != nil {
 		query = whereNodeConditionStatus(query, "provisioning", *filters.Provisioning)
+	}
+	if filters.Joined != nil {
+		query = whereNodeConditionStatus(query, "joined", *filters.Joined)
 	}
 	if filters.Deleting != nil {
 		query = whereNodeConditionStatus(query, "deleting", *filters.Deleting)

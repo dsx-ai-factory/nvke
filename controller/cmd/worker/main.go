@@ -30,6 +30,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeset"
+	"github.com/NVIDIA/nke/controller/internal/controllers/tenantaccess"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/db/migrations"
 	"github.com/NVIDIA/nke/controller/internal/dbmetrics"
@@ -157,6 +158,7 @@ func main() {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)
 		os.Exit(1)
 	}
+	nodeAgentClient := agent.NewClient(cfg, trustDomain)
 
 	nodeSetController := nodeset.NewController(
 		cfg,
@@ -180,6 +182,19 @@ func main() {
 			os.Exit(1)
 		}
 	}
+	if cfg.TenantAccessEnabled {
+		tenantAccessController := tenantaccess.NewController(
+			cfg,
+			logger.With("logger", "tenant-access"),
+			dbInstance,
+			managementK8sClient,
+			nodeAgentClient,
+		)
+		if err := tenantAccessController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up tenant access controller", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	nodePoolController := nodepool.NewController(
 		cfg,
@@ -191,7 +206,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("controller-runtime manager configuration", "enableCapi", cfg.EnableCapi, "enableForgeCapi", cfg.EnableForgeCapi, "enableNodeProvisioningMonitor", enableNodeProvisioningMonitor)
+	logger.Info("controller-runtime manager configuration", "enableCapi", cfg.EnableCapi, "enableForgeCapi", cfg.EnableForgeCapi, "enableNodeProvisioningMonitor", enableNodeProvisioningMonitor, "enableTenantAccess", cfg.TenantAccessEnabled)
 	if cfg.EnableCapi {
 		machineSpireEntryController := capi.NewMachineSpireEntryController(
 			cfg,
@@ -264,7 +279,6 @@ func main() {
 
 	metricsServer := server.NewMetricsServer(cfg)
 
-	nodeAgentClient := agent.NewClient(cfg, trustDomain)
 	tenantClientProvider := kube.NewDBClusterTenantClientProvider(
 		dbInstance,
 		managementK8sClient,

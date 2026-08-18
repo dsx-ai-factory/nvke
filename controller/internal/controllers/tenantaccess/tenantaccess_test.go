@@ -24,9 +24,12 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/agent/agenttest"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
@@ -155,34 +158,23 @@ func TestExtractServerAndCAFromKubeconfig_Missing(t *testing.T) {
 
 func TestController_Reconcile(t *testing.T) {
 	ctx := context.Background()
-	siteID := uuid.New()
-
-	activeID := uuid.New()
-	deletingID := uuid.New()
-	notReadyID := uuid.New()
-
+	activeCluster := db.Cluster{ID: uuid.New(), Name: "active"}
+	deletingCluster := db.Cluster{ID: uuid.New(), Name: "deleting"}
+	deletingCluster.Conditions.Deleting = db.Condition{Status: db.ConditionStatusTrue}
+	notReadyCluster := db.Cluster{ID: uuid.New(), Name: "not-ready"}
 	activeNodeID := uuid.New()
 
-	activeCluster := db.Cluster{ID: activeID, SiteID: siteID, Name: "active"}
-	deletingCluster := db.Cluster{ID: deletingID, SiteID: siteID, Name: "deleting"}
-	deletingCluster.Conditions.Deleting = db.Condition{Status: db.ConditionStatusTrue}
-	notReadyCluster := db.Cluster{ID: notReadyID, SiteID: siteID, Name: "not-ready"}
-
 	mockDB := &testutil.MockDB{}
-	// upsertSecret re-reads the row immediately before writing; by default the
-	// re-read echoes back a live cluster.
-	mockDB.On("GetCluster", mock.Anything, mock.Anything).Return(func(_ context.Context, id uuid.UUID) db.Cluster {
-		return db.Cluster{ID: id}
-	}, nil).Maybe()
-	mockDB.On("ListClusters", mock.Anything, mock.MatchedBy(func(f db.ClusterFilters) bool {
-		return f.SiteID != nil && *f.SiteID == siteID
-	})).Return([]db.Cluster{activeCluster, deletingCluster, notReadyCluster}, nil)
+	// Active is read once by Reconcile and once immediately before publication.
+	mockDB.On("GetCluster", mock.Anything, activeCluster.ID).Return(activeCluster, nil).Twice()
+	mockDB.On("GetCluster", mock.Anything, deletingCluster.ID).Return(deletingCluster, nil).Once()
+	mockDB.On("GetCluster", mock.Anything, notReadyCluster.ID).Return(notReadyCluster, nil).Once()
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == activeID
-	})).Return([]db.Node{joinedCPNode(activeNodeID, activeID)}, nil)
+		return f.ClusterID != nil && *f.ClusterID == activeCluster.ID
+	})).Return([]db.Node{joinedCPNode(activeNodeID, activeCluster.ID)}, nil)
 	// not-ready cluster has no joined control-plane node.
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == notReadyID
+		return f.ClusterID != nil && *f.ClusterID == notReadyCluster.ID
 	})).Return([]db.Node{}, nil)
 
 	nodeAgentClient := &agenttest.FakeClient{
@@ -191,23 +183,35 @@ func TestController_Reconcile(t *testing.T) {
 		},
 	}
 
-	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
+	kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Name: KubeconfigSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+	}}
+	trustBundleSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Name: TrustBundleSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+	}}
+	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(kubeconfigSecret, trustBundleSecret).Build()
 
 	cfg := config.Config{TenantAccessEnabled: true}
-	c := NewController(cfg, slog.Default(), mockDB, k8sClient, nodeAgentClient)
+	c := newTestController(cfg, mockDB, k8sClient, nodeAgentClient)
 
-	require.NoError(t, c.Reconcile(ctx, db.Site{ID: siteID}))
+	_, err := c.Reconcile(ctx, dbreconcile.ClusterKey(activeCluster.ID))
+	require.NoError(t, err)
+	_, err = c.Reconcile(ctx, dbreconcile.ClusterKey(deletingCluster.ID))
+	require.NoError(t, err)
+	_, err = c.Reconcile(ctx, dbreconcile.ClusterKey(notReadyCluster.ID))
+	require.NoError(t, err)
 
 	// The non-OIDC cluster publishes the admin kubeconfig verbatim.
 	assertSecret(t, ctx, k8sClient, activeCluster, true)
 	// Deleting and not-ready clusters publish nothing.
 	assertSecret(t, ctx, k8sClient, deletingCluster, false)
 	assertSecret(t, ctx, k8sClient, notReadyCluster, false)
+	assertSecretAbsent(t, ctx, k8sClient, TrustBundleSecretName(deletingCluster.Name))
 
 	mockDB.AssertExpectations(t)
 	// Deleting cluster is skipped before any node lookup.
 	mockDB.AssertNotCalled(t, "ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.ClusterID != nil && *f.ClusterID == deletingID
+		return f.ClusterID != nil && *f.ClusterID == deletingCluster.ID
 	}))
 }
 
@@ -297,7 +301,7 @@ func TestFetchAdminKubeconfig(t *testing.T) {
 			mockDB.On("ListNodes", mock.Anything, mock.Anything).Return(tc.nodes, nil)
 
 			nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: tc.kubeconfig, KubeconfigErrors: tc.errors}
-			c := NewController(config.Config{TenantAccessEnabled: true}, slog.Default(), mockDB, nil, nodeAgentClient)
+			c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, nil, nodeAgentClient)
 
 			got, ready, err := c.fetchAdminKubeconfig(context.Background(), cluster)
 			if tc.wantErr != "" {
@@ -324,7 +328,7 @@ func TestFetchAdminKubeconfigBoundsEachProbe(t *testing.T) {
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(nodeID, clusterID)}, nil)
 
 	nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: map[uuid.UUID]string{nodeID: testKubeconfig}}
-	c := NewController(config.Config{TenantAccessEnabled: true}, slog.Default(), mockDB, nil, nodeAgentClient)
+	c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, nil, nodeAgentClient)
 
 	// A parent with no deadline: any deadline seen by the RPC is one this code added.
 	_, _, err := c.fetchAdminKubeconfig(context.Background(), db.Cluster{ID: clusterID, Name: "c"})
@@ -340,21 +344,14 @@ func TestFetchAdminKubeconfigBoundsEachProbe(t *testing.T) {
 
 func TestController_ReconcileOIDC(t *testing.T) {
 	ctx := context.Background()
-	siteID := uuid.New()
 	oidcID := uuid.New()
 	oidcNodeID := uuid.New()
 
-	oidcCluster := db.Cluster{ID: oidcID, SiteID: siteID, Name: "oidc", OIDCAuthEnabled: true}
+	oidcCluster := db.Cluster{ID: oidcID, Name: "oidc", OIDCAuthEnabled: true}
 
 	mockDB := &testutil.MockDB{}
-	// upsertSecret re-reads the row immediately before writing; by default the
-	// re-read echoes back a live cluster.
-	mockDB.On("GetCluster", mock.Anything, mock.Anything).Return(func(_ context.Context, id uuid.UUID) db.Cluster {
-		return db.Cluster{ID: id}
-	}, nil).Maybe()
-	mockDB.On("ListClusters", mock.Anything, mock.MatchedBy(func(f db.ClusterFilters) bool {
-		return f.SiteID != nil && *f.SiteID == siteID
-	})).Return([]db.Cluster{oidcCluster}, nil)
+	// Reconcile reads once; each of the two published Secrets re-checks the row.
+	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(3)
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
 		return f.ClusterID != nil && *f.ClusterID == oidcID
 	})).Return([]db.Node{joinedCPNode(oidcNodeID, oidcID)}, nil)
@@ -377,14 +374,15 @@ func TestController_ReconcileOIDC(t *testing.T) {
 		TenantAccessEnabled:  true,
 		SpiffeEndpointSocket: "unix:///run/spire/agent.sock",
 	}
-	c := NewController(cfg, slog.Default(), mockDB, k8sClient, nodeAgentClient)
+	c := newTestController(cfg, mockDB, k8sClient, nodeAgentClient)
 	var gotAdminConf []byte
 	c.tenantClientFor = func(adminConf []byte) (ctrlclient.Client, error) {
 		gotAdminConf = adminConf
 		return tenantClient, nil
 	}
 
-	require.NoError(t, c.Reconcile(ctx, db.Site{ID: siteID}))
+	_, err := c.Reconcile(ctx, dbreconcile.ClusterKey(oidcID))
+	require.NoError(t, err)
 
 	// The tenant client is built from the agent admin.conf.
 	assert.Equal(t, []byte(testAdminConf), gotAdminConf)
@@ -432,29 +430,20 @@ func TestController_ReconcileOIDC(t *testing.T) {
 	mockDB.AssertExpectations(t)
 }
 
-// TestController_ReconcileMixed runs an OIDC and a non-OIDC cluster through a
-// single Reconcile pass over one site and asserts both secrets are published in
-// the same run. With the two paths only ever exercised in isolation, an
-// early-return or shared-state bug between them would go unnoticed.
+// TestController_ReconcileMixed reconciles an OIDC and a non-OIDC cluster
+// independently and verifies one cluster's state does not leak into the other.
 func TestController_ReconcileMixed(t *testing.T) {
 	ctx := context.Background()
-	siteID := uuid.New()
 
 	plainID, plainNodeID := uuid.New(), uuid.New()
 	oidcID, oidcNodeID := uuid.New(), uuid.New()
 
-	plainCluster := db.Cluster{ID: plainID, SiteID: siteID, Name: "plain"}
-	oidcCluster := db.Cluster{ID: oidcID, SiteID: siteID, Name: "oidc", OIDCAuthEnabled: true}
+	plainCluster := db.Cluster{ID: plainID, Name: "plain"}
+	oidcCluster := db.Cluster{ID: oidcID, Name: "oidc", OIDCAuthEnabled: true}
 
 	mockDB := &testutil.MockDB{}
-	// upsertSecret re-reads the row immediately before writing; by default the
-	// re-read echoes back a live cluster.
-	mockDB.On("GetCluster", mock.Anything, mock.Anything).Return(func(_ context.Context, id uuid.UUID) db.Cluster {
-		return db.Cluster{ID: id}
-	}, nil).Maybe()
-	mockDB.On("ListClusters", mock.Anything, mock.MatchedBy(func(f db.ClusterFilters) bool {
-		return f.SiteID != nil && *f.SiteID == siteID
-	})).Return([]db.Cluster{plainCluster, oidcCluster}, nil)
+	mockDB.On("GetCluster", mock.Anything, plainID).Return(plainCluster, nil).Twice()
+	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(3)
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
 		return f.ClusterID != nil && *f.ClusterID == plainID
 	})).Return([]db.Node{joinedCPNode(plainNodeID, plainID)}, nil)
@@ -480,12 +469,15 @@ func TestController_ReconcileMixed(t *testing.T) {
 		TenantAccessEnabled:  true,
 		SpiffeEndpointSocket: "unix:///run/spire/agent.sock",
 	}
-	c := NewController(cfg, slog.Default(), mockDB, k8sClient, nodeAgentClient)
+	c := newTestController(cfg, mockDB, k8sClient, nodeAgentClient)
 	c.tenantClientFor = func([]byte) (ctrlclient.Client, error) {
 		return tenantClient, nil
 	}
 
-	require.NoError(t, c.Reconcile(ctx, db.Site{ID: siteID}))
+	_, err := c.Reconcile(ctx, dbreconcile.ClusterKey(plainID))
+	require.NoError(t, err)
+	_, err = c.Reconcile(ctx, dbreconcile.ClusterKey(oidcID))
+	require.NoError(t, err)
 
 	// Non-OIDC cluster: verbatim admin kubeconfig published.
 	assertSecret(t, ctx, k8sClient, plainCluster, true)
@@ -549,6 +541,22 @@ func assertSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client
 	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
 }
 
+func assertSecretAbsent(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client, name string) {
+	t.Helper()
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: SecretsNamespace}, &corev1.Secret{})
+	assert.True(t, apierrors.IsNotFound(err), "expected no secret %s", name)
+}
+
+func newTestController(
+	cfg config.Config,
+	database db.DB,
+	k8sClient ctrlclient.Client,
+	nodeAgentClient agent.Client,
+) *Controller {
+	logger := slog.New(slog.DiscardHandler)
+	return NewController(cfg, logger, dbwrapper.New(database, logger), k8sClient, nodeAgentClient)
+}
+
 func testScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -566,33 +574,31 @@ func tenantScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
-// Reconcile decides what to publish from a ListClusters snapshot taken at the
-// top of the pass. If a cluster starts deleting while the pass is still running,
-// the stale snapshot must not be allowed to re-create Secrets that cluster
-// teardown has already deleted.
+// If a cluster starts deleting while a reconcile is still running, the stale
+// row loaded at the start must not re-create Secrets teardown already deleted.
 func TestController_SkipsPublishWhenClusterStartsDeletingMidPass(t *testing.T) {
 	ctx := context.Background()
-	siteID := uuid.New()
 	clusterID := uuid.New()
 	nodeID := uuid.New()
 
 	// The snapshot the pass carries: not deleting.
-	snapshot := db.Cluster{ID: clusterID, SiteID: siteID, Name: "vanishing"}
+	snapshot := db.Cluster{ID: clusterID, Name: "vanishing"}
 
 	// The row as it stands by the time we are about to write: deleting.
 	live := snapshot
 	live.Conditions.Deleting = db.Condition{Status: db.ConditionStatusTrue}
 
 	mockDB := &testutil.MockDB{}
-	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{snapshot}, nil)
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(nodeID, clusterID)}, nil)
-	mockDB.On("GetCluster", mock.Anything, clusterID).Return(live, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(snapshot, nil).Once()
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(live, nil).Once()
 
 	nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: map[uuid.UUID]string{nodeID: testKubeconfig}}
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
 
-	c := NewController(config.Config{TenantAccessEnabled: true}, slog.Default(), mockDB, k8sClient, nodeAgentClient)
-	require.NoError(t, c.Reconcile(ctx, db.Site{ID: siteID}))
+	c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, k8sClient, nodeAgentClient)
+	_, err := c.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+	require.NoError(t, err)
 
 	assertSecret(t, ctx, k8sClient, snapshot, false)
 }
@@ -600,24 +606,24 @@ func TestController_SkipsPublishWhenClusterStartsDeletingMidPass(t *testing.T) {
 // Same window, one step further along: teardown has already deleted the row.
 func TestController_SkipsPublishWhenClusterRowIsGone(t *testing.T) {
 	ctx := context.Background()
-	siteID := uuid.New()
 	clusterID := uuid.New()
 	nodeID := uuid.New()
 
-	snapshot := db.Cluster{ID: clusterID, SiteID: siteID, Name: "deleted"}
+	snapshot := db.Cluster{ID: clusterID, Name: "deleted"}
 
 	mockDB := &testutil.MockDB{}
-	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{snapshot}, nil)
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(nodeID, clusterID)}, nil)
-	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(snapshot, nil).Once()
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound).Once()
 
 	nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: map[uuid.UUID]string{nodeID: testKubeconfig}}
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
 
-	c := NewController(config.Config{TenantAccessEnabled: true}, slog.Default(), mockDB, k8sClient, nodeAgentClient)
+	c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, k8sClient, nodeAgentClient)
 
 	// A vanished cluster is a normal outcome of the teardown race, not an error.
-	require.NoError(t, c.Reconcile(ctx, db.Site{ID: siteID}))
+	_, err := c.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+	require.NoError(t, err)
 	assertSecret(t, ctx, k8sClient, snapshot, false)
 }
 
@@ -651,7 +657,7 @@ func TestFetchAdminKubeconfigPicksTheSameNodeRegardlessOfRowOrder(t *testing.T) 
 		mockDB.On("ListNodes", mock.Anything, mock.Anything).Return(rows, nil)
 
 		nodeAgentClient := &agenttest.FakeClient{Kubeconfigs: kubeconfigs}
-		c := NewController(config.Config{TenantAccessEnabled: true}, slog.Default(), mockDB, nil, nodeAgentClient)
+		c := newTestController(config.Config{TenantAccessEnabled: true}, mockDB, nil, nodeAgentClient)
 
 		got, ready, err := c.fetchAdminKubeconfig(context.Background(), cluster)
 		require.NoError(t, err)

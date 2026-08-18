@@ -17,7 +17,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodehealth"
-	"github.com/NVIDIA/nke/controller/internal/controllers/tenantaccess"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge"
@@ -43,7 +42,6 @@ type ControllerManager struct {
 	clusterStaticEntryController *NodeClusterStaticEntryController
 	tpmPubhashesCmController     *TpmPubhashesCmController
 	teleportTokenController      *TeleportTokenController
-	tenantAccessController       *tenantaccess.Controller
 }
 
 // NewControllerManager creates a new ControllerManager.
@@ -81,11 +79,6 @@ func NewControllerManager(
 		capiClusterScaffold = NewCAPIClusterScaffoldController(controllerManagerLogger, dbInstance, k8sClient, nodeAgentClient)
 	}
 
-	var tenantAccessController *tenantaccess.Controller
-	if cfg.TenantAccessEnabled {
-		tenantAccessController = tenantaccess.NewController(cfg, controllerManagerLogger, dbInstance, k8sClient, nodeAgentClient)
-	}
-
 	return &ControllerManager{
 		cfg:                          cfg,
 		logger:                       controllerManagerLogger,
@@ -102,7 +95,6 @@ func NewControllerManager(
 		clusterStaticEntryController: clusterStaticEntryController,
 		tpmPubhashesCmController:     tpmPubhashesCmController,
 		teleportTokenController:      teleportTokenController,
-		tenantAccessController:       tenantAccessController,
 	}, nil
 }
 
@@ -250,13 +242,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 		if err := a.teleportTokenController.Reconcile(ctx, site); err != nil {
 			// Log errors but continue processing the other controllers.
 			a.logger.Error("Failed to reconcile Teleport tokens", "error", err, "siteID", site.ID.String())
-		}
-	}
-
-	if a.tenantAccessController != nil {
-		if err := a.tenantAccessController.Reconcile(ctx, site); err != nil {
-			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile tenant access", "error", err, "siteID", site.ID.String())
 		}
 	}
 

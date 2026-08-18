@@ -9,12 +9,30 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
+
+// deleteSecrets removes the access-material handoff as soon as the durable
+// cluster row enters Deleting. The teardown workflow's deletion remains an
+// idempotent cleanup fallback.
+func (c *Controller) deleteSecrets(ctx context.Context, cluster db.Cluster) error {
+	var deleteErrs []error
+	for _, name := range []string{
+		KubeconfigSecretName(cluster.Name),
+		TrustBundleSecretName(cluster.Name),
+	} {
+		secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: SecretsNamespace}}
+		if err := c.k8sClient.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
+			deleteErrs = append(deleteErrs, fmt.Errorf("deleting secret %s/%s: %w", SecretsNamespace, name, err))
+		}
+	}
+	return errors.Join(deleteErrs...)
+}
 
 // upsertSecret creates or updates an Opaque Secret in the tenant-access
 // namespace, merging only the fields this controller owns (the owner labels and

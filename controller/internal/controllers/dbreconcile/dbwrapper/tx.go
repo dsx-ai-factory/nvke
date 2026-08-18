@@ -14,9 +14,28 @@ import (
 
 type reconcileTx struct {
 	db.Tx
+	clusterIDs  []uuid.UUID
 	nodeIDs     []uuid.UUID
 	nodePoolIDs []uuid.UUID
 	nodeSetIDs  []uuid.UUID
+}
+
+func (tx *reconcileTx) CreateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
+	created, err := tx.Tx.CreateCluster(ctx, cluster)
+	if err != nil {
+		return created, err
+	}
+	tx.clusterIDs = append(tx.clusterIDs, created.ID)
+	return created, nil
+}
+
+func (tx *reconcileTx) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
+	updated, err := tx.Tx.UpdateCluster(ctx, cluster)
+	if err != nil {
+		return updated, err
+	}
+	tx.clusterIDs = append(tx.clusterIDs, updated.ID)
+	return updated, nil
 }
 
 func (tx *reconcileTx) CreateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {

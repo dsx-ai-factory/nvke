@@ -404,6 +404,7 @@ func (c *Cluster) BeforeUpdate() error {
 }
 
 type ClusterFilters struct {
+	ID     *uuid.UUID
 	Name   *string
 	SiteID *uuid.UUID
 }
@@ -461,6 +462,10 @@ type ClusterQueries interface {
 func (q *queriesImpl) ListClusters(ctx context.Context, filters ClusterFilters) ([]Cluster, error) {
 	var clusters []Cluster
 	query := q.db.NewSelect().Model(&clusters)
+
+	if filters.ID != nil {
+		query = query.Where("id = ?", *filters.ID)
+	}
 
 	if filters.Name != nil {
 		query = query.Where("name = ?", *filters.Name)
