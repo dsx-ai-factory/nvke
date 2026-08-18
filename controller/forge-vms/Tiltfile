@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 load("ext://helm_resource", "helm_repo", "helm_resource")
-load("ext://uibutton", "cmd_button", "text_input")
+load("ext://uibutton", "cmd_button", "choice_input", "text_input")
 
 # Pin chart versions to avoid surprise breakage from upstream releases.
 CHART_VERSION_LOKI = "6.29.0"
@@ -306,6 +306,8 @@ def register(ctx):
           KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
           CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
           WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
+          CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}" \
+          CNI_VERSION="${CNI_VERSION:-}" \
           ./hack/create-forge-vms-cluster.sh
         """ % (ctx.main_dir, _cwe_port)],
         resource="cwe",
@@ -316,6 +318,8 @@ def register(ctx):
             text_input("KUBERNETES_VERSION", label="Kubernetes version", default="1.34.2", placeholder="Tenant Kubernetes version"),
             text_input("CONTROL_PLANE_DESIRED_COUNT", label="Control-plane nodes", default="1", placeholder="Number of control-plane VMs"),
             text_input("WORKER_DESIRED_COUNT", label="Worker nodes", default="1", placeholder="Number of worker VMs"),
+            choice_input("CNI_PLUGIN", label="CNI plugin", choices=["ovn-kubernetes", "calico"]),
+            text_input("CNI_VERSION", label="CNI version (optional)", default="", placeholder="e.g. 1.4.0 (OVN) or 3.30.1 (Calico); empty = server default"),
         ],
     )
 

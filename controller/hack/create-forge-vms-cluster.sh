@@ -20,6 +20,9 @@
 #     exceeds these small seed instance types, so it must be set explicitly here.
 #   - The worker pool is always included; set WORKER_DESIRED_COUNT=0 to create a
 #     control-plane-only cluster.
+#   - CNI defaults to ovn-kubernetes. Set CNI_PLUGIN=calico to use Calico instead.
+#     CNI_VERSION is optional; when empty the CWE API applies the plugin default
+#     (1.4.0 for OVN, 3.30.1 for Calico).
 
 set -euo pipefail
 
@@ -39,12 +42,20 @@ INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000003}"  # 
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
+CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
+CNI_VERSION="${CNI_VERSION:-}"
 
 OS_PROFILE="${OS_PROFILE:-nke-260602-24.04-x86-fde}"
 CP_CONFIG_PROFILE="${CP_CONFIG_PROFILE:-nvcf-cp-v3}"
 WORKER_CONFIG_PROFILE="${WORKER_CONFIG_PROFILE:-nvcf-monitoring-v3}"
 SYSTEM_RESERVED_MEMORY="${SYSTEM_RESERVED_MEMORY:-1Gi}"
 ETCD_ENCRYPTED="${ETCD_ENCRYPTED:-false}"
+
+CNI_VERSION_JSON=""
+if [[ -n "${CNI_VERSION}" ]]; then
+  CNI_VERSION_JSON=",
+  \"cniVersion\": \"${CNI_VERSION}\""
+fi
 
 BODY=$(cat <<EOF
 {
@@ -53,7 +64,7 @@ BODY=$(cat <<EOF
   "siteID": "${SITE_ID}",
   "vpcID": "${VPC_ID}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
-  "cniPlugin": "calico",
+  "cniPlugin": "${CNI_PLUGIN}"${CNI_VERSION_JSON},
   "etcdEncrypted": ${ETCD_ENCRYPTED},
   "teleportEnabled": false,
   "nodePools": [
@@ -92,7 +103,7 @@ BODY=$(cat <<EOF
 EOF
 )
 
-echo "Creating forge-vms cluster '${CLUSTER_NAME}' (cp=${CONTROL_PLANE_DESIRED_COUNT}, worker=${WORKER_DESIRED_COUNT})" >&2
+echo "Creating forge-vms cluster '${CLUSTER_NAME}' (cp=${CONTROL_PLANE_DESIRED_COUNT}, worker=${WORKER_DESIRED_COUNT}, cni=${CNI_PLUGIN}${CNI_VERSION:+/${CNI_VERSION}})" >&2
 
 curl -fsS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}" \
   -H "Content-Type: application/json" \
