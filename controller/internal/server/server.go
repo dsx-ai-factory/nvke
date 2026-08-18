@@ -17,10 +17,12 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	pathpkg "path"
 	"time"
 
 	oapi_middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/swaggest/swgui/v5emb"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.temporal.io/sdk/client"
 
 	"github.com/NVIDIA/nke/controller/api"
@@ -111,14 +113,24 @@ func NewServer(
 	})
 
 	hc := newHealthChecker(logger, database, temporalClient)
-	m.HandleFunc("GET /healthz", hc.healthz)
-	m.HandleFunc("GET /readyz", hc.readyz)
+	m.HandleFunc("GET "+healthz, hc.healthz)
+	m.HandleFunc("GET "+readyz, hc.readyz)
 
 	m.Handle("/", http.FileServer(http.Dir(cfg.UIDir)))
 
 	// Apply middleware chain: logging -> managed-by check -> main handler
 	handler := loggingMiddleware(m, logger)
 	handler = managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(handler)
+	if cfg.Tracing.Enabled {
+		handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
+			otelhttp.WithFilter(func(r *http.Request) bool {
+				// Skip operational probes (/healthz, /readyz, /metrics). /metrics is
+				// served on a separate listen address today, but is excluded here too
+				// so it stays consistent with isOperationalPath.
+				return !isOperationalPath(pathpkg.Clean(r.URL.Path))
+			}),
+		)
+	}
 
 	srv := &http.Server{
 		Addr:              cfg.ServerListenAddress,

@@ -40,6 +40,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/dbmetrics"
 	"github.com/NVIDIA/nke/controller/internal/kube"
 	"github.com/NVIDIA/nke/controller/internal/metrics"
+	"github.com/NVIDIA/nke/controller/internal/otelx"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/server"
 	"github.com/NVIDIA/nke/controller/internal/spiffe"
@@ -88,6 +89,19 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	otelShutdown, err := otelx.Init(ctx, cfg.Tracing, logger.With("logger", "otel"))
+	if err != nil {
+		logger.Error("Failed to initialize OpenTelemetry tracing", "error", err)
+		os.Exit(1)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), ServerGracefulShutdownTimeout)
+		defer cancel()
+		if err := otelShutdown(shutdownCtx); err != nil {
+			logger.Error("Error during OpenTelemetry shutdown", "error", err)
+		}
+	}()
 
 	// Get cloud-workflow-engine workload trust domain and bundle
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)

@@ -28,6 +28,8 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/opentelemetry"
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -89,7 +91,7 @@ func NewClient(cfg config.Config, logger *slog.Logger) (client.Client, error) {
 		return nil, fmt.Errorf("unable to create CWE Temporal TLS config: %w", err)
 	}
 
-	return client.Dial(client.Options{
+	opts := client.Options{
 		HostPort:  cfg.TemporalHostPort,
 		Namespace: cfg.TemporalNamespace,
 		ConnectionOptions: client.ConnectionOptions{
@@ -99,7 +101,17 @@ func NewClient(cfg config.Config, logger *slog.Logger) (client.Client, error) {
 		Logger:         log.NewStructuredLogger(logger.With("temporalClient", "cwe")),
 		MetricsHandler: sdktally.NewMetricsHandler(newPrometheusScope()), // Adding a metrics handler gets the built in temporal metrics for the CWE temporal worker.
 		DataConverter:  NewDataConverter(),
-	})
+	}
+
+	if cfg.Tracing.Enabled {
+		tracingInterceptor, err := newTracingInterceptor()
+		if err != nil {
+			return nil, err
+		}
+		opts.Interceptors = []interceptor.ClientInterceptor{tracingInterceptor}
+	}
+
+	return client.Dial(opts)
 }
 
 func newTLSConfig(cfg config.TemporalTLSConfig) (*tls.Config, error) {
@@ -150,7 +162,16 @@ func NewWorker(
 	trustDomain string,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 ) (worker.Worker, error) {
-	w := worker.New(temporalClient, cfg.TemporalTaskQueue, worker.Options{})
+	workerOpts := worker.Options{}
+	if cfg.Tracing.Enabled {
+		tracingInterceptor, err := newTracingInterceptor()
+		if err != nil {
+			return nil, err
+		}
+		workerOpts.Interceptors = []interceptor.WorkerInterceptor{tracingInterceptor}
+	}
+
+	w := worker.New(temporalClient, cfg.TemporalTaskQueue, workerOpts)
 
 	w.RegisterActivity(activities.NewActivities(
 		cfg,
@@ -206,6 +227,14 @@ func NewWorker(
 	rollouttemporal.NewClusterLoaderActivity(rolloutLoader, cfg.NodeAgentPort).Register(w)
 
 	return w, nil
+}
+
+func newTracingInterceptor() (interceptor.Interceptor, error) {
+	tracingInterceptor, err := opentelemetry.NewTracingInterceptor(opentelemetry.TracerOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("create Temporal OpenTelemetry tracing interceptor: %w", err)
+	}
+	return tracingInterceptor, nil
 }
 
 // By default, temporal uses the tally library for go instrumentation.

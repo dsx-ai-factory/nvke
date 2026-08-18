@@ -40,6 +40,7 @@ const (
 	databaseConst   = "database"
 	failedValue     = "Failed"
 	healthz         = "/healthz"
+	readyz          = "/readyz"
 	metrics         = "/metrics"
 	nodePoolIDConst = "nodePoolID"
 	okValue         = "ok"

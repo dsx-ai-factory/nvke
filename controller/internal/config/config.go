@@ -302,6 +302,28 @@ type Config struct {
 	// TenantAccessEnabled controls whether the TenantAccessController publishes
 	// each cluster's admin kubeconfig into the tenant-access Secret plane.
 	TenantAccessEnabled bool `env:"TENANT_ACCESS_ENABLED" default:"false"`
+
+	// Tracing configures OpenTelemetry distributed tracing. When Enabled and
+	// Endpoint are set, CWE exports OTLP gRPC spans. Endpoint and related OTEL_*
+	// vars may be injected by the OpenTelemetry Operator (inject-sdk + sidecar);
+	// do not hardcode collector URLs in application code.
+	Tracing TracingConfig `envPrefix:"OTEL_"`
+}
+
+// TracingConfig configures OpenTelemetry tracing export.
+// Env vars use standard OTEL_* names (also commonly injected by the
+// OpenTelemetry Operator): OTEL_TRACING_ENABLED, OTEL_EXPORTER_OTLP_ENDPOINT,
+// OTEL_EXPORTER_OTLP_INSECURE, OTEL_SERVICE_NAME.
+type TracingConfig struct {
+	// Enabled gates TracerProvider initialization and transport instrumentation.
+	Enabled bool `env:"TRACING_ENABLED" default:"false"`
+	// Endpoint is the OTLP gRPC collector host:port (scheme optional). With
+	// operator sidecar injection this is typically localhost:4317.
+	Endpoint string `env:"EXPORTER_OTLP_ENDPOINT" default:""`
+	// Insecure uses plaintext OTLP (required for localhost sidecar / in-cluster collectors).
+	Insecure bool `env:"EXPORTER_OTLP_INSECURE" default:"true"`
+	// ServiceName is the resource attribute service.name.
+	ServiceName string `env:"SERVICE_NAME" default:"cloud-workflow-engine"`
 }
 
 // TemporalTLSConfig contains optional file paths for Temporal client mTLS.

@@ -16,6 +16,7 @@ import (
 	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/otelx"
 )
 
 // ngcProductionServerURL and ngcStagingServerURL are the NGC API server URLs for
@@ -58,6 +59,9 @@ func NewSDKConfig(cfg *config.Config) *forgesdk.Configuration {
 			URL:         cfg.ForgeURL,
 			Description: config.ForgeEnvironmentTest,
 		},
+	}
+	if cfg.Tracing.Enabled {
+		sdkCfg.HTTPClient = otelx.HTTPClient(sdkCfg.HTTPClient)
 	}
 	return sdkCfg
 }

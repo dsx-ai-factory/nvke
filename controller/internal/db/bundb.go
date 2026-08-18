@@ -21,6 +21,7 @@ import (
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/uptrace/bun/extra/bunotel"
 	"github.com/uptrace/bun/extra/bunslog"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
@@ -86,6 +87,12 @@ func NewBunDB(cfg config.Config, logger *slog.Logger) (*bun.DB, error) {
 		bunslog.WithLogger(logger),
 		bunslog.WithLogFormat(logFormat),
 	))
+
+	if cfg.Tracing.Enabled {
+		db.AddQueryHook(bunotel.NewQueryHook(
+			bunotel.WithDBName("cloud-workflow"),
+		))
+	}
 
 	if err := db.PingContext(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)

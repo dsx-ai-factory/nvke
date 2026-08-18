@@ -126,6 +126,33 @@ metrics:
     # -- additionalNamespaces allows extra namespaces to scrape the metrics port.
     additionalNamespaces: []
 
+tracing:
+  # -- Enable OpenTelemetry tracing in the CWE binary (TracerProvider + transport hooks).
+  # Keep false in chart defaults; enable per environment against an OTLP collector.
+  enabled: false
+  # OpenTelemetry Operator injection. When enabled (with tracing.enabled), add
+  # standard Operator annotations so inject-sdk / sidecar inject can supply
+  # OTEL_* env and a collector sidecar. Prefer inject-sdk over inject-go when
+  # using the manual Go SDK. Leave annotation values empty in chart defaults;
+  # set them per environment to the Instrumentation / OpenTelemetryCollector
+  # resource names in that cluster (e.g. "observability/default-instrumentation").
+  operatorInject:
+    # -- When true (with tracing.enabled), add OpenTelemetry Operator pod annotations.
+    enabled: false
+    # -- Value for instrumentation.opentelemetry.io/inject-sdk (namespace/name).
+    injectSdk: ""
+    # -- Value for sidecar.opentelemetry.io/inject (namespace/name).
+    injectSidecar: ""
+  # -- Optional OTLP gRPC endpoint override (host:port). Leave empty when
+  # operatorInject.enabled is true so the operator-injected localhost sidecar
+  # endpoint is used.
+  endpoint: ""
+  # -- Use insecure (plaintext) OTLP gRPC. Required for localhost sidecar / most in-cluster collectors.
+  insecure: true
+  # -- Resource attribute service.name written when tracing.endpoint is set.
+  # With operatorInject, prefer operator-injected OTEL_SERVICE_NAME instead.
+  serviceName: "cloud-workflow-engine"
+
 # ServiceMonitor configuration for Prometheus monitoring
 serviceMonitor:
   # -- Enable/disable ServiceMonitor creation. ANDed with the umbrella

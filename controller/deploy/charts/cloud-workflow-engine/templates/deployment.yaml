@@ -42,9 +42,21 @@ spec:
       maxSurge: 1
   template:
     metadata:
+      {{- $podAnnotations := dict }}
       {{- with .Values.podAnnotations }}
+      {{- $podAnnotations = . | deepCopy }}
+      {{- end }}
+      {{- if and .Values.tracing.enabled .Values.tracing.operatorInject.enabled }}
+      {{- with .Values.tracing.operatorInject.injectSdk }}
+      {{- $_ := set $podAnnotations "instrumentation.opentelemetry.io/inject-sdk" . }}
+      {{- end }}
+      {{- with .Values.tracing.operatorInject.injectSidecar }}
+      {{- $_ := set $podAnnotations "sidecar.opentelemetry.io/inject" . }}
+      {{- end }}
+      {{- end }}
+      {{- if $podAnnotations }}
       annotations:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml $podAnnotations | nindent 8 }}
       {{- end }}
       labels:
         {{- include "cloud-workflow-engine.labels" . | nindent 8 }}
@@ -156,6 +168,21 @@ spec:
             # Metrics server listen address (NKX-11690)
             - name: METRICS_LISTEN_ADDRESS
               value: {{ .Values.metrics.listenAddress | quote }}
+            {{- if .Values.tracing.enabled }}
+            - name: OTEL_TRACING_ENABLED
+              value: "true"
+            {{- /* When operatorInject is enabled, leave OTEL_EXPORTER_OTLP_* unset (no tracing.endpoint) so inject-sdk supplies localhost sidecar values. */}}
+            {{- if .Values.tracing.endpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tracing.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_INSECURE
+              value: {{ .Values.tracing.insecure | quote }}
+            {{- if .Values.tracing.serviceName }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.tracing.serviceName | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
             - name: POD_NAMESPACE
               valueFrom:
                 fieldRef:

@@ -41,6 +41,13 @@ A Helm chart to deploy the cloud-workflow-engine service
 | metrics.networkPolicy.additionalNamespaces | list | `[]` | additionalNamespaces allows extra namespaces to scrape the metrics port. |
 | metrics.networkPolicy.enabled | bool | `true` | enabled controls whether a NetworkPolicy is created to restrict metrics port access to the Prometheus and Alloy scraper namespaces. |
 | metrics.port | int | `9090` | Port for the dedicated Prometheus metrics server. Must match METRICS_LISTEN_ADDRESS in the container env. |
+| tracing.enabled | bool | `false` | Enable OpenTelemetry tracing in the CWE binary (TracerProvider + transport hooks). Keep false in chart defaults; enable per environment against an OTLP collector. |
+| tracing.operatorInject.enabled | bool | `false` | When true (with tracing.enabled), add OpenTelemetry Operator pod annotations (`inject-sdk` / sidecar inject). Prefer `inject-sdk` over `inject-go` when using the manual Go SDK. |
+| tracing.operatorInject.injectSdk | string | `""` | Value for `instrumentation.opentelemetry.io/inject-sdk` (namespace/name). Set per environment. |
+| tracing.operatorInject.injectSidecar | string | `""` | Value for `sidecar.opentelemetry.io/inject` (namespace/name). Set per environment. |
+| tracing.endpoint | string | `""` | Optional OTLP gRPC endpoint override (host:port). Leave empty when operatorInject.enabled is true so the operator-injected localhost sidecar endpoint is used. |
+| tracing.insecure | bool | `true` | Use insecure (plaintext) OTLP gRPC. Required for localhost sidecar / most in-cluster collectors. |
+| tracing.serviceName | string | `"cloud-workflow-engine"` | Resource attribute service.name when chart sets OTEL env (non-operatorInject or endpoint override). |
 | nameOverride | string | `""` |  |
 | namespaceOverride | string | `""` | Deploy into this namespace instead of the release namespace (umbrella use). |
 | nodeSelector | object | `{}` |  |
