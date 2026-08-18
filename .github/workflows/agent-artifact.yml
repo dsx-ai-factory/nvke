@@ -174,6 +174,7 @@ jobs:
       # load-bearing: without it the manifest has no platform in its config and
       # `oras manifest index create` cannot tell the two apart.
       - name: Push per-architecture artifacts
+        id: push
         working-directory: agent
         shell: bash
         env:
@@ -195,7 +196,11 @@ jobs:
             # Pushed from the binary's own directory so the layer's title
             # annotation is "nke-agent" and not a path -- that title is the
             # filename `oras pull` writes.
-            ( cd "bin/linux_${arch}" && oras push "${REPO}:${tags}" \
+            #
+            # Capture the digest from the push output so the index step can
+            # reference manifests by digest rather than re-fetching by tag.
+            # All aliases share the same binary, so one digest per arch suffices.
+            output=$(cd "bin/linux_${arch}" && oras push "${REPO}:${tags}" \
                 --artifact-type application/vnd.nvidia.nke.agent.v1 \
                 --artifact-platform "linux/${arch}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
@@ -203,7 +208,10 @@ jobs:
                 --annotation "org.opencontainers.image.version=${VERSION}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
                 --annotation "org.opencontainers.image.title=nke-agent" \
-                nke-agent:application/octet-stream )
+                nke-agent:application/octet-stream)
+            echo "${output}"
+            digest=$(echo "${output}" | grep '^Digest:' | awk '{print $2}')
+            echo "digest_${arch}=${digest}" >> "${GITHUB_OUTPUT}"
           done
 
       - name: Create multi-arch index
@@ -211,6 +219,8 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           ALIASES: ${{ steps.meta.outputs.aliases }}
+          DIGEST_AMD64: ${{ steps.push.outputs.digest_amd64 }}
+          DIGEST_ARM64: ${{ steps.push.outputs.digest_arm64 }}
         run: |
           set -euo pipefail
           read -ra aliases <<< "${ALIASES}"
@@ -220,7 +230,7 @@ jobs:
               --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
               --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
               --annotation "org.opencontainers.image.version=${VERSION}" \
-              "${alias}-amd64" "${alias}-arm64"
+              "${REPO}@${DIGEST_AMD64}" "${REPO}@${DIGEST_ARM64}"
           done
 
       # Proof in the log that the published index is what a consumer will
