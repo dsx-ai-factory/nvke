@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/google/uuid"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
@@ -45,6 +46,12 @@ const (
 // kubeconfig published into SecretsNamespace.
 func KubeconfigSecretName(clusterName string) string { return clusterName + "-kubeconfig" }
 
+// TenantManagerSet stops the per-cluster controller manager when its cluster
+// enters deletion.
+type TenantManagerSet interface {
+	RemoveCluster(clusterID uuid.UUID)
+}
+
 // Controller publishes one cluster's access material into the tenant-access
 // Secret plane for each cluster-keyed reconciliation.
 type Controller struct {
@@ -53,6 +60,7 @@ type Controller struct {
 	db              *dbwrapper.DB
 	k8sClient       ctrlclient.Client
 	nodeAgentClient agent.Client
+	tenantManagers  TenantManagerSet
 
 	// tenantClientFor builds a controller-runtime client for a tenant cluster
 	// from its admin.conf bytes. Defaulted in NewController; a test seam.
@@ -66,6 +74,7 @@ func NewController(
 	dbInstance *dbwrapper.DB,
 	k8sClient ctrlclient.Client,
 	nodeAgentClient agent.Client,
+	tenantManagers TenantManagerSet,
 ) *Controller {
 	return &Controller{
 		cfg:             cfg,
@@ -73,6 +82,7 @@ func NewController(
 		db:              dbInstance,
 		k8sClient:       k8sClient,
 		nodeAgentClient: nodeAgentClient,
+		tenantManagers:  tenantManagers,
 		tenantClientFor: newTenantClient,
 	}
 }
@@ -122,7 +132,9 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		return reconcile.Result{}, fmt.Errorf("getting cluster %s: %w", key.ID, err)
 	}
 	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
-		return reconcile.Result{}, c.deleteSecrets(ctx, cluster)
+		c.tenantManagers.RemoveCluster(cluster.ID)
+		// Temporal owns Secret deletion after it no longer needs tenant access.
+		return reconcile.Result{}, nil
 	}
 	return reconcile.Result{}, c.reconcileCluster(ctx, cluster)
 }

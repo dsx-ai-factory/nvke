@@ -125,8 +125,7 @@
 // informer queues existing pending CSRs during cache sync and newly observed
 // pending CSRs from its watch.
 //
-// When the durable cluster row enters Deleting, the same cluster source
-// immediately reconciles tenant access and removes the access Secrets.
-// SecretReconciler then stops the tenant manager. Temporal teardown repeats the
-// Secret deletion as an idempotent cleanup fallback.
+// When the durable cluster row enters Deleting, the same cluster source stops
+// the tenant manager immediately. Temporal retains the access Secrets until its
+// final teardown step, then removes them after deleting the cluster row.
 package tenant

@@ -185,14 +185,15 @@ func TestController_Reconcile(t *testing.T) {
 
 	kubeconfigSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: KubeconfigSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
-	}}
+	}, Data: map[string][]byte{KubeconfigSecretKey: []byte("existing-kubeconfig")}}
 	trustBundleSecret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
 		Name: TrustBundleSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
-	}}
+	}, Data: map[string][]byte{TrustBundleSecretKey: []byte("existing-trust-bundle")}}
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(kubeconfigSecret, trustBundleSecret).Build()
 
 	cfg := config.Config{TenantAccessEnabled: true}
-	c := newTestController(cfg, mockDB, k8sClient, nodeAgentClient)
+	tenantManagers := &recordingTenantManagerSet{}
+	c := NewController(cfg, slog.New(slog.DiscardHandler), dbwrapper.New(mockDB, slog.New(slog.DiscardHandler)), k8sClient, nodeAgentClient, tenantManagers)
 
 	_, err := c.Reconcile(ctx, dbreconcile.ClusterKey(activeCluster.ID))
 	require.NoError(t, err)
@@ -203,10 +204,20 @@ func TestController_Reconcile(t *testing.T) {
 
 	// The non-OIDC cluster publishes the admin kubeconfig verbatim.
 	assertSecret(t, ctx, k8sClient, activeCluster, true)
-	// Deleting and not-ready clusters publish nothing.
-	assertSecret(t, ctx, k8sClient, deletingCluster, false)
+	// Deleting clusters preserve existing access material for the teardown
+	// workflow, while not-ready clusters publish nothing.
+	preservedKubeconfig := &corev1.Secret{}
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
+		Name: KubeconfigSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+	}, preservedKubeconfig))
+	assert.Equal(t, []byte("existing-kubeconfig"), preservedKubeconfig.Data[KubeconfigSecretKey])
+	preservedTrustBundle := &corev1.Secret{}
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
+		Name: TrustBundleSecretName(deletingCluster.Name), Namespace: SecretsNamespace,
+	}, preservedTrustBundle))
+	assert.Equal(t, []byte("existing-trust-bundle"), preservedTrustBundle.Data[TrustBundleSecretKey])
 	assertSecret(t, ctx, k8sClient, notReadyCluster, false)
-	assertSecretAbsent(t, ctx, k8sClient, TrustBundleSecretName(deletingCluster.Name))
+	assert.Equal(t, []uuid.UUID{deletingCluster.ID}, tenantManagers.removed)
 
 	mockDB.AssertExpectations(t)
 	// Deleting cluster is skipped before any node lookup.
@@ -541,10 +552,12 @@ func assertSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client
 	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
 }
 
-func assertSecretAbsent(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client, name string) {
-	t.Helper()
-	err := k8sClient.Get(ctx, types.NamespacedName{Name: name, Namespace: SecretsNamespace}, &corev1.Secret{})
-	assert.True(t, apierrors.IsNotFound(err), "expected no secret %s", name)
+type recordingTenantManagerSet struct {
+	removed []uuid.UUID
+}
+
+func (s *recordingTenantManagerSet) RemoveCluster(clusterID uuid.UUID) {
+	s.removed = append(s.removed, clusterID)
 }
 
 func newTestController(
@@ -554,7 +567,7 @@ func newTestController(
 	nodeAgentClient agent.Client,
 ) *Controller {
 	logger := slog.New(slog.DiscardHandler)
-	return NewController(cfg, logger, dbwrapper.New(database, logger), k8sClient, nodeAgentClient)
+	return NewController(cfg, logger, dbwrapper.New(database, logger), k8sClient, nodeAgentClient, &recordingTenantManagerSet{})
 }
 
 func testScheme(t *testing.T) *runtime.Scheme {
@@ -575,7 +588,7 @@ func tenantScheme(t *testing.T) *runtime.Scheme {
 }
 
 // If a cluster starts deleting while a reconcile is still running, the stale
-// row loaded at the start must not re-create Secrets teardown already deleted.
+// row loaded at the start must not publish new access material.
 func TestController_SkipsPublishWhenClusterStartsDeletingMidPass(t *testing.T) {
 	ctx := context.Background()
 	clusterID := uuid.New()

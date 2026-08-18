@@ -161,6 +161,20 @@ func main() {
 		os.Exit(1)
 	}
 	nodeAgentClient := agent.NewClient(cfg, trustDomain)
+	tenantManagerSet, err := tenant.NewManagerSet(
+		ctx,
+		logger.With("logger", "tenant-controller-manager-set"),
+		tenant.NewManagerFactory(
+			logger.With("logger", "tenant-controller-runtime"),
+			csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
+		),
+		tenant.DefaultManagerSetOptions(),
+	)
+	if err != nil {
+		logger.Error("Failed to create tenant controller manager set", "error", err)
+		os.Exit(1)
+	}
+	defer tenantManagerSet.Shutdown()
 
 	nodeSetController := nodeset.NewController(
 		cfg,
@@ -191,6 +205,7 @@ func main() {
 			dbInstance,
 			managementK8sClient,
 			nodeAgentClient,
+			tenantManagerSet,
 		)
 		if err := tenantAccessController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up tenant access controller", "error", err)
@@ -247,21 +262,6 @@ func main() {
 			}
 		}
 	}
-
-	tenantManagerSet, err := tenant.NewManagerSet(
-		ctx,
-		logger.With("logger", "tenant-controller-manager-set"),
-		tenant.NewManagerFactory(
-			logger.With("logger", "tenant-controller-runtime"),
-			csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
-		),
-		tenant.DefaultManagerSetOptions(),
-	)
-	if err != nil {
-		logger.Error("Failed to create tenant controller manager set", "error", err)
-		os.Exit(1)
-	}
-	defer tenantManagerSet.Shutdown()
 
 	tenantSecretReconciler := tenant.NewSecretReconciler(
 		dbInstance,
