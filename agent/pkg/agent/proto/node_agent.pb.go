@@ -453,6 +453,68 @@ func (ResourceApplyResult_Outcome) EnumDescriptor() ([]byte, []int) {
 	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{34, 0}
 }
 
+type ReconfigureKubeletAPIServerResponse_Outcome int32
+
+const (
+	ReconfigureKubeletAPIServerResponse_OUTCOME_UNSPECIFIED ReconfigureKubeletAPIServerResponse_Outcome = 0
+	// kubelet.conf changed and kubelet was restarted and verified active.
+	ReconfigureKubeletAPIServerResponse_OUTCOME_APPLIED ReconfigureKubeletAPIServerResponse_Outcome = 1
+	// kubelet.conf already contained the requested endpoint; it was not
+	// rewritten, and kubelet was restarted and verified active.
+	ReconfigureKubeletAPIServerResponse_OUTCOME_UNCHANGED ReconfigureKubeletAPIServerResponse_Outcome = 2
+	// Reconfiguration failed after mutation, but the original kubelet.conf was
+	// restored and kubelet was verified active with the original config.
+	ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_RESTORED ReconfigureKubeletAPIServerResponse_Outcome = 3
+	// Reconfiguration failed and restoration could not be confirmed. The node
+	// needs retry or operator intervention.
+	ReconfigureKubeletAPIServerResponse_OUTCOME_FAILED_NOT_RESTORED ReconfigureKubeletAPIServerResponse_Outcome = 4
+)
+
+// Enum value maps for ReconfigureKubeletAPIServerResponse_Outcome.
+var (
+	ReconfigureKubeletAPIServerResponse_Outcome_name = map[int32]string{
+		0: "OUTCOME_UNSPECIFIED",
+		1: "OUTCOME_APPLIED",
+		2: "OUTCOME_UNCHANGED",
+		3: "OUTCOME_FAILED_RESTORED",
+		4: "OUTCOME_FAILED_NOT_RESTORED",
+	}
+	ReconfigureKubeletAPIServerResponse_Outcome_value = map[string]int32{
+		"OUTCOME_UNSPECIFIED":         0,
+		"OUTCOME_APPLIED":             1,
+		"OUTCOME_UNCHANGED":           2,
+		"OUTCOME_FAILED_RESTORED":     3,
+		"OUTCOME_FAILED_NOT_RESTORED": 4,
+	}
+)
+
+func (x ReconfigureKubeletAPIServerResponse_Outcome) Enum() *ReconfigureKubeletAPIServerResponse_Outcome {
+	p := new(ReconfigureKubeletAPIServerResponse_Outcome)
+	*p = x
+	return p
+}
+
+func (x ReconfigureKubeletAPIServerResponse_Outcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ReconfigureKubeletAPIServerResponse_Outcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_pkg_agent_proto_node_agent_proto_enumTypes[8].Descriptor()
+}
+
+func (ReconfigureKubeletAPIServerResponse_Outcome) Type() protoreflect.EnumType {
+	return &file_pkg_agent_proto_node_agent_proto_enumTypes[8]
+}
+
+func (x ReconfigureKubeletAPIServerResponse_Outcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ReconfigureKubeletAPIServerResponse_Outcome.Descriptor instead.
+func (ReconfigureKubeletAPIServerResponse_Outcome) EnumDescriptor() ([]byte, []int) {
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{98, 0}
+}
+
 type GetSupportBundleRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -6394,6 +6456,110 @@ func (x *GetNodeBootInfoResponse) GetBootId() string {
 	return ""
 }
 
+type ReconfigureKubeletAPIServerRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Kubernetes API endpoint in the exact form https://<host-or-ip>:6443.
+	Server string `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
+}
+
+func (x *ReconfigureKubeletAPIServerRequest) Reset() {
+	*x = ReconfigureKubeletAPIServerRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[97]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ReconfigureKubeletAPIServerRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconfigureKubeletAPIServerRequest) ProtoMessage() {}
+
+func (x *ReconfigureKubeletAPIServerRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[97]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconfigureKubeletAPIServerRequest.ProtoReflect.Descriptor instead.
+func (*ReconfigureKubeletAPIServerRequest) Descriptor() ([]byte, []int) {
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{97}
+}
+
+func (x *ReconfigureKubeletAPIServerRequest) GetServer() string {
+	if x != nil {
+		return x.Server
+	}
+	return ""
+}
+
+type ReconfigureKubeletAPIServerResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Outcome ReconfigureKubeletAPIServerResponse_Outcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=proto.ReconfigureKubeletAPIServerResponse_Outcome" json:"outcome,omitempty"`
+	// Populated only on FAILED_* outcomes.
+	ErrorMessage string `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+}
+
+func (x *ReconfigureKubeletAPIServerResponse) Reset() {
+	*x = ReconfigureKubeletAPIServerResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[98]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *ReconfigureKubeletAPIServerResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReconfigureKubeletAPIServerResponse) ProtoMessage() {}
+
+func (x *ReconfigureKubeletAPIServerResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_pkg_agent_proto_node_agent_proto_msgTypes[98]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReconfigureKubeletAPIServerResponse.ProtoReflect.Descriptor instead.
+func (*ReconfigureKubeletAPIServerResponse) Descriptor() ([]byte, []int) {
+	return file_pkg_agent_proto_node_agent_proto_rawDescGZIP(), []int{98}
+}
+
+func (x *ReconfigureKubeletAPIServerResponse) GetOutcome() ReconfigureKubeletAPIServerResponse_Outcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return ReconfigureKubeletAPIServerResponse_OUTCOME_UNSPECIFIED
+}
+
+func (x *ReconfigureKubeletAPIServerResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_pkg_agent_proto_node_agent_proto protoreflect.FileDescriptor
 
 var file_pkg_agent_proto_node_agent_proto_rawDesc = []byte{
@@ -7174,89 +7340,119 @@ var file_pkg_agent_proto_node_agent_proto_rawDesc = []byte{
 	0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x52, 0x13, 0x62, 0x6f, 0x6f, 0x74, 0x54, 0x69, 0x6d, 0x65,
 	0x55, 0x6e, 0x69, 0x78, 0x53, 0x65, 0x63, 0x6f, 0x6e, 0x64, 0x73, 0x12, 0x17, 0x0a, 0x07, 0x62,
 	0x6f, 0x6f, 0x74, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x62, 0x6f,
-	0x6f, 0x74, 0x49, 0x64, 0x2a, 0xbe, 0x01, 0x0a, 0x17, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65,
-	0x6e, 0x74, 0x4f, 0x70, 0x65, 0x72, 0x61, 0x74, 0x69, 0x6f, 0x6e, 0x50, 0x68, 0x61, 0x73, 0x65,
-	0x12, 0x2a, 0x0a, 0x26, 0x4e, 0x4f, 0x44, 0x45, 0x5f, 0x41, 0x47, 0x45, 0x4e, 0x54, 0x5f, 0x4f,
-	0x50, 0x45, 0x52, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x50, 0x48, 0x41, 0x53, 0x45, 0x5f, 0x55,
-	0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x26, 0x0a, 0x22,
-	0x4e, 0x4f, 0x44, 0x45, 0x5f, 0x41, 0x47, 0x45, 0x4e, 0x54, 0x5f, 0x4f, 0x50, 0x45, 0x52, 0x41,
-	0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x50, 0x48, 0x41, 0x53, 0x45, 0x5f, 0x52, 0x55, 0x4e, 0x4e, 0x49,
-	0x4e, 0x47, 0x10, 0x01, 0x12, 0x28, 0x0a, 0x24, 0x4e, 0x4f, 0x44, 0x45, 0x5f, 0x41, 0x47, 0x45,
+	0x6f, 0x74, 0x49, 0x64, 0x22, 0x3c, 0x0a, 0x22, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67,
+	0x75, 0x72, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72,
+	0x76, 0x65, 0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x12, 0x16, 0x0a, 0x06, 0x73, 0x65,
+	0x72, 0x76, 0x65, 0x72, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x73, 0x65, 0x72, 0x76,
+	0x65, 0x72, 0x22, 0xa7, 0x02, 0x0a, 0x23, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75,
+	0x72, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76,
+	0x65, 0x72, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x4c, 0x0a, 0x07, 0x6f, 0x75,
+	0x74, 0x63, 0x6f, 0x6d, 0x65, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0e, 0x32, 0x32, 0x2e, 0x70, 0x72,
+	0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65, 0x4b,
+	0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52,
+	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x2e, 0x4f, 0x75, 0x74, 0x63, 0x6f, 0x6d, 0x65, 0x52,
+	0x07, 0x6f, 0x75, 0x74, 0x63, 0x6f, 0x6d, 0x65, 0x12, 0x23, 0x0a, 0x0d, 0x65, 0x72, 0x72, 0x6f,
+	0x72, 0x5f, 0x6d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52,
+	0x0c, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x22, 0x8c, 0x01,
+	0x0a, 0x07, 0x4f, 0x75, 0x74, 0x63, 0x6f, 0x6d, 0x65, 0x12, 0x17, 0x0a, 0x13, 0x4f, 0x55, 0x54,
+	0x43, 0x4f, 0x4d, 0x45, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44,
+	0x10, 0x00, 0x12, 0x13, 0x0a, 0x0f, 0x4f, 0x55, 0x54, 0x43, 0x4f, 0x4d, 0x45, 0x5f, 0x41, 0x50,
+	0x50, 0x4c, 0x49, 0x45, 0x44, 0x10, 0x01, 0x12, 0x15, 0x0a, 0x11, 0x4f, 0x55, 0x54, 0x43, 0x4f,
+	0x4d, 0x45, 0x5f, 0x55, 0x4e, 0x43, 0x48, 0x41, 0x4e, 0x47, 0x45, 0x44, 0x10, 0x02, 0x12, 0x1b,
+	0x0a, 0x17, 0x4f, 0x55, 0x54, 0x43, 0x4f, 0x4d, 0x45, 0x5f, 0x46, 0x41, 0x49, 0x4c, 0x45, 0x44,
+	0x5f, 0x52, 0x45, 0x53, 0x54, 0x4f, 0x52, 0x45, 0x44, 0x10, 0x03, 0x12, 0x1f, 0x0a, 0x1b, 0x4f,
+	0x55, 0x54, 0x43, 0x4f, 0x4d, 0x45, 0x5f, 0x46, 0x41, 0x49, 0x4c, 0x45, 0x44, 0x5f, 0x4e, 0x4f,
+	0x54, 0x5f, 0x52, 0x45, 0x53, 0x54, 0x4f, 0x52, 0x45, 0x44, 0x10, 0x04, 0x2a, 0xbe, 0x01, 0x0a,
+	0x17, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x4f, 0x70, 0x65, 0x72, 0x61, 0x74,
+	0x69, 0x6f, 0x6e, 0x50, 0x68, 0x61, 0x73, 0x65, 0x12, 0x2a, 0x0a, 0x26, 0x4e, 0x4f, 0x44, 0x45,
+	0x5f, 0x41, 0x47, 0x45, 0x4e, 0x54, 0x5f, 0x4f, 0x50, 0x45, 0x52, 0x41, 0x54, 0x49, 0x4f, 0x4e,
+	0x5f, 0x50, 0x48, 0x41, 0x53, 0x45, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49,
+	0x45, 0x44, 0x10, 0x00, 0x12, 0x26, 0x0a, 0x22, 0x4e, 0x4f, 0x44, 0x45, 0x5f, 0x41, 0x47, 0x45,
 	0x4e, 0x54, 0x5f, 0x4f, 0x50, 0x45, 0x52, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x50, 0x48, 0x41,
-	0x53, 0x45, 0x5f, 0x53, 0x55, 0x43, 0x43, 0x45, 0x45, 0x44, 0x45, 0x44, 0x10, 0x02, 0x12, 0x25,
-	0x0a, 0x21, 0x4e, 0x4f, 0x44, 0x45, 0x5f, 0x41, 0x47, 0x45, 0x4e, 0x54, 0x5f, 0x4f, 0x50, 0x45,
-	0x52, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x50, 0x48, 0x41, 0x53, 0x45, 0x5f, 0x46, 0x41, 0x49,
-	0x4c, 0x45, 0x44, 0x10, 0x03, 0x2a, 0x26, 0x0a, 0x0d, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c,
-	0x4d, 0x65, 0x74, 0x68, 0x6f, 0x64, 0x12, 0x0b, 0x0a, 0x07, 0x4b, 0x75, 0x62, 0x65, 0x63, 0x74,
-	0x6c, 0x10, 0x00, 0x12, 0x08, 0x0a, 0x04, 0x48, 0x65, 0x6c, 0x6d, 0x10, 0x01, 0x2a, 0x56, 0x0a,
-	0x0a, 0x43, 0x6e, 0x69, 0x56, 0x61, 0x72, 0x69, 0x61, 0x6e, 0x74, 0x12, 0x1b, 0x0a, 0x17, 0x43,
-	0x4e, 0x49, 0x5f, 0x56, 0x41, 0x52, 0x49, 0x41, 0x4e, 0x54, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45,
-	0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x13, 0x0a, 0x0f, 0x43, 0x4e, 0x49, 0x5f,
-	0x56, 0x41, 0x52, 0x49, 0x41, 0x4e, 0x54, 0x5f, 0x4f, 0x56, 0x4e, 0x10, 0x01, 0x12, 0x16, 0x0a,
-	0x12, 0x43, 0x4e, 0x49, 0x5f, 0x56, 0x41, 0x52, 0x49, 0x41, 0x4e, 0x54, 0x5f, 0x43, 0x41, 0x4c,
-	0x49, 0x43, 0x4f, 0x10, 0x02, 0x2a, 0x5c, 0x0a, 0x0a, 0x43, 0x6e, 0x69, 0x41, 0x70, 0x74, 0x52,
-	0x6f, 0x6c, 0x65, 0x12, 0x1c, 0x0a, 0x18, 0x43, 0x4e, 0x49, 0x5f, 0x41, 0x50, 0x54, 0x5f, 0x52,
-	0x4f, 0x4c, 0x45, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10,
-	0x00, 0x12, 0x17, 0x0a, 0x13, 0x43, 0x4e, 0x49, 0x5f, 0x41, 0x50, 0x54, 0x5f, 0x52, 0x4f, 0x4c,
-	0x45, 0x5f, 0x49, 0x4d, 0x41, 0x47, 0x45, 0x53, 0x10, 0x01, 0x12, 0x17, 0x0a, 0x13, 0x43, 0x4e,
-	0x49, 0x5f, 0x41, 0x50, 0x54, 0x5f, 0x52, 0x4f, 0x4c, 0x45, 0x5f, 0x43, 0x48, 0x41, 0x52, 0x54,
-	0x53, 0x10, 0x02, 0x2a, 0x9a, 0x02, 0x0a, 0x27, 0x45, 0x74, 0x63, 0x64, 0x45, 0x6e, 0x63, 0x72,
-	0x79, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x41, 0x74, 0x52, 0x65, 0x73, 0x74, 0x4f, 0x62, 0x6a, 0x65,
-	0x63, 0x74, 0x73, 0x52, 0x65, 0x77, 0x72, 0x69, 0x74, 0x65, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12,
-	0x3d, 0x0a, 0x39, 0x45, 0x54, 0x43, 0x44, 0x5f, 0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49,
-	0x4f, 0x4e, 0x5f, 0x41, 0x54, 0x5f, 0x52, 0x45, 0x53, 0x54, 0x5f, 0x4f, 0x42, 0x4a, 0x45, 0x43,
-	0x54, 0x53, 0x5f, 0x52, 0x45, 0x57, 0x52, 0x49, 0x54, 0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45,
-	0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x39,
-	0x0a, 0x35, 0x45, 0x54, 0x43, 0x44, 0x5f, 0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f,
-	0x4e, 0x5f, 0x41, 0x54, 0x5f, 0x52, 0x45, 0x53, 0x54, 0x5f, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54,
-	0x53, 0x5f, 0x52, 0x45, 0x57, 0x52, 0x49, 0x54, 0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f,
-	0x52, 0x55, 0x4e, 0x4e, 0x49, 0x4e, 0x47, 0x10, 0x01, 0x12, 0x3b, 0x0a, 0x37, 0x45, 0x54, 0x43,
-	0x44, 0x5f, 0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x41, 0x54, 0x5f,
-	0x52, 0x45, 0x53, 0x54, 0x5f, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x53, 0x5f, 0x52, 0x45, 0x57,
-	0x52, 0x49, 0x54, 0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x53, 0x55, 0x43, 0x43, 0x45,
-	0x45, 0x44, 0x45, 0x44, 0x10, 0x02, 0x12, 0x38, 0x0a, 0x34, 0x45, 0x54, 0x43, 0x44, 0x5f, 0x45,
+	0x53, 0x45, 0x5f, 0x52, 0x55, 0x4e, 0x4e, 0x49, 0x4e, 0x47, 0x10, 0x01, 0x12, 0x28, 0x0a, 0x24,
+	0x4e, 0x4f, 0x44, 0x45, 0x5f, 0x41, 0x47, 0x45, 0x4e, 0x54, 0x5f, 0x4f, 0x50, 0x45, 0x52, 0x41,
+	0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x50, 0x48, 0x41, 0x53, 0x45, 0x5f, 0x53, 0x55, 0x43, 0x43, 0x45,
+	0x45, 0x44, 0x45, 0x44, 0x10, 0x02, 0x12, 0x25, 0x0a, 0x21, 0x4e, 0x4f, 0x44, 0x45, 0x5f, 0x41,
+	0x47, 0x45, 0x4e, 0x54, 0x5f, 0x4f, 0x50, 0x45, 0x52, 0x41, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x50,
+	0x48, 0x41, 0x53, 0x45, 0x5f, 0x46, 0x41, 0x49, 0x4c, 0x45, 0x44, 0x10, 0x03, 0x2a, 0x26, 0x0a,
+	0x0d, 0x49, 0x6e, 0x73, 0x74, 0x61, 0x6c, 0x6c, 0x4d, 0x65, 0x74, 0x68, 0x6f, 0x64, 0x12, 0x0b,
+	0x0a, 0x07, 0x4b, 0x75, 0x62, 0x65, 0x63, 0x74, 0x6c, 0x10, 0x00, 0x12, 0x08, 0x0a, 0x04, 0x48,
+	0x65, 0x6c, 0x6d, 0x10, 0x01, 0x2a, 0x56, 0x0a, 0x0a, 0x43, 0x6e, 0x69, 0x56, 0x61, 0x72, 0x69,
+	0x61, 0x6e, 0x74, 0x12, 0x1b, 0x0a, 0x17, 0x43, 0x4e, 0x49, 0x5f, 0x56, 0x41, 0x52, 0x49, 0x41,
+	0x4e, 0x54, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10, 0x00,
+	0x12, 0x13, 0x0a, 0x0f, 0x43, 0x4e, 0x49, 0x5f, 0x56, 0x41, 0x52, 0x49, 0x41, 0x4e, 0x54, 0x5f,
+	0x4f, 0x56, 0x4e, 0x10, 0x01, 0x12, 0x16, 0x0a, 0x12, 0x43, 0x4e, 0x49, 0x5f, 0x56, 0x41, 0x52,
+	0x49, 0x41, 0x4e, 0x54, 0x5f, 0x43, 0x41, 0x4c, 0x49, 0x43, 0x4f, 0x10, 0x02, 0x2a, 0x5c, 0x0a,
+	0x0a, 0x43, 0x6e, 0x69, 0x41, 0x70, 0x74, 0x52, 0x6f, 0x6c, 0x65, 0x12, 0x1c, 0x0a, 0x18, 0x43,
+	0x4e, 0x49, 0x5f, 0x41, 0x50, 0x54, 0x5f, 0x52, 0x4f, 0x4c, 0x45, 0x5f, 0x55, 0x4e, 0x53, 0x50,
+	0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x17, 0x0a, 0x13, 0x43, 0x4e, 0x49,
+	0x5f, 0x41, 0x50, 0x54, 0x5f, 0x52, 0x4f, 0x4c, 0x45, 0x5f, 0x49, 0x4d, 0x41, 0x47, 0x45, 0x53,
+	0x10, 0x01, 0x12, 0x17, 0x0a, 0x13, 0x43, 0x4e, 0x49, 0x5f, 0x41, 0x50, 0x54, 0x5f, 0x52, 0x4f,
+	0x4c, 0x45, 0x5f, 0x43, 0x48, 0x41, 0x52, 0x54, 0x53, 0x10, 0x02, 0x2a, 0x9a, 0x02, 0x0a, 0x27,
+	0x45, 0x74, 0x63, 0x64, 0x45, 0x6e, 0x63, 0x72, 0x79, 0x70, 0x74, 0x69, 0x6f, 0x6e, 0x41, 0x74,
+	0x52, 0x65, 0x73, 0x74, 0x4f, 0x62, 0x6a, 0x65, 0x63, 0x74, 0x73, 0x52, 0x65, 0x77, 0x72, 0x69,
+	0x74, 0x65, 0x53, 0x74, 0x61, 0x74, 0x65, 0x12, 0x3d, 0x0a, 0x39, 0x45, 0x54, 0x43, 0x44, 0x5f,
+	0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x41, 0x54, 0x5f, 0x52, 0x45,
+	0x53, 0x54, 0x5f, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x53, 0x5f, 0x52, 0x45, 0x57, 0x52, 0x49,
+	0x54, 0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49,
+	0x46, 0x49, 0x45, 0x44, 0x10, 0x00, 0x12, 0x39, 0x0a, 0x35, 0x45, 0x54, 0x43, 0x44, 0x5f, 0x45,
 	0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x41, 0x54, 0x5f, 0x52, 0x45, 0x53,
 	0x54, 0x5f, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54, 0x53, 0x5f, 0x52, 0x45, 0x57, 0x52, 0x49, 0x54,
-	0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x46, 0x41, 0x49, 0x4c, 0x45, 0x44, 0x10, 0x03,
-	0x2a, 0x58, 0x0a, 0x14, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x50, 0x72, 0x65, 0x66, 0x6c,
-	0x69, 0x67, 0x68, 0x74, 0x52, 0x6f, 0x6c, 0x65, 0x12, 0x1f, 0x0a, 0x1b, 0x4b, 0x55, 0x42, 0x45,
-	0x41, 0x44, 0x4d, 0x5f, 0x50, 0x52, 0x45, 0x46, 0x4c, 0x49, 0x47, 0x48, 0x54, 0x5f, 0x52, 0x4f,
-	0x4c, 0x45, 0x5f, 0x49, 0x4e, 0x49, 0x54, 0x10, 0x00, 0x12, 0x1f, 0x0a, 0x1b, 0x4b, 0x55, 0x42,
-	0x45, 0x41, 0x44, 0x4d, 0x5f, 0x50, 0x52, 0x45, 0x46, 0x4c, 0x49, 0x47, 0x48, 0x54, 0x5f, 0x52,
-	0x4f, 0x4c, 0x45, 0x5f, 0x4a, 0x4f, 0x49, 0x4e, 0x10, 0x01, 0x32, 0xc4, 0x1e, 0x0a, 0x09, 0x4e,
-	0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74, 0x12, 0x4f, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x4b,
-	0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x12, 0x1b, 0x2e, 0x70,
-	0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x53, 0x74, 0x61, 0x74,
-	0x75, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52,
-	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x5b, 0x0a, 0x12, 0x53, 0x63, 0x68,
-	0x65, 0x64, 0x75, 0x6c, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x52, 0x65, 0x62, 0x6f, 0x6f, 0x74, 0x12,
-	0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x63, 0x68, 0x65, 0x64, 0x75, 0x6c, 0x65,
-	0x4e, 0x6f, 0x64, 0x65, 0x52, 0x65, 0x62, 0x6f, 0x6f, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
-	0x74, 0x1a, 0x21, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x53, 0x63, 0x68, 0x65, 0x64, 0x75,
-	0x6c, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x52, 0x65, 0x62, 0x6f, 0x6f, 0x74, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x52, 0x0a, 0x0f, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64,
-	0x65, 0x42, 0x6f, 0x6f, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x12, 0x1d, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x2e, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x49, 0x6e, 0x66,
-	0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
-	0x2e, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x49, 0x6e, 0x66, 0x6f,
-	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x53, 0x0a, 0x12, 0x45, 0x78,
-	0x65, 0x63, 0x75, 0x74, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x49, 0x6e, 0x69, 0x74,
-	0x12, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d,
-	0x49, 0x6e, 0x69, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x49, 0x6e, 0x69, 0x74, 0x53,
-	0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12,
-	0x53, 0x0a, 0x12, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64,
-	0x6d, 0x4a, 0x6f, 0x69, 0x6e, 0x12, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75,
-	0x62, 0x65, 0x61, 0x64, 0x6d, 0x4a, 0x6f, 0x69, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
-	0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d,
-	0x4a, 0x6f, 0x69, 0x6e, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
-	0x73, 0x65, 0x22, 0x00, 0x12, 0x56, 0x0a, 0x13, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4b,
-	0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x52, 0x65, 0x73, 0x65, 0x74, 0x12, 0x1a, 0x2e, 0x70, 0x72,
-	0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x52, 0x65, 0x73, 0x65, 0x74,
-	0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x21, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
-	0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x52, 0x65, 0x73, 0x65, 0x74, 0x53, 0x74, 0x61, 0x74,
-	0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x9d, 0x01, 0x0a,
+	0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f, 0x52, 0x55, 0x4e, 0x4e, 0x49, 0x4e, 0x47, 0x10,
+	0x01, 0x12, 0x3b, 0x0a, 0x37, 0x45, 0x54, 0x43, 0x44, 0x5f, 0x45, 0x4e, 0x43, 0x52, 0x59, 0x50,
+	0x54, 0x49, 0x4f, 0x4e, 0x5f, 0x41, 0x54, 0x5f, 0x52, 0x45, 0x53, 0x54, 0x5f, 0x4f, 0x42, 0x4a,
+	0x45, 0x43, 0x54, 0x53, 0x5f, 0x52, 0x45, 0x57, 0x52, 0x49, 0x54, 0x45, 0x5f, 0x53, 0x54, 0x41,
+	0x54, 0x45, 0x5f, 0x53, 0x55, 0x43, 0x43, 0x45, 0x45, 0x44, 0x45, 0x44, 0x10, 0x02, 0x12, 0x38,
+	0x0a, 0x34, 0x45, 0x54, 0x43, 0x44, 0x5f, 0x45, 0x4e, 0x43, 0x52, 0x59, 0x50, 0x54, 0x49, 0x4f,
+	0x4e, 0x5f, 0x41, 0x54, 0x5f, 0x52, 0x45, 0x53, 0x54, 0x5f, 0x4f, 0x42, 0x4a, 0x45, 0x43, 0x54,
+	0x53, 0x5f, 0x52, 0x45, 0x57, 0x52, 0x49, 0x54, 0x45, 0x5f, 0x53, 0x54, 0x41, 0x54, 0x45, 0x5f,
+	0x46, 0x41, 0x49, 0x4c, 0x45, 0x44, 0x10, 0x03, 0x2a, 0x58, 0x0a, 0x14, 0x4b, 0x75, 0x62, 0x65,
+	0x61, 0x64, 0x6d, 0x50, 0x72, 0x65, 0x66, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x52, 0x6f, 0x6c, 0x65,
+	0x12, 0x1f, 0x0a, 0x1b, 0x4b, 0x55, 0x42, 0x45, 0x41, 0x44, 0x4d, 0x5f, 0x50, 0x52, 0x45, 0x46,
+	0x4c, 0x49, 0x47, 0x48, 0x54, 0x5f, 0x52, 0x4f, 0x4c, 0x45, 0x5f, 0x49, 0x4e, 0x49, 0x54, 0x10,
+	0x00, 0x12, 0x1f, 0x0a, 0x1b, 0x4b, 0x55, 0x42, 0x45, 0x41, 0x44, 0x4d, 0x5f, 0x50, 0x52, 0x45,
+	0x46, 0x4c, 0x49, 0x47, 0x48, 0x54, 0x5f, 0x52, 0x4f, 0x4c, 0x45, 0x5f, 0x4a, 0x4f, 0x49, 0x4e,
+	0x10, 0x01, 0x32, 0xbc, 0x1f, 0x0a, 0x09, 0x4e, 0x6f, 0x64, 0x65, 0x41, 0x67, 0x65, 0x6e, 0x74,
+	0x12, 0x4f, 0x0a, 0x10, 0x47, 0x65, 0x74, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x53, 0x74,
+	0x61, 0x74, 0x75, 0x73, 0x12, 0x1b, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62,
+	0x65, 0x61, 0x64, 0x6d, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73,
+	0x74, 0x1a, 0x1c, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64,
+	0x6d, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22,
+	0x00, 0x12, 0x5b, 0x0a, 0x12, 0x53, 0x63, 0x68, 0x65, 0x64, 0x75, 0x6c, 0x65, 0x4e, 0x6f, 0x64,
+	0x65, 0x52, 0x65, 0x62, 0x6f, 0x6f, 0x74, 0x12, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e,
+	0x53, 0x63, 0x68, 0x65, 0x64, 0x75, 0x6c, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x52, 0x65, 0x62, 0x6f,
+	0x6f, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x21, 0x2e, 0x70, 0x72, 0x6f, 0x74,
+	0x6f, 0x2e, 0x53, 0x63, 0x68, 0x65, 0x64, 0x75, 0x6c, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x52, 0x65,
+	0x62, 0x6f, 0x6f, 0x74, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x52,
+	0x0a, 0x0f, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65, 0x42, 0x6f, 0x6f, 0x74, 0x49, 0x6e, 0x66,
+	0x6f, 0x12, 0x1d, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64,
+	0x65, 0x42, 0x6f, 0x6f, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x1a, 0x1e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x47, 0x65, 0x74, 0x4e, 0x6f, 0x64, 0x65,
+	0x42, 0x6f, 0x6f, 0x74, 0x49, 0x6e, 0x66, 0x6f, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x22, 0x00, 0x12, 0x53, 0x0a, 0x12, 0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4b, 0x75, 0x62,
+	0x65, 0x61, 0x64, 0x6d, 0x49, 0x6e, 0x69, 0x74, 0x12, 0x19, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x49, 0x6e, 0x69, 0x74, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65,
+	0x61, 0x64, 0x6d, 0x49, 0x6e, 0x69, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x73,
+	0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x53, 0x0a, 0x12, 0x45, 0x78, 0x65, 0x63, 0x75,
+	0x74, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x4a, 0x6f, 0x69, 0x6e, 0x12, 0x19, 0x2e,
+	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x4a, 0x6f, 0x69,
+	0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x20, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f,
+	0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x4a, 0x6f, 0x69, 0x6e, 0x53, 0x74, 0x61, 0x74,
+	0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x56, 0x0a, 0x13,
+	0x45, 0x78, 0x65, 0x63, 0x75, 0x74, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x52, 0x65,
+	0x73, 0x65, 0x74, 0x12, 0x1a, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65,
+	0x61, 0x64, 0x6d, 0x52, 0x65, 0x73, 0x65, 0x74, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a,
+	0x21, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x4b, 0x75, 0x62, 0x65, 0x61, 0x64, 0x6d, 0x52,
+	0x65, 0x73, 0x65, 0x74, 0x53, 0x74, 0x61, 0x74, 0x75, 0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e,
+	0x73, 0x65, 0x22, 0x00, 0x12, 0x76, 0x0a, 0x1b, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67,
+	0x75, 0x72, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72,
+	0x76, 0x65, 0x72, 0x12, 0x29, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x63, 0x6f,
+	0x6e, 0x66, 0x69, 0x67, 0x75, 0x72, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x41, 0x50,
+	0x49, 0x53, 0x65, 0x72, 0x76, 0x65, 0x72, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2a,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x52, 0x65, 0x63, 0x6f, 0x6e, 0x66, 0x69, 0x67, 0x75,
+	0x72, 0x65, 0x4b, 0x75, 0x62, 0x65, 0x6c, 0x65, 0x74, 0x41, 0x50, 0x49, 0x53, 0x65, 0x72, 0x76,
+	0x65, 0x72, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x22, 0x00, 0x12, 0x9d, 0x01, 0x0a,
 	0x28, 0x53, 0x74, 0x61, 0x72, 0x74, 0x4b, 0x38, 0x73, 0x43, 0x6f, 0x6e, 0x74, 0x72, 0x6f, 0x6c,
 	0x50, 0x6c, 0x61, 0x6e, 0x65, 0x4e, 0x6f, 0x64, 0x65, 0x47, 0x72, 0x61, 0x63, 0x65, 0x66, 0x75,
 	0x6c, 0x53, 0x68, 0x75, 0x74, 0x64, 0x6f, 0x77, 0x6e, 0x12, 0x36, 0x2e, 0x70, 0x72, 0x6f, 0x74,
@@ -7486,8 +7682,8 @@ func file_pkg_agent_proto_node_agent_proto_rawDescGZIP() []byte {
 	return file_pkg_agent_proto_node_agent_proto_rawDescData
 }
 
-var file_pkg_agent_proto_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_pkg_agent_proto_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 100)
+var file_pkg_agent_proto_node_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 9)
+var file_pkg_agent_proto_node_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 102)
 var file_pkg_agent_proto_node_agent_proto_goTypes = []interface{}{
 	(NodeAgentOperationPhase)(0),                                 // 0: proto.NodeAgentOperationPhase
 	(InstallMethod)(0),                                           // 1: proto.InstallMethod
@@ -7497,225 +7693,231 @@ var file_pkg_agent_proto_node_agent_proto_goTypes = []interface{}{
 	(KubeadmPreflightRole)(0),                                    // 5: proto.KubeadmPreflightRole
 	(PatchAPIServerManifestResponse_Outcome)(0),                  // 6: proto.PatchAPIServerManifestResponse.Outcome
 	(ResourceApplyResult_Outcome)(0),                             // 7: proto.ResourceApplyResult.Outcome
-	(*GetSupportBundleRequest)(nil),                              // 8: proto.GetSupportBundleRequest
-	(*GetSupportBundleResponse)(nil),                             // 9: proto.GetSupportBundleResponse
-	(*KubeadmStatusRequest)(nil),                                 // 10: proto.KubeadmStatusRequest
-	(*KubeadmStatusResponse)(nil),                                // 11: proto.KubeadmStatusResponse
-	(*File)(nil),                                                 // 12: proto.File
-	(*PatchAPIServerManifestRequest)(nil),                        // 13: proto.PatchAPIServerManifestRequest
-	(*FlagOp)(nil),                                               // 14: proto.FlagOp
-	(*SetFlag)(nil),                                              // 15: proto.SetFlag
-	(*RemoveFlag)(nil),                                           // 16: proto.RemoveFlag
-	(*PatchAPIServerManifestResponse)(nil),                       // 17: proto.PatchAPIServerManifestResponse
-	(*KubeadmInitRequest)(nil),                                   // 18: proto.KubeadmInitRequest
-	(*KubeadmInitStatusRequest)(nil),                             // 19: proto.KubeadmInitStatusRequest
-	(*KubeadmInitStatusResponse)(nil),                            // 20: proto.KubeadmInitStatusResponse
-	(*KubeadmJoinRequest)(nil),                                   // 21: proto.KubeadmJoinRequest
-	(*KubeadmJoinStatusRequest)(nil),                             // 22: proto.KubeadmJoinStatusRequest
-	(*KubeadmJoinStatusResponse)(nil),                            // 23: proto.KubeadmJoinStatusResponse
-	(*KubeadmResetRequest)(nil),                                  // 24: proto.KubeadmResetRequest
-	(*KubeadmResetStatusResponse)(nil),                           // 25: proto.KubeadmResetStatusResponse
-	(*NodeAgentOperationStatus)(nil),                             // 26: proto.NodeAgentOperationStatus
-	(*StartK8SControlPlaneNodeGracefulShutdownRequest)(nil),      // 27: proto.StartK8sControlPlaneNodeGracefulShutdownRequest
-	(*StartK8SControlPlaneNodeGracefulShutdownResponse)(nil),     // 28: proto.StartK8sControlPlaneNodeGracefulShutdownResponse
-	(*GetK8SControlPlaneNodeGracefulShutdownStatusRequest)(nil),  // 29: proto.GetK8sControlPlaneNodeGracefulShutdownStatusRequest
-	(*GetK8SControlPlaneNodeGracefulShutdownStatusResponse)(nil), // 30: proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse
-	(*InstallCNIPluginRequest)(nil),                              // 31: proto.InstallCNIPluginRequest
-	(*InstallCNIRequest)(nil),                                    // 32: proto.InstallCNIRequest
-	(*InstallCNIResponse)(nil),                                   // 33: proto.InstallCNIResponse
-	(*KubeadmJoinStringRequest)(nil),                             // 34: proto.KubeadmJoinStringRequest
-	(*KubeadmJoinStringResponse)(nil),                            // 35: proto.KubeadmJoinStringResponse
-	(*KubernetesClusterStatusRequest)(nil),                       // 36: proto.KubernetesClusterStatusRequest
-	(*KubernetesClusterStatusResponse)(nil),                      // 37: proto.KubernetesClusterStatusResponse
-	(*KubeconfigRequest)(nil),                                    // 38: proto.KubeconfigRequest
-	(*KubeconfigResponse)(nil),                                   // 39: proto.KubeconfigResponse
-	(*UpdateNKERBACRequest)(nil),                                 // 40: proto.UpdateNKERBACRequest
-	(*UpdateNKERBACResponse)(nil),                                // 41: proto.UpdateNKERBACResponse
-	(*ResourceApplyResult)(nil),                                  // 42: proto.ResourceApplyResult
-	(*ExecuteScriptRequest)(nil),                                 // 43: proto.ExecuteScriptRequest
-	(*ExecuteScriptResponse)(nil),                                // 44: proto.ExecuteScriptResponse
-	(*InitializeKubernetesAPIEncryptionRequest)(nil),             // 45: proto.InitializeKubernetesAPIEncryptionRequest
-	(*InitializeKubernetesAPIEncryptionResponse)(nil),            // 46: proto.InitializeKubernetesAPIEncryptionResponse
-	(*RewriteKubernetesAPIObjectsRequest)(nil),                   // 47: proto.RewriteKubernetesAPIObjectsRequest
-	(*RewriteKubernetesAPIObjectsResponse)(nil),                  // 48: proto.RewriteKubernetesAPIObjectsResponse
-	(*PromoteKubernetesAPIEncryptionProvidersRequest)(nil),       // 49: proto.PromoteKubernetesAPIEncryptionProvidersRequest
-	(*PromoteKubernetesAPIEncryptionProvidersResponse)(nil),      // 50: proto.PromoteKubernetesAPIEncryptionProvidersResponse
-	(*AddSecondaryKeyOperation)(nil),                             // 51: proto.AddSecondaryKeyOperation
-	(*PromotePrimaryKeyOperation)(nil),                           // 52: proto.PromotePrimaryKeyOperation
-	(*RemoveOldKeysOperation)(nil),                               // 53: proto.RemoveOldKeysOperation
-	(*UpdateEncryptionConfigRequest)(nil),                        // 54: proto.UpdateEncryptionConfigRequest
-	(*UpdateEncryptionConfigResponse)(nil),                       // 55: proto.UpdateEncryptionConfigResponse
-	(*EtcdEncryptionAtRestObjectsRewriteOperation)(nil),          // 56: proto.EtcdEncryptionAtRestObjectsRewriteOperation
-	(*StartEtcdEncryptionAtRestObjectsRewriteRequest)(nil),       // 57: proto.StartEtcdEncryptionAtRestObjectsRewriteRequest
-	(*StartEtcdEncryptionAtRestObjectsRewriteResponse)(nil),      // 58: proto.StartEtcdEncryptionAtRestObjectsRewriteResponse
-	(*GetEtcdEncryptionAtRestObjectsRewriteStatusRequest)(nil),   // 59: proto.GetEtcdEncryptionAtRestObjectsRewriteStatusRequest
-	(*GetEtcdEncryptionAtRestObjectsRewriteStatusResponse)(nil),  // 60: proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse
-	(*RemovePlainTextSecondaryEncryptionEntryRequest)(nil),       // 61: proto.RemovePlainTextSecondaryEncryptionEntryRequest
-	(*RemovePlainTextSecondaryEncryptionEntryResponse)(nil),      // 62: proto.RemovePlainTextSecondaryEncryptionEntryResponse
-	(*FileChunk)(nil),                                            // 63: proto.FileChunk
-	(*UploadStatus)(nil),                                         // 64: proto.UploadStatus
-	(*WriteNodeAgentConfigRequest)(nil),                          // 65: proto.WriteNodeAgentConfigRequest
-	(*WriteNodeAgentConfigResponse)(nil),                         // 66: proto.WriteNodeAgentConfigResponse
-	(*RestartAPIPodsRequest)(nil),                                // 67: proto.RestartAPIPodsRequest
-	(*RestartAPIPodsResponse)(nil),                               // 68: proto.RestartAPIPodsResponse
-	(*ScriptOutputChunk)(nil),                                    // 69: proto.ScriptOutputChunk
-	(*SetUnsetIsMasterRequest)(nil),                              // 70: proto.SetUnsetIsMasterRequest
-	(*SetUnsetIsMasterResponse)(nil),                             // 71: proto.SetUnsetIsMasterResponse
-	(*InstallBundleRequest)(nil),                                 // 72: proto.InstallBundleRequest
-	(*InstallBundleResponse)(nil),                                // 73: proto.InstallBundleResponse
-	(*GetBundleStatusRequest)(nil),                               // 74: proto.GetBundleStatusRequest
-	(*BundleStatus)(nil),                                         // 75: proto.BundleStatus
-	(*GetBundleStatusResponse)(nil),                              // 76: proto.GetBundleStatusResponse
-	(*InstallCollectionRequest)(nil),                             // 77: proto.InstallCollectionRequest
-	(*InstallCollectionResponse)(nil),                            // 78: proto.InstallCollectionResponse
-	(*InstallPackagesRequest)(nil),                               // 79: proto.InstallPackagesRequest
-	(*InstallPackagesResponse)(nil),                              // 80: proto.InstallPackagesResponse
-	(*ListPackagesRequest)(nil),                                  // 81: proto.ListPackagesRequest
-	(*InstalledPackage)(nil),                                     // 82: proto.InstalledPackage
-	(*ListPackagesResponse)(nil),                                 // 83: proto.ListPackagesResponse
-	(*RemovePackagesRequest)(nil),                                // 84: proto.RemovePackagesRequest
-	(*RemovePackagesResponse)(nil),                               // 85: proto.RemovePackagesResponse
-	(*KubeadmPreflightRequest)(nil),                              // 86: proto.KubeadmPreflightRequest
-	(*PreflightCheckResult)(nil),                                 // 87: proto.PreflightCheckResult
-	(*KubeadmPreflightResponse)(nil),                             // 88: proto.KubeadmPreflightResponse
-	(*ExecuteNodePreflightRequest)(nil),                          // 89: proto.ExecuteNodePreflightRequest
-	(*CheckCloudInitStatus)(nil),                                 // 90: proto.CheckCloudInitStatus
-	(*NodePreflightCheck)(nil),                                   // 91: proto.NodePreflightCheck
-	(*FileExistsPreflightCheck)(nil),                             // 92: proto.FileExistsPreflightCheck
-	(*ExecuteNodePreflightResponse)(nil),                         // 93: proto.ExecuteNodePreflightResponse
-	(*NodePreflightResult)(nil),                                  // 94: proto.NodePreflightResult
-	(*ConfigureAptRepoRequest)(nil),                              // 95: proto.ConfigureAptRepoRequest
-	(*ConfigureAptRepoResponse)(nil),                             // 96: proto.ConfigureAptRepoResponse
-	(*RemoveAptRepoRequest)(nil),                                 // 97: proto.RemoveAptRepoRequest
-	(*RemoveAptRepoResponse)(nil),                                // 98: proto.RemoveAptRepoResponse
-	(*StartKubeVipRestoreRequest)(nil),                           // 99: proto.StartKubeVipRestoreRequest
-	(*StartKubeVipRestoreResponse)(nil),                          // 100: proto.StartKubeVipRestoreResponse
-	(*ScheduleNodeRebootRequest)(nil),                            // 101: proto.ScheduleNodeRebootRequest
-	(*ScheduleNodeRebootResponse)(nil),                           // 102: proto.ScheduleNodeRebootResponse
-	(*GetNodeBootInfoRequest)(nil),                               // 103: proto.GetNodeBootInfoRequest
-	(*GetNodeBootInfoResponse)(nil),                              // 104: proto.GetNodeBootInfoResponse
-	nil,                                                          // 105: proto.KubeadmInitRequest.CniConfigEntry
-	nil,                                                          // 106: proto.InstallCNIPluginRequest.CniConfigEntry
-	nil,                                                          // 107: proto.InstallCNIRequest.CniConfigEntry
+	(ReconfigureKubeletAPIServerResponse_Outcome)(0),             // 8: proto.ReconfigureKubeletAPIServerResponse.Outcome
+	(*GetSupportBundleRequest)(nil),                              // 9: proto.GetSupportBundleRequest
+	(*GetSupportBundleResponse)(nil),                             // 10: proto.GetSupportBundleResponse
+	(*KubeadmStatusRequest)(nil),                                 // 11: proto.KubeadmStatusRequest
+	(*KubeadmStatusResponse)(nil),                                // 12: proto.KubeadmStatusResponse
+	(*File)(nil),                                                 // 13: proto.File
+	(*PatchAPIServerManifestRequest)(nil),                        // 14: proto.PatchAPIServerManifestRequest
+	(*FlagOp)(nil),                                               // 15: proto.FlagOp
+	(*SetFlag)(nil),                                              // 16: proto.SetFlag
+	(*RemoveFlag)(nil),                                           // 17: proto.RemoveFlag
+	(*PatchAPIServerManifestResponse)(nil),                       // 18: proto.PatchAPIServerManifestResponse
+	(*KubeadmInitRequest)(nil),                                   // 19: proto.KubeadmInitRequest
+	(*KubeadmInitStatusRequest)(nil),                             // 20: proto.KubeadmInitStatusRequest
+	(*KubeadmInitStatusResponse)(nil),                            // 21: proto.KubeadmInitStatusResponse
+	(*KubeadmJoinRequest)(nil),                                   // 22: proto.KubeadmJoinRequest
+	(*KubeadmJoinStatusRequest)(nil),                             // 23: proto.KubeadmJoinStatusRequest
+	(*KubeadmJoinStatusResponse)(nil),                            // 24: proto.KubeadmJoinStatusResponse
+	(*KubeadmResetRequest)(nil),                                  // 25: proto.KubeadmResetRequest
+	(*KubeadmResetStatusResponse)(nil),                           // 26: proto.KubeadmResetStatusResponse
+	(*NodeAgentOperationStatus)(nil),                             // 27: proto.NodeAgentOperationStatus
+	(*StartK8SControlPlaneNodeGracefulShutdownRequest)(nil),      // 28: proto.StartK8sControlPlaneNodeGracefulShutdownRequest
+	(*StartK8SControlPlaneNodeGracefulShutdownResponse)(nil),     // 29: proto.StartK8sControlPlaneNodeGracefulShutdownResponse
+	(*GetK8SControlPlaneNodeGracefulShutdownStatusRequest)(nil),  // 30: proto.GetK8sControlPlaneNodeGracefulShutdownStatusRequest
+	(*GetK8SControlPlaneNodeGracefulShutdownStatusResponse)(nil), // 31: proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse
+	(*InstallCNIPluginRequest)(nil),                              // 32: proto.InstallCNIPluginRequest
+	(*InstallCNIRequest)(nil),                                    // 33: proto.InstallCNIRequest
+	(*InstallCNIResponse)(nil),                                   // 34: proto.InstallCNIResponse
+	(*KubeadmJoinStringRequest)(nil),                             // 35: proto.KubeadmJoinStringRequest
+	(*KubeadmJoinStringResponse)(nil),                            // 36: proto.KubeadmJoinStringResponse
+	(*KubernetesClusterStatusRequest)(nil),                       // 37: proto.KubernetesClusterStatusRequest
+	(*KubernetesClusterStatusResponse)(nil),                      // 38: proto.KubernetesClusterStatusResponse
+	(*KubeconfigRequest)(nil),                                    // 39: proto.KubeconfigRequest
+	(*KubeconfigResponse)(nil),                                   // 40: proto.KubeconfigResponse
+	(*UpdateNKERBACRequest)(nil),                                 // 41: proto.UpdateNKERBACRequest
+	(*UpdateNKERBACResponse)(nil),                                // 42: proto.UpdateNKERBACResponse
+	(*ResourceApplyResult)(nil),                                  // 43: proto.ResourceApplyResult
+	(*ExecuteScriptRequest)(nil),                                 // 44: proto.ExecuteScriptRequest
+	(*ExecuteScriptResponse)(nil),                                // 45: proto.ExecuteScriptResponse
+	(*InitializeKubernetesAPIEncryptionRequest)(nil),             // 46: proto.InitializeKubernetesAPIEncryptionRequest
+	(*InitializeKubernetesAPIEncryptionResponse)(nil),            // 47: proto.InitializeKubernetesAPIEncryptionResponse
+	(*RewriteKubernetesAPIObjectsRequest)(nil),                   // 48: proto.RewriteKubernetesAPIObjectsRequest
+	(*RewriteKubernetesAPIObjectsResponse)(nil),                  // 49: proto.RewriteKubernetesAPIObjectsResponse
+	(*PromoteKubernetesAPIEncryptionProvidersRequest)(nil),       // 50: proto.PromoteKubernetesAPIEncryptionProvidersRequest
+	(*PromoteKubernetesAPIEncryptionProvidersResponse)(nil),      // 51: proto.PromoteKubernetesAPIEncryptionProvidersResponse
+	(*AddSecondaryKeyOperation)(nil),                             // 52: proto.AddSecondaryKeyOperation
+	(*PromotePrimaryKeyOperation)(nil),                           // 53: proto.PromotePrimaryKeyOperation
+	(*RemoveOldKeysOperation)(nil),                               // 54: proto.RemoveOldKeysOperation
+	(*UpdateEncryptionConfigRequest)(nil),                        // 55: proto.UpdateEncryptionConfigRequest
+	(*UpdateEncryptionConfigResponse)(nil),                       // 56: proto.UpdateEncryptionConfigResponse
+	(*EtcdEncryptionAtRestObjectsRewriteOperation)(nil),          // 57: proto.EtcdEncryptionAtRestObjectsRewriteOperation
+	(*StartEtcdEncryptionAtRestObjectsRewriteRequest)(nil),       // 58: proto.StartEtcdEncryptionAtRestObjectsRewriteRequest
+	(*StartEtcdEncryptionAtRestObjectsRewriteResponse)(nil),      // 59: proto.StartEtcdEncryptionAtRestObjectsRewriteResponse
+	(*GetEtcdEncryptionAtRestObjectsRewriteStatusRequest)(nil),   // 60: proto.GetEtcdEncryptionAtRestObjectsRewriteStatusRequest
+	(*GetEtcdEncryptionAtRestObjectsRewriteStatusResponse)(nil),  // 61: proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse
+	(*RemovePlainTextSecondaryEncryptionEntryRequest)(nil),       // 62: proto.RemovePlainTextSecondaryEncryptionEntryRequest
+	(*RemovePlainTextSecondaryEncryptionEntryResponse)(nil),      // 63: proto.RemovePlainTextSecondaryEncryptionEntryResponse
+	(*FileChunk)(nil),                                            // 64: proto.FileChunk
+	(*UploadStatus)(nil),                                         // 65: proto.UploadStatus
+	(*WriteNodeAgentConfigRequest)(nil),                          // 66: proto.WriteNodeAgentConfigRequest
+	(*WriteNodeAgentConfigResponse)(nil),                         // 67: proto.WriteNodeAgentConfigResponse
+	(*RestartAPIPodsRequest)(nil),                                // 68: proto.RestartAPIPodsRequest
+	(*RestartAPIPodsResponse)(nil),                               // 69: proto.RestartAPIPodsResponse
+	(*ScriptOutputChunk)(nil),                                    // 70: proto.ScriptOutputChunk
+	(*SetUnsetIsMasterRequest)(nil),                              // 71: proto.SetUnsetIsMasterRequest
+	(*SetUnsetIsMasterResponse)(nil),                             // 72: proto.SetUnsetIsMasterResponse
+	(*InstallBundleRequest)(nil),                                 // 73: proto.InstallBundleRequest
+	(*InstallBundleResponse)(nil),                                // 74: proto.InstallBundleResponse
+	(*GetBundleStatusRequest)(nil),                               // 75: proto.GetBundleStatusRequest
+	(*BundleStatus)(nil),                                         // 76: proto.BundleStatus
+	(*GetBundleStatusResponse)(nil),                              // 77: proto.GetBundleStatusResponse
+	(*InstallCollectionRequest)(nil),                             // 78: proto.InstallCollectionRequest
+	(*InstallCollectionResponse)(nil),                            // 79: proto.InstallCollectionResponse
+	(*InstallPackagesRequest)(nil),                               // 80: proto.InstallPackagesRequest
+	(*InstallPackagesResponse)(nil),                              // 81: proto.InstallPackagesResponse
+	(*ListPackagesRequest)(nil),                                  // 82: proto.ListPackagesRequest
+	(*InstalledPackage)(nil),                                     // 83: proto.InstalledPackage
+	(*ListPackagesResponse)(nil),                                 // 84: proto.ListPackagesResponse
+	(*RemovePackagesRequest)(nil),                                // 85: proto.RemovePackagesRequest
+	(*RemovePackagesResponse)(nil),                               // 86: proto.RemovePackagesResponse
+	(*KubeadmPreflightRequest)(nil),                              // 87: proto.KubeadmPreflightRequest
+	(*PreflightCheckResult)(nil),                                 // 88: proto.PreflightCheckResult
+	(*KubeadmPreflightResponse)(nil),                             // 89: proto.KubeadmPreflightResponse
+	(*ExecuteNodePreflightRequest)(nil),                          // 90: proto.ExecuteNodePreflightRequest
+	(*CheckCloudInitStatus)(nil),                                 // 91: proto.CheckCloudInitStatus
+	(*NodePreflightCheck)(nil),                                   // 92: proto.NodePreflightCheck
+	(*FileExistsPreflightCheck)(nil),                             // 93: proto.FileExistsPreflightCheck
+	(*ExecuteNodePreflightResponse)(nil),                         // 94: proto.ExecuteNodePreflightResponse
+	(*NodePreflightResult)(nil),                                  // 95: proto.NodePreflightResult
+	(*ConfigureAptRepoRequest)(nil),                              // 96: proto.ConfigureAptRepoRequest
+	(*ConfigureAptRepoResponse)(nil),                             // 97: proto.ConfigureAptRepoResponse
+	(*RemoveAptRepoRequest)(nil),                                 // 98: proto.RemoveAptRepoRequest
+	(*RemoveAptRepoResponse)(nil),                                // 99: proto.RemoveAptRepoResponse
+	(*StartKubeVipRestoreRequest)(nil),                           // 100: proto.StartKubeVipRestoreRequest
+	(*StartKubeVipRestoreResponse)(nil),                          // 101: proto.StartKubeVipRestoreResponse
+	(*ScheduleNodeRebootRequest)(nil),                            // 102: proto.ScheduleNodeRebootRequest
+	(*ScheduleNodeRebootResponse)(nil),                           // 103: proto.ScheduleNodeRebootResponse
+	(*GetNodeBootInfoRequest)(nil),                               // 104: proto.GetNodeBootInfoRequest
+	(*GetNodeBootInfoResponse)(nil),                              // 105: proto.GetNodeBootInfoResponse
+	(*ReconfigureKubeletAPIServerRequest)(nil),                   // 106: proto.ReconfigureKubeletAPIServerRequest
+	(*ReconfigureKubeletAPIServerResponse)(nil),                  // 107: proto.ReconfigureKubeletAPIServerResponse
+	nil, // 108: proto.KubeadmInitRequest.CniConfigEntry
+	nil, // 109: proto.InstallCNIPluginRequest.CniConfigEntry
+	nil, // 110: proto.InstallCNIRequest.CniConfigEntry
 }
 var file_pkg_agent_proto_node_agent_proto_depIdxs = []int32{
-	14,  // 0: proto.PatchAPIServerManifestRequest.flag_ops:type_name -> proto.FlagOp
-	12,  // 1: proto.PatchAPIServerManifestRequest.files:type_name -> proto.File
-	15,  // 2: proto.FlagOp.set:type_name -> proto.SetFlag
-	16,  // 3: proto.FlagOp.remove:type_name -> proto.RemoveFlag
+	15,  // 0: proto.PatchAPIServerManifestRequest.flag_ops:type_name -> proto.FlagOp
+	13,  // 1: proto.PatchAPIServerManifestRequest.files:type_name -> proto.File
+	16,  // 2: proto.FlagOp.set:type_name -> proto.SetFlag
+	17,  // 3: proto.FlagOp.remove:type_name -> proto.RemoveFlag
 	6,   // 4: proto.PatchAPIServerManifestResponse.outcome:type_name -> proto.PatchAPIServerManifestResponse.Outcome
-	105, // 5: proto.KubeadmInitRequest.cni_config:type_name -> proto.KubeadmInitRequest.CniConfigEntry
-	12,  // 6: proto.KubeadmInitRequest.files:type_name -> proto.File
-	12,  // 7: proto.KubeadmJoinRequest.files:type_name -> proto.File
+	108, // 5: proto.KubeadmInitRequest.cni_config:type_name -> proto.KubeadmInitRequest.CniConfigEntry
+	13,  // 6: proto.KubeadmInitRequest.files:type_name -> proto.File
+	13,  // 7: proto.KubeadmJoinRequest.files:type_name -> proto.File
 	0,   // 8: proto.NodeAgentOperationStatus.phase:type_name -> proto.NodeAgentOperationPhase
-	26,  // 9: proto.StartK8sControlPlaneNodeGracefulShutdownResponse.operation:type_name -> proto.NodeAgentOperationStatus
-	26,  // 10: proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse.operation:type_name -> proto.NodeAgentOperationStatus
-	106, // 11: proto.InstallCNIPluginRequest.cni_config:type_name -> proto.InstallCNIPluginRequest.CniConfigEntry
+	27,  // 9: proto.StartK8sControlPlaneNodeGracefulShutdownResponse.operation:type_name -> proto.NodeAgentOperationStatus
+	27,  // 10: proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse.operation:type_name -> proto.NodeAgentOperationStatus
+	109, // 11: proto.InstallCNIPluginRequest.cni_config:type_name -> proto.InstallCNIPluginRequest.CniConfigEntry
 	2,   // 12: proto.InstallCNIRequest.cni_variant:type_name -> proto.CniVariant
 	3,   // 13: proto.InstallCNIRequest.cni_apt_role:type_name -> proto.CniAptRole
-	107, // 14: proto.InstallCNIRequest.cni_config:type_name -> proto.InstallCNIRequest.CniConfigEntry
-	42,  // 15: proto.UpdateNKERBACResponse.results:type_name -> proto.ResourceApplyResult
+	110, // 14: proto.InstallCNIRequest.cni_config:type_name -> proto.InstallCNIRequest.CniConfigEntry
+	43,  // 15: proto.UpdateNKERBACResponse.results:type_name -> proto.ResourceApplyResult
 	7,   // 16: proto.ResourceApplyResult.outcome:type_name -> proto.ResourceApplyResult.Outcome
-	51,  // 17: proto.UpdateEncryptionConfigRequest.add_secondary_key:type_name -> proto.AddSecondaryKeyOperation
-	52,  // 18: proto.UpdateEncryptionConfigRequest.promote_primary_key:type_name -> proto.PromotePrimaryKeyOperation
-	53,  // 19: proto.UpdateEncryptionConfigRequest.remove_old_keys:type_name -> proto.RemoveOldKeysOperation
+	52,  // 17: proto.UpdateEncryptionConfigRequest.add_secondary_key:type_name -> proto.AddSecondaryKeyOperation
+	53,  // 18: proto.UpdateEncryptionConfigRequest.promote_primary_key:type_name -> proto.PromotePrimaryKeyOperation
+	54,  // 19: proto.UpdateEncryptionConfigRequest.remove_old_keys:type_name -> proto.RemoveOldKeysOperation
 	4,   // 20: proto.EtcdEncryptionAtRestObjectsRewriteOperation.state:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteState
-	56,  // 21: proto.StartEtcdEncryptionAtRestObjectsRewriteResponse.operation:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteOperation
-	56,  // 22: proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse.operation:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteOperation
-	75,  // 23: proto.GetBundleStatusResponse.statuses:type_name -> proto.BundleStatus
-	82,  // 24: proto.ListPackagesResponse.packages:type_name -> proto.InstalledPackage
+	57,  // 21: proto.StartEtcdEncryptionAtRestObjectsRewriteResponse.operation:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteOperation
+	57,  // 22: proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse.operation:type_name -> proto.EtcdEncryptionAtRestObjectsRewriteOperation
+	76,  // 23: proto.GetBundleStatusResponse.statuses:type_name -> proto.BundleStatus
+	83,  // 24: proto.ListPackagesResponse.packages:type_name -> proto.InstalledPackage
 	5,   // 25: proto.KubeadmPreflightRequest.role:type_name -> proto.KubeadmPreflightRole
-	87,  // 26: proto.KubeadmPreflightResponse.results:type_name -> proto.PreflightCheckResult
-	91,  // 27: proto.ExecuteNodePreflightRequest.checks:type_name -> proto.NodePreflightCheck
-	86,  // 28: proto.ExecuteNodePreflightRequest.kubeadm_preflight:type_name -> proto.KubeadmPreflightRequest
-	90,  // 29: proto.ExecuteNodePreflightRequest.check_cloud_init_status:type_name -> proto.CheckCloudInitStatus
-	92,  // 30: proto.NodePreflightCheck.file_exists:type_name -> proto.FileExistsPreflightCheck
-	94,  // 31: proto.ExecuteNodePreflightResponse.results:type_name -> proto.NodePreflightResult
-	88,  // 32: proto.ExecuteNodePreflightResponse.kubeadm_preflight:type_name -> proto.KubeadmPreflightResponse
-	26,  // 33: proto.StartKubeVipRestoreResponse.operation:type_name -> proto.NodeAgentOperationStatus
-	10,  // 34: proto.NodeAgent.GetKubeadmStatus:input_type -> proto.KubeadmStatusRequest
-	101, // 35: proto.NodeAgent.ScheduleNodeReboot:input_type -> proto.ScheduleNodeRebootRequest
-	103, // 36: proto.NodeAgent.GetNodeBootInfo:input_type -> proto.GetNodeBootInfoRequest
-	18,  // 37: proto.NodeAgent.ExecuteKubeadmInit:input_type -> proto.KubeadmInitRequest
-	21,  // 38: proto.NodeAgent.ExecuteKubeadmJoin:input_type -> proto.KubeadmJoinRequest
-	24,  // 39: proto.NodeAgent.ExecuteKubeadmReset:input_type -> proto.KubeadmResetRequest
-	27,  // 40: proto.NodeAgent.StartK8sControlPlaneNodeGracefulShutdown:input_type -> proto.StartK8sControlPlaneNodeGracefulShutdownRequest
-	29,  // 41: proto.NodeAgent.GetK8sControlPlaneNodeGracefulShutdownStatus:input_type -> proto.GetK8sControlPlaneNodeGracefulShutdownStatusRequest
-	99,  // 42: proto.NodeAgent.StartKubeVipRestore:input_type -> proto.StartKubeVipRestoreRequest
-	32,  // 43: proto.NodeAgent.InstallCNI:input_type -> proto.InstallCNIRequest
-	34,  // 44: proto.NodeAgent.UpdateAndFetchKubeAdmJoinStrings:input_type -> proto.KubeadmJoinStringRequest
-	38,  // 45: proto.NodeAgent.GetKubeconfig:input_type -> proto.KubeconfigRequest
-	40,  // 46: proto.NodeAgent.UpdateNKERBAC:input_type -> proto.UpdateNKERBACRequest
-	43,  // 47: proto.NodeAgent.ExecuteScript:input_type -> proto.ExecuteScriptRequest
-	34,  // 48: proto.NodeAgent.GetKubeadmJoinString:input_type -> proto.KubeadmJoinStringRequest
-	45,  // 49: proto.NodeAgent.InitializeKubernetesAPIEncryption:input_type -> proto.InitializeKubernetesAPIEncryptionRequest
-	47,  // 50: proto.NodeAgent.RewriteKubernetesAPIObjects:input_type -> proto.RewriteKubernetesAPIObjectsRequest
-	49,  // 51: proto.NodeAgent.PromoteKubernetesAPIEncryptionProviders:input_type -> proto.PromoteKubernetesAPIEncryptionProvidersRequest
-	54,  // 52: proto.NodeAgent.UpdateEncryptionConfig:input_type -> proto.UpdateEncryptionConfigRequest
-	57,  // 53: proto.NodeAgent.StartEtcdEncryptionAtRestObjectsRewrite:input_type -> proto.StartEtcdEncryptionAtRestObjectsRewriteRequest
-	59,  // 54: proto.NodeAgent.GetEtcdEncryptionAtRestObjectsRewriteStatus:input_type -> proto.GetEtcdEncryptionAtRestObjectsRewriteStatusRequest
-	61,  // 55: proto.NodeAgent.RemovePlainTextSecondaryEncryptionEntry:input_type -> proto.RemovePlainTextSecondaryEncryptionEntryRequest
-	67,  // 56: proto.NodeAgent.RestartAPIPods:input_type -> proto.RestartAPIPodsRequest
-	63,  // 57: proto.NodeAgent.UploadFileBundle:input_type -> proto.FileChunk
-	65,  // 58: proto.NodeAgent.WriteNodeAgentConfig:input_type -> proto.WriteNodeAgentConfigRequest
-	43,  // 59: proto.NodeAgent.StreamExecuteScript:input_type -> proto.ExecuteScriptRequest
-	70,  // 60: proto.NodeAgent.SetUnsetIsMaster:input_type -> proto.SetUnsetIsMasterRequest
-	72,  // 61: proto.NodeAgent.InstallBundle:input_type -> proto.InstallBundleRequest
-	74,  // 62: proto.NodeAgent.GetBundleStatus:input_type -> proto.GetBundleStatusRequest
-	77,  // 63: proto.NodeAgent.InstallCollection:input_type -> proto.InstallCollectionRequest
-	79,  // 64: proto.NodeAgent.InstallPackages:input_type -> proto.InstallPackagesRequest
-	81,  // 65: proto.NodeAgent.ListPackages:input_type -> proto.ListPackagesRequest
-	84,  // 66: proto.NodeAgent.RemovePackages:input_type -> proto.RemovePackagesRequest
-	8,   // 67: proto.NodeAgent.GetSupportBundle:input_type -> proto.GetSupportBundleRequest
-	86,  // 68: proto.NodeAgent.ExecuteKubeadmPreflight:input_type -> proto.KubeadmPreflightRequest
-	89,  // 69: proto.NodeAgent.ExecuteNodePreflight:input_type -> proto.ExecuteNodePreflightRequest
-	95,  // 70: proto.NodeAgent.ConfigureAptRepo:input_type -> proto.ConfigureAptRepoRequest
-	97,  // 71: proto.NodeAgent.RemoveAptRepo:input_type -> proto.RemoveAptRepoRequest
-	13,  // 72: proto.NodeAgent.PatchAPIServerManifest:input_type -> proto.PatchAPIServerManifestRequest
-	11,  // 73: proto.NodeAgent.GetKubeadmStatus:output_type -> proto.KubeadmStatusResponse
-	102, // 74: proto.NodeAgent.ScheduleNodeReboot:output_type -> proto.ScheduleNodeRebootResponse
-	104, // 75: proto.NodeAgent.GetNodeBootInfo:output_type -> proto.GetNodeBootInfoResponse
-	20,  // 76: proto.NodeAgent.ExecuteKubeadmInit:output_type -> proto.KubeadmInitStatusResponse
-	23,  // 77: proto.NodeAgent.ExecuteKubeadmJoin:output_type -> proto.KubeadmJoinStatusResponse
-	25,  // 78: proto.NodeAgent.ExecuteKubeadmReset:output_type -> proto.KubeadmResetStatusResponse
-	28,  // 79: proto.NodeAgent.StartK8sControlPlaneNodeGracefulShutdown:output_type -> proto.StartK8sControlPlaneNodeGracefulShutdownResponse
-	30,  // 80: proto.NodeAgent.GetK8sControlPlaneNodeGracefulShutdownStatus:output_type -> proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse
-	100, // 81: proto.NodeAgent.StartKubeVipRestore:output_type -> proto.StartKubeVipRestoreResponse
-	33,  // 82: proto.NodeAgent.InstallCNI:output_type -> proto.InstallCNIResponse
-	35,  // 83: proto.NodeAgent.UpdateAndFetchKubeAdmJoinStrings:output_type -> proto.KubeadmJoinStringResponse
-	39,  // 84: proto.NodeAgent.GetKubeconfig:output_type -> proto.KubeconfigResponse
-	41,  // 85: proto.NodeAgent.UpdateNKERBAC:output_type -> proto.UpdateNKERBACResponse
-	44,  // 86: proto.NodeAgent.ExecuteScript:output_type -> proto.ExecuteScriptResponse
-	35,  // 87: proto.NodeAgent.GetKubeadmJoinString:output_type -> proto.KubeadmJoinStringResponse
-	46,  // 88: proto.NodeAgent.InitializeKubernetesAPIEncryption:output_type -> proto.InitializeKubernetesAPIEncryptionResponse
-	48,  // 89: proto.NodeAgent.RewriteKubernetesAPIObjects:output_type -> proto.RewriteKubernetesAPIObjectsResponse
-	50,  // 90: proto.NodeAgent.PromoteKubernetesAPIEncryptionProviders:output_type -> proto.PromoteKubernetesAPIEncryptionProvidersResponse
-	55,  // 91: proto.NodeAgent.UpdateEncryptionConfig:output_type -> proto.UpdateEncryptionConfigResponse
-	58,  // 92: proto.NodeAgent.StartEtcdEncryptionAtRestObjectsRewrite:output_type -> proto.StartEtcdEncryptionAtRestObjectsRewriteResponse
-	60,  // 93: proto.NodeAgent.GetEtcdEncryptionAtRestObjectsRewriteStatus:output_type -> proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse
-	62,  // 94: proto.NodeAgent.RemovePlainTextSecondaryEncryptionEntry:output_type -> proto.RemovePlainTextSecondaryEncryptionEntryResponse
-	68,  // 95: proto.NodeAgent.RestartAPIPods:output_type -> proto.RestartAPIPodsResponse
-	64,  // 96: proto.NodeAgent.UploadFileBundle:output_type -> proto.UploadStatus
-	66,  // 97: proto.NodeAgent.WriteNodeAgentConfig:output_type -> proto.WriteNodeAgentConfigResponse
-	69,  // 98: proto.NodeAgent.StreamExecuteScript:output_type -> proto.ScriptOutputChunk
-	71,  // 99: proto.NodeAgent.SetUnsetIsMaster:output_type -> proto.SetUnsetIsMasterResponse
-	73,  // 100: proto.NodeAgent.InstallBundle:output_type -> proto.InstallBundleResponse
-	76,  // 101: proto.NodeAgent.GetBundleStatus:output_type -> proto.GetBundleStatusResponse
-	78,  // 102: proto.NodeAgent.InstallCollection:output_type -> proto.InstallCollectionResponse
-	80,  // 103: proto.NodeAgent.InstallPackages:output_type -> proto.InstallPackagesResponse
-	83,  // 104: proto.NodeAgent.ListPackages:output_type -> proto.ListPackagesResponse
-	85,  // 105: proto.NodeAgent.RemovePackages:output_type -> proto.RemovePackagesResponse
-	9,   // 106: proto.NodeAgent.GetSupportBundle:output_type -> proto.GetSupportBundleResponse
-	88,  // 107: proto.NodeAgent.ExecuteKubeadmPreflight:output_type -> proto.KubeadmPreflightResponse
-	93,  // 108: proto.NodeAgent.ExecuteNodePreflight:output_type -> proto.ExecuteNodePreflightResponse
-	96,  // 109: proto.NodeAgent.ConfigureAptRepo:output_type -> proto.ConfigureAptRepoResponse
-	98,  // 110: proto.NodeAgent.RemoveAptRepo:output_type -> proto.RemoveAptRepoResponse
-	17,  // 111: proto.NodeAgent.PatchAPIServerManifest:output_type -> proto.PatchAPIServerManifestResponse
-	73,  // [73:112] is the sub-list for method output_type
-	34,  // [34:73] is the sub-list for method input_type
-	34,  // [34:34] is the sub-list for extension type_name
-	34,  // [34:34] is the sub-list for extension extendee
-	0,   // [0:34] is the sub-list for field type_name
+	88,  // 26: proto.KubeadmPreflightResponse.results:type_name -> proto.PreflightCheckResult
+	92,  // 27: proto.ExecuteNodePreflightRequest.checks:type_name -> proto.NodePreflightCheck
+	87,  // 28: proto.ExecuteNodePreflightRequest.kubeadm_preflight:type_name -> proto.KubeadmPreflightRequest
+	91,  // 29: proto.ExecuteNodePreflightRequest.check_cloud_init_status:type_name -> proto.CheckCloudInitStatus
+	93,  // 30: proto.NodePreflightCheck.file_exists:type_name -> proto.FileExistsPreflightCheck
+	95,  // 31: proto.ExecuteNodePreflightResponse.results:type_name -> proto.NodePreflightResult
+	89,  // 32: proto.ExecuteNodePreflightResponse.kubeadm_preflight:type_name -> proto.KubeadmPreflightResponse
+	27,  // 33: proto.StartKubeVipRestoreResponse.operation:type_name -> proto.NodeAgentOperationStatus
+	8,   // 34: proto.ReconfigureKubeletAPIServerResponse.outcome:type_name -> proto.ReconfigureKubeletAPIServerResponse.Outcome
+	11,  // 35: proto.NodeAgent.GetKubeadmStatus:input_type -> proto.KubeadmStatusRequest
+	102, // 36: proto.NodeAgent.ScheduleNodeReboot:input_type -> proto.ScheduleNodeRebootRequest
+	104, // 37: proto.NodeAgent.GetNodeBootInfo:input_type -> proto.GetNodeBootInfoRequest
+	19,  // 38: proto.NodeAgent.ExecuteKubeadmInit:input_type -> proto.KubeadmInitRequest
+	22,  // 39: proto.NodeAgent.ExecuteKubeadmJoin:input_type -> proto.KubeadmJoinRequest
+	25,  // 40: proto.NodeAgent.ExecuteKubeadmReset:input_type -> proto.KubeadmResetRequest
+	106, // 41: proto.NodeAgent.ReconfigureKubeletAPIServer:input_type -> proto.ReconfigureKubeletAPIServerRequest
+	28,  // 42: proto.NodeAgent.StartK8sControlPlaneNodeGracefulShutdown:input_type -> proto.StartK8sControlPlaneNodeGracefulShutdownRequest
+	30,  // 43: proto.NodeAgent.GetK8sControlPlaneNodeGracefulShutdownStatus:input_type -> proto.GetK8sControlPlaneNodeGracefulShutdownStatusRequest
+	100, // 44: proto.NodeAgent.StartKubeVipRestore:input_type -> proto.StartKubeVipRestoreRequest
+	33,  // 45: proto.NodeAgent.InstallCNI:input_type -> proto.InstallCNIRequest
+	35,  // 46: proto.NodeAgent.UpdateAndFetchKubeAdmJoinStrings:input_type -> proto.KubeadmJoinStringRequest
+	39,  // 47: proto.NodeAgent.GetKubeconfig:input_type -> proto.KubeconfigRequest
+	41,  // 48: proto.NodeAgent.UpdateNKERBAC:input_type -> proto.UpdateNKERBACRequest
+	44,  // 49: proto.NodeAgent.ExecuteScript:input_type -> proto.ExecuteScriptRequest
+	35,  // 50: proto.NodeAgent.GetKubeadmJoinString:input_type -> proto.KubeadmJoinStringRequest
+	46,  // 51: proto.NodeAgent.InitializeKubernetesAPIEncryption:input_type -> proto.InitializeKubernetesAPIEncryptionRequest
+	48,  // 52: proto.NodeAgent.RewriteKubernetesAPIObjects:input_type -> proto.RewriteKubernetesAPIObjectsRequest
+	50,  // 53: proto.NodeAgent.PromoteKubernetesAPIEncryptionProviders:input_type -> proto.PromoteKubernetesAPIEncryptionProvidersRequest
+	55,  // 54: proto.NodeAgent.UpdateEncryptionConfig:input_type -> proto.UpdateEncryptionConfigRequest
+	58,  // 55: proto.NodeAgent.StartEtcdEncryptionAtRestObjectsRewrite:input_type -> proto.StartEtcdEncryptionAtRestObjectsRewriteRequest
+	60,  // 56: proto.NodeAgent.GetEtcdEncryptionAtRestObjectsRewriteStatus:input_type -> proto.GetEtcdEncryptionAtRestObjectsRewriteStatusRequest
+	62,  // 57: proto.NodeAgent.RemovePlainTextSecondaryEncryptionEntry:input_type -> proto.RemovePlainTextSecondaryEncryptionEntryRequest
+	68,  // 58: proto.NodeAgent.RestartAPIPods:input_type -> proto.RestartAPIPodsRequest
+	64,  // 59: proto.NodeAgent.UploadFileBundle:input_type -> proto.FileChunk
+	66,  // 60: proto.NodeAgent.WriteNodeAgentConfig:input_type -> proto.WriteNodeAgentConfigRequest
+	44,  // 61: proto.NodeAgent.StreamExecuteScript:input_type -> proto.ExecuteScriptRequest
+	71,  // 62: proto.NodeAgent.SetUnsetIsMaster:input_type -> proto.SetUnsetIsMasterRequest
+	73,  // 63: proto.NodeAgent.InstallBundle:input_type -> proto.InstallBundleRequest
+	75,  // 64: proto.NodeAgent.GetBundleStatus:input_type -> proto.GetBundleStatusRequest
+	78,  // 65: proto.NodeAgent.InstallCollection:input_type -> proto.InstallCollectionRequest
+	80,  // 66: proto.NodeAgent.InstallPackages:input_type -> proto.InstallPackagesRequest
+	82,  // 67: proto.NodeAgent.ListPackages:input_type -> proto.ListPackagesRequest
+	85,  // 68: proto.NodeAgent.RemovePackages:input_type -> proto.RemovePackagesRequest
+	9,   // 69: proto.NodeAgent.GetSupportBundle:input_type -> proto.GetSupportBundleRequest
+	87,  // 70: proto.NodeAgent.ExecuteKubeadmPreflight:input_type -> proto.KubeadmPreflightRequest
+	90,  // 71: proto.NodeAgent.ExecuteNodePreflight:input_type -> proto.ExecuteNodePreflightRequest
+	96,  // 72: proto.NodeAgent.ConfigureAptRepo:input_type -> proto.ConfigureAptRepoRequest
+	98,  // 73: proto.NodeAgent.RemoveAptRepo:input_type -> proto.RemoveAptRepoRequest
+	14,  // 74: proto.NodeAgent.PatchAPIServerManifest:input_type -> proto.PatchAPIServerManifestRequest
+	12,  // 75: proto.NodeAgent.GetKubeadmStatus:output_type -> proto.KubeadmStatusResponse
+	103, // 76: proto.NodeAgent.ScheduleNodeReboot:output_type -> proto.ScheduleNodeRebootResponse
+	105, // 77: proto.NodeAgent.GetNodeBootInfo:output_type -> proto.GetNodeBootInfoResponse
+	21,  // 78: proto.NodeAgent.ExecuteKubeadmInit:output_type -> proto.KubeadmInitStatusResponse
+	24,  // 79: proto.NodeAgent.ExecuteKubeadmJoin:output_type -> proto.KubeadmJoinStatusResponse
+	26,  // 80: proto.NodeAgent.ExecuteKubeadmReset:output_type -> proto.KubeadmResetStatusResponse
+	107, // 81: proto.NodeAgent.ReconfigureKubeletAPIServer:output_type -> proto.ReconfigureKubeletAPIServerResponse
+	29,  // 82: proto.NodeAgent.StartK8sControlPlaneNodeGracefulShutdown:output_type -> proto.StartK8sControlPlaneNodeGracefulShutdownResponse
+	31,  // 83: proto.NodeAgent.GetK8sControlPlaneNodeGracefulShutdownStatus:output_type -> proto.GetK8sControlPlaneNodeGracefulShutdownStatusResponse
+	101, // 84: proto.NodeAgent.StartKubeVipRestore:output_type -> proto.StartKubeVipRestoreResponse
+	34,  // 85: proto.NodeAgent.InstallCNI:output_type -> proto.InstallCNIResponse
+	36,  // 86: proto.NodeAgent.UpdateAndFetchKubeAdmJoinStrings:output_type -> proto.KubeadmJoinStringResponse
+	40,  // 87: proto.NodeAgent.GetKubeconfig:output_type -> proto.KubeconfigResponse
+	42,  // 88: proto.NodeAgent.UpdateNKERBAC:output_type -> proto.UpdateNKERBACResponse
+	45,  // 89: proto.NodeAgent.ExecuteScript:output_type -> proto.ExecuteScriptResponse
+	36,  // 90: proto.NodeAgent.GetKubeadmJoinString:output_type -> proto.KubeadmJoinStringResponse
+	47,  // 91: proto.NodeAgent.InitializeKubernetesAPIEncryption:output_type -> proto.InitializeKubernetesAPIEncryptionResponse
+	49,  // 92: proto.NodeAgent.RewriteKubernetesAPIObjects:output_type -> proto.RewriteKubernetesAPIObjectsResponse
+	51,  // 93: proto.NodeAgent.PromoteKubernetesAPIEncryptionProviders:output_type -> proto.PromoteKubernetesAPIEncryptionProvidersResponse
+	56,  // 94: proto.NodeAgent.UpdateEncryptionConfig:output_type -> proto.UpdateEncryptionConfigResponse
+	59,  // 95: proto.NodeAgent.StartEtcdEncryptionAtRestObjectsRewrite:output_type -> proto.StartEtcdEncryptionAtRestObjectsRewriteResponse
+	61,  // 96: proto.NodeAgent.GetEtcdEncryptionAtRestObjectsRewriteStatus:output_type -> proto.GetEtcdEncryptionAtRestObjectsRewriteStatusResponse
+	63,  // 97: proto.NodeAgent.RemovePlainTextSecondaryEncryptionEntry:output_type -> proto.RemovePlainTextSecondaryEncryptionEntryResponse
+	69,  // 98: proto.NodeAgent.RestartAPIPods:output_type -> proto.RestartAPIPodsResponse
+	65,  // 99: proto.NodeAgent.UploadFileBundle:output_type -> proto.UploadStatus
+	67,  // 100: proto.NodeAgent.WriteNodeAgentConfig:output_type -> proto.WriteNodeAgentConfigResponse
+	70,  // 101: proto.NodeAgent.StreamExecuteScript:output_type -> proto.ScriptOutputChunk
+	72,  // 102: proto.NodeAgent.SetUnsetIsMaster:output_type -> proto.SetUnsetIsMasterResponse
+	74,  // 103: proto.NodeAgent.InstallBundle:output_type -> proto.InstallBundleResponse
+	77,  // 104: proto.NodeAgent.GetBundleStatus:output_type -> proto.GetBundleStatusResponse
+	79,  // 105: proto.NodeAgent.InstallCollection:output_type -> proto.InstallCollectionResponse
+	81,  // 106: proto.NodeAgent.InstallPackages:output_type -> proto.InstallPackagesResponse
+	84,  // 107: proto.NodeAgent.ListPackages:output_type -> proto.ListPackagesResponse
+	86,  // 108: proto.NodeAgent.RemovePackages:output_type -> proto.RemovePackagesResponse
+	10,  // 109: proto.NodeAgent.GetSupportBundle:output_type -> proto.GetSupportBundleResponse
+	89,  // 110: proto.NodeAgent.ExecuteKubeadmPreflight:output_type -> proto.KubeadmPreflightResponse
+	94,  // 111: proto.NodeAgent.ExecuteNodePreflight:output_type -> proto.ExecuteNodePreflightResponse
+	97,  // 112: proto.NodeAgent.ConfigureAptRepo:output_type -> proto.ConfigureAptRepoResponse
+	99,  // 113: proto.NodeAgent.RemoveAptRepo:output_type -> proto.RemoveAptRepoResponse
+	18,  // 114: proto.NodeAgent.PatchAPIServerManifest:output_type -> proto.PatchAPIServerManifestResponse
+	75,  // [75:115] is the sub-list for method output_type
+	35,  // [35:75] is the sub-list for method input_type
+	35,  // [35:35] is the sub-list for extension type_name
+	35,  // [35:35] is the sub-list for extension extendee
+	0,   // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_pkg_agent_proto_node_agent_proto_init() }
@@ -8888,6 +9090,30 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 				return nil
 			}
 		}
+		file_pkg_agent_proto_node_agent_proto_msgTypes[97].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ReconfigureKubeletAPIServerRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_pkg_agent_proto_node_agent_proto_msgTypes[98].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*ReconfigureKubeletAPIServerResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
 	}
 	file_pkg_agent_proto_node_agent_proto_msgTypes[6].OneofWrappers = []interface{}{
 		(*FlagOp_Set)(nil),
@@ -8907,8 +9133,8 @@ func file_pkg_agent_proto_node_agent_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_pkg_agent_proto_node_agent_proto_rawDesc,
-			NumEnums:      8,
-			NumMessages:   100,
+			NumEnums:      9,
+			NumMessages:   102,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

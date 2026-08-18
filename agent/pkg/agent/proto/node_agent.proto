@@ -24,6 +24,13 @@ service NodeAgent {
 
   rpc ExecuteKubeadmReset(KubeadmResetRequest) returns (KubeadmResetStatusResponse) {}
 
+  // ReconfigureKubeletAPIServer updates the server endpoint in the local
+  // kubelet.conf, restarts kubelet, and verifies the service is active. The
+  // config update is atomic and convergent. If kubelet cannot be restarted
+  // after a config change, the agent restores the original config and tries to
+  // restore the service before returning a structured failure outcome.
+  rpc ReconfigureKubeletAPIServer(ReconfigureKubeletAPIServerRequest) returns (ReconfigureKubeletAPIServerResponse) {}
+
   // StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
   // control-plane node graceful shutdown operation. The operation_id is an
   // idempotency key; retrying with the same operation_id returns the existing
@@ -967,4 +974,30 @@ message GetNodeBootInfoResponse {
 
   // Linux boot ID when available.
   string boot_id = 2;
+}
+
+message ReconfigureKubeletAPIServerRequest {
+  // Kubernetes API endpoint in the exact form https://<host-or-ip>:6443.
+  string server = 1;
+}
+
+message ReconfigureKubeletAPIServerResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // kubelet.conf changed and kubelet was restarted and verified active.
+    OUTCOME_APPLIED = 1;
+    // kubelet.conf already contained the requested endpoint; it was not
+    // rewritten, and kubelet was restarted and verified active.
+    OUTCOME_UNCHANGED = 2;
+    // Reconfiguration failed after mutation, but the original kubelet.conf was
+    // restored and kubelet was verified active with the original config.
+    OUTCOME_FAILED_RESTORED = 3;
+    // Reconfiguration failed and restoration could not be confirmed. The node
+    // needs retry or operator intervention.
+    OUTCOME_FAILED_NOT_RESTORED = 4;
+  }
+
+  Outcome outcome = 1;
+  // Populated only on FAILED_* outcomes.
+  string error_message = 2;
 }

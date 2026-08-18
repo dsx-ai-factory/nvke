@@ -135,6 +135,9 @@ type NodeAgentServer struct {
 	// ScriptExecutionLogger logs ExecuteScript/StreamExecuteScript call info and results to e.g. /var/log/nke-execute-scripts.log.
 	// If nil, script execution is not logged to a dedicated file.
 	ScriptExecutionLogger *slog.Logger
+
+	kubeletConfigMu          sync.Mutex // serializes kubelet.conf reconfiguration transactions
+	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
 }
 
 // Real implementations
