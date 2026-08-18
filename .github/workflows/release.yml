@@ -53,7 +53,8 @@ jobs:
     timeout-minutes: 15
     needs: [license-checks]
     permissions:
-      contents: write   # creates the GitHub release
+      contents: write         # creates the GitHub release
+      security-events: write  # the malware scan uploads SARIF
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -151,6 +152,22 @@ jobs:
             echo "has_files=false" >> "${GITHUB_OUTPUT}"
             echo "count=0" >> "${GITHUB_OUTPUT}"
           fi
+
+      # Scans what is about to be published, after checksums are computed and
+      # before anything leaves the runner. Scanning earlier would miss
+      # checksums.txt; scanning after the upload would mean withdrawing a
+      # release rather than never cutting one.
+      #
+      # Skipped when the component built nothing, because clamscan fails on a
+      # path that does not exist and a controller tag legitimately produces no
+      # dist/ until the notices step runs.
+      - name: Malware scan the release artifacts
+        if: steps.artifacts.outputs.has_files == 'true'
+        uses: ./.github/actions/malware-scan
+        with:
+          scan_path: 'dist'
+          category: 'clamav-release'
+          output_file: 'clamav-release.sarif'
 
       - name: Extract changelog section for this tag
         id: changelog

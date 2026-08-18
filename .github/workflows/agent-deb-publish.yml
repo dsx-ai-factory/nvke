@@ -56,6 +56,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      security-events: write  # the malware scan uploads SARIF
     strategy:
       fail-fast: false
       matrix:
@@ -141,6 +142,19 @@ jobs:
           esac
 
           echo "OK  ${deb}  package=${pkg} version=${ver} arch=${arch}"
+
+      # Scanned here rather than in the two consumers. `publish` and
+      # `github-release` both take `needs: [build]`, so gating once covers the
+      # apt intake and the GitHub release together, and the package cannot
+      # reach either if it fails.
+      - name: Malware scan the package
+        uses: ./.github/actions/malware-scan
+        with:
+          scan_path: 'agent/bin'
+          # Per architecture: this job is a matrix, and two uploads sharing one
+          # category would overwrite each other in the Security tab.
+          category: 'clamav-agent-deb-${{ matrix.arch }}'
+          output_file: 'clamav-agent-deb.sarif'
 
       - name: Upload package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
