@@ -72,6 +72,8 @@ const (
 	kubeletConfigPath       = "/var/lib/kubelet/config.yaml"
 )
 
+var DefaultTigeraVersion *semver.Version = semver.MustParse("3.30.1")
+
 type NodeStatusPersister interface {
 	Persist(status *NodeStatus) error
 	LoadFromStateFile() (*NodeStatus, error)
@@ -734,6 +736,21 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 	}
 	ns.CompletedPhases = append(ns.CompletedPhases, string(InitPhase))
 
+	// Legacy in-init CNI: when no_cni_install is false (the default), install via InstallCNIPlugin
+	// to match pre–InstallCNI callers. New callers set no_cni_install and use InstallCNI after init.
+	if !req.GetNoCniInstall() && !req.GetSkipCniPluginInstall() {
+		cniReq := installCNIPluginRequestFromKubeadmInit(req)
+		if err := s.installCNIPlugin(cniReq); err != nil {
+			slog.Error("failed to install CNI plugin", "err", err)
+			ns.CNIPluginStatus = ErrorStatus
+			ns.ErrorMessage = "failed to install CNI plugin: " + err.Error()
+			return
+		}
+		ns.CNIPlugin = cniReq.GetPluginName()
+		ns.CNIPluginVersion = resolveCNIPluginVersion(cniReq)
+		ns.CNIPluginStatus = ReadyStatus
+	}
+
 	if err := s.disableKubeletSelfRegistration(); err != nil {
 		slog.Error("failed to disable kubelet self-registration", "err", err)
 	}
@@ -839,6 +856,67 @@ func (s *NodeAgentServer) InstallCNI(
 	resp.Status = ReadyStatus
 	resp.ResolvedAptPackage = chartsPkgSpec
 	return resp, nil
+}
+
+// resolveCNIPluginVersion returns the version that was (or would be) used for installation.
+// Used for status persistence so we record the actual version installed.
+func resolveCNIPluginVersion(req *pb.InstallCNIPluginRequest) string {
+	switch req.GetPluginName() {
+	case "ovn":
+		return req.GetPluginVersion()
+	case "tigera", "calico":
+		if v := req.GetPluginVersion(); v != "" {
+			return v
+		}
+		return DefaultTigeraVersion.String()
+	default:
+		return DefaultTigeraVersion.String()
+	}
+}
+
+// installCNIPluginRequestFromKubeadmInit maps KubeadmInitRequest fields to InstallCNIPluginRequest for
+// the legacy in-init CNI path.
+func installCNIPluginRequestFromKubeadmInit(req *pb.KubeadmInitRequest) *pb.InstallCNIPluginRequest {
+	cniReq := &pb.InstallCNIPluginRequest{
+		PluginName:                   req.GetCniPluginName(),
+		TigeraOperatorManifest:       req.GetTigeraOperatorManifest(),
+		TigeraCustomResourceManifest: req.GetTigeraCustomResourceManifest(),
+		PodNetworkCidr:               req.GetPodNetworkCidr(),
+		ServiceCidr:                  req.GetServiceCidr(),
+		CniConfig:                    req.GetCniConfig(),
+	}
+	switch req.GetCniPluginName() {
+	case "ovn":
+		cniReq.PluginVersion = req.GetOvnVersion()
+	case "tigera", "calico":
+		cniReq.PluginVersion = req.GetTigeraVersion()
+	default:
+		cniReq.PluginName = "calico"
+		cniReq.PluginVersion = DefaultTigeraVersion.String()
+	}
+	return cniReq
+}
+
+func (s *NodeAgentServer) installCNIPlugin(req *pb.InstallCNIPluginRequest) error {
+	switch req.GetPluginName() {
+	case "ovn":
+		slog.Info("installing ovn")
+		return s.installOvnK8sCNIPlugin(req)
+	case "tigera", "calico":
+		slog.Info("installing calico")
+		versionStr := req.GetPluginVersion()
+		if versionStr == "" {
+			versionStr = DefaultTigeraVersion.String()
+		}
+		version, err := semver.NewVersion(versionStr)
+		if err != nil {
+			return fmt.Errorf("failed to parse tigera version: %w", err)
+		}
+		return s.installCalico(version, req.GetTigeraOperatorManifest(), req.GetTigeraCustomResourceManifest())
+	default:
+		slog.Info("unknown or no CniPlugin specified, will install default calico/tigera version", "version", DefaultTigeraVersion)
+		return s.installCalico(DefaultTigeraVersion, "", "")
+	}
 }
 
 func parseJoinCmds(s string) (string, string) {

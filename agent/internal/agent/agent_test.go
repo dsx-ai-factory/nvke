@@ -377,6 +377,34 @@ func TestProcessKubeadmInit(t *testing.T) {
 	}
 }
 
+func TestInstallCNIPluginRequestFromKubeadmInit(t *testing.T) {
+	t.Run("defaults to calico with default version", func(t *testing.T) {
+		out := installCNIPluginRequestFromKubeadmInit(&pb.KubeadmInitRequest{
+			PodNetworkCidr: "10.0.0.0/16",
+			ServiceCidr:    "10.96.0.0/12",
+		})
+		assert.Equal(t, "calico", out.GetPluginName())
+		assert.Equal(t, DefaultTigeraVersion.String(), out.GetPluginVersion())
+		assert.Equal(t, "10.0.0.0/16", out.GetPodNetworkCidr())
+		assert.Equal(t, "10.96.0.0/12", out.GetServiceCidr())
+	})
+	t.Run("ovn uses ovn_version", func(t *testing.T) {
+		out := installCNIPluginRequestFromKubeadmInit(&pb.KubeadmInitRequest{
+			CniPluginName: "ovn",
+			OvnVersion:    "1.2.3",
+		})
+		assert.Equal(t, "ovn", out.GetPluginName())
+		assert.Equal(t, "1.2.3", out.GetPluginVersion())
+	})
+	t.Run("tigera uses tigera_version", func(t *testing.T) {
+		out := installCNIPluginRequestFromKubeadmInit(&pb.KubeadmInitRequest{
+			CniPluginName: "tigera",
+			TigeraVersion: "3.29.0",
+		})
+		assert.Equal(t, "3.29.0", out.GetPluginVersion())
+	})
+}
+
 func TestProcessKubeadmInit_FilesWrittenBeforeKubeadm(t *testing.T) {
 	server := newKubeadmFileTestServer(t)
 	server.NodeStatus = &NodeStatus{

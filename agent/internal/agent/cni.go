@@ -21,6 +21,8 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
+var CILIUM_VERSION semver.Version = *semver.MustParse("1.15.5")
+
 // errCNIApplyRequiresControlPlane is returned when charts deploy is requested on a node
 // whose Role is not controlplane (see ControlPlaneRole in agent.go).
 var errCNIApplyRequiresControlPlane = errors.New("InstallCNI may only be invoked on control-plane nodes")
@@ -94,6 +96,78 @@ func (s *NodeAgentServer) applyTigeraManifestOverrides(path, operatorManifest, r
 			return fmt.Errorf("failed to write custom resource manifest file: %w", err)
 		}
 	}
+
+	return nil
+}
+
+func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifest, resourceManifest string) error {
+	// TODO:  It would be nice to simply drop into "InstallBundle" here but CNI's are a little unique in that we usually provide
+	// custom manifests.  For now those custom manifests aren't int he bundle so we're doing a two step process:
+	// 1. Download/Extract the bundle
+	// 2. Overwrite the manifests
+	//
+	// We can update the bundle to our "formula" and include everything in it then just call "installBundle"
+	slog.Info("fetching calico bundle by index", "version", version.String(), "architecture", s.NodeStatus.Architecture)
+	calicoBundle, err := nkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, "calico", version, s.NodeStatus.Architecture)
+	if err != nil {
+		slog.Error("failed to fetch calico bundle", "error", err)
+		return err
+	}
+	slog.Info("retrived calico bundle by index", "Bundle", calicoBundle)
+
+	requestID := generateRequestID()
+
+	bundleStatus := &Bundle{
+		RequestID:   requestID,
+		Name:        calicoBundle.Name,
+		Version:     version,
+		InstallTime: time.Now().Format(time.RFC3339),
+		Status:      "installing",
+		Source:      calicoBundle.URL,
+	}
+
+	calicoBundle.InstallFile = "calico-install.py"
+	calicoBundle.InstallCmd = []string{nkeutils.ResolvePython(), "calico-install.py"}
+
+	defer s.AppendBundleToStatus(bundleStatus)
+
+	path, err := nkeutils.DownloadAndExtractArchive(calicoBundle, s.BundleSource)
+	if err != nil {
+		bundleStatus.Status = ErrorStatus
+		bundleStatus.Error = fmt.Sprintf("failed to download calico bundle: %v", err.Error())
+		return err
+	}
+
+	if err := s.applyTigeraManifestOverrides(path, operatorManifest, resourceManifest); err != nil {
+		bundleStatus.Error = err.Error()
+		bundleStatus.Status = ErrorStatus
+		return err
+	}
+
+	slog.Info("attempting install of calico bundle", "name", calicoBundle.Name, "url", calicoBundle.URL)
+	// Ensure insall file is executable
+	_, _ = s.Runner.Run("chmod", []string{"+x", calicoBundle.InstallFile}, &nkeutils.CommandOptions{Dir: path})
+	out, err := s.Runner.Run(calicoBundle.InstallCmd[0],
+		calicoBundle.InstallCmd[1:],
+		&nkeutils.CommandOptions{
+			Dir: path,
+			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+		})
+	if err != nil {
+		slog.Error("calico bundle install failed", "error", err, "output", string(out))
+		bundleStatus.Error = fmt.Sprintf("failed to install calico bundle: %v", err.Error())
+		bundleStatus.Status = ErrorStatus
+		bundleStatus.Output = string(out)
+		return err
+	}
+
+	installLog := filepath.Join(path, "tigera-install.log")
+	logContents, _ := os.ReadFile(installLog)
+	s.mu.Lock()
+	s.NodeStatus.CalicoInstallLog = string(logContents)
+	s.mu.Unlock()
+	bundleStatus.Status = SuccessStatus
+	bundleStatus.Output = string(logContents)
 
 	return nil
 }
@@ -201,6 +275,70 @@ func (s *NodeAgentServer) runOvnKubernetesHelmInstallFromDir(chartDir, podNetwor
 			err,
 		)
 	}
+	return nil
+}
+
+func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest) error {
+	slog.Info("installing OVN Kubernetes CNI plugin")
+
+	if err := checkHostOpenVSwitchReady(s.Runner); err != nil {
+		slog.Error("OVS readiness check failed", "error", err)
+		return err
+	}
+
+	versionStr := req.GetPluginVersion()
+	if versionStr == "" {
+		return fmt.Errorf("ovn plugin requires a version")
+	}
+	version, err := semver.NewVersion(versionStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse ovn version: %w", err)
+	}
+
+	ovnBundle, err := nkeutils.FetchBundleFromIndex(context.Background(), s.BundleServerURL, s.BundleIndexFile, "ovn", version, s.NodeStatus.Architecture)
+	if err != nil {
+		return err
+	}
+	ovnBundle.InstallFile = "install.sh"
+	ovnBundle.InstallCmd = []string{"/bin/bash", "-c", "./install.sh"}
+
+	requestID := generateRequestID()
+	bundleStatus := &Bundle{
+		RequestID:   requestID,
+		Name:        ovnBundle.Name,
+		Version:     ovnBundle.Version,
+		Status:      "pending",
+		InstallTime: time.Now().Format(time.RFC3339),
+	}
+	defer s.AppendBundleToStatus(bundleStatus)
+
+	path, err := nkeutils.DownloadAndExtractArchive(ovnBundle, s.BundleSource)
+	if err != nil {
+		return err
+	}
+
+	slog.Info("attempting install of ovn bundle", "name", ovnBundle.Name, "url", ovnBundle.URL)
+	// Ensure install file is executable
+	_, _ = s.Runner.Run("chmod", []string{"+x", ovnBundle.InstallFile}, &nkeutils.CommandOptions{Dir: path})
+	out, err := s.Runner.Run(ovnBundle.InstallCmd[0],
+		ovnBundle.InstallCmd[1:],
+		&nkeutils.CommandOptions{
+			Dir: path,
+			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+		})
+	if err != nil {
+		slog.Error("ovn-kubernetes bundle install failed", "error", err, "path", path, "output", string(out))
+		bundleStatus.Error = fmt.Sprintf("failed to install ovn-kubernetes bundle: %v, path: %s", err.Error(), path)
+		bundleStatus.Status = ErrorStatus
+		return err
+	}
+
+	if err := s.runOvnKubernetesHelmInstallFromDir(ovnKubernetesHelmChartDir, req.GetPodNetworkCidr(), req.GetServiceCidr(), req.GetCniConfig()); err != nil {
+		bundleStatus.Status = ErrorStatus
+		bundleStatus.Error = err.Error()
+		return err
+	}
+	bundleStatus.Status = SuccessStatus
 	return nil
 }
 
