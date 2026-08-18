@@ -71,23 +71,17 @@ type (
 	// NOTE: [WorkerDeploymentOptions.UseVersioning] must be set to enable Worker Deployment
 	// Versioning.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/worker.DeploymentOptions]
 	WorkerDeploymentOptions struct {
 		// If set, opts this worker into the Worker Deployment Versioning feature. It will only
 		// operate on workflows it claims to be compatible with. You must set [Version] if this flag
 		// is true.
 		//
-		// NOTE: Experimental
-		//
 		// NOTE: Cannot be enabled at the same time as [WorkerOptions.EnableSessionWorker]
 		UseVersioning bool
 
 		// Assign a Deployment Version identifier to this worker. If [Version] is set
 		// [WorkerOptions.BuildID] will be ignored.
-		//
-		// NOTE: Experimental
 		Version WorkerDeploymentVersion
 
 		// Optional: Provides a default Versioning Behavior to workflows that do not set one with
@@ -97,8 +91,6 @@ type (
 		// NOTE: When the new Deployment-based Worker Versioning feature is on, and
 		// [DefaultVersioningBehavior] is unspecified, workflows that do not set the Versioning
 		// Behavior will fail at registration time.
-		//
-		// NOTE: Experimental
 		DefaultVersioningBehavior VersioningBehavior
 	}
 
@@ -117,9 +109,12 @@ type (
 		// Optional: Sets the rate limiting on number of activities that can be executed per second per
 		// worker. This can be used to limit resources used by the worker.
 		// Notice that the number is represented in float, so that you can set it to less than
-		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
-		// once for every 10 seconds. This can be used to protect down stream services from flooding.
-		// The zero value of this uses the default value
+		// 1 if needed. For example, setting the number to 0.1 means activities execute
+		// once every 10 seconds. This can be used to protect downstream services from flooding.
+		// This rate limit is applied after activity tasks are received by the worker. If this
+		// value is set very low, server-side timeouts may continue to elapse while tasks wait
+		// behind this worker-side rate limiter.
+		// The zero value of this uses the default value.
 		//
 		// default: 100k
 		WorkerActivitiesPerSecond float64
@@ -356,8 +351,6 @@ type (
 
 		// Optional: If set it configures Worker Versioning for this worker. See [WorkerDeploymentOptions]
 		// for more.
-		//
-		// NOTE: Experimental
 		DeploymentOptions WorkerDeploymentOptions
 
 		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
@@ -366,6 +359,17 @@ type (
 		//
 		// NOTE: Experimental
 		Tuner WorkerTuner
+
+		// Optional: If set, provides CPU and memory usage information for worker heartbeats.
+		// Use contrib/sysinfo.SysInfoProvider() for a gopsutil-based implementation, or provide
+		// your own. When unset, the worker will use the Tuner's SysInfoProvider if it exposes one
+		// (e.g. a resource-based tuner); otherwise heartbeats report 0 for CPU/memory usage.
+		//
+		// It is an error to provide a SysInfoProvider here that differs from the one used by the
+		// Tuner.
+		//
+		// NOTE: Experimental
+		SysInfoProvider SysInfoProvider
 
 		// Optional: If set, the worker will use the provided poller behavior when polling for workflow tasks.
 		// This is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
@@ -402,6 +406,33 @@ type (
 		//
 		// NOTE: Experimental
 		Plugins []WorkerPlugin
+
+		// MaxConcurrentWorkflowTaskExternalStorageVisits sets how many external
+		// storage operations (reads or writes) may run in parallel when the worker
+		// processes a single workflow task. When a workflow task contains many large
+		// payloads that need to be fetched from or uploaded to external storage,
+		// raising this value can reduce latency by overlapping those calls. Lower
+		// values reduce pressure on the storage backend.
+		// A value of 0 uses the default. Set to 1 to disable parallelism.
+		// Please report any issues you encounter with this setting or if you feel the
+		// default should be changed.
+		//
+		// NOTE: Experimental
+		//
+		// default: 3
+		MaxConcurrentWorkflowTaskExternalStorageVisits int
+
+		// Optional: Disable payload size error limit enforcement in the worker.
+		//
+		// When false, the worker will validate the payload size before submitting
+		// to the Temporal server, and cause a task failure if the size limit is
+		// exceeded. When true, the worker will not perform this validation.
+		//
+		// See https://docs.temporal.io/troubleshooting/blob-size-limit-error for more
+		// details.
+		//
+		// NOTE: Experimental
+		DisablePayloadErrorLimit bool
 	}
 )
 

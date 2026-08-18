@@ -395,7 +395,10 @@ github.com/modern-go/reflect2
 # github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822
 ## explicit
 github.com/munnerz/goautoneg
-# github.com/nexus-rpc/sdk-go v0.5.1
+# github.com/nexus-rpc/nexus-proto-annotations v0.1.1-0.20260629224650-76486e7cc189
+## explicit; go 1.25.4
+github.com/nexus-rpc/nexus-proto-annotations/go/nexusannotations/v1
+# github.com/nexus-rpc/sdk-go v0.6.0
 ## explicit; go 1.23
 github.com/nexus-rpc/sdk-go/nexus
 # github.com/oapi-codegen/nethttp-middleware v1.0.2
@@ -632,9 +635,15 @@ github.com/uptrace/bun/dialect/sqlitedialect
 # github.com/uptrace/bun/driver/pgdriver v1.2.18
 ## explicit; go 1.24.0
 github.com/uptrace/bun/driver/pgdriver
+# github.com/uptrace/bun/extra/bunotel v1.2.18
+## explicit; go 1.24.0
+github.com/uptrace/bun/extra/bunotel
 # github.com/uptrace/bun/extra/bunslog v1.2.18
 ## explicit; go 1.24.0
 github.com/uptrace/bun/extra/bunslog
+# github.com/uptrace/opentelemetry-go-extra/otelsql v0.3.2
+## explicit; go 1.22
+github.com/uptrace/opentelemetry-go-extra/otelsql
 # github.com/vearutop/statigz v1.4.0
 ## explicit; go 1.17
 github.com/vearutop/statigz
@@ -687,6 +696,8 @@ go.opentelemetry.io/otel/internal/global
 go.opentelemetry.io/otel/propagation
 go.opentelemetry.io/otel/semconv/internal
 go.opentelemetry.io/otel/semconv/v1.10.0
+go.opentelemetry.io/otel/semconv/v1.12.0
+go.opentelemetry.io/otel/semconv/v1.20.0
 go.opentelemetry.io/otel/semconv/v1.21.0
 go.opentelemetry.io/otel/semconv/v1.37.0
 go.opentelemetry.io/otel/semconv/v1.40.0
@@ -735,12 +746,14 @@ go.opentelemetry.io/proto/otlp/collector/trace/v1
 go.opentelemetry.io/proto/otlp/common/v1
 go.opentelemetry.io/proto/otlp/resource/v1
 go.opentelemetry.io/proto/otlp/trace/v1
-# go.temporal.io/api v1.60.0
-## explicit; go 1.21
+# go.temporal.io/api v1.63.0
+## explicit; go 1.25.4
 go.temporal.io/api/activity/v1
 go.temporal.io/api/batch/v1
+go.temporal.io/api/callback/v1
 go.temporal.io/api/command/v1
 go.temporal.io/api/common/v1
+go.temporal.io/api/compute/v1
 go.temporal.io/api/deployment/v1
 go.temporal.io/api/enums/v1
 go.temporal.io/api/errordetails/v1
@@ -758,8 +771,10 @@ go.temporal.io/api/internal/protojson/strs
 go.temporal.io/api/internal/strcase
 go.temporal.io/api/namespace/v1
 go.temporal.io/api/nexus/v1
+go.temporal.io/api/nexusservices/workerservice/v1
 go.temporal.io/api/operatorservice/v1
 go.temporal.io/api/protocol/v1
+go.temporal.io/api/protometa/v1
 go.temporal.io/api/proxy
 go.temporal.io/api/query/v1
 go.temporal.io/api/replication/v1
@@ -775,11 +790,12 @@ go.temporal.io/api/worker/v1
 go.temporal.io/api/workflow/v1
 go.temporal.io/api/workflowservice/v1
 go.temporal.io/api/workflowservicemock/v1
-# go.temporal.io/sdk v1.39.0
-## explicit; go 1.23.0
+# go.temporal.io/sdk v1.46.0
+## explicit; go 1.25.4
 go.temporal.io/sdk/activity
 go.temporal.io/sdk/client
 go.temporal.io/sdk/converter
+go.temporal.io/sdk/interceptor
 go.temporal.io/sdk/internal
 go.temporal.io/sdk/internal/common/backoff
 go.temporal.io/sdk/internal/common/cache
@@ -787,6 +803,7 @@ go.temporal.io/sdk/internal/common/metrics
 go.temporal.io/sdk/internal/common/retry
 go.temporal.io/sdk/internal/common/serializer
 go.temporal.io/sdk/internal/common/util
+go.temporal.io/sdk/internal/extstore
 go.temporal.io/sdk/internal/log
 go.temporal.io/sdk/internal/protocol
 go.temporal.io/sdk/log
@@ -795,6 +812,9 @@ go.temporal.io/sdk/temporal
 go.temporal.io/sdk/testsuite
 go.temporal.io/sdk/worker
 go.temporal.io/sdk/workflow
+# go.temporal.io/sdk/contrib/opentelemetry v0.8.1
+## explicit; go 1.25.4
+go.temporal.io/sdk/contrib/opentelemetry
 # go.temporal.io/sdk/contrib/tally v0.2.0
 ## explicit; go 1.16
 go.temporal.io/sdk/contrib/tally

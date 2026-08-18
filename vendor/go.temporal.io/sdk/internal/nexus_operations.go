@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
@@ -28,6 +29,9 @@ type NexusOperationInfo struct {
 	Namespace string
 	// The task queue of the worker handling this Nexus operation.
 	TaskQueue string
+	// The endpoint this request was addressed to before forwarding to the worker.
+	// Supported from server version 1.30.0.
+	Endpoint string
 }
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
@@ -35,9 +39,43 @@ type NexusOperationContext struct {
 	client         Client
 	Namespace      string
 	TaskQueue      string
+	Endpoint       string
 	metricsHandler metrics.Handler
 	log            log.Logger
 	registry       *registry
+
+	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
+	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
+	// accumulator is synchronized.
+	responseLinksMu sync.Mutex
+	// responseLinks holds the response links returned by outbound RPCs the operation handler issues
+	// (such as SignalWorkflowExecutionResponse.link or
+	// SignalWithStartWorkflowExecutionResponse.signal_link). One entry per outbound RPC that
+	// returned a link. Drained by the task handler when building the StartOperationResponse so each
+	// RPC the handler issued gets a corresponding link on the caller workflow's history event.
+	responseLinks []*commonpb.Link
+}
+
+// AddResponseLink appends a response link returned by an outbound RPC the operation handler issued
+// (e.g. signal, signalWithStart). nil links are ignored. The task handler drains the accumulated
+// response links when building the operation's StartOperationResponse.
+func (nc *NexusOperationContext) AddResponseLink(link *commonpb.Link) {
+	if link == nil {
+		return
+	}
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	nc.responseLinks = append(nc.responseLinks, link)
+}
+
+// ResponseLinks returns a copy of the response links accumulated from every outbound RPC the handler
+// issued, in call order.
+func (nc *NexusOperationContext) ResponseLinks() []*commonpb.Link {
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	out := make([]*commonpb.Link, len(nc.responseLinks))
+	copy(out, nc.responseLinks)
+	return out
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
@@ -54,6 +92,7 @@ func (nc *nexusOperationEnvironment) GetOperationInfo(ctx context.Context) Nexus
 		panic("temporalnexus GetInfo: Not a valid Nexus context")
 	}
 	return NexusOperationInfo{
+		Endpoint:  nctx.Endpoint,
 		Namespace: nctx.Namespace,
 		TaskQueue: nctx.TaskQueue,
 	}
@@ -166,9 +205,9 @@ type nexusOperationRequestIDKeyType struct{}
 
 var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
 
-type nexusOperationLinksKeyType struct{}
+type nexusOperationRequestLinksKeyType struct{}
 
-var NexusOperationLinksKey = nexusOperationLinksKeyType{}
+var NexusOperationRequestLinksKey = nexusOperationRequestLinksKeyType{}
 
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
@@ -258,7 +297,7 @@ func protoFailureToNexusFailure(failure *nexuspb.Failure) nexus.Failure {
 }
 
 // nexusOperationFailure is a utility in use by the test environment.
-func nexusOperationFailure(params executeNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
+func nexusOperationFailure(params ExecuteNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
 	return &failurepb.Failure{
 		Message: "nexus operation completed unsuccessfully",
 		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{
@@ -274,10 +313,33 @@ func nexusOperationFailure(params executeNexusOperationParams, token string, cau
 	}
 }
 
-// nexusFailureToAPIFailure converts a Nexus Failure to an API proto Failure.
+// temporalFailureToNexusFailure converts an API proto Failure to a Nexus SDK Failure setting the metadata "type" field to
+// the proto fullname of the temporal API Failure message or the standard Nexus SDK failure types.
+// Returns an error if the failure cannot be converted.
+func temporalFailureToNexusFailure(failure *failurepb.Failure) (*nexus.Failure, error) {
+	message := failure.Message
+	stackTrack := failure.StackTrace
+	failure.Message = ""
+	failure.StackTrace = ""
+	b, err := protojson.Marshal(failure)
+	if err != nil {
+		return nil, err
+	}
+	failure.Message = message
+	failure.StackTrace = stackTrack
+	return &nexus.Failure{
+		Message:    message,
+		StackTrace: stackTrack,
+		Metadata:   nexusFailureMetadata,
+		Details:    b,
+	}, nil
+
+}
+
+// nexusFailureToTemporalFailure converts a Nexus Failure to an API proto Failure.
 // If the failure metadata "type" field is set to the fullname of the temporal API Failure message, the failure is
 // reconstructed using protojson.Unmarshal on the failure details field.
-func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb.Failure, error) {
+func nexusFailureToTemporalFailure(failure nexus.Failure, retryable bool) (*failurepb.Failure, error) {
 	apiFailure := &failurepb.Failure{}
 
 	if failure.Metadata != nil && failure.Metadata["type"] == failureTypeString {
@@ -300,6 +362,7 @@ func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb
 	}
 	// Ensure this always gets written.
 	apiFailure.Message = failure.Message
+	apiFailure.StackTrace = failure.StackTrace
 	return apiFailure, nil
 }
 
@@ -349,7 +412,7 @@ func apiHandlerErrorToNexusHandlerError(apiErr *nexuspb.HandlerError, failureCon
 		RetryBehavior: retryBehavior,
 	}
 
-	failure, err := nexusFailureToAPIFailure(protoFailureToNexusFailure(apiErr.GetFailure()), nexusErr.Retryable())
+	failure, err := nexusFailureToTemporalFailure(protoFailureToNexusFailure(apiErr.GetFailure()), nexusErr.Retryable())
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +432,7 @@ func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Fa
 	// Canceled must be translated into a CanceledFailure to match the SDK expectation.
 	if opErr.State == nexus.OperationStateCanceled {
 		if nexusFailure.Metadata != nil && nexusFailure.Metadata["type"] == failureTypeString {
-			temporalFailure, err := nexusFailureToAPIFailure(nexusFailure, false)
+			temporalFailure, err := nexusFailureToTemporalFailure(nexusFailure, false)
 			if err != nil {
 				return nil, err
 			}
@@ -394,7 +457,7 @@ func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Fa
 		}, nil
 	}
 
-	return nexusFailureToAPIFailure(nexusFailure, false)
+	return nexusFailureToTemporalFailure(nexusFailure, false)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -440,8 +503,28 @@ func (t *testSuiteClientForNexusOperations) CompleteActivity(ctx context.Context
 	panic("not implemented in the test environment")
 }
 
+// CompleteActivityWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityWithOptions(ctx context.Context, opts CompleteActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
 // CompleteActivityByID implements Client.
 func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
+	panic("not implemented in the test environment")
+}
+
+// CompleteActivityByIDWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByIDWithOptions(ctx context.Context, opts CompleteActivityByIDOptions) error {
+	panic("not implemented in the test environment")
+}
+
+// CompleteActivityByActivityID implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
+	panic("not implemented in the test environment")
+}
+
+// CompleteActivityByActivityIDWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityIDWithOptions(ctx context.Context, opts CompleteActivityByActivityIDOptions) error {
 	panic("not implemented in the test environment")
 }
 
@@ -645,8 +728,18 @@ func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeat(ctx context.
 	panic("not implemented in the test environment")
 }
 
+// RecordActivityHeartbeatWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatWithOptions(ctx context.Context, opts RecordActivityHeartbeatOptions) error {
+	panic("not implemented in the test environment")
+}
+
 // RecordActivityHeartbeatByID implements Client.
 func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
+	panic("not implemented in the test environment")
+}
+
+// RecordActivityHeartbeatByIDWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByIDWithOptions(ctx context.Context, opts RecordActivityHeartbeatByIDOptions) error {
 	panic("not implemented in the test environment")
 }
 
@@ -702,6 +795,22 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx cont
 	panic("unimplemented in the test environment")
 }
 
+func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error) {
+	panic("unimplemented in the test environment")
+}
+
 // WorkflowService implements Client.
 func (t *testSuiteClientForNexusOperations) WorkflowService() workflowservice.WorkflowServiceClient {
 	panic("not implemented in the test environment")
@@ -719,6 +828,22 @@ func (t *testSuiteClientForNexusOperations) WorkerDeploymentClient() WorkerDeplo
 
 // UpdateWorkflowExecutionOptions implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error) {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) NewNexusClient(options ClientNexusClientOptions) (ClientNexusClient, error) {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) GetNexusOperationHandle(options ClientGetNexusOperationHandleOptions) ClientNexusOperationHandle {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ListNexusOperations(ctx context.Context, options ClientListNexusOperationsOptions) (ClientListNexusOperationsResult, error) {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) CountNexusOperations(ctx context.Context, options ClientCountNexusOperationsOptions) (*ClientCountNexusOperationsResult, error) {
 	panic("not implemented in the test environment")
 }
 

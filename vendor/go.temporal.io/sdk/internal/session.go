@@ -22,8 +22,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SessionInfo]
 	SessionInfo struct {
+		// SessionID is the unique identifier for the session.
 		SessionID         string
+		// HostName is the host executing the session.
 		HostName          string
+		// SessionState is the current state of the session.
 		SessionState      SessionState
 		resourceID        string     // hide from user for now
 		taskqueue         string     // resource specific taskqueue
@@ -42,8 +45,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SessionOptions]
 	SessionOptions struct {
+		// ExecutionTimeout specifies the maximum amount of time the session can run.
 		ExecutionTimeout time.Duration
+		// CreationTimeout specifies how long session creation can take before returning an error.
 		CreationTimeout  time.Duration
+		// HeartbeatTimeout specifies the heartbeat timeout. If heartbeat is not received by server within the timeout, the session will be declared as failed.
 		HeartbeatTimeout time.Duration
 	}
 
@@ -51,6 +57,8 @@ type (
 		Taskqueue string
 	}
 
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionState]
 	SessionState int
 
 	sessionTokenBucket struct {
@@ -69,6 +77,8 @@ type (
 
 	sessionEnvironmentImpl struct {
 		*sync.Mutex
+		// doneChanMap is keyed by sessionID. CreateSession creates and stores each
+		// channel, and CompleteSession deletes and closes it to signal session end.
 		doneChanMap               map[string]chan struct{}
 		resourceID                string
 		resourceSpecificTaskqueue string
@@ -549,7 +559,7 @@ func (env *sessionEnvironmentImpl) AddSessionToken() {
 
 func (env *sessionEnvironmentImpl) SignalCreationResponse(ctx context.Context, sessionID string) error {
 	activityEnv := getActivityEnv(ctx)
-	client := activityEnv.serviceInvoker.GetClient(ClientOptions{Namespace: activityEnv.workflowNamespace})
+	client := activityEnv.serviceInvoker.GetClient(ClientOptions{Namespace: activityEnv.namespace})
 	return client.SignalWorkflow(ctx, activityEnv.workflowExecution.ID, activityEnv.workflowExecution.RunID,
 		sessionID, env.getCreationResponse())
 }

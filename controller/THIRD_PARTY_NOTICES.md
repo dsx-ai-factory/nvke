@@ -76,7 +76,8 @@ notices-check` verifies it is up to date.
 | `github.com/modern-go/concurrent` | Apache-2.0 | `github.com/modern-go/concurrent@v0.0.0-20180306012644-bacd9c7ef1dd` | Unknown |
 | `github.com/modern-go/reflect2` | Apache-2.0 | `github.com/modern-go/reflect2@v1.0.3-0.20250322232337-35a7c28c31ee` | Unknown |
 | `github.com/munnerz/goautoneg` | BSD-3-Clause | `github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822` | Unknown |
-| `github.com/nexus-rpc/sdk-go/nexus` | MIT | `github.com/nexus-rpc/sdk-go@v0.5.1` | Unknown |
+| `github.com/nexus-rpc/nexus-proto-annotations/go/nexusannotations/v1` | MIT | `github.com/nexus-rpc/nexus-proto-annotations@v0.1.1-0.20260629224650-76486e7cc189` | Unknown |
+| `github.com/nexus-rpc/sdk-go/nexus` | MIT | `github.com/nexus-rpc/sdk-go@v0.6.0` | Unknown |
 | `github.com/oapi-codegen/nethttp-middleware` | Apache-2.0 | `github.com/oapi-codegen/nethttp-middleware@v1.0.2` | Unknown |
 | `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.6.0` | Unknown |
 | `github.com/oasdiff/yaml` | BSD-3-Clause / MIT | `github.com/oasdiff/yaml@v0.1.1` | Unknown |
@@ -108,7 +109,9 @@ notices-check` verifies it is up to date.
 | `github.com/uptrace/bun` | BSD-2-Clause | `github.com/uptrace/bun@v1.2.18` | Unknown |
 | `github.com/uptrace/bun/dialect/pgdialect` | BSD-2-Clause | `github.com/uptrace/bun/dialect/pgdialect@v1.2.18` | Unknown |
 | `github.com/uptrace/bun/driver/pgdriver` | BSD-2-Clause | `github.com/uptrace/bun/driver/pgdriver@v1.2.18` | Unknown |
+| `github.com/uptrace/bun/extra/bunotel` | BSD-2-Clause | `github.com/uptrace/bun/extra/bunotel@v1.2.18` | Unknown |
 | `github.com/uptrace/bun/extra/bunslog` | BSD-2-Clause | `github.com/uptrace/bun/extra/bunslog@v1.2.18` | Unknown |
+| `github.com/uptrace/opentelemetry-go-extra/otelsql` | BSD-2-Clause | `github.com/uptrace/opentelemetry-go-extra/otelsql@v0.3.2` | Unknown |
 | `github.com/vearutop/statigz` | MIT | `github.com/vearutop/statigz@v1.4.0` | Unknown |
 | `github.com/vmihailenco/msgpack/v5` | BSD-2-Clause | `github.com/vmihailenco/msgpack/v5@v5.4.1` | Unknown |
 | `github.com/vmihailenco/tagparser/v2` | BSD-2-Clause | `github.com/vmihailenco/tagparser/v2@v2.0.0` | Unknown |
@@ -123,9 +126,10 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.44.0` | Unknown |
 | `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.44.0` | Unknown |
 | `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.10.0` | Unknown |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.60.0` | Unknown |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.60.0` | Unknown |
-| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.39.0` | Unknown |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.0` | Unknown |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.0` | Unknown |
+| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.46.0` | Unknown |
+| `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | Unknown |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | Unknown |
 | `go.uber.org/atomic` | MIT | `go.uber.org/atomic@v1.11.0` | Unknown |
 | `go.uber.org/automaxprocs` | MIT | `go.uber.org/automaxprocs@v1.6.0` | Unknown |
@@ -7166,9 +7170,40 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ```
 
+### github.com/nexus-rpc/nexus-proto-annotations/go/nexusannotations/v1
+
+_MIT — github.com/nexus-rpc/nexus-proto-annotations@v0.1.1-0.20260629224650-76486e7cc189_
+
+#### LICENSE
+
+```text
+MIT License
+
+Copyright (c) 2026 Temporal Technologies Inc. All Rights Reserved
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
 ### github.com/nexus-rpc/sdk-go/nexus
 
-_MIT — github.com/nexus-rpc/sdk-go@v0.5.1_
+_MIT — github.com/nexus-rpc/sdk-go@v0.6.0_
 
 #### LICENSE
 
@@ -11007,6 +11042,40 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ```
 
+### github.com/uptrace/bun/extra/bunotel
+
+_BSD-2-Clause — github.com/uptrace/bun/extra/bunotel@v1.2.18_
+
+#### LICENSE
+
+```text
+Copyright (c) 2021 Vladimir Mihailenco. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+```
+
 ### github.com/uptrace/bun/extra/bunslog
 
 _BSD-2-Clause — github.com/uptrace/bun/extra/bunslog@v1.2.18_
@@ -11015,6 +11084,40 @@ _BSD-2-Clause — github.com/uptrace/bun/extra/bunslog@v1.2.18_
 
 ```text
 Copyright (c) 2021 Vladimir Mihailenco. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+```
+
+### github.com/uptrace/opentelemetry-go-extra/otelsql
+
+_BSD-2-Clause — github.com/uptrace/opentelemetry-go-extra/otelsql@v0.3.2_
+
+#### LICENSE
+
+```text
+Copyright (c) 2020 github.com/uptrace/opentelemetry-go-extra Contributors. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are
@@ -13518,7 +13621,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.10.0_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.60.0_
+_MIT — go.temporal.io/api@v1.63.0_
 
 #### LICENSE
 
@@ -13548,7 +13651,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.60.0_
+_BSD-3-Clause — go.temporal.io/api@v1.63.0_
 
 #### LICENSE
 
@@ -13585,7 +13688,39 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.temporal.io/sdk
 
-_MIT — go.temporal.io/sdk@v1.39.0_
+_MIT — go.temporal.io/sdk@v1.46.0_
+
+#### LICENSE
+
+```text
+The MIT License
+
+Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
+
+Copyright (c) 2020 Uber Technologies, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+```
+
+### go.temporal.io/sdk/contrib/opentelemetry
+
+_MIT — go.temporal.io/sdk/contrib/opentelemetry@v0.8.1_
 
 #### LICENSE
 
