@@ -141,8 +141,7 @@ tilt up
 
 - Tilt only runs against the expected Kind context (`kind-${KIND_CLUSTER_NAME}` or the current `kind-*` context if `KIND_CLUSTER_NAME` is unset).
 - Plain `tilt up` keeps the default CAPD-oriented provider set.
-- If you want to enable NICo for the local dev flow, set `providers` in `tilt_config.json` to include `"capi_core"` and `"nico"`. This is also the local setup that enables the mock-backed Forge cluster path. Tilt expects `cluster-api-provider-nico` at `../cluster-api-provider-nico` by default. Override with `NICO_PROVIDER_REPO_DIR` if needed.
-- The `forge-console` provider lives in [nke/forge-console](https://gitlab-master.nvidia.com/nke/forge-console). Clone it as a sibling of this repo (`../forge-console`), set `FORGE_CONSOLE_DIR`, or pass `{"forge-console": "/path/to/forge-console"}` in `providers`. Image/chart publish and site-deploy bumps happen from that repo, not from CWE.
+- If you want to enable NICo for the local dev flow, set `providers` in `tilt_config.json` to include `"capi_core"` and `"nico"`. This is also the local setup that enables the mock-backed Forge cluster path. Tilt expects `cluster-api-provider-nico` at `../../cluster-api-provider-nico` (sibling of the monorepo) by default. Override with `NICO_PROVIDER_REPO_DIR` if needed.
 - Tilt no longer hard-requires `FWE_API_KEY` just to start. When NICo is enabled and `FWE_API_KEY` is unset, the NICo provider forces Forge `test` mode for local development.
 - `.env.tilt` configures in-cluster CWE env overrides. Keep host-local settings in `.env.local`.
 - `DGXC_TENANT_USER`, `DGXC_TENANT_PASSWORD`, `CNPG_SUPERUSER_PASSWORD`, `CNPG_CLOUD_PASSWORD`, and `CNPG_TEMPORAL_PASSWORD` have no defaults — set them in `.env.tilt` or export them, or `tilt up` fails with the list of what is missing. `CNPG_SUPERUSER_PASSWORD` is what the local postgres chart is installed with, so changing it after the first `tilt up` requires deleting the postgres PVC.
@@ -207,7 +206,7 @@ with the optional `capnico_source_dir` key:
 ```json
 {
   "providers": ["capi_core", "forge-vms", "nico-vm"],
-  "capnico_source_dir": "../cluster-api-provider-nico"
+  "capnico_source_dir": "../../cluster-api-provider-nico"
 }
 ```
 

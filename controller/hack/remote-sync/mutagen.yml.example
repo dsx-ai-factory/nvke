@@ -3,9 +3,24 @@
 # Docs: docs/remote-colossus-tilt.md
 #
 # Placeholders (substituted from env vars during setup):
-#   __LOCAL_NKE_ROOT__   Mac absolute path to the NKE sibling checkout parent
+#   __LOCAL_NKE_ROOT__   Mac absolute path to the parent of the nke/ monorepo
+#                        (also parent of cluster-api-provider-nico/, forge-console/,
+#                        nke-site-deploy/)
 #   __REMOTE_SSH_ALIAS__ SSH Host alias for the target
-#   __REMOTE_NKE_ROOT__  Path relative to the remote user's home
+#   __REMOTE_NKE_ROOT__  Path relative to the remote user's home (same parent)
+#
+# Expected layout (Mac and remote — flat siblings, mirrored 1:1):
+#   $ROOT/nke/                         # NVIDIA/nke monorepo (controller/ + agent/)
+#   $ROOT/cluster-api-provider-nico/
+#   $ROOT/forge-console/               # optional; enable via tilt_config.json
+#   $ROOT/nke-site-deploy/
+#
+# Profiles resolve via ../../nke-site-deploy from controller/. CAPNICo defaults
+# to ../../cluster-api-provider-nico. forge-console is not a built-in provider —
+# opt in with an external dict entry in tilt_config.json (see remote-colossus-tilt.md).
+#
+# On the target, run Tilt from the controller module:
+#   cd ~/<REMOTE_NKE_ROOT>/nke/controller && TILT_LINK_PORT_OFFSET=1000 tilt up
 #
 # Model: Mac is source of truth (edit + git here). Target runs Tilt.
 # Do NOT run git on the target -- one-way-replica overwrites it to match the Mac.
@@ -24,10 +39,12 @@ sync:
       defaultDirectoryMode: 0755
     ignore:
       paths:
-        - "bin/"
-        - "var/"
-        - ".dev/"
-        - "logs/"
+        # Prefer root-anchored ignores. Unanchored "logs/" also matches
+        # vendor/k8s.io/component-base/logs/ and breaks `go build -mod=vendor`.
+        - "/bin/"
+        - "/var/"
+        - "/.dev/"
+        - "/logs/"
         - "release/"
         - "images/"
         - ".gocache/"
@@ -39,21 +56,18 @@ sync:
         - "*.qcow2"
         - "*.log"
         - "__debug_bin*"
-  cloud-workflow-engine:
-    alpha: "__LOCAL_NKE_ROOT__/cloud-workflow-engine"
-    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/cloud-workflow-engine"
+  nke:
+    alpha: "__LOCAL_NKE_ROOT__/nke"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/nke"
   cluster-api-provider-nico:
     alpha: "__LOCAL_NKE_ROOT__/cluster-api-provider-nico"
     beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/cluster-api-provider-nico"
-  agent:
-    alpha: "__LOCAL_NKE_ROOT__/agent"
-    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/agent"
-  nke-site-deploy:
-    alpha: "__LOCAL_NKE_ROOT__/nke-site-deploy"
-    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/nke-site-deploy"
   forge-console:
     alpha: "__LOCAL_NKE_ROOT__/forge-console"
     beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/forge-console"
+  nke-site-deploy:
+    alpha: "__LOCAL_NKE_ROOT__/nke-site-deploy"
+    beta: "__REMOTE_SSH_ALIAS__:__REMOTE_NKE_ROOT__/nke-site-deploy"
 
 forward:
   tilt:

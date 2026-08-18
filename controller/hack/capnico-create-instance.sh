@@ -135,7 +135,7 @@ esac
 # Render the OS profile's iPXE script.
 # ---------------------------------------------------------------------------
 
-PROFILES_ROOT="${CWE_PROFILES_DIR:-${REPO_ROOT}/../nke-site-deploy/cwe-profiles/profiles}"
+PROFILES_ROOT="${CWE_PROFILES_DIR:-${REPO_ROOT}/../../nke-site-deploy/cwe-profiles/profiles}"
 IPXE_SOURCE="${PROFILES_ROOT}/osProfiles/${OS_PROFILE}/ipxeScript"
 if [ ! -f "${IPXE_SOURCE}" ]; then
   echo "OS profile '${OS_PROFILE}' has no ipxeScript at ${IPXE_SOURCE}" >&2

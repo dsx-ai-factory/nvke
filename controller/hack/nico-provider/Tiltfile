@@ -44,7 +44,8 @@ def register(ctx):
     kind_cluster_name = _get_kind_cluster_name()
     cwe_http_port = os.getenv("CWE_HTTP_PORT", "8080")
     capd_kindest_node_image = os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local")
-    nico_provider_repo_dir = os.getenv("NICO_PROVIDER_REPO_DIR", os.path.join(ctx.main_dir, "..", "cluster-api-provider-nico"))
+    # External checkouts sit next to the monorepo (controller/ is one level down).
+    nico_provider_repo_dir = os.getenv("NICO_PROVIDER_REPO_DIR", os.path.join(ctx.main_dir, "..", "..", "cluster-api-provider-nico"))
     nico_provider_config_dir = os.path.join(ctx.provider_dir, "config")
     build_capd_kindest_node_image_script = os.path.join(ctx.main_dir, "hack", "capd-kindest-node", "build-image.sh")
     mock_dir = os.path.join(ctx.main_dir, "hack", "nico-mock")

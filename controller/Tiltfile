@@ -17,16 +17,8 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "capi-syscmp"             -- CAPI system component addon provider
 #   "forge-vms"               -- Forge-compatible local VM provider
 #   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
-#   "forge-console"           -- Forge UI + /api/forge/* (external repo; see below)
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
 # Default: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]
-#
-# forge-console lives in gitlab nke/forge-console (sibling checkout). Resolution
-# order when the built-in name is used:
-#   1. FORGE_CONSOLE_DIR env (absolute or relative path to that repo)
-#   2. ../forge-console next to this repo (common local layout)
-# Override with a dict entry if the checkout is elsewhere:
-#   {"forge-console": "/path/to/forge-console"}
 
 # Provider interface
 # ------------------
@@ -57,12 +49,6 @@ load("ext://uibutton", "cmd_button", "text_input")
 # helm_resource, etc.) and returns the struct to wire itself into CWE.
 
 # Built-in provider name -> directory (relative to config.main_dir, or absolute).
-def _resolve_forge_console_dir():
-    override = os.getenv("FORGE_CONSOLE_DIR", "").strip()
-    if override:
-        return os.path.abspath(override)
-    return os.path.abspath(os.path.join(config.main_dir, "..", "forge-console"))
-
 _builtin_provider_dirs = {
     "capi_core": os.path.join(config.main_dir, "hack/capi-core-provider"),
     "bgp-containers": os.path.join(config.main_dir, "hack/bgp-containers"),
@@ -72,7 +58,6 @@ _builtin_provider_dirs = {
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "forge-vms": os.path.join(config.main_dir, "forge-vms"),
     "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
-    "forge-console": _resolve_forge_console_dir(),
 }
 
 _tilt_config = read_json("tilt_config.json", default={})
@@ -325,17 +310,17 @@ for _entry in _provider_entries:
     elif type(_entry) == "dict":
         _provider_name = _entry.keys()[0]
         _provider_dir = _entry[_provider_name]
+        # ctx.provider_dir is contracted to be absolute: provider build scripts
+        # cd into it and then resolve sibling paths, which breaks if the value
+        # stays relative. Relative entries are resolved from config.main_dir.
+        if not _provider_dir.startswith("/"):
+            _provider_dir = os.path.abspath(os.path.join(config.main_dir, _provider_dir))
     else:
         fail("Invalid provider entry: %s" % _entry)
 
     _tiltfile_path = os.path.join(_provider_dir, "Tiltfile")
     if not os.path.exists(_tiltfile_path):
-        fail(
-            "Provider '%s' Tiltfile not found at %s. For forge-console, clone " % (_provider_name, _tiltfile_path) +
-            "nke/forge-console as a sibling of cloud-workflow-engine, set " +
-            "FORGE_CONSOLE_DIR, or use a dict entry " +
-            '{"forge-console": "/path/to/forge-console"}.'
-        )
+        fail("Provider '%s' Tiltfile not found at %s." % (_provider_name, _tiltfile_path))
     _symbols = load_dynamic(_tiltfile_path)
     _result = _symbols["register"](struct(
         main_dir     = config.main_dir,

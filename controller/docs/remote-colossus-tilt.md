@@ -26,11 +26,11 @@ On the Mac you need:
 - Mutagen: `brew install mutagen-io/mutagen/mutagen`
 - `yq` (for `fetch-kubeconfig.sh --update-mutagen`)
 - An SSH config Host alias that reaches the box (e.g. `colossus`)
-- Local checkouts of at least: `cloud-workflow-engine`,
-  `cluster-api-provider-nico`, `agent`, `nke-site-deploy`, and `forge-console`
-  (sibling layout under one parent dir is assumed; `nke-site-deploy` supplies
-  `cwe-profiles` for the Tilt profiles image; `forge-console` is loaded by CWE
-  Tilt from `../forge-console` or `FORGE_CONSOLE_DIR`)
+- Local checkouts as **siblings under one parent** (see template):
+  - **NVIDIA/nke** monorepo (`controller/` + `agent/`)
+  - `cluster-api-provider-nico`
+  - `nke-site-deploy` (fleet `cwe-profiles` for the Tilt profiles image)
+  - `forge-console` (optional; private GitLab UI — enable via `tilt_config.json`)
 
 ## Mental model
 
@@ -49,15 +49,16 @@ On the Mac you need:
 Templates live under [`hack/remote-sync/`](../hack/remote-sync/). Keep your
 personal project **outside** the repo (paths differ per user/host).
 
-Run from the CWE repo root (or adjust the `hack/remote-sync/...` paths). The
-template uses a **+1000** local port offset (see below).
+Run from the monorepo `controller/` directory (or adjust the
+`hack/remote-sync/...` paths). The template uses a **+1000** local port offset
+(see below).
 
 ```bash
 # Set once (shell rc is fine)
 export REMOTE_SYNC_DIR=~/dev/remote-sync
-export LOCAL_NKE_ROOT="$HOME/dev/nke"          # Mac absolute parent of the repos
+export LOCAL_NKE_ROOT="$HOME/dev/nvidia"      # Mac absolute parent of nke/ + siblings
 export REMOTE_SSH_ALIAS=colossus               # SSH Host alias
-export REMOTE_NKE_ROOT=dev/nke                 # path relative to remote $HOME
+export REMOTE_NKE_ROOT=dev/nvidia              # path relative to remote $HOME
 
 mkdir -p "$REMOTE_SYNC_DIR/$REMOTE_SSH_ALIAS"
 sed \
@@ -67,6 +68,9 @@ sed \
   hack/remote-sync/mutagen.yml.example \
   > "$REMOTE_SYNC_DIR/$REMOTE_SSH_ALIAS/mutagen.yml"
 cp hack/remote-sync/fetch-kubeconfig.sh "$REMOTE_SYNC_DIR/"
+
+# Mutagen will not create missing parent dirs on the remote.
+ssh "$REMOTE_SSH_ALIAS" "mkdir -p ~/${REMOTE_NKE_ROOT}"
 
 cd "$REMOTE_SYNC_DIR/$REMOTE_SSH_ALIAS"
 mutagen project start
@@ -80,9 +84,9 @@ mutagen project list
 mutagen project flush      # force sync; also clears a wedged .git on the target
 mutagen project terminate  # stop sync + forwards
 
-# temporarily stop sync/resume of cloud-workflow-engine code changes - leaving the ports open
-mutagen sync pause cloud-workflow-engine
-mutagen sync resume cloud-workflow-engine
+# temporarily stop sync/resume of monorepo code changes - leaving the ports open
+mutagen sync pause nke
+mutagen sync resume nke
 ```
 
 Run one Mutagen project at a time, or `terminate` before switching targets.
@@ -91,15 +95,36 @@ Run one Mutagen project at a time, or `terminate` before switching targets.
 
 Default template syncs:
 
-- `cloud-workflow-engine`
-- `cluster-api-provider-nico`
-- `agent`
-- `nke-site-deploy` (fleet `cwe-profiles` for `docker.local/cwe-profiles:tilt`)
-- `forge-console` (external repo; CWE Tilt loads it as a provider)
+- `nke` — NVIDIA/nke monorepo (`controller/` + `agent/`)
+- `cluster-api-provider-nico` — sibling of `nke/`
+- `nke-site-deploy` — sibling of `nke/` (fleet `cwe-profiles` for `docker.local/cwe-profiles:tilt`)
+- `forge-console` — sibling of `nke/` (optional UI; see tilt_config below)
 
 Ignored on both sides (built/managed on the target): `bin/`, `var/`, `.dev/`,
 `logs/`, `release/`, `images/`, `.gocache/`, `.gomodcache/`, `.cache/`,
 `*.qcow2`, `*.log`, and similar.
+
+## Enable forge-console (optional)
+
+`forge-console` is **not** a built-in controller provider (it lives in a private
+repo). Opt in with an external dict entry in `controller/tilt_config.json`
+(gitignored). Relative paths are resolved from `controller/` (where you run
+`tilt up`):
+
+```json
+{
+  "providers": [
+    "capi_core",
+    "forge-vms",
+    {
+      "forge-console": "../../forge-console"
+    }
+  ]
+}
+```
+
+That path is the Mutagen-synced sibling next to the monorepo. The Mutagen
+template already forwards Mac `:9090` → remote `:8090`.
 
 ## Port forwards (browse on the Mac)
 
@@ -157,10 +182,13 @@ SSH (or a remote terminal), then:
 # recommended: keep tilt alive across SSH disconnect
 tmux new -s tilt
 
-cd ~/dev/nke/cloud-workflow-engine   # or whatever beta path you configured
+# Must be the monorepo controller/ (not the old cloud-workflow-engine path)
+cd ~/dev/nvidia/nke/controller   # or whatever beta path you configured
 export TILT_LINK_PORT_OFFSET=1000
 tilt up
 ```
+
+Mac browser: http://localhost:11350 (Mutagen forward to remote Tilt on `:10350`).
 This starts:
 
 - **forge-vms** — built with `make build-privileged`, live-reloaded on code changes
@@ -168,6 +196,7 @@ This starts:
 - **Loki + Promtail + Grafana** — observability stack deployed into the Kind cluster
 - **forge-vms-log-shipper** — host Promtail container that ships forge-vms and VM console logs to Loki
 - **forge-vms-register-site** — registers the forge-vms site in CWE with the correct VIP CIDR
+- **forge-console** — if enabled in `tilt_config.json` (Mac: http://localhost:9090)
 
 Reattach later with:
 ```bash
@@ -179,7 +208,7 @@ tmux attach -t tilt
 ```bash
 tmux new -s e2e
 
-cd ~/dev/nke/cloud-workflow-engine
+cd ~/dev/nvidia/nke/controller
 
 # Run any e2e desired e2e tests
 make test-e2e
