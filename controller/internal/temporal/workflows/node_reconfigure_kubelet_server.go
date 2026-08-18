@@ -15,6 +15,10 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
+const (
+	kubeVIPMaintenanceTaintValue = "kube-vip"
+)
+
 type NodeReconfigureKubeletServerInput struct {
 	Server string `json:"server"`
 }
@@ -31,19 +35,15 @@ func NodeReconfigureKubeletServer(
 	logger.Info("Reconfiguring kubelet server", "nodeID", nodeID, "server", input.Server)
 
 	taintKey := constants.TaintKeyMaintenance
-	taintValue := "kube-vip"
+	taintValue := kubeVIPMaintenanceTaintValue
 	taintEffect := constants.TaintEffectNoSchedule
 
 	if err := taintNode(ctx, nodeID, taintKey, taintValue, taintEffect); err != nil {
 		return NodeReconfigureKubeletServerResult{}, fmt.Errorf("failed to taint node: %w", err)
 	}
 
-	if err := configureKubeletServer(ctx, nodeID, input.Server); err != nil {
-		return NodeReconfigureKubeletServerResult{}, fmt.Errorf("failed to configure kubelet server: %w", err)
-	}
-
-	if err := restartKubelet(ctx, nodeID); err != nil {
-		return NodeReconfigureKubeletServerResult{}, fmt.Errorf("failed to restart kubelet: %w", err)
+	if err := reconfigureKubeletAPIServer(ctx, nodeID, input.Server); err != nil {
+		return NodeReconfigureKubeletServerResult{}, fmt.Errorf("failed to reconfigure kubelet API server: %w", err)
 	}
 
 	if err := waitForKubeletToRenewNodeLease(ctx, nodeID); err != nil {
@@ -88,7 +88,7 @@ func taintNode(ctx workflow.Context, nodeID uuid.UUID, taintKey, taintValue, tai
 	return nil
 }
 
-func configureKubeletServer(ctx workflow.Context, nodeID uuid.UUID, server string) error {
+func reconfigureKubeletAPIServer(ctx workflow.Context, nodeID uuid.UUID, server string) error {
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
@@ -102,42 +102,13 @@ func configureKubeletServer(ctx workflow.Context, nodeID uuid.UUID, server strin
 
 	if err := workflow.ExecuteActivity(
 		workflow.WithActivityOptions(ctx, activityOptions),
-		a.ExecuteHostRunbook,
-		activities.ExecuteHostRunbookInput{
-			HostID:      nodeID,
-			RunbookName: "kubelet-api-address",
-			RunbookEnv: map[string]string{
-				"API_SERVER": server,
-			},
+		a.ReconfigureKubeletAPIServer,
+		activities.ReconfigureKubeletAPIServerInput{
+			NodeID: nodeID,
+			Server: server,
 		},
 	).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to configure kubelet server: %w", err)
-	}
-
-	return nil
-}
-
-func restartKubelet(ctx workflow.Context, nodeID uuid.UUID) error {
-	var a *activities.Activities
-
-	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 1 * time.Minute,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval: 1 * time.Minute,
-			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 3,
-		},
-	}
-
-	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, activityOptions),
-		a.ExecuteHostRunbook,
-		activities.ExecuteHostRunbookInput{
-			HostID:      nodeID,
-			RunbookName: "restart-kubelet",
-		},
-	).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to restart kubelet: %w", err)
+		return fmt.Errorf("failed to reconfigure kubelet API server: %w", err)
 	}
 
 	return nil

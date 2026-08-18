@@ -36,6 +36,11 @@ type FakeClient struct {
 	PreflightCalls   int
 	LastPreflightReq *nkeproto.ExecuteNodePreflightRequest
 
+	ReconfigureKubeletAPIServerCalls    []uuid.UUID
+	ReconfigureKubeletAPIServerRequests []*nkeproto.ReconfigureKubeletAPIServerRequest
+	ReconfigureKubeletAPIServerResponse *nkeproto.ReconfigureKubeletAPIServerResponse
+	ReconfigureKubeletAPIServerErr      error
+
 	InitializeAPIEncryptionCalls            []uuid.UUID
 	InitializeAPIEncryptionKeys             []string
 	PromoteAPIEncryptionProvidersCalls      []uuid.UUID
@@ -137,6 +142,15 @@ func (f *FakeClient) ExecuteKubeadmJoin(context.Context, db.Node, *nkeproto.Kube
 
 func (f *FakeClient) ExecuteKubeadmReset(context.Context, db.Node, *nkeproto.KubeadmResetRequest) (*nkeproto.KubeadmResetStatusResponse, error) {
 	return &nkeproto.KubeadmResetStatusResponse{}, nil
+}
+
+func (f *FakeClient) ReconfigureKubeletAPIServer(_ context.Context, node db.Node, req *nkeproto.ReconfigureKubeletAPIServerRequest) (*nkeproto.ReconfigureKubeletAPIServerResponse, error) {
+	f.ReconfigureKubeletAPIServerCalls = append(f.ReconfigureKubeletAPIServerCalls, node.ID)
+	f.ReconfigureKubeletAPIServerRequests = append(f.ReconfigureKubeletAPIServerRequests, req)
+	if f.ReconfigureKubeletAPIServerResponse == nil {
+		return &nkeproto.ReconfigureKubeletAPIServerResponse{}, f.ReconfigureKubeletAPIServerErr
+	}
+	return f.ReconfigureKubeletAPIServerResponse, f.ReconfigureKubeletAPIServerErr
 }
 
 func (f *FakeClient) ExecuteNodePreflight(_ context.Context, _ db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error) {
