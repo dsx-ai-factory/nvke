@@ -9,7 +9,10 @@
 
 Module-specific docs live alongside their code:
 
-- `controller/docs/` — remote Colossus Tilt guide
+- `controller/docs/` — remote Colossus Tilt guide, and design proposals under
+  discussion:
+  [BYO-OS](../controller/docs/byo-os.md),
+  [preprovisioned CAPI bootstrap](../controller/docs/preprovisioned-capi-bootstrap.md)
 - `controller/AGENTS.md` — AI agent guide for CWE
 - `agent/docs/` — agent design and security notes
 - `agent/AGENTS.md` — AI agent guide for the node agent
