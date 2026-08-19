@@ -5,6 +5,7 @@ package activities
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,6 +13,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/testsuite"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
@@ -74,6 +77,60 @@ func TestKubeadmUpgradeApplyFallsBackToJoinedControlPlaneNode(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, joinedNode.ID, result.NodeID)
 	require.Equal(t, []uuid.UUID{joinedNode.ID}, fakeAgent.KubeadmUpgradeApplyCalls)
+	mockDB.AssertExpectations(t)
+}
+
+func TestKubeadmUpgradeApplyFallsBackToLegacyRunbookWhenRPCIsUnimplemented(t *testing.T) {
+	clusterID := uuid.New()
+	controlPlaneNode := joinedControlPlaneNode(clusterID, "healthy", true)
+	mockDB := &testutil.MockDB{}
+	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{controlPlaneNode}, nil).Once()
+	mockDB.On("GetNode", mock.Anything, controlPlaneNode.ID).Return(controlPlaneNode, nil).Once()
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "cluster-1"}, nil).Once()
+	fakeAgent := &agenttest.FakeClient{
+		KubeadmUpgradeApplyError: fmt.Errorf("kubeadm upgrade: %w", status.Error(codes.Unimplemented, "unknown method KubeadmUpgradeApply")),
+		ExecuteScriptHook: func(_ db.Node, scriptName, scriptContents string) (*nkeproto.ExecuteScriptResponse, error) {
+			require.Equal(t, "upgrade-kubelet-kubeadm", scriptName)
+			require.Contains(t, scriptContents, "export IS_MASTER='true'")
+			require.Contains(t, scriptContents, "export KUBEADM_UPGRADE_ONLY='true'")
+			require.Contains(t, scriptContents, "export VERSION='1.34.2'")
+			require.Contains(t, scriptContents, "kubeadm upgrade apply")
+			return &nkeproto.ExecuteScriptResponse{Output: "legacy upgrade output\n"}, nil
+		},
+	}
+	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
+
+	result, err := executeKubeadmUpgradeApplyActivity(t, a, KubeadmUpgradeApplyInput{
+		ClusterID:         clusterID,
+		KubernetesVersion: "1.34.2",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, controlPlaneNode.ID, result.NodeID)
+	assert.Equal(t, controlPlaneNode.Name, result.NodeName)
+	assert.Equal(t, "legacy upgrade output\n", result.Output)
+	require.Equal(t, []uuid.UUID{controlPlaneNode.ID}, fakeAgent.KubeadmUpgradeApplyCalls)
+	require.Equal(t, []string{"upgrade-kubelet-kubeadm"}, fakeAgent.ExecuteScriptNames)
+	mockDB.AssertExpectations(t)
+}
+
+func TestKubeadmUpgradeApplyDoesNotFallBackForSupportedRPCFailure(t *testing.T) {
+	clusterID := uuid.New()
+	controlPlaneNode := joinedControlPlaneNode(clusterID, "healthy", true)
+	mockDB := &testutil.MockDB{}
+	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{controlPlaneNode}, nil).Once()
+	fakeAgent := &agenttest.FakeClient{
+		KubeadmUpgradeApplyError: status.Error(codes.Internal, "upgrade failed"),
+	}
+	a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
+
+	_, err := executeKubeadmUpgradeApplyActivity(t, a, KubeadmUpgradeApplyInput{
+		ClusterID:         clusterID,
+		KubernetesVersion: "1.34.2",
+	})
+
+	require.ErrorContains(t, err, "failed to apply kubeadm upgrade")
+	require.Empty(t, fakeAgent.ExecuteScriptNames)
 	mockDB.AssertExpectations(t)
 }
 

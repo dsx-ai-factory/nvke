@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
@@ -65,6 +67,31 @@ func (a *Activities) KubeadmUpgradeApply(
 		TargetVersion: input.KubernetesVersion,
 	})
 	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			activity.GetLogger(ctx).Info(
+				"KubeadmUpgradeApply is unavailable; falling back to legacy kubeadm upgrade runbook",
+				"nodeID", controlPlaneNode.ID,
+				"nodeName", controlPlaneNode.Name,
+			)
+			result, runbookErr := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
+				HostID:      controlPlaneNode.ID,
+				RunbookName: "upgrade-kubelet-kubeadm",
+				RunbookEnv: map[string]string{
+					"VERSION":              input.KubernetesVersion,
+					"IS_MASTER":            trueValue,
+					"KUBEADM_UPGRADE_ONLY": trueValue,
+				},
+			})
+			if runbookErr != nil {
+				return KubeadmUpgradeApplyResult{}, fmt.Errorf("failed to execute legacy kubeadm upgrade runbook on control plane node %s: %w", controlPlaneNode.Name, runbookErr)
+			}
+
+			return KubeadmUpgradeApplyResult{
+				NodeID:   controlPlaneNode.ID,
+				NodeName: controlPlaneNode.Name,
+				Output:   result.Output,
+			}, nil
+		}
 		return KubeadmUpgradeApplyResult{}, fmt.Errorf("failed to apply kubeadm upgrade on control plane node %s: %w", controlPlaneNode.Name, err)
 	}
 	if response.GetOutcome() != nkeproto.KubeadmUpgradeApplyResponse_OUTCOME_APPLIED {
