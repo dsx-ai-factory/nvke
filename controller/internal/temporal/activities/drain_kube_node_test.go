@@ -181,6 +181,30 @@ func TestDrainKubeNodeSucceedsWhenTenantNodeIsAlreadyAbsent(t *testing.T) {
 	fixture.database.AssertExpectations(t)
 }
 
+func TestDrainKubeNodeSkipsWhenClusterIsDeleting(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+		ID: nodeID, ClusterID: clusterID, Name: "worker-0",
+	}, nil)
+	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+		ID:   clusterID,
+		Name: "cluster-a",
+		Conditions: db.ClusterConditions{
+			Deleting: db.NewCondition(true, "Cluster deletion in progress"),
+		},
+	}, nil)
+
+	// No tenant client provider: reaching for one would panic, proving the
+	// activity returns before it needs the tenant API.
+	a := &Activities{db: database}
+
+	require.NoError(t, executeDrainKubeNodeActivity(t, a, DrainKubeNodeInput{NodeID: nodeID}))
+	database.AssertExpectations(t)
+}
+
 type drainKubeNodeFixture struct {
 	activities   *Activities
 	tenantClient client.WithWatch

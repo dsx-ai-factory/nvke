@@ -379,6 +379,47 @@ func TestTeardownNodeSkipRemoveFromClusterResetsOnly(t *testing.T) {
 	require.ErrorIs(t, err, db.ErrNotFound, "node record should be deleted after infrastructure teardown")
 }
 
+func TestTeardownNodeResetsOnlyWhenClusterIsDeletingDespiteInput(t *testing.T) {
+	database, res := setupTestDB(t, seedOpts{
+		clusterProvisioned: true,
+		cpNodeJoined:       true,
+		clusterDeleting:    true,
+		workerNodePool:     true,
+		omitConfigProfile:  true,
+	})
+
+	env, a := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{
+		omitClusterRunbookMock:      true,
+		omitKubeadmResetMock:        true,
+		omitDeleteForgeInstanceMock: true,
+	})
+	env.OnActivity(a.KubeadmReset, mock.Anything, mock.MatchedBy(func(input activities.KubeadmResetInput) bool {
+		return input.NodeID == res.nodeID && len(input.SkipPhases) == 0
+	})).Return(activities.KubeadmResetResult{}, nil).Once()
+	env.OnActivity(a.DeleteForgeInstance, mock.Anything, mock.Anything).Return(activities.DeleteForgeInstanceResult{}, nil).Once()
+
+	var activityNames []string
+	env.SetOnActivityStartedListener(func(activityInfo *activity.Info, _ context.Context, _ converter.EncodedValues) {
+		activityNames = append(activityNames, activityInfo.ActivityType.Name)
+	})
+
+	// SkipRemoveFromCluster left false on purpose: this is the input the outbox
+	// failed to deliver.
+	env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
+		NodeID: res.nodeID,
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+	require.NotContains(t, activityNames, "DrainKubeNode",
+		"must not drain into a cluster that is being deleted")
+	require.NotContains(t, activityNames, "DeleteKubeNode")
+
+	_, err := database.GetNode(context.Background(), res.nodeID)
+	require.ErrorIs(t, err, db.ErrNotFound, "node record should be deleted after infrastructure teardown")
+}
+
 // NKX-13735: tearing down the last joined CP with SkipRemoveFromCluster=false
 // (e.g. DELETE /api/nodePools racing cluster delete) must not attempt drain —
 // ExecuteClusterRunbook excludes the target, leaving zero executor candidates.
@@ -776,6 +817,7 @@ type seedOpts struct {
 	cpNodeJoined              bool
 	onlyJoinedCPUnderTeardown bool // primary node is the sole joined CP; no surviving peer
 	survivingCPDeleting       bool // the peer CP is joined but is itself being torn down
+	clusterDeleting           bool // cluster is being torn down, whatever the workflow input says
 	workerNodePool            bool
 	configProfileName         string
 	omitConfigProfile         bool
@@ -824,6 +866,9 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 	clusterConditions := db.ClusterConditions{}
 	if opts.clusterProvisioned {
 		clusterConditions.Provisioned = db.NewCondition(true, "Provisioned cluster")
+	}
+	if opts.clusterDeleting {
+		clusterConditions.Deleting = db.NewCondition(true, "Cluster deletion in progress")
 	}
 	_, err = database.CreateCluster(ctx, &db.Cluster{
 		ID:                clusterID,

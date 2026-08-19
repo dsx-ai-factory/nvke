@@ -13,6 +13,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
 type DeleteKubeNodeInput struct {
@@ -30,6 +32,11 @@ func (a *Activities) DeleteKubeNode(ctx context.Context, input DeleteKubeNodeInp
 	cluster, err := a.db.GetCluster(ctx, node.ClusterID)
 	if err != nil {
 		return fmt.Errorf("failed to get cluster: %w", err)
+	}
+
+	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		logger.Info("Cluster is deleting, skipping Kubernetes node deletion", "nodeID", input.NodeID, "clusterID", cluster.ID)
+		return nil
 	}
 
 	tenantClient, err := a.tenantClientForCluster(ctx, cluster)

@@ -73,6 +73,28 @@ func TestDeleteKubeNodeSucceedsWhenTenantNodeIsAlreadyAbsent(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestDeleteKubeNodeSkipsWhenClusterIsDeleting(t *testing.T) {
+	nodeID := uuid.New()
+	clusterID := uuid.New()
+
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+		ID: nodeID, ClusterID: clusterID, Name: "worker-0",
+	}, nil)
+	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+		ID:   clusterID,
+		Name: "cluster-a",
+		Conditions: db.ClusterConditions{
+			Deleting: db.NewCondition(true, "Cluster deletion in progress"),
+		},
+	}, nil)
+
+	a := &Activities{db: database}
+
+	require.NoError(t, executeDeleteKubeNodeActivity(t, a, DeleteKubeNodeInput{NodeID: nodeID}))
+	database.AssertExpectations(t)
+}
+
 func executeDeleteKubeNodeActivity(t *testing.T, a *Activities, input DeleteKubeNodeInput) error {
 	t.Helper()
 

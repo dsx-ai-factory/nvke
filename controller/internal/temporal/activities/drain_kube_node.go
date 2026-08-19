@@ -17,6 +17,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
 const (
@@ -55,6 +57,11 @@ func (a *Activities) drainKubeNode(
 	cluster, err := a.db.GetCluster(ctx, node.ClusterID)
 	if err != nil {
 		return nonRetryableIfNotFound("failed to get cluster", err)
+	}
+
+	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		logger.Info("Cluster is deleting, nothing to drain", "nodeID", input.NodeID, "clusterID", cluster.ID)
+		return nil
 	}
 
 	tenantClient, err := a.tenantClientForCluster(ctx, cluster)

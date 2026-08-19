@@ -181,22 +181,29 @@ func prepareNodeForInfrastructureDeletion(
 		return false, resetNodeForClusterTeardown(ctx, input)
 	}
 
-	if err := runTeardownHooks(ctx, input, BeforeRemoveNode); err != nil {
-		return false, fmt.Errorf("failed to run beforeRemoveNode hooks: %w", err)
-	}
-
 	logger := workflow.GetLogger(ctx)
 
 	var a *activities.Activities
 
-	var node db.Node
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNode, input.NodeID).Get(ctx, &node); err != nil {
-		return false, fmt.Errorf("failed to get node: %w", err)
-	}
-
+	// The input flag is baked into the workflow start event and can be stale. Read
+	// ahead of the remove-node hooks, which need a live control plane like drain does.
 	var cluster db.Cluster
 	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetClusterForNode, input.NodeID).Get(ctx, &cluster); err != nil {
 		return false, fmt.Errorf("failed to get cluster: %w", err)
+	}
+	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		logger.Info("Cluster is deleting; skipping live removal for node teardown",
+			"nodeID", input.NodeID, "clusterID", cluster.ID)
+		return false, resetNodeForClusterTeardown(ctx, input)
+	}
+
+	if err := runTeardownHooks(ctx, input, BeforeRemoveNode); err != nil {
+		return false, fmt.Errorf("failed to run beforeRemoveNode hooks: %w", err)
+	}
+
+	var node db.Node
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNode, input.NodeID).Get(ctx, &node); err != nil {
+		return false, fmt.Errorf("failed to get node: %w", err)
 	}
 
 	var nodePool db.NodePool
