@@ -11,6 +11,7 @@
 package csr
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -191,6 +192,40 @@ func TestPlanDecision(t *testing.T) {
 		require.Equal(t, decisionSkip, decision.Action)
 		require.Equal(t, "node is not present in CWE desired state", decision.Reason)
 	})
+}
+
+func TestLogDecisionUsesDecisionLevel(t *testing.T) {
+	tests := map[string]struct {
+		action    string
+		wantLevel string
+	}{
+		"approval is informational": {
+			action:    decisionApprove,
+			wantLevel: `"level":"INFO"`,
+		},
+		"skip is diagnostic": {
+			action:    decisionSkip,
+			wantLevel: `"level":"DEBUG"`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			var output bytes.Buffer
+			reconciler := &Reconciler{
+				clusterID: uuid.New(),
+				logger: slog.New(slog.NewJSONHandler(&output, &slog.HandlerOptions{
+					Level: slog.LevelDebug,
+				})),
+			}
+			reconciler.logDecision(csrDecision{
+				CSR:    &certificatesv1.CertificateSigningRequest{ObjectMeta: metav1.ObjectMeta{Name: "test-csr"}},
+				Action: test.action,
+			})
+
+			require.Contains(t, output.String(), test.wantLevel)
+		})
+	}
 }
 
 func TestReconcilerApprovesValidatedCSR(t *testing.T) {

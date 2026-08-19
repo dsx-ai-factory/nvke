@@ -155,7 +155,11 @@ func (r *Reconciler) applyDecision(ctx context.Context, decision csrDecision) er
 }
 
 func (r *Reconciler) logDecision(decision csrDecision) {
-	r.logger.Info(
+	log := r.logger.Info
+	if decision.Action == decisionSkip {
+		log = r.logger.Debug
+	}
+	log(
 		"Reconciled tenant kubelet-serving CSR",
 		"clusterID", r.clusterID,
 		"csrName", decision.CSR.Name,
