@@ -46,12 +46,19 @@ trap cleanup EXIT
 # ── Stage 1: fake nodes ──────────────────────────────────────────────────
 
 log "starting fake node containers"
-make -C "${CLI_DIR}" nodes-up
+# Set before the call, not after: `nodes-up` is a single `docker compose up
+# -d` that can fail after creating some containers (e.g. node3 fails to
+# pull/start while node1/node2 succeeded). Under `set -e` that failure exits
+# the script immediately, so cleanup must already know to tear down whatever
+# got created rather than skipping it because the call never "finished".
+# `nodes-down` is safe to run against a partial or nonexistent stack.
 nodes_up=true
+make -C "${CLI_DIR}" nodes-up
 
 log "waiting for node-agent to answer on ${NODE_IPS[*]}:${NODE_AGENT_PORT}"
-deadline=$((SECONDS + 120))
 for ip in "${NODE_IPS[@]}"; do
+  # Per-node budget: a slow node1 must not starve node2/node3 of wait time.
+  deadline=$((SECONDS + 120))
   until (exec 3<>"/dev/tcp/${ip}/${NODE_AGENT_PORT}") 2>/dev/null; do
     exec 3>&- 2>/dev/null || true
     if [ "${SECONDS}" -ge "${deadline}" ]; then
