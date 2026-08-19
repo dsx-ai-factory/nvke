@@ -110,24 +110,20 @@ func TestUnit_DBClusterForNodeSourceEnqueuesOwningClusterAfterUpdate(t *testing.
 	filters := db.NodeFilters{ControlPlane: ptr.To(true), Joined: ptr.To(true)}
 	liveFilters := filters
 	liveFilters.ID = &node.ID
-	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+	database := &testutil.MockDB{}
 	database.On("ListNodes", mock.Anything, filters).Return([]db.Node{}, nil).Once()
 	database.On("ListNodes", mock.Anything, liveFilters).Return([]db.Node{node}, nil).Once()
-	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
-	database.MockTx.On("UpdateNode", mock.Anything, &node).Return(node, nil)
+	database.On("UpdateNode", mock.Anything, &node).Return(node, nil)
 	wrapper := New(database, slog.Default())
 	source := wrapper.ClusterForNodeSource(filters)
 	queue := startSource(t, source)
 
-	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
-		_, err := tx.UpdateNode(ctx, &node)
-		return err
-	})
+	updated, err := wrapper.UpdateNode(context.Background(), &node)
 
 	require.NoError(t, err)
+	assert.Equal(t, node, updated)
 	assert.Equal(t, dbreconcile.ClusterKey(node.ClusterID), getQueueItem(t, queue))
 	database.AssertExpectations(t)
-	database.MockTx.AssertExpectations(t)
 }
 
 func TestUnit_DBClusterSourceEnqueuesClusterAfterUpdate(t *testing.T) {
@@ -235,9 +231,6 @@ func TestUnit_DBDoesNotFailSuccessfulTxWhenPostCommitNodeEnqueueFails(t *testing
 	wrapper := New(database, slog.Default())
 	wrapper.nodeSources = append(wrapper.nodeSources, nodeSourceRegistration{
 		enqueuer: errorEnqueuer{err: wantErr},
-		keyFor: func(node db.Node) dbreconcile.Key {
-			return dbreconcile.NodeKey(node.ID)
-		},
 	})
 
 	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
@@ -246,6 +239,32 @@ func TestUnit_DBDoesNotFailSuccessfulTxWhenPostCommitNodeEnqueueFails(t *testing
 	})
 
 	require.NoError(t, err)
+	database.AssertExpectations(t)
+	database.MockTx.AssertExpectations(t)
+}
+
+func TestUnit_DBPostCommitClusterForNodeEnqueueContinuesAfterNodeEnqueueFails(t *testing.T) {
+	node := db.Node{ID: uuid.New(), ClusterID: uuid.New()}
+	liveFilters := db.NodeFilters{ID: &node.ID}
+	wantErr := errors.New("enqueue failed")
+	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil).Once()
+	database.On("ListNodes", mock.Anything, liveFilters).Return([]db.Node{node}, nil).Twice()
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	database.MockTx.On("UpdateNode", mock.Anything, &node).Return(node, nil)
+	wrapper := New(database, slog.New(slog.DiscardHandler))
+	wrapper.nodeSources = append(wrapper.nodeSources, nodeSourceRegistration{
+		enqueuer: errorEnqueuer{err: wantErr},
+	})
+	queue := startSource(t, wrapper.ClusterForNodeSource(db.NodeFilters{}))
+
+	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+		_, err := tx.UpdateNode(ctx, &node)
+		return err
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, dbreconcile.ClusterKey(node.ClusterID), getQueueItem(t, queue))
 	database.AssertExpectations(t)
 	database.MockTx.AssertExpectations(t)
 }

@@ -25,7 +25,11 @@ type Enqueuer interface {
 type nodeSourceRegistration struct {
 	filters  db.NodeFilters
 	enqueuer Enqueuer
-	keyFor   func(db.Node) dbreconcile.Key
+}
+
+type clusterForNodeSourceRegistration struct {
+	filters  db.NodeFilters
+	enqueuer Enqueuer
 }
 
 type clusterSourceRegistration struct {
@@ -46,12 +50,13 @@ type nodeSetSourceRegistration struct {
 type DB struct {
 	db.DB
 
-	logger          *slog.Logger
-	lock            sync.RWMutex
-	clusterSources  []clusterSourceRegistration
-	nodeSources     []nodeSourceRegistration
-	nodePoolSources []nodePoolSourceRegistration
-	nodeSetSources  []nodeSetSourceRegistration
+	logger                *slog.Logger
+	lock                  sync.RWMutex
+	clusterSources        []clusterSourceRegistration
+	clusterForNodeSources []clusterForNodeSourceRegistration
+	nodeSources           []nodeSourceRegistration
+	nodePoolSources       []nodePoolSourceRegistration
+	nodeSetSources        []nodeSetSourceRegistration
 }
 
 func New(database db.DB, logger *slog.Logger) *DB {
@@ -65,27 +70,11 @@ func New(database db.DB, logger *slog.Logger) *DB {
 }
 
 func (w *DB) NodeSource(filters db.NodeFilters) *dbsource.Source[dbreconcile.Key] {
-	return w.nodeSource(filters, func(node db.Node) dbreconcile.Key {
-		return dbreconcile.NodeKey(node.ID)
-	})
-}
-
-// ClusterForNodeSource emits the owning cluster key when a matching node is
-// created or updated. It is useful for cluster-scoped reconcilers whose
-// readiness depends on node state.
-func (w *DB) ClusterForNodeSource(filters db.NodeFilters) *dbsource.Source[dbreconcile.Key] {
-	return w.nodeSource(filters, func(node db.Node) dbreconcile.Key {
-		return dbreconcile.ClusterKey(node.ClusterID)
-	})
-}
-
-func (w *DB) nodeSource(filters db.NodeFilters, keyFor func(db.Node) dbreconcile.Key) *dbsource.Source[dbreconcile.Key] {
 	nodeSource := dbsource.NewSource[dbreconcile.Key](
 		dbsource.DefaultBufferSize,
 		nodeEventSource{
 			queries: w,
 			filters: filters,
-			keyFor:  keyFor,
 		},
 	)
 	w.lock.Lock()
@@ -93,9 +82,31 @@ func (w *DB) nodeSource(filters db.NodeFilters, keyFor func(db.Node) dbreconcile
 	w.nodeSources = append(w.nodeSources, nodeSourceRegistration{
 		filters:  filters,
 		enqueuer: nodeSource,
-		keyFor:   keyFor,
 	})
 	return nodeSource
+}
+
+// ClusterForNodeSource emits the owning cluster key when a matching node is
+// created or updated. It is useful for cluster-scoped reconcilers whose
+// readiness depends on node state.
+func (w *DB) ClusterForNodeSource(filters db.NodeFilters) *dbsource.Source[dbreconcile.Key] {
+	clusterSource := dbsource.NewSource[dbreconcile.Key](
+		dbsource.DefaultBufferSize,
+		nodeEventSource{
+			queries: w,
+			filters: filters,
+			keyFor: func(node db.Node) dbreconcile.Key {
+				return dbreconcile.ClusterKey(node.ClusterID)
+			},
+		},
+	)
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	w.clusterForNodeSources = append(w.clusterForNodeSources, clusterForNodeSourceRegistration{
+		filters:  filters,
+		enqueuer: clusterSource,
+	})
+	return clusterSource
 }
 
 // ClusterSource emits cluster keys after cluster writes and periodically
@@ -216,6 +227,9 @@ func (w *DB) CreateNode(ctx context.Context, node *db.Node) (db.Node, error) {
 	if err := w.enqueueNode(ctx, created.ID); err != nil {
 		return created, err
 	}
+	if err := w.enqueueClusterForNode(ctx, created.ID); err != nil {
+		return created, err
+	}
 	if err := w.enqueueNodeSetForNode(ctx, created); err != nil {
 		return created, err
 	}
@@ -228,6 +242,9 @@ func (w *DB) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error) {
 		return updated, err
 	}
 	if err := w.enqueueNode(ctx, updated.ID); err != nil {
+		return updated, err
+	}
+	if err := w.enqueueClusterForNode(ctx, updated.ID); err != nil {
 		return updated, err
 	}
 	return updated, nil
@@ -296,6 +313,9 @@ func (w *DB) RunInTx(ctx context.Context, fn func(ctx context.Context, tx db.Tx)
 		if err := w.enqueueNode(ctx, nodeID); err != nil {
 			w.logger.Warn("Failed to enqueue node after committed transaction", "nodeID", nodeID, "error", err)
 		}
+		if err := w.enqueueClusterForNode(ctx, nodeID); err != nil {
+			w.logger.Warn("Failed to enqueue cluster for node after committed transaction", "nodeID", nodeID, "error", err)
+		}
 	}
 	for _, nodePoolID := range tx.nodePoolIDs {
 		if err := w.enqueueNodePool(ctx, nodePoolID); err != nil {
@@ -342,6 +362,28 @@ func (w *DB) enqueueNode(ctx context.Context, nodeID uuid.UUID) error {
 	}()
 
 	for _, source := range sources {
+		matches, err := w.nodeMatchesFilters(ctx, nodeID, source.filters)
+		if err != nil {
+			return err
+		}
+		if !matches {
+			continue
+		}
+		if err := source.enqueuer.Enqueue(ctx, dbreconcile.NodeKey(nodeID)); err != nil {
+			return fmt.Errorf("failed to enqueue node %s: %w", nodeID, err)
+		}
+	}
+	return nil
+}
+
+func (w *DB) enqueueClusterForNode(ctx context.Context, nodeID uuid.UUID) error {
+	sources := func() []clusterForNodeSourceRegistration {
+		w.lock.RLock()
+		defer w.lock.RUnlock()
+		return append([]clusterForNodeSourceRegistration(nil), w.clusterForNodeSources...)
+	}()
+
+	for _, source := range sources {
 		node, matches, err := w.nodeMatchingFilters(ctx, nodeID, source.filters)
 		if err != nil {
 			return err
@@ -349,8 +391,8 @@ func (w *DB) enqueueNode(ctx context.Context, nodeID uuid.UUID) error {
 		if !matches {
 			continue
 		}
-		if err := source.enqueuer.Enqueue(ctx, source.keyFor(node)); err != nil {
-			return fmt.Errorf("failed to enqueue node %s: %w", nodeID, err)
+		if err := source.enqueuer.Enqueue(ctx, dbreconcile.ClusterKey(node.ClusterID)); err != nil {
+			return fmt.Errorf("failed to enqueue cluster for node %s: %w", nodeID, err)
 		}
 	}
 	return nil
@@ -399,6 +441,11 @@ func (w *DB) enqueueNodeSet(ctx context.Context, nodeSetID uuid.UUID) error {
 
 func (w *DB) enqueueNodeSetForNode(ctx context.Context, node db.Node) error {
 	return w.enqueueNodeSet(ctx, node.NodeSetID)
+}
+
+func (w *DB) nodeMatchesFilters(ctx context.Context, nodeID uuid.UUID, filters db.NodeFilters) (bool, error) {
+	_, matches, err := w.nodeMatchingFilters(ctx, nodeID, filters)
+	return matches, err
 }
 
 func (w *DB) nodeMatchingFilters(ctx context.Context, nodeID uuid.UUID, filters db.NodeFilters) (db.Node, bool, error) {
