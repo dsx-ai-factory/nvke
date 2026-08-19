@@ -89,7 +89,7 @@ func softRebootNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, m
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 6 * time.Minute, // The agent may wait up to 5m for apt/dpkg locks before issuing reboot.
+		StartToCloseTimeout: 6 * time.Minute, // The agent RPC or legacy runbook may wait up to 5m for apt/dpkg locks.
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    30 * time.Second,
 			BackoffCoefficient: 2,

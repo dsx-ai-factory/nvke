@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type SoftRebootNodeInput struct {
@@ -48,6 +50,16 @@ func (a *Activities) softRebootNode(ctx context.Context, input SoftRebootNodeInp
 	// for the reboot to complete or require the connection to survive it.
 	response, err := a.nodeAgentClient.ScheduleNodeReboot(ctx, node)
 	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			logger.Info("ScheduleNodeReboot is unavailable; falling back to legacy reboot runbook", "nodeID", node.ID, "nodeName", node.Name)
+			if _, runbookErr := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
+				HostID:      input.NodeID,
+				RunbookName: "reboot",
+			}); runbookErr != nil {
+				return SoftRebootNodeResult{}, fmt.Errorf("failed to execute legacy reboot runbook on node %s: %w", node.Name, runbookErr)
+			}
+			return SoftRebootNodeResult{}, nil
+		}
 		return SoftRebootNodeResult{}, fmt.Errorf("failed to schedule soft reboot on node %s: %w", node.Name, err)
 	}
 	if response.GetPackageLocksTimedOut() {
