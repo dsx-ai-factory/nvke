@@ -60,7 +60,7 @@ NKECTL_LDFLAGS := \
 	-X '$(NKECTL_PKG).gitTreeState=$(NKECTL_TREE)' \
 	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)'
 
-.PHONY: build build-cross test fmt lint license file-license-check
+.PHONY: build build-cross test test-e2e fmt lint license file-license-check
 
 # The platforms shipped on a release. nkectl is the one binary here a human
 # downloads, so it is cross-built; the others are deployed, not fetched.
@@ -115,6 +115,12 @@ GO_TEST_FLAGS ?=
 
 test:
 	$(GO) test $(GO_TEST_FLAGS) ./...
+
+# Self-contained: no live cluster or external service required, unlike
+# controller/test/e2e. Safe for a pull-request lane. See e2e/run.sh for what
+# it currently exercises and why it grows in step with bootstrap site.
+test-e2e: build
+	./e2e/run.sh
 
 # golangci-lint applies the formatters enabled in .golangci.yml (gci, gofumpt),
 # so there is no separate gofmt step here.
