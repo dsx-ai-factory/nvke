@@ -1,0 +1,21 @@
+# Serves the CNI bundles baked into the image at build time over loopback.
+#
+# The node-agent's in-init CNI install fetches the calico bundle over HTTP.
+# Pointing it at this server instead of the nke-dev S3 bucket means the e2e
+# nodes need no outbound DNS or internet at test time — which CI's Docker
+# does not reliably give a nested container.
+
+[Unit]
+Description=NKE bundle file server (e2e)
+Documentation=https://github.com/NVIDIA/nke/tree/main/cli
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m http.server 8080 --bind 127.0.0.1 --directory /opt/nke-bundles
+Restart=on-failure
+RestartSec=2s
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

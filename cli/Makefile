@@ -60,7 +60,8 @@ NKECTL_LDFLAGS := \
 	-X '$(NKECTL_PKG).gitTreeState=$(NKECTL_TREE)' \
 	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)'
 
-.PHONY: build build-cross test test-e2e fmt lint license file-license-check
+.PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \
+	fetch-node-agent build-node-image nodes-up nodes-down nodes-status
 
 # The platforms shipped on a release. nkectl is the one binary here a human
 # downloads, so it is cross-built; the others are deployed, not fetched.
@@ -116,11 +117,50 @@ GO_TEST_FLAGS ?=
 test:
 	$(GO) test $(GO_TEST_FLAGS) ./...
 
+# e2e coverage for "nkectl bootstrap site" specifically -- e2e/bootstrap/ is
+# one of what may become several e2e/<command>/ suites as nkectl grows more
+# commands worth covering this way.
+#
 # Self-contained: no live cluster or external service required, unlike
-# controller/test/e2e. Safe for a pull-request lane. See e2e/run.sh for what
-# it currently exercises and why it grows in step with bootstrap site.
-test-e2e: build
-	./e2e/run.sh
+# controller/test/e2e. Safe for a pull-request lane. See e2e/bootstrap/run.sh
+# for what it currently exercises and why it grows in step with bootstrap
+# site.
+test-e2e-bootstrap: build
+	./e2e/bootstrap/run.sh
+
+# Fake-node fixture for the bootstrap e2e suite: three kindest/node
+# containers running nke-agent, standing in for pre-provisioned hardware.
+# `nodes-up`/`nodes-down` are also invoked by e2e/bootstrap/run.sh (via `make
+# -C`), so the compose invocation has one definition rather than two.
+NODE_AGENT_TAG    ?= edge
+K8S_VERSION       ?= 1.32.0
+CNI_BUNDLE_VERSION ?= 3.31.4-1
+E2E_NODE_DIR      := e2e/bootstrap/node
+E2E_COMPOSE_FILE  := e2e/bootstrap/docker-compose.yaml
+# Explicit project name: without it compose derives one from the compose
+# file's directory, which does not match what a hand-run `docker compose ps`
+# from cli/ expects.
+E2E_COMPOSE_PROJECT := nkectl-e2e
+
+fetch-node-agent:
+	NODE_AGENT_TAG=$(NODE_AGENT_TAG) $(E2E_NODE_DIR)/fetch-node-agent.sh
+
+build-node-image: fetch-node-agent
+	docker build \
+	  --build-arg K8S_VERSION=$(K8S_VERSION) \
+	  --build-arg CNI_BUNDLE_VERSION=$(CNI_BUNDLE_VERSION) \
+	  --tag kindest/node-agent:v$(K8S_VERSION)-$(NODE_AGENT_TAG) \
+	  $(E2E_NODE_DIR)
+
+nodes-up: build-node-image
+	K8S_VERSION=$(K8S_VERSION) NODE_AGENT_TAG=$(NODE_AGENT_TAG) \
+	  docker compose -f $(E2E_COMPOSE_FILE) -p $(E2E_COMPOSE_PROJECT) up -d
+
+nodes-down:
+	docker compose -f $(E2E_COMPOSE_FILE) -p $(E2E_COMPOSE_PROJECT) down --volumes --timeout 30
+
+nodes-status:
+	docker compose -f $(E2E_COMPOSE_FILE) -p $(E2E_COMPOSE_PROJECT) ps
 
 # golangci-lint applies the formatters enabled in .golangci.yml (gci, gofumpt),
 # so there is no separate gofmt step here.
