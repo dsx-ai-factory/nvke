@@ -28,6 +28,38 @@ check() { command -v "$1" >/dev/null 2>&1; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Pin the host toolchain to controller/go.mod, not go.dev's latest.
+# Override with GO_VERSION=go1.x.y if needed.
+required_go_version() {
+    if [[ -n "${GO_VERSION:-}" ]]; then
+        echo "${GO_VERSION}"
+        return
+    fi
+    local gomod="${SCRIPT_DIR}/../../go.mod"
+    local ver
+    if [[ ! -f "$gomod" ]]; then
+        fail "controller/go.mod not found at ${gomod}; set GO_VERSION=go1.x.y"
+    fi
+    ver="$(awk '/^go / { print "go" $2; exit }' "$gomod")"
+    if [[ -z "$ver" ]]; then
+        fail "no go directive in ${gomod}; set GO_VERSION=go1.x.y"
+    fi
+    echo "$ver"
+}
+
+install_go() {
+    local version="$1"
+    info "Installing Go ${version} from go.dev..."
+    local go_tarball_tmp
+    go_tarball_tmp="$(mktemp)"
+    curl -fsSLo "$go_tarball_tmp" "https://go.dev/dl/${version}.linux-${DEB_ARCH}.tar.gz"
+    sudo rm -rf /usr/local/go
+    sudo tar -C /usr/local -xzf "$go_tarball_tmp"
+    rm -f "$go_tarball_tmp"
+    export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+    info "Go ${version} installed"
+}
+
 # Host architecture, normalized so this script works on both amd64 and arm64.
 # DEB_ARCH matches Debian/Go/kubectl/kind download-URL naming (amd64|arm64);
 # UNAME_ARCH matches QEMU's per-target binary suffix (x86_64|aarch64).
@@ -188,21 +220,20 @@ else
     info "helm installed"
 fi
 
-if check go; then
-    ver=$(go version 2>&1 | head -1)
-    printf "  ${GREEN}ok${NC}  %-20s %s\n" "go" "$ver"
-else
-    info "Installing Go..."
-    GO_VERSION=$(curl -fsSL https://go.dev/VERSION?m=text | head -1)
-    go_tarball_tmp="$(mktemp)"
-    curl -fsSLo "$go_tarball_tmp" "https://go.dev/dl/${GO_VERSION}.linux-${DEB_ARCH}.tar.gz"
-    sudo rm -rf /usr/local/go
-    sudo tar -C /usr/local -xzf "$go_tarball_tmp"
-    rm -f "$go_tarball_tmp"
-    export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
-    info "Go ${GO_VERSION} installed"
-fi
 export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
+REQUIRED_GO="$(required_go_version)"
+if check go; then
+    installed="$(go version | awk '{print $3}')"
+    if [[ "$installed" == "$REQUIRED_GO" ]]; then
+        ver=$(go version 2>&1 | head -1)
+        printf "  ${GREEN}ok${NC}  %-20s %s\n" "go" "$ver"
+    else
+        warn "Go ${installed} does not match ${REQUIRED_GO} from go.mod; replacing..."
+        install_go "$REQUIRED_GO"
+    fi
+else
+    install_go "$REQUIRED_GO"
+fi
 
 # Persist Go PATH for all future shells (Tilt spawns subprocesses that need this).
 PROFILE_SNIPPET='export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"'
