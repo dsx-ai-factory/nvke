@@ -9,8 +9,16 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+)
+
+const (
+	legacyKubeletAPIAddressRunbook = "kubelet-api-address"
+	legacyRestartKubeletRunbook    = "restart-kubelet"
 )
 
 type ReconfigureKubeletAPIServerInput struct {
@@ -35,6 +43,14 @@ func (a *Activities) ReconfigureKubeletAPIServer(
 		&nkeproto.ReconfigureKubeletAPIServerRequest{Server: input.Server},
 	)
 	if err != nil {
+		if status.Code(err) == codes.Unimplemented {
+			activity.GetLogger(ctx).Info(
+				"ReconfigureKubeletAPIServer is unavailable; falling back to legacy kubelet runbooks",
+				"nodeID", node.ID,
+				"nodeName", node.Name,
+			)
+			return a.reconfigureKubeletAPIServerWithLegacyRunbooks(ctx, input, node.Name)
+		}
 		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("failed to reconfigure kubelet API server on node %s: %w", node.Name, err)
 	}
 	if response == nil {
@@ -54,4 +70,29 @@ func (a *Activities) ReconfigureKubeletAPIServer(
 	default:
 		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("node agent returned unknown kubelet API server outcome %d for node %s", response.GetOutcome(), node.Name)
 	}
+}
+
+func (a *Activities) reconfigureKubeletAPIServerWithLegacyRunbooks(
+	ctx context.Context,
+	input ReconfigureKubeletAPIServerInput,
+	nodeName string,
+) (ReconfigureKubeletAPIServerResult, error) {
+	if _, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
+		HostID:      input.NodeID,
+		RunbookName: legacyKubeletAPIAddressRunbook,
+		RunbookEnv: map[string]string{
+			"API_SERVER": input.Server,
+		},
+	}); err != nil {
+		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("failed to execute legacy kubelet API address runbook on node %s: %w", nodeName, err)
+	}
+
+	if _, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
+		HostID:      input.NodeID,
+		RunbookName: legacyRestartKubeletRunbook,
+	}); err != nil {
+		return ReconfigureKubeletAPIServerResult{}, fmt.Errorf("failed to execute legacy kubelet restart runbook on node %s: %w", nodeName, err)
+	}
+
+	return ReconfigureKubeletAPIServerResult{}, nil
 }
