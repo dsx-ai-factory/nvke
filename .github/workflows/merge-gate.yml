@@ -86,6 +86,11 @@ jobs:
     permissions:
       contents: read
 
+  nkectl-e2e:
+    uses: ./.github/workflows/nkectl-e2e.yml
+    permissions:
+      contents: read
+
   agent-test:
     uses: ./.github/workflows/agent-test.yml
     permissions:
@@ -146,6 +151,7 @@ jobs:
     needs:
       - build
       - controller-test
+      - nkectl-e2e
       - agent-test
       - workspace
       - chart
