@@ -109,11 +109,11 @@ build pass. Removing those dependencies is tracked work with its own design.
   `agent/pkg/agent/proto/*.pb.go`, and `agent/THIRD_PARTY_NOTICES.md` are
   produced by `make generate`, `make protos`, and `make notices`. Change the
   source — the OpenAPI spec, the `.proto` file, or `go.mod` — and regenerate.
-- **Do not rewrite license headers in bulk.** Most Go files here carry
-  `LicenseRef-NvidiaProprietary` while the repository ships Apache-2.0. That
-  mismatch is real and is being resolved by a single tracked sweep. Match the
-  header of the file you are editing; copy it from a neighbouring file for new
-  files. A pull request that relicenses files as a side effect will be rejected.
+- **Do not rewrite license headers in bulk.** Every source file carries
+  `SPDX-License-Identifier: Apache-2.0`, matching the repository's LICENSE.
+  Match the header of the file you are editing; `make license` adds it for new
+  files. A pull request that relicenses files as a side effect will be
+  rejected.
 - **Do not weaken linters to make a change pass.** The `.golangci.yml` files are
   the project's standard. Fix the code instead. Do not add `//nolint` without a
   reason on the same line.

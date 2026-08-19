@@ -21,9 +21,10 @@ var generatedFiles = []string{"models.gen.go", "server.gen.go", "client.gen.go"}
 // idempotency check.
 const licenseMarker = "// SPDX-FileCopyrightText"
 
-// licenseHeader is the repo's canonical 9-line SPDX/NVIDIA header block, copied
-// from generate.go. Keep it byte-for-byte identical to the boilerplate so the
-// file-license-check (addlicense) job stays satisfied.
+// licenseHeader is the repository's canonical header block. Keep it
+// byte-for-byte identical to hack/license-header.tmpl, which is what addlicense
+// stamps everywhere else, so file-license-check stays satisfied and a generated
+// file carries the same header as a hand-written one.
 const licenseHeader = `// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0`
 

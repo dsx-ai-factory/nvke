@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# The licence header template lives once, at the repository root.
+REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
+
 # Module-level targets, matching the other workspace members. Until this file
 # existed, nico-mock was the only tested module with no Makefile: its
 # controller-test.yml matrix entry ran a bare `go test ./...` while every other
@@ -44,7 +47,7 @@ lint:
 	$(GOBIN)/golangci-lint run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
-	$(GO) run github.com/google/addlicense@v1.1.1 -f ./hack/boilerplate.addlicense.txt .
+	$(GO) run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
 
 # The target name is load-bearing beyond this file: license.yml builds its
 # header-check matrix from modules whose Makefile defines `file-license-check:`,

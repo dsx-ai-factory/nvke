@@ -90,7 +90,6 @@ jobs:
       contents: read
     outputs:
       modules: ${{ steps.find.outputs.modules }}
-      header_modules: ${{ steps.find.outputs.header_modules }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,19 +112,11 @@ jobs:
           modules=$(printf '%s\n' "$all" | jq -R . | jq -sc .)
           echo "modules=$modules" >> "$GITHUB_OUTPUT"
 
-          # Header checks: every module that exposes the Makefile target, with
-          # no private-dependency exclusions (see the note at the top of this
-          # file). A module without the target is silently absent from the
-          # matrix, so list what was found to keep the gap visible in the log.
-          header_modules=$(printf '%s\n' "$all" | while read -r m; do
-            if [ -f "$m/Makefile" ] && grep -qE '^file-license-check:' "$m/Makefile"; then
-              echo "$m"
-            fi
-          done | jq -R . | jq -sc .)
-          echo "header_modules=$header_modules" >> "$GITHUB_OUTPUT"
-
+          # Header checks are no longer discovered per module. They run once,
+          # from the repository root, against one template -- see the
+          # header-check job below for why the per-module shape could not catch
+          # a header that named the wrong licence.
           echo "dependency-license modules: $modules"
-          echo "license-header modules:     $header_modules"
 
   license-check:
     name: License check (${{ matrix.module }})
@@ -199,17 +190,24 @@ jobs:
             --ignore github.com/NVIDIA/nke \
             --ignore github.com/NVIDIA/cluster-api-provider-nico
 
+  # One job for the whole repository, not one per module.
+  #
+  # The per-module matrix this replaces could not catch the defect it existed to
+  # prevent. addlicense only ADDS a header to a file that has none, so
+  # `make file-license-check` passes on a file already stamped with the WRONG
+  # licence -- which is how 830 files carried a proprietary identifier in an
+  # Apache-2.0 repository with every module green, including six under agent/,
+  # whose template had said Apache-2.0 all along.
+  #
+  # make license-header-check asserts both things: a header exists, and it names
+  # Apache-2.0. It reads one template, hack/license-header.tmpl, so the modules
+  # cannot disagree about the answer.
   header-check:
-    name: License headers (${{ matrix.module }})
-    needs: [discover-modules]
+    name: License headers
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
-    strategy:
-      matrix:
-        module: ${{ fromJson(needs.discover-modules.outputs.header_modules) }}
-      fail-fast: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -217,14 +215,11 @@ jobs:
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: '${{ matrix.module }}/go.mod'
+          go-version-file: go.work
           cache: true
 
-      # file-license-check runs addlicense in place and then fails on any
-      # resulting git diff, so it needs a clean tree — which a fresh checkout is.
       - name: Verify license headers
-        working-directory: ${{ matrix.module }}
-        run: make file-license-check
+        run: make license-header-check
 
   shipped-licenses:
     name: Shipped LICENSE and NOTICE copies

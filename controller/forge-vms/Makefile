@@ -114,7 +114,7 @@ lint:
 	$(GOBIN)/golangci-lint run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
-	$(GO) run github.com/google/addlicense@v1.1.1 -f ./hack/boilerplate.addlicense.txt \
+	$(GO) run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" \
 		-ignore 'ui/vendor/**' \
 		-ignore 'test/integration/testutil/testdata/**' \
 		-ignore '.dev/**' \

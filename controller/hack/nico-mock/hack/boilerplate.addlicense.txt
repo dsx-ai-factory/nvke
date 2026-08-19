@@ -1,2 +1,0 @@
-SPDX-FileCopyrightText: Copyright (c) {{.Year}} NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-SPDX-License-Identifier: Apache-2.0

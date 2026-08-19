@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# The licence header template lives once, at the repository root.
+REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
+
 # Module-level targets, matching the other workspace members. The root Makefile
 # builds nkectl into the repository's bin/ as part of `make build`; this file is
 # for working inside cli/ alone, and it is what the Lint workflow
@@ -125,7 +128,7 @@ lint:
 	$(GOBIN)/golangci-lint run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
-	$(GO) run github.com/google/addlicense@v1.1.1 -f ./hack/boilerplate.addlicense.txt .
+	$(GO) run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
 
 # nkectl is a redistributed binary, so it carries its own attribution. It reuses
 # the controller's generator rather than copying it: the script discovers the

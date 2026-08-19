@@ -15,6 +15,35 @@ unexport GOWORK
 GO      ?= go
 BIN_DIR ?= $(CURDIR)/bin
 
+# One template for the whole repository. Every module's `make license` reads
+# this file, so the header text has a single definition and cannot drift
+# between modules -- which is how four of the five modules ended up stamping a
+# proprietary identifier into a repository that ships Apache-2.0.
+LICENSE_HOLDER   ?= NVIDIA CORPORATION & AFFILIATES
+LICENSE_TEMPLATE ?= $(CURDIR)/hack/license-header.tmpl
+ADDLICENSE       ?= $(GO) run github.com/google/addlicense@v1.1.1
+
+# The files that carry a licence header.
+#
+# Dockerfiles are absent deliberately: addlicense keys off the file extension
+# and would give Dockerfile.proto C-style `//` comments, which Docker cannot
+# parse.
+#
+# The exclusions are the union of what the per-module targets already ignore --
+# vendored and generated trees, testdata, fixtures, build tooling, and the
+# chart templates the chart ships. This set is exactly the files stamped today.
+# Widening it is a separate change: this one fixes headers that are WRONG, and
+# mixing that with headers that are MISSING would hide both.
+LICENSE_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.yaml' '*.yml' \
+	| grep -vE '(^|/)vendor/' \
+	| grep -vE '(^|/)testdata/' \
+	| grep -vE '(^|/)hack/' \
+	| grep -vE '^generated/' \
+	| grep -vE '\.pb\.go$$' \
+	| grep -vE '^controller/deploy/charts/' \
+	| grep -vE '^controller/test/fixtures/' \
+	| grep -vE '^(\.github/|build/|\.grype\.yaml$$)'
+
 # Modules in go.work — every module in the repository. Building needs no
 # NVIDIA credentials: the one still-INTERNAL dependency
 # (github.com/NVIDIA/cluster-api-provider-nico) is carried in the committed
@@ -346,6 +375,43 @@ licenses-check: licenses ## Verify the shipped LICENSE and NOTICE copies match t
 	 [ -z "$$untracked" ] \
 		|| { echo "ERROR: these shipped licence files are not tracked:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 	@echo "Shipped LICENSE and NOTICE copies are current."
+
+license-header-check: ## Verify every source file carries the Apache-2.0 SPDX header.
+	@# Two assertions, because either one alone passes while the tree is wrong.
+	@#
+	@# addlicense only ADDS a header to a file that has none. It never rewrites
+	@# one that is already there, so a per-module `make license` reports success
+	@# on a file stamped with a different licence -- which is how 830 files here
+	@# carried LicenseRef-NvidiaProprietary for months with every gate green,
+	@# including six under agent/, whose template has said Apache-2.0 all along.
+	@#
+	@# So the first assertion catches a MISSING header, and the second catches a
+	@# header naming the WRONG licence. The second is the one this repository
+	@# lacked.
+	@#
+	@# stderr is deliberately NOT captured. addlicense prints the offending paths
+	@# to stdout, while `go run` writes "go: downloading ..." there on a cold
+	@# module cache and "exit status 1" on any failure -- to stderr. Folding the
+	@# two together reports a module download as a file with no licence header,
+	@# which is exactly how the first CI run of this check failed while passing
+	@# on a developer machine whose cache was already warm.
+	@missing=$$($(LICENSE_FILES) | xargs $(ADDLICENSE) -check -c "$(LICENSE_HOLDER)" -f $(LICENSE_TEMPLATE) | grep -v '^$$' || true); \
+	 if [ -n "$$missing" ]; then \
+		echo "ERROR: these files carry no licence header. Run 'make license':"; \
+		printf '%s\n' "$$missing" | sed 's/^/    /'; \
+		exit 1; \
+	 fi
+	@wrong=$$($(LICENSE_FILES) | while read -r f; do \
+		grep -qE '^.{0,3} ?Code generated .* DO NOT EDIT\.$$' "$$f" && continue; \
+		head -20 "$$f" | grep -q 'SPDX-License-Identifier: Apache-2.0' || echo "$$f"; \
+	 done); \
+	 if [ -n "$$wrong" ]; then \
+		echo "ERROR: these files carry a header that is not Apache-2.0:"; \
+		printf '%s\n' "$$wrong" | sed 's/^/    /'; \
+		echo "The repository ships Apache-2.0. Fix the header rather than the check."; \
+		exit 1; \
+	 fi
+	@echo "Licence headers: every tracked source file declares Apache-2.0."
 
 clean: ## Remove the built binaries.
 	@rm -rf $(BIN_DIR)

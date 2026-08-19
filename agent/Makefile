@@ -1,6 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
+# The licence header template lives once, at the repository root.
+REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
+
 # Makefile for multi-arch agent
 
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
@@ -194,7 +197,7 @@ ADDLICENSE_IGNORES := \
 
 .PHONY: license
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@v1.1.1 -f ./hack/boilerplate.addlicense.txt $(ADDLICENSE_IGNORES) .
+	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" $(ADDLICENSE_IGNORES) .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check
