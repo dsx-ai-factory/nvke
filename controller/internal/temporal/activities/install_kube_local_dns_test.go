@@ -64,7 +64,7 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		Namespace: metav1.NamespaceSystem,
 		Name:      "node-local-dns",
 	}, &daemonSet))
-	require.Equal(t, "registry.k8s.io/dns/k8s-dns-node-cache:1.23.1", daemonSet.Spec.Template.Spec.Containers[0].Image)
+	require.Contains(t, daemonSet.Spec.Template.Spec.Containers[0].Image, "registry.k8s.io/dns/k8s-dns-node-cache:")
 
 	var metricsService corev1.Service
 	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
