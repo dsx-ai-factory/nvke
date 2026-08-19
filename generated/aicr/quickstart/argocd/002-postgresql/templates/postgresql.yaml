@@ -38,7 +38,7 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: "docker.io/library/postgres@sha256:304ab813518754228f9f792f79d6da36359b82d8ecf418096c636725f8c930ad"
+          image: "docker.io/library/postgres@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941"
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_USER
