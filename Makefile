@@ -123,13 +123,16 @@ LICENSE_DESTS := controller/licenses \
                  controller/deploy/charts/cloud-workflow-engine
 
 .DEFAULT_GOAL := help
-.PHONY: help work work-sync work-check work-check-offline build test version-check clean licenses licenses-check
+.PHONY: help test-e2e-capd-ci work work-sync work-check work-check-offline build test version-check clean licenses licenses-check
 
 help: ## Show the available targets.
 	@echo "Usage: make <target>"
 	@echo
-	@awk 'BEGIN { FS = ":.*## " } /^[a-z][a-z-]*:.*## / { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN { FS = ":.*## " } /^[a-z][a-z0-9-]*:.*## / { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo
+
+test-e2e-capd-ci: ## Run the full CAPD E2E suite with local controller and agent source.
+	./controller/hack/ci/capd-e2e.sh
 
 work: ## Reset go.work to exactly the public modules, creating it if absent.
 	@test -f go.work || $(GO) work init

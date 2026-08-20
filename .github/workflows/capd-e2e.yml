@@ -1,0 +1,172 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Full CAPD integration test using controller and agent source from this commit.
+#
+# Self-hosted runners do not receive pull_request events. copy-pr-bot mirrors a
+# vetted pull request head to pull-request/<number>; the push of that same commit
+# is the security boundary and trigger used by the other self-hosted checks.
+# Run this gate only when controller, agent, or root Makefile changes can affect
+# the CAPD lifecycle exercised here.
+
+name: CAPD E2E
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - "controller/**"
+      - "agent/**"
+      - Makefile
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: CAPD E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  capd-e2e:
+    name: capd-e2e
+    runs-on: linux-amd64-cpu16
+    if: github.repository == 'NVIDIA/nke'
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      CAPD_E2E_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
+      CAPD_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      CAPD_E2E_LABEL_FILTER: ${{ startsWith(github.ref, 'refs/heads/pull-request/') && 'capd && happy-path && (readiness || (lifecycle && !(post-ready || scale || reboot)))' || 'capd' }}
+      KIND_CLUSTER_NAME: cwe-capi-${{ github.run_id }}-${{ github.run_attempt }}
+      GOPROXY: "off"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.20.2
+
+      - name: Set up Kind and kubectl
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          version: v0.32.0
+          kubectl_version: v1.36.0
+          install_only: true
+
+      - name: Show runner tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker version
+          go version
+          helm version --short
+          kind version
+          kubectl version --client
+
+      - name: Configure runner inotify capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          raise_minimum() {
+            local key="$1"
+            local minimum="$2"
+            local current
+
+            current="$(sysctl -n "${key}")"
+            echo "${key}=${current} (required minimum ${minimum})"
+            if (( current < minimum )); then
+              sudo sysctl -w "${key}=${minimum}"
+              current="$(sysctl -n "${key}")"
+            fi
+            if (( current < minimum )); then
+              echo "${key} remained below ${minimum}: ${current}" >&2
+              exit 1
+            fi
+          }
+
+          raise_minimum fs.inotify.max_user_instances 1024
+          raise_minimum fs.inotify.max_user_watches 1048576
+
+      - name: Run CAPD E2E suite
+        run: make test-e2e-capd-ci
+
+      - name: Check whether diagnostics are safe to upload
+        id: diagnostics
+        if: always()
+        shell: bash
+        run: |
+          marker="controller/.local/capd-e2e/${CAPD_E2E_RUN_ID}/SAFE_TO_UPLOAD"
+          if [[ -f "${marker}" ]]; then
+            echo "safe=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "safe=false" >> "${GITHUB_OUTPUT}"
+            echo "Diagnostics are absent or were not marked safe to upload."
+          fi
+
+      - name: Show redacted failure diagnostics
+        if: failure() && steps.diagnostics.outputs.safe == 'true'
+        shell: bash
+        run: |
+          state_dir="controller/.local/capd-e2e/${CAPD_E2E_RUN_ID}"
+          files=(
+            capi-state-timeline.log
+            capi-resources.yaml
+            capi-describe.txt
+            management-events.txt
+            management-pods.txt
+            capi-controller.log
+            capi-kubeadm-bootstrap-controller.log
+            capi-kubeadm-control-plane-controller.log
+            capd-controller.log
+            cwe.log
+          )
+          for file in "${files[@]}"; do
+            [[ -f "${state_dir}/${file}" ]] || continue
+            echo "::group::${file} (last 300 lines)"
+            tail -n 300 "${state_dir}/${file}"
+            echo "::endgroup::"
+          done
+          for path in \
+            "${state_dir}"/nodes/*-console.log \
+            "${state_dir}"/nodes/*-systemd.txt \
+            "${state_dir}"/nodes/*-journal.log \
+            "${state_dir}"/nodes/*-crictl-ps.txt \
+            "${state_dir}"/nodes/*-crictl-pods.txt \
+            "${state_dir}"/nodes/*-crictl-images.txt \
+            "${state_dir}"/nodes/*-crictl-info.json \
+            "${state_dir}"/nodes/*-dockerhub-hosts.toml \
+            "${state_dir}"/nodes/*-network.txt; do
+            [[ -f "${path}" ]] || continue
+            file="${path#"${state_dir}/"}"
+            echo "::group::${file} (last 300 lines)"
+            tail -n 300 "${path}"
+            echo "::endgroup::"
+          done
+
+      - name: Upload redacted diagnostics
+        if: always() && steps.diagnostics.outputs.safe == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: capd-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          path: controller/.local/capd-e2e/${{ env.CAPD_E2E_RUN_ID }}/
+          if-no-files-found: error
+          retention-days: 7

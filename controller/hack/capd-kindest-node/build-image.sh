@@ -18,6 +18,7 @@ repo_root="$(cd "${script_dir}/../.." && pwd)"
 : "${CAPD_NODE_AGENT_LOCAL_BUILD:=auto}"
 : "${CAPD_SPIRE_ATTESTATION_METHOD:=tpm}"
 : "${CAPD_CNI_MANIFESTS_DEB_PATH:=}"
+: "${CAPD_E2E_DOCKERHUB_MIRROR:=}"
 : "${NODE_AGENT_REPO_PATH:=${repo_root}/../agent}"
 : "${BUNDLE_SERVER_URL:=https://d3mq564cn7sth7.cloudfront.net/}"
 : "${INDEX_FILE_URL:=${BUNDLE_SERVER_URL%/}/nke_bundles/Ubuntu_24.04/index.json}"
@@ -172,6 +173,22 @@ trap 'rm -rf "${build_context}"' EXIT
 cp "${script_dir}/Dockerfile" "${build_context}/Dockerfile"
 cp -R "${script_dir}/scripts" "${build_context}/scripts"
 cp -R "${script_dir}/systemd" "${build_context}/systemd"
+
+if [[ -n "${CAPD_E2E_DOCKERHUB_MIRROR}" ]]; then
+  if [[ ! "${CAPD_E2E_DOCKERHUB_MIRROR}" =~ ^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+    echo "CAPD_E2E_DOCKERHUB_MIRROR must be a registry host with an optional port" >&2
+    exit 1
+  fi
+  sed -i \
+    -e "s#server = \"https://registry-1.docker.io\"#server = \"https://${CAPD_E2E_DOCKERHUB_MIRROR}\"#" \
+    -e "s#http://registry-mirror:5000#https://${CAPD_E2E_DOCKERHUB_MIRROR}#" \
+    "${build_context}/Dockerfile"
+  mirror_occurrences="$(grep -Fc "https://${CAPD_E2E_DOCKERHUB_MIRROR}" "${build_context}/Dockerfile" || true)"
+  if [[ "${mirror_occurrences}" -lt 2 ]]; then
+    echo "Failed to route the CAPD node image through ${CAPD_E2E_DOCKERHUB_MIRROR}" >&2
+    exit 1
+  fi
+fi
 
 # A local CAPD run may inject a manifests deb built from public CNI sources.
 # Keep it optional so ordinary local image builds and published-agent builds

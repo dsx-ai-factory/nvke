@@ -14,6 +14,7 @@ RUN_ID="${RUN_ID//[^a-zA-Z0-9_.-]/-}"
 RUN_ID="${RUN_ID:0:64}"
 STATE_DIR="${CAPD_E2E_STATE_DIR:-${CONTROLLER_ROOT}/.local/capd-e2e/${RUN_ID}}"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-cwe-capi}"
+DOCKERHUB_MIRROR="${CAPD_E2E_DOCKERHUB_MIRROR:-}"
 RUNNER_NAME="capd-e2e-runner-${RUN_ID}"
 RUNNER_IMAGE="${CAPD_E2E_RUNNER_IMAGE:-docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04}"
 STATE_VOLUME="capd-e2e-state-${RUN_ID}"
@@ -43,6 +44,7 @@ BUNDLE_LOADER_OWNED=false
 STATE_VOLUME_OWNED=false
 BUNDLE_VOLUME_OWNED=false
 CAPD_NODE_IMAGE_OWNED=false
+STATE_MONITOR_PID=""
 
 if [[ "${RUNNER_DOCKER_HOST}" == "unix:///var/run/docker.sock" ]]; then
   [[ -S /var/run/docker.sock ]] || {
@@ -131,7 +133,71 @@ runner_exec() {
   docker exec \
     -e KUBECONFIG=/state/management.kubeconfig \
     -e DOCKER_HOST="${RUNNER_DOCKER_HOST}" \
+    -e CAPD_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
     "${RUNNER_NAME}" "$@"
+}
+
+configure_kind_dockerhub_mirror() {
+  local node_name="${KIND_CLUSTER_NAME}-control-plane"
+  local registry_host
+
+  if [[ -z "${DOCKERHUB_MIRROR}" ]]; then
+    return
+  fi
+  log "routing management-cluster Docker Hub pulls through ${DOCKERHUB_MIRROR}"
+  for registry_host in docker.io registry-1.docker.io; do
+    docker exec "${node_name}" mkdir -p "/etc/containerd/certs.d/${registry_host}"
+    printf '%s\n' \
+      "server = \"https://${DOCKERHUB_MIRROR}\"" \
+      '' \
+      "[host.\"https://${DOCKERHUB_MIRROR}\"]" \
+      '  capabilities = ["pull", "resolve"]' | \
+      docker exec -i "${node_name}" cp /dev/stdin "/etc/containerd/certs.d/${registry_host}/hosts.toml"
+  done
+}
+
+start_state_monitor() {
+  (
+    while true; do
+      captured_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      printf '=== %s CAPI conditions ===\n' "${captured_at}"
+      if ! runner_exec kubectl get \
+        clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
+        -A -o json | jq -c --arg captured_at "${captured_at}" '
+          .items[] | {
+            capturedAt: $captured_at,
+            apiVersion: .apiVersion,
+            kind: .kind,
+            namespace: .metadata.namespace,
+            name: .metadata.name,
+            generation: .metadata.generation,
+            observedGeneration: (.status.observedGeneration // null),
+            phase: (.status.phase // null),
+            ready: (.status.ready // null),
+            failureReason: (.status.failureReason // null),
+            failureMessage: (.status.failureMessage // null),
+            conditions: (.status.conditions // [])
+          }
+        '; then
+        printf '[capd-e2e] failed to capture CAPI conditions at %s\n' "${captured_at}"
+      fi
+      printf '%s\n' "=== ${captured_at} CAPD node containers ==="
+      docker ps -a \
+        --filter "ancestor=${CAPD_NODE_IMAGE}" \
+        --format '{{.Names}} {{.Status}}' || true
+      sleep 30
+    done
+  ) >"${STATE_DIR}/capi-state-timeline.log" 2>&1 &
+  STATE_MONITOR_PID=$!
+}
+
+stop_state_monitor() {
+  if [[ -z "${STATE_MONITOR_PID}" ]]; then
+    return
+  fi
+  kill "${STATE_MONITOR_PID}" >/dev/null 2>&1 || true
+  wait "${STATE_MONITOR_PID}" >/dev/null 2>&1 || true
+  STATE_MONITOR_PID=""
 }
 
 handle_signal() {
@@ -148,6 +214,8 @@ collect_diagnostics() {
   trap - EXIT
   trap '' INT TERM
   set +e
+
+  stop_state_monitor
 
   mkdir -p "${STATE_DIR}"
   if [[ "${SKIP_DIAGNOSTICS}" != true ]]; then
@@ -166,10 +234,24 @@ collect_diagnostics() {
       while IFS= read -r node_name; do
         [[ -n "${node_name}" ]] || continue
         docker logs "${node_name}" >"${STATE_DIR}/nodes/${node_name}-console.log" 2>&1
-        docker exec "${node_name}" systemctl status nke-agent spire-agent swtpm-local --no-pager \
+        docker exec "${node_name}" systemctl status \
+          nke-agent spire-agent swtpm-local containerd kubelet --no-pager \
           >"${STATE_DIR}/nodes/${node_name}-systemd.txt" 2>&1
-        docker exec "${node_name}" journalctl --no-pager -u nke-agent -u spire-agent -u swtpm-local \
+        docker exec "${node_name}" journalctl --no-pager \
+          -u nke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
           >"${STATE_DIR}/nodes/${node_name}-journal.log" 2>&1
+        docker exec "${node_name}" crictl ps -a \
+          >"${STATE_DIR}/nodes/${node_name}-crictl-ps.txt" 2>&1
+        docker exec "${node_name}" crictl pods \
+          >"${STATE_DIR}/nodes/${node_name}-crictl-pods.txt" 2>&1
+        docker exec "${node_name}" crictl images \
+          >"${STATE_DIR}/nodes/${node_name}-crictl-images.txt" 2>&1
+        docker exec "${node_name}" crictl info \
+          >"${STATE_DIR}/nodes/${node_name}-crictl-info.json" 2>&1
+        docker exec "${node_name}" cat /etc/containerd/certs.d/docker.io/hosts.toml \
+          >"${STATE_DIR}/nodes/${node_name}-dockerhub-hosts.toml" 2>&1
+        docker exec "${node_name}" sh -c 'ip -brief address; ip route show; ip -6 route show' \
+          >"${STATE_DIR}/nodes/${node_name}-network.txt" 2>&1
       done < <(docker ps -a --filter "ancestor=${CAPD_NODE_IMAGE}" --format '{{.Names}}')
 
       if docker inspect "${RUNNER_NAME}" >/dev/null 2>&1; then
@@ -178,12 +260,26 @@ collect_diagnostics() {
         runner_exec kubectl get events -A --sort-by=.lastTimestamp >"${STATE_DIR}/management-events.txt" 2>&1
         runner_exec kubectl -n capd-system logs deployment/capd-controller-manager --all-containers --tail=-1 \
           >"${STATE_DIR}/capd-controller.log" 2>&1
+        runner_exec kubectl -n capi-system logs deployment/capi-controller-manager --all-containers --tail=-1 \
+          >"${STATE_DIR}/capi-controller.log" 2>&1
+        runner_exec kubectl -n capi-kubeadm-bootstrap-system \
+          logs deployment/capi-kubeadm-bootstrap-controller-manager --all-containers --tail=-1 \
+          >"${STATE_DIR}/capi-kubeadm-bootstrap-controller.log" 2>&1
+        runner_exec kubectl -n capi-kubeadm-control-plane-system \
+          logs deployment/capi-kubeadm-control-plane-controller-manager --all-containers --tail=-1 \
+          >"${STATE_DIR}/capi-kubeadm-control-plane-controller.log" 2>&1
         runner_exec kubectl -n capd-reboot-system logs deployment/capd-reboot-controller --all-containers --tail=-1 \
           >"${STATE_DIR}/capd-reboot-controller.log" 2>&1
         runner_exec kubectl -n cloud-workflow-engine logs deployment/cloud-workflow-engine --all-containers --tail=-1 \
           >"${STATE_DIR}/cwe.log" 2>&1
-        runner_exec kubectl get clusters,machines,kubeadmcontrolplanes,dockermachines -A -o yaml \
+        runner_exec kubectl get \
+          clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
+          -A -o yaml \
           >"${STATE_DIR}/capi-resources.yaml" 2>&1
+        runner_exec kubectl describe \
+          clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
+          -A \
+          >"${STATE_DIR}/capi-describe.txt" 2>&1
         for artifact in tilt.log tilt-snapshot.json e2e.log junit.xml; do
           docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done
@@ -272,6 +368,10 @@ rm -f "${DIAGNOSTICS_MARKER}"
 for command in curl docker find git go grep helm jq kind kubectl sed sha256sum tar; do
   require_command "${command}"
 done
+if [[ -n "${DOCKERHUB_MIRROR}" && ! "${DOCKERHUB_MIRROR}" =~ ^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+  log "CAPD_E2E_DOCKERHUB_MIRROR must be a registry host with an optional port" >&2
+  exit 1
+fi
 docker info >/dev/null
 if ! kind_clusters="$(kind get clusters 2>&1)"; then
   log "could not inspect existing Kind clusters: ${kind_clusters}" >&2
@@ -439,6 +539,7 @@ BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \
 INDEX_FILE_URL="http://${BUNDLE_MIRROR_NAME}/index.json" \
 CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
 CAPD_KINDEST_NODE_PLATFORM="${CAPD_KINDEST_NODE_PLATFORM:-linux/amd64}" \
+CAPD_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
   bash hack/capd-kindest-node/build-image.sh
 CAPD_NODE_IMAGE_OWNED=true
 docker image inspect "${CAPD_NODE_IMAGE}" >"${STATE_DIR}/capd-node-image.json"
@@ -449,6 +550,7 @@ kind create cluster \
   --name "${KIND_CLUSTER_NAME}" \
   --config hack/cwe-capi-kind.yaml \
   --wait 5m
+configure_kind_dockerhub_mirror
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
 kind get kubeconfig --internal --name "${KIND_CLUSTER_NAME}" >"${MANAGEMENT_KUBECONFIG}"
@@ -485,7 +587,9 @@ docker start "${RUNNER_NAME}" >/dev/null
 docker cp "${MANAGEMENT_KUBECONFIG}" "${RUNNER_NAME}:/state/management.kubeconfig"
 docker cp "${CLUSTERCTL_BIN}" "${RUNNER_NAME}:/usr/local/bin/clusterctl"
 docker cp "${TILT_BIN}" "${RUNNER_NAME}:/usr/local/bin/tilt"
-for tool in helm kind kubectl; do
+docker cp "$(command -v helm)" "${RUNNER_NAME}:/usr/local/bin/helm-real"
+docker cp hack/ci/helm-dockerhub-mirror.sh "${RUNNER_NAME}:/usr/local/bin/helm"
+for tool in kind kubectl; do
   docker cp "$(command -v "${tool}")" "${RUNNER_NAME}:/usr/local/bin/${tool}"
 done
 docker cp "${SOURCE_ARCHIVE}" "${RUNNER_NAME}:/state/cwe-source.tgz"
@@ -607,7 +711,15 @@ runner_exec kubectl get --raw \
   >"${STATE_DIR}/cwe-version.json"
 
 CAPD_E2E_LABEL_FILTER="${CAPD_E2E_LABEL_FILTER:-capd}"
-log "running CAPD E2E scenarios matching ${CAPD_E2E_LABEL_FILTER}"
+CAPD_E2E_FOCUS="${CAPD_E2E_FOCUS:-}"
+ginkgo_focus_args=()
+if [[ -n "${CAPD_E2E_FOCUS}" ]]; then
+  ginkgo_focus_args+=("-ginkgo.focus=${CAPD_E2E_FOCUS}")
+  log "running CAPD E2E scenarios matching label ${CAPD_E2E_LABEL_FILTER} and focus ${CAPD_E2E_FOCUS}"
+else
+  log "running CAPD E2E scenarios matching label ${CAPD_E2E_LABEL_FILTER}"
+fi
+start_state_monitor
 set +e
 runner_exec /state/cwe-e2e.test \
   -test.v \
@@ -615,11 +727,14 @@ runner_exec /state/cwe-e2e.test \
   -e2e.config=/state/e2e-config.json \
   -ginkgo.v \
   -ginkgo.no-color \
+  -ginkgo.fail-on-empty \
   -ginkgo.timeout=100m \
   "-ginkgo.label-filter=${CAPD_E2E_LABEL_FILTER}" \
+  "${ginkgo_focus_args[@]}" \
   -ginkgo.junit-report=/state/junit.xml \
   2>&1 | tee "${STATE_DIR}/e2e.log"
 e2e_rc=${PIPESTATUS[0]}
+stop_state_monitor
 set -e
 
 if ((e2e_rc != 0)); then
