@@ -66,3 +66,41 @@ func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiredForCAPIClus
 	})
 	require.EqualError(t, err, "capiSpireAttestationMethod is required for CAPI clusters")
 }
+
+func TestAPINodePoolFromDB_SpireAttestationMethodNone(t *testing.T) {
+	apiNodePool := apiNodePoolFromDB(&db.NodePool{
+		CapiSpireAttestationMethod: db.SpireAttestationMethodNone,
+	})
+
+	require.NotNil(t, apiNodePool.CapiSpireAttestationMethod)
+	require.Equal(t, api.SpireAttestationMethodNone, *apiNodePool.CapiSpireAttestationMethod)
+}
+
+func TestValidateCAPISpireAttestationMethod(t *testing.T) {
+	for _, method := range []string{"tpm", "joinToken", "none"} {
+		require.NoError(t, validateCAPISpireAttestationMethod(method), "method %q must be accepted", method)
+	}
+
+	require.EqualError(t, validateCAPISpireAttestationMethod(""),
+		"capiSpireAttestationMethod is required for CAPI clusters")
+	require.EqualError(t, validateCAPISpireAttestationMethod("nope"),
+		`invalid capiSpireAttestationMethod: "nope"`)
+}
+
+// "none" exists for bootstrapping a cluster on preprovisioned hosts, which are
+// always CAPI-backed. A Forge node pool must still reject it.
+func TestValidateCreateNodePoolRequest_AcceptsNoneForCAPIClusters(t *testing.T) {
+	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+
+	err := service.validateCreateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.Nil}, &api.CreateNodePoolRequest{
+		Name:             "worker",
+		NodeNamePrefix:   "worker",
+		DesiredNodeCount: 1,
+		CapiInfraMachineTemplate: map[string]interface{}{
+			"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+			"kind":       "PreprovisionedMachineTemplate",
+		},
+		CapiSpireAttestationMethod: api.SpireAttestationMethodCreateNone,
+	})
+	require.NoError(t, err)
+}

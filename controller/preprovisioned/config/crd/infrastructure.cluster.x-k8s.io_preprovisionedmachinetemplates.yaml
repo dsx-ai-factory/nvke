@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Written by hand: this repository carries no controller-gen. Keep it in step
+# with preprovisioned/api/v1alpha1/preprovisionedmachinetemplate_types.go.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: preprovisionedmachinetemplates.infrastructure.cluster.x-k8s.io
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-preprovisioned
+    # Cluster API reads this label to resolve the contract version of the kind.
+    cluster.x-k8s.io/v1beta2: v1alpha1
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+      - cluster-api
+    kind: PreprovisionedMachineTemplate
+    listKind: PreprovisionedMachineTemplateList
+    plural: preprovisionedmachinetemplates
+    shortNames:
+      - ppmt
+    singular: preprovisionedmachinetemplate
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: |
+            PreprovisionedMachineTemplate is the Schema for the
+            preprovisionedmachinetemplates API. A caller sends this kind as the
+            capiInfraMachineTemplate of a node pool or of the cluster control plane
+            configuration. The template usually carries an empty spec, because the
+            provider creates nothing.
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - template
+              properties:
+                template:
+                  type: object
+                  required:
+                    - spec
+                  properties:
+                    metadata:
+                      description: |
+                        ObjectMeta is copied to the rendered machine. Only labels
+                        and annotations are used.
+                      type: object
+                      properties:
+                        labels:
+                          type: object
+                          additionalProperties:
+                            type: string
+                        annotations:
+                          type: object
+                          additionalProperties:
+                            type: string
+                    spec:
+                      description: Spec is the spec of the rendered PreprovisionedMachine.
+                      type: object
+                      properties:
+                        providerID:
+                          type: string
+                          minLength: 1
+                          maxLength: 512
+                        hostSelector:
+                          type: object
+                          additionalProperties:
+                            type: string

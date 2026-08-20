@@ -1,0 +1,202 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Written by hand: this repository carries no controller-gen. Keep it in step
+# with preprovisioned/api/v1alpha1/preprovisionedcluster_types.go.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: preprovisionedclusters.infrastructure.cluster.x-k8s.io
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-preprovisioned
+    # Cluster API reads this label to resolve the contract version of the kind.
+    cluster.x-k8s.io/v1beta2: v1alpha1
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+      - cluster-api
+    kind: PreprovisionedCluster
+    listKind: PreprovisionedClusterList
+    plural: preprovisionedclusters
+    shortNames:
+      - ppc
+    singular: preprovisionedcluster
+  scope: Namespaced
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Provisioned
+          type: boolean
+          jsonPath: .status.initialization.provisioned
+        - name: Hosts
+          type: integer
+          description: Hosts that no machine holds
+          jsonPath: .status.availableHosts
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: PreprovisionedCluster is the Schema for the preprovisionedclusters API.
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: |
+                PreprovisionedClusterSpec defines the desired state of
+                PreprovisionedCluster. It holds no control plane endpoint: CWE owns
+                the control plane VIP through its own cluster API.
+              type: object
+              required:
+                - hosts
+              properties:
+                hosts:
+                  description: |
+                    Hosts is the inventory. The provider gives one host to each
+                    machine. Treat the inventory as fixed after the cluster is
+                    created.
+                  type: array
+                  minItems: 1
+                  items:
+                    description: |
+                      PreprovisionedHost describes one host that already exists on
+                      the network.
+                    type: object
+                    required:
+                      - name
+                      - addresses
+                    properties:
+                      name:
+                        description: |
+                          Name identifies the host in the inventory. It must be
+                          unique in the cluster. It does not become the Kubernetes
+                          node name.
+                        type: string
+                        minLength: 1
+                        maxLength: 253
+                      addresses:
+                        description: |
+                          Addresses are the addresses that the network already
+                          assigned to this host.
+                        type: array
+                        minItems: 1
+                        maxItems: 256
+                        items:
+                          type: object
+                          required:
+                            - type
+                            - address
+                          properties:
+                            type:
+                              description: One of Hostname, ExternalIP, InternalIP, ExternalDNS or InternalDNS.
+                              type: string
+                            address:
+                              type: string
+                              minLength: 1
+                              maxLength: 256
+                      machineID:
+                        description: |
+                          A stable hardware identity: a BMC serial, a system
+                          UUID, or anything that names the machine itself rather
+                          than where it sits on the network. The provider locks
+                          a host under every identity it declares.
+                        type: string
+                        maxLength: 253
+                      role:
+                        description: |
+                          Role limits which machines can use this host. An empty
+                          value allows any machine.
+                        type: string
+                        enum:
+                          - control-plane
+                          - worker
+                      labels:
+                        description: |
+                          Labels select this host. A machine that sets
+                          spec.hostSelector only uses a host whose labels contain
+                          every entry of that selector.
+                        type: object
+                        additionalProperties:
+                          type: string
+            status:
+              description: PreprovisionedClusterStatus defines the observed state of PreprovisionedCluster.
+              type: object
+              properties:
+                initialization:
+                  description: |
+                    Initialization reports the state that the Cluster API contract
+                    requires.
+                  type: object
+                  minProperties: 1
+                  properties:
+                    provisioned:
+                      description: |
+                        Provisioned is true when the inventory is valid. Cluster API
+                        waits for it before it acts on any machine of the cluster.
+                      type: boolean
+                allocatedHosts:
+                  description: |
+                    AllocatedHosts reports which machine holds each host. It exists
+                    for operators; no controller reads it.
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - hostName
+                      - machineName
+                    properties:
+                      hostName:
+                        type: string
+                      machineName:
+                        type: string
+                availableHosts:
+                  description: AvailableHosts is the count of hosts that no machine holds.
+                  type: integer
+                  format: int32
+                conditions:
+                  description: Conditions describes the current state.
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    properties:
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      message:
+                        type: string
+                        maxLength: 32768
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      reason:
+                        type: string
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      status:
+                        type: string
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                      type:
+                        type: string
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$

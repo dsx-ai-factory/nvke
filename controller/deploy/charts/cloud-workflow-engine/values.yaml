@@ -259,6 +259,17 @@ capi:
     # -- Create RBAC for CWE to watch and patch CAPI/NICo resources.
     create: false
 
+# Preprovisioned Cluster API infrastructure provider. It binds machines to hosts
+# that already exist instead of creating infrastructure. Use it to bootstrap a
+# cluster on hosts that the network has already addressed.
+preprovisioned:
+  # -- Run the preprovisioned provider controllers. Needs capi.enabled, and the
+  # provider CRDs must already be installed: apply
+  # controller/preprovisioned/config/crd/ before you turn this on. The
+  # controllers watch those kinds, and a watch on an unknown kind stops the
+  # manager from starting.
+  enabled: false
+
 kubeadm:
   # -- OCI registry kubeadm uses for control-plane component images.
   imageRepository: registry.k8s.io

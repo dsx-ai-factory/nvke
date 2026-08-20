@@ -74,6 +74,14 @@ func (r *reconciler) createPendingNode(
 		return db.Node{}, fmt.Errorf("missing control plane configuration ID for pending control-plane node")
 	}
 
+	// A CAPI control plane that asks for the "none" attestation method gets
+	// nodes without SPIFFE, whatever the deployment-wide setting is. This
+	// mirrors the node set controller for node-pool nodes.
+	spiffeEnabled := r.cfg.SpiffeEnabled
+	if capiProvider := cluster.ControlPlaneConfig.Capi; capiProvider != nil {
+		spiffeEnabled = spiffeEnabled && db.SpiffeEnabledForAttestationMethod(capiProvider.SpireAttestationMethod)
+	}
+
 	pendingNode := db.Node{
 		ClusterID:    cluster.ID,
 		ControlPlane: true,
@@ -82,7 +90,7 @@ func (r *reconciler) createPendingNode(
 		// node's pinned InstanceTypePreference and persists it back onto the row.
 		ControlPlaneConfigurationID: cluster.ControlPlaneConfig.ConfigurationID,
 		Name:                        generateControlPlaneNodeName(existingNodeNames, cluster.Name, defaultControlPlaneNodePrefix),
-		SpiffeEnabled:               r.cfg.SpiffeEnabled,
+		SpiffeEnabled:               spiffeEnabled,
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending control-plane node provisioning"),
 			Provisioning:            db.NewCondition(false, "Not yet provisioning"),

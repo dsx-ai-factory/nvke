@@ -2657,14 +2657,24 @@ components:
       enum:
         - "tpm"
         - "joinToken"
-      description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+        - "none"
+      description: |
+        How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+        `none` disables SPIFFE on those nodes and reaches the node agent over an
+        unauthenticated connection. Use it only to bootstrap a cluster on
+        preprovisioned hosts, never for a tenant cluster.
 
     SpireAttestationMethodCreate:
       type: string
       enum:
         - "tpm"
         - "joinToken"
-      description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+        - "none"
+      description: |
+        How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+        `none` disables SPIFFE on those nodes and reaches the node agent over an
+        unauthenticated connection. Use it only to bootstrap a cluster on
+        preprovisioned hosts, never for a tenant cluster.
       x-go-type-skip-optional-pointer: true
 
     ListOSProfilesResponse:

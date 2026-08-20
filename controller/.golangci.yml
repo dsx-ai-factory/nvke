@@ -244,6 +244,15 @@ linters:
           # better a named returned parameter than other patterns.
           - nakedret
           - nonamedreturns
+      # A Kubernetes API package registers its types through package-level
+      # GroupVersion / AddToScheme / SchemeBuilder variables. Every controller
+      # and every client resolves the kinds through those names, and
+      # controller-gen emits code that expects them, so the shape is fixed by
+      # the convention rather than chosen here.
+      - path: 'preprovisioned/api/.*'
+        linters:
+          - gochecknoglobals
+          - grouper
       - text: 'shadow: declaration of "(err|ctx)" shadows declaration at'
         linters:
           - govet

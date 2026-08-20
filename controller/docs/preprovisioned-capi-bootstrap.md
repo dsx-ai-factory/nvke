@@ -1,14 +1,15 @@
-# Proposal: cluster bootstrapping on preprovisioned hosts
+# Cluster bootstrapping on preprovisioned hosts
 
-> Status: **proposal** — for alignment. Describes how CWE bootstraps a cluster
-> on hosts that already exist, using generic-CAPI mode and a new infrastructure
-> provider, with no change to the REST API.
+> Status: **agreed and built**. Describes how CWE bootstraps a cluster on hosts
+> that already exist, using generic-CAPI mode and a new infrastructure provider.
+> Section 9 records what the code does against what this document proposed.
 
 | | |
 |---|---|
 | Ticket | [NKX-14875](https://jirasw.nvidia.com/browse/NKX-14875) |
-| Components | `controller/` (CWE), new infrastructure provider |
+| Components | `controller/` (CWE), `controller/preprovisioned/` (the provider) |
 | Supersedes | The approach in `nke/cloud-workflow-engine!996`, which changed the REST API |
+| Code | [`../preprovisioned/`](../preprovisioned/) and its [README](../preprovisioned/README.md) |
 
 ## 1. Summary
 
@@ -16,9 +17,10 @@ CWE must bootstrap a Kubernetes cluster on hosts that already exist. The hosts
 are on, the operating system is installed, and the network gives each host an IP
 address. No component must create infrastructure.
 
-This proposal adds no field to the CWE REST API and no column to the database.
-The caller sends the host inventory inside the `capiInfraCluster` manifest that
-the API already accepts. A new, small Cluster API infrastructure provider reads
+The design adds no field to the CWE REST API and no column to the database. The
+caller sends the host inventory inside the `capiInfraCluster` manifest that the
+API already accepts. (One enum value was added to an existing field after all;
+section 9.1 records why.) A new, small Cluster API infrastructure provider reads
 that inventory. For each machine, the provider selects a host that no other
 machine uses, and reports the address of that host through the Cluster API
 contract. The rest of the CWE generic-CAPI flow does not change.
@@ -93,11 +95,12 @@ Three kinds go into API group `infrastructure.cluster.x-k8s.io`, version
 `v1alpha1`. The kinds follow the same shape as the Nico provider kinds, which
 Appendix D shows for comparison.
 
-| Kind | Purpose |
-|---|---|
-| `PreprovisionedCluster` | Holds the host inventory for one cluster |
-| `PreprovisionedMachine` | One machine, bound to one host from the inventory |
-| `PreprovisionedMachineTemplate` | Template that CWE renders into a `PreprovisionedMachine` |
+| Kind | Scope | Purpose |
+|---|---|---|
+| `PreprovisionedCluster` | Namespaced | Holds the host inventory for one cluster |
+| `PreprovisionedMachine` | Namespaced | One machine, bound to one host from the inventory |
+| `PreprovisionedMachineTemplate` | Namespaced | Template that CWE renders into a `PreprovisionedMachine` |
+| `PreprovisionedHostClaim` | **Cluster** | Locks one identity of one physical host across every cluster. See section 4.4 |
 
 #### PreprovisionedCluster
 
@@ -127,15 +130,11 @@ type PreprovisionedHost struct {
     Labels map[string]string `json:"labels,omitempty"`
 }
 
+// The spec holds no control plane endpoint: section 6.2 keeps that with CWE.
 type PreprovisionedClusterSpec struct {
     // Hosts is the inventory. The provider gives one host to each machine.
     // +kubebuilder:validation:MinItems=1
     Hosts []PreprovisionedHost `json:"hosts"`
-
-    // ControlPlaneEndpoint is the endpoint that clients use to reach the API
-    // server. Set it when a VIP is in use. See section 6.2.
-    // +optional
-    ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty,omitzero"`
 }
 
 type PreprovisionedClusterStatus struct {
@@ -243,18 +242,72 @@ would release a host that a running node still uses.
 
 The cluster controller does very little:
 
-1. Validate the inventory. Host names must be unique. Every host must have at
-   least one address.
-2. Copy `spec.controlPlaneEndpoint` to the parent `Cluster` if the parent has
-   no endpoint, as the contract expects.
-3. Set `status.initialization.provisioned = true`.
-4. Recompute `status.allocatedHosts` and `status.availableHosts` for operators.
+1. Validate the inventory. Host names must be unique, and so must addresses
+   across names. Every host must have at least one address.
+2. Set `status.initialization.provisioned = true`.
+3. Recompute `status.allocatedHosts` and `status.availableHosts` for operators.
 
-Step 3 is not optional. The core Cluster API machine controller waits for the
+Step 2 is not optional. The core Cluster API machine controller waits for the
 cluster infrastructure to report `provisioned` before it acts on any machine. A
 provider that skips this step stops the whole flow.
 
-### 4.4 Where the code goes
+### 4.4 Stopping two clusters from taking one machine
+
+Allocation inside a cluster is safe: the used set is derived from the provider
+IDs of that cluster's machines, and the claim is an optimistic-concurrency
+write. Across clusters it is not. Each cluster carries its own inventory in its
+own namespace, so two of them can list the same physical machine and neither
+sees a conflict. Both would run `kubeadm` on it, and the second would destroy
+the first. This was observed while running the E2E suite, where a leftover
+cluster and a new one each held `preprov-1`.
+
+**The problem is identity before it is locking.** A host is named by an operator
+label scoped to one inventory, and by addresses that can be reassigned. Nothing
+in the original design named the machine itself.
+
+`PreprovisionedHostClaim` closes both halves:
+
+- `PreprovisionedHost` gains an optional `machineID` for a stable hardware
+  identity — a BMC serial, a system UUID. Give it where you have it.
+- A host is locked under **every** identity it declares: the machineID, and each
+  address. Locking one field alone is a footgun, because an inventory naming a
+  machine by serial and one naming it by address would derive different locks
+  and both succeed.
+- The claim is cluster-scoped, so it is visible across the namespace boundary
+  the overlap crosses.
+- Creating the object *is* the lock. Two claimants race and the API server
+  rejects the second with `AlreadyExists` — the same compare-and-swap that makes
+  intra-cluster allocation correct, applied at the only scope where a physical
+  machine is unique.
+
+Acquisition is all-or-nothing: a host with a serial and two addresses is three
+locks, and holding two would leave it reachable through the third.
+
+An overlap costs a host, not a node. A machine walks its candidates and takes
+the first it can lock, so a cluster whose inventory names one machine somebody
+else took still uses the rest. Only when every candidate is locked elsewhere
+does it report `HostsClaimedElsewhere` and wait.
+
+**No finalizer.** Three invariants keep the claim set correct instead:
+
+| Invariant | Enforced by |
+|---|---|
+| A machine holding no host holds no claims | `allocateHost` releases before selecting, so a provider that died between claiming and binding strands nothing |
+| A machine that is gone leaves no claims | The reconcile for a deleted object releases them |
+| A claim whose holder no longer exists is not a lock | A blocked claimant checks the holder and reclaims it |
+
+The third is what makes the second safe to miss. A release lost while the
+provider was down is recovered by the next claimant rather than stranding the
+host, so the provider still needs no finalizer — and a wedged provider can never
+block a machine from being deleted, which matters more on hardware CWE does not
+own.
+
+What this does **not** decide is whether an overlap is an error or a queue. A
+blocked machine waits and retries, so a host one cluster releases is picked up by
+the other. If overlapping inventories should be rejected outright rather than
+serialized, that belongs in validation.
+
+### 4.5 Implementation
 
 **Recommendation: add the controllers to the existing CWE controller-runtime
 manager, and put the API types in a separate package.**
@@ -286,7 +339,9 @@ The API types go in their own package, for example
 `controller/api/preprovisioned/v1alpha1`, with no dependency on CWE internals.
 A later move to a separate module then only moves files.
 
-### 4.5 What the caller sends
+Our implementation should *also* make sure that it is extremely easy to move the PreprovisionedMachine controller logic out into a separate golang package / binary easily. It will likely remain in the same mono-repo under the controllers/ directory though.
+
+### 4.6 What the caller sends
 
 Appendix B gives the full request. The important part is the infrastructure
 cluster manifest:
@@ -296,7 +351,6 @@ cluster manifest:
   "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
   "kind": "PreprovisionedCluster",
   "spec": {
-    "controlPlaneEndpoint": { "host": "10.0.0.10", "port": 6443 },
     "hosts": [
       { "name": "host-01", "role": "control-plane",
         "addresses": [{ "type": "InternalIP", "address": "10.0.0.11" }] },
@@ -364,6 +418,9 @@ Three options:
 **Recommendation: allow A for the bootstrap case, and target B.** Keep the
 provider out of this question in both cases. This choice needs no CRD field.
 
+**Choice**: We choose Option A. In future we will solve this in a better way.
+*(Built that way, but it did need one API change after all: see section 9.1.)*
+
 ### 6.2 Where the control plane VIP goes
 
 The ticket asks for the kube-vip address in the infrastructure cluster manifest.
@@ -379,6 +436,10 @@ to report it. That value is for Cluster API consumers.
 Cluster API objects correct for other readers. Setting the same address twice is
 acceptable. Making the provider own kube-vip is not.
 
+**Choice**: Yes, do as you recommend. Remove `controlPlaneEndpoint` from the
+infra cluster object. *(Built that way: `PreprovisionedClusterSpec` holds only
+`hosts`.)*
+
 ### 6.3 The tenant node keeps no provider ID
 
 Cluster API links a `Machine` to a `Node` by provider ID. On the Nico path,
@@ -389,12 +450,17 @@ CWE does not depend on the link, so the cluster still comes up. But the
 `Machine` objects never reach the `Running` phase, `status.nodeRef` stays empty,
 and machine health checks cannot work.
 
+*(Built: see section 9.3, which reads the providerID from the `Machine` rather
+than from the infrastructure object.)*
+
 **Recommendation: generalise the existing controller.** The logic in
-[`controller/internal/controllers/capi/nico_provider_id_controller.go`](../internal/controllers/capi/nico_provider_id_controller.go)
+[`controller/internal/controllers/capi/machine_provider_id_controller.go`](../internal/controllers/capi/machine_provider_id_controller.go)
 is already generic, except that it watches a `NicoMachine` and reads
 Forge-specific labels from its status. A version that watches `Machine` and
 reads `spec.providerID` from the infrastructure reference serves both providers.
 The topology labels stay behind a type check.
+
+**Choice**: Please implement what you suggest here and make this work generically.
 
 ### 6.4 Host name against node name
 
@@ -407,6 +473,8 @@ inventory label.
 Operators find the mapping in `PreprovisionedMachine.status.hostName` and in the
 provider ID.
 
+**Choice**: Keep this recommendation.
+
 ### 6.5 Who maintains the inventory
 
 Adding a host means a `PATCH` on the cluster with a longer `hosts` list. The
@@ -416,28 +484,157 @@ confirmed before this is promised to users.
 **Recommendation: for the first version, treat the inventory as fixed at create
 time.** Size it for the target cluster. Track growth separately.
 
+**Choice**: Yes, let's implement your recommendation here.
+
 ## 7. Risks
 
 | Risk | Effect | Control |
 |---|---|---|
 | An address in the inventory is wrong or stale | The node agent never answers. The node stops at preflight. | The provider validates the format only. The failure is visible on the node condition. |
-| An operator lists one host twice under two names | Two machines target the same host. `kubeadm` fails on the second. | The cluster controller rejects duplicate names. It cannot detect duplicate addresses across names; add a second check. |
+| An operator lists one host twice under two names | Two machines target the same host. `kubeadm` fails on the second. | `validateInventory` rejects a repeated name **and** a repeated address across names. |
 | The inventory runs out | New nodes stay pending. | Condition `Ready=False`, reason `NoHostAvailable`, and `status.availableHosts`. |
 | CWE acts as consumer and provider | A change to one role can affect the other. | Separate packages, separate field managers, and no shared state except the API server. |
 | The provider has no fallback | A stuck machine cannot move to another host. | Accepted. `provisioningFallbackFor` returns nil for template-backed nodes today. Deleting the machine releases the host. |
+| Two clusters list the same physical host | Both claim it and both run kubeadm on it. The second cluster destroys the first. | Prevented by `PreprovisionedHostClaim`. See section 4.4. |
 
 ## 8. Work items
 
-| # | Item | Size |
+All are done. See section 9 for what changed against the proposal.
+
+| # | Item | State |
 |---|---|---|
-| 1 | API types, deepcopy, and CRD manifests | S |
-| 2 | Cluster controller: validation, `provisioned`, status | S |
-| 3 | Machine controller: selection, provider ID, addresses | M |
-| 4 | Register the scheme and the controllers in `cmd/worker` | XS |
-| 5 | RBAC and CRD installation in `controller/deploy` | S |
-| 6 | Generalise the provider ID controller (section 6.3) | M |
-| 7 | A `hack/create-preprovisioned-cluster.sh` script, like the CAPD one | XS |
-| 8 | End-to-end test with containers or VMs as preprovisioned hosts | M |
+| 1 | API types, deepcopy, and CRD manifests | Done — `preprovisioned/api/v1alpha1/`, `preprovisioned/config/crd/` |
+| 2 | Cluster controller: validation, `provisioned`, status | Done — `preprovisioned/controllers/cluster_controller.go` |
+| 3 | Machine controller: selection, provider ID, addresses | Done — `preprovisioned/controllers/machine_controller.go` |
+| 4 | Register the scheme and the controllers in `cmd/worker` | Done, behind `ENABLE_PREPROVISIONED_PROVIDER` |
+| 5 | RBAC and CRD installation | Done — RBAC in the chart; CRDs stay with the provider, see section 9 |
+| 6 | Generalise the provider ID controller (section 6.3) | Done — `internal/controllers/capi/machine_provider_id_controller.go` |
+| 7 | A `hack/create-preprovisioned-cluster.sh` script | Done |
+| 8 | End-to-end test with containers or VMs as preprovisioned hosts | Done — `test/e2e/preprovisioned_test.go`, run by `hack/local-preprovisioned-e2e.sh` |
+
+## 9. As built
+
+Four things differ from the proposal above. Everything else was built as
+written.
+
+### 9.1 One REST API change was necessary after all
+
+Section 6.1 chose option A, the unauthenticated node agent, and claimed it
+needed no API field. That was wrong. `SpiffeEnabled` on a node row came from the
+deployment-wide `SPIFFE_ENABLED` setting, so option A could only be chosen for a
+whole CWE, not for the one cluster being bootstrapped.
+
+`capiSpireAttestationMethod` therefore takes a third value, `none`, next to
+`tpm` and `joinToken`. It is a new enum value on an existing field, not a new
+field. It does three things:
+
+| Where | Behaviour with `none` |
+|---|---|
+| `renderCAPIBootstrapUserData` | Writes no SPIRE agent config and no trust bundle, and does not read the trust bundle at all — a bootstrap has no SPIRE server to answer. |
+| Node set controller, control plane scale-up | Creates node rows with `SpiffeEnabled=false`, whatever the deployment sets. |
+| Node agent client | Uses an unauthenticated connection, through the existing `SpiffeEnabled=false` path. |
+
+The API rejects it for Forge clusters, like every other `capi*` field. This is
+accepted as a temporary step, to be replaced by a real identity for
+preprovisioned hosts.
+
+### 9.2 The provider lives in `controller/preprovisioned/`
+
+Section 4.4 suggested `controller/api/preprovisioned/v1alpha1` for the types.
+That is the wrong home: `controller/api` is a separate Go module that publishes
+the OpenAPI client, and putting Kubernetes types there would push
+controller-runtime into that module's dependencies.
+
+The provider is one self-contained tree instead:
+
+```
+controller/preprovisioned/
+├── api/v1alpha1/     types, deepcopy, provider ID format
+├── controllers/      the two reconcilers
+└── config/crd/       the CRDs
+```
+
+It imports nothing from CWE. Moving it out is `git mv` plus a `go.mod`; the only
+CWE-side change is the two `SetupWithManager` calls in `cmd/worker/main.go`.
+
+### 9.3 The provider ID controller reads the Machine, not the infra object
+
+Section 6.3 proposed reading `spec.providerID` from the object that the
+infrastructure reference names. Reading it from `Machine.spec.providerID`
+instead is simpler and gives the same value: the Cluster API machine controller
+already copies it up from the infrastructure machine of every provider
+(`core/reconcilers/machine/machine_controller_phases.go`).
+
+That removes a CRD-metadata lookup per reconcile, and with it the RBAC and the
+contract-label resolution that the lookup needs. Forge topology labels still
+come from a typed read of the `NicoMachine`, behind a check of the referenced
+kind, so no other provider has its labels touched.
+
+The controller now runs whenever `ENABLE_CAPI` is set, not only with
+`ENABLE_FORGE_CAPI`. The watch on `NicoMachine` stays behind the Forge flag,
+because that CRD is absent in a deployment without the NICo provider.
+
+### 9.4 The CRDs are not in the CWE chart
+
+Work item 5 said the chart would install them. Shipping the same YAML in
+`preprovisioned/config/crd/` and in the chart gives two copies to keep in step,
+and a consumer's chart installing another component's CRDs is the wrong way
+round: every Cluster API provider ships its own.
+
+The CRDs stay in `preprovisioned/config/crd/`. Apply them before you set
+`preprovisioned.enabled=true`. The chart still carries the RBAC and the feature
+flag.
+
+### 9.5 The end-to-end suite runs the hosts as containers
+
+`test/e2e/preprovisioned_test.go` drives the whole path against hosts the suite
+stands up itself. `test/e2e/internal/substrate` starts one container per host on
+the management cluster's docker network, each running systemd and `nke-agent`
+exactly as a prepared machine would, and reads their addresses back from docker
+rather than choosing them. CWE is never told how they came to exist.
+
+The specs are rungs, so a failure names the first thing that broke:
+
+| Rung | Asserts |
+|---|---|
+| 0 | The substrate itself: containers up, agents answering, addresses distinct |
+| 1 | The inventory round-trips through `capiInfraCluster`, and the provider reports the cluster provisioned |
+| 2 | One machine per host, each bound to a distinct host, addresses published, provider IDs copied up to the `Machine`, **and no infrastructure created** |
+| 3 | Attestation `none` writes bootstrap data with no SPIRE material |
+| 4 | A three-node Kubernetes control plane comes up, and every `Machine` gets a `nodeRef` — which is section 9.3 working end to end |
+| 5 | Teardown releases the hosts: containers survive, kubeadm state is gone, and a second cluster builds on them |
+| — | A machine with no free host reports `NoHostAvailable` instead of double-booking |
+| — | The API rejects malformed generic-CAPI requests |
+
+Three things are true of the local substrate but not of real hardware, and all
+are held outside the path under test:
+
+| Local fact | Handled by |
+|---|---|
+| The hosts are containers, so kubeadm needs the container-mode contract | `LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP`, set by the runner script |
+| Preflight wants a bootstrap-success sentinel rather than a cloud-init status | The substrate writes it (`markBootstrapComplete`) |
+| kube-vip cannot reach a host-network BGP peer on Docker 28 and later | The substrate probes the peer port and drops the VIP when it is unreachable |
+
+The last one is worth spelling out, because the failure it produces is
+misleading. Docker 28 stopped a container reaching a host service on the bridge
+gateway. FRR still listens on `0.0.0.0:179`, so every check short of a real
+connection says it is healthy, and kube-vip logs "announcing route" while its
+BGP session sits in state `ACTIVE`. The symptom appears minutes later and far
+away, as CWE failing to reach the API server on the VIP. The substrate therefore
+probes the peer port from a host container rather than checking that the peer
+exists, and says so in the log when it drops the VIP. A cluster without a VIP
+reaches its API server on the node address, which is what CWE does whenever
+`controlPlaneVIP` is empty.
+
+The suite needs docker and a kind cluster, so no job in this repository runs it.
+CI compiles it — `go vet ./...` in `controller/test/e2e` — and the request
+builder has unit tests, so the harness cannot rot silently.
+
+### 9.6 Still open
+
+- **`none` needs a successor.** See section 9.1.
+- **The inventory is fixed at create time.** Section 6.5. Growing it needs the
+  `PATCH /api/clusters/{id}` handling of `capiInfraCluster` to be confirmed.
 
 ## Appendix A — Sequence
 
@@ -497,7 +694,6 @@ Operator            CWE API        Temporal          Provider         Host
     "kind": "PreprovisionedCluster",
     "metadata": { "name": "bootstrap" },
     "spec": {
-      "controlPlaneEndpoint": { "host": "10.0.0.10", "port": 6443 },
       "hosts": [
         { "name": "host-01", "role": "control-plane",
           "addresses": [{ "type": "InternalIP", "address": "10.0.0.11" }] },
@@ -576,7 +772,7 @@ Contract fields that Cluster API reads, from
 | Object | Path | Use |
 |---|---|---|
 | Infrastructure cluster | `status.initialization.provisioned` | Gates every machine in the cluster |
-| Infrastructure cluster | `spec.controlPlaneEndpoint` | Optional. Copied to the `Cluster` |
+| Infrastructure cluster | `spec.controlPlaneEndpoint` | Optional, and not used here. CWE owns the VIP through `controlPlaneVIP`. |
 | Infrastructure machine | `status.initialization.provisioned` | Gates the machine |
 | Infrastructure machine | `status.addresses` | Copied to `Machine.status.addresses` |
 | Infrastructure machine | `spec.providerID` | Copied to `Machine.spec.providerID`. Links the node |
@@ -594,7 +790,7 @@ Fields that CWE itself reads from the infrastructure machine, in
 | | NicoCluster / NicoMachine | PreprovisionedCluster / PreprovisionedMachine |
 |---|---|---|
 | Creates infrastructure | Yes, through the Forge API | No |
-| Cluster spec | `siteID`, `identityRef` | `hosts[]`, `controlPlaneEndpoint` |
+| Cluster spec | `siteID`, `identityRef` | `hosts[]` |
 | Machine spec | `vpcID`, `instanceTypeID`, `interfaces`, `ipxeScript`, `labels` | `providerID`, `hostSelector` |
 | Source of the address | Reported by Forge after creation | Read from the inventory |
 | Provider ID | `nico://<instance-id>` | `preprovisioned://<cluster>/<host>` |

@@ -25,6 +25,10 @@ const (
 	BackendNicoContainers Backend = "nico-containers"
 	// BackendForgeVMS is the local forge-vms Forge emulator backend.
 	BackendForgeVMS Backend = "forge-vms"
+	// BackendPreprovisioned is the generic-CAPI backend for hosts that already
+	// exist. Nothing creates infrastructure: the inventory travels inside the
+	// capiInfraCluster manifest and the provider binds machines to it.
+	BackendPreprovisioned Backend = "preprovisioned"
 )
 
 // NodePoolSpec describes a single node pool to create.
@@ -75,6 +79,10 @@ type ClusterSpec struct {
 	Workers           []NodePoolSpec
 	Network           *ClusterNetworkSpec
 
+	// PreprovisionedHosts is the inventory for BackendPreprovisioned. It ends up
+	// inside capiInfraCluster rather than in any request field of its own.
+	PreprovisionedHosts []PreprovisionedHost
+
 	// Infrastructure-specific cluster fields. Nico containers use SiteID and
 	// VpcID inside their CAPI manifests; Forge VMs use all three as API fields.
 	OrgID  string
@@ -89,6 +97,13 @@ var (
 	capdNodePoolJSON []byte
 )
 
+// BuildCreateRequest exposes the backend-specific request builder so a spec can
+// take a valid request, break one field, and assert how the API rejects it.
+// CreateCluster is the path for the positive case.
+func BuildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+	return buildCreateRequest(spec)
+}
+
 // buildCreateRequest dispatches to the backend-specific request builder.
 func buildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	switch spec.Backend {
@@ -98,6 +113,8 @@ func buildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		return buildNicoRequest(spec)
 	case BackendForgeVMS:
 		return buildForgeRequest(spec)
+	case BackendPreprovisioned:
+		return buildPreprovisionedRequest(spec)
 	default:
 		return api.CreateClusterRequest{}, fmt.Errorf("unsupported backend %q", spec.Backend)
 	}

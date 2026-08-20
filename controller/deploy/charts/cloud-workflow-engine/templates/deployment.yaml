@@ -299,6 +299,10 @@ spec:
             - name: ENABLE_FORGE_CAPI
               value: "true"
             {{- end }}
+            {{- if .Values.preprovisioned.enabled }}
+            - name: ENABLE_PREPROVISIONED_PROVIDER
+              value: "true"
+            {{- end }}
             # Teleport config
             {{- if .Values.teleport.enabled }}
             - name: TELEPORT_ENABLED

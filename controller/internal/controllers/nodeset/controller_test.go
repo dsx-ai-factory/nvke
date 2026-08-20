@@ -72,6 +72,33 @@ func TestUnit_Reconcile(t *testing.T) {
 		ProviderType: db.ProviderTypeNico,
 	}
 
+	capiNodePool := db.NodePool{
+		ID:               nodePoolID,
+		ClusterID:        clusterID,
+		ControlPlane:     false,
+		NodeNamePrefix:   "w",
+		CurrentNodeSetID: &nodeSetID,
+	}
+	capiNodePool.SetCapi(db.CAPINodePoolProvider{
+		InfraMachineTemplate:   []byte(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1alpha1","kind":"PreprovisionedMachineTemplate"}`),
+		SpireAttestationMethod: db.SpireAttestationMethodNone,
+	})
+	capiCluster := db.Cluster{
+		ID:           clusterID,
+		Name:         "test-cluster",
+		ProviderType: db.ProviderTypeCAPI,
+	}
+	capiNoneNodeSet := db.NodeSet{ID: nodeSetID, NodePoolID: nodePoolID, DesiredCount: 1}
+	capiNoneNodeSet.SetCapi(db.CAPINodePoolProvider{
+		InfraMachineTemplate:   []byte(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1alpha1","kind":"PreprovisionedMachineTemplate"}`),
+		SpireAttestationMethod: db.SpireAttestationMethodNone,
+	})
+	capiTPMNodeSet := db.NodeSet{ID: nodeSetID, NodePoolID: nodePoolID, DesiredCount: 1}
+	capiTPMNodeSet.SetCapi(db.CAPINodePoolProvider{
+		InfraMachineTemplate:   []byte(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1alpha1","kind":"PreprovisionedMachineTemplate"}`),
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+	})
+
 	type parameters struct {
 		nodeSet db.NodeSet
 		cfg     config.Config
@@ -143,6 +170,47 @@ func TestUnit_Reconcile(t *testing.T) {
 				mockTx.AssertNotCalled(t, "ListNodes", mock.Anything, mock.Anything)
 				mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
 				mockTx.AssertNotCalled(t, "DeleteNode", mock.Anything, mock.Anything)
+			},
+		},
+		// A CAPI node set that asks for the "none" attestation method must create
+		// nodes without SPIFFE even where the deployment enables it, or CWE
+		// would try mTLS against a node agent that has no SPIRE identity.
+		"disables spiffe on nodes of a none-attestation capi node set": {
+			nodeSet: capiNoneNodeSet,
+			cfg: config.Config{
+				SpiffeEnabled: true,
+				ProvisionControlPlaneWithControlPlaneController: false,
+			},
+			setup: func(mockDB *testutil.MockDB, mockTx *testutil.MockTx, nodeSet db.NodeSet) {
+				mockDB.MockTx = mockTx
+				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+				mockTx.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil)
+				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(capiNodePool, nil)
+				mockTx.On("ListNodes", mock.Anything, db.NodeFilters{NodeSetID: &nodeSetID}).Return([]db.Node{}, nil)
+				mockTx.On("GetCluster", mock.Anything, clusterID).Return(capiCluster, nil)
+				mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{}, nil)
+				mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+					return !node.SpiffeEnabled
+				})).Return(db.Node{}, nil).Once()
+			},
+		},
+		"keeps spiffe on nodes of a tpm-attestation capi node set": {
+			nodeSet: capiTPMNodeSet,
+			cfg: config.Config{
+				SpiffeEnabled: true,
+				ProvisionControlPlaneWithControlPlaneController: false,
+			},
+			setup: func(mockDB *testutil.MockDB, mockTx *testutil.MockTx, nodeSet db.NodeSet) {
+				mockDB.MockTx = mockTx
+				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+				mockTx.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil)
+				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(capiNodePool, nil)
+				mockTx.On("ListNodes", mock.Anything, db.NodeFilters{NodeSetID: &nodeSetID}).Return([]db.Node{}, nil)
+				mockTx.On("GetCluster", mock.Anything, clusterID).Return(capiCluster, nil)
+				mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{}, nil)
+				mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+					return node.SpiffeEnabled
+				})).Return(db.Node{}, nil).Once()
 			},
 		},
 		"skips missing node set": {

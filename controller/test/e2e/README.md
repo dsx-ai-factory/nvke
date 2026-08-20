@@ -49,6 +49,53 @@ If your feature requires a specific cluster configuration (e.g., custom node poo
 2. Define your own cluster spec.
 3. Implement the flow that fits your use case. The most common one is create -> validate -> delete.
 
+## Preprovisioned hosts
+
+`preprovisioned_test.go` covers the generic-CAPI path for hosts that already
+exist: CWE is told about machines it did not create, and the preprovisioned
+provider binds each Cluster API machine to one of them.
+
+The hosts are docker containers that the suite owns end to end
+(`internal/substrate`). They run systemd and `nke-agent` exactly as a prepared
+host would, they join the management cluster's docker network, and their
+addresses are read back from docker rather than chosen — the specs are testing
+"the provider was told an address and published it".
+
+Run the whole thing, including the environment it needs:
+
+```bash
+hack/local-preprovisioned-e2e.sh
+```
+
+To iterate on the substrate alone, without creating a cluster:
+
+```bash
+LOCAL_PREPROV_E2E_LABEL_FILTER="preprovisioned && substrate" hack/local-preprovisioned-e2e.sh
+```
+
+Always keep `preprovisioned &&` in the filter. The other labels are shared with
+the rest of the suite — `happy-path` alone also selects the CAPD and forge-vms
+entries in `tenant_test.go`, which cannot pass in this environment because it
+installs CAPI core without an infrastructure provider.
+
+The substrate reads its knobs from the environment; every one has a working
+default for a local kind and Tilt setup.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CWE_E2E_PREPROV_NETWORK` | `kind` | Docker network to join. Must already exist. |
+| `CWE_E2E_PREPROV_NODES` | `3` | How many hosts to stand up |
+| `CWE_E2E_PREPROV_BASE_IMAGE` | `cwe-capd-kindest-node:local` | Image the node image derives from (`make -f Makefile.dev capd-image`) |
+| `CWE_E2E_PREPROV_KEEP` | unset | `1` leaves the containers running after the suite |
+| `CWE_E2E_PREPROV_REUSE` | unset | `1` attaches to already-running containers |
+| `CWE_E2E_PREPROV_GATEWAY` | unset | Default gateway for the hosts; the runner points this at the FRR peer so kube-vip can advertise |
+
+Because the hosts are containers, the runner sets
+`LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP=true` on CWE so kubeadm uses the
+container-mode contract, and the substrate writes the
+`/run/cluster-api/bootstrap-success.complete` sentinel that preflight looks for.
+Neither is needed on real preprovisioned hardware.
+
 ## Configuration
 
 The tests can be configured using an `e2e-config.yaml` file. A missing config file is not an error; the tests will simply use sensible defaults for a local Tilt environment. 

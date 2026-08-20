@@ -39,6 +39,7 @@ clusters on NVIDIA infrastructure.
 | `internal/db/` | Bun ORM + PostgreSQL migrations |
 | `internal/providers/forge/` | Forge bare-metal API client (cached) |
 | `profiles/` | OS image and Kubernetes config profiles (YAML) |
+| `preprovisioned/` | Cluster API infrastructure provider for hosts that already exist (see [the design](../controller/docs/preprovisioned-capi-bootstrap.md)) |
 
 Key data flows:
 

@@ -28,7 +28,24 @@ type SpireAttestationMethod string
 const (
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
+
+	// SpireAttestationMethodNone disables SPIFFE for the nodes of a CAPI node
+	// set. CWE writes no SPIRE agent configuration into the bootstrap data, and
+	// it reaches the node agent over an unauthenticated connection.
+	//
+	// It exists for bootstrapping a cluster on preprovisioned hosts. Those
+	// hosts booted before CWE existed, so nothing consumes the bootstrap data
+	// secret and no cloud-init can install SPIRE material. Do not use it for a
+	// tenant cluster.
+	SpireAttestationMethodNone SpireAttestationMethod = "none"
 )
+
+// SpiffeEnabledForAttestationMethod reports whether nodes created with this
+// attestation method run with SPIFFE. Only the explicit "none" method turns it
+// off; an empty method belongs to a Forge node pool, which is unaffected.
+func SpiffeEnabledForAttestationMethod(method SpireAttestationMethod) bool {
+	return method != SpireAttestationMethodNone
+}
 
 type NicoNodePoolProvider struct {
 	SubnetIDs                []uuid.UUID           `json:"subnet_ids,omitempty"`

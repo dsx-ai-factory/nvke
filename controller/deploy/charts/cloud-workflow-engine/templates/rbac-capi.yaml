@@ -30,6 +30,43 @@ rules:
       - list
       - patch
       - watch
+  # CWE runs the preprovisioned provider itself, so these need more than the
+  # NICo kinds above, which CWE only ever applies.
+  #
+  # `update` is what the machine reconciler claims a host with: it writes
+  # spec.providerID under optimistic concurrency, which is what keeps two
+  # machines off one host. A server-side apply would not conflict, so `patch`
+  # alone is not enough and its absence is not cosmetic.
+  - apiGroups:
+      - infrastructure.cluster.x-k8s.io
+    resources:
+      - preprovisionedclusters
+      - preprovisionedmachines
+      - preprovisionedmachinetemplates
+      # Cluster-scoped. It locks a physical host across every cluster, so the
+      # provider must be able to create and delete it outside any namespace.
+      - preprovisionedhostclaims
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  # The provider owns the status of both kinds.
+  - apiGroups:
+      - infrastructure.cluster.x-k8s.io
+    resources:
+      - preprovisionedclusters/status
+      - preprovisionedmachines/status
+    verbs:
+      - get
+      - patch
+      - update
+  # Cluster API resolves the served version of an infrastructure kind from the
+  # contract labels on its CRD, so every kind reached through an infrastructure
+  # reference needs a read here.
   - apiGroups:
       - apiextensions.k8s.io
     resources:
@@ -37,6 +74,10 @@ rules:
     resourceNames:
       - nicoclusters.infrastructure.cluster.x-k8s.io
       - nicomachines.infrastructure.cluster.x-k8s.io
+      - preprovisionedclusters.infrastructure.cluster.x-k8s.io
+      - preprovisionedmachines.infrastructure.cluster.x-k8s.io
+      - preprovisionedmachinetemplates.infrastructure.cluster.x-k8s.io
+      - preprovisionedhostclaims.infrastructure.cluster.x-k8s.io
     verbs:
       - get
   # Needed for cluster specific namespaces and bootstrap secrets

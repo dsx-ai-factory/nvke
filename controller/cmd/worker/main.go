@@ -42,6 +42,8 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/teleport"
 	"github.com/NVIDIA/nke/controller/internal/temporal"
 	"github.com/NVIDIA/nke/controller/internal/version"
+	preprovisionedv1 "github.com/NVIDIA/nke/controller/preprovisioned/api/v1alpha1"
+	preprovisioned "github.com/NVIDIA/nke/controller/preprovisioned/controllers"
 )
 
 const (
@@ -145,14 +147,19 @@ func main() {
 	forgeProviderLogger := logger.With("logger", "forge-provider")
 	forgeProvider := forge.NewForgeProvider(cfg, dbInstance, forgeProviderLogger)
 
-	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme)
+	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme, preprovisionedv1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
 		os.Exit(1)
 	}
 
 	controllerRuntimeLogger := logger.With("logger", "controller-runtime")
-	k8sControllerManager, err := kube.NewRuntimeManager(controllerRuntimeLogger, spirev1alpha1.AddToScheme, nicov1.AddToScheme)
+	k8sControllerManager, err := kube.NewRuntimeManager(
+		controllerRuntimeLogger,
+		spirev1alpha1.AddToScheme,
+		nicov1.AddToScheme,
+		preprovisionedv1.AddToScheme,
+	)
 	if err != nil {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)
 		os.Exit(1)
@@ -191,7 +198,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	logger.Info("controller-runtime manager configuration", "enableCapi", cfg.EnableCapi, "enableForgeCapi", cfg.EnableForgeCapi, "enableNodeProvisioningMonitor", enableNodeProvisioningMonitor)
+	logger.Info("controller-runtime manager configuration",
+		"enableCapi", cfg.EnableCapi,
+		"enableForgeCapi", cfg.EnableForgeCapi,
+		"enablePreprovisionedProvider", cfg.EnablePreprovisionedProvider,
+		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
+	)
 	if cfg.EnableCapi {
 		machineSpireEntryController := capi.NewMachineSpireEntryController(
 			cfg,
@@ -201,6 +213,20 @@ func main() {
 		)
 		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+			os.Exit(1)
+		}
+
+		// Provider-independent: it reads the providerID from whatever object the
+		// Machine's infrastructure reference names, so it serves the Nico, the
+		// preprovisioned and any other infrastructure provider.
+		machineProviderIDController := capi.NewMachineProviderIDController(
+			k8sControllerManager.GetClient(),
+			kube.NewCAPIKubeconfigTenantClientProvider(k8sControllerManager.GetClient()),
+			logger.With("logger", "machine-provider-id-controller"),
+			cfg.EnableForgeCapi,
+		)
+		if err := machineProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up machine provider ID controller", "error", err)
 			os.Exit(1)
 		}
 
@@ -214,14 +240,27 @@ func main() {
 				logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
 				os.Exit(1)
 			}
+		}
 
-			nicoProviderIDController := capi.NewNicoProviderIDController(
+		// The preprovisioned provider only runs where its CRDs are installed,
+		// so it stays behind its own flag: a watch on a kind the API server
+		// does not know would stop the manager from starting.
+		if cfg.EnablePreprovisionedProvider {
+			preprovisionedClusterReconciler := preprovisioned.NewClusterReconciler(
 				k8sControllerManager.GetClient(),
-				kube.NewCAPIKubeconfigTenantClientProvider(k8sControllerManager.GetClient()),
-				logger.With("logger", "nico-provider-id-controller"),
+				logger.With("logger", "preprovisioned-cluster-controller"),
 			)
-			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico provider ID controller", "error", err)
+			if err := preprovisionedClusterReconciler.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up preprovisioned cluster controller", "error", err)
+				os.Exit(1)
+			}
+
+			preprovisionedMachineReconciler := preprovisioned.NewMachineReconciler(
+				k8sControllerManager.GetClient(),
+				logger.With("logger", "preprovisioned-machine-controller"),
+			)
+			if err := preprovisionedMachineReconciler.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up preprovisioned machine controller", "error", err)
 				os.Exit(1)
 			}
 		}

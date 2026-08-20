@@ -40,12 +40,14 @@ const (
 // Defines values for SpireAttestationMethod.
 const (
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
+	SpireAttestationMethodNone      SpireAttestationMethod = "none"
 	SpireAttestationMethodTpm       SpireAttestationMethod = "tpm"
 )
 
 // Defines values for SpireAttestationMethodCreate.
 const (
 	SpireAttestationMethodCreateJoinToken SpireAttestationMethodCreate = "joinToken"
+	SpireAttestationMethodCreateNone      SpireAttestationMethodCreate = "none"
 	SpireAttestationMethodCreateTpm       SpireAttestationMethodCreate = "tpm"
 )
 
@@ -199,6 +201,9 @@ type ControlPlaneConfig struct {
 	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
 
 	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	// `none` disables SPIFFE on those nodes and reaches the node agent over an
+	// unauthenticated connection. Use it only to bootstrap a cluster on
+	// preprovisioned hosts, never for a tenant cluster.
 	CapiSpireAttestationMethod *SpireAttestationMethod `json:"capiSpireAttestationMethod,omitempty"`
 
 	// ConfigProfile The name of the config profile used by control plane nodes.
@@ -255,6 +260,9 @@ type CreateClusterControlPlaneConfig struct {
 	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
 
 	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	// `none` disables SPIFFE on those nodes and reaches the node agent over an
+	// unauthenticated connection. Use it only to bootstrap a cluster on
+	// preprovisioned hosts, never for a tenant cluster.
 	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
 
 	// ConfigProfile The name of the config profile for control plane nodes. Required for Forge clusters.
@@ -419,6 +427,9 @@ type CreateNodePoolRequest struct {
 	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	// `none` disables SPIFFE on those nodes and reaches the node agent over an
+	// unauthenticated connection. Use it only to bootstrap a cluster on
+	// preprovisioned hosts, never for a tenant cluster.
 	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
 
 	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
@@ -931,6 +942,9 @@ type NodePool struct {
 	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	// `none` disables SPIFFE on those nodes and reaches the node agent over an
+	// unauthenticated connection. Use it only to bootstrap a cluster on
+	// preprovisioned hosts, never for a tenant cluster.
 	CapiSpireAttestationMethod *SpireAttestationMethod `json:"capiSpireAttestationMethod,omitempty"`
 
 	// Conditions Conditions representing various aspects of the node pool's state
@@ -1058,6 +1072,9 @@ type NodePoolCreateConfig struct {
 	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	// `none` disables SPIFFE on those nodes and reaches the node agent over an
+	// unauthenticated connection. Use it only to bootstrap a cluster on
+	// preprovisioned hosts, never for a tenant cluster.
 	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
 
 	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
@@ -1149,9 +1166,15 @@ type Site struct {
 }
 
 // SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+// `none` disables SPIFFE on those nodes and reaches the node agent over an
+// unauthenticated connection. Use it only to bootstrap a cluster on
+// preprovisioned hosts, never for a tenant cluster.
 type SpireAttestationMethod string
 
 // SpireAttestationMethodCreate How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+// `none` disables SPIFFE on those nodes and reaches the node agent over an
+// unauthenticated connection. Use it only to bootstrap a cluster on
+// preprovisioned hosts, never for a tenant cluster.
 type SpireAttestationMethodCreate string
 
 // UpdateClusterControlPlaneConfig defines model for UpdateClusterControlPlaneConfig.
@@ -1166,6 +1189,9 @@ type UpdateClusterControlPlaneConfig struct {
 	CapiPreKubeadmCommands *[]string `json:"capiPreKubeadmCommands,omitempty"`
 
 	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	// `none` disables SPIFFE on those nodes and reaches the node agent over an
+	// unauthenticated connection. Use it only to bootstrap a cluster on
+	// preprovisioned hosts, never for a tenant cluster.
 	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
 
 	// ConfigProfile Set the config profile for control plane nodes.
@@ -1273,6 +1299,9 @@ type UpdateNodePoolRequest struct {
 	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
 
 	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	// `none` disables SPIFFE on those nodes and reaches the node agent over an
+	// unauthenticated connection. Use it only to bootstrap a cluster on
+	// preprovisioned hosts, never for a tenant cluster.
 	CapiSpireAttestationMethod *SpireAttestationMethod `json:"capiSpireAttestationMethod,omitempty"`
 
 	// ConfigProfile The name of the config profile to use for the nodes in the set

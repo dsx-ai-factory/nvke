@@ -257,6 +257,16 @@ type Config struct {
 	// Requires EnableCapi=true.
 	EnableForgeCapi bool `env:"ENABLE_FORGE_CAPI" default:"false"`
 
+	// EnablePreprovisionedProvider starts the controllers of the preprovisioned
+	// Cluster API infrastructure provider, which binds machines to hosts that
+	// already exist instead of creating infrastructure.
+	//
+	// It has its own flag because the controllers watch the PreprovisionedCluster
+	// and PreprovisionedMachine kinds. A watch on a kind that the API server does
+	// not know stops the manager from starting, so this must stay off wherever
+	// the CRDs are not installed. Requires EnableCapi=true.
+	EnablePreprovisionedProvider bool `env:"ENABLE_PREPROVISIONED_PROVIDER" default:"false"`
+
 	// LocalDevForceDockerMachineBootstrap forces every node through the
 	// DockerMachine bootstrap/preflight + container-mode kubeadm contract
 	// (the /run/cluster-api/bootstrap-success.complete sentinel) regardless of
@@ -406,6 +416,9 @@ func (c *Config) Validate() error {
 
 	if c.EnableForgeCapi && !c.EnableCapi {
 		return fmt.Errorf("ENABLE_FORGE_CAPI=true requires ENABLE_CAPI=true")
+	}
+	if c.EnablePreprovisionedProvider && !c.EnableCapi {
+		return fmt.Errorf("ENABLE_PREPROVISIONED_PROVIDER=true requires ENABLE_CAPI=true")
 	}
 	return nil
 }

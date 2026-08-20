@@ -212,13 +212,22 @@ func (c *Controller) createPendingNode(ctx context.Context, tx db.Tx, cluster db
 		return db.Node{}, fmt.Errorf("failed to list cluster node names: %w", err)
 	}
 
+	// A CAPI node set that asks for the "none" attestation method gets nodes
+	// without SPIFFE, whatever the deployment-wide setting is. The node agent
+	// client then uses an unauthenticated connection, which is the only way to
+	// reach a preprovisioned host that never ran cloud-init.
+	spiffeEnabled := c.cfg.SpiffeEnabled
+	if capiNodeSetProvider, err := nodeSet.CAPIProvider(); err == nil {
+		spiffeEnabled = spiffeEnabled && db.SpiffeEnabledForAttestationMethod(capiNodeSetProvider.SpireAttestationMethod)
+	}
+
 	dbNode := db.Node{
 		ClusterID:     cluster.ID,
 		NodePoolID:    nodePool.ID,
 		NodeSetID:     nodeSet.ID,
 		ControlPlane:  nodePool.ControlPlane,
 		Name:          naming.GenerateNodeName(existingNodeNames, cluster.Name, nodePool.NodeNamePrefix, rand.IntN),
-		SpiffeEnabled: c.cfg.SpiffeEnabled,
+		SpiffeEnabled: spiffeEnabled,
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending node provisioning"),
 			Provisioning:            db.NewCondition(false, "Not yet provisioning"),

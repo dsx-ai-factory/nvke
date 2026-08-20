@@ -64,6 +64,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | podLabels.project | string | `"nke"` |  |
 | podLabels.team | string | `"nke"` |  |
 | podSecurityContext.runAsNonRoot | bool | `true` |  |
+| preprovisioned.enabled | bool | `false` | Run the preprovisioned provider controllers. Needs capi.enabled, and the provider CRDs must already be installed: apply controller/preprovisioned/config/crd/ before you turn this on. The controllers watch those kinds, and a watch on an unknown kind stops the manager from starting. |
 | profiles.path | string | `""` | Directory mounted/read as PROFILES_DIR |
 | profiles.image.enabled | bool | `false` | Copy `/profiles` from a content image into profiles.path |
 | profiles.image.repository | string | `"nvcr.io/j7sbcjl3qgta/cwe-profiles"` | Profiles content image repository |

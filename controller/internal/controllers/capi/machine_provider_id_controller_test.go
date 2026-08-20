@@ -28,13 +28,13 @@ import (
 
 const providerIDTestNodeName = "worker-0"
 
-func TestNicoProviderIDControllerReconcilePatchesTenantNodeProviderID(t *testing.T) {
-	controller, tenantClient := newNicoProviderIDControllerForTest(
+func TestMachineProviderIDControllerReconcilePatchesTenantNodeProviderID(t *testing.T) {
+	controller, tenantClient := newMachineProviderIDControllerForTest(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+			newMachineForProviderIDTest("nico://instance-1"),
+			newNicoMachineForProviderIDTest(),
 		},
 		[]client.Object{
 			newTenantNodeForProviderIDTest(""),
@@ -48,13 +48,13 @@ func TestNicoProviderIDControllerReconcilePatchesTenantNodeProviderID(t *testing
 	require.Equal(t, "nico://instance-1", node.Spec.ProviderID)
 }
 
-func TestNicoProviderIDControllerReconcileNoOpsWhenTenantNodeProviderIDMatches(t *testing.T) {
-	controller, tenantClient := newNicoProviderIDControllerForTest(
+func TestMachineProviderIDControllerReconcileNoOpsWhenTenantNodeProviderIDMatches(t *testing.T) {
+	controller, tenantClient := newMachineProviderIDControllerForTest(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+			newMachineForProviderIDTest("nico://instance-1"),
+			newNicoMachineForProviderIDTest(),
 		},
 		[]client.Object{
 			newTenantNodeForProviderIDTest("nico://instance-1"),
@@ -68,8 +68,71 @@ func TestNicoProviderIDControllerReconcileNoOpsWhenTenantNodeProviderIDMatches(t
 	require.Equal(t, "nico://instance-1", node.Spec.ProviderID)
 }
 
-func TestNicoProviderIDControllerReconcilePatchesTenantNodeTopologyLabels(t *testing.T) {
-	nicoMachine := newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName)
+// A provider other than NICo still gets its providerID copied. This is the case
+// that the preprovisioned provider and CAPD take.
+func TestMachineProviderIDControllerReconcilePatchesNonNicoProviderID(t *testing.T) {
+	machine := newMachineForProviderIDTest("preprovisioned://test-cluster/host-01")
+	machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
+		APIGroup: "infrastructure.cluster.x-k8s.io",
+		Kind:     "PreprovisionedMachine",
+		Name:     providerIDTestNodeName,
+	}
+
+	controller, tenantClient := newMachineProviderIDControllerForTest(
+		t,
+		[]client.Object{
+			newCAPIClusterForProviderIDTest(),
+			machine,
+		},
+		[]client.Object{
+			newTenantNodeForProviderIDTest(""),
+		},
+	)
+
+	_, err := controller.Reconcile(context.Background(), providerIDReconcileRequest())
+	require.NoError(t, err)
+
+	node := getTenantNodeForProviderIDTest(t, tenantClient)
+	require.Equal(t, "preprovisioned://test-cluster/host-01", node.Spec.ProviderID)
+}
+
+// Forge topology labels belong to the NICo provider. Another provider reports
+// no topology, so the controller must leave those labels alone rather than
+// delete them.
+func TestMachineProviderIDControllerReconcileLeavesTopologyLabelsForNonNicoProvider(t *testing.T) {
+	machine := newMachineForProviderIDTest("preprovisioned://test-cluster/host-01")
+	machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
+		APIGroup: "infrastructure.cluster.x-k8s.io",
+		Kind:     "PreprovisionedMachine",
+		Name:     providerIDTestNodeName,
+	}
+
+	controller, tenantClient := newMachineProviderIDControllerForTest(
+		t,
+		[]client.Object{
+			newCAPIClusterForProviderIDTest(),
+			machine,
+		},
+		[]client.Object{
+			newTenantNodeForProviderIDTest("", map[string]string{
+				"example.com/keep":           "value",
+				constants.LabelKeyNodeSiteID: "set-by-somebody-else",
+			}),
+		},
+	)
+
+	_, err := controller.Reconcile(context.Background(), providerIDReconcileRequest())
+	require.NoError(t, err)
+
+	node := getTenantNodeForProviderIDTest(t, tenantClient)
+	require.Equal(t, map[string]string{
+		"example.com/keep":           "value",
+		constants.LabelKeyNodeSiteID: "set-by-somebody-else",
+	}, node.Labels)
+}
+
+func TestMachineProviderIDControllerReconcilePatchesTenantNodeTopologyLabels(t *testing.T) {
+	nicoMachine := newNicoMachineForProviderIDTest()
 	nicoMachine.Status = nicov1.NicoMachineStatus{
 		MachineID: "machine-123",
 		SiteID:    "site-123",
@@ -77,11 +140,11 @@ func TestNicoProviderIDControllerReconcilePatchesTenantNodeTopologyLabels(t *tes
 		VPCID:     "vpc-123",
 		VPCName:   "Production VPC",
 	}
-	controller, tenantClient := newNicoProviderIDControllerForTest(
+	controller, tenantClient := newMachineProviderIDControllerForTest(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
+			newMachineForProviderIDTest("nico://instance-1"),
 			nicoMachine,
 		},
 		[]client.Object{
@@ -103,13 +166,13 @@ func TestNicoProviderIDControllerReconcilePatchesTenantNodeTopologyLabels(t *tes
 	}, node.Labels)
 }
 
-func TestNicoProviderIDControllerReconcileRemovesMissingTopologyLabels(t *testing.T) {
-	controller, tenantClient := newNicoProviderIDControllerForTest(
+func TestMachineProviderIDControllerReconcileRemovesMissingTopologyLabels(t *testing.T) {
+	controller, tenantClient := newMachineProviderIDControllerForTest(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+			newMachineForProviderIDTest("nico://instance-1"),
+			newNicoMachineForProviderIDTest(),
 		},
 		[]client.Object{
 			newTenantNodeForProviderIDTest("nico://instance-1", map[string]string{
@@ -130,13 +193,13 @@ func TestNicoProviderIDControllerReconcileRemovesMissingTopologyLabels(t *testin
 	require.Equal(t, map[string]string{"example.com/keep": "value"}, node.Labels)
 }
 
-func TestNicoProviderIDControllerReconcileErrorsWhenTenantNodeProviderIDDiffers(t *testing.T) {
-	controller, tenantClient := newNicoProviderIDControllerForTest(
+func TestMachineProviderIDControllerReconcileErrorsWhenTenantNodeProviderIDDiffers(t *testing.T) {
+	controller, tenantClient := newMachineProviderIDControllerForTest(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+			newMachineForProviderIDTest("nico://instance-1"),
+			newNicoMachineForProviderIDTest(),
 		},
 		[]client.Object{
 			newTenantNodeForProviderIDTest("nico://other-instance"),
@@ -150,14 +213,14 @@ func TestNicoProviderIDControllerReconcileErrorsWhenTenantNodeProviderIDDiffers(
 	require.Equal(t, "nico://other-instance", node.Spec.ProviderID)
 }
 
-func TestNicoProviderIDControllerReconcileWaitsForNicoMachineProviderID(t *testing.T) {
+func TestMachineProviderIDControllerReconcileWaitsForMachineProviderID(t *testing.T) {
 	tenantProvider := &fakeTenantClusterClientProvider{}
-	controller := newNicoProviderIDControllerForTestWithProvider(
+	controller := newMachineProviderIDControllerForTestWithProvider(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("", providerIDTestNodeName),
+			newMachineForProviderIDTest(""),
+			newNicoMachineForProviderIDTest(),
 		},
 		tenantProvider,
 	)
@@ -168,13 +231,12 @@ func TestNicoProviderIDControllerReconcileWaitsForNicoMachineProviderID(t *testi
 	require.Equal(t, 0, tenantProvider.calls)
 }
 
-func TestNicoProviderIDControllerReconcileWaitsForOwnerMachine(t *testing.T) {
+func TestMachineProviderIDControllerReconcileSkipsWhenMachineIsGone(t *testing.T) {
 	tenantProvider := &fakeTenantClusterClientProvider{}
-	controller := newNicoProviderIDControllerForTestWithProvider(
+	controller := newMachineProviderIDControllerForTestWithProvider(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", ""),
 		},
 		tenantProvider,
 	)
@@ -185,16 +247,16 @@ func TestNicoProviderIDControllerReconcileWaitsForOwnerMachine(t *testing.T) {
 	require.Equal(t, 0, tenantProvider.calls)
 }
 
-func TestNicoProviderIDControllerReconcileWaitsForKubeconfigSecret(t *testing.T) {
+func TestMachineProviderIDControllerReconcileWaitsForKubeconfigSecret(t *testing.T) {
 	tenantProvider := &fakeTenantClusterClientProvider{
 		err: apierrors.NewNotFound(schema.GroupResource{Resource: "secrets"}, "test-kubeconfig"),
 	}
-	controller := newNicoProviderIDControllerForTestWithProvider(
+	controller := newMachineProviderIDControllerForTestWithProvider(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+			newMachineForProviderIDTest("nico://instance-1"),
+			newNicoMachineForProviderIDTest(),
 		},
 		tenantProvider,
 	)
@@ -205,13 +267,13 @@ func TestNicoProviderIDControllerReconcileWaitsForKubeconfigSecret(t *testing.T)
 	require.Equal(t, 1, tenantProvider.calls)
 }
 
-func TestNicoProviderIDControllerReconcileSkipsWhenCAPIClusterIsGone(t *testing.T) {
+func TestMachineProviderIDControllerReconcileSkipsWhenCAPIClusterIsGone(t *testing.T) {
 	tenantProvider := &fakeTenantClusterClientProvider{}
-	controller := newNicoProviderIDControllerForTestWithProvider(
+	controller := newMachineProviderIDControllerForTestWithProvider(
 		t,
 		[]client.Object{
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+			newMachineForProviderIDTest("nico://instance-1"),
+			newNicoMachineForProviderIDTest(),
 		},
 		tenantProvider,
 	)
@@ -222,13 +284,13 @@ func TestNicoProviderIDControllerReconcileSkipsWhenCAPIClusterIsGone(t *testing.
 	require.Equal(t, 0, tenantProvider.calls)
 }
 
-func TestNicoProviderIDControllerReconcileWaitsForTenantNode(t *testing.T) {
-	controller, _ := newNicoProviderIDControllerForTest(
+func TestMachineProviderIDControllerReconcileWaitsForTenantNode(t *testing.T) {
+	controller, _ := newMachineProviderIDControllerForTest(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName),
+			newMachineForProviderIDTest("nico://instance-1"),
+			newNicoMachineForProviderIDTest(),
 		},
 		nil,
 	)
@@ -238,19 +300,19 @@ func TestNicoProviderIDControllerReconcileWaitsForTenantNode(t *testing.T) {
 	require.Equal(t, tenantClusterReadinessRetryAfter, result.RequeueAfter)
 }
 
-func TestNicoProviderIDControllerReconcileSkipsDeletingNicoMachine(t *testing.T) {
-	deletingNicoMachine := newNicoMachineForProviderIDTest("nico://instance-1", providerIDTestNodeName)
+func TestMachineProviderIDControllerReconcileSkipsDeletingMachine(t *testing.T) {
+	deletingMachine := newMachineForProviderIDTest("nico://instance-1")
 	now := metav1.Now()
-	deletingNicoMachine.DeletionTimestamp = &now
-	deletingNicoMachine.Finalizers = []string{"test.finalizer"}
+	deletingMachine.DeletionTimestamp = &now
+	deletingMachine.Finalizers = []string{"test.finalizer"}
 
 	tenantProvider := &fakeTenantClusterClientProvider{}
-	controller := newNicoProviderIDControllerForTestWithProvider(
+	controller := newMachineProviderIDControllerForTestWithProvider(
 		t,
 		[]client.Object{
 			newCAPIClusterForProviderIDTest(),
-			newMachineForProviderIDTest(),
-			deletingNicoMachine,
+			deletingMachine,
+			newNicoMachineForProviderIDTest(),
 		},
 		tenantProvider,
 	)
@@ -259,6 +321,54 @@ func TestNicoProviderIDControllerReconcileSkipsDeletingNicoMachine(t *testing.T)
 	require.NoError(t, err)
 	require.Zero(t, result.RequeueAfter)
 	require.Equal(t, 0, tenantProvider.calls)
+}
+
+// A NicoMachine that Cluster API deleted before this reconcile leaves the
+// Machine with a providerID. The node still gets it, without topology labels.
+func TestMachineProviderIDControllerReconcileToleratesMissingNicoMachine(t *testing.T) {
+	controller, tenantClient := newMachineProviderIDControllerForTest(
+		t,
+		[]client.Object{
+			newCAPIClusterForProviderIDTest(),
+			newMachineForProviderIDTest("nico://instance-1"),
+		},
+		[]client.Object{
+			newTenantNodeForProviderIDTest(""),
+		},
+	)
+
+	_, err := controller.Reconcile(context.Background(), providerIDReconcileRequest())
+	require.NoError(t, err)
+
+	node := getTenantNodeForProviderIDTest(t, tenantClient)
+	require.Equal(t, "nico://instance-1", node.Spec.ProviderID)
+}
+
+func TestInfraMachineToOwnerMachine(t *testing.T) {
+	isController := true
+	nicoMachine := newNicoMachineForProviderIDTest()
+	nicoMachine.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: clusterv1.GroupVersion.String(),
+		Kind:       machineConst,
+		Name:       providerIDTestNodeName,
+		Controller: &isController,
+	}}
+
+	requests := infraMachineToOwnerMachine(context.Background(), nicoMachine)
+	require.Equal(t, []ctrl.Request{{
+		NamespacedName: types.NamespacedName{Namespace: "cluster-test", Name: providerIDTestNodeName},
+	}}, requests)
+}
+
+func TestInfraMachineToOwnerMachineIgnoresOtherOwners(t *testing.T) {
+	nicoMachine := newNicoMachineForProviderIDTest()
+	nicoMachine.OwnerReferences = []metav1.OwnerReference{{
+		APIVersion: "apps/v1",
+		Kind:       "ReplicaSet",
+		Name:       "something-else",
+	}}
+
+	require.Nil(t, infraMachineToOwnerMachine(context.Background(), nicoMachine))
 }
 
 type fakeTenantClusterClientProvider struct {
@@ -279,11 +389,11 @@ func (p *fakeTenantClusterClientProvider) ClientForCluster(
 	return p.tenantClient, nil
 }
 
-func newNicoProviderIDControllerForTest(
+func newMachineProviderIDControllerForTest(
 	t *testing.T,
 	managementObjects []client.Object,
 	tenantObjects []client.Object,
-) (*NicoProviderIDController, client.Client) {
+) (*MachineProviderIDController, client.Client) {
 	t.Helper()
 
 	tenantClient := fake.NewClientBuilder().
@@ -293,29 +403,30 @@ func newNicoProviderIDControllerForTest(
 	tenantProvider := &fakeTenantClusterClientProvider{
 		tenantClient: tenantClient,
 	}
-	controller := newNicoProviderIDControllerForTestWithProvider(t, managementObjects, tenantProvider)
+	controller := newMachineProviderIDControllerForTestWithProvider(t, managementObjects, tenantProvider)
 	return controller, tenantClient
 }
 
-func newNicoProviderIDControllerForTestWithProvider(
+func newMachineProviderIDControllerForTestWithProvider(
 	t *testing.T,
 	managementObjects []client.Object,
 	tenantProvider kube.TenantClientProvider,
-) *NicoProviderIDController {
+) *MachineProviderIDController {
 	t.Helper()
 
 	managementClient := fake.NewClientBuilder().
-		WithScheme(newNicoProviderIDControllerTestScheme(t)).
+		WithScheme(newMachineProviderIDControllerTestScheme(t)).
 		WithObjects(managementObjects...).
 		Build()
-	return &NicoProviderIDController{
+	return &MachineProviderIDController{
 		k8sClient:            managementClient,
 		tenantClientProvider: tenantProvider,
 		logger:               slog.New(slog.DiscardHandler),
+		watchNicoMachines:    true,
 	}
 }
 
-func newNicoProviderIDControllerTestScheme(t *testing.T) *runtime.Scheme {
+func newMachineProviderIDControllerTestScheme(t *testing.T) *runtime.Scheme {
 	t.Helper()
 
 	scheme := runtime.NewScheme()
@@ -347,7 +458,10 @@ func newCAPIClusterForProviderIDTest() *clusterv1.Cluster {
 	}
 }
 
-func newMachineForProviderIDTest() *clusterv1.Machine {
+// newMachineForProviderIDTest builds the Machine that the Cluster API machine
+// controller would have reconciled: it carries the providerID copied from the
+// infrastructure machine, and the reference to that object.
+func newMachineForProviderIDTest(providerID string) *clusterv1.Machine {
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
@@ -359,36 +473,27 @@ func newMachineForProviderIDTest() *clusterv1.Machine {
 		},
 		Spec: clusterv1.MachineSpec{
 			ClusterName: "test-cluster",
+			ProviderID:  providerID,
+			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				APIGroup: nicov1.GroupVersion.Group,
+				Kind:     nicoMachineKind,
+				Name:     providerIDTestNodeName,
+			},
 		},
 	}
 }
 
-func newNicoMachineForProviderIDTest(providerID, ownerMachineName string) *nicov1.NicoMachine {
-	nicoMachine := &nicov1.NicoMachine{
+func newNicoMachineForProviderIDTest() *nicov1.NicoMachine {
+	return &nicov1.NicoMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: nicov1.GroupVersion.String(),
-			Kind:       "NicoMachine",
+			Kind:       nicoMachineKind,
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      providerIDTestNodeName,
 			Namespace: "cluster-test",
 		},
-		Spec: nicov1.NicoMachineSpec{
-			ProviderID: providerID,
-		},
 	}
-
-	if ownerMachineName != "" {
-		isController := true
-		nicoMachine.OwnerReferences = []metav1.OwnerReference{{
-			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
-			Name:       ownerMachineName,
-			Controller: &isController,
-		}}
-	}
-
-	return nicoMachine
 }
 
 func newTenantNodeForProviderIDTest(providerID string, labels ...map[string]string) *corev1.Node {

@@ -1,0 +1,89 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Written by hand: this repository carries no controller-gen. Keep it in step
+# with preprovisioned/api/v1alpha1/preprovisionedhostclaim_types.go.
+#
+# Cluster-scoped on purpose. A physical machine is a singleton, but each cluster
+# carries its own inventory in its own namespace, so a namespaced lock could not
+# see across the boundary that this object exists to guard.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: preprovisionedhostclaims.infrastructure.cluster.x-k8s.io
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-preprovisioned
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+      - cluster-api
+    kind: PreprovisionedHostClaim
+    listKind: PreprovisionedHostClaimList
+    plural: preprovisionedhostclaims
+    shortNames:
+      - pphc
+    singular: preprovisionedhostclaim
+  scope: Cluster
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Identity
+          type: string
+          jsonPath: .spec.identity
+        - name: Cluster
+          type: string
+          jsonPath: .spec.clusterName
+        - name: Machine
+          type: string
+          jsonPath: .spec.machineName
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          description: |
+            PreprovisionedHostClaim locks one identity of one physical host
+            across every cluster. The object's existence is the lock.
+          type: object
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              type: object
+              required:
+                - identity
+                - clusterName
+                - machineNamespace
+                - machineName
+              properties:
+                identity:
+                  description: "The value being locked: a machineID, or an address."
+                  type: string
+                  minLength: 1
+                clusterName:
+                  description: The cluster whose inventory listed the host.
+                  type: string
+                  minLength: 1
+                machineNamespace:
+                  description: |
+                    Namespace of the PreprovisionedMachine that holds the claim.
+                    A claimant that finds this machine gone reclaims the host.
+                  type: string
+                  minLength: 1
+                machineName:
+                  description: Name of the PreprovisionedMachine that holds the claim.
+                  type: string
+                  minLength: 1
+                hostName:
+                  description: |
+                    The name the inventory gave the host, for operators. Two
+                    clusters may call the same machine different things, which
+                    is why the lock keys on identity instead.
+                  type: string
