@@ -12,8 +12,26 @@ controller can reach the node over SPIFFE mTLS. The contract is [SPEC.md](SPEC.m
 
 ## Build the image
 
-On a Linux host with KVM, [Packer](https://developer.hashicorp.com/packer),
-[ORAS](https://oras.land/), and `curl`:
+Prereqs, on a Linux host with KVM:
+
+| Tool | Version | Install |
+|---|---|---|
+| [Packer](https://developer.hashicorp.com/packer) | >= 1.10.0 | https://developer.hashicorp.com/packer/install |
+| [ORAS](https://oras.land/) | any | https://oras.land/docs/installation |
+| `curl` | any | via your package manager |
+
+`make image` checks for `oras` on `PATH` before it boots the build VM and
+fails fast with the install link above if it's missing.
+
+If `ghcr.io/nvidia/nke/agent` is private, log in first with a GitHub PAT
+(`read:packages` scope):
+
+```bash
+echo "<github-pat>" | oras login ghcr.io -u <your-github-username> --password-stdin
+```
+
+Credentials are cached (`~/.docker/config.json` by default), so `oras pull`
+in `fetch-artifacts.sh` picks them up automatically.
 
 ```bash
 cd packer

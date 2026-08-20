@@ -9,7 +9,7 @@ PKR_FILE    := $(CURDIR)/nke-node.pkr.hcl
 NKE_AGENT_VERSION  ?= edge
 NKE_AGENT_REGISTRY ?= ghcr.io/nvidia/nke/agent
 
-.PHONY: image init ssh-key clean
+.PHONY: image init ssh-key clean check-deps
 
 ssh-key: $(SSH_DIR)/id_ed25519
 
@@ -20,7 +20,15 @@ $(SSH_DIR)/id_ed25519:
 init:
 	$(PACKER) init $(PKR_FILE)
 
-image: ssh-key init
+check-deps:
+	@command -v oras >/dev/null 2>&1 || { \
+		echo "oras is required to pull $(NKE_AGENT_REGISTRY)" >&2; \
+		echo "https://oras.land/docs/installation" >&2; \
+		exit 1; \
+	}
+
+image: check-deps ssh-key init
+	mkdir -p $(ARTIFACTS)
 	NKE_AGENT_VERSION=$(NKE_AGENT_VERSION) \
 	NKE_AGENT_REGISTRY=$(NKE_AGENT_REGISTRY) \
 	$(PACKER) build \
