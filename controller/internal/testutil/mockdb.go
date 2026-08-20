@@ -52,22 +52,27 @@ func (m *MockDB) DeleteNodePool(ctx context.Context, nodePoolID uuid.UUID) error
 	return args.Error(0)
 }
 
-func (m *MockDB) CreateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
-	args := m.Called(ctx, nodePool)
-	v, ok := args.Get(0).(db.NodePool)
+func (m *MockDB) CreateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
+	args := m.Called(ctx, cluster)
+	v, ok := args.Get(0).(db.Cluster)
 	if !ok {
-		return db.NodePool{}, args.Error(1)
+		return db.Cluster{}, args.Error(1)
 	}
 	return v, args.Error(1)
 }
 
-func (m *MockDB) UpdateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
-	args := m.Called(ctx, nodePool)
-	v, ok := args.Get(0).(db.NodePool)
+func (m *MockDB) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
+	args := m.Called(ctx, cluster)
+	v, ok := args.Get(0).(db.Cluster)
 	if !ok {
-		return db.NodePool{}, args.Error(1)
+		return db.Cluster{}, args.Error(1)
 	}
 	return v, args.Error(1)
+}
+
+func (m *MockDB) DeleteCluster(ctx context.Context, clusterID uuid.UUID) error {
+	args := m.Called(ctx, clusterID)
+	return args.Error(0)
 }
 
 func (m *MockDB) ListClusters(ctx context.Context, filters db.ClusterFilters) ([]db.Cluster, error) {
@@ -81,24 +86,6 @@ func (m *MockDB) ListClusters(ctx context.Context, filters db.ClusterFilters) ([
 
 func (m *MockDB) GetCluster(ctx context.Context, id uuid.UUID) (db.Cluster, error) {
 	args := m.Called(ctx, id)
-	v, ok := args.Get(0).(db.Cluster)
-	if !ok {
-		return db.Cluster{}, args.Error(1)
-	}
-	return v, args.Error(1)
-}
-
-func (m *MockDB) CreateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
-	args := m.Called(ctx, cluster)
-	v, ok := args.Get(0).(db.Cluster)
-	if !ok {
-		return db.Cluster{}, args.Error(1)
-	}
-	return v, args.Error(1)
-}
-
-func (m *MockDB) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
-	args := m.Called(ctx, cluster)
 	v, ok := args.Get(0).(db.Cluster)
 	if !ok {
 		return db.Cluster{}, args.Error(1)
@@ -154,6 +141,24 @@ func (m *MockDB) ListNodePools(ctx context.Context, filters db.NodePoolFilters) 
 
 func (m *MockDB) GetNodePool(ctx context.Context, id uuid.UUID) (db.NodePool, error) {
 	args := m.Called(ctx, id)
+	v, ok := args.Get(0).(db.NodePool)
+	if !ok {
+		return db.NodePool{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockDB) CreateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
+	args := m.Called(ctx, nodePool)
+	v, ok := args.Get(0).(db.NodePool)
+	if !ok {
+		return db.NodePool{}, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
+func (m *MockDB) UpdateNodePool(ctx context.Context, nodePool *db.NodePool) (db.NodePool, error) {
+	args := m.Called(ctx, nodePool)
 	v, ok := args.Get(0).(db.NodePool)
 	if !ok {
 		return db.NodePool{}, args.Error(1)

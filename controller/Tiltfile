@@ -32,6 +32,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 # Input — ctx is a struct with:
 #   ctx.main_dir      (string)  Root directory of the main Tiltfile (config.main_dir).
 #   ctx.cfg           (dict)    Parsed tilt_config.json contents.
+#   ctx.tilt_env      (dict)    Parsed .env.tilt contents, falling back to .env.tilt.example.
 #   ctx.kind_host_ip  (string)  IP reachable from inside Kind pods (e.g. Kind gateway).
 #   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
 #
@@ -198,6 +199,24 @@ def include_user_tilt_files():
             continue
         include(f)
 
+def parse_env_file(path):
+    values = {}
+    if not os.path.exists(path):
+        return values
+    for line in str(read_file(path)).split("\n"):
+        line = line.strip()
+        if line == "" or line.startswith("#"):
+            continue
+        parts = line.split("=", 1)
+        if len(parts) != 2:
+            continue
+        values[parts[0].strip()] = parts[1].strip()
+    return values
+
+_tilt_env = parse_env_file(os.path.join(config.main_dir, ".env.tilt"))
+if not _tilt_env:
+    _tilt_env = parse_env_file(os.path.join(config.main_dir, ".env.tilt.example"))
+
 # ---------------------------------------------------------------------------
 # cert-manager — needed by the OIDC discovery provider to issue its TLS cert
 # from the long-lived NKE OIDC upstream CA (see deploy/k8s/oidc-upstream-ca.yaml).
@@ -325,6 +344,7 @@ for _entry in _provider_entries:
     _result = _symbols["register"](struct(
         main_dir     = config.main_dir,
         cfg          = cfg,
+        tilt_env     = _tilt_env,
         kind_host_ip = _kind_host_ip,
         provider_dir = _provider_dir,
     ))
@@ -337,26 +357,8 @@ for _entry in _provider_entries:
 # Local environment / required credentials
 # ---------------------------------------------------------------------------
 #
-# Parsed here rather than in the CWE section below because the postgres and
-# temporal charts also consume CNPG_SUPERUSER_PASSWORD.
-
-def parse_env_file(path):
-    values = {}
-    if not os.path.exists(path):
-        return values
-    for line in str(read_file(path)).split("\n"):
-        line = line.strip()
-        if line == "" or line.startswith("#"):
-            continue
-        parts = line.split("=", 1)
-        if len(parts) != 2:
-            continue
-        values[parts[0].strip()] = parts[1].strip()
-    return values
-
-_tilt_env = parse_env_file(os.path.join(config.main_dir, ".env.tilt"))
-if not _tilt_env:
-    _tilt_env = parse_env_file(os.path.join(config.main_dir, ".env.tilt.example"))
+# Parsed before provider loading so external providers can consume .env.tilt
+# through ctx.tilt_env.
 _tilt_env.update(_all_cwe_env_overrides)
 
 # Credentials with no defaults anywhere in the repo. The developer supplies each
@@ -879,6 +881,7 @@ _cwe_chart_extra_env_names = [
     "FORGE_URL",
     "FORGE_ENVIRONMENT",
     "LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP",
+    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
     "SPIRE_SERVER_API_ADDRESS",
 ]
 _cwe_chart_extra_env = []

@@ -148,7 +148,21 @@ func TestBuildNicoRequestNodePools(t *testing.T) {
 	if pools[0].Name != "control-plane" || !pools[0].ControlPlane {
 		t.Errorf("first Nico node pool = %q controlPlane=%t, want control-plane controlPlane=true", pools[0].Name, pools[0].ControlPlane)
 	}
+	assertBootstrapSuccessCommands(t, pools[0].CapiPreKubeadmCommands)
 	if pools[1].Name != "worker" || pools[1].ControlPlane {
 		t.Errorf("second Nico node pool = %q controlPlane=%t, want worker controlPlane=false", pools[1].Name, pools[1].ControlPlane)
+	}
+	assertBootstrapSuccessCommands(t, pools[1].CapiPreKubeadmCommands)
+}
+
+func assertBootstrapSuccessCommands(t *testing.T, got []string) {
+	t.Helper()
+	if len(got) != len(containerCAPIReadyCommands) {
+		t.Fatalf("bootstrap success command count = %d, want %d", len(got), len(containerCAPIReadyCommands))
+	}
+	for i := range containerCAPIReadyCommands {
+		if got[i] != containerCAPIReadyCommands[i] {
+			t.Fatalf("bootstrap success command %d = %q, want %q", i, got[i], containerCAPIReadyCommands[i])
+		}
 	}
 }

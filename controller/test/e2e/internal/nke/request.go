@@ -89,6 +89,11 @@ var (
 	capdNodePoolJSON []byte
 )
 
+var containerCAPIReadyCommands = []string{
+	"mkdir -p /run/cluster-api",
+	"echo success > /run/cluster-api/bootstrap-success.complete",
+}
+
 // buildCreateRequest dispatches to the backend-specific request builder.
 func buildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	switch spec.Backend {
@@ -188,7 +193,7 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 		DesiredNodeCount:           spec.DesiredNodeCount,
 		SystemReservedMemory:       spec.SystemReservedMemory,
 		CapiSpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
-		CapiPreKubeadmCommands:     []string{},
+		CapiPreKubeadmCommands:     append([]string(nil), containerCAPIReadyCommands...),
 		CapiInfraMachineTemplate: map[string]any{
 			"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 			"kind":       "NicoMachineTemplate",

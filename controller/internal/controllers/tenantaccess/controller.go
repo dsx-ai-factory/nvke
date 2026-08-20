@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +29,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
 )
@@ -44,8 +44,6 @@ const (
 	// removal. The chart creates the namespace and scopes CWE's Secret grant to
 	// it, so this is a constant rather than a config knob.
 	SecretsNamespace = constants.NamespaceNKESystem
-
-	resyncInterval = 3 * time.Minute
 )
 
 // KubeconfigSecretName returns the Secret name that holds the per-cluster
@@ -98,13 +96,20 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"tenant-access",
 		c,
-		c.db.ClusterSource(db.ClusterFilters{}, resyncInterval),
-		c.db.ClusterForNodeSource(db.NodeFilters{
+		c.db.ClusterSource(dbfilters.Cluster{}),
+		c.db.NodeSource(dbfilters.Node{
 			ControlPlane: ptr.To(true),
 			Joined:       ptr.To(true),
 			Deleting:     ptr.To(false),
-		}),
+		}, nodeClusterKeys),
 	)
+}
+
+func nodeClusterKeys(node db.Node) []dbreconcile.Key {
+	if node.ClusterID == uuid.Nil {
+		return nil
+	}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}
 }
 
 // Reconcile publishes access material for one cluster. The cluster row is

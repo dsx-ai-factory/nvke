@@ -17,6 +17,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/metrics"
 	"github.com/NVIDIA/nke/controller/internal/nodes"
@@ -47,7 +48,7 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-provisioning-monitor",
 		c,
-		c.db.NodeSource(db.NodeFilters{
+		c.db.NodeSource(dbfilters.Node{
 			Provisioning: ptr.To(true),
 			Deleting:     ptr.To(false),
 		}),

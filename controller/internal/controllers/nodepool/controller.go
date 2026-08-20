@@ -18,6 +18,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
@@ -45,8 +46,16 @@ func (a *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-pool-controller",
 		a,
-		a.db.NodePoolSource(db.NodePoolFilters{}),
+		a.db.NodePoolSource(dbfilters.NodePool{}),
+		a.db.NodeSource(dbfilters.Node{}, nodePoolKeysForNode),
 	)
+}
+
+func nodePoolKeysForNode(node db.Node) []dbreconcile.Key {
+	if node.NodePoolID == uuid.Nil {
+		return nil
+	}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}
 }
 
 // Reconcile a NodePool:

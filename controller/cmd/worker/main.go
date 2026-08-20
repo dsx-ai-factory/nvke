@@ -26,6 +26,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
+	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
@@ -304,6 +305,29 @@ func main() {
 		os.Exit(1)
 	}
 	defer temporalClient.Close()
+
+	enableControlPlanePostgresReconciler := !cfg.ControllerManagerDisabled
+
+	logger.Info(
+		"controller-runtime manager configuration",
+		"enableCapi", cfg.EnableCapi,
+		"enableForgeCapi", cfg.EnableForgeCapi,
+		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
+		"enableControlPlanePostgresReconciler", enableControlPlanePostgresReconciler,
+	)
+
+	if enableControlPlanePostgresReconciler {
+		controlPlaneController := controlplane.NewController(
+			cfg,
+			logger.With("logger", "control-plane-controller"),
+			dbInstance,
+			temporalClient,
+		)
+		if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up control plane controller", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, forgeProvider, temporalClient)
 	if err != nil {

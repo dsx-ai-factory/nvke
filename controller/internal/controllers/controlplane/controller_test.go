@@ -14,10 +14,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
@@ -38,6 +41,29 @@ const (
 	controllerEventuallyTimeout = 5 * time.Second
 	testKubernetesVersion       = "1.31.0"
 )
+
+func TestUnit_ControllerReconcileSkipsMissingCluster(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	mockTx := &testutil.MockTx{}
+	mockDB := &testutil.MockDB{MockTx: mockTx}
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	mockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)
+	controller := controlplane.NewController(
+		config.Config{},
+		slog.Default(),
+		dbwrapper.New(mockDB, slog.Default()),
+		nil,
+	)
+
+	result, err := controller.Reconcile(context.Background(), dbreconcile.ClusterKey(clusterID))
+
+	require.NoError(t, err)
+	assert.Empty(t, result)
+	mockDB.AssertExpectations(t)
+	mockTx.AssertExpectations(t)
+}
 
 func TestController_Reconcile_WithOneCluster_ReplaceOneMachine(t *testing.T) {
 	t.Parallel()
@@ -236,7 +262,7 @@ func (tc *controllerTest) startControllers(ctx context.Context) {
 	go newFakeNodeController(tc.database, tc.logger).Start(ctx)
 	go newFakeNodePoolController(tc.database, tc.logger).Start(ctx)
 	go newFakeProvisioner(tc.database, tc.logger).Start(ctx)
-	go newCPController(tc.cfg, tc.logger, tc.database, tc.site).Start(ctx)
+	go newCPController(tc.cfg, tc.logger, tc.database, tc.cluster.ID).Start(ctx)
 }
 
 // controlPlaneFixture holds the resources created for a control plane node pool.
@@ -414,10 +440,11 @@ func (c *controller) Start(ctx context.Context) {
 }
 
 // newCPController creates a controller wrapper for a controlplane.Controller.
-func newCPController(cfg config.Config, logger *slog.Logger, database db.DB, site db.Site) *controller {
-	cpController := controlplane.NewController(cfg, logger, database, nil)
+func newCPController(cfg config.Config, logger *slog.Logger, database db.DB, clusterID uuid.UUID) *controller {
+	cpController := controlplane.NewController(cfg, logger, dbwrapper.New(database, logger), nil)
 	return newController(func(ctx context.Context) error {
-		return cpController.Reconcile(ctx, site)
+		_, err := cpController.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
+		return err
 	}, logger)
 }
 

@@ -15,7 +15,6 @@ import (
 
 	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodehealth"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
@@ -34,7 +33,6 @@ type ControllerManager struct {
 	nodeScheduler                *NodeScheduler
 	capiClusterScaffold          *CAPIClusterScaffoldController
 	autoModeController           *AutoModeController
-	controlPlaneController       *controlplane.Controller
 	nodeHealthController         *nodehealth.Controller
 	certRenewalController        *CertRenewalController
 	nodeTPMEKPubController       *NodeTPMEKPubController
@@ -86,7 +84,6 @@ func NewControllerManager(
 		nodeScheduler:                NewNodeScheduler(cfg, controllerManagerLogger, dbInstance, cweTemporalClient, forgeProvider),
 		capiClusterScaffold:          capiClusterScaffold,
 		autoModeController:           NewAutoModeController(cfg, controllerManagerLogger, dbInstance),
-		controlPlaneController:       controlplane.NewController(cfg, logger, dbInstance, cweTemporalClient),
 		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
 		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
 		nodeTPMEKPubController:       NewNodeTPMEKPubController(cfg, dbInstance, controllerManagerLogger, forgeProvider, k8sClient),
@@ -207,11 +204,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	if err := a.nodeHealthController.Reconcile(ctx, site); err != nil {
 		// Log errors but continue processing the other controllers.
 		a.logger.Error("Failed to reconcile node health", "error", err, "siteID", site.ID.String())
-	}
-
-	if err := a.controlPlaneController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile control plane", "error", err, "siteID", site.ID.String())
 	}
 
 	if a.capiClusterScaffold != nil {

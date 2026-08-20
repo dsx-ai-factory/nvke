@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 
+	"github.com/google/uuid"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -17,6 +18,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/naming"
 )
@@ -45,8 +47,16 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-set-controller",
 		c,
-		c.db.NodeSetSource(db.NodeSetFilters{}),
+		c.db.NodeSetSource(dbfilters.NodeSet{}),
+		c.db.NodeSource(dbfilters.Node{}, nodeSetKeysForNode),
 	)
+}
+
+func nodeSetKeysForNode(node db.Node) []dbreconcile.Key {
+	if node.NodeSetID == uuid.Nil {
+		return nil
+	}
+	return []dbreconcile.Key{dbreconcile.NodeSetKey(node.NodeSetID)}
 }
 
 // Reconcile NodeSets, for each NodeSet:

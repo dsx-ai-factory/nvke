@@ -9,13 +9,17 @@ import (
 	"log/slog"
 	"time"
 
+	"k8s.io/apimachinery/pkg/util/wait"
+
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
 type clusterEventSource struct {
 	queries        db.ClusterQueries
-	filters        db.ClusterFilters
+	filters        dbfilters.Cluster
+	keyMappers     []ClusterKeyMapper
 	resyncInterval time.Duration
 	logger         *slog.Logger
 }
@@ -33,14 +37,15 @@ func (s clusterEventSource) Start(ctx context.Context, enqueue func(context.Cont
 }
 
 func (s clusterEventSource) resync(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error) {
-	ticker := time.NewTicker(s.resyncInterval)
-	defer ticker.Stop()
-
 	for {
+		timer := time.NewTimer(wait.Jitter(s.resyncInterval, defaultSourceResyncJitterFactor))
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			if err := s.enqueueAll(ctx, enqueue); err != nil {
 				s.logger.Warn("Failed to resync DB cluster reconcile source", "error", err)
 			}
@@ -49,13 +54,28 @@ func (s clusterEventSource) resync(ctx context.Context, enqueue func(context.Con
 }
 
 func (s clusterEventSource) enqueueAll(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error) error {
-	clusters, err := s.queries.ListClusters(ctx, s.filters)
+	clusters, err := s.queries.ListClusters(ctx, db.ClusterFilters{})
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %w", err)
 	}
 	for _, cluster := range clusters {
-		if err := enqueue(ctx, dbreconcile.ClusterKey(cluster.ID)); err != nil {
-			return fmt.Errorf("failed to enqueue cluster %s: %w", cluster.ID, err)
+		if !s.filters.Matches(cluster) {
+			continue
+		}
+		if err := enqueueKeysForCluster(ctx, enqueue, cluster, s.keyMappers...); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func enqueueKeysForCluster(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error, cluster db.Cluster, keyMappers ...ClusterKeyMapper) error {
+	for _, keyMapper := range keyMappers {
+		keys := keyMapper(cluster)
+		for _, key := range keys {
+			if err := enqueue(ctx, key); err != nil {
+				return fmt.Errorf("failed to enqueue cluster %s key %s: %w", cluster.ID, key.String(), err)
+			}
 		}
 	}
 	return nil

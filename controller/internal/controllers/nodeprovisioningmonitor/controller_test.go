@@ -132,6 +132,7 @@ func TestController_Reconcile(t *testing.T) {
 			SiteID: siteID,
 			Name:   "test-cluster",
 		}, nil)
+		mockTx.On("GetNode", mock.Anything, nodeID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
 			return updated.ID == nodeID &&
 				updated.Conditions.Deleting.Status == db.ConditionStatusTrue &&
