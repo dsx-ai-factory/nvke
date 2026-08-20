@@ -470,7 +470,7 @@ func TestController_ReconcileOIDC(t *testing.T) {
 	assert.Equal(t, constants.LabelValueNkeManagedBy, tbSecret.Labels[constants.LabelKeyNkeManagedBy])
 	assert.Equal(t, oidcCluster.ID.String(), tbSecret.Labels[constants.LabelKeyClusterID])
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[constants.LabelKeyKubeconfigMode])
-	assert.Equal(t, clusterv1.ClusterSecretType, kcSecret.Type)
+	assert.Equal(t, corev1.SecretTypeOpaque, kcSecret.Type)
 
 	mockDB.AssertExpectations(t)
 }
@@ -581,7 +581,7 @@ func assertSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client
 
 	require.NoError(t, err)
 	assert.Equal(t, []byte(testKubeconfig), secret.Data[KubeconfigSecretKey])
-	assert.Equal(t, clusterv1.ClusterSecretType, secret.Type)
+	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
 	assert.Equal(t, cluster.Name, secret.Labels[clusterv1.ClusterNameLabel])
 	assert.Equal(t, constants.LabelValueNkeManagedBy, secret.Labels[constants.LabelKeyNkeManagedBy])
 	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
@@ -880,7 +880,7 @@ func TestPublish_RewritesAdminToSPIRE(t *testing.T) {
 		Namespace: SecretsNamespace,
 	}, got))
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, got.Labels[constants.LabelKeyKubeconfigMode])
-	assert.Equal(t, clusterv1.ClusterSecretType, got.Type)
+	assert.Equal(t, corev1.SecretTypeOpaque, got.Type)
 	assert.Contains(t, string(got.Data[KubeconfigSecretKey]), "k8s-spiffe-workload-jwt-exec-auth")
 }
 

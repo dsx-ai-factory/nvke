@@ -172,7 +172,13 @@ func (c *Controller) publish(ctx context.Context, cluster db.Cluster, adminConf 
 				clusterv1.ClusterNameLabel: live.Name,
 			},
 		},
-		Type: clusterv1.ClusterSecretType,
+		// Opaque, not clusterv1.ClusterSecretType. Nothing reads the type -- CAPI
+		// resolves a kubeconfig by name and data key -- and Opaque is CAPI's marker
+		// for a Secret its core components did not create, which is what a
+		// TenantAccess-published kubeconfig is. It also matches what the retired SWE
+		// controller left on the fleet, so taking those Secrets over is an in-place
+		// update rather than a collision on an immutable field.
+		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{KubeconfigSecretKey: adminConf},
 	}
 	capi.SetSecretOwnership(secret, live, constants.LabelValueKubeconfigModeAdmin)
@@ -233,7 +239,7 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 				clusterv1.ClusterNameLabel: cluster.Name,
 			},
 		},
-		Type: clusterv1.ClusterSecretType,
+		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{KubeconfigSecretKey: kubeconfig},
 	}
 	capi.SetSecretOwnership(kubeconfigSecret, cluster, constants.LabelValueKubeconfigModeSPIRE)
