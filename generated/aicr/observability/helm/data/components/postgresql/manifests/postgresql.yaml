@@ -44,6 +44,12 @@ spec:
           image: "{{ $component.image.repository }}{{- if $component.image.digest }}@{{ $component.image.digest }}{{- else }}:{{ $component.image.tag }}{{- end }}"
           imagePullPolicy: {{ $component.image.pullPolicy }}
           env:
+            # postgres:18 moved the image default to
+            # /var/lib/postgresql/18/docker and now refuses to start when it
+            # finds a mount at the old path. Pin PGDATA back so the data
+            # directory stays on the volume mounted below.
+            - name: PGDATA
+              value: /var/lib/postgresql/data
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
