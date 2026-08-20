@@ -14,7 +14,7 @@
 # and could not build on a public runner. #76 replaced that SDK with the public
 # ncx-infra-controller-rest, so the whole workspace builds from public
 # dependencies now, and the build step is `make build` -- which compiles every
-# package in all eight modules.
+# package in all nine modules.
 #
 # One database rather than a matrix, deliberately. CodeQL produces a single
 # database per run and uploads it under one category, so a matrix would need a
@@ -75,7 +75,7 @@ jobs:
       security-events: write
     # A matrix over LANGUAGES, which is not the matrix the note at the top of
     # this file argues against -- that one is about modules, and the Go build
-    # below still analyses all eight in a single traced pass. CodeQL produces
+    # below still analyses all nine in a single traced pass. CodeQL produces
     # one database per language and uploads each under its own category, so a
     # language axis is the shape it expects.
     #

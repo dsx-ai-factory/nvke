@@ -56,7 +56,8 @@ WORK_MODULES := agent \
                 controller/hack/capd-reboot-controller \
                 controller/hack/nico-mock \
                 cli \
-                controller/test/e2e
+                controller/test/e2e \
+                image
 
 # Modules whose commands `build` can compile with `go build -o bin/ ./cmd/...`,
 # which names each binary after its package directory. controller/api and
@@ -72,19 +73,28 @@ WORK_MODULES := agent \
 # and asserts the stamp took. `build` delegates to cli/Makefile.
 CMD_MODULES := agent \
                controller/hack/capd-reboot-controller \
-               controller/hack/nico-mock
+               controller/hack/nico-mock \
+               image
 
 # The version stamped into a CMD_MODULES binary. First hit wins: the module's own
 # tag series, a repo-wide one, the commit, then v0.0.0 outside a git checkout.
 # The hack tools have no tags, so they get the commit.
 #
-# --match is required. This repo has several tag series, and a bare
-# `git describe --tags` returns the nearest one, so agent would report a
-# controller version. Same derivation as controller/ and cli/.
+# --match is required, on EVERY describe including the --always one. This repo
+# has several tag series, and a describe without --match returns the nearest one
+# from any of them, so agent would report a controller version.
+#
+# --always only degrades to a bare commit when no tag describes HEAD, and in
+# this repository some tag always does. So an unmatched --always never reached
+# the commit this comment promises: it returned another component's tag, and the
+# patsubst above strips only THIS module's prefix, so the foreign one survived.
+# nico-mock, capd-reboot-controller and nke-image-check each have no tag series
+# of their own and all three reported `agent/v0.2.1-rc.2-6-g23939718` this way,
+# past version-check, which only rejects dev/unknown/v0.0.0.
 cmd_version = $(patsubst $(notdir $(1))/%,%,$(shell \
     git describe --tags --dirty --match '$(notdir $(1))/v[0-9]*' 2>/dev/null \
     || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null \
-    || git describe --always --dirty 2>/dev/null \
+    || git describe --always --dirty --match '$(notdir $(1))/v[0-9]*' 2>/dev/null \
     || echo v0.0.0))
 
 # Both spellings: agent declares VERSION, the hack tools declare version. The
@@ -320,6 +330,7 @@ VERSION_CMDS := agent:--version \
                 capd-reboot-controller:--version \
                 cloud-workflow-engine:--version \
                 nico-mock:--version \
+                nke-image-check:--version \
                 nkectl:version
 
 version-check: build ## Verify every built binary reports a real version.
@@ -327,6 +338,13 @@ version-check: build ## Verify every built binary reports a real version.
 	@# catches a variable with no default, which prints a label and nothing else.
 	@# A shell function, because a `case` pattern inside $(foreach) would end it
 	@# at the pattern's own `)`.
+	@#
+	@# The declared/built comparison sorts LC_ALL=C, because the two sides are
+	@# sorted by different tools: make's $(sort) is byte order, while the shell's
+	@# sort follows the locale, which folds punctuation and puts nkectl before
+	@# nke-image-check where bytes put nke-image-check first. Every name that
+	@# existed before sorted the same both ways, so this surfaced only when
+	@# nke-image-check was added -- as a mismatch listing the identical six names.
 	@fail=0; \
 	check() { \
 		out=$$("$(BIN_DIR)/$$1" $$2 2>&1) || { \
@@ -347,7 +365,7 @@ version-check: build ## Verify every built binary reports a real version.
 	}; \
 	$(foreach p,$(VERSION_CMDS),check $(word 1,$(subst :, ,$(p))) $(word 2,$(subst :, ,$(p))) || fail=1;) \
 	declared="$(sort $(foreach p,$(VERSION_CMDS),$(word 1,$(subst :, ,$(p)))))"; \
-	built=$$(ls -1 $(BIN_DIR) | sort | tr '\n' ' '); \
+	built=$$(ls -1 $(BIN_DIR) | LC_ALL=C sort | tr '\n' ' '); \
 	if [ "$$(echo $$declared)" != "$$(echo $$built)" ]; then \
 		echo "  FAIL VERSION_CMDS lists [$$declared] but build produced [$$built]"; \
 		echo "       Add the new binary to VERSION_CMDS so its version is checked too."; \

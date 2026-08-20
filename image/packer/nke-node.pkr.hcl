@@ -1,0 +1,100 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+packer {
+  required_version = ">= 1.10.0"
+  required_plugins {
+    qemu = {
+      source  = "github.com/hashicorp/qemu"
+      version = "~> 1.1"
+    }
+  }
+}
+
+variable "nke_agent_version" {
+  type        = string
+  default     = "edge"
+  description = "GHCR tag for ghcr.io/nvidia/nke/agent (edge or vX.Y.Z)."
+}
+
+variable "nke_agent_registry" {
+  type        = string
+  default     = "ghcr.io/nvidia/nke/agent"
+  description = "OCI repository that stores the nke-agent binary artifact."
+}
+
+variable "iso_url" {
+  type        = string
+  default     = "https://cloud-images.ubuntu.com/releases/26.04/release/ubuntu-26.04-server-cloudimg-amd64.img"
+  description = "Ubuntu 26.04 cloud image (qcow2)."
+}
+
+variable "iso_checksum" {
+  type        = string
+  default     = "file:https://cloud-images.ubuntu.com/releases/26.04/release/SHA256SUMS"
+  description = "Checksum file or hash for iso_url."
+}
+
+variable "disk_size" {
+  type    = string
+  default = "10G"
+}
+
+locals {
+  artifacts = "${path.root}/artifacts"
+  ssh_dir   = "${path.root}/.ssh"
+}
+
+source "qemu" "nke" {
+  iso_url              = var.iso_url
+  iso_checksum         = var.iso_checksum
+  disk_image           = true
+  format               = "qcow2"
+  disk_size            = var.disk_size
+  accelerator          = "kvm"
+  ssh_username         = "ubuntu"
+  ssh_private_key_file = "${local.ssh_dir}/id_ed25519"
+  ssh_timeout          = "15m"
+  cd_label             = "cidata"
+  cd_content = {
+    "user-data" = templatefile("${path.root}/cidata/user-data.pkrtpl", {
+      ssh_public_key = file("${local.ssh_dir}/id_ed25519.pub")
+    })
+    "meta-data" = "instance-id: nke-packer\nlocal-hostname: nke-packer\n"
+  }
+  shutdown_command = "sudo shutdown -P now"
+  vm_name          = "nke-node"
+  output_directory = "${path.root}/output"
+  headless         = true
+  memory           = 2048
+  cpus             = 2
+  net_device       = "virtio-net"
+  disk_interface   = "virtio"
+}
+
+build {
+  name    = "nke-node"
+  sources = ["source.qemu.nke"]
+
+  provisioner "shell-local" {
+    environment_vars = [
+      "ARTIFACTS_DIR=${local.artifacts}",
+      "NKE_AGENT_VERSION=${var.nke_agent_version}",
+      "NKE_AGENT_REGISTRY=${var.nke_agent_registry}",
+    ]
+    script = "${path.root}/scripts/fetch-artifacts.sh"
+  }
+
+  provisioner "shell" {
+    inline = ["mkdir -p /tmp/nke-image"]
+  }
+
+  provisioner "file" {
+    source      = "${local.artifacts}/"
+    destination = "/tmp/nke-image/"
+  }
+
+  provisioner "shell" {
+    script = "${path.root}/scripts/provision.sh"
+  }
+}

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=SPIRE Agent
+Documentation=https://github.com/NVIDIA/nke/blob/main/image/SPEC.md
+After=network-online.target nke-spire-configure.service
+Wants=network-online.target
+Requires=nke-spire-configure.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/spire-agent run -config /etc/spire-agent/agent.conf
+Restart=on-failure
+RestartSec=5
+User=spire
+Group=spire
+
+[Install]
+WantedBy=multi-user.target

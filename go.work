@@ -18,4 +18,5 @@ use (
 	./controller/hack/capd-reboot-controller
 	./controller/hack/nico-mock
 	./controller/test/e2e
+	./image
 )
