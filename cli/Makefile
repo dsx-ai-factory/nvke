@@ -61,7 +61,7 @@ NKECTL_LDFLAGS := \
 	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)'
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \
-	fetch-node-agent build-node-image nodes-up nodes-down nodes-status
+	ensure-capd-image nodes-up nodes-down nodes-status
 
 # The platforms shipped on a release. nkectl is the one binary here a human
 # downloads, so it is cross-built; the others are deployed, not fetched.
@@ -128,39 +128,34 @@ test:
 test-e2e-bootstrap: build
 	./e2e/bootstrap/run.sh
 
-# Fake-node fixture for the bootstrap e2e suite: three kindest/node
-# containers running nke-agent, standing in for pre-provisioned hardware.
-# `nodes-up`/`nodes-down` are also invoked by e2e/bootstrap/run.sh (via `make
-# -C`), so the compose invocation has one definition rather than two.
-NODE_AGENT_TAG    ?= edge
-K8S_VERSION       ?= 1.32.0
-CNI_BUNDLE_VERSION ?= 3.31.4-1
-E2E_NODE_DIR      := e2e/bootstrap/node
-E2E_COMPOSE_FILE  := e2e/bootstrap/docker-compose.yaml
-# Explicit project name: without it compose derives one from the compose
-# file's directory, which does not match what a hand-run `docker compose ps`
-# from cli/ expects.
-E2E_COMPOSE_PROJECT := nkectl-e2e
+# Fake-node fixture for the bootstrap e2e suite: docker containers running
+# nke-agent, standing in for pre-provisioned hardware. cli/e2e/bootstrap/substrate
+# is a thin derivation of controller/hack/capd-kindest-node's node image
+# (nke-agent, SPIRE/TPM plumbing, kubeadm/reboot shims and registry mirrors
+# stay a single source of truth there) plus a small Go package that brings the
+# containers up, waits for the agent, and tears them down — see
+# e2e/bootstrap/substrate/substrate.go. `nodes-up`/`nodes-down` are also
+# invoked by e2e/bootstrap/run.sh (via `make -C`).
+CAPD_KINDEST_NODE_IMAGE ?= cwe-capd-kindest-node:local
 
-fetch-node-agent:
-	NODE_AGENT_TAG=$(NODE_AGENT_TAG) $(E2E_NODE_DIR)/fetch-node-agent.sh
+# Builds nke-agent from this checkout's own agent/ module rather than
+# downloading a published bundle, so the e2e job depends on no registry
+# beyond the public CNI/SPIRE bundle host controller/hack/capd-kindest-node
+# already uses. A no-op once the image exists locally.
+ensure-capd-image:
+	@docker image inspect $(CAPD_KINDEST_NODE_IMAGE) >/dev/null 2>&1 || \
+	  CAPD_NODE_AGENT_LOCAL_BUILD=true NODE_AGENT_REPO_PATH=$(CURDIR)/../agent \
+	  CAPD_KINDEST_NODE_IMAGE=$(CAPD_KINDEST_NODE_IMAGE) \
+	  bash ../controller/hack/capd-kindest-node/build-image.sh
 
-build-node-image: fetch-node-agent
-	docker build \
-	  --build-arg K8S_VERSION=$(K8S_VERSION) \
-	  --build-arg CNI_BUNDLE_VERSION=$(CNI_BUNDLE_VERSION) \
-	  --tag kindest/node-agent:v$(K8S_VERSION)-$(NODE_AGENT_TAG) \
-	  $(E2E_NODE_DIR)
-
-nodes-up: build-node-image
-	K8S_VERSION=$(K8S_VERSION) NODE_AGENT_TAG=$(NODE_AGENT_TAG) \
-	  docker compose -f $(E2E_COMPOSE_FILE) -p $(E2E_COMPOSE_PROJECT) up -d
+nodes-up: ensure-capd-image
+	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes up
 
 nodes-down:
-	docker compose -f $(E2E_COMPOSE_FILE) -p $(E2E_COMPOSE_PROJECT) down --volumes --timeout 30
+	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes down
 
 nodes-status:
-	docker compose -f $(E2E_COMPOSE_FILE) -p $(E2E_COMPOSE_PROJECT) ps
+	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes status
 
 # golangci-lint applies the formatters enabled in .golangci.yml (gci, gofumpt),
 # so there is no separate gofmt step here.

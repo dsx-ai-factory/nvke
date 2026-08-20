@@ -5,8 +5,9 @@
 # "nkectl bootstrap e2e" CI workflow. See examples/inventory.yaml for the
 # annotated field reference.
 #
-# Node IPs match the fake-node docker-compose fixture added alongside the CI
-# workflow that first dials them — this file lands ahead of that because the
+# Node IPs match the deterministic addressing the substrate package assigns
+# (cli/e2e/bootstrap/substrate, subnet 172.26.0.0/24 starting at .10) — this
+# file lands ahead of dispatch actually dialing them because the
 # walking-skeleton e2e run does not reach the nodes yet.
 #
 # nodeAgentPort is set explicitly rather than left to

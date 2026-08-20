@@ -15,7 +15,9 @@
 # Current stages:
 #   1. Fake node containers come up and nke-agent answers on each — proves
 #      the fixture a later change's real dispatch will depend on, ahead of
-#      that change actually reaching it.
+#      that change actually reaching it. The wait for readiness lives in the
+#      substrate package (cli/e2e/bootstrap/substrate), not here: `nodes-up`
+#      does not return until every node's agent is confirmed active.
 #   2. Inventory load + validation only. `bootstrap site` stops at its
 #      not-yet-implemented dispatch stub, which this script asserts by name
 #      so a change that silently starts dispatching (or stops validating) is
@@ -27,10 +29,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 NKECTL="${CLI_DIR}/bin/nkectl"
 INVENTORY="${SCRIPT_DIR}/inventory.ci.yaml"
-# Matches inventory.ci.yaml's nodeAgentPort override — see the note there on
-# why this isn't inventory.DefaultNodeAgentPort ("50051").
-NODE_AGENT_PORT=15005
-NODE_IPS=(172.26.0.10 172.26.0.11 172.26.0.12)
 
 log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
 
@@ -46,30 +44,14 @@ trap cleanup EXIT
 # ── Stage 1: fake nodes ──────────────────────────────────────────────────
 
 log "starting fake node containers"
-# Set before the call, not after: `nodes-up` is a single `docker compose up
-# -d` that can fail after creating some containers (e.g. node3 fails to
-# pull/start while node1/node2 succeeded). Under `set -e` that failure exits
-# the script immediately, so cleanup must already know to tear down whatever
-# got created rather than skipping it because the call never "finished".
-# `nodes-down` is safe to run against a partial or nonexistent stack.
+# Set before the call, not after: `nodes-up` can fail after creating some
+# containers (e.g. node3 fails to start while node1/node2 succeeded). Under
+# `set -e` that failure exits the script immediately, so cleanup must already
+# know to tear down whatever got created rather than skipping it because the
+# call never "finished". `nodes-down` is safe to run against a partial or
+# nonexistent fixture.
 nodes_up=true
 make -C "${CLI_DIR}" nodes-up
-
-log "waiting for node-agent to answer on ${NODE_IPS[*]}:${NODE_AGENT_PORT}"
-for ip in "${NODE_IPS[@]}"; do
-  # Per-node budget: a slow node1 must not starve node2/node3 of wait time.
-  deadline=$((SECONDS + 120))
-  until (exec 3<>"/dev/tcp/${ip}/${NODE_AGENT_PORT}") 2>/dev/null; do
-    exec 3>&- 2>/dev/null || true
-    if [ "${SECONDS}" -ge "${deadline}" ]; then
-      log "FAIL: node-agent never answered on ${ip}:${NODE_AGENT_PORT}"
-      exit 1
-    fi
-    sleep 2
-  done
-  exec 3>&- 2>/dev/null || true
-  log "node-agent reachable on ${ip}:${NODE_AGENT_PORT}"
-done
 
 log "PASS: all fake nodes are up and node-agent is reachable"
 

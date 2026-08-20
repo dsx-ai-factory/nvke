@@ -12,15 +12,16 @@
 # Unlike controller/test/e2e (excluded from the pull-request lane in
 # controller-test.yml because it needs a live cluster in KUBECONFIG), this
 # suite stands up everything it needs itself: fake node containers today
-# (three kindest/node + nke-agent, `make -C cli nodes-up`), growing to an
+# (cli/e2e/bootstrap/substrate, `make -C cli nodes-up`), growing to an
 # ephemeral Kind cluster as `nkectl bootstrap site` gains real stages.
 # ubuntu-latest ships Docker, so no self-hosted runner is needed for that
 # either.
 #
-# nke-agent itself comes from this repo's own GHCR artifact feed (see
-# agent-artifact.yml), not a separate registry -- `packages: read` plus the
-# job's own GITHUB_TOKEN is enough to pull it, since this repository is
-# GitHub-internal and an anonymous pull would 401.
+# The fixture's node image is a thin derivation of
+# controller/hack/capd-kindest-node's CAPD node image (see
+# cli/e2e/bootstrap/substrate/node/Dockerfile), built here with nke-agent
+# compiled from this checkout's own agent/ module -- no external registry or
+# credentials needed beyond the public bundle host that image already uses.
 #
 # Required from the start (wired into merge-gate.yml's `gate`), deliberately:
 # cli/e2e/bootstrap/run.sh's stages are added one at a time alongside the
@@ -35,6 +36,8 @@ on:
     branches: [main]
     paths:
       - 'cli/**'
+      - 'agent/**'
+      - 'controller/hack/capd-kindest-node/**'
       - '.github/workflows/nkectl-bootstrap-e2e.yml'
   workflow_call:
   workflow_dispatch: {}
@@ -52,13 +55,12 @@ jobs:
     name: e2e
     runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
-    # Generous margin: building the node image's CNI bundle fetch (an S3
-    # download baked into the image so nodes need no outbound access at test
-    # time) took ~23 minutes end to end in one observed run.
+    # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
+    # bundle fetch, local agent compile) plus the thin derivation on top has
+    # not yet been timed end to end in this CI lane.
     timeout-minutes: 45
     permissions:
       contents: read
-      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -73,22 +75,6 @@ jobs:
           cache-dependency-path: |
             go.work.sum
             **/go.sum
-
-      # Same version agent-artifact.yml uses to push nke-agent; pinned so a
-      # newer default does not silently change how the artifact is read.
-      - name: Set up ORAS
-        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
-        with:
-          version: 1.3.3
-
-      - name: Log in to GHCR
-        shell: bash
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          echo "${GHCR_TOKEN}" | oras login ghcr.io \
-            --username "${{ github.actor }}" --password-stdin
 
       - name: Run nkectl bootstrap e2e
         working-directory: cli

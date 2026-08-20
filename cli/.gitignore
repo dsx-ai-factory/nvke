@@ -1,7 +1,3 @@
 bin/
 /nkectl
 /nkectl.exe
-
-# Fetched by e2e/bootstrap/node/fetch-node-agent.sh; not committed.
-/e2e/bootstrap/node/nke-agent
-/e2e/bootstrap/node/nke-agent.version
