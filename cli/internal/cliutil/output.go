@@ -1,5 +1,5 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
-// SPDX-License-Identifier: LicenseRef-NvidiaProprietary
+// SPDX-License-Identifier: Apache-2.0
 
 // Package cliutil provides shared utility functions for nkectl commands:
 // output formatting, age display, and other common CLI helpers.
@@ -18,7 +18,7 @@ import (
 type Format string
 
 const (
-	FormatTable Format = ""     // default: human-readable table or key-value
+	FormatTable Format = "" // default: human-readable table or key-value
 	FormatJSON  Format = "json"
 	FormatYAML  Format = "yaml"
 )

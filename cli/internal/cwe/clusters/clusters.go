@@ -18,7 +18,6 @@ import (
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-
 // ClientFn is a factory that returns an authenticated CWE client.
 // Commands receive this rather than a constructed client so that the
 // client is only built when a command actually runs (not at startup).
