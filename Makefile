@@ -57,7 +57,7 @@ WORK_MODULES := agent \
                 controller/hack/nico-mock \
                 cli \
                 controller/test/e2e \
-                image
+                os-image
 
 # Modules whose commands `build` can compile with `go build -o bin/ ./cmd/...`,
 # which names each binary after its package directory. controller/api and
@@ -74,7 +74,7 @@ WORK_MODULES := agent \
 CMD_MODULES := agent \
                controller/hack/capd-reboot-controller \
                controller/hack/nico-mock \
-               image
+               os-image
 
 # The version stamped into a CMD_MODULES binary. First hit wins: the module's own
 # tag series, a repo-wide one, the commit, then v0.0.0 outside a git checkout.
@@ -344,7 +344,7 @@ VERSION_CMDS := agent:--version \
                 capd-reboot-controller:--version \
                 cloud-workflow-engine:--version \
                 nico-mock:--version \
-                nke-image-check:--version \
+                nke-os-image-check:--version \
                 nkectl:version
 
 version-check: build ## Verify every built binary reports a real version.
@@ -356,9 +356,9 @@ version-check: build ## Verify every built binary reports a real version.
 	@# The declared/built comparison sorts LC_ALL=C, because the two sides are
 	@# sorted by different tools: make's $(sort) is byte order, while the shell's
 	@# sort follows the locale, which folds punctuation and puts nkectl before
-	@# nke-image-check where bytes put nke-image-check first. Every name that
+	@# nke-os-image-check where bytes put nke-os-image-check first. Every name that
 	@# existed before sorted the same both ways, so this surfaced only when
-	@# nke-image-check was added -- as a mismatch listing the identical six names.
+	@# nke-os-image-check was added -- as a mismatch listing the identical six names.
 	@fail=0; \
 	check() { \
 		out=$$("$(BIN_DIR)/$$1" $$2 2>&1) || { \

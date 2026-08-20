@@ -1,4 +1,4 @@
-module github.com/NVIDIA/nke/image
+module github.com/NVIDIA/nke/os-image
 
 go 1.26.5
 

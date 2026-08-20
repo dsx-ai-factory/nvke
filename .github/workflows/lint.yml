@@ -215,8 +215,8 @@ jobs:
         working-directory: controller/forge-vms
         run: make lint
 
-  lint-image:
-    name: golangci-lint (image)
+  lint-os-image:
+    name: golangci-lint (os-image)
     runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
     timeout-minutes: 15
@@ -231,12 +231,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: image/go.mod
+          go-version-file: os-image/go.mod
           cache: true
           cache-dependency-path: |
-            image/go.sum
+            os-image/go.sum
             **/go.sum
 
       - name: Run golangci-lint
-        working-directory: image
+        working-directory: os-image
         run: make lint

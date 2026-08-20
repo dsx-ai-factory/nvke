@@ -187,7 +187,7 @@ oras pull ghcr.io/nvidia/nke/agent-deb:v0.3.0 --platform linux/amd64
 ```
 
 Apt remains the node install path; the OCI binary above is the same executable
-without the packaging/systemd unit. The reference image (`image/`) prefers the
+without the packaging/systemd unit. The reference OS image (`os-image/`) prefers the
 `.deb` and falls back to the binary.
 
 The intake destination comes from the GitHub `apt-intake` environment

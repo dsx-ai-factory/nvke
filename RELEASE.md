@@ -79,6 +79,17 @@ The prefix is the module's directory because Go requires it: the module
 `.github/workflows/release.yml` reads the directory back off the tag and checks
 it against `go.work`, so a prefix naming no module fails the run.
 
+Two prefixes skip that workflow's GitHub Release job and cut the release
+themselves, after they have built and verified the real artifacts:
+
+| Tag | Workflow | What ships |
+|---|---|---|
+| `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s, GitHub Release assets, GHCR binary |
+| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on GHCR (`ghcr.io/nvidia/nke/os-image`), `nke-os-image-check` on the GitHub Release |
+
+An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
+OCI artifact and never promotes the GitHub Release out of draft.
+
 Push tags to `upstream`. The release workflow has no repository guard, so a tag
 pushed to a fork cuts a real release there.
 
@@ -91,7 +102,9 @@ body from `CHANGELOG.md`. Nothing is created by hand.
 ### 4. Verify artifacts
 
 After the tag push, confirm that any CI release pipelines complete
-successfully (image build, chart publish, etc.).
+successfully (node OS-image bake, chart publish, etc.). For `os-image/v*`, that is
+the **OS Image Artifact** check: Packer, boot-smoke, then `oras` to
+`ghcr.io/nvidia/nke/os-image`.
 
 ## Hotfix releases
 

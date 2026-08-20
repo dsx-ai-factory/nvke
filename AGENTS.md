@@ -12,7 +12,7 @@ this file adds the constraints an agent needs before it starts editing.
   module has its own toolchain:
   - [controller/AGENTS.md](controller/AGENTS.md) — Flox, code generation, database, Temporal
   - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, packaging, gRPC conventions
-  - [image/AGENTS.md](image/AGENTS.md) — reference node image spec, Packer, connectivity checker
+  - [os-image/AGENTS.md](os-image/AGENTS.md) — reference node OS image spec, Packer, connectivity checker
 
 ## Read if needed
 
@@ -73,7 +73,7 @@ build pass. Removing those dependencies is tracked work with its own design.
 | `controller/profiles/` | OS and config profiles | Ask first — being moved out of this repo |
 | `build/` | Build scripts (`agent.sh`) | Yes |
 | `docs/` | Repository-level documentation | Yes |
-| `image/` | Reference node image spec, Packer recipe, `nke-image-check` | Yes |
+| `os-image/` | Reference node OS image spec, Packer recipe, `nke-os-image-check` | Yes |
 | `controller/api/*.gen.go` | oapi-codegen output | **No — regenerate** |
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
@@ -82,7 +82,7 @@ build pass. Removing those dependencies is tracked work with its own design.
 ## What agents may do
 
 - Implement or fix logic under `agent/internal/`, `agent/pkg/`,
-  `controller/internal/`, and `image/`.
+  `controller/internal/`, and `os-image/`.
 - Change the REST API by editing `controller/api/openapi.yaml`, **then running
   `flox activate -- make generate`** so the generated Go matches.
 - Change the gRPC API by editing `agent/pkg/agent/proto/node_agent.proto`,

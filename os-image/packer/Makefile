@@ -10,7 +10,7 @@ NKE_AGENT_VERSION      ?= edge
 NKE_AGENT_REGISTRY     ?= ghcr.io/nvidia/nke/agent
 NKE_AGENT_DEB_REGISTRY ?= ghcr.io/nvidia/nke/agent-deb
 
-.PHONY: image init ssh-key clean check-deps
+.PHONY: os-image image init ssh-key clean check-deps
 
 ssh-key: $(SSH_DIR)/id_ed25519
 
@@ -28,7 +28,7 @@ check-deps:
 		exit 1; \
 	}
 
-image: check-deps ssh-key init
+os-image: check-deps ssh-key init
 	mkdir -p $(ARTIFACTS)
 	NKE_AGENT_VERSION=$(NKE_AGENT_VERSION) \
 	NKE_AGENT_REGISTRY=$(NKE_AGENT_REGISTRY) \
@@ -38,6 +38,9 @@ image: check-deps ssh-key init
 		-var nke_agent_registry=$(NKE_AGENT_REGISTRY) \
 		-var nke_agent_deb_registry=$(NKE_AGENT_DEB_REGISTRY) \
 		$(PKR_FILE)
+
+# Alias kept so existing `make image` muscle memory still works.
+image: os-image
 
 clean:
 	rm -rf $(CURDIR)/output $(ARTIFACTS)

@@ -250,7 +250,7 @@ jobs:
         run: ./scripts/upload-s3-apt-intake.sh
 
   # OCI copy of the same two packages the GitHub Release attaches. The Packer
-  # reference image pulls from here with oras (see image/packer/scripts/fetch-artifacts.sh).
+  # reference OS image pulls from here with oras (see os-image/packer/scripts/fetch-artifacts.sh).
   # Filename is always nke-agent.deb so `oras pull` writes a stable path.
   publish-ghcr:
     name: Publish debs to GHCR

@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Smoke test: boot the qcow2 nke-node build produced and confirm it comes up
-# clean (cloud-init completes, SSH answers). Does not exercise SPIRE/nke-agent
-# against a real server -- just proves the golden image boots on its own.
+# clean (cloud-init completes, SSH answers, nke-agent and spire-agent units
+# are installed and enabled). Does not exercise SPIRE/nke-agent against a real
+# server -- just proves the golden image boots on its own.
 
 set -euo pipefail
 
@@ -75,3 +76,19 @@ until ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
 done
 
 echo "boot-smoke: VM booted and completed cloud-init OK"
+
+ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
+    -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -o ConnectTimeout=5 -o BatchMode=yes \
+    ubuntu@127.0.0.1 bash -s <<'EOF'
+set -euo pipefail
+systemctl is-enabled nke-agent.service
+systemctl is-enabled spire-agent.service
+systemctl is-enabled nke-spire-configure.service
+test -x /usr/local/bin/nke-agent || test -x /usr/bin/nke-agent
+test -x /usr/local/bin/spire-agent
+test -x /usr/lib/nke/spire-configure.sh
+test -x /usr/lib/nke/wait-spiffe-socket.sh
+EOF
+
+echo "boot-smoke: nke-agent and spire-agent are installed and enabled"

@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Renders SPIRE agent config from cloud-init instance identity. See image/SPEC.md.
+# Renders SPIRE agent config from cloud-init instance identity. See os-image/SPEC.md.
 
 set -euo pipefail
 

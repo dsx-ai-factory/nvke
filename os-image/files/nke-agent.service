@@ -3,7 +3,7 @@
 
 [Unit]
 Description=NKE Node Agent
-Documentation=https://github.com/NVIDIA/nke/blob/main/image/SPEC.md
+Documentation=https://github.com/NVIDIA/nke/blob/main/os-image/SPEC.md
 After=spire-agent.service
 Wants=spire-agent.service
 StartLimitIntervalSec=0

@@ -97,7 +97,7 @@ server that has issued a join token and a `/nke-service/...` identity for the
 checker, then:
 
 ```bash
-nke-image-check --endpoint <node-ip>:15005
+nke-os-image-check --endpoint <node-ip>:15005
 ```
 
 The checker is a **client**. It uses the local workload API (same pattern as

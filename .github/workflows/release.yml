@@ -41,14 +41,14 @@ jobs:
     permissions:
       contents: read
 
-  # Skipped for an agent tag, which agent-deb-publish.yml releases instead. That
-  # workflow builds the Debian packages, creates the release, attaches them and
-  # publishes it. This job builds nothing for agent, and CHANGELOG.md has no
-  # section a component tag can match, so it would only add an empty release and
-  # a set of notes that overwrite the package ones.
+  # Skipped for tags that a dedicated workflow releases: agent/ (agent-deb-publish.yml)
+  # and os-image/ (os-image-artifact.yml). Those jobs build the real artifacts, create
+  # the release, and publish it only after verification. This job would otherwise
+  # cut a notes-only release first, and CHANGELOG.md has no section a component
+  # tag can match.
   release:
     name: Create GitHub release
-    if: ${{ !startsWith(github.ref_name, 'agent/') }}
+    if: ${{ !startsWith(github.ref_name, 'agent/') && !startsWith(github.ref_name, 'os-image/') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [license-checks]
@@ -290,9 +290,10 @@ jobs:
       # Component publish lives in dedicated workflows so each component can
       # own its runners, secrets and artifact shape. agent/v* .debs go through
       # agent-deb-publish.yml (S3 apt intake + GitHub Release assets); binaries
-      # through agent-artifact.yml / agent-artifact-nvcr.yml. This job only
-      # records which path fired so a component tag never looks like a no-op
-      # release.
+      # through agent-artifact.yml / agent-artifact-nvcr.yml. os-image/v* qcow2
+      # through os-image-artifact.yml (Packer + boot-smoke, then GHCR). This job
+      # only records which path fired so a component tag never looks like a
+      # no-op release.
       - name: Route component publish
         run: |
           set -euo pipefail
@@ -301,6 +302,12 @@ jobs:
               echo "Agent tag ${GITHUB_REF_NAME}:"
               echo "  - .debs  → Agent Deb Publish (apt-intake S3 + GitHub Release assets)"
               echo "  - binary → Agent Artifact / Agent Artifact NVCR"
+              ;;
+
+            os-image/v*)
+              echo "OS-image tag ${GITHUB_REF_NAME}:"
+              echo "  - qcow2  → OS Image Artifact (Packer + boot-smoke, then ghcr.io/nvidia/nke/os-image)"
+              echo "  - check  → nke-os-image-check attached to the GitHub Release"
               ;;
 
             *)

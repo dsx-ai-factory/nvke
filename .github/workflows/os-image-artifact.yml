@@ -1,0 +1,280 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: OS Image Artifact
+
+# Builds the Packer reference node qcow2 on an os-image/v* tag, boots it for the
+# smoke test, and only then publishes. The GitHub Release is created here (not
+# in release.yml) so a failed bake or smoke test never cuts a release.
+#
+# The payload is an OCI artifact, not a container image:
+#
+#   ghcr.io/nvidia/nke/os-image:v0.1.0
+#     `-- platform linux/amd64   layer: nke-node.qcow2
+#
+#   oras pull ghcr.io/nvidia/nke/os-image:v0.1.0 --platform linux/amd64
+#
+# Distinct from image.yml, which compiles controller Dockerfiles and pushes
+# nothing. Distinct from image-nvcr.yml, which publishes the controller
+# container. This is the Ubuntu node disk the site controller boots.
+on:
+  push:
+    tags:
+      - "os-image/v[0-9]+.[0-9]+.[0-9]+"
+      - "os-image/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  workflow_dispatch:
+    inputs:
+      nke_agent_version:
+        description: "Agent GHCR tag to bake (.deb preferred). Example: v0.3.0 or edge"
+        required: false
+        default: "edge"
+        type: string
+
+permissions: {}
+
+concurrency:
+  # A literal name, NOT ${{ github.workflow }}. Inside a called workflow that
+  # expression is the CALLER's name, so any workflow merge-gate.yml calls would
+  # share a group with its siblings and cancel them.
+  group: OS Image Artifact-${{ github.ref }}
+  # Never cancel a publish midway: a half-pushed qcow2 would leave a tag
+  # pointing at a truncated layer.
+  cancel-in-progress: false
+
+env:
+  REPO: ghcr.io/nvidia/nke/os-image
+  PACKER_VERSION: "1.14.2"
+  PACKER_SHA256: "cfefdea4ac580eba7b254ef34d25b756d4961741004e3e701a1476594d13e64a"
+
+jobs:
+  publish:
+    if: github.repository == 'NVIDIA/nke'
+    name: Build, verify, and publish
+    # Packer QEMU needs /dev/kvm. The GitHub-hosted 2-core runners do not
+    # expose it; this label is the same class image.yml already uses.
+    runs-on: linux-amd64-cpu16
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      packages: write
+    env:
+      NKE_AGENT_VERSION: ${{ github.event.inputs.nke_agent_version || 'edge' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: 1.3.3
+
+      - name: Resolve version and tags
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${GITHUB_REF}" == refs/tags/os-image/* ]]; then
+            version="${GITHUB_REF_NAME#os-image/}"
+          else
+            version="$(git describe --match 'os-image/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+            version="${version#os-image/}"
+          fi
+
+          aliases=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            aliases+=("${version}")
+          fi
+
+          {
+            echo "version=${version}"
+            echo "aliases=${aliases[*]}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${version} as: ${aliases[*]}"
+          echo "Baking nke-agent ${NKE_AGENT_VERSION}"
+
+      - name: Build and test nke-os-image-check
+        working-directory: os-image
+        run: |
+          set -euo pipefail
+          make test
+          make build
+
+      - name: Install QEMU and cloud-localds
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils genisoimage unzip
+          qemu-system-x86_64 --version | head -1
+          qemu-img --version | head -1
+
+      - name: Require KVM
+        run: |
+          set -euo pipefail
+          if [[ ! -c /dev/kvm ]]; then
+            echo "::error::/dev/kvm is missing; Packer accelerator=kvm cannot run on this runner"
+            exit 1
+          fi
+          # Membership in group kvm does not apply until a new login.
+          sudo chmod 666 /dev/kvm
+
+      - name: Install Packer
+        env:
+          PACKER_VERSION: ${{ env.PACKER_VERSION }}
+          PACKER_SHA256: ${{ env.PACKER_SHA256 }}
+        run: |
+          set -euo pipefail
+          zip="packer_${PACKER_VERSION}_linux_amd64.zip"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/${zip}" \
+            "https://releases.hashicorp.com/packer/${PACKER_VERSION}/${zip}"
+          actual="$(sha256sum "${tmp}/${zip}" | awk '{print $1}')"
+          if [[ "${actual}" != "${PACKER_SHA256}" ]]; then
+            echo "::error::checksum mismatch for ${zip}: got ${actual}, expected ${PACKER_SHA256}"
+            exit 1
+          fi
+          unzip -d "${tmp}" "${tmp}/${zip}" packer
+          sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
+          packer version
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | oras login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Build the node image
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make -C os-image/packer os-image NKE_AGENT_VERSION="${NKE_AGENT_VERSION}"
+
+      - name: Boot-smoke the qcow2
+        run: make -C os-image boot-smoke
+
+      - name: Compress the qcow2 for publish
+        id: disk
+        run: |
+          set -euo pipefail
+          src="os-image/packer/output/nke-node"
+          if [[ ! -f "${src}" ]]; then
+            echo "::error::Packer did not write ${src}"
+            ls -la os-image/packer/output || true
+            exit 1
+          fi
+          mkdir -p dist
+          qemu-img convert -p -c -O qcow2 "${src}" dist/nke-node.qcow2
+          qemu-img info dist/nke-node.qcow2
+          cp os-image/bin/nke-os-image-check dist/nke-os-image-check
+          ( cd dist && sha256sum nke-node.qcow2 nke-os-image-check > checksums.txt )
+          echo "::group::checksums"
+          cat dist/checksums.txt
+          echo "::endgroup::"
+          echo "qcow=dist/nke-node.qcow2" >> "${GITHUB_OUTPUT}"
+
+      # --artifact-platform is still marked experimental in the ORAS CLI. It is
+      # load-bearing: without it the manifest has no platform in its config and
+      # `oras pull --platform linux/amd64` cannot select this disk.
+      - name: Push the qcow2 to GHCR
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+        run: |
+          set -euo pipefail
+          read -ra aliases <<< "${ALIASES}"
+          tags=""
+          for alias in "${aliases[@]}"; do
+            tags="${tags:+${tags},}${alias}"
+          done
+
+          ( cd dist && oras push "${REPO}:${tags}" \
+              --artifact-type application/vnd.nvidia.nke.node.qcow2.v1 \
+              --artifact-platform linux/amd64 \
+              --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+              --annotation "org.opencontainers.image.version=${VERSION}" \
+              --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+              --annotation "org.opencontainers.image.title=nke-node.qcow2" \
+              nke-node.qcow2:application/vnd.qemu.qcow2 )
+
+      - name: Show published manifest
+        run: |
+          set -euo pipefail
+          oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/os-image/')
+        id: release
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: os-image ${{ steps.meta.outputs.version }}
+          draft: true
+          body: |
+            Reference node OS image ${{ steps.meta.outputs.version }} (Ubuntu 26.04, linux/amd64).
+
+            Baked nke-agent: `${{ env.NKE_AGENT_VERSION }}`.
+
+            Pull the qcow2 with oras (not docker):
+
+            ```
+            oras pull ghcr.io/nvidia/nke/os-image:${{ steps.meta.outputs.version }} --platform linux/amd64
+            ```
+
+            The GitHub Release attaches `nke-os-image-check` and checksums. The disk
+            itself is the OCI artifact above; it is too large to attach here.
+          files: |
+            dist/nke-os-image-check
+            dist/checksums.txt
+          fail_on_unmatched_files: true
+          prerelease: ${{ contains(github.ref_name, '-rc.') }}
+          make_latest: false
+          generate_release_notes: false
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/os-image/')
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_ID: ${{ steps.release.outputs.id }}
+        with:
+          retries: 3
+          script: |
+            const release_id = Number(process.env.RELEASE_ID);
+
+            const { data: rel } = await github.rest.repos.getRelease({
+              ...context.repo, release_id,
+            });
+
+            const names = rel.assets
+              .filter(a => a.state === 'uploaded' && a.size > 0)
+              .map(a => a.name)
+              .sort();
+            const want = ['checksums.txt', 'nke-os-image-check'];
+            for (const n of want) {
+              if (!names.includes(n)) {
+                core.setFailed(
+                  `Release ${release_id} is missing ${n} (has [${names.join(', ') || 'nothing'}]). ` +
+                  `It is left as an unpublished draft.`);
+                return;
+              }
+            }
+
+            if (rel.draft) {
+              await github.rest.repos.updateRelease({
+                ...context.repo, release_id, draft: false, make_latest: 'false',
+              });
+            }
+            core.info(`Published ${context.ref.replace('refs/tags/', '')} with ${names.length} assets.`);

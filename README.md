@@ -54,12 +54,12 @@ What distinguishes it from a generic CAPI distribution:
 | `controller/forge-vms/` | VM lifecycle service used by the development and test environments. |
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
-| `image/` | Reference Ubuntu node image (spec + Packer) and `nke-image-check`. |
+| `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 
 **Nine Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links six binaries: `agent`,
 `cloud-workflow-engine`, `nkectl`, `capd-reboot-controller`, `nico-mock` and
-`nke-image-check`.
+`nke-os-image-check`.
 See [docs/go-workspace.md](docs/go-workspace.md) for how the workspace fits
 together and why `vendor/` is committed.
 

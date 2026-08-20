@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// nke-image-check probes an nke-agent endpoint over SPIFFE mTLS.
+// nke-os-image-check probes an nke-agent endpoint over SPIFFE mTLS.
 package main
 
 import (
@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/NVIDIA/nke/image/internal/check"
+	"github.com/NVIDIA/nke/os-image/internal/check"
 )
 
 // version is set at build time via -X main.version=.
@@ -26,7 +26,7 @@ func main() {
 }
 
 func run(args []string) int {
-	fs := flag.NewFlagSet("nke-image-check", flag.ContinueOnError)
+	fs := flag.NewFlagSet("nke-os-image-check", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	versionFlag := fs.Bool("version", false, "Print the version and exit")
 	endpoint := fs.String("endpoint", "", "nke-agent host or host:port (default port 15005)")
@@ -37,11 +37,11 @@ func run(args []string) int {
 		return 2
 	}
 	if *versionFlag {
-		fmt.Printf("nke-image-check version: %s\n", version)
+		fmt.Printf("nke-os-image-check version: %s\n", version)
 		return 0
 	}
 	if strings.TrimSpace(*endpoint) == "" {
-		fmt.Fprintln(os.Stderr, "nke-image-check: --endpoint is required")
+		fmt.Fprintln(os.Stderr, "nke-os-image-check: --endpoint is required")
 		fs.Usage()
 		return 2
 	}
