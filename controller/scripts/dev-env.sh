@@ -63,7 +63,7 @@ postgres_start() {
         fi
     else
         echo "Creating new PostgreSQL container..."
-        docker run -d --name=cwe-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17.4
+        docker run -d --name=cwe-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:18.6
         success "✅ PostgreSQL created and started"
         echo "Waiting for PostgreSQL to be ready..."
         sleep 3
