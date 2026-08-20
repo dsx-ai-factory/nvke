@@ -19,7 +19,7 @@ func (c *CWEClient) ListClusters(ctx context.Context) ([]api.Cluster, error) {
 		return nil, fmt.Errorf("listing clusters: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("listing clusters: unexpected status %s: %s", resp.Status(), resp.Body)
+		return nil, fmt.Errorf("listing clusters: %w", apiError(resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("listing clusters: empty response body")
@@ -35,7 +35,7 @@ func (c *CWEClient) CreateCluster(ctx context.Context, req api.CreateClusterJSON
 		return nil, fmt.Errorf("creating cluster: %w", err)
 	}
 	if resp.StatusCode() != 201 {
-		return nil, fmt.Errorf("creating cluster: unexpected status %s: %s", resp.Status(), resp.Body)
+		return nil, fmt.Errorf("creating cluster: %w", apiError(resp.Status(), resp.Body))
 	}
 	if resp.JSON201 == nil {
 		return nil, fmt.Errorf("creating cluster: empty response body")
@@ -50,7 +50,7 @@ func (c *CWEClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api
 		return nil, fmt.Errorf("getting cluster: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("getting cluster: unexpected status %s: %s", resp.Status(), resp.Body)
+		return nil, fmt.Errorf("getting cluster: %w", apiError(resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("getting cluster: empty response body")
@@ -73,9 +73,11 @@ func (c *CWEClient) DeleteCluster(ctx context.Context, id openapi_types.UUID) er
 // FindClusterByName resolves a cluster name to its full Cluster record.
 // Returns an error if no cluster with that name exists or if multiple clusters
 // share the same name (which would make name-based targeting ambiguous).
-// FIXME: NKX-14307 — verify whether the CWE API enforces cluster name uniqueness
-// per site. If it does, the duplicate check here becomes unreachable and can be
-// removed. If not, consider adding a GET /clusters?name= filter to avoid listing all.
+// The duplicate check is unreachable in practice: the DB enforces a global unique
+// index on cluster name (migration 20250407125309_name_uniqueness.go, index
+// clusters_name_unique), so the API rejects duplicate names at creation time.
+// If the uniqueness scope is ever narrowed to (name, orgID, siteID), a
+// GET /clusters?name= filter should be added here to avoid listing all clusters.
 func (c *CWEClient) FindClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
 	clusters, err := c.ListClusters(ctx)
 	if err != nil {

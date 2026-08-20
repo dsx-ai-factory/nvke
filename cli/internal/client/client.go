@@ -8,6 +8,7 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -41,4 +42,15 @@ func New(cfg config.SiteConfig) (*CWEClient, error) {
 		return nil, fmt.Errorf("building CWE client: %w", err)
 	}
 	return &CWEClient{raw: raw}, nil
+}
+
+// apiError extracts a human-readable message from a non-2xx response body.
+// The CWE API returns {"message": "..."} for all error responses (GenericError).
+// Falls back to the raw body if the body isn't a GenericError.
+func apiError(status string, body []byte) error {
+	var e api.GenericError
+	if json.Unmarshal(body, &e) == nil && e.Message != "" {
+		return fmt.Errorf("%s: %s", status, e.Message)
+	}
+	return fmt.Errorf("%s: %s", status, body)
 }

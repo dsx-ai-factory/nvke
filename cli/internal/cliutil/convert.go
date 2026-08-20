@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package cwe
+package cliutil
 
 import (
 	"bytes"
@@ -11,12 +11,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// YAMLToRequest reads a YAML file and deserialises it into a CWE API request
-// type T. Field names in the YAML must match the json tags of T exactly.
+// YAMLToRequest reads a YAML document and deserialises it into a CWE API
+// request type T. Field names in the YAML must match the json tags of T.
 //
-// The conversion goes YAML → interface{} → JSON → T so that the json tags on
-// the generated API types are honoured. Direct yaml.Unmarshal into generated
-// structs is avoided because those structs only carry json tags, not yaml tags.
+// The conversion goes YAML → interface{} → JSON → T so that json tags on
+// generated API types are honoured. Direct yaml.Unmarshal is avoided because
+// generated structs only carry json tags, not yaml tags.
 func YAMLToRequest[T any](data []byte) (T, error) {
 	var raw interface{}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
