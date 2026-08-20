@@ -13,10 +13,21 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QCOW="${QCOW:-${ROOT}/output/nke-node}"
 SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
-BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}"
+
+# Same probe as packer/Makefile, and for the same reason: the CI runners have no
+# /dev/kvm, so -enable-kvm makes QEMU exit instead of booting. Emulated boot is
+# minutes rather than seconds, so the timeout moves with the accelerator.
+if [[ -c /dev/kvm && -w /dev/kvm ]]; then
+  ACCEL_ARGS=(-enable-kvm -cpu host)
+  BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}"
+else
+  echo "boot-smoke: no usable /dev/kvm, booting under software emulation (slower)" >&2
+  ACCEL_ARGS=(-accel tcg)
+  BOOT_TIMEOUT="${BOOT_TIMEOUT:-1200}"
+fi
 
 if [[ ! -f "${QCOW}" ]]; then
-  echo "boot-smoke: no image at ${QCOW}, run 'make image' first" >&2
+  echo "boot-smoke: no image at ${QCOW}, run 'make os-image' first" >&2
   exit 1
 fi
 if [[ ! -f "${SSH_KEY}" ]]; then
@@ -54,7 +65,7 @@ cloud-localds "${SEED}" "${WORKDIR}/user-data" "${WORKDIR}/meta-data"
 echo "boot-smoke: starting VM (ssh on 127.0.0.1:${SSH_PORT})"
 qemu-system-x86_64 \
   -m 2048 -smp 2 \
-  -enable-kvm \
+  "${ACCEL_ARGS[@]}" \
   -nographic \
   -drive if=virtio,file="${DISK}",format=qcow2 \
   -drive if=virtio,file="${SEED}",format=raw \

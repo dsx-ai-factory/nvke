@@ -12,13 +12,18 @@ controller can reach the node over SPIFFE mTLS. The contract is [SPEC.md](SPEC.m
 
 ## Build the OS image
 
-Prereqs, on a Linux host with KVM:
+Prereqs, on a Linux host:
 
 | Tool | Version | Install |
 |---|---|---|
 | [Packer](https://developer.hashicorp.com/packer) | >= 1.10.0 | https://developer.hashicorp.com/packer/install |
 | [ORAS](https://oras.land/) | any | https://oras.land/docs/installation |
 | `curl` | any | via your package manager |
+
+`/dev/kvm` is preferred, not required. `packer/Makefile` probes for it and picks
+`accelerator = kvm` when it is usable, `tcg` (software emulation) otherwise —
+correct but roughly an order of magnitude slower. Force either mode with
+`make os-image ACCELERATOR=tcg`. `boot-smoke.sh` does the same probe.
 
 `make os-image` checks for `oras` on `PATH` before it boots the build VM and
 fails fast with the install link above if it's missing.

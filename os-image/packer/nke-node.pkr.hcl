@@ -46,6 +46,26 @@ variable "disk_size" {
   default = "10G"
 }
 
+# "kvm" when the host exposes /dev/kvm, "tcg" for software emulation. The
+# Makefile picks one by probing the device; a container-based CI runner has no
+# /dev/kvm and a hard kvm requirement fails there before Packer starts.
+# forge-vms already treats KVM and TCG as the two supported Linux modes
+# (controller/forge-vms/docs/e2e-testing.md).
+variable "accelerator" {
+  type        = string
+  default     = "kvm"
+  description = "QEMU accelerator: kvm (hardware) or tcg (software emulation)."
+}
+
+# Boot to SSH takes minutes under TCG where it takes seconds under KVM, so the
+# caller raises this alongside the accelerator rather than carrying one timeout
+# that is either too tight for emulation or too slack to be a useful signal.
+variable "ssh_timeout" {
+  type        = string
+  default     = "15m"
+  description = "How long Packer waits for SSH after boot."
+}
+
 locals {
   artifacts = "${path.root}/artifacts"
   ssh_dir   = "${path.root}/.ssh"
@@ -57,10 +77,10 @@ source "qemu" "nke" {
   disk_image           = true
   format               = "qcow2"
   disk_size            = var.disk_size
-  accelerator          = "kvm"
+  accelerator          = var.accelerator
   ssh_username         = "ubuntu"
   ssh_private_key_file = "${local.ssh_dir}/id_ed25519"
-  ssh_timeout          = "15m"
+  ssh_timeout          = var.ssh_timeout
   cd_label             = "cidata"
   cd_content = {
     "user-data" = templatefile("${path.root}/cidata/user-data.pkrtpl", {

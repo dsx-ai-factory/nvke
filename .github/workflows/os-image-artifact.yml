@@ -53,7 +53,9 @@ jobs:
     # Packer QEMU needs /dev/kvm. The GitHub-hosted 2-core runners do not
     # expose it; this label is the same class image.yml already uses.
     runs-on: linux-amd64-cpu16
-    timeout-minutes: 90
+    # Sized for the emulated path. A KVM bake is well under 30 minutes; TCG
+    # boots the guest one interpreted instruction at a time and needs the room.
+    timeout-minutes: 240
     permissions:
       contents: write
       packages: write
@@ -120,15 +122,25 @@ jobs:
           qemu-system-x86_64 --version | head -1
           qemu-img --version | head -1
 
-      - name: Require KVM
+      # Not a gate. These runners are containers with no /dev/kvm, and neither
+      # do GitHub-hosted standard runners (Azure VMs without nested
+      # virtualization), so requiring it here failed every tag before Packer
+      # started. packer/Makefile and boot-smoke.sh probe the device themselves
+      # and fall back to TCG; this step only makes the device usable when it is
+      # there, and says which mode the bake will run in.
+      #
+      # FIXME: https://github.com/NVIDIA/nke/issues/219 — move this job to a
+      # bare-metal runner and drop the emulated path, which costs ~10x.
+      - name: Report the accelerator
         run: |
           set -euo pipefail
-          if [[ ! -c /dev/kvm ]]; then
-            echo "::error::/dev/kvm is missing; Packer accelerator=kvm cannot run on this runner"
-            exit 1
+          if [[ -c /dev/kvm ]]; then
+            # Membership in group kvm does not apply until a new login.
+            sudo chmod 666 /dev/kvm
+            echo "::notice::/dev/kvm present; building with hardware acceleration"
+          else
+            echo "::warning::/dev/kvm is missing on this runner; building under QEMU software emulation (much slower)"
           fi
-          # Membership in group kvm does not apply until a new login.
-          sudo chmod 666 /dev/kvm
 
       - name: Install Packer
         env:
