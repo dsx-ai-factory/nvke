@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+[Unit]
+Description=Render SPIRE agent config from instance identity
+Documentation=https://github.com/NVIDIA/nke/blob/main/image/SPEC.md
+After=cloud-final.service
+Before=spire-agent.service
+ConditionPathExists=/etc/nke/spire.env
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/nke/spire-configure.sh
+
+[Install]
+WantedBy=multi-user.target

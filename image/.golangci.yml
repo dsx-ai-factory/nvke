@@ -1,0 +1,44 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+version: "2"
+
+run:
+  concurrency: 8
+  modules-download-mode: readonly
+  tests: true
+  allow-parallel-runners: true
+
+linters:
+  enable:
+    - errorlint
+    - goheader
+    - misspell
+    - revive
+    - unconvert
+    - usestdlibvars
+  settings:
+    goheader:
+      template: |-
+        SPDX-FileCopyrightText: Copyright (c) {{MOD_YEAR-RANGE}} NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+        SPDX-License-Identifier: Apache-2.0
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+
+formatters:
+  enable:
+    - gci
+    - gofumpt
+  settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(github.com/NVIDIA/)
+    gofumpt:
+      extra-rules: true

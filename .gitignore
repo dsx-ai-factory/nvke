@@ -12,6 +12,11 @@ controller/hack/nico-mock/nico-mock
 **/dist/
 **/release/
 
+# Reference-image Packer output and build-only SSH keys / pulled binaries.
+image/packer/output/
+image/packer/artifacts/
+image/packer/.ssh/
+
 # Editor / OS
 .idea/
 .vscode/

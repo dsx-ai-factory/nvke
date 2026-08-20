@@ -1,0 +1,74 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+// nke-image-check probes an nke-agent endpoint over SPIFFE mTLS.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/NVIDIA/nke/image/internal/check"
+)
+
+// version is set at build time via -X main.version=.
+var version = "dev"
+
+func main() {
+	os.Exit(run(os.Args[1:]))
+}
+
+func run(args []string) int {
+	fs := flag.NewFlagSet("nke-image-check", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+	versionFlag := fs.Bool("version", false, "Print the version and exit")
+	endpoint := fs.String("endpoint", "", "nke-agent host or host:port (default port 15005)")
+	socket := fs.String("spiffe-socket", check.DefaultSPIFFESocket, "SPIFFE workload API address")
+	trustDomain := fs.String("expect-trust-domain", "", "If set, require the local SVID to be in this trust domain")
+	timeout := fs.Duration("timeout", 30*time.Second, "Overall probe timeout")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *versionFlag {
+		fmt.Printf("nke-image-check version: %s\n", version)
+		return 0
+	}
+	if strings.TrimSpace(*endpoint) == "" {
+		fmt.Fprintln(os.Stderr, "nke-image-check: --endpoint is required")
+		fs.Usage()
+		return 2
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, *timeout)
+	defer cancel()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	slog.SetDefault(logger)
+
+	result, err := check.Probe(ctx, check.Options{
+		Endpoint:          *endpoint,
+		SPIFFESocket:      *socket,
+		ExpectTrustDomain: *trustDomain,
+	})
+	if err != nil {
+		slog.Error("probe failed", "err", err)
+		return 1
+	}
+	slog.Info("nke-agent reachable",
+		"endpoint", result.Endpoint,
+		"client_svid", result.ClientSVID,
+		"agent_version", result.AgentVersion,
+		"kubeadm_status", result.Kubeadm,
+		"services", result.Services,
+	)
+	return 0
+}

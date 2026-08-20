@@ -172,7 +172,7 @@ jobs:
           # Pin the version the Dockerfiles build with, so the scan reports on
           # the toolchain we ship. Not go-version-file: a go directive is a
           # floor, so it scans the oldest Go allowed -- and this workspace's
-          # floors range from 1.25.4 to 1.26.5, which would give eight modules
+          # floors range from 1.25.4 to 1.26.5, which would give nine modules
           # five different answers to the same question. Not `stable`: setup-go
           # resolves it from GitHub's manifest, which lags, so it can be older
           # than what we ship. Keep this in step with the Dockerfiles.

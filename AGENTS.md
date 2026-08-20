@@ -12,6 +12,7 @@ this file adds the constraints an agent needs before it starts editing.
   module has its own toolchain:
   - [controller/AGENTS.md](controller/AGENTS.md) — Flox, code generation, database, Temporal
   - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, packaging, gRPC conventions
+  - [image/AGENTS.md](image/AGENTS.md) — reference node image spec, Packer, connectivity checker
 
 ## Read if needed
 
@@ -41,7 +42,7 @@ no credentials and no network:
 GOPROXY=off make build
 ```
 
-compiles all eight modules and links five binaries. `GOPROXY=off` is not a
+compiles all nine modules and links six binaries. `GOPROXY=off` is not a
 suggestion to copy — it is how you can tell nothing is being fetched.
 
 This changed in #76, which replaced the internal carbide SDK
@@ -72,6 +73,7 @@ build pass. Removing those dependencies is tracked work with its own design.
 | `controller/profiles/` | OS and config profiles | Ask first — being moved out of this repo |
 | `build/` | Build scripts (`agent.sh`) | Yes |
 | `docs/` | Repository-level documentation | Yes |
+| `image/` | Reference node image spec, Packer recipe, `nke-image-check` | Yes |
 | `controller/api/*.gen.go` | oapi-codegen output | **No — regenerate** |
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
@@ -79,8 +81,8 @@ build pass. Removing those dependencies is tracked work with its own design.
 
 ## What agents may do
 
-- Implement or fix logic under `agent/internal/`, `agent/pkg/`, and
-  `controller/internal/`.
+- Implement or fix logic under `agent/internal/`, `agent/pkg/`,
+  `controller/internal/`, and `image/`.
 - Change the REST API by editing `controller/api/openapi.yaml`, **then running
   `flox activate -- make generate`** so the generated Go matches.
 - Change the gRPC API by editing `agent/pkg/agent/proto/node_agent.proto`,
