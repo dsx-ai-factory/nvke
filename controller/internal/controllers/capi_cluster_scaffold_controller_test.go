@@ -45,7 +45,7 @@ func TestCAPIClusterScaffoldController_Reconcile(t *testing.T) {
 	}
 	emptyCluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: json.RawMessage(`{}`)})
 
-	t.Run("applies CAPI objects in cluster-<name> and does not write kubeconfig", func(t *testing.T) {
+	t.Run("applies CAPI objects in nke-system and does not write kubeconfig", func(t *testing.T) {
 		mockDB := &testutil.MockDB{}
 		mockDB.On("ListClusters", mock.Anything, mock.MatchedBy(func(filters db.ClusterFilters) bool {
 			return filters.SiteID != nil && *filters.SiteID == siteID
@@ -65,14 +65,14 @@ func TestCAPIClusterScaffoldController_Reconcile(t *testing.T) {
 		clusterObj := &clusterv1.Cluster{}
 		require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
 			Name:      activeCluster.Name,
-			Namespace: clusterNS,
+			Namespace: constants.NamespaceNKESystem,
 		}, clusterObj))
 
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      activeCluster.Name + "-kubeconfig",
 			Namespace: clusterNS,
-		}, &corev1.Secret{})
-		assert.True(t, apierrors.IsNotFound(err), "scaffold must not write the kubeconfig Secret")
+		}, &clusterv1.Cluster{})
+		assert.True(t, apierrors.IsNotFound(err), "scaffold must not write into the legacy per-cluster namespace")
 		err = k8sClient.Get(ctx, types.NamespacedName{
 			Name:      activeCluster.Name + "-kubeconfig",
 			Namespace: constants.NamespaceNKESystem,
@@ -96,7 +96,7 @@ func TestCAPIClusterScaffoldController_Reconcile(t *testing.T) {
 		require.NoError(t, controller.Reconcile(ctx, db.Site{ID: siteID}))
 		err := k8sClient.Get(ctx, types.NamespacedName{
 			Name:      deletingCluster.Name,
-			Namespace: "cluster-" + deletingCluster.Name,
+			Namespace: constants.NamespaceNKESystem,
 		}, &clusterv1.Cluster{})
 		assert.True(t, apierrors.IsNotFound(err))
 		mockDB.AssertExpectations(t)

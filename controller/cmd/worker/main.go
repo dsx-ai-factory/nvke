@@ -190,6 +190,13 @@ func main() {
 	}
 	nodeAgentClient := agent.NewClient(cfg, trustDomain)
 
+	tenantClientProvider := kube.NewDBClusterTenantClientProvider(
+		dbInstance,
+		managementK8sClient,
+		nodeAgentClient,
+		cfg.TenantAccessEnabled,
+	)
+
 	nodeSetController := nodeset.NewController(
 		cfg,
 		logger.With("logger", "node-set-controller"),
@@ -312,7 +319,7 @@ func main() {
 
 			nicoProviderIDController := capi.NewNicoProviderIDController(
 				k8sControllerManager.GetClient(),
-				kube.NewCAPIKubeconfigTenantClientProvider(k8sControllerManager.GetAPIReader()),
+				tenantClientProvider,
 				logger.With("logger", "nico-provider-id-controller"),
 			)
 			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
@@ -432,13 +439,6 @@ func main() {
 	}
 
 	metricsServer := server.NewMetricsServer(cfg)
-
-	tenantClientProvider := kube.NewDBClusterTenantClientProvider(
-		dbInstance,
-		managementK8sClient,
-		nodeAgentClient,
-		cfg.TenantAccessEnabled,
-	)
 
 	temporalWorker, err := temporal.NewWorker(
 		cfg,

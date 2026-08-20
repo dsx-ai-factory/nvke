@@ -21,12 +21,15 @@ import (
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
-func TestDeleteCAPIClusterResources_DeletesClusterNamespace(t *testing.T) {
+// The shared namespace holds every cluster's CAPI objects plus the tenant-access
+// Secrets and trust bundles for the whole site, so a teardown that deleted it
+// would take the site down with the cluster.
+func TestDeleteCAPIClusterResources_LeavesSharedNamespaceIntact(t *testing.T) {
 	ctx := context.Background()
 	siteID := uuid.New()
 	vpcID := uuid.New()
@@ -39,7 +42,7 @@ func TestDeleteCAPIClusterResources_DeletesClusterNamespace(t *testing.T) {
 		ProviderType: db.ProviderTypeNico,
 		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}
-	ns := capi.ClusterNamespace(cluster.Name)
+	ns := constants.NamespaceNKESystem
 
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
@@ -62,7 +65,8 @@ func TestDeleteCAPIClusterResources_DeletesClusterNamespace(t *testing.T) {
 	require.NoError(t, a.DeleteCAPIClusterResources(ctx, DeleteCAPIClusterResourcesInput{ClusterID: cluster.ID}))
 
 	err := k8sClient.Get(ctx, client.ObjectKey{Name: cluster.Name, Namespace: ns}, &clusterv1.Cluster{})
-	assert.True(t, apierrors.IsNotFound(err))
-	err = k8sClient.Get(ctx, client.ObjectKey{Name: ns}, &corev1.Namespace{})
-	assert.True(t, apierrors.IsNotFound(err), "cluster-<name> namespace should be deleted")
+	assert.True(t, apierrors.IsNotFound(err), "CAPI cluster should be deleted")
+	err = k8sClient.Get(ctx, client.ObjectKey{Name: cluster.Name, Namespace: ns}, &nicov1.NicoCluster{})
+	assert.True(t, apierrors.IsNotFound(err), "infra cluster should be deleted")
+	assert.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Name: ns}, &corev1.Namespace{}), "shared namespace must survive cluster teardown")
 }

@@ -25,7 +25,6 @@ import (
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -171,7 +170,7 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 		CniPlugin: db.CNICalico,
 	}
 	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID})
-	namespace := capi.ClusterNamespace(cluster.Name)
+	namespace := constants.NamespaceNKESystem
 	k8sClient := newCAPIMachineCreateClient(t)
 	a := &Activities{
 		cfg:       testTemplateLessForgeCAPICfg(t),
@@ -359,7 +358,7 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
-			Namespace: capi.ClusterNamespace("cluster-a"),
+			Namespace: constants.NamespaceNKESystem,
 		},
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
@@ -416,7 +415,7 @@ func testNicoMachineForRotation(params nicoMachineRotationParameters) *nicov1.Ni
 
 func testNicoMachineForCAPIMachineReady(params nicoMachineRotationParameters) *nicov1.NicoMachine {
 	nicoMachine := testNicoMachineForRotation(params)
-	nicoMachine.Namespace = capi.ClusterNamespace("cluster-a")
+	nicoMachine.Namespace = constants.NamespaceNKESystem
 	return nicoMachine
 }
 
@@ -517,7 +516,7 @@ func getTestNicoMachine(t *testing.T, k8sClient client.Client) *nicov1.NicoMachi
 
 	nicoMachine := &nicov1.NicoMachine{}
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKey{
-		Namespace: capi.ClusterNamespace("cluster-a"),
+		Namespace: constants.NamespaceNKESystem,
 		Name:      "worker-0",
 	}, nicoMachine))
 	return nicoMachine

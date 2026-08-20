@@ -17,10 +17,9 @@ import (
 )
 
 const (
-	provisioningCompleted            = "Provisioning completed"
-	removeEtcdMember                 = "remove-etcd-member"
-	unknownValue                     = "unknown"
-	tenantAccessSolePublisherVersion = 1
+	provisioningCompleted = "Provisioning completed"
+	removeEtcdMember      = "remove-etcd-member"
+	unknownValue          = "unknown"
 )
 
 type ProvisionClusterInput struct {
@@ -70,10 +69,6 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 	// Create the cluster with a single node -- the rest of the nodes, including other CP nodes, will join from ProvisionNode
 	if err := kubeadmInit(ctx, input.ClusterID, initialNodeID); err != nil {
 		return fmt.Errorf("failed to initialize Kubernetes control plane: %w", err)
-	}
-
-	if err := preserveLegacyCAPIKubeconfigPublish(ctx, clusterCtx.InfraMode, input.ClusterID, initialNodeID); err != nil {
-		return fmt.Errorf("failed to preserve legacy CAPI kubeconfig publish: %w", err)
 	}
 
 	if err := markInitialNodeAsJoined(ctx, initialNodeID); err != nil {
@@ -211,37 +206,6 @@ func kubeadmInit(ctx workflow.Context, clusterID, initialNodeID uuid.UUID) error
 	}
 
 	return nil
-}
-
-func applyLegacyCAPIClusterKubeconfigSecret(ctx workflow.Context, clusterID, initialNodeID uuid.UUID) error {
-	var a *activities.Activities
-
-	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    1 * time.Minute,
-			MaximumInterval:    5 * time.Minute,
-			BackoffCoefficient: 2,
-			MaximumAttempts:    0,
-		},
-	}
-
-	return workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, activityOptions),
-		a.ApplyCAPIClusterKubeconfigSecret,
-		activities.ApplyCAPIClusterKubeconfigSecretInput{
-			ClusterID:                 clusterID,
-			InitialControlPlaneNodeID: initialNodeID,
-		},
-	).Get(ctx, nil)
-}
-
-func preserveLegacyCAPIKubeconfigPublish(ctx workflow.Context, infraMode activities.InfraMode, clusterID, initialNodeID uuid.UUID) error {
-	version := workflow.GetVersion(ctx, "tenant-access-sole-publisher", workflow.DefaultVersion, tenantAccessSolePublisherVersion)
-	if version != workflow.DefaultVersion || infraMode != activities.InfraModeCAPI {
-		return nil
-	}
-	return applyLegacyCAPIClusterKubeconfigSecret(ctx, clusterID, initialNodeID)
 }
 
 func markInitialNodeAsJoined(ctx workflow.Context, nodeID uuid.UUID) error {

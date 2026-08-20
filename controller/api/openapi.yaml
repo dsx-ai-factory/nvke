@@ -715,7 +715,7 @@ components:
           minLength: 1
           maxLength: 55
           example: "my-cluster"
-          description: The name of the cluster. Must be a lowercase DNS label so CWE can derive the `cluster-<name>` namespace for CAPI resources.
+          description: The name of the cluster. Must be a lowercase DNS label, because CWE derives the names of the cluster's CAPI resources and its node names from it.
           x-order: 1
         orgID:
           type: string

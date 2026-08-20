@@ -17,7 +17,6 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -141,7 +140,7 @@ func (c *NodeClusterStaticEntryController) shouldSkipTPMClusterStaticEntry(ctx c
 
 	machine := &clusterv1.Machine{}
 	if err := c.k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: capi.ClusterNamespace(cluster.Name),
+		Namespace: constants.NamespaceNKESystem,
 		Name:      node.Name,
 	}, machine); err != nil {
 		if apierrors.IsNotFound(err) {

@@ -19,7 +19,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -59,7 +58,7 @@ func TestNodeClusterStaticEntryController_SkipsTPMEntryForJoinTokenCAPIMachine(t
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      node.Name,
-				Namespace: capi.ClusterNamespace(cluster.Name),
+				Namespace: constants.NamespaceNKESystem,
 				Annotations: map[string]string{
 					constants.MachineAnnotationKeySpireAgentSpiffeIDPath: constants.JoinTokenAlternateSpireAgentPath + nodeID.String(),
 				},
@@ -133,7 +132,7 @@ func TestNodeClusterStaticEntryController_DeletesStaleTPMEntryForJoinTokenCAPIMa
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      node.Name,
-				Namespace: capi.ClusterNamespace(cluster.Name),
+				Namespace: constants.NamespaceNKESystem,
 				Annotations: map[string]string{
 					constants.MachineAnnotationKeySpireAgentSpiffeIDPath: constants.JoinTokenAlternateSpireAgentPath + nodeID.String(),
 				},
@@ -208,7 +207,7 @@ func TestNodeClusterStaticEntryController_AppliesTPMEntryForTPMCAPIMachine(t *te
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      node.Name,
-				Namespace: capi.ClusterNamespace(cluster.Name),
+				Namespace: constants.NamespaceNKESystem,
 				Annotations: map[string]string{
 					constants.MachineAnnotationKeySpireAgentSpiffeIDPath: constants.TPMSpireAgentPath + tpmHash,
 				},

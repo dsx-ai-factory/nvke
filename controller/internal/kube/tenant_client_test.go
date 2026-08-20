@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -26,44 +25,42 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
-func TestCAPIKubeconfigTenantClientProviderReturnsNotFoundForMissingSecret(t *testing.T) {
-	scheme := newTenantClientProviderTestScheme(t)
-	managementClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	provider := NewCAPIKubeconfigTenantClientProvider(managementClient)
+// A CAPI Cluster that has not been migrated out of the legacy per-cluster
+// namespace must still resolve, because TenantAccess publishes only into
+// nke-system regardless of where the Cluster object lives.
+func TestDBClusterTenantClientProviderResolvesCAPIClusterFromLegacyNamespace(t *testing.T) {
+	ctx := context.Background()
+	cluster := newSiteDBClusterForTenantClientProviderTest()
+	managementClient := fake.NewClientBuilder().
+		WithScheme(newTenantClientProviderTestScheme(t)).
+		WithObjects(newPublishedTenantKubeconfigSecret(cluster.Name)).
+		Build()
+	database := &testutil.MockDB{}
+	database.On("ListClusters", mock.Anything, db.ClusterFilters{Name: &cluster.Name}).
+		Return([]db.Cluster{cluster}, nil)
+	provider := NewDBClusterTenantClientProvider(database, managementClient, nil, true)
 
-	_, err := provider.ClientForCluster(context.Background(), newCAPIClusterForTenantClientProviderTest())
-	require.Error(t, err)
-	require.True(t, apierrors.IsNotFound(err))
-}
+	capiCluster := &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{
+		Name:      cluster.Name,
+		Namespace: capi.LegacyClusterNamespace(cluster.Name),
+	}}
 
-func TestCAPIKubeconfigTenantClientProviderReturnsParseErrorForInvalidSecret(t *testing.T) {
-	cluster := newCAPIClusterForTenantClientProviderTest()
-	secret := capikubeconfig.GenerateSecret(cluster, []byte("not kubeconfig"))
-	scheme := newTenantClientProviderTestScheme(t)
-	managementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, secret).Build()
-	provider := NewCAPIKubeconfigTenantClientProvider(managementClient)
-
-	_, err := provider.ClientForCluster(context.Background(), cluster)
-	require.Error(t, err)
-	require.False(t, apierrors.IsNotFound(err))
-}
-
-func TestCAPIKubeconfigTenantClientProviderAppliesAdditionalSchemes(t *testing.T) {
-	cluster := newCAPIClusterForTenantClientProviderTest()
-	kubeconfigBytes := newTenantClientProviderTestKubeconfig(t)
-	secret := capikubeconfig.GenerateSecret(cluster, kubeconfigBytes)
-	scheme := newTenantClientProviderTestScheme(t)
-	managementClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, secret).Build()
-	addToSchemeCalled := false
-	provider := NewCAPIKubeconfigTenantClientProvider(managementClient)
-
-	tenantClient, err := provider.ClientForCluster(context.Background(), cluster, func(*runtime.Scheme) error {
-		addToSchemeCalled = true
-		return nil
-	})
+	tenantClient, err := provider.ClientForCluster(ctx, capiCluster)
 	require.NoError(t, err)
 	require.NotNil(t, tenantClient)
-	require.True(t, addToSchemeCalled)
+}
+
+func TestDBClusterTenantClientProviderErrorsWhenCAPIClusterHasNoRow(t *testing.T) {
+	name := "orphan"
+	database := &testutil.MockDB{}
+	database.On("ListClusters", mock.Anything, db.ClusterFilters{Name: &name}).
+		Return([]db.Cluster{}, nil)
+	provider := NewDBClusterTenantClientProvider(database, nil, nil, true)
+
+	_, err := provider.ClientForCluster(context.Background(), &clusterv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "nke-system"},
+	})
+	require.ErrorIs(t, err, db.ErrNotFound)
 }
 
 func TestNewRESTConfigFromKubeconfigPreservesExecProvider(t *testing.T) {
@@ -352,6 +349,10 @@ func newPublishedTenantKubeconfigSecret(clusterName string) *corev1.Secret {
 	}
 }
 
+// newCAPIClusterForTenantClientProviderTest builds an unmigrated Cluster, still
+// in the legacy per-cluster namespace. Tests pair it with a same-named kubeconfig
+// Secret in that namespace to assert the published nke-system Secret is what
+// actually gets used.
 func newCAPIClusterForTenantClientProviderTest() *clusterv1.Cluster {
 	return &clusterv1.Cluster{
 		TypeMeta: metav1.TypeMeta{
@@ -360,7 +361,7 @@ func newCAPIClusterForTenantClientProviderTest() *clusterv1.Cluster {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster",
-			Namespace: capi.ClusterNamespace("test-cluster"),
+			Namespace: capi.LegacyClusterNamespace("test-cluster"),
 			UID:       types.UID("test-cluster-uid"),
 		},
 	}

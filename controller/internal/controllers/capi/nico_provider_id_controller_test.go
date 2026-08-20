@@ -291,7 +291,6 @@ type fakeTenantClusterClientProvider struct {
 func (p *fakeTenantClusterClientProvider) ClientForCluster(
 	context.Context,
 	*clusterv1.Cluster,
-	...kube.AddToSchemeFunc,
 ) (client.Client, error) {
 	p.calls++
 	if p.err != nil {
