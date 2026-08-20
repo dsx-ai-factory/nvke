@@ -38,7 +38,9 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
 - Do not default `nke-agent` to `--disable-mtls`.
 - Pin SPIRE (version + sha256) in `packer/scripts/fetch-artifacts.sh`; do not
   float `latest` for SPIRE.
-- `nke-agent` version may be `edge` or `vX.Y.Z` (GHCR OCI binary).
+- `nke-agent` version may be `edge` or `vX.Y.Z`. Packer pulls the `.deb` from
+  `ghcr.io/nvidia/nke/agent-deb` via oras, and falls back to the OCI binary at
+  `ghcr.io/nvidia/nke/agent` when that tag has no package.
 - Checker is a SPIFFE **client**. Do not embed a SPIRE server in the binary.
 - New files need the Apache-2.0 SPDX header (`make license`). Cloud-init
   user-data cannot: `#cloud-config` must be line 1, so examples live in

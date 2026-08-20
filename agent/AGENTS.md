@@ -32,8 +32,9 @@ git push origin agent/v0.1.30
 Pushing the tag publishes:
 
 - OCI binaries to GHCR / NVCR (`.github/workflows/agent-artifact*.yml`)
-- `.deb`s to the apt-publisher S3 intake and as assets on the GitHub Release
-  for that tag (`.github/workflows/agent-deb-publish.yml`)
+- `.deb`s to the apt-publisher S3 intake, as assets on the GitHub Release
+  for that tag, and to GHCR as `ghcr.io/nvidia/nke/agent-deb`
+  (`.github/workflows/agent-deb-publish.yml`)
 
 `make` / `./build/agent.sh` derive `VERSION` from:
 

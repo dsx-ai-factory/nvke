@@ -23,7 +23,7 @@ Prereqs, on a Linux host with KVM:
 `make image` checks for `oras` on `PATH` before it boots the build VM and
 fails fast with the install link above if it's missing.
 
-If `ghcr.io/nvidia/nke/agent` is private, log in first with a GitHub PAT
+If `ghcr.io/nvidia/nke/agent-deb` (or the binary fallback `ghcr.io/nvidia/nke/agent`) is private, log in first with a GitHub PAT
 (`read:packages` scope):
 
 ```bash
@@ -39,10 +39,12 @@ make image NKE_AGENT_VERSION=edge
 # or a release tag, without the agent/ prefix: NKE_AGENT_VERSION=v0.3.0
 ```
 
-`edge` (the default) is tip of `main` at `ghcr.io/nvidia/nke/agent`. The recipe
-pulls that OCI **binary** on the Packer host and copies it in; it does not
-install from apt. SPIRE agent is pinned (version + sha256) from GitHub
-Releases.
+`edge` (the default) is tip of `main`. The recipe **prefers** the nke-agent
+`.deb` from `ghcr.io/nvidia/nke/agent-deb` (published on `agent/v*` tags) and
+falls back to the OCI **binary** at `ghcr.io/nvidia/nke/agent` when no package
+exists for that tag. Pass a release tag without the `agent/` prefix to pull a
+`.deb`: `NKE_AGENT_VERSION=v0.3.0`. SPIRE agent is pinned (version + sha256)
+from GitHub Releases.
 
 Output: `packer/output/nke-node.qcow2`.
 

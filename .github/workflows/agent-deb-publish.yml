@@ -2,9 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Builds the nke-agent .debs on an agent/v* tag, uploads them to the
-# apt-publisher S3 intake, and attaches both packages as assets on a GitHub
-# Release for that tag. deb.yml exercises the same packaging path on every
-# agent change and throws the packages away; this workflow is the release side.
+# apt-publisher S3 intake, attaches both packages as assets on a GitHub
+# Release for that tag, and publishes the same packages to GHCR as an OCI
+# artifact (ghcr.io/nvidia/nke/agent-deb) for oras pull. deb.yml exercises
+# the same packaging path on every agent change and throws the packages away;
+# this workflow is the release side.
 #
 # Layout written by agent/scripts/upload-s3-apt-intake.sh (consumed by
 # nke/packages/apt-publisher):
@@ -25,8 +27,8 @@
 # ubuntu-24.04-arm) for the same reason as deb.yml: cross-compiling flips CGO
 # off and produces a static binary that still claims Depends: libc6. A single
 # publish job then uploads both packages once so the shared index.json merge
-# cannot race with itself. The GitHub Release job runs in parallel with S3
-# publish and does not touch apt intake.
+# cannot race with itself. The GitHub Release job and the GHCR job run in
+# parallel with S3 publish and do not touch apt intake.
 
 name: Agent Deb Publish
 
@@ -246,6 +248,90 @@ jobs:
           APT_INTAKE_RELEASE: ${{ steps.meta.outputs.release }}
           ASSETS_DIR: bin
         run: ./scripts/upload-s3-apt-intake.sh
+
+  # OCI copy of the same two packages the GitHub Release attaches. The Packer
+  # reference image pulls from here with oras (see image/packer/scripts/fetch-artifacts.sh).
+  # Filename is always nke-agent.deb so `oras pull` writes a stable path.
+  publish-ghcr:
+    name: Publish debs to GHCR
+    needs: [build]
+    if: >-
+      github.repository == 'NVIDIA/nke' &&
+      startsWith(github.ref, 'refs/tags/agent/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      REPO: ghcr.io/nvidia/nke/agent-deb
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: agent-deb-*
+          merge-multiple: true
+          path: agent/bin
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
+        with:
+          version: 1.3.3
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "${GHCR_TOKEN}" | oras login ghcr.io \
+            --username "${{ github.actor }}" --password-stdin
+
+      # --artifact-platform is still marked experimental in the ORAS CLI. It is
+      # load-bearing: without it the manifest has no platform in its config and
+      # `oras manifest index create` cannot tell the two packages apart.
+      - name: Push per-architecture packages
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${VERSION#agent/}"
+          shopt -s nullglob
+          debs=(agent/bin/*.deb)
+          if [ ${#debs[@]} -ne 2 ]; then
+            echo "::error::expected exactly 2 packages (amd64 + arm64), found ${#debs[@]}"
+            printf '    %s\n' "${debs[@]}"
+            exit 1
+          fi
+
+          for deb in "${debs[@]}"; do
+            arch=$(dpkg-deb -f "$deb" Architecture)
+            work="$(mktemp -d)"
+            cp "$deb" "${work}/nke-agent.deb"
+            ( cd "${work}" && oras push "${REPO}:${version}-${arch}" \
+                --artifact-type application/vnd.nvidia.nke.agent.deb.v1 \
+                --artifact-platform "linux/${arch}" \
+                --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${version}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nke-agent.deb" \
+                nke-agent.deb:application/vnd.debian.binary-package )
+            rm -rf "${work}"
+          done
+
+          oras manifest index create "${REPO}:${version}" \
+            --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "org.opencontainers.image.version=${version}" \
+            "${version}-amd64" "${version}-arm64"
+
+      - name: Show published index
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${VERSION#agent/}"
+          oras manifest fetch --pretty "${REPO}:${version}"
 
   # Separate from apt intake so the release job does not need the apt-intake
   # environment or id-token. Runs only on agent/v* tag pushes (not branch

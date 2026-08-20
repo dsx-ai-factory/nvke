@@ -180,8 +180,15 @@ single-platform variants underneath. These are artifacts, not container images
 Every `agent/vX.Y.Z` tag also builds native amd64 and arm64 `.deb`s and uploads
 them to the apt-publisher S3 intake (`.github/workflows/agent-deb-publish.yml`,
 via `scripts/upload-s3-apt-intake.sh`). The same packages are attached as assets
-on the GitHub Release for that tag. Apt remains the node install path; the OCI
-binary above is the same executable without the packaging/systemd unit.
+on the GitHub Release for that tag and published to GHCR as an OCI artifact:
+
+```bash
+oras pull ghcr.io/nvidia/nke/agent-deb:v0.3.0 --platform linux/amd64
+```
+
+Apt remains the node install path; the OCI binary above is the same executable
+without the packaging/systemd unit. The reference image (`image/`) prefers the
+`.deb` and falls back to the binary.
 
 The intake destination comes from the GitHub `apt-intake` environment
 (`APT_INTAKE_S3_URI`, `APT_INTAKE_AWS_ROLE_ARN`, …) — nothing bucket-specific

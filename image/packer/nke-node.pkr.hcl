@@ -14,13 +14,19 @@ packer {
 variable "nke_agent_version" {
   type        = string
   default     = "edge"
-  description = "GHCR tag for ghcr.io/nvidia/nke/agent (edge or vX.Y.Z)."
+  description = "GHCR tag for the agent .deb (ghcr.io/nvidia/nke/agent-deb) or binary fallback (ghcr.io/nvidia/nke/agent)."
 }
 
 variable "nke_agent_registry" {
   type        = string
   default     = "ghcr.io/nvidia/nke/agent"
-  description = "OCI repository that stores the nke-agent binary artifact."
+  description = "OCI repository for the nke-agent binary artifact (fallback when no .deb is published)."
+}
+
+variable "nke_agent_deb_registry" {
+  type        = string
+  default     = "ghcr.io/nvidia/nke/agent-deb"
+  description = "OCI repository for the nke-agent Debian package."
 }
 
 variable "iso_url" {
@@ -81,6 +87,7 @@ build {
       "ARTIFACTS_DIR=${local.artifacts}",
       "NKE_AGENT_VERSION=${var.nke_agent_version}",
       "NKE_AGENT_REGISTRY=${var.nke_agent_registry}",
+      "NKE_AGENT_DEB_REGISTRY=${var.nke_agent_deb_registry}",
     ]
     script = "${path.root}/scripts/fetch-artifacts.sh"
   }
