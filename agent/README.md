@@ -179,7 +179,8 @@ single-platform variants underneath. These are artifacts, not container images
 
 Every `agent/vX.Y.Z` tag also builds native amd64 and arm64 `.deb`s and uploads
 them to the apt-publisher S3 intake (`.github/workflows/agent-deb-publish.yml`,
-via `scripts/upload-s3-apt-intake.sh`). The same packages are attached as assets
+via `scripts/upload-s3-apt-intake.sh`). Main merges and branch workflow runs do
+not ingest — only `refs/tags/agent/v*`. The same packages are attached as assets
 on the GitHub Release for that tag and published to GHCR as an OCI artifact:
 
 ```bash

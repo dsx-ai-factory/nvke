@@ -18,7 +18,7 @@
 # Required env:
 #   APT_INTAKE_S3_URI   e.g. s3://example-bucket/nke-packages
 #   APT_INTAKE_PROJECT  e.g. nke-agent
-#   APT_INTAKE_RELEASE  e.g. v0.1.26 (release tag or short SHA)
+#   APT_INTAKE_RELEASE  e.g. v0.1.26 (agent/v* tag with the component prefix stripped)
 # Optional env:
 #   APT_INTAKE_DISTROS  space-separated; default "jammy noble"
 #   ASSETS_DIR          default "bin" (nke-agent package job writes bin/*.deb)

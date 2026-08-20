@@ -4,9 +4,11 @@
 # Builds the nke-agent .debs on an agent/v* tag, uploads them to the
 # apt-publisher S3 intake, attaches both packages as assets on a GitHub
 # Release for that tag, and publishes the same packages to GHCR as an OCI
-# artifact (ghcr.io/nvidia/nke/agent-deb) for oras pull. deb.yml exercises
-# the same packaging path on every agent change and throws the packages away;
-# this workflow is the release side.
+# artifact (ghcr.io/nvidia/nke/agent-deb) for oras pull. Apt intake is
+# tag-only: workflow_dispatch is kept so a failed tag publish can be re-run,
+# but branch dispatches never upload. deb.yml exercises the same packaging
+# path on every agent change and throws the packages away; this workflow is
+# the release side.
 #
 # Layout written by agent/scripts/upload-s3-apt-intake.sh (consumed by
 # nke/packages/apt-publisher):
@@ -54,7 +56,11 @@ jobs:
   build:
     name: Build the ${{ matrix.arch }} package
     runs-on: ${{ matrix.runner }}
-    if: github.repository == 'NVIDIA/nke'
+    # Tag-only: a branch workflow_dispatch must not produce packages that the
+    # publish job (or a later re-enable) could upload into apt intake.
+    if: >-
+      github.repository == 'NVIDIA/nke' &&
+      startsWith(github.ref, 'refs/tags/agent/v')
     timeout-minutes: 20
     permissions:
       contents: read
@@ -169,7 +175,11 @@ jobs:
   publish:
     name: Upload to apt intake
     needs: [build]
-    if: github.repository == 'NVIDIA/nke'
+    # Same tag gate as build: never ingest from a branch (including
+    # workflow_dispatch on main). Re-run from the agent/v* tag only.
+    if: >-
+      github.repository == 'NVIDIA/nke' &&
+      startsWith(github.ref, 'refs/tags/agent/v')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: apt-intake
@@ -213,13 +223,8 @@ jobs:
 
           # Tag refs are agent/vX.Y.Z; the intake release key and apt-publisher
           # expect the unprefixed form (vX.Y.Z), matching DEB_VERSION's source.
-          ref="${GITHUB_REF_NAME}"
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            release="${ref#agent/}"
-          else
-            # workflow_dispatch on a branch: still stamp a discoverable key.
-            release="sha-${GITHUB_SHA:0:12}"
-          fi
+          # Job-level if already requires refs/tags/agent/v*; no branch/sha path.
+          release="${GITHUB_REF_NAME#agent/}"
 
           {
             echo "s3_uri=${APT_INTAKE_S3_URI}"
