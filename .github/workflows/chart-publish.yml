@@ -3,11 +3,16 @@
 
 name: Chart Publish
 
-# Packages the cloud-workflow-engine Helm chart and publishes it under
+# Packages the controller Helm chart and publishes it under
 # ghcr.io/nvidia/nke/charts as an OCI artifact:
 #
-#   ghcr.io/nvidia/nke/charts/cloud-workflow-engine:0.1.0        <- release tag
-#   ghcr.io/nvidia/nke/charts/cloud-workflow-engine:0.1.0-rc.1   <- release candidate
+#   ghcr.io/nvidia/nke/charts/controller:0.1.0        <- release tag
+#   ghcr.io/nvidia/nke/charts/controller:0.1.0-rc.1   <- release candidate
+#
+# The last path segment is the chart's `name:`, not anything set here.
+# Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine
+# and published at .../charts/cloud-workflow-engine; those tags stay where
+# they are, so anything reaching for an older version wants the old path.
 #
 # Release tags only. The NVCR mirror in chart-publish-nvcr.yml is the one that
 # also runs on main.
@@ -61,7 +66,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CHART: controller/deploy/charts/cloud-workflow-engine
+  CHART: controller/deploy/charts/controller
 
 jobs:
   publish:
@@ -163,6 +168,6 @@ jobs:
         run: |
           set -euo pipefail
           helm push \
-            "${RUNNER_TEMP}/chart-dist/cloud-workflow-engine-${VERSION}.tgz" \
+            "${RUNNER_TEMP}/chart-dist/controller-${VERSION}.tgz" \
             oci://ghcr.io/nvidia/nke/charts
-          echo "Pushed ghcr.io/nvidia/nke/charts/cloud-workflow-engine:${VERSION}"
+          echo "Pushed ghcr.io/nvidia/nke/charts/controller:${VERSION}"

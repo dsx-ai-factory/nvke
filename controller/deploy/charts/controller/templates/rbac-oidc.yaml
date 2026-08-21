@@ -10,10 +10,10 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-nke-rbac
+  name: {{ include "controller.fullname" . }}-nke-rbac
   namespace: nke-system
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 rules:
   # applyRBAC reads this ConfigMap for persisted-OIDC clusters even when the
   # live Helm flag is off (the ConfigMap is rendered whenever
@@ -31,18 +31,18 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-nke-rbac
+  name: {{ include "controller.fullname" . }}-nke-rbac
   namespace: nke-system
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "cloud-workflow-engine.fullname" . }}-nke-rbac
+  name: {{ include "controller.fullname" . }}-nke-rbac
 subjects:
   - kind: ServiceAccount
-    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
-    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+    name: {{ include "controller.serviceAccountName" . }}
+    namespace: {{ include "controller.namespace" . }}
 {{- with .Values.nkeOIDCAuth.caBundleSecret }}
 {{- if and $.Values.nkeOIDCAuth.enabled .namespace .name }}
 ---
@@ -54,10 +54,10 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" $ }}-oidc-ca-read
+  name: {{ include "controller.fullname" $ }}-oidc-ca-read
   namespace: {{ .namespace }}
   labels:
-    {{- include "cloud-workflow-engine.labels" $ | nindent 4 }}
+    {{- include "controller.labels" $ | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -68,17 +68,17 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" $ }}-oidc-ca-read
+  name: {{ include "controller.fullname" $ }}-oidc-ca-read
   namespace: {{ .namespace }}
   labels:
-    {{- include "cloud-workflow-engine.labels" $ | nindent 4 }}
+    {{- include "controller.labels" $ | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "cloud-workflow-engine.fullname" $ }}-oidc-ca-read
+  name: {{ include "controller.fullname" $ }}-oidc-ca-read
 subjects:
   - kind: ServiceAccount
-    name: {{ include "cloud-workflow-engine.serviceAccountName" $ }}
-    namespace: {{ include "cloud-workflow-engine.namespace" $ }}
+    name: {{ include "controller.serviceAccountName" $ }}
+    namespace: {{ include "controller.namespace" $ }}
 {{- end }}
 {{- end }}

@@ -129,7 +129,7 @@ PRIVATE_MODULES :=
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
 LICENSE_DESTS := controller/licenses \
-                 controller/deploy/charts/cloud-workflow-engine
+                 controller/deploy/charts/controller
 
 # Redistributed binaries with generated third-party attribution.
 NOTICE_MODULES := agent controller cli os-image

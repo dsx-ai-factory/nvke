@@ -2,9 +2,9 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-capi
+  name: {{ include "controller.fullname" . }}-capi
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - cluster.x-k8s.io
@@ -65,15 +65,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-capi
+  name: {{ include "controller.fullname" . }}-capi
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "cloud-workflow-engine.fullname" . }}-capi
+  name: {{ include "controller.fullname" . }}-capi
 subjects:
   - kind: ServiceAccount
-    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
-    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+    name: {{ include "controller.serviceAccountName" . }}
+    namespace: {{ include "controller.namespace" . }}
 {{- end }}

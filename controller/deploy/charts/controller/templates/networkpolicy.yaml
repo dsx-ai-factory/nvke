@@ -5,14 +5,14 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-metrics
-  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  name: {{ include "controller.fullname" . }}-metrics
+  namespace: {{ include "controller.namespace" . }}
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "cloud-workflow-engine.selectorLabels" . | nindent 6 }}
+      {{- include "controller.selectorLabels" . | nindent 6 }}
   policyTypes:
     - Ingress
   ingress:

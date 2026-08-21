@@ -3,9 +3,9 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-spire
+  name: {{ include "controller.fullname" . }}-spire
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - spire.spiffe.io
@@ -22,25 +22,25 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-spire
+  name: {{ include "controller.fullname" . }}-spire
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "cloud-workflow-engine.fullname" . }}-spire
+  name: {{ include "controller.fullname" . }}-spire
 subjects:
   - kind: ServiceAccount
-    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
-    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+    name: {{ include "controller.serviceAccountName" . }}
+    namespace: {{ include "controller.namespace" . }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-spire-tpm-pubhashes
+  name: {{ include "controller.fullname" . }}-spire-tpm-pubhashes
   namespace: {{ .Values.spiffe.spire.serverNamespace }}
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - ""
@@ -64,16 +64,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}-spire-tpm-pubhashes
+  name: {{ include "controller.fullname" . }}-spire-tpm-pubhashes
   namespace: {{ .Values.spiffe.spire.serverNamespace }}
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: {{ include "cloud-workflow-engine.fullname" . }}-spire-tpm-pubhashes
+  name: {{ include "controller.fullname" . }}-spire-tpm-pubhashes
 subjects:
   - kind: ServiceAccount
-    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
-    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+    name: {{ include "controller.serviceAccountName" . }}
+    namespace: {{ include "controller.namespace" . }}
 {{- end }}

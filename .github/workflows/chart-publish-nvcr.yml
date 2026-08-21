@@ -3,7 +3,7 @@
 
 name: Chart Publish NVCR
 
-# Publishes the cloud-workflow-engine Helm chart to nvcr.io as an OCI artifact.
+# Publishes the controller Helm chart to nvcr.io as an OCI artifact.
 # Mirrors chart-publish.yml but targets NVCR for NGC cluster consumers that
 # hold NGC pull credentials but not GHCR credentials.
 #
@@ -12,7 +12,16 @@ name: Chart Publish NVCR
 #   NKE_NGC_ORG              variable  NGC org id
 #   NGC_REGISTRY_TOKEN_NKE   secret    NGC API key with write access on the org
 #
-# The chart is pushed to nvcr.io/<NKE_NGC_ORG>/cloud-workflow-engine.
+# The chart is pushed to nvcr.io/<NKE_NGC_ORG>/charts/controller.
+#
+# `charts/` is a reserved path segment here for the same reason it is on
+# GHCR: the chart is named `controller` and the image it deploys is
+# nvcr.io/<NKE_NGC_ORG>/controller, so without the split the two would land
+# in one OCI repository, told apart only by whether the tag carries a "v".
+#
+# Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine
+# and published at nvcr.io/<NKE_NGC_ORG>/cloud-workflow-engine; those
+# versions stay there.
 
 on:
   push:
@@ -44,7 +53,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CHART: controller/deploy/charts/cloud-workflow-engine
+  CHART: controller/deploy/charts/controller
 
 jobs:
   publish:
@@ -91,9 +100,9 @@ jobs:
           {
             echo "version=${version}"
             echo "app_version=${describe}"
-            echo "repo=nvcr.io/${NKE_NGC_ORG}"
+            echo "repo=nvcr.io/${NKE_NGC_ORG}/charts"
           } >> "${GITHUB_OUTPUT}"
-          echo "Chart version: ${version}  appVersion: ${describe}  repo: nvcr.io/${NKE_NGC_ORG}"
+          echo "Chart version: ${version}  appVersion: ${describe}  repo: nvcr.io/${NKE_NGC_ORG}/charts"
 
       # values.yaml defaults to the GHCR image, which is the right default for
       # someone reading the repository. This chart goes to NVCR, so it has to
@@ -166,6 +175,6 @@ jobs:
         run: |
           set -euo pipefail
           helm push \
-            "${RUNNER_TEMP}/chart-dist/cloud-workflow-engine-${VERSION}.tgz" \
+            "${RUNNER_TEMP}/chart-dist/controller-${VERSION}.tgz" \
             "oci://${REPO}"
-          echo "Pushed ${REPO}/cloud-workflow-engine:${VERSION}"
+          echo "Pushed ${REPO}/controller:${VERSION}"

@@ -67,7 +67,7 @@ metadata:
   name: nke-rbac
   namespace: nke-system
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
 data:
   manifest.yaml: |
     apiVersion: rbac.authorization.k8s.io/v1

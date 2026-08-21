@@ -2,14 +2,14 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "cloud-workflow-engine.fullname" . }}
-  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  name: {{ include "controller.fullname" . }}
+  namespace: {{ include "controller.namespace" . }}
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
   {{- $reloadSecrets := list }}
   {{- $reloadConfigMaps := list }}
   {{- if and .Values.secrets.forgeSecret.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
-  {{- $reloadSecrets = append $reloadSecrets (default (printf "%s-%s" (include "cloud-workflow-engine.fullname" .) "forge-creds") .Values.secrets.forgeSecretName) }}
+  {{- $reloadSecrets = append $reloadSecrets (default (printf "%s-%s" (include "controller.fullname" .) "forge-creds") .Values.secrets.forgeSecretName) }}
   {{- end }}
   {{- if and .Values.secrets.dgxcTenantCredSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
   {{- $reloadSecrets = append $reloadSecrets .Values.secrets.dgxcTenantCredSecretName }}
@@ -38,7 +38,7 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "cloud-workflow-engine.selectorLabels" . | nindent 6 }}
+      {{- include "controller.selectorLabels" . | nindent 6 }}
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -63,7 +63,7 @@ spec:
         {{- toYaml $podAnnotations | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "cloud-workflow-engine.labels" . | nindent 8 }}
+        {{- include "controller.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -72,7 +72,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+      serviceAccountName: {{ include "controller.serviceAccountName" . }}
       {{- if .Values.podSecurityContext }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
@@ -114,7 +114,11 @@ spec:
         {{- end }}
       {{- end }}
       containers:
-        - name: {{ .Chart.Name }}
+        {{- /* The name helper, not .Chart.Name: the chart is named `controller`
+        for its OCI path, and a bare .Chart.Name would rename this container on
+        upgrade, breaking every `kubectl logs -c` and log/metric selector keyed
+        on it. */}}
+        - name: {{ include "controller.name" . }}
           {{- with .Values.command }}
           command:
             {{- toYaml . | nindent 12 }}
@@ -241,7 +245,7 @@ spec:
             - name: DB_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
-                  name: {{ default (printf "%s-%s" (include "cloud-workflow-engine.fullname" .) "db")  .Values.secrets.dbSecretName}}
+                  name: {{ default (printf "%s-%s" (include "controller.fullname" .) "db")  .Values.secrets.dbSecretName}}
                   key:  {{ default "database-connection-string" .Values.secrets.dbSecretKey }}
             {{- else }}
             - name: DB_CONNECTION_STRING
@@ -252,7 +256,7 @@ spec:
             - name: FWE_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ default (printf "%s-%s" (include "cloud-workflow-engine.fullname" .) "forge-creds") .Values.secrets.forgeSecretName }}
+                  name: {{ default (printf "%s-%s" (include "controller.fullname" .) "forge-creds") .Values.secrets.forgeSecretName }}
                   key: {{ default "forge-api-key" .Values.secrets.forgeSecretKey }}
             {{- end }}
             # Temporal config

@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
-  CHART: controller/deploy/charts/cloud-workflow-engine
+  CHART: controller/deploy/charts/controller
 
 jobs:
   chart:

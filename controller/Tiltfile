@@ -1158,7 +1158,7 @@ if not CWE_IMAGE and not _cwe_local_debug_active:
 
 helm_resource(
     "cwe",
-    chart="deploy/charts/cloud-workflow-engine",
+    chart="deploy/charts/controller",
     labels=["3-cwe"],
     release_name="cwe",
     namespace=CWE_NAMESPACE,
@@ -1168,7 +1168,7 @@ helm_resource(
       ".env.tilt",
       ".env.tilt.example",
       "hack/tilt-cwe-chart-values.yaml",
-      "deploy/charts/cloud-workflow-engine",
+      "deploy/charts/controller",
     ],
     flags=_cwe_chart_flags,
     resource_deps=_cwe_resource_deps,

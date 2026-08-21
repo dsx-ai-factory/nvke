@@ -23,8 +23,8 @@ on:
       - 'hack/workspace-modules.sh'
       - 'controller/Makefile'
       - 'controller/licenses/**'
-      - 'controller/deploy/charts/cloud-workflow-engine/LICENSE'
-      - 'controller/deploy/charts/cloud-workflow-engine/NOTICE'
+      - 'controller/deploy/charts/controller/LICENSE'
+      - 'controller/deploy/charts/controller/NOTICE'
       - '.github/workflows/license.yml'
   # No `pull_request:` trigger. Pull requests reach this through merge-gate.yml,
   # which calls it as a reusable workflow, so it runs once rather than twice.
