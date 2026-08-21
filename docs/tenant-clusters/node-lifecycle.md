@@ -55,7 +55,7 @@ If rebooting a node is required, use one of the following approaches:
 
 1. **Via [NVSentinel](https://github.com/NVIDIA/NVSentinel)** — preferred when the node is being recycled or repaired, as this gives NVSentinel the opportunity to apply workload-aware cordon and drain policy before the reboot.
 2. **Via the CWE UI** — find the node and use the reboot action.
-3. **Via the `nke-cli`** — `nke-cli` provides cluster connect and node-level operations.
+3. **Via `nkectl`** — `nkectl` provides cluster and node-level operations.
 
 ## Terminating a Node
 
@@ -65,7 +65,7 @@ Two approaches:
 
 1. **Via the CWE UI** — find the problematic node and click **Delete Node**. If the NodePool desired count remains unchanged, terminated nodes are automatically replaced when matching capacity becomes available.
 
-2. **Via `nke-cli`** — connect to the cluster and use the node termination command.
+2. **Via `nkectl`** — connect to the cluster and use the node termination command.
 
 If the node is still present in Kubernetes but is already gone from CWE, it is a Kubernetes-only zombie node. Remove it manually:
 

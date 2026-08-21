@@ -1,54 +1,75 @@
-> **Note:** This component is being migrated from internal repositories. Build commands, installation paths, and CLI flags will be finalized during migration. The information here reflects the intended state.
+# nkectl
 
-# nke-cli
+NKE control-plane CLI. Bootstraps site controllers and manages tenant cluster lifecycle.
 
-Command-line tool for NKE operators. Provides cluster access, fleet operations, site deployment, and an operator console web dashboard.
+**Module:** `github.com/NVIDIA/nke/cli`  
+**Binary:** `nkectl`  
+**Releases:** `cli/v*` tags
 
 ## What it does
 
-- **Cluster connect** — wraps the Teleport login flow into a single command that spawns an isolated shell with `kubectl` configured and built-in helpers for common tasks (`admin`/`drop-admin`, port-forwards to CWE/ArgoCD/Temporal UIs, direct node SSH)
-- **Site deploy** — provisions site controller infrastructure via the NICo/Forge API
-- **Teleport token management** — generates and rotates Teleport join tokens for enrolling nodes
-- **Hardware inspection** — queries infrastructure provider APIs for hardware inventory
-- **Operator console** — embedded web dashboard for fleet-wide cluster visibility
-
-## Language and tech
-
-Go, multi-platform (Linux x86_64, aarch64, macOS). Embeds the operator console UI as static assets.
+- **Site bootstrap** — `nkectl bootstrap site` drives kubeadm init/join across pre-provisioned nodes via `nke-agent` gRPC; no SSH required
+- **Cluster lifecycle** — `nkectl get/create/delete/describe clusters` manages tenant clusters through the CWE API
+- **Config** — `nkectl config set-site` points the CLI at a site controller; `nkectl config validate` validates a bootstrap inventory file
 
 ## Installation
 
-> **TODO:** Replace with real release URL once CI publishes nke-cli binaries. Confirm binary naming convention (platform suffix format).
-
 ```bash
-# Download the latest release binary for your platform
-curl -fsSL https://github.com/NVIDIA/nke/releases/latest/download/nke-cli-linux-amd64 -o nke-cli
-chmod +x nke-cli
-sudo mv nke-cli /usr/local/bin/
+# linux/amd64
+curl -fsSL -o nkectl \
+  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-amd64
+chmod +x nkectl && sudo mv nkectl /usr/local/bin/
+
+# linux/arm64
+curl -fsSL -o nkectl \
+  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-arm64
+chmod +x nkectl && sudo mv nkectl /usr/local/bin/
+
+# macOS (amd64 / arm64)
+curl -fsSL -o nkectl \
+  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-darwin-arm64
+chmod +x nkectl && sudo mv nkectl /usr/local/bin/
 ```
 
-## Usage
+```bash
+nkectl version
+```
+
+## Quick reference
 
 ```bash
-# Connect to a site controller cluster (opens an isolated shell with kubectl ready)
-nke-cli cluster connect <cluster-name>
+# Bootstrap a new site controller
+nkectl bootstrap site -i inventory.yaml
+nkectl bootstrap site -i inventory.yaml --dry-run   # validate only
 
-# Within the connected shell:
-admin              # request cluster-admin privileges
-cwe-pf             # port-forward to Cloud Workflow Engine UI
-argo-pf            # port-forward to ArgoCD UI
-temporal-pf        # port-forward to Temporal UI
-node-ssh <node>    # SSH to a node via Teleport
+# Point the CLI at a site controller
+nkectl config set-site https://cwe.example.com
+
+# Tenant cluster lifecycle
+nkectl get clusters
+nkectl describe cluster <name>
+nkectl create cluster [spec-file]
+nkectl delete cluster <name>
+```
+
+## Build from source
+
+```bash
+# From monorepo root
+make build          # builds all binaries including cli/nkectl into bin/
+
+# Or from this directory
+make build
 ```
 
 ## Platform support
 
-| OS | x86_64 | aarch64 |
+| OS | amd64 | arm64 |
 |---|---|---|
 | Linux | ✓ | ✓ |
 | macOS | ✓ | ✓ |
 
 ## Related docs
 
+- [Site Controller Bootstrap](../docs/tier0-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)
-- [Tier-0 Bootstrap](../docs/tier0-bootstrap/overview.md)

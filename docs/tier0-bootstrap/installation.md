@@ -1,10 +1,10 @@
 # Download and Install nkectl
 
-`nkectl` is the NKE control-plane CLI. You use it to validate and bootstrap a site controller cluster from a declarative inventory file.
+`nkectl` is the NKE control-plane CLI. You use it to validate and bootstrap a site controller cluster from a declarative inventory file, and to manage tenant cluster lifecycle.
+
+Releases are published under `cli/v*` tags at https://github.com/NVIDIA/nke/releases.
 
 ## Download
-
-> **TODO:** Replace with the published release URL once CI publishes `nkectl` release artifacts.
 
 ```bash
 # linux/amd64
@@ -22,6 +22,16 @@ chmod +x nkectl
 sudo mv nkectl /usr/local/bin/
 ```
 
+```bash
+# macOS (Apple Silicon)
+curl -fsSL -o nkectl \
+  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-darwin-arm64
+chmod +x nkectl
+sudo mv nkectl /usr/local/bin/
+```
+
+Verify the download with `checksums.txt` from the same release.
+
 ## Verify
 
 ```bash
@@ -29,8 +39,6 @@ nkectl version
 ```
 
 ## Build from Source
-
-If you prefer to build from the monorepo:
 
 ```bash
 git clone https://github.com/NVIDIA/nke.git
