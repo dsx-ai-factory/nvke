@@ -123,6 +123,9 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("failed to render infra machine template: %w", err)
 	}
+	if err := a.applyNicoMachineInstanceLabels(ctx, createCtx, infraMachine); err != nil {
+		return err
+	}
 
 	if err := a.k8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra machine %s: %w", infraMachine.GetName(), err)
@@ -228,6 +231,55 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 		return fmt.Errorf("failed to apply machine %s: %w", machine.Name, err)
 	}
 
+	return nil
+}
+
+func (a *Activities) applyNicoMachineInstanceLabels(
+	ctx context.Context,
+	createCtx *capiMachineCreateContext,
+	infraMachine *unstructured.Unstructured,
+) error {
+	gv, err := schema.ParseGroupVersion(infraMachine.GetAPIVersion())
+	if err != nil {
+		return fmt.Errorf("parse infrastructure machine apiVersion %q: %w", infraMachine.GetAPIVersion(), err)
+	}
+	if gv.Group != nicov1.GroupVersion.Group || infraMachine.GetKind() != nicoMachineConst {
+		return nil
+	}
+
+	nicoProvider := db.NicoClusterProvider{
+		OrgID:  createCtx.cluster.OrgID,
+		SiteID: createCtx.cluster.SiteID,
+		VpcID:  createCtx.cluster.VpcID,
+	}
+	vpcName := ""
+	if a.forgeProvider != nil {
+		vpcName = a.resolveVPCName(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), nicoProvider.VpcID.String())
+	}
+	labels, err := buildNicoInstanceLabels(
+		createCtx.node,
+		createCtx.cluster,
+		nicoProvider,
+		createCtx.nodePool.ID,
+		a.cfg.NKESiteControllerName,
+		vpcName,
+	)
+	if err != nil {
+		return fmt.Errorf("build NicoMachine instance labels: %w", err)
+	}
+	existingLabels, _, err := unstructured.NestedStringMap(infraMachine.Object, "spec", "labels")
+	if err != nil {
+		return fmt.Errorf("read NicoMachine instance labels: %w", err)
+	}
+	if existingLabels == nil {
+		existingLabels = map[string]string{}
+	}
+	for key, value := range labels {
+		existingLabels[key] = value
+	}
+	if err := unstructured.SetNestedStringMap(infraMachine.Object, existingLabels, "spec", "labels"); err != nil {
+		return fmt.Errorf("set NicoMachine instance labels: %w", err)
+	}
 	return nil
 }
 

@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
@@ -79,6 +81,52 @@ func TestFirstInfrastructureRefIPAddress_NicoMachine(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, "10.0.0.10", ipAddress)
+}
+
+func TestApplyNicoMachineInstanceLabels_MergesOntoTemplateSpec(t *testing.T) {
+	nodeID := uuid.MustParse("72000000-0000-0000-0000-000000000001")
+	clusterID := uuid.MustParse("72000000-0000-0000-0000-000000000002")
+	nodePoolID := uuid.MustParse("72000000-0000-0000-0000-000000000003")
+	siteID := uuid.MustParse("72000000-0000-0000-0000-000000000004")
+	vpcID := uuid.MustParse("72000000-0000-0000-0000-000000000005")
+
+	infraMachine := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": nicov1.GroupVersion.String(),
+		"kind":       nicoMachineConst,
+		"spec": map[string]any{
+			"labels": map[string]any{
+				"example.com/from-template": "keep",
+			},
+		},
+	}}
+	a := &Activities{cfg: config.Config{NKESiteControllerName: "site-a"}}
+	err := a.applyNicoMachineInstanceLabels(context.Background(), &capiMachineCreateContext{
+		node: db.Node{
+			ID:   nodeID,
+			Nico: &db.NicoNodeProvider{ForgeMachineID: "machine-abc123"},
+		},
+		nodePool: db.NodePool{ID: nodePoolID},
+		cluster: db.Cluster{
+			ID:     clusterID,
+			OrgID:  "org-1",
+			SiteID: siteID,
+			VpcID:  vpcID,
+		},
+	}, infraMachine)
+	require.NoError(t, err)
+
+	labels, found, err := unstructured.NestedStringMap(infraMachine.Object, "spec", "labels")
+	require.NoError(t, err)
+	require.True(t, found)
+	assert.Equal(t, "keep", labels["example.com/from-template"])
+	assert.Equal(t, nodeID.String(), labels[constants.LabelKeyNodeID])
+	assert.Equal(t, clusterID.String(), labels[constants.LabelKeyClusterID])
+	assert.Equal(t, nodePoolID.String(), labels[constants.LabelKeyNodePoolID])
+	assert.Equal(t, "machine-abc123", labels[constants.LabelKeyMachineID])
+	assert.Equal(t, siteID.String(), labels[constants.LabelKeyNodeSiteID])
+	assert.Equal(t, "site-a", labels[constants.LabelKeyNodeSiteName])
+	assert.Equal(t, vpcID.String(), labels[constants.LabelKeyNodeVPCID])
+	assert.Empty(t, labels[constants.LabelKeyNodeVPCName])
 }
 
 func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *testing.T) {
