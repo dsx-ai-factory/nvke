@@ -11,11 +11,19 @@
 #
 # Unlike controller/test/e2e (excluded from the pull-request lane in
 # controller-test.yml because it needs a live cluster in KUBECONFIG), this
-# suite stands up everything it needs itself: fake node containers today
-# (cli/e2e/bootstrap/substrate, `make -C cli nodes-up`), growing to an
-# ephemeral Kind cluster as `nkectl bootstrap site` gains real stages.
-# ubuntu-latest ships Docker, so no self-hosted runner is needed for that
-# either.
+# suite stands up everything it needs itself: fake node containers
+# (cli/e2e/bootstrap/substrate, `make -C cli nodes-up`) and, since the
+# cli/internal/bootstrapengine port (NKX-14787), a real ephemeral Kind
+# cluster that `nkectl bootstrap site` creates and tears down itself.
+# ubuntu-latest ships Docker, so no self-hosted runner is needed for that;
+# `kind` itself is not preinstalled and is set up below the same way
+# capd-e2e.yml does it (helm/kind-action, install_only).
+#
+# Runs on the Docker provider (see run.sh) rather than nerdctl: that is the
+# path actually verified end to end on this runner image. nerdctl/containerd
+# rootless+cgroup-v2 provisioning on ubuntu-latest is tracked as a follow-up
+# on NKX-14787, not yet validated here — see run.sh's comment for the exact
+# rollback rationale.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -75,6 +83,16 @@ jobs:
           cache-dependency-path: |
             go.work.sum
             **/go.sum
+
+      # Same pinned version and install pattern as capd-e2e.yml, for the same
+      # reason: install_only, since this suite drives kind itself rather than
+      # delegating cluster creation to the action.
+      - name: Set up Kind and kubectl
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          version: v0.32.0
+          kubectl_version: v1.36.0
+          install_only: true
 
       - name: Run nkectl bootstrap e2e
         working-directory: cli

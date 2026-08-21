@@ -18,10 +18,23 @@
 #      that change actually reaching it. The wait for readiness lives in the
 #      substrate package (cli/e2e/bootstrap/substrate), not here: `nodes-up`
 #      does not return until every node's agent is confirmed active.
-#   2. Inventory load + validation only. `bootstrap site` stops at its
-#      not-yet-implemented dispatch stub, which this script asserts by name
-#      so a change that silently starts dispatching (or stops validating) is
-#      caught here rather than downstream. Nothing dials the nodes yet.
+#   2. `bootstrap site` stands up the ephemeral bootstrap Kind cluster
+#      (cli/internal/bootstrapengine), then stops at its not-yet-implemented
+#      CWE-dispatch stub, which this script asserts by name so a change that
+#      silently starts dispatching (or stops validating) is caught here
+#      rather than downstream. Nothing dials the fake nodes yet.
+#   3. The ephemeral Kind cluster is confirmed gone after the command exits —
+#      `bootstrap site` tears it down unconditionally on every exit path,
+#      including the dispatch-stub error path stage 2 asserts on.
+#
+# NKECTL_BOOTSTRAP_PROVIDER selects the container runtime front end the
+# ephemeral cluster runs on (see cli/internal/bootstrapengine and NKX-14787).
+# Defaults to "docker" here specifically: that is the path this suite has
+# actually verified end to end (including on the ubuntu-latest CI runner);
+# nerdctl is the package's default everywhere else and is exercised by the
+# package's own unit tests, but rootless/cgroup-v2 provisioning for a real
+# nerdctl+containerd runtime on the CI runner is tracked as a NKX-14787
+# follow-up, not yet validated here. Override to try it locally.
 
 set -Eeuo pipefail
 
@@ -29,6 +42,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 NKECTL="${CLI_DIR}/bin/nkectl"
 INVENTORY="${SCRIPT_DIR}/inventory.ci.yaml"
+BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
+export NKECTL_BOOTSTRAP_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER:-docker}"
 
 log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
 
@@ -57,7 +72,7 @@ log "PASS: all fake nodes are up and node-agent is reachable"
 
 # ── Stage 2: bootstrap-dispatch stub ─────────────────────────────────────
 
-log "running: nkectl bootstrap site -i ${INVENTORY}"
+log "running: nkectl bootstrap site -i ${INVENTORY} (NKECTL_BOOTSTRAP_PROVIDER=${NKECTL_BOOTSTRAP_PROVIDER})"
 set +e
 output="$("${NKECTL}" bootstrap site -i "${INVENTORY}" 2>&1)"
 status=$?
@@ -72,5 +87,24 @@ if ! grep -q "not yet implemented" <<<"${output}"; then
   log "FAIL: command failed, but not with the expected dispatch stub error"
   exit 1
 fi
+if ! grep -q "bootstrap kind cluster ready" <<<"${output}"; then
+  log "FAIL: command reached the dispatch stub, but never reported the bootstrap kind cluster ready"
+  exit 1
+fi
 
-log "PASS: inventory loaded and validated; reached the bootstrap-dispatch stub"
+log "PASS: inventory loaded and validated; ephemeral kind cluster came up; reached the bootstrap-dispatch stub"
+
+# ── Stage 3: ephemeral kind cluster is gone after ───────────────────────
+
+log "confirming the ephemeral bootstrap kind cluster (${BOOTSTRAP_KIND_CLUSTER}) was torn down"
+if ! grep -q "tearing down bootstrap kind cluster" <<<"${output}"; then
+  log "FAIL: command never logged tearing down the bootstrap kind cluster"
+  exit 1
+fi
+if kind get clusters 2>/dev/null | grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"; then
+  log "FAIL: kind cluster ${BOOTSTRAP_KIND_CLUSTER} is still registered after bootstrap site exited"
+  kind get clusters || true
+  exit 1
+fi
+
+log "PASS: ephemeral kind cluster ${BOOTSTRAP_KIND_CLUSTER} is gone after the command exited"
