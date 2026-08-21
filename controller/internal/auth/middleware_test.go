@@ -399,9 +399,9 @@ func TestMiddlewareAnonymousSurface(t *testing.T) {
 	}
 }
 
-// Deny by default. Nothing outside the API and the documented surface is served
-// by this binary any more, so every path below authenticates first and 404s
-// second -- the order that keeps an unrouted path from reporting whether it exists.
+// Deny by default. This binary serves nothing outside the API and the documented
+// surface, so every path below authenticates first and 404s second -- the order
+// that keeps an unrouted path from reporting whether it exists.
 func TestMiddlewareCatchAllDoesNotLeak(t *testing.T) {
 	t.Parallel()
 
@@ -411,8 +411,8 @@ func TestMiddlewareCatchAllDoesNotLeak(t *testing.T) {
 		"/api/clusters",
 		"/API/CLUSTERS",
 
-		// The UI moved out of this binary, so its index and its assets are no
-		// longer exempt. They authenticate and then 404.
+		// No UI is served here, so its index and its assets are not exempt. They
+		// authenticate and then 404.
 		"/",
 		"/index.html",
 		"/api.js",

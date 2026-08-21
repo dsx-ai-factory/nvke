@@ -29,14 +29,16 @@ const (
 // authentication. escaped is r.URL.EscapedPath(); decoded is r.URL.Path.
 //
 // It exempts only if both views agree, because neither alone is sufficient.
-// http.ServeMux unescapes each segment before matching, so "/%61pi/nodes/x.js"
-// reaches the "/api/nodes/{id}" handler while the escaped view sees no "/api/"
-// prefix and exempts it as a UI asset. The decoded view catches that.
 //
-// The escaped view catches the opposite: an encoded dot-segment such as
-// "/api/docs%2f..%2fversion" survives path.Clean intact while the decoded view
-// cleans it to "/api/version", which is exempt. Only the escaped view sees that
-// the request never named an exempt path to begin with.
+// The decoded view catches an encoded dot-segment that climbs out of an exempt
+// subtree: "/api/docs/%2e%2e/nodes" keeps its "/api/docs/" prefix through
+// path.Clean, which leaves "%2e%2e" as an ordinary segment, so the escaped view
+// alone would exempt it. Decoded, it cleans to "/api/nodes".
+//
+// The escaped view catches the opposite: "/api/docs%2f..%2fversion" survives
+// path.Clean intact while the decoded view cleans it to "/api/version", which is
+// exempt. Only the escaped view sees that the request never named an exempt path
+// to begin with.
 //
 // path.Clean folds dot-segments and duplicate slashes, so "/api/nodes/../../docs"
 // cannot dress an API path up as an exempt one. It also strips a trailing slash,

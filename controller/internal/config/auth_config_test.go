@@ -75,7 +75,15 @@ func TestValidateIgnoresAuthFields(t *testing.T) {
 		SpireJoinTokenTTL:     time.Hour,
 	}
 
-	// Validate reads neither field, so setting them cannot change this answer.
-	// This is the case a new required-auth check would break.
-	require.NoError(t, base.Validate())
+	// Unset is the disabled state every existing deployment upgrades into. This
+	// is the case a new required-auth check would break.
+	require.NoError(t, base.Validate(), "an unset AUTH_CONFIG_PATH must still validate")
+
+	// And set changes nothing, in either mode: Validate has no opinion either way.
+	for _, permissive := range []bool{false, true} {
+		configured := base
+		configured.AuthConfigPath = "/etc/nke/auth/auth.yaml"
+		configured.PermissiveMode = permissive
+		require.NoError(t, configured.Validate(), "permissive=%t must not change validation", permissive)
+	}
 }

@@ -66,20 +66,16 @@ func NewServer(
 		Middlewares: []api.MiddlewareFunc{
 			oapi_middleware.OapiRequestValidatorWithOptions(openapiSpec, &oapi_middleware.Options{
 				SilenceServersWarning: true,
-				// Turn off this validator's own security check. It has to be off:
-				// api/openapi.yaml declares `security` globally, and kin-openapi
-				// rejects every request against an operation carrying a security
-				// requirement it has no AuthenticationFunc to evaluate. Delete
-				// this line and NKE answers 401 to everything -- including when
-				// authentication is disabled, which is every deployment today.
+				// Turn off this validator's own security check. api/openapi.yaml
+				// declares `security` globally, and kin-openapi rejects every
+				// request carrying a security requirement it has no
+				// AuthenticationFunc to evaluate. Delete this line and NKE answers
+				// 401 to everything -- including when authentication is disabled,
+				// which is every deployment today.
 				//
-				// It costs nothing, because this was never where tokens are
-				// checked. The authentication middleware wraps this entire mux
-				// (see the chain below), so anything reaching the validator has
-				// already been authenticated or is on the anonymous surface. The
-				// spec declares `security` so the generated client carries a 401
-				// and the Swagger UI offers an Authorize button, not so that it
-				// gets enforced here.
+				// Nothing is lost: tokens are checked by the middleware wrapping
+				// this whole mux, so anything reaching the validator is already
+				// authenticated or on the anonymous surface.
 				Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 				ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
 					logger.Error("OpenAPI middleware validation error", "message", message)
@@ -141,9 +137,8 @@ func NewServer(
 	// that a rejection still produces the usual request/response log pair. Tracing
 	// stays outermost so a rejected request is still a span.
 	//
-	// This reorders the two existing middlewares even when authn is nil: managed-by
-	// used to run before logging rather than after it. The visible effect is that a
-	// request managed-by answers 409 now produces a log pair it did not before.
+	// Logging wraps managed-by, so a 409 from managed-by is logged like any other
+	// response. TestDisabledServerLogsTheManagedByRejection pins that.
 	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
 	if authn != nil {
 		handler = authn.Wrap(handler)

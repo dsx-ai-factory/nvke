@@ -148,7 +148,7 @@ func TestEnforcingServerAuthenticatesBeforeValidating(t *testing.T) {
 
 // The chain order, through the real NewServer, with authentication disabled --
 // which is every deployment today. Wiring authentication in reordered the two
-// middlewares that were already there, and this is the one behaviour that
+// middlewares that were already there, and this is the one behavior that
 // changes for a deployment that never turns authentication on.
 //
 // managed-by used to wrap logging, so it answered 409 before logging ever ran.

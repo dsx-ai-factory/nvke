@@ -1776,7 +1776,8 @@ type ListClustersClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListClustersResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -1800,7 +1801,8 @@ type CreateClusterClientResponse struct {
 	HTTPResponse *http.Response
 	JSON201      *Cluster
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -1822,7 +1824,8 @@ func (r CreateClusterClientResponse) StatusCode() int {
 type DeleteClusterClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -1845,7 +1848,8 @@ type GetClusterClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *Cluster
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -1869,7 +1873,8 @@ type UpdateClusterClientResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *Cluster
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 	JSON409      *GenericError
 }
 
@@ -1893,7 +1898,8 @@ type ListCNIPluginsClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListCNIPluginsResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -1916,7 +1922,8 @@ type ListConfigProfilesClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListConfigProfilesResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -1939,7 +1946,8 @@ type ListNodePoolsClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListNodePoolsResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -1963,7 +1971,8 @@ type CreateNodePoolClientResponse struct {
 	HTTPResponse *http.Response
 	JSON201      *NodePool
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 	JSON409      *GenericError
 }
 
@@ -1987,7 +1996,8 @@ type DeleteNodePoolClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2010,7 +2020,8 @@ type GetNodePoolClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *NodePool
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2034,7 +2045,8 @@ type UpdateNodePoolClientResponse struct {
 	HTTPResponse *http.Response
 	JSON200      *NodePool
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2057,7 +2069,8 @@ type GetNodePoolConfigHistoryClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *NodePoolConfigHistory
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2080,7 +2093,8 @@ type ListNodeSetsClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListNodeSetsResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2103,7 +2117,8 @@ type GetNodeSetClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *NodeSet
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2126,7 +2141,8 @@ type ListNodesClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListNodesResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2149,7 +2165,8 @@ type DeleteNodeClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2172,7 +2189,8 @@ type GetNodeClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *Node
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2195,7 +2213,8 @@ type GetNodeHistoryClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *NodeHistory
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2218,7 +2237,8 @@ type ListOSProfilesClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListOSProfilesResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2241,7 +2261,8 @@ type ListSitesClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListSitesResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2265,7 +2286,8 @@ type RegisterSiteClientResponse struct {
 	HTTPResponse *http.Response
 	JSON201      *Site
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2288,7 +2310,8 @@ type GetSiteClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *Site
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2311,7 +2334,8 @@ type ListVIPAllocationsClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *ListVIPAllocationsResponse
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2335,7 +2359,8 @@ type CreateVIPAllocationClientResponse struct {
 	HTTPResponse *http.Response
 	JSON201      *VIPAllocation
 	JSON400      *GenericError
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2358,7 +2383,8 @@ type GetVIPAllocationClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *VIPAllocation
-	JSON401      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
 }
 
 // Status returns HTTPResponse.Status
@@ -2689,11 +2715,18 @@ func ParseListClustersClientResponse(rsp *http.Response) (*ListClustersClientRes
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -2729,11 +2762,18 @@ func ParseCreateClusterClientResponse(rsp *http.Response) (*CreateClusterClientR
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -2755,11 +2795,19 @@ func ParseDeleteClusterClientResponse(rsp *http.Response) (*DeleteClusterClientR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
 	}
 
 	return response, nil
@@ -2787,11 +2835,18 @@ func ParseGetClusterClientResponse(rsp *http.Response) (*GetClusterClientRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -2827,11 +2882,18 @@ func ParseUpdateClusterClientResponse(rsp *http.Response) (*UpdateClusterClientR
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest GenericError
@@ -2867,11 +2929,18 @@ func ParseListCNIPluginsClientResponse(rsp *http.Response) (*ListCNIPluginsClien
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -2900,11 +2969,18 @@ func ParseListConfigProfilesClientResponse(rsp *http.Response) (*ListConfigProfi
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -2933,11 +3009,18 @@ func ParseListNodePoolsClientResponse(rsp *http.Response) (*ListNodePoolsClientR
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -2973,11 +3056,18 @@ func ParseCreateNodePoolClientResponse(rsp *http.Response) (*CreateNodePoolClien
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest GenericError
@@ -3013,11 +3103,18 @@ func ParseDeleteNodePoolClientResponse(rsp *http.Response) (*DeleteNodePoolClien
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3046,11 +3143,18 @@ func ParseGetNodePoolClientResponse(rsp *http.Response) (*GetNodePoolClientRespo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3086,11 +3190,18 @@ func ParseUpdateNodePoolClientResponse(rsp *http.Response) (*UpdateNodePoolClien
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3119,11 +3230,18 @@ func ParseGetNodePoolConfigHistoryClientResponse(rsp *http.Response) (*GetNodePo
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3152,11 +3270,18 @@ func ParseListNodeSetsClientResponse(rsp *http.Response) (*ListNodeSetsClientRes
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3185,11 +3310,18 @@ func ParseGetNodeSetClientResponse(rsp *http.Response) (*GetNodeSetClientRespons
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3218,11 +3350,18 @@ func ParseListNodesClientResponse(rsp *http.Response) (*ListNodesClientResponse,
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3251,11 +3390,18 @@ func ParseDeleteNodeClientResponse(rsp *http.Response) (*DeleteNodeClientRespons
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3284,11 +3430,18 @@ func ParseGetNodeClientResponse(rsp *http.Response) (*GetNodeClientResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3317,11 +3470,18 @@ func ParseGetNodeHistoryClientResponse(rsp *http.Response) (*GetNodeHistoryClien
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3350,11 +3510,18 @@ func ParseListOSProfilesClientResponse(rsp *http.Response) (*ListOSProfilesClien
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3383,11 +3550,18 @@ func ParseListSitesClientResponse(rsp *http.Response) (*ListSitesClientResponse,
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3423,11 +3597,18 @@ func ParseRegisterSiteClientResponse(rsp *http.Response) (*RegisterSiteClientRes
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3456,11 +3637,18 @@ func ParseGetSiteClientResponse(rsp *http.Response) (*GetSiteClientResponse, err
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3489,11 +3677,18 @@ func ParseListVIPAllocationsClientResponse(rsp *http.Response) (*ListVIPAllocati
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3529,11 +3724,18 @@ func ParseCreateVIPAllocationClientResponse(rsp *http.Response) (*CreateVIPAlloc
 		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 
@@ -3562,11 +3764,18 @@ func ParseGetVIPAllocationClientResponse(rsp *http.Response) (*GetVIPAllocationC
 		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest GenericError
+		var dest Unauthorized
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
 
 	}
 

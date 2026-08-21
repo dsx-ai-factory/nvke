@@ -9,7 +9,6 @@ package auth_test
 // binary.
 
 import (
-	"io"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -21,7 +20,7 @@ import (
 )
 
 func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
+	return slog.New(slog.DiscardHandler)
 }
 
 // The default every deployment gets. Nil and no error, so the caller keeps the

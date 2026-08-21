@@ -33,11 +33,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListCNIPluginsResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /clusters:
     get:
@@ -58,11 +56,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListClustersResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       summary: Create Cluster
       operationId: createCluster
@@ -86,11 +82,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /clusters/{clusterID}:
     parameters:
@@ -113,11 +107,9 @@ paths:
         "404":
           description: Cluster not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     patch:
       summary: Update a Cluster
       operationId: updateCluster
@@ -152,11 +144,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     delete:
       summary: Delete a Cluster
       operationId: deleteCluster
@@ -166,11 +156,9 @@ paths:
         "404":
           description: Cluster not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodePools:
     get:
@@ -204,11 +192,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListNodePoolsResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       summary: Create Node Pool
       operationId: createNodePool
@@ -238,11 +224,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodePools/{nodePoolID}:
     parameters:
@@ -265,11 +249,9 @@ paths:
         "404":
           description: Node Pool not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     patch:
       summary: Update Node Pool
       operationId: updateNodePool
@@ -295,11 +277,9 @@ paths:
         "404":
           description: Node Pool not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     delete:
       summary: Delete a Node Pool
       description: |
@@ -320,11 +300,9 @@ paths:
         "404":
           description: Node Pool not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodePools/{nodePoolID}/configHistory:
     parameters:
@@ -348,11 +326,9 @@ paths:
         "404":
           description: Node Pool not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodeSets:
     get:
@@ -374,11 +350,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListNodeSetsResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodeSets/{nodeSetID}:
     parameters:
@@ -401,11 +375,9 @@ paths:
         "404":
           description: Node Set not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodes:
     get:
@@ -446,11 +418,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListNodesResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodes/{nodeID}:
     parameters:
@@ -473,11 +443,9 @@ paths:
         "404":
           description: Node not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     delete:
       summary: Delete a Single Node
       description: |
@@ -505,11 +473,9 @@ paths:
         "404":
           description: Node not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /nodes/{nodeID}/history:
     parameters:
@@ -533,11 +499,9 @@ paths:
         "404":
           description: Node not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /sites:
     get:
@@ -551,11 +515,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListSitesResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       summary: Register Site
       operationId: registerSite
@@ -579,11 +541,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /sites/{siteID}:
     parameters:
@@ -606,11 +566,9 @@ paths:
         "404":
           description: Site not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /vipAllocations:
     get:
@@ -632,11 +590,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListVIPAllocationsResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     post:
       summary: Create VIP Allocation
       operationId: createVIPAllocation
@@ -660,11 +616,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/GenericError"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /vipAllocations/{vipAllocationID}:
     parameters:
@@ -687,11 +641,9 @@ paths:
         "404":
           description: VIP allocation not found
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /osProfiles:
     get:
@@ -705,11 +657,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListOSProfilesResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /configProfiles:
     get:
@@ -723,13 +673,29 @@ paths:
               schema:
                 $ref: "#/components/schemas/ListConfigProfilesResponse"
         "401":
-          description: Unauthorized
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/GenericError"
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
 components:
+  responses:
+    # The two statuses every operation can answer. They come from the
+    # authentication middleware, which runs before routing, rather than from any
+    # handler -- so they belong to every operation equally and are referenced
+    # rather than repeated.
+    Unauthorized:
+      description: No valid bearer token was presented.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GenericError"
+    Forbidden:
+      description: The token verified, but its subject matches no admission rule.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/GenericError"
+
   securitySchemes:
     # Any JWT signed by an issuer the deployment is configured to trust. Which
     # issuers those are, and which subjects they admit, is operator configuration
