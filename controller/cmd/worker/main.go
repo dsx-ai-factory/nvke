@@ -467,6 +467,7 @@ func main() {
 		dbInstance,
 		managementK8sClient,
 		temporalClient,
+		forgeProvider,
 		nodeAgentClient,
 		tenantClientProvider,
 		trustDomain,

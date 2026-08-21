@@ -18,6 +18,8 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodehealth"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
+	"github.com/NVIDIA/nke/controller/internal/providers/forge"
+	temporalactivities "github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
 // ControllerManager runs the site reconciliation loop and manages controllers
@@ -28,7 +30,7 @@ type ControllerManager struct {
 	db     db.DB
 	stopCh chan struct{}
 
-	capiClusterScaffold          *CAPIClusterScaffoldController
+	forgeCAPIMigration           *ForgeCAPIMigrationController
 	nodeHealthController         *nodehealth.Controller
 	clusterStaticEntryController *NodeClusterStaticEntryController
 	tpmPubhashesCmController     *TpmPubhashesCmController
@@ -43,6 +45,7 @@ func NewControllerManager(
 	dbInstance db.DB,
 	k8sClient ctrlclient.Client,
 	cweTemporalClient client.Client,
+	forgeProvider *forge.ForgeProvider,
 	nodeAgentClient agent.Client,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 	trustDomain string,
@@ -56,9 +59,18 @@ func NewControllerManager(
 		tpmPubhashesCmController = NewTpmPubhashesCmController(cfg, k8sClient, controllerManagerLogger, trustDomain)
 	}
 
-	var capiClusterScaffold *CAPIClusterScaffoldController
+	var forgeCAPIMigration *ForgeCAPIMigrationController
 	if cfg.EnableForgeCapi {
-		capiClusterScaffold = NewCAPIClusterScaffoldController(cfg, controllerManagerLogger, dbInstance, k8sClient, nodeAgentClient)
+		activities := temporalactivities.NewActivities(
+			cfg,
+			dbInstance,
+			k8sClient,
+			nodeAgentClient,
+			forgeProvider,
+			trustDomain,
+			tenantClientProvider,
+		)
+		forgeCAPIMigration = NewForgeCAPIMigrationController(controllerManagerLogger, dbInstance, k8sClient, activities)
 	}
 
 	return &ControllerManager{
@@ -66,7 +78,7 @@ func NewControllerManager(
 		logger:                       controllerManagerLogger,
 		db:                           dbInstance,
 		stopCh:                       make(chan struct{}),
-		capiClusterScaffold:          capiClusterScaffold,
+		forgeCAPIMigration:           forgeCAPIMigration,
 		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
 		clusterStaticEntryController: clusterStaticEntryController,
 		tpmPubhashesCmController:     tpmPubhashesCmController,
@@ -186,10 +198,10 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 		a.logger.Error("Failed to reconcile node health", "error", err, "siteID", site.ID.String())
 	}
 
-	if a.capiClusterScaffold != nil {
-		if err := a.capiClusterScaffold.Reconcile(ctx, site); err != nil {
+	if a.forgeCAPIMigration != nil {
+		if err := a.forgeCAPIMigration.Reconcile(ctx, site); err != nil {
 			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile CAPI cluster scaffold", "error", err, "siteID", site.ID.String())
+			a.logger.Error("Failed to reconcile Forge CAPI migration", "error", err, "siteID", site.ID.String())
 		}
 	}
 

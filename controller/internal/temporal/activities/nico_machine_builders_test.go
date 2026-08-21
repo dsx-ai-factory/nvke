@@ -9,6 +9,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/ptr"
+
+	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
@@ -335,6 +338,77 @@ func TestNicoMachineBuilders_BuildNicoMachineNVLinkInterfaces(t *testing.T) {
 	assert.Equal(t, nvLinkLogicalPartitionID.String(), nvLinkInterfaces[0].NVLinkLogicalPartitionID)
 	assert.Equal(t, int32(0), *nvLinkInterfaces[0].DeviceInstance)
 	assert.Equal(t, int32(2), *nvLinkInterfaces[1].DeviceInstance)
+}
+
+func TestNicoMachineBuilders_BuildAdoptedNicoMachineForNodeFromForgeInstance(t *testing.T) {
+	labels := map[string]string{
+		"nke.nvidia.com/ip-address": "10.0.0.10",
+		"nke.nvidia.com/node-id":    "node-1",
+	}
+	instance := forgesdk.NewInstance()
+	instance.SetId("instance-1")
+	instance.SetVpcId("vpc-1")
+	instance.SetInstanceTypeId("instance-type-1")
+	instance.SetIpxeScript("#!ipxe\nboot")
+	instance.SetLabels(labels)
+	instance.SetSshKeyGroupIds([]string{"ssh-key-1", "ssh-key-2"})
+
+	subnetInterface := forgesdk.NewInterface()
+	subnetInterface.SetSubnetId("subnet-1")
+	subnetInterface.SetRequestedIpAddress("10.0.0.10")
+	subnetInterface.SetDevice("eth0")
+	subnetInterface.SetIsPhysical(false)
+	subnetInterface.SetDeviceInstance(0)
+	prefixInterface := forgesdk.NewInterface()
+	prefixInterface.SetVpcPrefixId("prefix-1")
+	instance.SetInterfaces([]forgesdk.Interface{*subnetInterface, *prefixInterface})
+
+	infinibandInterface := forgesdk.NewInfiniBandInterface()
+	infinibandInterface.SetPartitionId("partition-1")
+	infinibandInterface.SetDevice("mlx5_0")
+	infinibandInterface.SetDeviceInstance(0)
+	infinibandInterface.SetIsPhysical(false)
+	infinibandInterface.SetVirtualFunctionId(7)
+	instance.SetInfinibandInterfaces([]forgesdk.InfiniBandInterface{*infinibandInterface})
+
+	nvLinkInterface := forgesdk.NewNVLinkInterface()
+	nvLinkInterface.SetNvLinkLogicalPartitionId("nvlink-partition-1")
+	nvLinkInterface.SetDeviceInstance(0)
+	instance.SetNvLinkInterfaces([]forgesdk.NVLinkInterface{*nvLinkInterface})
+
+	nicoMachine, err := buildAdoptedNicoMachineForNode(db.Node{Name: "node-1"}, db.Cluster{Name: "cluster-a"}, "test-namespace", false, instance)
+	require.NoError(t, err)
+	got := nicoMachine.Spec
+	labels["nke.nvidia.com/node-id"] = "mutated-after-projection"
+
+	assert.Equal(t, "vpc-1", got.VPCID)
+	assert.Equal(t, "instance-type-1", got.InstanceTypeID)
+	assert.Empty(t, got.MachineID)
+	assert.Equal(t, "#!ipxe\nboot", got.IpxeScript)
+	assert.Equal(t, map[string]string{
+		"nke.nvidia.com/ip-address": "10.0.0.10",
+		"nke.nvidia.com/node-id":    "node-1",
+	}, got.Labels)
+	assert.Equal(t, []string{"ssh-key-1", "ssh-key-2"}, got.SSHKeyGroupIDs)
+
+	require.Len(t, got.Interfaces, 2)
+	assert.Equal(t, "subnet-1", got.Interfaces[0].SubnetID)
+	assert.Equal(t, "10.0.0.10", got.Interfaces[0].IPAddress)
+	assert.Equal(t, "eth0", got.Interfaces[0].Device)
+	assert.Equal(t, ptr.To(false), got.Interfaces[0].Physical)
+	assert.Equal(t, ptr.To(int32(0)), got.Interfaces[0].DeviceInstance)
+	assert.Equal(t, "prefix-1", got.Interfaces[1].VPCPrefixID)
+
+	require.Len(t, got.InfinibandInterfaces, 1)
+	assert.Equal(t, "partition-1", got.InfinibandInterfaces[0].PartitionID)
+	assert.Equal(t, "mlx5_0", got.InfinibandInterfaces[0].Device)
+	assert.Equal(t, ptr.To(int32(0)), got.InfinibandInterfaces[0].DeviceInstance)
+	assert.Equal(t, ptr.To(false), got.InfinibandInterfaces[0].IsPhysical)
+	assert.Equal(t, ptr.To(int32(7)), got.InfinibandInterfaces[0].VirtualFunctionID)
+
+	require.Len(t, got.NVLinkInterfaces, 1)
+	assert.Equal(t, "nvlink-partition-1", got.NVLinkInterfaces[0].NVLinkLogicalPartitionID)
+	assert.Equal(t, ptr.To(int32(0)), got.NVLinkInterfaces[0].DeviceInstance)
 }
 
 func TestNicoMachineBuilders_ValidateNicoMachineAcceleratorInterfaces(t *testing.T) {

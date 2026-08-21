@@ -26,10 +26,14 @@ var (
 	ErrMissingProviderPayload = errors.New("missing provider payload")
 )
 
+// ProviderType is a DB/API discriminator for who authors the manifests, not for whether CAPI reconciles the cluster.
 type ProviderType string
 
 const (
+	// When ProviderType is Nico, the caller gives OS profile / instance-type preference / subnets / etc/ and CWE generates the infra machine template for each node.
 	ProviderTypeNico ProviderType = "nico"
+
+	// When ProviderType is CAPI, the user specifies the infra machine template and CWE clones it for each node.
 	ProviderTypeCAPI ProviderType = "capi"
 )
 
