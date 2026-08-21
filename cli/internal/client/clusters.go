@@ -76,25 +76,24 @@ func (c *CWEClient) DeleteCluster(ctx context.Context, id openapi_types.UUID) er
 // The duplicate check is unreachable in practice: the DB enforces a global unique
 // index on cluster name (migration 20250407125309_name_uniqueness.go, index
 // clusters_name_unique), so the API rejects duplicate names at creation time.
-// If the uniqueness scope is ever narrowed to (name, orgID, siteID), a
-// GET /clusters?name= filter should be added here to avoid listing all clusters.
 func (c *CWEClient) FindClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
-	clusters, err := c.ListClusters(ctx)
+	resp, err := c.raw.ListClustersWithResponse(ctx, &api.ListClustersParams{Name: &name})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("finding cluster: %w", err)
 	}
-	var matches []*api.Cluster
-	for i := range clusters {
-		if clusters[i].Name == name {
-			matches = append(matches, &clusters[i])
-		}
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("finding cluster: %w", apiError(resp.Status(), resp.Body))
 	}
-	switch len(matches) {
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("finding cluster: empty response body")
+	}
+	clusters := resp.JSON200.Clusters
+	switch len(clusters) {
 	case 0:
 		return nil, fmt.Errorf("cluster %q not found", name)
 	case 1:
-		return matches[0], nil
+		return &clusters[0], nil
 	default:
-		return nil, fmt.Errorf("cluster name %q is ambiguous: %d clusters match; use the cluster ID instead", name, len(matches))
+		return nil, fmt.Errorf("cluster name %q is ambiguous: %d clusters match; use the cluster ID instead", name, len(clusters))
 	}
 }
