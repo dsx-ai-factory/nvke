@@ -120,7 +120,7 @@ PRIVATE_MODULES :=
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
 LICENSE_DESTS := controller/licenses \
-                 controller/deploy/charts/cloud-workflow-engine
+                 controller/deploy/charts/controller
 
 .DEFAULT_GOAL := help
 .PHONY: help test-e2e-capd-ci work work-sync work-check work-check-offline build test version-check clean licenses licenses-check

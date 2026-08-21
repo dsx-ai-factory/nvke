@@ -54,7 +54,14 @@ image:
 #   --set imagePullSecrets[0].name=ghcr-imagepull
 imagePullSecrets: []
 # This is to override the chart name.
-nameOverride: ""
+#
+# Pinned to cloud-workflow-engine rather than left empty: the chart is named
+# `controller` so it publishes to <registry>/nke/charts/controller, but the
+# name helper feeds app.kubernetes.io/name, every resource name derived from
+# the fullname template, and the serviceMonitor.matchLabels selector below.
+# Letting it follow .Chart.Name would rename every object this chart owns and
+# break that selector on upgrade of an existing release.
+nameOverride: "cloud-workflow-engine"
 fullnameOverride: ""
 # -- Deploy into this namespace instead of the release namespace (umbrella use).
 namespaceOverride: ""

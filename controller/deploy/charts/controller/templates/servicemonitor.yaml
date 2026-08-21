@@ -4,9 +4,9 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: {{ .Values.serviceMonitor.name }}
-  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  namespace: {{ include "controller.namespace" . }}
   labels:
-    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+    {{- include "controller.labels" . | nindent 4 }}
     {{- with .Values.serviceMonitor.labels }}
     {{- toYaml . | nindent 4 }}
     {{- end }}
@@ -16,7 +16,7 @@ spec:
       port: metrics
   namespaceSelector:
     matchNames:
-      - {{ include "cloud-workflow-engine.namespace" . }}
+      - {{ include "controller.namespace" . }}
   selector:
     {{- /*
       Merged into one map rather than emitted as two blocks. Emitting both
@@ -25,7 +25,7 @@ spec:
       Helm never parses its own output, so `helm lint` and `helm template`
       both passed while the manifest was invalid.
     */}}
-    {{- $labels := fromYaml (include "cloud-workflow-engine.selectorLabels" .) }}
+    {{- $labels := fromYaml (include "controller.selectorLabels" .) }}
     {{- $labels = merge (deepCopy (.Values.serviceMonitor.matchLabels | default dict)) $labels }}
     matchLabels:
       {{- toYaml $labels | nindent 6 }}

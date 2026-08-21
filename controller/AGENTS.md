@@ -209,7 +209,7 @@ CI pipeline (`.gitlab/ci/`) handles the whole chain:
    (auto-incrementing `v0.0.x`).
 2. **`publish-image-nvcr`** builds and pushes the multi-arch image to
    `nvcr.io/j7sbcjl3qgta/cloud-workflow-engine:<BUILD_VERSION>`.
-3. **`publish-chart-nvcr`** packages `deploy/charts/cloud-workflow-engine`
+3. **`publish-chart-nvcr`** packages `deploy/charts/controller`
    with `version`/`appVersion` derived from `BUILD_VERSION` and pushes it to
    `oci://nvcr.io/j7sbcjl3qgta/cloud-workflow-engine:<BUILD_VERSION>`. The
    chart and image are versioned 1:1.

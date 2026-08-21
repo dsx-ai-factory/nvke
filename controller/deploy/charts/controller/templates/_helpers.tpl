@@ -2,14 +2,14 @@
 Expand the name of the chart.
 */}}
 
-{{- define "cloud-workflow-engine.name" -}}
+{{- define "controller.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Allow the release namespace to be overridden for multi-namespace deployments in combined charts
 */}}
-{{- define "cloud-workflow-engine.namespace" -}}
+{{- define "controller.namespace" -}}
 {{- if .Values.namespaceOverride -}}
 {{- .Values.namespaceOverride -}}
 {{- else -}}
@@ -22,7 +22,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "cloud-workflow-engine.fullname" -}}
+{{- define "controller.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -38,7 +38,7 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "cloud-workflow-engine.chart" -}}
+{{- define "controller.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -52,9 +52,9 @@ Create postgres connection string
 {{/*
 Common labels
 */}}
-{{- define "cloud-workflow-engine.labels" -}}
-helm.sh/chart: {{ include "cloud-workflow-engine.chart" . }}
-{{ include "cloud-workflow-engine.selectorLabels" . }}
+{{- define "controller.labels" -}}
+helm.sh/chart: {{ include "controller.chart" . }}
+{{ include "controller.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -64,17 +64,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "cloud-workflow-engine.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "cloud-workflow-engine.name" . }}
+{{- define "controller.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "controller.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "cloud-workflow-engine.serviceAccountName" -}}
+{{- define "controller.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "cloud-workflow-engine.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "controller.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
