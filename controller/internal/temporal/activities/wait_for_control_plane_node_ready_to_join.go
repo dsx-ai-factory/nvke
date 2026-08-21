@@ -105,7 +105,8 @@ func (a *Activities) assertSiteRegistered(ctx context.Context, clusterID uuid.UU
 			return temporal.NewNonRetryableApplicationError(
 				fmt.Sprintf("site %s is not registered, so no node can be scheduled for cluster %s",
 					cluster.SiteID, clusterID),
-				"site.NotRegistered", err)
+				"site.NotRegistered", err,
+			)
 		}
 	}
 	return nil
