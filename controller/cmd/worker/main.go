@@ -25,6 +25,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers"
+	"github.com/NVIDIA/nke/controller/internal/controllers/automode"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
@@ -230,6 +231,16 @@ func main() {
 	)
 	if err := nodePoolController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up node pool controller", "error", err)
+		os.Exit(1)
+	}
+
+	autoModeController := automode.NewController(
+		cfg,
+		logger.With("logger", "auto-mode-controller"),
+		dbInstance,
+	)
+	if err := autoModeController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up auto-mode controller", "error", err)
 		os.Exit(1)
 	}
 

@@ -472,6 +472,15 @@ func (m *MockTx) ListNodes(ctx context.Context, filters db.NodeFilters) ([]db.No
 	return v, args.Error(1)
 }
 
+func (m *MockTx) ListNodesEligibleForRecycling(ctx context.Context, nodePoolID uuid.UUID, limit int) ([]db.Node, error) {
+	args := m.Called(ctx, nodePoolID, limit)
+	v, ok := args.Get(0).([]db.Node)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockTx) CreateNode(ctx context.Context, node *db.Node) (db.Node, error) {
 	args := m.Called(ctx, node)
 	v, ok := args.Get(0).(db.Node)

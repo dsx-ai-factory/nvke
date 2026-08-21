@@ -22,8 +22,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/teleport"
 )
 
-// ControllerManager runs the site reconciliation loop and manages controllers
-// (node pool, node set, node scheduler, auto-mode, control plane, etc.).
+// ControllerManager runs the site reconciliation loop and manages controllers.
 type ControllerManager struct {
 	cfg    config.Config
 	logger *slog.Logger
@@ -32,7 +31,6 @@ type ControllerManager struct {
 
 	nodeScheduler                *NodeScheduler
 	capiClusterScaffold          *CAPIClusterScaffoldController
-	autoModeController           *AutoModeController
 	nodeHealthController         *nodehealth.Controller
 	certRenewalController        *CertRenewalController
 	nodeTPMEKPubController       *NodeTPMEKPubController
@@ -83,7 +81,6 @@ func NewControllerManager(
 		stopCh:                       make(chan struct{}),
 		nodeScheduler:                NewNodeScheduler(cfg, controllerManagerLogger, dbInstance, cweTemporalClient, forgeProvider),
 		capiClusterScaffold:          capiClusterScaffold,
-		autoModeController:           NewAutoModeController(cfg, controllerManagerLogger, dbInstance),
 		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
 		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
 		nodeTPMEKPubController:       NewNodeTPMEKPubController(cfg, dbInstance, controllerManagerLogger, forgeProvider, k8sClient),
@@ -216,11 +213,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	if err := a.nodeScheduler.Schedule(ctx, site); err != nil {
 		// Log errors but continue processing the other controllers.
 		a.logger.Error("Failed to schedule nodes", "error", err, "siteID", site.ID.String())
-	}
-
-	if err := a.autoModeController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile auto-mode", "error", err, "siteID", site.ID.String())
 	}
 
 	if err := a.nodeTPMEKPubController.Reconcile(ctx, site); err != nil {
