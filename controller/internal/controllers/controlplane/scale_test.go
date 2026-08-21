@@ -223,7 +223,7 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 			node.NodeSetID == uuid.Nil &&
 			node.ControlPlane &&
 			// The control-plane controller no longer stamps an instance type;
-			// the node scheduler selects it at schedule time.
+			// the control plane node scheduler selects it at schedule time.
 			node.InstanceTypeID == uuid.Nil &&
 			node.ControlPlaneConfigurationID == controlPlaneConfigID
 	})).Return(db.Node{}, nil).Twice()

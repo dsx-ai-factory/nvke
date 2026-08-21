@@ -18,18 +18,17 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodehealth"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/teleport"
 )
 
-// ControllerManager runs the site reconciliation loop and manages controllers.
+// ControllerManager runs the site reconciliation loop and manages controllers
+// that have not yet migrated to controller-runtime.
 type ControllerManager struct {
 	cfg    config.Config
 	logger *slog.Logger
 	db     db.DB
 	stopCh chan struct{}
 
-	nodeScheduler                *NodeScheduler
 	capiClusterScaffold          *CAPIClusterScaffoldController
 	nodeHealthController         *nodehealth.Controller
 	certRenewalController        *CertRenewalController
@@ -40,7 +39,7 @@ type ControllerManager struct {
 
 // NewControllerManager creates a new ControllerManager.
 //
-// - cweTemporalClient: Used by NodeScheduler and ControlPlaneController for CWE-owned workflows (node provisioning, cluster lifecycle, control plane upgrades)
+// - cweTemporalClient: Used by controllers that start CWE-owned workflows.
 // - teleportClient: Used by TeleportTokenController for TPM join token management (can be nil if Teleport disabled)
 func NewControllerManager(
 	cfg config.Config,
@@ -48,7 +47,6 @@ func NewControllerManager(
 	dbInstance db.DB,
 	k8sClient ctrlclient.Client,
 	cweTemporalClient client.Client,
-	forgeProvider *forge.ForgeProvider,
 	nodeAgentClient agent.Client,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 	trustDomain string,
@@ -78,7 +76,6 @@ func NewControllerManager(
 		logger:                       controllerManagerLogger,
 		db:                           dbInstance,
 		stopCh:                       make(chan struct{}),
-		nodeScheduler:                NewNodeScheduler(cfg, controllerManagerLogger, dbInstance, cweTemporalClient, forgeProvider),
 		capiClusterScaffold:          capiClusterScaffold,
 		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
 		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
@@ -206,11 +203,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 			// Log errors but continue processing the other controllers.
 			a.logger.Error("Failed to reconcile CAPI cluster scaffold", "error", err, "siteID", site.ID.String())
 		}
-	}
-
-	if err := a.nodeScheduler.Schedule(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to schedule nodes", "error", err, "siteID", site.ID.String())
 	}
 
 	if a.teleportTokenController != nil {

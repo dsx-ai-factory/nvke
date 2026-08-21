@@ -62,7 +62,7 @@ func nodeSetKeysForNode(node db.Node) []dbreconcile.Key {
 // Reconcile NodeSets, for each NodeSet:
 // - Examine the NodeSet.DesiredCount
 //   - Create pending records for any missing nodes.
-//   - The NodeScheduler will try to provision Pending Nodes when resources are available.
+//   - The node pool node scheduler will try to provision Pending Nodes when resources are available.
 //   - Delete pending nodes when the count is above the desired count.
 //   - !!! NOTE: Only pending nodes will be deleted. We do not currently delete or mark for deletion active nodes.
 //   - For non-current NodeSets the NodePoolController will have set the DesiredCount to 0.
@@ -139,7 +139,7 @@ func (c *Controller) reconcileNodeSet(ctx context.Context, tx db.Tx, nodeSet db.
 		}
 
 		// Create a pending node record for each node we need to provision, to come up to the desired count.
-		// The NodeScheduler will then try to provision the pending node records when resources are available.
+		// The node pool node scheduler will then try to provision the pending node records when resources are available.
 		for range deficit {
 			createdNode, err := c.createPendingNode(ctx, tx, cluster, nodePool, nodeSet)
 			if err != nil {
@@ -158,7 +158,7 @@ func (c *Controller) reconcileNodeSet(ctx context.Context, tx db.Tx, nodeSet db.
 		// - We still have the delete node capability from the API.
 		//
 		// For these reasons, we only delete pending node records if there is a surplus.
-		// So that the NodeScheduler does not provision nodes into a node pool, and thus consume forge resources, that would be above the desired count.
+		// So that the node pool node scheduler does not provision nodes into a node pool, and thus consume forge resources, that would be above the desired count.
 
 		pendingNodes, err := tx.ListNodes(ctx, db.NodeFilters{NodeSetID: &nodeSet.ID, Pending: ptr.To(true)})
 		if err != nil {

@@ -28,8 +28,10 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/automode"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
+	"github.com/NVIDIA/nke/controller/internal/controllers/controlplanenodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodepoolnodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeset"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodetpmekpub"
@@ -330,27 +332,46 @@ func main() {
 	}
 	defer temporalClient.Close()
 
-	enableControlPlanePostgresReconciler := !cfg.ControllerManagerDisabled
-
 	logger.Info(
 		"controller-runtime manager configuration",
 		"enableCapi", cfg.EnableCapi,
 		"enableForgeCapi", cfg.EnableForgeCapi,
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
-		"enableControlPlanePostgresReconciler", enableControlPlanePostgresReconciler,
 	)
 
-	if enableControlPlanePostgresReconciler {
-		controlPlaneController := controlplane.NewController(
-			cfg,
-			logger.With("logger", "control-plane-controller"),
-			dbInstance,
-			temporalClient,
-		)
-		if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
-			logger.Error("Failed to set up control plane controller", "error", err)
-			os.Exit(1)
-		}
+	controlPlaneController := controlplane.NewController(
+		cfg,
+		logger.With("logger", "control-plane-controller"),
+		dbInstance,
+		temporalClient,
+	)
+	if err := controlPlaneController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up control plane controller", "error", err)
+		os.Exit(1)
+	}
+
+	nodePoolNodeScheduler := nodepoolnodescheduler.NewNodePoolNodeScheduler(
+		cfg,
+		logger.With("logger", "node-pool-node-scheduler"),
+		dbInstance,
+		temporalClient,
+		forgeProvider,
+	)
+	if err := nodePoolNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up node pool node scheduler", "error", err)
+		os.Exit(1)
+	}
+
+	controlPlaneNodeScheduler := controlplanenodescheduler.NewControlPlaneNodeScheduler(
+		cfg,
+		logger.With("logger", "control-plane-node-scheduler"),
+		dbInstance,
+		temporalClient,
+		forgeProvider,
+	)
+	if err := controlPlaneNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up control plane node scheduler", "error", err)
+		os.Exit(1)
 	}
 
 	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, forgeProvider, temporalClient)
@@ -395,7 +416,6 @@ func main() {
 		dbInstance,
 		managementK8sClient,
 		temporalClient,
-		forgeProvider,
 		nodeAgentClient,
 		tenantClientProvider,
 		trustDomain,
