@@ -13,12 +13,14 @@ import (
 	pathpkg "path"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3filter"
 	oapi_middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/swaggest/swgui/v5emb"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.temporal.io/sdk/client"
 
 	"github.com/NVIDIA/nke/controller/api"
+	"github.com/NVIDIA/nke/controller/internal/auth"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge"
@@ -29,12 +31,16 @@ const (
 	ReadHeaderTimeout = 5 * time.Second
 )
 
+// NewServer builds the API's HTTP server. A nil authn means the middleware is
+// absent from the chain entirely, not a middleware that lets everything through:
+// a disabled deployment must behave exactly as it did before.
 func NewServer(
 	cfg config.Config,
 	logger *slog.Logger,
 	database db.DB,
 	forgeProvider *forge.ForgeProvider,
 	temporalClient client.Client,
+	authn *auth.Authenticator,
 ) (*http.Server, error) {
 	m := http.NewServeMux()
 
@@ -60,6 +66,21 @@ func NewServer(
 		Middlewares: []api.MiddlewareFunc{
 			oapi_middleware.OapiRequestValidatorWithOptions(openapiSpec, &oapi_middleware.Options{
 				SilenceServersWarning: true,
+				// Turn off this validator's own security check. It has to be off:
+				// api/openapi.yaml declares `security` globally, and kin-openapi
+				// rejects every request against an operation carrying a security
+				// requirement it has no AuthenticationFunc to evaluate. Delete
+				// this line and NKE answers 401 to everything -- including when
+				// authentication is disabled, which is every deployment today.
+				//
+				// It costs nothing, because this was never where tokens are
+				// checked. The authentication middleware wraps this entire mux
+				// (see the chain below), so anything reaching the validator has
+				// already been authenticated or is on the anonymous surface. The
+				// spec declares `security` so the generated client carries a 401
+				// and the Swagger UI offers an Authorize button, not so that it
+				// gets enforced here.
+				Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 				ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
 					logger.Error("OpenAPI middleware validation error", "message", message)
 					handleError(w, logger, message, statusCode)
@@ -109,9 +130,25 @@ func NewServer(
 	m.HandleFunc("GET "+healthz, hc.healthz)
 	m.HandleFunc("GET "+readyz, hc.readyz)
 
-	// Apply middleware chain: logging -> managed-by check -> main handler
-	handler := loggingMiddleware(m, logger)
-	handler = managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(handler)
+	// The chain is built inside out: each assignment below wraps the handler the
+	// previous one produced, so the code lists the middlewares in the reverse of
+	// the order a request meets them. A request runs
+	//
+	//	tracing -> logging -> authentication -> managed-by -> mux
+	//
+	// Authentication is placed before managed-by so an unauthenticated caller is
+	// turned away without managed-by ever seeing the request, and after logging so
+	// that a rejection still produces the usual request/response log pair. Tracing
+	// stays outermost so a rejected request is still a span.
+	//
+	// This reorders the two existing middlewares even when authn is nil: managed-by
+	// used to run before logging rather than after it. The visible effect is that a
+	// request managed-by answers 409 now produces a log pair it did not before.
+	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
+	if authn != nil {
+		handler = authn.Wrap(handler)
+	}
+	handler = loggingMiddleware(handler, logger)
 	if cfg.Tracing.Enabled {
 		handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
 			otelhttp.WithFilter(func(r *http.Request) bool {

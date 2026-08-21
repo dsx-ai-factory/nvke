@@ -29,20 +29,24 @@ func TestIsAnonymousRequestPathAgreesWithTheMux(t *testing.T) {
 		{"encoded slash is one segment, no route", "/api%2Fnodes/abc.js", false},
 
 		// "%41PI" unescapes to "/API/" and ServeMux matches case-sensitively, so
-		// this reaches the file server, not the API. Anonymous is correct.
-		{"encoded but wrong case, so no API route", "/%41PI/nodes/abc.js", true},
+		// this reaches no route at all. Nothing is served outside the API and the
+		// documented surface any more, so it authenticates and then 404s.
+		{"encoded but wrong case, so no API route", "/%41PI/nodes/abc.js", false},
 		{"plain api path", "/api/nodes/abc", false},
 		{"plain api path with asset suffix", "/api/nodes/abc.js", false},
 
-		{"root", "/", true},
+		// Nothing is registered at "/" since the UI moved out of this binary.
+		{"root", "/", false},
 		{"openapi document", "/openapi.yaml", true},
 		{"version", "/api/version", true},
 		{"swagger subtree", "/api/docs/swagger-ui.css", true},
 		{"liveness", "/healthz", true},
 		{"readiness", "/readyz", true},
-		{"ui asset", "/main.js", true},
-		{"ui asset in a subdirectory", "/vendor/js-yaml.min.js", true},
-		{"ui asset with an encoded space", "/my%20file.css", true},
+		// The bundled UI is gone, so an asset-looking path is just an unrouted
+		// path: it needs a token and then 404s, rather than being exempt.
+		{"former ui asset", "/main.js", false},
+		{"former ui asset in a subdirectory", "/vendor/js-yaml.min.js", false},
+		{"former ui asset with an encoded space", "/my%20file.css", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

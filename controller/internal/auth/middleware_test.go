@@ -370,20 +370,13 @@ func TestMiddlewareAnonymousSurface(t *testing.T) {
 		// spellings normalize to this one, so it stands for the pair.
 		"/api/docs",
 
-		// The UI's own embedded assets, served from below its base path. The
-		// extension is inert here: the swagger prefix decides before isUIAsset.
+		// The Swagger UI's own embedded assets, served from below its base path.
+		// The whole subtree is exempt, whatever the extension.
 		"/api/docs/swagger-ui.css",
 
 		"/docs",
 		"/healthz",
 		"/readyz",
-
-		// The UI index and its assets. Exactly "/", never a prefix. "/api.js" is
-		// the one that also probes the apiPrefix boundary inside isUIAsset.
-		"/",
-		"/index.html",
-		"/api.js",
-		"/vendor/js-yaml.min.js",
 
 		// Cleaned onto the entries above, so a doubled slash is not a 401.
 		"//healthz",
@@ -406,17 +399,24 @@ func TestMiddlewareAnonymousSurface(t *testing.T) {
 	}
 }
 
-// Deny by default. internal/server/server.go registers http.FileServer under "/",
-// so the mux routes every path below somewhere and an exemption rule derived from
-// mux patterns would make all of them anonymous.
+// Deny by default. Nothing outside the API and the documented surface is served
+// by this binary any more, so every path below authenticates first and 404s
+// second -- the order that keeps an unrouted path from reporting whether it exists.
 func TestMiddlewareCatchAllDoesNotLeak(t *testing.T) {
 	t.Parallel()
 
 	paths := []string{
-		// A real operation. Registered or not, every "/api/" path exits at the same
-		// apiPrefix guard, so one stands for the unregistered ones too.
+		// A real operation. Registered or not, every "/api/" path exits the same
+		// way, so one stands for the unregistered ones too.
 		"/api/clusters",
 		"/API/CLUSTERS",
+
+		// The UI moved out of this binary, so its index and its assets are no
+		// longer exempt. They authenticate and then 404.
+		"/",
+		"/index.html",
+		"/api.js",
+		"/vendor/js-yaml.min.js",
 
 		// Near misses on the exempt literals, which prefix matching would admit.
 		"/api/versions",

@@ -8,16 +8,15 @@ import (
 	"strings"
 )
 
-// The anonymous surface. Deny by default: every path not named here needs a
-// token. The "/" entry means exactly "/" and the UI's own assets, never a prefix
-// of "/", because the server registers http.FileServer under "/" and treating it
-// as a prefix would make the whole API anonymous. The table is written out
-// because http.ServeMux is not enumerable.
+// The anonymous surface: every path not listed here needs a token.
+//
+// The list is maintained by hand. It has to be, because an http.ServeMux cannot
+// be asked which patterns were registered on it, so there is no way to derive
+// the exemptions from the routes they correspond to. It can therefore fall out
+// of step with internal/server -- but only in the safe direction: a route added
+// there and forgotten here starts requiring a token, rather than a protected one
+// silently becoming anonymous.
 const (
-	// apiPrefix is the base of every generated operation, so nothing under it can
-	// qualify as a UI asset.
-	apiPrefix = "/api/"
-
 	// swaggerUIPrefix is the Swagger UI subtree. The handler serves its own CSS
 	// and JavaScript from below its base path, so the whole subtree has to be
 	// anonymous or the docs page renders unstyled and inert.
@@ -78,34 +77,9 @@ func isAnonymousPath(p string) bool {
 		// A probe that had to authenticate would make a key-source outage look
 		// like a dead pod.
 		"/healthz",
-		"/readyz",
-
-		// The UI index. Exactly this path, see above.
-		rootPath:
+		"/readyz":
 		return true
 	}
 
-	if strings.HasPrefix(p, swaggerUIPrefix) {
-		return true
-	}
-
-	return isUIAsset(p)
-}
-
-// isUIAsset reports whether a path is a static asset of the bundled UI, which
-// sends no token. Matched by extension rather than by file name, so adding a
-// stylesheet does not break the console; an API path can never acquire one,
-// because this refuses apiPrefix outright. A match makes the path anonymous, not
-// existent: the file server still 404s.
-func isUIAsset(p string) bool {
-	if strings.HasPrefix(p, apiPrefix) {
-		return false
-	}
-
-	switch path.Ext(p) {
-	case ".css", ".html", ".ico", ".js", ".map", ".png", ".svg", ".woff", ".woff2":
-		return true
-	default:
-		return false
-	}
+	return strings.HasPrefix(p, swaggerUIPrefix)
 }
