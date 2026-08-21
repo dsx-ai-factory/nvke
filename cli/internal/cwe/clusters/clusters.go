@@ -6,9 +6,11 @@
 package clusters
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -198,16 +200,27 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 
 // NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.
 func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
-	return &cobra.Command{
+	var yes bool
+	cmd := &cobra.Command{
 		Use:   "cluster <name>",
 		Short: "Delete a tenant cluster",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !yes {
+				fmt.Fprintf(os.Stdout, "Delete cluster %q? This cannot be undone. [y/N] ", name)
+				scanner := bufio.NewScanner(os.Stdin)
+				scanner.Scan()
+				if strings.ToLower(strings.TrimSpace(scanner.Text())) != "y" {
+					fmt.Fprintln(os.Stdout, "Aborted.")
+					return nil
+				}
+			}
 			c, err := clientFn()
 			if err != nil {
 				return err
 			}
-			cl, err := c.FindClusterByName(cmd.Context(), args[0])
+			cl, err := c.FindClusterByName(cmd.Context(), name)
 			if err != nil {
 				return err
 			}
@@ -219,6 +232,8 @@ func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
 			return nil
 		},
 	}
+	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
+	return cmd
 }
 
 // clusterStatus returns a human-readable status string derived from conditions.
