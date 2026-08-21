@@ -108,6 +108,7 @@ func (r *reconciler) createPendingNode(
 func (r *reconciler) deleteNode(
 	ctx context.Context,
 	cluster db.Cluster,
+	cp *controlPlane,
 	node db.Node,
 	reason string,
 	logger *slog.Logger,
@@ -132,7 +133,7 @@ func (r *reconciler) deleteNode(
 		}
 	}
 
-	healthy, err := r.isControlPlaneHealthy(ctx, cluster, logger)
+	healthy, err := r.isControlPlaneHealthy(ctx, cluster, cp, logger)
 	if err != nil {
 		return false, err
 	}
@@ -167,6 +168,7 @@ func (r *reconciler) deleteNode(
 func (r *reconciler) scaleDownSurgeNodes(
 	ctx context.Context,
 	cluster db.Cluster,
+	cp *controlPlane,
 	cpNodePools []db.NodePool,
 	logger *slog.Logger,
 ) (bool, error) {
@@ -178,10 +180,13 @@ func (r *reconciler) scaleDownSurgeNodes(
 	if err != nil {
 		return false, err
 	}
-	if len(managedNodes) == 0 {
+	// Nothing to scale down unless a surge node is present (count > desired). Under
+	// the control-plane-controller path all CP nodes are managed, so compare
+	// against desired rather than 0.
+	if len(managedNodes) <= cluster.ControlPlaneConfig.DesiredCount {
 		return false, nil
 	}
-	deleted, err := r.deleteNode(ctx, cluster, managedNodes[0], "max-surge scale down", logger)
+	deleted, err := r.deleteNode(ctx, cluster, cp, managedNodes[0], "max-surge scale down", logger)
 	if err != nil {
 		return deleted, err
 	}

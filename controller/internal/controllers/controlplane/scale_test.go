@@ -45,7 +45,8 @@ func TestDeleteNode_UnhealthySkips(t *testing.T) {
 	})).Return(pools, nil)
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
-	got, err := r.deleteNode(context.Background(), cluster, surgeNode, "test", slog.Default())
+	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+	got, err := r.deleteNode(context.Background(), cluster, cp, surgeNode, "test", slog.Default())
 	require.Error(t, err)
 	assert.False(t, got)
 	assert.Contains(t, err.Error(), "not healthy")
@@ -65,7 +66,8 @@ func TestScaleDownSurgeNodes_SkipsWhenNotClusterLevelSurge(t *testing.T) {
 	}
 
 	r := &reconciler{logger: slog.Default()}
-	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cpNodePools, slog.Default())
+	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cp, cpNodePools, slog.Default())
 	require.NoError(t, err)
 	assert.False(t, handled)
 }
@@ -97,7 +99,8 @@ func TestScaleDownSurgeNodes_UnhealthySkips(t *testing.T) {
 	})).Return(cpNodePools, nil)
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
-	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cpNodePools, slog.Default())
+	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cp, cpNodePools, slog.Default())
 	require.Error(t, err)
 	assert.False(t, handled)
 	assert.Contains(t, err.Error(), "not healthy")

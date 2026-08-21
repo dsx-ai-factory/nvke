@@ -44,7 +44,7 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return nil
 	}
 
-	controlPlane, err := readControlPlane(ctx, r.db, cluster.ID)
+	controlPlane, err := readControlPlane(ctx, r.db, cluster, r.cfg.UseControlPlaneControllerForControlPlane())
 	if err != nil {
 		return fmt.Errorf("reading control plane: %w", err)
 	}
@@ -65,9 +65,9 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reconciling k8s upgrade: %w", err)
 	}
 
-	// Tear down deprecated control plane nodes (e.g. OS profile rolling upgrades).
-	if err := r.reconcileDeprecatedControlPlaneNodes(ctx, cluster); err != nil {
-		return fmt.Errorf("reconciling deprecated control plane nodes: %w", err)
+	// Tear down control plane nodes needing rollout (e.g. OS profile rolling upgrades).
+	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane); err != nil {
+		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
 	}
 
 	return nil

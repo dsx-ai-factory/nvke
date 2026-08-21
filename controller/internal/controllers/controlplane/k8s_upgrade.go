@@ -114,9 +114,13 @@ func (r *reconciler) startK8sUpgrade(
 	logger.Info("Updated kubeadm ConfigMap", "kubernetesVersion", cluster.KubernetesVersion)
 
 	// Update OSProfiles for node pools, which makes old NodeSets deprecated automatically.
-	if err := r.updateNodePoolsKubeVersion(ctx, cluster, cp.nodePools, logger); err != nil {
-		logger.Error("Failed to update OSProfile", "error", err)
-		return err
+	// Skipped under the control-plane-controller path: no CP node pools, and the new
+	// version already lives in the cluster snapshot.
+	if !r.cfg.UseControlPlaneControllerForControlPlane() {
+		if err := r.updateNodePoolsKubeVersion(ctx, cluster, cp.nodePools, logger); err != nil {
+			logger.Error("Failed to update OSProfile", "error", err)
+			return err
+		}
 	}
 
 	// Mark cluster as upgrading
@@ -136,6 +140,16 @@ func (r *reconciler) isK8sVersionUpgradeNeeded(
 	cp *controlPlane,
 	logger *slog.Logger,
 ) bool {
+	// Control-plane-controller path: derive the need from each node's pinned
+	// snapshot k8s version.
+	if r.cfg.UseControlPlaneControllerForControlPlane() {
+		needed := cp.controlPlaneControllerNeedsK8sUpgrade(cluster.KubernetesVersion)
+		if needed {
+			logger.Info("Control plane needs k8s upgrade", "targetVersion", cluster.KubernetesVersion)
+		}
+		return needed
+	}
+
 	if len(cp.nodePools) == 0 {
 		logger.Debug("No control plane node pools found")
 		return false
@@ -231,18 +245,27 @@ func (r *reconciler) isControlPlaneUpgradeComplete(
 		return false
 	}
 
-	deprecatedCount := cp.countDeprecatedNodes()
+	rolloutCount := cp.countNodesNeedingRollout()
 
-	if deprecatedCount > 0 {
-		logger.Info("Cluster has deprecated nodes, upgrade not complete",
-			"deprecatedNodesCount", deprecatedCount)
+	if rolloutCount > 0 {
+		logger.Info("Cluster has nodes needing rollout, upgrade not complete",
+			"nodesNeedingRolloutCount", rolloutCount)
 		return false
 	}
 
 	healthyCount := cp.countHealthyNodes()
 	totalDesired := cp.countDesiredNodes()
 
-	if healthyCount < totalDesired {
+	// Control-plane-controller path: require an exact match so any surge node is
+	// scaled back down before completing.
+	if cp.useController {
+		if healthyCount != totalDesired {
+			logger.Info("Control plane healthy count does not match desired, upgrade not complete",
+				"healthyCount", healthyCount,
+				"totalDesired", totalDesired)
+			return false
+		}
+	} else if healthyCount < totalDesired {
 		logger.Info("Control plane does not have desired healthy nodes, upgrade not complete",
 			"healthyCount", healthyCount,
 			"totalDesired", totalDesired)
@@ -486,7 +509,9 @@ func (r *reconciler) upgradeAddons(
 		"kubernetesVersion", cluster.KubernetesVersion,
 	)
 
-	if len(cp.nodePools) == 0 {
+	// The node-pool guard is spurious under the control-plane-controller path (no
+	// CP node pools); the node guard below still applies.
+	if !r.cfg.UseControlPlaneControllerForControlPlane() && len(cp.nodePools) == 0 {
 		return false, fmt.Errorf("no control plane node pools found for cluster %s", cluster.ID)
 	}
 

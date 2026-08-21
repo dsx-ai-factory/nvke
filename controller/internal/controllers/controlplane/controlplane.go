@@ -19,13 +19,18 @@ type controlPlane struct {
 	nodes     []db.Node
 	nodePools []nodePool
 	nodeSets  []db.NodeSet
+	// nodePinnedControlPlaneConfigs maps each CP-controller node's pinned config ID
+	// to its spec, preloaded once per reconcile.
+	nodePinnedControlPlaneConfigs map[uuid.UUID]db.ControlPlaneConfigSpec
+	clusterControlPlaneConfig     db.ControlPlaneConfig
+	useController                 bool
 }
 
 // readControlPlane reads the control plane from the database.
-func readControlPlane(ctx context.Context, database db.Queries, clusterID uuid.UUID) (*controlPlane, error) {
+func readControlPlane(ctx context.Context, database db.Queries, cluster db.Cluster, useController bool) (*controlPlane, error) {
 	cpTrue := true
 	nodes, err := database.ListNodes(ctx, db.NodeFilters{
-		ClusterID:    &clusterID,
+		ClusterID:    &cluster.ID,
 		ControlPlane: &cpTrue,
 	})
 	if err != nil {
@@ -33,7 +38,7 @@ func readControlPlane(ctx context.Context, database db.Queries, clusterID uuid.U
 	}
 
 	dbNodePools, err := database.ListNodePools(ctx, db.NodePoolFilters{
-		ClusterID:    &clusterID,
+		ClusterID:    &cluster.ID,
 		ControlPlane: &cpTrue,
 	})
 	if err != nil {
@@ -68,7 +73,53 @@ func readControlPlane(ctx context.Context, database db.Queries, clusterID uuid.U
 		nodePools = append(nodePools, nodePool{NodePool: np, nodeSets: nodeSets})
 	}
 
-	return &controlPlane{nodes: nodes, nodePools: nodePools, nodeSets: allNodeSets}, nil
+	// Preload CP-controller nodes' pinned config snapshots (batched).
+	configs, err := preloadControlPlaneConfigs(ctx, database, nodes)
+	if err != nil {
+		return nil, err
+	}
+
+	return &controlPlane{
+		nodes:                         nodes,
+		nodePools:                     nodePools,
+		nodeSets:                      allNodeSets,
+		nodePinnedControlPlaneConfigs: configs,
+		clusterControlPlaneConfig:     cluster.ControlPlaneConfig,
+		useController:                 useController,
+	}, nil
+}
+
+// preloadControlPlaneConfigs batch-loads the pinned configuration for the distinct
+// config IDs referenced by CP-controller nodes.
+func preloadControlPlaneConfigs(
+	ctx context.Context,
+	database db.Queries,
+	nodes []db.Node,
+) (map[uuid.UUID]db.ControlPlaneConfigSpec, error) {
+	ids := make([]uuid.UUID, 0, len(nodes))
+	seen := make(map[uuid.UUID]struct{}, len(nodes))
+	for _, node := range nodes {
+		if !node.IsManagedByControlPlaneController() || node.ControlPlaneConfigurationID == uuid.Nil {
+			continue
+		}
+		if _, ok := seen[node.ControlPlaneConfigurationID]; ok {
+			continue
+		}
+		seen[node.ControlPlaneConfigurationID] = struct{}{}
+		ids = append(ids, node.ControlPlaneConfigurationID)
+	}
+	if len(ids) == 0 {
+		return map[uuid.UUID]db.ControlPlaneConfigSpec{}, nil
+	}
+	rows, err := database.ListControlPlaneConfigurationsByIDs(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("listing control plane configuration snapshots: %w", err)
+	}
+	configs := make(map[uuid.UUID]db.ControlPlaneConfigSpec, len(rows))
+	for _, row := range rows {
+		configs[row.ID] = row.Config
+	}
+	return configs, nil
 }
 
 // hasNodesMarkedForDeletion returns true if there is at least one node that is marked for deletion.
@@ -117,8 +168,18 @@ type nodePool struct {
 	nodeSets []nodeSet
 }
 
+// surgeBudget is how many surge nodes the rollout may run concurrently,
+// bounded by the number of nodes still needing rollout.
+func (c *controlPlane) surgeBudget() int {
+	return min(c.clusterControlPlaneConfig.MaxSurge,
+		len(c.nodesNeedingRollout(c.clusterControlPlaneConfig.ControlPlaneConfigSpec)))
+}
+
 // expectedCount returns the expected number of control plane nodes.
 func (c *controlPlane) expectedCount() int {
+	if c.useController {
+		return c.clusterControlPlaneConfig.DesiredCount + c.surgeBudget()
+	}
 	total := 0
 	for _, np := range c.nodePools {
 		total += np.expectedCount()
@@ -128,6 +189,9 @@ func (c *controlPlane) expectedCount() int {
 
 // countDesiredNodes returns the total desired number of control plane nodes (without surge).
 func (c *controlPlane) countDesiredNodes() int {
+	if c.useController {
+		return c.clusterControlPlaneConfig.DesiredCount
+	}
 	total := 0
 	for _, np := range c.nodePools {
 		total += np.DesiredCount
@@ -151,9 +215,12 @@ func (c *controlPlane) countHealthyNodes() int {
 	return count
 }
 
-// countDeprecatedNodes returns the total count of deprecated nodes
-// across all control plane node pools.
-func (c *controlPlane) countDeprecatedNodes() int {
+// countNodesNeedingRollout returns the total count of control plane nodes
+// needing rollout across all control plane node pools.
+func (c *controlPlane) countNodesNeedingRollout() int {
+	if c.useController {
+		return len(c.nodesNeedingRollout(c.clusterControlPlaneConfig.ControlPlaneConfigSpec))
+	}
 	total := 0
 	for _, np := range c.nodePools {
 		total += np.countDeprecatedNodes()
@@ -179,6 +246,46 @@ func (np *nodePool) countDeprecatedNodes() int {
 		}
 	}
 	return count
+}
+
+// nodesNeedingRollout returns CP-controller nodes whose pinned snapshot differs
+// from current in a field that requires replacement (k8s version, OS profile, or
+// config profile).
+func (c *controlPlane) nodesNeedingRollout(current db.ControlPlaneConfigSpec) []db.Node {
+	var toReplace []db.Node
+	for _, node := range c.nodes {
+		if !node.IsManagedByControlPlaneController() {
+			continue
+		}
+		pinned, ok := c.nodePinnedControlPlaneConfigs[node.ControlPlaneConfigurationID]
+		if !ok {
+			continue
+		}
+		if pinned.KubernetesVersion != current.KubernetesVersion ||
+			pinned.OSProfile != current.OSProfile ||
+			pinned.ConfigProfile != current.ConfigProfile {
+			toReplace = append(toReplace, node)
+		}
+	}
+	return toReplace
+}
+
+// controlPlaneControllerNeedsK8sUpgrade reports whether any CP-controller node's
+// pinned snapshot k8s version differs from the target (drives kubeadm + addons).
+func (c *controlPlane) controlPlaneControllerNeedsK8sUpgrade(targetK8sVersion string) bool {
+	for _, node := range c.nodes {
+		if !node.IsManagedByControlPlaneController() {
+			continue
+		}
+		pinned, ok := c.nodePinnedControlPlaneConfigs[node.ControlPlaneConfigurationID]
+		if !ok {
+			continue
+		}
+		if pinned.KubernetesVersion != targetK8sVersion {
+			return true
+		}
+	}
+	return false
 }
 
 // isKubernetesReady returns true if the node has a KubernetesReady condition that is true.

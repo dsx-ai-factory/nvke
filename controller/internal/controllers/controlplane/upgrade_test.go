@@ -120,12 +120,13 @@ func TestGetTotalDesiredControlPlaneNodes_WithSurge(t *testing.T) {
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 	ctx := context.Background()
+	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 
-	withoutSurge, err := r.getTotalDesiredControlPlaneNodes(ctx, cluster, false)
+	withoutSurge, err := r.getTotalDesiredControlPlaneNodes(ctx, cluster, cp, false)
 	require.NoError(t, err)
 	assert.Equal(t, 3, withoutSurge)
 
-	withSurge, err := r.getTotalDesiredControlPlaneNodes(ctx, cluster, true)
+	withSurge, err := r.getTotalDesiredControlPlaneNodes(ctx, cluster, cp, true)
 	require.NoError(t, err)
 	assert.Equal(t, 4, withSurge)
 
@@ -208,7 +209,8 @@ func TestIsControlPlaneHealthy_WithSurgeThreshold(t *testing.T) {
 			})).Return(tt.nodes, nil)
 
 			r := &reconciler{db: mockTx, logger: slog.Default()}
-			got, err := r.isControlPlaneHealthy(context.Background(), cluster, slog.Default())
+			cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
+			got, err := r.isControlPlaneHealthy(context.Background(), cluster, cp, slog.Default())
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 			mockTx.AssertExpectations(t)

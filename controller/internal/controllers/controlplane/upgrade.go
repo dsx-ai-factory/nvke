@@ -33,8 +33,8 @@ func isSurgeAtClusterLevel(cluster db.Cluster, cpPools []db.NodePool) bool {
 	return true
 }
 
-// reconcileDeprecatedControlPlaneNodes tears down deprecated control plane nodes during rolling upgrades.
-func (r *reconciler) reconcileDeprecatedControlPlaneNodes(ctx context.Context, cluster db.Cluster) error {
+// reconcileNodesNeedingRollout tears down control plane nodes needing rollout during rolling upgrades.
+func (r *reconciler) reconcileNodesNeedingRollout(ctx context.Context, cluster db.Cluster, cp *controlPlane) error {
 	logger := r.logger.With(
 		"clusterID", cluster.ID,
 		"clusterName", cluster.Name,
@@ -46,25 +46,31 @@ func (r *reconciler) reconcileDeprecatedControlPlaneNodes(ctx context.Context, c
 		return err
 	}
 
-	// Get all deprecated nodes for this cluster
-	deprecatedNodes, err := r.getClusterDeprecatedNodes(ctx, cluster.ID, logger)
+	// Get all nodes needing rollout for this cluster
+	nodesNeedingRollout, err := r.getClusterNodesNeedingRollout(ctx, cluster, cp, logger)
 	if err != nil {
 		return err
 	}
 
-	if len(deprecatedNodes) == 0 {
-		// After all deprecated nodes are gone, remove any cluster-level surge node before
-		// clearing the recycling condition.
-		surgeHandled, err := r.scaleDownSurgeNodes(ctx, cluster, cpNodePools, logger)
-		if err != nil {
-			return err
-		}
-		if surgeHandled {
-			// if surge node deleted, return and wait for it to be deleted before next step
-			return nil
+	if len(nodesNeedingRollout) == 0 {
+		// Node-pool path only: reclaim any cluster-level surge node before clearing
+		// recycling. The control-plane-controller path needs no separate surge
+		// scaledown — the one-at-a-time rolling teardown (nodesNeedingRollout counts
+		// in-flight nodes, so provisioning never outruns teardown) converges the
+		// count back to DesiredCount. Cluster-level desired-count decreases are
+		// handled outside this upgrade path.
+		if !cp.useController {
+			surgeHandled, err := r.scaleDownSurgeNodes(ctx, cluster, cp, cpNodePools, logger)
+			if err != nil {
+				return err
+			}
+			if surgeHandled {
+				// if surge node deleted, return and wait for it to be deleted before next step
+				return nil
+			}
 		}
 
-		// If there are no deprecated nodes and we were recycling, mark recycling completed.
+		// If there are no nodes needing rollout and we were recycling, mark recycling completed.
 		if cluster.Conditions.CPNodesRecycling.Status == db.ConditionStatusTrue {
 			if err := r.updateClusterCPNodesRecyclingCondition(ctx, cluster.ID, false, "Control plane nodes recycling completed successfully", logger); err != nil {
 				return err
@@ -82,7 +88,21 @@ func (r *reconciler) reconcileDeprecatedControlPlaneNodes(ctx context.Context, c
 		if err != nil {
 			return err
 		}
-		if len(surgeNodes) == 0 {
+		if cp.useController {
+			// Control-plane-controller path: provision toward the surge-inclusive
+			// target. All CP nodes are managed here, so the target is
+			// desired + surge budget. Today surgeBudget is 0 or 1; a future
+			// MaxSurge>1 refills the full deficit in one pass (parallel host
+			// provisioning) with no further upgrade-code changes.
+			target := cluster.ControlPlaneConfig.DesiredCount + cp.surgeBudget()
+			if deficit := target - len(surgeNodes); deficit > 0 {
+				if _, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade"); err != nil {
+					return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
+				}
+			}
+		} else if len(surgeNodes) == 0 {
+			// Node-pool path: unchanged from origin/main — add a single surge node
+			// only when none is present.
 			if _, err := r.scaleUp(ctx, cluster, 1, "surge node during upgrade"); err != nil {
 				return fmt.Errorf("failed to scale up control plane before recycling: %w", err)
 			}
@@ -90,13 +110,13 @@ func (r *reconciler) reconcileDeprecatedControlPlaneNodes(ctx context.Context, c
 	}
 
 	// During recycling/teardown, enforce surge-inclusive health before marking recycling.
-	healthy, err := r.isControlPlaneHealthy(ctx, cluster, logger)
+	healthy, err := r.isControlPlaneHealthy(ctx, cluster, cp, logger)
 	if err != nil {
 		return err
 	}
 	if !healthy {
 		logger.Info("Control plane not ready for node recycling - waiting for sufficient healthy nodes",
-			"deprecatedNodesCount", len(deprecatedNodes))
+			"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 		return nil
 	}
 
@@ -106,17 +126,17 @@ func (r *reconciler) reconcileDeprecatedControlPlaneNodes(ctx context.Context, c
 		}
 	}
 
-	for _, deprecatedNode := range deprecatedNodes {
-		if deprecatedNode.Conditions.Deleting.Status == db.ConditionStatusTrue {
-			logger.Info("Skipping node for deletion - node delete already in progress", "nodeID", deprecatedNode.ID, "nodeName", deprecatedNode.Name)
+	for _, nodeNeedingRollout := range nodesNeedingRollout {
+		if nodeNeedingRollout.Conditions.Deleting.Status == db.ConditionStatusTrue {
+			logger.Info("Skipping node for deletion - node delete already in progress", "nodeID", nodeNeedingRollout.ID, "nodeName", nodeNeedingRollout.Name)
 			return nil
 		}
 	}
 
-	// Select the first deprecated node for teardown
-	// deprecatedNodes contain nodes from nodepool with maxSurge last
+	// Select the first node needing rollout for teardown
+	// nodesNeedingRollout contain nodes from nodepool with maxSurge last
 	// non maxSurge nodepool nodes are deleted first
-	targetNode := deprecatedNodes[0]
+	targetNode := nodesNeedingRollout[0]
 
 	nodeLogger := logger.With(
 		"nodeID", targetNode.ID,
@@ -265,7 +285,17 @@ func isHealthyControlPlaneNode(node db.Node) bool {
 // getTotalDesiredControlPlaneNodes calculates the total DesiredCount across all control plane nodepools.
 // If withSurge is true, it accounts for either nodepool-level or cluster-level maxSurge
 // from control_plane_config.
-func (r *reconciler) getTotalDesiredControlPlaneNodes(ctx context.Context, cluster db.Cluster, withSurge bool) (int, error) {
+func (r *reconciler) getTotalDesiredControlPlaneNodes(ctx context.Context, cluster db.Cluster, cp *controlPlane, withSurge bool) (int, error) {
+	// Control-plane-controller path: desired count comes from the cluster config;
+	// no control-plane nodepools are involved.
+	if r.cfg.UseControlPlaneControllerForControlPlane() {
+		totalDesired := cluster.ControlPlaneConfig.DesiredCount
+		if withSurge && cluster.ControlPlaneConfig.MaxSurge > 0 {
+			totalDesired += cp.surgeBudget()
+		}
+		return totalDesired, nil
+	}
+
 	// Get all control plane nodepools in the cluster
 	nodePools, err := r.getControlPlaneNodePools(ctx, cluster.ID)
 	if err != nil {
@@ -298,6 +328,7 @@ func (r *reconciler) getTotalDesiredControlPlaneNodes(ctx context.Context, clust
 func (r *reconciler) isControlPlaneHealthy(
 	ctx context.Context,
 	cluster db.Cluster,
+	cp *controlPlane,
 	logger *slog.Logger,
 ) (bool, error) {
 	healthyCount, err := r.countHealthyControlPlaneNodes(ctx, cluster.ID)
@@ -305,7 +336,7 @@ func (r *reconciler) isControlPlaneHealthy(
 		return false, fmt.Errorf("failed to count healthy nodes: %w", err)
 	}
 
-	totalDesired, err := r.getTotalDesiredControlPlaneNodes(ctx, cluster, true)
+	totalDesired, err := r.getTotalDesiredControlPlaneNodes(ctx, cluster, cp, true)
 	if err != nil {
 		return false, fmt.Errorf("failed to get total desired control plane nodes: %w", err)
 	}
@@ -347,17 +378,24 @@ func (r *reconciler) getControlPlaneNodes(ctx context.Context, clusterID uuid.UU
 	return nodes, nil
 }
 
-// getClusterDeprecatedNodes returns all deprecated nodes across all control plane node pools,
-// regardless of their state (pending, deleting, etc.).
+// getClusterNodesNeedingRollout returns all control plane nodes needing rollout across all
+// control plane node pools, regardless of their state (pending, deleting, etc.).
 // Nodes from NodePools with maxSurge=0 are returned first, followed by nodes from NodePools
 // with maxSurge>0 (surge nodes are deleted last to maintain availability during upgrades).
-func (r *reconciler) getClusterDeprecatedNodes(
+func (r *reconciler) getClusterNodesNeedingRollout(
 	ctx context.Context,
-	clusterID uuid.UUID,
+	cluster db.Cluster,
+	cp *controlPlane,
 	logger *slog.Logger,
 ) ([]db.Node, error) {
+	// Control-plane-controller path: derive rollout from each node's pinned
+	// snapshot vs the cluster's current snapshot (preloaded by readControlPlane).
+	if r.cfg.UseControlPlaneControllerForControlPlane() {
+		return cp.nodesNeedingRollout(cluster.ControlPlaneConfig.ControlPlaneConfigSpec), nil
+	}
+
 	// Get all control plane node pools for this cluster
-	cpNodePools, err := r.getControlPlaneNodePools(ctx, clusterID)
+	cpNodePools, err := r.getControlPlaneNodePools(ctx, cluster.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get control plane node pools: %w", err)
 	}
@@ -413,9 +451,9 @@ func (r *reconciler) getClusterDeprecatedNodes(
 	}
 
 	// Add non-surge nodes first (to be deleted first), then surge nodes last
-	deprecatedNodes := make([]db.Node, 0, len(nonSurgeNodePoolDeprecatedNodes)+len(surgeNodePoolDeprecatedNodes))
-	deprecatedNodes = append(deprecatedNodes, nonSurgeNodePoolDeprecatedNodes...)
-	deprecatedNodes = append(deprecatedNodes, surgeNodePoolDeprecatedNodes...)
+	nodesNeedingRollout := make([]db.Node, 0, len(nonSurgeNodePoolDeprecatedNodes)+len(surgeNodePoolDeprecatedNodes))
+	nodesNeedingRollout = append(nodesNeedingRollout, nonSurgeNodePoolDeprecatedNodes...)
+	nodesNeedingRollout = append(nodesNeedingRollout, surgeNodePoolDeprecatedNodes...)
 
-	return deprecatedNodes, nil
+	return nodesNeedingRollout, nil
 }
