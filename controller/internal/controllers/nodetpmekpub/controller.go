@@ -26,6 +26,7 @@ import (
 
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
@@ -270,12 +271,12 @@ func (c *Controller) reconcileForgeNodeEKPub(ctx context.Context, node db.Node, 
 	return &tpmEKPubResult{hash: tpmEKPubHash, source: tpmSourceForgeAPI}, nil
 }
 
-func (c *Controller) reconcileNicoMachineEKPub(ctx context.Context, node db.Node, cluster db.Cluster) (*tpmEKPubResult, error) {
+func (c *Controller) reconcileNicoMachineEKPub(ctx context.Context, node db.Node, _ db.Cluster) (*tpmEKPubResult, error) {
 	nicoMachine := &nicov1.NicoMachine{}
 	// buildNicoMachine names the NicoMachine CR after the database node name, so
 	// node.Name is the corresponding NicoMachine lookup key.
 	if err := c.k8sClient.Get(ctx, client.ObjectKey{
-		Namespace: capi.ClusterNamespace(cluster.Name),
+		Namespace: constants.NamespaceNKESystem,
 		Name:      node.Name,
 	}, nicoMachine); err != nil {
 		if apierrors.IsNotFound(err) {

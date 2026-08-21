@@ -31,8 +31,8 @@ import (
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -195,7 +195,7 @@ func TestUnit_ReconcileNicoMachineEKPub_PersistsHashWhenReady(t *testing.T) {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: capi.ClusterNamespace("capi-cluster"),
+			Namespace: constants.NamespaceNKESystem,
 		},
 		Spec: nicov1.NicoMachineSpec{
 			ProviderID: "nico://instance-1",
@@ -265,7 +265,7 @@ func TestUnit_ReconcileNicoMachineEKPub_RequeuesWhenNotReady(t *testing.T) {
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,
-			Namespace: capi.ClusterNamespace(cluster.Name),
+			Namespace: constants.NamespaceNKESystem,
 		},
 		Spec: nicov1.NicoMachineSpec{
 			ProviderID: "nico://instance-1",
@@ -844,7 +844,7 @@ func testNicoMachineTemplateManifest() []byte {
 	return []byte(`{"apiVersion":"` + nicov1.GroupVersion.String() + `","kind":"NicoMachineTemplate"}`)
 }
 
-func readyTestNicoMachine(nodeName, clusterName, tpmHash string) *nicov1.NicoMachine {
+func readyTestNicoMachine(nodeName, _, tpmHash string) *nicov1.NicoMachine {
 	return &nicov1.NicoMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: nicov1.GroupVersion.String(),
@@ -852,7 +852,7 @@ func readyTestNicoMachine(nodeName, clusterName, tpmHash string) *nicov1.NicoMac
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      nodeName,
-			Namespace: capi.ClusterNamespace(clusterName),
+			Namespace: constants.NamespaceNKESystem,
 		},
 		Spec: nicov1.NicoMachineSpec{
 			ProviderID: "nico://instance-1",

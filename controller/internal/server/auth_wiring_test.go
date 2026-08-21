@@ -150,7 +150,8 @@ func TestPermissiveServerServesUnauthenticatedRequests(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	handler.ServeHTTP(rr, httptest.NewRequestWithContext(
-		t.Context(), http.MethodGet, "/api/clusters", http.NoBody))
+		t.Context(), http.MethodGet, "/api/clusters", http.NoBody,
+	))
 
 	assert.Equal(t, http.StatusOK, rr.Code,
 		"permissive serves a request carrying no token; body: %s", rr.Body)
@@ -253,7 +254,8 @@ func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rr, httptest.NewRequestWithContext(
-		t.Context(), http.MethodPost, "/api/clusters", strings.NewReader(`{}`)))
+		t.Context(), http.MethodPost, "/api/clusters", strings.NewReader(`{}`),
+	))
 
 	assert.Equal(t, http.StatusConflict, rr.Code,
 		"a mutating request with no managed-by header is still rejected when authentication is off")

@@ -32,6 +32,9 @@ func (a *Activities) ApplyCAPIClusterResources(ctx context.Context, input ApplyC
 	if capi.IsEmptyManifest(manifest) {
 		return nil
 	}
+	if err := a.rejectUnmigratedCluster(ctx, cluster.Name); err != nil {
+		return err
+	}
 
 	return capi.ApplyClusterScaffold(ctx, a.k8sClient, cluster)
 }
