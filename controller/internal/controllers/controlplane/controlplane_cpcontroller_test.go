@@ -113,7 +113,7 @@ func TestReadControlPlane_SkipsConfigLoadWithoutCPControllerNodes(t *testing.T) 
 
 	cp, err := readControlPlane(context.Background(), mockTx, db.Cluster{ID: clusterID}, false)
 	require.NoError(t, err)
-	assert.Nil(t, cp.nodePinnedControlPlaneConfigs)
+	assert.Empty(t, cp.nodePinnedControlPlaneConfigs)
 	mockTx.AssertNotCalled(t, "ListControlPlaneConfigurationsByIDs", mock.Anything, mock.Anything)
 	mockTx.AssertExpectations(t)
 }
