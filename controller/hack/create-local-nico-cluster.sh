@@ -23,6 +23,14 @@ NICO_SSH_KEY_GROUP_ID="${NICO_SSH_KEY_GROUP_ID:-00000000-0000-0000-0000-00000000
 NICO_INSTANCE_TYPE_ID="${NICO_INSTANCE_TYPE_ID:-00000000-0000-0000-0000-000000000005}"
 CAPI_SPIRE_ATTESTATION_METHOD="${CAPI_SPIRE_ATTESTATION_METHOD:-joinToken}"
 
+# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# this works either way.
+TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+AUTH_HEADER=()
+if [[ -n "${TOKEN}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
+fi
+
 echo "Ensuring default CAPI site ${DEFAULT_SITE_ID} exists in CWE..."
 API_URL="${API_URL}" DEFAULT_SITE_ID="${DEFAULT_SITE_ID}" \
   "${SCRIPT_DIR}/register-default-site.sh" >/dev/null
@@ -130,6 +138,6 @@ BODY=$(cat <<EOF
 EOF
 )
 
-curl -sS "${CLUSTERS_API_URL}" \
+curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -sS "${CLUSTERS_API_URL}" \
   -H "Content-Type: application/json" \
   --data-raw "${BODY}" | jq

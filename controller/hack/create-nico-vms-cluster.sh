@@ -26,9 +26,19 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 CWE_HTTP_PORT="${CWE_HTTP_PORT:-8080}"
 API_URL="${API_URL:-http://localhost:${CWE_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"
+
+# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# this works either way.
+TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+AUTH_HEADER=()
+if [[ -n "${TOKEN}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
+fi
 
 CLUSTER_NAME="${CLUSTER_NAME:-nico-vms}"
 
@@ -105,6 +115,6 @@ EOF
 
 echo "Creating nico-vms cluster '${CLUSTER_NAME}' (cp=${CONTROL_PLANE_DESIRED_COUNT}, worker=${WORKER_DESIRED_COUNT}, cni=${CNI_PLUGIN}${CNI_VERSION:+/${CNI_VERSION}})" >&2
 
-curl -fsS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}" \
+curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}" \
   -H "Content-Type: application/json" \
   --data-raw "${BODY}" | jq

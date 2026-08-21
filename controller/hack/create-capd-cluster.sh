@@ -13,6 +13,14 @@ else
   CLUSTERS_API_URL="${API_BASE_URL%/}/clusters"
 fi
 API_URL="${CLUSTERS_API_URL}"
+
+# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# this works either way.
+TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+AUTH_HEADER=()
+if [[ -n "${TOKEN}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
+fi
 CLUSTER_NAME="${CLUSTER_NAME:-capd}"
 DEFAULT_SITE_ID="${DEFAULT_SITE_ID:-00000000-0000-0000-0000-000000000000}"
 # Distinct from nico-vms NICO_VMS_VIP_CIDR (172.31.0.0/24); see NKX-13387.
@@ -147,6 +155,6 @@ BODY=$(cat <<EOF
 EOF
 )
 
-curl -fsS --max-time "${CURL_MAX_TIME:-30}" "${API_URL}" \
+curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME:-30}" "${API_URL}" \
   -H "Content-Type: application/json" \
   --data-raw "${BODY}" | jq

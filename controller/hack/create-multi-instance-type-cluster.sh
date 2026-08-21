@@ -18,9 +18,19 @@
 # and CWE rotates the NicoMachine in place to preference[1] and provisions there.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 CWE_HTTP_PORT="${CWE_HTTP_PORT:-8080}"
 API_URL="${API_URL:-http://localhost:${CWE_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"
+
+# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# this works either way.
+TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+AUTH_HEADER=()
+if [[ -n "${TOKEN}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
+fi
 
 # nico-mock admin endpoint used to register the two instance types below.
 # Tilt already port-forwards the in-cluster mock Service to localhost:18080
@@ -150,7 +160,7 @@ BODY=$(cat <<EOF
 EOF
 )
 
-curl --fail-with-body -sS -X POST "${CLUSTERS_API_URL}" \
+curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" --fail-with-body -sS -X POST "${CLUSTERS_API_URL}" \
   -H 'Content-Type: application/json' \
   -d "${BODY}"
 

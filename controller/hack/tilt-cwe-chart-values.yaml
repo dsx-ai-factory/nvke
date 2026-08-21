@@ -62,6 +62,11 @@ profiles:
     repository: docker.local/cwe-profiles
     tag: tilt
 
+# Nothing for apiAuth here on purpose: the Tiltfile drives the chart's apiAuth
+# block via NKE_AUTH_ENABLED / NKE_PERMISSIVE_MODE, and the chart's defaults for
+# the ConfigMap name, key and mount path already match the nke-auth-config
+# ConfigMap that deploy/k8s/nke-auth-dev.yaml applies.
+
 spiffe:
   enabled: true
   endpointSocket: unix:///spiffe-workload-api/spire-agent.sock

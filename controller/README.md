@@ -460,6 +460,34 @@ rules keep every service account on the cluster from being an NKE administrator.
 NKE does no authorization: every admitted caller can do everything. That is a
 platform responsibility.
 
+### Local Development
+
+You need no identity infrastructure to work on this. The cluster's own API server
+is already an issuer and the service account tokens it signs are already JWTs, so
+NKE verifies them like any other issuer — which is also the path the e2e suite
+uses, so what you exercise locally is what ships.
+
+`tilt up` deploys an enforcing NKE with the config in
+`deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
+and the RBAC below.
+
+```bash
+./hack/nke-auth-demo.sh    # four credentials, prints the status code for each
+```
+
+Mint a token yourself:
+
+```bash
+kubectl create token nke-client -n nke-clients \
+  --audience=https://nke.tilt.local --duration=10m
+```
+
+Permissive mode is a different deployment, not a runtime switch:
+
+```bash
+NKE_PERMISSIVE_MODE=true tilt up
+```
+
 ### Enabling Authentication
 
 Two environment variables, read at startup. Changing either, or the configuration
@@ -484,8 +512,9 @@ starting with authentication disabled.
 
 ### Authentication Configuration
 
-One file, mounted at `AUTH_CONFIG_PATH`. The full schema and every validation
-rule live in `internal/auth/config.go`. The shape:
+One file, mounted at `AUTH_CONFIG_PATH`. `deploy/k8s/nke-auth-dev.yaml` is a
+working example to start from; the full schema and every validation rule live in
+`internal/auth/config.go`. The shape:
 
 ```yaml
 apiVersion: auth.nke.nvidia.com/v1alpha1
@@ -529,6 +558,23 @@ issuers:
         trustDomain: example.org     # bare host: no spiffe:// scheme, no path
         pathPrefixes: [/nke-e2e/]    # segment-wise; /nke-e2e/ never matches /nke-e2e-evil/
 ```
+
+### RBAC Prerequisite
+
+An issuer pointing at the cluster's own `/openid/v1/jwks` needs NKE's
+ServiceAccount bound to `system:service-account-issuer-discovery`. That endpoint
+is not anonymous, and without the binding an enforcing NKE will not start. The
+chart creates the binding when `apiAuth.clusterIssuerDiscovery` is true.
+Otherwise:
+
+```bash
+kubectl create clusterrolebinding nke-service-account-issuer-discovery \
+  --clusterrole=system:service-account-issuer-discovery \
+  --serviceaccount=cloud-workflow-engine:cloud-workflow-engine
+```
+
+A stock cluster already works — Kubernetes ships a bootstrap binding granting
+this to every service account. Bind it explicitly if yours has pruned that.
 
 ### Rejections and Status Codes
 

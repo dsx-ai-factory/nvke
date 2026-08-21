@@ -732,6 +732,8 @@ k8s_yaml([
     "deploy/k8s/spire-oidc-provider-nodeport.yaml",
     "deploy/k8s/spire-nke-services-spiffe-id.yaml",
     "deploy/k8s/spire-tpm-pubhashes-configmap.yaml",
+    "deploy/k8s/nke-auth-dev.yaml",
+    "deploy/k8s/nke-spire-client.yaml",
 ])
 
 k8s_resource(
@@ -782,6 +784,48 @@ k8s_resource(
     labels=["1-infra"],
     objects=["nke-system:namespace"],
     resource_deps=["check-management-cluster"],
+    pod_readiness="ignore",
+)
+
+# NKE API authentication scaffolding: the client namespaces and service
+# accounts the demo mints tokens for, the token-minter RBAC, and the auth config
+# the deployment mounts at /etc/nke/auth/auth.yaml. The NKE release depends on
+# this so the ConfigMap exists before the pod tries to mount it.
+k8s_resource(
+    new_name="nke-auth-dev",
+    labels=["1-infra"],
+    objects=[
+        "cloud-workflow-engine:namespace",
+        "nke-clients:namespace",
+        "nke-outsiders:namespace",
+        "nke-client:serviceaccount:nke-clients",
+        "nke-outsider:serviceaccount:nke-outsiders",
+        "nke-e2e:serviceaccount:nke-clients",
+        "nke-client-token-minter:role:nke-clients",
+        "nke-client-token-minter:rolebinding:nke-clients",
+        "nke-outsider-token-minter:role:nke-outsiders",
+        "nke-outsider-token-minter:rolebinding:nke-outsiders",
+        "nke-auth-config:configmap:cloud-workflow-engine",
+    ],
+    resource_deps=["check-management-cluster"],
+    pod_readiness="ignore",
+)
+
+# The SPIRE-attested client identity for the authentication specs: a namespace,
+# a service account, the ClusterSPIFFEID that gets it an SVID, and the probe
+# script test/e2e/authn_spire_test.go runs in a one-shot pod. Depends on
+# spire-server because a ClusterSPIFFEID needs the CRD and the controller
+# manager; nothing here is a pod, so the probe pod is not created by Tilt.
+k8s_resource(
+    new_name="nke-spire-client",
+    labels=["1-infra"],
+    objects=[
+        "nke-spire-clients:namespace",
+        "nke-spire-client:serviceaccount:nke-spire-clients",
+        "nke-spire-client:clusterspiffeid",
+        "nke-spire-probe:configmap:nke-spire-clients",
+    ],
+    resource_deps=["spire-server"],
     pod_readiness="ignore",
 )
 
@@ -880,6 +924,21 @@ _cwe_tenant_access_enabled = os.getenv(
 _cwe_oidc_enabled = os.getenv(
     "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
 
+# NKE API authentication. Enforcing by default locally; the config file comes
+# from the nke-auth-config ConfigMap in deploy/k8s/nke-auth-dev.yaml and is
+# mounted by hack/tilt-cwe-chart-values.yaml.
+#
+#   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
+#   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
+#
+# AUTH_CONFIG_PATH must be unset rather than empty when authentication is off:
+# set-but-unreadable is a startup failure by design, so an empty value would
+# turn a disabled deployment into a crash loop.
+_cwe_auth_enabled = os.getenv(
+    "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "true")) == "true"
+_cwe_permissive_mode = os.getenv(
+    "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
+
 _cwe_chart_extra_env_names = [
     "TEMPORAL_UI_URL",
     "CONTROLLER_MANAGER_POLLING_INTERVAL",
@@ -906,11 +965,17 @@ if _tilt_env.get("FWE_API_KEY", "") != "":
     })
 for _name in _required_cred_names:
     _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
+# AUTH_CONFIG_PATH and PERMISSIVE_MODE are the chart's to set, from apiAuth
+# below. They are not appended to the env list here: the chart owns the mount
+# they point at, and splitting the two across a --set-json env list and a chart
+# value is how they drift.
 
 _cwe_chart_flags = [
     "--create-namespace",
     "--values", "hack/tilt-cwe-chart-values.yaml",
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
+    "--set", "apiAuth.enabled=%s" % ("true" if _cwe_auth_enabled else "false"),
+    "--set", "apiAuth.permissive=%s" % ("true" if _cwe_permissive_mode else "false"),
     "--set", "capi.enabled=%s" % ("true" if _cwe_capi_enabled else "false"),
     "--set", "capi.forgeCapiEnabled=%s" % ("true" if _cwe_forge_capi_enabled else "false"),
     "--set", "capi.rbac.create=%s" % ("true" if _cwe_capi_enabled else "false"),
@@ -943,7 +1008,7 @@ if CWE_IMAGE:
 
 _cwe_local_debug_active = os.path.exists(CWE_LOCAL_DEBUG_MARKER)
 _cwe_tilt_goarch = local_arch()
-_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace"] + _all_cwe_resource_deps
+_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev"] + _all_cwe_resource_deps
 if _cwe_oidc_enabled:
     _cwe_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 

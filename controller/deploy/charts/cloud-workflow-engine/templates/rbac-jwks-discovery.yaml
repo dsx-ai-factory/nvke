@@ -1,0 +1,24 @@
+{{- if and .Values.apiAuth.enabled .Values.apiAuth.clusterIssuerDiscovery }}
+# Lets NKE read the cluster's own JWKS at /openid/v1/jwks, which an issuer
+# configured with `keys: {kubernetes: {}}` verifies signatures against. That
+# endpoint is not anonymous: without this binding the fetch is 403 and NKE refuses
+# to start in enforcing mode. Gated on apiAuth.clusterIssuerDiscovery rather than
+# inferred, because the issuer list lives in a ConfigMap this chart does not
+# read.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "cloud-workflow-engine.fullname" . }}-service-account-issuer-discovery
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:service-account-issuer-discovery
+subjects:
+  # From the helpers: a literal name binds the wrong subject under nameOverride
+  # or namespaceOverride, presenting as a 403 on the fetch.
+  - kind: ServiceAccount
+    name: {{ include "cloud-workflow-engine.serviceAccountName" . }}
+    namespace: {{ include "cloud-workflow-engine.namespace" . }}
+{{- end }}

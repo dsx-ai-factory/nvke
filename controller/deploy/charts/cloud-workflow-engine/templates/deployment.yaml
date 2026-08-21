@@ -141,6 +141,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.apiAuth.enabled }}
+            - name: nke-auth-config
+              mountPath: {{ .Values.apiAuth.mountPath | quote }}
+              readOnly: true
+            {{- end }}
             {{- if .Values.profiles.image.enabled }}
             - name: profiles
               mountPath: {{ .Values.profiles.path | quote }}
@@ -349,6 +354,15 @@ spec:
                   key: CNPG_TEMPORAL_PASSWORD
                   optional: false
             {{- end }}
+            {{- if .Values.apiAuth.enabled }}
+            # When disabled this must be ABSENT rather than empty: NKE treats a
+            # set-but-unreadable path as a startup failure, so an empty value
+            # would crash-loop a deployment with authentication off.
+            - name: AUTH_CONFIG_PATH
+              value: {{ printf "%s/%s" .Values.apiAuth.mountPath .Values.apiAuth.configMap.key | quote }}
+            - name: PERMISSIVE_MODE
+              value: {{ .Values.apiAuth.permissive | quote }}
+            {{- end }}
             {{- range .Values.env }}
             - name: {{ .name }}
               value: {{ .value | quote }}
@@ -373,6 +387,13 @@ spec:
         - name: teleport-identity
           secret:
             secretName: {{ .Values.teleport.identitySecretName }}
+        {{- end }}
+        {{- if .Values.apiAuth.enabled }}
+        # Deliberately not optional: a missing ConfigMap should leave the pod
+        # stuck mounting, where the cause is named.
+        - name: nke-auth-config
+          configMap:
+            name: {{ required "apiAuth.configMap.name is required when apiAuth.enabled=true" .Values.apiAuth.configMap.name }}
         {{- end }}
         {{- with .Values.volumes }}
         {{- toYaml . | nindent 8 }}
