@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/NVIDIA/nke/cli/internal/bootstrapengine"
 	"github.com/NVIDIA/nke/cli/internal/inventory"
 )
 
@@ -38,9 +40,17 @@ func newBootstrapCmd() *cobra.Command {
 
 // bootstrapSiteOptions holds the flag values for "bootstrap site".
 type bootstrapSiteOptions struct {
-	inventory      string
-	dryRun         bool
-	registryAPIKey string
+	inventory         string
+	dryRun            bool
+	registryAPIKey    string
+	provider          string
+	keepBootstrapKind bool
+
+	// bootstrapRunner overrides the CommandRunner the bootstrap engine uses.
+	// Nil in production (bootstrapengine.New defaults to the real exec-backed
+	// runner); tests set it to a fake so this command can be exercised
+	// without a real kind binary or container runtime.
+	bootstrapRunner bootstrapengine.CommandRunner
 }
 
 func newBootstrapSiteCmd() *cobra.Command {
@@ -80,6 +90,12 @@ inventory file format.`,
 		"Load and validate the inventory and print it, but do not dispatch any workflow")
 	cmd.Flags().StringVar(&opts.registryAPIKey, "registry-api-key", "",
 		"Container registry credential (overrides registry.apiKey and the "+registryAPIKeyEnv+" env var)")
+	cmd.Flags().StringVar(&opts.provider, "bootstrap-provider", "",
+		"Container runtime front end for the ephemeral bootstrap Kind cluster: "+
+			string(bootstrapengine.ProviderNerdctl)+" (default) or "+string(bootstrapengine.ProviderDocker)+
+			" (rollback path, see NKX-14787). Overrides NKECTL_BOOTSTRAP_PROVIDER.")
+	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
+		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 
 	return cmd
 }
@@ -110,9 +126,39 @@ func runBootstrapSite(opts *bootstrapSiteOptions) error {
 		return nil
 	}
 
-	// Step 2+ (subsequent tickets): start the ephemeral bootstrap engine and
-	// dispatch the init/join/untaint workflows. Stubbed for now so the command
-	// is runnable end-to-end while the bootstrap core is ported.
+	// Step 2: stand up the ephemeral bootstrap Kind cluster CWE will run on.
+	// Torn down unconditionally on the way out, including on every error path
+	// below — nothing here is meant to outlive this command invocation.
+	ctx := context.Background()
+	cfg := bootstrapengine.DefaultConfig()
+	if opts.provider != "" {
+		cfg.Provider = bootstrapengine.Provider(opts.provider)
+	}
+
+	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
+	logger.Info("creating ephemeral bootstrap kind cluster",
+		"cluster", cfg.ClusterName, "provider", cfg.Provider)
+	cluster, err := engine.Create(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("standing up bootstrap kind cluster: %w", err)
+	}
+	defer func() {
+		if opts.keepBootstrapKind {
+			logger.Info("--keep-bootstrap-cluster set: leaving the bootstrap kind cluster running",
+				"cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
+			return
+		}
+		logger.Info("tearing down bootstrap kind cluster", "cluster", cluster.Name)
+		if err := engine.Delete(ctx, cluster.Name, cluster.Provider); err != nil {
+			logger.Error("failed to tear down bootstrap kind cluster",
+				"cluster", cluster.Name, "err", err)
+		}
+	}()
+
+	// Step 3+ (subsequent tickets): deploy CWE onto the bootstrap cluster and
+	// dispatch the init/join/untaint workflows. Stubbed for now so the
+	// command is runnable end-to-end while the rest of the bootstrap core is
+	// ported.
 	return errors.New("bootstrap dispatch is not yet implemented; re-run with --dry-run to validate the inventory")
 }
 

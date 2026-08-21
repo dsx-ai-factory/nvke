@@ -4,14 +4,42 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/NVIDIA/nke/cli/internal/bootstrapengine"
 	"github.com/NVIDIA/nke/cli/internal/inventory"
 )
+
+// fakeBootstrapRunner is a scripted bootstrapengine.CommandRunner so
+// runBootstrapSite can be exercised without a real kind binary or container
+// runtime. It answers every kind invocation the happy path issues: no
+// existing cluster, a successful create, and a fixed kubeconfig.
+type fakeBootstrapRunner struct{}
+
+func (fakeBootstrapRunner) Run(_ context.Context, _ map[string]string, name string, args ...string) (string, error) {
+	if name != "kind" || len(args) == 0 {
+		return "", nil
+	}
+	switch args[0] {
+	case "get":
+		if len(args) > 1 && args[1] == "clusters" {
+			// Mirrors kind's own exit-1-with-message behavior when no
+			// clusters exist, which bootstrapengine.Exists treats as
+			// "false, nil" rather than a real error.
+			return "No kind clusters found.\n", errors.New("exit status 1")
+		}
+		if len(args) > 1 && args[1] == "kubeconfig" {
+			return "apiVersion: v1\nkind: Config\n", nil
+		}
+	}
+	return "", nil
+}
 
 const validInventory = `
 clusterName: nke-site
@@ -79,16 +107,62 @@ registry:
 	}
 }
 
-// TestRunBootstrapSiteValidReachesStub confirms a valid inventory (no dry-run)
-// passes validation and reaches the not-yet-implemented dispatch stub.
+// TestRunBootstrapSiteValidReachesStub confirms a valid inventory (no
+// dry-run) passes validation, stands up and tears down the ephemeral
+// bootstrap kind cluster, and reaches the not-yet-implemented dispatch stub.
+// The kind/kubectl calls go through fakeBootstrapRunner, so this needs no
+// real kind binary or container runtime.
 func TestRunBootstrapSiteValidReachesStub(t *testing.T) {
-	err := runBootstrapSite(&bootstrapSiteOptions{inventory: writeInventory(t, validInventory)})
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(&bootstrapSiteOptions{
+		inventory:       writeInventory(t, validInventory),
+		bootstrapRunner: runner,
+	})
 	if err == nil {
 		t.Fatal("expected the dispatch stub error")
 	}
 	if !strings.Contains(err.Error(), "not yet implemented") {
 		t.Errorf("expected dispatch stub error, got: %v", err)
 	}
+
+	if !runner.sawArgs("create", "cluster") {
+		t.Errorf("runBootstrapSite did not create the bootstrap kind cluster; calls: %v", runner.calls)
+	}
+	if !runner.sawArgs("delete", "cluster") {
+		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster; calls: %v", runner.calls)
+	}
+}
+
+// recordingRunner wraps another CommandRunner and records the args of every
+// call, so a test can assert the bootstrap cluster was actually created and
+// torn down without depending on bootstrapengine's own internals.
+type recordingRunner struct {
+	next  bootstrapengine.CommandRunner
+	calls [][]string
+}
+
+func (r *recordingRunner) Run(ctx context.Context, env map[string]string, name string, args ...string) (string, error) {
+	r.calls = append(r.calls, args)
+	return r.next.Run(ctx, env, name, args...)
+}
+
+func (r *recordingRunner) sawArgs(prefix ...string) bool {
+	for _, call := range r.calls {
+		if len(call) < len(prefix) {
+			continue
+		}
+		match := true
+		for i, p := range prefix {
+			if call[i] != p {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }
 
 func writeInventory(t *testing.T, content string) string {
