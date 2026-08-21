@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -86,7 +87,7 @@ func printMap(w io.Writer, m map[string]any, indent int) {
 	for k := range m {
 		keys = append(keys, k)
 	}
-	sortStrings(keys)
+	slices.Sort(keys)
 	for _, k := range keys {
 		v := m[k]
 		switch val := v.(type) {
@@ -107,14 +108,6 @@ func printMap(w io.Writer, m map[string]any, indent int) {
 			fmt.Fprintf(w, "%s%s: null\n", prefix, k)
 		default:
 			fmt.Fprintf(w, "%s%s: %v\n", prefix, k, val)
-		}
-	}
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
 		}
 	}
 }

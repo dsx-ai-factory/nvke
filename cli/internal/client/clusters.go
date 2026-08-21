@@ -94,6 +94,6 @@ func (c *CWEClient) FindClusterByName(ctx context.Context, name string) (*api.Cl
 	case 1:
 		return &clusters[0], nil
 	default:
-		return nil, fmt.Errorf("cluster name %q is ambiguous: %d clusters match; use the cluster ID instead", name, len(clusters))
+		return nil, fmt.Errorf("cluster name %q is ambiguous: %d clusters match", name, len(clusters))
 	}
 }
