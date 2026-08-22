@@ -315,7 +315,7 @@ func rebootForgeNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int) 
 	logger := workflow.GetLogger(ctx)
 	rebootStartedTime := workflow.Now(ctx).UTC()
 
-	err := softRebootNode(ctx, nodeID, rebootAttempt, 1)
+	err := softRebootNode(ctx, nodeID, rebootAttempt, rebootStartedTime, 1)
 	if err == nil {
 		logger.Info("Soft reboot initiated", "nodeID", nodeID, "rebootAttempt", rebootAttempt)
 		return rebootStartedTime, nil

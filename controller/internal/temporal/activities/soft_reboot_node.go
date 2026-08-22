@@ -6,6 +6,7 @@ package activities
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
@@ -13,8 +14,13 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+const (
+	legacyRebootRunbookName = "reboot"
+)
+
 type SoftRebootNodeInput struct {
-	NodeID uuid.UUID
+	NodeID              uuid.UUID
+	RebootInitiatedTime time.Time
 
 	NodeRebootingConditionMessage string
 }
@@ -41,6 +47,21 @@ func (a *Activities) softRebootNode(ctx context.Context, input SoftRebootNodeInp
 
 	logger.Info("Soft rebooting node", "nodeID", input.NodeID)
 
+	if activity.GetInfo(ctx).Attempt > 1 && !input.RebootInitiatedTime.IsZero() {
+		bootTime, err := a.getBootTime(ctx, input.NodeID)
+		if err != nil {
+			return SoftRebootNodeResult{}, fmt.Errorf("failed to determine whether node %s already rebooted: %w", input.NodeID, err)
+		}
+		if !bootTime.Before(input.RebootInitiatedTime) {
+			logger.Info("Node already rebooted; skipping duplicate reboot request",
+				"nodeID", input.NodeID,
+				"bootTime", bootTime,
+				"rebootInitiatedTime", input.RebootInitiatedTime,
+			)
+			return SoftRebootNodeResult{}, nil
+		}
+	}
+
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
 		return SoftRebootNodeResult{}, fmt.Errorf("failed to get node %s: %w", input.NodeID, err)
@@ -54,10 +75,26 @@ func (a *Activities) softRebootNode(ctx context.Context, input SoftRebootNodeInp
 			logger.Info("ScheduleNodeReboot is unavailable; falling back to legacy reboot runbook", "nodeID", node.ID, "nodeName", node.Name)
 			if _, runbookErr := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
 				HostID:      input.NodeID,
-				RunbookName: "reboot",
+				RunbookName: legacyRebootRunbookName,
 			}); runbookErr != nil {
+				if isRebootSchedulingOutcomeUnknown(runbookErr) {
+					logger.Warn("Legacy reboot scheduling outcome is unknown; deferring to boot-state verification",
+						"nodeID", node.ID,
+						"nodeName", node.Name,
+						"error", runbookErr,
+					)
+					return SoftRebootNodeResult{}, nil
+				}
 				return SoftRebootNodeResult{}, fmt.Errorf("failed to execute legacy reboot runbook on node %s: %w", node.Name, runbookErr)
 			}
+			return SoftRebootNodeResult{}, nil
+		}
+		if isRebootSchedulingOutcomeUnknown(err) {
+			logger.Warn("Soft reboot scheduling outcome is unknown; deferring to boot-state verification",
+				"nodeID", node.ID,
+				"nodeName", node.Name,
+				"error", err,
+			)
 			return SoftRebootNodeResult{}, nil
 		}
 		return SoftRebootNodeResult{}, fmt.Errorf("failed to schedule soft reboot on node %s: %w", node.Name, err)
@@ -67,4 +104,9 @@ func (a *Activities) softRebootNode(ctx context.Context, input SoftRebootNodeInp
 	}
 
 	return SoftRebootNodeResult{}, nil
+}
+
+func isRebootSchedulingOutcomeUnknown(err error) bool {
+	code := status.Code(err)
+	return code == codes.Unavailable || code == codes.DeadlineExceeded
 }
