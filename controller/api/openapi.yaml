@@ -1362,6 +1362,7 @@ components:
 
     UpdateNodePoolRequest:
       type: object
+      additionalProperties: false
       # No required fields since all fields are optional
       properties:
         autoProvisionDisabled:
@@ -2404,4 +2405,3 @@ components:
           format: uuid
           description: The cluster ID (required if allocationType is cluster)
           x-order: 4
-
