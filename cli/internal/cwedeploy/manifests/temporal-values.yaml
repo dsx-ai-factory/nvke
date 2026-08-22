@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Values for the official go.temporal.io/helm-charts "temporal" chart,
+# pointed at the postgresql release this package also installs.
+#
+# Ported from controller/deploy/helm-values/temporal.yaml (see the note in
+# postgres-values.yaml about why this is an embedded copy rather than a
+# runtime read from controller/). host/database names below assume the
+# postgres release is named "postgres" in the "postgres" namespace, matching
+# what Engine.Deploy installs it as -- if that ever changes, this file and
+# Engine.Deploy's release name must move together.
+#
+# server.config.persistence.{default,visibility}.sql.password is supplied on
+# the `helm upgrade --install` command line, not hardcoded here, same as the
+# source file.
+server:
+  configMapsToMount: sprig
+  setConfigFilePath: true
+  config:
+    persistence:
+      driver: sql
+      default:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: postgres-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal
+          user: postgres
+          maxConns: 10
+          maxIdleConns: 5
+      visibility:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: postgres-postgresql.postgres.svc.cluster.local
+          port: 5432
+          database: temporal_visibility
+          user: postgres
+          maxConns: 10
+          maxIdleConns: 5
+
+cassandra:
+  enabled: false
+
+mysql:
+  enabled: false
+
+postgresql:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+grafana:
+  enabled: false
+
+elasticsearch:
+  enabled: false
+
+schema:
+  createDatabase:
+    enabled: true
+  setup:
+    enabled: true
+  update:
+    enabled: true
