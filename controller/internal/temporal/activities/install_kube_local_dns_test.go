@@ -34,6 +34,7 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	require.NoError(t, corev1.AddToScheme(scheme))
 	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		newCoreDNSDeployment(),
+		newCoreDNSPod("coredns-0", true),
 		newKubeDNSService(),
 	).Build()
 	provider := &fakeTenantClientProvider{tenantClient: tenantClient}
@@ -104,6 +105,13 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	}, &coreDNS))
 	require.Equal(t, dnsRoleClusterDNS, coreDNS.Spec.Template.Labels[dnsRoleLabelKey])
 
+	var coreDNSPod corev1.Pod
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      "coredns-0",
+	}, &coreDNSPod))
+	require.Equal(t, dnsRoleClusterDNS, coreDNSPod.Labels[dnsRoleLabelKey])
+
 	var kubeDNS corev1.Service
 	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
 		Namespace: metav1.NamespaceSystem,
@@ -132,6 +140,7 @@ func TestInstallKubeLocalDNSLabelsCoreDNSDaemonSet(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		newCoreDNSDaemonSet(),
+		newCoreDNSPod("coredns-0", true),
 		newKubeDNSService(),
 	).Build()
 	a := &Activities{
@@ -147,6 +156,82 @@ func TestInstallKubeLocalDNSLabelsCoreDNSDaemonSet(t *testing.T) {
 		Name:      coreDNSName,
 	}, &coreDNS))
 	require.Equal(t, dnsRoleClusterDNS, coreDNS.Spec.Template.Labels[dnsRoleLabelKey])
+	database.AssertExpectations(t)
+}
+
+func TestInstallKubeLocalDNSDefersSelectorUntilClusterDNSPodIsReady(t *testing.T) {
+	cluster := db.Cluster{ID: uuid.New(), Name: "cluster-a"}
+	database := &testutil.MockDB{}
+	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	// The only CoreDNS pod is not Ready yet, so the activity must not cut
+	// kube-dns over to the dns-role=cluster-dns selector on this run.
+	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		newCoreDNSDeployment(),
+		newCoreDNSPod("coredns-0", false),
+		newKubeDNSService(),
+	).Build()
+	a := &Activities{
+		db:                   database,
+		tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient},
+	}
+
+	// The activity should fail rather than silently leaving kube-dns
+	// pointed at cluster-dns pods before any of them can serve traffic.
+	err := executeInstallKubeLocalDNSActivity(t, a, InstallKubeLocalDNSInput{ClusterID: cluster.ID})
+	require.ErrorContains(t, err, "waiting for a Ready pod")
+
+	// Selector must stay on the original kube-dns backend
+	var kubeDNS corev1.Service
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      kubeDNSServiceName,
+	}, &kubeDNS))
+	require.Equal(t, map[string]string{k8sAppLabelKey: kubeDNSAppLabel}, kubeDNS.Spec.Selector)
+	require.Equal(t, preferLocalAnnotationVal, kubeDNS.Annotations[preferLocalAnnotationKey])
+	require.NotContains(t, kubeDNS.Annotations, prometheusPortAnnotation)
+
+	// The CoreDNS pod is labeled dns-role=cluster-dns regardless of
+	// readiness, so a later retry can see it Ready and finish the cutover.
+	var coreDNSPod corev1.Pod
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      "coredns-0",
+	}, &coreDNSPod))
+	require.Equal(t, dnsRoleClusterDNS, coreDNSPod.Labels[dnsRoleLabelKey])
+	database.AssertExpectations(t)
+}
+
+func TestInstallKubeLocalDNSRewritesSelectorWhenNodeLocalDNSIsReady(t *testing.T) {
+	cluster := db.Cluster{ID: uuid.New(), Name: "cluster-a"}
+	database := &testutil.MockDB{}
+	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, appsv1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme))
+	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		newCoreDNSDeployment(),
+		newCoreDNSPod("coredns-0", false),
+		newNodeLocalDNSPod("node-local-dns-0", true),
+		newKubeDNSService(),
+	).Build()
+	a := &Activities{
+		db:                   database,
+		tenantClientProvider: &fakeTenantClientProvider{tenantClient: tenantClient},
+	}
+
+	require.NoError(t, executeInstallKubeLocalDNSActivity(t, a, InstallKubeLocalDNSInput{ClusterID: cluster.ID}))
+
+	var kubeDNS corev1.Service
+	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
+		Namespace: metav1.NamespaceSystem,
+		Name:      kubeDNSServiceName,
+	}, &kubeDNS))
+	require.Equal(t, map[string]string{dnsRoleLabelKey: dnsRoleClusterDNS}, kubeDNS.Spec.Selector)
 	database.AssertExpectations(t)
 }
 
@@ -208,6 +293,38 @@ func newCoreDNSDaemonSet() *appsv1.DaemonSet {
 					Labels: map[string]string{"k8s-app": "kube-dns"},
 				},
 			},
+		},
+	}
+}
+
+func newCoreDNSPod(name string, ready bool) *corev1.Pod {
+	return newDNSPod(name, map[string]string{k8sAppLabelKey: kubeDNSAppLabel}, ready)
+}
+
+func newNodeLocalDNSPod(name string, ready bool) *corev1.Pod {
+	return newDNSPod(name, map[string]string{
+		k8sAppLabelKey:  "node-local-dns",
+		dnsRoleLabelKey: dnsRoleClusterDNS,
+	}, ready)
+}
+
+func newDNSPod(name string, labels map[string]string, ready bool) *corev1.Pod {
+	status := corev1.ConditionFalse
+	if ready {
+		status = corev1.ConditionTrue
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: metav1.NamespaceSystem,
+			Labels:    labels,
+		},
+		Status: corev1.PodStatus{
+			Phase: corev1.PodRunning,
+			Conditions: []corev1.PodCondition{{
+				Type:   corev1.PodReady,
+				Status: status,
+			}},
 		},
 	}
 }

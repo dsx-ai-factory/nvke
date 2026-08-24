@@ -92,16 +92,18 @@ data:
     rules:
       - apiGroups: [""]
         resources: ["pods"]
-        verbs: ["get", "list", "watch"]
+        verbs: ["get", "list", "watch", "patch"]
       # node-local-dns install (NKX-13737, InstallKubeLocalDNS) server-side-applies
       # a ServiceAccount, Services (including kube-dns-metrics), a ConfigMap, and a
       # DaemonSet into kube-system as the SPIFFE tenant client; SSA is a PATCH on
       # objects that may not pre-exist, so create + patch (with update/get for the
       # apply round-trip) are required. The same activity also patches kubeadm-managed
-      # CoreDNS (Deployment or DaemonSet) and the kube-dns Service. The install path
-      # never enumerates these objects, so list/watch are omitted. The broad
+      # CoreDNS (Deployment or DaemonSet), running CoreDNS pod labels, and the
+      # kube-dns Service. The install path never enumerates Services/ConfigMaps/
+      # DaemonSets/Deployments, so list/watch are omitted there. The broad
       # configmaps verbs here subsume the former kubeadm-config resourceName update
-      # rule.
+      # rule. Pods are listed so existing CoreDNS pods can be labeled before the
+      # kube-dns selector is rewritten.
       - apiGroups: [""]
         resources: ["serviceaccounts", "services", "configmaps"]
         verbs: ["get", "create", "patch", "update"]

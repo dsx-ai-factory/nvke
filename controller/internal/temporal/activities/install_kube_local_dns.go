@@ -29,6 +29,8 @@ import (
 const (
 	coreDNSName              = "coredns"
 	kubeDNSServiceName       = "kube-dns"
+	k8sAppLabelKey           = "k8s-app"
+	kubeDNSAppLabel          = "kube-dns"
 	dnsRoleLabelKey          = "dns-role"
 	dnsRoleClusterDNS        = "cluster-dns"
 	preferLocalAnnotationKey = "k8s.ovn.org/prefer-local-with-fallback"
@@ -111,9 +113,18 @@ func applyKubeLocalDNSManifest(ctx context.Context, tenantClient ctrlclient.Clie
 	}
 }
 
-// ensureCoreDNSClusterDNSLabel adds dns-role=cluster-dns to CoreDNS pods.
-// kubeadm installs CoreDNS as a Deployment; some environments use a DaemonSet.
+// ensureCoreDNSClusterDNSLabel adds dns-role=cluster-dns to the CoreDNS
+// workload template and to already-running CoreDNS pods. Template-only updates
+// roll out asynchronously; in-place pod labels keep kube-dns backends matching
+// as soon as those pods are Ready.
 func ensureCoreDNSClusterDNSLabel(ctx context.Context, tenantClient ctrlclient.Client) error {
+	if err := ensureCoreDNSTemplateClusterDNSLabel(ctx, tenantClient); err != nil {
+		return err
+	}
+	return labelRunningCoreDNSPods(ctx, tenantClient)
+}
+
+func ensureCoreDNSTemplateClusterDNSLabel(ctx context.Context, tenantClient ctrlclient.Client) error {
 	key := ctrlclient.ObjectKey{Namespace: metav1.NamespaceSystem, Name: coreDNSName}
 
 	var daemonSet appsv1.DaemonSet
@@ -121,13 +132,11 @@ func ensureCoreDNSClusterDNSLabel(ctx context.Context, tenantClient ctrlclient.C
 	switch {
 	case err == nil:
 		before := daemonSet.DeepCopy()
-		if daemonSet.Spec.Template.Labels[dnsRoleLabelKey] == dnsRoleClusterDNS {
+		labels, changed := withClusterDNSLabel(daemonSet.Spec.Template.Labels)
+		if !changed {
 			return nil
 		}
-		if daemonSet.Spec.Template.Labels == nil {
-			daemonSet.Spec.Template.Labels = map[string]string{}
-		}
-		daemonSet.Spec.Template.Labels[dnsRoleLabelKey] = dnsRoleClusterDNS
+		daemonSet.Spec.Template.Labels = labels
 		if err := tenantClient.Patch(ctx, &daemonSet, ctrlclient.MergeFrom(before)); err != nil {
 			return fmt.Errorf("failed to patch CoreDNS DaemonSet labels: %w", err)
 		}
@@ -145,21 +154,59 @@ func ensureCoreDNSClusterDNSLabel(ctx context.Context, tenantClient ctrlclient.C
 	}
 
 	before := deployment.DeepCopy()
-	if deployment.Spec.Template.Labels[dnsRoleLabelKey] == dnsRoleClusterDNS {
+	labels, changed := withClusterDNSLabel(deployment.Spec.Template.Labels)
+	if !changed {
 		return nil
 	}
-	if deployment.Spec.Template.Labels == nil {
-		deployment.Spec.Template.Labels = map[string]string{}
-	}
-	deployment.Spec.Template.Labels[dnsRoleLabelKey] = dnsRoleClusterDNS
+	deployment.Spec.Template.Labels = labels
 	if err := tenantClient.Patch(ctx, &deployment, ctrlclient.MergeFrom(before)); err != nil {
 		return fmt.Errorf("failed to patch CoreDNS Deployment labels: %w", err)
 	}
 	return nil
 }
 
+func labelRunningCoreDNSPods(ctx context.Context, tenantClient ctrlclient.Client) error {
+	var pods corev1.PodList
+	if err := tenantClient.List(ctx, &pods,
+		ctrlclient.InNamespace(metav1.NamespaceSystem),
+		ctrlclient.MatchingLabels{k8sAppLabelKey: kubeDNSAppLabel},
+	); err != nil {
+		return fmt.Errorf("failed to list CoreDNS pods: %w", err)
+	}
+
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		before := pod.DeepCopy()
+		labels, changed := withClusterDNSLabel(pod.Labels)
+		if !changed {
+			continue
+		}
+		pod.Labels = labels
+		if err := tenantClient.Patch(ctx, pod, ctrlclient.MergeFrom(before)); err != nil {
+			return fmt.Errorf("failed to patch CoreDNS pod %s labels: %w", pod.Name, err)
+		}
+	}
+	return nil
+}
+
+func withClusterDNSLabel(labels map[string]string) (map[string]string, bool) {
+	if labels[dnsRoleLabelKey] == dnsRoleClusterDNS {
+		return labels, false
+	}
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[dnsRoleLabelKey] = dnsRoleClusterDNS
+	return labels, true
+}
+
 // configureKubeDNSService rewires the kubeadm kube-dns Service for OVN prefer-local
 // DNS (shared selector with node-local-dns) and moves Prometheus scrape to kube-dns-metrics.
+// The selector is rewritten only after at least one Ready dns-role=cluster-dns pod exists
+// so kube-dns does not lose all endpoints during the CoreDNS / node-local-dns rollout.
 func configureKubeDNSService(ctx context.Context, tenantClient ctrlclient.Client) error {
 	var service corev1.Service
 	key := ctrlclient.ObjectKey{Namespace: metav1.NamespaceSystem, Name: kubeDNSServiceName}
@@ -168,8 +215,44 @@ func configureKubeDNSService(ctx context.Context, tenantClient ctrlclient.Client
 	}
 
 	before := service.DeepCopy()
-	changed := false
+	changed := overlayKubeDNSService(&service)
+	rewritten := kubeDNSSelectorRewritten(&service)
 
+	// Selector cutover already happened on a prior run: nothing left to do
+	// but make sure the annotation/port overlay above is persisted.
+	if rewritten && !changed {
+		return nil
+	}
+	if rewritten {
+		return patchKubeDNSService(ctx, tenantClient, &service, before)
+	}
+
+	// Selector not yet cut over. Only allowed once a dns-role=cluster-dns
+	// pod is Ready, so kube-dns never loses all its endpoints.
+	ready, err := hasReadyClusterDNSPod(ctx, tenantClient)
+	if err != nil {
+		return err
+	}
+
+	// Not ready yet: still persist the overlay (safe, doesn't affect
+	// routing) so a later retry has less left to do, then bail out with
+	// the "not ready" error so Temporal retries this activity.
+	if !ready && changed {
+		if err := patchKubeDNSService(ctx, tenantClient, &service, before); err != nil {
+			return err
+		}
+	}
+	if !ready {
+		return fmt.Errorf("waiting for a Ready pod with %s=%s before rewriting kube-dns selector", dnsRoleLabelKey, dnsRoleClusterDNS)
+	}
+
+	// A Ready cluster-dns pod exists: safe to cut kube-dns over to it.
+	service.Spec.Selector = map[string]string{dnsRoleLabelKey: dnsRoleClusterDNS}
+	return patchKubeDNSService(ctx, tenantClient, &service, before)
+}
+
+func overlayKubeDNSService(service *corev1.Service) bool {
+	changed := false
 	if service.Annotations == nil {
 		service.Annotations = map[string]string{}
 	}
@@ -189,11 +272,6 @@ func configureKubeDNSService(ctx context.Context, tenantClient ctrlclient.Client
 		service.Annotations = nil
 	}
 
-	if service.Spec.Selector[dnsRoleLabelKey] != dnsRoleClusterDNS || len(service.Spec.Selector) != 1 {
-		service.Spec.Selector = map[string]string{dnsRoleLabelKey: dnsRoleClusterDNS}
-		changed = true
-	}
-
 	filteredPorts := slices.DeleteFunc(slices.Clone(service.Spec.Ports), func(port corev1.ServicePort) bool {
 		return port.Name == metricsPortName
 	})
@@ -201,12 +279,44 @@ func configureKubeDNSService(ctx context.Context, tenantClient ctrlclient.Client
 		service.Spec.Ports = filteredPorts
 		changed = true
 	}
+	return changed
+}
 
-	if !changed {
-		return nil
+func kubeDNSSelectorRewritten(service *corev1.Service) bool {
+	return service.Spec.Selector[dnsRoleLabelKey] == dnsRoleClusterDNS && len(service.Spec.Selector) == 1
+}
+
+func hasReadyClusterDNSPod(ctx context.Context, tenantClient ctrlclient.Client) (bool, error) {
+	var pods corev1.PodList
+	if err := tenantClient.List(ctx, &pods,
+		ctrlclient.InNamespace(metav1.NamespaceSystem),
+		ctrlclient.MatchingLabels{dnsRoleLabelKey: dnsRoleClusterDNS},
+	); err != nil {
+		return false, fmt.Errorf("failed to list cluster-dns pods: %w", err)
 	}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if podReady(pod) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
 
-	if err := tenantClient.Patch(ctx, &service, ctrlclient.MergeFrom(before)); err != nil {
+func podReady(pod *corev1.Pod) bool {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func patchKubeDNSService(ctx context.Context, tenantClient ctrlclient.Client, service, before *corev1.Service) error {
+	if err := tenantClient.Patch(ctx, service, ctrlclient.MergeFrom(before)); err != nil {
 		return fmt.Errorf("failed to patch kube-dns Service: %w", err)
 	}
 	return nil

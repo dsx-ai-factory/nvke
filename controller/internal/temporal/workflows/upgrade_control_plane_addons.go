@@ -85,7 +85,9 @@ func UpgradeControlPlaneAddons(ctx workflow.Context, input UpgradeControlPlaneAd
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval: 30 * time.Second,
 			MaximumInterval: 2 * time.Minute,
-			MaximumAttempts: 3,
+			// Retry while waiting for a Ready dns-role=cluster-dns pod before
+			// rewriting the kube-dns selector (CoreDNS / node-local-dns rollout).
+			MaximumAttempts: 8,
 		},
 	}
 	if err := workflow.ExecuteActivity(
