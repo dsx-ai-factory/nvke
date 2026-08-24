@@ -112,9 +112,9 @@ func TestEnforcingServerRequiresTokenOnEveryOperation(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, swagger.Paths.Map())
 
-	// The anonymous surface is registered directly on the mux and appears in no
-	// path item, so there is nothing to exempt. Deliberately no skip list: if one
-	// of those gains a path item, this test should fail rather than pass it over.
+	// The anonymous surface is registered on the mux and appears in no path item,
+	// so there is nothing to exempt. No skip list: if one of them ever gains a
+	// path item, this test should fail.
 	for path, item := range swagger.Paths.Map() {
 		for method := range item.Operations() {
 			// Path parameters are left as literal "{id}" segments, so this only
@@ -129,9 +129,10 @@ func TestEnforcingServerRequiresTokenOnEveryOperation(t *testing.T) {
 	}
 }
 
-// Why the middleware is not in the generated router's per-operation Middlewares
-// list: those run inside the mux alongside OapiRequestValidator, so a malformed
-// body would be answered 400 and the missing credential never mentioned.
+// Authentication runs ahead of the OpenAPI validator, so a request that is both
+// unauthenticated and malformed is answered 401, not 400. The generated router's
+// per-operation middleware list runs after routing, which is why authentication
+// is not in it.
 func TestEnforcingServerAuthenticatesBeforeValidating(t *testing.T) {
 	handler := newEnforcingTestServer(t)
 

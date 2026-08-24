@@ -20,8 +20,7 @@ func setMinimumEnv(t *testing.T) {
 	t.Setenv("CNPG_SUPERUSER_PASSWORD", "not-the-dev-default")
 }
 
-// The tri-state selector. Unset AUTH_CONFIG_PATH is the disabled state and must
-// remain a clean start, which is what every existing deployment gets on upgrade.
+// The tri-state selector. Unset AUTH_CONFIG_PATH parses as the disabled state.
 func TestAuthEnvFields(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -64,9 +63,8 @@ func TestAuthEnvFields(t *testing.T) {
 	}
 }
 
-// Config.Validate must not grow an opinion about either authentication field: a
-// required audience or config path would refuse to start every existing site
-// controller deployment on upgrade.
+// Validate ignores both authentication fields, set or unset. Requiring either
+// would stop every deployment that has not enabled authentication.
 func TestValidateIgnoresAuthFields(t *testing.T) {
 	base := config.Config{
 		MetricsListenAddress:  "127.0.0.1:9090",

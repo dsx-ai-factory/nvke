@@ -65,15 +65,10 @@ func NewServer(
 		Middlewares: []api.MiddlewareFunc{
 			oapi_middleware.OapiRequestValidatorWithOptions(openapiSpec, &oapi_middleware.Options{
 				SilenceServersWarning: true,
-				// Turn off this validator's own security check. api/openapi.yaml
-				// declares `security` globally, and kin-openapi rejects any request
-				// carrying a requirement it has no AuthenticationFunc for. Without
-				// this line the server answers 401 to everything, authentication
-				// off included.
-				//
-				// Tokens are checked by the middleware wrapping this mux, so
-				// anything reaching the validator is already authenticated or on
-				// the anonymous surface.
+				// api/openapi.yaml declares `security` globally, so without an
+				// AuthenticationFunc kin-openapi answers 401 to every request,
+				// even with authentication off. This makes its check a no-op.
+				// Tokens are verified by the middleware wrapping this mux.
 				Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 				ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
 					logger.Error("OpenAPI middleware validation error", "message", message)

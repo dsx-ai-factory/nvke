@@ -291,20 +291,14 @@ type Config struct {
 	TenantAccessEnabled bool `env:"TENANT_ACCESS_ENABLED" default:"false"`
 
 	// AuthConfigPath is the mounted YAML file holding the API authentication
-	// configuration. Unset disables authentication entirely, which is what
-	// every existing deployment gets on upgrade with no values change. A
-	// set-but-unreadable path is a startup failure, never "disabled"; see
-	// auth.Load.
+	// configuration. Unset disables authentication. A set-but-unreadable path is
+	// a startup failure, never "disabled"; see auth.Load.
 	//
-	// Deliberately absent from Validate(): an empty value is the valid,
-	// default, authentication-disabled state.
+	// Validate() does not check it: unset is the valid default.
 	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
 
 	// PermissiveMode evaluates and logs authentication and admission decisions
-	// without enforcing them. Off by default. It is an environment variable
-	// rather than a field in the authentication file on purpose: it is the one
-	// setting an operator flips under pressure, so flipping it must not risk
-	// taking the pod down with a bad YAML edit. It has no effect when
+	// without enforcing them, so no request is rejected. No effect when
 	// AuthConfigPath is unset.
 	PermissiveMode bool `env:"PERMISSIVE_MODE" default:"false"`
 

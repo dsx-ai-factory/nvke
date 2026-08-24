@@ -3,9 +3,8 @@
 
 package auth_test
 
-// These tests drive a bare handler rather than a server: NewServer needs a
-// database and a Forge provider, and would test the mux rather than the rules
-// here, which must not depend on it.
+// These tests drive a bare handler, not a server: NewServer needs a database and
+// a Forge provider, and the rules under test depend on neither.
 
 import (
 	"bytes"

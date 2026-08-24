@@ -105,10 +105,8 @@ func main() {
 		}
 	}()
 
-	// Before the SPIFFE wait and the migrations, so a bad configuration costs a
-	// restart rather than a migrated schema. A nil authenticator means
-	// authentication is disabled; NewServer then leaves the middleware out of the
-	// request chain entirely.
+	// Before the SPIFFE wait and the migrations: a bad configuration should cost a
+	// restart, not a migrated schema.
 	authenticator, err := auth.Setup(ctx, auth.Options{
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,

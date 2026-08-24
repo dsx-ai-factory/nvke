@@ -34,8 +34,8 @@ func TestSetupDisabledWhenNoConfigPath(t *testing.T) {
 	assert.Nil(t, authenticator, "an empty ConfigPath is disabled, not enforcing")
 }
 
-// The failure this exists to prevent: a mount path that is wrong must not be
-// read as "disabled", because that is a server which authenticates nobody.
+// A set-but-unreadable path is an error, never "disabled". Read as disabled, it
+// would produce a server that authenticates nobody.
 func TestSetupUnreadableConfigPathIsAnError(t *testing.T) {
 	t.Parallel()
 
@@ -73,9 +73,8 @@ func TestSetupPermissiveBuildsWithoutReachableKeys(t *testing.T) {
 	assert.NotNil(t, authenticator)
 }
 
-// Enforcing refuses rather than starting up unable to verify anything. The
-// issuers in exampleConfig are not resolvable from a test process, which is
-// exactly the condition being asserted.
+// Enforcing refuses to start without reachable keys. exampleConfig's issuers do
+// not resolve from a test process, which is the condition under test.
 func TestSetupEnforcingRefusesWithoutReachableKeys(t *testing.T) {
 	t.Parallel()
 
