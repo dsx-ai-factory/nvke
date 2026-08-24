@@ -437,32 +437,32 @@ You should now see the Swagger UI at http://localhost:8080/api/docs.
 
 ## API Authentication
 
-Today any caller that can reach `/api` has full administrative access: the whole
-cluster lifecycle, plus the pass-through endpoints that call the infrastructure
-provider using NKE's own credentials. Authentication closes that.
+NKE can require a signed JWT on every `/api` request. It is off by default, and
+mounting a configuration file is what turns it on.
 
-NKE can require a signed JWT on every `/api` request. It is **off by default**,
-and off in every deployment today — you mount a config file to turn it on.
+With it off, any caller that can reach `/api` has full administrative access:
+the whole cluster lifecycle, plus the pass-through endpoints that call the
+infrastructure provider using NKE's own credentials.
 
 A token gets in if it was signed by an issuer you configured, names NKE in `aud`,
 has not expired, and its subject matches an admission rule. Rules come in two
-shapes: Kubernetes service accounts (namespace + name) and SPIFFE IDs (trust
-domain + path prefix). In practice you are presenting either a bound service
-account token or a SPIRE JWT-SVID.
+shapes: Kubernetes service accounts (namespace plus name) and SPIFFE IDs (trust
+domain plus path prefix). In practice you present either a bound service account
+token or a SPIRE JWT-SVID.
 
-Verifying the token is not the whole check. Any workload author who can write a
-pod spec can have the kubelet project a token for their own service account with
-any audience they choose, including NKE's — no RBAC check applies to the audience
-value. The allow-list is what stops every service account on the cluster from
-being an NKE administrator.
+Verifying the token is not enough on its own. Any workload author who can write a
+pod spec can have the kubelet project a token for their own service account
+naming any audience they like, NKE's included, and no RBAC check applies to that
+value. The admission rules are what stop every service account on the cluster
+from being an NKE administrator.
 
-There is no authorization yet. Every admitted caller can do everything, exactly as
-today; authorization is a follow-on and a platform responsibility.
+NKE does no authorization: every admitted caller can do everything. Authorization
+is a platform responsibility.
 
 ### Enabling Authentication
 
-Two environment variables read at startup. Changing either — or the
-config file — needs a pod restart.
+Two environment variables, read at startup. Changing either, or the configuration
+file itself, needs a pod restart.
 
 | | `AUTH_CONFIG_PATH` | `PERMISSIVE_MODE` | Result |
 | --- | --- | --- | --- |
@@ -470,23 +470,21 @@ config file — needs a pod restart.
 | **Permissive** | set | `true` | Every request evaluated, logged and counted, then served anyway. |
 | **Enforcing** | set | unset or `false` | Failures answered 401 or 403. |
 
-A deployment that was never given a config file stays disabled across an upgrade
-and needs no values change.
+A deployment that never sets `AUTH_CONFIG_PATH` stays disabled across upgrades.
 
-Permissive is a migration tool rather than a setting to leave on. Use it to find
-out who would be locked out before locking anyone out: watch
+Permissive is a migration tool, not a setting to leave on. Use it to find out who
+would be locked out before locking anyone out: watch
 `nke_auth_requests_total{outcome="would_reject"}` until it stays at zero, then
 turn it off. The `reason` and `issuer` labels say what was wrong and whose token
-it was. It suppresses the 403 as well as the 401, so switching it on rejects
-nobody.
+it was. It suppresses the 403 as well as the 401, so turning it on rejects nobody.
 
-If `AUTH_CONFIG_PATH` is set but unreadable, **NKE will not start**. A typo'd
-mount path fails loudly rather than quietly disabling authentication.
+If `AUTH_CONFIG_PATH` is set but unreadable, NKE will not start. A typo'd mount
+path fails loudly rather than silently disabling authentication.
 
 ### Authentication Configuration
 
-The full schema and every validation rule live in `internal/auth/config.go`.
-The shape:
+One file, mounted at `AUTH_CONFIG_PATH`. The full schema and every validation
+rule live in `internal/auth/config.go`. The shape:
 
 ```yaml
 apiVersion: auth.nke.nvidia.com/v1alpha1
@@ -507,8 +505,8 @@ issuers:
       caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
       bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
     algorithms: [RS256, ES256]     # asymmetric only; "none" and HMAC are refused
-    # serviceAccounts or spiffe, never both: either match admits, so the pair
-    # together admits identities the narrower rule was written to exclude.
+    # serviceAccounts or spiffe, never both: either one matching admits, so a
+    # pair admits more than the narrower rule alone would.
     admit:
       serviceAccounts:
         # Omitting `name` admits every service account in the namespace, present
@@ -533,8 +531,9 @@ issuers:
 
 ### Rejections and Status Codes
 
-`403` is the only one a better token will not fix: NKE verified the caller and
-will not serve them. Everything else is `401`, with `WWW-Authenticate: Bearer`.
+Every rejection is `401` with a `WWW-Authenticate: Bearer` challenge, except
+`not_admitted`, which is `403`: the token verified, and a different one will not
+help.
 
 | `reason` label | Status | Meaning |
 | --- | --- | --- |
@@ -548,7 +547,7 @@ will not serve them. Everything else is `401`, with `WWW-Authenticate: Bearer`.
 | `jwks_stale` | 401 | The issuer's key set could not be refreshed and is no longer authoritative. |
 | `not_admitted` | 403 | Token verified; its subject matches no admission rule for its issuer. |
 
-The response body names only the reason — issuer names and configuration detail
+The response body names only the reason. Issuer names and configuration detail
 stay in NKE's log. In permissive mode nothing is rejected: the decision is counted
 under `outcome="would_reject"` with the status it would have returned.
 
@@ -556,7 +555,8 @@ under `outcome="would_reject"` with the status it would have returned.
 
 `/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/docs`, and the Swagger
 UI under `/api/docs/`. Everything else needs a token, including paths that route
-nowhere. `internal/auth/routes.go` is the authoritative list.
+nowhere, so an unauthenticated caller cannot probe which ones exist.
+`internal/auth/routes.go` is the list.
 
 ## Debugging
 
