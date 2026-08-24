@@ -6,6 +6,13 @@
 # clean (cloud-init completes, SSH answers, nke-agent and spire-agent units
 # are installed and enabled). Does not exercise SPIRE/nke-agent against a real
 # server -- just proves the golden image boots on its own.
+#
+# Set OVMF_CODE (and optionally OVMF_VARS_TEMPLATE) to boot a UEFI-installed
+# image, e.g. the nke-node-non-fde.pkr.hcl / nke-node-fde.pkr.hcl variants:
+#   QCOW=../output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./boot-smoke.sh
+# Unset (the default), this boots BIOS-style, matching the base nke-node.pkr.hcl
+# image. The FDE variant needs its own passphrase/TPM handling instead of
+# this script -- see ../../demo-fde.sh.
 
 set -euo pipefail
 
@@ -13,6 +20,8 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QCOW="${QCOW:-${ROOT}/output/nke-node}"
 SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
+OVMF_CODE="${OVMF_CODE:-}"
+OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
 
 # Same probe as packer/Makefile, and for the same reason: the CI runners have no
 # /dev/kvm, so -enable-kvm makes QEMU exit instead of booting. Emulated boot is
@@ -62,11 +71,22 @@ local-hostname: nke-boot-smoke" >"${WORKDIR}/meta-data"
 
 cloud-localds "${SEED}" "${WORKDIR}/user-data" "${WORKDIR}/meta-data"
 
+EFI_ARGS=()
+if [[ -n "${OVMF_CODE}" ]]; then
+  EFIVARS="${WORKDIR}/OVMF_VARS.fd"
+  cp "${OVMF_VARS_TEMPLATE}" "${EFIVARS}"
+  EFI_ARGS=(
+    -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}"
+    -drive if=pflash,format=raw,file="${EFIVARS}"
+  )
+fi
+
 echo "boot-smoke: starting VM (ssh on 127.0.0.1:${SSH_PORT})"
 qemu-system-x86_64 \
   -m 2048 -smp 2 \
   "${ACCEL_ARGS[@]}" \
   -nographic \
+  "${EFI_ARGS[@]}" \
   -drive if=virtio,file="${DISK}",format=qcow2 \
   -drive if=virtio,file="${SEED}",format=raw \
   -netdev user,id=net0,hostfwd=tcp::"${SSH_PORT}"-:22 \

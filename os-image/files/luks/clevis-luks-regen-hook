@@ -1,0 +1,45 @@
+#!/bin/bash
+# Kernel post-install hook to regenerate Clevis TPM bindings.
+# Ensures TPM unlock continues to work after kernel/initramfs updates.
+#
+# Installed to: /etc/kernel/postinst.d/zz-clevis-regen
+
+set -euo pipefail
+
+if ! command -v clevis &>/dev/null; then
+    exit 0
+fi
+
+log() {
+    logger -t clevis-regen "$1"
+    echo "clevis-regen: $1"
+}
+
+log "Kernel update detected, checking Clevis bindings..."
+
+for dev in $(lsblk -ln -o NAME,FSTYPE | grep crypto_LUKS | awk '{print "/dev/" $1}'); do
+    if clevis luks list -d "$dev" 2>/dev/null | grep -q tpm2; then
+        # Slot index is NOT fixed: Clevis is often slot 0 and passphrase slot 1 — never hardcode -s 1.
+        while IFS= read -r line; do
+            case "$line" in
+                *:tpm2*)
+                    slot="${line%%:*}"
+                    slot="${slot// /}"
+                    if [[ -z "$slot" ]] || ! [[ "$slot" =~ ^[0-9]+$ ]]; then
+                        log "Warning: Could not parse Clevis slot from: $line"
+                        continue
+                    fi
+                    log "Regenerating TPM binding for $dev slot $slot..."
+                    if clevis luks regen -d "$dev" -s "$slot"; then
+                        log "Successfully regenerated binding for $dev slot $slot"
+                    else
+                        log "Warning: clevis luks regen failed for $dev slot $slot"
+                    fi
+                    ;;
+            esac
+        done < <(clevis luks list -d "$dev" 2>/dev/null | grep tpm2)
+    fi
+done
+
+log "Clevis TPM binding check complete."
+exit 0

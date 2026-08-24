@@ -18,7 +18,7 @@ TODO:  Need to refine the requirements around spire-agent below
 | `nke-agent` | Installed at `/usr/local/bin/nke-agent` from the nke-agent `.deb` when GHCR has one for the requested tag, otherwise the OCI binary. systemd unit `nke-agent.service` **enabled**. Listens on TCP **15005**. mTLS is on (no `--disable-mtls` in `/etc/default/nke-agent`). A drop-in waits for the SPIRE workload API before exec. |
 | SPIRE agent | `spire-agent` at `/usr/local/bin/spire-agent`, unit `spire-agent.service` **enabled**. Workload API socket at `unix:///tmp/spire-agent/public/api.sock` (the `nke-agent` default). |
 | Unix workload attestor | SPIRE `WorkloadAttestor "unix"` so root `nke-agent` can fetch an X.509 SVID. |
-| Node attestor | Join-token (`NodeAttestor "join_token"`). TPM attestation is out of scope for this reference image. |
+| Node attestor | Join-token (`NodeAttestor "join_token"`). TPM *node attestation* (proving node identity to SPIRE) is out of scope for this reference image — see "Must have (FDE variant)" below for the unrelated use of TPM to seal the disk-encryption key. |
 | Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 
@@ -58,6 +58,35 @@ After a successful `nke-agent` start, the image touches
 `/var/lib/spire-agent/.nke-attested` and subsequent boots omit `-joinToken`
 (the token is single-use).
 
+## Must have (FDE variant)
+
+`nke-node-fde.pkr.hcl` is an **opt-in** build variant, not the default image.
+It satisfies everything above, plus:
+
+| Item | Requirement |
+|---|---|
+| Root volume | LVM-on-LUKS2 (`ubuntu-vg`/`ubuntu-lv` on a LUKS2 container), created by `autoinstall-lvm.pkrtpl` (`luks_enabled = true`) at install time. |
+| TPM binding | `luks-tpm-firstboot.service` binds the LUKS key to the node's own TPM 2.0 (Clevis `tpm2`) on first real boot — TPM binding is machine-specific and cannot happen at image-build time. TPM-only policy by default (no PCR/measured-boot binding); see [docs/full-disk-encryption.md](docs/full-disk-encryption.md) for the tradeoff. |
+| Passphrase removal | The build-time LUKS passphrase slot is removed once the TPM bind is verified unsealable. After that, the volume unlocks **only** via that node's TPM — moving the disk to different hardware, or losing the TPM state, makes it unrecoverable by design. |
+| No key material off-image | The only secret on the cidata/autoinstall medium is the shared build-time passphrase (documented default, not a per-node secret); no per-node key, join token, or TPM-derived material is ever written to cloud-init, user-data, or the genesis medium. |
+| Node replacement | Each new node image boot re-runs first-boot binding against its own local TPM — no old-TPM/new-TPM migration step exists or is needed. |
+
+## Must have (non-FDE variant, no encryption)
+
+`nke-node-non-fde.pkr.hcl` is also **opt-in**, not the default image. It follows
+the same installer + autoinstall + LVM flow as the FDE variant —
+`autoinstall-lvm.pkrtpl` with `luks_enabled = false` — but configures **no
+encryption at all**: no LUKS container, no Clevis, no TPM binding. It exists
+to isolate FDE-specific issues from installer-flow issues (same partitioning,
+same identity/SSH setup, same first-boot storage growth pattern, minus
+encryption), and as a base for anyone who wants the installer-based LVM
+layout without opting into encryption.
+
+| Item | Requirement |
+|---|---|
+| Root volume | Plain LVM (`ubuntu-vg`/`ubuntu-lv`), no LUKS container. |
+| Storage growth | `lvm-growth-firstboot.service` grows the partition/PV/LV/filesystem to the target disk's full size on first boot — the same growth logic the FDE variant's `luks-tpm-firstboot.sh` runs, minus everything LUKS/TPM. |
+
 ## Identity rules (runtime)
 
 These are enforced by `nke-agent`, not by the image:
@@ -87,8 +116,12 @@ server, not this image.
 
 - kubeadm / kubelet / container runtime as a cluster-ready stack
 - CNI, GPU drivers, NVIDIA fabric
-- TPM attestor plugin and swtpm
+- TPM as a SPIRE *node attestor* plugin, and swtpm for that purpose (the FDE
+  variant's use of TPM to seal the disk-encryption key is unrelated and in
+  scope — see "Must have (FDE variant)" above)
 - `--disable-mtls` as a supported production mode
+- Kubernetes Secrets / etcd encryption-at-rest — a controller/agent concern,
+  not an image-build concern; out of scope for `os-image/`
 
 ## How to prove it
 

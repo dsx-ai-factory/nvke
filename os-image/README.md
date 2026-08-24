@@ -8,6 +8,10 @@ controller can reach the node over SPIFFE mTLS. The contract is [SPEC.md](SPEC.m
 | `SPEC.md` | Image contract (bake vs first-boot, ports, identity) |
 | `packer/` | Packer + QEMU recipe that produces a qcow2 |
 | `files/` | systemd units, SPIRE template, first-boot script |
+| `files/luks/` | LUKS/TPM2 first-boot binding assets for the FDE variant |
+| `files/lvm/` | First-boot storage-growth assets for the non-FDE (no encryption) variant |
+| `docs/full-disk-encryption.md` | FDE variant: build, verify, failure modes |
+| `demo-fde.sh` | Runs the host-FDE acceptance scenarios against a built image |
 | `cmd/nke-os-image-check` | Connectivity checker (Go) |
 
 ## Build the OS image
@@ -55,6 +59,46 @@ Output: `packer/output/nke-node` (qcow2, Packer's `vm_name`).
 
 The build-time cloud-init seed is only for Packer's SSH. The provisioner runs
 `cloud-init clean` and drops the build key, so the qcow2 is a golden image.
+
+## Full-disk-encryption (FDE) variant
+
+An opt-in build that lays down an LVM-on-LUKS2 root volume via the Ubuntu
+Server installer + autoinstall, then defers TPM 2.0 binding to first boot on
+the target hardware. See [docs/full-disk-encryption.md](docs/full-disk-encryption.md)
+for the full design, verification steps, and (unrecoverable-by-design)
+failure modes.
+
+```bash
+cd packer
+make os-image-fde NKE_AGENT_VERSION=edge
+```
+
+Output: `packer/output-fde/nke-node-fde` (qcow2). Same `NKE_AGENT_VERSION`
+handling as `os-image`; `LUKS_PASSPHRASE` (default `changeit`) sets the
+build-time-only passphrase, which the shipped image never retains once a
+node's first boot completes a verified TPM bind.
+
+## Non-FDE variant (no encryption)
+
+The same installer + autoinstall + LVM flow as the FDE variant, with
+encryption turned off entirely — no LUKS, no Clevis, no TPM binding. Useful
+for telling FDE-specific issues apart from issues in the installer flow
+itself (partitioning, identity/SSH setup, first-boot storage growth), or as
+a starting point if you want the installer-based LVM layout without opting
+into encryption.
+
+```bash
+cd packer
+make os-image-non-fde NKE_AGENT_VERSION=edge
+```
+
+Output: `packer/output-non-fde/nke-node-non-fde` (qcow2). Boot it with
+`boot-smoke.sh` (it needs `OVMF_CODE` set, since this variant boots UEFI —
+see the comment at the top of that script):
+
+```bash
+QCOW=../output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
+```
 
 ## Release
 

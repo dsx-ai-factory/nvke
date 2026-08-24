@@ -14,6 +14,8 @@ controller/hack/nico-mock/nico-mock
 
 # Reference-image Packer output and build-only SSH keys / pulled binaries.
 os-image/packer/output/
+os-image/packer/output-fde/
+os-image/packer/output-non-fde/
 os-image/packer/artifacts/
 os-image/packer/.ssh/
 

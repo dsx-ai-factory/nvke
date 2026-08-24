@@ -1,0 +1,22 @@
+[Unit]
+Description=LUKS TPM2 First-Boot Binding
+DefaultDependencies=no
+After=local-fs.target
+Before=cloud-init-local.service
+Conflicts=shutdown.target reboot.target
+Before=shutdown.target reboot.target
+ConditionPathExists=/usr/local/bin/luks-tpm-firstboot.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/luks-tpm-firstboot.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+# update-initramfs can take 2-5 min; give systemd enough time to let it finish
+# before force-killing on a concurrent reboot. Without this, the default 90s
+# TimeoutStopSec can SIGKILL mid-initramfs-write and corrupt /boot/initrd.img-*.
+TimeoutStopSec=600
+
+[Install]
+WantedBy=sysinit.target

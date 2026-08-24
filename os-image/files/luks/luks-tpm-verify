@@ -1,0 +1,120 @@
+#!/bin/bash
+#
+# luks-tpm-verify
+# Non-destructive health check for LUKS TPM2 (Clevis) auto-unlock.
+#
+# Confirms, WITHOUT modifying any LUKS slot, that:
+#   1. each LUKS device has a Clevis tpm2 binding,
+#   2. the TPM can actually unseal that binding against the CURRENT TPM policy
+#      (the same operation the initramfs performs at boot, via
+#      `clevis luks pass | cryptsetup luksOpen --test-passphrase`),
+#   3. reports the bound PCR policy when PCR binding is configured.
+#
+# Intended to be run over the console right after first-boot binding, before
+# relying on TPM-only unlock (e.g. before removing console access).
+#
+# Exit codes:
+#   0  all LUKS devices are bound AND can be unsealed by the TPM now
+#   1  a LUKS device is NOT bound to TPM2
+#   2  a binding exists but the TPM cannot unseal it (policy mismatch / lockout risk)
+#   3  no TPM device, or required tooling missing
+#   4  no LUKS devices found
+#
+# Installed to: /usr/local/bin/luks-tpm-verify
+
+set -uo pipefail
+
+RED=""; GRN=""; YLW=""; RST=""
+if [ -t 1 ]; then
+    RED="$(printf '\033[31m')"; GRN="$(printf '\033[32m')"
+    YLW="$(printf '\033[33m')"; RST="$(printf '\033[0m')"
+fi
+
+ok()   { echo "${GRN}[ OK ]${RST} $*"; }
+warn() { echo "${YLW}[WARN]${RST} $*"; }
+err()  { echo "${RED}[FAIL]${RST} $*"; }
+info() { echo "[INFO] $*"; }
+
+for tool in clevis cryptsetup lsblk; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        err "Required tool '$tool' not found."
+        exit 3
+    fi
+done
+
+if [ ! -c /dev/tpm0 ] && [ ! -c /dev/tpmrm0 ]; then
+    err "No TPM device (/dev/tpm0 or /dev/tpmrm0) present."
+    exit 3
+fi
+
+mapfile -t LUKS_DEVICES < <(lsblk -ln -o NAME,FSTYPE | awk '$2=="crypto_LUKS"{print "/dev/" $1}')
+
+if [ "${#LUKS_DEVICES[@]}" -eq 0 ]; then
+    err "No LUKS (crypto_LUKS) devices found."
+    exit 4
+fi
+
+info "TPM device: $( [ -c /dev/tpmrm0 ] && echo /dev/tpmrm0 || echo /dev/tpm0 )"
+info "LUKS devices: ${LUKS_DEVICES[*]}"
+echo
+
+OVERALL_RC=0
+
+for dev in "${LUKS_DEVICES[@]}"; do
+    echo "=== ${dev} ==="
+
+    binding="$(clevis luks list -d "$dev" 2>/dev/null | grep tpm2 || true)"
+    if [ -z "$binding" ]; then
+        err "${dev}: no Clevis tpm2 binding present (will NOT auto-unlock)."
+        OVERALL_RC=1
+        echo
+        continue
+    fi
+    ok "${dev}: Clevis tpm2 binding present."
+    echo "       ${binding}"
+
+    # Slot number of the tpm2 binding (leading "N:" of the list line).
+    # REQUIRED by `clevis luks pass -s`; omitting it prints usage and emits no
+    # passphrase, which would make this check spuriously fail.
+    clevis_slot="$(printf '%s\n' "$binding" | head -1 | cut -d: -f1 | tr -d '[:space:]')"
+
+    pcr_bank="$(echo "$binding" | sed -n 's/.*"pcr_bank"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')"
+    pcr_ids="$(echo "$binding"  | sed -n 's/.*"pcr_ids"[[:space:]]*:[[:space:]]*\[\?"\?\([0-9,"]*\).*/\1/p' | tr -d '"')"
+    if [ -n "$pcr_bank" ]; then
+        info "${dev}: bound PCR bank=${pcr_bank} ids=${pcr_ids:-?}"
+    else
+        info "${dev}: bound policy: TPM-only (no PCR binding)"
+    fi
+
+    slot_count="$(cryptsetup luksDump "$dev" 2>/dev/null | grep -cE '^[[:space:]]+[0-9]+: luks2' || true)"
+    info "${dev}: active key slots: ${slot_count:-unknown} (1 = TPM-only, no passphrase fallback)"
+
+    # THE REAL TEST: ask Clevis to recover the slot passphrase via the TPM
+    # (performs the TPM unseal against the CURRENT policy) and feed it to
+    # `cryptsetup luksOpen --test-passphrase`, without activating or mounting
+    # anything. This is the same unseal the boot path relies on.
+    if [ -n "$clevis_slot" ] \
+        && clevis luks pass -d "$dev" -s "$clevis_slot" 2>/dev/null \
+        | cryptsetup luksOpen --test-passphrase "$dev" --key-file=- >/dev/null 2>&1; then
+        ok "${dev}: TPM unseal verified — device will auto-unlock at boot."
+    else
+        err "${dev}: TPM unseal FAILED — current TPM state does not satisfy the bound policy."
+        err "${dev}: if there is no passphrase slot left, this device is at LOCKOUT risk."
+        if [ -n "$pcr_bank" ]; then
+            echo "       Current ${pcr_bank} PCR(s) ${pcr_ids:-}:"
+            tpm2_pcrread "${pcr_bank}:${pcr_ids:-7}" 2>/dev/null | sed 's/^/       /' || true
+        fi
+        OVERALL_RC=2
+    fi
+    echo
+done
+
+if [ "$OVERALL_RC" -eq 0 ]; then
+    ok "All LUKS devices are TPM-bound and unsealable. Safe to rely on auto-unlock."
+else
+    err "One or more LUKS devices failed verification (rc=${OVERALL_RC}). Do NOT remove"
+    err "console/passphrase access until resolved (re-add a passphrase with"
+    err "'cryptsetup luksAddKey <dev>' if a slot was already removed)."
+fi
+
+exit "$OVERALL_RC"

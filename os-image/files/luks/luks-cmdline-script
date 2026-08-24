@@ -1,0 +1,98 @@
+#!/bin/sh
+#
+# initramfs-tools local-top script for LUKS command line unlock.
+# Unlocks LUKS using a luks.key= kernel parameter, for boot before TPM
+# binding has happened (e.g. first netboot). Removed once
+# luks-tpm-firstboot.sh completes a verified TPM bind; clevis handles unlock
+# after that.
+#
+PREREQ="clevis"
+prereqs() { echo "$PREREQ"; }
+case "$1" in
+    prereqs) prereqs; exit 0 ;;
+esac
+
+. /scripts/functions
+
+# Already unlocked (e.g. by clevis)? Nothing to do.
+if ls /dev/mapper/luks-* >/dev/null 2>&1 || ls /dev/mapper/dm_crypt* >/dev/null 2>&1; then
+    log_success_msg "LUKS already unlocked (likely by clevis), skipping luks-cmdline"
+    if [ -x /sbin/lvm ]; then
+        /sbin/lvm vgchange -ay 2>/dev/null
+    fi
+    exit 0
+fi
+
+LUKS_KEY=""
+for param in $(cat /proc/cmdline); do
+    case "$param" in
+        luks.key=*)
+            LUKS_KEY="${param#luks.key=}"
+            ;;
+    esac
+done
+
+if [ -z "$LUKS_KEY" ]; then
+    log_warning_msg "No luks.key= parameter found on kernel command line"
+    log_warning_msg "Falling back to cryptroot for password prompt"
+    exit 0
+fi
+
+log_begin_msg "LUKS unlock: scanning for encrypted devices"
+
+RETRIES=10
+FOUND_DEV=""
+while [ $RETRIES -gt 0 ]; do
+    for dev in /dev/sd*[0-9] /dev/vd*[0-9] /dev/nvme*n*p[0-9]*; do
+        [ -b "$dev" ] || continue
+        if /sbin/cryptsetup isLuks "$dev" 2>/dev/null; then
+            FOUND_DEV="$dev"
+            break 2
+        fi
+    done
+    RETRIES=$((RETRIES - 1))
+    [ $RETRIES -gt 0 ] && sleep 1
+done
+
+if [ -z "$FOUND_DEV" ]; then
+    log_failure_msg "No LUKS devices found"
+    exit 1
+fi
+
+log_success_msg "Found LUKS device: $FOUND_DEV"
+
+LUKS_UUID=$(/sbin/cryptsetup luksUUID "$FOUND_DEV" 2>/dev/null)
+if [ -n "$LUKS_UUID" ]; then
+    DM_NAME="luks-${LUKS_UUID}"
+else
+    DM_NAME="luks-root"
+fi
+
+log_begin_msg "Unlocking $FOUND_DEV as $DM_NAME"
+
+if printf '%s' "$LUKS_KEY" | /sbin/cryptsetup luksOpen "$FOUND_DEV" "$DM_NAME" --key-file=- 2>/dev/null; then
+    log_success_msg "LUKS unlocked successfully"
+else
+    log_failure_msg "LUKS unlock failed - wrong passphrase?"
+    exit 1
+fi
+
+sleep 1
+
+log_begin_msg "Activating LVM volumes"
+if [ -x /sbin/lvm ]; then
+    /sbin/lvm pvscan --cache 2>/dev/null
+    /sbin/lvm vgchange -ay 2>/dev/null
+    log_success_msg "LVM activated"
+else
+    log_warning_msg "LVM tools not found"
+fi
+
+ROOT_DEV="/dev/mapper/ubuntu--vg-ubuntu--lv"
+if [ -b "$ROOT_DEV" ]; then
+    log_success_msg "Root device ready: $ROOT_DEV"
+else
+    log_warning_msg "Root device not found: $ROOT_DEV"
+fi
+
+exit 0

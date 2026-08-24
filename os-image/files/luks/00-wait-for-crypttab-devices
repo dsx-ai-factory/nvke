@@ -1,0 +1,60 @@
+#!/bin/sh
+# Wait for LUKS block devices from crypttab to appear before Clevis runs.
+# Clevis runs in local-top and needs the block device (e.g. /dev/nvme0n1p3 or
+# /dev/disk/by-uuid/<uuid>) to exist; on some systems NVMe/block appears after
+# local-top starts. This script runs first (00- prefix) and waits up to 30s.
+#
+# Uses only POSIX/BusyBox-friendly commands (sleep, not /bin/sleep).
+
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "$1" in prereqs) prereqs; exit 0 ;; esac
+
+. /scripts/functions
+
+CRYPTTAB="${CRYPTTAB:-/etc/crypttab}"
+MAX_WAIT="${MAX_WAIT:-30}"
+# Ensure numeric (avoid empty or non-numeric from env)
+case "$MAX_WAIT" in ''|*[!0-9]*) MAX_WAIT=30;; esac
+
+if [ ! -f "$CRYPTTAB" ]; then
+    exit 0
+fi
+
+log_begin_msg "Waiting for LUKS devices from crypttab..."
+
+grep -v "^#" "$CRYPTTAB" | grep "UUID=" | sed -n 's/.*UUID=\([^ 	]*\).*/\1/p' | while read -r uuid; do
+    [ -z "$uuid" ] && continue
+    dev="/dev/disk/by-uuid/$uuid"
+    count=0
+    while [ "$count" -lt "$MAX_WAIT" ]; do
+        if [ -b "$dev" ]; then
+            log_success_msg "Found $dev"
+            break
+        fi
+        sleep 1
+        count=$((count + 1))
+    done
+    if [ "$count" -ge "$MAX_WAIT" ]; then
+        log_warning_msg "Timeout waiting for $dev (${MAX_WAIT}s)"
+    fi
+done
+
+# Wait for the TPM device so Clevis can use it for LUKS unlock (TPM modules
+# must be present in the initramfs).
+TPM_WAIT="${TPM_WAIT:-30}"
+case "$TPM_WAIT" in ''|*[!0-9]*) TPM_WAIT=30;; esac
+count=0
+while [ "$count" -lt "$TPM_WAIT" ]; do
+    if [ -c /dev/tpm0 ] 2>/dev/null; then
+        log_success_msg "TPM device /dev/tpm0 ready"
+        break
+    fi
+    sleep 1
+    count=$((count + 1))
+done
+if [ "$count" -ge "$TPM_WAIT" ]; then
+    log_warning_msg "Timeout waiting for /dev/tpm0 (${TPM_WAIT}s); Clevis TPM unlock may fail"
+fi
+
+exit 0

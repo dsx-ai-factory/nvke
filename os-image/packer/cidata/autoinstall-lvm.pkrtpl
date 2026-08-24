@@ -1,0 +1,101 @@
+#cloud-config
+autoinstall:
+  version: 1
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ""
+
+  network:
+    version: 2
+    ethernets:
+      default_nic:
+        match:
+          name: "e*"
+        dhcp4: true
+
+  # LVM layout (LUKS optional, gated by luks_enabled). VG: ubuntu-vg, LV:
+  # ubuntu-lv (Ubuntu defaults). The image ships at build-time disk_size and
+  # is grown to the target disk's full size on first boot — by
+  # luks-tpm-firstboot.sh when luks_enabled, or by cloud-init's growpart +
+  # a plain lvextend/resize2fs otherwise (see configure-lvm-growth.sh).
+  # No swap: not wanted on a Kubernetes node.
+  storage:
+    swap:
+      size: 0
+    layout:
+      name: lvm
+      sizing_policy: all
+%{ if luks_enabled ~}
+      password: ${luks_passphrase}
+%{ endif ~}
+      match:
+        size: largest
+
+  identity:
+    hostname: nke-node
+    username: ubuntu
+    # Locked — login is by SSH key only (ssh.allow-pw: false below).
+    password: "!"
+
+  ssh:
+    allow-pw: false
+    authorized-keys:
+      - ${ssh_public_key}
+    install-server: true
+
+  ntp:
+    enabled: true
+
+  packages:
+    - lvm2
+%{ if luks_enabled ~}
+    - cryptsetup
+    - cryptsetup-initramfs
+    # Ubuntu 26.04 ships dracut, not initramfs-tools, by default.
+    # /usr/sbin/update-initramfs is a dracut-provided CLI-compatibility shim
+    # that internally just runs `dracut --force`, ignoring
+    # /etc/cryptsetup-initramfs/conf-hook and everything under
+    # /etc/initramfs-tools/ entirely. Installing the real package here makes
+    # the late-command's `update-initramfs -u -k all` below (which embeds
+    # the build-time keyfile into the initrd) actually take effect on the
+    # very first post-autoinstall boot, instead of silently building a
+    # dracut image that prompts for the passphrase at console.
+    - initramfs-tools
+%{ endif ~}
+    - python3
+    - python3-apt
+    - openssh-server
+
+  updates: security
+
+  late-commands:
+    - curtin in-target --target=/target -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu'
+    - curtin in-target --target=/target -- chmod 440 /etc/sudoers.d/ubuntu
+    # Subiquity normally writes cloud-init.disabled so cloud-init doesn't
+    # re-run the installer config on later boots. The base (cloud-image)
+    # variant of this image depends on cloud-init staying active across
+    # boots (SPEC.md's "Cloud-init input" — spire.env/trust-bundle.pem
+    # delivery), so keep it active here too rather than diverge per variant.
+    - curtin in-target --target=/target -- rm -f /etc/cloud/cloud-init.disabled
+%{ if luks_enabled ~}
+    # ========================================================================
+    # Build-time-only unlock: a temporary keyfile so the post-autoinstall
+    # reboot (and Packer's SSH provisioning) can happen unattended. The
+    # keyfile never leaves this build VM's disk image and is removed by
+    # configure-fde.sh before the golden image ships — the only durable
+    # unlock method in the shipped image is the LUKS passphrase slot (until
+    # first boot replaces it with a TPM binding) and, later, the TPM itself.
+    # This satisfies the "no key material in cloud-init/user-data/genesis
+    # medium" requirement: this keyfile isn't cloud-init/user-data, it is a
+    # file on the disk being built, and it is deleted before the disk is
+    # published as an image.
+    # ========================================================================
+    - curtin in-target --target=/target -- sh -c 'echo -n "${luks_passphrase}" > /etc/luks-build.key && chmod 600 /etc/luks-build.key'
+    - curtin in-target --target=/target -- sh -c 'LUKS_DEV=$(blkid -t TYPE=crypto_LUKS -o device | head -1) && echo -n "${luks_passphrase}" | cryptsetup luksAddKey "$LUKS_DEV" /etc/luks-build.key -'
+    - curtin in-target --target=/target -- sh -c 'mkdir -p /etc/cryptsetup-initramfs && echo "KEYFILE_PATTERN=\"/etc/luks-build.key\"" > /etc/cryptsetup-initramfs/conf-hook'
+    - curtin in-target --target=/target -- sh -c 'sed -i "s| none | /etc/luks-build.key |g" /etc/crypttab'
+    - curtin in-target --target=/target -- update-initramfs -u -k all
+%{ endif ~}

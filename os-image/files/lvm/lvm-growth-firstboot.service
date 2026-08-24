@@ -1,0 +1,15 @@
+[Unit]
+Description=LVM First-Boot Storage Growth
+After=local-fs.target
+Before=cloud-init-local.service
+ConditionPathExists=/usr/local/bin/lvm-growth-firstboot.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/lvm-growth-firstboot.sh
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=sysinit.target
