@@ -33,7 +33,6 @@ type ControllerManager struct {
 	capiClusterScaffold          *CAPIClusterScaffoldController
 	nodeHealthController         *nodehealth.Controller
 	certRenewalController        *CertRenewalController
-	nodeTPMEKPubController       *NodeTPMEKPubController
 	clusterStaticEntryController *NodeClusterStaticEntryController
 	tpmPubhashesCmController     *TpmPubhashesCmController
 	teleportTokenController      *TeleportTokenController
@@ -83,7 +82,6 @@ func NewControllerManager(
 		capiClusterScaffold:          capiClusterScaffold,
 		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
 		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
-		nodeTPMEKPubController:       NewNodeTPMEKPubController(cfg, dbInstance, controllerManagerLogger, forgeProvider, k8sClient),
 		clusterStaticEntryController: clusterStaticEntryController,
 		tpmPubhashesCmController:     tpmPubhashesCmController,
 		teleportTokenController:      teleportTokenController,
@@ -213,11 +211,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	if err := a.nodeScheduler.Schedule(ctx, site); err != nil {
 		// Log errors but continue processing the other controllers.
 		a.logger.Error("Failed to schedule nodes", "error", err, "siteID", site.ID.String())
-	}
-
-	if err := a.nodeTPMEKPubController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile host ID", "error", err, "siteID", site.ID.String())
 	}
 
 	if a.teleportTokenController != nil {

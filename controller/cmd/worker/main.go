@@ -32,6 +32,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeset"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodetpmekpub"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant/csr"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenantaccess"
@@ -171,6 +172,18 @@ func main() {
 	)
 	if err := nodeSetController.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up node set controller", "error", err)
+		os.Exit(1)
+	}
+
+	nodeTPMEKPubController := nodetpmekpub.NewController(
+		cfg,
+		logger.With("logger", "node-tpm-ekpub-controller"),
+		dbInstance,
+		forgeProvider,
+		k8sControllerManager.GetClient(),
+	)
+	if err := nodeTPMEKPubController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up node TPM EK public key controller", "error", err)
 		os.Exit(1)
 	}
 

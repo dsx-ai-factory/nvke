@@ -32,6 +32,7 @@ func (f NodeSet) Matches(_ db.NodeSet) bool {
 
 type Node struct {
 	ControlPlane *bool
+	TpmEKPubHash *string
 
 	// Condition filters use asymmetric matching:
 	//   - true: exact match (status = 'True')
@@ -43,6 +44,9 @@ type Node struct {
 
 func (f Node) Matches(node db.Node) bool {
 	if f.ControlPlane != nil && node.ControlPlane != *f.ControlPlane {
+		return false
+	}
+	if f.TpmEKPubHash != nil && node.TpmEKPubHash != *f.TpmEKPubHash {
 		return false
 	}
 	if !conditionMatches(node.Conditions.Provisioning, f.Provisioning) {

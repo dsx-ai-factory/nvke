@@ -122,6 +122,61 @@ func TestUnit_DBEnqueuesNodeUpdateWhenSourceFiltersMatch(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestUnit_DBEnqueuesNodeAfterUpdateNodeForgeDetails(t *testing.T) {
+	nodeID := uuid.New()
+	previous := db.Node{ID: nodeID}
+	updated := db.Node{ID: nodeID, ForgeInstanceID: "instance-1"}
+	forgeInstanceID := "instance-1"
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+	database.On("GetNode", mock.Anything, nodeID).Return(previous, nil).Once()
+	database.On("UpdateNodeForgeDetails", mock.Anything, nodeID, &forgeInstanceID, (*string)(nil), (*string)(nil)).Return(nil)
+	database.On("GetNode", mock.Anything, nodeID).Return(updated, nil).Once()
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, dbfilters.Node{})
+
+	err := wrapper.UpdateNodeForgeDetails(context.Background(), nodeID, &forgeInstanceID, nil, nil)
+
+	require.NoError(t, err)
+	assert.Equal(t, dbreconcile.NodeKey(nodeID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+}
+
+func TestUnit_DBDoesNotEnqueueNodeAfterUpdateNodeForgeDetailsNoop(t *testing.T) {
+	nodeID := uuid.New()
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+	database.On("UpdateNodeForgeDetails", mock.Anything, nodeID, (*string)(nil), (*string)(nil), (*string)(nil)).Return(nil)
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, dbfilters.Node{})
+
+	err := wrapper.UpdateNodeForgeDetails(context.Background(), nodeID, nil, nil, nil)
+
+	require.NoError(t, err)
+	assertQueueEmpty(t, queue)
+	database.AssertExpectations(t)
+}
+
+func TestUnit_DBDoesNotEnqueueNodeAfterUpdateNodeForgeDetailsFilterMismatch(t *testing.T) {
+	nodeID := uuid.New()
+	previous := db.Node{ID: nodeID, TpmEKPubHash: "existing"}
+	updated := db.Node{ID: nodeID, TpmEKPubHash: "existing", ForgeInstanceID: "instance-1"}
+	forgeInstanceID := "instance-1"
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+	database.On("GetNode", mock.Anything, nodeID).Return(previous, nil).Once()
+	database.On("UpdateNodeForgeDetails", mock.Anything, nodeID, &forgeInstanceID, (*string)(nil), (*string)(nil)).Return(nil)
+	database.On("GetNode", mock.Anything, nodeID).Return(updated, nil).Once()
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, dbfilters.Node{TpmEKPubHash: ptr.To("")})
+
+	err := wrapper.UpdateNodeForgeDetails(context.Background(), nodeID, &forgeInstanceID, nil, nil)
+
+	require.NoError(t, err)
+	assertQueueEmpty(t, queue)
+	database.AssertExpectations(t)
+}
+
 func TestUnit_DBNodeSourceEnqueuesOwningClusterAfterUpdate(t *testing.T) {
 	node := db.Node{
 		ID:           uuid.New(),
@@ -143,6 +198,54 @@ func TestUnit_DBNodeSourceEnqueuesOwningClusterAfterUpdate(t *testing.T) {
 	assert.Equal(t, node, updated)
 	assert.Equal(t, dbreconcile.ClusterKey(node.ClusterID), getQueueItem(t, queue))
 	database.AssertExpectations(t)
+}
+
+func TestUnit_DBEnqueuesNodeAfterSuccessfulTxUpdateNodeForgeDetails(t *testing.T) {
+	nodeID := uuid.New()
+	previous := db.Node{ID: nodeID}
+	updated := db.Node{ID: nodeID, ForgeInstanceID: "instance-1"}
+	forgeInstanceID := "instance-1"
+	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	database.MockTx.On("GetNode", mock.Anything, nodeID).Return(previous, nil).Once()
+	database.MockTx.On("UpdateNodeForgeDetails", mock.Anything, nodeID, &forgeInstanceID, (*string)(nil), (*string)(nil)).Return(nil)
+	database.MockTx.On("GetNode", mock.Anything, nodeID).Return(updated, nil).Once()
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, dbfilters.Node{})
+
+	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+		return tx.UpdateNodeForgeDetails(ctx, nodeID, &forgeInstanceID, nil, nil)
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, dbreconcile.NodeKey(nodeID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+	database.MockTx.AssertExpectations(t)
+}
+
+func TestUnit_DBDoesNotEnqueueNodeAfterFailedTxUpdateNodeForgeDetails(t *testing.T) {
+	nodeID := uuid.New()
+	previous := db.Node{ID: nodeID}
+	forgeInstanceID := "instance-1"
+	wantErr := errors.New("tx failed")
+	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(wantErr)
+	database.MockTx.On("GetNode", mock.Anything, nodeID).Return(previous, nil).Once()
+	database.MockTx.On("UpdateNodeForgeDetails", mock.Anything, nodeID, &forgeInstanceID, (*string)(nil), (*string)(nil)).Return(nil)
+	database.MockTx.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ForgeInstanceID: "instance-1"}, nil).Once()
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, dbfilters.Node{})
+
+	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+		return tx.UpdateNodeForgeDetails(ctx, nodeID, &forgeInstanceID, nil, nil)
+	})
+
+	require.ErrorIs(t, err, wantErr)
+	assertQueueEmpty(t, queue)
+	database.AssertExpectations(t)
+	database.MockTx.AssertExpectations(t)
 }
 
 func TestUnit_DBDoesNotEnqueueNodeAfterUpdateError(t *testing.T) {
@@ -603,13 +706,16 @@ func TestUnit_DBEnqueuesParentNodePoolAfterNodeDelete(t *testing.T) {
 func TestUnit_DBNodeSourceSeedsNodes(t *testing.T) {
 	first := db.Node{ID: uuid.New(), Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, "")}}
 	second := db.Node{ID: uuid.New(), Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, "")}}
+	hasHash := db.Node{ID: uuid.New(), TpmEKPubHash: "existing", Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, "")}}
+	deleting := db.Node{ID: uuid.New(), Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, ""), Deleting: db.NewCondition(true, "")}}
 	unmatched := db.Node{ID: uuid.New()}
 	filters := dbfilters.Node{
 		Provisioning: ptr.To(true),
 		Deleting:     ptr.To(false),
+		TpmEKPubHash: ptr.To(""),
 	}
 	database := &testutil.MockDB{}
-	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{first, unmatched, second}, nil)
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{first, unmatched, hasHash, deleting, second}, nil)
 	wrapper := New(database, slog.Default())
 	queue := startNodeSource(t, wrapper, filters)
 
