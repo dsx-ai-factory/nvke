@@ -10,9 +10,16 @@ no compatibility shims, so a host that ran the old build needs a one-time migrat
 First destroy any VMs the old build left behind. They are named `forge-vm-*`, and the
 new orphan reaper only matches `nico-vm-*`, so they are invisible to cleanup:
 
+`--nvram` is required, not optional: these domains boot UEFI, and libvirt refuses to
+undefine a domain that has an NVRAM varstore without it. `--tpm` clears the persistent
+swtpm state, and is only supported on newer libvirt — hence the fallback.
+
 ```bash
 virsh list --all --name | grep '^forge-vm-' | xargs -r -n1 virsh destroy
-virsh list --all --name | grep '^forge-vm-' | xargs -r -n1 virsh undefine --remove-all-storage
+virsh list --all --name | grep '^forge-vm-' | while read -r d; do
+  virsh undefine "$d" --nvram --tpm --remove-all-storage ||
+    virsh undefine "$d" --nvram --remove-all-storage   # older libvirt: no --tpm
+done
 ```
 
 Then run the *old* checkout's `scripts/teardown-linux.sh` before this one's
