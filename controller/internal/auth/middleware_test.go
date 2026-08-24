@@ -400,8 +400,8 @@ func TestMiddlewareAnonymousSurface(t *testing.T) {
 }
 
 // Deny by default. This binary serves nothing outside the API and the documented
-// surface, so every path below authenticates first and 404s second -- the order
-// that keeps an unrouted path from reporting whether it exists.
+// surface, so every path below authenticates first and 404s second. That order
+// keeps an unrouted path from reporting whether it exists.
 func TestMiddlewareCatchAllDoesNotLeak(t *testing.T) {
 	t.Parallel()
 

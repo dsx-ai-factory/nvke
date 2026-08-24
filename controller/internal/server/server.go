@@ -31,9 +31,8 @@ const (
 	ReadHeaderTimeout = 5 * time.Second
 )
 
-// NewServer builds the API's HTTP server. A nil authn means the middleware is
-// absent from the chain entirely, not a middleware that lets everything through:
-// a disabled deployment must behave exactly as it did before.
+// NewServer builds the API's HTTP server. A nil authn leaves the authentication
+// middleware out of the chain rather than installing one that admits everyone.
 func NewServer(
 	cfg config.Config,
 	logger *slog.Logger,
@@ -67,15 +66,14 @@ func NewServer(
 			oapi_middleware.OapiRequestValidatorWithOptions(openapiSpec, &oapi_middleware.Options{
 				SilenceServersWarning: true,
 				// Turn off this validator's own security check. api/openapi.yaml
-				// declares `security` globally, and kin-openapi rejects every
-				// request carrying a security requirement it has no
-				// AuthenticationFunc to evaluate. Delete this line and NKE answers
-				// 401 to everything -- including when authentication is disabled,
-				// which is every deployment today.
+				// declares `security` globally, and kin-openapi rejects any request
+				// carrying a requirement it has no AuthenticationFunc for. Without
+				// this line the server answers 401 to everything, authentication
+				// off included.
 				//
-				// Nothing is lost: tokens are checked by the middleware wrapping
-				// this whole mux, so anything reaching the validator is already
-				// authenticated or on the anonymous surface.
+				// Tokens are checked by the middleware wrapping this mux, so
+				// anything reaching the validator is already authenticated or on
+				// the anonymous surface.
 				Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 				ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
 					logger.Error("OpenAPI middleware validation error", "message", message)
@@ -126,19 +124,17 @@ func NewServer(
 	m.HandleFunc("GET "+healthz, hc.healthz)
 	m.HandleFunc("GET "+readyz, hc.readyz)
 
-	// The chain is built inside out: each assignment below wraps the handler the
-	// previous one produced, so the code lists the middlewares in the reverse of
-	// the order a request meets them. A request runs
+	// Built inside out: each assignment wraps the handler the previous one
+	// produced, so the order below is the reverse of the order a request meets.
+	// A request runs
 	//
 	//	tracing -> logging -> authentication -> managed-by -> mux
 	//
-	// Authentication is placed before managed-by so an unauthenticated caller is
-	// turned away without managed-by ever seeing the request, and after logging so
-	// that a rejection still produces the usual request/response log pair. Tracing
-	// stays outermost so a rejected request is still a span.
-	//
-	// Logging wraps managed-by, so a 409 from managed-by is logged like any other
-	// response. TestDisabledServerLogsTheManagedByRejection pins that.
+	// Authentication precedes managed-by so an unauthenticated caller never
+	// reaches it, and follows logging so a rejection still produces the usual
+	// request/response pair. Tracing stays outermost so a rejected request is
+	// still a span. TestDisabledServerLogsTheManagedByRejection pins the logging
+	// and managed-by order.
 	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
 	if authn != nil {
 		handler = authn.Wrap(handler)
