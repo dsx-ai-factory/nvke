@@ -2,20 +2,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package nke offers utilities to interact with the NKE management plane.
-// Like a thin client over the CWE generated API, reached through the
-// management apiserver's Service proxy (no localhost / port-forward).
+// Like a thin client over the NKE generated API, reached over a port-forward to
+// the NKE Service's backing pod.
 package nke
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"k8s.io/client-go/rest"
 
 	"github.com/NVIDIA/nke/controller/api"
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
 )
 
 // Default waiter timeouts when Options fields are zero.
@@ -25,8 +27,7 @@ const (
 	defaultPoll      = 30 * time.Second
 )
 
-// Options tunes the waiter loops. Zero values fall back to the defaults
-// (75m provision / 40m delete / 30s poll).
+// Options tunes the waiter loops. Zero values fall back to the defaults above.
 type Options struct {
 	Provision, Upgrade, Delete, Poll time.Duration
 }
@@ -37,17 +38,17 @@ type Client struct {
 	opts Options
 }
 
-// NewClient builds the generated API client over the kube apiserver service-proxy.
-// The proxy forwards /proxy/api/clusters to the CWE Service's /api/clusters,
-// reusing the REST config's auth and TLS transport.
+// NewClient builds the generated API client over a port-forward to the NKE
+// Service's backing pod, shared process-wide and closed by
+// kube.CloseSharedForwarders.
 func NewClient(restConfig *rest.Config, opts Options) (*Client, error) {
-	httpClient, err := rest.HTTPClientFor(restConfig)
+	forwarder, err := kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cwe.Port())
 	if err != nil {
-		return nil, fmt.Errorf("building HTTP client: %w", err)
+		return nil, fmt.Errorf("building NKE port-forward: %w", err)
 	}
-	base := strings.TrimRight(restConfig.Host, "/") +
-		"/api/v1/namespaces/cloud-workflow-engine/services/cloud-workflow-engine:8080/proxy/api"
-	apiClient, err := api.NewClientWithResponses(base, api.WithHTTPClient(httpClient))
+
+	apiClient, err := api.NewClientWithResponses(forwarder.BaseURL()+"/api",
+		api.WithHTTPClient(forwarder.HTTPClient()))
 	if err != nil {
 		return nil, fmt.Errorf("building API client: %w", err)
 	}
@@ -305,7 +306,7 @@ func (c *Client) GetByName(ctx context.Context, name string) (*api.Cluster, erro
 		return nil, fmt.Errorf("listing clusters: unexpected status %s", resp.Status())
 	}
 	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("listing clusters: empty response body")
+		return nil, errors.New("listing clusters: empty response body")
 	}
 	for i := range resp.JSON200.Clusters {
 		if resp.JSON200.Clusters[i].Name == name {

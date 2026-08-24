@@ -49,6 +49,29 @@ If your feature requires a specific cluster configuration (e.g., custom node poo
 2. Define your own cluster spec.
 3. Implement the flow that fits your use case. The most common one is create -> validate -> delete.
 
+## How the tests reach NKE
+
+Every NKE call travels over a port-forward to a pod backing the
+`cloud-workflow-engine` Service, built by `internal/kube.ServiceForwarder`. It
+runs over the API server's own `pods/portforward` subresource, so it needs
+nothing the previous Service-proxy transport did: no ingress, no NodePort, no
+direct pod or Service IP reachability.
+
+What it buys is header control. Through the Service proxy one `Authorization`
+header had to satisfy two hops and the API server stripped it, so no NKE
+credential survived. Over a port-forward the kubeconfig credential
+authenticates the tunnel and the request inside it is entirely the caller's.
+
+The forward is lazy, shared process-wide, and torn down in `AfterSuite`. Its
+local port is ephemeral, so parallel runs and a developer's Tilt port-forward do
+not collide.
+
+A pod replacement costs one failed request. The local listener stays up when the
+pod behind it goes away, so the next request through the tunnel fails with `EOF`;
+the session then ends, and the request after it rebuilds against a new Ready pod.
+Specs that replace the pod themselves do not pay that, because `SetOIDCEnabled`
+drops the shared forwards once the rollout completes.
+
 ## Configuration
 
 The tests can be configured using an `e2e-config.yaml` file. A missing config file is not an error; the tests will simply use sensible defaults for a local Tilt environment. 
@@ -71,9 +94,8 @@ deployment. They verify that:
 - `/readyz` responds, and
 - the reported version optionally matches the expected version.
 
-All HTTP GETs reach CWE through the Kubernetes API server service proxy; no
-direct CWE URL is required. Access requires either a `KUBECONFIG` for the
-management cluster or Kubernetes in-cluster configuration.
+All HTTP GETs reach NKE over the port-forward described in [How the tests reach
+NKE](#how-the-tests-reach-nke); no direct NKE URL is required.
 
 Run them from the repository root:
 
@@ -88,12 +110,15 @@ cd test/e2e
 go run github.com/onsi/ginkgo/v2/ginkgo@v2.27.2 run -v --label-filter=health .
 ```
 
+Only `CWE_EXPECTED_VERSION` and `CWE_HEALTH_TIMEOUT` are specific to the health
+specs; the rest apply everywhere.
+
 | Variable | Description | Default |
 | --- | --- | --- |
 | `KUBECONFIG` | Kubeconfig used to reach the management cluster (clientcmd default loading rules). | Unset (falls back to in-cluster configuration) |
 | `CWE_NAMESPACE` | Namespace containing CWE. | `cloud-workflow-engine` |
-| `CWE_SERVICE` | CWE Service name used by the API server proxy. | `cloud-workflow-engine` |
-| `CWE_SERVICE_PORT` | CWE Service port used by the API server proxy. | `8080` |
+| `CWE_SERVICE` | NKE Service whose backing pod is port-forwarded to. | `cloud-workflow-engine` |
+| `CWE_SERVICE_PORT` | NKE Service port, by name or number; the pod-side port is resolved from its `targetPort`. | `8080` |
 | `CWE_EXPECTED_VERSION` | Required CWE version; when unset, the version spec is skipped. | Unset |
 | `CWE_HEALTH_TIMEOUT` | Per-spec context timeout. | `60s` |
 
@@ -163,7 +188,10 @@ When adding an OS profile:
 4. Run the focused matrix test and then the new profile's label before running
    the complete matrix.
 
-The current exclusions are:
+The current exclusions are arm64 images (forge-vms provisions x86_64 VMs), the
+arm64 `nke-local-dev-kindest` placeholder (not a tenant OS profile), and legacy
+autoinstall profiles whose iPXE scripts boot a kernel, initrd and ISO directly
+where forge-vms requires a `chain` to `qcow-imager.efi` with an `image_url`.
 
 - arm64 images because nico-vms provisions x86_64 VMs;
 - the arm64 `nke-local-dev-kindest` placeholder because it is not a tenant OS

@@ -14,6 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/config"
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
 )
 
@@ -31,10 +32,12 @@ func loadHealthConfig() (healthConfig, error) {
 		return healthConfig{}, fmt.Errorf("parsing CWE_HEALTH_TIMEOUT: %w", err)
 	}
 
+	// Where NKE is, from internal/cwe, which reads the same CWE_NAMESPACE /
+	// CWE_SERVICE / CWE_SERVICE_PORT everything else looking for NKE reads.
 	return healthConfig{
-		Namespace:       envOrDefault("CWE_NAMESPACE", "cloud-workflow-engine"),
-		Service:         envOrDefault("CWE_SERVICE", "cloud-workflow-engine"),
-		ServicePort:     envOrDefault("CWE_SERVICE_PORT", "8080"),
+		Namespace:       cwe.Namespace(),
+		Service:         cwe.Service(),
+		ServicePort:     cwe.Port(),
 		ExpectedVersion: envOrDefault("CWE_EXPECTED_VERSION", ""),
 		Timeout:         timeout,
 	}, nil
@@ -47,10 +50,14 @@ func envOrDefault(key, def string) string {
 	return def
 }
 
+// These specs talk to the forwarder directly rather than through nke.Client, so
+// they carry no NKE credential and need none: all three paths are on the
+// anonymous surface in internal/auth/routes.go. If /api/version ever stops
+// being anonymous, this file goes red before anything else does.
 var _ = Describe("CWE management-plane health", Label("health"), func() {
 	var (
-		hc    healthConfig
-		proxy *kube.ServiceProxy
+		hc        healthConfig
+		forwarder *kube.ServiceForwarder
 	)
 
 	BeforeEach(func() {
@@ -64,15 +71,15 @@ var _ = Describe("CWE management-plane health", Label("health"), func() {
 		restConfig, err := kube.RESTConfigWithInClusterFallback(cfg.Kube.Kubeconfig, cfg.Kube.Context)
 		Expect(err).NotTo(HaveOccurred(), "health specs require KUBECONFIG or in-cluster configuration")
 
-		proxy, err = kube.NewServiceProxy(restConfig, hc.Namespace, hc.Service, hc.ServicePort)
-		Expect(err).NotTo(HaveOccurred(), "build service-proxy client")
+		forwarder, err = kube.SharedServiceForwarder(restConfig, hc.Namespace, hc.Service, hc.ServicePort)
+		Expect(err).NotTo(HaveOccurred(), "build port-forward client")
 	})
 
 	It("serves /healthz", func(ctx SpecContext) {
 		tctx, cancel := context.WithTimeout(ctx, hc.Timeout)
 		defer cancel()
 
-		statusCode, body, err := proxy.Get(tctx, "/healthz")
+		statusCode, body, err := forwarder.Get(tctx, "/healthz")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(statusCode).To(Equal(200), "response body: %s", body)
 	})
@@ -81,7 +88,7 @@ var _ = Describe("CWE management-plane health", Label("health"), func() {
 		tctx, cancel := context.WithTimeout(ctx, hc.Timeout)
 		defer cancel()
 
-		statusCode, body, err := proxy.Get(tctx, "/readyz")
+		statusCode, body, err := forwarder.Get(tctx, "/readyz")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(statusCode).To(Equal(200), "response body: %s", body)
 	})
@@ -94,7 +101,7 @@ var _ = Describe("CWE management-plane health", Label("health"), func() {
 			Skip("CWE_EXPECTED_VERSION is not set")
 		}
 
-		statusCode, body, err := proxy.Get(tctx, "/api/version")
+		statusCode, body, err := forwarder.Get(tctx, "/api/version")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(statusCode).To(Equal(200), "response body: %s", body)
 

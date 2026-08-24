@@ -366,8 +366,8 @@ type validations struct {
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)
-// and preflights CWE reachability through the apiserver service-proxy. It does
-// not create a cluster.
+// and preflights NKE reachability over the port-forward. It does not create a
+// cluster.
 func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, error) {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -403,7 +403,7 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 	defer cancel()
 	resp, err := cweClient.API().GetClusterWithResponse(pingCtx, uuid.New())
 	if err != nil {
-		return tenantTest{}, fmt.Errorf("reaching CWE through the apiserver service-proxy: %w", err)
+		return tenantTest{}, fmt.Errorf("reaching NKE over the port-forward: %w", err)
 	}
 	if resp.StatusCode() != 404 {
 		return tenantTest{}, fmt.Errorf("CWE preflight: want 404 for a random cluster UUID, got %s: %s", resp.Status(), resp.Body)

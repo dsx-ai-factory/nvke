@@ -537,7 +537,7 @@ func newTestTenantClientFactory(t *testing.T, objects ...runtime.Object) *Tenant
 	if err != nil {
 		t.Fatalf("NewTenantClientFactory() error = %v", err)
 	}
-	factory.coreClient = k8sfake.NewSimpleClientset(objects...).CoreV1()
+	factory.coreClient = k8sfake.NewClientset(objects...).CoreV1()
 	return factory
 }
 
