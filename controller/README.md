@@ -466,9 +466,11 @@ You don't need identity infrastructure to work on this. The cluster's own API
 server is an issuer, and the service account tokens it signs are JWTs, so NKE
 verifies them like any other issuer. The e2e suite takes the same path.
 
-`tilt up` deploys an enforcing NKE with the config in
-`deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
-and the binding described under RBAC Prerequisite.
+`tilt up` applies the config in `deploy/k8s/nke-auth-dev.yaml`, two client
+identities (one admitted, one not), and the binding described under RBAC
+Prerequisite. Authentication itself is off by default, because the e2e suite
+cannot present a credential yet; `NKE_AUTH_ENABLED=true tilt up` deploys an
+enforcing NKE.
 
 ```bash
 ./hack/nke-auth-demo.sh    # four credentials, prints the status code for each
