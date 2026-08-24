@@ -18,7 +18,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodehealth"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
-	"github.com/NVIDIA/nke/controller/internal/teleport"
 )
 
 // ControllerManager runs the site reconciliation loop and manages controllers
@@ -34,13 +33,11 @@ type ControllerManager struct {
 	certRenewalController        *CertRenewalController
 	clusterStaticEntryController *NodeClusterStaticEntryController
 	tpmPubhashesCmController     *TpmPubhashesCmController
-	teleportTokenController      *TeleportTokenController
 }
 
 // NewControllerManager creates a new ControllerManager.
 //
 // - cweTemporalClient: Used by controllers that start CWE-owned workflows.
-// - teleportClient: Used by TeleportTokenController for TPM join token management (can be nil if Teleport disabled)
 func NewControllerManager(
 	cfg config.Config,
 	logger *slog.Logger,
@@ -50,7 +47,6 @@ func NewControllerManager(
 	nodeAgentClient agent.Client,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 	trustDomain string,
-	teleportClient teleport.Client,
 ) (*ControllerManager, error) {
 	controllerManagerLogger := logger.With("logger", "controller-manager")
 
@@ -59,11 +55,6 @@ func NewControllerManager(
 	if cfg.SpiffeEnabled {
 		clusterStaticEntryController = NewClusterStaticEntryController(cfg, dbInstance, k8sClient, controllerManagerLogger, trustDomain)
 		tpmPubhashesCmController = NewTpmPubhashesCmController(cfg, k8sClient, controllerManagerLogger, trustDomain)
-	}
-
-	var teleportTokenController *TeleportTokenController
-	if cfg.Teleport.Enabled && teleportClient != nil {
-		teleportTokenController = NewTeleportTokenController(cfg, dbInstance, controllerManagerLogger, teleportClient)
 	}
 
 	var capiClusterScaffold *CAPIClusterScaffoldController
@@ -81,7 +72,6 @@ func NewControllerManager(
 		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
 		clusterStaticEntryController: clusterStaticEntryController,
 		tpmPubhashesCmController:     tpmPubhashesCmController,
-		teleportTokenController:      teleportTokenController,
 	}, nil
 }
 
@@ -202,13 +192,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 		if err := a.capiClusterScaffold.Reconcile(ctx, site); err != nil {
 			// Log errors but continue processing the other controllers.
 			a.logger.Error("Failed to reconcile CAPI cluster scaffold", "error", err, "siteID", site.ID.String())
-		}
-	}
-
-	if a.teleportTokenController != nil {
-		if err := a.teleportTokenController.Reconcile(ctx, site); err != nil {
-			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile Teleport tokens", "error", err, "siteID", site.ID.String())
 		}
 	}
 

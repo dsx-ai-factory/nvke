@@ -194,21 +194,29 @@ func TestUnit_ReconcileSelfEnqueueIsIdempotent(t *testing.T) {
 func TestUnit_NodePoolKeysForNodeSet(t *testing.T) {
 	nodePoolID := uuid.New()
 
+	keys, err := nodePoolKeysForNodeSet(context.Background(), db.NodeSet{NodePoolID: nodePoolID})
+	require.NoError(t, err)
 	assert.Equal(t,
 		[]dbreconcile.Key{dbreconcile.NodePoolKey(nodePoolID)},
-		nodePoolKeysForNodeSet(db.NodeSet{NodePoolID: nodePoolID}),
+		keys,
 	)
-	assert.Nil(t, nodePoolKeysForNodeSet(db.NodeSet{}))
+	keys, err = nodePoolKeysForNodeSet(context.Background(), db.NodeSet{})
+	require.NoError(t, err)
+	assert.Nil(t, keys)
 }
 
 func TestUnit_NodePoolKeysForNode(t *testing.T) {
 	nodePoolID := uuid.New()
 
+	keys, err := nodePoolKeysForNode(context.Background(), db.Node{NodePoolID: nodePoolID})
+	require.NoError(t, err)
 	assert.Equal(t,
 		[]dbreconcile.Key{dbreconcile.NodePoolKey(nodePoolID)},
-		nodePoolKeysForNode(db.Node{NodePoolID: nodePoolID}),
+		keys,
 	)
-	assert.Nil(t, nodePoolKeysForNode(db.Node{}))
+	keys, err = nodePoolKeysForNode(context.Background(), db.Node{})
+	require.NoError(t, err)
+	assert.Nil(t, keys)
 }
 
 func baseNodePool(id, currentNodeSetID uuid.UUID, opts ...func(*db.NodePool)) db.NodePool {

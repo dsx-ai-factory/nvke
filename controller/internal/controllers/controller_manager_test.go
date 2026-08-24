@@ -41,7 +41,6 @@ func TestNewControllerManagerGatesCAPIClusterScaffold(t *testing.T) {
 				nil,
 				nil,
 				"",
-				nil,
 			)
 			require.NoError(t, err)
 

@@ -73,7 +73,10 @@ func (s nodePoolEventSource) enqueueAll(ctx context.Context, enqueue func(contex
 
 func enqueueKeysForNodePool(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error, nodePool db.NodePool, keyMappers ...NodePoolKeyMapper) error {
 	for _, keyMapper := range keyMappers {
-		keys := keyMapper(nodePool)
+		keys, err := keyMapper(ctx, nodePool)
+		if err != nil {
+			return fmt.Errorf("failed to map node pool %s keys: %w", nodePool.ID, err)
+		}
 		for _, key := range keys {
 			if err := enqueue(ctx, key); err != nil {
 				return fmt.Errorf("failed to enqueue node pool %s key %s: %w", nodePool.ID, key.String(), err)

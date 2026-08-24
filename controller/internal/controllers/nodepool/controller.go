@@ -51,11 +51,11 @@ func (a *Controller) SetupWithManager(mgr manager.Manager) error {
 	)
 }
 
-func nodePoolKeysForNode(node db.Node) []dbreconcile.Key {
+func nodePoolKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodePoolID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}, nil
 }
 
 // Reconcile a NodePool:

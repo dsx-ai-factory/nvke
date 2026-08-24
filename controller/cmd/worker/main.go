@@ -35,6 +35,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeset"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodetpmekpub"
+	"github.com/NVIDIA/nke/controller/internal/controllers/teleporttoken"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant/csr"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenantaccess"
@@ -322,6 +323,19 @@ func main() {
 		logger.Info("Teleport integration disabled")
 	}
 
+	if cfg.Teleport.Enabled && teleportClient != nil {
+		teleportTokenController := teleporttoken.NewController(
+			cfg,
+			dbInstance,
+			logger.With("logger", "teleport-token-controller"),
+			teleportClient,
+		)
+		if err := teleportTokenController.SetupWithManager(k8sControllerManager, dbInstance); err != nil {
+			logger.Error("Failed to set up Teleport token controller", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	serverLogger := logger.With("logger", "server")
 	temporalLogger := logger.With("logger", "temporal")
 	// Retry before giving up. Temporal restarting for a few seconds used to be
@@ -427,7 +441,6 @@ func main() {
 		nodeAgentClient,
 		tenantClientProvider,
 		trustDomain,
-		teleportClient,
 	)
 	if err != nil {
 		logger.Error("Failed to create controller-manager", "error", err)

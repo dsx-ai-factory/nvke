@@ -73,7 +73,10 @@ func (s nodeSetEventSource) enqueueAll(ctx context.Context, enqueue func(context
 
 func enqueueKeysForNodeSet(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error, nodeSet db.NodeSet, keyMappers ...NodeSetKeyMapper) error {
 	for _, keyMapper := range keyMappers {
-		keys := keyMapper(nodeSet)
+		keys, err := keyMapper(ctx, nodeSet)
+		if err != nil {
+			return fmt.Errorf("failed to map node set %s keys: %w", nodeSet.ID, err)
+		}
 		for _, key := range keys {
 			if err := enqueue(ctx, key); err != nil {
 				return fmt.Errorf("failed to enqueue node set %s key %s: %w", nodeSet.ID, key.String(), err)

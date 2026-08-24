@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package controllers
+package teleporttoken
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"github.com/uptrace/bun"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/teleport"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
@@ -380,7 +381,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("creates tokens for unregistered nodes", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -389,8 +390,9 @@ func TestReconcile(t *testing.T) {
 			return token.Name == teleport.TPMTokenName(node.ID)
 		})).Return(nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		result, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
+		assert.Equal(t, TokenRefreshThreshold, result.RequeueAfter)
 
 		mockTeleport.AssertCalled(t, "UpsertToken", ctx, mock.Anything)
 	})
@@ -398,7 +400,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("marks already registered nodes and updates DB", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 		node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
@@ -415,7 +417,10 @@ func TestReconcile(t *testing.T) {
 		}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.Anything).Return(nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node1.ID))
+		require.NoError(t, err)
+
+		_, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node2.ID))
 		require.NoError(t, err)
 
 		// Verify node-1 was marked as registered in the DB
@@ -432,7 +437,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("ignores nodes with different node-id even if same hostname", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -450,7 +455,7 @@ func TestReconcile(t *testing.T) {
 			return token.Name == teleport.TPMTokenName(node.ID)
 		})).Return(nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
 		// Token should still be created for our node
@@ -463,7 +468,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("handles bootstrap scenario - registered node without site label", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -479,7 +484,7 @@ func TestReconcile(t *testing.T) {
 			},
 		}, nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
 		// Verify node was marked as registered in the DB
@@ -494,13 +499,13 @@ func TestReconcile(t *testing.T) {
 	t.Run("fails when ListNodes returns error", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
-		te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
+		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return(nil, errors.New("teleport api error"))
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to list Teleport nodes")
 	})
@@ -508,29 +513,66 @@ func TestReconcile(t *testing.T) {
 	t.Run("no tokens created when no eligible nodes", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
-		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
+		node := te.createNode(ctx, t, "no-tpm-node", "forge-1", "")
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
+		mockTeleport.AssertNotCalled(t, "ListNodes")
 		mockTeleport.AssertNotCalled(t, "UpsertToken")
 	})
 
 	t.Run("partial failure - returns aggregated error", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
-		te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
-		te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
+		node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
+		node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
 
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.Anything).Return(errors.New("upsert failed"))
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node1.ID))
 		require.Error(t, err)
+		_, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node2.ID))
+		require.Error(t, err)
+	})
+
+	t.Run("skips ineligible nodes and clears token throttle", func(t *testing.T) {
+		te := setupTestEnv(ctx, t)
+		mockTeleport := &mockTeleportClient{}
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+
+		node := te.createNode(ctx, t, "deleting-node", "forge-1", validEKPubHash("0001"))
+		node.Conditions.Deleting = db.NewCondition(true, "deleting")
+		_, err := te.database.UpdateNode(ctx, &node)
+		require.NoError(t, err)
+		controller.tokenCreatedAt[node.ID] = time.Now()
+
+		result, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
+		require.NoError(t, err)
+		assert.Zero(t, result.RequeueAfter)
+		assert.NotContains(t, controller.tokenCreatedAt, node.ID)
+		mockTeleport.AssertNotCalled(t, "ListNodes")
+		mockTeleport.AssertNotCalled(t, "UpsertToken")
+	})
+
+	t.Run("clears token throttle for missing node", func(t *testing.T) {
+		te := setupTestEnv(ctx, t)
+		mockTeleport := &mockTeleportClient{}
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		nodeID := uuid.New()
+		controller.tokenCreatedAt[nodeID] = time.Now()
+
+		result, err := controller.Reconcile(ctx, dbreconcile.NodeKey(nodeID))
+		require.NoError(t, err)
+		assert.Zero(t, result.RequeueAfter)
+		assert.NotContains(t, controller.tokenCreatedAt, nodeID)
+		mockTeleport.AssertNotCalled(t, "ListNodes")
+		mockTeleport.AssertNotCalled(t, "UpsertToken")
 	})
 }
 
@@ -540,7 +582,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("creates token with correct structure", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := te.createNode(ctx, t, "test-node", "forge-123", validEKPubHash("abcd"))
 
@@ -582,7 +624,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("creates token with nil node-pool label for no-nodepool control plane", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := db.Node{
 			ID:              uuid.New(),
@@ -611,7 +653,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("fails when node context resolution errors", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := db.Node{
 			ID:              uuid.New(),
@@ -633,7 +675,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("fails when GetCluster errors", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		// Create a NodePool pointing to a non-existent Cluster
 		orphanPool := db.NodePool{
@@ -677,7 +719,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("fails when UpsertToken errors", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := te.createNode(ctx, t, "test-node", "forge-123", validEKPubHash("abcd"))
 
@@ -693,7 +735,7 @@ func TestTokenUsesStoredEKPubHash(t *testing.T) {
 	ctx := context.Background()
 	te := setupTestEnv(ctx, t)
 	mockTeleport := &mockTeleportClient{}
-	controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+	controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 	// The stored hash - this should be used directly, not recomputed
 	storedHash := validEKPubHash("beef")
@@ -719,7 +761,7 @@ func TestCreateTokenForNode_InvalidEKPubHash(t *testing.T) {
 	ctx := context.Background()
 	te := setupTestEnv(ctx, t)
 	mockTeleport := &mockTeleportClient{}
-	controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+	controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 	// Node with invalid EK pub hash (too short, not 64 hex characters)
 	node := db.Node{
@@ -749,20 +791,22 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("skips token upsert for recently created tokens", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
-		te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
+		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.Anything).Return(nil)
 
 		// First reconcile - should create token
-		err := controller.Reconcile(ctx, te.site)
+		result, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
+		assert.Equal(t, TokenRefreshThreshold, result.RequeueAfter)
 
 		// Second reconcile - should skip token (recently created)
-		err = controller.Reconcile(ctx, te.site)
+		result, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
+		assert.Positive(t, result.RequeueAfter)
 
 		// UpsertToken should have been called exactly once
 		mockTeleport.AssertNumberOfCalls(t, "UpsertToken", 1)
@@ -771,7 +815,7 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("refreshes token after threshold passes", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -781,8 +825,9 @@ func TestTokenCreationTracking(t *testing.T) {
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.Anything).Return(nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		result, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
+		assert.Equal(t, TokenRefreshThreshold, result.RequeueAfter)
 
 		// UpsertToken should be called because the cached token is stale
 		mockTeleport.AssertNumberOfCalls(t, "UpsertToken", 1)
@@ -791,7 +836,7 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("cleans up cache on registration confirmation", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -809,7 +854,7 @@ func TestTokenCreationTracking(t *testing.T) {
 			},
 		}, nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
 		// Cache entry should be removed after registration confirmation
@@ -823,10 +868,10 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("fresh controller creates tokens normally", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
-		te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
-		te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
+		node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
+		node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
 
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.Anything).Return(nil)
@@ -834,7 +879,10 @@ func TestTokenCreationTracking(t *testing.T) {
 		// Empty cache (fresh controller) should create tokens for all nodes
 		assert.Empty(t, controller.tokenCreatedAt)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node1.ID))
+		require.NoError(t, err)
+
+		_, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node2.ID))
 		require.NoError(t, err)
 
 		mockTeleport.AssertNumberOfCalls(t, "UpsertToken", 2)
@@ -848,7 +896,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("deconfirms node registered in DB but absent from Teleport", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		// Node is marked registered in DB
 		node := te.createRegisteredNode(ctx, t, "stale-node", "forge-1", validEKPubHash("0001"))
@@ -859,7 +907,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 			return token.Name == teleport.TPMTokenName(node.ID)
 		})).Return(nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
 		// Verify node condition was flipped back to False
@@ -875,7 +923,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("steady state - registered node still in Teleport is a no-op", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		// Node is marked registered in DB
 		node := te.createRegisteredNode(ctx, t, "steady-node", "forge-1", validEKPubHash("0001"))
@@ -891,7 +939,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 			},
 		}, nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
 		// Verify node condition is still True
@@ -906,7 +954,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("newly confirmed - node appears in Teleport with DB condition False", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		// Node starts unregistered (default condition)
 		node := te.createNode(ctx, t, "new-node", "forge-1", validEKPubHash("0001"))
@@ -922,7 +970,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 			},
 		}, nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
 		// Verify node condition was set to True
@@ -937,7 +985,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("deconfirmed node skips token if recently created", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		// Node is marked registered in DB
 		node := te.createRegisteredNode(ctx, t, "stale-cached", "forge-1", validEKPubHash("0001"))
@@ -948,7 +996,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 		// Teleport returns empty - node is gone
 		mockTeleport.On("ListNodes", ctx, TeleportNamespace, mock.Anything).Return([]teleport.Node{}, nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
 		require.NoError(t, err)
 
 		// Condition should still be flipped to False (deconfirmed)
@@ -963,7 +1011,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("mixed scenario - confirmed, deconfirmed, pending, and steady-state", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewTeleportTokenController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
 
 		// Node 1: unregistered, appears in Teleport -> should be confirmed
 		node1 := te.createNode(ctx, t, "confirm-me", "forge-1", validEKPubHash("0001"))
@@ -996,7 +1044,16 @@ func TestObservedStateReconciliation(t *testing.T) {
 		}, nil)
 		mockTeleport.On("UpsertToken", ctx, mock.Anything).Return(nil)
 
-		err := controller.Reconcile(ctx, te.site)
+		_, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node1.ID))
+		require.NoError(t, err)
+
+		_, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node2.ID))
+		require.NoError(t, err)
+
+		_, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node3.ID))
+		require.NoError(t, err)
+
+		_, err = controller.Reconcile(ctx, dbreconcile.NodeKey(node4.ID))
 		require.NoError(t, err)
 
 		// Node 1: confirmed (False -> True)
@@ -1030,4 +1087,53 @@ func TestObservedStateReconciliation(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestTeleportDependencyKeyMappers(t *testing.T) {
+	ctx := context.Background()
+	te := setupTestEnv(ctx, t)
+	node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
+	node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
+	otherNodeSet := db.NodeSet{
+		ID:                     uuid.New(),
+		NodePoolID:             te.nodePool.ID,
+		OSProfile:              "test-os",
+		ConfigProfile:          "test-config",
+		CapiBootstrapFiles:     []db.CloudInitFile{},
+		CapiPreKubeadmCommands: []string{},
+		SystemReservedMemory:   "16Gi",
+		TeleportEnabled:        true,
+	}
+	_, err := te.database.CreateNodeSet(ctx, &otherNodeSet)
+	require.NoError(t, err)
+	otherNode := db.Node{
+		ID:              uuid.New(),
+		ClusterID:       te.cluster.ID,
+		NodePoolID:      te.nodePool.ID,
+		NodeSetID:       otherNodeSet.ID,
+		Name:            "other-node",
+		ForgeInstanceID: "forge-3",
+		ForgeMachineID:  "machine-other-node",
+		IP:              "10.0.0.3",
+		TpmEKPubHash:    validEKPubHash("0003"),
+	}
+	otherNode, err = te.database.CreateNode(ctx, &otherNode)
+	require.NoError(t, err)
+
+	controller := NewController(testConfig(), te.database, testLogger(), &mockTeleportClient{})
+
+	clusterKeys, err := controller.nodeKeysForCluster(ctx, te.cluster)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []dbreconcile.Key{
+		dbreconcile.NodeKey(node1.ID),
+		dbreconcile.NodeKey(node2.ID),
+		dbreconcile.NodeKey(otherNode.ID),
+	}, clusterKeys)
+
+	nodeSetKeys, err := controller.nodeKeysForNodeSet(ctx, te.nodeSet)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []dbreconcile.Key{
+		dbreconcile.NodeKey(node1.ID),
+		dbreconcile.NodeKey(node2.ID),
+	}, nodeSetKeys)
 }

@@ -28,16 +28,25 @@ import (
 )
 
 func TestUnit_ClusterKeysForManagedControlPlaneNode(t *testing.T) {
+	ctx := context.Background()
 	clusterID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 	nodePoolID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 
+	keys, err := clusterKeysForManagedControlPlaneNode(ctx, db.Node{ClusterID: clusterID, ControlPlane: true})
+	require.NoError(t, err)
 	require.Equal(t,
 		[]dbreconcile.Key{dbreconcile.ClusterKey(clusterID)},
-		clusterKeysForManagedControlPlaneNode(db.Node{ClusterID: clusterID, ControlPlane: true}),
+		keys,
 	)
-	require.Nil(t, clusterKeysForManagedControlPlaneNode(db.Node{ClusterID: clusterID}))
-	require.Nil(t, clusterKeysForManagedControlPlaneNode(db.Node{ClusterID: clusterID, ControlPlane: true, NodePoolID: nodePoolID}))
-	require.Nil(t, clusterKeysForManagedControlPlaneNode(db.Node{ControlPlane: true}))
+	keys, err = clusterKeysForManagedControlPlaneNode(ctx, db.Node{ClusterID: clusterID})
+	require.NoError(t, err)
+	require.Nil(t, keys)
+	keys, err = clusterKeysForManagedControlPlaneNode(ctx, db.Node{ClusterID: clusterID, ControlPlane: true, NodePoolID: nodePoolID})
+	require.NoError(t, err)
+	require.Nil(t, keys)
+	keys, err = clusterKeysForManagedControlPlaneNode(ctx, db.Node{ControlPlane: true})
+	require.NoError(t, err)
+	require.Nil(t, keys)
 }
 
 func TestUnit_ControlPlaneNodeSchedulerReconcileCAPIStartsManagedPendingNodeWorkflows(t *testing.T) {

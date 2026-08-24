@@ -71,7 +71,10 @@ func (s clusterEventSource) enqueueAll(ctx context.Context, enqueue func(context
 
 func enqueueKeysForCluster(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error, cluster db.Cluster, keyMappers ...ClusterKeyMapper) error {
 	for _, keyMapper := range keyMappers {
-		keys := keyMapper(cluster)
+		keys, err := keyMapper(ctx, cluster)
+		if err != nil {
+			return fmt.Errorf("failed to map cluster %s keys: %w", cluster.ID, err)
+		}
 		for _, key := range keys {
 			if err := enqueue(ctx, key); err != nil {
 				return fmt.Errorf("failed to enqueue cluster %s key %s: %w", cluster.ID, key.String(), err)

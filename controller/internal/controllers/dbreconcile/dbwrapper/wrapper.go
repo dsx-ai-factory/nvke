@@ -395,7 +395,11 @@ func (w *DB) enqueueClusters(ctx context.Context, clusters ...db.Cluster) error 
 			if !source.filters.Matches(cluster) {
 				continue
 			}
-			if err := enqueueKeys(ctx, source.enqueuer, seen, keysForCluster(cluster, source.keyMappers...)); err != nil {
+			keys, err := keysForCluster(ctx, cluster, source.keyMappers...)
+			if err != nil {
+				return fmt.Errorf("failed to map keys for cluster %s: %w", cluster.ID, err)
+			}
+			if err := enqueueKeys(ctx, source.enqueuer, seen, keys); err != nil {
 				return fmt.Errorf("failed to enqueue keys for cluster %s: %w", cluster.ID, err)
 			}
 		}
@@ -416,7 +420,11 @@ func (w *DB) enqueueNodePools(ctx context.Context, nodePools ...db.NodePool) err
 			if !source.filters.Matches(nodePool) {
 				continue
 			}
-			if err := enqueueKeys(ctx, source.enqueuer, seen, keysForNodePool(nodePool, source.keyMappers...)); err != nil {
+			keys, err := keysForNodePool(ctx, nodePool, source.keyMappers...)
+			if err != nil {
+				return fmt.Errorf("failed to map keys for node pool %s: %w", nodePool.ID, err)
+			}
+			if err := enqueueKeys(ctx, source.enqueuer, seen, keys); err != nil {
 				return fmt.Errorf("failed to enqueue keys for node pool %s: %w", nodePool.ID, err)
 			}
 		}
@@ -437,7 +445,11 @@ func (w *DB) enqueueNodeSets(ctx context.Context, nodeSets ...db.NodeSet) error 
 			if !source.filters.Matches(nodeSet) {
 				continue
 			}
-			if err := enqueueKeys(ctx, source.enqueuer, seen, keysForNodeSet(nodeSet, source.keyMappers...)); err != nil {
+			keys, err := keysForNodeSet(ctx, nodeSet, source.keyMappers...)
+			if err != nil {
+				return fmt.Errorf("failed to map keys for node set %s: %w", nodeSet.ID, err)
+			}
+			if err := enqueueKeys(ctx, source.enqueuer, seen, keys); err != nil {
 				return fmt.Errorf("failed to enqueue keys for node set %s: %w", nodeSet.ID, err)
 			}
 		}
@@ -459,7 +471,12 @@ func (w *DB) enqueueNodes(ctx context.Context, nodes ...db.Node) error {
 			if !source.filters.Matches(node) {
 				continue
 			}
-			if err := enqueueKeys(ctx, source.enqueuer, seen, keysForNode(node, source.keyMappers...)); err != nil {
+			keys, err := keysForNode(ctx, node, source.keyMappers...)
+			if err != nil {
+				enqueueErrs = append(enqueueErrs, fmt.Errorf("failed to map keys for node %s: %w", node.ID, err))
+				continue
+			}
+			if err := enqueueKeys(ctx, source.enqueuer, seen, keys); err != nil {
 				enqueueErrs = append(enqueueErrs, fmt.Errorf("failed to enqueue keys for node %s: %w", node.ID, err))
 			}
 		}
@@ -480,34 +497,50 @@ func enqueueKeys(ctx context.Context, enqueuer Enqueuer, seen map[dbreconcile.Ke
 	return nil
 }
 
-func keysForCluster(cluster db.Cluster, keyMappers ...ClusterKeyMapper) []dbreconcile.Key {
+func keysForCluster(ctx context.Context, cluster db.Cluster, keyMappers ...ClusterKeyMapper) ([]dbreconcile.Key, error) {
 	keys := make([]dbreconcile.Key, 0, len(keyMappers))
 	for _, keyMapper := range keyMappers {
-		keys = append(keys, keyMapper(cluster)...)
+		mapped, err := keyMapper(ctx, cluster)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, mapped...)
 	}
-	return keys
+	return keys, nil
 }
 
-func keysForNodePool(nodePool db.NodePool, keyMappers ...NodePoolKeyMapper) []dbreconcile.Key {
+func keysForNodePool(ctx context.Context, nodePool db.NodePool, keyMappers ...NodePoolKeyMapper) ([]dbreconcile.Key, error) {
 	keys := make([]dbreconcile.Key, 0, len(keyMappers))
 	for _, keyMapper := range keyMappers {
-		keys = append(keys, keyMapper(nodePool)...)
+		mapped, err := keyMapper(ctx, nodePool)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, mapped...)
 	}
-	return keys
+	return keys, nil
 }
 
-func keysForNodeSet(nodeSet db.NodeSet, keyMappers ...NodeSetKeyMapper) []dbreconcile.Key {
+func keysForNodeSet(ctx context.Context, nodeSet db.NodeSet, keyMappers ...NodeSetKeyMapper) ([]dbreconcile.Key, error) {
 	keys := make([]dbreconcile.Key, 0, len(keyMappers))
 	for _, keyMapper := range keyMappers {
-		keys = append(keys, keyMapper(nodeSet)...)
+		mapped, err := keyMapper(ctx, nodeSet)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, mapped...)
 	}
-	return keys
+	return keys, nil
 }
 
-func keysForNode(node db.Node, keyMappers ...NodeKeyMapper) []dbreconcile.Key {
+func keysForNode(ctx context.Context, node db.Node, keyMappers ...NodeKeyMapper) ([]dbreconcile.Key, error) {
 	keys := make([]dbreconcile.Key, 0, len(keyMappers))
 	for _, keyMapper := range keyMappers {
-		keys = append(keys, keyMapper(node)...)
+		mapped, err := keyMapper(ctx, node)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, mapped...)
 	}
-	return keys
+	return keys, nil
 }

@@ -65,11 +65,11 @@ func (s *ControlPlaneNodeScheduler) SetupWithManager(mgr manager.Manager) error 
 	)
 }
 
-func clusterKeysForManagedControlPlaneNode(node db.Node) []dbreconcile.Key {
+func clusterKeysForManagedControlPlaneNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if !node.IsManagedByControlPlaneController() || node.ClusterID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}, nil
 }
 
 // Reconcile schedules pending managed control-plane nodes for one cluster.

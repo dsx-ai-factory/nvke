@@ -24,13 +24,18 @@ import (
 )
 
 func TestUnit_NodePoolKeysForPendingNode(t *testing.T) {
+	ctx := context.Background()
 	nodePoolID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 
+	keys, err := nodePoolKeysForPendingNode(ctx, db.Node{NodePoolID: nodePoolID})
+	require.NoError(t, err)
 	require.Equal(t,
 		[]dbreconcile.Key{dbreconcile.NodePoolKey(nodePoolID)},
-		nodePoolKeysForPendingNode(db.Node{NodePoolID: nodePoolID}),
+		keys,
 	)
-	require.Nil(t, nodePoolKeysForPendingNode(db.Node{}))
+	keys, err = nodePoolKeysForPendingNode(ctx, db.Node{})
+	require.NoError(t, err)
+	require.Nil(t, keys)
 }
 
 func TestUnit_NodePoolNodeSchedulerReconcileCAPIStartsPendingNodeWorkflows(t *testing.T) {

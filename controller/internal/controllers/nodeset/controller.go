@@ -52,11 +52,11 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 	)
 }
 
-func nodeSetKeysForNode(node db.Node) []dbreconcile.Key {
+func nodeSetKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodeSetID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodeSetKey(node.NodeSetID)}
+	return []dbreconcile.Key{dbreconcile.NodeSetKey(node.NodeSetID)}, nil
 }
 
 // Reconcile NodeSets, for each NodeSet:

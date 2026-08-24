@@ -122,6 +122,31 @@ func TestUnit_DBEnqueuesNodeUpdateWhenSourceFiltersMatch(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestUnit_DBEnqueuesNodeUpdateWhenPreviousStateMatchesSourceFilters(t *testing.T) {
+	nodeID := uuid.New()
+	previous := db.Node{ID: nodeID}
+	updated := db.Node{
+		ID: nodeID,
+		Conditions: db.NodeConditions{
+			Deleting: db.NewCondition(true, "deleting"),
+		},
+	}
+	filters := dbfilters.Node{Deleting: ptr.To(false)}
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil).Once()
+	database.On("GetNode", mock.Anything, nodeID).Return(previous, nil)
+	database.On("UpdateNode", mock.Anything, &updated).Return(updated, nil)
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, filters)
+
+	got, err := wrapper.UpdateNode(context.Background(), &updated)
+
+	require.NoError(t, err)
+	assert.Equal(t, updated, got)
+	assert.Equal(t, dbreconcile.NodeKey(nodeID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+}
+
 func TestUnit_DBEnqueuesNodeAfterUpdateNodeForgeDetails(t *testing.T) {
 	nodeID := uuid.New()
 	previous := db.Node{ID: nodeID}
@@ -1169,18 +1194,18 @@ func startNodeClusterSource(t *testing.T, wrapper *DB, filters dbfilters.Node) w
 	return queue
 }
 
-func testNodePoolClusterKeys(nodePool db.NodePool) []dbreconcile.Key {
+func testNodePoolClusterKeys(_ context.Context, nodePool db.NodePool) ([]dbreconcile.Key, error) {
 	if nodePool.ClusterID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(nodePool.ClusterID)}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(nodePool.ClusterID)}, nil
 }
 
-func testNodeClusterKeys(node db.Node) []dbreconcile.Key {
+func testNodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.ClusterID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}, nil
 }
 
 func startNodeSource(t *testing.T, wrapper *DB, filters dbfilters.Node) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
@@ -1248,18 +1273,18 @@ func startNodePoolSourceForNode(t *testing.T, wrapper *DB) workqueue.TypedRateLi
 	return queue
 }
 
-func testNodePoolKeysForNode(node db.Node) []dbreconcile.Key {
+func testNodePoolKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodePoolID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}, nil
 }
 
-func testNodeSetKeysForNode(node db.Node) []dbreconcile.Key {
+func testNodeSetKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodeSetID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodeSetKey(node.NodeSetID)}
+	return []dbreconcile.Key{dbreconcile.NodeSetKey(node.NodeSetID)}, nil
 }
 
 func getQueueItem(t *testing.T, queue workqueue.TypedRateLimitingInterface[dbreconcile.Key]) dbreconcile.Key {

@@ -62,11 +62,11 @@ func (s *NodePoolNodeScheduler) SetupWithManager(mgr manager.Manager) error {
 	)
 }
 
-func nodePoolKeysForPendingNode(node db.Node) []dbreconcile.Key {
+func nodePoolKeysForPendingNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodePoolID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}, nil
 }
 
 // Reconcile schedules pending nodes for one node pool.

@@ -57,18 +57,18 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 	)
 }
 
-func nodePoolKeysForNodeSet(nodeSet db.NodeSet) []dbreconcile.Key {
+func nodePoolKeysForNodeSet(_ context.Context, nodeSet db.NodeSet) ([]dbreconcile.Key, error) {
 	if nodeSet.NodePoolID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodePoolKey(nodeSet.NodePoolID)}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(nodeSet.NodePoolID)}, nil
 }
 
-func nodePoolKeysForNode(node db.Node) []dbreconcile.Key {
+func nodePoolKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodePoolID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}, nil
 }
 
 // Reconcile applies auto-mode for a single NodePool key.
