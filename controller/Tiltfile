@@ -12,10 +12,10 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "capi_core"               -- built-in CAPI core support
 #   "bgp-containers"          -- shared BGP router and default-site VIP pool for container nodes
 #   "capd"                    -- built-in CAPD support
-#   "nico"                    -- NCX Infra Controller support
+#   "nico"                    -- NCX Infra Controller support (nico-mock, container-backed)
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
-#   "forge-vms"               -- Forge-compatible local VM provider
+#   "nico-vms"                -- Forge-compatible local VM backend (real KVM/libvirt VMs)
 #   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
 # Default: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]
@@ -57,7 +57,7 @@ _builtin_provider_dirs = {
     "nico": os.path.join(config.main_dir, "hack/nico-provider"),
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
-    "forge-vms": os.path.join(config.main_dir, "forge-vms"),
+    "nico-vms": os.path.join(config.main_dir, "nico-vms"),
     "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
 }
 
@@ -87,25 +87,32 @@ if "capi-syscmp" in _provider_entries and "capi_core" not in _provider_entries:
 if "nico-vm" in _provider_entries and "capi_core" not in _provider_entries:
     fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
 
-# nico-vm points nico-credentials at the local forge-vms backend and its
-# credentials resource depends on the 'forge-vms' Tilt resource by name.
-if "nico-vm" in _provider_entries and "forge-vms" not in _provider_entries:
-    fail("Provider 'nico-vm' requires 'forge-vms' in the provider list: it points " +
-         "nico-credentials at the local forge-vms backend and depends on its Tilt resource.")
+# nico-vm points nico-credentials at the local nico-vms backend and its
+# credentials resource depends on the 'nico-vms' Tilt resource by name.
+#
+# 'nico-vm' and 'nico-vms' are one character apart, so both fail() messages
+# below name what each provider IS rather than relying on the key alone.
+if "nico-vm" in _provider_entries and "nico-vms" not in _provider_entries:
+    fail("Provider 'nico-vm' (the CAPNICo controller, installed from the NGC Helm chart) " +
+         "requires 'nico-vms' (the local VM backend that serves the Forge API on port 18080) " +
+         "in the provider list: it points nico-credentials at that backend and depends on " +
+         "its Tilt resource by name.")
 
-# 'nico' and 'forge-vms' are mutually exclusive Forge backends for CWE: both set
-# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs forge-vms's
+# 'nico' and 'nico-vms' are mutually exclusive Forge backends for CWE: both set
+# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-vms's
 # listener). Enable at most one. (capd is orthogonal and may accompany either.)
-if "nico" in _provider_entries and "forge-vms" in _provider_entries:
-    fail("Providers 'nico' and 'forge-vms' are mutually exclusive: both set CWE's FORGE_URL " +
+if "nico" in _provider_entries and "nico-vms" in _provider_entries:
+    fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-vms' (real " +
+         "KVM/libvirt VMs) are mutually exclusive CWE backends: both set CWE's FORGE_URL " +
          "and bind host port 18080. Enable only one (capd may accompany either).")
 
 # 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
 # controller: both install one into the capnico-system namespace and own the
 # 'nico-credentials' secret it reads. Enable at most one.
 if "nico" in _provider_entries and "nico-vm" in _provider_entries:
-    fail("Providers 'nico' and 'nico-vm' are mutually exclusive: both install a CAPNICo " +
-         "controller into capnico-system and own the 'nico-credentials' secret. Enable only one.")
+    fail("Providers 'nico' (nico-mock, container-backed) and 'nico-vm' (the CAPNICo chart " +
+         "from NGC) are mutually exclusive: both install a CAPNICo controller into " +
+         "capnico-system and own the 'nico-credentials' secret. Enable only one.")
 
 CWE_NAMESPACE = "cloud-workflow-engine"
 TEMPORAL_NAMESPACE = "temporal"

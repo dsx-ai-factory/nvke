@@ -26,7 +26,7 @@ admin kubeconfigs with embedded client certificates.
 
 When you want to run the same validations across different cluster configurations, you can use table tests (`DescribeTableSubtree`).
 
-Currently, we have tables that run against different backends (`forge-vms` and `capd`). In the future, this structure allows us to easily test across different Kubernetes versions or other infrastructure variables.
+Currently, we have tables that run against different backends (`nico-vms` and `capd`). In the future, this structure allows us to easily test across different Kubernetes versions or other infrastructure variables.
 
 ## Adding New Tests
 
@@ -106,21 +106,21 @@ You can run these tests with `make test-e2e`, `go test`, or the `ginkgo` CLI.
 
 **Run via Make (recommended):**
 
-`make test-e2e` sets a 2h suite timeout (forge-vms first boot can exceed Go's 10m
+`make test-e2e` sets a 2h suite timeout (nico-vms first boot can exceed Go's 10m
 default). Pass ginkgo flags through `ARGS`:
 
 ```bash
 make test-e2e
 make test-e2e-happy-path
 make test-e2e-capd
-make test-e2e-forge-vms
-make test-e2e-forge-vms-os-profiles
+make test-e2e-nico-vms
+make test-e2e-nico-vms-os-profiles
 make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 ```
 
 ### OS profile provisioning matrix
 
-The `forge-vms && os-profiles` matrix gives each supported active OS profile an
+The `nico-vms && os-profiles` matrix gives each supported active OS profile an
 isolated sanity lifecycle: create a one-control-plane/one-worker tenant cluster,
 wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active profile names, architectures, and Kubernetes versions from fleet
@@ -130,7 +130,7 @@ OS profile metadata (NKX-13910). Resolution order:
 2. `$PROFILES_DIR/osProfiles/metadata.yaml`
 3. sibling `../nke-site-deploy/cwe-profiles/profiles/osProfiles/metadata.yaml`
 
-If fleet metadata is unavailable, forge-vms matrix table entries are skipped at
+If fleet metadata is unavailable, nico-vms matrix table entries are skipped at
 suite init (no panic) so CAPD and other label filters can still run.
 
 Profiles with an embedded Kubernetes version use that version for their
@@ -140,7 +140,7 @@ Run the complete matrix with a longer suite timeout because entries run
 sequentially:
 
 ```bash
-make test-e2e-forge-vms-os-profiles
+make test-e2e-nico-vms-os-profiles
 ```
 
 Every entry also carries its full profile name as a label, so a new or failing
@@ -156,8 +156,8 @@ When adding an OS profile:
    `nke-site-deploy/cwe-profiles/profiles/osProfiles/`.
 2. For an amd64 tenant profile, no separate e2e list update is required; the
    matrix includes it automatically.
-3. If forge-vms cannot support it, add it to
-   `forgeVMSOSProfileExclusions` in `test/e2e/os_profile_matrix_test.go` with
+3. If nico-vms cannot support it, add it to
+   `nicoVMSOSProfileExclusions` in `test/e2e/os_profile_matrix_test.go` with
    the concrete reason and an owning follow-up ticket when one can remove the
    limitation.
 4. Run the focused matrix test and then the new profile's label before running
@@ -165,18 +165,18 @@ When adding an OS profile:
 
 The current exclusions are:
 
-- arm64 images because forge-vms provisions x86_64 VMs;
+- arm64 images because nico-vms provisions x86_64 VMs;
 - the arm64 `nke-local-dev-kindest` placeholder because it is not a tenant OS
   profile; and
 - legacy autoinstall profiles whose iPXE scripts boot a kernel, initrd, and ISO
-  directly. forge-vms currently requires a `chain` to `qcow-imager.efi` with an
+  directly. nico-vms currently requires a `chain` to `qcow-imager.efi` with an
   `image_url` pointing to a qcow2 artifact.
 
-Use the `nke-forge-vms-*` profiles for the emulator's normal control-plane and
+Use the `nke-nico-vms-*` profiles for the emulator's normal control-plane and
 worker defaults, or for an emulator-specific compatibility scenario such as
 the old node-agent profile. Use production `nke-*` profiles as explicit worker
 profiles when validating the real image, iPXE, cloud-init, or node-agent
-artifacts that tenant clusters consume. The matrix uses the 2 GiB forge-vms
+artifacts that tenant clusters consume. The matrix uses the 2 GiB nico-vms
 instance type with explicit kube and system memory reservations.
 
 The happy-path targets run create/readiness/delete for the selected backend(s)
@@ -202,7 +202,7 @@ Run tests only for a specific backend using labels:
 
 ```bash
 ginkgo run -v --label-filter="capd" ./test/e2e
-ginkgo run -v --label-filter="forge-vms" ./test/e2e
+ginkgo run -v --label-filter="nico-vms" ./test/e2e
 ```
 
 **Filter by validation:**
@@ -228,7 +228,7 @@ You can combine labels to be highly specific. For example, to run only the OIDC 
 ginkgo run -v --label-filter="capd && (spire-oidc || lifecycle || readiness)" ./test/e2e
 ```
 
-Run the forge-vms multi-pod-CIDR scenario and its pod-CIDR validation:
+Run the nico-vms multi-pod-CIDR scenario and its pod-CIDR validation:
 
 ```bash
 ginkgo run -v --label-filter="multi-pod-cidrs && (pod-cidr || lifecycle)" ./test/e2e

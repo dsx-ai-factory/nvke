@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Mirror of the active OS profile index from nke-site-deploy/cwe-profiles.
-# TestForgeVMSOSProfileMatrix reads it to check that every entry in
-# forgeVMSOSProfileExclusions still names an active profile, and that every
-# profile that is not excluded is one forge-vms can boot.
+# TestNicoVMSOSProfileMatrix reads it to check that every entry in
+# nicoVMSOSProfileExclusions still names an active profile, and that every
+# profile that is not excluded is one nico-vms can boot.
 #
 # Only the three fields the matrix reads are copied. build_date, ubuntu_version
 # and variant are deliberately left out.
@@ -89,11 +89,11 @@ profiles:
     kubernetes_version: ""
     kubernetes_version_injected: true
     architecture: "amd64"
-  nke-forge-vms-24.04-amd64-fde:
+  nke-nico-vms-24.04-amd64-fde:
     kubernetes_version: ""
     kubernetes_version_injected: true
     architecture: "amd64"
-  nke-forge-vms-24.04-amd64-fde-old-agent:
+  nke-nico-vms-24.04-amd64-fde-old-agent:
     kubernetes_version: ""
     kubernetes_version_injected: true
     architecture: "amd64"

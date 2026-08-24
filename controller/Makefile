@@ -59,7 +59,7 @@ lint: ## Lint source files.
 
 .PHONY: license
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'forge-vms/ui/vendor/**' -ignore 'forge-vms/test/integration/testutil/testdata/**' -ignore 'forge-vms/.dev/**' -ignore 'deploy/charts/**' .
+	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-vms/ui/vendor/**' -ignore 'nico-vms/test/integration/testutil/testdata/**' -ignore 'nico-vms/.dev/**' -ignore 'deploy/charts/**' .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check
@@ -127,7 +127,7 @@ test: ## Execute unit tests (excludes integration tests).
 	# .gitlab-ci.yml, no workflow reading either file, and both are gitignored.
 	# It cost about 9 seconds of download and compile per run on a cold cache,
 	# and pulled golang.org/x/tools, 15 MB, to convert one file to XML.
-	# forge-vms already produces a coverprofile without it.
+	# nico-vms already produces a coverprofile without it.
 	#
 	# integration-test/ is behind the `integration_test` build tag, so
 	# `go list ./...` no longer needs filtering here. The old grep matched
@@ -151,15 +151,15 @@ test-integration-teleport: ## Execute Teleport client integration tests (require
 E2E_DIR := test/e2e
 E2E_TIMEOUT ?= 2h
 GINKGO_VERSION ?= v2.27.2
-# Ginkgo CLI flags, e.g. ARGS='--label-filter="forge-vms && happy-path"'
+# Ginkgo CLI flags, e.g. ARGS='--label-filter="nico-vms && happy-path"'
 ARGS ?=
 
 .PHONY: test-e2e
-test-e2e: ## Run all NKE e2e tests; optional ARGS forwards ginkgo flags Example: make test-e2e ARGS='--label-filter="forge-vms && happy-path"'
+test-e2e: ## Run all NKE e2e tests; optional ARGS forwards ginkgo flags Example: make test-e2e ARGS='--label-filter="nico-vms && happy-path"'
 	cd $(E2E_DIR) && go run github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION) run -v --timeout=$(E2E_TIMEOUT) $(ARGS) .
 
 .PHONY: test-e2e-happy-path
-test-e2e-happy-path: ## Run CAPD and Forge VMs happy-path e2e tests
+test-e2e-happy-path: ## Run CAPD and NICo VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
 .PHONY: test-e2e-capd
@@ -170,13 +170,13 @@ test-e2e-capd: ## Run CAPD happy-path e2e tests
 test-e2e-capd-local: ## Bootstrap Colima and run all CAPD e2e tests with local CWE and agent source
 	./hack/local-backend-e2e.sh
 
-.PHONY: test-e2e-forge-vms
-test-e2e-forge-vms: ## Run Forge VMs happy-path e2e tests
-	make test-e2e ARGS='--label-filter="forge-vms && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
+.PHONY: test-e2e-nico-vms
+test-e2e-nico-vms: ## Run NICo VMs happy-path e2e tests
+	make test-e2e ARGS='--label-filter="nico-vms && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
-.PHONY: test-e2e-forge-vms-os-profiles
-test-e2e-forge-vms-os-profiles: ## Run the opt-in Forge VMs OS profile provisioning matrix
-	$(MAKE) test-e2e E2E_TIMEOUT=6h ARGS='--label-filter="forge-vms && os-profiles"'
+.PHONY: test-e2e-nico-vms-os-profiles
+test-e2e-nico-vms-os-profiles: ## Run the opt-in NICo VMs OS profile provisioning matrix
+	$(MAKE) test-e2e E2E_TIMEOUT=6h ARGS='--label-filter="nico-vms && os-profiles"'
 
 .PHONY: e2e-gofail
 e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.

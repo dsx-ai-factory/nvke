@@ -35,7 +35,7 @@ const parallelClusterStagger = time.Minute
 // instead. Opt in with the "parallel-lifecycle" label — it is the most
 // expensive scenario (multiple clusters provisioning at once).
 var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure,
-	Label("forge-vms", "extended", "parallel-lifecycle"), func() {
+	Label("nico-vms", "extended", "parallel-lifecycle"), func() {
 		shapes := []clusterShape{
 			{
 				cniPlugin:         CNIPluginOVN,
@@ -84,8 +84,8 @@ var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure
 				}
 
 				parallelShape := shape
-				parallelShape.controlPlaneVIP = forgeControlPlaneVIPAtOffset(i)
-				spec := forgeSpec(test.cfg, fmt.Sprintf("%s-par%d", clusterNamePrefix, i), parallelShape)
+				parallelShape.controlPlaneVIP = nicoVMSControlPlaneVIPAtOffset(i)
+				spec := nicoVMSSpec(test.cfg, fmt.Sprintf("%s-par%d", clusterNamePrefix, i), parallelShape)
 				spec.Name = fmt.Sprintf("%s-%s", spec.Name, spec.Backend) // CreateCluster appends a timestamp
 
 				By(fmt.Sprintf("Creating parallel cluster %d (%s)", i, shape.cniPlugin))

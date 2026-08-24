@@ -121,7 +121,7 @@ jobs:
     permissions:
       contents: read
     # cli depends only on public modules, so it lints one module at a time like
-    # agent and forge-vms (workflow-level GOWORK=off applies). It is its own
+    # agent and nico-vms (workflow-level GOWORK=off applies). It is its own
     # module, so no other lint job reaches it.
     steps:
       - name: Checkout
@@ -152,7 +152,7 @@ jobs:
     # A nested module: `go list ./...` in controller/ does not reach it, so
     # controller's own lint job cannot cover it and this is the only thing that
     # does. Every dependency is public, so it lints one module at a time like
-    # agent and forge-vms (workflow-level GOWORK=off applies).
+    # agent and nico-vms (workflow-level GOWORK=off applies).
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -223,14 +223,14 @@ jobs:
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
           "$(go env GOPATH)/bin/golangci-lint" run --timeout 10m
 
-  lint-forge-vms:
-    name: golangci-lint (forge-vms)
+  lint-nico-vms:
+    name: golangci-lint (nico-vms)
     runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
     timeout-minutes: 15
     permissions:
       contents: read
-    # forge-vms builds from public dependencies only, so it lints one module
+    # nico-vms builds from public dependencies only, so it lints one module
     # at a time like agent (workflow-level GOWORK=off applies).
     steps:
       - name: Checkout
@@ -241,12 +241,12 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: controller/forge-vms/go.mod
+          go-version-file: controller/nico-vms/go.mod
           cache: true
-          cache-dependency-path: controller/forge-vms/go.sum
+          cache-dependency-path: controller/nico-vms/go.sum
 
       - name: Run golangci-lint
-        working-directory: controller/forge-vms
+        working-directory: controller/nico-vms
         run: make lint
 
   lint-os-image:

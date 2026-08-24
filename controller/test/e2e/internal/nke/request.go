@@ -23,8 +23,8 @@ const (
 	BackendCAPD Backend = "capd"
 	// BackendNicoContainers is the local CAPNico backend backed by Docker containers.
 	BackendNicoContainers Backend = "nico-containers"
-	// BackendForgeVMS is the local forge-vms Forge emulator backend.
-	BackendForgeVMS Backend = "forge-vms"
+	// BackendNicoVMS is the local nico-vms Forge emulator backend.
+	BackendNicoVMS Backend = "nico-vms"
 )
 
 // NodePoolSpec describes a single node pool to create.
@@ -36,7 +36,7 @@ type NodePoolSpec struct {
 	KubeReservedMemory   string // optional, e.g. "250Mi"
 
 	// Infrastructure-specific pool fields. Nico containers use InstanceTypeID,
-	// SubnetIDs, and SSHKeyGroupIDs; Forge VMs use InstanceTypeID,
+	// SubnetIDs, and SSHKeyGroupIDs; NICo VMs use InstanceTypeID,
 	// VpcPrefixIDs, SSHKeyGroupIDs, and the profile/disk fields.
 	InstanceTypeID        string
 	SubnetIDs             []string
@@ -76,7 +76,7 @@ type ClusterSpec struct {
 	Network           *ClusterNetworkSpec
 
 	// Infrastructure-specific cluster fields. Nico containers use SiteID and
-	// VpcID inside their CAPI manifests; Forge VMs use all three as API fields.
+	// VpcID inside their CAPI manifests; NICo VMs use all three as API fields.
 	OrgID  string
 	SiteID string
 	VpcID  string
@@ -101,8 +101,8 @@ func buildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		return buildCAPDRequest(spec)
 	case BackendNicoContainers:
 		return buildNicoRequest(spec)
-	case BackendForgeVMS:
-		return buildForgeRequest(spec)
+	case BackendNicoVMS:
+		return buildNicoVMSRequest(spec)
 	default:
 		return api.CreateClusterRequest{}, fmt.Errorf("unsupported backend %q", spec.Backend)
 	}
@@ -283,10 +283,10 @@ func CAPDNodePoolRequest(clusterID uuid.UUID, spec NodePoolSpec, nodeImage strin
 	return nodePoolRequest(clusterID, pool), nil
 }
 
-// buildForgeRequest builds a Forge-backed create request (no CAPI manifests).
+// buildNicoVMSRequest builds a Forge-backed create request (no CAPI manifests).
 // The Forge identifiers come from spec; see test/e2e/oidc_test.go for the
-// forge-vms seed values.
-func buildForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+// nico-vms seed values.
+func buildNicoVMSRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	siteID, err := uuid.Parse(spec.SiteID)
 	if err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("parsing site ID %q: %w", spec.SiteID, err)
@@ -311,7 +311,7 @@ func buildForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	applyNetworkConfig(&req, spec.Network)
 
 	for _, ps := range orderedPools(spec) {
-		pool, err := buildForgeNodePool(ps)
+		pool, err := buildNicoVMSNodePool(ps)
 		if err != nil {
 			return api.CreateClusterRequest{}, fmt.Errorf("building node pool %q: %w", ps.Name, err)
 		}
@@ -334,7 +334,7 @@ func applyNetworkConfig(req *api.CreateClusterRequest, spec *ClusterNetworkSpec)
 	}
 }
 
-func buildForgeNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
+func buildNicoVMSNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 	instanceTypeID, err := uuid.Parse(spec.InstanceTypeID)
 	if err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing instance type ID %q: %w", spec.InstanceTypeID, err)
@@ -370,13 +370,13 @@ func buildForgeNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 	return pool, nil
 }
 
-// ForgeNodePoolRequest builds a standalone create-node-pool request for a
-// forge-vms cluster from spec. It delegates the UUID parsing and field shaping
-// to buildForgeNodePool so the two stay in sync, adding only the owning cluster
+// NicoVMSNodePoolRequest builds a standalone create-node-pool request for a
+// nico-vms cluster from spec. It delegates the UUID parsing and field shaping
+// to buildNicoVMSNodePool so the two stay in sync, adding only the owning cluster
 // ID that the CreateNodePool endpoint requires (unlike the cluster-create path,
 // which nests the pool inside the cluster request).
-func ForgeNodePoolRequest(clusterID uuid.UUID, spec NodePoolSpec) (api.CreateNodePoolRequest, error) {
-	pool, err := buildForgeNodePool(spec)
+func NicoVMSNodePoolRequest(clusterID uuid.UUID, spec NodePoolSpec) (api.CreateNodePoolRequest, error) {
+	pool, err := buildNicoVMSNodePool(spec)
 	if err != nil {
 		return api.CreateNodePoolRequest{}, err
 	}

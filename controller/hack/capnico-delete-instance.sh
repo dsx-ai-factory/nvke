@@ -4,15 +4,15 @@
 #
 # Delete a bare VM created by hack/capnico-create-instance.sh.
 #
-# Deleting the Machine triggers the NicoMachine finalizer, which calls forge-vms
+# Deleting the Machine triggers the NicoMachine finalizer, which calls nico-vms
 # DeleteInstance (VM + qemu/swtpm torn down in ~4s); deleting the Cluster
 # cascades to the NicoCluster.
 #
 # Notes:
-#   - The forge-vms instance ID is captured from Machine.spec.providerID BEFORE
+#   - The nico-vms instance ID is captured from Machine.spec.providerID BEFORE
 #     anything is deleted -- afterwards there is nothing left to read it from.
 #   - Deletion is verified with a by-ID GET expecting 404. A list-based check is
-#     invalid: forge-vms ignores the `?name=` filter and returns all instances.
+#     invalid: nico-vms ignores the `?name=` filter and returns all instances.
 #   - Several instances share one Cluster: the create script re-applies the same
 #     NAMESPACE/CLUSTER_NAME for every INSTANCE_NAME. CAPI cascades a Cluster
 #     deletion to every Machine labelled with that cluster, so deleting the
@@ -26,8 +26,8 @@
 
 set -euo pipefail
 
-NAMESPACE="${NAMESPACE:-forge-test}"
-CLUSTER_NAME="${CLUSTER_NAME:-forge-vms-bare}"
+NAMESPACE="${NAMESPACE:-nico-test}"
+CLUSTER_NAME="${CLUSTER_NAME:-nico-vms-bare}"
 INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}"
 BOOTSTRAP_SECRET_NAME="${BOOTSTRAP_SECRET_NAME:-${INSTANCE_NAME}-bootstrap}"
 DELETE_NAMESPACE="${DELETE_NAMESPACE:-true}"
@@ -38,8 +38,8 @@ DELETE_NAMESPACE="${DELETE_NAMESPACE:-true}"
 DELETE_CLUSTER="${DELETE_CLUSTER:-auto}"
 
 ORG_ID="${ORG_ID:-novxwn552ssc}"
-FORGE_VMS_URL="${FORGE_VMS_URL:-http://localhost:18080}"
-FORGE_VMS_TOKEN="${FORGE_VMS_TOKEN:-forge-vmsctl-token}"
+NICO_VMS_URL="${NICO_VMS_URL:-http://localhost:18080}"
+NICO_VMS_TOKEN="${NICO_VMS_TOKEN:-nico-vmsctl-token}"
 
 DELETE_TIMEOUT="${DELETE_TIMEOUT:-5m}"
 
@@ -61,7 +61,7 @@ INSTANCE_ID="${INSTANCE_ID#nico://}"
 echo "Deleting instance '${INSTANCE_NAME}' (cluster ${CLUSTER_NAME}) in namespace ${NAMESPACE}" >&2
 
 # --timeout makes this block until the Machine (and with it the NicoMachine
-# finalizer's forge-vms DeleteInstance) is really gone, so the sibling count
+# finalizer's nico-vms DeleteInstance) is really gone, so the sibling count
 # below no longer includes the instance being deleted.
 kubectl delete machine "${INSTANCE_NAME}" -n "${NAMESPACE}" --ignore-not-found --timeout="${DELETE_TIMEOUT}"
 # Normally a no-op: the Machine ownerRef cascades to the NicoMachine. It matters
@@ -113,21 +113,21 @@ if [ "${REMOVE_CLUSTER}" = "true" ]; then
 fi
 
 if [ -z "${INSTANCE_ID}" ]; then
-  echo "Machine had no providerID -- no forge-vms instance to verify." >&2
+  echo "Machine had no providerID -- no nico-vms instance to verify." >&2
   exit 0
 fi
 
-echo "Verifying forge-vms instance ${INSTANCE_ID} is gone..." >&2
+echo "Verifying nico-vms instance ${INSTANCE_ID} is gone..." >&2
 for _ in $(seq 1 30); do
   HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' \
-    -H "Authorization: Bearer ${FORGE_VMS_TOKEN}" \
-    "${FORGE_VMS_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}")"
+    -H "Authorization: Bearer ${NICO_VMS_TOKEN}" \
+    "${NICO_VMS_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}")"
   if [ "${HTTP_CODE}" = "404" ]; then
-    echo "forge-vms instance ${INSTANCE_ID} is deleted (404)."
+    echo "nico-vms instance ${INSTANCE_ID} is deleted (404)."
     exit 0
   fi
   sleep 2
 done
 
-echo "forge-vms still returns HTTP ${HTTP_CODE} for instance ${INSTANCE_ID} after 60s." >&2
+echo "nico-vms still returns HTTP ${HTTP_CODE} for instance ${INSTANCE_ID} after 60s." >&2
 exit 1

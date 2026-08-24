@@ -51,7 +51,7 @@ What distinguishes it from a generic CAPI distribution:
 | `controller/` | The control plane. REST API and UI, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
 | `cli/` | `nkectl`, the command-line interface. Validates a site inventory and drives bootstrap. |
-| `controller/forge-vms/` | VM lifecycle service used by the development and test environments. |
+| `controller/nico-vms/` | VM lifecycle service used by the development and test environments. |
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |

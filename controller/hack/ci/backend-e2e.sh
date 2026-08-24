@@ -672,7 +672,7 @@ fi
 # capi_core is not optional: the Tiltfile refuses a list without it.
 : "${NKE_E2E_PROVIDERS:=[\"capi_core\", \"bgp-containers\", \"capd\", \"capd-reboot-controller\"]}"
 
-# Where the suite reads the OS profile index it builds the forge-vms matrix
+# Where the suite reads the OS profile index it builds the nico-vms matrix
 # from. This has to be a path on the inner runner. The suite is compiled on the
 # outer runner, so the fallback resolveOSProfileMetadataPath derives from
 # runtime.Caller names a directory that does not exist where the binary runs,

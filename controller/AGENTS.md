@@ -145,7 +145,7 @@ Key configuration (see `internal/config/config.go` for full list):
 ## Local Development
 
 Preferred day-to-day path is CAPI + Tilt (see root `README.md`). For editing on a
-Mac while Tilt/forge-vms runs on a Colossus (or other x86_64 Linux) host, see
+Mac while Tilt/nico-vms runs on a Colossus (or other x86_64 Linux) host, see
 [`docs/remote-colossus-tilt.md`](docs/remote-colossus-tilt.md).
 
 ### Full Local Setup

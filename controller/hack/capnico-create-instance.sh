@@ -2,22 +2,22 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Boot a bare VM on the local forge-vms backend through CAPNICo (the replacement
+# Boot a bare VM on the local nico-vms backend through CAPNICo (the replacement
 # for `self-bootstrap create`).
 #
 # Applies the six resources CAPNICo needs -- Namespace, bootstrap Secret,
 # NicoCluster, Cluster, NicoMachine, Machine -- then waits for the NicoMachine to
-# report ready and prints the forge-vms instance JSON.
+# report ready and prints the nico-vms instance JSON.
 #
 # Notes:
 #   - The iPXE script comes from the CWE-side OS profile
-#     (profiles/osProfiles/<OS_PROFILE>/ipxeScript); forge-vms and CAPNICo only
+#     (profiles/osProfiles/<OS_PROFILE>/ipxeScript); nico-vms and CAPNICo only
 #     ever see the rendered text. `{{ .DiskSelectionStrategy }}` is the only
 #     template variable today and is rendered with sed; any surviving `{{` is a
 #     hard failure rather than a VM that silently fails to boot.
 #   - The userData is a deliberately minimal bare boot: no teleport, SPIRE,
-#     nke-agent or kubeadm. Readiness is a port-22 probe (forge-vms injects its
-#     own forge-diag user), so cloud-init never gates Ready.
+#     nke-agent or kubeadm. Readiness is a port-22 probe (nico-vms injects its
+#     own nico-diag user), so cloud-init never gates Ready.
 #   - CAPNICo v0.0.28 CRDs strict-decode: the capital-`ID` spelling (siteID,
 #     vpcID, instanceTypeID, subnetID, sshKeyGroupIDs) is load-bearing. Lowercase
 #     `id` fields are rejected with a hard BadRequest, not pruned.
@@ -28,28 +28,28 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-NAMESPACE="${NAMESPACE:-forge-test}"
-CLUSTER_NAME="${CLUSTER_NAME:-forge-vms-bare}"
+NAMESPACE="${NAMESPACE:-nico-test}"
+CLUSTER_NAME="${CLUSTER_NAME:-nico-vms-bare}"
 INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}"
 BOOTSTRAP_SECRET_NAME="${BOOTSTRAP_SECRET_NAME:-${INSTANCE_NAME}-bootstrap}"
 
 OS_PROFILE="${OS_PROFILE:-nke-260611-24.04-amd64-fde}"
 DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}"
 
-# forge-vms seed resources (forge-vms/internal/seed/default-seed.yaml).
+# nico-vms seed resources (nico-vms/internal/seed/default-seed.yaml).
 ORG_ID="${ORG_ID:-novxwn552ssc}"
 SITE_ID="${SITE_ID:-a1b2c3d4-0001-4000-8000-000000000001}"
 VPC_ID="${VPC_ID:-a1b2c3d4-0002-4000-8000-000000000001}"
 SUBNET_ID="${SUBNET_ID:-a1b2c3d4-0003-4000-8000-000000000001}"
 SSH_KEY_GROUP_ID="${SSH_KEY_GROUP_ID:-a1b2c3d4-0006-4000-8000-000000000001}"
 # cpu2-mem4gb-disk50gb. The instance type's disk_gib overrides
-# FORGE_VMS_VM_DISK_GIB, and 50 GiB is ample for a bare boot. Use
+# NICO_VMS_VM_DISK_GIB, and 50 GiB is ample for a bare boot. Use
 # a1b2c3d4-0005-4000-8000-000000000004 (cpu6-mem32gb-disk60gb) for real NKE-node
 # work later.
 INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000005}"
 
-FORGE_VMS_URL="${FORGE_VMS_URL:-http://localhost:18080}"
-FORGE_VMS_TOKEN="${FORGE_VMS_TOKEN:-forge-vmsctl-token}"
+NICO_VMS_URL="${NICO_VMS_URL:-http://localhost:18080}"
+NICO_VMS_TOKEN="${NICO_VMS_TOKEN:-nico-vmsctl-token}"
 
 # cluster.x-k8s.io/v1beta1 is still served on the pinned CAPI v1.12.3 and
 # matches CWE's own nico_machine_builders output, but the CRDs mark it
@@ -82,7 +82,7 @@ command -v jq >/dev/null || {
   exit 1
 }
 command -v curl >/dev/null || {
-  echo "curl is required (it queries the forge-vms instance after the VM is ready)" >&2
+  echo "curl is required (it queries the nico-vms instance after the VM is ready)" >&2
   exit 1
 }
 
@@ -160,7 +160,7 @@ IPXE_SCRIPT_INDENTED="$(printf '%s\n' "${IPXE_SCRIPT}" | sed 's/^/    /')"
 # The login is emitted as a JSON string -- a valid YAML double-quoted scalar --
 # rather than interpolated raw. A password containing ': ', ' #', a quote or a
 # newline otherwise changes what the chpasswd entry means, and the failure is
-# silent: readiness is a port-22 probe (forge-vms injects its own forge-diag
+# silent: readiness is a port-22 probe (nico-vms injects its own nico-diag
 # user), so a mis-parsed cloud-config still reports Ready. jq reads the values
 # from the environment so they never appear in a command line (`ps`).
 # ---------------------------------------------------------------------------
@@ -186,7 +186,7 @@ users:
     sudo: "ALL=(ALL) NOPASSWD:ALL"
     lock_passwd: false
 
-# Throwaway credential for a local-only VM on the forge-vms bridge; the VM is
+# Throwaway credential for a local-only VM on the nico-vms bridge; the VM is
 # not reachable off-host and holds nothing of value.
 chpasswd:
   expire: false
@@ -396,11 +396,11 @@ if [ -z "${INSTANCE_ID}" ]; then
   exit 1
 fi
 
-echo "Instance ${INSTANCE_NAME} is ready (forge-vms instance ${INSTANCE_ID})" >&2
+echo "Instance ${INSTANCE_NAME} is ready (nico-vms instance ${INSTANCE_ID})" >&2
 # The fields are projected deliberately: the instance JSON carries `userData`
 # verbatim, and that is the cloud-config holding the VM login password. Dumping
 # the bare object would print the credential into the Tilt resource log (and any
 # tilt snapshot or CI log). Do not replace this with a plain `| jq`.
-curl -fsS -H "Authorization: Bearer ${FORGE_VMS_TOKEN}" \
-  "${FORGE_VMS_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}" |
+curl -fsS -H "Authorization: Bearer ${NICO_VMS_TOKEN}" \
+  "${NICO_VMS_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}" |
   jq '{id, name, status, instanceTypeId, vpcId, siteId, interfaces}'

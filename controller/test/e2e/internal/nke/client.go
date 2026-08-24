@@ -133,7 +133,7 @@ func (c *Client) ProvisionedNodeCount(ctx context.Context, nodePoolID openapi_ty
 // CreateCluster builds a create request from spec and posts it. It requires a
 // 201 response and returns the created cluster.
 // DefaultSiteVIPRanges matches hack/register-default-site.sh: distinct from the
-// forge-vms range and off the kind Docker subnet.
+// nico-vms range and off the kind Docker subnet.
 var DefaultSiteVIPRanges = []string{"172.31.1.0/24"}
 
 // EnsureSite registers a site if it is not already there.

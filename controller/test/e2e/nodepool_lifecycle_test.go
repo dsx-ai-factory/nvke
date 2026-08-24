@@ -206,9 +206,9 @@ func workerNodePoolRequest(test *tenantTest, name, nodeNamePrefix string) (api.C
 		spec := capdNodePoolSpec(base, name, nodeNamePrefix)
 		return nke.CAPDNodePoolRequest(test.cluster.ID, spec, test.spec.CAPDNodeImage)
 	}
-	if test.spec.Backend == nke.BackendForgeVMS {
-		spec := forgeNodePoolSpec(base, name, nodeNamePrefix, forgeOSProfile, forgeWConfigProfile)
-		return nke.ForgeNodePoolRequest(test.cluster.ID, spec)
+	if test.spec.Backend == nke.BackendNicoVMS {
+		spec := nicoVMSNodePoolSpec(base, name, nodeNamePrefix, nicoVMSOSProfile, nicoVMSWConfigProfile)
+		return nke.NicoVMSNodePoolRequest(test.cluster.ID, spec)
 	}
 	return api.CreateNodePoolRequest{}, fmt.Errorf("node pool lifecycle is unsupported for backend %q", test.spec.Backend)
 }

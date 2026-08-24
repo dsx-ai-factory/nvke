@@ -1,17 +1,17 @@
 # Remote Colossus Tilt (Mac → Linux)
 
-Edit NKE repos on your Mac and run the CWE / forge-vms Tilt harness on a remote
+Edit NKE repos on your Mac and run the CWE / nico-vms Tilt harness on a remote
 x86_64 Linux host (typically a Colossus bare-metal lease). [Mutagen](https://mutagen.io)
 mirrors source and forwards UIs / kubectl back to the Mac.
 
-Use this when Apple Silicon / macOS cannot run the full forge-vms path (amd64 OS
+Use this when Apple Silicon / macOS cannot run the full nico-vms path (amd64 OS
 profile + KVM/libvirt). For laptop-local CAPD/Tilt without real VMs, see the
 main [README](../README.md#capi--tilt-development-recommended).
 
 ## Before you start
 
 This guide assumes you already have a remote Linux box you can SSH into
-(typically a Colossus lease) with forge-vms / KVM host setup done — Ubuntu
+(typically a Colossus lease) with nico-vms / KVM host setup done — Ubuntu
 24.04 x86_64, `/dev/kvm`, Docker, kind, tilt, kubectl, Go, `ko`, clusterctl,
 and private GitLab Go auth (`GOPRIVATE=gitlab-master.nvidia.com` plus netrc or
 SSH `insteadOf` so detached `tilt` builds work without agent forwarding).
@@ -36,7 +36,7 @@ On the Mac you need:
 
 - **Mac = source of truth.** Edit and run all `git` here.
 - **Target host = test harness.** Runs Tilt (kind + CAPI/CAPD + CWE +
-  forge-vms). Tilt must run there because builds need the host Docker/kind and
+  nico-vms). Tilt must run there because builds need the host Docker/kind and
   KVM/libvirt.
 - **Mutagen complements Tilt.** Mutagen moves files host→host and forwards
   ports; Tilt builds/deploys/watches inside the cluster on the target.
@@ -115,7 +115,7 @@ repo). Opt in with an external dict entry in `controller/tilt_config.json`
 {
   "providers": [
     "capi_core",
-    "forge-vms",
+    "nico-vms",
     {
       "forge-console": "../../forge-console"
     }
@@ -132,7 +132,7 @@ Uniform per-target offset so remotes coexist with a local Mac Tilt stack (which
 uses 3000 / 3100 / 8080 / 8081 / 18080 / 10350). Convention: **+1000 per
 target**.
 
-| target           | CWE   | TemporalUI | TemporalFE | Postgres | forge-vms | forge-console | Grafana | Tilt  |
+| target           | CWE   | TemporalUI | TemporalFE | Postgres | nico-vms | forge-console | Grafana | Tilt  |
 | ---------------- | ----- | ---------- | ---------- | -------- | --------- | ------------- | ------- | ----- |
 | local Mac (+0)   | 8080  | 8081       | 7233       | 5432     | 18080     | 8090          | 3000    | 10350 |
 | colossus (+1000) | 9080  | 9081       | 8233       | 6432     | 19080     | 9090          | 4000    | 11350 |
@@ -147,7 +147,7 @@ AirPlay may own 5000).
 - Tilt UI: http://localhost:11350
 - CWE Swagger: http://localhost:9080/api/docs
 - Temporal UI: http://localhost:9081
-- forge-vms UI: http://localhost:19080/ui/
+- nico-vms UI: http://localhost:19080/ui/
 - Grafana: http://localhost:4000
 - Temporal frontend (gRPC / `temporal` CLI): `localhost:8233`
 - Postgres: `localhost:6432`
@@ -190,11 +190,11 @@ tilt up
 Mac browser: http://localhost:11350 (Mutagen forward to remote Tilt on `:10350`).
 This starts:
 
-- **forge-vms** — built with `make build-privileged`, live-reloaded on code changes
+- **nico-vms** — built with `make build-privileged`, live-reloaded on code changes
 - **dnsmasq** — DHCP/DNS for VMs on the bridge (if installed on host)
 - **Loki + Promtail + Grafana** — observability stack deployed into the Kind cluster
-- **forge-vms-log-shipper** — host Promtail container that ships forge-vms and VM console logs to Loki
-- **forge-vms-register-site** — registers the forge-vms site in CWE with the correct VIP CIDR
+- **nico-vms-log-shipper** — host Promtail container that ships nico-vms and VM console logs to Loki
+- **nico-vms-register-site** — registers the nico-vms site in CWE with the correct VIP CIDR
 - **forge-console** — if enabled in `tilt_config.json` (Mac: http://localhost:9090)
 
 Reattach later with:
@@ -229,7 +229,7 @@ ssh colossus 'tmux capture-pane -p -S -2000' | pbcopy
 ## Related docs
 
 - [CWE README — CAPI + Tilt](../README.md#capi--tilt-development-recommended)
-- [forge-vms README](../forge-vms/README.md)
-- [forge-vms e2e testing (incl. one-shot remote rsync)](../forge-vms/docs/e2e-testing.md)
+- [nico-vms README](../nico-vms/README.md)
+- [nico-vms e2e testing (incl. one-shot remote rsync)](../nico-vms/docs/e2e-testing.md)
 - [CWE E2E tests](../test/e2e/README.md)
 - [`provision-colossus-local-forge` skill](https://gitlab-master.nvidia.com/nke/nke-agent-skills/-/tree/main/skills/provision-colossus-local-forge)

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<!--
+  SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  SPDX-License-Identifier: Apache-2.0
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nico-vms</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="vendor/highlightjs/styles/nord.min.css">
+    <script src="vendor/highlightjs/highlight.min.js"></script>
+    <script src="vendor/highlightjs/languages/yaml.min.js"></script>
+    <script src="vendor/highlightjs/languages/shell.min.js"></script>
+    <link rel="stylesheet" href="vendor/xterm/xterm.min.css">
+    <script src="vendor/xterm/xterm.min.js"></script>
+    <script src="vendor/xterm/addon-fit.min.js"></script>
+    <script src="vendor/xterm/addon-search.min.js"></script>
+</head>
+<body>
+    <div class="wrapper">
+        <header>
+            <div class="header-left">
+                <span class="logo">nico-vms</span>
+            </div>
+            <div class="header-right">
+                <label class="auto-refresh-toggle">
+                    <input type="checkbox" id="auto-refresh" checked>
+                    Auto-refresh (5s)
+                </label>
+                <span id="status-indicator" class="status-dot"></span>
+            </div>
+        </header>
+
+        <div class="view-tabs" role="tablist" aria-label="Server views">
+            <button class="view-tab active" id="view-tab-instances" data-view="instances" role="tab" aria-selected="true">Instances</button>
+            <button class="view-tab" id="view-tab-files" data-view="files" role="tab" aria-selected="false">Files</button>
+        </div>
+
+        <section id="instances-view" class="view-panel">
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Instances</h2>
+                    <span id="instance-count" class="count-badge">0</span>
+                </div>
+                <div class="table-wrap">
+                    <table id="instance-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>IP Address</th>
+                                <th>Instance Type</th>
+                                <th>DHCP</th>
+                                <th>Phone Home</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="instance-tbody">
+                            <tr><td colspan="8" class="empty-state">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="files-view" class="view-panel" hidden>
+            <div class="files-note">
+                Files shown here are served to VMs through the unauthenticated files HTTP server. From inside a VM, fetch them via <code>http://carbide-pxe.forge:18080/files</code>.
+            </div>
+            <div class="panel">
+                <div class="panel-header panel-header-split">
+                    <div class="panel-title-group">
+                        <h2>Files</h2>
+                        <span id="files-count" class="count-badge">0</span>
+                    </div>
+                    <div class="panel-actions">
+                        <span id="files-root-path" class="panel-meta">Configured Root: Loading...</span>
+                        <button id="files-refresh" class="btn btn-secondary btn-small">Refresh</button>
+                    </div>
+                </div>
+                <div class="files-browser">
+                    <div class="files-tree-pane">
+                        <div id="files-tree" class="files-tree">
+                            <div class="empty-state">Loading...</div>
+                        </div>
+                    </div>
+                    <div class="files-details-pane">
+                        <div id="files-details" class="files-details">
+                            <div class="empty-state">Select a file or folder</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Console Log Modal -->
+    <div id="console-modal" class="modal-overlay" hidden>
+        <div class="modal">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <h3 id="console-title">Console Log</h3>
+                    <span id="console-spinner" class="spinner" hidden></span>
+                </div>
+                <div class="console-search" hidden id="console-search">
+                    <input type="text" id="console-search-input" placeholder="Search...">
+                    <button class="btn-search" onclick="consoleSearchPrev()">&uarr;</button>
+                    <button class="btn-search" onclick="consoleSearchNext()">&darr;</button>
+                    <button class="btn-search" onclick="closeConsoleSearch()">&times;</button>
+                </div>
+                <button class="modal-close" onclick="closeConsoleLog()">&times;</button>
+            </div>
+            <div id="diag-tabs" class="diag-tabs"></div>
+            <div class="modal-body">
+                <div id="console-output"></div>
+                <pre id="log-output" hidden></pre>
+                <pre id="file-output" hidden><code id="file-output-code"></code></pre>
+            </div>
+            <div class="modal-footer">
+                <label class="follow-toggle">
+                    <input type="checkbox" id="console-follow"> Follow
+                </label>
+                <button class="btn btn-secondary" onclick="refreshConsoleLog()">Refresh</button>
+                <button class="btn btn-secondary" onclick="closeConsoleLog()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

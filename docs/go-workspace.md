@@ -18,7 +18,7 @@ when the first two go stale.
 | `controller/hack/nico-mock` | yes | builds from public dependencies |
 | `controller/test/e2e` | yes | builds from public dependencies |
 | `controller` | yes | public dependencies + one vendored INTERNAL module |
-| `controller/forge-vms` | yes | builds from public dependencies |
+| `controller/nico-vms` | yes | builds from public dependencies |
 | `os-image` | yes | builds from public dependencies |
 
 ### The vendored dependency

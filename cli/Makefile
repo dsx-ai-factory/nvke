@@ -16,7 +16,7 @@ GO ?= go
 BINARY := bin/nkectl
 
 # Go tool install location (GOPATH/bin, unless GOBIN is set); matches
-# agent/Makefile and controller/forge-vms/Makefile.
+# agent/Makefile and controller/nico-vms/Makefile.
 GOBIN ?= $(shell $(GO) env GOBIN)
 ifeq (,$(GOBIN))
 GOBIN = $(shell $(GO) env GOPATH)/bin

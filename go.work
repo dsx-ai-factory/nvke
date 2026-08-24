@@ -14,7 +14,7 @@ use (
 	./cli
 	./controller
 	./controller/api
-	./controller/forge-vms
+	./controller/nico-vms
 	./controller/hack/capd-reboot-controller
 	./controller/hack/nico-mock
 	./controller/test/e2e

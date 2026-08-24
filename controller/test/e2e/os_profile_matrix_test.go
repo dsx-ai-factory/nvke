@@ -42,13 +42,13 @@ type osProfileExclusion struct {
 	reason string
 }
 
-const legacyAutoinstallExclusionReason = "profile boots vmlinuz, initrd, and ISO directly; forge-vms currently requires a qcow-imager chain with image_url"
+const legacyAutoinstallExclusionReason = "profile boots vmlinuz, initrd, and ISO directly; nico-vms currently requires a qcow-imager chain with image_url"
 
-// forgeVMSOSProfileExclusions classifies active profiles that the local
-// x86_64 forge-vms backend cannot use. New active profiles are otherwise
+// nicoVMSOSProfileExclusions classifies active profiles that the local
+// x86_64 nico-vms backend cannot use. New active profiles are otherwise
 // required by the matrix, so an unsupported profile must be added here with
 // an explicit reason before the suite will register.
-var forgeVMSOSProfileExclusions = map[string]osProfileExclusion{
+var nicoVMSOSProfileExclusions = map[string]osProfileExclusion{
 	"nke-1.29.7-251119": {
 		reason: legacyAutoinstallExclusionReason,
 	},
@@ -77,79 +77,79 @@ var forgeVMSOSProfileExclusions = map[string]osProfileExclusion{
 		reason: legacyAutoinstallExclusionReason,
 	},
 	"nke-1.31.9-251124-24.04-arm64": {
-		reason: "forge-vms currently provisions x86_64 VMs and cannot boot arm64 images",
+		reason: "nico-vms currently provisions x86_64 VMs and cannot boot arm64 images",
 	},
 	"nke-1.34.2-251201-arm64-ytl": {
-		reason: "forge-vms currently provisions x86_64 VMs and cannot boot arm64 images",
+		reason: "nico-vms currently provisions x86_64 VMs and cannot boot arm64 images",
 	},
 	"nke-1.34.2-260616-arm64-ytl": {
-		reason: "forge-vms currently provisions x86_64 VMs and cannot boot arm64 images",
+		reason: "nico-vms currently provisions x86_64 VMs and cannot boot arm64 images",
 	},
 	"nke-260602-24.04-arm64-fde": {
-		reason: "forge-vms currently provisions x86_64 VMs and cannot boot arm64 images",
+		reason: "nico-vms currently provisions x86_64 VMs and cannot boot arm64 images",
 	},
 	"nke-260611-24.04-arm64-fde": {
-		reason: "forge-vms currently provisions x86_64 VMs and cannot boot arm64 images",
+		reason: "nico-vms currently provisions x86_64 VMs and cannot boot arm64 images",
 	},
 	"nke-260625-24.04-arm64-fde": {
-		reason: "forge-vms currently provisions x86_64 VMs and cannot boot arm64 images",
+		reason: "nico-vms currently provisions x86_64 VMs and cannot boot arm64 images",
 	},
 	"nke-260625-24.04-arm64-fde-na-0.1.29": {
-		reason: "forge-vms currently provisions x86_64 VMs and cannot boot arm64 images",
+		reason: "nico-vms currently provisions x86_64 VMs and cannot boot arm64 images",
 	},
 	"nke-local-dev-kindest-arm64": {
 		reason: "local kindest profile is an arm64 development placeholder, not a tenant OS profile",
 	},
 }
 
-func mustForgeVMSOSProfileTableEntries() []ginkgo.TableEntry {
-	profiles, err := forgeVMSOSProfileMatrix()
+func mustNicoVMSOSProfileTableEntries() []ginkgo.TableEntry {
+	profiles, err := nicoVMSOSProfileMatrix()
 	if err != nil {
-		// CAPD and other non-forge-vms suites import this package but do not ship
+		// CAPD and other non-nico-vms suites import this package but do not ship
 		// fleet profile metadata (NKX-13910 moved it to nke-site-deploy). Soft-skip
-		// only that case — other matrix errors still panic so forge-vms regressions
+		// only that case — other matrix errors still panic so nico-vms regressions
 		// stay loud.
 		if isOSProfileMetadataUnavailable(err) {
-			fmt.Fprintf(os.Stderr, "skipping forge-vms OS profile matrix entries: %v\n", err)
+			fmt.Fprintf(os.Stderr, "skipping nico-vms OS profile matrix entries: %v\n", err)
 			return nil
 		}
-		panic(fmt.Sprintf("building forge-vms OS profile matrix: %v", err))
+		panic(fmt.Sprintf("building nico-vms OS profile matrix: %v", err))
 	}
 
 	entries := make([]ginkgo.TableEntry, 0, len(profiles))
 	for i, profile := range profiles {
 		entries = append(entries, ginkgo.Entry(
-			fmt.Sprintf("forge-vms OS profile %s", profile.name),
+			fmt.Sprintf("nico-vms OS profile %s", profile.name),
 			ginkgo.Ordered,
 			ginkgo.ContinueOnFailure,
-			ginkgo.Label("forge-vms", "extended", "os-profiles", profile.name),
-			forgeVMSOSProfileTestSpec(profile, i),
+			ginkgo.Label("nico-vms", "extended", "os-profiles", profile.name),
+			nicoVMSOSProfileTestSpec(profile, i),
 		))
 	}
 	return entries
 }
 
-func forgeVMSOSProfileTestSpec(profile forgeVMSOSProfile, index int) testSpec {
+func nicoVMSOSProfileTestSpec(profile nicoVMSOSProfileEntry, index int) testSpec {
 	kubernetesVersion := defaultKubernetesVersion
 	if !profile.metadata.KubernetesVersionInjected {
 		kubernetesVersion = profile.metadata.KubernetesVersion
 	}
 
 	return testSpec{
-		buildSpec: forgeSpec,
+		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: kubernetesVersion,
 			cniPlugin:         CNIPluginCalico,
 			controlPlanePools: []nke.NodePoolSpec{{
 				DesiredNodeCount: 1,
-				InstanceTypeID:   forgeInstanceTypeID,
+				InstanceTypeID:   nicoVMSInstanceTypeID,
 			}},
 			workerPools: []nke.NodePoolSpec{{
 				Name:             fmt.Sprintf("worker-profile-%02d", index+1),
 				NodeNamePrefix:   fmt.Sprintf("wp%02d", index+1),
 				DesiredNodeCount: 1,
 				OSProfile:        profile.name,
-				InstanceTypeID:   forgeInstanceTypeID,
+				InstanceTypeID:   nicoVMSInstanceTypeID,
 			}},
 		},
 		options: nke.Options{
@@ -161,18 +161,18 @@ func forgeVMSOSProfileTestSpec(profile forgeVMSOSProfile, index int) testSpec {
 	}
 }
 
-type forgeVMSOSProfile struct {
+type nicoVMSOSProfileEntry struct {
 	name     string
 	metadata osProfileMetadata
 }
 
-func forgeVMSOSProfileMatrix() ([]forgeVMSOSProfile, error) {
+func nicoVMSOSProfileMatrix() ([]nicoVMSOSProfileEntry, error) {
 	index, err := loadActiveOSProfileMetadata()
 	if err != nil {
 		return nil, err
 	}
 
-	for name := range forgeVMSOSProfileExclusions {
+	for name := range nicoVMSOSProfileExclusions {
 		if _, ok := index.Profiles[name]; !ok {
 			return nil, fmt.Errorf("exclusion %q is not an active OS profile", name)
 		}
@@ -184,16 +184,16 @@ func forgeVMSOSProfileMatrix() ([]forgeVMSOSProfile, error) {
 	}
 	sort.Strings(names)
 
-	profiles := make([]forgeVMSOSProfile, 0, len(names))
+	profiles := make([]nicoVMSOSProfileEntry, 0, len(names))
 	for _, name := range names {
-		if _, excluded := forgeVMSOSProfileExclusions[name]; excluded {
+		if _, excluded := nicoVMSOSProfileExclusions[name]; excluded {
 			continue
 		}
 
 		metadata := index.Profiles[name]
 		if metadata.Architecture != "amd64" {
 			return nil, fmt.Errorf(
-				"active profile %q has architecture %q; add a supported forge-vms entry or a documented exclusion",
+				"active profile %q has architecture %q; add a supported nico-vms entry or a documented exclusion",
 				name,
 				metadata.Architecture,
 			)
@@ -201,7 +201,7 @@ func forgeVMSOSProfileMatrix() ([]forgeVMSOSProfile, error) {
 		if !metadata.KubernetesVersionInjected && metadata.KubernetesVersion == "" {
 			return nil, fmt.Errorf("active profile %q has neither an embedded nor injectable Kubernetes version", name)
 		}
-		profiles = append(profiles, forgeVMSOSProfile{name: name, metadata: metadata})
+		profiles = append(profiles, nicoVMSOSProfileEntry{name: name, metadata: metadata})
 	}
 
 	return profiles, nil
@@ -260,8 +260,8 @@ func resolveOSProfileMetadataPath() (string, error) {
 	return "", fmt.Errorf("%w (set CWE_PROFILES_DIR to nke-site-deploy/cwe-profiles/profiles); tried: %s", errOSProfileMetadataUnavailable, strings.Join(missing, ", "))
 }
 
-func TestForgeVMSOSProfileMatrix(t *testing.T) {
-	profiles, err := forgeVMSOSProfileMatrix()
+func TestNicoVMSOSProfileMatrix(t *testing.T) {
+	profiles, err := nicoVMSOSProfileMatrix()
 	if err != nil {
 		// Fleet metadata lives in nke-site-deploy; CI without a sibling checkout
 		// cannot build the full matrix. Other matrix errors must still fail.
@@ -278,23 +278,23 @@ func TestForgeVMSOSProfileMatrix(t *testing.T) {
 		}
 		t.Fatalf("loading active metadata: %v", err)
 	}
-	expectedProfiles := len(index.Profiles) - len(forgeVMSOSProfileExclusions)
+	expectedProfiles := len(index.Profiles) - len(nicoVMSOSProfileExclusions)
 	if len(profiles) != expectedProfiles {
 		t.Fatalf("matrix contains %d profiles, want %d active profiles minus exclusions", len(profiles), expectedProfiles)
 	}
 
-	for name, exclusion := range forgeVMSOSProfileExclusions {
+	for name, exclusion := range nicoVMSOSProfileExclusions {
 		if exclusion.reason == "" {
 			t.Errorf("exclusion %s must document a reason", name)
 		}
 	}
 
-	profilesByName := make(map[string]forgeVMSOSProfile, len(profiles))
+	profilesByName := make(map[string]nicoVMSOSProfileEntry, len(profiles))
 	for _, profile := range profiles {
 		profilesByName[profile.name] = profile
 	}
 
-	fixedVersionSpec := forgeVMSOSProfileTestSpec(forgeVMSOSProfile{
+	fixedVersionSpec := nicoVMSOSProfileTestSpec(nicoVMSOSProfileEntry{
 		name: "fixed-version-test-profile",
 		metadata: osProfileMetadata{
 			KubernetesVersion: "1.29.7",
@@ -304,26 +304,26 @@ func TestForgeVMSOSProfileMatrix(t *testing.T) {
 		t.Errorf("fixed-version profile uses Kubernetes %q, want 1.29.7", fixedVersionSpec.shape.kubernetesVersion)
 	}
 
-	productionSpec := forgeVMSOSProfileTestSpec(profilesByName["nke-260625-24.04-x86-fde"], 1)
+	productionSpec := nicoVMSOSProfileTestSpec(profilesByName["nke-260625-24.04-x86-fde"], 1)
 	if productionSpec.shape.kubernetesVersion != defaultKubernetesVersion {
 		t.Errorf("injected profile uses Kubernetes %q, want suite default %q", productionSpec.shape.kubernetesVersion, defaultKubernetesVersion)
 	}
-	if productionSpec.shape.workerPools[0].InstanceTypeID != forgeInstanceTypeID {
-		t.Errorf("production profile uses instance type %q, want %q", productionSpec.shape.workerPools[0].InstanceTypeID, forgeInstanceTypeID)
+	if productionSpec.shape.workerPools[0].InstanceTypeID != nicoVMSInstanceTypeID {
+		t.Errorf("production profile uses instance type %q, want %q", productionSpec.shape.workerPools[0].InstanceTypeID, nicoVMSInstanceTypeID)
 	}
-	if productionSpec.shape.controlPlanePools[0].InstanceTypeID != forgeInstanceTypeID {
-		t.Errorf("control plane uses instance type %q, want %q", productionSpec.shape.controlPlanePools[0].InstanceTypeID, forgeInstanceTypeID)
+	if productionSpec.shape.controlPlanePools[0].InstanceTypeID != nicoVMSInstanceTypeID {
+		t.Errorf("control plane uses instance type %q, want %q", productionSpec.shape.controlPlanePools[0].InstanceTypeID, nicoVMSInstanceTypeID)
 	}
 	if productionSpec.options.Provision != 2*time.Hour {
 		t.Errorf("provision timeout is %s, want 2h", productionSpec.options.Provision)
 	}
 
-	forgeProfile, ok := profilesByName[forgeOSProfile]
+	nicoVMSProfile, ok := profilesByName[nicoVMSOSProfile]
 	if !ok {
-		t.Fatalf("matrix missing expected forge profile %q", forgeOSProfile)
+		t.Fatalf("matrix missing expected nico-vms profile %q", nicoVMSOSProfile)
 	}
-	forgeProfileSpec := forgeVMSOSProfileTestSpec(forgeProfile, 2)
-	if forgeProfileSpec.shape.workerPools[0].InstanceTypeID != forgeInstanceTypeID {
-		t.Errorf("forge-vms profile uses instance type %q, want %q", forgeProfileSpec.shape.workerPools[0].InstanceTypeID, forgeInstanceTypeID)
+	nicoVMSProfileSpec := nicoVMSOSProfileTestSpec(nicoVMSProfile, 2)
+	if nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID != nicoVMSInstanceTypeID {
+		t.Errorf("nico-vms profile uses instance type %q, want %q", nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID, nicoVMSInstanceTypeID)
 	}
 }

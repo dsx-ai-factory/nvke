@@ -10,7 +10,7 @@
 # is the kind bridge gateway (172.18.0.1 by default), and kube-vip's stock
 # configure-kube-vip runbook auto-detects that gateway as its BGP peer, so no
 # static routes and no manifest patching are needed.
-# This is the closest analogue to forge-vms' embedded gobgp speaker.
+# This is the closest analogue to nico-vms' embedded gobgp speaker.
 #
 # Usage:
 #   ./up.sh           # start host-mode FRR

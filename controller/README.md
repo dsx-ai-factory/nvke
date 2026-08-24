@@ -72,7 +72,7 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 ## Choose a Development Path
 
 - `CAPI + Tilt (recommended)`: bring up a local Kind management cluster with CAPD, then run `tilt up` for an end-to-end local stack.
-- `Remote Colossus Tilt (forge-vms on Linux)`: edit on a Mac, Mutagen-sync to a Colossus (or other x86_64 Linux) host that runs Tilt with real KVM VMs — see [docs/remote-colossus-tilt.md](docs/remote-colossus-tilt.md).
+- `Remote Colossus Tilt (nico-vms on Linux)`: edit on a Mac, Mutagen-sync to a Colossus (or other x86_64 Linux) host that runs Tilt with real KVM VMs — see [docs/remote-colossus-tilt.md](docs/remote-colossus-tilt.md).
 - `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`.
 - `UI-only development`: port-forward a live CWE deployment and run the local UI dev server against it.
 
@@ -81,7 +81,7 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 This is the recommended local workflow for developing against a Kind management cluster with CAPD.
 Tilt improves the Kubernetes inner dev loop: it rebuilds and redeploys services when code or manifests change, keeps a multi-service local stack coordinated in one place, and gives you a single UI for logs, status, port-forwards, and helper actions.
 
-Full forge-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM. If you edit on a Mac and run Tilt remotely, follow [Remote Colossus Tilt](docs/remote-colossus-tilt.md) instead of the Colima steps below. 
+Full nico-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM. If you edit on a Mac and run Tilt remotely, follow [Remote Colossus Tilt](docs/remote-colossus-tilt.md) instead of the Colima steps below. 
 
 ### First Run
 
@@ -148,9 +148,9 @@ tilt up
 - Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
 - CWE defaults to `SPIRE_SERVER_ADDRESS=host.docker.internal` and `SPIRE_SERVER_PORT=30440`. On Linux Docker, if `host.docker.internal` is not available, override `SPIRE_SERVER_ADDRESS` in `.env.tilt` to your host's gateway IP (for example: `ip -4 route show default | awk '{print $3}'`).
 
-### CAPNICo bare-VM flow (forge-vms)
+### CAPNICo bare-VM flow (nico-vms)
 
-Boots a bare VM on the local `forge-vms` backend through the released CAPNICo
+Boots a bare VM on the local `nico-vms` backend through the released CAPNICo
 provider chart (or, optionally, a controller built from a local checkout — see
 below). The flow runs alongside the normal full stack: `tilt up` still
 brings up postgres, temporal, spire, cert-manager and cwe, and the CAPNICo
@@ -172,11 +172,11 @@ make capi-core-up
 
 ```json
 {
-  "providers": ["capi_core", "forge-vms", "nico-vm"]
+  "providers": ["capi_core", "nico-vms", "nico-vm"]
 }
 ```
 
-   `nico-vm` requires both `capi_core` and `forge-vms`, and is mutually
+   `nico-vm` requires both `capi_core` and `nico-vms`, and is mutually
    exclusive with `nico` (both install a CAPNICo controller into
    `capnico-system` and own the `nico-credentials` secret).
 
@@ -205,7 +205,7 @@ with the optional `capnico_source_dir` key:
 
 ```json
 {
-  "providers": ["capi_core", "forge-vms", "nico-vm"],
+  "providers": ["capi_core", "nico-vms", "nico-vm"],
   "capnico_source_dir": "../../cluster-api-provider-nico"
 }
 ```

@@ -32,7 +32,7 @@
 # agent.startSecureServer to grpc.Server.Serve, and it reached main behind a
 # green check because this job reported it without failing on it. See #89.
 #
-# controller/forge-vms is waived rather than gated:
+# controller/nico-vms is waived rather than gated:
 #
 #   GO-2026-4736  github.com/osrg/gobgp/v3 v3.37.0  Fixed in: N/A
 #
@@ -261,7 +261,7 @@ jobs:
           # available. Space-separated, and every entry needs a reason in the
           # header of this file. Waived is not ignored: the SARIF above still
           # reports everything, and the check below still runs.
-          GATE_WAIVED: "controller/forge-vms"
+          GATE_WAIVED: "controller/nico-vms"
         run: |
           set +e
           govulncheck ./...

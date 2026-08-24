@@ -34,7 +34,7 @@ func TestApplyNetworkConfig(t *testing.T) {
 	}
 }
 
-func TestBuildForgeNodePoolKubeReservedMemory(t *testing.T) {
+func TestBuildNicoVMSNodePoolKubeReservedMemory(t *testing.T) {
 	spec := NodePoolSpec{
 		Name:               "worker",
 		NodeNamePrefix:     "w",
@@ -47,9 +47,9 @@ func TestBuildForgeNodePoolKubeReservedMemory(t *testing.T) {
 		KubeReservedMemory: "250Mi",
 	}
 
-	pool, err := buildForgeNodePool(spec)
+	pool, err := buildNicoVMSNodePool(spec)
 	if err != nil {
-		t.Fatalf("building forge node pool: %v", err)
+		t.Fatalf("building nico-vms node pool: %v", err)
 	}
 	if pool.KubeReservedMemory != "250Mi" {
 		t.Errorf("kube reserved memory = %q, want 250Mi", pool.KubeReservedMemory)
@@ -102,15 +102,15 @@ func TestCAPDNodePoolRequest(t *testing.T) {
 	}
 }
 
-func TestUnit_BuildForgeRequestControlPlaneVIP(t *testing.T) {
+func TestUnit_BuildNicoVMSRequestControlPlaneVIP(t *testing.T) {
 	type parameters struct {
 		spec    ClusterSpec
 		wantVIP string
 	}
 
 	baseSpec := ClusterSpec{
-		Name:              "forge-test",
-		Backend:           BackendForgeVMS,
+		Name:              "nico-test",
+		Backend:           BackendNicoVMS,
 		KubernetesVersion: "1.34.8",
 		CNIPlugin:         "ovn-kubernetes",
 		OrgID:             "org-1",
@@ -124,8 +124,8 @@ func TestUnit_BuildForgeRequestControlPlaneVIP(t *testing.T) {
 				InstanceTypeID:        "a1b2c3d4-0005-4000-8000-000000000001",
 				VpcPrefixIDs:          []string{"a1b2c3d4-0004-4000-8000-000000000001"},
 				SSHKeyGroupIDs:        []string{"a1b2c3d4-0006-4000-8000-000000000001"},
-				OSProfile:             "nke-forge-vms-24.04-amd64-fde",
-				ConfigProfile:         "forge-vms-cp",
+				OSProfile:             "nke-nico-vms-24.04-amd64-fde",
+				ConfigProfile:         "nico-vms-cp",
 				DiskSelectionStrategy: "smallest",
 			}},
 		},
@@ -148,9 +148,9 @@ func TestUnit_BuildForgeRequestControlPlaneVIP(t *testing.T) {
 
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
-			req, err := buildForgeRequest(params.spec)
+			req, err := buildNicoVMSRequest(params.spec)
 			if err != nil {
-				t.Fatalf("buildForgeRequest failed: %v", err)
+				t.Fatalf("buildNicoVMSRequest failed: %v", err)
 			}
 			if req.ControlPlaneVIP != params.wantVIP {
 				t.Fatalf("ControlPlaneVIP = %q, want %q", req.ControlPlaneVIP, params.wantVIP)

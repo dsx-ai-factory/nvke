@@ -3,7 +3,7 @@
 #
 # Unit-test lane for the controller modules. Until this existed, agent-test.yml
 # was the only workflow that ran `go test` anywhere in the repository, so
-# controller/, controller/forge-vms/, controller/hack/nico-mock/, and nkectl
+# controller/, controller/nico-vms/, controller/hack/nico-mock/, and nkectl
 # were
 # compiled, linted, vetted, CodeQL-scanned and govulncheck-scanned -- and never
 # tested. A test suite nothing runs reads as coverage in review and provides
@@ -91,7 +91,7 @@ jobs:
           # running CWE on port 8080.
           - module: controller
             run: make test
-          - module: controller/forge-vms
+          - module: controller/nico-vms
             run: make test
           # Every module here now has a Makefile with a `test` target, so all
           # four go through `make test` and pick up -race from GO_TEST_FLAGS
@@ -152,7 +152,7 @@ jobs:
   #     compile-only assertion for the whole suite.
   #   - controller/e2e/... is behind `-tags gofail`; `go list ./e2e/...`
   #     reports "matched no packages" without it.
-  #   - the teleport and forge-vms integration suites are behind
+  #   - the teleport and nico-vms integration suites are behind
   #     `-tags integration`. No workflow anywhere sets a Go build tag.
   #   - controller/integration-test is dropped from `make test` by a grep,
   #     because it needs a CWE on port 8080.
@@ -179,8 +179,8 @@ jobs:
           - name: teleport integration
             dir: controller
             run: go vet -tags integration ./internal/teleport/...
-          - name: forge-vms integration
-            dir: controller/forge-vms
+          - name: nico-vms integration
+            dir: controller/nico-vms
             run: go vet -tags integration ./test/integration/...
           - name: integration-test
             dir: controller

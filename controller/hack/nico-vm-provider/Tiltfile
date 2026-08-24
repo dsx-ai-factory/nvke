@@ -3,7 +3,7 @@
 
 # nico-vm provider: installs the released CAPNICo provider chart (NGC
 # classic Helm registry) into the management cluster and points it at the local
-# forge-vms backend, then exposes manual create/inspect/delete buttons for a
+# nico-vms backend, then exposes manual create/inspect/delete buttons for a
 # bare VM boot.
 #
 # Raw helm/kubectl in local_resources rather than helm_repo/helm_resource: the
@@ -45,10 +45,10 @@ CAPNICO_HELM_REPO_URL = "https://helm.ngc.nvidia.com/0837451325059433/components
 CAPNICO_SOURCE_IMAGE = "cluster-api-provider-nico:local"
 CAPNICO_SOURCE_REPO_URL = "https://github.com/NVIDIA/cluster-api-provider-nico"
 
-# forge-vms tenant/auth (see forge-vms/internal/seed/default-seed.yaml).
-FORGE_VMS_ORG_ID = "novxwn552ssc"
-FORGE_VMS_TOKEN = "forge-vmsctl-token"
-FORGE_VMS_PORT = "18080"
+# nico-vms tenant/auth (see nico-vms/internal/seed/default-seed.yaml).
+NICO_VMS_ORG_ID = "novxwn552ssc"
+NICO_VMS_TOKEN = "nico-vmsctl-token"
+NICO_VMS_PORT = "18080"
 
 def _get_kind_cluster_name():
     """Kind cluster name, derived the same way as the root Tiltfile."""
@@ -88,9 +88,9 @@ def register(ctx):
     labels = ["6-capnico"]
     source_dir = _capnico_source_dir(ctx)
 
-    # forge-vms listens on *:18080 on the host; pods reach it via the kind
+    # nico-vms listens on *:18080 on the host; pods reach it via the kind
     # network gateway.
-    endpoint = "http://%s:%s" % (ctx.kind_host_ip, FORGE_VMS_PORT)
+    endpoint = "http://%s:%s" % (ctx.kind_host_ip, NICO_VMS_PORT)
 
     # NGC_API_KEY is read from the environment at run time and never
     # interpolated into the script text (Tilt echoes the command it runs).
@@ -237,7 +237,7 @@ def register(ctx):
             --rm --attach --restart=Never --quiet \
             --image=curlimages/curl:8.11.1 \
             --command -- curl -fsS --max-time 10 "${endpoint}/healthz" || {
-            echo "forge-vms is not reachable at ${endpoint} from inside the cluster." >&2
+            echo "nico-vms is not reachable at ${endpoint} from inside the cluster." >&2
             exit 1
           }
 
@@ -252,15 +252,15 @@ def register(ctx):
         CAPNICO_NAMESPACE,
         CAPNICO_NAMESPACE,
         CAPNICO_NAMESPACE,
-        FORGE_VMS_ORG_ID,
-        FORGE_VMS_TOKEN,
+        NICO_VMS_ORG_ID,
+        NICO_VMS_TOKEN,
     )
 
     local_resource(
         CAPNICO_CREDENTIALS_RESOURCE,
         labels=labels,
         cmd=["bash", "-c", credentials_script],
-        resource_deps=[CAPNICO_PROVIDER_RESOURCE, "forge-vms"],
+        resource_deps=[CAPNICO_PROVIDER_RESOURCE, "nico-vms"],
         allow_parallel=True,
     )
 
@@ -308,7 +308,7 @@ def register(ctx):
         "2-instance-status",
         argv=["bash", "-c", """
           set -euo pipefail
-          namespace="${NAMESPACE:-forge-test}"
+          namespace="${NAMESPACE:-nico-test}"
           instance_name="${INSTANCE_NAME:-capnico-vm-1}"
 
           kubectl get cluster,nicocluster,machine,nicomachine -n "${namespace}"
@@ -321,7 +321,7 @@ def register(ctx):
         text="Instance status",
         inputs=[
             text_input("INSTANCE_NAME", default="capnico-vm-1"),
-            text_input("NAMESPACE", default="forge-test"),
+            text_input("NAMESPACE", default="nico-test"),
         ],
     )
 
@@ -329,7 +329,7 @@ def register(ctx):
         "3-console-log",
         argv=["bash", "-c", """
           set -euo pipefail
-          namespace="${NAMESPACE:-forge-test}"
+          namespace="${NAMESPACE:-nico-test}"
           instance_name="${INSTANCE_NAME:-capnico-vm-1}"
 
           # `|| true`: a missing Machine must reach the friendly message below
@@ -337,19 +337,19 @@ def register(ctx):
           instance_id="$(kubectl get machine "${instance_name}" -n "${namespace}" -o jsonpath='{.spec.providerID}' 2>/dev/null || true)"
           instance_id="${instance_id#nico://}"
           if [ -z "${instance_id}" ]; then
-            echo "providerID is not set yet -- no forge-vms instance for ${instance_name}." >&2
+            echo "providerID is not set yet -- no nico-vms instance for ${instance_name}." >&2
             exit 1
           fi
 
           curl -fsS -H "Authorization: Bearer %s" \
             "http://localhost:%s/v2/org/%s/forge/instance/${instance_id}/console-log"
-        """ % (FORGE_VMS_TOKEN, FORGE_VMS_PORT, FORGE_VMS_ORG_ID)],
+        """ % (NICO_VMS_TOKEN, NICO_VMS_PORT, NICO_VMS_ORG_ID)],
         resource=CAPNICO_CREATE_INSTANCE_RESOURCE,
         icon_name="terminal",
         text="Console log",
         inputs=[
             text_input("INSTANCE_NAME", default="capnico-vm-1"),
-            text_input("NAMESPACE", default="forge-test"),
+            text_input("NAMESPACE", default="nico-test"),
         ],
     )
 
@@ -371,7 +371,7 @@ def register(ctx):
 
     preflight_script = """
       # hack/capnico-create-instance.sh needs both: jq escapes the VM login into
-      # the cloud-config and prints the instance JSON, curl queries forge-vms.
+      # the cloud-config and prints the instance JSON, curl queries nico-vms.
       command -v jq >/dev/null || {
         echo "jq is required in PATH for the 'nico-vm' provider" >&2
         exit 1
@@ -437,7 +437,7 @@ def register(ctx):
         echo "CAPNICo CRDs are not installed yet -- the 'capnico-provider' resource installs them %s."
 """ % crd_install_source
 
-    # No CWE wiring: this provider drives forge-vms through CAPNICo directly, so
+    # No CWE wiring: this provider drives nico-vms through CAPNICo directly, so
     # it adds no CWE resource deps or env overrides. It runs alongside the normal
     # CWE stack without interacting with it.
     return struct(

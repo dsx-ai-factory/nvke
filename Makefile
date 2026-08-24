@@ -49,7 +49,7 @@ LICENSE_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.
 WORK_MODULES := agent \
                 controller \
                 controller/api \
-                controller/forge-vms \
+                controller/nico-vms \
                 controller/hack/capd-reboot-controller \
                 controller/hack/nico-mock \
                 cli \
@@ -63,7 +63,7 @@ WORK_MODULES := agent \
 #
 # controller does not belong here: its command is ./cmd/worker, but the binary
 # it ships is named cloud-workflow-engine, so this loop would produce the wrong
-# name. `build` delegates to controller/Makefile for it. controller/forge-vms
+# name. `build` delegates to controller/Makefile for it. controller/nico-vms
 # ships through its own Makefile and the container image.
 #
 # cli is absent because its Makefile stamps four symbols, not one,
