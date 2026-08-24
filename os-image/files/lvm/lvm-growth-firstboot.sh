@@ -1,5 +1,8 @@
 #!/bin/bash
-# First-boot storage growth for the plain-LVM (no encryption) build variant.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# First-boot storage growth for the non-FDE (no encryption) build variant.
 # Grows the partition/PV/LV/filesystem to use the target disk's full size —
 # the image ships at build-time disk_size, same as the FDE variant, but with
 # no LUKS container in the way. This is the LUKS-less half of

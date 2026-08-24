@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
 # LUKS TPM2 first-boot binding.
 # - Grows partition, LUKS, PV, LV, and filesystem to use the full disk.
 # - Binds the LUKS volume to the local TPM via Clevis, then removes the
