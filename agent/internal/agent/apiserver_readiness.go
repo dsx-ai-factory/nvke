@@ -164,7 +164,7 @@ func (n *NodeAgentServer) readAPIServerMirrorPodUID(ctx context.Context) (string
 		return "", errors.New("k8s client is nil (registry returned no client)")
 	}
 	podName := fmt.Sprintf("kube-apiserver-%s", hostname)
-	pod, err := client.CoreV1().Pods("kube-system").Get(ctx, podName, metav1.GetOptions{})
+	pod, err := client.CoreV1().Pods(kubeSystemNamespace).Get(ctx, podName, metav1.GetOptions{})
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			return "", nil

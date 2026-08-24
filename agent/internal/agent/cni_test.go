@@ -117,7 +117,7 @@ func TestGetKubeAPIServer(t *testing.T) {
 			// Create a temp file with the kubeconfig data
 			tmpDir := t.TempDir()
 			kubeconfigPath := filepath.Join(tmpDir, "kubeconfig")
-			err := os.WriteFile(kubeconfigPath, []byte(tc.kubeconfigData), 0644)
+			err := os.WriteFile(kubeconfigPath, []byte(tc.kubeconfigData), 0o644)
 			assert.NoError(t, err)
 
 			server, err := getKubeAPIServer(kubeconfigPath)
@@ -155,7 +155,7 @@ kind: Config
 `
 	tmpDir := t.TempDir()
 	kubeconfigPath := filepath.Join(tmpDir, "kubeconfig")
-	err := os.WriteFile(kubeconfigPath, []byte(multiClusterKubeconfig), 0644)
+	err := os.WriteFile(kubeconfigPath, []byte(multiClusterKubeconfig), 0o644)
 	assert.NoError(t, err)
 
 	server, err := getKubeAPIServer(kubeconfigPath)
@@ -202,7 +202,7 @@ kind: Config
 `
 			tmpDir := t.TempDir()
 			kubeconfigPath := filepath.Join(tmpDir, "kubeconfig")
-			err := os.WriteFile(kubeconfigPath, []byte(kubeconfig), 0644)
+			err := os.WriteFile(kubeconfigPath, []byte(kubeconfig), 0o644)
 			assert.NoError(t, err)
 
 			server, err := getKubeAPIServer(kubeconfigPath)

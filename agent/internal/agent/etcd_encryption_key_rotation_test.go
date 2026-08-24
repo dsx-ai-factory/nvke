@@ -647,18 +647,27 @@ func TestUpdateEncryptionConfig_NoOp(t *testing.T) {
 		keys []KeyConfig
 		op   *pb.UpdateEncryptionConfigRequest
 	}{
-		{"AddSecondaryKey already present",
+		{
+			"AddSecondaryKey already present",
 			[]KeyConfig{{Name: "kube-api-encryption-key-1", Secret: testKey1}},
 			&pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
-				AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey1}}}},
-		{"PromotePrimaryKey already primary",
+				AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey1},
+			}},
+		},
+		{
+			"PromotePrimaryKey already primary",
 			[]KeyConfig{{Name: "kube-api-encryption-key-1", Secret: testKey1}, {Name: "kube-api-encryption-key-2", Secret: testKey2}},
 			&pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_PromotePrimaryKey{
-				PromotePrimaryKey: &pb.PromotePrimaryKeyOperation{NewKey: testKey1}}}},
-		{"RemoveOldKeys already sole key",
+				PromotePrimaryKey: &pb.PromotePrimaryKeyOperation{NewKey: testKey1},
+			}},
+		},
+		{
+			"RemoveOldKeys already sole key",
 			[]KeyConfig{{Name: "kube-api-encryption-key-1", Secret: testKey1}},
 			&pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_RemoveOldKeys{
-				RemoveOldKeys: &pb.RemoveOldKeysOperation{PrimaryKey: testKey1}}}},
+				RemoveOldKeys: &pb.RemoveOldKeysOperation{PrimaryKey: testKey1},
+			}},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
@@ -681,25 +690,34 @@ func TestUpdateEncryptionConfig_WritesConfigAndWaits(t *testing.T) {
 		wantLen     int
 		wantPrimary string
 	}{
-		{"AddSecondaryKey",
+		{
+			"AddSecondaryKey",
 			[]KeyConfig{{Name: "kube-api-encryption-key-1", Secret: testKey1}},
 			&pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
-				AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2}}},
-			2, testKey1},
-		{"PromotePrimaryKey",
+				AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
+			}},
+			2, testKey1,
+		},
+		{
+			"PromotePrimaryKey",
 			[]KeyConfig{{Name: "kube-api-encryption-key-1", Secret: testKey1}, {Name: "kube-api-encryption-key-2", Secret: testKey2}},
 			&pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_PromotePrimaryKey{
-				PromotePrimaryKey: &pb.PromotePrimaryKeyOperation{NewKey: testKey2}}},
-			2, testKey2},
-		{"RemoveOldKeys",
+				PromotePrimaryKey: &pb.PromotePrimaryKeyOperation{NewKey: testKey2},
+			}},
+			2, testKey2,
+		},
+		{
+			"RemoveOldKeys",
 			[]KeyConfig{
 				{Name: "kube-api-encryption-key-1", Secret: testKey1},
 				{Name: "kube-api-encryption-key-2", Secret: testKey2},
 				{Name: "kube-api-encryption-key-3", Secret: testKey3},
 			},
 			&pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_RemoveOldKeys{
-				RemoveOldKeys: &pb.RemoveOldKeysOperation{PrimaryKey: testKey1}}},
-			1, testKey1},
+				RemoveOldKeys: &pb.RemoveOldKeysOperation{PrimaryKey: testKey1},
+			}},
+			1, testKey1,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tmpDir := t.TempDir()
@@ -785,7 +803,8 @@ func TestCrashRecovery_S1_StateFileWrittenConfigNotYet(t *testing.T) {
 	writeEncryptionConfigFixture(t, tmpDir, []KeyConfig{{Name: "kube-api-encryption-key-1", Secret: testKey1}})
 	srv := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), metricsWithReload(5))
 	req := &pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
-		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2}}}
+		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
+	}}
 	writeWALFixture(t, srv, 5, req)
 
 	_, err := srv.UpdateEncryptionConfig(context.Background(), req)
@@ -809,7 +828,8 @@ func TestCrashRecovery_S2_ConfigWrittenReloadPending(t *testing.T) {
 	}}
 	srv := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), seq)
 	req := &pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
-		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2}}}
+		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
+	}}
 	writeWALFixture(t, srv, 5, req)
 
 	_, err := srv.UpdateEncryptionConfig(context.Background(), req)
@@ -826,7 +846,8 @@ func TestCrashRecovery_S3_ReloadConfirmedStateFileStale(t *testing.T) {
 	})
 	srv := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), metricsWithCount(7))
 	req := &pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
-		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2}}}
+		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
+	}}
 	writeWALFixture(t, srv, 5, req) // R=7 > walN=5
 
 	_, err := srv.UpdateEncryptionConfig(context.Background(), req)
@@ -845,7 +866,8 @@ func TestCrashRecovery_StaleStateFileDifferentOperation(t *testing.T) {
 	})
 	srv := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), metricsWithCount(0))
 	addSecondaryReq := &pb.UpdateEncryptionConfigRequest{Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
-		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2}}}
+		AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
+	}}
 	writeWALFixture(t, srv, 5, addSecondaryReq) // opID "add:..."
 
 	// PromotePrimaryKey opID ("promote:...") mismatches → FailedPrecondition.
@@ -965,7 +987,8 @@ func TestKeyRotationSequence_E2E(t *testing.T) {
 	srv1 := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), metricsWithReload(0))
 	_, err := srv1.UpdateEncryptionConfig(ctx, &pb.UpdateEncryptionConfigRequest{
 		Operation: &pb.UpdateEncryptionConfigRequest_AddSecondaryKey{
-			AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2}},
+			AddSecondaryKey: &pb.AddSecondaryKeyOperation{NewKey: testKey2},
+		},
 	})
 	require.NoError(t, err)
 	assert.False(t, walFileExists(srv1))
@@ -979,7 +1002,8 @@ func TestKeyRotationSequence_E2E(t *testing.T) {
 	srv2 := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), metricsWithReload(1))
 	_, err = srv2.UpdateEncryptionConfig(ctx, &pb.UpdateEncryptionConfigRequest{
 		Operation: &pb.UpdateEncryptionConfigRequest_PromotePrimaryKey{
-			PromotePrimaryKey: &pb.PromotePrimaryKeyOperation{NewKey: testKey2}},
+			PromotePrimaryKey: &pb.PromotePrimaryKeyOperation{NewKey: testKey2},
+		},
 	})
 	require.NoError(t, err)
 	assert.False(t, walFileExists(srv2))
@@ -992,7 +1016,8 @@ func TestKeyRotationSequence_E2E(t *testing.T) {
 	srv3 := newEncryptionServer(t, tmpDir, ControlPlaneRole, NewMockK8sEncryptionRunner(), metricsWithReload(2))
 	_, err = srv3.UpdateEncryptionConfig(ctx, &pb.UpdateEncryptionConfigRequest{
 		Operation: &pb.UpdateEncryptionConfigRequest_RemoveOldKeys{
-			RemoveOldKeys: &pb.RemoveOldKeysOperation{PrimaryKey: testKey2}},
+			RemoveOldKeys: &pb.RemoveOldKeysOperation{PrimaryKey: testKey2},
+		},
 	})
 	require.NoError(t, err)
 	assert.False(t, walFileExists(srv3))

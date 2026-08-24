@@ -54,6 +54,7 @@ const (
 	ResetPhase           = "reset"
 	ReadyStatus          = "ready"
 	PendingStatus        = "pending"
+	InstallingStatus     = "installing"
 	ErrorStatus          = "error"
 	SuccessStatus        = "success"
 	NotReadyStatus       = "notready"
@@ -70,7 +71,28 @@ const (
 	ScriptStatusLimit       = 3
 	maxScriptLogOutputBytes = 4096
 	kubeletConfigPath       = "/var/lib/kubelet/config.yaml"
+
+	kubeSystemNamespace  = "kube-system"
+	kubeadmConfigMapName = "kubeadm-config"
+
+	kubeadmCmdInit = "init"
+	kubeadmCmdJoin = "join"
+
+	scriptStatusSuccess = "Success"
+
+	errMsgConfigRequired = "config is required"
+
+	preflightSeverityWarning = "warning"
+	preflightSeverityError   = "error"
+
+	localDevEnvVar = "NKE_LOCAL_DEV"
 )
+
+// isLocalDev reports whether the agent is running under the local development
+// harness, where some kubeadm SystemVerification checks cannot succeed.
+func isLocalDev() bool {
+	return os.Getenv(localDevEnvVar) == "true" //nolint:goconst // env-var value, not a shared domain term
+}
 
 var DefaultTigeraVersion *semver.Version = semver.MustParse("3.30.1")
 
@@ -537,8 +559,8 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 			ns.Phase = JoinPhase
 			return
 		}
-		joinArgs := []string{"join", "--config", "/tmp/kubeadm-join-config.yaml"}
-		if os.Getenv("NKE_LOCAL_DEV") == "true" {
+		joinArgs := []string{"join", "--config", "/tmp/kubeadm-join-config.yaml"} //nolint:goconst // kubeadm argv fragment; naming each CLI flag reads worse than the literal
+		if isLocalDev() {
 			// SystemVerification checks kernel config via `modprobe configs` + /proc/config.gz.
 			// On production bare-metal Ubuntu this succeeds (kernel ships with the configs module).
 			// In Docker containers it fails because the container namespace cannot load kernel modules.
@@ -615,10 +637,10 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 		}
 
 		args = []string{
-			"init",
+			"init", //nolint:goconst // kubeadm argv; kept literal so the arg list reads as the command line
 			fmt.Sprintf("--pod-network-cidr=%s", kubeadmPodNetworkCIDR(req.PodNetworkCidr)),
 			fmt.Sprintf("--control-plane-endpoint=%s", req.ControlPlaneEndpoint),
-			"--upload-certs",
+			"--upload-certs", //nolint:goconst // kubeadm argv fragment; naming each CLI flag reads worse than the literal
 		}
 
 		if req.ServiceCidr != "" {
@@ -687,7 +709,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 		}
 		// If it turns out we're using a config file, just overwrite the args that were built
 		args = []string{"init", "--config", configPath, "--upload-certs"}
-		if os.Getenv("NKE_LOCAL_DEV") == "true" {
+		if isLocalDev() {
 			// SystemVerification checks kernel config via `modprobe configs` + /proc/config.gz.
 			// On production bare-metal Ubuntu this succeeds (kernel ships with the configs module).
 			// In Docker containers it fails because the container namespace cannot load kernel modules.
@@ -982,7 +1004,7 @@ func (s *NodeAgentServer) ExecuteKubeadmReset(
 	defer s.Persister.Persist(s.NodeStatus) //nolint:all
 	s.NodeStatus.Phase = ResetPhase
 
-	cmdArgs := []string{"reset", "-f"}
+	cmdArgs := []string{"reset", "-f"} //nolint:goconst // kubeadm argv fragment; naming each CLI flag reads worse than the literal
 
 	// Append --skip-phases=<name> for each entry in the request. Used by the
 	// controller CP-teardown path to skip remove-etcd-member, which would otherwise hang in
@@ -1046,7 +1068,7 @@ func (s *NodeAgentServer) ExecuteKubeadmPreflight(
 	if req.Config == "" {
 		return &pb.KubeadmPreflightResponse{
 			Status:       ErrorStatus,
-			ErrorMessage: "config is required",
+			ErrorMessage: errMsgConfigRequired,
 		}, nil
 	}
 
@@ -1070,13 +1092,13 @@ func (s *NodeAgentServer) runKubeadmPreflight(
 	if strings.TrimSpace(configYAML) == "" {
 		return &pb.KubeadmPreflightResponse{
 			Status:       ErrorStatus,
-			ErrorMessage: "config is required",
+			ErrorMessage: errMsgConfigRequired,
 		}, nil
 	}
 
-	phase := "init"
+	phase := kubeadmCmdInit
 	if role == pb.KubeadmPreflightRole_KUBEADM_PREFLIGHT_ROLE_JOIN {
-		phase = "join"
+		phase = kubeadmCmdJoin
 	}
 
 	configPath := fmt.Sprintf("/tmp/kubeadm-%s-preflight-config.yaml", phase)
@@ -1139,7 +1161,7 @@ func parsePreflightOutput(output string) []*pb.PreflightCheckResult {
 			name, msg := parsePreflightLine(line, "[WARNING ")
 			results = append(results, &pb.PreflightCheckResult{
 				Name:     name,
-				Severity: "warning",
+				Severity: preflightSeverityWarning,
 				Message:  msg,
 			})
 
@@ -1148,7 +1170,7 @@ func parsePreflightOutput(output string) []*pb.PreflightCheckResult {
 			name, msg := parsePreflightLine(line, "[ERROR ")
 			results = append(results, &pb.PreflightCheckResult{
 				Name:     name,
-				Severity: "error",
+				Severity: preflightSeverityError,
 				Message:  msg,
 			})
 
@@ -1157,7 +1179,7 @@ func parsePreflightOutput(output string) []*pb.PreflightCheckResult {
 			msg := strings.TrimSpace(strings.TrimPrefix(line, "[preflight] WARNING:"))
 			results = append(results, &pb.PreflightCheckResult{
 				Name:     "Preflight",
-				Severity: "warning",
+				Severity: preflightSeverityWarning,
 				Message:  msg,
 			})
 		}
@@ -1472,7 +1494,7 @@ func (s *NodeAgentServer) executeScript(
 	response.Status = SuccessStatus
 	response.ErrorMessage = ""
 
-	script.Status = "Success"
+	script.Status = scriptStatusSuccess
 	s.addScript(script)
 	s.logScriptExecution("ExecuteScript", requestID, req, SuccessStatus, int32(exitCode), "", string(output))
 	return response, nil
@@ -1827,7 +1849,7 @@ func (s *NodeAgentServer) InstallBundle(
 		Name:        req.Name,
 		Version:     version,
 		InstallTime: time.Now().Format(time.RFC3339),
-		Status:      "installing",
+		Status:      InstallingStatus,
 		Source:      bundle.URL,
 	}
 
@@ -1972,7 +1994,7 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 				Name:        bundleReq.Name,
 				Version:     bundleReq.Version,
 				InstallTime: time.Now().Format(time.RFC3339),
-				Status:      "installing",
+				Status:      InstallingStatus,
 				Source:      bundle.URL,
 			}
 
@@ -2004,7 +2026,7 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 			RequestID:   requestID,
 			Name:        "deb-collection",
 			Source:      req.CollectionURL,
-			Status:      "installing",
+			Status:      InstallingStatus,
 			InstallTime: time.Now().Format(time.RFC3339),
 			Type:        "deb-collection",
 			Output:      strings.Join(packages, ", "),

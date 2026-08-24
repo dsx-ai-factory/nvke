@@ -28,6 +28,14 @@ const (
 	rbacAPIVersion      = "rbac.authorization.k8s.io/v1"
 	nkeRBACNamePrefix   = "nke:"
 	rbacAPIGroup        = "rbac.authorization.k8s.io"
+	// rbacVersionV1 is the version segment of rbacAPIVersion, used on its own
+	// in the GroupVersionResource entries in rbacKindSpecs.
+	rbacVersionV1 = "v1"
+
+	resourceClusterRoles        = "clusterroles"
+	resourceClusterRoleBindings = "clusterrolebindings"
+	resourceRoles               = "roles"
+	resourceRoleBindings        = "rolebindings"
 
 	rbacKindClusterRole        = "ClusterRole"
 	rbacKindClusterRoleBinding = "ClusterRoleBinding"
@@ -48,32 +56,32 @@ var rbacKindSpecs = map[string]rbacKindSpec{
 	rbacKindClusterRole: {
 		gvr: schema.GroupVersionResource{
 			Group:    rbacAPIGroup,
-			Version:  "v1",
-			Resource: "clusterroles",
+			Version:  rbacVersionV1,
+			Resource: resourceClusterRoles,
 		},
 		namespaced: false,
 	},
 	rbacKindClusterRoleBinding: {
 		gvr: schema.GroupVersionResource{
 			Group:    rbacAPIGroup,
-			Version:  "v1",
-			Resource: "clusterrolebindings",
+			Version:  rbacVersionV1,
+			Resource: resourceClusterRoleBindings,
 		},
 		namespaced: false,
 	},
 	rbacKindRole: {
 		gvr: schema.GroupVersionResource{
 			Group:    rbacAPIGroup,
-			Version:  "v1",
-			Resource: "roles",
+			Version:  rbacVersionV1,
+			Resource: resourceRoles,
 		},
 		namespaced: true,
 	},
 	rbacKindRoleBinding: {
 		gvr: schema.GroupVersionResource{
 			Group:    rbacAPIGroup,
-			Version:  "v1",
-			Resource: "rolebindings",
+			Version:  rbacVersionV1,
+			Resource: resourceRoleBindings,
 		},
 		namespaced: true,
 	},

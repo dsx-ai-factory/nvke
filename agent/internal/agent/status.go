@@ -286,7 +286,7 @@ func (p *JSONFilePersister) Persist(status *NodeStatus) error {
 
 	// Ensure cleanup on error
 	defer func() {
-		tmpFile.Close()   
+		tmpFile.Close()
 		os.Remove(tmpName)
 	}()
 

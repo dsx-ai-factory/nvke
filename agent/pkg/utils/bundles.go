@@ -133,11 +133,22 @@ const (
 	ArchAarch64 = "aarch64"
 	// ArchArm64 is the arm64 label that Go reports.
 	ArchArm64 = "arm64"
+	// ArchX8664 is the amd64 label that uname reports.
+	ArchX8664 = "x86_64"
+	// ArchAmd64 is the amd64 label that Go reports.
+	ArchAmd64 = "amd64"
+	// ArchNA labels a bundle that is architecture-independent.
+	ArchNA = "na"
+
+	// bundleNameAgent and bundleNameAttestation install themselves detached,
+	// because each one restarts the service running the install.
+	bundleNameAgent       = "agent"
+	bundleNameAttestation = "attestation"
 )
 
 var (
-	ArmArchLabels = []string{ArchArm64, ArchAarch64, "na"}
-	AmdArchLabels = []string{"amd64", "x86_64", "na"}
+	ArmArchLabels = []string{ArchArm64, ArchAarch64, ArchNA}
+	AmdArchLabels = []string{ArchAmd64, ArchX8664, ArchNA}
 )
 
 type Profile struct {
@@ -213,8 +224,8 @@ func (idx Index) Find(name string, version *semver.Version, architecture string)
 
 func GetMachineArchitecture() string {
 	switch runtime.GOARCH {
-	case "amd64":
-		return "x86_64"
+	case ArchAmd64:
+		return ArchX8664
 	case ArchArm64:
 		return ArchAarch64
 	default:
@@ -457,7 +468,7 @@ func InstallBundle(b *Bundle, runner CommandRunner, source *BundleSource) (strin
 		}
 	}
 
-	runDetached := (b.Name == "agent" || b.Name == "attestation")
+	runDetached := (b.Name == bundleNameAgent || b.Name == bundleNameAttestation)
 
 	installErr := error(nil)
 	output := ""

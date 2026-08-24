@@ -299,8 +299,8 @@ func GetOSVersionString() (string, error) {
 func GetArchString() string {
 	arch := GetMachineArchitecture()
 	switch arch {
-	case "x86_64":
-		return "amd64"
+	case ArchX8664:
+		return ArchAmd64
 	case ArchAarch64:
 		return ArchArm64
 	default:
