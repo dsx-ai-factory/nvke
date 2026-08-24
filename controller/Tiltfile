@@ -787,10 +787,10 @@ k8s_resource(
     pod_readiness="ignore",
 )
 
-# NKE API authentication scaffolding: the client namespaces and service
-# accounts the demo mints tokens for, the token-minter RBAC, and the auth config
-# the deployment mounts at /etc/nke/auth/auth.yaml. The NKE release depends on
-# this so the ConfigMap exists before the pod tries to mount it.
+# NKE API authentication scaffolding: the client namespaces and service accounts
+# the demo mints tokens for, the token-minter RBAC, and the auth config the
+# deployment mounts at /etc/nke/auth/auth.yaml. The NKE release depends on this
+# so the ConfigMap exists before the pod mounts it.
 k8s_resource(
     new_name="nke-auth-dev",
     labels=["1-infra"],
@@ -811,11 +811,11 @@ k8s_resource(
     pod_readiness="ignore",
 )
 
-# The SPIRE-attested client identity for the authentication specs: a namespace,
-# a service account, the ClusterSPIFFEID that gets it an SVID, and the probe
-# script test/e2e/authn_spire_test.go runs in a one-shot pod. Depends on
-# spire-server because a ClusterSPIFFEID needs the CRD and the controller
-# manager; nothing here is a pod, so the probe pod is not created by Tilt.
+# The SPIRE-attested client identity for the authentication specs: a namespace, a
+# service account, the ClusterSPIFFEID that gets it an SVID, and the probe script
+# test/e2e/authn_spire_test.go runs in a one-shot pod. Depends on spire-server
+# for the ClusterSPIFFEID CRD and controller manager. Tilt does not create the
+# probe pod; the spec does.
 k8s_resource(
     new_name="nke-spire-client",
     labels=["1-infra"],
@@ -931,10 +931,6 @@ _cwe_oidc_enabled = os.getenv(
 #   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
 #   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
 #
-# The chart omits AUTH_CONFIG_PATH rather than setting it empty when
-# authentication is off. NKE reads an empty value as unset and starts with
-# authentication off, so an empty one would render a deployment that looks
-# configured and authenticates nobody.
 _cwe_auth_enabled = os.getenv(
     "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "true")) == "true"
 _cwe_permissive_mode = os.getenv(
@@ -966,10 +962,8 @@ if _tilt_env.get("FWE_API_KEY", "") != "":
     })
 for _name in _required_cred_names:
     _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
-# AUTH_CONFIG_PATH and PERMISSIVE_MODE are the chart's to set, from apiAuth
-# below. They are not appended to the env list here: the chart owns the mount
-# they point at, and splitting the two across a --set-json env list and a chart
-# value is how they drift.
+# AUTH_CONFIG_PATH and PERMISSIVE_MODE come from the apiAuth values below, not
+# from this env list: the chart owns the mount they point at.
 
 _cwe_chart_flags = [
     "--create-namespace",

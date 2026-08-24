@@ -55,9 +55,9 @@ NKE_METRICS_LOCAL_PORT="${NKE_METRICS_LOCAL_PORT:-19090}"
 PROBE_PATH="${PROBE_PATH:-/api/clusters}"
 TOKEN_TTL="${TOKEN_TTL:-10m}"
 
-# nke-token.sh is a child process and reads these from the environment. Without
-# the export it would discover the audience from the kubeconfig's current
-# context while this script mints against KUBE_CONTEXT.
+# Exported because nke-token.sh runs as a child process and reads them from the
+# environment. Without this it would use the kubeconfig's current context while
+# this script targets KUBE_CONTEXT.
 export KUBE_CONTEXT CWE_NAMESPACE NKE_DEPLOYMENT
 
 ADMITTED_NS="nke-clients"
@@ -109,16 +109,15 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   exit 2
 fi
 
-# The audience comes from the live deployment, not a constant here, and through
-# nke-token.sh so there is only one parser to keep in step with the schema.
+# The audience comes from the live deployment, via nke-token.sh.
 AUDIENCE="$("${SCRIPT_DIR}/nke-token.sh" --audience)"
 [[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${CWE_NAMESPACE}/nke-auth-config"
 
 # --- mode detection -------------------------------------------------------
 
 if [[ -z "${MODE}" ]]; then
-  # By container name, not index: a sidecar can sort first, and reading its
-  # environment would report the wrong mode.
+  # By container name, not index: a sidecar can sort first, and its environment
+  # would report the wrong mode.
   container_env() {
     "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${CWE_NAMESPACE}" \
       -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null

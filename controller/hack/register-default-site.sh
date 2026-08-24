@@ -24,9 +24,9 @@ if [[ -n "${TOKEN}" ]]; then
   AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
 fi
 
-# Check for 404 specifically, not any failure. A bare `curl -fsS` existence
-# check reads a 401, a 500 or a refused connection as "the site does not exist"
-# and falls through to a POST that then fails confusingly.
+# Checks for 404 specifically. A bare `curl -fsS` would read a 401, a 500 or a
+# refused connection as "does not exist" and fall through to a POST that fails
+# confusingly.
 status="$(
   curl -sS -o /dev/null -w '%{http_code}' \
     "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" \

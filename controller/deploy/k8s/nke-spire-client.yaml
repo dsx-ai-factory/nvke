@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The SPIRE-attested client identity for NKE API authentication, and the probe it
-# runs. The Workload API issues a JWT-SVID only to an attested process, so proving
-# NKE accepts one needs a pod; test/e2e/authn_spire_test.go creates it.
+# runs. The Workload API issues a JWT-SVID only to an attested process, so this
+# needs a real pod; test/e2e/authn_spire_test.go creates it.
 #
 #   cd test/e2e && KUBECONFIG="$HOME/.kube/config" \
 #     go test . -count=1 -args -ginkgo.label-filter=authn-spire
@@ -35,13 +35,16 @@ metadata:
     app.kubernetes.io/part-of: cloud-workflow-engine
     nke.nvidia.com/purpose: nke-auth-dev
 ---
-# What makes SPIRE willing to issue this workload an SVID. The path segment is
-# /nke-e2e/ rather than NKE's own /nke-service/, so a probe sharing NKE's prefix
-# cannot pass without admit.spiffe's prefix being checked. className must match the
-# SPIRE controller manager's (the Tiltfile sets SPIRE_CLASS_NAME); a wrong one is
-# ignored silently and presents as a pod that never gets an SVID. This grants full
-# NKE API access to any pod matching both selectors below, which is acceptable
-# only on a dev cluster.
+# What makes SPIRE issue this workload an SVID.
+#
+# The path segment is /nke-e2e/ rather than NKE's own /nke-service/, so the probe
+# does not share NKE's prefix and admit.spiffe's prefix check is actually
+# exercised. className must match the SPIRE controller manager's (the Tiltfile
+# sets SPIRE_CLASS_NAME); a wrong value is ignored silently and shows up as a pod
+# that never gets an SVID.
+#
+# Any pod matching both selectors below gets full NKE API access. Dev clusters
+# only.
 apiVersion: spire.spiffe.io/v1alpha1
 kind: ClusterSPIFFEID
 metadata:
@@ -66,10 +69,12 @@ spec:
       nke.nvidia.com/purpose: nke-auth-dev
 ---
 # The probe fetches JWT-SVIDs over the Workload API socket, calls NKE's Service
-# with them, and writes one line to the termination message for the spec to assert
-# on. Two cases rather than one: a 200 alone would also come from an NKE with the
-# middleware out of the chain, so the 401 for an SVID differing only in "aud" rules
-# that out.
+# with them, and writes one line to the termination message for the spec to
+# assert on.
+#
+# It tests two cases because a 200 alone would also come from an NKE with the
+# middleware out of the chain. The second SVID differs only in "aud" and must be
+# rejected with a 401.
 apiVersion: v1
 kind: ConfigMap
 metadata:

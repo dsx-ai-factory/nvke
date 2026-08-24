@@ -91,11 +91,9 @@ jobs:
           echo "rendered ${count} resources"
           echo "### Chart renders ${count} resources" >> "${GITHUB_STEP_SUMMARY}"
 
-      # `helm template` proves the chart parses and renders something. It does
-      # not prove that enabling apiAuth yields a deployment that can
-      # authenticate, nor, the direction that matters on upgrade, that leaving it
-      # off renders AUTH_CONFIG_PATH absent rather than empty, which is an NKE
-      # that starts and authenticates nobody.
+      # Checks what apiAuth renders in each state: that enabling it produces a
+      # deployment which can authenticate, and that disabling it omits
+      # AUTH_CONFIG_PATH rather than setting it empty.
       - name: Assert what apiAuth renders
         run: ./controller/hack/chart-auth-assertions.sh
 

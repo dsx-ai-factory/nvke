@@ -1,9 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Local-development scaffolding for NKE API authentication. Development only: the
-# one permission a real deployment needs is the JWKS discovery ClusterRoleBinding,
-# which the chart renders from apiAuth.clusterIssuerDiscovery.
+# Local-development scaffolding for NKE API authentication. Development only. A
+# real deployment needs just the JWKS discovery ClusterRoleBinding, which the
+# chart renders from apiAuth.clusterIssuerDiscovery.
 #
 # Two client identities, so the negative cases can be exercised by hand:
 #
@@ -15,8 +15,8 @@
 #
 # See hack/nke-auth-demo.sh.
 ---
-# Tilt owns the release namespace rather than Helm's --create-namespace, because
-# it applies this file before the release runs. Same as nke-system-namespace.yaml.
+# Tilt owns the release namespace rather than Helm's --create-namespace: this
+# file is applied before the release runs. Same as nke-system-namespace.yaml.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -66,9 +66,9 @@ metadata:
     app.kubernetes.io/part-of: cloud-workflow-engine
     nke.nvidia.com/purpose: nke-auth-dev
 ---
-# The e2e suite mints its own tokens through the TokenRequest API. The two Roles
-# below are pinned by resourceNames to one service account each: token minting is
-# credential issuance, so a namespace-wide grant would be an escalation path.
+# The e2e suite mints its own tokens through the TokenRequest API. Each Role
+# below is pinned by resourceNames to a single service account, so neither grants
+# token minting across the namespace.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -152,8 +152,8 @@ subjects:
     namespace: nke-clients
 ---
 # The authentication configuration, mounted at /etc/nke/auth/auth.yaml by the
-# chart. Schema and the three states: internal/auth and the README. Only
-# auth.nke.nvidia.com/v1alpha1 is accepted -- the apiserver's own
+# chart. See internal/auth and the README for the schema. Only
+# auth.nke.nvidia.com/v1alpha1 is accepted: the apiserver's own
 # AuthenticationConfiguration shares the kind but not the group.
 apiVersion: v1
 kind: ConfigMap
@@ -173,9 +173,9 @@ data:
     issuers:
       - name: local-kubernetes
         issuer: "https://kubernetes.default.svc.cluster.local"
-        # One retrieval path for every issuer: fetch a JWKS over HTTPS. The
-        # cluster's own endpoint is not anonymous, which is what the bearer
-        # token and the issuer-discovery ClusterRole are for.
+        # Every issuer is fetched the same way, as a JWKS over HTTPS. The
+        # cluster's own endpoint is not anonymous, hence the bearer token and
+        # the issuer-discovery ClusterRole.
         jwks:
           uri: "https://kubernetes.default.svc/openid/v1/jwks"
           caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt

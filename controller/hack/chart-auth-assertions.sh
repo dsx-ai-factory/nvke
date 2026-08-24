@@ -2,9 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Assertions on what the chart renders for apiAuth. `helm lint` proves the chart
-# parses; it does not prove that enabling authentication yields a deployment that
-# can authenticate, nor that disabling it leaves AUTH_CONFIG_PATH absent.
+# Asserts what the chart renders for apiAuth in each state, which `helm lint`
+# does not check.
 #
 # Needs only helm. Resolves the chart relative to this script, so it runs from
 # anywhere; CHART overrides that, which is how the workflow points it at
@@ -40,9 +39,8 @@ absent() {
 }
 
 # pair <description> <key> <value> <rendered>
-# Asserts value on the line AFTER key. Greping the whole manifest for a bare
-# `value: "true"` matches unrelated env vars -- an enforcing render carries
-# three -- so the value checks passed either way.
+# Asserts value on the line after key. A bare `value: "true"` matches unrelated
+# env vars, so checking key and value independently would pass either way.
 pair() {
   if grep -A1 "name: $2" <<<"$4" | grep -q "value: \"$3\""; then
     printf '  ok    %s\n' "$1"
@@ -54,9 +52,7 @@ pair() {
 
 echo "apiAuth disabled (the default):"
 out="$(render)"
-# ABSENT, not empty. NKE reads an empty AUTH_CONFIG_PATH as unset and starts
-# with authentication off, so an empty value would render a deployment that looks
-# configured and authenticates nobody.
+# Absent, not empty: NKE reads an empty AUTH_CONFIG_PATH as unset.
 absent "AUTH_CONFIG_PATH is not set at all"   'AUTH_CONFIG_PATH'                     "${out}"
 absent "PERMISSIVE_MODE is not set"           'PERMISSIVE_MODE'                      "${out}"
 absent "no config volume"                     'name: nke-auth-config'                "${out}"

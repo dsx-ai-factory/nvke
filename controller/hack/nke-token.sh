@@ -8,8 +8,8 @@
 #   TOKEN="$(hack/nke-token.sh)"
 #   curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/sites"
 #
-# Empty output is success, not failure: it means AUTH_CONFIG_PATH is unset and a
-# bare request is the right one. Any real problem is fatal and says why on stderr.
+# Empty output means authentication is off and a bare request is correct. Real
+# failures exit non-zero and say why on stderr.
 #
 # Environment:
 #   KUBE_CONTEXT               kube context (default: kubeconfig current-context)
@@ -30,7 +30,7 @@ NKE_TOKEN_NAMESPACE="${NKE_TOKEN_NAMESPACE:-nke-clients}"
 NKE_TOKEN_SERVICE_ACCOUNT="${NKE_TOKEN_SERVICE_ACCOUNT:-nke-client}"
 NKE_TOKEN_TTL="${NKE_TOKEN_TTL:-30m}"
 
-# An explicit token wins outright, including a deliberately wrong one.
+# An explicit token wins, including an invalid one.
 if [[ -n "${NKE_AUTH_TOKEN:-}" ]]; then
   printf '%s' "${NKE_AUTH_TOKEN}"
   exit 0
@@ -44,10 +44,11 @@ KUBECTL=(kubectl)
 
 # --- audience ---------------------------------------------------------------
 
-# Read from the deployment's own config rather than a constant: a token minted
-# for the wrong audience fails as a 401 indistinguishable from sending none.
-# Matching is any-of, so the first entry will do. Handles the flow and block forms
-# and strips quotes, which would otherwise leak into the minted token's "aud".
+# Reads the audience from the live deployment. A token minted for the wrong one
+# is rejected with a 401 that looks identical to sending no token at all.
+#
+# Matching is any-of, so the first entry will do. Handles the flow and block
+# forms, and strips quotes that would otherwise land in the token's "aud".
 cwe_discover_audience() {
   "${KUBECTL[@]}" get configmap nke-auth-config -n "${CWE_NAMESPACE}" \
     -o jsonpath='{.data.auth\.yaml}' 2>/dev/null \
@@ -73,18 +74,17 @@ cwe_discover_audience() {
 
 # --audience lets other scripts reuse this parser rather than growing a copy.
 if [[ "${1:-}" == "--audience" ]]; then
-  # Guarded, not printed straight out: a command substitution in an argument
-  # list does not fail the script under set -e, so an empty discovery would
-  # exit 0 and the caller would carry on with no audience.
+  # Checked before use: a command substitution inside an argument list does not
+  # trip set -e, so an empty result would pass through silently.
   audience="${NKE_AUDIENCE:-$(cwe_discover_audience)}"
   [[ -n "${audience}" ]] || die "no audience in configmap ${CWE_NAMESPACE}/nke-auth-config; set NKE_AUDIENCE to override"
   printf '%s' "${audience}"
   exit 0
 fi
 
-# Is NKE authenticating? AUTH_CONFIG_PATH on the Deployment, not the ConfigMap's
-# existence: Tilt applies the ConfigMap unconditionally. A lookup failure is
-# fatal, not "authentication is off".
+# Reads AUTH_CONFIG_PATH from the Deployment rather than checking whether the
+# ConfigMap exists, which Tilt applies either way. A lookup failure is fatal,
+# not "authentication is off".
 auth_config_path="$(
   "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${CWE_NAMESPACE}" \
     -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='AUTH_CONFIG_PATH')].value}" 2>&1
@@ -105,9 +105,9 @@ fi
 
 # --- mint -------------------------------------------------------------------
 
-# TokenRequest, not a long-lived Secret: NKE accepts only audience-scoped tokens
-# and a legacy Secret carries no audience. Needs `create` on
-# serviceaccounts/token, which deploy/k8s/nke-auth-dev.yaml grants.
+# Uses TokenRequest: NKE accepts only audience-scoped tokens, and a legacy
+# Secret carries no audience. Needs `create` on serviceaccounts/token, granted
+# by deploy/k8s/nke-auth-dev.yaml.
 token="$(
   "${KUBECTL[@]}" create token "${NKE_TOKEN_SERVICE_ACCOUNT}" \
     -n "${NKE_TOKEN_NAMESPACE}" \

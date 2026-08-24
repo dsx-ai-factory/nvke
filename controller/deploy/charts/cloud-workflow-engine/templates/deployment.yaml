@@ -355,12 +355,8 @@ spec:
                   optional: false
             {{- end }}
             {{- if .Values.apiAuth.enabled }}
-            # Absent when disabled, never empty. NKE reads an empty
-            # AUTH_CONFIG_PATH exactly as unset and starts with authentication
-            # off, so an empty value fails nothing: it renders a deployment that
-            # looks configured and authenticates nobody. Presence is the signal,
-            # and test/e2e reads it that way when it decides which mode a
-            # deployment is in.
+            # Omitted when disabled, never set empty: NKE reads an empty value as
+            # unset, so the deployment would look configured and authenticate nobody.
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "cloud-workflow-engine.apiAuth.mountPath" .) (include "cloud-workflow-engine.apiAuth.configFile" .) | quote }}
             - name: PERMISSIVE_MODE
@@ -392,8 +388,8 @@ spec:
             secretName: {{ .Values.teleport.identitySecretName }}
         {{- end }}
         {{- if .Values.apiAuth.enabled }}
-        # Deliberately not optional: a missing ConfigMap should leave the pod
-        # stuck mounting, where the cause is named.
+        # Not optional: a missing ConfigMap holds the pod in ContainerCreating
+        # with the name in its events, rather than starting it unconfigured.
         - name: nke-auth-config
           configMap:
             name: {{ required "apiAuth.configMap.name is required when apiAuth.enabled=true" .Values.apiAuth.configMap.name }}

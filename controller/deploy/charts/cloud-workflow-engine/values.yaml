@@ -288,9 +288,8 @@ nkeOIDCAuth:
     # -- Key in the Secret containing the OIDC CA bundle.
     key: ""
 
-# NKE API authentication. This chart mounts the configuration but does not write
-# it: the audiences and issuers live in a ConfigMap created out of band, so the
-# schema has one definition, in internal/auth. See the README.
+# NKE API authentication. The chart mounts the configuration ConfigMap; it does
+# not create it. See the README for the schema.
 apiAuth:
   # -- Enable NKE API authentication.
   enabled: false
@@ -299,9 +298,7 @@ apiAuth:
   permissive: false
   configMap:
     # -- ConfigMap holding the authentication configuration, keyed `auth.yaml`.
-    # This chart mounts it but does not create it. Setting this to an empty
-    # string with apiAuth.enabled=true is a render error rather than a
-    # deployment with a nameless volume.
+    # Required when apiAuth.enabled=true; an empty name fails the render.
     name: nke-auth-config
   # -- Bind system:service-account-issuer-discovery so NKE can read the cluster's
   # own JWKS. Needed only for an issuer using `keys: {kubernetes: {}}`.
