@@ -72,6 +72,21 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/*
 Create the name of the service account to use
 */}}
+{{/*
+Where the authentication ConfigMap is mounted, and the file within it.
+
+Not values: the chart owns both ends. AUTH_CONFIG_PATH is these two joined, and
+nothing outside the pod observes either, so making them configurable would only
+create a way for the mount and the path to disagree.
+*/}}
+{{- define "cloud-workflow-engine.apiAuth.mountPath" -}}
+/etc/nke/auth
+{{- end }}
+
+{{- define "cloud-workflow-engine.apiAuth.configFile" -}}
+auth.yaml
+{{- end }}
+
 {{- define "cloud-workflow-engine.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
 {{- default (include "cloud-workflow-engine.fullname" .) .Values.serviceAccount.name }}

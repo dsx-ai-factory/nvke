@@ -78,9 +78,10 @@ out="$(render --set apiAuth.enabled=true --set apiAuth.clusterIssuerDiscovery=fa
 absent "drops the cluster-scoped grant"       'system:service-account-issuer-discovery' "${out}"
 want   "but the rest of apiAuth still renders" 'AUTH_CONFIG_PATH'                    "${out}"
 
-echo "mountPath and key flow into AUTH_CONFIG_PATH:"
-out="$(render --set apiAuth.enabled=true --set apiAuth.mountPath=/custom --set apiAuth.configMap.key=other.yaml)"
-want   "path is built from both"              'value: "/custom/other.yaml"'          "${out}"
+echo "the mount path and file name are fixed by the chart:"
+out="$(render --set apiAuth.enabled=true)"
+want   "mounted at the path AUTH_CONFIG_PATH names" 'mountPath: "/etc/nke/auth"'     "${out}"
+want   "and the two agree"                    'value: "/etc/nke/auth/auth.yaml"'     "${out}"
 
 echo "a named ConfigMap is what gets mounted:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.configMap.name=my-auth)"

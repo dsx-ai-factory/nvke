@@ -298,13 +298,11 @@ apiAuth:
   # Watch nke_auth_requests_total{outcome="would_reject"} before enforcing.
   permissive: false
   configMap:
-    # -- ConfigMap holding the authentication configuration. Required when
-    # enabled. Not created by this chart.
+    # -- ConfigMap holding the authentication configuration, keyed `auth.yaml`.
+    # This chart mounts it but does not create it. Setting this to an empty
+    # string with apiAuth.enabled=true is a render error rather than a
+    # deployment with a nameless volume.
     name: nke-auth-config
-    # -- Key within it. Becomes the file name under mountPath.
-    key: auth.yaml
-  # -- Directory the ConfigMap is mounted at.
-  mountPath: /etc/nke/auth
   # -- Bind system:service-account-issuer-discovery so NKE can read the cluster's
   # own JWKS. Needed only for an issuer using `keys: {kubernetes: {}}`.
   clusterIssuerDiscovery: true
