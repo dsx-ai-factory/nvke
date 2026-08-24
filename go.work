@@ -14,9 +14,9 @@ use (
 	./cli
 	./controller
 	./controller/api
-	./controller/nico-vms
 	./controller/hack/capd-reboot-controller
 	./controller/hack/nico-mock
+	./controller/nico-vms
 	./controller/test/e2e
 	./os-image
 )
