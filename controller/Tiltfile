@@ -931,9 +931,10 @@ _cwe_oidc_enabled = os.getenv(
 #   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
 #   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
 #
-# AUTH_CONFIG_PATH must be unset rather than empty when authentication is off:
-# set-but-unreadable is a startup failure by design, so an empty value would
-# turn a disabled deployment into a crash loop.
+# The chart omits AUTH_CONFIG_PATH rather than setting it empty when
+# authentication is off. NKE reads an empty value as unset and starts with
+# authentication off, so an empty one would render a deployment that looks
+# configured and authenticates nobody.
 _cwe_auth_enabled = os.getenv(
     "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "true")) == "true"
 _cwe_permissive_mode = os.getenv(
