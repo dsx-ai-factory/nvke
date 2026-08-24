@@ -462,14 +462,14 @@ platform responsibility.
 
 ### Local Development
 
-You need no identity infrastructure to work on this. The cluster's own API server
-is already an issuer and the service account tokens it signs are already JWTs, so
-NKE verifies them like any other issuer — which is also the path the e2e suite
-uses, so what you exercise locally is what ships.
+You don't need identity infrastructure to work on this. The cluster's own API
+server is already an issuer and the service account tokens it signs are already
+JWTs, so NKE verifies them like any other issuer. This is the path the e2e suite
+uses.
 
 `tilt up` deploys an enforcing NKE with the config in
 `deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
-and the RBAC below.
+and the binding described under RBAC Prerequisite.
 
 ```bash
 ./hack/nke-auth-demo.sh    # four credentials, prints the status code for each
@@ -563,8 +563,10 @@ issuers:
 
 An issuer pointing at the cluster's own `/openid/v1/jwks` needs NKE's
 ServiceAccount bound to `system:service-account-issuer-discovery`. That endpoint
-is not anonymous, and without the binding an enforcing NKE will not start. The
-chart creates the binding when `apiAuth.clusterIssuerDiscovery` is true.
+is not anonymous, and Kubernetes ships the ClusterRole bound to nobody, so
+without this an enforcing NKE will not start.
+
+The chart creates the binding when `apiAuth.clusterIssuerDiscovery` is true.
 Otherwise:
 
 ```bash
@@ -572,9 +574,6 @@ kubectl create clusterrolebinding nke-service-account-issuer-discovery \
   --clusterrole=system:service-account-issuer-discovery \
   --serviceaccount=cloud-workflow-engine:cloud-workflow-engine
 ```
-
-Kubernetes ships the ClusterRole but binds it to nobody, so this is required
-wherever an issuer reads the cluster's own JWKS.
 
 ### Rejections and Status Codes
 
