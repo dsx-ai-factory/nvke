@@ -9,14 +9,9 @@ info:
 servers:
   - url: /api
 
-# Every operation in this file requires a bearer token. Declared once here rather
-# than on each operation, so a newly added one is covered by default.
-#
-# The endpoints that need no token -- /healthz, /readyz, /api/version, /api/docs/
-# and /openapi.yaml -- do not appear in this file at all. They are registered
-# directly on the mux in internal/server, and internal/auth/routes.go is the
-# authoritative list. That is why no operation below needs `security: []`, which
-# is how one would opt out if it ever did.
+# Declared once rather than per operation, so a new operation requires a token by
+# default. The endpoints that need no token are not in this file at all;
+# internal/server registers them and internal/auth/routes.go is the list.
 security:
   - bearerAuth: []
 
@@ -679,10 +674,8 @@ paths:
 
 components:
   responses:
-    # The two statuses every operation can answer. They come from the
-    # authentication middleware, which runs before routing, rather than from any
-    # handler -- so they belong to every operation equally and are referenced
-    # rather than repeated.
+    # Both come from the authentication middleware, which runs before routing, so
+    # every operation can answer them.
     Unauthorized:
       description: No valid bearer token was presented.
       content:
@@ -697,9 +690,8 @@ components:
             $ref: "#/components/schemas/GenericError"
 
   securitySchemes:
-    # Any JWT signed by an issuer the deployment is configured to trust. Which
-    # issuers those are, and which subjects they admit, is operator configuration
-    # rather than part of this contract -- see internal/auth and the README.
+    # Any JWT signed by a trusted issuer. Which issuers, and which subjects they
+    # admit, is operator configuration; see internal/auth and the README.
     bearerAuth:
       type: http
       scheme: bearer
