@@ -355,9 +355,12 @@ spec:
                   optional: false
             {{- end }}
             {{- if .Values.apiAuth.enabled }}
-            # When disabled this must be ABSENT rather than empty: NKE treats a
-            # set-but-unreadable path as a startup failure, so an empty value
-            # would crash-loop a deployment with authentication off.
+            # Absent when disabled, never empty. NKE reads an empty
+            # AUTH_CONFIG_PATH exactly as unset and starts with authentication
+            # off, so an empty value fails nothing: it renders a deployment that
+            # looks configured and authenticates nobody. Presence is the signal,
+            # and test/e2e reads it that way when it decides which mode a
+            # deployment is in.
             - name: AUTH_CONFIG_PATH
               value: {{ printf "%s/%s" (include "cloud-workflow-engine.apiAuth.mountPath" .) (include "cloud-workflow-engine.apiAuth.configFile" .) | quote }}
             - name: PERMISSIVE_MODE

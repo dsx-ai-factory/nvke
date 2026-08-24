@@ -54,8 +54,9 @@ pair() {
 
 echo "apiAuth disabled (the default):"
 out="$(render)"
-# ABSENT, not empty: an empty AUTH_CONFIG_PATH crash-loops the deployment,
-# because NKE treats a set-but-unreadable path as a startup failure.
+# ABSENT, not empty. NKE reads an empty AUTH_CONFIG_PATH as unset and starts
+# with authentication off, so an empty value would render a deployment that looks
+# configured and authenticates nobody.
 absent "AUTH_CONFIG_PATH is not set at all"   'AUTH_CONFIG_PATH'                     "${out}"
 absent "PERMISSIVE_MODE is not set"           'PERMISSIVE_MODE'                      "${out}"
 absent "no config volume"                     'name: nke-auth-config'                "${out}"

@@ -72,6 +72,14 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{/*
 Create the name of the service account to use
 */}}
+{{- define "cloud-workflow-engine.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "cloud-workflow-engine.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
 {{/*
 Where the authentication ConfigMap is mounted, and the file within it.
 
@@ -85,12 +93,4 @@ create a way for the mount and the path to disagree.
 
 {{- define "cloud-workflow-engine.apiAuth.configFile" -}}
 auth.yaml
-{{- end }}
-
-{{- define "cloud-workflow-engine.serviceAccountName" -}}
-{{- if .Values.serviceAccount.create }}
-{{- default (include "cloud-workflow-engine.fullname" .) .Values.serviceAccount.name }}
-{{- else }}
-{{- default "default" .Values.serviceAccount.name }}
-{{- end }}
 {{- end }}
