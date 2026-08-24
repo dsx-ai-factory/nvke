@@ -18,8 +18,6 @@ const (
 	// and JavaScript from below this path, so the whole subtree must be anonymous
 	// or the docs page does not render.
 	swaggerUIPrefix = "/api/docs/"
-
-	rootPath = "/"
 )
 
 // IsAnonymousRequestPath reports whether a request's path is exempt from
@@ -42,7 +40,7 @@ func IsAnonymousRequestPath(escaped, decoded string) bool {
 func normalizePath(p string) string {
 	if p == "" {
 		// path.Clean("") is ".", which no rule here should see.
-		return rootPath
+		return "/"
 	}
 	return path.Clean(p)
 }
