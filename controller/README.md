@@ -491,8 +491,20 @@ NKE_PERMISSIVE_MODE=true tilt up
 
 ### Enabling Authentication
 
-Two environment variables, read at startup. Changing either, or the configuration
-file, needs a pod restart.
+With the Helm chart, set the `apiAuth` values:
+
+```yaml
+apiAuth:
+  enabled: true
+  permissive: false
+  configMap:
+    name: nke-auth-config       # you create this; the chart only mounts it
+  clusterIssuerDiscovery: true  # see RBAC Prerequisite below
+```
+
+The chart renders those into the two environment variables NKE reads. Set them
+directly if you deploy without the chart. Both are read at startup, so changing
+either, or the configuration file, needs a pod restart.
 
 | State | `AUTH_CONFIG_PATH` | `PERMISSIVE_MODE` | Result |
 | --- | --- | --- | --- |
@@ -513,9 +525,19 @@ starting with authentication disabled.
 
 ### Authentication Configuration
 
-One file, mounted at `AUTH_CONFIG_PATH`. `deploy/k8s/nke-auth-dev.yaml` is a
-working example; the full schema and every validation rule live in
-`internal/auth/config.go`. The shape:
+One file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap the chart mounts but
+does not create. Create it first, keyed `auth.yaml`, and point
+`apiAuth.configMap.name` at it:
+
+```bash
+# In the release namespace. The key must be auth.yaml: the chart mounts the
+# ConfigMap at /etc/nke/auth and points AUTH_CONFIG_PATH at auth.yaml within it.
+kubectl create configmap nke-auth-config -n "${RELEASE_NAMESPACE}" \
+  --from-file=auth.yaml=./auth.yaml
+```
+
+`deploy/k8s/nke-auth-dev.yaml` is a working example; the full schema and every
+validation rule live in `internal/auth/config.go`. The shape:
 
 ```yaml
 apiVersion: auth.nke.nvidia.com/v1alpha1
@@ -575,6 +597,33 @@ kubectl create clusterrolebinding nke-service-account-issuer-discovery \
   --clusterrole=system:service-account-issuer-discovery \
   --serviceaccount=cloud-workflow-engine:cloud-workflow-engine
 ```
+
+### Calling the API from Scripts and CI
+
+`hack/nke-token.sh` prints a bearer token, or nothing when authentication is off,
+so the same call works either way:
+
+```bash
+TOKEN="$(hack/nke-token.sh)"
+curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/sites"
+```
+
+It reads the audience from the running Deployment and mints an audience-scoped
+token through the TokenRequest API, so the caller needs `create` on
+`serviceaccounts/token` for the service account being minted for.
+`deploy/k8s/nke-auth-dev.yaml` grants that locally.
+
+Useful overrides:
+
+| | |
+| --- | --- |
+| `NKE_AUTH_TOKEN` | Use this token and skip discovery. For CI that already holds one. |
+| `NKE_AUDIENCE` | Mint for this audience instead of reading it from the Deployment. |
+| `NKE_TOKEN_SERVICE_ACCOUNT`, `NKE_TOKEN_NAMESPACE` | Mint for a different identity. |
+| `NKE_TOKEN_TTL` | Requested lifetime. Defaults to 30m. |
+
+The bootstrap scripts under `hack/` call it themselves, so `create-capd-cluster.sh`
+and friends keep working whether authentication is on or off.
 
 ### Rejections and Status Codes
 
