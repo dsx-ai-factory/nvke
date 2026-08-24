@@ -1,0 +1,21 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package cwedeploy
+
+import "embed"
+
+// manifestsFS embeds the Helm values files this package installs Postgres,
+// Temporal and CWE with. Embedded rather than read from controller/ at
+// runtime: cli is a separate Go module from controller, and nkectl ships as a
+// standalone binary that may run far from a monorepo checkout. See the
+// comments in manifests/*.yaml for where each file was ported from.
+//
+//go:embed manifests/*.yaml
+var manifestsFS embed.FS
+
+const (
+	postgresValuesFile = "manifests/postgres-values.yaml"
+	temporalValuesFile = "manifests/temporal-values.yaml"
+	cweValuesFile      = "manifests/cwe-values.yaml"
+)

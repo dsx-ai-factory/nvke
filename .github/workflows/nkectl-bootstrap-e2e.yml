@@ -35,6 +35,21 @@
 # cli/e2e/bootstrap/run.sh's stages are added one at a time alongside the
 # bootstrap-site code they exercise, so the job is expected to stay green
 # throughout rather than going red until some later change makes it pass.
+#
+# Since cli/internal/cwedeploy (NKX-13889), the job also deploys Postgres,
+# Temporal and CWE onto the ephemeral cluster and asserts CWE reports healthy
+# on /readyz -- see run.sh's Stage 2. The CWE image comes from
+# image-nvcr.yml, which publishes nvcr.io/<NKE_NGC_ORG>/controller:edge on
+# every push to main; there is no other canonical build of it yet (the
+# GitLab spike this was ported from, cloud-workflow-engine!995, has not
+# merged, so there is nothing there to pull either). This job logs in to
+# nvcr.io using the same `nvcr` environment and NGC_REGISTRY_TOKEN_NKE secret
+# image-nvcr.yml uses, and pulls the image on the runner's Docker daemon --
+# nkectl itself never authenticates to a registry; it only `kind
+# load`s an image already present locally (see cmd/nkectl/bootstrap.go's
+# ensureImageAvailable). `edge` is a moving tag, not a version pin; this is a
+# known rough edge until controller/v* release tags exist and this can pin a
+# real version instead (see NKX-13889).
 name: nkectl bootstrap e2e
 
 # See go-build.yml for why the push path list is duplicated by hand instead of
@@ -63,6 +78,9 @@ jobs:
     name: e2e
     runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
+    # Grants secrets.NGC_REGISTRY_TOKEN_NKE and vars.NKE_NGC_ORG, same as
+    # image-nvcr.yml -- this job only reads from nvcr.io, it never publishes.
+    environment: nvcr
     # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
     # bundle fetch, local agent compile) plus the thin derivation on top has
     # not yet been timed end to end in this CI lane.
@@ -84,6 +102,15 @@ jobs:
             go.work.sum
             **/go.sum
 
+      # Same pinned version as capd-e2e.yml: cli/internal/cwedeploy shells
+      # out to `helm` directly, so this action installs the binary rather
+      # than the Helm chart-testing tooling `helm/kind-action` below would
+      # otherwise pull in.
+      - name: Set up Helm
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: v3.20.2
+
       # Same pinned version and install pattern as capd-e2e.yml, for the same
       # reason: install_only, since this suite drives kind itself rather than
       # delegating cluster creation to the action.
@@ -94,6 +121,37 @@ jobs:
           kubectl_version: v1.36.0
           install_only: true
 
+      # `$oauthtoken` is NGC's literal username, not a variable reference.
+      # Same login image-nvcr.yml performs to publish; this job only pulls.
+      - name: Log in to NVCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: nvcr.io
+          username: "$oauthtoken"
+          password: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+
+      # Pulled here, once, on the runner's own Docker daemon -- nkectl itself
+      # never talks to a registry. cmd/nkectl/bootstrap.go's
+      # ensureImageAvailable finds this image already cached and `kind
+      # load`s it straight into the ephemeral cluster.
+      - name: Resolve and pull the CWE image
+        id: cwe-image
+        shell: bash
+        env:
+          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NKE_NGC_ORG}" ]]; then
+            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+            exit 1
+          fi
+          image="nvcr.io/${NKE_NGC_ORG}/controller:edge"
+          echo "Pulling ${image} (published by image-nvcr.yml on every push to main)"
+          docker pull "${image}"
+          echo "image=${image}" >> "${GITHUB_OUTPUT}"
+
       - name: Run nkectl bootstrap e2e
         working-directory: cli
+        env:
+          NKECTL_CWE_IMAGE: ${{ steps.cwe-image.outputs.image }}
         run: make test-e2e-bootstrap

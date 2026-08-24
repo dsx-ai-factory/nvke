@@ -14,6 +14,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/NVIDIA/nke/cli/internal/bootstrapengine"
+	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
 	"github.com/NVIDIA/nke/cli/internal/inventory"
 )
 
@@ -51,6 +52,11 @@ type bootstrapSiteOptions struct {
 	// runner); tests set it to a fake so this command can be exercised
 	// without a real kind binary or container runtime.
 	bootstrapRunner bootstrapengine.CommandRunner
+
+	// cweRunner overrides the CommandRunner cwedeploy uses (helm/kubectl).
+	// Nil in production; tests set it to a fake for the same reason as
+	// bootstrapRunner above.
+	cweRunner cwedeploy.CommandRunner
 }
 
 func newBootstrapSiteCmd() *cobra.Command {
@@ -155,11 +161,79 @@ func runBootstrapSite(opts *bootstrapSiteOptions) error {
 		}
 	}()
 
-	// Step 3+ (subsequent tickets): deploy CWE onto the bootstrap cluster and
-	// dispatch the init/join/untaint workflows. Stubbed for now so the
-	// command is runnable end-to-end while the rest of the bootstrap core is
-	// ported.
+	// Step 3: deploy Postgres, Temporal and CWE onto the bootstrap cluster and
+	// wait for CWE to report healthy on /readyz before going any further —
+	// there is nothing to dispatch a workflow to otherwise.
+	if err := deployAndWaitForCWE(ctx, engine, cluster, opts.cweRunner, logger); err != nil {
+		return err
+	}
+
+	// Step 4+ (subsequent tickets): dispatch the init/join/untaint workflows
+	// against the now-healthy CWE. Stubbed for now so the command is runnable
+	// end-to-end while the rest of the bootstrap core is ported.
 	return errors.New("bootstrap dispatch is not yet implemented; re-run with --dry-run to validate the inventory")
+}
+
+// deployAndWaitForCWE installs Postgres, Temporal and CWE onto cluster and
+// polls CWE's /readyz until it reports healthy or a bounded timeout elapses.
+//
+// The CWE image is loaded into the kind cluster directly (bootstrapengine's
+// existing Engine.LoadImage, via `kind load docker-image`) rather than
+// pulled from inside the cluster: the cluster is ephemeral and has no image
+// pull secret configured, and this way authenticating to whatever registry
+// hosts the image (see cwedeploy.Config.CWEImage's doc comment) is the
+// caller's problem, not nkectl's — `docker login` once on the host, same as
+// any other pull, before running this command.
+func deployAndWaitForCWE(
+	ctx context.Context,
+	engine *bootstrapengine.Engine,
+	cluster *bootstrapengine.Cluster,
+	cweRunner cwedeploy.CommandRunner,
+	logger *slog.Logger,
+) error {
+	cweCfg := cwedeploy.DefaultConfig()
+	if cweCfg.CWEImage == "" {
+		return errors.New("NKECTL_CWE_IMAGE is not set; it must name the CWE image to deploy " +
+			"(e.g. nvcr.io/<org>/controller:edge — see .github/workflows/image-nvcr.yml)")
+	}
+
+	if err := ensureImageAvailable(ctx, engine, cluster, cweCfg.CWEImage, logger); err != nil {
+		return fmt.Errorf("loading cwe image into bootstrap kind cluster: %w", err)
+	}
+
+	cwe := cwedeploy.New(cweRunner, logger)
+	logger.Info("deploying cwe onto bootstrap kind cluster", "cluster", cluster.Name, "image", cweCfg.CWEImage)
+	if err := cwe.Deploy(ctx, cluster.KubeconfigPath, cweCfg); err != nil {
+		return fmt.Errorf("deploying cwe: %w", err)
+	}
+
+	logger.Info("waiting for cwe to report healthy", "timeout", cweCfg.ReadyTimeout)
+	if err := cwe.WaitReady(ctx, cluster.KubeconfigPath, cweCfg.ReadyTimeout); err != nil {
+		return fmt.Errorf("waiting for cwe to become healthy: %w", err)
+	}
+	logger.Info("cwe deployment healthy")
+	return nil
+}
+
+// ensureImageAvailable makes sure image is present in the local container
+// runtime's image store before handing it to Engine.LoadImage, pulling it if
+// it is not already cached from a previous run.
+func ensureImageAvailable(
+	ctx context.Context,
+	engine *bootstrapengine.Engine,
+	cluster *bootstrapengine.Cluster,
+	image string,
+	logger *slog.Logger,
+) error {
+	if _, err := engine.Runner.Run(ctx, nil, "docker", "image", "inspect", image); err != nil {
+		logger.Info("cwe image not cached locally; pulling", "image", image)
+		if out, err := engine.Runner.Run(ctx, nil, "docker", "pull", image); err != nil {
+			return fmt.Errorf("docker pull %s: %w\n%s\n"+
+				"if this is an authentication failure, log in to the image's registry "+
+				"(e.g. `docker login nvcr.io`) and re-run", image, err, out)
+		}
+	}
+	return engine.LoadImage(ctx, cluster.Name, cluster.Provider, image)
 }
 
 // dumpInventory prints the loaded, defaulted inventory as YAML so the operator

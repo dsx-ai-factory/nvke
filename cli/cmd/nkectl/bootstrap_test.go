@@ -16,6 +16,19 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/inventory"
 )
 
+// fakeCWERunner is a scripted cwedeploy.CommandRunner: every helm call
+// succeeds, and every `kubectl get --raw .../readyz` call reports healthy
+// immediately, so runBootstrapSite's CWE deploy step can be exercised
+// without a real helm binary, kubectl binary or cluster.
+type fakeCWERunner struct{}
+
+func (fakeCWERunner) Run(_ context.Context, name string, _ ...string) (string, error) {
+	if name == "kubectl" {
+		return `{"status":"ok","checks":{"database":"ok","temporal":"ok"}}`, nil
+	}
+	return "", nil
+}
+
 // fakeBootstrapRunner is a scripted bootstrapengine.CommandRunner so
 // runBootstrapSite can be exercised without a real kind binary or container
 // runtime. It answers every kind invocation the happy path issues: no
@@ -113,10 +126,13 @@ registry:
 // The kind/kubectl calls go through fakeBootstrapRunner, so this needs no
 // real kind binary or container runtime.
 func TestRunBootstrapSiteValidReachesStub(t *testing.T) {
+	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
+
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(&bootstrapSiteOptions{
 		inventory:       writeInventory(t, validInventory),
 		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
 	})
 	if err == nil {
 		t.Fatal("expected the dispatch stub error")
@@ -130,6 +146,30 @@ func TestRunBootstrapSiteValidReachesStub(t *testing.T) {
 	}
 	if !runner.sawArgs("delete", "cluster") {
 		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster; calls: %v", runner.calls)
+	}
+}
+
+// TestRunBootstrapSiteMissingCWEImage confirms the command fails with a
+// clear, actionable error when NKECTL_CWE_IMAGE is not set, rather than
+// reaching helm with an empty image reference.
+func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
+	t.Setenv("NKECTL_CWE_IMAGE", "")
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(&bootstrapSiteOptions{
+		inventory:       writeInventory(t, validInventory),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+	})
+	if err == nil {
+		t.Fatal("expected an error for a missing NKECTL_CWE_IMAGE")
+	}
+	if !strings.Contains(err.Error(), "NKECTL_CWE_IMAGE") {
+		t.Errorf("error does not name the missing setting: %v", err)
+	}
+
+	if !runner.sawArgs("delete", "cluster") {
+		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster on this error path; calls: %v", runner.calls)
 	}
 }
 
