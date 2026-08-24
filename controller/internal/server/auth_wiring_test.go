@@ -19,14 +19,17 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/auth"
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/server"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
@@ -42,18 +45,10 @@ func (stubKeySource) KeyFor(context.Context, string) (crypto.PublicKey, error) {
 	return nil, errNoKeys
 }
 
-// newEnforcingTestServer builds the production handler, enforcing.
-func newEnforcingTestServer(t *testing.T) http.Handler {
-	t.Helper()
-
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
-	cfg := config.Config{
-		FWEAPIKey:            "test-key",
-		ManagedByK8sPlatform: false,
-		ProfilesDir:          "./profiles",
-	}
-
-	authConfig := &auth.Config{
+// testAuthConfig is the registry both test servers verify against. No key is
+// ever resolved, so the issuer only has to be well formed.
+func testAuthConfig() *auth.Config {
+	return &auth.Config{
 		Audiences: []string{"https://cwe.test.invalid"},
 		Issuers: []auth.Issuer{{
 			Name:       "test-kubernetes",
@@ -65,7 +60,20 @@ func newEnforcingTestServer(t *testing.T) http.Handler {
 			},
 		}},
 	}
-	verifier, err := auth.NewVerifier(authConfig, map[string]auth.KeySource{"test-kubernetes": stubKeySource{}})
+}
+
+// newEnforcingTestServer builds the production handler, enforcing.
+func newEnforcingTestServer(t *testing.T) http.Handler {
+	t.Helper()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := config.Config{
+		FWEAPIKey:            "test-key",
+		ManagedByK8sPlatform: false,
+		ProfilesDir:          "./profiles",
+	}
+
+	verifier, err := auth.NewVerifier(testAuthConfig(), map[string]auth.KeySource{"test-kubernetes": stubKeySource{}})
 	require.NoError(t, err)
 
 	authn, err := auth.NewAuthenticator(verifier, auth.ModeEnforcing, logger, nil)
@@ -77,6 +85,77 @@ func newEnforcingTestServer(t *testing.T) http.Handler {
 	require.NoError(t, err)
 
 	return srv.Handler
+}
+
+// decisions records what the Authenticator reported, so a permissive run can be
+// checked for what it would have done rather than only for what it served.
+type decisions struct {
+	mu   sync.Mutex
+	seen []decision
+}
+
+type decision struct {
+	outcome auth.Outcome
+	reason  auth.FailureReason
+}
+
+func (d *decisions) record(outcome auth.Outcome, reason auth.FailureReason, _ string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.seen = append(d.seen, decision{outcome: outcome, reason: reason})
+}
+
+func (d *decisions) all() []decision {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]decision(nil), d.seen...)
+}
+
+// newPermissiveTestServer builds the production handler in permissive mode. The
+// database is a mock with one expectation, so a request that gets through
+// reaches a handler rather than panicking in the mock.
+func newPermissiveTestServer(t *testing.T) (http.Handler, *decisions) {
+	t.Helper()
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
+	cfg := config.Config{
+		FWEAPIKey:            "test-key",
+		ManagedByK8sPlatform: false,
+		ProfilesDir:          "./profiles",
+	}
+
+	verifier, err := auth.NewVerifier(testAuthConfig(), map[string]auth.KeySource{"test-kubernetes": stubKeySource{}})
+	require.NoError(t, err)
+
+	recorded := &decisions{}
+	authn, err := auth.NewAuthenticator(verifier, auth.ModePermissive, logger, recorded.record)
+	require.NoError(t, err)
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{}, nil)
+
+	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
+	srv, err := server.NewServer(cfg, logger, mockDB, forgeProvider, nil, authn)
+	require.NoError(t, err)
+
+	return srv.Handler, recorded
+}
+
+// Permissive serves the request and records what enforcing would have refused.
+// internal/auth proves the middleware does this; only the real chain shows that
+// a permissive Authenticator hands the request on to the mux instead of
+// answering it.
+func TestPermissiveServerServesUnauthenticatedRequests(t *testing.T) {
+	handler, recorded := newPermissiveTestServer(t)
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, httptest.NewRequestWithContext(
+		t.Context(), http.MethodGet, "/api/clusters", http.NoBody))
+
+	assert.Equal(t, http.StatusOK, rr.Code,
+		"permissive serves a request carrying no token; body: %s", rr.Body)
+	assert.Equal(t, []decision{{outcome: auth.OutcomeWouldReject, reason: auth.ReasonNoToken}},
+		recorded.all(), "the decision is counted as would_reject, not authenticated")
 }
 
 // The anonymous surface through the real mux, with no credential.
