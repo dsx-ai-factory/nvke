@@ -87,7 +87,7 @@ fi
 # fatal, not "authentication is off".
 auth_config_path="$(
   "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${CWE_NAMESPACE}" \
-    -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}' 2>&1
+    -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='AUTH_CONFIG_PATH')].value}" 2>&1
 )" || die "cannot read deploy ${CWE_NAMESPACE}/${NKE_DEPLOYMENT}:
   ${auth_config_path}
   Check KUBE_CONTEXT, CWE_NAMESPACE and that this identity may read Deployments."

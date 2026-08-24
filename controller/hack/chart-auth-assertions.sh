@@ -76,7 +76,7 @@ pair   "PERMISSIVE_MODE is true"             'PERMISSIVE_MODE' 'true'           
 echo "clusterIssuerDiscovery=false:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.clusterIssuerDiscovery=false)"
 absent "drops the cluster-scoped grant"       'system:service-account-issuer-discovery' "${out}"
-want   "and nothing else"                     'AUTH_CONFIG_PATH'                     "${out}"
+want   "but the rest of apiAuth still renders" 'AUTH_CONFIG_PATH'                    "${out}"
 
 echo "mountPath and key flow into AUTH_CONFIG_PATH:"
 out="$(render --set apiAuth.enabled=true --set apiAuth.mountPath=/custom --set apiAuth.configMap.key=other.yaml)"

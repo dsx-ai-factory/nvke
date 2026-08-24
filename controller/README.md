@@ -573,8 +573,8 @@ kubectl create clusterrolebinding nke-service-account-issuer-discovery \
   --serviceaccount=cloud-workflow-engine:cloud-workflow-engine
 ```
 
-A stock cluster already works — Kubernetes ships a bootstrap binding granting
-this to every service account. Bind it explicitly if yours has pruned that.
+Kubernetes ships the ClusterRole but binds it to nobody, so this is required
+wherever an issuer reads the cluster's own JWKS.
 
 ### Rejections and Status Codes
 

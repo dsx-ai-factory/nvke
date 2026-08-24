@@ -113,19 +113,18 @@ fi
 # nke-token.sh so there is only one parser to keep in step with the schema.
 AUDIENCE="$("${SCRIPT_DIR}/nke-token.sh" --audience)"
 [[ -n "${AUDIENCE}" ]] || die "could not read the audience from configmap ${CWE_NAMESPACE}/nke-auth-config"
-AUDIENCE="${AUDIENCE:-https://nke.tilt.local}"
 
 # --- mode detection -------------------------------------------------------
 
 if [[ -z "${MODE}" ]]; then
-  auth_path="$(
+  # By container name, not index: a sidecar can sort first, and reading its
+  # environment would report the wrong mode.
+  container_env() {
     "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${CWE_NAMESPACE}" \
-      -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="AUTH_CONFIG_PATH")].value}' 2>/dev/null
-  )"
-  permissive="$(
-    "${KUBECTL[@]}" get deploy "${NKE_DEPLOYMENT}" -n "${CWE_NAMESPACE}" \
-      -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="PERMISSIVE_MODE")].value}' 2>/dev/null
-  )"
+      -o jsonpath="{.spec.template.spec.containers[?(@.name=='${NKE_DEPLOYMENT}')].env[?(@.name=='$1')].value}" 2>/dev/null
+  }
+  auth_path="$(container_env AUTH_CONFIG_PATH)"
+  permissive="$(container_env PERMISSIVE_MODE)"
   if [[ -z "${auth_path}" ]]; then
     MODE="disabled"
   elif [[ "${permissive}" == "true" ]]; then
@@ -193,7 +192,11 @@ auth_counter() {
   (( metrics_available )) || { echo ""; return; }
   curl -s --max-time 5 "${METRICS_URL}" \
     | awk -v want="outcome=\"${outcome}\"" '
-        /^nke_auth_requests_total\{/ && index($0, want) { total += $NF; found = 1 }
+        # $(NF-1) would be wrong too; the value is the field right after "}".
+        /^nke_auth_requests_total\{/ && index($0, want) {
+          split(substr($0, index($0, "}") + 1), f, " ")
+          total += f[1]; found = 1
+        }
         END { if (found) printf "%d\n", total; else print "" }
       '
 }

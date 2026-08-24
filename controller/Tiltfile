@@ -924,9 +924,9 @@ _cwe_tenant_access_enabled = os.getenv(
 _cwe_oidc_enabled = os.getenv(
     "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
 
-# NKE API authentication. Enforcing by default locally; the config file comes
-# from the nke-auth-config ConfigMap in deploy/k8s/nke-auth-dev.yaml and is
-# mounted by hack/tilt-cwe-chart-values.yaml.
+# NKE API authentication. Enforcing by default locally. The config file comes
+# from the nke-auth-config ConfigMap in deploy/k8s/nke-auth-dev.yaml, and the
+# chart mounts it from the apiAuth values set below.
 #
 #   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
 #   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
