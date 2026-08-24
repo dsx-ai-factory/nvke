@@ -43,6 +43,10 @@ const (
 	// locating the container to mutate.
 	kubeAPIServerContainerName = "kube-apiserver"
 
+	// kubeVipContainerName is the name of the kube-vip container in its
+	// static-pod manifest.
+	kubeVipContainerName = "kube-vip"
+
 	// patchManifestFileMode is the on-disk mode of the static-pod manifest and
 	// its snapshots.
 	patchManifestFileMode os.FileMode = 0o600

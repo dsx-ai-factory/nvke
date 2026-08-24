@@ -28,9 +28,11 @@ import (
 )
 
 const (
-	defaultStaticPodManifestDir      = "/etc/kubernetes/manifests"
-	defaultStaticPodBackupDir        = "/etc/kubernetes/manifests-backup"
-	defaultKubeVipManifestName       = "kube-vip.yaml"
+	defaultStaticPodManifestDir = "/etc/kubernetes/manifests"
+	defaultStaticPodBackupDir   = "/etc/kubernetes/manifests-backup"
+	defaultKubeVipManifestName  = "kube-vip.yaml"
+	// loopbackInterface is the device kube-vip binds the VIP to in ARP mode.
+	loopbackInterface                = "lo"
 	defaultKubeAPIServerManifestName = "kube-apiserver.yaml"
 	defaultStaticPodExitTimeout      = 60
 	defaultStaticPodStartTimeout     = 60
@@ -43,6 +45,18 @@ const (
 
 	operationTypeK8sControlPlaneNodeGracefulShutdown = "k8s_control_plane_node_graceful_shutdown"
 	operationTypeKubeVipRestore                      = "kube_vip_restore"
+
+	stepStoppingKubeAPIServer       = "stopping_kube_apiserver"
+	stepWaitingKubeAPIServerExit    = "waiting_for_kube_apiserver_exit"
+	stepStoppingKubeVip             = "stopping_kube_vip"
+	stepWaitingKubeVipExit          = "waiting_for_kube_vip_exit"
+	stepRestoringKubeVip            = "restoring_kube_vip"
+	stepWaitingKubeVipStart         = "waiting_for_kube_vip_start"
+	stepWaitingVipSocketQuietWindow = "waiting_for_vip_socket_quiet_window"
+	stepWaitingLoopbackVip          = "waiting_for_loopback_vip"
+	stepResolvingKubeVip            = "resolving_kube_vip"
+	stepClosingVipSockets           = "closing_vip_sockets"
+	stepRemovingLoopbackVip         = "removing_loopback_vip"
 )
 
 type vipSocketPeer struct {
@@ -154,7 +168,7 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 	if runner == nil {
 		runner = &nkeutils.ExecRunner{}
 	}
-	progress.SetStep("resolving_kube_vip")
+	progress.SetStep(stepResolvingKubeVip)
 	vip, err := s.resolveKubeVipAddress(runner)
 	switch {
 	case err == nil:
@@ -171,8 +185,8 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 		return s.stopStaticPod(ctx, runner, progress, staticPodStopSpec{
 			containerName: kubeAPIServerContainerName,
 			manifestName:  defaultKubeAPIServerManifestName,
-			stoppingStep:  "stopping_kube_apiserver",
-			waitingStep:   "waiting_for_kube_apiserver_exit",
+			stoppingStep:  stepStoppingKubeAPIServer,
+			waitingStep:   stepWaitingKubeAPIServerExit,
 			timeout:       time.Duration(defaultStaticPodExitTimeout) * time.Second,
 		})
 	}
@@ -194,10 +208,10 @@ func (s *NodeAgentServer) drainKubeVip(
 	vip string,
 ) error {
 	if err := s.stopStaticPod(ctx, runner, progress, staticPodStopSpec{
-		containerName: "kube-vip",
+		containerName: kubeVipContainerName,
 		manifestName:  defaultKubeVipManifestName,
-		stoppingStep:  "stopping_kube_vip",
-		waitingStep:   "waiting_for_kube_vip_exit",
+		stoppingStep:  stepStoppingKubeVip,
+		waitingStep:   stepWaitingKubeVipExit,
 		timeout:       time.Duration(defaultStaticPodExitTimeout) * time.Second,
 	}); err != nil {
 		return err
@@ -205,9 +219,9 @@ func (s *NodeAgentServer) drainKubeVip(
 	// Close stale sockets while the VIP is still local; in testing this gave
 	// the kernel the best chance to emit RSTs for those tuples. Then remove
 	// the VIP to avoid accepting new traffic.
-	progress.SetStep("closing_vip_sockets")
+	progress.SetStep(stepClosingVipSockets)
 	_, closeErr := s.closeRemoteVipPeers(runner, vip, defaultKubeVipApiserverPort)
-	progress.SetStep("removing_loopback_vip")
+	progress.SetStep(stepRemovingLoopbackVip)
 	removeErr := s.removeKubeVipFromLoopback(runner, vip)
 	if closeErr != nil {
 		if removeErr != nil {
@@ -225,7 +239,7 @@ func (s *NodeAgentServer) drainKubeVip(
 	// stale sticky ARP entry on a DPU. Fail here before stopping the apiserver;
 	// otherwise worker kubelets still pinned to this node can lose their API
 	// path and become NotReady.
-	progress.SetStep("waiting_for_vip_socket_quiet_window")
+	progress.SetStep(stepWaitingVipSocketQuietWindow)
 	if err := s.waitForVipSocketQuietWindow(ctx, runner, vip, defaultKubeVipApiserverPort, s.drainKubeVipSocketQuietWindowOrDefault()); err != nil {
 		return fmt.Errorf("vip socket quiet window failed: %w", err)
 	}
@@ -247,7 +261,7 @@ func (s *NodeAgentServer) runKubeVipRestore(
 		runner = &nkeutils.ExecRunner{}
 	}
 
-	progress.SetStep("resolving_kube_vip")
+	progress.SetStep(stepResolvingKubeVip)
 	vip, err := s.resolveKubeVipAddress(runner)
 	switch {
 	case err == nil:
@@ -260,16 +274,16 @@ func (s *NodeAgentServer) runKubeVipRestore(
 	}
 
 	if err := s.restoreStaticPod(ctx, runner, progress, staticPodRestoreSpec{
-		containerName: "kube-vip",
+		containerName: kubeVipContainerName,
 		manifestName:  defaultKubeVipManifestName,
-		restoringStep: "restoring_kube_vip",
-		waitingStep:   "waiting_for_kube_vip_start",
+		restoringStep: stepRestoringKubeVip,
+		waitingStep:   stepWaitingKubeVipStart,
 		timeout:       s.staticPodStartTimeoutOrDefault(),
 	}); err != nil {
 		return err
 	}
 
-	progress.SetStep("waiting_for_loopback_vip")
+	progress.SetStep(stepWaitingLoopbackVip)
 	if err := s.waitForKubeVipOnLoopback(ctx, runner, vip, s.staticPodStartTimeoutOrDefault()); err != nil {
 		return fmt.Errorf("wait for kube-vip address on lo: %w", err)
 	}
@@ -327,7 +341,7 @@ func parseKubeVipManifestAddress(path string) (string, error) {
 	}
 	env := map[string]string{}
 	for _, container := range manifest.Spec.Containers {
-		if container.Name != "" && container.Name != "kube-vip" {
+		if container.Name != "" && container.Name != kubeVipContainerName {
 			continue
 		}
 		for _, entry := range container.Env {
@@ -340,7 +354,7 @@ func parseKubeVipManifestAddress(path string) (string, error) {
 	if env["address"] == "" {
 		return "", fmt.Errorf("parse kube-vip manifest %s: missing env address", path)
 	}
-	if iface := env["vip_interface"]; iface != "" && iface != "lo" {
+	if iface := env["vip_interface"]; iface != "" && iface != loopbackInterface {
 		return "", fmt.Errorf("parse kube-vip manifest %s: unsupported vip_interface %q, expected lo", path, iface)
 	}
 	if cidr := env["vip_cidr"]; cidr != "" && cidr != "32" {
@@ -357,7 +371,7 @@ func parseKubeVipManifestAddress(path string) (string, error) {
 }
 
 func resolveKubeVipAddressFromLoopback(runner nkeutils.CommandRunner) (string, error) {
-	output, err := runner.Run("ip", []string{"-o", "-4", "addr", "show", "dev", "lo", "scope", "host"}, nil)
+	output, err := runner.Run("ip", []string{"-o", "-4", "addr", "show", "dev", "lo", "scope", "host"}, nil) //nolint:goconst // ip(8) argv fragment; naming each CLI flag reads worse than the literal
 	if err != nil {
 		return "", fmt.Errorf("ip addr show dev lo: %w: %s", err, strings.TrimSpace(string(output)))
 	}
@@ -546,9 +560,9 @@ func (s *NodeAgentServer) rootedPath(path string) string {
 
 func listStaticPodContainerIDs(runner nkeutils.CommandRunner, containerName string) ([]string, error) {
 	output, err := runner.RunSplitOutput("crictl", []string{
-		"ps",
-		"--label", "io.kubernetes.container.name=" + containerName,
-		"-o", "json",
+		"ps",                                                       //nolint:goconst // crictl argv fragment; naming each CLI flag reads worse than the literal
+		"--label", "io.kubernetes.container.name=" + containerName, //nolint:goconst // crictl argv fragment; naming each CLI flag reads worse than the literal
+		"-o", "json", //nolint:goconst // crictl argv fragment; naming each CLI flag reads worse than the literal
 	}, nil)
 	if stderr := strings.TrimSpace(string(output.Stderr)); stderr != "" {
 		slog.Warn("crictl ps static pod wrote to stderr", "container", containerName, "stderr", stderr)
@@ -661,7 +675,7 @@ func sleepOrDone(ctx context.Context, d time.Duration) error {
 }
 
 func (s *NodeAgentServer) removeKubeVipFromLoopback(runner nkeutils.CommandRunner, vip string) error {
-	output, err := runner.Run("ip", []string{"addr", "del", vip + "/32", "dev", "lo"}, nil)
+	output, err := runner.Run("ip", []string{"addr", "del", vip + "/32", "dev", "lo"}, nil) //nolint:goconst // ip(8) argv fragment; naming each CLI flag reads worse than the literal
 	if err == nil {
 		slog.Info("removed kube-vip address from lo", "vip", vip)
 		return nil
@@ -719,8 +733,8 @@ func (s *NodeAgentServer) closeRemoteVipPeers(runner nkeutils.CommandRunner, vip
 	for _, peer := range peers {
 		slog.Info("closing stale remote VIP socket", "vip", vip, "port", port, "peerIP", peer.IP, "peerPort", peer.Port)
 		output, err := runner.Run("ss", []string{
-			"-Ktan", "state", "established",
-			"src", vip, "sport", "=", ":" + strconv.Itoa(port),
+			"-Ktan", "state", "established", //nolint:goconst // ss(8) argv fragment; naming each CLI flag reads worse than the literal
+			"src", vip, "sport", "=", ":" + strconv.Itoa(port), //nolint:goconst // ss(8) filter keyword, not a domain term
 			"dst", peer.IP, "dport", "=", ":" + peer.Port,
 		}, nil)
 		if err != nil {
@@ -787,7 +801,7 @@ func formatVipSocketPeers(vip string, port int, peers []vipSocketPeer) string {
 
 func (s *NodeAgentServer) listRemoteVipPeers(runner nkeutils.CommandRunner, vip string, port int) ([]vipSocketPeer, error) {
 	output, err := runner.Run("ss", []string{
-		"-Htan", "state", "established",
+		"-Htan", "state", "established", //nolint:goconst // ss(8) argv fragment; naming each CLI flag reads worse than the literal
 		"src", vip, "sport", "=", ":" + strconv.Itoa(port),
 	}, nil)
 	if err != nil {

@@ -263,6 +263,10 @@ spec:
             {{- end }}
             - name: PROFILES_DIR
               value: {{ .Values.profiles.path | quote }}
+            {{- if .Values.profiles.image.enabled }}
+            - name: RUNBOOKS_DIR
+              value: {{ printf "%s/runbooks" .Values.profiles.path | quote }}
+            {{- end }}
             # SPIFFE/SPIRE config
             - name: SPIFFE_ENABLED
               value: {{ .Values.spiffe.enabled | quote }}

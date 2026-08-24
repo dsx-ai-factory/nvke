@@ -177,6 +177,32 @@ func TestUnit_DBDoesNotEnqueueNodeAfterUpdateNodeForgeDetailsFilterMismatch(t *t
 	database.AssertExpectations(t)
 }
 
+func TestUnit_DBEnqueuesNodeUpdateWhenPendingSourceFilterMatches(t *testing.T) {
+	node := db.Node{
+		ID: uuid.New(),
+		Conditions: db.NodeConditions{
+			Pending: db.NewCondition(true, ""),
+		},
+	}
+	filters := dbfilters.Node{
+		Pending:  ptr.To(true),
+		Deleting: ptr.To(false),
+	}
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil).Once()
+	database.On("GetNode", mock.Anything, node.ID).Return(node, nil)
+	database.On("UpdateNode", mock.Anything, &node).Return(node, nil)
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, filters)
+
+	updated, err := wrapper.UpdateNode(context.Background(), &node)
+
+	require.NoError(t, err)
+	assert.Equal(t, node, updated)
+	assert.Equal(t, dbreconcile.NodeKey(node.ID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+}
+
 func TestUnit_DBNodeSourceEnqueuesOwningClusterAfterUpdate(t *testing.T) {
 	node := db.Node{
 		ID:           uuid.New(),

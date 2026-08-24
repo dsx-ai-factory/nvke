@@ -21,7 +21,7 @@ const (
 
 // scaleUp creates pending control-plane nodes and returns the number created.
 // Instance-type selection (preference + Forge capacity) is not
-// done here: the node scheduler picks the Forge
+// done here: the control plane node scheduler picks the Forge
 // instance type per node at schedule time from the node's pinned
 // InstanceTypePreference snapshot. Pending nodes are therefore created with a
 // zero-value InstanceTypeID and a pinned ControlPlaneConfigurationID.

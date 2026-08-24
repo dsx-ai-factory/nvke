@@ -358,19 +358,19 @@ temporal:
     queue: cloud-workflow-engine-tasks
 
 profiles:
-  # Directory CWE reads OS/config profiles from (PROFILES_DIR).
+  # Directory CWE reads OS/config profiles from (PROFILES_DIR) and profile-hook
+  # scripts from its runbooks/ child (RUNBOOKS_DIR).
   # When image.enabled is true, an initContainer copies /profiles from the
   # profiles content image into an emptyDir mounted at this path.
   path: ""
   image:
-    # Materialize fleet profiles from an OCI image (built from nke-site-deploy
-    # cwe-profiles/). Prefer digest pins so Deployment rolls on profile changes.
+    # Materialize fleet profiles from an external OCI content image. Prefer
+    # digest pins so Deployment rolls on profile changes.
     #
     # Still nvcr.io, unlike image.repository above, and deliberately so: this
-    # image is built and published by nke-site-deploy, not by this repository.
-    # Pointing it at ghcr.io/nvidia/nke would name an image nothing here
-    # publishes. Moving it needs a decision in nke-site-deploy first. It is
-    # disabled by default, so the chart still renders with no nvcr.io reference.
+    # independently published content image does not have a GHCR counterpart in
+    # this repository. It is disabled by default, so the chart still renders
+    # with no nvcr.io reference.
     #
     # ⚠️ If you enable this, you need an NGC pull secret as well as whatever
     # imagePullSecrets entry the controller image needs -- the two images are in

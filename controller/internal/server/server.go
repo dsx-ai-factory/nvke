@@ -13,12 +13,14 @@ import (
 	pathpkg "path"
 	"time"
 
+	"github.com/getkin/kin-openapi/openapi3filter"
 	oapi_middleware "github.com/oapi-codegen/nethttp-middleware"
 	"github.com/swaggest/swgui/v5emb"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.temporal.io/sdk/client"
 
 	"github.com/NVIDIA/nke/controller/api"
+	"github.com/NVIDIA/nke/controller/internal/auth"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge"
@@ -29,12 +31,15 @@ const (
 	ReadHeaderTimeout = 5 * time.Second
 )
 
+// NewServer builds the API's HTTP server. A nil authn leaves the authentication
+// middleware out of the chain rather than installing one that admits everyone.
 func NewServer(
 	cfg config.Config,
 	logger *slog.Logger,
 	database db.DB,
 	forgeProvider *forge.ForgeProvider,
 	temporalClient client.Client,
+	authn *auth.Authenticator,
 ) (*http.Server, error) {
 	m := http.NewServeMux()
 
@@ -60,6 +65,11 @@ func NewServer(
 		Middlewares: []api.MiddlewareFunc{
 			oapi_middleware.OapiRequestValidatorWithOptions(openapiSpec, &oapi_middleware.Options{
 				SilenceServersWarning: true,
+				// api/openapi.yaml declares `security` globally, so without an
+				// AuthenticationFunc kin-openapi answers 401 to every request,
+				// even with authentication off. This makes its check a no-op.
+				// Tokens are verified by the middleware wrapping this mux.
+				Options: openapi3filter.Options{AuthenticationFunc: openapi3filter.NoopAuthenticationFunc},
 				ErrorHandler: func(w http.ResponseWriter, message string, statusCode int) {
 					logger.Error("OpenAPI middleware validation error", "message", message)
 					handleError(w, logger, message, statusCode)
@@ -109,9 +119,22 @@ func NewServer(
 	m.HandleFunc("GET "+healthz, hc.healthz)
 	m.HandleFunc("GET "+readyz, hc.readyz)
 
-	// Apply middleware chain: logging -> managed-by check -> main handler
-	handler := loggingMiddleware(m, logger)
-	handler = managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(handler)
+	// Built inside out: each assignment wraps the handler the previous one
+	// produced, so the order below is the reverse of the order a request meets.
+	// A request runs
+	//
+	//	tracing -> logging -> authentication -> managed-by -> mux
+	//
+	// Authentication precedes managed-by so an unauthenticated caller never
+	// reaches it, and follows logging so a rejection still produces the usual
+	// request/response pair. Tracing stays outermost so a rejected request is
+	// still a span. TestDisabledServerLogsTheManagedByRejection pins the logging
+	// and managed-by order.
+	handler := managedByMiddleware(cfg.ManagedByK8sPlatform, logger)(m)
+	if authn != nil {
+		handler = authn.Wrap(handler)
+	}
+	handler = loggingMiddleware(handler, logger)
 	if cfg.Tracing.Enabled {
 		handler = otelhttp.NewHandler(handler, "cloud-workflow-engine",
 			otelhttp.WithFilter(func(r *http.Request) bool {

@@ -547,7 +547,7 @@ func newTestServerWithValidator(t *testing.T, mockDB *testutil.MockDB) http.Hand
 
 	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
 
-	srv, err := server.NewServer(cfg, logger, mockDB, forgeProvider, nil)
+	srv, err := server.NewServer(cfg, logger, mockDB, forgeProvider, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 

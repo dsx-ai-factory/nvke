@@ -37,6 +37,7 @@ type Node struct {
 	// Condition filters use asymmetric matching:
 	//   - true: exact match (status = 'True')
 	//   - false: not definitely true (includes 'False', 'Unknown', and missing/zero)
+	Pending      *bool
 	Provisioning *bool
 	Deleting     *bool
 	Joined       *bool
@@ -47,6 +48,9 @@ func (f Node) Matches(node db.Node) bool {
 		return false
 	}
 	if f.TpmEKPubHash != nil && node.TpmEKPubHash != *f.TpmEKPubHash {
+		return false
+	}
+	if !conditionMatches(node.Conditions.Pending, f.Pending) {
 		return false
 	}
 	if !conditionMatches(node.Conditions.Provisioning, f.Provisioning) {

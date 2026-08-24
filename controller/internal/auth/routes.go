@@ -8,19 +8,15 @@ import (
 	"strings"
 )
 
-// The anonymous surface. Deny by default: every path not named here needs a
-// token. The "/" entry means exactly "/" and the UI's own assets, never a prefix
-// of "/", because the server registers http.FileServer under "/" and treating it
-// as a prefix would make the whole API anonymous. The table is written out
-// because http.ServeMux is not enumerable.
+// The anonymous surface: every path not listed here needs a token.
+//
+// Maintained by hand, because http.ServeMux cannot be asked what was registered
+// on it. The list can fall out of step with internal/server, but only safely: a
+// route added there and missed here requires a token rather than skipping one.
 const (
-	// apiPrefix is the base of every generated operation, so nothing under it can
-	// qualify as a UI asset.
-	apiPrefix = "/api/"
-
 	// swaggerUIPrefix is the Swagger UI subtree. The handler serves its own CSS
-	// and JavaScript from below its base path, so the whole subtree has to be
-	// anonymous or the docs page renders unstyled and inert.
+	// and JavaScript from below this path, so the whole subtree must be anonymous
+	// or the docs page does not render.
 	swaggerUIPrefix = "/api/docs/"
 
 	rootPath = "/"
@@ -29,19 +25,14 @@ const (
 // IsAnonymousRequestPath reports whether a request's path is exempt from
 // authentication. escaped is r.URL.EscapedPath(); decoded is r.URL.Path.
 //
-// It exempts only if both views agree, because neither alone is sufficient.
-// http.ServeMux unescapes each segment before matching, so "/%61pi/nodes/x.js"
-// reaches the "/api/nodes/{id}" handler while the escaped view sees no "/api/"
-// prefix and exempts it as a UI asset. The decoded view catches that.
+// Both views must agree, because each catches what the other misses. path.Clean
+// leaves "%2e%2e" alone, so "/api/docs/%2e%2e/nodes" keeps an exempt prefix
+// escaped but cleans to "/api/nodes" decoded. The reverse holds for
+// "/api/docs%2f..%2fversion", which reaches the exempt "/api/version" only once
+// decoded.
 //
-// The escaped view catches the opposite: an encoded dot-segment such as
-// "/api/docs%2f..%2fversion" survives path.Clean intact while the decoded view
-// cleans it to "/api/version", which is exempt. Only the escaped view sees that
-// the request never named an exempt path to begin with.
-//
-// path.Clean folds dot-segments and duplicate slashes, so "/api/nodes/../../docs"
-// cannot dress an API path up as an exempt one. It also strips a trailing slash,
-// which is why "/api/docs/" and "/api/docs" need one entry between them.
+// Clean also folds dot-segments and duplicate slashes and strips a trailing one,
+// so "/api/docs/" and "/api/docs" need one entry between them.
 func IsAnonymousRequestPath(escaped, decoded string) bool {
 	return isAnonymousPath(normalizePath(escaped)) &&
 		isAnonymousPath(normalizePath(decoded))
@@ -60,16 +51,16 @@ func normalizePath(p string) string {
 // by method: a POST to "/openapi.yaml" is exempt and then 404s.
 func isAnonymousPath(p string) bool {
 	switch p {
-	// The OpenAPI document, read by the Swagger UI page and by client generators.
+	// Read by the Swagger UI page and by client generators.
 	case "/openapi.yaml",
 
-		// The version endpoint. Tilt points both probes at it, and the UI reads
-		// temporalUIURL and temporalNamespace from it without sending a token.
+		// Tilt points both probes at it, and the UI reads temporalUIURL and
+		// temporalNamespace from it with no token.
 		"/api/version",
 
-		// The Swagger UI. The mux 301s the unslashed form onto the subtree, but
-		// that redirect happens downstream of this middleware, so "/api/docs"
-		// would be rejected before the browser learned to add the slash.
+		// The mux redirects this onto the subtree, but downstream of here, so
+		// without an entry it is rejected before the browser is told to add the
+		// slash.
 		"/api/docs",
 
 		// The note that says the Swagger UI moved.
@@ -78,34 +69,9 @@ func isAnonymousPath(p string) bool {
 		// A probe that had to authenticate would make a key-source outage look
 		// like a dead pod.
 		"/healthz",
-		"/readyz",
-
-		// The UI index. Exactly this path, see above.
-		rootPath:
+		"/readyz":
 		return true
 	}
 
-	if strings.HasPrefix(p, swaggerUIPrefix) {
-		return true
-	}
-
-	return isUIAsset(p)
-}
-
-// isUIAsset reports whether a path is a static asset of the bundled UI, which
-// sends no token. Matched by extension rather than by file name, so adding a
-// stylesheet does not break the console; an API path can never acquire one,
-// because this refuses apiPrefix outright. A match makes the path anonymous, not
-// existent: the file server still 404s.
-func isUIAsset(p string) bool {
-	if strings.HasPrefix(p, apiPrefix) {
-		return false
-	}
-
-	switch path.Ext(p) {
-	case ".css", ".html", ".ico", ".js", ".map", ".png", ".svg", ".woff", ".woff2":
-		return true
-	default:
-		return false
-	}
+	return strings.HasPrefix(p, swaggerUIPrefix)
 }

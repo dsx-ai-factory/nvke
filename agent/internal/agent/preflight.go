@@ -87,7 +87,7 @@ func (s *NodeAgentServer) runCloudInitStatusPreflightCheck() (*pb.NodePreflightR
 		return nil, fmt.Errorf("check_cloud_init_status: command runner not configured")
 	}
 
-	output, err := s.Runner.Run("cloud-init", []string{"status"}, nil)
+	output, err := s.Runner.Run("cloud-init", []string{"status"}, nil) //nolint:goconst // cloud-init argv fragment; naming each CLI flag reads worse than the literal
 	if err != nil {
 		return nil, fmt.Errorf("check_cloud_init_status: cloud-init status: %w", err)
 	}

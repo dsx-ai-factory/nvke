@@ -49,7 +49,7 @@ func getK8sClientSet() (kubernetes.Interface, error) {
 	return clientset, errClientset
 }
 
-func updateObjectMetadata(getObj func() (metav1.Object, error), updateObj func(metav1.Object) error, kvStr string, isLabel bool, remove bool) error {
+func updateObjectMetadata(getObj func() (metav1.Object, error), updateObj func(metav1.Object) error, kvStr string, isLabel, remove bool) error {
 	kv := strings.SplitN(kvStr, "=", 2)
 	if len(kv) < 1 {
 		return nil

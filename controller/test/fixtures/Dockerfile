@@ -19,3 +19,4 @@ ARG BASE_REGISTRY=docker.io
 FROM ${BASE_REGISTRY}/alpine:3.24.1
 RUN mkdir -p /profiles
 COPY profiles/ /profiles/
+COPY runbooks/ /profiles/runbooks/

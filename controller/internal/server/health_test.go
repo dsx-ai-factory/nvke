@@ -139,7 +139,7 @@ func TestServerHealthEndpoints(t *testing.T) {
 		ProfilesDir:          "./profiles",
 	}
 	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
-	srv, err := NewServer(cfg, logger, mockDB, forgeProvider, nil)
+	srv, err := NewServer(cfg, logger, mockDB, forgeProvider, nil, nil)
 	require.NoError(t, err)
 
 	healthRR := httptest.NewRecorder()

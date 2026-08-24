@@ -10,6 +10,14 @@ option go_package = "github.com/NVIDIA/nke/agent/pkg/agent/proto";
 service NodeAgent {
   rpc GetKubeadmStatus(KubeadmStatusRequest) returns (KubeadmStatusResponse) {}
 
+  // ScheduleNodeReboot waits up to five minutes for apt/dpkg locks to clear,
+  // then starts a detached reboot so the RPC can return before the node exits.
+  rpc ScheduleNodeReboot(ScheduleNodeRebootRequest) returns (ScheduleNodeRebootResponse) {}
+
+  // GetNodeBootInfo returns typed boot identity and timing information used by
+  // callers to confirm that a requested reboot completed.
+  rpc GetNodeBootInfo(GetNodeBootInfoRequest) returns (GetNodeBootInfoResponse) {}
+
   rpc ExecuteKubeadmInit(KubeadmInitRequest) returns (KubeadmInitStatusResponse) {}
 
   rpc ExecuteKubeadmJoin(KubeadmJoinRequest) returns (KubeadmJoinStatusResponse) {}
@@ -941,4 +949,22 @@ message StartKubeVipRestoreRequest {
 
 message StartKubeVipRestoreResponse {
   NodeAgentOperationStatus operation = 1;
+}
+
+message ScheduleNodeRebootRequest {}
+
+message ScheduleNodeRebootResponse {
+  // True when package-manager locks remained held for the full wait period.
+  // The reboot is still scheduled in this case.
+  bool package_locks_timed_out = 1;
+}
+
+message GetNodeBootInfoRequest {}
+
+message GetNodeBootInfoResponse {
+  // UTC Unix timestamp, in seconds, for when the current boot began.
+  int64 boot_time_unix_seconds = 1;
+
+  // Linux boot ID when available.
+  string boot_id = 2;
 }

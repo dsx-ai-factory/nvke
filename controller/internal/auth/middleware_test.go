@@ -3,9 +3,8 @@
 
 package auth_test
 
-// These tests drive a bare handler rather than a server: NewServer needs a
-// database and a Forge provider, and would test the mux rather than the rules
-// here, which must not depend on it.
+// These tests drive a bare handler, not a server: NewServer needs a database and
+// a Forge provider, and the rules under test depend on neither.
 
 import (
 	"bytes"
@@ -370,20 +369,13 @@ func TestMiddlewareAnonymousSurface(t *testing.T) {
 		// spellings normalize to this one, so it stands for the pair.
 		"/api/docs",
 
-		// The UI's own embedded assets, served from below its base path. The
-		// extension is inert here: the swagger prefix decides before isUIAsset.
+		// The Swagger UI's own embedded assets, served from below its base path.
+		// The whole subtree is exempt, whatever the extension.
 		"/api/docs/swagger-ui.css",
 
 		"/docs",
 		"/healthz",
 		"/readyz",
-
-		// The UI index and its assets. Exactly "/", never a prefix. "/api.js" is
-		// the one that also probes the apiPrefix boundary inside isUIAsset.
-		"/",
-		"/index.html",
-		"/api.js",
-		"/vendor/js-yaml.min.js",
 
 		// Cleaned onto the entries above, so a doubled slash is not a 401.
 		"//healthz",
@@ -406,17 +398,24 @@ func TestMiddlewareAnonymousSurface(t *testing.T) {
 	}
 }
 
-// Deny by default. internal/server/server.go registers http.FileServer under "/",
-// so the mux routes every path below somewhere and an exemption rule derived from
-// mux patterns would make all of them anonymous.
+// Deny by default. This binary serves nothing outside the API and the documented
+// surface, so every path below authenticates first and 404s second. That order
+// keeps an unrouted path from reporting whether it exists.
 func TestMiddlewareCatchAllDoesNotLeak(t *testing.T) {
 	t.Parallel()
 
 	paths := []string{
-		// A real operation. Registered or not, every "/api/" path exits at the same
-		// apiPrefix guard, so one stands for the unregistered ones too.
+		// A real operation. Registered or not, every "/api/" path exits the same
+		// way, so one stands for the unregistered ones too.
 		"/api/clusters",
 		"/API/CLUSTERS",
+
+		// No UI is served here, so its index and its assets are not exempt. They
+		// authenticate and then 404.
+		"/",
+		"/index.html",
+		"/api.js",
+		"/vendor/js-yaml.min.js",
 
 		// Near misses on the exempt literals, which prefix matching would admit.
 		"/api/versions",

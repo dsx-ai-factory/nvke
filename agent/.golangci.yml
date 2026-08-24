@@ -29,7 +29,7 @@ linters:
     - gochecksumtype
     - goconst
     - gomoddirectives
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosmopolitan
     - importas
@@ -183,13 +183,15 @@ issues:
   max-same-issues: 0
   fix: false
 formatters:
-  # TODO: fix and re-enable all formatters
+  # TODO: fix and re-enable the remaining formatters
   # - gofmt     # 1 issue
   # - goimports # 4 issues
   # - gci       # 6 issues - import grouping
-  # - gofumpt   # 3 issues - stricter formatting
-  enable: []
+  enable:
+    - gofumpt
   settings:
+    gofumpt:
+      extra-rules: true
     gci:
       sections:
         - standard

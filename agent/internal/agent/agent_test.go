@@ -1460,4 +1460,3 @@ func TestInstallCollectionJSONRequiresIndex(t *testing.T) {
 	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
 	assert.Contains(t, err.Error(), "bundle index not configured")
 }
-

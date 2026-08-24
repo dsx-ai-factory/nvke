@@ -317,7 +317,7 @@ func provisionForgeInstance(ctx workflow.Context, nodeID uuid.UUID) error {
 	// retry endlessly.
 	//
 	// Failed workflows won't be rescheduled until new forge capacity becomes
-	// available, since the NodeScheduler checks forge capacity before scheduling.
+	// available, since node schedulers check forge capacity before scheduling.
 	// This prevents a buildup of perpetually failing workflows.
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 1 * time.Minute, // Calling a synchronous API via FWE/temporal

@@ -267,11 +267,11 @@ func main() {
 		os.Exit(0)
 	}
 
-	auditFile, err := os.OpenFile(*auditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	auditFile, err := os.OpenFile(*auditLogFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		log.Fatalf("failed to open audit log file: %v", err)
 	}
-	scriptExecLogFile, err := os.OpenFile("/var/log/nke-execute-scripts.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	scriptExecLogFile, err := os.OpenFile("/var/log/nke-execute-scripts.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		log.Fatalf("failed to open script execution log file: %v", err)
 	}

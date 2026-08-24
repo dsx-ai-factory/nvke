@@ -22,8 +22,14 @@ type FakeClient struct {
 	// can assert on per-call deadlines.
 	GetKubeconfigCtxs []context.Context
 
-	AgentVersion    string
-	AgentVersionErr error
+	AgentVersion               string
+	AgentVersionErr            error
+	ScheduleNodeRebootResponse *nkeproto.ScheduleNodeRebootResponse
+	ScheduleNodeRebootErr      error
+	ScheduleNodeRebootCalls    []uuid.UUID
+	GetNodeBootInfoResponse    *nkeproto.GetNodeBootInfoResponse
+	GetNodeBootInfoErr         error
+	GetNodeBootInfoCalls       []uuid.UUID
 
 	PreflightResp    *nkeproto.ExecuteNodePreflightResponse
 	PreflightErr     error
@@ -65,6 +71,16 @@ func (f *FakeClient) GetAgentVersion(context.Context, db.Node) (string, error) {
 
 func (f *FakeClient) GetKubeadmStatus(context.Context, db.Node) (*nkeproto.KubeadmStatusResponse, error) {
 	return &nkeproto.KubeadmStatusResponse{}, nil
+}
+
+func (f *FakeClient) ScheduleNodeReboot(_ context.Context, node db.Node) (*nkeproto.ScheduleNodeRebootResponse, error) {
+	f.ScheduleNodeRebootCalls = append(f.ScheduleNodeRebootCalls, node.ID)
+	return f.ScheduleNodeRebootResponse, f.ScheduleNodeRebootErr
+}
+
+func (f *FakeClient) GetNodeBootInfo(_ context.Context, node db.Node) (*nkeproto.GetNodeBootInfoResponse, error) {
+	f.GetNodeBootInfoCalls = append(f.GetNodeBootInfoCalls, node.ID)
+	return f.GetNodeBootInfoResponse, f.GetNodeBootInfoErr
 }
 
 func (f *FakeClient) PatchAPIServerManifest(context.Context, db.Node, *nkeproto.PatchAPIServerManifestRequest) (*nkeproto.PatchAPIServerManifestResponse, error) {

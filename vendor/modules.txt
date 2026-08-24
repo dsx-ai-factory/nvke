@@ -807,7 +807,6 @@ go.temporal.io/sdk/internal/extstore
 go.temporal.io/sdk/internal/log
 go.temporal.io/sdk/internal/protocol
 go.temporal.io/sdk/log
-go.temporal.io/sdk/mocks
 go.temporal.io/sdk/temporal
 go.temporal.io/sdk/testsuite
 go.temporal.io/sdk/worker

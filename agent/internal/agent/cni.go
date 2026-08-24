@@ -128,7 +128,7 @@ func (s *NodeAgentServer) installCalico(version *semver.Version, operatorManifes
 		Name:        calicoBundle.Name,
 		Version:     version,
 		InstallTime: time.Now().Format(time.RFC3339),
-		Status:      "installing",
+		Status:      InstallingStatus,
 		Source:      calicoBundle.URL,
 	}
 
@@ -306,7 +306,7 @@ func (s *NodeAgentServer) installOvnK8sCNIPlugin(req *pb.InstallCNIPluginRequest
 		return err
 	}
 	ovnBundle.InstallFile = "install.sh"
-	ovnBundle.InstallCmd = []string{"/bin/bash", "-c", "./install.sh"}
+	ovnBundle.InstallCmd = []string{"/bin/bash", "-c", "./install.sh"} //nolint:goconst // bash argv fragment; naming each CLI flag reads worse than the literal
 
 	requestID := generateRequestID()
 	bundleStatus := &Bundle{
@@ -612,7 +612,7 @@ func calicoCustomResourcesApplyPath(manifestsDir, podNetworkCidr string) (string
 	return tmpPath, func() { _ = os.Remove(tmpPath) }, nil
 }
 
-func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root string, podNetworkCidr string) error {
+func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root, podNetworkCidr string) error {
 	applyScript := filepath.Join(root, "apply-manifests.sh")
 	if st, err := os.Stat(applyScript); err == nil && !st.IsDir() {
 		out, err := s.Runner.Run(applyScript, nil, &nkeutils.CommandOptions{
@@ -640,7 +640,7 @@ func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root string, podNetworkCi
 			return fmt.Errorf("calico manifest %s: %w", p, err)
 		}
 	}
-	args := []string{"apply", "-f", paths[0], "-f", paths[1]}
+	args := []string{"apply", "-f", paths[0], "-f", paths[1]} //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
 	stdout, err := s.Runner.Run("kubectl", args, &nkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 	})
@@ -755,7 +755,7 @@ func (s *NodeAgentServer) installCNI(ctx context.Context, req *pb.InstallCNIRequ
 	bundleStatus := &Bundle{
 		RequestID:   requestID,
 		Name:        binPkg,
-		Status:      "installing",
+		Status:      InstallingStatus,
 		InstallTime: time.Now().Format(time.RFC3339),
 		Source:      "charts:" + chartsPkgLogical,
 	}

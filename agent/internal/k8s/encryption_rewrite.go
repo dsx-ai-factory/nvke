@@ -20,21 +20,34 @@ import (
 	"k8s.io/client-go/util/retry"
 )
 
+const (
+	// coreAPIVersion is the version of the core (empty-group) API that every
+	// resource in encryptableCoreV1GVR belongs to.
+	coreAPIVersion                 = "v1"
+	resourceSecrets                = "secrets"
+	resourceConfigMaps             = "configmaps"
+	resourcePersistentVolumeClaims = "persistentvolumeclaims"
+	resourcePersistentVolumes      = "persistentvolumes"
+	resourceServiceAccounts        = "serviceaccounts"
+	resourceEvents                 = "events"
+	resourceServices               = "services"
+)
+
 // encryptableCoreV1GVR maps encryption-config resource names (plural, lowercase)
 // to core/v1 GroupVersionResource. This matches the default objectsToEncrypt list in the agent.
 var encryptableCoreV1GVR = map[string]schema.GroupVersionResource{
-	"secrets":                {Group: "", Version: "v1", Resource: "secrets"},
-	"configmaps":             {Group: "", Version: "v1", Resource: "configmaps"},
-	"persistentvolumeclaims": {Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
-	"persistentvolumes":      {Group: "", Version: "v1", Resource: "persistentvolumes"},
-	"serviceaccounts":        {Group: "", Version: "v1", Resource: "serviceaccounts"},
-	"events":                 {Group: "", Version: "v1", Resource: "events"},
-	"services":               {Group: "", Version: "v1", Resource: "services"},
+	resourceSecrets:                {Group: "", Version: coreAPIVersion, Resource: resourceSecrets},
+	resourceConfigMaps:             {Group: "", Version: coreAPIVersion, Resource: resourceConfigMaps},
+	resourcePersistentVolumeClaims: {Group: "", Version: coreAPIVersion, Resource: resourcePersistentVolumeClaims},
+	resourcePersistentVolumes:      {Group: "", Version: coreAPIVersion, Resource: resourcePersistentVolumes},
+	resourceServiceAccounts:        {Group: "", Version: coreAPIVersion, Resource: resourceServiceAccounts},
+	resourceEvents:                 {Group: "", Version: coreAPIVersion, Resource: resourceEvents},
+	resourceServices:               {Group: "", Version: coreAPIVersion, Resource: resourceServices},
 }
 
 // clusterScopedEncryptResources lists plural resource names that are not namespaced.
 var clusterScopedEncryptResources = map[string]struct{}{
-	"persistentvolumes": {},
+	resourcePersistentVolumes: {},
 }
 
 // encryptRewriteBackoff limits conflict and transient rate-limit retries per object.

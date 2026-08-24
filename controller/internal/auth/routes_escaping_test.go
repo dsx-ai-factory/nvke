@@ -10,9 +10,9 @@ import (
 )
 
 // A path is exempt only if it is exempt under both the escaped form and the form
-// http.ServeMux routes on. The attack cases below all reach a registered /api/
-// handler because the mux unescapes each segment first, and checking only the
-// escaped form would classify them as UI assets.
+// http.ServeMux routes on. Each view catches a class the other misses, so both
+// classes are represented below; drop either half of the check and one of these
+// cases goes red.
 func TestIsAnonymousRequestPathAgreesWithTheMux(t *testing.T) {
 	t.Parallel()
 
@@ -29,20 +29,28 @@ func TestIsAnonymousRequestPathAgreesWithTheMux(t *testing.T) {
 		{"encoded slash is one segment, no route", "/api%2Fnodes/abc.js", false},
 
 		// "%41PI" unescapes to "/API/" and ServeMux matches case-sensitively, so
-		// this reaches the file server, not the API. Anonymous is correct.
-		{"encoded but wrong case, so no API route", "/%41PI/nodes/abc.js", true},
+		// this reaches no route at all: it authenticates and then 404s.
+		{"encoded but wrong case, so no API route", "/%41PI/nodes/abc.js", false},
 		{"plain api path", "/api/nodes/abc", false},
 		{"plain api path with asset suffix", "/api/nodes/abc.js", false},
 
-		{"root", "/", true},
+		// Nothing is registered at "/".
+		{"root", "/", false},
 		{"openapi document", "/openapi.yaml", true},
 		{"version", "/api/version", true},
 		{"swagger subtree", "/api/docs/swagger-ui.css", true},
+		// The escaped view alone would exempt this: path.Clean leaves "%2e%2e" as
+		// an ordinary segment, so the "/api/docs/" prefix survives. Only the
+		// decoded view sees that it cleans to "/api/nodes". The mirror case, which
+		// only the escaped view catches, is in middleware_test.go.
+		{"encoded dot-segment climbing out of the swagger subtree", "/api/docs/%2e%2e/nodes", false},
 		{"liveness", "/healthz", true},
 		{"readiness", "/readyz", true},
-		{"ui asset", "/main.js", true},
-		{"ui asset in a subdirectory", "/vendor/js-yaml.min.js", true},
-		{"ui asset with an encoded space", "/my%20file.css", true},
+		// No UI is served here, so an asset-looking path is just an unrouted path:
+		// it needs a token and then 404s, rather than being exempt.
+		{"asset-looking path", "/main.js", false},
+		{"asset-looking path in a subdirectory", "/vendor/js-yaml.min.js", false},
+		{"asset-looking path with an encoded space", "/my%20file.css", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

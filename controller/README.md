@@ -435,6 +435,129 @@ TEMPORAL_HOST_PORT=localhost:17233 FWE_API_KEY=<NGC API KEY> go run ./cmd/worker
 
 You should now see the Swagger UI at http://localhost:8080/api/docs.
 
+## API Authentication
+
+NKE can require a signed JWT on every `/api` request. It is off by default;
+mounting a configuration file turns it on.
+
+With it off, any caller that can reach `/api` has full administrative access:
+the whole cluster lifecycle, plus the pass-through endpoints that call the
+infrastructure provider using NKE's own credentials.
+
+A token is accepted when all four of the following hold: it was signed by an
+issuer you configured, it names NKE in `aud`, it has not expired, and its subject
+matches an admission rule.
+
+Rules come in two shapes: Kubernetes service accounts (namespace plus name) and
+SPIFFE IDs (trust domain plus path prefix). In practice you present either a bound
+service account token or a SPIRE JWT-SVID.
+
+Verifying the token is not enough on its own. Any workload author who can write a
+pod spec can have the kubelet project a token for their own service account,
+naming any audience they choose. No RBAC check applies to that audience. Admission
+rules keep every service account on the cluster from being an NKE administrator.
+
+NKE does no authorization: every admitted caller can do everything. That is a
+platform responsibility.
+
+### Enabling Authentication
+
+Two environment variables, read at startup. Changing either, or the configuration
+file, needs a pod restart.
+
+| State | `AUTH_CONFIG_PATH` | `PERMISSIVE_MODE` | Result |
+| --- | --- | --- | --- |
+| **Disabled** | unset | — | Middleware is not in the chain. Every request served. The default. |
+| **Permissive** | set | `true` | Every request evaluated, logged and counted, then served anyway. |
+| **Enforcing** | set | unset or `false` | Failures answered 401 or 403. |
+
+A deployment that never sets `AUTH_CONFIG_PATH` stays disabled across upgrades.
+
+Permissive is a migration tool, not a setting to leave on. Use it to see who would
+be rejected before anyone actually is: watch
+`nke_auth_requests_total{outcome="would_reject"}` until it stays at zero, then
+turn it off. The `reason` and `issuer` labels say what was wrong and whose token
+it was. It suppresses the 403 as well as the 401, so no caller is rejected.
+
+If `AUTH_CONFIG_PATH` is set but unreadable, NKE will not start, rather than
+starting with authentication disabled.
+
+### Authentication Configuration
+
+One file, mounted at `AUTH_CONFIG_PATH`. The full schema and every validation
+rule live in `internal/auth/config.go`. The shape:
+
+```yaml
+apiVersion: auth.nke.nvidia.com/v1alpha1
+kind: AuthenticationConfiguration
+
+# Accepted "aud" claims. Any-of, so list two to rotate without downtime. No entry
+# may equal an issuer below: kubeadm defaults --api-audiences to the service
+# account issuer, so that would accept every pod's automounted token.
+audiences: ["https://nke.example.internal"]
+
+issuers:
+  - name: local-kubernetes
+    # The exact "iss" claim. Read it from the cluster's
+    # /.well-known/openid-configuration; it is not the API server's address.
+    issuer: "https://kubernetes.default.svc.cluster.local"
+    jwks:
+      uri: "https://kubernetes.default.svc/openid/v1/jwks"    # https only
+      caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+      bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+    algorithms: [RS256, ES256]     # asymmetric only; "none" and HMAC are refused
+    # serviceAccounts or spiffe, never both: either one matching admits, so a
+    # pair admits more than the narrower rule alone would.
+    admit:
+      serviceAccounts:
+        # Omitting `name` admits every service account in the namespace, present
+        # and future.
+        - namespace: nke-clients
+          name: nke-client
+
+  - name: spire
+    issuer: "https://nke.site-controller.internal"     # SPIRE's jwt_issuer
+    # A per-issuer list replaces the deployment-wide one rather than adding to
+    # it. Omit to inherit; `audiences: []` is a startup error.
+    # audiences: ["https://nke-spire.example.internal"]
+    jwks:
+      uri: "https://nke.site-controller.internal:30443/keys"
+      caBundlePath: /etc/nke/spire-ca/ca.crt
+    algorithms: [RS256]
+    admit:
+      spiffe:
+        trustDomain: example.org     # bare host: no spiffe:// scheme, no path
+        pathPrefixes: [/nke-e2e/]    # segment-wise; /nke-e2e/ never matches /nke-e2e-evil/
+```
+
+### Rejections and Status Codes
+
+Every rejection is `401` with a `WWW-Authenticate: Bearer` challenge, except
+`not_admitted`, which is `403`: the token verified; a different one will not help.
+
+| `reason` label | Status | Meaning |
+| --- | --- | --- |
+| `no_token` | 401 | No bearer token in the `Authorization` header. |
+| `unknown_issuer` | 401 | `iss` matches no configured issuer, or could not be read. |
+| `bad_signature` | 401 | Did not verify against the issuer's keys, or is not a well-formed JWT. |
+| `expired` | 401 | `exp` is in the past, or absent. |
+| `not_yet_valid` | 401 | `nbf` is in the future by more than the clock-skew leeway. |
+| `audience_mismatch` | 401 | `aud` does not contain the audience configured for that issuer. |
+| `algorithm_not_allowed` | 401 | `alg` is not in that issuer's allow-list. |
+| `jwks_stale` | 401 | The issuer's key set could not be refreshed and is no longer authoritative. |
+| `not_admitted` | 403 | Token verified; its subject matches no admission rule for its issuer. |
+
+The response body names only the reason. Issuer names and configuration detail
+stay in NKE's log. In permissive mode nothing is rejected: the decision is counted
+under `outcome="would_reject"` with the status it would have returned.
+
+### The Anonymous Surface
+
+These need no token: `/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`,
+`/docs`, and the Swagger UI under `/api/docs/`. Everything else does, including
+paths that route nowhere, so an unauthenticated caller cannot probe which ones
+exist. `internal/auth/routes.go` is the list.
+
 ## Debugging
 
 ### Local NICo/TPM Diagnostics

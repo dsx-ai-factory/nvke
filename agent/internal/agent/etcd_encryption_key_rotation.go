@@ -926,4 +926,3 @@ func k8sAPIRewriteStateToProto(state K8sAPIRewriteState) pb.EtcdEncryptionAtRest
 func k8sAPIRewriteTerminal(state K8sAPIRewriteState) bool {
 	return state == K8sAPIRewriteStateSucceeded || state == K8sAPIRewriteStateFailed
 }
-

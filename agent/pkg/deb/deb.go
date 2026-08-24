@@ -131,9 +131,11 @@ func Remove(ctx context.Context, purge bool, name ...string) error {
 	return aptget(ctx, args...)
 }
 
-const aptKeyringsDir = "/etc/apt/keyrings"
-const aptPreferencesDir = "/etc/apt/preferences.d"
-const aptSourcesListDDir = "/etc/apt/sources.list.d"
+const (
+	aptKeyringsDir     = "/etc/apt/keyrings"
+	aptPreferencesDir  = "/etc/apt/preferences.d"
+	aptSourcesListDDir = "/etc/apt/sources.list.d"
+)
 
 // AptRepoConfig is the input for ConfigureAptRepo.
 type AptRepoConfig struct {
@@ -416,7 +418,7 @@ func validateAptComponents(s string) error {
 	return nil
 }
 
-func aptSourcesListBasenameOrDefault(explicit string, keyringBasename string) (string, error) {
+func aptSourcesListBasenameOrDefault(explicit, keyringBasename string) (string, error) {
 	explicit = strings.TrimSpace(explicit)
 	if explicit == "" {
 		return keyringBasename + ".list", nil

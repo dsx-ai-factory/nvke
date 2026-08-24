@@ -56,7 +56,7 @@ func RebootNodeWaitForUptime(ctx workflow.Context, input RebootNodeWaitForUptime
 
 	// Trigger a node-local reboot and wait for the node uptime to advance.
 	// maxAttempts is 0 because we want to retry indefinitely until the node is reachable.
-	if err := softRebootNode(ctx, input.NodeID, rebootAttempt, 0); err != nil {
+	if err := softRebootNode(ctx, input.NodeID, rebootAttempt, rebootInitiatedTime, 0); err != nil {
 		return fmt.Errorf("failed to reboot node: %w", err)
 	}
 
@@ -85,11 +85,11 @@ func RebootNodeWaitForUptime(ctx workflow.Context, input RebootNodeWaitForUptime
 	return nil
 }
 
-func softRebootNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, maxAttempts int32) error {
+func softRebootNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, rebootInitiatedTime time.Time, maxAttempts int32) error {
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 6 * time.Minute, // reboot runbook may wait up to 5m for apt/dpkg locks before issuing reboot.
+		StartToCloseTimeout: 6 * time.Minute, // The agent RPC or legacy runbook may wait up to 5m for apt/dpkg locks.
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval:    30 * time.Second,
 			BackoffCoefficient: 2,
@@ -103,6 +103,7 @@ func softRebootNode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, m
 		a.SoftRebootNode,
 		activities.SoftRebootNodeInput{
 			NodeID:                        nodeID,
+			RebootInitiatedTime:           rebootInitiatedTime,
 			NodeRebootingConditionMessage: fmt.Sprintf("Soft rebooting node (attempt: %d)", rebootAttempt),
 		},
 	).Get(ctx, nil)

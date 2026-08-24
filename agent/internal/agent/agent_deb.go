@@ -27,7 +27,7 @@ func (s *NodeAgentServer) InstallPackages(ctx context.Context, req *pb.InstallPa
 	pkgStatus := &Bundle{
 		RequestID:   requestID,
 		Name:        "deb-packages",
-		Status:      "installing",
+		Status:      InstallingStatus,
 		InstallTime: time.Now().Format(time.RFC3339),
 		Type:        "deb-packages",
 		Output:      strings.Join(req.GetPackages(), ", "),

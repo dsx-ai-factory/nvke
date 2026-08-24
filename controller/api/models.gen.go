@@ -12,6 +12,10 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+const (
+	BearerAuthScopes = "bearerAuth.Scopes"
+)
+
 // Defines values for ConditionStatus.
 const (
 	ConditionStatusFalse   ConditionStatus = "False"
@@ -1146,6 +1150,12 @@ type VIPAllocation struct {
 
 // VIPAllocationAllocationType Type of resource that has been allocated this VIP
 type VIPAllocationAllocationType string
+
+// Forbidden defines model for Forbidden.
+type Forbidden = GenericError
+
+// Unauthorized defines model for Unauthorized.
+type Unauthorized = GenericError
 
 // ListClustersParams defines parameters for ListClusters.
 type ListClustersParams struct {

@@ -6,6 +6,7 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -107,6 +108,11 @@ type Config struct {
 
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
+
+	// RunbooksDir is the optional directory containing config-profile hook scripts.
+	// When omitted, hook execution looks under ProfilesDir/runbooks before falling
+	// back to controller-owned embedded runbooks.
+	RunbooksDir string `env:"RUNBOOKS_DIR"`
 
 	// NodeRebootInitialTimeout is the initial timeout for the node reboot workflow.
 	NodeRebootInitialTimeout time.Duration `env:"NODE_REBOOT_INITIAL_TIMEOUT" default:"30m"`
@@ -290,6 +296,18 @@ type Config struct {
 	// not gate that writer.
 	TenantAccessEnabled bool `env:"TENANT_ACCESS_ENABLED" default:"false"`
 
+	// AuthConfigPath is the mounted YAML file holding the API authentication
+	// configuration. Unset disables authentication. A set-but-unreadable path is
+	// a startup failure, never "disabled"; see auth.Load.
+	//
+	// Validate() does not check it: unset is the valid default.
+	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
+
+	// PermissiveMode evaluates and logs authentication and admission decisions
+	// without enforcing them, so no request is rejected. No effect when
+	// AuthConfigPath is unset.
+	PermissiveMode bool `env:"PERMISSIVE_MODE" default:"false"`
+
 	// Tracing configures OpenTelemetry distributed tracing. When Enabled and
 	// Endpoint are set, CWE exports OTLP gRPC spans. Endpoint and related OTEL_*
 	// vars may be injected by the OpenTelemetry Operator (inject-sdk + sidecar);
@@ -425,6 +443,14 @@ func (c *TeleportConfig) Validate() error {
 // controller path.
 func (c Config) UseControlPlaneControllerForControlPlane() bool {
 	return c.ProvisionControlPlaneWithControlPlaneController
+}
+
+// EffectiveRunbooksDir returns the configured profile-hook runbook directory.
+func (c Config) EffectiveRunbooksDir() string {
+	if c.RunbooksDir != "" {
+		return c.RunbooksDir
+	}
+	return filepath.Join(c.ProfilesDir, "runbooks")
 }
 
 // ParseConfigFromEnv parses configuration from environment variables and validates it.

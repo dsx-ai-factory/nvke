@@ -188,7 +188,7 @@ func TestJSONFilePersisterLoadFromStateFile(t *testing.T) {
 		CompletedPhases: []string{JoinPhase},
 	}
 	data, _ := json.MarshalIndent(status, "", "  ")
-	err := os.WriteFile(stateFile, data, 0644)
+	err := os.WriteFile(stateFile, data, 0o644)
 	assert.NoError(t, err)
 
 	persister := &JSONFilePersister{Path: stateFile}
@@ -215,7 +215,7 @@ func TestJSONFilePersisterLoadFromStateFileEmpty(t *testing.T) {
 	stateFile := filepath.Join(tmpDir, "state.json")
 
 	// Create empty file
-	err := os.WriteFile(stateFile, []byte{}, 0644)
+	err := os.WriteFile(stateFile, []byte{}, 0o644)
 	assert.NoError(t, err)
 
 	persister := &JSONFilePersister{Path: stateFile}
@@ -231,7 +231,7 @@ func TestJSONFilePersisterLoadFromStateFileInvalidJSON(t *testing.T) {
 	stateFile := filepath.Join(tmpDir, "state.json")
 
 	// Create file with invalid JSON
-	err := os.WriteFile(stateFile, []byte("not valid json"), 0644)
+	err := os.WriteFile(stateFile, []byte("not valid json"), 0o644)
 	assert.NoError(t, err)
 
 	persister := &JSONFilePersister{Path: stateFile}
@@ -501,7 +501,7 @@ func TestLoadFromStateFileWithValidKubeadmVersion(t *testing.T) {
 		Status:   ReadyStatus,
 	}
 	data, _ := json.MarshalIndent(status, "", "  ")
-	err := os.WriteFile(stateFile, data, 0644)
+	err := os.WriteFile(stateFile, data, 0o644)
 	assert.NoError(t, err)
 
 	persister := &JSONFilePersister{Path: stateFile}

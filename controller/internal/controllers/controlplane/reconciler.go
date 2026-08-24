@@ -91,7 +91,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	}
 
 	// Create exactly the deficit as type-less pending nodes. Instance-type
-	// selection and Forge capacity checks are the node scheduler's job: it picks
+	// selection and Forge capacity checks are the control plane node scheduler's job: it picks
 	// each node's Forge instance type from the pinned InstanceTypePreference at
 	// schedule time and persists it back onto the node row.
 	created, err := r.scaleUp(ctx, cluster, deficit, "control-plane scale-up")
