@@ -463,9 +463,8 @@ platform responsibility.
 ### Local Development
 
 You don't need identity infrastructure to work on this. The cluster's own API
-server is already an issuer and the service account tokens it signs are already
-JWTs, so NKE verifies them like any other issuer. This is the path the e2e suite
-uses.
+server is an issuer, and the service account tokens it signs are JWTs, so NKE
+verifies them like any other issuer. The e2e suite takes the same path.
 
 `tilt up` deploys an enforcing NKE with the config in
 `deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
@@ -513,7 +512,7 @@ starting with authentication disabled.
 ### Authentication Configuration
 
 One file, mounted at `AUTH_CONFIG_PATH`. `deploy/k8s/nke-auth-dev.yaml` is a
-working example to start from; the full schema and every validation rule live in
+working example; the full schema and every validation rule live in
 `internal/auth/config.go`. The shape:
 
 ```yaml
@@ -563,8 +562,8 @@ issuers:
 
 An issuer pointing at the cluster's own `/openid/v1/jwks` needs NKE's
 ServiceAccount bound to `system:service-account-issuer-discovery`. That endpoint
-is not anonymous, and Kubernetes ships the ClusterRole bound to nobody, so
-without this an enforcing NKE will not start.
+is not anonymous, and Kubernetes ships the ClusterRole unbound, so an enforcing
+NKE will not start without this binding.
 
 The chart creates the binding when `apiAuth.clusterIssuerDiscovery` is true.
 Otherwise:
