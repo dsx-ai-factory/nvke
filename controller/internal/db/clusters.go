@@ -44,21 +44,22 @@ type CAPIClusterProvider struct {
 }
 
 type Cluster struct {
-	ID                    uuid.UUID `bun:"type:uuid,pk,default:gen_random_uuid()"`
-	Name                  string    `bun:"type:text,notnull"`
-	OrgID                 string    `bun:"type:text,notnull"`
-	SiteID                uuid.UUID `bun:"type:uuid,notnull"`
-	VpcID                 uuid.UUID `bun:"type:uuid,notnull"`
-	CniPlugin             CniPlugin `bun:"type:text"`
-	CniVersion            string    `bun:"type:text"`
-	EtcdEncrypted         bool      `bun:"type:boolean,notnull,default:false"`
-	KubernetesVersion     string    `bun:"type:text,notnull"`
-	ControlPlaneVIP       string    `bun:"type:text"`
-	EnableCPNodeRecycling bool      `bun:"type:boolean,notnull,default:false"`
-	TeleportEnabled       bool      `bun:"type:boolean,notnull,default:false"`
-	PodCIDR               string    `bun:"pod_cidr,type:text,notnull,default:'192.168.0.0/16'"`
-	ServiceCIDR           string    `bun:"service_cidr,type:text,notnull,default:'10.96.0.0/12'"`
-	OIDCAuthEnabled       bool      `bun:"type:boolean,notnull,default:false"`
+	ID                    uuid.UUID  `bun:"type:uuid,pk,default:gen_random_uuid()"`
+	Name                  string     `bun:"type:text,notnull"`
+	OrgID                 string     `bun:"type:text,notnull"`
+	SiteID                uuid.UUID  `bun:"type:uuid,notnull"`
+	VpcID                 uuid.UUID  `bun:"type:uuid,notnull"`
+	CniPlugin             CniPlugin  `bun:"type:text"`
+	CniVersion            string     `bun:"type:text"`
+	EtcdEncrypted         bool       `bun:"type:boolean,notnull,default:false"`
+	KubernetesVersion     string     `bun:"type:text,notnull"`
+	ControlPlaneVIP       string     `bun:"type:text"`
+	EnableCPNodeRecycling bool       `bun:"type:boolean,notnull,default:false"`
+	TeleportEnabled       bool       `bun:"type:boolean,notnull,default:false"`
+	PodCIDR               string     `bun:"pod_cidr,type:text,notnull,default:'192.168.0.0/16'"`
+	ServiceCIDR           string     `bun:"service_cidr,type:text,notnull,default:'10.96.0.0/12'"`
+	OIDCAuthEnabled       bool       `bun:"type:boolean,notnull,default:false"`
+	NextCertRenewalDue    *time.Time `bun:"type:timestamptz"`
 
 	CapiInfraCluster json.RawMessage      `bun:"type:jsonb,notnull,default:'{}'"`
 	ProviderType     ProviderType         `bun:"provider_type,type:text,notnull"`
@@ -453,6 +454,7 @@ type ClusterQueries interface {
 	GetClusterForUpdate(ctx context.Context, id uuid.UUID) (Cluster, error)
 	CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
 	UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error)
+	UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error
 	DeleteCluster(ctx context.Context, id uuid.UUID) error
 	// SyncClusterControlPlaneConfigFromCPNodePools sets control_plane_config from all control-plane
 	// node pools for the cluster that are not marked deleting.
@@ -534,6 +536,18 @@ func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Clus
 		return Cluster{}, err
 	}
 	return *cluster, notFoundErrIfNoRowsAffected(res)
+}
+
+func (q *queriesImpl) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
+	res, err := q.db.NewUpdate().
+		Model(&Cluster{}).
+		Set("next_cert_renewal_due = ?", nextDue).
+		Where("id = ?", clusterID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update cluster next cert renewal due: %w", err)
+	}
+	return notFoundErrIfNoRowsAffected(res)
 }
 
 func (q *queriesImpl) DeleteCluster(ctx context.Context, id uuid.UUID) error {

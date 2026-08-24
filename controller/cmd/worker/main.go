@@ -28,6 +28,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers"
 	"github.com/NVIDIA/nke/controller/internal/controllers/automode"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
+	"github.com/NVIDIA/nke/controller/internal/controllers/certrenewal"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplanenodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
@@ -393,6 +394,21 @@ func main() {
 	if err := controlPlaneNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane node scheduler", "error", err)
 		os.Exit(1)
+	}
+
+	if cfg.CertRenewalControllerEnabled {
+		certRenewalController := certrenewal.NewController(
+			cfg,
+			logger.With("logger", "cert-renewal-controller"),
+			dbInstance,
+			temporalClient,
+		)
+		if err := certRenewalController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up cert renewal controller", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("Cert renewal controller disabled")
 	}
 
 	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, forgeProvider, temporalClient, authenticator)

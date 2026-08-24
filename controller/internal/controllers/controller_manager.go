@@ -31,7 +31,6 @@ type ControllerManager struct {
 
 	capiClusterScaffold          *CAPIClusterScaffoldController
 	nodeHealthController         *nodehealth.Controller
-	certRenewalController        *CertRenewalController
 	clusterStaticEntryController *NodeClusterStaticEntryController
 	tpmPubhashesCmController     *TpmPubhashesCmController
 	teleportTokenController      *TeleportTokenController
@@ -78,7 +77,6 @@ func NewControllerManager(
 		stopCh:                       make(chan struct{}),
 		capiClusterScaffold:          capiClusterScaffold,
 		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
-		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
 		clusterStaticEntryController: clusterStaticEntryController,
 		tpmPubhashesCmController:     tpmPubhashesCmController,
 		teleportTokenController:      teleportTokenController,
@@ -224,10 +222,5 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 		}
 	} else {
 		a.logger.Debug("SPIFFE is disabled, skipping tpm pubhashes configmap reconciliation")
-	}
-
-	if err := a.certRenewalController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile cert renewal", "error", err, "siteID", site.ID.String())
 	}
 }

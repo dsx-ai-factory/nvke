@@ -70,6 +70,11 @@ func (m *MockDB) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Clu
 	return v, args.Error(1)
 }
 
+func (m *MockDB) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
+	args := m.Called(ctx, clusterID, nextDue)
+	return args.Error(0)
+}
+
 func (m *MockDB) DeleteCluster(ctx context.Context, clusterID uuid.UUID) error {
 	args := m.Called(ctx, clusterID)
 	return args.Error(0)
@@ -95,11 +100,6 @@ func (m *MockDB) GetCluster(ctx context.Context, id uuid.UUID) (db.Cluster, erro
 
 func (m *MockDB) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error {
 	args := m.Called(ctx, clusterID)
-	return args.Error(0)
-}
-
-func (m *MockDB) UpdateSiteNextCertRenewalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {
-	args := m.Called(ctx, siteID, nextDue)
 	return args.Error(0)
 }
 
@@ -331,8 +331,8 @@ func (m *MockTx) UpdateCluster(ctx context.Context, cluster *db.Cluster) (db.Clu
 	return v, args.Error(1)
 }
 
-func (m *MockTx) UpdateSiteNextCertRenewalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {
-	args := m.Called(ctx, siteID, nextDue)
+func (m *MockTx) UpdateClusterNextCertRenewalDue(ctx context.Context, clusterID uuid.UUID, nextDue time.Time) error {
+	args := m.Called(ctx, clusterID, nextDue)
 	return args.Error(0)
 }
 
