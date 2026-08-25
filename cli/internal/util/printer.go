@@ -1,9 +1,9 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cliutil provides shared utility functions for nkectl commands:
+// Package util provides shared utility functions for nkectl commands:
 // output formatting, age display, and other common CLI helpers.
-package cliutil
+package util
 
 import (
 	"encoding/json"
@@ -115,7 +115,7 @@ func printMap(w io.Writer, m map[string]any, indent int) {
 // FormatAge returns a short human-readable duration since t, matching the
 // bucketed format kubectl uses: seconds, minutes, hours, or days.
 func FormatAge(t time.Time) string {
-	d := time.Since(t).Round(time.Second)
+	d := max(time.Since(t).Round(time.Second), 0)
 	switch {
 	case d < time.Minute:
 		return fmt.Sprintf("%ds", int(d.Seconds()))

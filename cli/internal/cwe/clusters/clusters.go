@@ -15,15 +15,15 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/client"
-	"github.com/NVIDIA/nke/cli/internal/cliutil"
+	"github.com/NVIDIA/nke/cli/internal/clients"
+	"github.com/NVIDIA/nke/cli/internal/util"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-// ClientFn is a factory that returns an authenticated CWE client.
+// ClientFn is a factory that returns an authenticated CWE clients.
 // Commands receive this rather than a constructed client so that the
 // client is only built when a command actually runs (not at startup).
-type ClientFn func() (*client.CWEClient, error)
+type ClientFn func() (*clients.CWEClient, error)
 
 // NewGetCmd returns the "nkectl get clusters" subcommand.
 func NewGetCmd(clientFn ClientFn) *cobra.Command {
@@ -34,7 +34,7 @@ func NewGetCmd(clientFn ClientFn) *cobra.Command {
 		Short: "List tenant clusters on the site controller",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			f, err := cliutil.ParseFormat(outputFormat)
+			f, err := util.ParseFormat(outputFormat)
 			if err != nil {
 				return err
 			}
@@ -46,8 +46,8 @@ func NewGetCmd(clientFn ClientFn) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if f != cliutil.FormatTable {
-				return cliutil.Print(os.Stdout, f, clusters)
+			if f != util.FormatTable {
+				return util.Print(os.Stdout, f, clusters)
 			}
 			printClusters(clusters)
 			return nil
@@ -67,7 +67,7 @@ func NewDescribeCmd(clientFn ClientFn) *cobra.Command {
 		Short: "Show details of a tenant cluster",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			f, err := cliutil.ParseFormat(outputFormat)
+			f, err := util.ParseFormat(outputFormat)
 			if err != nil {
 				return err
 			}
@@ -83,10 +83,10 @@ func NewDescribeCmd(clientFn ClientFn) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if f == cliutil.FormatTable {
-				return cliutil.PrintFields(os.Stdout, cl2)
+			if f == util.FormatTable {
+				return util.PrintFields(os.Stdout, cl2)
 			}
-			return cliutil.Print(os.Stdout, f, cl2)
+			return util.Print(os.Stdout, f, cl2)
 		},
 	}
 
@@ -108,7 +108,7 @@ func NewCreateCmd(clientFn ClientFn) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "cluster <spec-file|-|->",
+		Use:   "cluster <spec-file|->",
 		Short: "Create a tenant cluster",
 		Long: `Create a tenant cluster on the site controller.
 
@@ -195,7 +195,7 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 	if err != nil {
 		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("reading spec: %w", err)
 	}
-	return cliutil.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
+	return util.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
 }
 
 // NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.
@@ -208,11 +208,14 @@ func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if !yes {
-				fmt.Fprintf(os.Stdout, "Delete cluster %q? This cannot be undone. [y/N] ", name)
-				scanner := bufio.NewScanner(os.Stdin)
-				scanner.Scan()
+				fmt.Fprintf(cmd.OutOrStdout(), "Delete cluster %q? This cannot be undone. [y/N] ", name)
+				scanner := bufio.NewScanner(cmd.InOrStdin())
+				if !scanner.Scan() {
+					fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+					return nil
+				}
 				if strings.ToLower(strings.TrimSpace(scanner.Text())) != "y" {
-					fmt.Fprintln(os.Stdout, "Aborted.")
+					fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
 					return nil
 				}
 			}
@@ -276,7 +279,7 @@ func printClusters(clusters []api.Cluster) {
 			cl.CniPlugin,
 			clusterStatus(&cl),
 			cl.ID,
-			cliutil.FormatAge(cl.CreatedAt),
+			util.FormatAge(cl.CreatedAt),
 		)
 	}
 	w.Flush() //nolint:errcheck

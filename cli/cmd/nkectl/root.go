@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/NVIDIA/nke/cli/internal/client"
+	"github.com/NVIDIA/nke/cli/internal/clients"
 	"github.com/NVIDIA/nke/cli/internal/config"
 )
 
@@ -46,7 +46,7 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 // loadClient is the shared client factory injected into all CWE-backed commands.
 // It is called lazily (when a command runs, not at startup) so that --help and
 // non-API commands work without a configured site.
-func loadClient() (*client.CWEClient, error) {
+func loadClient() (*clients.CWEClient, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
@@ -55,7 +55,7 @@ func loadClient() (*client.CWEClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return client.New(site)
+	return clients.New(site)
 }
 
 // Execute is the entry point called from main.
