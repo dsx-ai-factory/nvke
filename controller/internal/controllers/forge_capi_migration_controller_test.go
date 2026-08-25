@@ -230,6 +230,40 @@ func (a *unexpectedMachineAdopter) ApplyAdoptedForgeCAPIMachine(
 	return nil
 }
 
+func TestCAPIAdoptionPredicates(t *testing.T) {
+	t.Parallel()
+
+	provisioned := adoptedForgeNode()
+	unprovisioned := adoptedForgeNode()
+	unprovisioned.Conditions.Provisioned = db.NewCondition(false, "Not yet provisioned")
+	deleting := adoptedForgeNode()
+	deleting.Conditions.Deleting = db.NewCondition(true, "Deleting")
+	noForgeID := adoptedForgeNode()
+	noForgeID.Nico = &db.NicoNodeProvider{}
+	noPool := adoptedForgeNode()
+	noPool.NodePoolID = uuid.Nil
+	noSet := adoptedForgeNode()
+	noSet.NodeSetID = uuid.Nil
+
+	assert.True(t, expectsCAPIAdoption(provisioned))
+	assert.True(t, eligibleForCAPIAdoption(provisioned))
+
+	assert.True(t, expectsCAPIAdoption(unprovisioned))
+	assert.False(t, eligibleForCAPIAdoption(unprovisioned))
+
+	assert.False(t, expectsCAPIAdoption(deleting))
+	assert.False(t, eligibleForCAPIAdoption(deleting))
+
+	assert.False(t, expectsCAPIAdoption(noForgeID))
+	assert.False(t, eligibleForCAPIAdoption(noForgeID))
+
+	assert.True(t, expectsCAPIAdoption(noPool))
+	assert.False(t, eligibleForCAPIAdoption(noPool))
+
+	assert.True(t, expectsCAPIAdoption(noSet))
+	assert.False(t, eligibleForCAPIAdoption(noSet))
+}
+
 func adoptedForgeNode() db.Node {
 	node := db.Node{
 		ID:         uuid.New(),

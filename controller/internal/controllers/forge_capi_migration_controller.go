@@ -249,8 +249,15 @@ func (c *ForgeCAPIMigrationController) reconcileNicoCluster(ctx context.Context,
 // still running, and Forge label updates replace the whole label map rather
 // than merging: CAPNICo's own topology label write would race it and one set of
 // labels would be lost.
+//
+// A node pool and node set are required because ApplyAdoptedForgeCAPIMachine
+// looks them up. No-nodepool control-plane nodes (null pool/set) still count as
+// remaining work via expectsCAPIAdoption.
 func eligibleForCAPIAdoption(node db.Node) bool {
-	return expectsCAPIAdoption(node) && node.Conditions.Provisioned.Status == db.ConditionStatusTrue
+	return expectsCAPIAdoption(node) &&
+		node.NodePoolID != uuid.Nil &&
+		node.NodeSetID != uuid.Nil &&
+		node.Conditions.Provisioned.Status == db.ConditionStatusTrue
 }
 
 // expectsCAPIAdoption reports whether the node should ever gain CAPI objects,
@@ -259,9 +266,7 @@ func eligibleForCAPIAdoption(node db.Node) bool {
 // create it, so adopting one leaves a Machine and NicoMachine that no teardown
 // will revisit once the node row is gone.
 func expectsCAPIAdoption(node db.Node) bool {
-	if node.Conditions.Deleting.Status == db.ConditionStatusTrue ||
-		node.NodePoolID == uuid.Nil ||
-		node.NodeSetID == uuid.Nil {
+	if node.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		return false
 	}
 	return node.Nico != nil && node.Nico.ForgeInstanceID != ""
