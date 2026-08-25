@@ -139,6 +139,7 @@ runner_exec() {
     -e KUBECONFIG=/state/management.kubeconfig \
     -e DOCKER_HOST="${RUNNER_DOCKER_HOST}" \
     -e NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
+    -e NKE_E2E_REQUIRE_AUTHN="${NKE_E2E_REQUIRE_AUTHN:-}" \
     "${RUNNER_NAME}" "$@"
 }
 

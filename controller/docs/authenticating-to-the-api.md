@@ -21,16 +21,18 @@ it did, so you can fix it when it doesn't.
 
 ## Before you start
 
-You need a kind cluster running NKE with authentication enabled:
+You need a kind cluster running NKE:
 
 ```bash
-NKE_AUTH_ENABLED=true tilt up
+tilt up
 ```
 
-Authentication is off by default, so a plain `tilt up` gives you an NKE that
-serves everyone. Tilt forwards the API to `localhost:8080` either way, and
+That deploys an enforcing NKE. Tilt forwards the API to `localhost:8080` and
 applies `deploy/k8s/nke-auth-dev.yaml`, which creates the client identities used
 below.
+
+`NKE_AUTH_ENABLED=false tilt up` turns authentication off, and then none of this
+is necessary.
 
 ## Is authentication even on?
 

@@ -384,7 +384,7 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 		return tenantTest{}, fmt.Errorf("building management cluster client: %w", err)
 	}
 
-	cweClient, err := nke.NewClient(restConfig, timeouts)
+	cweClient, err := nke.NewClient(ctx, restConfig, timeouts)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("building CWE API client: %w", err)
 	}

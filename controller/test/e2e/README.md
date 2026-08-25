@@ -111,7 +111,9 @@ go run github.com/onsi/ginkgo/v2/ginkgo@v2.27.2 run -v --label-filter=health .
 ```
 
 Only `CWE_EXPECTED_VERSION` and `CWE_HEALTH_TIMEOUT` are specific to the health
-specs; the rest apply everywhere.
+specs; the first four apply everywhere. The `NKE_E2E_*` group configures the
+credential `nke.NewClient` discovers and presents on every ordinary NKE call,
+not the authentication specs, which build their own token per case.
 
 | Variable | Description | Default |
 | --- | --- | --- |
@@ -121,9 +123,50 @@ specs; the rest apply everywhere.
 | `CWE_SERVICE_PORT` | NKE Service port, by name or number; the pod-side port is resolved from its `targetPort`. | `8080` |
 | `CWE_EXPECTED_VERSION` | Required CWE version; when unset, the version spec is skipped. | Unset |
 | `CWE_HEALTH_TIMEOUT` | Per-spec context timeout. | `60s` |
+| `NKE_E2E_AUTH_DISABLE` | Turns the token source off, so the suite sends no `Authorization` header. Against an enforcing NKE every spec then fails with 401. | Unset |
+| `NKE_E2E_AUDIENCE` | Overrides the audience the suite mints for. Normally discovered from the `nke-auth-config` ConfigMap in `CWE_NAMESPACE`. | Discovered |
+| `NKE_E2E_TOKEN_NAMESPACE` | Namespace of the service account the suite presents. | `nke-clients` |
+| `NKE_E2E_TOKEN_SERVICE_ACCOUNT` | Service account the suite presents. Point this pair at `nke-outsiders`/`nke-outsider` for the 403 case. | `nke-client` |
+| `NKE_E2E_TOKEN_TTL` | Minted token lifetime. The apiserver rejects anything under 10m. | `15m` |
+
+When the `nke-auth-config` ConfigMap does not exist, the suite sends no token,
+so an unauthenticated NKE needs no configuration here.
 
 Unfiltered runs, including `make test-e2e`, include the health specs. To exclude
 them, pass `--label-filter='!health'`.
+
+## Authentication specs
+
+Three labels, which do not all run against the same deployment.
+
+| Label | What it covers | Deployment it needs |
+|---|---|---|
+| `authn` | The negative cases: no token -> 401, wrong audience -> 401, an unadmitted identity -> 403, and the anonymous routes `internal/auth/routes.go` exempts staying reachable with no credential. Also selects `authn-spire`. | Enforcing (`AUTH_CONFIG_PATH` set, `PERMISSIVE_MODE` unset or false) |
+| `authn-spire` | A SPIRE JWT-SVID end to end: a pod the spec creates fetches an SVID over the Workload API and calls NKE with it, and with one that differs only in `aud`. | Enforcing, plus SPIFFE enabled on the NKE pod |
+| `authn-permissive` | That permissive mode counts what it would have rejected: all cases return 200 and `nke_auth_requests_total{outcome="would_reject"}` advances. It flips the deployment itself and puts it back. | Enforcing; it arranges permissive mode for its own duration |
+
+Each skips itself, with the reason, when the deployment is not in the state it
+needs, reading `AUTH_CONFIG_PATH` and `PERMISSIVE_MODE` off the live NKE
+Deployment. Set `NKE_E2E_REQUIRE_AUTHN=true` (as the CAPD lane does) to turn
+"authentication is not deployed" from a skip into a failure; without it a
+cluster with authentication off produces `SUCCESS! -- 0 Passed | 0 Failed | N
+Skipped`, indistinguishable in a CI log from a suite that never had these specs.
+
+**Prerequisites.** `tilt up` applies `deploy/k8s/nke-auth-dev.yaml` (client
+namespaces, service accounts, token-minter RBAC and the `nke-auth-config`
+ConfigMap) and, for `authn-spire`, `deploy/k8s/nke-spire-client.yaml`. NKE's
+permission to read the cluster JWKS comes from the chart
+(`apiAuth.clusterIssuerDiscovery`).
+
+Run from the repository root:
+
+```bash
+make test-authn
+make test-authn-spire
+```
+
+`hack/nke-auth-demo.sh` drives the same four credentials with `curl` and needs
+no Go at all.
 
 ## Useful Ginkgo CLI Commands
 

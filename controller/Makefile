@@ -150,6 +150,24 @@ test-integration: ## Execute tests against a running CWE deployment.
 test-health: ## Run the health-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
 	$(MAKE) test-e2e E2E_TIMEOUT=10m ARGS='--label-filter=health'
 
+# The authentication specs. Both need deploy/k8s/nke-auth-dev.yaml applied and
+# an enforcing NKE; the chart binds the JWKS read permission.
+#
+# The SPIRE spec carries both labels, so test-authn runs it too; it skips itself
+# with a message naming deploy/k8s/nke-spire-client.yaml when that scaffolding
+# is absent. test-authn-spire is the way to run only that one.
+#
+# The permissive specs have no target: they need an NKE deployed with
+# PERMISSIVE_MODE=true, which is a different deployment. Run them against one
+# with `make test-e2e ARGS='--label-filter=authn-permissive'`.
+.PHONY: test-authn
+test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
+	$(MAKE) test-e2e E2E_TIMEOUT=20m ARGS='--label-filter=authn'
+
+.PHONY: test-authn-spire
+test-authn-spire: ## Run the SPIRE JWT-SVID authentication spec against the cluster in KUBECONFIG.
+	$(MAKE) test-e2e E2E_TIMEOUT=20m ARGS='--label-filter=authn-spire'
+
 .PHONY: test-integration-teleport
 test-integration-teleport: ## Execute Teleport client integration tests (requires valid credentials).
 	@bash -c '[ -f .env.local ] && set -a && source .env.local && set +a; \

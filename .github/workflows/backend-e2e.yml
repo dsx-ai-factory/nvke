@@ -42,6 +42,13 @@ on:
         required: false
         type: number
         default: 90
+      require-authn:
+        description: >-
+          Fail rather than skip when the deployment is not authenticating. Only
+          meaningful for a backend whose label-filter selects the authn specs.
+        required: false
+        type: boolean
+        default: false
       needs-nico-provider:
         description: >-
           Check out NVIDIA/cluster-api-provider-nico next to the monorepo. It is
@@ -69,6 +76,7 @@ jobs:
       NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
       NKE_E2E_LABEL_FILTER: ${{ inputs.label-filter }}
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
+      NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
       KIND_CLUSTER_NAME: cwe-${{ inputs.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
       GOPROXY: "off"
       # Empty unless the caller asked for CAPNICo. The script stages the tree

@@ -479,11 +479,9 @@ For a step-by-step walkthrough of getting a token and calling the API, including
 what to check when you get an unexpected 401, see
 [Authenticating to the NKE API](docs/authenticating-to-the-api.md).
 
-`tilt up` applies the config in `deploy/k8s/nke-auth-dev.yaml`, two client
-identities (one admitted, one not), and the binding described under RBAC
-Prerequisite. Authentication itself is off by default, because the e2e suite
-cannot present a credential yet; `NKE_AUTH_ENABLED=true tilt up` deploys an
-enforcing NKE.
+`tilt up` deploys an enforcing NKE with the config in
+`deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
+and the binding described under RBAC Prerequisite.
 
 ```bash
 ./hack/nke-auth-demo.sh    # four credentials, prints the status code for each

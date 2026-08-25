@@ -47,7 +47,21 @@ jobs:
       # in a job nothing requires.
       #
       # `health` rides along: those specs need a cluster running CWE, which this
-      # lane has already built by the time the suite starts.
-      label-filter: capd || health
+      # lane has already built by the time the suite starts. So do the
+      # authentication specs: this is the only job with a deployed NKE, and the
+      # chart deploys it enforcing. authn-spire is excluded -- it needs the SPIRE
+      # agent to attest a pod the spec creates, which is not demonstrated in the
+      # CAPD runner yet.
+      #
+      # authn-permissive rides along too. It puts the deployment into permissive
+      # mode itself and puts it back, so it needs this lane rather than one of
+      # its own.
+      label-filter: capd || health || (authn && !authn-spire) || authn-permissive
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
       timeout-minutes: 90
+      # Turns "authentication is not deployed" from a per-spec skip into a
+      # failure. -ginkgo.fail-on-empty catches a filter that matches nothing; it
+      # cannot catch specs that matched, ran, and skipped themselves. Without
+      # this, breaking the deployment leaves the job green with every authn spec
+      # skipped, which in a CI log reads the same as a spec that never existed.
+      require-authn: true

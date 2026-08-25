@@ -3,19 +3,22 @@
 
 // Package nke offers utilities to interact with the NKE management plane.
 // Like a thin client over the NKE generated API, reached over a port-forward to
-// the NKE Service's backing pod.
+// the NKE Service's backing pod. The client carries an NKE credential of its
+// own, separate from the kubeconfig credential authenticating the forward.
 package nke
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"k8s.io/client-go/rest"
 
 	"github.com/NVIDIA/nke/controller/api"
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/authtoken"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
 )
@@ -29,9 +32,23 @@ const (
 	defaultSiteVIPRange = "172.31.1.0/24"
 )
 
+const (
+	// discoverTimeout bounds the cluster reads NewClient does to work out whether
+	// NKE is authenticating and for what audience.
+	discoverTimeout = 30 * time.Second
+)
+
 // Options tunes the waiter loops. Zero values fall back to the defaults above.
 type Options struct {
 	Provision, Upgrade, Delete, Poll time.Duration
+}
+
+// TokenSource yields the bearer token to present to the NKE API. Satisfied by
+// *authtoken.Source; an interface so a spec can hand over a wrong identity.
+type TokenSource interface {
+	// Token must refresh: one client serves a whole provisioning wait,
+	// outlasting any token lifetime.
+	Token(ctx context.Context) (string, error)
 }
 
 // Client wraps the generated CWE API client plus the configured timeouts.
@@ -42,19 +59,58 @@ type Client struct {
 
 // NewClient builds the generated API client over a port-forward to the NKE
 // Service's backing pod, shared process-wide and closed by
-// kube.CloseSharedForwarders.
-func NewClient(restConfig *rest.Config, opts Options) (*Client, error) {
+// kube.CloseSharedForwarders. It discovers its own credential, so every spec
+// presents one. ctx bounds only the discovery reads.
+func NewClient(ctx context.Context, restConfig *rest.Config, opts Options) (*Client, error) {
+	ctx, cancel := context.WithTimeout(ctx, discoverTimeout)
+	defer cancel()
+
+	source, found, err := authtoken.Discover(ctx, restConfig)
+	if err != nil {
+		return nil, fmt.Errorf("discovering the NKE API credential: %w", err)
+	}
+	// A typed nil in an interface is not a nil interface, so the no-credential
+	// case leaves tokens unassigned.
+	var tokens TokenSource
+	if found {
+		tokens = source
+	}
+	return NewClientWithTokenSource(restConfig, opts, tokens)
+}
+
+// NewClientWithTokenSource is NewClient with the credential supplied rather
+// than discovered. A nil tokens sends no Authorization header, which is both
+// the no-authentication deployment and the 401 case.
+func NewClientWithTokenSource(restConfig *rest.Config, opts Options, tokens TokenSource) (*Client, error) {
 	forwarder, err := kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cwe.Port())
 	if err != nil {
 		return nil, fmt.Errorf("building NKE port-forward: %w", err)
 	}
 
-	apiClient, err := api.NewClientWithResponses(forwarder.BaseURL()+"/api",
-		api.WithHTTPClient(forwarder.HTTPClient()))
+	clientOpts := []api.ClientOption{api.WithHTTPClient(forwarder.HTTPClient())}
+	if tokens != nil {
+		clientOpts = append(clientOpts, api.WithRequestEditorFn(bearerToken(tokens)))
+	}
+
+	apiClient, err := api.NewClientWithResponses(forwarder.BaseURL()+"/api", clientOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("building API client: %w", err)
 	}
 	return &Client{api: apiClient, opts: withDefaults(opts)}, nil
+}
+
+// bearerToken sets Authorization on every request. The token is fetched per
+// request, so the source's refresh is what the request sees. A failure to mint
+// is an error rather than a bare request that would read as a 401.
+func bearerToken(tokens TokenSource) api.RequestEditorFn {
+	return func(ctx context.Context, req *http.Request) error {
+		token, err := tokens.Token(ctx)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		return nil
+	}
 }
 
 // API exposes the underlying generated client for preflight checks.

@@ -22,6 +22,10 @@ import (
 const (
 	oidcEnabledEnvVar = "NKE_OIDC_AUTH_ENABLED"
 	enabledValue      = "true"
+
+	// permissiveModeEnvVar is what NKE reads to decide whether a failed check
+	// rejects the request or is only counted.
+	permissiveModeEnvVar = "PERMISSIVE_MODE"
 )
 
 // OIDCEnabled reports whether the CWE deployment on the management cluster has
@@ -77,8 +81,17 @@ func SetOIDCEnabled(ctx context.Context, c client.Client, enabled bool) error {
 	return err
 }
 
+// SetPermissiveMode sets PERMISSIVE_MODE on the NKE container and waits for the
+// rollout, returning the value it replaced so a caller can put it back.
+//
+// An absent variable comes back as "", and restoring that sets it to the empty
+// string rather than removing it. NKE reads both as enforcing.
+func SetPermissiveMode(ctx context.Context, c client.Client, value string) (string, error) {
+	return setNKEContainerEnv(ctx, c, permissiveModeEnvVar, value)
+}
+
 // setNKEContainerEnv upserts an environment variable on the NKE container and
-// waits for the rollout.
+// waits for the rollout. It returns the value it replaced.
 //
 // The container is found by name, with no fallback. Guessing container 0 writes
 // the variable onto whichever sidecar happens to be first, then waits out a

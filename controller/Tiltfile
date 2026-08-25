@@ -924,20 +924,20 @@ _cwe_tenant_access_enabled = os.getenv(
 _cwe_oidc_enabled = os.getenv(
     "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
 
-# NKE API authentication. Off by default, because the e2e suite cannot present a
-# credential yet: it gains one with the authentication specs. Turning this on
-# before then deploys an enforcing NKE that answers 401 to every spec that calls
-# the API. The default flips once the suite can authenticate.
+# NKE API authentication. Enforcing by default now that the suite mints its own
+# token: internal/authtoken discovers the audience from the nke-auth-config
+# ConfigMap and nke.NewClient presents it on every call, so the ordinary specs
+# exercise the shipping authentication path rather than bypassing it.
 #
 # The config file comes from the nke-auth-config ConfigMap in
 # deploy/k8s/nke-auth-dev.yaml, and the chart mounts it from the apiAuth values
 # set below. To drive it by hand, use hack/nke-token.sh for the bearer token.
 #
-#   NKE_AUTH_ENABLED=true tilt up      -> enforcing
+#   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
 #   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
 #
 _cwe_auth_enabled = os.getenv(
-    "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "false")) == "true"
+    "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "true")) == "true"
 _cwe_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
 
