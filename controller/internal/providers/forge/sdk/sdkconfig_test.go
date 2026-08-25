@@ -66,3 +66,8 @@ func TestNewSDKConfig_AppendsDockerTestServer(t *testing.T) {
 		"SDK server list length must equal envServerIndexMap size (including docker-test entry); "+
 			"if the upstream SDK added or removed a server, update envServerIndexMap accordingly")
 }
+
+func TestNewSDKConfig_SetsForgeAPIName(t *testing.T) {
+	sdkCfg := NewSDKConfig(&config.Config{})
+	require.Equal(t, "forge", sdkCfg.GetAPIName())
+}

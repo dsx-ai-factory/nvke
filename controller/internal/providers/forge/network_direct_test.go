@@ -33,13 +33,13 @@ func TestGetNetworkByIDFromAPIBypassesCache(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 
 		switch r.URL.Path {
-		case "/v2/org/" + orgID + "/carbide/subnet":
+		case "/v2/org/" + orgID + "/forge/subnet":
 			subnet := forgesdk.NewSubnet()
 			subnet.SetId(subnetID)
 			if err := json.NewEncoder(w).Encode([]forgesdk.Subnet{*subnet}); err != nil {
 				t.Errorf("encoding subnet response: %v", err)
 			}
-		case "/v2/org/" + orgID + "/carbide/vpc-prefix":
+		case "/v2/org/" + orgID + "/forge/vpc-prefix":
 			vpcPrefix := forgesdk.NewVpcPrefix()
 			vpcPrefix.SetId(vpcPrefixID)
 			if err := json.NewEncoder(w).Encode([]forgesdk.VpcPrefix{*vpcPrefix}); err != nil {

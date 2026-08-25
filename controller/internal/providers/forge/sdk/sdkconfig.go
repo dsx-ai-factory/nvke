@@ -56,6 +56,8 @@ func NewSDKConfig(cfg *config.Config) *forgesdk.Configuration {
 	if cfg.Tracing.Enabled {
 		sdkCfg.HTTPClient = otelx.HTTPClient(sdkCfg.HTTPClient)
 	}
+	// Must be called after HTTPClient is set. Generated paths use carbide; NGC serves forge.
+	sdkCfg.SetAPIName("forge")
 	return sdkCfg
 }
 
