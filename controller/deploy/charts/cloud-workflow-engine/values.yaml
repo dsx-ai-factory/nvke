@@ -301,7 +301,9 @@ apiAuth:
     # Required when apiAuth.enabled=true; an empty name fails the render.
     name: nke-auth-config
   # -- Bind system:service-account-issuer-discovery so NKE can read the cluster's
-  # own JWKS. Needed only for an issuer using `keys: {kubernetes: {}}`.
+  # JWKS. Only used by an issuer that points `jwks.uri` at that endpoint.
+  # Kubernetes already grants this to every service account, so a stock cluster
+  # needs nothing. Keep it for clusters that removed that default.
   clusterIssuerDiscovery: true
 
 nodeTeardown:

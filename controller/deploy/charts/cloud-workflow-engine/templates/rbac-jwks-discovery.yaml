@@ -1,8 +1,10 @@
 {{- if and .Values.apiAuth.enabled .Values.apiAuth.clusterIssuerDiscovery }}
-# Grants NKE read access to the cluster's own JWKS at /openid/v1/jwks, which an
-# issuer using `keys: {kubernetes: {}}` verifies tokens against. The endpoint is
-# not anonymous: without this binding the fetch returns 403 and NKE will not
-# start when enforcing.
+# Lets NKE read the cluster's JWKS at /openid/v1/jwks. An issuer that points
+# jwks.uri at that endpoint verifies tokens against those keys.
+#
+# The endpoint requires authentication. Kubernetes already grants this role to
+# the system:serviceaccounts group, so a stock cluster needs nothing. This
+# binding is for clusters that removed or narrowed that default.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:

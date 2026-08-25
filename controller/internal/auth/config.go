@@ -75,7 +75,8 @@ type Issuer struct {
 	// skips the audience check outright when handed no audience to expect.
 	Audiences []string `json:"audiences,omitempty"`
 
-	// Keys names exactly one key source, never zero and never two.
+	// JWKS says where to fetch this issuer's signing keys. Required; it is the
+	// only key source.
 	JWKS *JWKSKeys `json:"jwks"`
 
 	// Algorithms is the per-issuer allow-list. Required, asymmetric only.

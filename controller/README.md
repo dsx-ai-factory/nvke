@@ -466,6 +466,10 @@ You don't need identity infrastructure to work on this. The cluster's own API
 server is an issuer, and the service account tokens it signs are JWTs, so NKE
 verifies them like any other issuer. The e2e suite takes the same path.
 
+For a step-by-step walkthrough of getting a token and calling the API, including
+what to check when you get an unexpected 401, see
+[Authenticating to the NKE API](docs/authenticating-to-the-api.md).
+
 `tilt up` applies the config in `deploy/k8s/nke-auth-dev.yaml`, two client
 identities (one admitted, one not), and the binding described under RBAC
 Prerequisite. Authentication itself is off by default, because the e2e suite
@@ -585,12 +589,15 @@ issuers:
 ### RBAC Prerequisite
 
 An issuer pointing at the cluster's own `/openid/v1/jwks` needs NKE's
-ServiceAccount bound to `system:service-account-issuer-discovery`. That endpoint
-is not anonymous, and Kubernetes ships the ClusterRole unbound, so an enforcing
-NKE will not start without this binding.
+ServiceAccount to hold `system:service-account-issuer-discovery`. The endpoint
+requires authentication; an anonymous fetch is refused.
 
-The chart creates the binding when `apiAuth.clusterIssuerDiscovery` is true.
-Otherwise:
+Kubernetes already grants that role to every service account, so a stock cluster
+needs nothing here. The chart still creates its own binding when
+`apiAuth.clusterIssuerDiscovery` is true, which covers clusters that removed or
+narrowed the default.
+
+To create the binding by hand:
 
 ```bash
 kubectl create clusterrolebinding nke-service-account-issuer-discovery \
