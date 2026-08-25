@@ -25,12 +25,13 @@ func validateLabelReboot(test *tenantTest) {
 
 		By("Waiting for a Ready worker to reboot")
 		worker := expectSucceed(test.nke.WaitForReadyNodeInPool(ctx, workerPool.ID))
+		rebootObservedAfter := worker.Conditions.Rebooting.LastTransitionTime
 
 		By(fmt.Sprintf("Applying %s=%s to worker %s", rebootLabelKey, rebootLabelReason, worker.Name))
 		applyRebootLabel(ctx, test, worker.Name)
 
-		By("Waiting for CWE to report Rebooting=True")
-		expectSucceed(test.nke.WaitForNodeRebooting(ctx, worker.ID))
+		By("Waiting for CWE to observe the reboot")
+		expectSucceed(test.nke.WaitForNodeRebooting(ctx, worker.ID, rebootObservedAfter))
 
 		By("Waiting for reboot to complete (Rebooting=False and KubernetesReady=True)")
 		expectSucceed(test.nke.WaitForNodeRebootComplete(ctx, worker.ID))

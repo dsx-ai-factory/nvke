@@ -356,8 +356,10 @@ func (c *Client) WaitForReadyNodeInPool(ctx context.Context, nodePoolID openapi_
 	}
 }
 
-// WaitForNodeRebooting polls until the node's Rebooting condition is True.
-func (c *Client) WaitForNodeRebooting(ctx context.Context, id openapi_types.UUID) (*api.Node, error) {
+// WaitForNodeRebooting polls until the node's Rebooting condition is True, or
+// until it reports a reboot that already finished after since: on a container
+// backend the True window can close between two polls.
+func (c *Client) WaitForNodeRebooting(ctx context.Context, id openapi_types.UUID, since time.Time) (*api.Node, error) {
 	deadline := time.After(nodeRebootStartTimeout)
 	ticker := time.NewTicker(c.opts.Poll)
 	defer ticker.Stop()
@@ -374,9 +376,11 @@ func (c *Client) WaitForNodeRebooting(ctx context.Context, id openapi_types.UUID
 			if err != nil {
 				continue
 			}
-			lastStatus = string(node.Conditions.Rebooting.Status)
-			lastMessage = node.Conditions.Rebooting.Message
-			if node.Conditions.Rebooting.Status == api.ConditionStatusTrue {
+			rebooting := node.Conditions.Rebooting
+			lastStatus = string(rebooting.Status)
+			lastMessage = rebooting.Message
+			if rebooting.Status == api.ConditionStatusTrue ||
+				(rebooting.Status == api.ConditionStatusFalse && rebooting.LastTransitionTime.After(since)) {
 				return node, nil
 			}
 		}
