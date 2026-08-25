@@ -7,7 +7,7 @@
 [extend]
 useDefault = true
 
-[allowlist]
+[[allowlists]]
 description = """vendor/ is the committed Go workspace vendor tree: verbatim
 third-party dependency source, which carries its upstream test fixtures —
 sample private keys, dummy tokens and the like. They are published upstream
@@ -15,4 +15,16 @@ already and are not credentials of this repository. First-party code is not
 covered by this allowlist."""
 paths = [
   '''^vendor/.*''',
+]
+
+[[allowlists]]
+description = """server.gen.go embeds the OpenAPI document as base64 of its
+gzip, split across 80-character string literals. Every one of those lines is
+high-entropy base64, so generic-api-key matches them. Editing openapi.yaml
+recompresses the whole blob, which makes every line new in the diff, so this
+fires on any pull request that touches the spec. The content is openapi.yaml,
+which is scanned on its own; only this one generated file is exempt, not
+*.gen.go as a group."""
+paths = [
+  '''^controller/api/server\.gen\.go$''',
 ]
