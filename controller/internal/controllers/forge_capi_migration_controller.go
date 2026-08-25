@@ -194,18 +194,21 @@ func (c *ForgeCAPIMigrationController) reconcileNicoCluster(ctx context.Context,
 		return err
 	}
 
+	clusterObj := &clusterv1.Cluster{}
+	key := ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: cluster.Name}
+	err = c.k8sClient.Get(ctx, key, clusterObj)
+	if err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("get adopted Cluster %s: %w", cluster.Name, err)
+	}
+	clusterMissing := apierrors.IsNotFound(err)
+
 	if len(missingNodes) > 0 {
 		// Cluster and NicoCluster must exist before Machines: CAPNICo waits
 		// for Cluster.InfrastructureRef, and Machine admission needs the
 		// Cluster. Keep them paused until the next pass, when Get can see
 		// the Machines we just applied. Do not re-apply the sparse scaffold
 		// over an existing Cluster; that SSA-drops copied spec fields.
-		clusterObj := &clusterv1.Cluster{}
-		key := ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: cluster.Name}
-		if err := c.k8sClient.Get(ctx, key, clusterObj); err != nil {
-			if !apierrors.IsNotFound(err) {
-				return fmt.Errorf("get adopted Cluster %s: %w", cluster.Name, err)
-			}
+		if clusterMissing {
 			if err := capi.ApplyClusterScaffold(ctx, c.k8sClient, cluster, true); err != nil {
 				return fmt.Errorf("failed to apply CAPI cluster scaffold: %w", err)
 			}
@@ -220,12 +223,7 @@ func (c *ForgeCAPIMigrationController) reconcileNicoCluster(ctx context.Context,
 	}
 
 	// Apply the full Cluster and infrastructure Cluster scaffold if it doesn't exist.
-	clusterObj := &clusterv1.Cluster{}
-	key := ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: cluster.Name}
-	if err := c.k8sClient.Get(ctx, key, clusterObj); err != nil {
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("get adopted Cluster %s: %w", cluster.Name, err)
-		}
+	if clusterMissing {
 		if err := capi.ApplyClusterScaffold(ctx, c.k8sClient, cluster, false); err != nil {
 			return fmt.Errorf("failed to apply CAPI cluster scaffold: %w", err)
 		}
@@ -389,7 +387,7 @@ func (c *ForgeCAPIMigrationController) unpauseCluster(ctx context.Context, clust
 		}
 	}
 
-	// Remove the paused annotation from the infrastructure cluster.
+	// Unpause the infrastructure cluster.
 	if !clusterObj.Spec.InfrastructureRef.IsDefined() {
 		return nil
 	}
@@ -397,7 +395,7 @@ func (c *ForgeCAPIMigrationController) unpauseCluster(ctx context.Context, clust
 	if err != nil {
 		return fmt.Errorf("get migrated infrastructure cluster %s: %w", clusterObj.Name, err)
 	}
-	return removePausedAnnotation(ctx, c.k8sClient, infraCluster)
+	return unpause(ctx, c.k8sClient, infraCluster)
 }
 
 func (c *ForgeCAPIMigrationController) unpauseMigratedMachines(ctx context.Context, clusterName string) error {
@@ -407,7 +405,7 @@ func (c *ForgeCAPIMigrationController) unpauseMigratedMachines(ctx context.Conte
 	}
 
 	for _, machine := range machines.Items {
-		if err := removePausedAnnotation(ctx, c.k8sClient, &machine); err != nil {
+		if err := unpause(ctx, c.k8sClient, &machine); err != nil {
 			return err
 		}
 
@@ -419,14 +417,14 @@ func (c *ForgeCAPIMigrationController) unpauseMigratedMachines(ctx context.Conte
 		if err != nil {
 			return fmt.Errorf("get migrated infrastructure machine %s: %w", machine.Name, err)
 		}
-		if err := removePausedAnnotation(ctx, c.k8sClient, infraMachine); err != nil {
+		if err := unpause(ctx, c.k8sClient, infraMachine); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func removePausedAnnotation(ctx context.Context, k8sClient ctrlclient.Client, obj ctrlclient.Object) error {
+func unpause(ctx context.Context, k8sClient ctrlclient.Client, obj ctrlclient.Object) error {
 	annotations := obj.GetAnnotations()
 	if _, ok := annotations[clusterv1.PausedAnnotation]; !ok {
 		return nil // No paused annotation to remove
