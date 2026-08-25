@@ -22,7 +22,10 @@ import (
 	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 )
 
-const kubeletKubeConfigPath = "/etc/kubernetes/kubelet.conf"
+const (
+	kubeletKubeConfigPath = "/etc/kubernetes/kubelet.conf"
+	kubeletServiceName    = "kubelet"
+)
 
 // ReconfigureKubeletAPIServer atomically updates the kubelet API endpoint,
 // restarts kubelet, and verifies that the service is active. A failure after
@@ -147,10 +150,10 @@ func (s *NodeAgentServer) writeKubeletConfig(path string, contents []byte) error
 
 func (s *NodeAgentServer) restartAndVerifyKubelet() error {
 	var errs []error
-	if _, err := s.Runner.Run("systemctl", []string{"restart", "kubelet"}, nil); err != nil {
+	if _, err := s.Runner.Run("systemctl", []string{"restart", kubeletServiceName}, nil); err != nil {
 		errs = append(errs, fmt.Errorf("restart kubelet: %w", err))
 	}
-	if _, err := s.Runner.Run("systemctl", []string{"is-active", "--quiet", "kubelet"}, nil); err != nil {
+	if _, err := s.Runner.Run("systemctl", []string{"is-active", "--quiet", kubeletServiceName}, nil); err != nil {
 		errs = append(errs, fmt.Errorf("verify kubelet is active: %w", err))
 	}
 	return errors.Join(errs...)

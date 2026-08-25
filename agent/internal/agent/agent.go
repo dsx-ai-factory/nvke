@@ -258,7 +258,7 @@ func mlx5Rescan() error {
 					slog.Info("Network interfaces were reset, restarting kubelet service")
 					ctxRestart, cancelRestart := context.WithTimeout(context.Background(), 30*time.Second)
 					defer cancelRestart()
-					restartCmd := exec.CommandContext(ctxRestart, "systemctl", "restart", "kubelet")
+					restartCmd := exec.CommandContext(ctxRestart, "systemctl", "restart", kubeletServiceName)
 					if restartOutput, restartErr := restartCmd.CombinedOutput(); restartErr != nil {
 						slog.Error("failed to restart kubelet service", "err", restartErr, "output", string(restartOutput))
 						// Don't return error here - the rescan was successful, kubelet restart is best-effort
