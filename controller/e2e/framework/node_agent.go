@@ -24,8 +24,9 @@ type NodeAgentCall struct {
 // NodeAgentServer is a test fixture reached through CWE's production agent client.
 type NodeAgentServer struct {
 	nkeproto.UnimplementedNodeAgentServer
-	address string
-	calls   chan NodeAgentCall
+	address    string
+	calls      chan NodeAgentCall
+	kubeconfig string
 }
 
 func StartNodeAgentServer(t testing.TB) *NodeAgentServer {
@@ -65,6 +66,18 @@ func (s *NodeAgentServer) WaitForScript(ctx context.Context, scriptName string) 
 			return NodeAgentCall{}, fmt.Errorf("wait for agent script %q: %w", scriptName, ctx.Err())
 		}
 	}
+}
+
+// SetKubeconfig configures the tenant kubeconfig returned by GetKubeconfig.
+func (s *NodeAgentServer) SetKubeconfig(kubeconfig string) {
+	s.kubeconfig = kubeconfig
+}
+
+func (s *NodeAgentServer) GetKubeconfig(
+	_ context.Context,
+	_ *nkeproto.KubeconfigRequest,
+) (*nkeproto.KubeconfigResponse, error) {
+	return &nkeproto.KubeconfigResponse{Kubeconfig: s.kubeconfig}, nil
 }
 
 func (s *NodeAgentServer) ExecuteScript(_ context.Context, req *nkeproto.ExecuteScriptRequest) (*nkeproto.ExecuteScriptResponse, error) {
