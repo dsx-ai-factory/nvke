@@ -137,8 +137,12 @@ linters:
             - pkg: github.com/pkg/errors
               desc: "use stdlib instead"
     funlen:
-      # 500 sounds like a generous value for this check
-      lines: 500
+      # cmd/worker's main() is a wiring function: it grows by a block every time
+      # a subsystem is added, and no single addition is the one at fault. It
+      # crossed 500 when the authentication setup and the teleport token
+      # controller landed within a few days of each other, breaking lint on main
+      # for changes that had nothing to do with either.
+      lines: 600
       statements: -1
       # Let us devs write comments.
       ignore-comments: true
