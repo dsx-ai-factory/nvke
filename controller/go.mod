@@ -10,6 +10,7 @@ require (
 	github.com/NVIDIA/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/blang/semver/v4 v4.0.0
 	github.com/caarlos0/env/v11 v11.3.1
+	github.com/evanphx/json-patch/v5 v5.9.11
 	github.com/getkin/kin-openapi v0.146.0
 	github.com/go-jose/go-jose/v4 v4.1.4
 	github.com/golang-jwt/jwt/v5 v5.3.0
@@ -62,7 +63,6 @@ require (
 	github.com/charlievieth/strcase v0.0.5 // indirect
 	github.com/coreos/go-semver v0.3.1 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
-	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
