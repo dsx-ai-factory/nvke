@@ -13,10 +13,10 @@ import (
 )
 
 type (
-	ClusterKeyMapper  func(context.Context, db.Cluster) ([]dbreconcile.Key, error)
-	NodePoolKeyMapper func(context.Context, db.NodePool) ([]dbreconcile.Key, error)
-	NodeSetKeyMapper  func(context.Context, db.NodeSet) ([]dbreconcile.Key, error)
-	NodeKeyMapper     func(context.Context, db.Node) ([]dbreconcile.Key, error)
+	ClusterKeyMapper[T comparable]  func(context.Context, db.Cluster) ([]T, error)
+	NodePoolKeyMapper[T comparable] func(context.Context, db.NodePool) ([]T, error)
+	NodeSetKeyMapper[T comparable]  func(context.Context, db.NodeSet) ([]T, error)
+	NodeKeyMapper[T comparable]     func(context.Context, db.Node) ([]T, error)
 )
 
 func defaultClusterKey(_ context.Context, cluster db.Cluster) ([]dbreconcile.Key, error) {
