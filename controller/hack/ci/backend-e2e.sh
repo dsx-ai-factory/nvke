@@ -749,6 +749,15 @@ runner_exec env \
     fi
   '
 
+for controller in \
+  "capi-system capi-controller-manager" \
+  "capi-kubeadm-control-plane-system capi-kubeadm-control-plane-controller-manager" \
+  "capd-system capd-controller-manager"; do
+  read -r namespace deployment <<<"${controller}"
+  runner_exec kubectl rollout status "deployment/${deployment}" -n "${namespace}" --timeout=5m
+  runner_exec kubectl exec "deployment/${deployment}" -n "${namespace}" -- \
+    /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth --help >/dev/null 2>&1
+done
 runner_exec kubectl -n cloud-workflow-engine rollout status deployment/cloud-workflow-engine --timeout=5m
 for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
   env_value="$(runner_exec kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \

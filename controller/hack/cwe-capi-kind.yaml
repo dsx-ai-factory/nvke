@@ -4,9 +4,8 @@
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 # The capi-spiffe-exec-auth overlay mounts the SPIRE exec-auth plugin as an OCI
-# image volume. ImageVolume is beta but off by default through k8s 1.34, so
-# enable it explicitly rather than depending on the kind binary's default node
-# image (kind v0.32 defaults to 1.36, which NKE does not support yet).
+# image volume. ImageVolume is stable and enabled by default in Kubernetes 1.36;
+# keep the gate explicit because the overlay requires it.
 featureGates:
   ImageVolume: true
 networking:
