@@ -116,11 +116,24 @@ make os-image-fde NKE_AGENT_VERSION=edge
 
 then run `../demo-fde.sh` (see its `--help`) to exercise the acceptance
 scenarios against the built image under QEMU with `swtpm`. Requires
-`qemu-system-x86_64`, `swtpm`, `cloud-localds`, `expect`, and OVMF
+`qemu-system-x86_64`, `swtpm`, `cloud-localds`, and OVMF
 (`/usr/share/OVMF/OVMF_CODE_4M.fd` + `OVMF_VARS_4M.fd`) on `PATH`/in the
-default location. `expect` types the build-time LUKS passphrase at the
-console on the very first boot only — see the comment above `boot_and_wait`
-in `demo-fde.sh` for why that boot, and only that boot, needs it.
+default location. No interactive/scripted console typing is needed: the
+autoinstall storage layout bakes a build-time `luks.key=<passphrase>` GRUB
+parameter (matching node-images' `ansible/roles/grub` +
+`ansible/roles/luks_tpm`), so `files/luks/luks-cmdline-script` unlocks the
+very first real boot on its own — the same mechanism production uses via an
+iPXE `luks.key=` kernel parameter. `luks-tpm-firstboot.sh` strips
+`luks.key=` from GRUB once the TPM bind succeeds, so a later boot against a
+different TPM has no fallback and correctly fails to unlock.
+
+The autoinstall layout also bakes `console=tty0 console=ttyS0,115200` into
+GRUB (also matching node-images), so boot and kernel messages — including
+the LUKS unlock prompt on a boot that *doesn't* have `luks.key=` anymore —
+reach a serial console (`virsh console`, `-nographic`, real BMC/SOL access)
+and not just the VGA framebuffer. Earlier revisions of this variant shipped
+with no `console=` parameter at all, which is why an earlier design here
+needed `expect`-driven blind console typing; that's no longer necessary.
 
 This exact flow (fresh boot → TPM bind/verify/passphrase-removal → a
 different swtpm can't unlock → a later boot on the original swtpm auto-

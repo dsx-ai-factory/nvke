@@ -13,20 +13,25 @@
 # Usage: ./demo-fde.sh [--help]
 #
 # Env overrides:
-#   QCOW                 path to the FDE qcow2 (default: packer/output-fde/nke-node-fde)
-#   SSH_KEY              ssh key used for the build (default: packer/.ssh/id_ed25519)
-#   SSH_PORT             host port to forward to guest :22 (default: 2222)
-#   BOOT_TIMEOUT         seconds to wait for SSH per boot (default: 180 kvm / 1200 tcg)
-#   LUKS_BUILD_PASSPHRASE  build-time LUKS passphrase (default: changeit) — the shipped
-#                        image only has a passphrase slot until TPM binding completes,
-#                        so the very first real boot needs this (normally supplied via
-#                        an iPXE luks.key= kernel parameter in production; here we type
-#                        it at the console, same as a human would on first bring-up).
+#   QCOW          path to the FDE qcow2 (default: packer/output-fde/nke-node-fde)
+#   SSH_KEY       ssh key used for the build (default: packer/.ssh/id_ed25519)
+#   SSH_PORT      host port to forward to guest :22 (default: 2222)
+#   BOOT_TIMEOUT  seconds to wait for SSH per boot (default: 360 kvm / 1800 tcg)
+#   CPU_MODEL     QEMU -cpu model (default: host kvm / max tcg)
+#
+# No interactive/blind console typing is needed: autoinstall-lvm.pkrtpl bakes
+# a build-time luks.key=<passphrase> GRUB parameter (matching node-images'
+# ansible/roles/grub + ansible/roles/luks_tpm), so even the very first real
+# boot of a freshly built image unlocks itself via
+# files/luks/luks-cmdline-script — the same mechanism production uses via an
+# iPXE luks.key= kernel parameter. luks-tpm-firstboot.sh strips luks.key=
+# from GRUB once the TPM bind succeeds, so a later boot against a different
+# TPM (scenario 2) has no fallback and correctly fails to unlock.
 
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  sed -n '2,23p' "${BASH_SOURCE[0]}"
+  sed -n '2,29p' "${BASH_SOURCE[0]}"
   exit 0
 fi
 
@@ -35,19 +40,29 @@ QCOW="${QCOW:-${ROOT}/packer/output-fde/nke-node-fde}"
 SSH_KEY="${SSH_KEY:-${ROOT}/packer/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
 
+# machine_type/cpu_model matter here for the same reason they do in
+# nke-node-fde.pkr.hcl: this image boots via OVMF/UEFI, and QEMU's default
+# "pc" (i440fx) machine type is a known-fragile pairing with OVMF that
+# produced intermittent guest-kernel instability while developing this
+# variant. q35 + an explicit cpu_model avoids it.
 if [[ -c /dev/kvm && -w /dev/kvm ]]; then
-  ACCEL_ARGS=(-enable-kvm -cpu host)
-  BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}"
+  ACCEL_ARGS=(-enable-kvm)
+  CPU_MODEL="${CPU_MODEL:-host}"
+  # The first real boot does partition/LUKS/PV/LV growth, a TPM bind+verify,
+  # and two full initramfs regens before it ever reaches cloud-init/sshd —
+  # comfortably past 180s in practice, so the default here is generous
+  # rather than tuned to the fast-path boots.
+  BOOT_TIMEOUT="${BOOT_TIMEOUT:-360}"
 else
   echo "demo: no usable /dev/kvm, booting under software emulation (slower)" >&2
   ACCEL_ARGS=(-accel tcg)
-  BOOT_TIMEOUT="${BOOT_TIMEOUT:-1200}"
+  CPU_MODEL="${CPU_MODEL:-max}"
+  BOOT_TIMEOUT="${BOOT_TIMEOUT:-1800}"
 fi
 
-for tool in qemu-system-x86_64 qemu-img swtpm cloud-localds ssh expect; do
+for tool in qemu-system-x86_64 qemu-img swtpm cloud-localds ssh; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "demo: required tool '${tool}' not found" >&2; exit 3; }
 done
-LUKS_BUILD_PASSPHRASE="${LUKS_BUILD_PASSPHRASE:-changeit}"
 if [[ ! -f "${QCOW}" ]]; then
   echo "demo: no image at ${QCOW}; run 'make -C packer os-image-fde' first" >&2
   exit 1
@@ -80,23 +95,20 @@ ssh_guest() {
     ubuntu@127.0.0.1 "$@"
 }
 
-# Boots $DISK against the swtpm state dir at $1, waits up to BOOT_TIMEOUT for
-# SSH. Prints "up" or "timeout" to stdout; callers decide what that means.
-#
-# needs_passphrase=1 types LUKS_BUILD_PASSPHRASE at the console if a "Please
-# unlock disk" prompt appears. Only the very first real boot of a freshly
-# built image needs this: the shipped image ships with only the passphrase
-# slot (the build-time keyfile was already removed by configure-fde.sh), and
-# luks-tpm-firstboot.service — which performs the TPM bind — only runs AFTER
-# that first unlock succeeds and the root filesystem is mounted. Production
-# supplies this passphrase via an iPXE luks.key= kernel parameter; here we
-# type it at the console the same way a human would on first bring-up. A
-# boot against the wrong TPM (scenario 2) must NOT get this treatment, or it
-# would unlock via passphrase and mask the "is this actually TPM-sealed"
-# check — every other boot in this script relies on the TPM alone.
-boot_and_wait() {
-  local tpmdir="$1" needs_passphrase="${2:-0}" runwork
-  runwork="$(mktemp -d)"
+# Boots $DISK against the swtpm state dir at $1 and leaves it running. Sets
+# VM_RUNWORK/VM_TPMDIR/VM_QPID for wait_ssh/stop_vm to use — deliberately
+# does NOT tear the VM down itself, so a caller that needs to run more than
+# one ssh_guest command after boot (scenario 1's firstboot-marker and
+# luks-tpm-verify checks) has a still-live VM to run them against. Call
+# stop_vm once done with a given boot.
+VM_RUNWORK=""
+VM_TPMDIR=""
+VM_QPID=""
+start_vm() {
+  local tpmdir="$1"
+  VM_TPMDIR="${tpmdir}"
+  VM_RUNWORK="$(mktemp -d)"
+  local runwork="${VM_RUNWORK}"
   local efivars="${runwork}/OVMF_VARS.fd"
   cp "${OVMF_VARS_TEMPLATE}" "${efivars}"
 
@@ -115,6 +127,8 @@ local-hostname: nke-fde-demo" >"${runwork}/meta-data"
     --tpm2 --daemon --pid "file=${tpmdir}/swtpm.pid"
 
   local qemu_args=(
+    -machine type=q35
+    -cpu "${CPU_MODEL}"
     -m 4096 -smp 2
     "${ACCEL_ARGS[@]}"
     -nographic
@@ -129,37 +143,13 @@ local-hostname: nke-fde-demo" >"${runwork}/meta-data"
     -device virtio-net,netdev=net0
   )
 
-  local qpid
-  if [[ "${needs_passphrase}" == "1" ]]; then
-    # expect owns qemu's pty (via -nographic, serial is multiplexed onto
-    # stdio) so it can type the passphrase the moment the prompt appears,
-    # then just relays everything else through to the log until exit/timeout.
-    # Plain (unquoted) interpolation is deliberate: expect/Tcl does its own
-    # whitespace word-splitting on the spawn line, not shell-style quote
-    # parsing, so bash quoting (e.g. ${var@Q}) would pass literal quote
-    # characters through to qemu's argv instead of being stripped. This is
-    # only safe because none of these values (temp-dir paths, -netdev
-    # strings, etc.) contain internal whitespace — same assumption the rest
-    # of this script already makes about its paths.
-    cat >"${runwork}/unlock.exp" <<EOF
-set timeout ${BOOT_TIMEOUT}
-log_file -a "${runwork}/qemu.log"
-spawn qemu-system-x86_64 ${qemu_args[@]}
-expect {
-  "Please unlock disk" { send "${LUKS_BUILD_PASSPHRASE}\r"; exp_continue }
-  timeout { exit 0 }
-  eof { exit 0 }
+  qemu-system-x86_64 "${qemu_args[@]}" >"${runwork}/qemu.log" 2>&1 &
+  VM_QPID=$!
+  echo "${VM_QPID}" > "${runwork}/qemu.pid"
 }
-EOF
-    expect "${runwork}/unlock.exp" >/dev/null 2>&1 &
-    local expect_pid=$!
-    echo "${expect_pid}" > "${runwork}/expect.pid"
-  else
-    qemu-system-x86_64 "${qemu_args[@]}" >"${runwork}/qemu.log" 2>&1 &
-    qpid=$!
-    echo "${qpid}" > "${runwork}/qemu.pid"
-  fi
 
+# Polls for SSH up to BOOT_TIMEOUT. Prints "up" or "timeout" to stdout.
+wait_ssh() {
   local deadline=$((SECONDS + BOOT_TIMEOUT)) up=0
   until ssh_guest true 2>/dev/null; do
     if (( SECONDS > deadline )); then
@@ -168,26 +158,58 @@ EOF
     fi
     sleep 5
   done
-
-  # pkill by disk path rather than tracking expect's qemu child pid — expect
-  # forks qemu as a grandchild, so the recorded expect_pid alone won't reach it.
-  pkill -f "qemu-system-x86_64.*${DISK}" 2>/dev/null || true
-  if [[ -f "${tpmdir}/swtpm.pid" ]] && kill -0 "$(cat "${tpmdir}/swtpm.pid")" 2>/dev/null; then
-    kill "$(cat "${tpmdir}/swtpm.pid")" 2>/dev/null || true
-  fi
-  rm -rf "${runwork}"
-
   [[ "${up}" -eq 0 ]] && echo "up" || echo "timeout"
+}
+
+# Tears down the VM started by the most recent start_vm.
+stop_vm() {
+  kill "${VM_QPID}" 2>/dev/null || true
+  # Fallback by disk path in case $VM_QPID somehow isn't qemu's own pid (e.g.
+  # a future refactor backgrounds it indirectly again).
+  pkill -f "qemu-system-x86_64.*${DISK}" 2>/dev/null || true
+  local swtpm_pid
+  swtpm_pid="$(cat "${VM_TPMDIR}/swtpm.pid" 2>/dev/null)" || true
+  if [[ -n "${swtpm_pid}" ]] && kill -0 "${swtpm_pid}" 2>/dev/null; then
+    kill "${swtpm_pid}" 2>/dev/null || true
+  fi
+  rm -rf "${VM_RUNWORK}"
+}
+
+# Convenience wrapper for scenarios that don't need to run extra ssh_guest
+# commands between boot and teardown.
+boot_and_wait() {
+  start_vm "$1"
+  local state
+  state="$(wait_ssh)"
+  stop_vm
+  echo "${state}"
 }
 
 echo "=== Scenario: host volumes are LUKS2, sealed to the node TPM ==="
 TPM_A="${WORKDIR}/tpm-a"
 mkdir -p "${TPM_A}"
-STATE="$(boot_and_wait "${TPM_A}" 1)"
+start_vm "${TPM_A}"
+STATE="$(wait_ssh)"
 if [[ "${STATE}" != "up" ]]; then
   report "host-volumes-luks2-tpm-sealed" "FAIL" "VM did not become SSH-reachable within ${BOOT_TIMEOUT}s (first-boot TPM bind may have failed)"
 else
-  if ssh_guest 'test -f /root/.luks-tpm-firstboot-done' 2>/dev/null; then
+  # VM is still running here (stop_vm hasn't been called yet) — these
+  # checks need a live guest, unlike the pass/fail-only scenarios below.
+  #
+  # sshd/cloud-init's SSH-key injection isn't ordered against
+  # luks-tpm-firstboot.service, so SSH can (and does, in practice) become
+  # reachable a bit before that service — still mid partition-grow / dual
+  # initramfs-regen — finishes. Poll for the marker rather than assuming
+  # SSH-up means firstboot-done; node-images' own demo-fde.sh does the same
+  # ("waiting for luks-tpm-firstboot to complete...").
+  FIRSTBOOT_DEADLINE=$((SECONDS + 180))
+  until ssh_guest 'sudo test -f /root/.luks-tpm-firstboot-done' 2>/dev/null; do
+    if (( SECONDS > FIRSTBOOT_DEADLINE )); then
+      break
+    fi
+    sleep 5
+  done
+  if ssh_guest 'sudo test -f /root/.luks-tpm-firstboot-done' 2>/dev/null; then
     if ssh_guest 'sudo /usr/local/bin/luks-tpm-verify' 2>/dev/null; then
       SLOTS="$(ssh_guest "LUKS_DEV=\$(lsblk -ln -o NAME,FSTYPE | grep crypto_LUKS | awk '{print \"/dev/\" \$1}' | head -1); sudo cryptsetup luksDump \"\${LUKS_DEV}\" | grep -cE '^[[:space:]]+[0-9]+: luks2'" 2>/dev/null || echo "?")"
       if [[ "${SLOTS}" == "1" ]]; then
@@ -202,6 +224,7 @@ else
     report "host-volumes-luks2-tpm-sealed" "FAIL" "/root/.luks-tpm-firstboot-done missing — first-boot binding never completed"
   fi
 fi
+stop_vm
 
 echo "=== Scenario: an encrypted volume cannot be read off the node ==="
 TPM_B="${WORKDIR}/tpm-b"
