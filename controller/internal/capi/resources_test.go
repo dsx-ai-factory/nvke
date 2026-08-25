@@ -55,7 +55,7 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 			ctx := context.Background()
 			k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
 
-			err := capi.ApplyClusterScaffold(ctx, k8sClient, params.cluster)
+			err := capi.ApplyClusterScaffold(ctx, k8sClient, params.cluster, false)
 			require.NoError(t, err)
 
 			namespace := constants.NamespaceNKESystem
@@ -68,6 +68,8 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 			assert.Equal(t, nicov1.GroupVersion.Group, clusterObj.Spec.InfrastructureRef.APIGroup)
 			assert.Equal(t, testNicoClusterKind, clusterObj.Spec.InfrastructureRef.Kind)
 			assert.Equal(t, params.cluster.Name, clusterObj.Spec.InfrastructureRef.Name)
+			require.NotNil(t, clusterObj.Spec.Paused)
+			assert.False(t, *clusterObj.Spec.Paused)
 
 			// The chart owns nke-system, so the scaffold must not create it.
 			err = k8sClient.Get(ctx, client.ObjectKey{Name: namespace}, &corev1.Namespace{})

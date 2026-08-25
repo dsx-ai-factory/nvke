@@ -36,7 +36,7 @@ func (a *Activities) ApplyCAPIClusterResources(ctx context.Context, input ApplyC
 		return err
 	}
 
-	return capi.ApplyClusterScaffold(ctx, a.k8sClient, cluster)
+	return capi.ApplyClusterScaffold(ctx, a.k8sClient, cluster, false)
 }
 
 type DeleteCAPIClusterResourcesInput struct {

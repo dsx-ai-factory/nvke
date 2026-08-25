@@ -11,6 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -20,7 +21,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
-func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster) error {
+func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster, paused bool) error {
 	namespace := constants.NamespaceNKESystem
 
 	manifest, err := ClusterScaffoldManifest(cluster)
@@ -33,6 +34,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 	}
 	infraCluster.SetNamespace(namespace)
 	infraCluster.SetName(cluster.Name)
+	SetPausedAnnotation(infraCluster, paused)
 	if err := k8sClient.Patch(ctx, infraCluster, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra cluster: %w", err)
 	}
@@ -58,6 +60,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 			},
 		},
 		Spec: clusterv1.ClusterSpec{
+			Paused: ptr.To(paused),
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: infraGV.Group,
 				Kind:     infraCluster.GetKind(),
@@ -65,12 +68,27 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 			},
 		},
 	}
+	SetPausedAnnotation(clusterObj, paused)
 
 	if err := k8sClient.Patch(ctx, clusterObj, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply CAPI cluster: %w", err)
 	}
 
 	return nil
+}
+
+// SetPausedAnnotation sets or removes the CAPI paused annotation.
+func SetPausedAnnotation(obj metav1.Object, paused bool) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	if paused {
+		annotations[clusterv1.PausedAnnotation] = "true"
+	} else {
+		delete(annotations, clusterv1.PausedAnnotation)
+	}
+	obj.SetAnnotations(annotations)
 }
 
 func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
