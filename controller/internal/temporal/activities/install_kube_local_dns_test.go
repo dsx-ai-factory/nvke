@@ -34,7 +34,7 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	require.NoError(t, corev1.AddToScheme(scheme))
 	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		newCoreDNSDeployment(),
-		newCoreDNSPod("coredns-0", true),
+		newCoreDNSPod(true),
 		newKubeDNSService(),
 	).Build()
 	provider := &fakeTenantClientProvider{tenantClient: tenantClient}
@@ -140,7 +140,7 @@ func TestInstallKubeLocalDNSLabelsCoreDNSDaemonSet(t *testing.T) {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		newCoreDNSDaemonSet(),
-		newCoreDNSPod("coredns-0", true),
+		newCoreDNSPod(true),
 		newKubeDNSService(),
 	).Build()
 	a := &Activities{
@@ -171,7 +171,7 @@ func TestInstallKubeLocalDNSDefersSelectorUntilClusterDNSPodIsReady(t *testing.T
 	// kube-dns over to the dns-role=cluster-dns selector on this run.
 	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		newCoreDNSDeployment(),
-		newCoreDNSPod("coredns-0", false),
+		newCoreDNSPod(false),
 		newKubeDNSService(),
 	).Build()
 	a := &Activities{
@@ -215,7 +215,7 @@ func TestInstallKubeLocalDNSRewritesSelectorWhenNodeLocalDNSIsReady(t *testing.T
 	require.NoError(t, corev1.AddToScheme(scheme))
 	tenantClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
 		newCoreDNSDeployment(),
-		newCoreDNSPod("coredns-0", false),
+		newCoreDNSPod(false),
 		newNodeLocalDNSPod("node-local-dns-0", true),
 		newKubeDNSService(),
 	).Build()
@@ -297,8 +297,8 @@ func newCoreDNSDaemonSet() *appsv1.DaemonSet {
 	}
 }
 
-func newCoreDNSPod(name string, ready bool) *corev1.Pod {
-	return newDNSPod(name, map[string]string{k8sAppLabelKey: kubeDNSAppLabel}, ready)
+func newCoreDNSPod(ready bool) *corev1.Pod {
+	return newDNSPod("coredns-0", map[string]string{k8sAppLabelKey: kubeDNSAppLabel}, ready)
 }
 
 func newNodeLocalDNSPod(name string, ready bool) *corev1.Pod {
