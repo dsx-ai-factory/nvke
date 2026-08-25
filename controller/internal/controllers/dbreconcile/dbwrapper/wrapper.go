@@ -13,8 +13,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
-	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
@@ -26,25 +24,21 @@ const (
 
 type clusterSourceRegistration struct {
 	id      uuid.UUID
-	done    <-chan struct{}
 	enqueue func(context.Context, ...db.Cluster) error
 }
 
 type nodePoolSourceRegistration struct {
 	id      uuid.UUID
-	done    <-chan struct{}
 	enqueue func(context.Context, ...db.NodePool) error
 }
 
 type nodeSetSourceRegistration struct {
 	id      uuid.UUID
-	done    <-chan struct{}
 	enqueue func(context.Context, ...db.NodeSet) error
 }
 
 type nodeSourceRegistration struct {
 	id      uuid.UUID
-	done    <-chan struct{}
 	enqueue func(context.Context, ...db.Node) error
 }
 
@@ -73,34 +67,23 @@ func New(database db.DB, logger *slog.Logger) *DB {
 	}
 }
 
-func (w *DB) ClusterSource(filters dbfilters.Cluster, keyMappers ...ClusterKeyMapper[dbreconcile.Key]) *ClusterEventSource[dbreconcile.Key] {
-	if len(keyMappers) == 0 {
-		keyMappers = []ClusterKeyMapper[dbreconcile.Key]{defaultClusterKey}
-	}
-	return ClusterSource(context.Background(), w, filters, keyMappers...)
-}
-
-// ClusterSource returns a DB-backed controller-runtime source for cluster changes.
-// The source is registered with database until ctx is canceled.
-func ClusterSource[T comparable](ctx context.Context, database *DB, filters dbfilters.Cluster, keyMappers ...ClusterKeyMapper[T]) *ClusterEventSource[T] {
-	clusterSource := newClusterSource(ctx, database, database.logger, filters, keyMappers...)
-
+func (w *DB) registerClusterSource(ctx context.Context, enqueue func(context.Context, ...db.Cluster) error) func() {
 	id := uuid.New()
-	database.registerClusterSource(clusterSourceRegistration{
+	registration := clusterSourceRegistration{
 		id:      id,
-		done:    ctx.Done(),
-		enqueue: clusterSource.Enqueue,
-	})
-	context.AfterFunc(ctx, func() {
-		database.unregisterClusterSource(id)
-	})
-	return clusterSource
-}
-
-func (w *DB) registerClusterSource(registration clusterSourceRegistration) {
+		enqueue: enqueue,
+	}
 	w.lock.Lock()
-	defer w.lock.Unlock()
 	w.clusterSources[registration.id] = registration
+	w.lock.Unlock()
+
+	stop := context.AfterFunc(ctx, func() {
+		w.unregisterClusterSource(id)
+	})
+	return func() {
+		stop()
+		w.unregisterClusterSource(id)
+	}
 }
 
 func (w *DB) unregisterClusterSource(id uuid.UUID) {
@@ -109,34 +92,23 @@ func (w *DB) unregisterClusterSource(id uuid.UUID) {
 	delete(w.clusterSources, id)
 }
 
-func (w *DB) NodePoolSource(filters dbfilters.NodePool, keyMappers ...NodePoolKeyMapper[dbreconcile.Key]) *NodePoolEventSource[dbreconcile.Key] {
-	if len(keyMappers) == 0 {
-		keyMappers = []NodePoolKeyMapper[dbreconcile.Key]{defaultNodePoolKey}
-	}
-	return NodePoolSource(context.Background(), w, filters, keyMappers...)
-}
-
-// NodePoolSource returns a DB-backed controller-runtime source for node pool changes.
-// The source is registered with database until ctx is canceled.
-func NodePoolSource[T comparable](ctx context.Context, database *DB, filters dbfilters.NodePool, keyMappers ...NodePoolKeyMapper[T]) *NodePoolEventSource[T] {
-	nodePoolSource := newNodePoolSource(ctx, database, database.logger, filters, keyMappers...)
-
+func (w *DB) registerNodePoolSource(ctx context.Context, enqueue func(context.Context, ...db.NodePool) error) func() {
 	id := uuid.New()
-	database.registerNodePoolSource(nodePoolSourceRegistration{
+	registration := nodePoolSourceRegistration{
 		id:      id,
-		done:    ctx.Done(),
-		enqueue: nodePoolSource.Enqueue,
-	})
-	context.AfterFunc(ctx, func() {
-		database.unregisterNodePoolSource(id)
-	})
-	return nodePoolSource
-}
-
-func (w *DB) registerNodePoolSource(registration nodePoolSourceRegistration) {
+		enqueue: enqueue,
+	}
 	w.lock.Lock()
-	defer w.lock.Unlock()
 	w.nodePoolSources[registration.id] = registration
+	w.lock.Unlock()
+
+	stop := context.AfterFunc(ctx, func() {
+		w.unregisterNodePoolSource(id)
+	})
+	return func() {
+		stop()
+		w.unregisterNodePoolSource(id)
+	}
 }
 
 func (w *DB) unregisterNodePoolSource(id uuid.UUID) {
@@ -145,34 +117,23 @@ func (w *DB) unregisterNodePoolSource(id uuid.UUID) {
 	delete(w.nodePoolSources, id)
 }
 
-func (w *DB) NodeSetSource(filters dbfilters.NodeSet, keyMappers ...NodeSetKeyMapper[dbreconcile.Key]) *NodeSetEventSource[dbreconcile.Key] {
-	if len(keyMappers) == 0 {
-		keyMappers = []NodeSetKeyMapper[dbreconcile.Key]{defaultNodeSetKey}
-	}
-	return NodeSetSource(context.Background(), w, filters, keyMappers...)
-}
-
-// NodeSetSource returns a DB-backed controller-runtime source for node set changes.
-// The source is registered with database until ctx is canceled.
-func NodeSetSource[T comparable](ctx context.Context, database *DB, filters dbfilters.NodeSet, keyMappers ...NodeSetKeyMapper[T]) *NodeSetEventSource[T] {
-	nodeSetSource := newNodeSetSource(ctx, database, database.logger, filters, keyMappers...)
-
+func (w *DB) registerNodeSetSource(ctx context.Context, enqueue func(context.Context, ...db.NodeSet) error) func() {
 	id := uuid.New()
-	database.registerNodeSetSource(nodeSetSourceRegistration{
+	registration := nodeSetSourceRegistration{
 		id:      id,
-		done:    ctx.Done(),
-		enqueue: nodeSetSource.Enqueue,
-	})
-	context.AfterFunc(ctx, func() {
-		database.unregisterNodeSetSource(id)
-	})
-	return nodeSetSource
-}
-
-func (w *DB) registerNodeSetSource(registration nodeSetSourceRegistration) {
+		enqueue: enqueue,
+	}
 	w.lock.Lock()
-	defer w.lock.Unlock()
 	w.nodeSetSources[registration.id] = registration
+	w.lock.Unlock()
+
+	stop := context.AfterFunc(ctx, func() {
+		w.unregisterNodeSetSource(id)
+	})
+	return func() {
+		stop()
+		w.unregisterNodeSetSource(id)
+	}
 }
 
 func (w *DB) unregisterNodeSetSource(id uuid.UUID) {
@@ -181,36 +142,23 @@ func (w *DB) unregisterNodeSetSource(id uuid.UUID) {
 	delete(w.nodeSetSources, id)
 }
 
-func (w *DB) NodeSource(filters dbfilters.Node, keyMappers ...NodeKeyMapper[dbreconcile.Key]) *NodeEventSource[dbreconcile.Key] {
-	if len(keyMappers) == 0 {
-		keyMappers = []NodeKeyMapper[dbreconcile.Key]{defaultNodeKey}
-	}
-	return NodeSource(context.Background(), w, filters, keyMappers...)
-}
-
-// NodeSource returns a DB-backed controller-runtime source for node changes.
-// The source is registered with database until ctx is canceled. Existing
-// process-lifetime callers should use (*DB).NodeSource, which preserves the
-// historical background lifetime and dbreconcile.Key queue type.
-func NodeSource[T comparable](ctx context.Context, database *DB, filters dbfilters.Node, keyMappers ...NodeKeyMapper[T]) *NodeEventSource[T] {
-	nodeSource := newNodeSource(ctx, database, database.logger, filters, keyMappers...)
-
+func (w *DB) registerNodeSource(ctx context.Context, enqueue func(context.Context, ...db.Node) error) func() {
 	id := uuid.New()
-	database.registerNodeSource(nodeSourceRegistration{
+	registration := nodeSourceRegistration{
 		id:      id,
-		done:    ctx.Done(),
-		enqueue: nodeSource.Enqueue,
-	})
-	context.AfterFunc(ctx, func() {
-		database.unregisterNodeSource(id)
-	})
-	return nodeSource
-}
-
-func (w *DB) registerNodeSource(registration nodeSourceRegistration) {
+		enqueue: enqueue,
+	}
 	w.lock.Lock()
-	defer w.lock.Unlock()
 	w.nodeSources[registration.id] = registration
+	w.lock.Unlock()
+
+	stop := context.AfterFunc(ctx, func() {
+		w.unregisterNodeSource(id)
+	})
+	return func() {
+		stop()
+		w.unregisterNodeSource(id)
+	}
 }
 
 func (w *DB) unregisterNodeSource(id uuid.UUID) {
@@ -449,9 +397,6 @@ func (w *DB) enqueueClusters(ctx context.Context, clusters ...db.Cluster) error 
 
 	var enqueueErrs []error
 	for _, source := range sources {
-		if sourceDone(source.done) {
-			continue
-		}
 		if err := source.enqueue(ctx, clusters...); err != nil {
 			enqueueErrs = append(enqueueErrs, err)
 		}
@@ -472,9 +417,6 @@ func (w *DB) enqueueNodePools(ctx context.Context, nodePools ...db.NodePool) err
 
 	var enqueueErrs []error
 	for _, source := range sources {
-		if sourceDone(source.done) {
-			continue
-		}
 		if err := source.enqueue(ctx, nodePools...); err != nil {
 			enqueueErrs = append(enqueueErrs, err)
 		}
@@ -495,9 +437,6 @@ func (w *DB) enqueueNodeSets(ctx context.Context, nodeSets ...db.NodeSet) error 
 
 	var enqueueErrs []error
 	for _, source := range sources {
-		if sourceDone(source.done) {
-			continue
-		}
 		if err := source.enqueue(ctx, nodeSets...); err != nil {
 			enqueueErrs = append(enqueueErrs, err)
 		}
@@ -518,21 +457,9 @@ func (w *DB) enqueueNodes(ctx context.Context, nodes ...db.Node) error {
 
 	var enqueueErrs []error
 	for _, source := range sources {
-		if sourceDone(source.done) {
-			continue
-		}
 		if err := source.enqueue(ctx, nodes...); err != nil {
 			enqueueErrs = append(enqueueErrs, err)
 		}
 	}
 	return errors.Join(enqueueErrs...)
-}
-
-func sourceDone(done <-chan struct{}) bool {
-	select {
-	case <-done:
-		return true
-	default:
-		return false
-	}
 }

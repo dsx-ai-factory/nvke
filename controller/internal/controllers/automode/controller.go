@@ -51,9 +51,9 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"auto-mode-controller",
 		c,
-		c.db.NodePoolSource(dbfilters.NodePool{ControlPlane: ptr.To(false)}),
-		c.db.NodeSetSource(dbfilters.NodeSet{}, nodePoolKeysForNodeSet),
-		c.db.NodeSource(dbfilters.Node{ControlPlane: ptr.To(false)}, nodePoolKeysForNode),
+		dbwrapper.NewNodePoolSource(c.db, dbfilters.NodePool{ControlPlane: ptr.To(false)}),
+		dbwrapper.NewNodeSetSource(c.db, dbfilters.NodeSet{}, nodePoolKeysForNodeSet),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{ControlPlane: ptr.To(false)}, nodePoolKeysForNode),
 	)
 }
 

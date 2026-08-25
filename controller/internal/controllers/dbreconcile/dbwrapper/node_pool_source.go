@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
@@ -24,32 +25,39 @@ import (
 type NodePoolEventSource[T comparable] struct {
 	events         chan event.TypedGenericEvent[T]
 	done           <-chan struct{}
-	queries        db.NodePoolQueries
+	database       *DB
 	filters        dbfilters.NodePool
 	keyMappers     []NodePoolKeyMapper[T]
 	resyncInterval time.Duration
 	logger         *slog.Logger
 }
 
-func newNodePoolSource[T comparable](
-	ctx context.Context,
-	queries db.NodePoolQueries,
-	logger *slog.Logger,
+func NewNodePoolSource(database *DB, filters dbfilters.NodePool, keyMappers ...NodePoolKeyMapper[dbreconcile.Key]) *NodePoolEventSource[dbreconcile.Key] {
+	if len(keyMappers) == 0 {
+		keyMappers = []NodePoolKeyMapper[dbreconcile.Key]{defaultNodePoolKey}
+	}
+	return NewMappedNodePoolSource(database, filters, keyMappers...)
+}
+
+// NewMappedNodePoolSource returns a DB-backed controller-runtime source for node pool changes.
+// The source is registered with database while controller-runtime is running it.
+func NewMappedNodePoolSource[T comparable](
+	database *DB,
 	filters dbfilters.NodePool,
 	keyMappers ...NodePoolKeyMapper[T],
 ) *NodePoolEventSource[T] {
 	return &NodePoolEventSource[T]{
 		events:         make(chan event.TypedGenericEvent[T], defaultSourceBufferSize),
-		done:           ctx.Done(),
-		queries:        queries,
+		database:       database,
 		filters:        filters,
 		keyMappers:     keyMappers,
 		resyncInterval: defaultSourceResyncInterval,
-		logger:         logger,
+		logger:         database.logger,
 	}
 }
 
-func (s NodePoolEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
+func (s *NodePoolEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
+	s.done = ctx.Done()
 	inner := crsource.TypedChannel[T, T](
 		s.events,
 		handler.TypedEnqueueRequestsFromMapFunc(func(_ context.Context, key T) []T {
@@ -60,18 +68,19 @@ func (s NodePoolEventSource[T]) Start(ctx context.Context, queue workqueue.Typed
 		return err
 	}
 
+	unregister := s.database.registerNodePoolSource(ctx, s.Enqueue)
 	if err := s.enqueueAll(ctx); err != nil {
+		unregister()
 		return err
 	}
-	if s.resyncInterval <= 0 {
-		return nil
+	if s.resyncInterval > 0 {
+		go s.resync(ctx)
 	}
 
-	go s.resync(ctx)
 	return nil
 }
 
-func (s NodePoolEventSource[T]) resync(ctx context.Context) {
+func (s *NodePoolEventSource[T]) resync(ctx context.Context) {
 	for {
 		timer := time.NewTimer(wait.Jitter(s.resyncInterval, defaultSourceResyncJitterFactor))
 		select {
@@ -88,8 +97,8 @@ func (s NodePoolEventSource[T]) resync(ctx context.Context) {
 	}
 }
 
-func (s NodePoolEventSource[T]) enqueueAll(ctx context.Context) error {
-	nodePools, err := s.queries.ListNodePools(ctx, db.NodePoolFilters{})
+func (s *NodePoolEventSource[T]) enqueueAll(ctx context.Context) error {
+	nodePools, err := s.database.ListNodePools(ctx, db.NodePoolFilters{})
 	if err != nil {
 		return fmt.Errorf("failed to list node pools: %w", err)
 	}
@@ -97,7 +106,7 @@ func (s NodePoolEventSource[T]) enqueueAll(ctx context.Context) error {
 	return s.Enqueue(ctx, nodePools...)
 }
 
-func (s NodePoolEventSource[T]) Enqueue(ctx context.Context, nodePools ...db.NodePool) error {
+func (s *NodePoolEventSource[T]) Enqueue(ctx context.Context, nodePools ...db.NodePool) error {
 	seen := map[T]struct{}{}
 	var enqueueErrs []error
 	for _, nodePool := range nodePools {
@@ -125,7 +134,7 @@ func (s NodePoolEventSource[T]) Enqueue(ctx context.Context, nodePools ...db.Nod
 	return errors.Join(enqueueErrs...)
 }
 
-func (s NodePoolEventSource[T]) enqueueKey(ctx context.Context, key T) error {
+func (s *NodePoolEventSource[T]) enqueueKey(ctx context.Context, key T) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, fmt.Errorf("failed to enqueue DB node pool reconcile event"))
 	}

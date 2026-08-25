@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
@@ -24,32 +25,39 @@ import (
 type NodeEventSource[T comparable] struct {
 	events         chan event.TypedGenericEvent[T]
 	done           <-chan struct{}
-	queries        db.NodeQueries
+	database       *DB
 	filters        dbfilters.Node
 	keyMappers     []NodeKeyMapper[T]
 	resyncInterval time.Duration
 	logger         *slog.Logger
 }
 
-func newNodeSource[T comparable](
-	ctx context.Context,
-	queries db.NodeQueries,
-	logger *slog.Logger,
+func NewNodeSource(database *DB, filters dbfilters.Node, keyMappers ...NodeKeyMapper[dbreconcile.Key]) *NodeEventSource[dbreconcile.Key] {
+	if len(keyMappers) == 0 {
+		keyMappers = []NodeKeyMapper[dbreconcile.Key]{defaultNodeKey}
+	}
+	return NewMappedNodeSource(database, filters, keyMappers...)
+}
+
+// NewMappedNodeSource returns a DB-backed controller-runtime source for node changes.
+// The source is registered with database while controller-runtime is running it.
+func NewMappedNodeSource[T comparable](
+	database *DB,
 	filters dbfilters.Node,
 	keyMappers ...NodeKeyMapper[T],
 ) *NodeEventSource[T] {
 	return &NodeEventSource[T]{
 		events:         make(chan event.TypedGenericEvent[T], defaultSourceBufferSize),
-		done:           ctx.Done(),
-		queries:        queries,
+		database:       database,
 		filters:        filters,
 		keyMappers:     keyMappers,
 		resyncInterval: defaultSourceResyncInterval,
-		logger:         logger,
+		logger:         database.logger,
 	}
 }
 
-func (s NodeEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
+func (s *NodeEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
+	s.done = ctx.Done()
 	inner := crsource.TypedChannel[T, T](
 		s.events,
 		handler.TypedEnqueueRequestsFromMapFunc(func(_ context.Context, key T) []T {
@@ -60,18 +68,19 @@ func (s NodeEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRate
 		return err
 	}
 
+	unregister := s.database.registerNodeSource(ctx, s.Enqueue)
 	if err := s.enqueueAll(ctx); err != nil {
+		unregister()
 		return err
 	}
-	if s.resyncInterval <= 0 {
-		return nil
+	if s.resyncInterval > 0 {
+		go s.resync(ctx)
 	}
 
-	go s.resync(ctx)
 	return nil
 }
 
-func (s NodeEventSource[T]) resync(ctx context.Context) {
+func (s *NodeEventSource[T]) resync(ctx context.Context) {
 	for {
 		timer := time.NewTimer(wait.Jitter(s.resyncInterval, defaultSourceResyncJitterFactor))
 		select {
@@ -88,8 +97,8 @@ func (s NodeEventSource[T]) resync(ctx context.Context) {
 	}
 }
 
-func (s NodeEventSource[T]) enqueueAll(ctx context.Context) error {
-	dbNodes, err := s.queries.ListNodes(ctx, db.NodeFilters{})
+func (s *NodeEventSource[T]) enqueueAll(ctx context.Context) error {
+	dbNodes, err := s.database.ListNodes(ctx, db.NodeFilters{})
 	if err != nil {
 		return fmt.Errorf("failed to list nodes: %w", err)
 	}
@@ -97,7 +106,7 @@ func (s NodeEventSource[T]) enqueueAll(ctx context.Context) error {
 	return s.Enqueue(ctx, dbNodes...)
 }
 
-func (s NodeEventSource[T]) Enqueue(ctx context.Context, nodes ...db.Node) error {
+func (s *NodeEventSource[T]) Enqueue(ctx context.Context, nodes ...db.Node) error {
 	seen := map[T]struct{}{}
 	var enqueueErrs []error
 	for _, node := range nodes {
@@ -124,7 +133,7 @@ func (s NodeEventSource[T]) Enqueue(ctx context.Context, nodes ...db.Node) error
 	return errors.Join(enqueueErrs...)
 }
 
-func (s NodeEventSource[T]) enqueueKey(ctx context.Context, key T) error {
+func (s *NodeEventSource[T]) enqueueKey(ctx context.Context, key T) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, fmt.Errorf("failed to enqueue DB node reconcile event"))
 	}

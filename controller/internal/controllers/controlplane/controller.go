@@ -53,9 +53,9 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"control-plane-controller",
 		c,
-		c.db.ClusterSource(dbfilters.Cluster{}),
-		c.db.NodePoolSource(dbfilters.NodePool{ControlPlane: ptr.To(true)}, nodePoolClusterKeys),
-		c.db.NodeSource(dbfilters.Node{ControlPlane: ptr.To(true)}, nodeClusterKeys),
+		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}),
+		dbwrapper.NewNodePoolSource(c.db, dbfilters.NodePool{ControlPlane: ptr.To(true)}, nodePoolClusterKeys),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{ControlPlane: ptr.To(true)}, nodeClusterKeys),
 	)
 }
 

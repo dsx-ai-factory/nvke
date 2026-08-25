@@ -88,7 +88,7 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-tpm-ekpub-controller",
 		c,
-		c.db.NodeSource(dbfilters.Node{
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{
 			TpmEKPubHash: ptr.To(""),
 			Deleting:     ptr.To(false),
 		}),

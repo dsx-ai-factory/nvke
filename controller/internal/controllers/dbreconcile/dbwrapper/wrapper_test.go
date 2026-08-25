@@ -81,17 +81,18 @@ func TestUnit_DBTypedNodeSourceEnqueuesMappedKey(t *testing.T) {
 	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
 	database.On("CreateNode", mock.Anything, &node).Return(node, nil)
 	wrapper := New(database, slog.Default())
-	source := NodeSource[string](
-		context.Background(),
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	source := NewMappedNodeSource[string](
 		wrapper,
 		dbfilters.Node{},
 		func(_ context.Context, node db.Node) ([]string, error) {
 			return []string{node.Name}, nil
 		},
 	)
-	queue := startStringSource(t, source)
+	queue := startStringSource(ctx, t, source)
 
-	created, err := wrapper.CreateNode(context.Background(), &node)
+	created, err := wrapper.CreateNode(ctx, &node)
 
 	require.NoError(t, err)
 	assert.Equal(t, node, created)
@@ -106,15 +107,14 @@ func TestUnit_DBTypedNodeSourceUnregistersWhenContextCancels(t *testing.T) {
 	database.On("CreateNode", mock.Anything, &node).Return(node, nil)
 	wrapper := New(database, slog.Default())
 	sourceCtx, cancelSource := context.WithCancel(context.Background())
-	source := NodeSource[string](
-		sourceCtx,
+	source := NewMappedNodeSource[string](
 		wrapper,
 		dbfilters.Node{},
 		func(_ context.Context, node db.Node) ([]string, error) {
 			return []string{node.Name}, nil
 		},
 	)
-	queue := startStringSource(t, source)
+	queue := startStringSource(sourceCtx, t, source)
 
 	cancelSource()
 	require.Eventually(t, func() bool {
@@ -142,10 +142,10 @@ func TestUnit_DBTypedSourceUnregistersWhenContextCancels(t *testing.T) {
 		"cluster": {
 			setup: func(database *testutil.MockDB, wrapper *DB, ctx context.Context) workqueue.TypedRateLimitingInterface[string] {
 				database.On("ListClusters", mock.Anything, db.ClusterFilters{}).Return([]db.Cluster{}, nil)
-				source := ClusterSource[string](ctx, wrapper, dbfilters.Cluster{}, func(_ context.Context, cluster db.Cluster) ([]string, error) {
+				source := NewMappedClusterSource[string](wrapper, dbfilters.Cluster{}, func(_ context.Context, cluster db.Cluster) ([]string, error) {
 					return []string{cluster.Name}, nil
 				})
-				return startStringSource(t, source)
+				return startStringSource(ctx, t, source)
 			},
 			canceled: func(wrapper *DB) bool {
 				wrapper.lock.RLock()
@@ -162,10 +162,10 @@ func TestUnit_DBTypedSourceUnregistersWhenContextCancels(t *testing.T) {
 		"node pool": {
 			setup: func(database *testutil.MockDB, wrapper *DB, ctx context.Context) workqueue.TypedRateLimitingInterface[string] {
 				database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil)
-				source := NodePoolSource[string](ctx, wrapper, dbfilters.NodePool{}, func(_ context.Context, nodePool db.NodePool) ([]string, error) {
+				source := NewMappedNodePoolSource[string](wrapper, dbfilters.NodePool{}, func(_ context.Context, nodePool db.NodePool) ([]string, error) {
 					return []string{nodePool.Name}, nil
 				})
-				return startStringSource(t, source)
+				return startStringSource(ctx, t, source)
 			},
 			canceled: func(wrapper *DB) bool {
 				wrapper.lock.RLock()
@@ -182,10 +182,10 @@ func TestUnit_DBTypedSourceUnregistersWhenContextCancels(t *testing.T) {
 		"node set": {
 			setup: func(database *testutil.MockDB, wrapper *DB, ctx context.Context) workqueue.TypedRateLimitingInterface[string] {
 				database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
-				source := NodeSetSource[string](ctx, wrapper, dbfilters.NodeSet{}, func(_ context.Context, nodeSet db.NodeSet) ([]string, error) {
+				source := NewMappedNodeSetSource[string](wrapper, dbfilters.NodeSet{}, func(_ context.Context, nodeSet db.NodeSet) ([]string, error) {
 					return []string{nodeSet.OSProfile}, nil
 				})
-				return startStringSource(t, source)
+				return startStringSource(ctx, t, source)
 			},
 			canceled: func(wrapper *DB) bool {
 				wrapper.lock.RLock()
@@ -220,23 +220,104 @@ func TestUnit_DBTypedSourceUnregistersWhenContextCancels(t *testing.T) {
 	}
 }
 
+func TestUnit_DBSourceRegistersWhenStarted(t *testing.T) {
+	type parameters struct {
+		setup      func(*testutil.MockDB, *DB) crsource.TypedSource[string]
+		registered func(*DB) bool
+	}
+
+	tests := map[string]parameters{
+		"cluster": {
+			setup: func(database *testutil.MockDB, wrapper *DB) crsource.TypedSource[string] {
+				database.On("ListClusters", mock.Anything, db.ClusterFilters{}).Return([]db.Cluster{}, nil)
+				return NewMappedClusterSource[string](wrapper, dbfilters.Cluster{}, func(_ context.Context, cluster db.Cluster) ([]string, error) {
+					return []string{cluster.Name}, nil
+				})
+			},
+			registered: func(wrapper *DB) bool {
+				wrapper.lock.RLock()
+				defer wrapper.lock.RUnlock()
+				return len(wrapper.clusterSources) == 1
+			},
+		},
+		"node pool": {
+			setup: func(database *testutil.MockDB, wrapper *DB) crsource.TypedSource[string] {
+				database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil)
+				return NewMappedNodePoolSource[string](wrapper, dbfilters.NodePool{}, func(_ context.Context, nodePool db.NodePool) ([]string, error) {
+					return []string{nodePool.Name}, nil
+				})
+			},
+			registered: func(wrapper *DB) bool {
+				wrapper.lock.RLock()
+				defer wrapper.lock.RUnlock()
+				return len(wrapper.nodePoolSources) == 1
+			},
+		},
+		"node set": {
+			setup: func(database *testutil.MockDB, wrapper *DB) crsource.TypedSource[string] {
+				database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
+				return NewMappedNodeSetSource[string](wrapper, dbfilters.NodeSet{}, func(_ context.Context, nodeSet db.NodeSet) ([]string, error) {
+					return []string{nodeSet.OSProfile}, nil
+				})
+			},
+			registered: func(wrapper *DB) bool {
+				wrapper.lock.RLock()
+				defer wrapper.lock.RUnlock()
+				return len(wrapper.nodeSetSources) == 1
+			},
+		},
+		"node": {
+			setup: func(database *testutil.MockDB, wrapper *DB) crsource.TypedSource[string] {
+				database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+				return NewMappedNodeSource[string](wrapper, dbfilters.Node{}, func(_ context.Context, node db.Node) ([]string, error) {
+					return []string{node.Name}, nil
+				})
+			},
+			registered: func(wrapper *DB) bool {
+				wrapper.lock.RLock()
+				defer wrapper.lock.RUnlock()
+				return len(wrapper.nodeSources) == 1
+			},
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			database := &testutil.MockDB{}
+			wrapper := New(database, slog.Default())
+			source := params.setup(database, wrapper)
+
+			assert.False(t, params.registered(wrapper))
+
+			ctx, cancel := context.WithCancel(context.Background())
+			t.Cleanup(cancel)
+			queue := startStringSource(ctx, t, source)
+
+			assert.True(t, params.registered(wrapper))
+			assertStringQueueEmpty(t, queue)
+			database.AssertExpectations(t)
+		})
+	}
+}
+
 func TestUnit_DBTypedClusterSourceEnqueuesMappedKey(t *testing.T) {
 	cluster := db.Cluster{ID: uuid.New(), Name: "tenant-1"}
 	database := &testutil.MockDB{}
 	database.On("ListClusters", mock.Anything, db.ClusterFilters{}).Return([]db.Cluster{}, nil)
 	database.On("CreateCluster", mock.Anything, &cluster).Return(cluster, nil)
 	wrapper := New(database, slog.Default())
-	source := ClusterSource[string](
-		context.Background(),
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	source := NewMappedClusterSource[string](
 		wrapper,
 		dbfilters.Cluster{},
 		func(_ context.Context, cluster db.Cluster) ([]string, error) {
 			return []string{cluster.Name}, nil
 		},
 	)
-	queue := startStringSource(t, source)
+	queue := startStringSource(ctx, t, source)
 
-	created, err := wrapper.CreateCluster(context.Background(), &cluster)
+	created, err := wrapper.CreateCluster(ctx, &cluster)
 
 	require.NoError(t, err)
 	assert.Equal(t, cluster, created)
@@ -250,17 +331,18 @@ func TestUnit_DBTypedNodePoolSourceEnqueuesMappedKey(t *testing.T) {
 	database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil)
 	database.On("CreateNodePool", mock.Anything, &nodePool).Return(nodePool, nil)
 	wrapper := New(database, slog.Default())
-	source := NodePoolSource[string](
-		context.Background(),
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	source := NewMappedNodePoolSource[string](
 		wrapper,
 		dbfilters.NodePool{},
 		func(_ context.Context, nodePool db.NodePool) ([]string, error) {
 			return []string{nodePool.Name}, nil
 		},
 	)
-	queue := startStringSource(t, source)
+	queue := startStringSource(ctx, t, source)
 
-	created, err := wrapper.CreateNodePool(context.Background(), &nodePool)
+	created, err := wrapper.CreateNodePool(ctx, &nodePool)
 
 	require.NoError(t, err)
 	assert.Equal(t, nodePool, created)
@@ -274,17 +356,18 @@ func TestUnit_DBTypedNodeSetSourceEnqueuesMappedKey(t *testing.T) {
 	database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
 	database.On("CreateNodeSet", mock.Anything, &nodeSet).Return(nodeSet, nil)
 	wrapper := New(database, slog.Default())
-	source := NodeSetSource[string](
-		context.Background(),
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	source := NewMappedNodeSetSource[string](
 		wrapper,
 		dbfilters.NodeSet{},
 		func(_ context.Context, nodeSet db.NodeSet) ([]string, error) {
 			return []string{nodeSet.OSProfile}, nil
 		},
 	)
-	queue := startStringSource(t, source)
+	queue := startStringSource(ctx, t, source)
 
-	created, err := wrapper.CreateNodeSet(context.Background(), &nodeSet)
+	created, err := wrapper.CreateNodeSet(ctx, &nodeSet)
 
 	require.NoError(t, err)
 	assert.Equal(t, nodeSet, created)
@@ -696,8 +779,7 @@ func TestUnit_DBDoesNotFailSuccessfulTxWhenPostCommitNodeEnqueueFails(t *testing
 	wrapper := New(database, slog.Default())
 	sourceID := uuid.New()
 	wrapper.nodeSources[sourceID] = nodeSourceRegistration{
-		id:   sourceID,
-		done: nil,
+		id: sourceID,
 		enqueue: func(context.Context, ...db.Node) error {
 			return wantErr
 		},
@@ -724,8 +806,7 @@ func TestUnit_DBPostCommitClusterForNodeEnqueueContinuesAfterNodeEnqueueFails(t 
 	wrapper := New(database, slog.New(slog.DiscardHandler))
 	sourceID := uuid.New()
 	wrapper.nodeSources[sourceID] = nodeSourceRegistration{
-		id:   sourceID,
-		done: nil,
+		id: sourceID,
 		enqueue: func(context.Context, ...db.Node) error {
 			return wantErr
 		},
@@ -1029,7 +1110,8 @@ func TestUnit_DBClusterSourceResyncsClusters(t *testing.T) {
 	database.On("ListClusters", mock.Anything, db.ClusterFilters{}).Return([]db.Cluster{cluster}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	source := newClusterSource(ctx, database, slog.New(slog.DiscardHandler), dbfilters.Cluster{}, defaultClusterKey)
+	wrapper := New(database, slog.New(slog.DiscardHandler))
+	source := NewClusterSource(wrapper, dbfilters.Cluster{})
 	source.resyncInterval = 10 * time.Millisecond
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
@@ -1049,7 +1131,8 @@ func TestUnit_DBNodePoolSourceResyncsNodePools(t *testing.T) {
 	database.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{nodePool}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	source := newNodePoolSource(ctx, database, slog.New(slog.DiscardHandler), dbfilters.NodePool{}, defaultNodePoolKey)
+	wrapper := New(database, slog.New(slog.DiscardHandler))
+	source := NewNodePoolSource(wrapper, dbfilters.NodePool{})
 	source.resyncInterval = 10 * time.Millisecond
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
@@ -1069,7 +1152,8 @@ func TestUnit_DBNodeSetSourceResyncsNodeSets(t *testing.T) {
 	database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{nodeSet}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	source := newNodeSetSource(ctx, database, slog.New(slog.DiscardHandler), dbfilters.NodeSet{}, defaultNodeSetKey)
+	wrapper := New(database, slog.New(slog.DiscardHandler))
+	source := NewNodeSetSource(wrapper, dbfilters.NodeSet{})
 	source.resyncInterval = 10 * time.Millisecond
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
@@ -1089,7 +1173,8 @@ func TestUnit_DBNodeSourceResyncsNodes(t *testing.T) {
 	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{node}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	source := newNodeSource[dbreconcile.Key](ctx, database, slog.New(slog.DiscardHandler), dbfilters.Node{}, defaultNodeKey)
+	wrapper := New(database, slog.New(slog.DiscardHandler))
+	source := NewNodeSource(wrapper, dbfilters.Node{})
 	source.resyncInterval = 10 * time.Millisecond
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
@@ -1126,7 +1211,8 @@ func TestUnit_DBNodeSourceReturnsErrorWhenEnqueueContextCancels(t *testing.T) {
 	database := &testutil.MockDB{}
 	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{node}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	source := newNodeSource[dbreconcile.Key](ctx, database, slog.New(slog.DiscardHandler), dbfilters.Node{}, defaultNodeKey)
+	wrapper := New(database, slog.New(slog.DiscardHandler))
+	source := NewNodeSource(wrapper, dbfilters.Node{})
 	cancel()
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
@@ -1161,7 +1247,8 @@ func TestUnit_DBNodeSetSourceReturnsErrorWhenEnqueueContextCancels(t *testing.T)
 	database := &testutil.MockDB{}
 	database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{nodeSet}, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	source := newNodeSetSource(ctx, database, slog.New(slog.DiscardHandler), dbfilters.NodeSet{}, defaultNodeSetKey)
+	wrapper := New(database, slog.New(slog.DiscardHandler))
+	source := NewNodeSetSource(wrapper, dbfilters.NodeSet{})
 	cancel()
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
@@ -1342,7 +1429,7 @@ func TestUnit_DBNodeSetEnqueueAfterTransaction(t *testing.T) {
 func startClusterSource(t *testing.T, wrapper *DB, filters dbfilters.Cluster) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	source := wrapper.ClusterSource(filters)
+	source := NewClusterSource(wrapper, filters)
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1354,7 +1441,7 @@ func startClusterSource(t *testing.T, wrapper *DB, filters dbfilters.Cluster) wo
 func startNodePoolClusterSource(t *testing.T, wrapper *DB, filters dbfilters.NodePool) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	source := wrapper.NodePoolSource(filters, testNodePoolClusterKeys)
+	source := NewNodePoolSource(wrapper, filters, testNodePoolClusterKeys)
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1366,7 +1453,7 @@ func startNodePoolClusterSource(t *testing.T, wrapper *DB, filters dbfilters.Nod
 func startNodeClusterSource(t *testing.T, wrapper *DB, filters dbfilters.Node) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	source := wrapper.NodeSource(filters, testNodeClusterKeys)
+	source := NewNodeSource(wrapper, filters, testNodeClusterKeys)
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1392,7 +1479,7 @@ func testNodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, er
 func startNodeSource(t *testing.T, wrapper *DB, filters dbfilters.Node) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	return startSource(t, wrapper.NodeSource(filters))
+	return startSource(t, NewNodeSource(wrapper, filters))
 }
 
 func startSource(t *testing.T, source crsource.TypedSource[dbreconcile.Key]) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
@@ -1406,13 +1493,15 @@ func startSource(t *testing.T, source crsource.TypedSource[dbreconcile.Key]) wor
 	return queue
 }
 
-func startStringSource(t *testing.T, source crsource.TypedSource[string]) workqueue.TypedRateLimitingInterface[string] {
+func startStringSource(
+	ctx context.Context,
+	t *testing.T,
+	source crsource.TypedSource[string],
+) workqueue.TypedRateLimitingInterface[string] {
 	t.Helper()
 
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[string]())
 	t.Cleanup(queue.ShutDown)
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 	require.NoError(t, source.Start(ctx, queue))
 	return queue
 }
@@ -1420,7 +1509,7 @@ func startStringSource(t *testing.T, source crsource.TypedSource[string]) workqu
 func startNodePoolSource(t *testing.T, wrapper *DB) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	source := wrapper.NodePoolSource(dbfilters.NodePool{})
+	source := NewNodePoolSource(wrapper, dbfilters.NodePool{})
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1432,7 +1521,7 @@ func startNodePoolSource(t *testing.T, wrapper *DB) workqueue.TypedRateLimitingI
 func startNodeSetSource(t *testing.T, wrapper *DB) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	source := wrapper.NodeSetSource(dbfilters.NodeSet{})
+	source := NewNodeSetSource(wrapper, dbfilters.NodeSet{})
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1448,15 +1537,15 @@ func startNodeSetControllerSources(t *testing.T, wrapper *DB) workqueue.TypedRat
 	t.Cleanup(queue.ShutDown)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	require.NoError(t, wrapper.NodeSetSource(dbfilters.NodeSet{}).Start(ctx, queue))
-	require.NoError(t, wrapper.NodeSource(dbfilters.Node{}, testNodeSetKeysForNode).Start(ctx, queue))
+	require.NoError(t, NewNodeSetSource(wrapper, dbfilters.NodeSet{}).Start(ctx, queue))
+	require.NoError(t, NewNodeSource(wrapper, dbfilters.Node{}, testNodeSetKeysForNode).Start(ctx, queue))
 	return queue
 }
 
 func startNodePoolSourceForNode(t *testing.T, wrapper *DB) workqueue.TypedRateLimitingInterface[dbreconcile.Key] {
 	t.Helper()
 
-	source := wrapper.NodeSource(dbfilters.Node{}, testNodePoolKeysForNode)
+	source := NewNodeSource(wrapper, dbfilters.Node{}, testNodePoolKeysForNode)
 	queue := workqueue.NewTypedRateLimitingQueue(workqueue.DefaultTypedControllerRateLimiter[dbreconcile.Key]())
 	t.Cleanup(queue.ShutDown)
 	ctx, cancel := context.WithCancel(context.Background())

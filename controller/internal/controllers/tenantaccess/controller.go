@@ -96,8 +96,8 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"tenant-access",
 		c,
-		c.db.ClusterSource(dbfilters.Cluster{}),
-		c.db.NodeSource(dbfilters.Node{
+		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{
 			ControlPlane: ptr.To(true),
 			Joined:       ptr.To(true),
 			Deleting:     ptr.To(false),

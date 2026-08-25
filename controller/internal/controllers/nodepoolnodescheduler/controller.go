@@ -54,8 +54,8 @@ func (s *NodePoolNodeScheduler) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-pool-node-scheduler",
 		s,
-		s.db.NodePoolSource(dbfilters.NodePool{}),
-		s.db.NodeSource(dbfilters.Node{
+		dbwrapper.NewNodePoolSource(s.db, dbfilters.NodePool{}),
+		dbwrapper.NewNodeSource(s.db, dbfilters.Node{
 			Pending:  ptr.To(true),
 			Deleting: ptr.To(false),
 		}, nodePoolKeysForPendingNode),

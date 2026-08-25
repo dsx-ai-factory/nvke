@@ -56,8 +56,8 @@ func (s *ControlPlaneNodeScheduler) SetupWithManager(mgr manager.Manager) error 
 		mgr,
 		"control-plane-node-scheduler",
 		s,
-		s.db.ClusterSource(dbfilters.Cluster{}),
-		s.db.NodeSource(dbfilters.Node{
+		dbwrapper.NewClusterSource(s.db, dbfilters.Cluster{}),
+		dbwrapper.NewNodeSource(s.db, dbfilters.Node{
 			Pending:      ptr.To(true),
 			Deleting:     ptr.To(false),
 			ControlPlane: ptr.To(true),

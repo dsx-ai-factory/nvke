@@ -47,8 +47,8 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-set-controller",
 		c,
-		c.db.NodeSetSource(dbfilters.NodeSet{}),
-		c.db.NodeSource(dbfilters.Node{}, nodeSetKeysForNode),
+		dbwrapper.NewNodeSetSource(c.db, dbfilters.NodeSet{}),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{}, nodeSetKeysForNode),
 	)
 }
 

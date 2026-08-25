@@ -49,7 +49,7 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"cert-renewal-controller",
 		c,
-		c.db.ClusterSource(dbfilters.Cluster{}),
+		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}),
 	)
 }
 

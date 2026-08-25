@@ -16,6 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
@@ -24,32 +25,39 @@ import (
 type NodeSetEventSource[T comparable] struct {
 	events         chan event.TypedGenericEvent[T]
 	done           <-chan struct{}
-	queries        db.NodeSetQueries
+	database       *DB
 	filters        dbfilters.NodeSet
 	keyMappers     []NodeSetKeyMapper[T]
 	resyncInterval time.Duration
 	logger         *slog.Logger
 }
 
-func newNodeSetSource[T comparable](
-	ctx context.Context,
-	queries db.NodeSetQueries,
-	logger *slog.Logger,
+func NewNodeSetSource(database *DB, filters dbfilters.NodeSet, keyMappers ...NodeSetKeyMapper[dbreconcile.Key]) *NodeSetEventSource[dbreconcile.Key] {
+	if len(keyMappers) == 0 {
+		keyMappers = []NodeSetKeyMapper[dbreconcile.Key]{defaultNodeSetKey}
+	}
+	return NewMappedNodeSetSource(database, filters, keyMappers...)
+}
+
+// NewMappedNodeSetSource returns a DB-backed controller-runtime source for node set changes.
+// The source is registered with database while controller-runtime is running it.
+func NewMappedNodeSetSource[T comparable](
+	database *DB,
 	filters dbfilters.NodeSet,
 	keyMappers ...NodeSetKeyMapper[T],
 ) *NodeSetEventSource[T] {
 	return &NodeSetEventSource[T]{
 		events:         make(chan event.TypedGenericEvent[T], defaultSourceBufferSize),
-		done:           ctx.Done(),
-		queries:        queries,
+		database:       database,
 		filters:        filters,
 		keyMappers:     keyMappers,
 		resyncInterval: defaultSourceResyncInterval,
-		logger:         logger,
+		logger:         database.logger,
 	}
 }
 
-func (s NodeSetEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
+func (s *NodeSetEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
+	s.done = ctx.Done()
 	inner := crsource.TypedChannel[T, T](
 		s.events,
 		handler.TypedEnqueueRequestsFromMapFunc(func(_ context.Context, key T) []T {
@@ -60,18 +68,19 @@ func (s NodeSetEventSource[T]) Start(ctx context.Context, queue workqueue.TypedR
 		return err
 	}
 
+	unregister := s.database.registerNodeSetSource(ctx, s.Enqueue)
 	if err := s.enqueueAll(ctx); err != nil {
+		unregister()
 		return err
 	}
-	if s.resyncInterval <= 0 {
-		return nil
+	if s.resyncInterval > 0 {
+		go s.resync(ctx)
 	}
 
-	go s.resync(ctx)
 	return nil
 }
 
-func (s NodeSetEventSource[T]) resync(ctx context.Context) {
+func (s *NodeSetEventSource[T]) resync(ctx context.Context) {
 	for {
 		timer := time.NewTimer(wait.Jitter(s.resyncInterval, defaultSourceResyncJitterFactor))
 		select {
@@ -88,8 +97,8 @@ func (s NodeSetEventSource[T]) resync(ctx context.Context) {
 	}
 }
 
-func (s NodeSetEventSource[T]) enqueueAll(ctx context.Context) error {
-	nodeSets, err := s.queries.ListNodeSets(ctx, db.NodeSetFilters{})
+func (s *NodeSetEventSource[T]) enqueueAll(ctx context.Context) error {
+	nodeSets, err := s.database.ListNodeSets(ctx, db.NodeSetFilters{})
 	if err != nil {
 		return fmt.Errorf("failed to list node sets: %w", err)
 	}
@@ -97,7 +106,7 @@ func (s NodeSetEventSource[T]) enqueueAll(ctx context.Context) error {
 	return s.Enqueue(ctx, nodeSets...)
 }
 
-func (s NodeSetEventSource[T]) Enqueue(ctx context.Context, nodeSets ...db.NodeSet) error {
+func (s *NodeSetEventSource[T]) Enqueue(ctx context.Context, nodeSets ...db.NodeSet) error {
 	seen := map[T]struct{}{}
 	var enqueueErrs []error
 	for _, nodeSet := range nodeSets {
@@ -125,7 +134,7 @@ func (s NodeSetEventSource[T]) Enqueue(ctx context.Context, nodeSets ...db.NodeS
 	return errors.Join(enqueueErrs...)
 }
 
-func (s NodeSetEventSource[T]) enqueueKey(ctx context.Context, key T) error {
+func (s *NodeSetEventSource[T]) enqueueKey(ctx context.Context, key T) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, fmt.Errorf("failed to enqueue DB node set reconcile event"))
 	}

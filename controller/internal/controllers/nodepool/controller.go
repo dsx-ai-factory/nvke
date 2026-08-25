@@ -46,8 +46,8 @@ func (a *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-pool-controller",
 		a,
-		a.db.NodePoolSource(dbfilters.NodePool{}),
-		a.db.NodeSource(dbfilters.Node{}, nodePoolKeysForNode),
+		dbwrapper.NewNodePoolSource(a.db, dbfilters.NodePool{}),
+		dbwrapper.NewNodeSource(a.db, dbfilters.Node{}, nodePoolKeysForNode),
 	)
 }
 

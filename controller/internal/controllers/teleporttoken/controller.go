@@ -87,9 +87,9 @@ func (c *Controller) SetupWithManager(mgr manager.Manager, sourceDB *dbwrapper.D
 		mgr,
 		"teleport-token",
 		c,
-		sourceDB.NodeSource(dbfilters.Node{Deleting: ptr.To(false)}),
-		sourceDB.ClusterSource(dbfilters.Cluster{}, c.nodeKeysForCluster),
-		sourceDB.NodeSetSource(dbfilters.NodeSet{}, c.nodeKeysForNodeSet),
+		dbwrapper.NewNodeSource(sourceDB, dbfilters.Node{Deleting: ptr.To(false)}),
+		dbwrapper.NewClusterSource(sourceDB, dbfilters.Cluster{}, c.nodeKeysForCluster),
+		dbwrapper.NewNodeSetSource(sourceDB, dbfilters.NodeSet{}, c.nodeKeysForNodeSet),
 	)
 }
 
