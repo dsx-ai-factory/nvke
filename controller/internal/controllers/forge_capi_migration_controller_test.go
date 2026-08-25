@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -228,6 +229,20 @@ func (a *unexpectedMachineAdopter) ApplyAdoptedForgeCAPIMachine(
 	a.t.Helper()
 	a.t.Error("ApplyAdoptedForgeCAPIMachine should not be called for existing CAPI objects")
 	return nil
+}
+
+func TestCountOrphanedLegacyNamespacesSkipsClusterSecrets(t *testing.T) {
+	t.Parallel()
+
+	namespaces := []corev1.Namespace{
+		{ObjectMeta: metav1.ObjectMeta{Name: "cluster-secrets"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "nke-system"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "cluster-gone"}},
+		{ObjectMeta: metav1.ObjectMeta{Name: "cluster-live"}},
+	}
+	clusters := []db.Cluster{{Name: "live"}}
+
+	assert.Equal(t, 1, countOrphanedLegacyNamespaces(namespaces, clusters))
 }
 
 func TestCAPIAdoptionPredicates(t *testing.T) {

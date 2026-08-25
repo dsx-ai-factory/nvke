@@ -517,6 +517,10 @@ func countOrphanedLegacyNamespaces(namespaces []corev1.Namespace, clusters []db.
 	var orphanedLegacyNamespaces int
 	for _, namespace := range namespaces {
 		name := namespace.Name
+		if name == "cluster-secrets" {
+			// Fleet aoa-infra chart namespace, not a leftover CAPI cluster-<name> ns.
+			continue
+		}
 		if !strings.HasPrefix(name, "cluster-") {
 			continue
 		}
