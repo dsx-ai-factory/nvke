@@ -33,7 +33,9 @@ NKE performs no authorization. Every admitted caller can call every endpoint.
 
 - A cluster running NKE from a chart version that has the `apiAuth` values.
   Check with `helm show values <chart> | grep apiAuth`.
-- Permission to create a ConfigMap in NKE's namespace.
+- Either permission to create a ConfigMap in NKE's namespace, or the ability to
+  set chart values: the chart can render the ConfigMap itself. Section 9.1 covers
+  both.
 - For the SPIRE recipe, access to the SPIRE server and its CA.
 
 ## 3. The configuration file
@@ -63,7 +65,12 @@ issuers:
 The Kubernetes API server has its own `AuthenticationConfiguration` kind in a
 different group. This is not that.
 
-The file is read once, at startup. Changing it requires a pod restart.
+If you let the chart render the file (section 9.1), the `apiAuth.config` value
+takes this document from its third line on. The chart supplies `apiVersion` and
+`kind`, and repeating them under `config` fails the render.
+
+The file is read once, at startup. Changing it requires a pod restart, which
+section 9.4 covers.
 
 No field may have leading or trailing whitespace. NKE rejects padded values
 rather than trimming them.
@@ -235,9 +242,13 @@ issuers:
 
 The endpoint requires authentication, which is what `bearerTokenPath` is for.
 Kubernetes grants read access to the `system:serviceaccounts` group by default,
-so a stock cluster needs no extra RBAC. If your cluster has narrowed that
-default, set `apiAuth.clusterIssuerDiscovery=true` so the chart creates an
-explicit binding.
+so a stock cluster needs no extra RBAC.
+
+`apiAuth.clusterIssuerDiscovery` defaults to **true**, so the chart binds
+`system:service-account-issuer-discovery` to NKE's ServiceAccount explicitly.
+That is redundant on a stock cluster and is what carries a cluster that removed
+or narrowed the default. Set it to false only if you are binding the role
+yourself.
 
 ### 7.3 Clients
 
@@ -297,6 +308,11 @@ kubectl -n cloud-workflow-engine create configmap nke-auth-config \
 
 The file is then at `/etc/nke/auth/spire-ca.crt`.
 
+This works only for a ConfigMap you manage yourself. The one the chart renders
+carries `auth.yaml` and nothing else, so with `apiAuth.configMap.create: true`
+put the CA in its own ConfigMap or Secret, mount it through the chart's
+top-level `volumes` and `volumeMounts`, and point `caBundlePath` at that mount.
+
 ### 8.3 Write the issuer block
 
 ```yaml
@@ -326,18 +342,57 @@ spire-server jwt mint \
 
 ## 9. Deploying and enabling
 
-### 9.1 Create the ConfigMap
+### 9.1 Get the ConfigMap in place
 
-The chart mounts this ConfigMap but does not create it. The contents are
-per-deployment.
+The chart always mounts the ConfigMap named by `apiAuth.configMap.name`. There
+are two ways to get one there, and they are alternatives: setting
+`apiAuth.config` without `configMap.create`, or `create` without `config`, fails
+the render rather than quietly ignoring one of them.
+
+**The chart renders it** when `apiAuth.configMap.create` is true. The document
+goes under `apiAuth.config`, carrying `audiences` and `issuers` only:
+
+```yaml
+apiAuth:
+  enabled: true
+  permissive: true
+  configMap:
+    create: true
+    name: nke-auth-config
+  config:
+    audiences: ["https://nke.example.com"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256, ES256]
+        admit:
+          serviceAccounts:
+            - namespace: nke-clients
+              name: nke-client
+```
+
+This is the option for a GitOps deployment, where the configuration belongs in
+the same values file as everything else and there is nowhere to put a loose
+manifest.
+
+The chart checks only that `audiences` and `issuers` are present and that
+`apiVersion` and `kind` are absent. Every other rule in this guide is enforced
+by NKE at startup, so a bad value is a `CrashLoopBackOff` rather than a failed
+render. Read the pod logs, not the Helm output.
+
+**Or create it yourself** and leave `create` at its default of false. The key
+must be `auth.yaml`, and the file is the whole document, `apiVersion` and `kind`
+included:
 
 ```bash
 kubectl -n cloud-workflow-engine create configmap nke-auth-config \
   --from-file=auth.yaml=auth.yaml \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
-
-The key must be `auth.yaml`.
 
 ### 9.2 Set the chart values
 
@@ -346,9 +401,14 @@ apiAuth:
   enabled: true
   permissive: true
   configMap:
+    create: false
     name: nke-auth-config
   clusterIssuerDiscovery: true
 ```
+
+`create: false` mounts a ConfigMap you manage. The block in section 9.1 is what
+these values look like when the chart renders it instead; `enabled`,
+`permissive` and `clusterIssuerDiscovery` are the same either way.
 
 Start with `permissive: true`. Section 10 covers the move to enforcing.
 
@@ -368,6 +428,23 @@ Expect one `fetched issuer signing keys` line per issuer. If one is missing, fix
 it now. In permissive mode a failed fetch is a warning. In enforcing mode it
 prevents startup.
 
+### 9.4 Changing the configuration later
+
+The file is read once at startup, and Kubernetes restarts nothing when a mounted
+ConfigMap changes. So whenever `apiAuth.enabled` is true the chart annotates the
+Deployment for [Reloader](https://github.com/stakater/Reloader), which watches
+the ConfigMap and rolls the Deployment when it changes — from any source, a
+`kubectl edit` included. That covers both paths in section 9.1: an edit to
+`apiAuth.config` and an edit to a ConfigMap you manage look the same to Reloader.
+
+Setting `deploymentAnnotations."configmap.reloader.stakater.com/reload"`
+yourself takes that over; the chart leaves an annotation you set alone. Where
+Reloader is not running, restart the pods after every change:
+
+```bash
+kubectl -n cloud-workflow-engine rollout restart deploy/cloud-workflow-engine
+```
+
 ## 10. Migrating to enforcing
 
 Do not skip permissive. It exists so you can find callers that would break
@@ -379,7 +456,7 @@ Set `apiAuth.permissive: true`. Nothing is rejected.
 
 ### 10.2 Find the callers
 
-Metrics are on a separate listener, `0.0.0.0:9090` by default:
+Metrics are on a separate listener, which the chart puts on `0.0.0.0:9090`:
 
 ```bash
 POD=$(kubectl -n cloud-workflow-engine get pod \
@@ -409,7 +486,7 @@ kubectl -n cloud-workflow-engine logs deploy/cloud-workflow-engine \
 ### 10.3 Fix each caller
 
 Give each one a token, or add its subject to an admission rule. Adding a rule
-requires a pod restart.
+requires a pod restart; see section 9.4.
 
 ### 10.4 Enforce
 
@@ -426,9 +503,10 @@ exits rather than starting. Add and verify new issuers while still permissive.
 |---|---|---|
 | `AUTH_CONFIG_PATH` | unset | Path to the configuration file. Unset disables authentication. Set but unreadable is a startup failure, not "disabled". |
 | `PERMISSIVE_MODE` | `false` | Only read when `AUTH_CONFIG_PATH` is set. |
-| `METRICS_LISTEN_ADDRESS` | `0.0.0.0:9090` | Where `nke_auth_requests_total` is served. |
+| `METRICS_LISTEN_ADDRESS` | `127.0.0.1:9090` | Where `nke_auth_requests_total` is served. The chart sets `0.0.0.0:9090` from `metrics.listenAddress`, so the value in a deployed pod is not the binary's default. |
 
-The chart renders the first two from the `apiAuth` values.
+The chart renders the first two from the `apiAuth` values, and the ConfigMap
+they point at when `apiAuth.configMap.create` is true.
 
 ### 11.2 Rejection reasons
 
@@ -452,8 +530,12 @@ names only the reason. Issuer names and configuration detail stay in the log.
 ### 11.3 Paths that need no token
 
 ```
-/healthz  /readyz  /api/version  /openapi.yaml  /docs  /api/docs/
+/healthz  /readyz  /api/version  /openapi.yaml  /docs  /api/docs  /api/docs/
 ```
+
+`/api/docs` is listed separately from the subtree because the mux redirects it
+onto `/api/docs/` downstream of the check, so without its own entry it would be
+rejected before the browser is told to add the slash.
 
 Everything else requires a token, including paths that route nowhere.
 
@@ -476,13 +558,23 @@ the startup log.
 The token verified and the subject is not admitted. The log names the subject.
 Compare it against the `admit` rules. A different token will not help.
 
+**`helm template` or `helm upgrade` fails with an `apiAuth` message.**
+The chart refuses the three ways the values can disagree with each other:
+`apiAuth.config` set without `apiAuth.configMap.create` or the reverse, `config`
+missing `audiences` or `issuers`, and `apiVersion` or `kind` repeated inside
+`config`. The message names which one. Every other rule is checked at startup
+instead, so a render that succeeds is not a validated configuration.
+
 **Configuration rejected at startup.**
 The error names the field and the reason. Common causes: an audience that
 matches an issuer, a value with leading or trailing whitespace, `serviceAccounts`
 and `spiffe` set on the same issuer, or a `jwks.uri` that is not `https`.
 
-**Changes to the ConfigMap have no effect.**
-The file is read once at startup. Restart the deployment.
+**Changes to the configuration have no effect.**
+The file is read once at startup. The chart annotates the Deployment for
+Reloader, which rolls it when the ConfigMap changes. Where Reloader is not
+running, or where the annotation was taken over in `deploymentAnnotations`,
+restart the deployment yourself. Section 9.4.
 
 **Cannot tell whether authentication is on.**
 Read the deployment, not the API:
