@@ -502,6 +502,11 @@ NKE_PERMISSIVE_MODE=true tilt up
 
 ### Enabling Authentication
 
+For a step-by-step guide to configuring authentication on a deployment you
+operate — writing the config, per-issuer recipes, and moving a running site from
+permissive to enforcing — see
+[Configuring NKE API Authentication](docs/configuring-api-authentication.md).
+
 With the Helm chart, set the `apiAuth` values:
 
 ```yaml

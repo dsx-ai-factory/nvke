@@ -197,6 +197,8 @@ from it 401 under Tilt.
 
 Full walkthrough, including what each rejection means:
 [`docs/authenticating-to-the-api.md`](docs/authenticating-to-the-api.md).
+For configuring authentication on a real deployment, see
+[`docs/configuring-api-authentication.md`](docs/configuring-api-authentication.md).
 
 ### SPIRE Integration for Local Development
 
