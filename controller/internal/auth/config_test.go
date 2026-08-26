@@ -88,6 +88,24 @@ func spiffeConfig(rule string) string {
     admit: {spiffe: ` + rule + `}`)
 }
 
+// twoIssuerConfig varies the admission rules of two issuers and nothing else;
+// their names, issuer URLs and key endpoints differ so the duplicate-name and
+// duplicate-issuer checks stay out of the way.
+func twoIssuerConfig(admitA, admitB string) string {
+	return "\n" + configHeader + `audiences: ["https://cwe.example.com"]
+issuers:
+  - name: issuer-a
+    issuer: "https://a.example.com"
+    jwks: {uri: "https://a.example.com/keys"}
+    algorithms: [RS256]
+    admit: ` + admitA + `
+  - name: issuer-b
+    issuer: "https://b.example.com"
+    jwks: {uri: "https://b.example.com/keys"}
+    algorithms: [RS256]
+    admit: ` + admitB + "\n"
+}
+
 // writeConfig writes contents to a fresh temp dir and returns the path.
 func writeConfig(t *testing.T, contents string) string {
 	t.Helper()
@@ -1022,6 +1040,189 @@ func TestLoadValidationAdmit(t *testing.T) {
 			yaml: spiffeConfig(`{trustDomain: example.org, pathPrefixes: ["/"]}`),
 		},
 	})
+}
+
+// Two issuers must not be able to admit one subject. Authorization keys its
+// grants on the bare "sub" and never consults the issuer, so an overlap is not
+// two lookalike identities, it is one identity with two key sources: a token
+// from either issuer arrives holding the other's grants.
+func TestLoadValidationSubjectsAreUnambiguous(t *testing.T) {
+	t.Parallel()
+
+	runValidationCases(t, []validationCase{
+		// --- service accounts ---
+		{
+			// The message names both issuers by index and by name, and both rules
+			// by index, because the fix is to edit one of those two lines.
+			name: "two issuers name the same namespace and service account",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-clients, name: cwe-client}]}`,
+				`{serviceAccounts: [{namespace: nke-clients, name: cwe-client}]}`),
+			wantErr: `issuers[1] (issuer-b): admit serviceAccounts[0] (namespace "nke-clients", name "cwe-client") ` +
+				`can admit the same subject as issuers[0] (issuer-a) admit serviceAccounts[0] ` +
+				`(namespace "nke-clients", name "cwe-client")`,
+		},
+		{
+			// An absent name is every name in the namespace, so it swallows the
+			// narrow rule rather than sitting beside it.
+			name: "an any-name rule covers another issuer's named rule in the same namespace",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-clients}]}`,
+				`{serviceAccounts: [{namespace: nke-clients, name: cwe-client}]}`),
+			wantErr: `issuers[1] (issuer-b): admit serviceAccounts[0] (namespace "nke-clients", name "cwe-client") ` +
+				`can admit the same subject as issuers[0] (issuer-a) admit serviceAccounts[0] ` +
+				`(namespace "nke-clients", any name)`,
+		},
+		{
+			// The same pair the other way round: which side is the wide one does
+			// not change that the two meet.
+			name: "a named rule sits under another issuer's any-name rule",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-clients, name: cwe-client}]}`,
+				`{serviceAccounts: [{namespace: nke-clients}]}`),
+			wantErr: "can admit the same subject",
+		},
+		{
+			name: "two any-name rules in one namespace",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-clients}]}`,
+				`{serviceAccounts: [{namespace: nke-clients}]}`),
+			wantErr: "can admit the same subject",
+		},
+		{
+			// The overlap need not be the first rule on either side.
+			name: "the overlap is between later rules in each list",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-a}, {namespace: nke-shared, name: cwe-client}]}`,
+				`{serviceAccounts: [{namespace: nke-b}, {namespace: nke-shared, name: cwe-client}]}`),
+			wantErr: "serviceAccounts[1]",
+		},
+
+		// --- spiffe ---
+		{
+			// One trust domain shared by two sites is the shape this takes in the
+			// fleet, and "/a/b/" is entirely inside "/a/".
+			name: "one prefix sits under the other in the same trust domain",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/a/"]}}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/a/b/"]}}`),
+			wantErr: `issuers[1] (issuer-b): admit spiffe trustDomain "example.org" pathPrefixes[0] "/a/b/" ` +
+				`can admit the same subject as issuers[0] (issuer-a) admit spiffe trustDomain "example.org" ` +
+				`pathPrefixes[0] "/a/"`,
+		},
+		{
+			// Equal prefixes, which the segment-wise prefix test alone would miss:
+			// a trailing slash excludes the bare segment, so "/a/" is not a prefix
+			// of the "/a" it trims down to.
+			name: "the same prefix twice",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}}`),
+			wantErr: "can admit the same subject",
+		},
+		{
+			// The two spellings of one segment: "/a" admits the bare workload too,
+			// but both admit everything under it.
+			name: "a prefix with a trailing slash and the same prefix without one",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service"]}}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}}`),
+			wantErr: "can admit the same subject",
+		},
+		{
+			// "/" is the whole trust domain, so it meets every prefix in it.
+			name: "a whole-trust-domain prefix beside a narrow one",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/"]}}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}}`),
+			wantErr: "can admit the same subject",
+		},
+		{
+			name: "the overlap is between later prefixes in each list",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/a/", "/shared/"]}}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/b/", "/shared/x/"]}}`),
+			wantErr: `pathPrefixes[1] "/shared/x/"`,
+		},
+
+		// --- the configurations that must keep loading ---
+		{
+			name: "different namespaces",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-a}]}`,
+				`{serviceAccounts: [{namespace: nke-b}]}`),
+		},
+		{
+			name: "different names in one namespace",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-clients, name: cwe-client}]}`,
+				`{serviceAccounts: [{namespace: nke-clients, name: swe-client}]}`),
+		},
+		{
+			name: "different trust domains, same prefix",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: a.example.org, pathPrefixes: ["/nke-service/"]}}`,
+				`{spiffe: {trustDomain: b.example.org, pathPrefixes: ["/nke-service/"]}}`),
+		},
+		{
+			// What segment-wise buys: a longer name starting with the same bytes is
+			// a different workload, not a workload underneath.
+			name: "prefixes that share a byte prefix but not a segment",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service-evil/"]}}`),
+		},
+		{
+			name: "disjoint prefixes in one trust domain",
+			yaml: twoIssuerConfig(
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/", "/a/"]}}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/other-service/", "/b/"]}}`),
+		},
+		{
+			// The two rule kinds match different shapes of subject --
+			// "system:serviceaccount:..." against a "spiffe://" URI -- so they
+			// cannot collide however alike they read.
+			name: "a service account issuer beside a SPIFFE issuer",
+			yaml: twoIssuerConfig(
+				`{serviceAccounts: [{namespace: nke-clients, name: cwe-client}]}`,
+				`{spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}}`),
+		},
+		{
+			// The file a real deployment writes: one Kubernetes issuer and one
+			// SPIRE issuer.
+			name: "the example configuration",
+			yaml: exampleConfig,
+		},
+	})
+}
+
+// The check is pairwise across every pair, not just neighbors: an issuer added
+// at the end of the list must be compared against all of the ones before it.
+func TestValidateComparesEveryIssuerPair(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := auth.Load(writeConfig(t, "\n"+configHeader+`audiences: ["https://cwe.example.com"]
+issuers:
+  - name: issuer-a
+    issuer: "https://a.example.com"
+    jwks: {uri: "https://a.example.com/keys"}
+    algorithms: [RS256]
+    admit: {serviceAccounts: [{namespace: nke-a}]}
+  - name: issuer-b
+    issuer: "https://b.example.com"
+    jwks: {uri: "https://b.example.com/keys"}
+    algorithms: [RS256]
+    admit: {serviceAccounts: [{namespace: nke-b}]}
+  - name: issuer-c
+    issuer: "https://c.example.com"
+    jwks: {uri: "https://c.example.com/keys"}
+    algorithms: [RS256]
+    admit: {serviceAccounts: [{namespace: nke-a}]}
+`))
+	require.Error(t, err)
+	assert.Nil(t, cfg)
+	assert.Contains(t, err.Error(), "issuers[2] (issuer-c)")
+	assert.Contains(t, err.Error(), "issuers[0] (issuer-a)")
 }
 
 func TestIssuerEffectiveAudiences(t *testing.T) {

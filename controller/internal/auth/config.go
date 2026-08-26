@@ -288,7 +288,127 @@ func (c *Config) Validate() error {
 			)
 		}
 	}
+
+	return validateSubjectsAreUnambiguous(c.Issuers)
+}
+
+// validateSubjectsAreUnambiguous refuses a configuration in which two issuers
+// can admit one subject.
+//
+// Nothing downstream carries the issuer: authorization keys its grants on the
+// bare "sub", so two issuers whose admission rules meet on a subject are not two
+// identities that happen to look alike, they are one identity with two key
+// sources, and a token from either arrives holding the other's grants. Two sites
+// sharing a SPIRE trust domain, or two clusters with the same
+// namespace/service-account pair, are the shapes this actually takes.
+//
+// Refusing the overlap is what turns "the subject identifies the caller" from an
+// assumption into an invariant, so it is checked here rather than left to the
+// operator to notice.
+func validateSubjectsAreUnambiguous(issuers []Issuer) error {
+	for j, later := range issuers {
+		for i := range j {
+			earlier := issuers[i]
+			laterRule, earlierRule, overlap := admitOverlap(later.Admit, earlier.Admit)
+			if !overlap {
+				continue
+			}
+			// Reported against the later issuer and pointing back at the earlier
+			// one, the way the duplicate name and issuer checks above do.
+			return fmt.Errorf(
+				"issuers[%d] (%s): admit %s can admit the same subject as issuers[%d] (%s) admit %s; "+
+					"authorization keys grants on the subject alone and never consults the issuer, so one caller "+
+					"would hold both issuers' grants. Narrow one of the two rules so no subject matches both",
+				j, strings.TrimSpace(later.Name), laterRule,
+				i, strings.TrimSpace(earlier.Name), earlierRule,
+			)
+		}
+	}
 	return nil
+}
+
+// admitOverlap returns the first pair of rules from a and b that can admit one
+// subject, described so an operator knows which two lines to change.
+//
+// A ServiceAccounts set and a SPIFFE set are compared to nothing, because the
+// subjects they match cannot be the same string: one is
+// "system:serviceaccount:<namespace>:<name>" and the other a "spiffe://" URI. A
+// cross-kind check could never fire, so none is written.
+func admitOverlap(a, b *Admit) (string, string, bool) {
+	if a == nil || b == nil {
+		return "", "", false
+	}
+
+	for i, ra := range a.ServiceAccounts {
+		for j, rb := range b.ServiceAccounts {
+			if serviceAccountRulesOverlap(ra, rb) {
+				return fmt.Sprintf("serviceAccounts[%d] (%s)", i, ra.describe()),
+					fmt.Sprintf("serviceAccounts[%d] (%s)", j, rb.describe()), true
+			}
+		}
+	}
+
+	if a.SPIFFE == nil || b.SPIFFE == nil {
+		return "", "", false
+	}
+	// Compared as admission compares them: parsed, so any normalization the
+	// SPIFFE library applies is applied to both sides. A trust domain that does
+	// not parse admits nobody and so overlaps nothing; SPIFFERule.validate has
+	// already refused one anyway.
+	tdA, errA := spiffeid.TrustDomainFromString(strings.TrimSpace(a.SPIFFE.TrustDomain))
+	tdB, errB := spiffeid.TrustDomainFromString(strings.TrimSpace(b.SPIFFE.TrustDomain))
+	if errA != nil || errB != nil || tdA != tdB {
+		return "", "", false
+	}
+	for i, pa := range a.SPIFFE.PathPrefixes {
+		for j, pb := range b.SPIFFE.PathPrefixes {
+			if pathPrefixesOverlap(pa, pb) {
+				return fmt.Sprintf("spiffe trustDomain %q pathPrefixes[%d] %q", tdA, i, pa),
+					fmt.Sprintf("spiffe trustDomain %q pathPrefixes[%d] %q", tdB, j, pb), true
+			}
+		}
+	}
+	return "", "", false
+}
+
+// serviceAccountRulesOverlap reports whether one service account can match both
+// rules. Namespace and name are compared verbatim, the way
+// admitRules.admitsServiceAccount matches them; an absent name means every name
+// in the namespace, so it meets any rule sharing that namespace.
+func serviceAccountRulesOverlap(a, b ServiceAccountRule) bool {
+	if a.Namespace != b.Namespace {
+		return false
+	}
+	if a.AllowsAnyName() || b.AllowsAnyName() {
+		return true
+	}
+	return *a.Name == *b.Name
+}
+
+// describe renders a rule the way the operator wrote it, for an error message.
+func (r ServiceAccountRule) describe() string {
+	if r.AllowsAnyName() {
+		return fmt.Sprintf("namespace %q, any name", r.Namespace)
+	}
+	return fmt.Sprintf("namespace %q, name %q", r.Namespace, *r.Name)
+}
+
+// pathPrefixesOverlap reports whether some SPIFFE path is admitted by both
+// prefixes. That happens exactly when one prefix's own segments sit at or above
+// the other's, so "/a/" meets "/a/b/" while "/nke-service/" and
+// "/nke-service-evil/" stay apart -- the same segment-wise reading admission
+// uses, which is why pathHasPrefix does the comparing.
+func pathPrefixesOverlap(a, b string) bool {
+	const separator = "/"
+	trimmedA := strings.TrimRight(a, separator)
+	trimmedB := strings.TrimRight(b, separator)
+	// Equal prefixes admit the same subtree whatever their trailing slashes, and
+	// pathHasPrefix alone would not say so: "/a/" deliberately excludes the bare
+	// "/a" it trims down to, so neither direction would match itself.
+	if trimmedA == trimmedB {
+		return true
+	}
+	return pathHasPrefix(trimmedA, b) || pathHasPrefix(trimmedB, a)
 }
 
 // validateTypeMeta names the accepted value in both messages; "wrong" is usually

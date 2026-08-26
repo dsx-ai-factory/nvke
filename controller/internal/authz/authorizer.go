@@ -98,6 +98,12 @@ const (
 // unrouted path.
 type Query struct {
 	// Principal is Principal.Subject, verbatim.
+	//
+	// The subject alone, with no issuer in it. That is only sound because a
+	// subject cannot come from two issuers: auth.Config.Validate refuses a
+	// configuration whose issuers' admission rules can admit one subject, so the
+	// string identifies a caller rather than a caller-and-a-key-source. A policy
+	// can still pin context.issuer when it wants to say more.
 	Principal string
 
 	// Issuer is Principal.IssuerName — the operator's label for the issuer entry,
