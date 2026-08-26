@@ -32,7 +32,7 @@ go = { pkg-path = "go", version = "1.26.5", pkg-group = "go" }
 # GOLANGCI_LINT_VERSION in six module Makefiles, and lint.yml:223.
 golangci-lint = { pkg-path = "golangci-lint", version = "2.12.2", pkg-group = "golangci-lint" }
 # Shared by local checks and workflows through make/tool-versions.mk.
-kubernetes-helm = { pkg-path = "kubernetes-helm", version = "3.20.2", pkg-group = "helm" }
+kubernetes-helm = { pkg-path = "kubernetes-helm", version = "4.2.4", pkg-group = "helm" }
 # backend-e2e.yml:118 and nkectl-bootstrap-e2e.yml:121.
 kind = { pkg-path = "kind", version = "0.32.0", pkg-group = "kind" }
 oapi-codegen = { pkg-path = "oapi-codegen", version = "2.4.1", pkg-group = "oapi-codegen" }
