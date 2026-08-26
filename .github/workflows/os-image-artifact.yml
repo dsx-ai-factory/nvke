@@ -29,6 +29,11 @@ on:
         required: false
         default: "edge"
         type: string
+      dry_run:
+        description: "Build and validate everything, but skip the GHCR push. The tag trigger always publishes; this only applies to a manual run."
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -166,6 +171,9 @@ jobs:
           sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
           packer version
 
+      # Needed even in a dry run: fetch-artifacts.sh (run by every `make
+      # os-image*` build below) pulls nke-agent/spire-agent from the same
+      # registry via oras, not just the final push.
       - name: Log in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -236,6 +244,7 @@ jobs:
       # load-bearing: without it the manifest has no platform in its config and
       # `oras pull --platform linux/amd64` cannot select this disk.
       - name: Push the qcow2 to GHCR
+        if: github.event.inputs.dry_run != 'true'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           ALIASES: ${{ steps.meta.outputs.aliases }}
@@ -258,6 +267,7 @@ jobs:
               nke-node.qcow2:application/vnd.qemu.qcow2 )
 
       - name: Show published manifest
+        if: github.event.inputs.dry_run != 'true'
         run: |
           set -euo pipefail
           oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
