@@ -203,6 +203,62 @@ echo "config is inert while authentication is off:"
 wantfail "and says so rather than ignoring it" 'apiAuth\.config is set but would not be rendered' \
   --set apiAuth.configMap.create=true --set 'apiAuth.config.audiences[0]=https://nke.example.internal'
 
+# An issuer behind a private CA needs a bundle in the same directory as the
+# config. The mount has no items selector, so any extra key is a file there.
+echo "extraFiles put a CA bundle beside the config:"
+ca_values="$(dirname "${values}")/auth-ca-values.yaml"
+cat > "${ca_values}" <<'YAML'
+apiAuth:
+  enabled: true
+  configMap:
+    create: true
+    extraFiles:
+      spire-ca.crt: |
+        -----BEGIN CERTIFICATE-----
+        notarealcertificate
+        -----END CERTIFICATE-----
+  config:
+    audiences: ["https://nke.example.internal"]
+    issuers:
+      - name: spire
+        issuer: "https://spire.example.internal"
+        jwks:
+          uri: "https://spire.example.internal:30443/keys"
+          caBundlePath: /etc/nke/auth/spire-ca.crt
+        algorithms: [RS256]
+        admit:
+          spiffe:
+            trustDomain: example.internal
+            pathPrefixes: ["/nke-service/"]
+YAML
+out="$(render -f "${ca_values}")"
+want   "the bundle is a key in the ConfigMap"  '^  spire-ca\.crt: \|'     "${out}"
+want   "its content is carried through"        'notarealcertificate'      "${out}"
+want   "the config file is still there"        '^  auth\.yaml: \|'        "${out}"
+
+# The whole point: caBundlePath names a file that has to exist in the mount, and
+# a missing one is a CrashLoopBackOff on a path rather than a render error.
+echo "a caBundlePath nothing supplies is refused:"
+wantfail "unlisted file in the mount is refused" 'nothing puts spire-ca\.crt there' \
+  --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
+  --set 'apiAuth.config.audiences[0]=https://nke.example.internal' \
+  --set 'apiAuth.config.issuers[0].name=spire' \
+  --set 'apiAuth.config.issuers[0].jwks.caBundlePath=/etc/nke/auth/spire-ca.crt'
+# A path outside the mount is the operator's own volume, and none of the chart's business.
+out="$(render -f "${values}")"
+want   "a CA outside the mount is left alone"  'caBundlePath: /var/run/secrets' "${out}"
+
+echo "extraFiles cannot shadow the config file:"
+wantfail "auth.yaml in extraFiles is refused" 'must not contain "auth\.yaml"' \
+  --set apiAuth.enabled=true --set apiAuth.configMap.create=true \
+  --set 'apiAuth.config.audiences[0]=https://nke.example.internal' \
+  --set 'apiAuth.config.issuers[0].name=local-kubernetes' \
+  --set 'apiAuth.configMap.extraFiles.auth\.yaml=whatever'
+
+echo "extraFiles is inert without create:"
+wantfail "and says so rather than ignoring it" 'apiAuth\.configMap\.extraFiles is set but would not be rendered' \
+  --set apiAuth.enabled=true --set 'apiAuth.configMap.extraFiles.spire-ca\.crt=x'
+
 if [[ "${failures}" -ne 0 ]]; then
   echo "${failures} chart assertion(s) failed" >&2
   exit 1

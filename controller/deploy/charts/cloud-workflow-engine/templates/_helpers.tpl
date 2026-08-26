@@ -96,7 +96,7 @@ auth.yaml
 {{- end }}
 
 {{/*
-Refuse the two ways apiAuth.config and apiAuth.configMap.create can disagree,
+Refuse the ways apiAuth's values can disagree with each other or with the chart,
 each of which otherwise renders clean and does the wrong thing silently.
 
 Called from deployment.yaml rather than from configmap-auth.yaml, because that
@@ -112,6 +112,9 @@ at fault.
 {{- if and $auth.config (not $create) -}}
 {{- fail "apiAuth.config is set but would not be rendered: it is only used when apiAuth.enabled and apiAuth.configMap.create are both true. Set both, or remove apiAuth.config and create the ConfigMap named by apiAuth.configMap.name yourself." -}}
 {{- end -}}
+{{- if and $auth.configMap.extraFiles (not $create) -}}
+{{- fail "apiAuth.configMap.extraFiles is set but would not be rendered: it is only used when apiAuth.enabled and apiAuth.configMap.create are both true. Set both, or drop extraFiles and put the files in the ConfigMap named by apiAuth.configMap.name yourself." -}}
+{{- end -}}
 {{- if and $create (not $auth.config) -}}
 {{- fail "apiAuth.configMap.create is true but apiAuth.config is empty, which would mount an AuthenticationConfiguration carrying no issuers. Populate apiAuth.config, or set create to false and manage the ConfigMap yourself." -}}
 {{- end -}}
@@ -124,6 +127,21 @@ at fault.
 {{- end -}}
 {{- if not $auth.config.issuers -}}
 {{- fail "apiAuth.config.issuers is required and must contain at least one issuer. NKE refuses to start with none, so this would be a crash loop rather than a permissive deployment." -}}
+{{- end -}}
+{{- $dir := printf "%s/" (include "cloud-workflow-engine.apiAuth.mountPath" .) -}}
+{{- $configFile := include "cloud-workflow-engine.apiAuth.configFile" . -}}
+{{- $extra := default dict $auth.configMap.extraFiles -}}
+{{- if hasKey $extra $configFile -}}
+{{- fail (printf "apiAuth.configMap.extraFiles must not contain %q: that key is the configuration file itself, and a second copy of it silently replaces the one rendered from apiAuth.config -- NKE would load whatever is here instead. Put the configuration under apiAuth.config, and use extraFiles only for files it refers to by path." $configFile) -}}
+{{- end -}}
+{{- range $auth.config.issuers -}}
+{{- $ca := (default dict .jwks).caBundlePath -}}
+{{- if and $ca (hasPrefix $dir $ca) -}}
+{{- $file := trimPrefix $dir $ca -}}
+{{- if and (ne $file $configFile) (not (hasKey $extra $file)) -}}
+{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end }}

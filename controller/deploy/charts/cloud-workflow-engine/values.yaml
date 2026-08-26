@@ -307,6 +307,20 @@ apiAuth:
     # Required when apiAuth.enabled=true; an empty name fails the render.
     # Created by the chart when configMap.create=true, mounted either way.
     name: nke-auth-config
+    # -- Extra files to place beside `auth.yaml`, keyed by filename. Only used
+    # when configMap.create=true. The whole ConfigMap is mounted, so each one
+    # lands in the same directory and can be named by a `jwks.caBundlePath` as
+    # /etc/nke/auth/<filename> -- which is how an issuer behind a private CA
+    # gets its bundle. A CA bundle is a public certificate, not a secret. The
+    # render fails if `caBundlePath` names a file in that directory that is not
+    # listed here, rather than leaving NKE to crash-loop on a missing file.
+    #
+    # extraFiles:
+    #   spire-ca.crt: |
+    #     -----BEGIN CERTIFICATE-----
+    #     ...
+    #     -----END CERTIFICATE-----
+    extraFiles: {}
   # -- The AuthenticationConfiguration itself, rendered verbatim into that
   # ConfigMap. Carries `audiences` and `issuers` only: apiVersion and kind are
   # supplied by the chart, which ships in lockstep with the build that accepts

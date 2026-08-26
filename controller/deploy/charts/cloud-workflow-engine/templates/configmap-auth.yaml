@@ -23,4 +23,15 @@ data:
     apiVersion: auth.nke.nvidia.com/v1alpha1
     kind: AuthenticationConfiguration
     {{- toYaml .Values.apiAuth.config | nindent 4 }}
+  {{- /*
+  Anything else the configuration refers to by path. The volume mount carries no
+  items selector, so every key here becomes a file in apiAuth.mountPath, which is
+  what a jwks.caBundlePath can point at. Content, not a reference: an issuer's CA
+  bundle is a public certificate, and pulling one from a Secret would need a
+  second volume to land in the same directory.
+  */}}
+  {{- range $name, $content := .Values.apiAuth.configMap.extraFiles }}
+  {{ $name }}: |
+    {{- toString $content | nindent 4 }}
+  {{- end }}
 {{- end }}

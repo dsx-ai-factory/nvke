@@ -584,6 +584,32 @@ else is checked by `internal/auth/config.go` at startup, which is strict and
 names the field at fault -- but it means a bad value is a `CrashLoopBackOff`
 rather than a failed render. Read the pod logs, not the Helm output.
 
+An issuer whose `jwks.uri` sits behind a private CA needs its bundle as a file
+in the same directory, which `extraFiles` puts there. The whole ConfigMap is
+mounted, so every key in it is a file at `/etc/nke/auth`:
+
+```yaml
+apiAuth:
+  configMap:
+    create: true
+    extraFiles:
+      spire-ca.crt: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+  config:
+    issuers:
+      - name: spire
+        jwks:
+          uri: "https://spire.example.internal:30443/keys"
+          caBundlePath: /etc/nke/auth/spire-ca.crt
+```
+
+A CA bundle is a public certificate, not a secret. A `caBundlePath` under
+`/etc/nke/auth` that names a file nothing supplies fails the render, rather than
+leaving the pod to crash-loop on a missing file; a path anywhere else is taken
+to be a volume you mount yourself and is left alone.
+
 **Or create it yourself** and leave `create` false, which is the default. The key
 must be `auth.yaml`:
 
