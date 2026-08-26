@@ -194,7 +194,7 @@ func TestEnforcingServerRequiresTokenOnEveryOperation(t *testing.T) {
 		for method := range item.Operations() {
 			// Path parameters are left as literal "{id}" segments, so this only
 			// works if the 401 happens before routing.
-			target := "/api" + path
+			target := api.BasePath + path
 			t.Run(method+" "+target, func(t *testing.T) {
 				rr := httptest.NewRecorder()
 				handler.ServeHTTP(rr, httptest.NewRequestWithContext(t.Context(), method, target, http.NoBody))

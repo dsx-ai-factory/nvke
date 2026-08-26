@@ -9,42 +9,41 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 
 	"github.com/NVIDIA/nke/controller/api"
 )
 
-// The generated table and the router must agree in both directions. A route the
+// The generated table and the spec must agree in both directions. A route the
 // router serves and the table does not know is a route no policy can name, and
 // the middleware denies it — which is safe, and is also an outage nobody
 // predicted. This test is what makes regenerating actions.gen.go non-optional
 // when api/openapi.yaml changes.
+//
+// Both sides here come from the same document, so this cannot see a route the
+// document does not describe. router_test.go covers that direction, by reading
+// what api/server.gen.go registered.
 
 // specOperations reads the operations out of the embedded OpenAPI document,
 // keyed by the route pattern the generated router registers for each.
+//
+// It reads them with kin-openapi, and enumerates PathItem.Operations() rather
+// than a list of methods written here: a list written here is a list that can
+// omit one, and an operation this test cannot see is one it cannot require.
 func specOperations(t *testing.T) map[string]string {
 	t.Helper()
 
-	var doc struct {
-		Paths map[string]map[string]yaml.Node `yaml:"paths"`
-	}
-	require.NoError(t, yaml.Unmarshal([]byte(api.OpenapiYAML), &doc))
+	doc, err := openapi3.NewLoader().LoadFromData([]byte(api.OpenapiYAML))
+	require.NoError(t, err)
+	require.NotNil(t, doc.Paths, "the embedded OpenAPI document declares no paths")
 
 	out := map[string]string{}
-	for path, item := range doc.Paths {
-		for _, method := range []string{"get", "put", "post", "patch", "delete"} {
-			node, ok := item[method]
-			if !ok {
-				continue
-			}
-			var op struct {
-				OperationID string `yaml:"operationId"`
-			}
-			require.NoError(t, node.Decode(&op))
+	for path, item := range doc.Paths.Map() {
+		for method, op := range item.Operations() {
 			require.NotEmptyf(t, op.OperationID, "%s %s has no operationId", method, path)
-			out[strings.ToUpper(method)+" /api"+path] = op.OperationID
+			out[method+" "+api.BasePath+path] = op.OperationID
 		}
 	}
 	return out
@@ -80,7 +79,7 @@ func TestEveryTableEntryRoutes(t *testing.T) {
 	// A nil ServerInterface is safe here: the test matches routes with
 	// mux.Handler and never dispatches one, so no method on it is ever called.
 	mux := http.NewServeMux()
-	api.HandlerWithOptions(nil, api.StdHTTPServerOptions{BaseRouter: mux, BaseURL: "/api"})
+	api.HandlerWithOptions(nil, api.StdHTTPServerOptions{BaseRouter: mux, BaseURL: api.BasePath})
 
 	for pattern, op := range operations {
 		method, path, ok := strings.Cut(pattern, " ")

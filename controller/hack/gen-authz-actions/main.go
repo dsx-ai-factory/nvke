@@ -13,7 +13,13 @@
 // notices is unprotected.
 //
 // The pattern is built the same way HandlerWithOptions builds it: the method,
-// the "/api" base URL, and the path, verbatim including the {param} spelling.
+// api.BasePath, and the path, verbatim including the {param} spelling.
+//
+// The document is read with kin-openapi, which is what oapi-codegen reads it
+// with. That is the point rather than a convenience: a hand-written method list
+// is a way for this table to be missing a route the router registers, and
+// PathItem.Operations() is the same enumeration the router is generated from, so
+// the two cannot disagree about what an operation is.
 package main
 
 import (
@@ -22,16 +28,16 @@ import (
 	"flag"
 	"fmt"
 	"go/format"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"gopkg.in/yaml.v3"
-)
+	"github.com/getkin/kin-openapi/openapi3"
 
-// baseURL is api.HandlerWithOptions' BaseURL, set in internal/server.NewServer.
-const baseURL = "/api"
+	"github.com/NVIDIA/nke/controller/api"
+)
 
 // Paths are flags so the //go:generate directive in internal/authz can name them
 // relative to that package, rather than the tool assuming it was run from the
@@ -42,9 +48,9 @@ var (
 	bundlePath = flag.String("bundle", "deploy/authz", "directory to write the generated bundle half to")
 )
 
-// methods is the set of HTTP verbs read out of a path item, lowercase as
-// OpenAPI spells them.
-var methods = []string{"get", "put", "post", "patch", "delete"} //nolint:gochecknoglobals // a fixed table
+// uuidFormat is the only path-parameter format this API uses, and the only one
+// the middleware knows how to canonicalise. See idFormatOf.
+const uuidFormat = "uuid"
 
 type operation struct {
 	Pattern      string // "GET /api/clusters/{clusterID}"
@@ -52,18 +58,29 @@ type operation struct {
 	Action       string // "getCluster"
 	ResourceType string // "NKE::Cluster", or "" for a collection
 	IDParam      string // "clusterID", or "" for a collection
+	IDFormat     string // "uuid", or "" for a collection
 	Collection   string // "clusters" — the first path segment
 }
 
-// group returns the coarse action group an operation belongs to. Derived from
-// the method rather than from the operationId's prefix: "get"/"list" is a naming
-// convention that a future operation can break, where the method cannot be
-// anything but what it is.
+// safeMethods are the HTTP methods that do not change state. They decide the
+// coarse action group, because the method is a fact about the request where an
+// operationId prefix is a naming convention a future operation can break.
+//
+// HEAD and OPTIONS are here and were missing while the group was a GET test:
+// http.ServeMux serves HEAD off a GET pattern, and a spec that declares either
+// explicitly gets a route registered for it.
 //
 // These groups are what let a policy say "readers may read" and stay correct as
-// endpoints are added, instead of naming all 26 operations and going stale.
+// endpoints are added, instead of naming every operation and going stale.
+var safeMethods = map[string]bool{ //nolint:gochecknoglobals // a fixed table
+	http.MethodGet:     true,
+	http.MethodHead:    true,
+	http.MethodOptions: true,
+	http.MethodTrace:   true,
+}
+
 func (o operation) group() string {
-	if o.Method == "GET" {
+	if safeMethods[o.Method] {
 		return "read"
 	}
 	return "write"
@@ -78,22 +95,13 @@ func main() {
 }
 
 func run() error {
-	raw, err := os.ReadFile(*specPath)
+	loader := openapi3.NewLoader()
+	doc, err := loader.LoadFromFile(*specPath)
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", *specPath, err)
 	}
 
-	// A path item holds operations keyed by method alongside non-operation keys
-	// such as "parameters", so the values are held as raw nodes and only the
-	// method keys are decoded.
-	var doc struct {
-		Paths map[string]map[string]yaml.Node `yaml:"paths"`
-	}
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return fmt.Errorf("parsing %s: %w", *specPath, err)
-	}
-
-	ops, err := collect(doc.Paths)
+	ops, err := collect(doc)
 	if err != nil {
 		return err
 	}
@@ -111,9 +119,9 @@ func run() error {
 	}
 	fmt.Printf("gen-authz-actions: wrote %s (%d operations)\n", *outPath, len(ops))
 
-	// The bundle's generated half. The schema is what makes cedar-agent reject a
-	// policy naming an action or attribute that does not exist; without it, such
-	// a policy loads clean and silently never matches.
+	// The bundle's generated half. The schema is what lets a Cedar validator
+	// reject a policy naming an action or attribute that does not exist; without
+	// it, such a policy loads clean and silently never matches.
 	bundleDir := *bundlePath
 	if err := os.MkdirAll(bundleDir, 0o755); err != nil { //nolint:gosec // a directory of public policy
 		return fmt.Errorf("creating %s: %w", bundleDir, err)
@@ -145,17 +153,16 @@ func writeJSON(path string, v any) error {
 // renderSchema emits the Cedar schema for the NKE namespace: every entity type
 // a policy may name, and every action, with what each applies to.
 //
-// Loading it is not optional. cedar-agent validates policies against the schema
-// as they are stored, and rejects one naming an unknown action or attribute with
-// a "did you mean" — but only if a schema is present. With no schema every
-// policy is accepted and a typo becomes a rule that never fires.
+// It is what lets a validator reject a policy naming an unknown action or
+// attribute. policy_validation_test.go type-checks the shipped bundle against
+// it; with no schema every policy is accepted and a typo becomes a rule that
+// never fires.
 func renderSchema(ops []operation) map[string]any {
 	entityTypes := map[string]any{
 		// Roles nest: "operator" is a member of "reader" so one grant covers
 		// both. Cedar enforces memberOfTypes when a schema is loaded, and
 		// omitting it here rejects the entity file — leaving the entity store
-		// empty and every request denied, with only a line in the sidecar's log
-		// to say so.
+		// empty and every request denied.
 		"Role": map[string]any{
 			"memberOfTypes": []string{"Role"},
 			"shape":         map[string]any{"type": "Record", "attributes": map[string]any{}},
@@ -233,7 +240,7 @@ func renderSchema(ops []operation) map[string]any {
 	}}
 }
 
-// entityJSON is one Cedar entity in cedar-agent's JSON entity format.
+// entityJSON is one Cedar entity in the JSON entity format.
 type entityJSON struct {
 	UID     uidJSON        `json:"uid"`
 	Attrs   map[string]any `json:"attrs"`
@@ -266,20 +273,16 @@ func renderActionEntities(ops []operation) []entityJSON {
 	return entities
 }
 
-func collect(paths map[string]map[string]yaml.Node) ([]operation, error) {
+func collect(doc *openapi3.T) ([]operation, error) {
+	if doc.Paths == nil {
+		return nil, fmt.Errorf("%s declares no paths", *specPath)
+	}
+
 	var ops []operation
-	for path, item := range paths {
-		for _, method := range methods {
-			node, ok := item[method]
-			if !ok {
-				continue
-			}
-			var op struct {
-				OperationID string `yaml:"operationId"`
-			}
-			if err := node.Decode(&op); err != nil {
-				return nil, fmt.Errorf("%s %s: %w", method, path, err)
-			}
+	for path, item := range doc.Paths.Map() {
+		// Operations() is the enumeration oapi-codegen registers routes from:
+		// all nine methods, not the five a hand-written list happened to name.
+		for method, op := range item.Operations() {
 			if op.OperationID == "" {
 				// Every route the router registers comes from an operationId, so
 				// one missing means a route with no name a policy could use.
@@ -288,6 +291,12 @@ func collect(paths map[string]map[string]yaml.Node) ([]operation, error) {
 			resourceType, idParam, err := resourceOf(path)
 			if err != nil {
 				return nil, fmt.Errorf("%s %s: %w", method, path, err)
+			}
+			idFormat := ""
+			if idParam != "" {
+				if idFormat, err = idFormatOf(item, op, idParam); err != nil {
+					return nil, fmt.Errorf("%s %s: %w", method, path, err)
+				}
 			}
 			// Collection only matters to Resolver.Resolve when there is no object
 			// identifier — that is what it names the NKE::Collection resource as.
@@ -298,11 +307,12 @@ func collect(paths map[string]map[string]yaml.Node) ([]operation, error) {
 				collection = collectionOf(path)
 			}
 			ops = append(ops, operation{
-				Pattern:      strings.ToUpper(method) + " " + baseURL + path,
-				Method:       strings.ToUpper(method),
+				Pattern:      method + " " + api.BasePath + path,
+				Method:       method,
 				Action:       op.OperationID,
 				ResourceType: resourceType,
 				IDParam:      idParam,
+				IDFormat:     idFormat,
 				Collection:   collection,
 			})
 		}
@@ -321,13 +331,26 @@ func collectionOf(path string) string {
 }
 
 // resourceOf derives the Cedar entity type and the path parameter carrying its
-// identifier, from the first {param} in the path.
+// identifier, from the LAST {param} in the path.
+//
+// The last rather than the first, because the last one names the object the
+// operation acts on: a DELETE on /clusters/{clusterID}/nodePools/{nodePoolID}
+// deletes a node pool, and taking the first parameter would authorize it as a
+// decision about the cluster — a different object, of a different type, with a
+// different policy. Every path in this API has at most one parameter today, so
+// the rule is stated here before a nested path arrives rather than after.
+//
+// What the rule does not do is carry the parent: the node pool is named, the
+// cluster it is in is not. Expressing "in this cluster" needs an attribute on
+// the resource, and the resource is synthesised from the path — see the note in
+// renderSchema.
 //
 // The type comes from the parameter name rather than from the collection
 // segment, because the parameter is already singular: {clusterID} gives
 // NKE::Cluster where "clusters" would need a de-pluralizer, and a de-pluralizer
 // is a guess. A path with no parameter is a collection and returns "", "".
 func resourceOf(path string) (resourceType, idParam string, err error) {
+	resourceType, idParam = "", ""
 	for _, segment := range strings.Split(strings.Trim(path, "/"), "/") {
 		if !strings.HasPrefix(segment, "{") || !strings.HasSuffix(segment, "}") {
 			continue
@@ -340,9 +363,42 @@ func resourceOf(path string) (resourceType, idParam string, err error) {
 			// silently becomes the wrong one.
 			return "", "", fmt.Errorf("path parameter %q does not end in \"ID\"", name)
 		}
-		return "NKE::" + strings.ToUpper(base[:1]) + base[1:], name, nil
+		resourceType, idParam = "NKE::"+strings.ToUpper(base[:1])+base[1:], name
 	}
-	return "", "", nil
+	return resourceType, idParam, nil
+}
+
+// idFormatOf returns the declared format of the path parameter carrying the
+// resource identifier, and refuses anything the middleware cannot canonicalise.
+//
+// The format is in the table because the middleware has to name the same object
+// the handler acts on, and the handler acts on the *bound* value: four spellings
+// of one UUID — canonical, braced, bare-32-hex, urn:uuid — all bind to the same
+// uuid.UUID and would otherwise be four distinct Cedar entities, only one of
+// which a resource-scoped forbid names. Canonicalising needs to know what the
+// value is, and a format nobody taught it is a guess.
+func idFormatOf(item *openapi3.PathItem, op *openapi3.Operation, idParam string) (string, error) {
+	// Operation-level parameters override path-item-level ones of the same
+	// name, so the operation's list is searched first.
+	for _, params := range []openapi3.Parameters{op.Parameters, item.Parameters} {
+		for _, ref := range params {
+			p := ref.Value
+			if p == nil || p.In != openapi3.ParameterInPath || p.Name != idParam {
+				continue
+			}
+			if p.Schema == nil || p.Schema.Value == nil {
+				return "", fmt.Errorf("path parameter %q declares no schema", idParam)
+			}
+			if format := p.Schema.Value.Format; format != uuidFormat {
+				return "", fmt.Errorf(
+					"path parameter %q has format %q; the middleware can only canonicalise %q, "+
+						"so teach it this format before adding the route",
+					idParam, format, uuidFormat)
+			}
+			return uuidFormat, nil
+		}
+	}
+	return "", fmt.Errorf("path parameter %q is in the path but is not declared", idParam)
 }
 
 func render(ops []operation) ([]byte, error) {
@@ -359,8 +415,8 @@ package authz
 var operations = map[string]Operation{
 `)
 	for _, op := range ops {
-		fmt.Fprintf(&b, "\t%q: {Action: %q, ResourceType: %q, IDParam: %q, Collection: %q},\n",
-			op.Pattern, op.Action, op.ResourceType, op.IDParam, op.Collection)
+		fmt.Fprintf(&b, "\t%q: {Action: %q, ResourceType: %q, IDParam: %q, IDFormat: %q, Collection: %q},\n",
+			op.Pattern, op.Action, op.ResourceType, op.IDParam, op.IDFormat, op.Collection)
 	}
 	b.WriteString("}\n")
 

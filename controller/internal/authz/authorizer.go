@@ -53,6 +53,13 @@ type Operation struct {
 	// a collection operation.
 	IDParam string
 
+	// IDFormat is that parameter's declared OpenAPI format, empty for a
+	// collection operation. The middleware canonicalises the identifier
+	// according to it, so that the entity a policy names is the object the
+	// handler acts on rather than one of the several ways of spelling it. A
+	// format the middleware does not know is a denial, not a guess.
+	IDFormat string
+
 	// Collection is the first path segment, naming the NKE::Collection entity a
 	// collection operation is authorized against.
 	Collection string

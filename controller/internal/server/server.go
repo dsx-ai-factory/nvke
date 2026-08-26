@@ -67,7 +67,7 @@ func NewServer(
 
 	api.HandlerWithOptions(strictHandler, api.StdHTTPServerOptions{
 		BaseRouter: m,
-		BaseURL:    "/api",
+		BaseURL:    api.BasePath,
 		Middlewares: []api.MiddlewareFunc{
 			oapi_middleware.OapiRequestValidatorWithOptions(openapiSpec, &oapi_middleware.Options{
 				SilenceServersWarning: true,

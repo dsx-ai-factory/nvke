@@ -85,7 +85,7 @@ func runBundleMatrix(t *testing.T, authorizer Authorizer) {
 	t.Helper()
 
 	mux := http.NewServeMux()
-	api.HandlerWithOptions(nil, api.StdHTTPServerOptions{BaseRouter: mux, BaseURL: "/api"})
+	api.HandlerWithOptions(nil, api.StdHTTPServerOptions{BaseRouter: mux, BaseURL: api.BasePath})
 
 	resolver, err := NewResolver(mux)
 	require.NoError(t, err)
