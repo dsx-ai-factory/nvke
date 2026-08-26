@@ -24,6 +24,17 @@ type Options struct {
 
 	// Recorder counts decisions. Optional: nil records nothing.
 	Recorder Recorder
+
+	// newEngine builds the Authorizer for BundleDir. Nil means NewLocal, which
+	// is every deployment.
+	//
+	// It is unexported, so only this package can set it, and only a test does.
+	// Setup's readiness gate is the reason it exists: no engine here can
+	// construct successfully and then fail Ready, so without a seam that gate
+	// is code no test can reach — and a gate nothing exercises is one that can
+	// be deleted without anything noticing, which is how it would come to be
+	// missing for the engine it is actually there for.
+	newEngine func(bundleDir string) (Authorizer, error)
 }
 
 // engine builds the Authorizer this deployment asked for, or reports that
@@ -31,6 +42,9 @@ type Options struct {
 func (o Options) engine() (Authorizer, error) {
 	if o.BundleDir == "" {
 		return nil, nil //nolint:nilnil // a nil Authorizer and a nil error is exactly "disabled"
+	}
+	if o.newEngine != nil {
+		return o.newEngine(o.BundleDir)
 	}
 	return NewLocal(o.BundleDir)
 }
