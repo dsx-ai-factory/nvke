@@ -59,6 +59,7 @@ func TestEntityUIDRefusesWhatWouldEscapeTheLiteral(t *testing.T) {
 		{"a newline", "abc\ndef", true},
 		{"a null byte", "abc\x00def", true},
 		{"a delete character", "abc\x7f", true},
+		{"an invalid utf-8 byte", "abc\xff", true},
 		{"empty", "", true},
 	}
 	for _, tt := range tests {

@@ -125,11 +125,8 @@ func entityUID(entityType, id string) (string, error) {
 	if entityType == "" {
 		return "", fmt.Errorf("%w: entity type is empty", ErrInvalidQuery)
 	}
-	if id == "" {
-		return "", fmt.Errorf("%w: entity id is empty", ErrInvalidQuery)
-	}
-	if i := strings.IndexFunc(id, unsafeInEntityID); i >= 0 {
-		return "", fmt.Errorf("%w: byte %d", errUnsafeEntityID, i)
+	if err := checkEntityIDValue(id); err != nil {
+		return "", fmt.Errorf("%w: %w", errUnsafeEntityID, err)
 	}
 	return entityType + `::"` + id + `"`, nil
 }

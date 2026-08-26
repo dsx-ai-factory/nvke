@@ -75,10 +75,11 @@ func TestAnAllowBesideAnEvaluationErrorIsRefused(t *testing.T) {
 	}
 }
 
-// The two engines must classify an erroring evaluation the same way, because the
-// metric reason and the log line are what an operator reads during a permissive
-// rollout, and they must not depend on which engine is deployed.
-func TestBothEnginesTreatAnErroringAllowAsAnEngineFailure(t *testing.T) {
+// The sidecar half of the classification. Local”'s half is
+// TestLocalRefusesAnAllowReachedWhileAPolicyErrored — the two must agree,
+// because the metric reason and the log line are what an operator reads during a
+// permissive rollout, and they must not depend on which engine is deployed.
+func TestCedarAgentTreatsAnErroringAllowAsAnEngineFailure(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"decision":"Allow","diagnostics":{"reason":["p"],"errors":["boom"]}}`))
 	}))

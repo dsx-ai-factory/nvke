@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // The action vocabulary is generated from the same OpenAPI document the router
@@ -169,23 +170,40 @@ func (q Query) Validate() error {
 		{"resource type", q.ResourceType},
 		{"resource id", q.ResourceID},
 	} {
-		if field.value == "" {
-			return fmt.Errorf("%w: %s is empty", ErrInvalidQuery, field.name)
-		}
-		if i := strings.IndexFunc(field.value, unsafeInEntityID); i >= 0 {
-			return fmt.Errorf("%w: %s holds a character that cannot appear in an entity literal, at byte %d",
-				ErrInvalidQuery, field.name, i)
+		if err := checkEntityIDValue(field.value); err != nil {
+			return fmt.Errorf("%w: %s %w", ErrInvalidQuery, field.name, err)
 		}
 	}
 	return nil
 }
 
-// unsafeInEntityID rejects what would close or escape a Cedar entity literal.
+// checkEntityIDValue is the one definition of what may appear in a Cedar entity
+// literal. Query.Validate applies it across a whole query and entityUID applies
+// it to one value on the way to the wire; both must agree, so neither carries
+// its own copy of the rule.
 //
-// Subjects arrive from verified tokens and object identifiers from URL path
-// segments the mux has already percent-decoded, so a caller does control these
-// bytes. Escaping would also work; refusing is checkable by reading it, and no
-// legitimate identifier in this API contains any of these.
-func unsafeInEntityID(r rune) bool {
-	return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
+// The returned error is a bare phrase, so a caller can name the field.
+func checkEntityIDValue(value string) error {
+	if value == "" {
+		return errors.New("is empty")
+	}
+	// Before the rune scan, not after: strings.IndexFunc decodes an invalid byte
+	// to U+FFFD, which is not a quote, a backslash or a control character, so
+	// the scan alone lets it through. Two identifiers differing only in invalid
+	// bytes are then distinct Go strings in-process and the same U+FFFD literal
+	// once JSON-encoded to the sidecar — one object on one engine, two on the
+	// other.
+	if !utf8.ValidString(value) {
+		return errors.New("is not valid UTF-8")
+	}
+	// Subjects arrive from verified tokens and object identifiers from URL path
+	// segments the mux has already percent-decoded, so a caller does control
+	// these bytes. Escaping would also work; refusing is checkable by reading
+	// it, and no legitimate identifier in this API contains any of these.
+	if i := strings.IndexFunc(value, func(r rune) bool {
+		return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
+	}); i >= 0 {
+		return fmt.Errorf("holds a character that cannot appear in an entity literal, at byte %d", i)
+	}
+	return nil
 }
