@@ -80,9 +80,8 @@ autoinstall:
     # boots (SPEC.md's "Cloud-init input" — spire.env/trust-bundle.pem
     # delivery), so keep it active here too rather than diverge per variant.
     - curtin in-target --target=/target -- rm -f /etc/cloud/cloud-init.disabled
-    # Mirror boot/kernel output to serial as well as the VGA console, matching
-    # node-images' ansible/roles/grub (grub_console_params). Without this, an
-    # installer-based image has no console= kernel parameter at all, so
+    # Mirror boot/kernel output to serial as well as the VGA console. Without
+    # this, an installer-based image has no console= kernel parameter at all, so
     # -nographic/serial-only tooling (demo-fde.sh, `virsh console`, real
     # out-of-band/BMC serial access) never sees boot messages or the LUKS
     # unlock prompt — they only ever reach the VGA framebuffer.
@@ -112,8 +111,7 @@ autoinstall:
     # target-hardware first boot (and this repo's own demo-fde.sh) unlock
     # unattended before the TPM binding exists. luks-tpm-firstboot.sh already
     # strips this from GRUB once that binding succeeds (see its "Cleaning up
-    # GRUB configuration" step) — matches node-images' ansible/roles/grub +
-    # ansible/roles/luks_tpm exactly.
+    # GRUB configuration" step).
     - curtin in-target --target=/target -- sh -c 'echo "GRUB_CMDLINE_LINUX_DEFAULT=\"luks.key=${luks_passphrase}\"" > /etc/default/grub.d/99-luks-key.cfg'
 %{ endif ~}
     - curtin in-target --target=/target -- update-grub

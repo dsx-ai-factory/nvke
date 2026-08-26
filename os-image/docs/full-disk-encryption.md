@@ -7,10 +7,8 @@ encryption-at-rest is a separate, controller/agent-side concern and is out of
 scope for `os-image/` — see the controller's etcd-encryption workflows for
 that half.
 
-This is ported from a working implementation in `node-images`
-(`ansible/roles/luks_tpm`), translated to this repo's plain-shell/Packer build
-(no Ansible, no installer stage in the base image) as a new opt-in build
-variant, `nke-node-fde.pkr.hcl`.
+This is a new opt-in build variant, `nke-node-fde.pkr.hcl`, using a plain-shell
+Packer build (the base image has no installer stage).
 
 ## How it works
 
@@ -64,9 +62,8 @@ is verified. This is a deliberate tradeoff:
 - **Pro**: firmware, GRUB, and kernel updates don't change PCR values, so
   there's no re-seal step to build or operate. `luks-tpm-firstboot.sh`'s PCR
   logic is still present (dead by default, `PCR_IDS=""`) if a fork wants to
-  opt into PCR binding — see the comment at the top of that script and the
-  original node-images role's PCR table for what each PCR measures and how
-  stable it is.
+  opt into PCR binding — see the comment at the top of that script for what
+  each PCR measures and how stable it is.
 - **Con**: there is **no recovery path**. If the node's TPM fails, is reset,
   or its state otherwise stops satisfying the seal, the volume is
   **permanently unreadable** — moving it to different hardware fails for the
@@ -120,15 +117,14 @@ scenarios against the built image under QEMU with `swtpm`. Requires
 (`/usr/share/OVMF/OVMF_CODE_4M.fd` + `OVMF_VARS_4M.fd`) on `PATH`/in the
 default location. No interactive/scripted console typing is needed: the
 autoinstall storage layout bakes a build-time `luks.key=<passphrase>` GRUB
-parameter (matching node-images' `ansible/roles/grub` +
-`ansible/roles/luks_tpm`), so `files/luks/luks-cmdline-script` unlocks the
-very first real boot on its own — the same mechanism production uses via an
+parameter, so `files/luks/luks-cmdline-script` unlocks the very first real
+boot on its own — the same mechanism production uses via an
 iPXE `luks.key=` kernel parameter. `luks-tpm-firstboot.sh` strips
 `luks.key=` from GRUB once the TPM bind succeeds, so a later boot against a
 different TPM has no fallback and correctly fails to unlock.
 
 The autoinstall layout also bakes `console=tty0 console=ttyS0,115200` into
-GRUB (also matching node-images), so boot and kernel messages — including
+GRUB, so boot and kernel messages — including
 the LUKS unlock prompt on a boot that *doesn't* have `luks.key=` anymore —
 reach a serial console (`virsh console`, `-nographic`, real BMC/SOL access)
 and not just the VGA framebuffer. Earlier revisions of this variant shipped

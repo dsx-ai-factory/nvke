@@ -7,10 +7,9 @@
 # - Binds the LUKS volume to the local TPM via Clevis, then removes the
 #   build-time passphrase slot (TPM-only unlock).
 #
-# Ported from node-images' ansible/roles/luks_tpm (deferred-binding mode),
-# with the Ansible/Jinja templating removed: this image always ships with
-# the TPM-only policy (no PCR binding) and passphrase removal enabled — see
-# os-image/docs/full-disk-encryption.md for the tradeoff and how to change it.
+# This image always ships with the TPM-only policy (no PCR binding) and
+# passphrase removal enabled — see os-image/docs/full-disk-encryption.md
+# for the tradeoff and how to change it.
 
 set -euo pipefail
 exec &> >(tee -a /var/log/luks-tpm-firstboot.log)

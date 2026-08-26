@@ -67,7 +67,7 @@ variable "accelerator" {
 variable "cpu_model" {
   type        = string
   default     = "host"
-  description = "QEMU CPU model. Use 'host' with KVM, 'max' with TCG emulation — matches node-images' ubuntu-lvm-x86-ansible.pkr.hcl."
+  description = "QEMU CPU model. Use 'host' with KVM, 'max' with TCG emulation."
 }
 
 variable "ssh_timeout" {
@@ -95,10 +95,10 @@ source "qemu" "nke-non-fde" {
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  # See the comment on this block in nke-node-fde.pkr.hcl: q35 + an explicit
-  # cpu_model matches node-images' proven-stable config and avoids the
-  # legacy "pc" (i440fx) + OVMF/UEFI pairing that produced intermittent
-  # guest-kernel crashes while developing these variants.
+  # See the comment on this block in nke-node-fde.pkr.hcl: machine_type is
+  # the QEMU chipset, not a CPU setting. q35 avoids the legacy "pc" (i440fx)
+  # + OVMF/UEFI pairing that produced intermittent guest-kernel crashes
+  # while developing these variants.
   machine_type   = "q35"
   cpu_model      = var.cpu_model
   disk_size      = var.disk_size

@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Configures deferred (first-boot) LUKS TPM2 binding on top of the LVM+LUKS
-# layout autoinstall-fde.pkrtpl already created. Ported from node-images'
-# ansible/roles/luks_tpm (deferred-binding mode) — see
+# layout autoinstall-fde.pkrtpl already created. See
 # os-image/docs/full-disk-encryption.md.
 #
 # Runs after provision.sh, on a VM that autoinstall partitioned with an

@@ -80,7 +80,7 @@ variable "accelerator" {
 variable "cpu_model" {
   type        = string
   default     = "host"
-  description = "QEMU CPU model. Use 'host' with KVM, 'max' with TCG emulation — matches node-images' ubuntu-lvm-x86-ansible.pkr.hcl."
+  description = "QEMU CPU model. Use 'host' with KVM, 'max' with TCG emulation."
 }
 
 variable "ssh_timeout" {
@@ -111,14 +111,14 @@ source "qemu" "nke-fde" {
   iso_url      = var.iso_url
   iso_checksum = var.iso_checksum
 
-  # machine_type/cpu_model matter here: this variant boots via OVMF/UEFI
-  # (efi_boot below), and the legacy "pc" (i440fx) machine type QEMU falls
-  # back to when machine_type is left unset predates PCIe/UEFI as first-class
-  # targets — a known-fragile pairing with OVMF. q35 + an explicit cpu_model
-  # is what node-images' otherwise-similar ubuntu-lvm-x86-ansible.pkr.hcl
-  # uses, and matching it resolved intermittent guest-kernel crashes
-  # (overlayfs page faults during curtin's install-time rsync) seen while
-  # developing this variant on "pc".
+  # machine_type is the QEMU virtual chipset, not a CPU setting — cpu_model
+  # (below) is the actual CPU. This matters here because this variant boots
+  # via OVMF/UEFI (efi_boot below), and the legacy "pc" (i440fx) machine type
+  # QEMU falls back to when machine_type is left unset predates PCIe/UEFI as
+  # first-class targets — a known-fragile pairing with OVMF. q35 (a modern
+  # PCIe-based chipset) resolved intermittent guest-kernel crashes (overlayfs
+  # page faults during curtin's install-time rsync) seen while developing
+  # this variant on "pc".
   machine_type   = "q35"
   cpu_model      = var.cpu_model
   disk_size      = var.disk_size

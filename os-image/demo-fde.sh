@@ -20,9 +20,8 @@
 #   CPU_MODEL     QEMU -cpu model (default: host kvm / max tcg)
 #
 # No interactive/blind console typing is needed: autoinstall-lvm.pkrtpl bakes
-# a build-time luks.key=<passphrase> GRUB parameter (matching node-images'
-# ansible/roles/grub + ansible/roles/luks_tpm), so even the very first real
-# boot of a freshly built image unlocks itself via
+# a build-time luks.key=<passphrase> GRUB parameter, so even the very first
+# real boot of a freshly built image unlocks itself via
 # files/luks/luks-cmdline-script — the same mechanism production uses via an
 # iPXE luks.key= kernel parameter. luks-tpm-firstboot.sh strips luks.key=
 # from GRUB once the TPM bind succeeds, so a later boot against a different
@@ -200,8 +199,7 @@ else
   # luks-tpm-firstboot.service, so SSH can (and does, in practice) become
   # reachable a bit before that service — still mid partition-grow / dual
   # initramfs-regen — finishes. Poll for the marker rather than assuming
-  # SSH-up means firstboot-done; node-images' own demo-fde.sh does the same
-  # ("waiting for luks-tpm-firstboot to complete...").
+  # SSH-up means firstboot-done.
   FIRSTBOOT_DEADLINE=$((SECONDS + 180))
   until ssh_guest 'sudo test -f /root/.luks-tpm-firstboot-done' 2>/dev/null; do
     if (( SECONDS > FIRSTBOOT_DEADLINE )); then
