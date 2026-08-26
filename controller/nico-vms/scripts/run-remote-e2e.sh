@@ -44,20 +44,20 @@
 #
 # Examples:
 #   # Run all libvirt tests on SSH machine
-#   ./scripts/run-remote-e2e.sh my-machine.nvidia.com
+#   ./scripts/run-remote-e2e.sh my-machine.example.com
 #
 #   # Run a specific test via Teleport
 #   ./scripts/run-remote-e2e.sh --tsh some-host --run TestSSHVerification
 #
 #   # Run production image test with log preservation
-#   ./scripts/run-remote-e2e.sh --ssh my-machine.nvidia.com \
+#   ./scripts/run-remote-e2e.sh --ssh my-machine.example.com \
 #     --production --preserve-logs --run TestIPXEProductionImageFlow
 #
 #   # Run batch test with 10 VMs
 #   ./scripts/run-remote-e2e.sh --tsh some-host --batch --batch-count 10
 #
 #   # Re-run without syncing (code already up to date)
-#   ./scripts/run-remote-e2e.sh --ssh my-machine.nvidia.com --skip-sync --run TestSSHVerification
+#   ./scripts/run-remote-e2e.sh --ssh my-machine.example.com --skip-sync --run TestSSHVerification
 
 set -euo pipefail
 

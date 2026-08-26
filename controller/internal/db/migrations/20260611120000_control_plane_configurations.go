@@ -126,8 +126,7 @@ func init() {
 			return fmt.Errorf("add fk_nodes_configuration_id: %w", err)
 		}
 
-		// FIXME: https://jirasw.nvidia.com/browse/NKX-13236
-		// Expand/contract safety: keep legacy clusters.control_plane_config in this
+		// FIXME: Expand/contract safety: keep legacy clusters.control_plane_config in this
 		// release; drop it in a follow-up migration after rollout completion.
 		return nil
 	}, func(ctx context.Context, db *bun.DB) error {

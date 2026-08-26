@@ -94,7 +94,7 @@ the lighter one-shot path for nico-vms integration tests only.
 SSH into the remote and run the setup script as root:
 
 ```bash
-ssh my-machine.nvidia.com
+ssh my-machine.example.com
 sudo bash ~/dev/cloud-workflow-engine/nico-vms/scripts/setup-linux.sh
 ```
 
@@ -107,7 +107,7 @@ rsync -avz \
   --exclude='.git' --exclude='vendor' --exclude='.cache' \
   --exclude='.gocache' --exclude='.gomodcache' \
   --exclude='var' --exclude='images' --exclude='bin' \
-  nico-vms/ my-machine.nvidia.com:~/dev/cloud-workflow-engine/nico-vms/
+  nico-vms/ my-machine.example.com:~/dev/cloud-workflow-engine/nico-vms/
 ```
 
 ### Run tests
@@ -116,7 +116,7 @@ The remote shell is csh/tcsh — always wrap commands in `bash -lc`:
 
 ```bash
 # Production image test
-ssh my-machine.nvidia.com 'bash -lc "cd ~/dev/cloud-workflow-engine/nico-vms && \
+ssh my-machine.example.com 'bash -lc "cd ~/dev/cloud-workflow-engine/nico-vms && \
   NICO_VMS_TEST_PRODUCTION_IMAGE=true \
   NICO_VMS_DHCP_HOSTS_DIR=/var/lib/nico-vms/dhcp-hosts \
   NICO_VMS_DHCP_LEASE_FILE=/var/run/nico-vms-dnsmasq.leases \
@@ -129,7 +129,7 @@ ssh my-machine.nvidia.com 'bash -lc "cd ~/dev/cloud-workflow-engine/nico-vms && 
 Keep the VM alive after the test:
 
 ```bash
-ssh my-machine.nvidia.com 'bash -lc "cd ~/dev/cloud-workflow-engine/nico-vms && \
+ssh my-machine.example.com 'bash -lc "cd ~/dev/cloud-workflow-engine/nico-vms && \
   NICO_VMS_TEST_PRODUCTION_IMAGE=true \
   NICO_VMS_E2E_TESTS_KEEP_VMS=true \
   NICO_VMS_PRESERVE_LOGS=true \
@@ -142,7 +142,7 @@ ssh my-machine.nvidia.com 'bash -lc "cd ~/dev/cloud-workflow-engine/nico-vms && 
 The test output will show the IP. SSH into the VM:
 
 ```bash
-ssh my-machine.nvidia.com   # get on the remote
+ssh my-machine.example.com   # get on the remote
 sshpass -p testpass ssh -o StrictHostKeyChecking=no testuser@172.30.0.XXX
 ```
 
@@ -174,7 +174,7 @@ cat /etc/netplan/*.yaml
 If a test times out or you used `NICO_VMS_E2E_TESTS_KEEP_VMS`, clean up manually:
 
 ```bash
-ssh my-machine.nvidia.com 'bash -lc "
+ssh my-machine.example.com 'bash -lc "
   for vm in \$(virsh -c qemu:///session list --all --name); do
     virsh -c qemu:///session destroy \$vm 2>/dev/null
     virsh -c qemu:///session undefine \$vm --nvram 2>/dev/null

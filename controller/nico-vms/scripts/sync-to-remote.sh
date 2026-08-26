@@ -7,8 +7,8 @@
 # Usage: ./scripts/sync-to-remote.sh [--ssh|--tsh] <host>
 #
 # Examples:
-#   ./scripts/sync-to-remote.sh my-machine.nvidia.com                    # auto-detect (tries ssh)
-#   ./scripts/sync-to-remote.sh --ssh my-machine.nvidia.com              # force ssh
+#   ./scripts/sync-to-remote.sh my-machine.example.com                    # auto-detect (tries ssh)
+#   ./scripts/sync-to-remote.sh --ssh my-machine.example.com              # force ssh
 #   ./scripts/sync-to-remote.sh --tsh nke-site-forge-az24-dev8-...  # force tsh
 
 set -euo pipefail
