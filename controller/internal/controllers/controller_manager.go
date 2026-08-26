@@ -30,10 +30,9 @@ type ControllerManager struct {
 	db     db.DB
 	stopCh chan struct{}
 
-	forgeCAPIMigration           *ForgeCAPIMigrationController
-	nodeHealthController         *nodehealth.Controller
-	clusterStaticEntryController *NodeClusterStaticEntryController
-	tpmPubhashesCmController     *TpmPubhashesCmController
+	forgeCAPIMigration       *ForgeCAPIMigrationController
+	nodeHealthController     *nodehealth.Controller
+	tpmPubhashesCmController *TpmPubhashesCmController
 }
 
 // NewControllerManager creates a new ControllerManager.
@@ -52,10 +51,8 @@ func NewControllerManager(
 ) (*ControllerManager, error) {
 	controllerManagerLogger := logger.With("logger", "controller-manager")
 
-	var clusterStaticEntryController *NodeClusterStaticEntryController
 	var tpmPubhashesCmController *TpmPubhashesCmController
 	if cfg.SpiffeEnabled {
-		clusterStaticEntryController = NewClusterStaticEntryController(cfg, dbInstance, k8sClient, controllerManagerLogger, trustDomain)
 		tpmPubhashesCmController = NewTpmPubhashesCmController(cfg, k8sClient, controllerManagerLogger, trustDomain)
 	}
 
@@ -74,14 +71,13 @@ func NewControllerManager(
 	}
 
 	return &ControllerManager{
-		cfg:                          cfg,
-		logger:                       controllerManagerLogger,
-		db:                           dbInstance,
-		stopCh:                       make(chan struct{}),
-		forgeCAPIMigration:           forgeCAPIMigration,
-		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
-		clusterStaticEntryController: clusterStaticEntryController,
-		tpmPubhashesCmController:     tpmPubhashesCmController,
+		cfg:                      cfg,
+		logger:                   controllerManagerLogger,
+		db:                       dbInstance,
+		stopCh:                   make(chan struct{}),
+		forgeCAPIMigration:       forgeCAPIMigration,
+		nodeHealthController:     nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
+		tpmPubhashesCmController: tpmPubhashesCmController,
 	}, nil
 }
 
@@ -206,11 +202,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	}
 
 	if a.cfg.SpiffeEnabled {
-		if err := a.clusterStaticEntryController.Reconcile(ctx, site); err != nil {
-			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile cluster static entries", "error", err, "siteID", site.ID.String())
-		}
-
 		if err := a.tpmPubhashesCmController.Reconcile(ctx); err != nil {
 			// Log errors but continue processing the other controllers.
 			a.logger.Error("Failed to reconcile tpm pubhashes configmap", "error", err)

@@ -32,6 +32,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplanenodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodeclusterstaticentry"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepoolnodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
@@ -326,6 +327,20 @@ func main() {
 				logger.Error("Failed to set up nico provider ID controller", "error", err)
 				os.Exit(1)
 			}
+		}
+	}
+
+	if cfg.SpiffeEnabled {
+		clusterStaticEntryController := nodeclusterstaticentry.NewController(
+			cfg,
+			dbInstance,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "node-cluster-static-entry-controller"),
+			trustDomain,
+		)
+		if err := clusterStaticEntryController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up node cluster static entry controller", "error", err)
+			os.Exit(1)
 		}
 	}
 
