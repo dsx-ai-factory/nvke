@@ -35,6 +35,8 @@ func (f *fakeAuthorizer) Authorize(_ context.Context, q Query) (Decision, error)
 
 func (f *fakeAuthorizer) Ready(context.Context) error { return f.err }
 
+func (f *fakeAuthorizer) Name() string { return "fake" }
+
 type recorded struct {
 	outcome Outcome
 	reason  DenyReason

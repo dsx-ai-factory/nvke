@@ -104,6 +104,47 @@ type authorizationAnswer struct {
 // the bundle would otherwise have to mirror every cluster, node and site in the
 // database. additional_entities augments the stored entities for this call only,
 // leaving the roles and action groups the bundle does hold in place.
+func (c *CedarAgent) Name() string { return "cedar-agent" }
+
+var (
+	_ Authorizer = (*CedarAgent)(nil)
+
+	// errUnsafeEntityID marks an identifier that cannot be put in a Cedar entity
+	// literal. It wraps ErrInvalidQuery so the middleware classifies it without
+	// knowing this engine exists.
+	errUnsafeEntityID = fmt.Errorf("%w: identifier is not safe in an entity literal", ErrInvalidQuery)
+)
+
+// entityUID renders a Cedar entity literal, `Type::"id"`.
+//
+// This is the sidecar's problem and nobody else's: the query crosses a process
+// boundary as text, so the identifier has to survive being spliced into Cedar
+// source. The in-process engine passes typed values and has no equivalent.
+//
+// The identifier is refused rather than escaped when it contains a quote, a
+// backslash or a control character. Subjects arrive from verified tokens and
+// object identifiers from URL path segments, which http.ServeMux has already
+// percent-decoded — so a caller does control these bytes, and a quote landing
+// unescaped inside a literal is how a request rewrites the query it is the
+// subject of. Escaping would work; refusing is checkable by reading it, and no
+// legitimate identifier in this API contains any of these.
+func entityUID(entityType, id string) (string, error) {
+	if entityType == "" {
+		return "", fmt.Errorf("%w: entity type is empty", ErrInvalidQuery)
+	}
+	if id == "" {
+		return "", fmt.Errorf("%w: entity id is empty", ErrInvalidQuery)
+	}
+	if i := strings.IndexFunc(id, unsafeInEntityID); i >= 0 {
+		return "", fmt.Errorf("%w: byte %d", errUnsafeEntityID, i)
+	}
+	return entityType + `::"` + id + `"`, nil
+}
+
+func unsafeInEntityID(r rune) bool {
+	return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
+}
+
 func (c *CedarAgent) Authorize(ctx context.Context, q Query) (Decision, error) {
 	principal, err := entityUID(PrincipalType, q.Principal)
 	if err != nil {
@@ -123,8 +164,8 @@ func (c *CedarAgent) Authorize(ctx context.Context, q Query) (Decision, error) {
 		Action:    action,
 		Resource:  resource,
 		Context: map[string]any{
-			"issuer": q.Issuer,
-			"method": q.Method,
+			ContextKeyIssuer: q.Issuer,
+			ContextKeyMethod: q.Method,
 		},
 		AdditionalEntities: []entity{{
 			UID:     entityUIDJSON{Type: q.ResourceType, ID: q.ResourceID},

@@ -116,7 +116,7 @@ func Setup(ctx context.Context, opts Options, logger *slog.Logger) (*Provider, e
 	// decision surprises them, so it is a startup line rather than a guess.
 	logger.Info("API authorization is enabled",
 		"mode", string(mode),
-		"engine", engineName(opts),
+		"engine", engine.Name(),
 		"source", cmp.Or(opts.BundleDir, opts.Endpoint),
 		"operations", len(operations),
 	)
@@ -148,12 +148,4 @@ func (p *Provider) Middleware(mux *http.ServeMux) (*Middleware, error) {
 		return nil, fmt.Errorf("building the authorization middleware: %w", err)
 	}
 	return middleware, nil
-}
-
-// engineName is the log label for which implementation is running.
-func engineName(opts Options) string {
-	if opts.BundleDir != "" {
-		return "cedar-go"
-	}
-	return "cedar-agent"
 }

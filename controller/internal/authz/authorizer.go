@@ -2,12 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package authz holds the NKE API authorization: the route-to-action mapping,
-// the policy-engine client, and the middleware that turns a request into an
+// the policy engines, and the middleware that turns a request into an
 // authorization decision. Three states, chosen outside this package:
 //
-//	Disabled   AUTHZ_ENDPOINT unset; the middleware is not in the chain.
+//	Disabled   neither AUTHZ_BUNDLE_PATH nor AUTHZ_ENDPOINT set; the
+//	           middleware is not in the chain.
 //	Permissive evaluate, log and count, never reject.
 //	Enforcing  403 on anything but Allow.
+//
+// Two engines implement Authorizer: Local evaluates in this process with
+// cedar-go, and CedarAgent calls a cedar-agent sidecar. Exactly one runs, and
+// both are held to the conformance matrix in conformance_test.go.
 //
 // It runs immediately after internal/auth and reads the Principal that package
 // put on the request context. It reads no claim for entitlement: who a caller is
@@ -17,8 +22,6 @@ package authz
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 )
 
 // The action vocabulary is generated from the same OpenAPI document the router
@@ -63,6 +66,14 @@ const (
 
 	// CollectionType is the resource for an operation with no object identifier.
 	CollectionType = "NKE::Collection"
+
+	// ContextKeyIssuer and ContextKeyMethod are the keys of the Cedar context
+	// record. Shared because three things have to agree on them: both engines
+	// build the record, and hack/gen-authz-actions declares them in the schema.
+	// A policy reading a key nobody sets is caught by validation, but only if
+	// the spellings match here first.
+	ContextKeyIssuer = "issuer"
+	ContextKeyMethod = "method"
 )
 
 // Query is one authorization question. Every field is derived from something
@@ -100,43 +111,40 @@ type Decision struct {
 	Reasons []string
 }
 
-// Authorizer evaluates one Query. Implementations must be safe for concurrent
-// use. An error is a denial, not a pass: see middleware.go.
+// Authorizer evaluates one Query against a policy bundle. It is the whole of the
+// contract between the middleware and an engine: nothing outside this file knows
+// which engine is running, and nothing in an engine knows how a Query was built.
+//
+// Implementations must be safe for concurrent use, and must answer the same way
+// for the same bundle — the conformance matrix in conformance_test.go is what
+// "the same way" means, and every implementation is run against it.
+//
+// An error is a denial, not a pass. Every implementation therefore fails towards
+// refusing: an engine that cannot answer must return an error rather than a
+// zero-value Decision that happened to be false, so the middleware can tell the
+// two apart and count them separately.
 type Authorizer interface {
+	// Authorize answers one Query. An error that the caller should classify as a
+	// malformed question rather than an engine failure must wrap ErrInvalidQuery.
 	Authorize(ctx context.Context, q Query) (Decision, error)
 
 	// Ready reports whether the engine holds a usable policy bundle. Called once
 	// at startup, before serving, so a bundle that failed to load stops the
-	// process rather than silently denying every request. See NewAuthorizer.
+	// process rather than silently denying every request.
 	Ready(ctx context.Context) error
+
+	// Name identifies the implementation for logs: "cedar-go", "cedar-agent".
+	// Which engine made a decision is the first thing anyone asks when a
+	// decision surprises them, and asking the engine beats inferring it from
+	// whichever option was set.
+	Name() string
 }
 
-// ErrUnsafeEntityID is returned for an identifier that cannot be rendered into a
-// Cedar entity literal without ambiguity.
-var ErrUnsafeEntityID = errors.New("identifier is not safe in an entity literal")
-
-// entityUID renders a Cedar entity literal, `Type::"id"`.
+// ErrInvalidQuery marks a Query an engine could not ask — one carrying a field
+// it cannot express, or missing one it requires. It is a denial like any other,
+// but a distinct one: it says the fault is in how the request was turned into a
+// question, not in the engine or the policy.
 //
-// The identifier is refused rather than escaped when it contains a quote, a
-// backslash or a control character. Subjects arrive from verified tokens and
-// object identifiers from URL path segments, which http.ServeMux has already
-// percent-decoded — so a caller does control these bytes, and a quote landing
-// unescaped inside a literal is how a request rewrites the query it is the
-// subject of. Escaping would work, but refusing is checkable by reading it, and
-// no legitimate identifier in this API contains any of these.
-func entityUID(entityType, id string) (string, error) {
-	if entityType == "" {
-		return "", errors.New("entity type is empty")
-	}
-	if id == "" {
-		return "", errors.New("entity id is empty")
-	}
-	if i := strings.IndexFunc(id, unsafeInEntityID); i >= 0 {
-		return "", fmt.Errorf("%w: byte %d", ErrUnsafeEntityID, i)
-	}
-	return entityType + `::"` + id + `"`, nil
-}
-
-func unsafeInEntityID(r rune) bool {
-	return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
-}
+// Engines wrap it rather than defining their own sentinel, so the middleware
+// classifies the reason without knowing which engine produced it.
+var ErrInvalidQuery = errors.New("the authorization query is not valid")

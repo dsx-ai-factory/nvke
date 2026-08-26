@@ -30,13 +30,9 @@ type Local struct {
 	entities types.EntityMap
 }
 
-// Bundle file names, relative to the mounted directory. These are the hand-
-// written and generated sources under deploy/authz, not deploy/authz/bundle.
-const (
-	policiesFile = "policies.cedar"
-	actionsFile  = "actions.json"
-	rolesFile    = "roles.json"
-)
+var _ Authorizer = (*Local)(nil)
+
+func (l *Local) Name() string { return "cedar-go" }
 
 // NewLocal loads the bundle from dir.
 //
@@ -64,7 +60,7 @@ func NewLocal(dir string) (*Local, error) {
 	}
 
 	entities := types.EntityMap{}
-	for _, name := range []string{actionsFile, rolesFile} {
+	for _, name := range entityFiles {
 		if err := loadEntities(filepath.Join(dir, name), entities); err != nil {
 			return nil, err
 		}
@@ -104,7 +100,7 @@ func loadEntities(path string, dst types.EntityMap) error {
 // CedarAgent needs has no counterpart here.
 func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
 	if q.Principal == "" || q.Action == "" || q.ResourceType == "" || q.ResourceID == "" {
-		return Decision{}, errors.New("the authorization query is incomplete")
+		return Decision{}, fmt.Errorf("%w: a required field is empty", ErrInvalidQuery)
 	}
 
 	resource := types.NewEntityUID(types.EntityType(q.ResourceType), types.String(q.ResourceID))
@@ -114,8 +110,8 @@ func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
 		Action:    types.NewEntityUID(ActionType, types.String(q.Action)),
 		Resource:  resource,
 		Context: types.NewRecord(types.RecordMap{
-			"issuer": types.String(q.Issuer),
-			"method": types.String(q.Method),
+			ContextKeyIssuer: types.String(q.Issuer),
+			ContextKeyMethod: types.String(q.Method),
 		}),
 	}
 

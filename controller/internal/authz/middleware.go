@@ -52,8 +52,9 @@ const (
 	// table does not know.
 	ReasonUnknownOperation DenyReason = "unknown_operation"
 
-	// ReasonInvalidQuery is an identifier that cannot be put in an entity
-	// literal.
+	// ReasonInvalidQuery is a question the engine could not be asked: a field
+	// it cannot express, or one it requires and did not get. The fault is in
+	// the query, not the engine or the policy. See ErrInvalidQuery.
 	ReasonInvalidQuery DenyReason = "invalid_query"
 
 	// ReasonEngineError is the engine unreachable, slow, or answering something
@@ -140,8 +141,11 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 
 		decision, err := m.authorizer.Authorize(r.Context(), query)
 		if err != nil {
+			// ErrInvalidQuery is the one error class the middleware
+			// distinguishes, and every engine wraps it for the same meaning.
+			// Anything else is the engine's failure rather than the question's.
 			reason := ReasonEngineError
-			if errors.Is(err, ErrUnsafeEntityID) {
+			if errors.Is(err, ErrInvalidQuery) {
 				reason = ReasonInvalidQuery
 			}
 			m.deny(w, r, next, reason, query.Action, err)

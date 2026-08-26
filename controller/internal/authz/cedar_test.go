@@ -95,7 +95,7 @@ func TestAuthorizeRefusesAnUnsafeIdentifierWithoutCallingTheEngine(t *testing.T)
 		Principal: `evil" || true || "`, Action: "getCluster",
 		ResourceType: "NKE::Cluster", ResourceID: "abc",
 	})
-	require.ErrorIs(t, err, ErrUnsafeEntityID)
+	require.ErrorIs(t, err, ErrInvalidQuery)
 	assert.False(t, called, "the engine must not be asked a question that could not be rendered")
 }
 
