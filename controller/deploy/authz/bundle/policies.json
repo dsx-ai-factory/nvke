@@ -1,0 +1,22 @@
+[
+  {
+    "id": "nobody-deletes-clusters",
+    "content": "@id(\"nobody-deletes-clusters\")\nforbid (\n    principal,\n    action == NKE::Action::\"deleteCluster\",\n    resource\n);"
+  },
+  {
+    "id": "node-operators-may-delete-nodes",
+    "content": "@id(\"node-operators-may-delete-nodes\")\npermit (\n    principal in NKE::Role::\"nodeOperator\",\n    action == NKE::Action::\"deleteNode\",\n    resource\n);"
+  },
+  {
+    "id": "only-node-operators-delete-nodes",
+    "content": "@id(\"only-node-operators-delete-nodes\")\nforbid (\n    principal,\n    action == NKE::Action::\"deleteNode\",\n    resource\n)\nunless { principal in NKE::Role::\"nodeOperator\" };"
+  },
+  {
+    "id": "operators-may-write",
+    "content": "@id(\"operators-may-write\")\npermit (\n    principal in NKE::Role::\"operator\",\n    action in NKE::Action::\"write\",\n    resource\n);"
+  },
+  {
+    "id": "readers-may-read",
+    "content": "@id(\"readers-may-read\")\npermit (\n    principal in NKE::Role::\"reader\",\n    action in NKE::Action::\"read\",\n    resource\n);"
+  }
+]

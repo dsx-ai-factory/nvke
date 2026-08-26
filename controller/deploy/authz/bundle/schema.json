@@ -1,0 +1,836 @@
+{
+  "NKE": {
+    "actions": {
+      "createCluster": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "createNodePool": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "createVIPAllocation": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "deleteCluster": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Cluster"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "deleteNode": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Node"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "deleteNodePool": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "NodePool"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "getCluster": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Cluster"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getNode": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Node"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getNodeHistory": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Node"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getNodePool": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "NodePool"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getNodePoolConfigHistory": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "NodePool"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getNodeSet": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "NodeSet"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getSite": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Site"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getVIPAllocation": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "VipAllocation"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listCNIPlugins": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listClusters": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listConfigProfiles": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listNodePools": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listNodeSets": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listNodes": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listOSProfiles": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listSites": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "listVIPAllocations": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "read": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Cluster",
+            "Collection",
+            "Node",
+            "NodePool",
+            "NodeSet",
+            "Site",
+            "VipAllocation"
+          ]
+        }
+      },
+      "registerSite": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "updateCluster": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Cluster"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "updateNodePool": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "NodePool"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
+      "write": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Cluster",
+            "Collection",
+            "Node",
+            "NodePool",
+            "NodeSet",
+            "Site",
+            "VipAllocation"
+          ]
+        }
+      }
+    },
+    "entityTypes": {
+      "Cluster": {
+        "shape": {
+          "attributes": {
+            "site": {
+              "required": false,
+              "type": "String"
+            }
+          },
+          "type": "Record"
+        }
+      },
+      "Collection": {
+        "shape": {
+          "attributes": {},
+          "type": "Record"
+        }
+      },
+      "Node": {
+        "shape": {
+          "attributes": {
+            "site": {
+              "required": false,
+              "type": "String"
+            }
+          },
+          "type": "Record"
+        }
+      },
+      "NodePool": {
+        "shape": {
+          "attributes": {
+            "site": {
+              "required": false,
+              "type": "String"
+            }
+          },
+          "type": "Record"
+        }
+      },
+      "NodeSet": {
+        "shape": {
+          "attributes": {
+            "site": {
+              "required": false,
+              "type": "String"
+            }
+          },
+          "type": "Record"
+        }
+      },
+      "Principal": {
+        "memberOfTypes": [
+          "Role"
+        ],
+        "shape": {
+          "attributes": {
+            "sites": {
+              "element": {
+                "type": "String"
+              },
+              "required": false,
+              "type": "Set"
+            }
+          },
+          "type": "Record"
+        }
+      },
+      "Role": {
+        "memberOfTypes": [
+          "Role"
+        ],
+        "shape": {
+          "attributes": {},
+          "type": "Record"
+        }
+      },
+      "Site": {
+        "shape": {
+          "attributes": {
+            "site": {
+              "required": false,
+              "type": "String"
+            }
+          },
+          "type": "Record"
+        }
+      },
+      "VipAllocation": {
+        "shape": {
+          "attributes": {
+            "site": {
+              "required": false,
+              "type": "String"
+            }
+          },
+          "type": "Record"
+        }
+      }
+    }
+  }
+}

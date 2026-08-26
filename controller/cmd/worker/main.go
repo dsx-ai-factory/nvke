@@ -24,6 +24,7 @@ import (
 
 	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/auth"
+	"github.com/NVIDIA/nke/controller/internal/authz"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers/automode"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
@@ -136,6 +137,19 @@ func main() {
 		metrics.SetAuthMode("permissive")
 	default:
 		metrics.SetAuthMode("enforcing")
+	}
+
+	// Alongside authentication, and before the migrations for the same reason: a
+	// policy engine holding no bundle refuses every request, and that is much
+	// better to learn at start time than at request time.
+	authzProvider, err := authz.Setup(ctx, authz.Options{
+		Endpoint:   cfg.AuthzEndpoint,
+		Permissive: cfg.AuthzPermissive,
+		Recorder:   metrics.RecordAuthzRequest,
+	}, logger)
+	if err != nil {
+		logger.Error("Failed to set up API authorization", "error", err)
+		os.Exit(1)
 	}
 
 	// Get cloud-workflow-engine workload trust domain and bundle
@@ -497,7 +511,7 @@ func main() {
 		logger.Info("Cert renewal controller disabled")
 	}
 
-	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator)
+	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator, authzProvider)
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
 		os.Exit(1)

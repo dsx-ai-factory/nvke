@@ -375,6 +375,50 @@ apiAuth:
   # needs nothing. Keep it for clusters that removed that default.
   clusterIssuerDiscovery: true
 
+apiAuthz:
+  # -- Enable NKE API authorization. Requires apiAuth.enabled: authorizing a
+  # caller nobody authenticated is not a meaningful state.
+  enabled: false
+  # -- Count what enforcement would have refused but serve the request anyway.
+  # Watch nke_authz_requests_total{outcome="would_reject"} before enforcing.
+  permissive: false
+  configMap:
+    # -- ConfigMap holding the policy bundle, keyed `schema.json`,
+    # `entities.json` and `policies.json`. Assemble it from the sources under
+    # deploy/authz with hack/authz-bundle. Required when apiAuthz.enabled=true;
+    # an empty name fails the render.
+    name: nke-authz-policy
+  sidecar:
+    image:
+      # -- The Cedar policy decision point, run beside NKE on the pod loopback.
+      repository: permitio/cedar-agent
+      tag: "0.2.2"
+      pullPolicy: IfNotPresent
+    # -- Port the sidecar listens on. AUTHZ_ENDPOINT is derived from it.
+    port: 8180
+    # -- Idle resident set is about 3 MiB; the limit is headroom, not a target.
+    resources:
+      requests:
+        cpu: 10m
+        memory: 16Mi
+      limits:
+        memory: 64Mi
+    # -- The sidecar reads a read-only ConfigMap and writes nothing.
+    securityContext:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 1000
+      capabilities:
+        drop: ["ALL"]
+
+nodeTeardown:
+  # -- Allow the DeleteNode API to accept the dangerous etcd safety overrides
+  # (allowQuorumLoss / allowSingleVoter). Disabled by default so production site
+  # controllers reject them; enable on development site controllers that need
+  # manual single-node control-plane rotation.
+  allowEtcdSafetyOverrides: false
+
 scheduledMaintenance:
   certRenewal:
     # -- Enable CWE-owned periodic Kubernetes control-plane certificate renewal.

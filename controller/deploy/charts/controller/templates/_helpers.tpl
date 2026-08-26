@@ -145,3 +145,17 @@ at fault.
 {{- end -}}
 {{- end -}}
 {{- end }}
+
+{{/*
+The authorization sidecar's end of the contract, fixed by the chart for the same
+reason the authentication mount path is: nothing outside the pod observes either,
+so making them values would only create a way for the mount, the sidecar's
+arguments and AUTHZ_ENDPOINT to disagree.
+*/}}
+{{- define "controller.apiAuthz.mountPath" -}}
+/etc/nke/authz
+{{- end }}
+
+{{- define "controller.apiAuthz.endpoint" -}}
+http://127.0.0.1:{{ .Values.apiAuthz.sidecar.port }}
+{{- end }}

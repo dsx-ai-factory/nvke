@@ -270,6 +270,20 @@ type Config struct {
 	// AuthConfigPath is unset.
 	PermissiveMode bool `env:"PERMISSIVE_MODE" default:"false"`
 
+	// AuthzEndpoint is the policy engine's base URL: the cedar-agent sidecar on
+	// the pod's loopback interface. Unset disables authorization. A set-but-
+	// unreachable endpoint, or one whose engine holds no policy, is a startup
+	// failure, never "disabled"; see authz.Setup.
+	//
+	// Validate() does not check it: unset is the valid default.
+	AuthzEndpoint string `env:"AUTHZ_ENDPOINT"`
+
+	// AuthzPermissive evaluates and logs authorization decisions without
+	// enforcing them, so no request is refused. No effect when AuthzEndpoint is
+	// unset. Separate from PermissiveMode so a deployment can enforce
+	// authentication while it is still learning what its policy should say.
+	AuthzPermissive bool `env:"AUTHZ_PERMISSIVE" default:"false"`
+
 	// Tracing configures OpenTelemetry distributed tracing. When Enabled and
 	// Endpoint are set, CWE exports OTLP gRPC spans. Endpoint and related OTEL_*
 	// vars may be injected by the OpenTelemetry Operator (inject-sdk + sidecar);

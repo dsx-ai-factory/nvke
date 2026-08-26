@@ -800,7 +800,7 @@ func newTestServerWithValidator(t *testing.T, mockDB *testutil.MockDB) http.Hand
 		ProfilesDir:          "./profiles",
 	}
 
-	srv, err := server.NewServer(cfg, logger, mockDB, nil, nil)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 
