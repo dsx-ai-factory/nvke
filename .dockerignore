@@ -20,6 +20,8 @@ bin/
 **/bin/
 release/
 **/release/
+out/
+**/out/
 agent/build/deb/
 agent/build/deb_amd64/
 agent/build/deb_arm64/

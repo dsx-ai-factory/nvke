@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+    cluster.x-k8s.io/v1beta2: v1alpha1
+  name: provisionedmachinetemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: ProvisionedMachineTemplate
+    listKind: ProvisionedMachineTemplateList
+    plural: provisionedmachinetemplates
+    shortNames:
+    - pmt
+    singular: provisionedmachinetemplate
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ProvisionedMachineTemplate is the Schema for the
+          provisionedmachinetemplates API.
+
+          A caller sends this kind as the capiInfraMachineTemplate of a node pool or of
+          the cluster control plane configuration. The template usually carries an
+          empty spec, because the provider creates nothing: every input it needs is in
+          the inventory of the ProvisionedCluster.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ProvisionedMachineTemplateSpec defines the desired state of
+              ProvisionedMachineTemplate.
+            properties:
+              template:
+                description: Template is the machine to render.
+                properties:
+                  metadata:
+                    description: |-
+                      ObjectMeta is copied to the rendered machine. Only labels and annotations
+                      are used.
+                    type: object
+                  spec:
+                    description: Spec is the spec of the rendered ProvisionedMachine.
+                    properties:
+                      hostSelector:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          HostSelector limits which hosts this machine can use. The provider only
+                          uses a host whose labels contain every entry of this selector.
+                        type: object
+                      providerID:
+                        description: |-
+                          ProviderID binds this machine to one host of the inventory. The provider
+                          sets it once, in the form provisioned://<cluster-name>/<ip-address>.
+                          The provider never changes it and never clears it.
+
+                          This field is the record of the allocation. The provider derives the set
+                          of used hosts from the providerID of every machine of the cluster, so the
+                          binding survives a restart of the provider and needs no lease.
+                        maxLength: 512
+                        minLength: 1
+                        type: string
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

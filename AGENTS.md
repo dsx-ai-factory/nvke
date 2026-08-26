@@ -24,7 +24,7 @@ this file adds the constraints an agent needs before it starts editing.
 
 NKE is a management plane for GPU Kubernetes on bare metal. A seed cluster
 stands up a highly available control plane, which then creates GPU tenant
-clusters on demand. Two components live here:
+clusters on demand. The main components are:
 
 - **`controller/`** — the Cloud Workflow Engine (CWE). Orchestrates cluster
   lifecycle through Temporal workflows, backed by PostgreSQL, with an OpenAPI
@@ -32,6 +32,8 @@ clusters on demand. Two components live here:
 - **`agent/`** — the node agent. A gRPC server running as a systemd service on
   every node. Drives `kubeadm`, installs packages and bundles, and authenticates
   through SPIFFE/SPIRE mTLS.
+- **`cluster-api-provider-provisioned/`** — the Cluster API infrastructure
+  provider for hosts that NKE provisions before CAPI bootstraps them.
 
 ## Read this before you try to build
 
@@ -42,7 +44,7 @@ no credentials and no network:
 GOPROXY=off make build
 ```
 
-compiles all nine modules and links six binaries. `GOPROXY=off` is not a
+compiles all ten modules and links six binaries. `GOPROXY=off` is not a
 suggestion to copy — it is how you can tell nothing is being fetched.
 
 This changed in #76, which replaced the internal carbide SDK
@@ -68,6 +70,7 @@ build pass. Removing those dependencies is tracked work with its own design.
 | Path | Contents | Edit? |
 |---|---|---|
 | `agent/cmd/`, `agent/internal/`, `agent/pkg/` | Node agent implementation | Yes |
+| `cluster-api-provider-provisioned/` | Provisioned Cluster API infrastructure provider | Yes |
 | `controller/internal/` | CWE server, controllers, Temporal workflows and activities, database layer | Yes |
 | `controller/api/openapi.yaml` | OpenAPI 3.0 spec — **the source of truth for the REST API** | Yes |
 | `controller/profiles/` | OS and config profiles | Ask first — being moved out of this repo |
@@ -75,6 +78,9 @@ build pass. Removing those dependencies is tracked work with its own design.
 | `docs/` | Repository-level documentation | Yes |
 | `os-image/` | Reference node OS image spec, Packer recipe, `nke-os-image-check` | Yes |
 | `controller/api/*.gen.go` | oapi-codegen output | **No — regenerate** |
+| `cluster-api-provider-provisioned/api/v1alpha1/zz_generated.deepcopy.go` | controller-gen output | **No — regenerate** |
+| `cluster-api-provider-provisioned/config/crd/bases/*.yaml` | controller-gen output | **No — regenerate** |
+| `cluster-api-provider-provisioned/config/rbac/role.yaml` | controller-gen output | **No — regenerate** |
 | `agent/pkg/agent/proto/*.pb.go` | buf/protoc output | **No — regenerate** |
 | `agent/THIRD_PARTY_NOTICES.md` | go-licenses output | **No — regenerate** |
 | `controller/deploy/charts/` | Helm charts | Yes, but bump the chart version |
@@ -88,6 +94,9 @@ build pass. Removing those dependencies is tracked work with its own design.
 - Change the gRPC API by editing `agent/pkg/agent/proto/node_agent.proto`,
   **then running `make protos`** and committing the regenerated `*.pb.go` in the
   same commit.
+- Change the provisioned provider API by editing its Go types and markers,
+  **then running `make generate manifests`** in
+  `cluster-api-provider-provisioned/`.
 - Add unit tests, table-driven cases, and mock implementations of the existing
   interfaces.
 - Improve documentation under `docs/`, the module `docs/` directories, and the
@@ -107,10 +116,11 @@ build pass. Removing those dependencies is tracked work with its own design.
   environment at runtime — never inline a real value. If you find a real secret
   already committed, **stop and report it** rather than pushing a fix that
   contains it.
-- **Do not edit generated output by hand.** `controller/api/*.gen.go`,
+- **Do not edit generated output by hand.** `controller/api/*.gen.go`, the
+  provisioned provider's deepcopy, CRD, and controller role files,
   `agent/pkg/agent/proto/*.pb.go`, and `agent/THIRD_PARTY_NOTICES.md` are
-  produced by `make generate`, `make protos`, and `make notices`. Change the
-  source — the OpenAPI spec, the `.proto` file, or `go.mod` — and regenerate.
+  produced by their module generation targets. Change the source types,
+  markers, OpenAPI spec, `.proto` file, or `go.mod`, and regenerate.
 - **Do not rewrite license headers in bulk.** Every source file carries
   `SPDX-License-Identifier: Apache-2.0`, matching the repository's LICENSE.
   Match the header of the file you are editing; `make license` adds it for new
@@ -235,6 +245,13 @@ make license
 make fmt
 make lint
 make test
+```
+
+In `cluster-api-provider-provisioned/`:
+
+```bash
+make generate-check
+go test ./...
 ```
 
 `make lint` in `agent/` is the check CI runs on every push, so treat a failure

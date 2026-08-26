@@ -49,6 +49,7 @@ What distinguishes it from a generic CAPI distribution:
 | Directory | What it is |
 |---|---|
 | `controller/` | The control plane. REST API and UI, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
+| `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NKE provisions before CAPI bootstraps them. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
 | `cli/` | `nkectl`, the command-line interface. Validates a site inventory and drives bootstrap. |
 | `controller/nico-vms/` | VM lifecycle service used by the development and test environments. |
@@ -56,7 +57,7 @@ What distinguishes it from a generic CAPI distribution:
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 
-**Nine Go modules**, tied together by a workspace at the repository root, each
+**Ten Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links six binaries: `agent`,
 `cloud-workflow-engine`, `nkectl`, `capd-reboot-controller`, `nico-mock` and
 `nke-os-image-check`.

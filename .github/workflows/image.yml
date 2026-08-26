@@ -100,6 +100,7 @@ jobs:
           # The controller Dockerfile builds from the repository root: the
           # module lives in the root Go workspace and needs go.work + vendor/.
           check controller/Dockerfile                    .
+          check cluster-api-provider-provisioned/Dockerfile .
           check controller/hack/nico-mock/Dockerfile     controller/hack/nico-mock
           check agent/Dockerfile.nke-builder             agent
 

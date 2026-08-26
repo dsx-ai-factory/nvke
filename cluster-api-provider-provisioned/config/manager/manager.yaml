@@ -1,0 +1,56 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provisioned-controller-manager
+  labels:
+    app.kubernetes.io/name: cluster-api-provider-provisioned
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cluster-api-provider-provisioned
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cluster-api-provider-provisioned
+        cluster.x-k8s.io/provider: infrastructure-provisioned
+    spec:
+      serviceAccountName: provisioned-controller-manager
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: manager
+          image: docker.io/library/cluster-api-provider-provisioned:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect
+          ports:
+            - name: metrics
+              containerPort: 8080
+            - name: probes
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: probes
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: probes
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL

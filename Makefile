@@ -55,6 +55,7 @@ LICENSE_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.
 # vendor/ tree, so `build` gives an outside contributor the same result as CI.
 # Re-vendoring (inside `work-sync`) is the only step that needs access to it.
 WORK_MODULES := agent \
+                cluster-api-provider-provisioned \
                 controller \
                 controller/api \
                 controller/nico-vms \

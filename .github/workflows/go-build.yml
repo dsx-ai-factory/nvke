@@ -98,3 +98,6 @@ jobs:
 
       - name: Test OS-image checker
         run: make -C os-image test
+
+      - name: Test provisioned infrastructure provider
+        run: make -C cluster-api-provider-provisioned test
