@@ -328,3 +328,93 @@ func writeTemp(t *testing.T, content string) string {
 	}
 	return path
 }
+
+// TestTPMEKThumbprints covers how the SPIRE allowlist is read off the
+// inventory: in node order, and skipping nodes that declare none.
+func TestTPMEKThumbprints(t *testing.T) {
+	const (
+		initThumb = "1111111111111111111111111111111111111111111111111111111111111111"
+		joinThumb = "2222222222222222222222222222222222222222222222222222222222222222"
+	)
+	cluster := Cluster{
+		InitNode: Node{Name: "node1", IP: "10.0.0.1", TPMEKThumbprint: initThumb},
+		JoinNodes: []Node{
+			{Name: "node2", IP: "10.0.0.2"},
+			{Name: "node3", IP: "10.0.0.3", TPMEKThumbprint: joinThumb},
+		},
+	}
+
+	got := cluster.TPMEKThumbprints()
+	if len(got) != 2 || got[0] != initThumb || got[1] != joinThumb {
+		t.Errorf("TPMEKThumbprints() = %v, want the init node's then node3's", got)
+	}
+	if len((Cluster{}).TPMEKThumbprints()) != 0 {
+		t.Error("a cluster with no thumbprints should yield none, so no TPM attestor is configured")
+	}
+}
+
+// TestValidate_TPMEKThumbprint rejects a malformed thumbprint at load time. It
+// would otherwise be seeded into the allowlist, match nothing, and surface as
+// that node silently failing attestation.
+func TestValidate_TPMEKThumbprint(t *testing.T) {
+	for name, thumbprint := range map[string]string{
+		"too short":   "abc123",
+		"uppercase":   "AAAA111111111111111111111111111111111111111111111111111111111111",
+		"non-hex":     "zzzz111111111111111111111111111111111111111111111111111111111111",
+		"with colons": "aa:bb:11111111111111111111111111111111111111111111111111111111",
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := &validator{}
+			v.checkNode("cluster.initNode", Node{
+				Name: "node1", IP: "10.0.0.1", TPMEKThumbprint: thumbprint,
+			}, map[string]int{}, map[string]int{})
+			if v.err() == nil {
+				t.Errorf("thumbprint %q should be rejected", thumbprint)
+			}
+		})
+	}
+}
+
+// TestIdentityCredential covers the fallback: one registry account holding
+// everything is the common case, two is the one that needs the extra key.
+func TestIdentityCredential(t *testing.T) {
+	if got := (Registry{APIKey: "shared"}).IdentityCredential(); got != "shared" {
+		t.Errorf("IdentityCredential() = %q, want the bootstrap key when no identity key is set", got)
+	}
+	if got := (Registry{APIKey: "shared", IdentityAPIKey: "identity"}).IdentityCredential(); got != "identity" {
+		t.Errorf("IdentityCredential() = %q, want the identity key to win", got)
+	}
+}
+
+// TestValidate_SpireCA covers the CA the operator brings to the bootstrap.
+// Both files or neither, and both must be readable before anything is touched.
+func TestValidate_SpireCA(t *testing.T) {
+	dir := t.TempDir()
+	cert := filepath.Join(dir, "ca.crt")
+	key := filepath.Join(dir, "ca.key")
+	for _, f := range []string{cert, key} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for name, tc := range map[string]struct {
+		spire   Spire
+		wantErr bool
+	}{
+		"neither is fine, SPIRE stays self-signed": {Spire{}, false},
+		"both, and readable":                       {Spire{CACertFile: cert, CAKeyFile: key}, false},
+		"cert without key":                         {Spire{CACertFile: cert}, true},
+		"key without cert":                         {Spire{CAKeyFile: key}, true},
+		"cert that does not exist":                 {Spire{CACertFile: filepath.Join(dir, "nope"), CAKeyFile: key}, true},
+		"key that does not exist":                  {Spire{CACertFile: cert, CAKeyFile: filepath.Join(dir, "nope")}, true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := &validator{}
+			v.checkSpire(tc.spire)
+			if gotErr := v.err() != nil; gotErr != tc.wantErr {
+				t.Errorf("checkSpire(%+v) error = %v, want error: %v", tc.spire, v.err(), tc.wantErr)
+			}
+		})
+	}
+}

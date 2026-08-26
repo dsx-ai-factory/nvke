@@ -41,11 +41,14 @@ func newBootstrapCmd() *cobra.Command {
 
 // bootstrapSiteOptions holds the flag values for "bootstrap site".
 type bootstrapSiteOptions struct {
-	inventory         string
-	dryRun            bool
-	registryAPIKey    string
-	provider          string
-	keepBootstrapKind bool
+	inventory      string
+	dryRun         bool
+	registryAPIKey string
+	// identityRegistryAPIKey is separate because the SPIRE chart's registry
+	// account need not be the bootstrap image's; see Registry.IdentityAPIKey.
+	identityRegistryAPIKey string
+	provider               string
+	keepBootstrapKind      bool
 
 	// bootstrapRunner overrides the CommandRunner the bootstrap engine uses.
 	// Nil in production (bootstrapengine.New defaults to the real exec-backed
@@ -96,6 +99,10 @@ inventory file format.`,
 		"Load and validate the inventory and print it, but do not dispatch any workflow")
 	cmd.Flags().StringVar(&opts.registryAPIKey, "registry-api-key", "",
 		"Container registry credential (overrides registry.apiKey and the "+registryAPIKeyEnv+" env var)")
+	cmd.Flags().StringVar(&opts.identityRegistryAPIKey, "identity-registry-api-key", "",
+		"Credential for the registry holding the SPIRE chart and its server image "+
+			"(overrides registry.identityApiKey and the IDENTITY_REGISTRY_API_KEY env var). "+
+			"Defaults to the bootstrap registry credential.")
 	cmd.Flags().StringVar(&opts.provider, "bootstrap-provider", "",
 		"Container runtime front end for the ephemeral bootstrap Kind cluster: "+
 			string(bootstrapengine.ProviderNerdctl)+" (default) or "+string(bootstrapengine.ProviderDocker)+
@@ -121,6 +128,9 @@ func runBootstrapSite(opts *bootstrapSiteOptions) error {
 	// credential is never logged or printed.
 	if opts.registryAPIKey != "" {
 		inv.Registry.APIKey = opts.registryAPIKey
+	}
+	if opts.identityRegistryAPIKey != "" {
+		inv.Registry.IdentityAPIKey = opts.identityRegistryAPIKey
 	}
 
 	if err := dumpInventory(inv); err != nil {

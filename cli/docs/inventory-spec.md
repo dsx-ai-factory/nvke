@@ -19,6 +19,8 @@ A ready-to-copy example is in [`examples/inventory.yaml`](../examples/inventory.
 | `cluster.initNode.ip` | string | yes | Valid IPv4 or IPv6 address. |
 | `cluster.joinNodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
 | `cluster.joinNodes[].ip` | string | yes, per entry | Valid IP. Unique across all nodes. |
+| `cluster.initNode.tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
+| `cluster.joinNodes[].tpmEkThumbprint` | string | no | As above, per entry. |
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
 | `cluster.cniName` | string | yes | One of `calico`, `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
@@ -29,6 +31,9 @@ A ready-to-copy example is in [`examples/inventory.yaml`](../examples/inventory.
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine image and chart. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
+| `registry.identityApiKey` | string | no | Credential for the registry account holding the SPIRE chart and its server image. Falls back to `registry.apiKey`. |
+| `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
+| `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 
 The version (image/chart tag) is baked into the `nkectl` build, so it is not
 part of the inventory.
@@ -65,10 +70,66 @@ A set variable takes precedence over the file value.
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
+| `IDENTITY_REGISTRY_API_KEY` | `registry.identityApiKey` |
+| `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
+| `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `JOIN_NODES` | `cluster.joinNodes` — format `name:ip,name:ip`, applied only when the file lists no join nodes |
 
 A malformed `JOIN_NODES` entry fails the load rather than being silently
 discarded.
+
+## TPM endorsement-key thumbprints
+
+`tpmEkThumbprint` is the SHA-256 of a node's TPM endorsement key, as printed by
+[`spire-tpm-plugin`](https://github.com/spiffe/spire-tpm-plugin)'s
+`get_tpm_pubhash`. It identifies the *machine* rather than anything about its
+software: an EK is burned into the TPM and cannot be moved or changed.
+
+Reading it is an out-of-band step before the bootstrap. For DSX, the ansible
+runbook collects it from each host over SSH and writes it into the inventory.
+
+Every thumbprint in the file is seeded into the allowlist of the SPIRE server
+`bootstrap site` deploys, and it is the whole of that allowlist:
+
+- a node with a thumbprint can attest and be issued an identity
+- a node without one cannot
+- an inventory where no node has one deploys SPIRE with no TPM attestor at all
+
+It is a public key hash, not a secret, so it belongs in the inventory rather
+than beside the credentials, and a file carrying them stays safe to commit.
+
+A malformed thumbprint fails the load. Left to reach the allowlist it would
+match nothing and surface much later as that one node failing attestation for no
+visible reason.
+
+## The SPIRE CA
+
+`spire.caCertFile` and `spire.caKeyFile` name a CA the operator brings to the
+bootstrap. `nkectl` configures SPIRE to chain its own CA to it, so a node that
+was given that certificate ahead of time — for DSX, delivered by the ansible
+runbook over SSH — verifies the server the first time it speaks to it, rather
+than trusting whatever answers.
+
+They are paths, not inline PEM. A private key does not belong in a file meant to
+be committed, and the same certificate has to be delivered to each node by
+whatever provisions it, so it already exists as a file.
+
+Both or neither. Omitting them leaves SPIRE self-signed, which is fine when
+nothing outside the cluster has to verify it — and means nodes cannot be given a
+trust anchor in advance. Both files are checked for existence at load, while
+nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
+helm failure naming a temporary file rather than the field that was wrong.
+
+## Two registry credentials
+
+`registry.apiKey` covers the bootstrap engine image and chart.
+`registry.identityApiKey` covers the SPIRE chart and its server image, and falls
+back to `registry.apiKey` when unset.
+
+They are two credentials rather than two hosts because the two can be the *same*
+host: the bootstrap image and the identity chart both live on `nvcr.io`, in
+different accounts. A registry login covers one account, so one credential
+cannot reach both, and keying them by hostname would not tell them apart.
 
 ## Relationship to the tier-0 bootstrap template
 
