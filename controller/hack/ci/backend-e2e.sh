@@ -24,6 +24,15 @@ BUNDLE_VOLUME="capd-e2e-bundles-${RUN_ID}"
 CAPD_NODE_IMAGE="cwe-capd-kindest-node:run-${RUN_ID}"
 BGP_CONTAINER_NAME="bgp-containers-${RUN_ID}"
 DIAGNOSTICS_MARKER="${STATE_DIR}/SAFE_TO_UPLOAD"
+# Sequential two-mode CAPD run: the cp-controller and node-pool provisioning
+# modes run back to back on one kind cluster. The cp-controller leg runs first,
+# so CWE is brought up flag-on here and the node-pool leg flips the
+# deployment-wide flag off between the legs. Any other backend, or a caller that
+# drives the flag itself, leaves this unset and takes the single-mode path below.
+SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES="${NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES:-false}"
+if [[ "${SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES}" == "true" ]]; then
+  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
+fi
 TMP_DIR="$(mktemp -d)"
 MANAGEMENT_KUBECONFIG="${TMP_DIR}/management.kubeconfig"
 CLUSTERCTL_BIN="${TMP_DIR}/clusterctl"
@@ -206,6 +215,98 @@ stop_state_monitor() {
   STATE_MONITOR_PID=""
 }
 
+# Run one Ginkgo leg against the already-deployed management plane. The label
+# filter and the control-plane-controller flag differ per leg; the flag is
+# forwarded to the e2e binary the same way the single-mode run always has. The
+# suffix keeps each leg's e2e log and JUnit report distinct (empty for the
+# single-mode run, so its artifact names are unchanged). Returns the suite's
+# exit code rather than aborting, so the caller decides what a failure means.
+run_ginkgo_leg() {
+  local label_filter="$1"
+  local cp_flag="$2"
+  local suffix="$3"
+  local e2e_log="${STATE_DIR}/e2e${suffix}.log"
+  local junit_report="/state/junit${suffix}.xml"
+  local -a focus_args=()
+
+  if [[ -n "${NKE_E2E_FOCUS}" ]]; then
+    focus_args+=("-ginkgo.focus=${NKE_E2E_FOCUS}")
+    log "running CAPD E2E scenarios matching label ${label_filter} and focus ${NKE_E2E_FOCUS}"
+  else
+    log "running CAPD E2E scenarios matching label ${label_filter}"
+  fi
+
+  set +e
+  # CWE_EXPECTED_VERSION turns the third health spec from a self-skip into a real
+  # assertion: the deployed CWE reports the version baked into the image this run
+  # built, so a stale image being tested fails here rather than passing quietly.
+  runner_exec env "CWE_EXPECTED_VERSION=${CWE_BUILD_VERSION}" \
+    "CWE_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
+    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
+    /state/cwe-e2e.test \
+    -test.v \
+    -test.timeout=105m \
+    -e2e.config=/state/e2e-config.json \
+    -ginkgo.v \
+    -ginkgo.no-color \
+    -ginkgo.fail-on-empty \
+    -ginkgo.timeout=100m \
+    "-ginkgo.label-filter=${label_filter}" \
+    "${focus_args[@]}" \
+    "-ginkgo.junit-report=${junit_report}" \
+    2>&1 | tee "${e2e_log}"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  return "${rc}"
+}
+
+# Cleanup gate between the two sequential legs: the cp-controller leg's delete
+# spec should have removed every tenant cluster before the node-pool leg starts.
+# Count CAPI Cluster objects directly with kubectl rather than the CWE API: the
+# apiserver service proxy authenticates the caller to the apiserver but does not
+# forward a bearer token to CWE, so a flag-on, auth-enforcing CWE 401s the raw
+# /api/clusters probe. Every tenant owns a cluster.cluster.x-k8s.io object CWE
+# deletes on teardown, so zero of them is a faithful, auth-free "cluster is clean"
+# signal (no DB access needed).
+wait_for_zero_tenant_clusters() {
+  local deadline=$((SECONDS + 300))
+  local list count
+  while true; do
+    if list="$(runner_exec kubectl get clusters.cluster.x-k8s.io -A --no-headers 2>/dev/null)"; then
+      count="$(printf '%s' "${list}" | grep -c . || true)"
+      if [[ "${count}" == "0" ]]; then
+        log "cleanup gate: no tenant clusters remain"
+        return 0
+      fi
+    fi
+    if ((SECONDS >= deadline)); then
+      log "cleanup gate: ${count:-unknown} tenant cluster(s) still present after 5m; refusing the node-pool leg" >&2
+      runner_exec kubectl get clusters.cluster.x-k8s.io -A >&2 2>/dev/null || true
+      return 1
+    fi
+    sleep 10
+  done
+}
+
+# Flip the deployment-wide control-plane-controller flag via a light redeploy
+# (no re-run of Tilt), wait for the rollout, then confirm the deployment now
+# carries the requested value. Mirrors the flag-on verification the Tilt deploy
+# already does, so a forwarding regression fails here rather than mid-leg.
+redeploy_cwe() {
+  local value="$1"
+  log "redeploying CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
+  runner_exec kubectl -n cloud-workflow-engine set env deployment/cloud-workflow-engine \
+    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
+  runner_exec kubectl -n cloud-workflow-engine rollout status deployment/cloud-workflow-engine --timeout=5m
+  local got
+  got="$(runner_exec kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
+    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
+  if [[ "${got}" != "${value}" ]]; then
+    log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be ${value} after redeploy, got ${got:-<empty>}" >&2
+    exit 1
+  fi
+}
+
 handle_signal() {
   SKIP_DIAGNOSTICS=true
   exit 130
@@ -286,7 +387,8 @@ collect_diagnostics() {
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A \
           >"${STATE_DIR}/capi-describe.txt" 2>&1
-        for artifact in tilt.log tilt-snapshot.json e2e.log junit.xml; do
+        for artifact in tilt.log tilt-snapshot.json e2e.log junit.xml \
+          junit-cp-controller.xml junit-nodepool.xml; do
           docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done
       fi
@@ -740,6 +842,7 @@ runner_exec env \
   NICO_PROVIDER_REPO_DIR="${NICO_PROVIDER_CONTAINER_DIR}" \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \
+  PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
   TILT_DISABLE_ANALYTICS=1 \
   bash -lc '
     set -euo pipefail
@@ -771,10 +874,63 @@ for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
     exit 1
   fi
 done
+# When the caller asked for control-plane-controller provisioning, confirm the
+# flag actually reached the CWE deployment. This catches a Tiltfile forwarding
+# regression before the cp-controller specs would mis-fail at cluster create.
+if [[ "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" == "true" ]]; then
+  cp_flag_value="$(runner_exec kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
+    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
+  if [[ "${cp_flag_value}" != "true" ]]; then
+    log "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be true in the CWE deployment, got ${cp_flag_value:-<empty>}"
+    exit 1
+  fi
+fi
 runner_exec kubectl get --raw \
   /api/v1/namespaces/cloud-workflow-engine/services/cloud-workflow-engine:8080/proxy/api/version \
   >"${STATE_DIR}/cwe-version.json"
 
+NKE_E2E_FOCUS="${NKE_E2E_FOCUS:-}"
+
+if [[ "${SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES}" == "true" ]]; then
+  # Two provisioning modes, one cluster, back to back. cp-controller runs first,
+  # against the flag-on CWE the Tilt deploy just verified, so a regression in the
+  # newer control-plane-controller path fails fast -- before the long node-pool
+  # leg spends a runner on a feature the first leg already showed is broken.
+  #
+  # `health` rides along with the cp-controller leg so CWE's /healthz, /readyz and
+  # version endpoints are probed against a flag-on deployment too.
+  start_state_monitor
+  leg_rc=0
+  run_ginkgo_leg "(capd && cp-controller) || health" "true" "-cp-controller" || leg_rc=$?
+  if ((leg_rc != 0)); then
+    stop_state_monitor
+    log "cp-controller leg failed with exit code ${leg_rc}; not running the node-pool leg" >&2
+    exit "${leg_rc}"
+  fi
+  log "cp-controller leg passed; confirming the cluster is clean before the node-pool leg"
+  if ! wait_for_zero_tenant_clusters; then
+    stop_state_monitor
+    exit 1
+  fi
+  redeploy_cwe false
+  # Node-pool control plane (flag off): the long-standing CAPD lane. `!cp-controller`
+  # keeps the flag-on spec out of this flag-off CWE. `health` and the authn specs
+  # ride along here -- both need a deployed, enforcing NKE, which this leg has;
+  # authn-spire is excluded (needs SPIRE pod attestation not yet wired in CAPD).
+  leg_rc=0
+  run_ginkgo_leg "((capd || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive" "false" "-nodepool" || leg_rc=$?
+  stop_state_monitor
+  if ((leg_rc != 0)); then
+    log "node-pool leg failed with exit code ${leg_rc}" >&2
+    exit "${leg_rc}"
+  fi
+  log "CAPD sequential management-plane E2E passed (cp-controller then node-pool)"
+  exit 0
+fi
+
+# Single-mode (default): one label filter, one flag. Every other backend and any
+# local run takes this path unchanged.
+#
 # The default is the CAPD lane's filter, for a local run with nothing set. A
 # caller passes its own; the NICo lane passes nico-containers.
 #
@@ -783,36 +939,10 @@ runner_exec kubectl get --raw \
 # built and waited on above. They are three HTTP probes through a service proxy,
 # so they cost seconds rather than minutes.
 NKE_E2E_LABEL_FILTER="${NKE_E2E_LABEL_FILTER:-capd || health}"
-NKE_E2E_FOCUS="${NKE_E2E_FOCUS:-}"
-ginkgo_focus_args=()
-if [[ -n "${NKE_E2E_FOCUS}" ]]; then
-  ginkgo_focus_args+=("-ginkgo.focus=${NKE_E2E_FOCUS}")
-  log "running CAPD E2E scenarios matching label ${NKE_E2E_LABEL_FILTER} and focus ${NKE_E2E_FOCUS}"
-else
-  log "running CAPD E2E scenarios matching label ${NKE_E2E_LABEL_FILTER}"
-fi
 start_state_monitor
-set +e
-# CWE_EXPECTED_VERSION turns the third health spec from a self-skip into a real
-# assertion: the deployed CWE reports the version baked into the image this run
-# built, so a stale image being tested fails here rather than passing quietly.
-runner_exec env "CWE_EXPECTED_VERSION=${CWE_BUILD_VERSION}" \
-  "CWE_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
-  /state/cwe-e2e.test \
-  -test.v \
-  -test.timeout=105m \
-  -e2e.config=/state/e2e-config.json \
-  -ginkgo.v \
-  -ginkgo.no-color \
-  -ginkgo.fail-on-empty \
-  -ginkgo.timeout=100m \
-  "-ginkgo.label-filter=${NKE_E2E_LABEL_FILTER}" \
-  "${ginkgo_focus_args[@]}" \
-  -ginkgo.junit-report=/state/junit.xml \
-  2>&1 | tee "${STATE_DIR}/e2e.log"
-e2e_rc=${PIPESTATUS[0]}
+e2e_rc=0
+run_ginkgo_leg "${NKE_E2E_LABEL_FILTER}" "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" "" || e2e_rc=$?
 stop_state_monitor
-set -e
 
 if ((e2e_rc != 0)); then
   log "CAPD E2E scenarios failed with exit code ${e2e_rc}" >&2

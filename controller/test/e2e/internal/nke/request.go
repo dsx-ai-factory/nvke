@@ -56,6 +56,21 @@ type ControlPlane struct {
 	Pools           []NodePoolSpec
 	EtcdEncrypted   bool
 	ControlPlaneVIP string
+
+	// Config, when non-nil, provisions the control plane through the cluster-level
+	// control-plane controller (CreateClusterControlPlaneConfig) with no
+	// control-plane node pool. It is mutually exclusive with Pools and requires
+	// CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+	Config *ControlPlaneConfigSpec
+}
+
+// ControlPlaneConfigSpec describes a cluster-level control-plane configuration
+// used by control-plane-controller provisioning (no control-plane node pool).
+// The CAPI infrastructure machine template is supplied by the backend builder
+// from the embedded skeleton, so only the topology knobs are needed here.
+type ControlPlaneConfigSpec struct {
+	DesiredCount int
+	MaxSurge     *int
 }
 
 // ClusterNetworkSpec describes the non-default network configuration to pass
@@ -91,6 +106,8 @@ var (
 	capdClusterJSON []byte
 	//go:embed capd_nodepool.json
 	capdNodePoolJSON []byte
+	//go:embed capd_control_plane_config.json
+	capdControlPlaneConfigJSON []byte
 )
 
 func containerCAPIReadyCommands() []string {
@@ -253,7 +270,32 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		*req.NodePools = append(*req.NodePools, pool)
 	}
 
+	if spec.ControlPlane.Config != nil {
+		cfg, err := buildCAPDControlPlaneConfig(spec)
+		if err != nil {
+			return api.CreateClusterRequest{}, fmt.Errorf("building control plane config: %w", err)
+		}
+		req.ControlPlaneConfig = cfg
+	}
+
 	return req, nil
+}
+
+// buildCAPDControlPlaneConfig stamps the embedded control-plane-config skeleton
+// (a DockerMachineTemplate carrying the CAPD node image) with the caller's
+// desired count and surge. It is used for control-plane-controller provisioning,
+// where the control plane has no owning node pool.
+func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPlaneConfig, error) {
+	var cfg api.CreateClusterControlPlaneConfig
+	if err := json.Unmarshal(capdControlPlaneConfigJSON, &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshaling control plane config skeleton: %w", err)
+	}
+	cfg.DesiredCount = spec.ControlPlane.Config.DesiredCount
+	cfg.MaxSurge = spec.ControlPlane.Config.MaxSurge
+	if err := setMapPath(cfg.CapiInfraMachineTemplate, spec.CAPDNodeImage, "spec", "template", "spec", "customImage"); err != nil {
+		return nil, fmt.Errorf("setting control plane custom image: %w", err)
+	}
+	return &cfg, nil
 }
 
 func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateConfig, error) {

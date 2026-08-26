@@ -952,7 +952,6 @@ _cwe_chart_extra_env_names = [
     "FORGE_URL",
     "FORGE_ENVIRONMENT",
     "LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP",
-    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
     "SPIRE_SERVER_API_ADDRESS",
 ]
 _cwe_chart_extra_env = []
@@ -963,6 +962,17 @@ if _tilt_env.get("FWE_API_KEY", "") != "":
     _cwe_chart_extra_env.append({
         "name": "FWE_API_KEY",
         "value": _tilt_env["FWE_API_KEY"],
+    })
+# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER is honored from the
+# process environment first (with the .env.tilt value as a fallback) so CI lanes
+# can toggle control-plane-controller provisioning per run without editing a file.
+_cwe_provision_cp_with_controller = os.getenv(
+    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
+    _tilt_env.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", ""))
+if _cwe_provision_cp_with_controller != "":
+    _cwe_chart_extra_env.append({
+        "name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
+        "value": _cwe_provision_cp_with_controller,
     })
 for _name in _required_cred_names:
     _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})

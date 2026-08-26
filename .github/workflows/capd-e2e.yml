@@ -36,32 +36,35 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Both control-plane provisioning modes on one runner/cluster, in sequence: the
+  # flag (PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER) is deployment-wide
+  # and each mode rejects the other's config, so a single CWE can't serve both at
+  # once. The script runs cp-controller flag-on first, then flips the flag off with
+  # a light redeploy for the node-pool leg.
+  #
+  # cp-controller runs first so the newer path fails fast: if it breaks, the script
+  # aborts before spending ~an hour on the node-pool leg and never reuses a dirty
+  # cluster. The node-pool leg runs only after cp-controller passes and the cluster
+  # is confirmed empty. `health` rides along with each leg (flag-on and flag-off).
   capd-e2e:
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
     with:
       backend: capd
-      # One filter for pull requests and main. Excluding post-ready, scale and
-      # reboot on a pull request meant a break in those only showed up on main,
-      # in a job nothing requires.
-      #
-      # `health` rides along: those specs need a cluster running CWE, which this
-      # lane has already built by the time the suite starts. So do the
-      # authentication specs: this is the only job with a deployed NKE, and the
-      # chart deploys it enforcing. authn-spire is excluded -- it needs the SPIRE
-      # agent to attest a pod the spec creates, which is not demonstrated in the
-      # CAPD runner yet.
-      #
-      # authn-permissive rides along too. It puts the deployment into permissive
-      # mode itself and puts it back, so it needs this lane rather than one of
-      # its own.
-      label-filter: capd || health || (authn && !authn-spire) || authn-permissive
+      # Ignored under single-runner-capd-control-plane-modes: the CI script drives
+      # each leg's label filter itself (cp-controller+health first, then
+      # node-pool+health+authn). This value mirrors the node-pool leg's filter to
+      # satisfy the required input and document what that leg runs. `health` and
+      # the authn specs ride along there -- both need a deployed, enforcing NKE.
+      # authn-spire is excluded (needs SPIRE pod attestation not wired in CAPD).
+      label-filter: ((capd || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
-      timeout-minutes: 90
-      # Turns "authentication is not deployed" from a per-spec skip into a
-      # failure. -ginkgo.fail-on-empty catches a filter that matches nothing; it
-      # cannot catch specs that matched, ran, and skipped themselves. Without
-      # this, breaking the deployment leaves the job green with every authn spec
-      # skipped, which in a CI log reads the same as a spec that never existed.
+      # Two full CAPD lifecycles plus a redeploy on one runner; 150m covers both
+      # in sequence with headroom.
+      timeout-minutes: 150
+      # Turn "authentication is not deployed" from a per-spec skip into a failure:
+      # the authn specs run on the node-pool leg, and without this a broken auth
+      # deployment would leave them silently skipped and the job green.
       require-authn: true
+      single-runner-capd-control-plane-modes: true

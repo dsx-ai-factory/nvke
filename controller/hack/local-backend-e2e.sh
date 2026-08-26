@@ -183,7 +183,9 @@ docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
 label_filter="${LOCAL_NKE_E2E_LABEL_FILTER:-capd}"
 log "running E2E specs matching ${label_filter}"
 set +e
-docker exec "${runner_name}" \
+docker exec \
+  -e "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
+  "${runner_name}" \
   /state/cwe-e2e.test \
     -test.v \
     -test.timeout=105m \

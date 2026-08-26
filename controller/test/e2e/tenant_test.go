@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"os"
 	"testing"
 	"time"
 
@@ -51,6 +52,16 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
 
 		It("creates the cluster", func(ctx context.Context) {
+			// The cp-controller lane needs a flag-on CWE (a flag-off CWE rejects the
+			// cluster-level controlPlaneConfig at create). Skip the whole entry rather
+			// than fail when the flag is not set, so a default local `capd` run against
+			// a flag-off CWE simply skips it. CI selects this entry only in its flag-on
+			// lane.
+			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
+				spec.validate.controlPlaneControllerRollingUpdate) &&
+				os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
+				Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+			}
 			test = expectSucceed(setupTenantTest(ctx, spec.options))
 			if spec.validate.brownfieldOIDC {
 				// A cluster on an OIDC-enabled site is always born OIDC-on, but
@@ -115,6 +126,15 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 			if spec.validate.cpRotation {
 				validateSingleNodeControlPlaneRotation(&test)
+			}
+			if spec.validate.controlPlaneController {
+				validateControllerManagedControlPlane(&test)
+			}
+			if spec.validate.controlPlaneControllerUpdate {
+				validateControllerManagedControlPlaneUpdate(&test)
+			}
+			if spec.validate.controlPlaneControllerRollingUpdate {
+				validateControllerManagedControlPlaneRollingUpdate(&test)
 			}
 			if spec.validate.nodePoolLifecycle {
 				validateAdditionalNodePool(&test)
@@ -184,6 +204,22 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		},
 		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{scale: true, reboot: true, postReadyChecks: true, csrApproval: true, nodePoolLifecycle: true},
+	}),
+	// Opt-in via the "cp-controller" label: it exercises cluster-level
+	// control-plane-controller provisioning (no control-plane node pool), so it
+	// only passes against CWE deployed with
+	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true. The CAPD E2E
+	// workflow runs it in a dedicated flag-on lane; the readiness spec also
+	// self-skips unless that flag is set (belt-and-suspenders).
+	Entry("CAPD control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("capd", "cp-controller"), testSpec{
+		buildSpec: capdControlPlaneControllerSpec,
+		shape: clusterShape{
+			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneVIP:    capdControlPlaneVIP,
+		},
+		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
 	}),
 	Entry("nico-containers", Ordered, ContinueOnFailure, Label("nico-containers", "happy-path"), testSpec{
 		buildSpec: nicoSpec,
@@ -319,6 +355,10 @@ type clusterShape struct {
 	workerPools       []nke.NodePoolSpec
 	etcdEncrypted     bool
 	controlPlaneVIP   string
+	// controlPlaneConfig, when set, provisions the control plane through the
+	// cluster-level control-plane controller (no control-plane node pool) instead
+	// of controlPlanePools. Consumed by capdControlPlaneControllerSpec.
+	controlPlaneConfig *nke.ControlPlaneConfigSpec
 }
 
 type validations struct {
@@ -363,6 +403,25 @@ type validations struct {
 	// override. Requires a 1-CP shape and CWE deployed with
 	// ALLOW_ETCD_SAFETY_OVERRIDES=true (self-skips otherwise). See NKX-13160.
 	cpRotation bool
+	// controlPlaneController asserts the control plane is provisioned by the
+	// cluster-level control-plane controller with no control-plane node pool.
+	// Requires CWE deployed with
+	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true (self-skips
+	// otherwise).
+	controlPlaneController bool
+	// controlPlaneControllerUpdate PATCHes the cluster-level controlPlaneConfig
+	// desiredCount and asserts the controller-managed control plane converges on
+	// the new count in CWE and the tenant API. Requires the same flag-on CWE as
+	// controlPlaneController (self-skips otherwise).
+	controlPlaneControllerUpdate bool
+	// controlPlaneControllerRollingUpdate PATCHes the cluster-level
+	// controlPlaneConfig with a new config profile to bump the control-plane
+	// configuration revision and asserts the controller-managed control-plane
+	// nodes are rolled onto new nodes at the same desired count in CWE and the
+	// tenant API. Ordered after controlPlaneControllerUpdate so the control plane
+	// has enough nodes to keep quorum while rolling. Requires the same flag-on CWE
+	// as controlPlaneController (self-skips otherwise).
+	controlPlaneControllerRollingUpdate bool
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)
@@ -492,6 +551,17 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpe
 		},
 		Workers: capdNodePoolSpecs(shape.workerPools, "worker", "w"),
 	}
+}
+
+// capdControlPlaneControllerSpec builds a CAPD topology whose control plane is
+// provisioned by the cluster-level control-plane controller: no control-plane
+// node pool, a cluster-level control plane config instead. Requires CWE deployed
+// with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	spec := capdSpec(cfg, name, shape)
+	spec.ControlPlane.Pools = nil
+	spec.ControlPlane.Config = shape.controlPlaneConfig
+	return spec
 }
 
 func TestUnit_CAPDSpec(t *testing.T) {
