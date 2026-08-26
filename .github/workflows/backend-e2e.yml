@@ -74,6 +74,7 @@ jobs:
     env:
       NKE_E2E_RUN_ID: github-${{ inputs.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
       NKE_E2E_LABEL_FILTER: ${{ inputs.label-filter }}
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
       NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
