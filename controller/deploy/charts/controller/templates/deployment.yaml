@@ -382,6 +382,11 @@ spec:
             {{- else }}
             - name: AUTHZ_ENDPOINT
               value: {{ include "controller.apiAuthz.endpoint" . | quote }}
+            - name: AUTHZ_ENDPOINT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "apiAuthz.sidecar.tokenSecret.name is required when apiAuthz.engine=sidecar" .Values.apiAuthz.sidecar.tokenSecret.name }}
+                  key: {{ .Values.apiAuthz.sidecar.tokenSecret.key | quote }}
             {{- end }}
             - name: AUTHZ_PERMISSIVE
               value: {{ .Values.apiAuthz.permissive | quote }}
@@ -391,14 +396,31 @@ spec:
               value: {{ .value | quote }}
             {{- end }}
         {{- if and .Values.apiAuthz.enabled (eq .Values.apiAuthz.engine "sidecar") }}
-        # The policy decision point. Reachable only on the pod's loopback
-        # interface: it is not in the Service and takes no traffic from outside
-        # the pod. It holds no secret and authenticates nobody — every input to a
-        # decision has already been verified by the container beside it.
+        # The policy decision point.
+        #
+        # It is NOT loopback-bound, and cannot be: cedar-agent 0.2.2 binds
+        # 0.0.0.0 whatever --addr or ROCKET_ADDRESS say (both measured, both
+        # ignored). Its API is read/write — a PUT to /v1/policies replaces the
+        # bundle in the running agent, and NKE's startup gate has already run —
+        # so anything able to reach this pod's IP on the sidecar port could
+        # rewrite the policy that authorizes the API beside it.
+        #
+        # Two things keep that shut, and both are required: a bearer token the
+        # agent enforces on every route but its health check, and a
+        # NetworkPolicy denying ingress to the port. Neither alone is enough:
+        # the token is in a Secret the pod already reads, and a NetworkPolicy
+        # needs a CNI that enforces it.
         - name: cedar-agent
           image: "{{ .Values.apiAuthz.sidecar.image.repository }}:{{ .Values.apiAuthz.sidecar.image.tag }}"
           imagePullPolicy: {{ .Values.apiAuthz.sidecar.image.pullPolicy }}
           args:
+            # Not a default: the chart's port value reached the container port,
+            # both probes and AUTHZ_ENDPOINT, but never the agent, which went on
+            # listening on its built-in 8180.
+            - --port
+            - {{ .Values.apiAuthz.sidecar.port | quote }}
+            - --authentication
+            - $(AUTHZ_SIDECAR_TOKEN)
             # Order matters. The schema is what makes the agent reject a policy
             # naming an action or attribute that does not exist; loaded after a
             # policy that violates it, the schema itself is refused and
@@ -409,6 +431,14 @@ spec:
             - {{ printf "%s/entities.json" (include "controller.apiAuthz.mountPath" .) | quote }}
             - --policies
             - {{ printf "%s/policies.json" (include "controller.apiAuthz.mountPath" .) | quote }}
+          env:
+            # Read by --authentication above. The same Secret is read by the NKE
+            # container, which sends it on every decision.
+            - name: AUTHZ_SIDECAR_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ required "apiAuthz.sidecar.tokenSecret.name is required when apiAuthz.engine=sidecar" .Values.apiAuthz.sidecar.tokenSecret.name }}
+                  key: {{ .Values.apiAuthz.sidecar.tokenSecret.key | quote }}
           ports:
             - name: cedar
               containerPort: {{ .Values.apiAuthz.sidecar.port }}

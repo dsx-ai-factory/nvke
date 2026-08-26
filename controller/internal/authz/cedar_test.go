@@ -31,7 +31,7 @@ func TestNewCedarAgentValidatesItsEndpoint(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewCedarAgent(tt.endpoint, 0)
+			_, err := NewCedarAgent(tt.endpoint, testToken, 0)
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -89,7 +89,7 @@ func TestAuthorizeRefusesAnUnsafeIdentifierWithoutCallingTheEngine(t *testing.T)
 	}))
 	defer server.Close()
 
-	agent, err := NewCedarAgent(server.URL, 0)
+	agent, err := NewCedarAgent(server.URL, testToken, 0)
 	require.NoError(t, err)
 
 	_, err = agent.Authorize(context.Background(), Query{
@@ -115,7 +115,7 @@ func TestAuthorizeSendsTheExpectedQuery(t *testing.T) {
 	}))
 	defer server.Close()
 
-	agent, err := NewCedarAgent(server.URL, 0)
+	agent, err := NewCedarAgent(server.URL, testToken, 0)
 	require.NoError(t, err)
 
 	decision, err := agent.Authorize(context.Background(), Query{
@@ -167,7 +167,7 @@ func TestOnlyAllowAllows(t *testing.T) {
 			}))
 			defer server.Close()
 
-			agent, err := NewCedarAgent(server.URL, 0)
+			agent, err := NewCedarAgent(server.URL, testToken, 0)
 			require.NoError(t, err)
 
 			decision, err := agent.Authorize(context.Background(), validQuery())
@@ -189,7 +189,7 @@ func TestAuthorizeTreatsANon200AsAnError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	agent, err := NewCedarAgent(server.URL, 0)
+	agent, err := NewCedarAgent(server.URL, testToken, 0)
 	require.NoError(t, err)
 
 	decision, err := agent.Authorize(context.Background(), validQuery())
@@ -209,7 +209,7 @@ func TestAuthorizeTimesOutRatherThanHanging(t *testing.T) {
 		server.Close()
 	}()
 
-	agent, err := NewCedarAgent(server.URL, 50*time.Millisecond)
+	agent, err := NewCedarAgent(server.URL, testToken, 50*time.Millisecond)
 	require.NoError(t, err)
 
 	start := time.Now()
@@ -248,7 +248,7 @@ func TestReadyRefusesAnEmptyStore(t *testing.T) {
 			}))
 			defer server.Close()
 
-			agent, err := NewCedarAgent(server.URL, 0)
+			agent, err := NewCedarAgent(server.URL, testToken, 0)
 			require.NoError(t, err)
 
 			err = agent.Ready(context.Background())
@@ -266,7 +266,7 @@ func TestReadyReportsAnUnreachableEngine(t *testing.T) {
 	endpoint := server.URL
 	server.Close() // nothing is listening now
 
-	agent, err := NewCedarAgent(endpoint, 100*time.Millisecond)
+	agent, err := NewCedarAgent(endpoint, testToken, 100*time.Millisecond)
 	require.NoError(t, err)
 
 	require.Error(t, agent.Ready(context.Background()))

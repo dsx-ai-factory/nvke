@@ -283,6 +283,12 @@ type Config struct {
 	// AuthzBundlePath, not an addition: setting both is a startup failure.
 	AuthzEndpoint string `env:"AUTHZ_ENDPOINT"`
 
+	// AuthzEndpointToken authenticates to that engine. Required whenever
+	// AuthzEndpoint is set: cedar-agent binds 0.0.0.0 whatever its --addr says,
+	// and its policy API is read/write, so an unauthenticated one is a
+	// rewritable policy store reachable on the pod IP.
+	AuthzEndpointToken string `env:"AUTHZ_ENDPOINT_TOKEN"`
+
 	// AuthzPermissive evaluates and logs authorization decisions without
 	// enforcing them, so no request is refused. No effect when AuthzEndpoint is
 	// unset. Separate from PermissiveMode so a deployment can enforce

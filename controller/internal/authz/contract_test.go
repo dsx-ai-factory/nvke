@@ -13,6 +13,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// testToken is the sidecar bearer token the tests use. Not a secret: cedar-agent
+// compares it to its --authentication argument, and the tests either stub the
+// agent or run against a local one started with the same value.
+const testToken = "test-token"
+
 // The Authorizer contract, asserted against every implementation rather than
 // described in a comment and hoped for. An engine that passes this and
 // bundleMatrix() is swappable; one that does not is a trap for whoever swaps it.
@@ -44,7 +49,7 @@ func contractEngines(t *testing.T) map[string]Authorizer {
 	}))
 	t.Cleanup(stub.Close)
 
-	agent, err := NewCedarAgent(stub.URL, 0)
+	agent, err := NewCedarAgent(stub.URL, testToken, 0)
 	require.NoError(t, err)
 
 	return map[string]Authorizer{"cedar-go": local, "cedar-agent": agent}

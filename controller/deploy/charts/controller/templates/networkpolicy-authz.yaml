@@ -1,0 +1,36 @@
+{{- if and .Values.apiAuthz.enabled (eq .Values.apiAuthz.engine "sidecar") }}
+# Deny all ingress to the Cedar sidecar's port.
+#
+# The sidecar is a policy decision point with a read/write HTTP API: a PUT to
+# /v1/policies replaces the bundle in the running agent, and NKE's startup gate
+# has already run by then, so nothing would notice. cedar-agent 0.2.2 cannot be
+# made to bind loopback — --addr and ROCKET_ADDRESS are both ignored — so the
+# port is reachable on the pod IP and this is what closes it.
+#
+# Rendered independently of metrics.networkPolicy: relying on that one meant an
+# operator disabling metrics scraping also opened the policy store. The bearer
+# token in apiAuthz.sidecar.tokenSecret is the other half, for clusters whose CNI
+# does not enforce NetworkPolicy.
+#
+# An empty ingress list denies everything to the selected pods on this port.
+# Traffic from NKE's own container does not traverse it: same pod, same network
+# namespace, loopback.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "controller.fullname" . }}-authz-sidecar
+  namespace: {{ include "controller.namespace" . }}
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "controller.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - ports:
+        - port: {{ .Values.apiAuthz.sidecar.port }}
+          protocol: TCP
+      from: []
+{{- end }}

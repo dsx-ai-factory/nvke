@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	// DefaultTimeout bounds one decision. The engine is a sidecar on the pod's
-	// loopback interface answering in single-digit milliseconds; this is
-	// generous by roughly two orders of magnitude, and exists so a wedged
-	// sidecar denies rather than holds every request open.
+	// DefaultTimeout bounds one decision. The engine is a sidecar in the same
+	// pod answering in single-digit milliseconds; this is generous by roughly
+	// two orders of magnitude, and exists so a wedged sidecar denies rather than
+	// holds every request open.
 	DefaultTimeout = 250 * time.Millisecond
 
 	// cedar-agent's API. Paths are fixed by the sidecar, not configurable.
@@ -34,17 +34,21 @@ const (
 
 // CedarAgent is an Authorizer backed by a cedar-agent sidecar over HTTP.
 //
-// The sidecar is a calculator, not a trust boundary: it holds no secret,
-// authenticates nobody, and every input it is given has already been verified
-// here. It is reachable only on the pod's loopback interface.
+// The sidecar decides nothing on its own — every input it is given has already
+// been verified here — but it is not merely a calculator either, because its API
+// is read/write: a PUT to /v1/policies replaces the bundle in the running agent,
+// after Ready has run. And it is not loopback-bound: cedar-agent 0.2.2 binds
+// 0.0.0.0 whatever --addr says. So the token below is not optional hardening,
+// and the chart pairs it with a NetworkPolicy on the port.
 type CedarAgent struct {
 	endpoint string
+	token    string
 	client   *http.Client
 }
 
 // NewCedarAgent builds a client for a cedar-agent at endpoint, e.g.
 // "http://127.0.0.1:8180".
-func NewCedarAgent(endpoint string, timeout time.Duration) (*CedarAgent, error) {
+func NewCedarAgent(endpoint, token string, timeout time.Duration) (*CedarAgent, error) {
 	if endpoint == "" {
 		return nil, errors.New("cedar agent requires an endpoint")
 	}
@@ -63,6 +67,7 @@ func NewCedarAgent(endpoint string, timeout time.Duration) (*CedarAgent, error) 
 	}
 	return &CedarAgent{
 		endpoint: strings.TrimRight(endpoint, "/"),
+		token:    token,
 		client:   &http.Client{Timeout: timeout},
 	}, nil
 }
@@ -238,6 +243,13 @@ func (c *CedarAgent) get(ctx context.Context, path string, out any) error {
 }
 
 func (c *CedarAgent) do(req *http.Request, out any) error {
+	// The bare token, not "Bearer <token>": cedar-agent compares the header
+	// value against its --authentication argument and answers 401 to the Bearer
+	// form. Measured against 0.2.2.
+	if c.token != "" {
+		req.Header.Set("Authorization", c.token)
+	}
+
 	//nolint:gosec // G704: see post; the URL is configuration, not request data
 	resp, err := c.client.Do(req)
 	if err != nil {

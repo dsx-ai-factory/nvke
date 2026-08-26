@@ -45,7 +45,7 @@ func liveEndpoint(t *testing.T) string {
 // to everything, which is indistinguishable at request time from a policy nobody
 // wrote.
 func TestLiveReadyGate(t *testing.T) {
-	agent, err := NewCedarAgent(liveEndpoint(t), 0)
+	agent, err := NewCedarAgent(liveEndpoint(t), testToken, 0)
 	require.NoError(t, err)
 
 	require.NoError(t, agent.Ready(context.Background()),
@@ -54,7 +54,7 @@ func TestLiveReadyGate(t *testing.T) {
 
 // The same matrix the in-process engine is held to.
 func TestLiveMatchesTheBundle(t *testing.T) {
-	agent, err := NewCedarAgent(liveEndpoint(t), 0)
+	agent, err := NewCedarAgent(liveEndpoint(t), testToken, 0)
 	require.NoError(t, err)
 	require.NoError(t, agent.Ready(context.Background()), "the bundle did not fully load")
 
@@ -64,7 +64,7 @@ func TestLiveMatchesTheBundle(t *testing.T) {
 // The anonymous surface reaches the handler with no Principal and no decision,
 // against a real engine that would otherwise refuse it.
 func TestLiveAnonymousSurfaceIsUntouched(t *testing.T) {
-	agent, err := NewCedarAgent(liveEndpoint(t), 0)
+	agent, err := NewCedarAgent(liveEndpoint(t), testToken, 0)
 	require.NoError(t, err)
 
 	resolver, err := NewResolver(http.NewServeMux())

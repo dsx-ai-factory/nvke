@@ -143,10 +143,11 @@ func main() {
 	// policy engine holding no bundle refuses every request, and that is much
 	// better to learn at start time than at request time.
 	authzProvider, err := authz.Setup(ctx, authz.Options{
-		BundleDir:  cfg.AuthzBundlePath,
-		Endpoint:   cfg.AuthzEndpoint,
-		Permissive: cfg.AuthzPermissive,
-		Recorder:   metrics.RecordAuthzRequest,
+		BundleDir:     cfg.AuthzBundlePath,
+		Endpoint:      cfg.AuthzEndpoint,
+		EndpointToken: cfg.AuthzEndpointToken,
+		Permissive:    cfg.AuthzPermissive,
+		Recorder:      metrics.RecordAuthzRequest,
 	}, logger)
 	if err != nil {
 		logger.Error("Failed to set up API authorization", "error", err)

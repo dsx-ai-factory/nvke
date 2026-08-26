@@ -26,6 +26,12 @@ type Options struct {
 	// BundleDir, not an addition to it.
 	Endpoint string
 
+	// EndpointToken authenticates to that engine. Required in practice, not by
+	// this struct: cedar-agent binds 0.0.0.0 and its policy API is read/write,
+	// so an unauthenticated one is a rewritable policy store on the pod IP.
+	// Setup refuses an empty token rather than leaving that to a chart value.
+	EndpointToken string
+
 	// Permissive evaluates and logs every decision without acting on it, so no
 	// request is refused.
 	Permissive bool
@@ -51,7 +57,10 @@ func (o Options) engine() (Authorizer, error) {
 	case o.BundleDir != "":
 		return NewLocal(o.BundleDir)
 	case o.Endpoint != "":
-		return NewCedarAgent(o.Endpoint, o.Timeout)
+		if o.EndpointToken == "" {
+			return nil, errors.New("an external policy engine requires a token: its API is read/write and it does not bind loopback")
+		}
+		return NewCedarAgent(o.Endpoint, o.EndpointToken, o.Timeout)
 	default:
 		return nil, nil //nolint:nilnil // a nil Authorizer and a nil error is exactly "disabled"
 	}

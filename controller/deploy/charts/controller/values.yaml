@@ -403,8 +403,18 @@ apiAuthz:
       repository: permitio/cedar-agent
       tag: "0.2.2"
       pullPolicy: IfNotPresent
-    # -- Port the sidecar listens on. AUTHZ_ENDPOINT is derived from it.
+    # -- Port the sidecar listens on. Passed to the agent, used for both probes,
+    # and AUTHZ_ENDPOINT is derived from it.
     port: 8180
+    tokenSecret:
+      # -- Secret holding the bearer token the sidecar requires on every route
+      # but its health check, and that NKE sends on every decision. Required
+      # when engine=sidecar: the agent binds 0.0.0.0 and its policy API is
+      # read/write, so an unauthenticated one is a rewritable policy store on
+      # the pod IP. Create it out of band; the chart does not generate secrets.
+      name: nke-authz-sidecar-token
+      # -- Key within that Secret.
+      key: token
     # -- Idle resident set is about 3 MiB; the limit is headroom, not a target.
     resources:
       requests:

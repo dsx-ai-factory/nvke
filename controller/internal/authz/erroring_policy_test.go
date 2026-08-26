@@ -61,7 +61,7 @@ func TestAnAllowBesideAnEvaluationErrorIsRefused(t *testing.T) {
 			}))
 			defer server.Close()
 
-			agent, err := NewCedarAgent(server.URL, 0)
+			agent, err := NewCedarAgent(server.URL, testToken, 0)
 			require.NoError(t, err)
 
 			decision, err := agent.Authorize(context.Background(), validQuery())
@@ -85,7 +85,7 @@ func TestCedarAgentTreatsAnErroringAllowAsAnEngineFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	agent, err := NewCedarAgent(server.URL, 0)
+	agent, err := NewCedarAgent(server.URL, testToken, 0)
 	require.NoError(t, err)
 
 	_, agentErr := agent.Authorize(context.Background(), validQuery())
