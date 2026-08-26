@@ -66,8 +66,9 @@ func NewLocal(dir string) (*Local, error) {
 	}
 
 	entities := types.EntityMap{}
+	declaredIn := map[types.EntityUID]string{}
 	for _, name := range entityFiles {
-		if err := loadEntities(filepath.Join(dir, name), entities); err != nil {
+		if err := loadEntities(filepath.Join(dir, name), entities, declaredIn); err != nil {
 			return nil, err
 		}
 	}
@@ -88,19 +89,45 @@ func NewLocal(dir string) (*Local, error) {
 // loadEntities merges one entity file into dst, refusing a duplicate: the later
 // one would win, so a role redefined in the wrong file would quietly change who
 // holds what.
-func loadEntities(path string, dst types.EntityMap) error {
+//
+// declaredIn records where each uid was first seen, and the check runs over the
+// file's raw list rather than over the parsed entity map. That is the whole
+// difference between catching a duplicate and not: an entity map is a map, so
+// json.Unmarshal collapses two entries with the same uid to the last one before
+// anything here could compare them. A roles.json repeating a principal with a
+// wider set of parents therefore loaded clean and silently granted the wider
+// set — the entity count gate, the schema validator and the conformance matrix
+// all stayed green, because by then there was only one entity.
+func loadEntities(path string, dst types.EntityMap, declaredIn map[types.EntityUID]string) error {
+	name := filepath.Base(path)
+
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", filepath.Base(path), err)
+		return fmt.Errorf("reading %s: %w", name, err)
 	}
+
+	var declarations []json.RawMessage
+	if err := json.Unmarshal(raw, &declarations); err != nil {
+		return fmt.Errorf("parsing %s: %w", name, err)
+	}
+	for i, declaration := range declarations {
+		var head struct {
+			UID types.EntityUID `json:"uid"`
+		}
+		if err := json.Unmarshal(declaration, &head); err != nil {
+			return fmt.Errorf("parsing %s[%d]: %w", name, i, err)
+		}
+		if where, duplicate := declaredIn[head.UID]; duplicate {
+			return fmt.Errorf("%s[%d] redeclares %s, already declared in %s", name, i, head.UID, where)
+		}
+		declaredIn[head.UID] = name
+	}
+
 	var loaded types.EntityMap
 	if err := json.Unmarshal(raw, &loaded); err != nil {
-		return fmt.Errorf("parsing %s: %w", filepath.Base(path), err)
+		return fmt.Errorf("parsing %s: %w", name, err)
 	}
 	for uid, entity := range loaded {
-		if _, ok := dst[uid]; ok {
-			return fmt.Errorf("%s redeclares %s", filepath.Base(path), uid)
-		}
 		dst[uid] = entity
 	}
 	return nil
