@@ -134,23 +134,29 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			// non-anonymous request it admits. No Principal here means the
 			// chain is misordered, or authentication is off while this is on.
 			// Neither is a state to authorize a request in.
-			m.deny(w, r, next, ReasonNoPrincipal, "", nil)
+			m.deny(w, r, next, ReasonNoPrincipal, Query{}, nil, nil)
 			return
 		}
 
+		// The caller's identity first, so that a refusal on the way to naming
+		// the operation is still attributable to someone. A request probing for
+		// endpoints that do not exist is precisely one an operator wants a
+		// subject for.
+		caller := Query{Principal: principal.Subject, Issuer: principal.IssuerName}
+
 		query, err := m.resolver.Resolve(r)
 		if err != nil {
-			m.deny(w, r, next, reasonForResolve(err), "", err)
+			m.deny(w, r, next, reasonForResolve(err), caller, nil, err)
 			return
 		}
-		query.Principal = principal.Subject
-		query.Issuer = principal.IssuerName
+		query.Principal = caller.Principal
+		query.Issuer = caller.Issuer
 
 		// Validated here rather than inside an engine, so every engine is asked
 		// only questions it can answer and a bad one is reported the same way
 		// whichever engine is deployed.
 		if err := query.Validate(); err != nil {
-			m.deny(w, r, next, ReasonInvalidQuery, query.Action, err)
+			m.deny(w, r, next, ReasonInvalidQuery, query, nil, err)
 			return
 		}
 
@@ -163,11 +169,11 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 			if errors.Is(err, ErrInvalidQuery) {
 				reason = ReasonInvalidQuery
 			}
-			m.deny(w, r, next, reason, query.Action, err)
+			m.deny(w, r, next, reason, query, nil, err)
 			return
 		}
 		if !decision.Allow {
-			m.deny(w, r, next, ReasonNoPolicyMatch, query.Action, nil)
+			m.deny(w, r, next, ReasonNoPolicyMatch, query, decision.Reasons, nil)
 			return
 		}
 
@@ -175,7 +181,8 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 		m.logger.Debug("request authorized",
 			"action", query.Action,
 			"subject", query.Principal,
-			"resource", query.ResourceType+"/"+query.ResourceID,
+			"issuer", query.Issuer,
+			"resource", resourceOf(query),
 			"policies", strings.Join(decision.Reasons, ","),
 		)
 		next.ServeHTTP(w, r)
@@ -184,40 +191,58 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 
 // deny records the decision, then serves the request (permissive) or answers it
 // (enforcing).
+//
+// It takes the whole Query and the policies that decided, because a denial that
+// says only "no_policy_match" is one nobody can act on. Behind a Service the
+// remote address is a proxy, so before this the only identifying field in either
+// the response or the log was a path — while the allow path logged the subject
+// and the policies that matched, and internal/auth logged the issuer on
+// rejection. And the shipped bundle carries two forbids, so a rule firing and
+// nothing matching at all are the ordinary pair of outcomes; they produced a
+// byte-identical line.
+//
+// The policy ids stay out of the metric deliberately: a label whose values come
+// from the bundle is a label whose cardinality an operator changes by editing
+// policy. The log is where a specific answer belongs.
 func (m *Middleware) deny(
 	w http.ResponseWriter,
 	r *http.Request,
 	next http.Handler,
 	reason DenyReason,
-	action string,
+	query Query,
+	policies []string,
 	cause error,
 ) {
-	// The path is caller-controlled and bounded only by MaxHeaderBytes.
-	loggedPath := elide(r.URL.Path, 256)
+	// All three are caller-influenced: the path is bounded only by
+	// MaxHeaderBytes, and the subject and the identifier come from a token and a
+	// URL. A log field is not the place to discover how long they were.
+	//
+	// One of these is deliberately imprecise. When the reason is invalid_query
+	// or ambiguous_path, the identifier logged is exactly the one that could not
+	// be written down faithfully — so cause names the field and the offending
+	// byte rather than leaving triage to depend on how it renders.
+	attrs := []any{
+		"reason", string(reason),
+		"action", query.Action,
+		"subject", elide(query.Principal, 256),
+		"issuer", query.Issuer,
+		"resource", elide(resourceOf(query), 256),
+		"policies", strings.Join(policies, ","),
+		"method", r.Method,
+		"path", elide(r.URL.Path, 256),
+		"remote_addr", r.RemoteAddr,
+		"error", cause,
+	}
 
 	if m.mode == ModePermissive {
-		m.record(OutcomeWouldReject, reason, action)
-		m.logger.Warn("authorization would have refused this request",
-			"reason", string(reason),
-			"action", action,
-			"method", r.Method,
-			"path", loggedPath,
-			"remote_addr", r.RemoteAddr,
-			"error", cause,
-		)
+		m.record(OutcomeWouldReject, reason, query.Action)
+		m.logger.Warn("authorization would have refused this request", attrs...)
 		next.ServeHTTP(w, r)
 		return
 	}
 
-	m.record(OutcomeRejected, reason, action)
-	m.logger.Info("refused request",
-		"reason", string(reason),
-		"action", action,
-		"method", r.Method,
-		"path", loggedPath,
-		"remote_addr", r.RemoteAddr,
-		"error", cause,
-	)
+	m.record(OutcomeRejected, reason, query.Action)
+	m.logger.Info("refused request", attrs...)
 
 	// The same api.GenericError body as every other error in this API. The
 	// message names the reason and nothing else: which policy matched, which
@@ -257,6 +282,15 @@ func messageFor(reason DenyReason) string {
 	default:
 		return "Not authorized."
 	}
+}
+
+// resourceOf renders the object a query names, or nothing when the query never
+// got as far as naming one.
+func resourceOf(q Query) string {
+	if q.ResourceType == "" {
+		return ""
+	}
+	return q.ResourceType + "/" + q.ResourceID
 }
 
 // elide bounds a caller-controlled string before it reaches a log line. The
