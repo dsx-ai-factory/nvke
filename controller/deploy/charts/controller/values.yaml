@@ -382,13 +382,22 @@ apiAuthz:
   # -- Count what enforcement would have refused but serve the request anyway.
   # Watch nke_authz_requests_total{outcome="would_reject"} before enforcing.
   permissive: false
+  # -- Where the decision is evaluated.
+  #   "in-process" — cedar-go inside the NKE container, reading the bundle
+  #                  sources. No sidecar, no assembly step. The default.
+  #   "sidecar"    — a cedar-agent container beside NKE, reading the assembled
+  #                  bundle over its own HTTP API.
+  # Both read the same ConfigMap; the keys differ. See deploy/authz/README.md.
+  engine: in-process
   configMap:
-    # -- ConfigMap holding the policy bundle, keyed `schema.json`,
-    # `entities.json` and `policies.json`. Assemble it from the sources under
-    # deploy/authz with hack/authz-bundle. Required when apiAuthz.enabled=true;
+    # -- ConfigMap holding the policy bundle. For engine=in-process, keyed
+    # `policies.cedar`, `actions.json` and `roles.json`. For engine=sidecar,
+    # keyed `schema.json`, `entities.json` and `policies.json`, assembled from
+    # those sources by hack/authz-bundle. Required when apiAuthz.enabled=true;
     # an empty name fails the render.
     name: nke-authz-policy
   sidecar:
+    # -- Only used when engine=sidecar.
     image:
       # -- The Cedar policy decision point, run beside NKE on the pod loopback.
       repository: permitio/cedar-agent

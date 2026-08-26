@@ -1,7 +1,15 @@
 # The NKE API policy bundle
 
-What `cedar-agent` loads beside NKE when `apiAuthz.enabled=true`. Four sources,
-two of them generated, assembled into the three files the sidecar's flags name.
+What NKE evaluates when `apiAuthz.enabled=true`. Four sources, two of them
+generated.
+
+Which files are actually read depends on `apiAuthz.engine`:
+
+- **`in-process`** (the default) — cedar-go inside the NKE container reads
+  `policies.cedar`, `actions.json` and `roles.json` directly. No assembly step,
+  and `bundle/` is not used at all.
+- **`sidecar`** — a cedar-agent container reads the assembled `bundle/`, whose
+  shape its flags require.
 
 | File | Written by | Purpose |
 |---|---|---|

@@ -1,0 +1,50 @@
+version: "2"
+formatters:
+  enable:
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/cedar-policy/cedar-go
+linters:
+  enable:
+    - errcheck
+    - errname
+    - govet
+    - ineffassign
+    - revive
+    - staticcheck
+  exclusions:
+    rules:
+      # Legitimate exclusion - we don't need to thoroughly document internal types
+      - path: internal/
+        linters:
+          - revive
+        text: exported
+
+      # Legitimate exclusion - we don't need to thoroughly document unstable interfaces
+      - path: x/
+        linters:
+          - revive
+        text: exported
+
+      # Legitimate exclusion - we don't need to thoroughly document internal packages
+      - path: internal/
+        linters:
+          - revive
+        text: package-comments
+
+      # We will make an effort to remove this exclusion
+      - path: types/
+        linters:
+          - revive
+        text: exported
+
+  settings:
+    revive:
+      rules:
+        - name: var-naming
+          arguments:
+            - []
+            - []
+            - - skip-package-name-checks: true

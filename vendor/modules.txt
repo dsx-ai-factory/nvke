@@ -40,6 +40,18 @@ github.com/blang/semver/v4
 github.com/caarlos0/env/v11
 # github.com/cedar-policy/cedar-go v1.8.0
 ## explicit; go 1.23.0
+github.com/cedar-policy/cedar-go
+github.com/cedar-policy/cedar-go/ast
+github.com/cedar-policy/cedar-go/internal
+github.com/cedar-policy/cedar-go/internal/consts
+github.com/cedar-policy/cedar-go/internal/eval
+github.com/cedar-policy/cedar-go/internal/extensions
+github.com/cedar-policy/cedar-go/internal/json
+github.com/cedar-policy/cedar-go/internal/mapset
+github.com/cedar-policy/cedar-go/internal/parser
+github.com/cedar-policy/cedar-go/internal/rust
+github.com/cedar-policy/cedar-go/types
+github.com/cedar-policy/cedar-go/x/exp/ast
 # github.com/cenkalti/backoff/v5 v5.0.3
 ## explicit; go 1.23
 github.com/cenkalti/backoff/v5
@@ -907,6 +919,9 @@ golang.org/x/crypto/ssh
 golang.org/x/crypto/ssh/internal/bcrypt_pbkdf
 # golang.org/x/exp v0.0.0-20251219203646-944ab1f22d93
 ## explicit; go 1.25.0
+# golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
+## go 1.25.0
+golang.org/x/exp/constraints
 # golang.org/x/mod v0.41.0
 ## explicit; go 1.26.0
 golang.org/x/mod/semver

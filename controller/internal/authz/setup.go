@@ -4,6 +4,7 @@
 package authz
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -12,22 +13,48 @@ import (
 	"time"
 )
 
-// Options is what a deployment configures. Endpoint decides whether
-// authorization runs at all; the other fields apply only when it does.
+// Options is what a deployment configures. Whether either of Endpoint and
+// BundleDir is set decides whether authorization runs at all; the rest applies
+// only when it does.
 type Options struct {
-	// Endpoint is the policy engine's base URL, e.g. "http://127.0.0.1:8180".
-	// Empty means authorization is disabled, which is the default.
+	// BundleDir is the mounted directory holding the policy bundle sources,
+	// evaluated in this process with cedar-go. Preferred over Endpoint.
+	BundleDir string
+
+	// Endpoint is an external policy engine's base URL, e.g.
+	// "http://127.0.0.1:8180" for a cedar-agent sidecar. An alternative to
+	// BundleDir, not an addition to it.
 	Endpoint string
 
 	// Permissive evaluates and logs every decision without acting on it, so no
 	// request is refused.
 	Permissive bool
 
-	// Timeout bounds one decision. Zero uses DefaultTimeout.
+	// Timeout bounds one decision made over Endpoint. Zero uses DefaultTimeout.
+	// Unused with BundleDir, where a decision makes no network call.
 	Timeout time.Duration
 
 	// Recorder counts decisions. Optional: nil records nothing.
 	Recorder Recorder
+}
+
+// engine builds the Authorizer this deployment asked for, or reports that
+// authorization is disabled by returning a nil Authorizer.
+//
+// Both set is a configuration error rather than a precedence rule: an operator
+// who set both has a belief about which one is running, and a silent winner
+// makes that belief unfalsifiable.
+func (o Options) engine() (Authorizer, error) {
+	switch {
+	case o.BundleDir != "" && o.Endpoint != "":
+		return nil, errors.New("set either the bundle directory or the engine endpoint, not both")
+	case o.BundleDir != "":
+		return NewLocal(o.BundleDir)
+	case o.Endpoint != "":
+		return NewCedarAgent(o.Endpoint, o.Timeout)
+	default:
+		return nil, nil //nolint:nilnil // a nil Authorizer and a nil error is exactly "disabled"
+	}
 }
 
 // Provider is a validated authorization configuration waiting for the mux.
@@ -46,26 +73,28 @@ type Provider struct {
 	record     Recorder
 }
 
-// Setup validates a deployment's authorization configuration and gates on the
-// policy engine, or reports that authorization is disabled.
+// Setup builds and validates a deployment's authorization engine, or reports
+// that authorization is disabled.
 //
-// An empty Endpoint returns (nil, nil), meaning disabled: the caller leaves the
-// middleware out of the chain. A nil Provider is not a permissive one.
+// Neither BundleDir nor Endpoint set returns (nil, nil), meaning disabled: the
+// caller leaves the middleware out of the chain. A nil Provider is not a
+// permissive one.
 //
-// An Endpoint that is set but whose engine cannot be reached, or holds no
-// policy, is an error, never "disabled". In enforcing mode that stops the
-// process: an empty policy store refuses every request, which from inside a
-// running pod looks exactly like a policy nobody wrote, and is a much worse
-// thing to discover at request time than at start time.
+// Either one set but broken — a bundle that does not parse, an engine that
+// cannot be reached or holds no policy — is an error, never "disabled". In
+// enforcing mode that stops the process: an empty policy store refuses every
+// request, which from inside a running pod looks exactly like a policy nobody
+// wrote, and is a much worse thing to discover at request time than at start
+// time.
 func Setup(ctx context.Context, opts Options, logger *slog.Logger) (*Provider, error) {
-	if opts.Endpoint == "" {
-		logger.Info("API authorization is disabled", "reason", "no authorization endpoint is set")
-		return nil, nil //nolint:nilnil // a nil Provider and a nil error is exactly "disabled"
-	}
-
-	agent, err := NewCedarAgent(opts.Endpoint, opts.Timeout)
+	engine, err := opts.engine()
 	if err != nil {
-		return nil, fmt.Errorf("building the policy engine client: %w", err)
+		return nil, fmt.Errorf("building the policy engine: %w", err)
+	}
+	if engine == nil {
+		logger.Info("API authorization is disabled",
+			"reason", "neither a policy bundle nor an engine endpoint is set")
+		return nil, nil //nolint:nilnil // a nil Provider and a nil error is exactly "disabled"
 	}
 
 	mode := ModeEnforcing
@@ -76,21 +105,24 @@ func Setup(ctx context.Context, opts Options, logger *slog.Logger) (*Provider, e
 
 	// Enforcing refuses to start without a loaded bundle; permissive logs and
 	// carries on, since it refuses nobody anyway.
-	if err := agent.Ready(ctx); err != nil {
+	if err := engine.Ready(ctx); err != nil {
 		if mode == ModeEnforcing {
 			return nil, fmt.Errorf("the policy engine is not ready: %w", err)
 		}
 		authzLogger.Warn("the policy engine is not ready; permissive mode continues anyway", "error", err)
 	}
 
+	// Which engine made a decision is the first thing anyone asks when a
+	// decision surprises them, so it is a startup line rather than a guess.
 	logger.Info("API authorization is enabled",
 		"mode", string(mode),
-		"endpoint", opts.Endpoint,
+		"engine", engineName(opts),
+		"source", cmp.Or(opts.BundleDir, opts.Endpoint),
 		"operations", len(operations),
 	)
 
 	return &Provider{
-		authorizer: agent,
+		authorizer: engine,
 		mode:       mode,
 		logger:     authzLogger,
 		record:     opts.Recorder,
@@ -116,4 +148,12 @@ func (p *Provider) Middleware(mux *http.ServeMux) (*Middleware, error) {
 		return nil, fmt.Errorf("building the authorization middleware: %w", err)
 	}
 	return middleware, nil
+}
+
+// engineName is the log label for which implementation is running.
+func engineName(opts Options) string {
+	if opts.BundleDir != "" {
+		return "cedar-go"
+	}
+	return "cedar-agent"
 }

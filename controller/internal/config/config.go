@@ -270,12 +270,17 @@ type Config struct {
 	// AuthConfigPath is unset.
 	PermissiveMode bool `env:"PERMISSIVE_MODE" default:"false"`
 
-	// AuthzEndpoint is the policy engine's base URL: the cedar-agent sidecar on
-	// the pod's loopback interface. Unset disables authorization. A set-but-
-	// unreachable endpoint, or one whose engine holds no policy, is a startup
-	// failure, never "disabled"; see authz.Setup.
+	// AuthzBundlePath is the mounted directory holding the policy bundle,
+	// evaluated in-process with cedar-go. Unset disables authorization unless
+	// AuthzEndpoint is set. A set-but-unparseable bundle is a startup failure,
+	// never "disabled"; see authz.Setup.
 	//
 	// Validate() does not check it: unset is the valid default.
+	AuthzBundlePath string `env:"AUTHZ_BUNDLE_PATH"`
+
+	// AuthzEndpoint runs the decision in an external policy engine instead — the
+	// cedar-agent sidecar on the pod's loopback interface. An alternative to
+	// AuthzBundlePath, not an addition: setting both is a startup failure.
 	AuthzEndpoint string `env:"AUTHZ_ENDPOINT"`
 
 	// AuthzPermissive evaluates and logs authorization decisions without

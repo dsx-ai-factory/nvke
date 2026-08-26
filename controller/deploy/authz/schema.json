@@ -53,32 +53,6 @@
           }
         ]
       },
-      "createVIPAllocation": {
-        "appliesTo": {
-          "context": {
-            "attributes": {
-              "issuer": {
-                "type": "String"
-              },
-              "method": {
-                "type": "String"
-              }
-            },
-            "type": "Record"
-          },
-          "principalTypes": [
-            "Principal"
-          ],
-          "resourceTypes": [
-            "Collection"
-          ]
-        },
-        "memberOf": [
-          {
-            "id": "write"
-          }
-        ]
-      },
       "deleteCluster": {
         "appliesTo": {
           "context": {
@@ -158,6 +132,58 @@
         ]
       },
       "getCluster": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Cluster"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getClusterControlPlane": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Cluster"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "read"
+          }
+        ]
+      },
+      "getClusterControlPlaneConfigHistory": {
         "appliesTo": {
           "context": {
             "attributes": {
@@ -305,58 +331,6 @@
           ],
           "resourceTypes": [
             "NodeSet"
-          ]
-        },
-        "memberOf": [
-          {
-            "id": "read"
-          }
-        ]
-      },
-      "getSite": {
-        "appliesTo": {
-          "context": {
-            "attributes": {
-              "issuer": {
-                "type": "String"
-              },
-              "method": {
-                "type": "String"
-              }
-            },
-            "type": "Record"
-          },
-          "principalTypes": [
-            "Principal"
-          ],
-          "resourceTypes": [
-            "Site"
-          ]
-        },
-        "memberOf": [
-          {
-            "id": "read"
-          }
-        ]
-      },
-      "getVIPAllocation": {
-        "appliesTo": {
-          "context": {
-            "attributes": {
-              "issuer": {
-                "type": "String"
-              },
-              "method": {
-                "type": "String"
-              }
-            },
-            "type": "Record"
-          },
-          "principalTypes": [
-            "Principal"
-          ],
-          "resourceTypes": [
-            "VipAllocation"
           ]
         },
         "memberOf": [
@@ -547,58 +521,6 @@
           }
         ]
       },
-      "listSites": {
-        "appliesTo": {
-          "context": {
-            "attributes": {
-              "issuer": {
-                "type": "String"
-              },
-              "method": {
-                "type": "String"
-              }
-            },
-            "type": "Record"
-          },
-          "principalTypes": [
-            "Principal"
-          ],
-          "resourceTypes": [
-            "Collection"
-          ]
-        },
-        "memberOf": [
-          {
-            "id": "read"
-          }
-        ]
-      },
-      "listVIPAllocations": {
-        "appliesTo": {
-          "context": {
-            "attributes": {
-              "issuer": {
-                "type": "String"
-              },
-              "method": {
-                "type": "String"
-              }
-            },
-            "type": "Record"
-          },
-          "principalTypes": [
-            "Principal"
-          ],
-          "resourceTypes": [
-            "Collection"
-          ]
-        },
-        "memberOf": [
-          {
-            "id": "read"
-          }
-        ]
-      },
       "read": {
         "appliesTo": {
           "context": {
@@ -620,37 +542,9 @@
             "Collection",
             "Node",
             "NodePool",
-            "NodeSet",
-            "Site",
-            "VipAllocation"
+            "NodeSet"
           ]
         }
-      },
-      "registerSite": {
-        "appliesTo": {
-          "context": {
-            "attributes": {
-              "issuer": {
-                "type": "String"
-              },
-              "method": {
-                "type": "String"
-              }
-            },
-            "type": "Record"
-          },
-          "principalTypes": [
-            "Principal"
-          ],
-          "resourceTypes": [
-            "Collection"
-          ]
-        },
-        "memberOf": [
-          {
-            "id": "write"
-          }
-        ]
       },
       "updateCluster": {
         "appliesTo": {
@@ -725,9 +619,7 @@
             "Collection",
             "Node",
             "NodePool",
-            "NodeSet",
-            "Site",
-            "VipAllocation"
+            "NodeSet"
           ]
         }
       }
@@ -806,28 +698,6 @@
         ],
         "shape": {
           "attributes": {},
-          "type": "Record"
-        }
-      },
-      "Site": {
-        "shape": {
-          "attributes": {
-            "site": {
-              "required": false,
-              "type": "String"
-            }
-          },
-          "type": "Record"
-        }
-      },
-      "VipAllocation": {
-        "shape": {
-          "attributes": {
-            "site": {
-              "required": false,
-              "type": "String"
-            }
-          },
           "type": "Record"
         }
       }

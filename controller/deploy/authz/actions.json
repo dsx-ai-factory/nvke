@@ -83,6 +83,32 @@
   {
     "uid": {
       "type": "NKE::Action",
+      "id": "getClusterControlPlane"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
+      "id": "getClusterControlPlaneConfigHistory"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "read"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
       "id": "listCNIPlugins"
     },
     "attrs": {},
@@ -226,58 +252,6 @@
   {
     "uid": {
       "type": "NKE::Action",
-      "id": "listSites"
-    },
-    "attrs": {},
-    "parents": [
-      {
-        "type": "NKE::Action",
-        "id": "read"
-      }
-    ]
-  },
-  {
-    "uid": {
-      "type": "NKE::Action",
-      "id": "getSite"
-    },
-    "attrs": {},
-    "parents": [
-      {
-        "type": "NKE::Action",
-        "id": "read"
-      }
-    ]
-  },
-  {
-    "uid": {
-      "type": "NKE::Action",
-      "id": "listVIPAllocations"
-    },
-    "attrs": {},
-    "parents": [
-      {
-        "type": "NKE::Action",
-        "id": "read"
-      }
-    ]
-  },
-  {
-    "uid": {
-      "type": "NKE::Action",
-      "id": "getVIPAllocation"
-    },
-    "attrs": {},
-    "parents": [
-      {
-        "type": "NKE::Action",
-        "id": "read"
-      }
-    ]
-  },
-  {
-    "uid": {
-      "type": "NKE::Action",
       "id": "updateCluster"
     },
     "attrs": {},
@@ -318,32 +292,6 @@
     "uid": {
       "type": "NKE::Action",
       "id": "createNodePool"
-    },
-    "attrs": {},
-    "parents": [
-      {
-        "type": "NKE::Action",
-        "id": "write"
-      }
-    ]
-  },
-  {
-    "uid": {
-      "type": "NKE::Action",
-      "id": "registerSite"
-    },
-    "attrs": {},
-    "parents": [
-      {
-        "type": "NKE::Action",
-        "id": "write"
-      }
-    ]
-  },
-  {
-    "uid": {
-      "type": "NKE::Action",
-      "id": "createVIPAllocation"
     },
     "attrs": {},
     "parents": [
