@@ -42,7 +42,7 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 	// Forge label-driven reboots try SoftRebootNode in-guest first. That activity uses
 	// the typed node-agent RPC when available and the legacy runbook for older agents.
 	// Forge TriggerInstanceReboot remains the fallback if the in-guest path cannot execute.
-	// Hard Forge reboot is out-of-band (no guest sync/unmount); see NKX-13717 / NKX-13323.
+	// Hard Forge reboot is out-of-band (no guest sync/unmount).
 	// CAPI path is unchanged.
 
 	logger := workflow.GetLogger(ctx)

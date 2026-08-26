@@ -13,17 +13,16 @@
 # controller-test.yml because it needs a live cluster in KUBECONFIG), this
 # suite stands up everything it needs itself: fake node containers
 # (cli/e2e/bootstrap/substrate, `make -C cli nodes-up`) and, since the
-# cli/internal/bootstrapengine port (NKX-14787), a real ephemeral Kind
-# cluster that `nkectl bootstrap site` creates and tears down itself.
+# cli/internal/bootstrapengine, a real ephemeral Kind cluster that
+# `nkectl bootstrap site` creates and tears down itself.
 # ubuntu-latest ships Docker, so no self-hosted runner is needed for that;
 # `kind` itself is not preinstalled and is set up below the same way
 # capd-e2e.yml does it (helm/kind-action, install_only).
 #
 # Runs on the Docker provider (see run.sh) rather than nerdctl: that is the
 # path actually verified end to end on this runner image. nerdctl/containerd
-# rootless+cgroup-v2 provisioning on ubuntu-latest is tracked as a follow-up
-# on NKX-14787, not yet validated here — see run.sh's comment for the exact
-# rollback rationale.
+# rootless+cgroup-v2 provisioning on ubuntu-latest is not yet validated here
+# — see run.sh's comment for the exact rollback rationale.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -36,7 +35,7 @@
 # bootstrap-site code they exercise, so the job is expected to stay green
 # throughout rather than going red until some later change makes it pass.
 #
-# Since cli/internal/cwedeploy (NKX-13889), the job also deploys Postgres,
+# Since cli/internal/cwedeploy, the job also deploys Postgres,
 # Temporal and CWE onto the ephemeral cluster and asserts CWE reports healthy
 # on /readyz -- see run.sh's Stage 2. The CWE image is pulled from GHCR with
 # the built-in GITHUB_TOKEN.

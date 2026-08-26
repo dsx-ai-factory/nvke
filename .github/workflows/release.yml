@@ -311,6 +311,6 @@ jobs:
               ;;
 
             *)
-              echo "::warning::No component publish workflow for '${GITHUB_REF_NAME}' yet (NKX-14116)."
+              echo "::warning::No component publish workflow for '${GITHUB_REF_NAME}' yet."
               ;;
           esac

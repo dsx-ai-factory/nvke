@@ -99,7 +99,7 @@ inventory file format.`,
 	cmd.Flags().StringVar(&opts.provider, "bootstrap-provider", "",
 		"Container runtime front end for the ephemeral bootstrap Kind cluster: "+
 			string(bootstrapengine.ProviderNerdctl)+" (default) or "+string(bootstrapengine.ProviderDocker)+
-			" (rollback path, see NKX-14787). Overrides NKECTL_BOOTSTRAP_PROVIDER.")
+			" (rollback path). Overrides NKECTL_BOOTSTRAP_PROVIDER.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 

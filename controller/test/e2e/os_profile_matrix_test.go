@@ -106,7 +106,7 @@ func mustNicoVMSOSProfileTableEntries() []ginkgo.TableEntry {
 	profiles, err := nicoVMSOSProfileMatrix()
 	if err != nil {
 		// CAPD and other non-nico-vms suites import this package but do not ship
-		// fleet profile metadata (NKX-13910 moved it to nke-site-deploy). Soft-skip
+		// fleet profile metadata (moved to nke-site-deploy). Soft-skip
 		// only that case — other matrix errors still panic so nico-vms regressions
 		// stay loud.
 		if isOSProfileMetadataUnavailable(err) {
@@ -224,8 +224,8 @@ func loadActiveOSProfileMetadata() (osProfileMetadataIndex, error) {
 	return index, nil
 }
 
-// resolveOSProfileMetadataPath finds fleet OS profile metadata (NKX-13910 moved
-// profiles to nke-site-deploy). Order: CWE_PROFILES_DIR, PROFILES_DIR, sibling
+// resolveOSProfileMetadataPath finds fleet OS profile metadata (moved to
+// nke-site-deploy). Order: CWE_PROFILES_DIR, PROFILES_DIR, sibling
 // nke-site-deploy checkout, in-repo mirror.
 //
 // The mirror is last so a real checkout always wins. It is a separate tree from

@@ -1,7 +1,7 @@
 # Shared nke-system namespace and tenant RBAC ConfigMap.
 #
 # The nke-system namespace is created unconditionally (Prune=false): the CWE
-# controller that reconciles tenant access (NKX-12975) publishes per-cluster Secrets
+# controller that reconciles tenant access publishes per-cluster Secrets
 # (<cluster>-kubeconfig, <cluster>-cluster-trust-bundle) into it for every reconciled
 # cluster, so it must exist whenever that controller runs, independent of
 # tenantAccess.enabled and nkeOIDCAuth.enabled. Keeping it unconditional also means
@@ -93,7 +93,7 @@ data:
       - apiGroups: [""]
         resources: ["pods"]
         verbs: ["get", "list", "watch", "patch"]
-      # node-local-dns install (NKX-13737, InstallKubeLocalDNS) server-side-applies
+      # node-local-dns install (InstallKubeLocalDNS) server-side-applies
       # a ServiceAccount, Services (including kube-dns-metrics), a ConfigMap, and a
       # DaemonSet into kube-system as the SPIFFE tenant client; SSA is a PATCH on
       # objects that may not pre-exist, so create + patch (with update/get for the

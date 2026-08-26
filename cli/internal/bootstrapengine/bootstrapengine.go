@@ -14,15 +14,12 @@
 // mockable seam).
 //
 // The container runtime front end (Docker or nerdctl/containerd) is a Config
-// field, not a hardcoded assumption — this implements NKX-14787 ("use
-// nerdctl/containerd as the container runtime for the bootstrap kind
-// cluster") in the same package as the walking-skeleton create/delete flow,
-// since both land through the same seam with nothing merging between them.
-// kind's own provider abstraction (KIND_EXPERIMENTAL_PROVIDER) does the work
-// of routing `kind create cluster`/`kind load docker-image` through nerdctl
-// and containerd's content store instead of the Docker daemon; this package
-// just plumbs the selection through consistently and keeps Docker available
-// as the acceptance-criteria rollback path.
+// field, not a hardcoded assumption. kind's own provider abstraction
+// (KIND_EXPERIMENTAL_PROVIDER) does the work of routing `kind create
+// cluster`/`kind load docker-image` through nerdctl and containerd's content
+// store instead of the Docker daemon; this package just plumbs the selection
+// through consistently and keeps Docker available as the acceptance-criteria
+// rollback path.
 package bootstrapengine
 
 import (
@@ -40,13 +37,13 @@ import (
 // Provider selects the container runtime front end kind drives the bootstrap
 // cluster through. kind treats every non-Docker provider as experimental;
 // callers that hit provider-specific breakage have Docker as a documented
-// rollback (NKX-14787 acceptance criteria).
+// rollback.
 type Provider string
 
 const (
 	// ProviderNerdctl drives kind through nerdctl/containerd. This is the
 	// default: it matches the target platform's runtime and removes the
-	// Docker daemon dependency (NKX-14787's motivation).
+	// Docker daemon dependency.
 	ProviderNerdctl Provider = "nerdctl"
 	// ProviderDocker drives kind through the Docker daemon. Kept selectable
 	// as the rollback path until the nerdctl provider is proven out in CI.
@@ -296,8 +293,7 @@ func (e *Engine) Kubeconfig(ctx context.Context, clusterName string) (string, er
 // Under both providers this goes through `kind load docker-image`: kind's
 // own provider abstraction (selected via KIND_EXPERIMENTAL_PROVIDER) routes
 // the load through nerdctl and containerd's content store when the nerdctl
-// provider is selected, rather than the Docker daemon — see NKX-14787's
-// "update the local image build and load path" scope item.
+// provider is selected, rather than the Docker daemon.
 func (e *Engine) LoadImage(ctx context.Context, clusterName string, provider Provider, image string) error {
 	if image == "" {
 		return fmt.Errorf("bootstrapengine: image is required")

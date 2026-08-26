@@ -109,7 +109,7 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 	require.NotEmpty(t, cfg.DBConnectionString)
 	require.NotEmpty(t, cfg.KubeconfigPath)
 	require.NotEmpty(t, cfg.NodeAgentPort)
-	// Fleet profiles are no longer baked into the worker binary (NKX-13910). Point
+	// Fleet profiles are no longer baked into the worker binary. Point
 	// migrations that load osProfiles/metadata.yaml at the sanitized fixtures tree.
 	profilesDir := filepath.Join(RepoRoot(t), "test", "fixtures", "profiles")
 	_, err := os.Stat(filepath.Join(profilesDir, "osProfiles", "metadata.yaml"))

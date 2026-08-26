@@ -266,8 +266,8 @@ func (c *Client) UpdateNodePoolDesiredCount(ctx context.Context, id openapi_type
 }
 
 // DeleteNodeOption configures the DeleteNode request body, mirroring the
-// force-unreachable / etcd-override controls exposed on the DeleteNode API
-// (NKX-13160). The etcd overrides only take effect when the CWE under test has
+// force-unreachable / etcd-override controls exposed on the DeleteNode API.
+// The etcd overrides only take effect when the CWE under test has
 // ALLOW_ETCD_SAFETY_OVERRIDES enabled; otherwise the API rejects them with a 400.
 type DeleteNodeOption func(*api.DeleteNodeRequest)
 

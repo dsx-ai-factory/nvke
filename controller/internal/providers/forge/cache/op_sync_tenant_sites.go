@@ -58,7 +58,7 @@ func (op *OpSyncTenantSites) Execute(ctx context.Context) {
 		// A 403 means the configured API key has no access to this tenant. This is expected
 		// when a single key only covers a subset of Forge tenants, so treat it as a benign
 		// no-op rather than an Error that logs and retries aggressively every refresh cycle
-		// (NKX-13835). Clearing err lets onExecutionFinished reschedule at the normal cadence.
+		// Clearing err lets onExecutionFinished reschedule at the normal cadence.
 		if errors.Is(err, api.ErrTenantNotAuthorized) {
 			op.logger.Debug("Skipping tenant sync; API key not authorized for tenant", "error", err)
 			cache.SetLastError(err)

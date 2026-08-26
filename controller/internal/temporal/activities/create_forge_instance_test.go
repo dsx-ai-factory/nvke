@@ -22,7 +22,7 @@ import (
 const testNodeID = "abcdef12-3456-7890-abcd-ef1234567890"
 
 // osProfilesDir resolves the OS profiles tree used by profile-rendering tests.
-// Production profiles live in nke-site-deploy (NKX-13910). Resolution order:
+// Production profiles live in nke-site-deploy. Resolution order:
 // CWE_PROFILES_DIR, sibling nke-site-deploy checkout, in-repo fixtures.
 func osProfilesDir(t *testing.T) string {
 	t.Helper()

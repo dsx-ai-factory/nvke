@@ -139,7 +139,7 @@ PROFILES_ROOT="${CWE_PROFILES_DIR:-${REPO_ROOT}/../../nke-site-deploy/cwe-profil
 IPXE_SOURCE="${PROFILES_ROOT}/osProfiles/${OS_PROFILE}/ipxeScript"
 if [ ! -f "${IPXE_SOURCE}" ]; then
   echo "OS profile '${OS_PROFILE}' has no ipxeScript at ${IPXE_SOURCE}" >&2
-  echo "Set CWE_PROFILES_DIR to the nke-site-deploy cwe-profiles profiles tree (NKX-13910)." >&2
+  echo "Set CWE_PROFILES_DIR to the nke-site-deploy cwe-profiles profiles tree." >&2
   exit 1
 fi
 

@@ -1,7 +1,7 @@
 {{- if .Values.metrics.networkPolicy.enabled }}
 # Restrict ingress on the Prometheus metrics port to known scraper namespaces
 # (kube-prometheus-stack in "monitoring", Grafana Alloy in "dgxc-alloy").
-# Addresses Argus finding 9593c0b7 (CWE-306 / NKX-11690).
+# Addresses Argus finding 9593c0b7 (CWE-306).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

@@ -361,7 +361,7 @@ type validations struct {
 	upgrade bool
 	// cpRotation rotates a single-node control plane using the etcd single-voter
 	// override. Requires a 1-CP shape and CWE deployed with
-	// ALLOW_ETCD_SAFETY_OVERRIDES=true (self-skips otherwise). See NKX-13160.
+	// ALLOW_ETCD_SAFETY_OVERRIDES=true (self-skips otherwise).
 	cpRotation bool
 }
 

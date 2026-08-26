@@ -26,7 +26,7 @@ type CWEClient struct {
 // New builds a CWEClient from a SiteConfig.
 // The URL should be the site controller base URL (e.g. http://localhost:8080).
 // The /api prefix is added automatically so callers never need to include it.
-// FIXME: NKX-15055 — add mTLS support: accept cert/key paths from SiteConfig so
+// FIXME: add mTLS support: accept cert/key paths from SiteConfig so
 // operators can authenticate via Teleport app certs (tsh apps login → --cert/--key).
 func New(cfg config.SiteConfig) (*CWEClient, error) {
 	if cfg.URL == "" {

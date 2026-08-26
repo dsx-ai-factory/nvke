@@ -83,7 +83,7 @@ func asForgeAPIError(res *http.Response, err error) error {
 	}
 
 	// A 403 Forbidden means the configured API key has no access to this tenant/org.
-	// See NKX-13835: a single key typically only covers a subset of Forge tenants.
+	// A single key typically only covers a subset of Forge tenants.
 	if res != nil && res.StatusCode == http.StatusForbidden {
 		return fmt.Errorf("%w: %s", ErrTenantNotAuthorized, body)
 	}

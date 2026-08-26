@@ -55,7 +55,7 @@ temporal:
 
 profiles:
   path: /profiles
-  # Exercise the fleet profiles.image materialize path (NKX-13910). Tilt builds
+  # Exercise the fleet profiles.image materialize path. Tilt builds
   # docker.local/cwe-profiles:tilt from the sibling nke-site-deploy tree.
   image:
     enabled: true

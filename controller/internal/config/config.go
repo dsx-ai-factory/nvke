@@ -28,12 +28,12 @@ type Config struct {
 	// DBConnectionString is the Postgres connection string for the database.
 	// In production the password component is overridden by CnpgSuperuserPassword
 	// (sourced from the cnpg-db-passwords Secret) so the compiled-in dev default
-	// never reaches a real cluster (NKX-11689).
+	// never reaches a real cluster.
 	DBConnectionString string `env:"DB_CONNECTION_STRING" default:"postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable"`
 
 	// CnpgSuperuserPassword is the CNPG PostgreSQL superuser password, sourced from
 	// the cnpg-db-passwords Secret. When set it replaces the password in
-	// DBConnectionString at startup (NKX-11689).
+	// DBConnectionString at startup.
 	CnpgSuperuserPassword string `env:"CNPG_SUPERUSER_PASSWORD"`
 
 	// CnpgCloudPassword is the cloud-workflow database app-user password.
@@ -90,7 +90,7 @@ type Config struct {
 	// overrides (allowQuorumLoss / allowSingleVoter) on the DeleteNode API. It is
 	// disabled by default so production site controllers reject these overrides;
 	// enable it on development site controllers that need manual single-node
-	// control-plane rotation (NKX-13160).
+	// control-plane rotation.
 	AllowEtcdSafetyOverrides bool `env:"ALLOW_ETCD_SAFETY_OVERRIDES" default:"false"`
 
 	// NodeHealthCheckTimeout is the timeout for a cluster's node health check reconcile
@@ -385,7 +385,7 @@ func (c TeleportConfig) NodePoolTeleportDefault(controlPlane bool) bool {
 
 // EffectiveDBConnectionString returns DBConnectionString with the password
 // replaced by CnpgSuperuserPassword when it is set, so production deployments
-// use Vault-sourced credentials rather than the compiled-in dev default (NKX-11689).
+// use Vault-sourced credentials rather than the compiled-in dev default.
 func (c Config) EffectiveDBConnectionString() (string, error) {
 	if c.CnpgSuperuserPassword == "" {
 		return c.DBConnectionString, nil
