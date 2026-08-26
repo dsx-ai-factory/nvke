@@ -8,14 +8,14 @@ A deploy repository contains the ArgoCD Application manifests, secrets, and Kube
 
 A complete, ready-to-fork reference repository is available at `github.com/NVIDIA/nke` under `deploy/reference/`. It includes the `nke-base-config` templates for secrets and namespaces, storage manifests, and ArgoCD Application manifests for all required NKE components.
 
-> **Important:** The deploy repository must be accessible from the machine running `tier0-bootstrap`. Ensure the repository is hosted on a git service reachable from your provisioned nodes (public GitHub, GitLab.com, or another externally accessible host).
+> **Important:** The deploy repository must be accessible from the machine running the post-bootstrap deployment tooling. Ensure the repository is hosted on a git service reachable from your provisioned nodes (public GitHub, GitLab.com, or another externally accessible host).
 
 To use the reference repo:
 
 1. Fork or copy it into your own git repository
 2. Edit subdirectories under `deploy/` for your environment (chart versions, image tags, storage classes, database sizing)
 3. Push to your git remote
-4. Point `tier0-bootstrap` at your fork:
+4. Point the post-bootstrap deployment tooling at your fork:
 
 ```yaml
 argocd:
@@ -28,7 +28,7 @@ argocd:
 
 ## Repository Layout
 
-A deploy repository has one or more **deploy paths** — directories that `tier0-bootstrap` processes. Each deploy path contains subdirectories, one per deploy item.
+A deploy repository has one or more **deploy paths** — directories that the post-bootstrap deployment tooling processes. Each deploy path contains subdirectories, one per deploy item.
 
 ```text
 my-deploy-repo/
@@ -85,13 +85,13 @@ items:
 
 Names must be unique across all repos — duplicates are skipped with a warning.
 
-If `nke-deploy.yaml` is absent, `tier0-bootstrap` falls back to **auto-detection**: subdirectories are processed in sorted order; those containing `application.yaml` are treated as ArgoCD apps, everything else as plain manifests.
+If `nke-deploy.yaml` is absent, the post-bootstrap deployment tooling falls back to **auto-detection**: subdirectories are processed in sorted order; those containing `application.yaml` are treated as ArgoCD apps, everything else as plain manifests.
 
 ## Deploy Item Types
 
 ### `template` — Go Template Rendering
 
-Template items contain `.yaml.tmpl` files (and optionally plain `.yaml` files). Before the deploy repo is uploaded to the init node, `tier0-bootstrap` renders each `.yaml.tmpl` file using Go's `text/template` engine with the full [`BootstrapConfig`](#bootstrapconfig-variable-reference) as template data. Rendered output replaces the `.tmpl` files in-place, and the item is then applied as a manifest.
+Template items contain `.yaml.tmpl` files (and optionally plain `.yaml` files). Before the deploy repo is uploaded to the init node, the post-bootstrap deployment tooling renders each `.yaml.tmpl` file using Go's `text/template` engine with the full [`BootstrapConfig`](#bootstrapconfig-variable-reference) as template data. Rendered output replaces the `.tmpl` files in-place, and the item is then applied as a manifest.
 
 This is how secrets and cluster-specific configuration that depend on `BootstrapConfig` values (NGC keys, database passwords, repo tokens, etc.) are created without hardcoding them in the repository.
 
@@ -187,7 +187,7 @@ flowchart TD
     K --> L["Wait for ArgoCD apps to sync"]
 ```
 
-For each repo with `deployPaths`, `tier0-bootstrap`:
+For each repo with `deployPaths`, the post-bootstrap deployment tooling:
 
 1. Clones the repository locally (shallow, `--depth 1 --single-branch`)
 2. Parses `nke-deploy.yaml` in each deploy path (if present)
@@ -375,9 +375,9 @@ The reference repository includes an `nke-base-config` template item that create
 
 ## Secret-Only Repos
 
-Repos that omit `deployPaths` are "secret-only." `tier0-bootstrap` does not clone them; they exist solely so that ArgoCD can fetch from them at runtime.
+Repos that omit `deployPaths` are "secret-only." the post-bootstrap deployment tooling does not clone them; they exist solely so that ArgoCD can fetch from them at runtime.
 
-> **Important:** `tier0-bootstrap` does **not** automatically create ArgoCD repo secrets. Your deploy repository must include a template that creates them. The reference repo's `20-argocd-repo-secrets.yaml.tmpl` handles this by iterating over `.ArgoCD.Repos`. If you build a bespoke deploy repository without `nke-base-config`, you must create these secrets yourself or ArgoCD will fail to fetch from your repos.
+> **Important:** the post-bootstrap deployment tooling does **not** automatically create ArgoCD repo secrets. Your deploy repository must include a template that creates them. The reference repo's `20-argocd-repo-secrets.yaml.tmpl` handles this by iterating over `.ArgoCD.Repos`. If you build a bespoke deploy repository without `nke-base-config`, you must create these secrets yourself or ArgoCD will fail to fetch from your repos.
 
 ```yaml
 argocd:
@@ -393,7 +393,7 @@ argocd:
 
 ## Sync and Health Monitoring
 
-After all deploy items are processed, `tier0-bootstrap` monitors ArgoCD through three phases:
+After all deploy items are processed, the post-bootstrap deployment tooling monitors ArgoCD through three phases:
 
 1. **App-of-apps sync** — waits up to 10 minutes for each deployed application to reach `Synced` + `Healthy`
 2. **Child app sync** — waits up to 60 minutes for all apps listed in `argocd.requiredApps` to reach `Synced` + `Healthy`
@@ -416,4 +416,4 @@ items:
   # ...
 ```
 
-4. Push to your repo — `tier0-bootstrap` deploys items in the declared order
+4. Push to your repo — the post-bootstrap deployment tooling deploys items in the declared order

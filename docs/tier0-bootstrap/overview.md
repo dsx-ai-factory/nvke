@@ -8,29 +8,37 @@ The process has three steps:
 
 1. [Prepare nodes](pre-provisioned-nodes.md#step-1-prepare-all-nodes) — install `nke-agent` and Kubernetes components
 2. [Write an inventory file](configuration.md) — declare your nodes, versions, and registry
-3. [Run `nkectl bootstrap site`](pre-provisioned-nodes.md#step-2-run-bootstrap) — bootstrap the cluster
+3. [Run `nkectl bootstrap site`](pre-provisioned-nodes.md#step-2-run-bootstrap-on-init-node) — bootstrap the cluster
 
 **Total time**: Approximately 30–45 minutes for cluster bring-up, plus time to deploy the NKE services stack afterward.
 
 ## What Happens During Bootstrap
 
-`nkectl` loads and validates the inventory, then dispatches init and join workflows over `nke-agent`'s gRPC API. Each node receives `kubeadm` instructions from the agent — no SSH required.
+`nkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NKE site controller (Postgres, Temporal, CWE) onto it, and then uses that controller to drive the init and join workflows against your actual nodes over `nke-agent`'s gRPC API — no SSH required.
+
+The ephemeral Kind cluster is torn down automatically when bootstrap completes.
 
 ```mermaid
 sequenceDiagram
     participant Op as Operator
     participant Ctl as nkectl (init node)
+    participant Kind as Ephemeral Kind cluster
+    participant CWE as Cloud Workflow Engine
     participant Init as nke-agent (init node)
     participant Join as nke-agent (join nodes)
-    participant K8s as Kubernetes Cluster
+    participant K8s as Site Controller Cluster
 
     Op->>Ctl: nkectl bootstrap site -i inventory.yaml
     Ctl->>Ctl: Load and validate inventory
-    Ctl->>Init: ExecuteKubeadmInit (gRPC)
+    Ctl->>Kind: Create ephemeral bootstrap Kind cluster
+    Ctl->>Kind: Deploy Postgres + Temporal + CWE
+    Ctl->>CWE: Wait for /readyz healthy
+    CWE->>Init: ExecuteKubeadmInit (gRPC)
     Init->>K8s: kubeadm init
-    K8s-->>Ctl: Join strings
-    Ctl->>Join: ExecuteKubeadmJoin (gRPC, parallel)
+    K8s-->>CWE: Join strings
+    CWE->>Join: ExecuteKubeadmJoin (gRPC, parallel)
     Join->>K8s: kubeadm join
+    Ctl->>Kind: Tear down ephemeral Kind cluster
     K8s-->>Op: Cluster ready
 ```
 

@@ -2,7 +2,7 @@
 
 If you already have nodes provisioned and running, you can manually prepare them for tier-0 bootstrap.
 
-> **Tested platforms:** Tier-0 bootstrap on pre-provisioned nodes is tested on **Ubuntu 22.04 and 24.04** with **Kubernetes up to 1.34**. Kubernetes 1.35 and 1.36 are experimental. Other Ubuntu releases (including 26.04) are unsupported.
+> **Tested platforms:** Tier-0 bootstrap on pre-provisioned nodes is tested on **Ubuntu 24.04 (Noble) and 26.04 (Resolute)** with **Kubernetes up to 1.34**. Kubernetes 1.35 and 1.36 are experimental. Ubuntu 22.04 (Jammy) is no longer supported.
 
 ## Self-Bootstrap Models: Managed vs Unmanaged
 
@@ -31,12 +31,15 @@ After bootstrap completes:
 
 ## Prerequisites
 
-- 1 or 3 Ubuntu nodes (single-node or HA deployment)
+- 1 or 3 Ubuntu 24.04 or 26.04 nodes (single-node or HA deployment)
 - SSH access to all nodes with sudo privileges
 - Nodes can reach the internet for downloading packages and artifacts
 - Network connectivity between all nodes
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NKE container images)
+- On the **init node**: `kind` binary and either `nerdctl` (default) or `docker` installed — `nkectl` uses these to create the ephemeral bootstrap Kind cluster
+- `NKECTL_CWE_IMAGE` — full image reference for the CWE controller (e.g. `nvcr.io/<org>/controller:edge`)
+- `NKECTL_CWE_PROFILES_IMAGE` — image holding the OS profiles tree at `/profiles`
 
 If you are targeting a self-managed cluster, prepare your environment SBOM and [deploy repository](deploy-repository.md) ahead of time.
 
@@ -66,7 +69,7 @@ sudo apt-mark hold kubelet kubeadm kubectl
 
 ### Install Node-Agent
 
-`nke-agent` installs from the NKE apt repository. The commands below are for Ubuntu 24.04; on 22.04 use the `nke-apt-jammy` prefix and `nke-jammy` suite.
+`nke-agent` installs from the NKE apt repository. The commands below are for Ubuntu 24.04 (Noble); on 26.04 (Resolute) use the `nke-apt-resolute` prefix and `nke-resolute` suite.
 
 > **TODO:** Confirm public apt repo URL and GPG key location before publishing.
 
@@ -108,15 +111,19 @@ On the **init node only**:
 3. Run bootstrap:
 
 ```bash
-# Validate the inventory first (no nodes touched)
+# Validate the inventory first (no nodes or clusters touched)
 nkectl bootstrap site -i inventory.yaml --dry-run
 
 # Run bootstrap
 REGISTRY_API_KEY="<your-registry-api-key>" \
+NKECTL_CWE_IMAGE="nvcr.io/<org>/controller:edge" \
+NKECTL_CWE_PROFILES_IMAGE="nvcr.io/<org>/profiles:edge" \
   nkectl bootstrap site -i inventory.yaml
 ```
 
-`nkectl` dispatches kubeadm init and join over `nke-agent` gRPC. No SSH, no ephemeral Kind cluster.
+`nkectl` creates a temporary Kind cluster on the init node, deploys Postgres, Temporal, and CWE onto it, waits for CWE to be healthy, and then dispatches kubeadm init and join workflows to your nodes over `nke-agent` gRPC. The ephemeral Kind cluster is torn down automatically when bootstrap completes. No SSH required.
+
+Use `--bootstrap-provider docker` if Docker is your container runtime instead of nerdctl. Use `--keep-bootstrap-cluster` to leave the Kind cluster running after bootstrap for debugging.
 
 **Duration**: Approximately **30–45 minutes**
 
