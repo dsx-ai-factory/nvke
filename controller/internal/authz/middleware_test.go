@@ -152,7 +152,8 @@ func TestDenialBodyLeaksNothing(t *testing.T) {
 }
 
 // An error from the engine is CWE's failure, not the caller's — and it is still
-// a denial. Failing open here would make an unreachable sidecar an open API.
+// a denial. Failing open here would turn any fault in the engine into an open
+// API, which is the one outcome worse than the outage.
 func TestEngineErrorFailsClosed(t *testing.T) {
 	handler, reached, counts := harness(t, &fakeAuthorizer{err: errors.New("connection refused")}, ModeEnforcing)
 

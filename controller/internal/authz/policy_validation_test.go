@@ -44,8 +44,9 @@ func validator(t *testing.T) *validate.Validator {
 	require.NoError(t, s.UnmarshalJSON(raw), "%s is not a valid Cedar JSON schema", schemaFile)
 
 	// Resolve expands type references and action groups. A schema that parses
-	// but does not resolve — a cycle, a dangling memberOf — would be accepted by
-	// the sidecar's loader and then behave unpredictably.
+	// but does not resolve — a cycle, a dangling memberOf — is one whose
+	// type-checking would be meaningless, so the failure belongs here rather
+	// than in whatever it lets through.
 	resolved, err := s.Resolve()
 	require.NoError(t, err, "%s does not resolve", schemaFile)
 

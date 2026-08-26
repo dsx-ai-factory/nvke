@@ -39,17 +39,51 @@ Schema validation is type-based, so it cannot tell you a role *instance* does no
 exist: `NKE::Role::"raeder"` is a well-typed reference to a role nobody declared.
 `policy_vocabulary_test.go` covers that half.
 
+## Policies may not read entity attributes
+
+`principal`, `action` and `resource` carry no attributes, and `NewLocal` refuses
+a policy that reads one — in the cluster, not only in CI.
+
+Nothing populates them and nothing can here. The resource is synthesised from the
+request path before the handler runs, so this process has not read a database and
+does not know what site a cluster is in. A rule like
+
+```cedar
+forbid(principal, action in NKE::Action::"write", resource)
+when { resource has site && resource.site == "prod" };
+```
+
+reads as a restriction, type-checks, loads, and applies to nothing — `resource
+has site` is false for every request, so the `forbid` is skipped and the `permit`
+it was written to override wins. That is the one policy mistake here that fails
+*open*, which is why it is refused at load rather than left to a test.
+
+`context` is the exception: `context.issuer` and `context.method` are populated
+per request and declared in the schema.
+
 ## Action groups, and what they cannot express
 
-`read` and `write` are derived from the HTTP method: every `GET` is a `read`,
-everything else a `write`. That is what lets `permit(principal in
-NKE::Role::"reader", action in NKE::Action::"read", resource)` stay correct as
-endpoints are added.
+`read` and `write` are derived from the HTTP method: the safe methods (`GET`,
+`HEAD`, `OPTIONS`, `TRACE`) are a `read`, everything else a `write`. That is what
+lets `permit(principal in NKE::Role::"reader", action in NKE::Action::"read",
+resource)` stay correct as endpoints are added.
 
 It also means an operation cannot be kept *out* of its group by a `permit`.
 `deleteNode` is a `DELETE`, so `operators-may-write` would grant it; holding it
-to one role takes a `forbid ... unless`, which beats every `permit`. Anything
-irreversible wants that treatment — see `only-node-operators-delete-nodes`.
+to one role takes a `forbid ... unless`, which beats every `permit`. See
+`only-node-operators-change-node-lifecycle`.
+
+The method says nothing about consequence, so that treatment is not optional and
+not left to judgement: `policy_fences_test.go` requires every write operation to
+be named by a policy or listed in `writesLeftToTheGroup` with a reason. Adding a
+destructive endpoint without doing one of the two fails the build, which is the
+diff a reviewer needs and would not otherwise get.
+
+There is a limit worth knowing. One `operationId` is one Cedar action, and this
+gate decides before the request body is parsed — so `updateCluster`, which
+carries both a cosmetic `PATCH` and the one-way `enableEtcdEncryption` and
+`enableOidc`, cannot be split by any rule here. Separating those is an API
+change.
 
 ## Testing a change
 

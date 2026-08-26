@@ -15,10 +15,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The in-process engine's half of the guarantees the sidecar's tests already
-// cover. It is the chart default, and both of these were previously asserted
-// only against CedarAgent — deleting Local's errored-Allow refusal left the
-// suite green.
+// The two guarantees that hold the engine to answering only what it can stand
+// behind: an Allow reached while a policy errored is not served, and a Deny that
+// errored is still a Deny. Both were once asserted against another engine only,
+// so deleting either of these guards left the suite green.
 
 // bundleWith writes a throwaway bundle and loads it. Used for policies the
 // shipped bundle deliberately does not contain.
@@ -95,10 +95,10 @@ permit(principal in NKE::Role::"nobody", action, resource) when { context.nothin
 	assert.False(t, decision.Allow)
 }
 
-// The Cedar context the in-process engine builds, pinned the way cedar_test.go
-// pins the sidecar's. No shipped policy has a `when` clause reading context, so
-// the conformance matrix cannot see this: replacing the record with an empty one
-// left every test green.
+// The Cedar context the engine builds, pinned here because nothing else pins
+// it. No shipped policy has a `when` clause reading context, so the conformance
+// matrix cannot see it: replacing the record with an empty one left every test
+// green.
 func TestLocalSendsTheContextRecord(t *testing.T) {
 	local := bundleWith(t, `
 permit(principal, action, resource)

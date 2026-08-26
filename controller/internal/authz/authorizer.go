@@ -5,8 +5,7 @@
 // the policy engines, and the middleware that turns a request into an
 // authorization decision. Three states, chosen outside this package:
 //
-//	Disabled   neither AUTHZ_BUNDLE_PATH nor AUTHZ_ENDPOINT set; the
-//	           middleware is not in the chain.
+//	Disabled   AUTHZ_BUNDLE_PATH unset; the middleware is not in the chain.
 //	Permissive evaluate, log and count, never reject.
 //	Enforcing  403 on anything but Allow.
 //

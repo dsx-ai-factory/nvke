@@ -154,8 +154,8 @@ func bundleDir(tb testing.TB) string {
 	return dir
 }
 
-// The in-process engine, against the bundle sources. No sidecar, no assembly
-// step, no network: cedar-go reads the multi-policy .cedar document directly.
+// The engine against the bundle sources: no assembly step and no network, so
+// what this asserts is what a deployment does with the files in deploy/authz.
 func TestLocalMatchesTheBundle(t *testing.T) {
 	local, err := NewLocal(bundleDir(t))
 	require.NoError(t, err)
@@ -207,10 +207,11 @@ func TestLocalRefusesABundleThatDidNotLoad(t *testing.T) {
 // A hostile identifier is refused, not evaluated — and refused identically
 // whichever engine is deployed.
 //
-// The in-process engine could treat a quote as data and deny it on the merits,
-// and used to. That was a divergence: the sidecar refuses it as a bad query, so
-// the same request produced invalid_query on one deployment and no_policy_match
-// on the other. Query.Validate now decides for both, above the interface.
+// cedar-go could treat a quote as data and deny it on the merits, and used to.
+// That made the refusal an engine's opinion rather than a property of the
+// request: the same identifier was a bad question to one engine and an ordinary
+// denial to another. Query.Validate decides above the interface now, so what is
+// refused does not depend on who would have evaluated it.
 func TestAHostileIdentifierIsRefusedNotEvaluated(t *testing.T) {
 	local, err := NewLocal(bundleDir(t))
 	require.NoError(t, err)

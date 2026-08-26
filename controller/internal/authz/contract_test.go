@@ -142,8 +142,8 @@ func TestMiddlewareRefusesANilEngine(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Setup's engine selection, which no test covered before the sidecar was
-// dropped and which is now the whole of the configuration surface.
+// Engine selection, which is the whole of the configuration surface: a bundle
+// directory or nothing.
 func TestSetupSelectsTheInProcessEngine(t *testing.T) {
 	engine, err := Options{BundleDir: bundleDir(t)}.engine()
 	require.NoError(t, err)

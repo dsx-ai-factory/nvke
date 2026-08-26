@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// What one decision costs in-process, against the real bundle under
-// deploy/authz. The comparable sidecar figure is a network round trip and is
-// measured out-of-band; see the design's cost table.
+// What one decision costs, against the real bundle under deploy/authz. It runs
+// in the request path, so the number belongs beside the code rather than in the
+// design's cost table alone.
 func BenchmarkLocalAuthorize(b *testing.B) {
 	local, err := NewLocal(bundleDir(b))
 	require.NoError(b, err)

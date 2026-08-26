@@ -18,11 +18,10 @@ import (
 // Local is an Authorizer that evaluates Cedar in this process, using the
 // first-party cedar-go implementation.
 //
-// It is the alternative to CedarAgent, behind the same interface, and it reads
-// the same bundle — but the bundle's *sources*, not the assembled form: cedar-go
-// parses a multi-policy .cedar document directly, where the sidecar needs one
-// statement per JSON entry. Nothing here renders an entity literal as text, so
-// there is no quoting to get right and no identifier to refuse.
+// It reads the bundle sources as they are written — cedar-go parses a
+// multi-policy .cedar document directly, so nothing assembles anything — and it
+// hands the evaluator typed values rather than rendering an entity literal as
+// text, so there is no quoting to get right.
 //
 // Immutable after construction and safe for concurrent use.
 type Local struct {
@@ -30,9 +29,10 @@ type Local struct {
 	entities types.EntityMap
 
 	// names maps cedar-go's positional policy id to the @id annotation the
-	// source carries. Without it a diagnostic reads "policy0", which changes
-	// meaning the moment a policy is inserted above it — and the sidecar reports
-	// the @id, so the two engines would log different names for the same rule.
+	// source carries. Without it a diagnostic reads "policy0", which is not a
+	// name anybody wrote and which changes meaning the moment a policy is
+	// inserted above it — so the refusal log would point at a different rule
+	// after an unrelated edit.
 	names map[cedar.PolicyID]string
 }
 
@@ -139,8 +139,9 @@ func loadEntities(path string, dst types.EntityMap, declaredIn map[types.EntityU
 // Authorize evaluates one query.
 //
 // Every value handed to cedar-go is typed, so a subject or an identifier
-// containing a quote is data rather than syntax. The entity-literal refusal
-// CedarAgent needs has no counterpart here.
+// containing a quote is data rather than syntax. Query.Validate refuses one
+// anyway, for a reason downstream of the evaluator: an identifier that cannot be
+// written down faithfully is one whose decision cannot be audited.
 func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
 	// Belt to Query.Validate's braces: the middleware validates before
 	// dispatching, so reaching this means an engine was called directly.
