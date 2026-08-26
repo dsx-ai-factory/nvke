@@ -400,9 +400,21 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 # change to the API has to build them to mean anything.
 API_DEPENDENTS := controller cli controller/test/e2e
 
-# The modules CI tests with -race, from agent-test.yml and controller-test.yml.
-# Only these, because -race needs cgo and some modules build with CGO_ENABLED=0.
-RACE_MODULES := agent controller
+# The modules CI tests with -race. agent-test.yml races agent; the unit-test
+# matrix in controller-test.yml sets GO_TEST_FLAGS: -race for the whole job, so
+# every module in that matrix is raced, not just controller.
+#
+# Preflight runs these with CGO_ENABLED=1, which is what controller-test.yml
+# and `make gate` already do. Recent Go no longer needs cgo for the race
+# detector everywhere, so this is not always load-bearing -- but a host that
+# exports CGO_ENABLED=0 should not get a different answer from the gate, and
+# matching it costs nothing.
+RACE_MODULES := agent \
+                cli \
+                controller \
+                controller/nico-vms \
+                controller/hack/nico-mock \
+                controller/test/e2e
 
 # Root lint covers every module CI lints. Root fmt excludes generated API code,
 # whose formatting belongs to controller's generator.
@@ -496,9 +508,14 @@ preflight: ## Lint and test the modules you changed. MODULES=... to choose them 
 		echo "==> $$m lint"; \
 		$(MAKE) --no-print-directory -C $$m lint || failed="$$failed $$m:lint"; \
 		echo "==> $$m test"; \
-		$(MAKE) --no-print-directory -C $$m test \
-			GO_TEST_FLAGS="$$(case " $(RACE_MODULES) " in *" $$m "*) echo -race ;; esac)" \
-			|| failed="$$failed $$m:test"; \
+		race=no; \
+		case " $(RACE_MODULES) " in (*" $$m "*) race=yes ;; esac; \
+		if [ "$$race" = yes ]; then \
+			CGO_ENABLED=1 $(MAKE) --no-print-directory -C $$m test GO_TEST_FLAGS=-race \
+				|| failed="$$failed $$m:test"; \
+		else \
+			$(MAKE) --no-print-directory -C $$m test || failed="$$failed $$m:test"; \
+		fi; \
 	done; \
 	if [ "$$workspace" = yes ]; then \
 		echo "==> work-check-offline"; \
