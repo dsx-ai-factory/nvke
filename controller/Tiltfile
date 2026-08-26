@@ -374,8 +374,7 @@ _tilt_env.update(_all_cwe_env_overrides)
 
 # Credentials with no defaults anywhere in the repo. The developer supplies each
 # one via .env.tilt or the shell environment; `tilt up` fails fast rather than
-# standing the stack up on placeholder credentials (NKX-11689). CNPG_SITE_PASSWORD
-# is deliberately absent — it is consumed by site-workflow-engine, not CWE.
+# standing the stack up on placeholder credentials.
 _required_cred_names = [
     "DGXC_TENANT_USER",
     "DGXC_TENANT_PASSWORD",
