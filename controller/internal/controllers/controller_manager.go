@@ -191,7 +191,7 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 
 	// These Reconciles are executed sequentially just for development simplicity.
 	// They are designed to be independent and may be run in parallel or separate go routines or processes in the future.
-	// FIXME: https://jirasw.nvidia.com/browse/NKX-13484: We are starting to get a lot of these we should evaluate concurrency options.
+	// FIXME: We are starting to get a lot of these we should evaluate concurrency options.
 
 	if err := a.nodeHealthController.Reconcile(ctx, site); err != nil {
 		// Log errors but continue processing the other controllers.

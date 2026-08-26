@@ -161,7 +161,7 @@ linters:
     godox:
       # Use TODO: to cause a lint error for things that should be done before merging.
       # Use FIXME: to indicate things that should be done in a future MR.
-      # Example: FIXME: https://jirasw.nvidia.com/browse/NKE-1234
+      # Example: FIXME: short description of deferred work
       keywords:
         - TODO
     goheader:
