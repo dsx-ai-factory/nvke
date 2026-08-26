@@ -3,7 +3,16 @@
 
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
 LOCALBIN ?= $(CURDIR)/bin
-GOBIN ?= $(LOCALBIN)
+
+# Go tool install location (GOPATH/bin, unless GOBIN is set); matches
+# agent/Makefile and cli/Makefile so the shared golangci.mk macro installs and
+# finds the same binary. Module-local tools (controller-gen) use LOCALBIN
+# directly instead, via an explicit GOBIN= prefix on their own `go install`.
+GOBIN ?= $(shell go env GOBIN)
+ifeq (,$(GOBIN))
+GOBIN = $(shell go env GOPATH)/bin
+endif
+
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 CONTROLLER_TOOLS_VERSION ?= v0.20.1
 IMG ?= docker.io/library/cluster-api-provider-provisioned:latest
