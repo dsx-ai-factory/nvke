@@ -32,6 +32,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplane"
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplanenodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/NVIDIA/nke/controller/internal/controllers/nodeagentreadiness"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeclusterstaticentry"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepoolnodescheduler"
@@ -41,6 +42,8 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/teleporttoken"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant/csr"
+	tenantnoderemediation "github.com/NVIDIA/nke/controller/internal/controllers/tenant/noderemediation"
+	tenantnodestatus "github.com/NVIDIA/nke/controller/internal/controllers/tenant/nodestatus"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenantaccess"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/db/migrations"
@@ -232,42 +235,18 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	tenantManagerSet, err := tenant.NewManagerSet(
-		ctx,
-		logger.With("logger", "tenant-controller-manager-set"),
-		tenant.NewManagerFactory(
-			logger.With("logger", "tenant-controller-runtime"),
-			csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
-		),
-		tenant.DefaultManagerSetOptions(),
-	)
-	if err != nil {
-		logger.Error("Failed to create tenant controller manager set", "error", err)
-		os.Exit(1)
-	}
-	defer tenantManagerSet.Shutdown()
 
-	tenantAccessController := tenantaccess.NewController(
-		cfg,
-		logger.With("logger", "tenant-access"),
-		dbInstance,
-		managementK8sClient,
-		nodeAgentClient,
-		tenantManagerSet,
-	)
-	if err := tenantAccessController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up tenant access controller", "error", err)
-		os.Exit(1)
-	}
-
-	tenantSecretReconciler := tenant.NewSecretReconciler(
-		dbInstance,
-		k8sControllerManager.GetClient(),
-		tenantManagerSet,
-	)
-	if err := tenantSecretReconciler.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up tenant manager Secret reconciler", "error", err)
-		os.Exit(1)
+	if !cfg.NodeHealthCheckDisabled {
+		nodeAgentHealthController := nodeagentreadiness.NewAgentReadinessController(
+			cfg,
+			logger.With("logger", "node-agent-health-controller"),
+			dbInstance,
+			nodeAgentClient,
+		)
+		if err := nodeAgentHealthController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up node agent health controller", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	nodePoolController := nodepool.NewController(
@@ -372,7 +351,6 @@ func main() {
 		}
 	}
 
-	serverLogger := logger.With("logger", "server")
 	temporalLogger := logger.With("logger", "temporal")
 	// Retry before giving up. Temporal restarting for a few seconds used to be
 	// enough to exit here, and once the process is in CrashLoopBackOff the
@@ -389,6 +367,60 @@ func main() {
 		os.Exit(1)
 	}
 	defer temporalClient.Close()
+
+	tenantRegistrars := []tenant.Registrar{
+		csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
+	}
+	if !cfg.NodeHealthCheckDisabled {
+		tenantRegistrars = append(tenantRegistrars,
+			tenantnodestatus.NewRegistrar(dbInstance),
+			tenantnoderemediation.NewRegistrar(
+				cfg,
+				dbInstance,
+				temporalClient,
+				logger.With("logger", "tenant-node-remediation-controller"),
+			),
+		)
+	}
+	tenantManagerSet, err := tenant.NewManagerSet(
+		ctx,
+		logger.With("logger", "tenant-controller-manager-set"),
+		tenant.NewManagerFactory(
+			logger.With("logger", "tenant-controller-runtime"),
+			tenantRegistrars...,
+		),
+		tenant.DefaultManagerSetOptions(),
+	)
+	if err != nil {
+		logger.Error("Failed to create tenant controller manager set", "error", err)
+		os.Exit(1)
+	}
+	defer tenantManagerSet.Shutdown()
+
+	tenantAccessController := tenantaccess.NewController(
+		cfg,
+		logger.With("logger", "tenant-access"),
+		dbInstance,
+		managementK8sClient,
+		nodeAgentClient,
+		tenantManagerSet,
+	)
+	if err := tenantAccessController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up tenant access controller", "error", err)
+		os.Exit(1)
+	}
+
+	tenantSecretReconciler := tenant.NewSecretReconciler(
+		dbInstance,
+		k8sControllerManager.GetClient(),
+		tenantManagerSet,
+	)
+	if err := tenantSecretReconciler.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up tenant manager Secret reconciler", "error", err)
+		os.Exit(1)
+	}
+
+	serverLogger := logger.With("logger", "server")
 
 	logger.Info(
 		"controller-runtime manager configuration",
@@ -481,7 +513,6 @@ func main() {
 		controllerManagerLogger,
 		dbInstance,
 		managementK8sClient,
-		temporalClient,
 		forgeProvider,
 		nodeAgentClient,
 		tenantClientProvider,

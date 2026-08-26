@@ -10,12 +10,10 @@ import (
 	"math/rand"
 	"time"
 
-	"go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/controllers/nodehealth"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge"
@@ -31,19 +29,15 @@ type ControllerManager struct {
 	stopCh chan struct{}
 
 	forgeCAPIMigration       *ForgeCAPIMigrationController
-	nodeHealthController     *nodehealth.Controller
 	tpmPubhashesCmController *TpmPubhashesCmController
 }
 
 // NewControllerManager creates a new ControllerManager.
-//
-// - cweTemporalClient: Used by controllers that start CWE-owned workflows.
 func NewControllerManager(
 	cfg config.Config,
 	logger *slog.Logger,
 	dbInstance db.DB,
 	k8sClient ctrlclient.Client,
-	cweTemporalClient client.Client,
 	forgeProvider *forge.ForgeProvider,
 	nodeAgentClient agent.Client,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
@@ -76,7 +70,6 @@ func NewControllerManager(
 		db:                       dbInstance,
 		stopCh:                   make(chan struct{}),
 		forgeCAPIMigration:       forgeCAPIMigration,
-		nodeHealthController:     nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
 		tpmPubhashesCmController: tpmPubhashesCmController,
 	}, nil
 }
@@ -188,11 +181,6 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 	// These Reconciles are executed sequentially just for development simplicity.
 	// They are designed to be independent and may be run in parallel or separate go routines or processes in the future.
 	// FIXME: We are starting to get a lot of these we should evaluate concurrency options.
-
-	if err := a.nodeHealthController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile node health", "error", err, "siteID", site.ID.String())
-	}
 
 	if a.forgeCAPIMigration != nil {
 		if err := a.forgeCAPIMigration.Reconcile(ctx, site); err != nil {

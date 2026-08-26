@@ -1,43 +1,64 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package nodehealth
+package noderemediation
 
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	corev1 "k8s.io/api/core/v1"
 
+	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/temporal/workflows"
 )
 
-func (c *Controller) startNodeRemediationWorkflowsIfNecessary(ctx context.Context, node db.Node, kubeNode *corev1.Node) error {
+type workflowStarter interface {
+	ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error)
+}
+
+type nodeRemediator struct {
+	cfg               config.Config
+	logger            *slog.Logger
+	cweTemporalClient workflowStarter
+}
+
+func newNodeRemediator(cfg config.Config, logger *slog.Logger, cweTemporalClient workflowStarter) *nodeRemediator {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &nodeRemediator{
+		cfg:               cfg,
+		logger:            logger,
+		cweTemporalClient: cweTemporalClient,
+	}
+}
+
+func (r *nodeRemediator) startWorkflowsIfNecessary(ctx context.Context, node db.Node, kubeNode *corev1.Node) error {
 	labels := kubeNode.GetLabels()
 
-	// Prefer recycle over reboot if both labels are present
 	if reason, terminateLabelPresent := labels[constants.LabelKeyNodeLabelTerminate]; terminateLabelPresent {
-		return c.startTeardownNodeWorkflow(ctx, node, kubeNode, reason)
+		return r.startTeardownNodeWorkflow(ctx, node, kubeNode, reason)
 	}
-
 	if reason, rebootLabelPresent := labels[constants.LabelKeyNodeLabelReboot]; rebootLabelPresent {
-		return c.startNodeRebootWorkflow(ctx, node, kubeNode, reason)
+		return r.startNodeRebootWorkflow(ctx, node, kubeNode, reason)
 	}
 
-	c.logger.Debug("No node remediation workflows to start for node", "nodeID", node.ID.String(), "nodeName", node.Name, "nvidiaLabels", nvidiaLabels(labels))
+	r.logger.Debug("No node remediation workflows to start for node", "nodeID", node.ID.String(), "nodeName", node.Name, "nvidiaLabels", nvidiaLabels(labels))
 	return nil
 }
 
-func (c *Controller) startTeardownNodeWorkflow(ctx context.Context, node db.Node, kubeNode *corev1.Node, reason string) error {
+func (r *nodeRemediator) startTeardownNodeWorkflow(ctx context.Context, node db.Node, kubeNode *corev1.Node, reason string) error {
 	workflowID := constants.TeardownNodeWorkflowPrefix + node.ID.String()
 	options := client.StartWorkflowOptions{
 		ID:                       workflowID,
-		TaskQueue:                c.cfg.TemporalTaskQueue,
+		TaskQueue:                r.cfg.TemporalTaskQueue,
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
@@ -50,7 +71,7 @@ func (c *Controller) startTeardownNodeWorkflow(ctx context.Context, node db.Node
 			return fmt.Errorf("failed to parse machine health issue annotation: %w", err)
 		}
 		if machineHealthIssue != nil {
-			c.logger.Info("Machine health issue reported", "annotation", annotation, "machineHealthIssue", machineHealthIssue)
+			r.logger.Info("Machine health issue reported", "annotation", annotation, "machineHealthIssue", machineHealthIssue)
 		}
 	}
 
@@ -61,12 +82,12 @@ func (c *Controller) startTeardownNodeWorkflow(ctx context.Context, node db.Node
 		MachineHealthIssue:    machineHealthIssue,
 	}
 
-	run, err := c.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.TeardownNode, input)
+	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.TeardownNode, input)
 	if err != nil {
 		return fmt.Errorf("failed to execute teardown node workflow for node %s: %w", node.ID, err)
 	}
 
-	c.logger.Info("Started (or already running) teardown node workflow",
+	r.logger.Info("Started (or already running) teardown node workflow",
 		"workflowID", run.GetID(),
 		"runID", run.GetRunID(),
 		"nodeID", node.ID.String(),
@@ -75,11 +96,11 @@ func (c *Controller) startTeardownNodeWorkflow(ctx context.Context, node db.Node
 	return nil
 }
 
-func (c *Controller) startNodeRebootWorkflow(ctx context.Context, node db.Node, kubeNode *corev1.Node, reason string) error {
+func (r *nodeRemediator) startNodeRebootWorkflow(ctx context.Context, node db.Node, kubeNode *corev1.Node, reason string) error {
 	workflowID := constants.RebootNodeWorkflowPrefix + node.ID.String()
 	options := client.StartWorkflowOptions{
 		ID:                       workflowID,
-		TaskQueue:                c.cfg.TemporalTaskQueue,
+		TaskQueue:                r.cfg.TemporalTaskQueue,
 		WorkflowIDConflictPolicy: enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING,
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
 	}
@@ -87,18 +108,18 @@ func (c *Controller) startNodeRebootWorkflow(ctx context.Context, node db.Node, 
 	input := workflows.RebootNodeInput{
 		NodeID:           node.ID,
 		Reason:           reason,
-		InitialTimeout:   c.cfg.NodeRebootInitialTimeout,
-		TimeoutIncrement: c.cfg.NodeRebootTimeoutIncrement,
-		MaxTimeout:       c.cfg.NodeRebootMaxTimeout,
-		PollingInterval:  c.cfg.NodeRebootPollingInterval,
+		InitialTimeout:   r.cfg.NodeRebootInitialTimeout,
+		TimeoutIncrement: r.cfg.NodeRebootTimeoutIncrement,
+		MaxTimeout:       r.cfg.NodeRebootMaxTimeout,
+		PollingInterval:  r.cfg.NodeRebootPollingInterval,
 	}
 
-	run, err := c.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.RebootNode, input)
+	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.RebootNode, input)
 	if err != nil {
 		return fmt.Errorf("failed to execute reboot node workflow for node %s: %w", node.ID, err)
 	}
 
-	c.logger.Info("Started (or already running) reboot node workflow",
+	r.logger.Info("Started (or already running) reboot node workflow",
 		"workflowID", run.GetID(),
 		"runID", run.GetRunID(),
 		"nodeID", node.ID.String(),
