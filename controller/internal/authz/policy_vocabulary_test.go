@@ -14,16 +14,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A policy naming an action that does not exist parses cleanly and then never
-// matches — a rule that looks enforced and is not. cedar-agent catches this when
-// a schema is loaded, and says "did you mean"; cedar-go's schema validator is
-// still under x/exp, so it is not used here.
+// Entity-instance checks, which schema validation does not do.
 //
-// This closes the same gap without the experimental dependency, and closes it
-// for both engines: every action and role a policy names must exist in the
-// generated action table or in the entity files beside it. It is a narrower
-// check than a schema — it does not type attributes — but it covers the class of
-// mistake that is actually silent.
+// policy_validation_test.go type-checks the bundle against schema.json: it
+// catches an action, an entity type, an attribute or a context key that the
+// schema does not declare. What it cannot catch is an entity *instance* that
+// does not exist, because Cedar validation is type-based — NKE::Role::"raeder"
+// is a perfectly well-typed reference to a role nobody declared, and a policy
+// naming it validates clean and then matches nothing. Verified: the validator
+// passes it.
+//
+// So these two layers are complementary and neither subsumes the other:
+//
+//	the validator   types — is this attribute declared, of the right type?
+//	these tests     instances — does this role exist, does anyone hold it?
+//
+// The action check overlaps the validator deliberately, because it also asserts
+// the generated actions.json agrees with the generated operations table; a stale
+// entity file would otherwise make a real action look absent at runtime while
+// the schema still declared it.
 
 var (
 	actionRef = regexp.MustCompile(`NKE::Action::"([^"]+)"`)
