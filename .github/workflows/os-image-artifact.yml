@@ -55,7 +55,11 @@ jobs:
     runs-on: linux-amd64-cpu16
     # Sized for the emulated path. A KVM bake is well under 30 minutes; TCG
     # boots the guest one interpreted instruction at a time and needs the room.
-    timeout-minutes: 240
+    # Bumped from 240: this job now also builds and validates the FDE and
+    # non-FDE variants (installer-based, so each bake is on its own slower
+    # than the base cloud-image build), plus demo-fde.sh's three sequential
+    # boots — each with its own up-to-1800s BOOT_TIMEOUT under TCG.
+    timeout-minutes: 480
     permissions:
       contents: write
       packages: write
@@ -114,13 +118,14 @@ jobs:
           make test
           make build
 
-      - name: Install QEMU and cloud-localds
+      - name: Install QEMU, cloud-localds, swtpm, and OVMF
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils genisoimage unzip
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf
           qemu-system-x86_64 --version | head -1
           qemu-img --version | head -1
+          swtpm --version
 
       # Not a gate. These runners are containers with no /dev/kvm, and neither
       # do GitHub-hosted standard runners (Azure VMs without nested
@@ -176,6 +181,36 @@ jobs:
 
       - name: Boot-smoke the qcow2
         run: make -C os-image boot-smoke
+
+      # FDE and non-FDE are opt-in installer-based variants (see
+      # os-image/nke-node-fde.pkr.hcl, nke-node-non-fde.pkr.hcl) — built and
+      # validated here so a regression in either blocks publish of the base
+      # image too, same as boot-smoke above. Neither is published: they have
+      # no stated consumer yet, so this is build+validate only, discarded at
+      # the end of the job like every other Packer output.
+      - name: Build the FDE node image
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make -C os-image/packer os-image-fde NKE_AGENT_VERSION="${NKE_AGENT_VERSION}"
+
+      # Full acceptance run: LUKS2+TPM-sealed, wrong-TPM-fails,
+      # reboot-auto-unlocks. No manual/scripted console interaction needed —
+      # the image auto-unlocks its own first boot via a build-time luks.key=
+      # GRUB parameter (see os-image/docs/full-disk-encryption.md).
+      - name: Validate FDE TPM unlock (demo-fde.sh)
+        working-directory: os-image
+        run: ./demo-fde.sh
+
+      - name: Build the non-FDE node image
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make -C os-image/packer os-image-non-fde NKE_AGENT_VERSION="${NKE_AGENT_VERSION}"
+
+      - name: Boot-smoke the non-FDE qcow2
+        run: |
+          make -C os-image boot-smoke \
+            QCOW="${GITHUB_WORKSPACE}/os-image/packer/output-non-fde/nke-node-non-fde" \
+            OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
 
       - name: Compress the qcow2 for publish
         id: disk
