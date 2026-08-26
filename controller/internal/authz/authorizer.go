@@ -108,8 +108,13 @@ type Query struct {
 	ResourceType string
 	ResourceID   string
 
-	// Method is the HTTP verb, for policy that wants to speak in terms of reads
-	// and writes without naming every operation.
+	// Method is the HTTP method of the route that matched, for policy that wants
+	// to speak in terms of reads and writes without naming every operation.
+	//
+	// The route's, not the request's. They differ for a HEAD, which
+	// http.ServeMux serves off a GET pattern: the action, its group and the
+	// schema all describe the GET, so a context saying "HEAD" would be the one
+	// field of the query disagreeing with the rest of it.
 	Method string
 }
 

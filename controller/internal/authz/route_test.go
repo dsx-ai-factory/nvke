@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -19,7 +21,7 @@ import (
 func apiMux(t *testing.T) *http.ServeMux {
 	t.Helper()
 	mux := http.NewServeMux()
-	api.HandlerWithOptions(nil, api.StdHTTPServerOptions{BaseRouter: mux, BaseURL: "/api"})
+	api.HandlerWithOptions(nil, api.StdHTTPServerOptions{BaseRouter: mux, BaseURL: api.BasePath})
 	return mux
 }
 
@@ -123,24 +125,174 @@ func TestResolveRefusesARouteMissingFromTheTable(t *testing.T) {
 	require.ErrorIs(t, err, ErrUnknownOperation)
 }
 
-func TestPathValuePairsSegments(t *testing.T) {
+func TestMatchedSegmentPairsSegments(t *testing.T) {
 	tests := []struct {
-		name    string
-		pattern string
-		path    string
-		param   string
-		want    string
+		name     string
+		template string
+		path     string
+		param    string
+		want     string
+		found    bool
 	}{
-		{"a trailing wildcard", "GET /api/clusters/{clusterID}", "/api/clusters/abc", "clusterID", "abc"},
-		{"a wildcard mid-path", "GET /api/nodes/{nodeID}/history", "/api/nodes/n1/history", "nodeID", "n1"},
-		{"a parameter the pattern does not carry", "GET /api/clusters/{clusterID}", "/api/clusters/abc", "siteID", ""},
-		{"more path than pattern", "GET /api/clusters/{clusterID}", "/api/clusters/abc/extra", "clusterID", ""},
-		{"less path than pattern", "GET /api/nodes/{nodeID}/history", "/api/nodes/n1", "nodeID", ""},
-		{"a pattern with no method", "/api/clusters/{clusterID}", "/api/clusters/abc", "clusterID", ""},
+		{"a trailing wildcard", "/api/clusters/{clusterID}", "/api/clusters/abc", "clusterID", "abc", true},
+		{"a wildcard mid-path", "/api/nodes/{nodeID}/history", "/api/nodes/n1/history", "nodeID", "n1", true},
+		{"a segment kept whole by its escaping", "/api/clusters/{clusterID}", "/api/clusters/a%2Fb", "clusterID", "a%2Fb", true},
+		{"a parameter the template does not carry", "/api/clusters/{clusterID}", "/api/clusters/abc", "siteID", "", false},
+		{"more path than template", "/api/clusters/{clusterID}", "/api/clusters/abc/extra", "clusterID", "", false},
+		{"less path than template", "/api/nodes/{nodeID}/history", "/api/nodes/n1", "nodeID", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, pathValue(tt.pattern, tt.path, tt.param))
+			got, ok := matchedSegment(tt.template, tt.path, tt.param)
+			assert.Equal(t, tt.found, ok)
+			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+// The claim this middleware's position rests on, stated against the thing that
+// actually decides it: the value the generated wrapper binds and hands the
+// handler. Not r.PathValue — that is one decode short of the handler's argument,
+// and the gap between them is where a request names two objects.
+func TestTheQueryNamesTheObjectTheHandlerActsOn(t *testing.T) {
+	const canonical = "11111111-1111-1111-1111-111111111111"
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"the canonical spelling", "/api/clusters/" + canonical},
+		{"brace-wrapped", "/api/clusters/%7B" + canonical + "%7D"},
+		{"bare 32 hex digits", "/api/clusters/11111111111111111111111111111111"},
+		{"urn:uuid-prefixed", "/api/clusters/urn:uuid:" + canonical},
+	}
+
+	resolver, err := NewResolver(apiMux(t))
+	require.NoError(t, err)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, tt.path, http.NoBody)
+
+			q, err := resolver.Resolve(req)
+			require.NoError(t, err)
+
+			// Exactly what api/server.gen.go does before calling the handler.
+			var bound openapi_types.UUID
+			require.NoError(t, runtime.BindStyledParameterWithOptions(
+				"simple", "clusterID", pathValueFor(t, req, "clusterID"), &bound,
+				runtime.BindStyledParameterOptions{
+					ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true,
+				}))
+
+			assert.Equal(t, canonical, bound.String(), "the handler did not act on the object under test")
+			assert.Equal(t, bound.String(), q.ResourceID,
+				"the policy names %q and the handler acts on %q, so a forbid naming one misses the other",
+				q.ResourceID, bound.String())
+		})
+	}
+}
+
+// A caller that escapes the escaping makes the two decodes disagree: the mux
+// hands the wrapper one identifier and the wrapper parses another. Refused,
+// because choosing between them is choosing which object the audit record lies
+// about.
+func TestResolveRefusesAPathThatNamesTwoObjects(t *testing.T) {
+	// "%2531" is "%31" once decoded and "1" twice: the mux's value and the
+	// wrapper's value differ by exactly the leading character.
+	const doubled = "/api/clusters/%25311111111-1111-1111-1111-111111111111"
+
+	resolver, err := NewResolver(apiMux(t))
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodDelete, doubled, http.NoBody)
+
+	// The premise: this is a request the router serves, and the handler acts on
+	// a real cluster. If that ever stops being true this test is asserting
+	// nothing, so it is checked rather than assumed.
+	var bound openapi_types.UUID
+	require.NoError(t, runtime.BindStyledParameterWithOptions(
+		"simple", "clusterID", pathValueFor(t, req, "clusterID"), &bound,
+		runtime.BindStyledParameterOptions{
+			ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true,
+		}))
+	require.Equal(t, "11111111-1111-1111-1111-111111111111", bound.String())
+
+	_, err = resolver.Resolve(req)
+	require.ErrorIs(t, err, ErrAmbiguousPath)
+}
+
+// An identifier that is not the format the route declares cannot name an
+// object, so there is no question to ask about it.
+func TestResolveRefusesAnIdentifierThatIsNotOne(t *testing.T) {
+	resolver, err := NewResolver(apiMux(t))
+	require.NoError(t, err)
+
+	for _, path := range []string{
+		"/api/clusters/not-a-uuid",
+		// An encoded slash is one segment to the mux, so the request routes —
+		// it just cannot name a cluster.
+		"/api/clusters/11111111-1111-1111-1111-111111111111%2Fextra",
+	} {
+		t.Run(path, func(t *testing.T) {
+			_, err := resolver.Resolve(httptest.NewRequestWithContext(t.Context(), http.MethodDelete, path, http.NoBody))
+			require.ErrorIs(t, err, ErrInvalidQuery)
+		})
+	}
+}
+
+// http.ServeMux reports the pattern a dirty path would have matched and then
+// answers 301 without running a handler. Authorizing that records an allow for
+// an operation nobody performed.
+func TestResolveRefusesWhatTheMuxWillOnlyRedirect(t *testing.T) {
+	mux := apiMux(t)
+	resolver, err := NewResolver(mux)
+	require.NoError(t, err)
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api//clusters", http.NoBody)
+
+	// The premise, again measured rather than assumed: the mux does report a
+	// pattern here, and does not serve the request.
+	_, pattern := mux.Handler(req)
+	require.Equal(t, http.MethodGet+" "+api.BasePath+"/clusters", pattern)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	require.GreaterOrEqual(t, rec.Code, http.StatusMultipleChoices, "the mux served this rather than redirecting it")
+	require.Less(t, rec.Code, http.StatusBadRequest)
+	require.Equal(t, api.BasePath+"/clusters", rec.Header().Get("Location"))
+
+	_, err = resolver.Resolve(req)
+	require.ErrorIs(t, err, ErrNoRoute)
+}
+
+// http.ServeMux serves HEAD off a GET pattern, so the action is the GET
+// operation's. The query says so rather than carrying a method that contradicts
+// its own action.
+func TestHeadCarriesTheMethodOfTheRouteItIsServedBy(t *testing.T) {
+	resolver, err := NewResolver(apiMux(t))
+	require.NoError(t, err)
+
+	q, err := resolver.Resolve(httptest.NewRequestWithContext(t.Context(), http.MethodHead, "/api/clusters", http.NoBody))
+	require.NoError(t, err)
+
+	assert.Equal(t, "listClusters", q.Action)
+	assert.Equal(t, http.MethodGet, q.Method,
+		"the action is the GET operation's, so the method in the same query must be too")
+}
+
+// pathValueFor gets the value the mux would give the handler, by letting the mux
+// dispatch. r.PathValue is empty until then, which is the whole reason Resolve
+// has to recover it another way.
+func pathValueFor(t *testing.T, r *http.Request, param string) string {
+	t.Helper()
+
+	var value string
+	mux := http.NewServeMux()
+	_, pattern := apiMux(t).Handler(r)
+	require.NotEmptyf(t, pattern, "%s does not route", r.URL)
+	mux.HandleFunc(pattern, func(_ http.ResponseWriter, served *http.Request) {
+		value = served.PathValue(param)
+	})
+	mux.ServeHTTP(httptest.NewRecorder(), r)
+	return value
 }

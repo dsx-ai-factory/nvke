@@ -102,7 +102,7 @@ func TestAllowReachesTheHandler(t *testing.T) {
 	handler, reached, counts := harness(t, authorizer, ModeEnforcing)
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/abc"))
+	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/"+someClusterID))
 
 	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.True(t, *reached)
@@ -110,7 +110,7 @@ func TestAllowReachesTheHandler(t *testing.T) {
 
 	q := authorizer.asked[0]
 	assert.Equal(t, "getCluster", q.Action)
-	assert.Equal(t, "abc", q.ResourceID)
+	assert.Equal(t, someClusterID, q.ResourceID)
 	assert.Equal(t, "NKE::Cluster", q.ResourceType)
 	assert.Equal(t, "system:serviceaccount:nke-system:cli", q.Principal)
 	assert.Equal(t, "kube-apiserver", q.Issuer, "policy names the issuer entry, never the iss claim")
@@ -123,7 +123,7 @@ func TestDenyAnswers403AndStopsTheRequest(t *testing.T) {
 	handler, reached, counts := harness(t, &fakeAuthorizer{allow: false}, ModeEnforcing)
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/abc"))
+	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/"+someClusterID))
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.False(t, *reached, "a refused request must not reach the handler")
@@ -140,7 +140,7 @@ func TestDenialBodyLeaksNothing(t *testing.T) {
 	handler, _, _ := harness(t, &fakeAuthorizer{allow: false}, ModeEnforcing)
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/abc"))
+	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/"+someClusterID))
 
 	var body map[string]any
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
@@ -157,7 +157,7 @@ func TestEngineErrorFailsClosed(t *testing.T) {
 	handler, reached, counts := harness(t, &fakeAuthorizer{err: errors.New("connection refused")}, ModeEnforcing)
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/abc"))
+	handler.ServeHTTP(rec, authenticated(t, "/api/clusters/"+someClusterID))
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.False(t, *reached)
@@ -187,7 +187,7 @@ func TestMissingPrincipalIsRefused(t *testing.T) {
 	handler, reached, counts := harness(t, authorizer, ModeEnforcing)
 
 	rec := httptest.NewRecorder()
-	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/clusters/abc", http.NoBody))
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/clusters/"+someClusterID, http.NoBody))
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
 	assert.False(t, *reached)
@@ -223,8 +223,8 @@ func TestPermissiveNeverRefuses(t *testing.T) {
 		path       string
 		wantReason DenyReason
 	}{
-		{"a denial", &fakeAuthorizer{allow: false}, "/api/clusters/abc", ReasonNoPolicyMatch},
-		{"an engine error", &fakeAuthorizer{err: errors.New("boom")}, "/api/clusters/abc", ReasonEngineError},
+		{"a denial", &fakeAuthorizer{allow: false}, "/api/clusters/" + someClusterID, ReasonNoPolicyMatch},
+		{"an engine error", &fakeAuthorizer{err: errors.New("boom")}, "/api/clusters/" + someClusterID, ReasonEngineError},
 		{"an unrouted request", &fakeAuthorizer{allow: true}, "/api/nope", ReasonNoRoute},
 	}
 	for _, tt := range tests {

@@ -52,6 +52,13 @@ const (
 	// table does not know.
 	ReasonUnknownOperation DenyReason = "unknown_operation"
 
+	// ReasonAmbiguousPath is a path whose escaped and decoded views name
+	// different objects, so no single entity describes what the handler would
+	// act on. Its own label rather than folded into invalid_query, because it
+	// is the signature of someone probing for the gap between the two and an
+	// operator should be able to see it without reading logs.
+	ReasonAmbiguousPath DenyReason = "ambiguous_path"
+
 	// ReasonInvalidQuery is a question the engine could not be asked: a field
 	// it cannot express, or one it requires and did not get. The fault is in
 	// the query, not the engine or the policy. See ErrInvalidQuery.
@@ -228,6 +235,10 @@ func reasonForResolve(err error) DenyReason {
 		return ReasonNoRoute
 	case errors.Is(err, ErrUnknownOperation):
 		return ReasonUnknownOperation
+	case errors.Is(err, ErrAmbiguousPath):
+		return ReasonAmbiguousPath
+	case errors.Is(err, ErrInvalidQuery):
+		return ReasonInvalidQuery
 	default:
 		return ReasonNoRoute
 	}
@@ -239,7 +250,7 @@ func messageFor(reason DenyReason) string {
 	switch reason {
 	case ReasonNoRoute, ReasonUnknownOperation:
 		return "Not authorized: no policy covers this request."
-	case ReasonEngineError, ReasonInvalidQuery, ReasonNoPrincipal:
+	case ReasonEngineError, ReasonInvalidQuery, ReasonAmbiguousPath, ReasonNoPrincipal:
 		return "Not authorized: the request could not be evaluated."
 	case ReasonNoPolicyMatch:
 		return "Not authorized: no policy permits this action."
