@@ -22,6 +22,8 @@ package authz
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 )
 
 // The action vocabulary is generated from the same OpenAPI document the router
@@ -124,8 +126,9 @@ type Decision struct {
 // zero-value Decision that happened to be false, so the middleware can tell the
 // two apart and count them separately.
 type Authorizer interface {
-	// Authorize answers one Query. An error that the caller should classify as a
-	// malformed question rather than an engine failure must wrap ErrInvalidQuery.
+	// Authorize answers one Query that has already passed Query.Validate. An
+	// engine may assume its fields are non-empty and renderable, and must not
+	// re-derive what a bad question is — see Validate for why that matters.
 	Authorize(ctx context.Context, q Query) (Decision, error)
 
 	// Ready reports whether the engine holds a usable policy bundle. Called once
@@ -140,11 +143,49 @@ type Authorizer interface {
 	Name() string
 }
 
-// ErrInvalidQuery marks a Query an engine could not ask — one carrying a field
-// it cannot express, or missing one it requires. It is a denial like any other,
-// but a distinct one: it says the fault is in how the request was turned into a
-// question, not in the engine or the policy.
-//
-// Engines wrap it rather than defining their own sentinel, so the middleware
-// classifies the reason without knowing which engine produced it.
+// ErrInvalidQuery marks a Query no engine should be asked — one missing a field
+// it requires, or carrying one that cannot be expressed. It is a denial like any
+// other, but a distinct one: it says the fault is in how the request was turned
+// into a question, not in the engine or the policy.
 var ErrInvalidQuery = errors.New("the authorization query is not valid")
+
+// Validate reports whether this Query is one any engine may be asked. The
+// middleware calls it before dispatching, so an engine never sees a bad one.
+//
+// It lives above both engines because otherwise they disagree about what a bad
+// question is, and the disagreement is observable. The sidecar renders the
+// identifier into Cedar source and must refuse a quote; the in-process engine
+// passes typed values and would treat the same input as data, deny it on the
+// merits, and report a different metric reason for the same request. AZ-4 says
+// nothing outside an engine knows which engine is running, and a reason label
+// that depends on which one is deployed breaks that.
+//
+// So the strict rule applies to every engine: an identifier a caller controls is
+// refused, never escaped and never reinterpreted, whoever will evaluate it.
+func (q Query) Validate() error {
+	for _, field := range []struct{ name, value string }{
+		{"principal", q.Principal},
+		{"action", q.Action},
+		{"resource type", q.ResourceType},
+		{"resource id", q.ResourceID},
+	} {
+		if field.value == "" {
+			return fmt.Errorf("%w: %s is empty", ErrInvalidQuery, field.name)
+		}
+		if i := strings.IndexFunc(field.value, unsafeInEntityID); i >= 0 {
+			return fmt.Errorf("%w: %s holds a character that cannot appear in an entity literal, at byte %d",
+				ErrInvalidQuery, field.name, i)
+		}
+	}
+	return nil
+}
+
+// unsafeInEntityID rejects what would close or escape a Cedar entity literal.
+//
+// Subjects arrive from verified tokens and object identifiers from URL path
+// segments the mux has already percent-decoded, so a caller does control these
+// bytes. Escaping would also work; refusing is checkable by reading it, and no
+// legitimate identifier in this API contains any of these.
+func unsafeInEntityID(r rune) bool {
+	return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
+}

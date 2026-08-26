@@ -139,6 +139,14 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 		query.Principal = principal.Subject
 		query.Issuer = principal.IssuerName
 
+		// Validated here rather than inside an engine, so every engine is asked
+		// only questions it can answer and a bad one is reported the same way
+		// whichever engine is deployed.
+		if err := query.Validate(); err != nil {
+			m.deny(w, r, next, ReasonInvalidQuery, query.Action, err)
+			return
+		}
+
 		decision, err := m.authorizer.Authorize(r.Context(), query)
 		if err != nil {
 			// ErrInvalidQuery is the one error class the middleware

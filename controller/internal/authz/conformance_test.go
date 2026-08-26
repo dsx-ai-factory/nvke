@@ -193,22 +193,33 @@ func TestLocalRefusesADuplicateEntity(t *testing.T) {
 	require.Error(t, err, "a redeclared entity would silently change who holds what")
 }
 
-// Nothing is rendered as text, so an identifier that CedarAgent has to refuse is
-// simply data here. It matches no entity and is denied on the merits.
-func TestLocalTreatsAHostileIdentifierAsData(t *testing.T) {
+// A hostile identifier is refused, not evaluated — and refused identically
+// whichever engine is deployed.
+//
+// The in-process engine could treat a quote as data and deny it on the merits,
+// and used to. That was a divergence: the sidecar refuses it as a bad query, so
+// the same request produced invalid_query on one deployment and no_policy_match
+// on the other. Query.Validate now decides for both, above the interface.
+func TestAHostileIdentifierIsRefusedNotEvaluated(t *testing.T) {
 	local, err := NewLocal(bundleDir(t))
 	require.NoError(t, err)
 
-	decision, err := local.Authorize(context.Background(), Query{
+	q := Query{
 		Principal:    `evil" || true || "`,
 		Issuer:       "kube-apiserver",
 		Action:       "getCluster",
 		ResourceType: "NKE::Cluster",
 		ResourceID:   someClusterID,
 		Method:       http.MethodGet,
-	})
-	require.NoError(t, err, "a quote in a subject is data, not a parse failure")
-	assert.False(t, decision.Allow, "an unknown subject holds no role")
+	}
+
+	require.ErrorIs(t, q.Validate(), ErrInvalidQuery,
+		"the middleware must refuse this before any engine sees it")
+
+	decision, err := local.Authorize(context.Background(), q)
+	require.ErrorIs(t, err, ErrInvalidQuery,
+		"an engine called directly must refuse it too, not evaluate it")
+	assert.False(t, decision.Allow)
 }
 
 func TestLocalRefusesAnIncompleteQuery(t *testing.T) {

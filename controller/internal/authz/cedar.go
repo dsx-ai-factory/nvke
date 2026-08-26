@@ -109,25 +109,18 @@ func (c *CedarAgent) Name() string { return "cedar-agent" }
 var (
 	_ Authorizer = (*CedarAgent)(nil)
 
-	// errUnsafeEntityID marks an identifier that cannot be put in a Cedar entity
-	// literal. It wraps ErrInvalidQuery so the middleware classifies it without
-	// knowing this engine exists.
+	// errUnsafeEntityID is the belt to Query.Validate's braces. The middleware
+	// validates before dispatching, so reaching this means an engine was called
+	// directly — in a test, or by a future caller — and it must still not render
+	// a literal it cannot render.
 	errUnsafeEntityID = fmt.Errorf("%w: identifier is not safe in an entity literal", ErrInvalidQuery)
 )
 
 // entityUID renders a Cedar entity literal, `Type::"id"`.
 //
-// This is the sidecar's problem and nobody else's: the query crosses a process
-// boundary as text, so the identifier has to survive being spliced into Cedar
-// source. The in-process engine passes typed values and has no equivalent.
-//
-// The identifier is refused rather than escaped when it contains a quote, a
-// backslash or a control character. Subjects arrive from verified tokens and
-// object identifiers from URL path segments, which http.ServeMux has already
-// percent-decoded — so a caller does control these bytes, and a quote landing
-// unescaped inside a literal is how a request rewrites the query it is the
-// subject of. Escaping would work; refusing is checkable by reading it, and no
-// legitimate identifier in this API contains any of these.
+// Rendering is the sidecar's problem and nobody else's: the query crosses a
+// process boundary as text. The refusal rule it enforces is not — that lives in
+// Query.Validate so both engines share it. See unsafeInEntityID.
 func entityUID(entityType, id string) (string, error) {
 	if entityType == "" {
 		return "", fmt.Errorf("%w: entity type is empty", ErrInvalidQuery)
@@ -139,10 +132,6 @@ func entityUID(entityType, id string) (string, error) {
 		return "", fmt.Errorf("%w: byte %d", errUnsafeEntityID, i)
 	}
 	return entityType + `::"` + id + `"`, nil
-}
-
-func unsafeInEntityID(r rune) bool {
-	return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
 }
 
 func (c *CedarAgent) Authorize(ctx context.Context, q Query) (Decision, error) {
@@ -177,6 +166,14 @@ func (c *CedarAgent) Authorize(ctx context.Context, q Query) (Decision, error) {
 	var answer authorizationAnswer
 	if err := c.post(ctx, authorizePath, call, &answer); err != nil {
 		return Decision{}, err
+	}
+	// An Allow that arrived beside an evaluation error is not an Allow. Cedar
+	// reports both together: a forbid whose guard errored is skipped, and the
+	// permit it existed to override wins. The in-process engine refuses that,
+	// and this must too, or which engine is deployed decides whether the request
+	// is served.
+	if len(answer.Diagnostics.Errors) > 0 && answer.Decision == decisionAllow {
+		return Decision{}, fmt.Errorf("policy evaluation errored: %v", answer.Diagnostics.Errors)
 	}
 	// Anything but the literal "Allow" is a denial, the empty string included:
 	// a response this code does not understand must not become a pass.

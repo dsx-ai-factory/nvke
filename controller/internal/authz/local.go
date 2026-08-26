@@ -28,6 +28,12 @@ import (
 type Local struct {
 	policies *cedar.PolicySet
 	entities types.EntityMap
+
+	// names maps cedar-go's positional policy id to the @id annotation the
+	// source carries. Without it a diagnostic reads "policy0", which changes
+	// meaning the moment a policy is inserted above it — and the sidecar reports
+	// the @id, so the two engines would log different names for the same rule.
+	names map[cedar.PolicyID]string
 }
 
 var _ Authorizer = (*Local)(nil)
@@ -69,7 +75,14 @@ func NewLocal(dir string) (*Local, error) {
 		return nil, errors.New("the bundle declares no entities: no principal would hold a role")
 	}
 
-	return &Local{policies: policies, entities: entities}, nil
+	names := map[cedar.PolicyID]string{}
+	for id, policy := range policies.All() {
+		if annotated, ok := policy.Annotations()["id"]; ok && annotated != "" {
+			names[id] = string(annotated)
+		}
+	}
+
+	return &Local{policies: policies, entities: entities, names: names}, nil
 }
 
 // loadEntities merges one entity file into dst, refusing a duplicate: the later
@@ -99,8 +112,10 @@ func loadEntities(path string, dst types.EntityMap) error {
 // containing a quote is data rather than syntax. The entity-literal refusal
 // CedarAgent needs has no counterpart here.
 func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
-	if q.Principal == "" || q.Action == "" || q.ResourceType == "" || q.ResourceID == "" {
-		return Decision{}, fmt.Errorf("%w: a required field is empty", ErrInvalidQuery)
+	// Belt to Query.Validate's braces: the middleware validates before
+	// dispatching, so reaching this means an engine was called directly.
+	if err := q.Validate(); err != nil {
+		return Decision{}, err
 	}
 
 	resource := types.NewEntityUID(types.EntityType(q.ResourceType), types.String(q.ResourceID))
@@ -131,7 +146,7 @@ func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
 
 	reasons := make([]string, 0, len(diagnostic.Reasons))
 	for _, reason := range diagnostic.Reasons {
-		reasons = append(reasons, string(reason.PolicyID))
+		reasons = append(reasons, l.policyName(reason.PolicyID))
 	}
 	// Cedar reports evaluation errors alongside a decision. A Deny with errors
 	// is still a Deny, but an Allow reached while some policy errored is not
@@ -174,4 +189,13 @@ func hasAny(set *cedar.PolicySet) bool {
 		return true
 	}
 	return false
+}
+
+// policyName resolves cedar-go's positional id to the @id the source carries,
+// falling back to the positional one for a policy that has no annotation.
+func (l *Local) policyName(id cedar.PolicyID) string {
+	if name, ok := l.names[id]; ok {
+		return name
+	}
+	return string(id)
 }
