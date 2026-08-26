@@ -186,6 +186,25 @@ make test-e2e-nico-vms-os-profiles
 make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 ```
 
+### Local CAPD e2e (`make test-e2e-capd-local`)
+
+`make test-e2e-capd-local` (Colima + kind + Tilt + CAPD) validates **both**
+control-plane paths on one cluster by default, mirroring CI: the
+controller-managed leg (`cp-controller`, deployed with
+`PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true`) runs first, then a
+light CWE redeploy flips the flag off for the node-pool leg. The node-pool leg
+only starts once the cp-controller leg's tenant cluster is fully torn down.
+
+To iterate faster, run a single leg instead:
+
+```bash
+# One explicit filter, single-mode (honors PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER):
+LOCAL_NKE_E2E_LABEL_FILTER="capd && cp-controller" make test-e2e-capd-local
+
+# Node-pool path only:
+LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES=false make test-e2e-capd-local
+```
+
 ### OS profile provisioning matrix
 
 The `nico-vms && os-profiles` matrix gives each supported active OS profile an
