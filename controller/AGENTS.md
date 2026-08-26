@@ -145,6 +145,8 @@ Key configuration (see `internal/config/config.go` for full list):
 | `FWE_API_KEY` | (required) | NGC API key for Forge API |
 | `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles (fleet content supplied at runtime from nke-site-deploy; see NKX-13910) |
 | `SPIFFE_ENDPOINT_SOCKET` | (optional) | SPIRE agent socket path for SPIFFE identity (e.g., `unix:///tmp/spire-agent/agent.sock`) |
+| `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what a host-local `go run` gets. Set but unreadable is a startup failure, never "disabled". |
+| `PERMISSIVE_MODE` | `false` | Only read when `AUTH_CONFIG_PATH` is set. `true` evaluates, logs and counts every request, then serves it anyway — nothing is rejected. |
 
 ## Local Development
 
@@ -160,6 +162,41 @@ Mac while Tilt/nico-vms runs on a Colossus (or other x86_64 Linux) host, see
  TEMPORAL_HOST_PORT=localhost:7233 FWE_API_KEY=<NGC_API_KEY> go run ./cmd/worker/main.go
  ```
 4. Access Swagger UI at http://localhost:8080/api/docs.
+
+### API Authentication
+
+The two local paths differ, and that is the usual source of confusion:
+
+| Path | Authentication |
+|------|----------------|
+| `make run` / `go run ./cmd/worker/main.go` | **off** — `AUTH_CONFIG_PATH` is unset, every request is served |
+| `tilt up` | **enforcing** — `/api/*` needs a bearer token |
+
+So a bare `curl` that works host-local returns 401 under Tilt. Get a token:
+
+```bash
+TOKEN="$(hack/nke-token.sh)"
+curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
+```
+
+`hack/nke-token.sh` prints nothing when authentication is off and exits 0, so one
+form works on both paths — the `${TOKEN:+...}` expansion drops the header
+entirely rather than sending an empty one:
+
+```bash
+TOKEN="$(hack/nke-token.sh)"
+curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} http://localhost:8080/api/clusters
+```
+
+`NKE_AUTH_ENABLED=false tilt up` turns it off. `NKE_PERMISSIVE_MODE=true tilt up`
+evaluates and counts without rejecting anything.
+
+`/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/docs` and `/api/docs/`
+never need a token. The Swagger UI therefore loads either way, but calls issued
+from it 401 under Tilt.
+
+Full walkthrough, including what each rejection means:
+[`docs/authenticating-to-the-api.md`](docs/authenticating-to-the-api.md).
 
 ### SPIRE Integration for Local Development
 
