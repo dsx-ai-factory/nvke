@@ -46,11 +46,20 @@ rules:
       - ""
     resources:
       - configmaps
+    verbs:
+      - create
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
     resourceNames:
       - {{ .Values.spiffe.spire.tpmPubhashesConfigMapName }}
     verbs:
       - get
       - patch
+      - update
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

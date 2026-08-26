@@ -1,42 +1,46 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package controllers
+package tpmpubhashes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	spirev1alpha1 "github.com/spiffe/spire-controller-manager/api/v1alpha1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
-
-	"github.com/spiffe/go-spiffe/v2/spiffeid"
-
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TpmPubhashesCmController is responsible for reconciling the tpm-pubhashes configmap.
-type TpmPubhashesCmController struct {
+// Controller is responsible for reconciling the tpm-pubhashes configmap.
+type Controller struct {
 	cfg         config.Config
 	k8sClient   client.Client
 	logger      *slog.Logger
 	trustDomain string
 }
 
-func NewTpmPubhashesCmController(
+// NewController creates a new Controller.
+func NewController(
 	cfg config.Config,
-	k8sClient client.Client,
 	logger *slog.Logger,
+	k8sClient client.Client,
 	trustDomain string,
-) *TpmPubhashesCmController {
-	return &TpmPubhashesCmController{
+) *Controller {
+	return &Controller{
 		cfg:         cfg,
 		k8sClient:   k8sClient,
 		logger:      logger,
@@ -44,17 +48,45 @@ func NewTpmPubhashesCmController(
 	}
 }
 
-// Reconcile the tpm-pubhashes configmap, for each ClusterStaticEntry managed by CWE:
-// - If the ClusterStaticEntry has a parentID that is a tpm spire agent path (/spire/agent/tpm/), add the pubhash to the configmap.
-func (c *TpmPubhashesCmController) Reconcile(ctx context.Context) error {
-	if err := c.reconcileTpmPubhashesCm(ctx); err != nil {
-		return fmt.Errorf("failed to reconcile tpm pubhashes configmap: %w", err)
+// SetupWithManager wires the controller into controller-runtime.
+func (c *Controller) SetupWithManager(mgr manager.Manager) error {
+	isTPMPubhashesConfigMap := func(obj client.Object) bool {
+		return obj.GetNamespace() == c.cfg.SpireServerNamespace && obj.GetName() == c.cfg.SpireTPMPubhashesConfigMapName
 	}
 
-	return nil
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&spirev1alpha1.ClusterStaticEntry{}).
+		// Watch the derived ConfigMap only to repair drift; ClusterStaticEntries remain the source of truth.
+		Watches(
+			&corev1.ConfigMap{},
+			handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
+				if !isTPMPubhashesConfigMap(obj) {
+					return nil
+				}
+				return []reconcile.Request{{NamespacedName: client.ObjectKey{
+					Namespace: obj.GetNamespace(),
+					Name:      obj.GetName(),
+				}}}
+			}),
+			builder.WithPredicates(predicate.NewPredicateFuncs(isTPMPubhashesConfigMap)),
+		).
+		Named("tpm-pubhashes").
+		Complete(c)
 }
 
-func (c *TpmPubhashesCmController) reconcileTpmPubhashesCm(ctx context.Context) error {
+// Reconcile the tpm-pubhashes configmap, for each ClusterStaticEntry managed by CWE:
+// - If the ClusterStaticEntry has a parentID that is a tpm spire agent path (/spire/agent/tpm/), add the pubhash to the configmap.
+func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
+	logger := c.logger.With("requestNamespace", req.Namespace, "requestName", req.Name)
+	if err := c.reconcileTpmPubhashesCm(ctx); err != nil {
+		return reconcile.Result{}, fmt.Errorf("failed to reconcile tpm pubhashes configmap: %w", err)
+	}
+
+	logger.Debug("Reconciled TPM pubhashes configmap")
+	return reconcile.Result{}, nil
+}
+
+func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
 	// List ClusterStaticEntries managed by CWE.
 	clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
 	err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
@@ -64,7 +96,6 @@ func (c *TpmPubhashesCmController) reconcileTpmPubhashesCm(ctx context.Context) 
 		return fmt.Errorf("failed to list cluster static entries: %w", err)
 	}
 
-	var errs []error
 	desiredPubHashes := make(map[string]struct{})
 	for _, clusterStaticEntry := range clusterStaticEntries.Items {
 		// Only process entries for our SPIRE installation.
@@ -107,10 +138,10 @@ func (c *TpmPubhashesCmController) reconcileTpmPubhashesCm(ctx context.Context) 
 		client.FieldOwner(constants.FieldManagerCWE),
 		client.ForceOwnership,
 	); err != nil {
-		errs = append(errs, fmt.Errorf("failed to apply TPM pubhashes configmap: %w", err))
+		return fmt.Errorf("failed to apply TPM pubhashes configmap: %w", err)
 	}
 
-	return errors.Join(errs...)
+	return nil
 }
 
 func extractTPMPubHash(parentID string) string {
