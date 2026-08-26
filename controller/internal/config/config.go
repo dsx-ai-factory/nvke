@@ -262,7 +262,10 @@ type Config struct {
 	// configuration. Unset disables authentication. A set-but-unreadable path is
 	// a startup failure, never "disabled"; see auth.Load.
 	//
-	// Validate() does not check it: unset is the valid default.
+	// Unset is the valid default and Validate() accepts it on its own.
+	// Authentication without authorization is a supported deployment: every
+	// admitted caller may do everything. The one shape Validate() refuses is the
+	// reverse, an AuthzBundlePath with this unset.
 	AuthConfigPath string `env:"AUTH_CONFIG_PATH"`
 
 	// PermissiveMode evaluates and logs authentication and admission decisions
@@ -275,7 +278,9 @@ type Config struct {
 	// set-but-unloadable bundle is a startup failure in both modes, never
 	// "disabled"; see authz.Setup.
 	//
-	// Validate() does not check it: unset is the valid default.
+	// Unset is the valid default, but Validate() refuses it set while
+	// AuthConfigPath is unset: authorization decides what an authenticated caller
+	// may do, so it requires authentication.
 	AuthzBundlePath string `env:"AUTHZ_BUNDLE_PATH"`
 
 	// AuthzPermissive evaluates and logs authorization decisions without
@@ -439,6 +444,22 @@ func (c *Config) Validate() error {
 	}
 	c.SupportedInfraProviders = supportedInfraProviders
 
+	// Authorization decides what an authenticated caller may do, so with
+	// authentication off there is no caller to decide about and every request
+	// resolves the same way: refused while enforcing, and logged as a refusal
+	// while permissive. The worker would still come up, pass /readyz and answer
+	// every API route with a denial, which reads as an outage rather than as a
+	// misconfiguration, so it is refused at startup where the operator can see
+	// the pair. The chart refuses it too, but the binary must not depend on
+	// having been started by that chart. Only this direction is wrong;
+	// authentication with no bundle is a supported deployment.
+	if strings.TrimSpace(c.AuthzBundlePath) != "" && strings.TrimSpace(c.AuthConfigPath) == "" {
+		return fmt.Errorf(
+			"AUTHZ_BUNDLE_PATH is set but AUTH_CONFIG_PATH is not: authorization requires authentication, " +
+				"and with no authenticated principal every request would be denied. Set AUTH_CONFIG_PATH, " +
+				"or unset AUTHZ_BUNDLE_PATH to run without authorization",
+		)
+	}
 	return nil
 }
 
