@@ -45,7 +45,7 @@ CHECK_LDFLAGS := -X 'main.version=$(CHECK_VERSION)'
 
 GO_TEST_FLAGS ?=
 
-.PHONY: build compile test fmt lint license file-license-check clean boot-smoke
+.PHONY: build compile test fmt lint license file-license-check clean boot-smoke run-vm
 
 build: ## Build nke-os-image-check into bin/.
 	$(GO) build -ldflags "$(CHECK_LDFLAGS)" -o $(BINARY) ./cmd/nke-os-image-check
@@ -87,6 +87,9 @@ file-license-check: license ## Verify all files have license headers.
 
 boot-smoke: ## Boot the packer/output qcow2 in QEMU and confirm cloud-init completes.
 	./packer/scripts/boot-smoke.sh
+
+run-vm: ## Boot a qcow2 and leave it running for interactive SSH. QCOW=path required; see the script header for OVMF_CODE/TPM.
+	./packer/scripts/run-vm.sh
 
 clean:
 	rm -rf bin

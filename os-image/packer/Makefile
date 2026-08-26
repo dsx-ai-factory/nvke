@@ -31,6 +31,14 @@ CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)
 # it without editing this file.
 SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),15m,60m)
 
+# FDE/non-FDE only: how long boot_command waits before blind-typing into
+# GRUB. Under tcg, BIOS+GRUB take far longer to reach the menu than under
+# kvm; too short and the autoinstall kernel params silently never get set,
+# and the build just sits at an interactive installer prompt until
+# ssh_timeout expires with no further log output. See the boot_wait
+# variable's comment in nke-node-fde.pkr.hcl.
+BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),5s,60s)
+
 .PHONY: os-image os-image-fde os-image-non-fde image init init-fde init-non-fde ssh-key clean check-deps
 
 ssh-key: $(SSH_DIR)/id_ed25519
@@ -92,6 +100,8 @@ os-image-fde: check-deps ssh-key init-fde
 		-var nke_agent_deb_registry=$(NKE_AGENT_DEB_REGISTRY) \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
+		-var ssh_timeout=$(SSH_TIMEOUT) \
+		-var boot_wait=$(BOOT_WAIT) \
 		-var luks_passphrase=$(LUKS_PASSPHRASE) \
 		$(PKR_FILE_FDE)
 
@@ -111,6 +121,8 @@ os-image-non-fde: check-deps ssh-key init-non-fde
 		-var nke_agent_deb_registry=$(NKE_AGENT_DEB_REGISTRY) \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
+		-var ssh_timeout=$(SSH_TIMEOUT) \
+		-var boot_wait=$(BOOT_WAIT) \
 		$(PKR_FILE_NON_FDE)
 
 clean:

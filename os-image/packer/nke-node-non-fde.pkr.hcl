@@ -76,6 +76,16 @@ variable "ssh_timeout" {
   description = "How long Packer waits for SSH after the autoinstall reboot (installer + LVM setup is much slower than booting a prebuilt cloud image)."
 }
 
+# See the same variable in nke-node-fde.pkr.hcl: under tcg, boot_command's
+# blind VNC keystrokes into GRUB can land before GRUB is ready if boot_wait
+# is too short, silently dropping the autoinstall kernel params rather than
+# failing loudly.
+variable "boot_wait" {
+  type        = string
+  default     = "5s"
+  description = "Delay before boot_command starts typing into GRUB. Must exceed however long BIOS+GRUB take to reach the menu; raise well past 5s under tcg."
+}
+
 locals {
   artifacts = "${path.root}/artifacts"
   ssh_dir   = "${path.root}/.ssh"
@@ -109,9 +119,9 @@ source "qemu" "nke-non-fde" {
     "/meta-data" = "instance-id: nke-packer-non-fde\nlocal-hostname: nke-packer-non-fde\n"
   }
 
-  boot_wait = "5s"
+  boot_wait = var.boot_wait
   boot_command = [
-    "<wait3>",
+    "<wait10>",
     "c<wait>",
     "set root=(cd0)<enter><wait>",
     "linux /casper/vmlinuz autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",

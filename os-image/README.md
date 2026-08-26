@@ -100,6 +100,21 @@ see the comment at the top of that script):
 QCOW=../output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
 ```
 
+## Interactive VM
+
+`make run-vm QCOW=<path>` boots any qcow2 this repo produces and leaves it
+running with SSH forwarded, for poking around manually — unlike
+`boot-smoke`/`demo-fde.sh`, it runs no checks and doesn't tear itself down;
+Ctrl-C stops it. See the comment at the top of
+[`packer/scripts/run-vm.sh`](packer/scripts/run-vm.sh) for the full env var
+list (`OVMF_CODE` for the UEFI variants, `TPM=1` to attach a TPM for the FDE
+image). Examples:
+
+```bash
+make run-vm QCOW=packer/output/nke-node
+make run-vm QCOW=packer/output-fde/nke-node-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1
+```
+
 ## Release
 
 An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs

@@ -89,6 +89,19 @@ variable "ssh_timeout" {
   description = "How long Packer waits for SSH after the autoinstall reboot (installer + LVM/LUKS setup is much slower than booting a prebuilt cloud image)."
 }
 
+# Under tcg, BIOS POST + GRUB load from the installer ISO is itself much
+# slower than under kvm. boot_command blind-types into GRUB's command line
+# a few seconds after boot_wait elapses; if GRUB isn't at its menu yet, those
+# keystrokes land nowhere, the autoinstall kernel params never get set, and
+# the VM sits at an interactive installer prompt until ssh_timeout expires
+# with no further log output — indistinguishable from "just slow" unless you
+# know to look for it. See docs/full-disk-encryption.md.
+variable "boot_wait" {
+  type        = string
+  default     = "5s"
+  description = "Delay before boot_command starts typing into GRUB. Must exceed however long BIOS+GRUB take to reach the menu; raise well past 5s under tcg."
+}
+
 locals {
   artifacts = "${path.root}/artifacts"
   ssh_dir   = "${path.root}/.ssh"
@@ -126,9 +139,9 @@ source "qemu" "nke-fde" {
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }
 
-  boot_wait = "5s"
+  boot_wait = var.boot_wait
   boot_command = [
-    "<wait3>",
+    "<wait10>",
     "c<wait>",
     "set root=(cd0)<enter><wait>",
     "linux /casper/vmlinuz autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
