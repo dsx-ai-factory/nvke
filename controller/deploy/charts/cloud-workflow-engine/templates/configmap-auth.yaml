@@ -1,0 +1,26 @@
+{{- if and .Values.apiAuth.enabled .Values.apiAuth.configMap.create }}
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The AuthenticationConfiguration NKE reads at AUTH_CONFIG_PATH.
+#
+# apiAuth.config is rendered verbatim; only apiVersion and kind are supplied
+# here. The chart validates nothing beyond the presence of the two top-level
+# keys: internal/auth/config.go is a strict loader whose errors name the field
+# at fault, and restating its rules in Helm would leave two schemas to keep in
+# step. An issuer that gains a new key needs no change to this file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ required "apiAuth.configMap.name is required when apiAuth.enabled=true" .Values.apiAuth.configMap.name }}
+  namespace: {{ include "cloud-workflow-engine.namespace" . }}
+  labels:
+    {{- include "cloud-workflow-engine.labels" . | nindent 4 }}
+data:
+  # The key is fixed by the chart, which mounts this ConfigMap at
+  # apiAuth.mountPath and points AUTH_CONFIG_PATH at this file within it.
+  {{ include "cloud-workflow-engine.apiAuth.configFile" . }}: |
+    apiVersion: auth.nke.nvidia.com/v1alpha1
+    kind: AuthenticationConfiguration
+    {{- toYaml .Values.apiAuth.config | nindent 4 }}
+{{- end }}

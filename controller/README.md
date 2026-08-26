@@ -509,13 +509,15 @@ apiAuth:
   enabled: true
   permissive: false
   configMap:
-    name: nke-auth-config       # you create this; the chart only mounts it
+    create: false               # true to render apiAuth.config into it
+    name: nke-auth-config       # mounted either way
   clusterIssuerDiscovery: true  # see RBAC Prerequisite below
 ```
 
 The chart renders those into the two environment variables NKE reads. Set them
-directly if you deploy without the chart. Both are read at startup, so changing
-either, or the configuration file, needs a pod restart.
+directly if you deploy without the chart. Both are read at startup, and so is
+the configuration file, so changing any of them needs a pod restart. The chart
+arranges that restart itself -- see *Authentication Configuration* below.
 
 | State | `AUTH_CONFIG_PATH` | `PERMISSIVE_MODE` | Result |
 | --- | --- | --- | --- |
@@ -536,16 +538,71 @@ starting with authentication disabled.
 
 ### Authentication Configuration
 
-One file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap the chart mounts but
-does not create. Create it first, keyed `auth.yaml`, and point
-`apiAuth.configMap.name` at it:
+One file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap named by
+`apiAuth.configMap.name`. Two ways to get one there, and they are alternatives:
+setting `apiAuth.config` without `create`, or `create` without `apiAuth.config`,
+fails the render rather than quietly ignoring one of them.
+
+**The chart renders it** when `apiAuth.configMap.create` is true. Put the
+document under `apiAuth.config`, carrying `audiences` and `issuers` only --
+`apiVersion` and `kind` are supplied by the chart, which ships in lockstep with
+the build that accepts them:
+
+```yaml
+apiAuth:
+  enabled: true
+  configMap:
+    create: true
+    name: nke-auth-config
+  config:
+    # No apiVersion or kind: the chart supplies both, and repeating them here
+    # renders duplicate keys that auth.Load refuses. The render fails if you do.
+    audiences: ["https://nke.example.internal"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256, ES256]
+        admit:
+          serviceAccounts:
+            - namespace: cloud-workflow-engine
+              name: forge-console
+```
+
+So the document below is the shape of the *file*, and `apiAuth.config` takes it
+from its third line on.
+
+This is the option for a GitOps deployment, where the configuration belongs in
+the same values file as everything else and there is nowhere to put a loose
+manifest.
+
+The chart validates only that `audiences` and `issuers` are present. Everything
+else is checked by `internal/auth/config.go` at startup, which is strict and
+names the field at fault -- but it means a bad value is a `CrashLoopBackOff`
+rather than a failed render. Read the pod logs, not the Helm output.
+
+**Or create it yourself** and leave `create` false, which is the default. The key
+must be `auth.yaml`:
 
 ```bash
-# In the release namespace. The key must be auth.yaml: the chart mounts the
-# ConfigMap at /etc/nke/auth and points AUTH_CONFIG_PATH at auth.yaml within it.
+# In the release namespace. The chart mounts the ConfigMap at /etc/nke/auth and
+# points AUTH_CONFIG_PATH at auth.yaml within it.
 kubectl create configmap nke-auth-config -n "${RELEASE_NAMESPACE}" \
   --from-file=auth.yaml=./auth.yaml
 ```
+
+Either way, editing the configuration only takes effect when the pods restart:
+`auth.Load` runs once at startup and Kubernetes does not restart anything when a
+mounted ConfigMap changes. So whenever `apiAuth.enabled` is true the chart
+annotates the Deployment for [Reloader](https://github.com/stakater/Reloader),
+which watches the ConfigMap and rolls the Deployment when it changes -- from any
+source, `kubectl edit` included. Set
+`deploymentAnnotations."configmap.reloader.stakater.com/reload"` to take that
+over; the chart leaves an annotation you set alone. Without Reloader running,
+restart the pods yourself.
 
 `deploy/k8s/nke-auth-dev.yaml` is a working example; the full schema and every
 validation rule live in `internal/auth/config.go`. The shape:

@@ -1,3 +1,4 @@
+{{- include "cloud-workflow-engine.apiAuth.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +16,9 @@ metadata:
   {{- end }}
   {{- if and .Values.secrets.cnpgDbPasswordsSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
   {{- $reloadSecrets = append $reloadSecrets .Values.secrets.cnpgDbPasswordsSecretName }}
+  {{- end }}
+  {{- if and .Values.apiAuth.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "configmap.reloader.stakater.com/reload")) }}
+  {{- $reloadConfigMaps = append $reloadConfigMaps .Values.apiAuth.configMap.name }}
   {{- end }}
   {{- if or .Values.deploymentAnnotations $reloadSecrets $reloadConfigMaps }}
   annotations:
