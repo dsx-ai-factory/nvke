@@ -48,7 +48,7 @@ suggestion to copy — it is how you can tell nothing is being fetched.
 This changed in #76, which replaced the internal carbide SDK
 (`nvmetal/cloud-api-sdk-go`, reached through the Forge provider) with the public
 `github.com/NVIDIA/ncx-infra-controller-rest`. Before that, `controller/` needed
-`gitlab-master.nvidia.com` and only `agent/` built from public dependencies.
+only `agent/` built from public dependencies.
 
 **One internal dependency remains**, and it does not block you:
 `github.com/NVIDIA/cluster-api-provider-nico` is an internal GitHub repository,

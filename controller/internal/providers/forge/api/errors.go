@@ -29,7 +29,6 @@ var (
 // and/or only return the information we need in the body.message,
 // so we need to parse the response body to determine the error and return a specific error.
 // This allows consumers to make business logic decisions based on the error type.
-// See for at least one example: https://nvbugspro.nvidia.com/bug/4971173
 func asForgeAPIError(res *http.Response, err error) error {
 	body := ""
 	if res != nil && res.Body != nil {

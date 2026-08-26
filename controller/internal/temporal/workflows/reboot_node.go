@@ -32,12 +32,8 @@ type RebootNodeInput struct {
 
 func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 	// Developer note:
-	// [NKE Node Remediation SADD](https://docs.google.com/document/d/1jcPbeJ37yC4iesrf6wx9QyZlkCnYOJJIJO5R192C2fY/edit?tab=t.0#heading=h.dh5skq4lgud6)
-	//
-	// This workflow is depended upon by:
-	// - [NVSentinel](https://gitlab-master.nvidia.com/dgxcloud/mk8s/k8s-addons/nvsentinel)
-	// - [dgxc-janitor](https://gitlab-master.nvidia.com/dgxcloud/mk8s/k8s-addons/dgxc-janitor)
-	// Please discuss any label or workflow changes with [#dgxc-gpu-node-resilience](https://nvidia.enterprise.slack.com/archives/C08E8U45VV4)
+	// This workflow is depended upon by NVSentinel and dgxc-janitor.
+	// Please discuss any label or workflow changes with the #dgxc-gpu-node-resilience channel.
 	//
 	// Forge label-driven reboots try SoftRebootNode in-guest first. That activity uses
 	// the typed node-agent RPC when available and the legacy runbook for older agents.
@@ -228,8 +224,7 @@ func completeReboot(ctx workflow.Context, input RebootNodeInput, status constant
 }
 
 // ISO datetime strings cannot be used as-is for labels, as they contain colons.
-// A label format has already been described in mk8s: Node Management Guidelines:
-// See: https://dgxcloud.gitlab-master-pages.nvidia.com/mk8s/docs/04-Operations/node-management-best-practices/
+// A label format has already been described in mk8s Node Management Guidelines.
 func formatTimeForK8sLabel(t time.Time) string {
 	return t.UTC().Format("2006-01-02T15-04-05Z")
 }

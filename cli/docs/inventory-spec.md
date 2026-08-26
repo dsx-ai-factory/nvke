@@ -72,10 +72,9 @@ discarded.
 
 ## Relationship to the tier-0 bootstrap template
 
-The field names mirror the [tier-0 bootstrap template](https://gitlab-master.nvidia.com/nke/site-workflow-engine/-/blob/main/tier0-bootstrap/tier0-bootstrap.yaml.template)
+The field names mirror the tier-0 bootstrap template
 so operators do not need to relearn them. The subset of settings our main user
-(DSX) configures today is rendered by their Ansible role — see the
-[DSX tier-0 bootstrap template](https://gitlab-master.nvidia.com/ncp/dsx/dsx-ansible-collections/-/blob/main/nvidia/nke/roles/tier0_init/templates/tier0-bootstrap.yaml.j2).
+(DSX) configures today is rendered by their Ansible role using the DSX tier-0 bootstrap template.
 
 The differences from tier-0 are deliberate and make the file open-sourceable:
 

@@ -6,7 +6,6 @@
 #
 # Mellanox DPU PCI Rescan Script
 # Rescans DPU devides that are not fully initialized during boot
-# See https://nvbugspro.nvidia.com/bug/5536160 for more details
 # Version: 1.0
 #
 

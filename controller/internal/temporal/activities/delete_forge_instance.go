@@ -86,7 +86,6 @@ func (a *Activities) deleteForgeInstance(ctx context.Context, input DeleteForgeI
 
 	// Perform the delete operation
 	// If input.MachineHealthIssue is not nil, it signals to Forge to flag the instance for repair.
-	// See https://nvmetal.gitlab-master-pages.nvidia.com/carbide/breakfix_integration/breakfix_integration.html#what-happens-when-you-report-issues
 	err = a.forgeProvider.DeleteInstance(ctx, nicoClusterProvider.OrgID, nicoNodeProvider.ForgeInstanceID, input.MachineHealthIssue)
 	if err != nil {
 		// Bad Request - Should not be retried

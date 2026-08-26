@@ -13,12 +13,10 @@ main [README](../README.md#capi--tilt-development-recommended).
 This guide assumes you already have a remote Linux box you can SSH into
 (typically a Colossus lease) with nico-vms / KVM host setup done — Ubuntu
 24.04 x86_64, `/dev/kvm`, Docker, kind, tilt, kubectl, Go, `ko`, clusterctl,
-and private GitLab Go auth (`GOPRIVATE=gitlab-master.nvidia.com` plus netrc or
-SSH `insteadOf` so detached `tilt` builds work without agent forwarding).
+and private GitLab Go auth (netrc or SSH `insteadOf` so detached `tilt` builds work without agent forwarding).
 
 Getting that host in the first place is covered by the
-[`provision-colossus-local-forge`](https://gitlab-master.nvidia.com/nke/nke-agent-skills/-/tree/main/skills/provision-colossus-local-forge)
-skill in `nke-agent-skills`. Use that (or an equivalent manual setup), then come
+`provision-colossus-local-forge` skill in `nke-agent-skills`. Use that (or an equivalent manual setup), then come
 back here.
 
 On the Mac you need:
@@ -232,4 +230,4 @@ ssh colossus 'tmux capture-pane -p -S -2000' | pbcopy
 - [nico-vms README](../nico-vms/README.md)
 - [nico-vms e2e testing (incl. one-shot remote rsync)](../nico-vms/docs/e2e-testing.md)
 - [CWE E2E tests](../test/e2e/README.md)
-- [`provision-colossus-local-forge` skill](https://gitlab-master.nvidia.com/nke/nke-agent-skills/-/tree/main/skills/provision-colossus-local-forge)
+- `provision-colossus-local-forge` skill in `nke-agent-skills`
