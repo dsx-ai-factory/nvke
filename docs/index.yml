@@ -12,17 +12,17 @@ navigation:
   - section: Site Controller Bootstrap
     contents:
       - page: Overview
-        path: tier0-bootstrap/overview.md
+        path: site-bootstrap/overview.md
       - page: Installation
-        path: tier0-bootstrap/installation.md
+        path: site-bootstrap/installation.md
       - page: Configuration
-        path: tier0-bootstrap/configuration.md
+        path: site-bootstrap/configuration.md
       - page: Deploy Repository
-        path: tier0-bootstrap/deploy-repository.md
+        path: site-bootstrap/deploy-repository.md
       - page: Pre-Provisioned Nodes
-        path: tier0-bootstrap/pre-provisioned-nodes.md
+        path: site-bootstrap/pre-provisioned-nodes.md
       - page: Custom Base OS
-        path: tier0-bootstrap/custom-base-os.md
+        path: site-bootstrap/custom-base-os.md
 
   - section: Tenant Clusters
     contents:

@@ -95,7 +95,7 @@ In NKE, every node and every workload gets a SPIFFE identity backed by TPM attes
 
 GitOps is the practice of using a git repository as the single source of truth for infrastructure state. You declare what you want in git; a controller (ArgoCD in NKE's case) makes the cluster match it.
 
-NKE requires a **deploy repository** — a git repo you own and maintain, structured so ArgoCD can discover and apply its contents. After `nkectl` bootstraps the cluster, you install ArgoCD and point it at the deploy repository to bring up the NKE services stack. ArgoCD then owns ongoing reconciliation. See [Deploy Repository](tier0-bootstrap/deploy-repository.md) for the structure.
+NKE requires a **deploy repository** — a git repo you own and maintain, structured so ArgoCD can discover and apply its contents. After `nkectl` bootstraps the cluster, you install ArgoCD and point it at the deploy repository to bring up the NKE services stack. ArgoCD then owns ongoing reconciliation. See [Deploy Repository](site-bootstrap/deploy-repository.md) for the structure.
 
 ---
 
@@ -110,4 +110,4 @@ NKE handles the following for you — you don't need deep expertise in these to 
 
 ---
 
-Ready to continue? Start with [Architecture](architecture.md) for the component overview, or go straight to [Tier-0 Bootstrap](tier0-bootstrap/overview.md) to stand up a site controller.
+Ready to continue? Start with [Architecture](architecture.md) for the component overview, or go straight to [Site Controller Bootstrap](site-bootstrap/overview.md) to stand up a site controller.

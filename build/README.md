@@ -10,7 +10,7 @@ These scripts are the operator's entry point into the NKD build pipeline. They w
 
 | Script | What it builds |
 |--------|---------------|
-| `cli.sh` | `nke-cli` binary (multi-arch) |
+| `cli.sh` | `nkectl` binary (multi-arch) |
 | `node-agent.sh` | `nke-agent` Debian package and container image |
 | `controller.sh` | Cloud Workflow Engine container image |
 | `node-image.sh` | Node OS image (QCOW2) from an NKD recipe |
@@ -28,4 +28,4 @@ Supported Kubernetes versions and their package collections are listed in `pkg-b
 - [Architecture](../docs/architecture.md)
 - [Node Images](../node-images/README.md)
 - [node-agent](../node-agent/README.md)
-- [Pre-Provisioned Nodes](../docs/tier0-bootstrap/pre-provisioned-nodes.md)
+- [Pre-Provisioned Nodes](../docs/site-bootstrap/pre-provisioned-nodes.md)

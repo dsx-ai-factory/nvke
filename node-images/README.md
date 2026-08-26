@@ -48,4 +48,4 @@ NVIDIA validates recipes against the NKE management plane before publishing. Ope
 ## Related docs
 
 - [Architecture](../docs/architecture.md) — NKD in context
-- [Pre-Provisioned Nodes](../docs/tier0-bootstrap/pre-provisioned-nodes.md) — using node images for bootstrap
+- [Pre-Provisioned Nodes](../docs/site-bootstrap/pre-provisioned-nodes.md) — using node images for bootstrap

@@ -76,5 +76,5 @@ make build
 
 ## Related docs
 
-- [Site Controller Bootstrap](../docs/tier0-bootstrap/overview.md)
+- [Site Controller Bootstrap](../docs/site-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)
