@@ -53,7 +53,7 @@ type Operation struct {
 	IDParam string
 
 	// IDFormat is that parameter's declared OpenAPI format, empty for a
-	// collection operation. The middleware canonicalises the identifier
+	// collection operation. The middleware canonicalizes the identifier
 	// according to it, so that the entity a policy names is the object the
 	// handler acts on rather than one of the several ways of spelling it. A
 	// format the middleware does not know is a denial, not a guess.
@@ -78,6 +78,14 @@ const (
 	// RoleType carries a named grant. Principals are members of roles and roles
 	// nest, which is how one grant covers a set of operations.
 	RoleType = "NKE::Role"
+
+	// The Cedar request variables. The first three name an entity; only the
+	// fourth carries values this engine populates. checkPolicyShape is what the
+	// distinction is for.
+	VariablePrincipal = "principal"
+	VariableAction    = "action"
+	VariableResource  = "resource"
+	VariableContext   = "context"
 
 	// CollectionType is the resource for an operation with no object identifier.
 	CollectionType = "NKE::Collection"

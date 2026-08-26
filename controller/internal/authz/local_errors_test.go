@@ -20,9 +20,9 @@ import (
 // errored is still a Deny. Both were once asserted against another engine only,
 // so deleting either of these guards left the suite green.
 
-// bundleWith writes a throwaway bundle and loads it. Used for policies the
-// shipped bundle deliberately does not contain.
-func bundleWith(t *testing.T, policies, roles string) *Local {
+// bundleWith writes a throwaway bundle holding one reader and loads it. Used for
+// policies the shipped bundle deliberately does not contain.
+func bundleWith(t *testing.T, policies string) *Local {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -34,7 +34,7 @@ func bundleWith(t *testing.T, policies, roles string) *Local {
 	for name, content := range map[string]string{
 		policiesFile: policies,
 		actionsFile:  string(actions),
-		rolesFile:    roles,
+		rolesFile:    oneReader,
 	} {
 		require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600))
 	}
@@ -64,7 +64,7 @@ func TestLocalRefusesAnAllowReachedWhileAPolicyErrored(t *testing.T) {
 	local := bundleWith(t, `
 permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource);
 forbid(principal, action, resource) when { context.nothingSetsThis == "forbidden" };
-`, oneReader)
+`)
 
 	decision, err := local.Authorize(context.Background(), Query{
 		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
@@ -84,7 +84,7 @@ forbid(principal, action, resource) when { context.nothingSetsThis == "forbidden
 func TestLocalKeepsADenyThatErrored(t *testing.T) {
 	local := bundleWith(t, `
 permit(principal in NKE::Role::"nobody", action, resource) when { context.nothingSetsThis == "x" };
-`, oneReader)
+`)
 
 	decision, err := local.Authorize(context.Background(), Query{
 		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
@@ -103,7 +103,7 @@ func TestLocalSendsTheContextRecord(t *testing.T) {
 	local := bundleWith(t, `
 permit(principal, action, resource)
 when { context.issuer == "kube-apiserver" && context.method == "GET" };
-`, oneReader)
+`)
 
 	allowed, err := local.Authorize(context.Background(), Query{
 		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",

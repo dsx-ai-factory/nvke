@@ -45,7 +45,7 @@ func TestReleaseBinaryExcludesExperimentalValidator(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
 
-	cmd := exec.Command(goBin, "list", "-deps", releaseBinaryPkg)
+	cmd := exec.CommandContext(t.Context(), goBin, "list", "-deps", releaseBinaryPkg)
 	cmd.Dir = root
 	out, err := cmd.CombinedOutput()
 	require.NoErrorf(t, err, "go list -deps %s: %s", releaseBinaryPkg, out)

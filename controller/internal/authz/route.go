@@ -209,20 +209,22 @@ func canonicalID(op Operation, value string) (string, error) {
 	default:
 		// The generator refuses to emit a format this does not handle, so
 		// reaching here means the table was written by something else.
-		return "", fmt.Errorf("%w: %s has format %q, which cannot be canonicalised",
+		return "", fmt.Errorf("%w: %s has format %q, which cannot be canonicalized",
 			ErrInvalidQuery, op.IDParam, op.IDFormat)
 	}
 }
 
-// FormatUUID is the OpenAPI format of every path parameter in this API, and the
-// only one canonicalID knows. hack/gen-authz-actions refuses to generate a table
-// naming another one.
-const FormatUUID = "uuid"
+const (
+	// FormatUUID is the OpenAPI format of every path parameter in this API, and
+	// the only one canonicalID knows. hack/gen-authz-actions refuses to generate
+	// a table naming another one.
+	FormatUUID = "uuid"
+)
 
 // splitPattern separates "GET /api/clusters/{clusterID}" into its method and its
 // path template.
-func splitPattern(pattern string) (method, template string, ok bool) {
-	method, template, ok = strings.Cut(pattern, " ")
+func splitPattern(pattern string) (string, string, bool) {
+	method, template, ok := strings.Cut(pattern, " ")
 	if !ok || method == "" || template == "" {
 		return "", "", false
 	}
@@ -262,6 +264,11 @@ func matchedSegment(template, escapedPath, param string) (string, bool) {
 // request or redirects it. Copied rather than approximated: the two have to
 // agree exactly, or this either denies a request the mux would have served or
 // authorizes one it will not.
+//
+// One deliberate divergence. The mux does not clean a CONNECT request's path, so
+// for CONNECT this is stricter than the mux is. It costs nothing: this API
+// registers no CONNECT route, so such a request matches no pattern and is
+// refused either way.
 func cleanPath(p string) string {
 	if p == "" {
 		return "/"

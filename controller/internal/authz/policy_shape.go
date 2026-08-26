@@ -14,16 +14,16 @@ import (
 // deliberately absent: it is the one thing in a request whose attributes this
 // engine populates.
 var entityVariables = map[string]bool{ //nolint:gochecknoglobals // a fixed table
-	"principal": true,
-	"action":    true,
-	"resource":  true,
+	VariablePrincipal: true,
+	VariableAction:    true,
+	VariableResource:  true,
 }
 
 // checkPolicyShape refuses a policy that reads an attribute of an entity.
 //
 // Nothing populates them. The generated schema declares no attribute on any
 // entity type, the entity files carry empty records, and the resource is
-// synthesised per request from the path — this middleware runs before the
+// synthesized per request from the path — this middleware runs before the
 // handler and has not read a database, so it does not know what site a cluster
 // is in. A policy that reads one is therefore not a rule that is sometimes
 // false. It is a rule that is never anything.
@@ -61,12 +61,12 @@ func checkPolicyShape(set *cedar.PolicySet) error {
 			name = string(annotated)
 		}
 		for _, condition := range policy.AST().Conditions {
-			if variable, attribute, found := entityAttributeRead(condition.Body); found {
+			if read, found := entityAttributeRead(condition.Body); found {
 				return fmt.Errorf(
 					"policy %s reads %s.%s, and nothing populates entity attributes: "+
 						"the rule would never apply, and a forbid written this way silently grants "+
 						"what it was written to refuse",
-					name, variable, attribute)
+					name, read.variable, read.attribute)
 			}
 		}
 	}
@@ -79,7 +79,10 @@ func checkPolicyShape(set *cedar.PolicySet) error {
 // produce. Enumerating them here instead would mean a node kind added upstream
 // is one this stops looking inside — and a check that quietly stops firing is
 // the shape of the defect it exists to catch.
-func entityAttributeRead(body ast.IsNode) (variable, attribute string, found bool) {
+func entityAttributeRead(body ast.IsNode) (attributeRead, bool) {
+	var read attributeRead
+	var found bool
+
 	ast.Inspect(ast.NewNode(body), func(node ast.IsNode) bool {
 		if found {
 			return false
@@ -87,28 +90,41 @@ func entityAttributeRead(body ast.IsNode) (variable, attribute string, found boo
 		switch n := node.(type) {
 		// `resource.site` and `resource has site`.
 		case ast.NodeTypeAccess:
-			variable, attribute, found = readOf(n.Arg, string(n.Value))
+			read, found = readOf(n.Arg, string(n.Value))
 		case ast.NodeTypeHas:
-			variable, attribute, found = readOf(n.Arg, string(n.Value))
+			read, found = readOf(n.Arg, string(n.Value))
 		// `resource.getTag(x)` and `resource hasTag x`. Tags are a second
 		// attribute namespace, populated by nothing here for the same reason.
 		case ast.NodeTypeGetTag:
-			variable, attribute, found = readOf(n.Left, "<tag>")
+			read, found = readOf(n.Left, tagAttribute)
 		case ast.NodeTypeHasTag:
-			variable, attribute, found = readOf(n.Left, "<tag>")
+			read, found = readOf(n.Left, tagAttribute)
 		}
 		return !found
 	})
-	return variable, attribute, found
+	return read, found
 }
+
+// attributeRead is what a policy reached for: the variable, and the attribute of
+// it.
+type attributeRead struct {
+	variable  string
+	attribute string
+}
+
+const (
+	// tagAttribute stands in for a tag name, which is an expression rather than
+	// a literal and so has nothing to quote back at the author.
+	tagAttribute = "<tag>"
+)
 
 // readOf reports the entity variable an access is rooted at, if it is one.
 // A nested access such as principal.a.b is caught at its inner node, so only the
-// direct case has to be recognised here.
-func readOf(target ast.IsNode, attribute string) (variable, attr string, found bool) {
+// direct case has to be recognized here.
+func readOf(target ast.IsNode, attribute string) (attributeRead, bool) {
 	name, ok := target.(ast.NodeTypeVariable)
 	if !ok || !entityVariables[string(name.Name)] {
-		return "", "", false
+		return attributeRead{}, false
 	}
-	return string(name.Name), attribute, true
+	return attributeRead{variable: string(name.Name), attribute: attribute}, true
 }

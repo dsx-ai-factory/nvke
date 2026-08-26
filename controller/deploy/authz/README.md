@@ -44,7 +44,7 @@ exist: `NKE::Role::"raeder"` is a well-typed reference to a role nobody declared
 `principal`, `action` and `resource` carry no attributes, and `NewLocal` refuses
 a policy that reads one — in the cluster, not only in CI.
 
-Nothing populates them and nothing can here. The resource is synthesised from the
+Nothing populates them and nothing can here. The resource is synthesized from the
 request path before the handler runs, so this process has not read a database and
 does not know what site a cluster is in. A rule like
 

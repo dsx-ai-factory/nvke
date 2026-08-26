@@ -94,7 +94,7 @@ func TestAPolicyMayReadTheContext(t *testing.T) {
 	local := bundleWith(t, `
 permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource)
 when { context.issuer == "kube-apiserver" && context.method == "GET" };
-`, oneReader)
+`)
 
 	decision, err := local.Authorize(t.Context(), Query{
 		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
