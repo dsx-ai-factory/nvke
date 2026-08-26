@@ -627,12 +627,7 @@
     "entityTypes": {
       "Cluster": {
         "shape": {
-          "attributes": {
-            "site": {
-              "required": false,
-              "type": "String"
-            }
-          },
+          "attributes": {},
           "type": "Record"
         }
       },
@@ -644,34 +639,19 @@
       },
       "Node": {
         "shape": {
-          "attributes": {
-            "site": {
-              "required": false,
-              "type": "String"
-            }
-          },
+          "attributes": {},
           "type": "Record"
         }
       },
       "NodePool": {
         "shape": {
-          "attributes": {
-            "site": {
-              "required": false,
-              "type": "String"
-            }
-          },
+          "attributes": {},
           "type": "Record"
         }
       },
       "NodeSet": {
         "shape": {
-          "attributes": {
-            "site": {
-              "required": false,
-              "type": "String"
-            }
-          },
+          "attributes": {},
           "type": "Record"
         }
       },
@@ -680,15 +660,7 @@
           "Role"
         ],
         "shape": {
-          "attributes": {
-            "sites": {
-              "element": {
-                "type": "String"
-              },
-              "required": false,
-              "type": "Set"
-            }
-          },
+          "attributes": {},
           "type": "Record"
         }
       },

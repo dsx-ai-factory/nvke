@@ -173,22 +173,28 @@ func renderSchema(ops []operation) map[string]any {
 		},
 		"Principal": map[string]any{
 			"memberOfTypes": []string{"Role"},
-			"shape": map[string]any{"type": "Record", "attributes": map[string]any{
-				// Declared but not required: a principal scoped to no site carries
-				// an empty set rather than being absent, so a policy reading it
-				// does not error.
-				"sites": map[string]any{
-					"type": "Set", "element": map[string]any{"type": "String"}, "required": false,
-				},
-			}},
+			"shape":         map[string]any{"type": "Record", "attributes": map[string]any{}},
 		},
 		"Collection": map[string]any{
 			"shape": map[string]any{"type": "Record", "attributes": map[string]any{}},
 		},
 	}
 
-	// Every resource type the routes can produce, each carrying the optional
-	// site attribute an ownership policy would read.
+	// Every resource type the routes can produce, and none of them declares an
+	// attribute.
+	//
+	// That is a decision, not an omission. The resource is synthesised per
+	// request from the path — the middleware runs before the handler and has not
+	// read a database — so every resource entity carries an empty record. An
+	// attribute declared here and populated nowhere is worse than absent: Cedar
+	// skips a policy whose guard errors, so an unguarded `resource.site == "x"`
+	// forbid is dropped and the permit it existed to override wins, and the
+	// `resource has site` form the validator steers authors towards is simply
+	// always false. Both shapes read in review as a restriction. Neither is one.
+	//
+	// Undeclared, the strict validator refuses either shape outright, which is
+	// how an author finds out at build time instead of in production. See
+	// policy_validation_test.go.
 	resourceTypes := map[string]bool{"NKE::Collection": true}
 	for _, op := range ops {
 		if op.ResourceType != "" {
@@ -201,9 +207,7 @@ func renderSchema(ops []operation) map[string]any {
 			continue
 		}
 		entityTypes[short] = map[string]any{
-			"shape": map[string]any{"type": "Record", "attributes": map[string]any{
-				"site": map[string]any{"type": "String", "required": false},
-			}},
+			"shape": map[string]any{"type": "Record", "attributes": map[string]any{}},
 		}
 	}
 

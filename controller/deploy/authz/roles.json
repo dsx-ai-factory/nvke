@@ -17,17 +17,17 @@
 
   {
     "uid": { "type": "NKE::Principal", "id": "system:serviceaccount:nke-system:nke-cli" },
-    "attrs": { "sites": [] },
+    "attrs": {},
     "parents": [{ "type": "NKE::Role", "id": "reader" }]
   },
   {
     "uid": { "type": "NKE::Principal", "id": "spiffe://nvidia.com/ns/nke-system/sa/nke-controller" },
-    "attrs": { "sites": [] },
+    "attrs": {},
     "parents": [{ "type": "NKE::Role", "id": "operator" }]
   },
   {
     "uid": { "type": "NKE::Principal", "id": "spiffe://nvidia.com/ns/nke-system/sa/node-lifecycle" },
-    "attrs": { "sites": [] },
+    "attrs": {},
     "parents": [{ "type": "NKE::Role", "id": "nodeOperator" }]
   }
 ]

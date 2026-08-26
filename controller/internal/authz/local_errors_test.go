@@ -47,22 +47,23 @@ func bundleWith(t *testing.T, policies, roles string) *Local {
 const oneReader = `[
  {"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]},
  {"uid":{"type":"NKE::Principal","id":"system:serviceaccount:nke-system:nke-cli"},
-  "attrs":{"sites":[]},"parents":[{"type":"NKE::Role","id":"reader"}]}
+  "attrs":{},"parents":[{"type":"NKE::Role","id":"reader"}]}
 ]`
 
 // A forbid whose guard errors is skipped, and the permit it existed to override
 // wins — so Cedar answers Allow with the error alongside. Serving that is
 // serving a request the policy meant to block.
 //
-// The guard here reads resource.site without a `has`. Resources are synthesized
-// per request with an empty attribute record, so the attribute is always absent
-// and the guard always errors. That is not a contrived case: it is exactly the
-// ownership idiom the design's open question 1 describes, written without the
-// guard.
+// The guard here reads a context key nothing sets, so the attribute is always
+// absent and the guard always errors. Not the ownership idiom that used to stand
+// here — NewLocal refuses a policy reading an entity attribute now, see
+// checkPolicyShape — but the same evaluation failure, which is what this is
+// about: an engine that answers Allow beside an error must not be believed,
+// whatever produced the error.
 func TestLocalRefusesAnAllowReachedWhileAPolicyErrored(t *testing.T) {
 	local := bundleWith(t, `
 permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource);
-forbid(principal, action, resource) when { resource.site == "forbidden" };
+forbid(principal, action, resource) when { context.nothingSetsThis == "forbidden" };
 `, oneReader)
 
 	decision, err := local.Authorize(context.Background(), Query{
@@ -82,7 +83,7 @@ forbid(principal, action, resource) when { resource.site == "forbidden" };
 // watching a permissive rollout would see a fault that is not there.
 func TestLocalKeepsADenyThatErrored(t *testing.T) {
 	local := bundleWith(t, `
-permit(principal in NKE::Role::"nobody", action, resource) when { resource.site == "x" };
+permit(principal in NKE::Role::"nobody", action, resource) when { context.nothingSetsThis == "x" };
 `, oneReader)
 
 	decision, err := local.Authorize(context.Background(), Query{

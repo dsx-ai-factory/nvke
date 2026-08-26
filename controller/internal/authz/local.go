@@ -64,6 +64,9 @@ func NewLocal(dir string) (*Local, error) {
 		// at request time from a policy nobody wrote.
 		return nil, fmt.Errorf("%s declares no policies", policiesFile)
 	}
+	if err := checkPolicyShape(policies); err != nil {
+		return nil, fmt.Errorf("%s: %w", policiesFile, err)
+	}
 
 	entities := types.EntityMap{}
 	declaredIn := map[types.EntityUID]string{}
