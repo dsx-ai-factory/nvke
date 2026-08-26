@@ -28,8 +28,9 @@ const (
 )
 
 const (
-	someClusterID = "11111111-1111-1111-1111-111111111111"
-	someNodeID    = "22222222-2222-2222-2222-222222222222"
+	someClusterID  = "11111111-1111-1111-1111-111111111111"
+	someNodeID     = "22222222-2222-2222-2222-222222222222"
+	someNodePoolID = "33333333-3333-3333-3333-333333333333"
 )
 
 // bundleCase is one row of the matrix. It is what deploy/authz grants, stated
@@ -61,11 +62,22 @@ func bundleMatrix() []bundleCase {
 		{"operator creates a node pool", subjectOperator, http.MethodPost, "/api/nodePools", http.StatusOK},
 		{"operator reads, via the nested reader role", subjectOperator, http.MethodGet, "/api/clusters", http.StatusOK},
 
-		// deleteNode is a DELETE and therefore in the write group; a forbid is
-		// what holds it to one role.
+		// Node lifecycle is a DELETE or a PATCH and therefore in the write
+		// group; a forbid is what holds it to one role.
 		{"operator cannot delete a node", subjectOperator, http.MethodDelete, "/api/nodes/" + someNodeID, http.StatusForbidden},
 		{"node operator deletes a node", subjectNodeOperator, http.MethodDelete, "/api/nodes/" + someNodeID, http.StatusOK},
 		{"node operator cannot write otherwise", subjectNodeOperator, http.MethodPatch, "/api/clusters/" + someClusterID, http.StatusForbidden},
+
+		// Deleting a pool tears down every node in it, and changing one rolls
+		// them. Both used to be an ordinary operator write.
+		{"operator cannot delete a node pool", subjectOperator, http.MethodDelete, "/api/nodePools/" + someNodePoolID, http.StatusForbidden},
+		{"node operator deletes a node pool", subjectNodeOperator, http.MethodDelete, "/api/nodePools/" + someNodePoolID, http.StatusOK},
+		{"operator cannot update a node pool", subjectOperator, http.MethodPatch, "/api/nodePools/" + someNodePoolID, http.StatusForbidden},
+		{"node operator updates a node pool", subjectNodeOperator, http.MethodPatch, "/api/nodePools/" + someNodePoolID, http.StatusOK},
+
+		// ...and creating one is still an ordinary write, because it is
+		// additive; see writesLeftToTheGroup.
+		{"operator creates a node pool, still", subjectOperator, http.MethodPost, "/api/nodePools", http.StatusOK},
 
 		// A forbid beats every permit, so nobody deletes a cluster.
 		{"operator cannot delete a cluster", subjectOperator, http.MethodDelete, "/api/clusters/" + someClusterID, http.StatusForbidden},

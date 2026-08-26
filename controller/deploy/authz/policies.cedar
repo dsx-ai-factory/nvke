@@ -29,27 +29,45 @@ permit(
   resource
 );
 
-// Node deletion is destructive and irreversible, so it is held to one role.
+// Node lifecycle is destructive and is held to one role.
 //
 // The permit alone does not achieve that. The action groups are generated from
-// the HTTP method, so deleteNode is a DELETE and therefore already in `write` —
-// and the operator rule above would grant it. Carving an operation back out of a
-// coarse group takes a forbid, which in Cedar beats every permit. `unless` is
-// what leaves the one role able to do it.
+// the HTTP method, so every one of these is already in `write` — and the
+// operator rule above would grant it. Carving an operation back out of a coarse
+// group takes a forbid, which in Cedar beats every permit. `unless` is what
+// leaves the one role able to do it.
 //
 // The general rule this is an instance of: a method-derived group is the right
-// default and the wrong answer for anything irreversible. Those get named.
-@id("node-operators-may-delete-nodes")
+// default and the wrong answer for anything destructive. Those get named.
+//
+// deleteNodePool is here for a reason the endpoint's name does not carry:
+// DeleteNodePoolWithTx enqueues TeardownNodePool, which tears down every node in
+// the pool. It read as one object's deletion and was granted to every operator.
+// updateNodePool is the same shape without the word "delete" in it — a profile
+// change rolls the pool's nodes.
+//
+// policy_fences_test.go is what keeps this list honest: a write operation added
+// to the API has to be named here or acknowledged there, by a person, in a
+// sentence.
+@id("node-operators-may-change-node-lifecycle")
 permit(
   principal in NKE::Role::"nodeOperator",
-  action == NKE::Action::"deleteNode",
+  action in [
+    NKE::Action::"deleteNode",
+    NKE::Action::"deleteNodePool",
+    NKE::Action::"updateNodePool"
+  ],
   resource
 );
 
-@id("only-node-operators-delete-nodes")
+@id("only-node-operators-change-node-lifecycle")
 forbid(
   principal,
-  action == NKE::Action::"deleteNode",
+  action in [
+    NKE::Action::"deleteNode",
+    NKE::Action::"deleteNodePool",
+    NKE::Action::"updateNodePool"
+  ],
   resource
 )
 unless { principal in NKE::Role::"nodeOperator" };
