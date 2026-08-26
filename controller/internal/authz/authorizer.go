@@ -76,6 +76,10 @@ const (
 	// ActionType carries the operationId.
 	ActionType = "NKE::Action"
 
+	// RoleType carries a named grant. Principals are members of roles and roles
+	// nest, which is how one grant covers a set of operations.
+	RoleType = "NKE::Role"
+
 	// CollectionType is the resource for an operation with no object identifier.
 	CollectionType = "NKE::Collection"
 

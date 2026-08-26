@@ -72,8 +72,8 @@ func NewLocal(dir string) (*Local, error) {
 			return nil, err
 		}
 	}
-	if len(entities) == 0 {
-		return nil, errors.New("the bundle declares no entities: no principal would hold a role")
+	if err := checkEntityStore(entities); err != nil {
+		return nil, err
 	}
 
 	names := map[cedar.PolicyID]string{}
@@ -185,11 +185,56 @@ func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
 	return Decision{Allow: decision == cedar.Allow, Reasons: reasons}, nil
 }
 
-// Ready reports whether the bundle is loaded. NewLocal already refused an empty
-// one, so this is a cheap invariant check rather than a network round trip.
+// Ready reports whether the bundle is loaded and can answer for this build.
+// NewLocal already refused everything below, so this is an invariant check
+// rather than a network round trip — but it is the same check, from one
+// function, so the gate and the loader cannot come to mean different things.
 func (l *Local) Ready(context.Context) error {
-	if l == nil || l.policies == nil || !hasAny(l.policies) || len(l.entities) == 0 {
+	if l == nil || l.policies == nil || !hasAny(l.policies) {
 		return errors.New("the policy bundle is not loaded")
+	}
+	return checkEntityStore(l.entities)
+}
+
+// checkEntityStore refuses an entity store that loaded and cannot do its job.
+//
+// "Not empty" was the whole of the gate, and it cannot detect either state it
+// was there for. The generated action entities alone satisfy it, so a roles.json
+// edited to [] loads with 28 entities, passes Ready, logs "API authorization is
+// enabled mode=enforcing" and then refuses every request as no_policy_match —
+// reproduced. Nobody holds a role, and nothing says so.
+//
+// The action check is the other half, and it is about a bundle and a binary that
+// were built at different times. The bundle is mounted from a ConfigMap; the
+// operations table is compiled in. An image that adds an endpoint ships a table
+// naming an action the mounted actions.json has no entity for, so that endpoint
+// is refused for everyone while the pod reports itself ready — the mirror of the
+// case above, and the reason the two are checked together here rather than left
+// to whoever notices first.
+func checkEntityStore(entities types.EntityMap) error {
+	var roles, principals int
+	for uid := range entities {
+		switch string(uid.Type) {
+		case RoleType:
+			roles++
+		case PrincipalType:
+			principals++
+		}
+	}
+	if roles == 0 {
+		return fmt.Errorf("%s declares no %s: every request would be refused", rolesFile, RoleType)
+	}
+	if principals == 0 {
+		return fmt.Errorf("%s declares no %s: no caller would hold a role", rolesFile, PrincipalType)
+	}
+
+	for pattern, op := range operations {
+		if _, ok := entities.Get(types.NewEntityUID(ActionType, types.String(op.Action))); !ok {
+			return fmt.Errorf(
+				"%s declares no %s::%q, which this build authorizes %q with: the mounted bundle is older than "+
+					"the image, and every call to that endpoint would be refused",
+				actionsFile, ActionType, op.Action, pattern)
+		}
 	}
 	return nil
 }
