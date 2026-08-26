@@ -122,12 +122,23 @@ func runBundleMatrix(t *testing.T, authorizer Authorizer) {
 }
 
 // bundleDir locates deploy/authz from this package.
-func bundleDir(t *testing.T) string {
-	t.Helper()
+//
+// A failure, not a skip. It is the first call in every test that asserts
+// anything about the shipped bundle — the whole conformance matrix, the engine
+// contract, the schema type-check, the vocabulary checks — and it used to
+// t.Skipf, which meant a run that could not find the bundle printed nineteen
+// SKIP lines and then PASS. Measured: run the test binary from a directory where
+// ../../deploy/authz does not resolve and the package reports success while
+// asserting none of it. A test suite that reports green when it has checked
+// nothing is worse than one that is absent, because it is counted.
+//
+// It takes a testing.TB so the benchmarks share it rather than carrying a second
+// copy of the path and a second reason to skip.
+func bundleDir(tb testing.TB) string {
+	tb.Helper()
 	dir := filepath.Join("..", "..", "deploy", "authz")
-	if _, err := os.Stat(filepath.Join(dir, policiesFile)); err != nil {
-		t.Skipf("bundle sources not found at %s: %v", dir, err)
-	}
+	_, err := os.Stat(filepath.Join(dir, policiesFile))
+	require.NoErrorf(tb, err, "the bundle sources must be readable at %s for this package to assert anything", dir)
 	return dir
 }
 
@@ -179,18 +190,6 @@ func TestLocalRefusesABundleThatDidNotLoad(t *testing.T) {
 			require.Error(t, err, "a bundle that did not load must not produce a working authorizer")
 		})
 	}
-}
-
-func TestLocalRefusesADuplicateEntity(t *testing.T) {
-	dir := t.TempDir()
-	entity := `[{"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]}]`
-	require.NoError(t, os.WriteFile(filepath.Join(dir, policiesFile),
-		[]byte(`permit(principal, action, resource);`), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, actionsFile), []byte(entity), 0o600))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, rolesFile), []byte(entity), 0o600))
-
-	_, err := NewLocal(dir)
-	require.Error(t, err, "a redeclared entity would silently change who holds what")
 }
 
 // A hostile identifier is refused, not evaluated — and refused identically

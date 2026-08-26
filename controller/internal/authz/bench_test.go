@@ -7,17 +7,16 @@ import (
 	"context"
 	"net/http"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // What one decision costs in-process, against the real bundle under
 // deploy/authz. The comparable sidecar figure is a network round trip and is
 // measured out-of-band; see the design's cost table.
 func BenchmarkLocalAuthorize(b *testing.B) {
-	dir := "../../deploy/authz"
-	local, err := NewLocal(dir)
-	if err != nil {
-		b.Skipf("bundle sources not loadable from %s: %v", dir, err)
-	}
+	local, err := NewLocal(bundleDir(b))
+	require.NoError(b, err)
 
 	query := Query{
 		Principal:    subjectReader,
@@ -42,11 +41,8 @@ func BenchmarkLocalAuthorize(b *testing.B) {
 // does not stop at the first match, since a later forbid can override — so the
 // two are the same order, and neither depends on which answer comes back.
 func BenchmarkLocalAuthorizeDenied(b *testing.B) {
-	dir := "../../deploy/authz"
-	local, err := NewLocal(dir)
-	if err != nil {
-		b.Skipf("bundle sources not loadable from %s: %v", dir, err)
-	}
+	local, err := NewLocal(bundleDir(b))
+	require.NoError(b, err)
 
 	query := Query{
 		Principal:    subjectStranger,
