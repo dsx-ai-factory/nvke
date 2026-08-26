@@ -263,7 +263,7 @@ func (s *NodeAgentServer) InitializeKubernetesAPIEncryption(
 		// apiserver itself takes ~15-30s longer to bind 6443 and pass its
 		// readiness probe (etcd connect, leader election, listener bind).
 		// Returning at pod-phase=Running races with PromoteKubernetesAPIEncryptionProviders,
-		// which immediately calls /metrics on the local apiserver. See HIPPO-9454.
+		// which immediately calls /metrics on the local apiserver.
 		timeoutCounter := 0
 		for {
 			time.Sleep(10 * time.Second)
