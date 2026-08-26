@@ -2,8 +2,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Asserts what the chart renders for apiAuth in each state, which `helm lint`
-# does not check.
+# Asserts what the chart renders for apiAuth and apiAuthz in each state, which
+# `helm lint` does not check.
 #
 # Needs only helm. Resolves the chart relative to this script, so it runs from
 # anywhere; CHART overrides that, which is how the workflow points it at
@@ -258,6 +258,42 @@ wantfail "auth.yaml in extraFiles is refused" 'must not contain "auth\.yaml"' \
 echo "extraFiles is inert without create:"
 wantfail "and says so rather than ignoring it" 'apiAuth\.configMap\.extraFiles is set but would not be rendered' \
   --set apiAuth.enabled=true --set 'apiAuth.configMap.extraFiles.spire-ca\.crt=x'
+
+echo "apiAuthz disabled (the default):"
+out="$(render)"
+# Absent, not empty, for the same reason as AUTH_CONFIG_PATH above: an empty
+# AUTHZ_BUNDLE_PATH reads as unset, so the deployment would look configured and
+# authorize nobody.
+absent "AUTHZ_BUNDLE_PATH is not set at all" 'AUTHZ_BUNDLE_PATH'                    "${out}"
+absent "AUTHZ_PERMISSIVE is not set"         'AUTHZ_PERMISSIVE'                     "${out}"
+absent "no policy volume"                    'name: nke-authz-policy'               "${out}"
+absent "nothing mounted at the bundle path"  'mountPath: "/etc/nke/authz"'          "${out}"
+
+echo "apiAuthz enabled, enforcing:"
+out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true)"
+want   "AUTHZ_BUNDLE_PATH points at the mount" 'value: "/etc/nke/authz"'            "${out}"
+pair   "AUTHZ_PERMISSIVE is false"           'AUTHZ_PERMISSIVE' 'false'             "${out}"
+want   "ConfigMap volume"                    'name: nke-authz-policy'               "${out}"
+want   "mounted where the bundle path says"  'mountPath: "/etc/nke/authz"'          "${out}"
+# The engine resolves the bundle's file names under AUTHZ_BUNDLE_PATH, so the
+# mount and the variable have to name the same directory or it loads nothing.
+want   "and the two agree"                   'value: "/etc/nke/authz"'              "${out}"
+
+echo "apiAuthz enabled, permissive:"
+out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.permissive=true)"
+pair   "AUTHZ_PERMISSIVE is true"            'AUTHZ_PERMISSIVE' 'true'              "${out}"
+
+echo "a named ConfigMap is what holds the bundle:"
+# A name of its own, because the default configMap.name matches the volume name,
+# so the default would pass whether or not the value is wired through.
+out="$(render --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.configMap.name=my-authz)"
+want   "configMap.name is honoured"          'name: my-authz'                       "${out}"
+
+echo "the guards that refuse to render:"
+wantfail     "apiAuthz without apiAuth is refused" 'requires apiAuth.enabled' \
+  --set apiAuthz.enabled=true
+wantfail     "an empty configMap.name is refused"  'apiAuthz.configMap.name is required' \
+  --set apiAuth.enabled=true --set apiAuthz.enabled=true --set apiAuthz.configMap.name=
 
 if [[ "${failures}" -ne 0 ]]; then
   echo "${failures} chart assertion(s) failed" >&2
