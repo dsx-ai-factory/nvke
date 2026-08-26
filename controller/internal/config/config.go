@@ -271,28 +271,23 @@ type Config struct {
 	PermissiveMode bool `env:"PERMISSIVE_MODE" default:"false"`
 
 	// AuthzBundlePath is the mounted directory holding the policy bundle,
-	// evaluated in-process with cedar-go. Unset disables authorization unless
-	// AuthzEndpoint is set. A set-but-unparseable bundle is a startup failure,
-	// never "disabled"; see authz.Setup.
+	// evaluated in-process with cedar-go. Unset disables authorization. A
+	// set-but-unloadable bundle is a startup failure in both modes, never
+	// "disabled"; see authz.Setup.
 	//
 	// Validate() does not check it: unset is the valid default.
 	AuthzBundlePath string `env:"AUTHZ_BUNDLE_PATH"`
 
-	// AuthzEndpoint runs the decision in an external policy engine instead — the
-	// cedar-agent sidecar on the pod's loopback interface. An alternative to
-	// AuthzBundlePath, not an addition: setting both is a startup failure.
-	AuthzEndpoint string `env:"AUTHZ_ENDPOINT"`
-
-	// AuthzEndpointToken authenticates to that engine. Required whenever
-	// AuthzEndpoint is set: cedar-agent binds 0.0.0.0 whatever its --addr says,
-	// and its policy API is read/write, so an unauthenticated one is a
-	// rewritable policy store reachable on the pod IP.
-	AuthzEndpointToken string `env:"AUTHZ_ENDPOINT_TOKEN"`
-
 	// AuthzPermissive evaluates and logs authorization decisions without
-	// enforcing them, so no request is refused. No effect when AuthzEndpoint is
-	// unset. Separate from PermissiveMode so a deployment can enforce
-	// authentication while it is still learning what its policy should say.
+	// enforcing them, so no request is refused. No effect when AuthzBundlePath
+	// is unset, since then no decision is made at all.
+	//
+	// It does NOT make a bundle that failed to load survivable: the bundle is
+	// loaded before the mode is consulted, so a bundle that did not load is
+	// fatal either way.
+	//
+	// Separate from PermissiveMode so a deployment can enforce authentication
+	// while it is still learning what its policy should say.
 	AuthzPermissive bool `env:"AUTHZ_PERMISSIVE" default:"false"`
 
 	// Tracing configures OpenTelemetry distributed tracing. When Enabled and

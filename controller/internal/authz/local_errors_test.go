@@ -173,3 +173,27 @@ func TestResourceOverlayDefersToTheBundle(t *testing.T) {
 	_, ok = view.Get(types.NewEntityUID("NKE::Cluster", "absent"))
 	assert.False(t, ok, "an entity in neither place must not be invented")
 }
+
+// Policy names in a decision come from the @id annotation. They are what appears
+// in the log when a request is allowed, and cedar-go's positional "policy0"
+// changes meaning the moment a policy is inserted above it — so the name a
+// reader can find in the source is the one that must be reported.
+func TestLocalReportsAnnotatedPolicyNames(t *testing.T) {
+	local, err := NewLocal(bundleDir(t))
+	require.NoError(t, err)
+
+	decision, err := local.Authorize(context.Background(), Query{
+		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
+		ResourceType: "NKE::Cluster", ResourceID: someClusterID, Method: http.MethodGet,
+	})
+	require.NoError(t, err)
+	require.True(t, decision.Allow)
+	require.NotEmpty(t, decision.Reasons)
+
+	assert.Contains(t, decision.Reasons, "readers-may-read",
+		"the engine must report the @id the source carries")
+	for _, reason := range decision.Reasons {
+		assert.NotRegexp(t, `^policy\d+$`, reason,
+			"a positional policy id is not a name a reader can find in the source")
+	}
+}

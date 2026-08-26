@@ -247,3 +247,13 @@ func messageFor(reason DenyReason) string {
 		return "Not authorized."
 	}
 }
+
+// elide bounds a caller-controlled string before it reaches a log line. The
+// request path is bounded only by MaxHeaderBytes, and a log field is not the
+// place to discover that.
+func elide(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	return s[:limit] + "…"
+}

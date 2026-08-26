@@ -382,54 +382,11 @@ apiAuthz:
   # -- Count what enforcement would have refused but serve the request anyway.
   # Watch nke_authz_requests_total{outcome="would_reject"} before enforcing.
   permissive: false
-  # -- Where the decision is evaluated.
-  #   "in-process" — cedar-go inside the NKE container, reading the bundle
-  #                  sources. No sidecar, no assembly step. The default.
-  #   "sidecar"    — a cedar-agent container beside NKE, reading the assembled
-  #                  bundle over its own HTTP API.
-  # Both read the same ConfigMap; the keys differ. See deploy/authz/README.md.
-  engine: in-process
   configMap:
-    # -- ConfigMap holding the policy bundle. For engine=in-process, keyed
-    # `policies.cedar`, `actions.json` and `roles.json`. For engine=sidecar,
-    # keyed `schema.json`, `entities.json` and `policies.json`, assembled from
-    # those sources by hack/authz-bundle. Required when apiAuthz.enabled=true;
-    # an empty name fails the render.
+    # -- ConfigMap holding the policy bundle, keyed `policies.cedar`,
+    # `actions.json` and `roles.json`. Required when apiAuthz.enabled=true; an
+    # empty name fails the render.
     name: nke-authz-policy
-  sidecar:
-    # -- Only used when engine=sidecar.
-    image:
-      # -- The Cedar policy decision point, run beside NKE on the pod loopback.
-      repository: permitio/cedar-agent
-      tag: "0.2.2"
-      pullPolicy: IfNotPresent
-    # -- Port the sidecar listens on. Passed to the agent, used for both probes,
-    # and AUTHZ_ENDPOINT is derived from it.
-    port: 8180
-    tokenSecret:
-      # -- Secret holding the bearer token the sidecar requires on every route
-      # but its health check, and that NKE sends on every decision. Required
-      # when engine=sidecar: the agent binds 0.0.0.0 and its policy API is
-      # read/write, so an unauthenticated one is a rewritable policy store on
-      # the pod IP. Create it out of band; the chart does not generate secrets.
-      name: nke-authz-sidecar-token
-      # -- Key within that Secret.
-      key: token
-    # -- Idle resident set is about 3 MiB; the limit is headroom, not a target.
-    resources:
-      requests:
-        cpu: 10m
-        memory: 16Mi
-      limits:
-        memory: 64Mi
-    # -- The sidecar reads a read-only ConfigMap and writes nothing.
-    securityContext:
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      runAsNonRoot: true
-      runAsUser: 1000
-      capabilities:
-        drop: ["ALL"]
 
 nodeTeardown:
   # -- Allow the DeleteNode API to accept the dangerous etcd safety overrides

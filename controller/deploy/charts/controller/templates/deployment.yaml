@@ -2,9 +2,6 @@
 {{- if and .Values.apiAuthz.enabled (not .Values.apiAuth.enabled) }}
 {{- fail "apiAuthz.enabled requires apiAuth.enabled: authorizing a caller nobody authenticated is not a meaningful state" }}
 {{- end }}
-{{- if and .Values.apiAuthz.enabled (not (has .Values.apiAuthz.engine (list "in-process" "sidecar"))) }}
-{{- fail "apiAuthz.engine must be \"in-process\" or \"sidecar\"" }}
-{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -157,7 +154,7 @@ spec:
               mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
               readOnly: true
             {{- end }}
-            {{- if and .Values.apiAuthz.enabled (eq .Values.apiAuthz.engine "in-process") }}
+            {{- if .Values.apiAuthz.enabled }}
             - name: nke-authz-policy
               mountPath: {{ include "controller.apiAuthz.mountPath" . | quote }}
               readOnly: true
@@ -371,23 +368,10 @@ spec:
               value: {{ .Values.apiAuth.permissive | quote }}
             {{- end }}
             {{- if .Values.apiAuthz.enabled }}
-            # Exactly one of these, never both: NKE refuses to start if both are
-            # set, because an operator who set both has a belief about which one
-            # is running. Omitted when disabled, never set empty: NKE reads an
-            # empty value as unset, so the deployment would look configured and
-            # authorize nobody.
-            {{- if eq .Values.apiAuthz.engine "in-process" }}
+            # Omitted when disabled, never set empty: NKE reads an empty value as
+            # unset, so the deployment would look configured and authorize nobody.
             - name: AUTHZ_BUNDLE_PATH
               value: {{ include "controller.apiAuthz.mountPath" . | quote }}
-            {{- else }}
-            - name: AUTHZ_ENDPOINT
-              value: {{ include "controller.apiAuthz.endpoint" . | quote }}
-            - name: AUTHZ_ENDPOINT_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ required "apiAuthz.sidecar.tokenSecret.name is required when apiAuthz.engine=sidecar" .Values.apiAuthz.sidecar.tokenSecret.name }}
-                  key: {{ .Values.apiAuthz.sidecar.tokenSecret.key | quote }}
-            {{- end }}
             - name: AUTHZ_PERMISSIVE
               value: {{ .Values.apiAuthz.permissive | quote }}
             {{- end }}
@@ -395,82 +379,6 @@ spec:
             - name: {{ .name }}
               value: {{ .value | quote }}
             {{- end }}
-        {{- if and .Values.apiAuthz.enabled (eq .Values.apiAuthz.engine "sidecar") }}
-        # The policy decision point.
-        #
-        # It is NOT loopback-bound, and cannot be: cedar-agent 0.2.2 binds
-        # 0.0.0.0 whatever --addr or ROCKET_ADDRESS say (both measured, both
-        # ignored). Its API is read/write — a PUT to /v1/policies replaces the
-        # bundle in the running agent, and NKE's startup gate has already run —
-        # so anything able to reach this pod's IP on the sidecar port could
-        # rewrite the policy that authorizes the API beside it.
-        #
-        # Two things keep that shut, and both are required: a bearer token the
-        # agent enforces on every route but its health check, and a
-        # NetworkPolicy denying ingress to the port. Neither alone is enough:
-        # the token is in a Secret the pod already reads, and a NetworkPolicy
-        # needs a CNI that enforces it.
-        - name: cedar-agent
-          image: "{{ .Values.apiAuthz.sidecar.image.repository }}:{{ .Values.apiAuthz.sidecar.image.tag }}"
-          imagePullPolicy: {{ .Values.apiAuthz.sidecar.image.pullPolicy }}
-          args:
-            # Not a default: the chart's port value reached the container port,
-            # both probes and AUTHZ_ENDPOINT, but never the agent, which went on
-            # listening on its built-in 8180.
-            - --port
-            - {{ .Values.apiAuthz.sidecar.port | quote }}
-            - --authentication
-            - $(AUTHZ_SIDECAR_TOKEN)
-            # Order matters. The schema is what makes the agent reject a policy
-            # naming an action or attribute that does not exist; loaded after a
-            # policy that violates it, the schema itself is refused and
-            # validation is silently off for everything that follows.
-            - --schema
-            - {{ printf "%s/schema.json" (include "controller.apiAuthz.mountPath" .) | quote }}
-            - --data
-            - {{ printf "%s/entities.json" (include "controller.apiAuthz.mountPath" .) | quote }}
-            - --policies
-            - {{ printf "%s/policies.json" (include "controller.apiAuthz.mountPath" .) | quote }}
-          env:
-            # Read by --authentication above. The same Secret is read by the NKE
-            # container, which sends it on every decision.
-            - name: AUTHZ_SIDECAR_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ required "apiAuthz.sidecar.tokenSecret.name is required when apiAuthz.engine=sidecar" .Values.apiAuthz.sidecar.tokenSecret.name }}
-                  key: {{ .Values.apiAuthz.sidecar.tokenSecret.key | quote }}
-          ports:
-            - name: cedar
-              containerPort: {{ .Values.apiAuthz.sidecar.port }}
-              protocol: TCP
-          # A pod is Ready only when every container is, so a sidecar that failed
-          # to start takes the pod out of the Service rather than leaving NKE
-          # refusing every request from behind a healthy-looking endpoint.
-          #
-          # This does not cover a bundle that failed to load: the agent serves
-          # 200 on / either way. NKE checks the stores itself before serving —
-          # see internal/authz.CedarAgent.Ready.
-          readinessProbe:
-            httpGet:
-              path: /
-              port: cedar
-            initialDelaySeconds: 2
-            periodSeconds: 10
-          livenessProbe:
-            httpGet:
-              path: /
-              port: cedar
-            initialDelaySeconds: 10
-            periodSeconds: 20
-          resources:
-            {{- toYaml .Values.apiAuthz.sidecar.resources | nindent 12 }}
-          securityContext:
-            {{- toYaml .Values.apiAuthz.sidecar.securityContext | nindent 12 }}
-          volumeMounts:
-            - name: nke-authz-policy
-              mountPath: {{ include "controller.apiAuthz.mountPath" . | quote }}
-              readOnly: true
-        {{- end }}
       volumes:
         {{- if .Values.profiles.image.enabled }}
         - name: profiles
@@ -502,8 +410,7 @@ spec:
         {{- if .Values.apiAuthz.enabled }}
         # Not optional, for the same reason as the authentication config: a
         # missing ConfigMap holds the pod in ContainerCreating with the name in
-        # its events, rather than starting a sidecar with an empty policy store
-        # that refuses every request.
+        # its events, rather than starting NKE with no bundle to load.
         - name: nke-authz-policy
           configMap:
             name: {{ required "apiAuthz.configMap.name is required when apiAuthz.enabled=true" .Values.apiAuthz.configMap.name }}

@@ -6,25 +6,21 @@ package authz
 import (
 	"context"
 	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// testToken is the sidecar bearer token the tests use. Not a secret: cedar-agent
-// compares it to its --authentication argument, and the tests either stub the
-// agent or run against a local one started with the same value.
-const testToken = "test-token"
-
 // The Authorizer contract, asserted against every implementation rather than
-// described in a comment and hoped for. An engine that passes this and
-// bundleMatrix() is swappable; one that does not is a trap for whoever swaps it.
+// described in a comment and hoped for.
 //
-// The sidecar is exercised here through a stub server rather than a live
-// cedar-agent, so the contract runs in the ordinary unit-test job for both
-// engines. TestLiveMatchesTheBundle covers the real thing.
+// There is one implementation today. These rules are still worth pinning: they
+// are what the middleware relies on, and they are the specification a second
+// engine would have to meet. An out-of-process engine was built and dropped —
+// see the design's Appendix C — and every rule below is a lesson from it,
+// because each one names something the two implementations disagreed about
+// until it was written down.
 
 // contractEngines returns each implementation with a bundle already loaded.
 func contractEngines(t *testing.T) map[string]Authorizer {
@@ -33,26 +29,7 @@ func contractEngines(t *testing.T) map[string]Authorizer {
 	local, err := NewLocal(bundleDir(t))
 	require.NoError(t, err)
 
-	// A stub that answers like cedar-agent, so CedarAgent's own request
-	// building, response decoding and error classification are under test.
-	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case authorizePath:
-			_, _ = w.Write([]byte(`{"decision":"Deny","diagnostics":{"reason":[],"errors":[]}}`))
-		case policiesPath:
-			_, _ = w.Write([]byte(`[{"id":"p"}]`))
-		case dataPath:
-			_, _ = w.Write([]byte(`[{"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]}]`))
-		default:
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	t.Cleanup(stub.Close)
-
-	agent, err := NewCedarAgent(stub.URL, testToken, 0)
-	require.NoError(t, err)
-
-	return map[string]Authorizer{"cedar-go": local, "cedar-agent": agent}
+	return map[string]Authorizer{"cedar-go": local}
 }
 
 func TestEveryEngineNamesItself(t *testing.T) {
@@ -109,9 +86,7 @@ func TestEveryEngineReturnsNoAllowOnError(t *testing.T) {
 	}
 }
 
-// Every engine must tolerate the identifiers this API actually produces. The
-// sidecar renders them into Cedar source and the in-process engine passes them
-// as typed values, so the two have different reasons to get this wrong.
+// Every engine must tolerate the identifiers this API actually produces.
 func TestEveryEngineAcceptsRealSubjectShapes(t *testing.T) {
 	subjects := []string{
 		"system:serviceaccount:nke-system:nke-cli",
@@ -132,14 +107,15 @@ func TestEveryEngineAcceptsRealSubjectShapes(t *testing.T) {
 	}
 }
 
-// A hostile identifier must never produce an Allow. How each engine gets there
-// differs — the sidecar refuses to render it, the in-process engine treats it as
-// data that matches no entity — and the contract is only the outcome.
+// A hostile identifier must never produce an Allow, and must be refused as a bad
+// question rather than denied on the merits — otherwise the metric blames the
+// policy for what is really a malformed request.
 func TestNoEngineAllowsAHostileIdentifier(t *testing.T) {
 	hostile := []string{
 		`evil" || true || "`,
 		`x", NKE::Action::"deleteCluster`,
 		"line\nbreak",
+		"invalid\xffutf8",
 	}
 	for name, engine := range contractEngines(t) {
 		for _, id := range hostile {
@@ -149,11 +125,8 @@ func TestNoEngineAllowsAHostileIdentifier(t *testing.T) {
 					ResourceType: "NKE::Cluster", ResourceID: "c1", Method: http.MethodGet,
 				})
 				assert.Falsef(t, decision.Allow, "%s allowed a hostile identifier", name)
-				if err != nil {
-					// If it refuses, it must refuse as a bad query rather than
-					// as an engine fault, or the metric blames the wrong thing.
-					assert.ErrorIsf(t, err, ErrInvalidQuery, "%s refused with the wrong error class", name)
-				}
+				require.Errorf(t, err, "%s evaluated a hostile identifier instead of refusing it", name)
+				assert.ErrorIsf(t, err, ErrInvalidQuery, "%s refused with the wrong error class", name)
 			})
 		}
 	}
@@ -167,4 +140,28 @@ func TestMiddlewareRefusesANilEngine(t *testing.T) {
 
 	_, err = NewMiddleware(nil, resolver, ModeEnforcing, nil, nil)
 	require.Error(t, err)
+}
+
+// Setup's engine selection, which no test covered before the sidecar was
+// dropped and which is now the whole of the configuration surface.
+func TestSetupSelectsTheInProcessEngine(t *testing.T) {
+	engine, err := Options{BundleDir: bundleDir(t)}.engine()
+	require.NoError(t, err)
+	require.NotNil(t, engine)
+	assert.Equal(t, "cedar-go", engine.Name())
+}
+
+// No bundle is "disabled", which is a nil engine and no error — never an engine
+// that allows everyone.
+func TestSetupWithNoBundleIsDisabled(t *testing.T) {
+	engine, err := Options{}.engine()
+	require.NoError(t, err)
+	assert.Nil(t, engine, "disabled must be a nil engine, never a permissive one")
+}
+
+// A bundle that does not load is a startup failure, not a disabled deployment
+// and not a deployment that refuses everything quietly.
+func TestSetupRefusesABundleThatDoesNotLoad(t *testing.T) {
+	_, err := Options{BundleDir: t.TempDir()}.engine()
+	require.Error(t, err, "set-but-unloadable must be an error, never \"disabled\"")
 }

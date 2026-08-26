@@ -10,9 +10,11 @@
 //	Permissive evaluate, log and count, never reject.
 //	Enforcing  403 on anything but Allow.
 //
-// Two engines implement Authorizer: Local evaluates in this process with
-// cedar-go, and CedarAgent calls a cedar-agent sidecar. Exactly one runs, and
-// both are held to the conformance matrix in conformance_test.go.
+// Cedar is evaluated in this process by Local, using cedar-go. An out-of-process
+// engine was built and dropped — see the design's Appendix C — so Authorizer has
+// one implementation today. It stays an interface because the middleware's tests
+// need a fake, and because it is what keeps the middleware from knowing anything
+// about how a decision is reached.
 //
 // It runs immediately after internal/auth and reads the Principal that package
 // put on the request context. It reads no claim for entitlement: who a caller is
@@ -116,16 +118,16 @@ type Decision struct {
 
 // Authorizer evaluates one Query against a policy bundle. It is the whole of the
 // contract between the middleware and an engine: nothing outside this file knows
-// which engine is running, and nothing in an engine knows how a Query was built.
+// how a decision is reached, and nothing in an engine knows how a Query was
+// built.
 //
-// Implementations must be safe for concurrent use, and must answer the same way
-// for the same bundle — the conformance matrix in conformance_test.go is what
-// "the same way" means, and every implementation is run against it.
+// Implementations must be safe for concurrent use. contract_test.go asserts the
+// rules below against every implementation rather than describing them here and
+// hoping.
 //
-// An error is a denial, not a pass. Every implementation therefore fails towards
-// refusing: an engine that cannot answer must return an error rather than a
-// zero-value Decision that happened to be false, so the middleware can tell the
-// two apart and count them separately.
+// An error is a denial, not a pass. An engine that cannot answer must return an
+// error rather than a zero-value Decision that happened to be false, so the
+// middleware can tell the two apart and count them separately.
 type Authorizer interface {
 	// Authorize answers one Query that has already passed Query.Validate. An
 	// engine may assume its fields are non-empty and renderable, and must not
@@ -137,10 +139,9 @@ type Authorizer interface {
 	// process rather than silently denying every request.
 	Ready(ctx context.Context) error
 
-	// Name identifies the implementation for logs: "cedar-go", "cedar-agent".
-	// Which engine made a decision is the first thing anyone asks when a
-	// decision surprises them, and asking the engine beats inferring it from
-	// whichever option was set.
+	// Name identifies the implementation in the startup log. One value today;
+	// it exists so that if a second engine is ever added, which one answered is
+	// a fact the log states rather than something inferred from configuration.
 	Name() string
 }
 
@@ -150,19 +151,16 @@ type Authorizer interface {
 // into a question, not in the engine or the policy.
 var ErrInvalidQuery = errors.New("the authorization query is not valid")
 
-// Validate reports whether this Query is one any engine may be asked. The
+// Validate reports whether this Query is one an engine may be asked. The
 // middleware calls it before dispatching, so an engine never sees a bad one.
 //
-// It lives above both engines because otherwise they disagree about what a bad
-// question is, and the disagreement is observable. The sidecar renders the
-// identifier into Cedar source and must refuse a quote; the in-process engine
-// passes typed values and would treat the same input as data, deny it on the
-// merits, and report a different metric reason for the same request. AZ-4 says
-// nothing outside an engine knows which engine is running, and a reason label
-// that depends on which one is deployed breaks that.
-//
-// So the strict rule applies to every engine: an identifier a caller controls is
-// refused, never escaped and never reinterpreted, whoever will evaluate it.
+// It refuses rather than sanitizes. cedar-go takes typed values, so a quote in
+// an identifier is data and not syntax — the refusal is not protecting the
+// evaluator. It is protecting everything downstream of the decision: the
+// identifier reaches the deny log and the audit record, and an identifier
+// carrying a control character or an invalid UTF-8 byte is one that cannot be
+// written down faithfully. A request whose subject cannot be recorded is one
+// that should not be authorized.
 func (q Query) Validate() error {
 	for _, field := range []struct{ name, value string }{
 		{"principal", q.Principal},
@@ -177,12 +175,9 @@ func (q Query) Validate() error {
 	return nil
 }
 
-// checkEntityIDValue is the one definition of what may appear in a Cedar entity
-// literal. Query.Validate applies it across a whole query and entityUID applies
-// it to one value on the way to the wire; both must agree, so neither carries
-// its own copy of the rule.
-//
-// The returned error is a bare phrase, so a caller can name the field.
+// checkEntityIDValue is the one definition of what may appear in an entity
+// identifier. The returned error is a bare phrase, so a caller can name the
+// field.
 func checkEntityIDValue(value string) error {
 	if value == "" {
 		return errors.New("is empty")
@@ -190,16 +185,15 @@ func checkEntityIDValue(value string) error {
 	// Before the rune scan, not after: strings.IndexFunc decodes an invalid byte
 	// to U+FFFD, which is not a quote, a backslash or a control character, so
 	// the scan alone lets it through. Two identifiers differing only in invalid
-	// bytes are then distinct Go strings in-process and the same U+FFFD literal
-	// once JSON-encoded to the sidecar — one object on one engine, two on the
-	// other.
+	// bytes are distinct entities to Cedar and the same U+FFFD sequence in every
+	// log line and JSON record about them, which is a decision nobody can audit.
 	if !utf8.ValidString(value) {
 		return errors.New("is not valid UTF-8")
 	}
 	// Subjects arrive from verified tokens and object identifiers from URL path
 	// segments the mux has already percent-decoded, so a caller does control
-	// these bytes. Escaping would also work; refusing is checkable by reading
-	// it, and no legitimate identifier in this API contains any of these.
+	// these bytes. No legitimate identifier in this API contains any of these,
+	// and one that did could not be logged faithfully.
 	if i := strings.IndexFunc(value, func(r rune) bool {
 		return r == '"' || r == '\\' || r < 0x20 || r == 0x7f
 	}); i >= 0 {

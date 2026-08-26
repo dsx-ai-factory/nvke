@@ -1,64 +1,48 @@
 # The NKE API policy bundle
 
-What NKE evaluates when `apiAuthz.enabled=true`. Four sources, two of them
-generated.
-
-Which files are actually read depends on `apiAuthz.engine`:
-
-- **`in-process`** (the default) — cedar-go inside the NKE container reads
-  `policies.cedar`, `actions.json` and `roles.json` directly. No assembly step,
-  and `bundle/` is not used at all.
-- **`sidecar`** — a cedar-agent container reads the assembled `bundle/`, whose
-  shape its flags require.
+What NKE evaluates when `apiAuthz.enabled=true`. One ConfigMap, mounted read-only
+at `/etc/nke/authz`, read at startup by `cedar-go` inside the NKE container.
 
 | File | Written by | Purpose |
 |---|---|---|
-| `policies.cedar` | hand | The rules. Native Cedar syntax, one `@id` per policy. |
+| `policies.cedar` | hand | The rules. Native Cedar, one `@id` per policy. |
 | `roles.json` | hand | The roles, and which subject holds which. |
-| `schema.json` | `hack/gen-authz-actions` | Entity and action types, from `api/openapi.yaml`. |
-| `actions.json` | `hack/gen-authz-actions` | One entity per operation, each in its `read` or `write` group. |
-| `bundle/` | `hack/authz-bundle` | The assembled result. Checked in, like `api/*.gen.go`. |
+| `actions.json` | `hack/gen-authz-actions` | One entity per API operation, each in its `read` or `write` group. |
+| `schema.json` | `hack/gen-authz-actions` | The entity and action types. **Not read at runtime** — see below. |
 
 ## Regenerating
 
 ```sh
-go generate ./internal/authz/            # schema.json, actions.json, actions.gen.go
-(cd hack/authz-bundle && GOWORK=off go run .)   # bundle/
+go generate ./internal/authz/     # actions.gen.go, actions.json, schema.json
 ```
 
-The assembler is its own Go module so that `cedar-go` — which it uses only to
-parse and split policy text — stays out of the controller's vendor tree. Hence
-`GOWORK=off`, the same reason `api/generate.go` needs it.
+`policies.cedar` and `roles.json` are yours. The other two are derived from
+`api/openapi.yaml` and regenerating is not optional: `actions_test.go` fails if
+the table and the spec disagree.
 
-## Why the assembly step exists at all
+## What the schema is for
 
-`cedar-agent` wants policies as a JSON array of `{id, content}` objects holding
-**exactly one** Cedar statement each. A whole `.cedar` file handed to
-`--policies` is rejected with `File is not a json file`; a whole file stuffed
-into one `content` is rejected with `unexpected token permit`. Splitting on `;`
-by hand would cut a policy in half at a semicolon inside a string literal, so the
-assembler parses instead — which also means a syntax error fails the build rather
-than becoming a sidecar with an empty policy store.
+`schema.json` is never loaded by the running process. It exists so that CI can
+type-check the bundle: `policy_validation_test.go` feeds it to cedar-go's
+validator and rejects a policy that names an action or entity type that does not
+exist, reads an undeclared attribute, applies an action to the wrong resource
+type, or compares a value against the wrong type. It also checks that every one
+of the 26 operations produces a request the schema accepts.
 
-## Two things that will bite
+That runs in tests only, deliberately: the validator lives under `x/exp` and a
+build-time check gets the benefit without the release binary depending on
+experimental API. The cost is that a bundle hand-edited in a cluster is not
+re-checked — it will parse, and a policy that can never match will simply never
+match.
 
-**Load order is schema, then entities, then policies.** A schema loaded after a
-policy that violates it is itself refused, leaving the store schema-less — and
-with no schema, `cedar-agent` accepts a policy naming an action that does not
-exist and it simply never matches. The chart's `args` are in this order
-deliberately.
-
-**A file that fails to load is not fatal to the sidecar.** It logs an `ERROR`,
-starts anyway with that store empty, and answers `200 OK` — `Deny` to everything
-if the entities did not load, which at request time is indistinguishable from a
-policy nobody wrote. NKE checks the stores itself before it serves; see
-`internal/authz.CedarAgent.Ready`. When a change here produces blanket 403s, read
-the sidecar's log first.
+Schema validation is type-based, so it cannot tell you a role *instance* does not
+exist: `NKE::Role::"raeder"` is a well-typed reference to a role nobody declared.
+`policy_vocabulary_test.go` covers that half.
 
 ## Action groups, and what they cannot express
 
-`read` and `write` are derived from the HTTP method, so every `GET` is a `read`
-and everything else is a `write`. That is what lets `permit(principal in
+`read` and `write` are derived from the HTTP method: every `GET` is a `read`,
+everything else a `write`. That is what lets `permit(principal in
 NKE::Role::"reader", action in NKE::Action::"read", resource)` stay correct as
 endpoints are added.
 
@@ -70,11 +54,18 @@ irreversible wants that treatment — see `only-node-operators-delete-nodes`.
 ## Testing a change
 
 ```sh
-docker run --rm -d --name nke-cedar -p 8190:8180 \
-  -v "$PWD/deploy/authz/bundle:/bundle:ro" permitio/cedar-agent:0.2.2 \
-  --schema /bundle/schema.json --data /bundle/entities.json --policies /bundle/policies.json
-AUTHZ_TEST_ENDPOINT=http://localhost:8190 go test -tags authz_live ./internal/authz/ -v
+go test ./internal/authz/
 ```
 
-`TestLiveDecisionMatrix` asserts what this bundle grants. A policy change that
-alters who may do what should change that table in the same commit.
+`TestLocalMatchesTheBundle` asserts what this bundle grants, case by case. A
+policy change that alters who may do what should change that table in the same
+commit — if it does not, either the change did nothing or the table was not
+covering it.
+
+## History
+
+An out-of-process engine — a `permitio/cedar-agent` sidecar — was built against
+this same bundle and dropped. It needed the sources assembled into a different
+shape, which is why `hack/authz-bundle` and `deploy/authz/bundle/` existed. The
+design's Appendix C records why it went; the branch
+`prototype/api-authz-cedar-sidecar` has the working code if it is ever wanted.
