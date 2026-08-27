@@ -146,6 +146,8 @@ spec:
             requests:
               cpu: 25m
               memory: 5Mi
+            limits:
+              memory: 128Mi
           securityContext:
             capabilities:
               add:

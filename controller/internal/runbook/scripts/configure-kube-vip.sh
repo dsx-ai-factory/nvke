@@ -378,7 +378,12 @@ ${health_check_env}
     image: ghcr.io/kube-vip/kube-vip:${KUBE_VIP_VERSION}
     imagePullPolicy: IfNotPresent
     name: kube-vip
-    resources: {}
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
     securityContext:
       capabilities:
         add:
