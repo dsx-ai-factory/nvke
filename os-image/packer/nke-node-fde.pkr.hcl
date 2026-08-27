@@ -59,7 +59,7 @@ variable "iso_checksum" {
 variable "disk_size" {
   type        = string
   default     = "12G"
-  description = "Build-time disk size. Headroom for LVM+LUKS overhead over the base image's 10G; the real deploy disk is grown to full size on first boot."
+  description = "Build-time disk size. Headroom for LVM+LUKS overhead over the base image's 10G; the real deploy disk is grown to full size on first boot. (autoinstall-lvm.pkrtpl's storage layout must actually claim the whole disk for this to matter — sizing-policy: all, not sizing_policy, which Subiquity silently ignores in favor of its own much smaller 'scaled' default.)"
 }
 
 variable "luks_passphrase" {
@@ -89,27 +89,51 @@ variable "ssh_timeout" {
   description = "How long Packer waits for SSH after the autoinstall reboot (installer + LVM/LUKS setup is much slower than booting a prebuilt cloud image)."
 }
 
-# Under tcg, BIOS POST + GRUB load from the installer ISO is itself much
-# slower than under kvm. boot_command blind-types into GRUB's command line
-# a few seconds after boot_wait elapses; if GRUB isn't at its menu yet, those
-# keystrokes land nowhere, the autoinstall kernel params never get set, and
-# the VM sits at an interactive installer prompt until ssh_timeout expires
-# with no further log output — indistinguishable from "just slow" unless you
-# know to look for it. See docs/full-disk-encryption.md.
+# Under tcg, BIOS POST + GRUB load from the installer ISO is much slower
+# than under kvm, and unpredictably so. boot_command blind-types into
+# GRUB's command line a fixed delay after boot_wait; if that lands before
+# GRUB's own menu timeout expires and auto-boots the non-autoinstall
+# default entry, the keystrokes go nowhere. packer/scripts/prepare-installer-iso.sh
+# patches the ISO's GRUB timeout from the stock 30s to 300s before packer
+# build runs (see the Makefile), so boot_wait only needs to be "comfortably
+# longer than BIOS POST takes", not "inside a narrow, unknowable window" —
+# it doesn't have to be exact, just not longer than 300s.
+#
+# (Direct QEMU -kernel/-initrd boot would remove the race entirely instead
+# of just widening it, but it re-executes the same kernel/initrd on every
+# guest-triggered reboot for the life of the QEMU process — confirmed by
+# testing it: autoinstall completed and rebooted correctly, but landed back
+# in the live installer instead of the newly-installed system, looping
+# forever instead of ever reaching it. Packer runs one QEMU process for the
+# whole build, with no way to switch to disk boot after the first boot, so
+# that approach doesn't work here.)
 variable "boot_wait" {
   type        = string
   default     = "5s"
-  description = "Delay before boot_command starts typing into GRUB. Must exceed however long BIOS+GRUB take to reach the menu; raise well past 5s under tcg."
+  description = "Delay before boot_command starts typing into GRUB. Comfortably under 300s (the patched GRUB timeout) but past however long BIOS+GRUB take to reach the menu; raise under tcg."
 }
 
 locals {
   artifacts = "${path.root}/artifacts"
   ssh_dir   = "${path.root}/.ssh"
+  # Deliberately NOT under local.artifacts: the "file" provisioner below
+  # uploads local.artifacts/ to the guest wholesale, and this is a
+  # multi-gigabyte ISO, not one of fetch-artifacts.sh's nke-agent/spire-agent
+  # downloads. packer/scripts/prepare-installer-iso.sh downloads iso_url into
+  # this directory and produces a GRUB-timeout-patched sibling next to it
+  # (see the Makefile) before packer build runs; iso_url below points at
+  # that patched copy.
+  iso_cache = "${path.root}/iso-cache"
+  iso_path  = "${local.iso_cache}/${basename(var.iso_url)}.patched.iso"
 }
 
 source "qemu" "nke-fde" {
-  iso_url      = var.iso_url
-  iso_checksum = var.iso_checksum
+  iso_url = local.iso_path
+  # "none", not var.iso_checksum: local.iso_path is prepare-installer-iso.sh's
+  # GRUB-patched copy, which legitimately doesn't match the upstream
+  # SHA256SUMS entry for the original filename. That script already verifies
+  # the original download against var.iso_checksum before patching it.
+  iso_checksum = "none"
 
   # machine_type is the QEMU virtual chipset, not a CPU setting — cpu_model
   # (below) is the actual CPU. This matters here because this variant boots
@@ -141,7 +165,7 @@ source "qemu" "nke-fde" {
 
   boot_wait = var.boot_wait
   boot_command = [
-    "<wait10>",
+    "<wait3>",
     "c<wait>",
     "set root=(cd0)<enter><wait>",
     "linux /casper/vmlinuz autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",

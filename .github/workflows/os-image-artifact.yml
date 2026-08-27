@@ -123,11 +123,11 @@ jobs:
           make test
           make build
 
-      - name: Install QEMU, cloud-localds, swtpm, and OVMF
+      - name: Install QEMU, cloud-localds, swtpm, OVMF, 7z, and xorriso
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf
+          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf p7zip-full xorriso
           qemu-system-x86_64 --version | head -1
           qemu-img --version | head -1
           swtpm --version

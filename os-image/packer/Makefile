@@ -4,11 +4,26 @@
 PACKER      ?= packer
 SSH_DIR     := $(CURDIR)/.ssh
 ARTIFACTS   := $(CURDIR)/artifacts
+# Deliberately separate from ARTIFACTS: the FDE/non-FDE "file" provisioner
+# uploads ARTIFACTS/ to the guest wholesale (it's meant to hold only
+# fetch-artifacts.sh's nke-agent/spire-agent downloads). The installer ISO
+# (GBs, cached across builds) must never land in that directory, or it gets
+# uploaded too -- this is exactly what caused an FDE build to try uploading
+# 5.8GB instead of ~120MB and fail with a misleading "Disk quota exceeded".
+ISO_CACHE   := $(CURDIR)/iso-cache
 PKR_FILE    := $(CURDIR)/nke-node.pkr.hcl
 PKR_FILE_FDE := $(CURDIR)/nke-node-fde.pkr.hcl
 PKR_FILE_NON_FDE := $(CURDIR)/nke-node-non-fde.pkr.hcl
 
 LUKS_PASSPHRASE ?= changeit
+
+# FDE/non-FDE only. Overridable together; prepare-installer-iso.sh
+# downloads ISO_URL, verifies it against ISO_CHECKSUM, and produces a
+# GRUB-timeout-patched sibling before packer build ever runs, so packer's
+# own iso_url/iso_checksum vars just point at the local copy (see the
+# locals block in nke-node-fde.pkr.hcl).
+ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso
+ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
 
 NKE_AGENT_VERSION      ?= edge
 NKE_AGENT_REGISTRY     ?= ghcr.io/nvidia/nke/agent
@@ -31,15 +46,14 @@ CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)
 # it without editing this file.
 SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),15m,60m)
 
-# FDE/non-FDE only: how long boot_command waits before blind-typing into
-# GRUB. Under tcg, BIOS+GRUB take far longer to reach the menu than under
-# kvm; too short and the autoinstall kernel params silently never get set,
-# and the build just sits at an interactive installer prompt until
-# ssh_timeout expires with no further log output. See the boot_wait
-# variable's comment in nke-node-fde.pkr.hcl.
-BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),5s,60s)
+# FDE/non-FDE only: how long boot_command waits before typing into GRUB.
+# prepare-installer-iso.sh patches the ISO's own GRUB timeout to 300s, so
+# this just needs to comfortably exceed BIOS+GRUB boot time under tcg — it
+# no longer has to land inside a narrow window. See boot_wait's comment in
+# nke-node-fde.pkr.hcl.
+BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
-.PHONY: os-image os-image-fde os-image-non-fde image init init-fde init-non-fde ssh-key clean check-deps
+.PHONY: os-image os-image-fde os-image-non-fde image init init-fde init-non-fde ssh-key prepare-installer-iso clean check-deps
 
 ssh-key: $(SSH_DIR)/id_ed25519
 
@@ -55,6 +69,14 @@ init-fde:
 
 init-non-fde:
 	$(PACKER) init $(PKR_FILE_NON_FDE)
+
+# FDE/non-FDE only. See prepare-installer-iso.sh's header for why this
+# exists: widening the installer ISO's own GRUB timeout to 300s means
+# boot_command's blind VNC keystrokes just need to land sometime in a wide
+# window, not a narrow, unpredictable one, under slow/tcg boots.
+prepare-installer-iso:
+	mkdir -p $(ISO_CACHE)
+	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
 
 check-deps:
 	@command -v oras >/dev/null 2>&1 || { \
@@ -86,7 +108,7 @@ image: os-image
 # cloud image) to lay down an LVM-on-LUKS layout via autoinstall, then
 # provisions the same nke-agent/spire-agent bits as `os-image`, plus TPM2
 # binding scaffolding deferred to first boot. See ../docs/full-disk-encryption.md.
-os-image-fde: check-deps ssh-key init-fde
+os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 	mkdir -p $(ARTIFACTS)
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
@@ -102,12 +124,14 @@ os-image-fde: check-deps ssh-key init-fde
 		-var cpu_model=$(CPU_MODEL) \
 		-var ssh_timeout=$(SSH_TIMEOUT) \
 		-var boot_wait=$(BOOT_WAIT) \
+		-var iso_url=$(ISO_URL) \
+		-var iso_checksum=$(ISO_CHECKSUM) \
 		-var luks_passphrase=$(LUKS_PASSPHRASE) \
 		$(PKR_FILE_FDE)
 
 # Non-FDE variant: same installer+autoinstall+LVM flow as os-image-fde,
 # minus LUKS/Clevis/TPM entirely. See nke-node-non-fde.pkr.hcl.
-os-image-non-fde: check-deps ssh-key init-non-fde
+os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 	mkdir -p $(ARTIFACTS)
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
@@ -123,7 +147,9 @@ os-image-non-fde: check-deps ssh-key init-non-fde
 		-var cpu_model=$(CPU_MODEL) \
 		-var ssh_timeout=$(SSH_TIMEOUT) \
 		-var boot_wait=$(BOOT_WAIT) \
+		-var iso_url=$(ISO_URL) \
+		-var iso_checksum=$(ISO_CHECKSUM) \
 		$(PKR_FILE_NON_FDE)
 
 clean:
-	rm -rf $(CURDIR)/output $(CURDIR)/output-fde $(CURDIR)/output-non-fde $(ARTIFACTS)
+	rm -rf $(CURDIR)/output $(CURDIR)/output-fde $(CURDIR)/output-non-fde $(ARTIFACTS) $(ISO_CACHE)

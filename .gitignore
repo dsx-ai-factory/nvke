@@ -17,6 +17,7 @@ os-image/packer/output/
 os-image/packer/output-fde/
 os-image/packer/output-non-fde/
 os-image/packer/artifacts/
+os-image/packer/iso-cache/
 os-image/packer/.ssh/
 
 # Editor / OS

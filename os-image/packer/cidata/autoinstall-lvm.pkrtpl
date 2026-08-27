@@ -27,7 +27,7 @@ autoinstall:
       size: 0
     layout:
       name: lvm
-      sizing_policy: all
+      sizing-policy: all
 %{ if luks_enabled ~}
       password: ${luks_passphrase}
 %{ endif ~}

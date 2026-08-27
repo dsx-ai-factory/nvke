@@ -53,7 +53,7 @@ variable "iso_checksum" {
 variable "disk_size" {
   type        = string
   default     = "12G"
-  description = "Build-time disk size, matching the FDE variant for comparability. The real deploy disk is grown to full size on first boot."
+  description = "Build-time disk size, matching the FDE variant for comparability (see its comment about sizing-policy). The real deploy disk is grown to full size on first boot."
 }
 
 # "kvm" when the host exposes /dev/kvm, "tcg" for software emulation — see
@@ -76,24 +76,27 @@ variable "ssh_timeout" {
   description = "How long Packer waits for SSH after the autoinstall reboot (installer + LVM setup is much slower than booting a prebuilt cloud image)."
 }
 
-# See the same variable in nke-node-fde.pkr.hcl: under tcg, boot_command's
-# blind VNC keystrokes into GRUB can land before GRUB is ready if boot_wait
-# is too short, silently dropping the autoinstall kernel params rather than
-# failing loudly.
+# See the same variable in nke-node-fde.pkr.hcl.
 variable "boot_wait" {
   type        = string
   default     = "5s"
-  description = "Delay before boot_command starts typing into GRUB. Must exceed however long BIOS+GRUB take to reach the menu; raise well past 5s under tcg."
+  description = "Delay before boot_command starts typing into GRUB. Comfortably under 300s (the patched GRUB timeout) but past however long BIOS+GRUB take to reach the menu; raise under tcg."
 }
 
 locals {
   artifacts = "${path.root}/artifacts"
   ssh_dir   = "${path.root}/.ssh"
+  # See the same locals block in nke-node-fde.pkr.hcl: this must stay out of
+  # local.artifacts, which the "file" provisioner uploads to the guest
+  # wholesale — a multi-gigabyte ISO doesn't belong in that upload.
+  iso_cache = "${path.root}/iso-cache"
+  iso_path  = "${local.iso_cache}/${basename(var.iso_url)}.patched.iso"
 }
 
 source "qemu" "nke-non-fde" {
-  iso_url      = var.iso_url
-  iso_checksum = var.iso_checksum
+  iso_url = local.iso_path
+  # See the comment on this in nke-node-fde.pkr.hcl.
+  iso_checksum = "none"
 
   # See the comment on this block in nke-node-fde.pkr.hcl: machine_type is
   # the QEMU chipset, not a CPU setting. q35 avoids the legacy "pc" (i440fx)
@@ -121,7 +124,7 @@ source "qemu" "nke-non-fde" {
 
   boot_wait = var.boot_wait
   boot_command = [
-    "<wait10>",
+    "<wait3>",
     "c<wait>",
     "set root=(cd0)<enter><wait>",
     "linux /casper/vmlinuz autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
