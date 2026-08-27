@@ -82,6 +82,13 @@ export NKECTL_CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE:-cwe-profiles:loca
 KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="${KUBECONFIG_DIR}/config"
 
+# KUBECONFIG alone is not enough: helm caches API discovery under
+# ~/.kube/cache and creates ~/.kube mode 0750 to do it, so under `sudo -E`
+# that directory is root-owned and the normal user cannot write the lock file
+# next to it either. `kubectl --raw` does not do this; helm does, on every
+# install. KUBECACHEDIR moves that cache into the same scratch directory.
+export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
+
 log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
 
 nodes_up=false
