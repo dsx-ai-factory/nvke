@@ -169,9 +169,14 @@ if ! grep -q "tearing down bootstrap kind cluster" <<<"${output}"; then
   log "FAIL: command never logged tearing down the bootstrap kind cluster"
   exit 1
 fi
-if kind get clusters 2>/dev/null | grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"; then
+# kind resolves a cluster through its provider, so ask the same one bootstrap
+# site used. Bare, the nerdctl leg asks Docker, sees none of nerdctl's
+# clusters, and passes without checking anything. kind accepts "docker" here
+# as well as its own default.
+if KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters 2>/dev/null |
+  grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"; then
   log "FAIL: kind cluster ${BOOTSTRAP_KIND_CLUSTER} is still registered after bootstrap site exited"
-  kind get clusters || true
+  KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters || true
   exit 1
 fi
 
