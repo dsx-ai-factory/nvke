@@ -352,14 +352,26 @@ start_dnsmasq() {
 }
 
 log "Starting dnsmasq on ${BRIDGE_NAME} (${DHCP_RANGE_START}-${DHCP_RANGE_END})..."
-if ! start_dnsmasq 2>/tmp/dnsmasq-start.err; then
-  if ! grep -q "Address already in use" /tmp/dnsmasq-start.err; then
-    cat /tmp/dnsmasq-start.err >&2
+DNSMASQ_ERR="$(mktemp)"
+if ! start_dnsmasq 2>"${DNSMASQ_ERR}"; then
+  if ! grep -q "Address already in use" "${DNSMASQ_ERR}"; then
+    cat "${DNSMASQ_ERR}" >&2
     fail "dnsmasq did not start"
   fi
-  holder="$(sudo ss -lnup "sport = :53" 2>/dev/null | grep "${BRIDGE_GW}:53" |
-    grep -oE 'users:\(\("[^"]+"' | head -1 | tr -d 'users:(("')"
-  log "${BRIDGE_GW}:53 is held by ${holder:-another process}"
+  # Purely diagnostic, and deliberately non-fatal. Two traps here:
+  #
+  #   - The common holder is a WILDCARD listener, which ss prints as 0.0.0.0:53
+  #     or *:53, never as ${BRIDGE_GW}:53. Filtering on the gateway address
+  #     matched nothing in exactly that case, and under `set -euo pipefail` a
+  #     grep that matches nothing aborts the script -- inside the fallback whose
+  #     whole job is to survive this. We already know port 53 is taken, because
+  #     dnsmasq just said so, so report whoever holds it and do not filter.
+  #   - `tr -d` takes a character SET, so it also ate the u/s/e/r/: characters
+  #     out of the process name ("systemd-resolved" -> "ytmd-olvd"). sed
+  #     extracts the quoted name instead.
+  holder="$(sudo ss -lnupH "sport = :53" 2>/dev/null |
+    sed -n 's/.*users:((\"\([^\"]*\)\".*/\1/p' | head -1 || true)"
+  log "${BRIDGE_GW}:53 is unavailable; port 53 is held by ${holder:-another process}"
   log "serving guest DNS on port ${ALT_DNS_PORT} and redirecting ${BRIDGE_NAME} port 53 to it"
   for proto in udp tcp; do
     if ! sudo iptables -t nat -C PREROUTING -i "${BRIDGE_NAME}" -p "${proto}" --dport 53 \
@@ -372,7 +384,7 @@ if ! start_dnsmasq 2>/tmp/dnsmasq-start.err; then
   ensure_bridge_input_rule -p tcp --dport "${ALT_DNS_PORT}"
   start_dnsmasq --port="${ALT_DNS_PORT}" || fail "dnsmasq did not start on port ${ALT_DNS_PORT} either"
 fi
-rm -f /tmp/dnsmasq-start.err
+rm -f "${DNSMASQ_ERR}"
 log "dnsmasq started (pid=$(cat "${DNSMASQ_PID_FILE}"))"
 
 # ── 6. Forwarding and NAT ───────────────────────────────────────────────────
