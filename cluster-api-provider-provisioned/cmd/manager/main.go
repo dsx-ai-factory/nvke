@@ -69,6 +69,7 @@ func main() {
 
 	exitOnError(logger, controllers.NewMachineReconciler(
 		manager.GetClient(),
+		manager.GetAPIReader(),
 		logger.With("controller", "provisioned-machine"),
 	).SetupWithManager(manager), "register machine controller")
 

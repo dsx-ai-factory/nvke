@@ -22,13 +22,14 @@ import (
 
 // MachineReconciler reconciles ProvisionedMachine objects.
 type MachineReconciler struct {
-	client client.Client
-	logger *slog.Logger
+	client    client.Client
+	apiReader client.Reader
+	logger    *slog.Logger
 }
 
 // NewMachineReconciler builds a MachineReconciler.
-func NewMachineReconciler(k8sClient client.Client, logger *slog.Logger) *MachineReconciler {
-	return &MachineReconciler{client: k8sClient, logger: logger}
+func NewMachineReconciler(k8sClient client.Client, apiReader client.Reader, logger *slog.Logger) *MachineReconciler {
+	return &MachineReconciler{client: k8sClient, apiReader: apiReader, logger: logger}
 }
 
 // SetupWithManager registers the reconciler with a manager.

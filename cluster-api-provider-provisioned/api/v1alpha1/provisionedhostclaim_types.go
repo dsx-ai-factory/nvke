@@ -11,22 +11,10 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 )
 
-const (
-	// ClaimClusterLabel records which cluster holds a claim.
-	ClaimClusterLabel = "provisioned.nke.nvidia.com/cluster"
-
-	// ClaimMachineNamespaceLabel records the namespace of the holding machine.
-	ClaimMachineNamespaceLabel = "provisioned.nke.nvidia.com/machine-namespace"
-
-	// ClaimMachineLabel records the name of the holding machine.
-	ClaimMachineLabel = "provisioned.nke.nvidia.com/machine"
-)
-
 // ProvisionedHostClaimSpec records who holds one IP address.
 //
-// The object's existence is the lock. Nothing reads this spec to make a
-// decision; it is here so an operator can see who holds what, and so a blocked
-// claimant can find the holder and check whether it still exists.
+// The object's existence is the lock. The spec identifies its exact holder so
+// a blocked claimant can determine whether that machine still exists.
 type ProvisionedHostClaimSpec struct {
 	// IPAddress is the canonical address being locked.
 	// +kubebuilder:validation:MinLength=1
@@ -36,14 +24,17 @@ type ProvisionedHostClaimSpec struct {
 	// +kubebuilder:validation:MinLength=1
 	ClusterName string `json:"clusterName"`
 
-	// MachineNamespace and MachineName locate the ProvisionedMachine that
-	// holds the claim. A claimant that finds this machine gone reclaims the
-	// host rather than waiting forever.
+	// MachineNamespace, MachineName, and MachineUID identify the exact
+	// ProvisionedMachine that holds the claim. The UID prevents a new machine
+	// with the same namespace and name from inheriting an old claim.
 	// +kubebuilder:validation:MinLength=1
 	MachineNamespace string `json:"machineNamespace"`
 
 	// +kubebuilder:validation:MinLength=1
 	MachineName string `json:"machineName"`
+
+	// +kubebuilder:validation:MinLength=1
+	MachineUID string `json:"machineUID"`
 
 	// HostName is the name the inventory gave the host, for operators. Two
 	// clusters may well call the same machine different things, which is the

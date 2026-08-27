@@ -68,9 +68,8 @@ spec:
             description: |-
               ProvisionedHostClaimSpec records who holds one IP address.
 
-              The object's existence is the lock. Nothing reads this spec to make a
-              decision; it is here so an operator can see who holds what, and so a blocked
-              claimant can find the holder and check whether it still exists.
+              The object's existence is the lock. The spec identifies its exact holder so
+              a blocked claimant can determine whether that machine still exists.
             properties:
               clusterName:
                 description: ClusterName is the cluster whose inventory listed the
@@ -92,9 +91,12 @@ spec:
                 type: string
               machineNamespace:
                 description: |-
-                  MachineNamespace and MachineName locate the ProvisionedMachine that
-                  holds the claim. A claimant that finds this machine gone reclaims the
-                  host rather than waiting forever.
+                  MachineNamespace, MachineName, and MachineUID identify the exact
+                  ProvisionedMachine that holds the claim. The UID prevents a new machine
+                  with the same namespace and name from inheriting an old claim.
+                minLength: 1
+                type: string
+              machineUID:
                 minLength: 1
                 type: string
             required:
@@ -102,6 +104,7 @@ spec:
             - ipAddress
             - machineName
             - machineNamespace
+            - machineUID
             type: object
         type: object
     served: true
