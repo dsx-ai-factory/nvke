@@ -45,6 +45,7 @@ import (
 	tenantnoderemediation "github.com/NVIDIA/nke/controller/internal/controllers/tenant/noderemediation"
 	tenantnodestatus "github.com/NVIDIA/nke/controller/internal/controllers/tenant/nodestatus"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenantaccess"
+	"github.com/NVIDIA/nke/controller/internal/controllers/tpmpubhashes"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/db/migrations"
 	"github.com/NVIDIA/nke/controller/internal/dbmetrics"
@@ -187,7 +188,12 @@ func main() {
 	}
 
 	controllerRuntimeLogger := logger.With("logger", "controller-runtime")
-	k8sControllerManager, err := kube.NewRuntimeManager(controllerRuntimeLogger, spirev1alpha1.AddToScheme, nicov1.AddToScheme)
+	k8sControllerManager, err := kube.NewRuntimeManager(
+		controllerRuntimeLogger,
+		cfg.SpireServerNamespace,
+		spirev1alpha1.AddToScheme,
+		nicov1.AddToScheme,
+	)
 	if err != nil {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)
 		os.Exit(1)
@@ -200,6 +206,19 @@ func main() {
 		nodeAgentClient,
 		cfg.TenantAccessEnabled,
 	)
+
+	if cfg.SpiffeEnabled {
+		tpmPubhashesCmController := tpmpubhashes.NewController(
+			cfg,
+			logger.With("logger", "tpm-pubhashes-configmap-controller"),
+			k8sControllerManager.GetClient(),
+			trustDomain,
+		)
+		if err := tpmPubhashesCmController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up TPM pubhashes ConfigMap controller", "error", err)
+			os.Exit(1)
+		}
+	}
 
 	nodeSetController := nodeset.NewController(
 		cfg,
@@ -273,6 +292,7 @@ func main() {
 		"enableCapi", cfg.EnableCapi,
 		"enableForgeCapi", cfg.EnableForgeCapi,
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
+		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
 	if cfg.EnableCapi {
 		machineSpireEntryController := capi.NewMachineSpireEntryController(
@@ -288,7 +308,6 @@ func main() {
 
 		if cfg.EnableForgeCapi {
 			nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
-				cfg,
 				k8sControllerManager.GetClient(),
 				logger.With("logger", "nico-tpm-spiffe-controller"),
 			)

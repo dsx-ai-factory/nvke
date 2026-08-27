@@ -19,10 +19,25 @@
 # `kind` itself is not preinstalled and is set up below the same way
 # capd-e2e.yml does it (helm/kind-action, install_only).
 #
-# Runs on the Docker provider (see run.sh) rather than nerdctl: that is the
-# path actually verified end to end on this runner image. nerdctl/containerd
-# rootless+cgroup-v2 provisioning on ubuntu-latest is not yet validated here
-# — see run.sh's comment for the exact rollback rationale.
+# Provider matrix: bootstrapengine defaults to the nerdctl/containerd
+# provider, but until this job existed only the Docker provider had ever
+# actually been exercised on a real runner -- CI silently overrode the
+# default back to docker. Both legs now run:
+#
+#   - docker:  the proven path, and the acceptance-criteria rollback --
+#     stays required so a regression here still blocks merges.
+#   - nerdctl: exercises KIND_EXPERIMENTAL_PROVIDER=nerdctl end to end
+#     against a standalone containerd this job installs and starts itself
+#     (see the "Install nerdctl" step below) -- separate from, and running
+#     alongside, the Docker daemon ubuntu-latest already ships (Stage 1's
+#     fake-node fixture and the profiles image still build through `docker`
+#     directly; see nodes-up/ensure-capd-image/ensure-profiles-image in
+#     cli/Makefile, unrelated to bootstrapengine's Provider and out of this
+#     job's scope to change). `continue-on-error` on this leg: kind's own
+#     docs mark every non-Docker provider experimental, and this is the
+#     first time this repo runs it in CI at all, so it is deliberately not
+#     yet allowed to block a merge -- see the PR that added this matrix for
+#     the exact reasoning and what "flip it to required" needs to see first.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -34,6 +49,8 @@
 # cli/e2e/bootstrap/run.sh's stages are added one at a time alongside the
 # bootstrap-site code they exercise, so the job is expected to stay green
 # throughout rather than going red until some later change makes it pass.
+# (The docker leg carries this required-ness; the nerdctl leg is advisory
+# within the same required workflow -- see the matrix comment above.)
 #
 # Since cli/internal/cwedeploy, the job also deploys Postgres,
 # Temporal and CWE onto the ephemeral cluster and asserts CWE reports healthy
@@ -50,6 +67,12 @@
 # what run.sh asks for and what promote-ghcr publishes (image-nvcr.yml copies
 # each controller/v* tag to GHCR; `edge` stays on nvcr.io alone). Bump it when
 # the suite needs something newer than the pinned controller.
+#
+# A tag, not the manifest digest under it: `docker save <repo>@<digest>`
+# writes `RepoTags: null`, so `kind load docker-image` leaves the node with an
+# anonymous image the kubelet cannot match, and it falls back to pulling from
+# ghcr.io with no credentials. Multi-arch images are handled in
+# bootstrapengine's flattenToHostPlatform instead.
 name: nkectl bootstrap e2e
 
 # See go-build.yml for why the push path list is duplicated by hand instead of
@@ -75,18 +98,46 @@ concurrency:
 
 jobs:
   e2e:
-    name: e2e
+    name: e2e (${{ matrix.provider }})
     runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
     # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
     # bundle fetch, local agent compile) plus the thin derivation on top has
-    # not yet been timed end to end in this CI lane.
+    # not yet been timed end to end in this CI lane. The nerdctl leg adds a
+    # standalone containerd install on top of that, so it gets the same
+    # budget rather than a tighter one.
     timeout-minutes: 45
     permissions:
       contents: read
       packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        provider: [docker, nerdctl]
+    # nerdctl is new to this CI lane (see the matrix comment above): let it
+    # report a real pass/fail without being able to block a merge until it
+    # has a track record. The docker leg has none of this -- it keeps
+    # blocking like it always has.
+    continue-on-error: ${{ matrix.provider == 'nerdctl' }}
     env:
       CWE_IMAGE: ghcr.io/nvidia/nke/controller:v0.1.1-rc.2
+      # nerdctl >= 1.7.0 is kind's own stated minimum for its nerdctl
+      # provider (KIND_EXPERIMENTAL_PROVIDER=nerdctl, added in kind v0.23.0,
+      # comfortably below the v0.32.0 this job pins). nerdctl-full bundles a
+      # matching containerd, runc and CNI plugins so nothing here depends on
+      # whatever containerd version ships with ubuntu-latest's Docker.
+      NERDCTL_VERSION: 2.3.5
+      NERDCTL_FULL_SHA256: b697295c623639734aaab737523c808fd3cc8d3046039fd94fff1744e4c317aa
+      # A standalone socket and containerd data/state root, distinct from
+      # the ones ubuntu-latest's Docker installation already runs (Docker's
+      # own containerd.io package also owns a unit literally named
+      # `containerd.service` on `/run/containerd/containerd.sock` -- reusing
+      # either would mean the "containerd-driven" leg is secretly still
+      # riding on Docker's daemon, which is exactly what this leg exists to
+      # rule out). Kept up alongside Docker rather than stopping Docker,
+      # because Stage 1's fake-node fixture and the profiles image build
+      # through `docker` directly (see the matrix comment above).
+      CONTAINERD_ADDRESS: /run/containerd-nerdctl/containerd.sock
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -132,6 +183,96 @@ jobs:
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
           install_only: true
 
+      # Standalone nerdctl + containerd for the nerdctl leg only. Installed
+      # from the upstream nerdctl-full bundle (containerd, runc, CNI plugins,
+      # nerdctl itself -- see https://github.com/containerd/nerdctl#install),
+      # checksummed against the release's published SHA256SUMS, same as this
+      # repo's other hand-downloaded-binary steps (see actionlint.yml).
+      #
+      # Rootful, not rootless: kind's nerdctl provider and bootstrapengine's
+      # own CommandRunner both exec a bare `nerdctl`/`kind` with no `sudo`
+      # baked in (see cli/internal/bootstrapengine/bootstrapengine.go and
+      # cmd/nkectl/bootstrap.go's ensureImageAvailable), the same shape as
+      # the docker leg, where the runner's `docker` group membership makes
+      # unprivileged `docker` work. Rootless nerdctl reaches the same
+      # no-sudo shape, but through systemd user-session cgroup delegation,
+      # subuid/subgid ranges and a rootlesskit network stack -- real
+      # moving parts to get right blind on a runner image nobody has run
+      # this provider on before, and irrelevant here: a GitHub-hosted
+      # runner is already a single-tenant, ephemeral VM with passwordless
+      # sudo, so rootless's isolation benefit over the docker leg's
+      # equivalent trust level is nil. This job gets root's access to the
+      # standalone containerd socket the same way: every step below that
+      # touches `nerdctl`/`kind` for this leg runs under `sudo -E`.
+      - name: Install nerdctl + standalone containerd
+        if: matrix.provider == 'nerdctl'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          archive="nerdctl-full-${NERDCTL_VERSION}-linux-amd64.tar.gz"
+          curl -fsSL -o "/tmp/${archive}" \
+            "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${archive}"
+          echo "${NERDCTL_FULL_SHA256}  /tmp/${archive}" | sha256sum -c -
+          sudo tar Cxzf /usr/local "/tmp/${archive}"
+
+          # A dedicated unit, config and data root -- see the CONTAINERD_ADDRESS
+          # comment above for why this does not reuse Docker's `containerd`.
+          sudo mkdir -p /etc/containerd-nerdctl /var/lib/containerd-nerdctl /run/containerd-nerdctl
+          /usr/local/bin/containerd config default | sudo tee /etc/containerd-nerdctl/config.toml >/dev/null
+          # containerd's `config default` output quotes strings with single
+          # quotes, not double -- matching only the path (not the quote
+          # style) keeps this working across containerd versions that differ
+          # on that. The grpc address is the only line with this exact path;
+          # the debug/grpc-tcp/metrics addresses are all empty.
+          sudo sed -i \
+            -e "s#^root = .*#root = \"/var/lib/containerd-nerdctl\"#" \
+            -e "s#^state = .*#state = \"/run/containerd-nerdctl\"#" \
+            -e "s#/run/containerd/containerd.sock#${CONTAINERD_ADDRESS}#" \
+            /etc/containerd-nerdctl/config.toml
+
+          sudo tee /etc/systemd/system/containerd-nerdctl.service >/dev/null <<'UNIT'
+          [Unit]
+          Description=standalone containerd for the nerdctl kind provider (NKX-14787)
+          After=network.target
+
+          [Service]
+          ExecStart=/usr/local/bin/containerd --config /etc/containerd-nerdctl/config.toml
+          Restart=on-failure
+          Delegate=yes
+          KillMode=process
+          OOMScoreAdjust=-999
+          LimitNOFILE=infinity
+          LimitNPROC=infinity
+          LimitCORE=infinity
+          TasksMax=infinity
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+
+          sudo systemctl daemon-reload
+          sudo systemctl enable --now containerd-nerdctl
+
+          for _ in $(seq 1 30); do
+            sudo test -S "${CONTAINERD_ADDRESS}" && break
+            sleep 1
+          done
+          if ! sudo test -S "${CONTAINERD_ADDRESS}"; then
+            echo "::error::containerd-nerdctl never opened ${CONTAINERD_ADDRESS}"
+            echo "::group::containerd-nerdctl.service status"
+            sudo systemctl status containerd-nerdctl --no-pager -l || true
+            echo "::endgroup::"
+            echo "::group::containerd-nerdctl journal"
+            sudo journalctl -u containerd-nerdctl --no-pager || true
+            echo "::endgroup::"
+            echo "::group::/etc/containerd-nerdctl/config.toml"
+            sudo cat /etc/containerd-nerdctl/config.toml || true
+            echo "::endgroup::"
+            exit 1
+          fi
+
+          sudo -E env "PATH=$PATH" nerdctl info
+
       - name: Log in to GHCR
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -139,18 +280,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Pulled here, once, on the runner's own Docker daemon -- nkectl itself
-      # never talks to a registry. cmd/nkectl/bootstrap.go's
-      # ensureImageAvailable finds this image already cached and `kind
-      # load`s it straight into the ephemeral cluster.
-      - name: Pull the CWE image
+      # docker/login-action writes ~/.docker/config.json for the runner
+      # user; `sudo -E` below preserves HOME so the nerdctl leg's root-run
+      # `nerdctl pull` reads the same credentials.
+      - name: Pull the CWE image (docker)
+        if: matrix.provider == 'docker'
         shell: bash
         run: docker pull "${CWE_IMAGE}"
 
+      - name: Pull the CWE image (nerdctl)
+        if: matrix.provider == 'nerdctl'
+        shell: bash
+        run: sudo -E env "PATH=$PATH" nerdctl pull "${CWE_IMAGE}"
+
       # The profiles image needs no registry: run.sh builds it from
-      # controller/test/fixtures.
-      - name: Run nkectl bootstrap e2e
+      # controller/test/fixtures. Built as the ordinary runner user for both
+      # legs -- bootstrapengine/cwedeploy are what change provider, not the
+      # fixture tooling (see the matrix comment above), and `make build`
+      # ahead of run.sh keeps the nerdctl leg's `sudo -E` scoped to the
+      # kind/nerdctl-touching part of the run rather than the Go build too.
+      - name: Build nkectl
+        working-directory: cli
+        run: make build
+
+      - name: Run nkectl bootstrap e2e (docker)
+        if: matrix.provider == 'docker'
         working-directory: cli
         env:
           NKECTL_CWE_IMAGE: ${{ env.CWE_IMAGE }}
-        run: make test-e2e-bootstrap
+          NKECTL_BOOTSTRAP_PROVIDER: docker
+        run: ./e2e/bootstrap/run.sh
+
+      - name: Run nkectl bootstrap e2e (nerdctl)
+        if: matrix.provider == 'nerdctl'
+        working-directory: cli
+        env:
+          NKECTL_CWE_IMAGE: ${{ env.CWE_IMAGE }}
+          NKECTL_BOOTSTRAP_PROVIDER: nerdctl
+        run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh

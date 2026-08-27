@@ -30,6 +30,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -182,7 +183,7 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		cfg.Provider = ProviderNerdctl
 	}
 
-	exists, err := e.Exists(ctx, cfg.ClusterName)
+	exists, err := e.Exists(ctx, cfg.ClusterName, cfg.Provider)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +213,7 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		return nil, fmt.Errorf("kind create cluster %s (provider=%s): %w\n%s", cfg.ClusterName, cfg.Provider, err, out)
 	}
 
-	kubeconfigPath, err := e.Kubeconfig(ctx, cfg.ClusterName)
+	kubeconfigPath, err := e.Kubeconfig(ctx, cfg.ClusterName, cfg.Provider)
 	if err != nil {
 		// The cluster came up but we could not retrieve its kubeconfig —
 		// leave it running rather than silently deleting state the caller
@@ -249,9 +250,14 @@ func (e *Engine) Delete(ctx context.Context, clusterName string, provider Provid
 }
 
 // Exists reports whether a kind cluster named clusterName is currently
-// registered with kind.
-func (e *Engine) Exists(ctx context.Context, clusterName string) (bool, error) {
-	out, err := e.Runner.Run(ctx, nil, "kind", "get", "clusters")
+// registered with kind under provider. kind's cluster listing is scoped to
+// the provider that created it, the same way create/delete/load are — an
+// empty provider defaults to ProviderNerdctl like the rest of this package.
+func (e *Engine) Exists(ctx context.Context, clusterName string, provider Provider) (bool, error) {
+	if provider == "" {
+		provider = ProviderNerdctl
+	}
+	out, err := e.Runner.Run(ctx, providerEnvMap(provider), "kind", "get", "clusters")
 	if err != nil {
 		// kind returns exit code 1 with "No kind clusters found." on stderr
 		// when none exist — that is not a failure of the query itself.
@@ -269,31 +275,53 @@ func (e *Engine) Exists(ctx context.Context, clusterName string) (bool, error) {
 	return false, nil
 }
 
-// Kubeconfig returns the path to a kubeconfig file for clusterName, writing
-// it out via `kind get kubeconfig` if not already cached on disk.
-func (e *Engine) Kubeconfig(ctx context.Context, clusterName string) (string, error) {
-	out, err := e.Runner.Run(ctx, nil, "kind", "get", "kubeconfig", "--name", clusterName)
-	if err != nil {
-		return "", fmt.Errorf("kind get kubeconfig %s: %w\n%s", clusterName, err, out)
+// Kubeconfig returns the path to a kubeconfig file for clusterName. provider
+// must match whatever provider created clusterName -- kind resolves a
+// cluster's nodes through its provider, so the wrong one reports the
+// cluster's nodes as missing even though it exists. An empty provider
+// defaults to ProviderNerdctl like the rest of this package.
+//
+// kind writes the file, rather than this function capturing its stdout: Run
+// merges stderr into stdout (see CommandRunner), and kind prints "using
+// nerdctl due to KIND_EXPERIMENTAL_PROVIDER" on stderr under every non-Docker
+// provider. Captured, that line became line 1 of the kubeconfig and clients
+// failed with "yaml: line 2: mapping values are not allowed in this context".
+func (e *Engine) Kubeconfig(ctx context.Context, clusterName string, provider Provider) (string, error) {
+	if provider == "" {
+		provider = ProviderNerdctl
 	}
-
-	f, err := os.CreateTemp("", "nkectl-bootstrap-kubeconfig-"+clusterName+"-*.yaml")
+	// A new directory, not a temp file: `kind export kubeconfig` merges into
+	// whatever the path holds, and an empty file is not a kubeconfig.
+	dir, err := os.MkdirTemp("", "nkectl-bootstrap-kubeconfig-"+clusterName+"-*")
 	if err != nil {
 		return "", fmt.Errorf("creating kubeconfig file for %s: %w", clusterName, err)
 	}
-	defer func() { _ = f.Close() }()
+	path := filepath.Join(dir, "config")
 
-	if _, err := f.WriteString(out); err != nil {
-		return "", fmt.Errorf("writing kubeconfig file for %s: %w", clusterName, err)
+	out, err := e.Runner.Run(ctx, providerEnvMap(provider),
+		"kind", "export", "kubeconfig", "--name", clusterName, "--kubeconfig", path)
+	if err != nil {
+		return "", fmt.Errorf("kind export kubeconfig %s: %w\n%s", clusterName, err, out)
 	}
-	return f.Name(), nil
+	return path, nil
 }
 
 // LoadImage loads a locally built image into every node of clusterName.
-// Under both providers this goes through `kind load docker-image`: kind's
-// own provider abstraction (selected via KIND_EXPERIMENTAL_PROVIDER) routes
-// the load through nerdctl and containerd's content store when the nerdctl
-// provider is selected, rather than the Docker daemon.
+//
+// Under the Docker provider this goes through `kind load docker-image`,
+// which itself shells out to `docker` to read the image. Under any other
+// provider it does not: `kind load docker-image`'s "is the image present,
+// and what is its ID" and "save it to a tarball" steps are hardcoded to the
+// `docker` binary regardless of KIND_EXPERIMENTAL_PROVIDER — see
+// https://github.com/kubernetes-sigs/kind/blob/main/pkg/cmd/kind/load/docker-image/docker-image.go.
+// Only the final "load the tarball onto each node" step honors the
+// provider. An image pulled via `nerdctl pull` was never in Docker's own
+// image store, so `kind load docker-image` fails with "not present
+// locally" even though the image genuinely exists. `kind load
+// image-archive` has no such dependency: it just opens a tarball you
+// already produced and loads it via the provider abstraction, so under a
+// non-Docker provider this saves the image itself first and hands kind the
+// archive instead.
 func (e *Engine) LoadImage(ctx context.Context, clusterName string, provider Provider, image string) error {
 	if image == "" {
 		return fmt.Errorf("bootstrapengine: image is required")
@@ -301,14 +329,132 @@ func (e *Engine) LoadImage(ctx context.Context, clusterName string, provider Pro
 	if provider == "" {
 		provider = ProviderNerdctl
 	}
-	env := providerEnvMap(provider)
 	e.log.Info("loading image into bootstrap kind cluster",
 		"cluster", clusterName, "provider", provider, "image", image)
-	out, err := e.Runner.Run(ctx, env, "kind", "load", "docker-image", image, "--name", clusterName)
+
+	if provider == ProviderDocker {
+		out, err := e.Runner.Run(ctx, nil, "kind", "load", "docker-image", image, "--name", clusterName)
+		if err != nil {
+			return fmt.Errorf("kind load docker-image %s into %s (provider=%s): %w\n%s", image, clusterName, provider, err, out)
+		}
+		return nil
+	}
+
+	archivePath, cleanup, err := saveImageArchive(ctx, e.Runner, provider, image)
 	if err != nil {
-		return fmt.Errorf("kind load docker-image %s into %s (provider=%s): %w\n%s", image, clusterName, provider, err, out)
+		return err
+	}
+	defer cleanup()
+
+	env := providerEnvMap(provider)
+	out, err := e.Runner.Run(ctx, env, "kind", "load", "image-archive", archivePath, "--name", clusterName)
+	if err != nil {
+		return fmt.Errorf("kind load image-archive %s into %s (provider=%s): %w\n%s", image, clusterName, provider, err, out)
 	}
 	return nil
+}
+
+// saveImageArchive saves image to a temp tarball via provider's own CLI
+// (e.g. `nerdctl save`), the same way ensureImageAvailable in
+// cmd/nkectl/bootstrap.go already treats the provider name as the CLI
+// binary to run. The caller must call cleanup once done with the file.
+func saveImageArchive(ctx context.Context, runner CommandRunner, provider Provider, image string) (path string, cleanup func(), err error) {
+	cli := string(provider)
+	if err := flattenToHostPlatform(ctx, runner, cli, image); err != nil {
+		return "", nil, err
+	}
+
+	f, err := os.CreateTemp("", "nkectl-bootstrap-image-*.tar")
+	if err != nil {
+		return "", nil, fmt.Errorf("creating image archive for %s: %w", image, err)
+	}
+	archivePath := f.Name()
+	_ = f.Close()
+	cleanup = func() { _ = os.Remove(archivePath) }
+
+	if out, err := runner.Run(ctx, nil, cli, "save", "-o", archivePath, image); err != nil {
+		cleanup()
+		return "", nil, fmt.Errorf("%s save %s: %w\n%s", cli, image, err, out)
+	}
+	return archivePath, cleanup, nil
+}
+
+// flattenToHostPlatform points image at the single manifest for this host,
+// the way `docker pull` already stores one.
+//
+// nerdctl stores a multi-arch tag as the whole manifest index, and `nerdctl
+// save` writes that index out. `--platform` limits which blobs it writes, not
+// what the index lists. kind imports on the node with `ctr images import
+// --all-platforms`, so it reads every entry the index lists and fails on the
+// platform nobody pulled: "content digest sha256:...: not found".
+//
+// A digest reference is already one manifest, and `tag` cannot target one, so
+// it is left alone.
+//
+// Pulls the platform manifest by digest before retagging (see the comment on
+// that call below) -- without it, `tag` fails with "not found" for a digest
+// `image inspect` just resolved, confirmed against a real nerdctl-provider
+// CI run: https://github.com/NVIDIA/nke/actions/runs/33088745329.
+func flattenToHostPlatform(ctx context.Context, runner CommandRunner, cli, image string) error {
+	repo, ok := repoOfTaggedRef(image)
+	if !ok {
+		return nil
+	}
+	out, err := runner.Run(ctx, nil, cli, "image", "inspect", "--mode=native",
+		"--format", "{{.Image.Target.Digest}} {{.ManifestDesc.Digest}}", image)
+	if err != nil {
+		return fmt.Errorf("%s image inspect %s: %w\n%s", cli, image, err, out)
+	}
+	// One line per store entry matching image, all the same pair.
+	line, _, _ := strings.Cut(strings.TrimSpace(out), "\n")
+	target, manifest, ok := strings.Cut(line, " ")
+	if !ok || !strings.HasPrefix(manifest, "sha256:") {
+		return fmt.Errorf("%s image inspect %s: want two sha256 digests, got %q", cli, image, out)
+	}
+	// Equal means the tag already points at one manifest, so there is no
+	// index to flatten. A locally built or loaded image is always this, and
+	// has no digest name for `tag` to read anyway.
+	if target == manifest {
+		return nil
+	}
+
+	// `tag` resolves its source by looking up an existing named image entry
+	// in the image store, not by walking arbitrary content-store blobs. The
+	// plain pull that got image here only registered the index itself
+	// (target, above) as a named entry -- the platform manifest content
+	// exists (image inspect's ManifestDesc walk finds it), but nothing has
+	// registered it as an image nerdctl can address by name, so `tag`
+	// reports "not found" for it even though `inspect` just resolved it.
+	// Pulling the digest directly registers it as its own image entry --
+	// its layers are already in the local content store under the same
+	// digests, so this only fetches the small manifest JSON, not the image
+	// again -- which the following tag can then find.
+	digestRef := repo + "@" + manifest
+	if out, err := runner.Run(ctx, nil, cli, "pull", digestRef); err != nil {
+		return fmt.Errorf("%s pull %s: %w\n%s", cli, digestRef, err, out)
+	}
+
+	// Retag image itself, not a new name: the node must end up holding the
+	// reference the pod spec asks for.
+	if out, err := runner.Run(ctx, nil, cli, "tag", digestRef, image); err != nil {
+		return fmt.Errorf("%s tag %s %s: %w\n%s", cli, digestRef, image, err, out)
+	}
+	return nil
+}
+
+// repoOfTaggedRef splits the repository off a "repo:tag" reference. It reports
+// false when the reference has no tag or pins a digest. A colon starts a tag
+// only after the last slash; before it, it is a registry port.
+func repoOfTaggedRef(image string) (repo string, ok bool) {
+	lastSlash := strings.LastIndex(image, "/")
+	if strings.Contains(image[lastSlash+1:], "@") {
+		return "", false
+	}
+	i := strings.LastIndex(image, ":")
+	if i <= lastSlash {
+		return "", false
+	}
+	return image[:i], true
 }
 
 // providerEnvMap returns the environment overrides Run should apply for the

@@ -1,0 +1,51 @@
+#cloud-config
+# Phase 4 — kubeadm cluster bring-up: per-VM cloud-init.
+#
+# Rendered by the Go test driver, internal/cloudinit.Render.
+#
+# Placeholders are sed-style NAME markers wrapped in double underscores, and
+# cloudinit.Vars lists every one of them. Do not spell a marker out in a comment
+# here: substitution does not skip comments, and a multi-line value would break
+# out of the comment and corrupt the document.
+hostname: __HOSTNAME__
+phone_home:
+  url: http://169.254.169.254:7777/latest/meta-data/phone_home
+  post: all
+  tries: 10
+preserve_hostname: false
+manage_etc_hosts: true
+users:
+  - name: nke
+    groups: sudo
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: false
+    passwd: __PASSWORD_HASH__
+ssh_pwauth: true
+chpasswd:
+  expire: false
+package_update: true
+packages:
+  - curl
+  - ca-certificates
+  - gnupg
+  - jq
+write_files:
+  - path: /etc/systemd/system/nke-agent.service.d/10-disable-mtls.conf
+    permissions: '0644'
+    content: |
+      # Phase 4 test override — runs nke-agent with plaintext gRPC on :50051.
+      # ExecStart= (empty) clears the base unit's command before overriding.
+      # Never use in production; consumed by tests/cluster-bringup/.
+      [Service]
+      ExecStart=
+      ExecStart=/usr/local/bin/nke-agent --disable-mtls --secure-server-port 50051
+runcmd:
+  # How kubeadm, the kubelet and a container runtime get onto the node. The
+  # block is built in Go: cloudinit.AptProvision for the NKE apt repository, or
+  # cloudinit.CommunityProvision for upstream releases plus a host-served
+  # nke-agent .deb, which is what a runner outside the repository's allow list
+  # has to use.
+__K8S_PROVISION__
+  - systemctl daemon-reload
+  - systemctl restart nke-agent

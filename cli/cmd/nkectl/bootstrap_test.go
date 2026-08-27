@@ -32,25 +32,24 @@ func (fakeCWERunner) Run(_ context.Context, name string, _ ...string) (string, e
 
 // fakeBootstrapRunner is a scripted bootstrapengine.CommandRunner so
 // runBootstrapSite can be exercised without a real kind binary or container
-// runtime. It answers every kind invocation the happy path issues: no
-// existing cluster, a successful create, and a fixed kubeconfig.
+// runtime. It answers every invocation the happy path issues: no existing
+// cluster, a successful create, and a resolvable host manifest digest.
 type fakeBootstrapRunner struct{}
 
 func (fakeBootstrapRunner) Run(_ context.Context, _ map[string]string, name string, args ...string) (string, error) {
-	if name != "kind" || len(args) == 0 {
+	if len(args) < 2 {
 		return "", nil
 	}
-	switch args[0] {
-	case "get":
-		if len(args) > 1 && args[1] == "clusters" {
-			// Mirrors kind's own exit-1-with-message behavior when no
-			// clusters exist, which bootstrapengine.Exists treats as
-			// "false, nil" rather than a real error.
-			return "No kind clusters found.\n", errors.New("exit status 1")
-		}
-		if len(args) > 1 && args[1] == "kubeconfig" {
-			return "apiVersion: v1\nkind: Config\n", nil
-		}
+	if name == "kind" && args[0] == "get" && args[1] == "clusters" {
+		// Mirrors kind's own exit-1-with-message behavior when no
+		// clusters exist, which bootstrapengine.Exists treats as
+		// "false, nil" rather than a real error.
+		return "No kind clusters found.\n", errors.New("exit status 1")
+	}
+	if args[0] == "image" && args[1] == "inspect" {
+		// Target digest and host manifest digest, equal: nothing to flatten.
+		d := "sha256:" + strings.Repeat("a", 64)
+		return d + " " + d + "\n", nil
 	}
 	return "", nil
 }

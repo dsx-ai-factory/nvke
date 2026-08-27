@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -19,7 +18,6 @@ import (
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
 )
 
@@ -28,14 +26,12 @@ const (
 )
 
 type NicoTpmSpiffeController struct {
-	cfg       config.Config
 	k8sClient client.Client
 	logger    *slog.Logger
 }
 
-func NewNicoTpmSpiffeController(cfg config.Config, k8sClient client.Client, logger *slog.Logger) *NicoTpmSpiffeController {
+func NewNicoTpmSpiffeController(k8sClient client.Client, logger *slog.Logger) *NicoTpmSpiffeController {
 	return &NicoTpmSpiffeController{
-		cfg:       cfg,
 		k8sClient: k8sClient,
 		logger:    logger,
 	}
@@ -50,12 +46,6 @@ func (c *NicoTpmSpiffeController) SetupWithManager(mgr ctrl.Manager) error {
 
 func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := c.logger.With("namespace", req.Namespace, "nicoMachineName", req.Name)
-
-	// Always reconcile the NicoMachine-derived tpm-pubhashes configmap, so that the SPIRE server has the latest set of pubhashes.
-	// Even if the NicoMachine that caused the reconcile is not ready, has no TPM EK public hash set yet, is being or has been deleted.
-	if err := c.reconcileTpmPubhashesConfigmap(ctx, logger); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to reconcile tpm pubhashes configmap: %w", err)
-	}
 
 	nicoMachine := &nicov1.NicoMachine{}
 	if err := c.k8sClient.Get(ctx, req.NamespacedName, nicoMachine); err != nil {
@@ -116,65 +106,4 @@ func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func (c *NicoTpmSpiffeController) reconcileTpmPubhashesConfigmap(ctx context.Context, logger *slog.Logger) error {
-	// Compute the full NicoMachine-derived pubhash set on every reconcile and apply it
-	// with a dedicated field manager. Multiple NicoMachines can trigger this controller,
-	// and applying only the current machine's key would cause those reconciles to
-	// overwrite each other via SSA.
-	nicoMachines := &nicov1.NicoMachineList{}
-	if err := c.k8sClient.List(ctx, nicoMachines); err != nil {
-		return fmt.Errorf("failed to list nico machines: %w", err)
-	}
-
-	data := map[string]string{}
-	for _, nicoMachine := range nicoMachines.Items {
-		if nicoMachine.Status.TpmEkPubHash == "" {
-			continue
-		}
-		if !nicoMachine.DeletionTimestamp.IsZero() {
-			continue
-		}
-		skip, err := c.shouldSkipTPMPubhash(ctx, nicoMachine)
-		if err != nil {
-			return err
-		}
-		if skip {
-			continue
-		}
-		data[nicoMachine.Status.TpmEkPubHash] = fmt.Sprintf("%s=%s", constants.LabelKeyNkeManagedBy, constants.FieldManagerNicoTpmSpiffe)
-	}
-
-	applyTpmPubhashesConfigmap := &corev1.ConfigMap{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "v1",
-			Kind:       "ConfigMap",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      c.cfg.SpireTPMPubhashesConfigMapName,
-			Namespace: c.cfg.SpireServerNamespace,
-		},
-		Data: data,
-	}
-
-	logger.Info("Applying tpm pubhashes configmap")
-	if err := c.k8sClient.Patch(ctx, applyTpmPubhashesConfigmap, client.Apply, client.FieldOwner(constants.FieldManagerNicoTpmSpiffe), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply tpm pubhashes configmap: %w", err)
-	}
-
-	return nil
-}
-
-func (c *NicoTpmSpiffeController) shouldSkipTPMPubhash(ctx context.Context, nicoMachine nicov1.NicoMachine) (bool, error) {
-	machine, err := util.GetOwnerMachine(ctx, c.k8sClient, nicoMachine.ObjectMeta)
-	if err != nil {
-		return false, fmt.Errorf("failed to get owner machine for NicoMachine %s/%s: %w", nicoMachine.Namespace, nicoMachine.Name, err)
-	}
-	if machine == nil {
-		return false, nil
-	}
-
-	spireAgentIDPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]
-	return spireAgentIDPath != "" && !strings.HasPrefix(spireAgentIDPath, constants.TPMSpireAgentPath), nil
 }

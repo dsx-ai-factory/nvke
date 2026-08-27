@@ -189,6 +189,24 @@ jobs:
             # refused connection to localhost:8080. Vet has to pass the tag,
             # or it matches no packages and exits non-zero.
             run: go vet -tags integration_test ./integration-test/...
+          - name: kubeadm bringup
+            dir: controller/test/kubeadm
+            # The 2-VM nico-vms bringup driver, behind `kubeadm_bringup`. It
+            # only ever runs on a self-hosted runner with QEMU, in the
+            # advisory kubeadm-bringup-e2e.yml lane, so this is the sole
+            # check that keeps it compiling against packages that keep
+            # moving. Vetted from its own directory rather than as
+            # ./test/kubeadm/... from controller, so `./...` here matches the
+            # suite and its internal packages and nothing else.
+            # go test, not just vet, for the internal packages. They are
+            # ordinary unit tests with no VM or config requirement, and nothing
+            # ran them: two cloudinit tests pointed at a path that does not
+            # exist and failed on every invocation while CI stayed green.
+            # ./... is not usable here because the top-level suite calls
+            # t.Fatal when its VM configuration is absent.
+            run: |
+              go vet -tags kubeadm_bringup ./...
+              go test -tags kubeadm_bringup ./internal/...
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

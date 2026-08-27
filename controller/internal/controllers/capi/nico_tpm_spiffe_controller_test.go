@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -20,11 +21,10 @@ import (
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
-	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
 )
 
-func TestNicoTpmSpiffeControllerReconcileAggregatesPubhashesAndAnnotatesMachine(t *testing.T) {
+func TestNicoTpmSpiffeControllerReconcileAnnotatesMachine(t *testing.T) {
 	currentMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
@@ -36,19 +36,12 @@ func TestNicoTpmSpiffeControllerReconcileAggregatesPubhashesAndAnnotatesMachine(
 		},
 	}
 
-	currentNicoMachine := newNicoMachineForTest("worker-0", "hash-current", false, currentMachine.Name)
-
-	otherNicoMachine := newNicoMachineForTest("worker-1", "hash-other", false, "")
-	noHashNicoMachine := newNicoMachineForTest("worker-2", "", false, "")
-	deletingNicoMachine := newNicoMachineForTest("worker-3", "hash-deleting", true, "")
+	currentNicoMachine := newNicoMachineForTest("worker-0", "hash-current", currentMachine.Name)
 
 	controller := newNicoTpmSpiffeControllerForTest(
 		t,
 		currentMachine,
 		currentNicoMachine,
-		otherNicoMachine,
-		noHashNicoMachine,
-		deletingNicoMachine,
 	)
 
 	_, err := controller.Reconcile(context.Background(), ctrl.Request{
@@ -59,12 +52,12 @@ func TestNicoTpmSpiffeControllerReconcileAggregatesPubhashesAndAnnotatesMachine(
 	})
 	require.NoError(t, err)
 
-	assertConfigMapEntries(t, controller, "hash-current", "hash-other")
 	assertMachineAnnotated(t, controller, currentMachine, constants.TPMSpireAgentPath+"hash-current")
+	assertConfigMapNotCreated(t, controller)
 }
 
-func TestNicoTpmSpiffeControllerReconcileCreatesConfigMapWhenRequestedMachineIsGone(t *testing.T) {
-	survivingNicoMachine := newNicoMachineForTest("worker-1", "hash-surviving", false, "")
+func TestNicoTpmSpiffeControllerReconcileSkipsWhenRequestedMachineIsGone(t *testing.T) {
+	survivingNicoMachine := newNicoMachineForTest("worker-1", "hash-surviving", "")
 
 	controller := newNicoTpmSpiffeControllerForTest(t, survivingNicoMachine)
 
@@ -76,7 +69,7 @@ func TestNicoTpmSpiffeControllerReconcileCreatesConfigMapWhenRequestedMachineIsG
 	})
 	require.NoError(t, err)
 
-	assertConfigMapEntries(t, controller, "hash-surviving")
+	assertConfigMapNotCreated(t, controller)
 }
 
 func TestNicoTpmSpiffeControllerReconcilePreservesExistingNonTPMSpiffePath(t *testing.T) {
@@ -95,7 +88,7 @@ func TestNicoTpmSpiffeControllerReconcilePreservesExistingNonTPMSpiffePath(t *te
 		},
 	}
 
-	currentNicoMachine := newNicoMachineForTest("worker-0", "hash-current", false, currentMachine.Name)
+	currentNicoMachine := newNicoMachineForTest("worker-0", "hash-current", currentMachine.Name)
 
 	controller := newNicoTpmSpiffeControllerForTest(t, currentMachine, currentNicoMachine)
 
@@ -107,8 +100,8 @@ func TestNicoTpmSpiffeControllerReconcilePreservesExistingNonTPMSpiffePath(t *te
 	})
 	require.NoError(t, err)
 
-	assertConfigMapEntries(t, controller)
 	assertMachineAnnotated(t, controller, currentMachine, joinTokenSpiffePath)
+	assertConfigMapNotCreated(t, controller)
 }
 
 func TestNicoTpmSpiffeControllerReconcileSkipsMachineAnnotationWhenRequestedMachineHasNoHash(t *testing.T) {
@@ -123,10 +116,9 @@ func TestNicoTpmSpiffeControllerReconcileSkipsMachineAnnotationWhenRequestedMach
 		},
 	}
 
-	currentNicoMachine := newNicoMachineForTest("worker-0", "", false, currentMachine.Name)
-	otherNicoMachine := newNicoMachineForTest("worker-1", "hash-other", false, "")
+	currentNicoMachine := newNicoMachineForTest("worker-0", "", currentMachine.Name)
 
-	controller := newNicoTpmSpiffeControllerForTest(t, currentMachine, currentNicoMachine, otherNicoMachine)
+	controller := newNicoTpmSpiffeControllerForTest(t, currentMachine, currentNicoMachine)
 
 	_, err := controller.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{
@@ -136,11 +128,11 @@ func TestNicoTpmSpiffeControllerReconcileSkipsMachineAnnotationWhenRequestedMach
 	})
 	require.NoError(t, err)
 
-	assertConfigMapEntries(t, controller, "hash-other")
 	assertMachineNotAnnotated(t, controller, currentMachine)
+	assertConfigMapNotCreated(t, controller)
 }
 
-func newNicoMachineForTest(name, tpmEkPubHash string, deleting bool, ownerMachineName string) *nicov1.NicoMachine {
+func newNicoMachineForTest(name, tpmEkPubHash, ownerMachineName string) *nicov1.NicoMachine {
 	nicoMachine := &nicov1.NicoMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: nicov1.GroupVersion.String(),
@@ -153,12 +145,6 @@ func newNicoMachineForTest(name, tpmEkPubHash string, deleting bool, ownerMachin
 		Status: nicov1.NicoMachineStatus{
 			TpmEkPubHash: tpmEkPubHash,
 		},
-	}
-
-	if deleting {
-		now := metav1.Now()
-		nicoMachine.DeletionTimestamp = &now
-		nicoMachine.Finalizers = []string{"test.finalizer"}
 	}
 
 	if ownerMachineName != "" {
@@ -178,10 +164,6 @@ func newNicoTpmSpiffeControllerForTest(t *testing.T, objs ...client.Object) *Nic
 	t.Helper()
 
 	return &NicoTpmSpiffeController{
-		cfg: config.Config{
-			SpireServerNamespace:           "spire-server",
-			SpireTPMPubhashesConfigMapName: "tpm-pubhashes",
-		},
 		k8sClient: fake.NewClientBuilder().
 			WithScheme(newNicoTpmSpiffeControllerTestScheme(t)).
 			WithObjects(objs...).
@@ -201,25 +183,14 @@ func newNicoTpmSpiffeControllerTestScheme(t *testing.T) *runtime.Scheme {
 	return scheme
 }
 
-func assertConfigMapEntries(t *testing.T, controller *NicoTpmSpiffeController, hashes ...string) {
+func assertConfigMapNotCreated(t *testing.T, controller *NicoTpmSpiffeController) {
 	t.Helper()
 
-	configMap := &corev1.ConfigMap{}
 	err := controller.k8sClient.Get(context.Background(), types.NamespacedName{
 		Namespace: "spire-server",
 		Name:      "tpm-pubhashes",
-	}, configMap)
-	require.NoError(t, err)
-
-	expectedData := make(map[string]string, len(hashes))
-	for _, hash := range hashes {
-		expectedData[hash] = constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerNicoTpmSpiffe
-	}
-
-	if len(expectedData) == 0 && len(configMap.Data) == 0 {
-		return
-	}
-	require.Equal(t, expectedData, configMap.Data)
+	}, &corev1.ConfigMap{})
+	require.True(t, apierrors.IsNotFound(err), "expected Nico TPM controller not to create the TPM pubhashes ConfigMap")
 }
 
 func assertMachineAnnotated(t *testing.T, controller *NicoTpmSpiffeController, machine *clusterv1.Machine, expectedPath string) {

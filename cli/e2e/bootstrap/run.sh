@@ -33,21 +33,26 @@
 #
 # NKECTL_BOOTSTRAP_PROVIDER selects the container runtime front end the
 # ephemeral cluster runs on (see cli/internal/bootstrapengine).
-# Defaults to "docker" here specifically: that is the path this suite has
-# actually verified end to end (including on the ubuntu-latest CI runner);
-# nerdctl is the package's default everywhere else and is exercised by the
-# package's own unit tests, but rootless/cgroup-v2 provisioning for a real
-# nerdctl+containerd runtime on the CI runner is not yet validated here.
-# Override to try it locally.
+# Defaults to "docker" here for a bare local run, since that is what a
+# checkout has without any extra setup. The CI workflow
+# (.github/workflows/nkectl-bootstrap-e2e.yml) now runs this script once per
+# provider in a matrix and exports NKECTL_BOOTSTRAP_PROVIDER explicitly for
+# each leg, exercising both docker and nerdctl end to end on the
+# ubuntu-latest runner rather than relying on this default. See that
+# workflow's own comments for how it stands up a standalone containerd for
+# the nerdctl leg, and why that leg is advisory (continue-on-error) rather
+# than required while it earns a track record. Override this var to try the
+# nerdctl provider locally too, once nerdctl/containerd are set up on the
+# host (see the workflow for the exact install this repo has verified).
 #
-# NKECTL_CWE_IMAGE must already be pulled locally (`docker pull`) before this
+# NKECTL_CWE_IMAGE must already be pulled locally, through whichever runtime
+# NKECTL_BOOTSTRAP_PROVIDER names (`docker pull`/`nerdctl pull`), before this
 # script runs -- nkectl loads it into the kind cluster via `kind load
 # docker-image` rather than pulling from inside the cluster (see
 # cmd/nkectl/bootstrap.go's ensureImageAvailable), so it does not itself need
-# registry credentials. The CI workflow logs in to nvcr.io and pulls the
-# image published by .github/workflows/image-nvcr.yml before invoking this
-# script; a local run needs the same `docker login nvcr.io` + `docker pull`
-# done by hand first.
+# registry credentials. The CI workflow logs in to GHCR and pulls the image
+# through the matching CLI for each leg before invoking this script; a local
+# run needs the same login + pull done by hand first.
 
 set -Eeuo pipefail
 
@@ -65,6 +70,25 @@ export NKECTL_CWE_IMAGE
 # nke-site-deploy, which this suite does not depend on.
 export NKECTL_CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE:-cwe-profiles:local}"
 
+# `kind create cluster` merges into $KUBECONFIG, defaulting to ~/.kube/config
+# if unset -- own scratch path instead, so this run never touches (or takes
+# ownership of) the caller's default kubeconfig. This matters most for the
+# nerdctl leg's CI job, which runs this whole script under `sudo -E`: without
+# this, `kind create cluster` running as root would leave ~/.kube/config
+# root-owned, and a later, unrelated cleanup step running as the normal user
+# (helm/kind-action's own post-job step) would fail with "permission denied"
+# trying to update it. Harmless for the docker leg too, so it is not
+# provider-conditional.
+KUBECONFIG_DIR="$(mktemp -d)"
+export KUBECONFIG="${KUBECONFIG_DIR}/config"
+
+# KUBECONFIG alone is not enough: helm caches API discovery under
+# ~/.kube/cache and creates ~/.kube mode 0750 to do it, so under `sudo -E`
+# that directory is root-owned and the normal user cannot write the lock file
+# next to it either. `kubectl --raw` does not do this; helm does, on every
+# install. KUBECACHEDIR moves that cache into the same scratch directory.
+export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
+
 log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
 
 nodes_up=false
@@ -73,6 +97,7 @@ cleanup() {
     log "tearing down fake node containers"
     make -C "${CLI_DIR}" nodes-down || true
   fi
+  rm -rf "${KUBECONFIG_DIR}"
 }
 trap cleanup EXIT
 
@@ -94,6 +119,20 @@ log "PASS: all fake nodes are up and node-agent is reachable"
 
 log "building the profiles image (${NKECTL_CWE_PROFILES_IMAGE})"
 make -C "${CLI_DIR}" ensure-profiles-image CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE}"
+
+# ensure-profiles-image always builds through `docker` (see cli/Makefile):
+# `nerdctl build` needs a running buildkitd, which this suite does not stand
+# up (a second daemon alongside the containerd-nerdctl.service the nerdctl
+# CI leg already installs -- see nkectl-bootstrap-e2e.yml). Under the
+# nerdctl provider, ensureImageAvailable in cmd/nkectl/bootstrap.go inspects
+# and loads NKECTL_CWE_PROFILES_IMAGE through nerdctl, and a purely local
+# image docker built is invisible to nerdctl's own, separate containerd
+# instance -- so bridge it across once here, the same way `docker save` /
+# `nerdctl load` move any other locally built image between two runtimes.
+if [ "${NKECTL_BOOTSTRAP_PROVIDER}" = "nerdctl" ]; then
+  log "loading ${NKECTL_CWE_PROFILES_IMAGE} into nerdctl's containerd (built via docker above)"
+  docker save "${NKECTL_CWE_PROFILES_IMAGE}" | nerdctl load
+fi
 
 log "running: nkectl bootstrap site -i ${INVENTORY}" \
   "(NKECTL_BOOTSTRAP_PROVIDER=${NKECTL_BOOTSTRAP_PROVIDER}, NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
@@ -130,9 +169,14 @@ if ! grep -q "tearing down bootstrap kind cluster" <<<"${output}"; then
   log "FAIL: command never logged tearing down the bootstrap kind cluster"
   exit 1
 fi
-if kind get clusters 2>/dev/null | grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"; then
+# kind resolves a cluster through its provider, so ask the same one bootstrap
+# site used. Bare, the nerdctl leg asks Docker, sees none of nerdctl's
+# clusters, and passes without checking anything. kind accepts "docker" here
+# as well as its own default.
+if KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters 2>/dev/null |
+  grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"; then
   log "FAIL: kind cluster ${BOOTSTRAP_KIND_CLUSTER} is still registered after bootstrap site exited"
-  kind get clusters || true
+  KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters || true
   exit 1
 fi
 

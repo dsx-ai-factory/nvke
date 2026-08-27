@@ -63,7 +63,7 @@ func NewRuntimeScheme(addToSchemes ...AddToSchemeFunc) (*runtime.Scheme, error) 
 	return scheme, nil
 }
 
-func NewRuntimeManager(logger *slog.Logger, addToSchemes ...AddToSchemeFunc) (ctrl.Manager, error) {
+func NewRuntimeManager(logger *slog.Logger, configMapNamespace string, addToSchemes ...AddToSchemeFunc) (ctrl.Manager, error) {
 	config, err := NewRESTConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Kubernetes config: %w", err)
@@ -80,15 +80,24 @@ func NewRuntimeManager(logger *slog.Logger, addToSchemes ...AddToSchemeFunc) (ct
 		ctrlruntimelog.SetLogger(logr.Discard())
 	}
 
-	return ctrl.NewManager(config, ctrl.Options{
-		Scheme: scheme,
-		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&corev1.Secret{}: {
-				Namespaces: map[string]cache.Config{
-					tenantAccessKubeconfigNamespace: {},
-				},
+	cacheOptions := cache.Options{ByObject: map[client.Object]cache.ByObject{
+		&corev1.Secret{}: {
+			Namespaces: map[string]cache.Config{
+				tenantAccessKubeconfigNamespace: {},
 			},
-		}},
+		},
+	}}
+	if configMapNamespace != "" {
+		cacheOptions.ByObject[&corev1.ConfigMap{}] = cache.ByObject{
+			Namespaces: map[string]cache.Config{
+				configMapNamespace: {},
+			},
+		}
+	}
+
+	return ctrl.NewManager(config, ctrl.Options{
+		Scheme:                 scheme,
+		Cache:                  cacheOptions,
 		Metrics:                metricsserver.Options{BindAddress: "0"},
 		HealthProbeBindAddress: "0",
 	})

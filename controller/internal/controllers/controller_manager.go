@@ -28,8 +28,7 @@ type ControllerManager struct {
 	db     db.DB
 	stopCh chan struct{}
 
-	forgeCAPIMigration       *ForgeCAPIMigrationController
-	tpmPubhashesCmController *TpmPubhashesCmController
+	forgeCAPIMigration *ForgeCAPIMigrationController
 }
 
 // NewControllerManager creates a new ControllerManager.
@@ -44,11 +43,6 @@ func NewControllerManager(
 	trustDomain string,
 ) (*ControllerManager, error) {
 	controllerManagerLogger := logger.With("logger", "controller-manager")
-
-	var tpmPubhashesCmController *TpmPubhashesCmController
-	if cfg.SpiffeEnabled {
-		tpmPubhashesCmController = NewTpmPubhashesCmController(cfg, k8sClient, controllerManagerLogger, trustDomain)
-	}
 
 	var forgeCAPIMigration *ForgeCAPIMigrationController
 	if cfg.EnableForgeCapi {
@@ -65,12 +59,11 @@ func NewControllerManager(
 	}
 
 	return &ControllerManager{
-		cfg:                      cfg,
-		logger:                   controllerManagerLogger,
-		db:                       dbInstance,
-		stopCh:                   make(chan struct{}),
-		forgeCAPIMigration:       forgeCAPIMigration,
-		tpmPubhashesCmController: tpmPubhashesCmController,
+		cfg:                cfg,
+		logger:             controllerManagerLogger,
+		db:                 dbInstance,
+		stopCh:             make(chan struct{}),
+		forgeCAPIMigration: forgeCAPIMigration,
 	}, nil
 }
 
@@ -187,14 +180,5 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 			// Log errors but continue processing the other controllers.
 			a.logger.Error("Failed to reconcile Forge CAPI migration", "error", err, "siteID", site.ID.String())
 		}
-	}
-
-	if a.cfg.SpiffeEnabled {
-		if err := a.tpmPubhashesCmController.Reconcile(ctx); err != nil {
-			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile tpm pubhashes configmap", "error", err)
-		}
-	} else {
-		a.logger.Debug("SPIFFE is disabled, skipping tpm pubhashes configmap reconciliation")
 	}
 }
