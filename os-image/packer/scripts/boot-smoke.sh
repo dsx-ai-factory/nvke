@@ -95,7 +95,12 @@ qemu-system-x86_64 \
   &
 
 deadline=$((SECONDS + BOOT_TIMEOUT))
-until ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
+# timeout wraps the ssh call itself: ConnectTimeout only bounds the SSH
+# handshake, not 'cloud-init status --wait' actually returning on the guest.
+# Without this, a guest that connects but never finishes cloud-init blocks
+# forever inside the `until` condition -- the deadline check below never
+# runs, since it's in the loop body, not the condition.
+until timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o BatchMode=yes \
     ubuntu@127.0.0.1 'cloud-init status --wait' 2>/dev/null; do
@@ -108,7 +113,7 @@ done
 
 echo "boot-smoke: VM booted and completed cloud-init OK"
 
-ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
+timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o BatchMode=yes \
     ubuntu@127.0.0.1 bash -s <<'EOF'

@@ -88,7 +88,13 @@ report() {
 }
 
 ssh_guest() {
-  ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
+  # timeout, not just ConnectTimeout: ConnectTimeout only bounds the SSH
+  # handshake, not the remote command actually returning. Several callers
+  # use this inside `until ssh_guest ...; do ...; done` retry loops with
+  # their own deadline check in the loop body -- a remote command that
+  # connects but never returns would block forever in the loop condition,
+  # where that deadline check never runs.
+  timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o BatchMode=yes \
     ubuntu@127.0.0.1 "$@"
