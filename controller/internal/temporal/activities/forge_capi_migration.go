@@ -91,9 +91,13 @@ func (a *Activities) ApplyAdoptedForgeCAPIMachine(
 	nicoMachine.Spec.ProviderID = "nico://" + instance.GetId()
 	capi.SetPausedAnnotation(&nicoMachine.ObjectMeta, true)
 
+	// Bootstrap data is best effort for adoption: the Forge instance is already
+	// running and CAPI will not boot it from this Secret, but CAPI still expects
+	// the Machine to reference one. Rendering can fail for old nodes whose
+	// deprecated OS profiles are no longer packaged.
 	userData, err := a.renderTemplateLessForgeCAPIBootstrapUserData(ctx, createCtx)
 	if err != nil {
-		return err
+		userData = fmt.Sprintf("#cloud-config\n# Bootstrap data rendering failed while adopting an existing Forge instance into CAPI: %s\n", err)
 	}
 	bootstrapSecret := buildCAPIBootstrapSecret(createCtx, userData)
 
