@@ -11,6 +11,10 @@ ARTIFACTS   := $(CURDIR)/artifacts
 # uploaded too -- this is exactly what caused an FDE build to try uploading
 # 5.8GB instead of ~120MB and fail with a misleading "Disk quota exceeded".
 ISO_CACHE   := $(CURDIR)/iso-cache
+# FDE/non-FDE only: where the guest's serial console (boot + autoinstall
+# output) gets captured, for CI to upload as an artifact on failure -- no
+# VNC/monitor access there to inspect a stuck build interactively.
+BUILD_LOGS  := $(CURDIR)/build-logs
 PKR_FILE    := $(CURDIR)/nke-node.pkr.hcl
 PKR_FILE_FDE := $(CURDIR)/nke-node-fde.pkr.hcl
 PKR_FILE_NON_FDE := $(CURDIR)/nke-node-non-fde.pkr.hcl
@@ -109,7 +113,7 @@ image: os-image
 # provisions the same nke-agent/spire-agent bits as `os-image`, plus TPM2
 # binding scaffolding deferred to first boot. See ../docs/full-disk-encryption.md.
 os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
-	mkdir -p $(ARTIFACTS)
+	mkdir -p $(ARTIFACTS) $(BUILD_LOGS)
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
@@ -132,7 +136,7 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 # Non-FDE variant: same installer+autoinstall+LVM flow as os-image-fde,
 # minus LUKS/Clevis/TPM entirely. See nke-node-non-fde.pkr.hcl.
 os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
-	mkdir -p $(ARTIFACTS)
+	mkdir -p $(ARTIFACTS) $(BUILD_LOGS)
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
@@ -152,4 +156,4 @@ os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 		$(PKR_FILE_NON_FDE)
 
 clean:
-	rm -rf $(CURDIR)/output $(CURDIR)/output-fde $(CURDIR)/output-non-fde $(ARTIFACTS) $(ISO_CACHE)
+	rm -rf $(CURDIR)/output $(CURDIR)/output-fde $(CURDIR)/output-non-fde $(ARTIFACTS) $(ISO_CACHE) $(BUILD_LOGS)

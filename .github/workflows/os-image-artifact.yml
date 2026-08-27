@@ -220,6 +220,21 @@ jobs:
             QCOW="${GITHUB_WORKSPACE}/os-image/packer/output-non-fde/nke-node-non-fde" \
             OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
 
+      # Runs regardless of outcome: this runner has no VNC/monitor access to
+      # inspect a stuck or failed FDE/non-FDE build interactively, so the
+      # guest's own serial console (boot + autoinstall output, see
+      # console=ttyS0 in nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl) is
+      # the only way to see what happened. No-op if the dir is empty/missing
+      # (e.g. a failure before either build reached prepare-installer-iso).
+      - name: Upload FDE/non-FDE install console logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fde-install-console-logs
+          path: os-image/packer/build-logs/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Compress the qcow2 for publish
         id: disk
         run: |

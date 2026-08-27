@@ -91,6 +91,8 @@ locals {
   # wholesale — a multi-gigabyte ISO doesn't belong in that upload.
   iso_cache = "${path.root}/iso-cache"
   iso_path  = "${local.iso_cache}/${basename(var.iso_url)}.patched.iso"
+  # See the same local in nke-node-fde.pkr.hcl.
+  build_logs = "${path.root}/build-logs"
 }
 
 source "qemu" "nke-non-fde" {
@@ -127,9 +129,14 @@ source "qemu" "nke-non-fde" {
     "<wait3>",
     "c<wait>",
     "set root=(cd0)<enter><wait>",
-    "linux /casper/vmlinuz autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
+    "linux /casper/vmlinuz autoinstall console=ttyS0,115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
     "initrd /casper/initrd<enter><wait>",
     "boot<enter>"
+  ]
+
+  # See the same block in nke-node-fde.pkr.hcl.
+  qemuargs = [
+    ["-serial", "file:${local.build_logs}/non-fde-install-console.log"]
   ]
 
   ssh_username           = "ubuntu"

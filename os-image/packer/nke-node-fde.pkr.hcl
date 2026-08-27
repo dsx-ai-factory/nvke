@@ -125,6 +125,12 @@ locals {
   # that patched copy.
   iso_cache = "${path.root}/iso-cache"
   iso_path  = "${local.iso_cache}/${basename(var.iso_url)}.patched.iso"
+  # Also not under local.artifacts, for the same reason. CI has no way to
+  # inspect a stuck build interactively (no VNC/monitor access), so this
+  # captures the guest's own boot/install console output to a file the
+  # workflow can upload as an artifact on failure -- see console=ttyS0 on
+  # the boot_command line below, which is what routes it here.
+  build_logs = "${path.root}/build-logs"
 }
 
 source "qemu" "nke-fde" {
@@ -168,9 +174,18 @@ source "qemu" "nke-fde" {
     "<wait3>",
     "c<wait>",
     "set root=(cd0)<enter><wait>",
-    "linux /casper/vmlinuz autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
+    "linux /casper/vmlinuz autoinstall console=ttyS0,115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
     "initrd /casper/initrd<enter><wait>",
     "boot<enter>"
+  ]
+
+  # Additive, not a full override (qemuargs only replaces genuinely
+  # conflicting switches) -- captures the live installer's boot/autoinstall
+  # console output, which the console=ttyS0 kernel param above routes here
+  # instead of the VGA framebuffer. Read on a stuck/failed build; harmless
+  # noise otherwise.
+  qemuargs = [
+    ["-serial", "file:${local.build_logs}/fde-install-console.log"]
   ]
 
   ssh_username           = "ubuntu"
