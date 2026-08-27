@@ -7,27 +7,23 @@
 // locally launched nico-vms, to answer one question: does nico-vms work on a
 // GitHub Actions runner?
 //
-// Scope, and what this deliberately does NOT assert. Success here is that
-// kubeadm reached phase=initialize on the control plane and phase=join on the
-// worker, both driven over nke-agent's gRPC API. It does NOT install a CNI and
-// therefore does NOT claim the cluster is usable — without a CNI both nodes
-// stay NotReady and CoreDNS stays Pending, which is expected. That is a real
-// limit on the signal, and it buys a much shorter run under emulation. The
-// GitLab original (4 VMs, HA etcd, OVN or Calico, and a `kubectl get nodes`
-// Ready assertion) remains the fuller test.
+// Success is a usable two-node cluster: kubeadm reaches phase=initialize on the
+// control plane and phase=join on the worker, both driven over nke-agent's gRPC
+// API, a CNI is installed, and every node reports Ready. That matches the
+// GitLab suite's criterion.
+//
+// The CNI is upstream Calico, applied from its public manifests. NKE's own CNI
+// packages sit behind a source-IP allowlist that CI runners are outside of, and
+// the agent's InstallCNI RPC requires one of those packages to be registered
+// with dpkg, so this lane installs the manifests directly. The consequence is
+// worth stating plainly: this proves the cluster the agent builds becomes
+// usable, NOT that NKE's CNI packaging works. Verifying the shipped packages
+// stays with the GitLab suite, which can reach them.
 //
 // Topology is one control plane plus one worker, not the original's three
 // control planes. With a single control plane there is no etcd quorum to form
 // and no leader election across emulated VMs, which removes the failure mode
 // most likely to flap when every guest instruction is being interpreted.
-//
-// Related: NVIDIA/nke#229 reports that CWE never calls the agent's InstallCNI.
-// It does not affect this test on three counts: CWE is not in the path here
-// (this driver is the orchestrator), the driver would call InstallCNI itself
-// anyway, and CNI is out of scope entirely. Note for whoever adds CNI back:
-// our cloud-init runs nke-agent without --bundle-server-url, which is exactly
-// the configuration #229 describes, so check whether the agent's chart deploy
-// needs a bundle server before assuming it works.
 package kubeadm
 
 import (
@@ -42,6 +38,7 @@ import (
 	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/cloudinit"
 	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/cluster"
 	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/nicovms"
+	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/verify"
 )
 
 const (
@@ -122,18 +119,42 @@ func TestKubeadmBringup(t *testing.T) {
 	}
 	t.Logf("join complete on %s", worker.Name)
 
-	// ── keep the kubeconfig for post-mortem ─────────────────────────────────
-	// Fetched but not used to assert readiness: no CNI is installed, so nodes
-	// will report NotReady. It is written out purely so a failed or surprising
-	// run can be inspected by hand from the uploaded work dir.
+	// ── install a CNI ───────────────────────────────────────────────────────
+	// Until this runs both nodes are NotReady and CoreDNS stays Pending: that
+	// is what "no CNI" looks like, not a failure.
+	t.Logf("installing Calico %s on %s (pod CIDR %s, timeout %s)",
+		cfg.calicoVersion, cp.Name, cfg.podCIDR, cfg.cniTimeout)
+	cniOut, err := cluster.InstallCalico(ctx, initAddr, cfg.calicoVersion, cfg.podCIDR, cfg.cniTimeout)
+	if cniOut != "" {
+		t.Logf("--- calico install output ---\n%s", cniOut)
+	}
+	if err != nil {
+		initNodeDiag(ctx, t, cp.Name, cp.IP, worker.IP)
+		t.Fatalf("installing Calico: %v", err)
+	}
+
+	// ── assert the cluster is usable ────────────────────────────────────────
+	// Fatal, not best-effort: without a kubeconfig there is nothing to assert.
+	// The write stays ahead of the assertion so the artifact is uploaded even
+	// when readiness then times out.
 	kc, err := cluster.FetchKubeconfig(ctx, initAddr)
 	if err != nil {
-		t.Logf("FetchKubeconfig failed (non-fatal, diagnostics only): %v", err)
-	} else if werr := os.WriteFile(filepath.Join(workDir, "admin.conf"), []byte(kc), 0o600); werr != nil {
+		t.Fatalf("FetchKubeconfig from %s: %v", cp.Name, err)
+	}
+	if werr := os.WriteFile(filepath.Join(workDir, "admin.conf"), []byte(kc), 0o600); werr != nil {
 		t.Logf("writing admin.conf failed (non-fatal): %v", werr)
 	}
 
-	t.Logf("SUCCESS: kubeadm reached phase=initialize on %s and phase=join on %s", cp.Name, worker.Name)
+	t.Logf("polling until all %d nodes are Ready (timeout %s)", nVMs, cfg.readyTimeout)
+	ready, err := verify.NodesReady(ctx, kc, nVMs, cfg.readyTimeout, 15*time.Second)
+	if err != nil {
+		initNodeDiag(ctx, t, cp.Name, cp.IP, worker.IP)
+		t.Fatalf("nodes never all became Ready: %v", err)
+	}
+	t.Logf("all %d nodes Ready: %v", len(ready), ready)
+
+	t.Logf("SUCCESS: %d-node cluster is Ready (init on %s, join on %s, Calico %s)",
+		nVMs, cp.Name, worker.Name, cfg.calicoVersion)
 }
 
 // renderCloudInit builds the per-VM cloud-init bodies and writes a copy of each

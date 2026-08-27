@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/NVIDIA/nke/controller/test/kubeadm/internal/cluster"
 )
 
 // The GitLab original was a CLI (`cluster-bringup full …`) and took these as
@@ -58,6 +60,14 @@ const (
 	// KVM and are the most likely cause of a spurious red run.
 	defaultInitTimeout = 45 * time.Minute
 	defaultJoinTimeout = 30 * time.Minute
+
+	// The CNI install fetches manifests and waits for the Tigera operator to
+	// create its CRDs, which means an image pull on an emulated guest.
+	defaultCNITimeout = 20 * time.Minute
+	// Readiness cannot reuse the GitLab suite's 5m: their CNI images shipped
+	// pre-embedded in Debian packages, so their budget covered pod scheduling
+	// only. Ours pulls from a public registry under emulation first.
+	defaultReadyTimeout = 30 * time.Minute
 )
 
 // config is the fully resolved test configuration.
@@ -82,8 +92,12 @@ type config struct {
 	nodeImageURL string
 	workDir      string
 
-	initTimeout time.Duration
-	joinTimeout time.Duration
+	initTimeout  time.Duration
+	joinTimeout  time.Duration
+	cniTimeout   time.Duration
+	readyTimeout time.Duration
+
+	calicoVersion string
 
 	keepVMs bool
 }
@@ -137,9 +151,12 @@ func loadConfig(t *testing.T) config {
 		serviceCIDR: envOr("NKE_BRINGUP_SERVICE_CIDR", defaultServiceCIDR),
 		sshPasswordHash: envOr("NKE_BRINGUP_SSH_PASSWORD_HASH",
 			"$6$nke-cluster-bringup$KrSrwhFvUJrjMqlVELHsBSx5G1QO8RtNyG8GP6Jrh3.dRgCWQ8GgY79hCsLwlcMz1F0VfeyzL6lJEhwYO5Ay00"),
-		initTimeout: envDuration(t, "NKE_BRINGUP_INIT_TIMEOUT", defaultInitTimeout),
-		joinTimeout: envDuration(t, "NKE_BRINGUP_JOIN_TIMEOUT", defaultJoinTimeout),
-		keepVMs:     os.Getenv("NKE_BRINGUP_KEEP_VMS") != "",
+		initTimeout:   envDuration(t, "NKE_BRINGUP_INIT_TIMEOUT", defaultInitTimeout),
+		joinTimeout:   envDuration(t, "NKE_BRINGUP_JOIN_TIMEOUT", defaultJoinTimeout),
+		cniTimeout:    envDuration(t, "NKE_BRINGUP_CNI_TIMEOUT", defaultCNITimeout),
+		readyTimeout:  envDuration(t, "NKE_BRINGUP_READY_TIMEOUT", defaultReadyTimeout),
+		calicoVersion: envOr("NKE_BRINGUP_CALICO_VERSION", cluster.DefaultCalicoVersion),
+		keepVMs:       os.Getenv("NKE_BRINGUP_KEEP_VMS") != "",
 	}
 
 	// Only the nico-vms binary is required here. The kubeadm settings are

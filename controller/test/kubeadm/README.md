@@ -14,31 +14,25 @@ compiles or runs unless you ask for it by name.
 
 ## What this proves, and what it does not
 
-**Proves.** nico-vms provisions two VMs that can see each other; cloud-init
-installs `nke-kubeadm-distro` and `nke-agent` from the NKE apt repository;
-`ExecuteKubeadmInit` reaches `phase=initialize`, and `ExecuteKubeadmJoin` on the
-second VM reaches `phase=join`. The join is the load-bearing half: it only
-completes if the worker can reach the first VM's API server across the bridge,
-so it exercises the same VM-to-VM path a real cluster needs.
+**Proves.** nico-vms creates two VMs on the host; cloud-init installs an upstream
+Kubernetes stack; **nke-agent** — built from the working tree, not a published
+package — drives `kubeadm init` and one worker join over gRPC; upstream Calico
+installs; every node reports `Ready`. That is functional coverage of nke-agent's
+kubeadm RPCs, which nothing else in this repo has.
 
-**Does not prove the cluster is usable.** No CNI is installed. Without a pod
-network the kubelet never reports `Ready`, so the suite asserts nothing about
-node readiness, runs no workload, and never shells out to `kubectl`. Success is
-exactly two agent-reported phases:
+**Does not prove.** That NKE's own packages work. The Kubernetes stack comes from
+`dl.k8s.io` and GitHub releases, and the CNI from upstream Calico's manifests —
+not from `nke-kubeadm-distro` or `nke-cni-*`. Those live behind a source-IP
+allowlist that CI runners cannot reach. Verifying the shipped artifacts stays
+with the GitLab `cluster-bringup` suite, which can reach them and runs the fuller
+matrix (4 VMs, HA etcd, OVN or Calico).
 
-```
-vm-1  GetKubeadmStatus  kubeadmStatus=ready  kubeadmPhase=initialize
-vm-2  GetKubeadmStatus  kubeadmStatus=ready  kubeadmPhase=join
-```
+The distinction matters: a green run here means *the cluster nke-agent builds is
+usable*, not *NKE's packaging is good*.
 
-A phase counts as complete only when `kubeadmStatus == "ready"`, the reported
-phase matches, *and* the phase is present in `kubeadmCompletedPhases` — the same
-three-part check the manual `grpcurl` procedure uses
-(`internal/cluster/init.go:14-20`).
-
-The VMs also run `nke-agent` with `--disable-mtls` so the driver can speak
-plaintext gRPC on `:50051` (`testdata/user-data.yml.tmpl:41-49`). Production
-never does this.
+**Not the production CNI path either.** The agent's `InstallCNI` RPC requires an
+NKE-named Debian package registered with dpkg, so this suite applies Calico's
+manifests directly rather than impersonating one.
 
 ## Layout
 
@@ -47,7 +41,7 @@ never does this.
 | `internal/nicovms/` | Launches the `nico-vms` binary as a subprocess and wraps the Forge SDK client (`CreateNode`/`CreateNodes`/`DeleteNode` with ready-state polling). The only place that talks to nico-vms; no nico-vms internal package is imported. |
 | `internal/cluster/` | gRPC client for `nke-agent`: `ExecuteInit`, `ExecuteJoin`, `GetJoinStrings`, `WaitForPhase`, `WaitForAgent`, `FetchKubeconfig`, and `RunScript` for on-failure diagnostics. |
 | `internal/cloudinit/` | Renders `testdata/user-data.yml.tmpl` by substituting the `__KEY__` placeholders. Every placeholder must resolve or `Render` fails. |
-| `testdata/user-data.yml.tmpl` | Per-VM cloud-init: adds the NKE apt repository, installs `nke-kubeadm-distro-<minor>` plus `nke-agent`, and drops the `--disable-mtls` systemd override. |
+| `testdata/user-data.yml.tmpl` | Per-VM cloud-init. The install block is a `__K8S_PROVISION__` placeholder filled by `internal/cloudinit`; it also drops the `--disable-mtls` systemd override. |
 | `scripts/setup-ci-host.sh` | Prepares a CI runner for native bridge mode: QEMU/libvirt packages, the bridge, dnsmasq, `ip_forward`, NAT and FORWARD rules. A trimmed lift of nico-vms' `setup-linux.sh` networking half. |
 | `scripts/teardown-ci-host.sh` | Undoes the above, best-effort, and copies the VM console logs into the artifact directory. |
 
@@ -63,7 +57,7 @@ no packages to test
 ```
 
 The tag exists because this suite needs real VMs, a host bridge, and outbound
-network access to the NKE apt repository. A plain `go test ./...` anywhere in
+network access to a public Kubernetes mirror. A plain `go test ./...` anywhere in
 the `controller` module must never try to boot a VM. The tag also keeps the
 suite inside the existing `controller` module — no new `go.mod`, no `go.work`
 entry, no `vendor/` churn — while `.github/workflows/controller-test.yml`'s
@@ -115,17 +109,16 @@ run this suite — nico-vms' libvirt backend is Linux-only.
    addresses and install routes. `setup-linux.sh` installs a sudoers rule so
    the `setcap` does not prompt.
 
-4. **Package coordinates.** The two `nke-kubeadm-distro` values below must
-   already exist in the NKE apt repository — this is a post-publish smoke test,
-   so the packages have to be synced before the run.
-
-## Running it
+4. **Nothing from NVIDIA.** In the default `community` mode the VMs fetch
+   Kubernetes from `dl.k8s.io`, containerd/runc/CNI-plugins/crictl from GitHub
+   releases, and Calico from `raw.githubusercontent.com`. `nke-agent` is built
+   locally and served to the guests over the bridge. No NVIDIA network needed.
 
 ```bash
-# Which kubeadm publish to install inside the VMs. Both must already be in
-# the NKE apt repository.
-export NKE_BRINGUP_KUBEADM_DEB=nke-kubeadm-distro-1.34.2
-export NKE_BRINGUP_KUBEADM_DEB_VERSION=5
+# Provisioning mode. "community" (the default) fetches upstream Kubernetes and
+# needs no NVIDIA network. "apt" uses the NKE apt repository and only works from
+# an allowlisted host.
+export NKE_BRINGUP_PROVISION_MODE=community
 
 # Where the base image lives. Make it absolute: nico-vms resolves a relative
 # path against its own working directory, which is not the one you are in.
@@ -151,7 +144,10 @@ nico-vms' own namespace and is never used for driver settings.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NKE_BRINGUP_KUBEADM_DEB` | the suite's pin | Package name, e.g. `nke-kubeadm-distro-1.34.2` |
+| `NKE_BRINGUP_KUBEADM_DEB` | unset | Only for `NKE_BRINGUP_PROVISION_MODE=apt`; e.g. `nke-kubeadm-distro-1.36.3` |
+| `NKE_BRINGUP_CALICO_VERSION` | `v3.31.4` | Upstream Calico stream to install |
+| `NKE_BRINGUP_CNI_TIMEOUT` | `20m` | Budget for the Calico install and its CRD waits |
+| `NKE_BRINGUP_READY_TIMEOUT` | `30m` | Budget for all nodes to report `Ready` |
 | `NKE_BRINGUP_KUBEADM_DEB_VERSION` | the suite's pin | Exact apt-pinned version, e.g. `5` |
 | `NKE_BRINGUP_INIT_TIMEOUT` | `15m` | Wall clock for `ExecuteKubeadmInit` → `phase=initialize` |
 | `NKE_BRINGUP_JOIN_TIMEOUT` | `10m` | Wall clock for `ExecuteKubeadmJoin` → `phase=join` |
@@ -163,7 +159,7 @@ this test is for.
 
 The apt repository coordinates are compiled-in defaults and normally need no
 override: suite `nke-noble` (**not** plain `noble`), component `main`, served
-from the public NKE apt bucket.
+from the public upstream mirrors.
 
 `.github/workflows/kubeadm-bringup-e2e.yml` is the canonical worked example of
 the whole environment; it explains each value in place.

@@ -5,11 +5,12 @@
 # each other -- installs nothing, so it answers "does nico-vms work on a GitHub
 # runner" on its own. B: kubeadm init plus one join, installing the Kubernetes
 # stack from community releases and nke-agent from a package built in this job,
-# so the lane needs no NVIDIA-internal network.
+# then installing upstream Calico so every node reaches Ready. The lane needs no
+# NVIDIA-internal network.
 # Advisory, deliberately NOT in merge-gate.yml: it needs NVIDIA runners and root.
 # Runs under QEMU TCG (~10x slower); no runner here exposes /dev/kvm, see #219.
 # Self-hosted runners get no pull_request events, so copy-pr-bot mirror branches
-# are the trigger. Expect early runs to fail -- this is a probe with a test on it.
+# are the trigger.
 
 name: Kubeadm Bringup E2E
 
@@ -86,8 +87,6 @@ jobs:
             echo "::warning::/dev/kvm is missing on this runner; booting under QEMU software emulation (much slower)"
           fi
 
-      # Before anything expensive. If the repo is unreachable, cloud-init retries
-      # silently until the 45m agent timeout and blames "nke-agent never came up".
       # Installs QEMU/libvirt, creates the bridge and fetches the base image. It
       # omits setup-linux.sh's 169.254.169.254 bridge address: that is this EC2
       # runner's own IMDS and claiming it locally breaks the runner agent.
@@ -154,6 +153,12 @@ jobs:
           # NKE_BRINGUP_*, not NICO_VMS_*: test-driver settings, not nico-vms'.
           NKE_BRINGUP_INIT_TIMEOUT: 45m
           NKE_BRINGUP_JOIN_TIMEOUT: 30m
+          # The CNI install pulls Calico images from a public registry and waits
+          # for the Tigera operator to create its CRDs, all under emulation. The
+          # GitLab suite's 5m does not transfer -- its CNI images shipped
+          # pre-embedded in Debian packages, so its budget covered no pull.
+          NKE_BRINGUP_CNI_TIMEOUT: 20m
+          NKE_BRINGUP_READY_TIMEOUT: 30m
           NKE_BRINGUP_NICO_VMS_BIN: ${{ github.workspace }}/controller/nico-vms/bin/nico-vms
           NKE_BRINGUP_PROVISION_MODE: community
           NKE_BRINGUP_AGENT_DEB: ${{ steps.agent_deb.outputs.path }}
