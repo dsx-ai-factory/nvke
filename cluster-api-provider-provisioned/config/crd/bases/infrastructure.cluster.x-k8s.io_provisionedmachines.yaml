@@ -82,6 +82,10 @@ spec:
                 minLength: 1
                 type: string
             type: object
+            x-kubernetes-validations:
+            - message: providerID is immutable once set
+              rule: '!has(oldSelf.providerID) || (has(self.providerID) && self.providerID
+                == oldSelf.providerID)'
           status:
             description: |-
               ProvisionedMachineStatus defines the observed state of

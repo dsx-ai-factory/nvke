@@ -72,8 +72,9 @@ func newInfraMachine(name, providerID string) *infrav1.ProvisionedMachine {
 		TypeMeta: metav1.TypeMeta{APIVersion: infrav1.GroupVersion.String(), Kind: "ProvisionedMachine"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: testNamespace,
-			UID:    types.UID("uid-" + name),
-			Labels: map[string]string{clusterv1.ClusterNameLabel: testClusterName},
+			UID:        types.UID("uid-" + name),
+			Labels:     map[string]string{clusterv1.ClusterNameLabel: testClusterName},
+			Finalizers: []string{machineFinalizer},
 			OwnerReferences: []metav1.OwnerReference{{
 				APIVersion: clusterv1.GroupVersion.String(), Kind: "Machine", Name: name, Controller: &isController,
 			}},

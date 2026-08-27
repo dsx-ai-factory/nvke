@@ -11,6 +11,7 @@ import (
 )
 
 // ProvisionedMachineSpec defines the desired state of ProvisionedMachine.
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.providerID) || (has(self.providerID) && self.providerID == oldSelf.providerID)",message="providerID is immutable once set"
 type ProvisionedMachineSpec struct {
 	// ProviderID binds this machine to one host of the inventory. The provider
 	// sets it once, in the form provisioned://<cluster-name>/<ip-address>.

@@ -21,13 +21,17 @@ const (
 	HostAllocatedReason = "HostAllocated"
 
 	// NoHostAvailableReason means no host of the inventory is free for this
-	// machine. Add hosts, or delete a machine to release one.
+	// machine. Add a matching host to the inventory.
 	NoHostAvailableReason = "NoHostAvailable"
 
 	// HostNotFoundReason means the machine holds a host that the inventory no
 	// longer describes. The provider keeps the binding: a node still runs on
 	// that host.
 	HostNotFoundReason = "HostNotFound"
+
+	// DeletionNotSupportedReason means the bootstrap-only provider cannot make
+	// a running host safe for reuse, so it blocks deletion after host allocation.
+	DeletionNotSupportedReason = "DeletionNotSupported"
 
 	// WaitingForOwnerReason means the Cluster API machine controller has not
 	// yet set the owner reference on this object.

@@ -8,11 +8,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
@@ -48,7 +47,7 @@ func TestClaimHostRejectsInvalidIPAddressBeforeCreatingClaim(t *testing.T) {
 	machine := newInfraMachine(testMachineName, "")
 	reconciler, k8sClient := newMachineReconcilerForTest(t, machine)
 
-	err := reconciler.claimHost(context.Background(), machine, testClusterName,
+	_, err := reconciler.claimHost(context.Background(), machine, testClusterName,
 		hostWithAddress("host-01", "not-an-ip"))
 	require.ErrorContains(t, err, "invalid IP address")
 
@@ -75,18 +74,16 @@ func TestClaimHostRefusesAHostHeldByAnotherCluster(t *testing.T) {
 	other.Namespace = otherNamespace
 	other.UID = types.UID("uid-other-cp-1")
 	require.NoError(t, k8sClient.Create(context.Background(), other))
-	require.NoError(t, reconciler.claimHost(context.Background(), other, "other", foreign))
+	requireClaimAcquired(t, reconciler, other, "other", foreign)
 
 	mine := getInfraMachine(t, k8sClient, testMachineName)
-	err := reconciler.claimHost(context.Background(), mine, testClusterName, host)
+	_, err := reconciler.claimHost(context.Background(), mine, testClusterName, host)
 
 	require.ErrorIs(t, err, errHostClaimedElsewhere)
 	require.ErrorContains(t, err, "other-cp-1")
 }
 
-// Without this a provider that died between claiming and binding would strand a
-// host forever, which is worse than the double-booking the lock prevents.
-func TestClaimHostReclaimsAClaimWhoseHolderIsGone(t *testing.T) {
+func TestClaimHostKeepsAClaimWhoseHolderIsGone(t *testing.T) {
 	host := hostWithAddress("host-01", "10.0.0.11")
 
 	reconciler, k8sClient := newMachineReconcilerForTest(t,
@@ -112,18 +109,13 @@ func TestClaimHostReclaimsAClaimWhoseHolderIsGone(t *testing.T) {
 	require.NoError(t, k8sClient.Create(context.Background(), abandoned))
 
 	mine := getInfraMachine(t, k8sClient, testMachineName)
-	err := reconciler.claimHost(context.Background(), mine, testClusterName, host)
+	_, err := reconciler.claimHost(context.Background(), mine, testClusterName, host)
+	require.ErrorIs(t, err, errHostClaimedElsewhere)
 
-	// The first pass reclaims and asks to be retried rather than recursing, so
-	// one reconcile cannot loop against something recreating the claim.
-	require.Error(t, err)
-	require.ErrorIs(t, err, errClaimRetry)
-
-	require.NoError(t, reconciler.claimHost(context.Background(), mine, testClusterName, host))
 	claim := &infrav1.ProvisionedHostClaim{}
 	require.NoError(t, k8sClient.Get(context.Background(),
 		client.ObjectKey{Name: infrav1.HostClaimName("10.0.0.11")}, claim))
-	require.Equal(t, testMachineName, claim.Spec.MachineName)
+	require.Equal(t, abandoned.Spec.MachineName, claim.Spec.MachineName)
 }
 
 func TestClaimHostIsIdempotentForItsOwnHolder(t *testing.T) {
@@ -137,8 +129,8 @@ func TestClaimHostIsIdempotentForItsOwnHolder(t *testing.T) {
 	)
 
 	mine := getInfraMachine(t, k8sClient, testMachineName)
-	require.NoError(t, reconciler.claimHost(context.Background(), mine, testClusterName, host))
-	require.NoError(t, reconciler.claimHost(context.Background(), mine, testClusterName, host))
+	requireClaimAcquired(t, reconciler, mine, testClusterName, host)
+	requireClaimAcquired(t, reconciler, mine, testClusterName, host)
 
 	claim := &infrav1.ProvisionedHostClaim{}
 	require.NoError(t, k8sClient.Get(context.Background(),
@@ -163,74 +155,23 @@ func TestClaimHostDoesNotAdoptClaimFromPreviousMachineUID(t *testing.T) {
 	}
 	reconciler, k8sClient := newMachineReconcilerForTest(t, machine, oldClaim)
 
-	err := reconciler.claimHost(context.Background(), machine, testClusterName, host)
-	require.ErrorIs(t, err, errClaimRetry)
-	require.NoError(t, reconciler.claimHost(context.Background(), machine, testClusterName, host))
+	_, err := reconciler.claimHost(context.Background(), machine, testClusterName, host)
+	require.ErrorIs(t, err, errHostClaimedElsewhere)
 
 	claim := &infrav1.ProvisionedHostClaim{}
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKey{Name: oldClaim.Name}, claim))
-	require.Equal(t, string(machine.UID), claim.Spec.MachineUID)
+	require.Equal(t, oldClaim.Spec.MachineUID, claim.Spec.MachineUID)
 }
 
-func TestMachineExistsUsesLiveReader(t *testing.T) {
-	holder := newInfraMachine("holder", "")
-	reconciler, _ := newMachineReconcilerForTest(t)
-	reconciler.apiReader = fake.NewClientBuilder().
-		WithScheme(newTestScheme(t)).
-		WithObjects(holder).
-		Build()
-
-	alive, err := reconciler.machineExists(context.Background(), holder.Namespace, holder.Name, holder.UID)
+func requireClaimAcquired(
+	t *testing.T,
+	reconciler *MachineReconciler,
+	machine *infrav1.ProvisionedMachine,
+	clusterName string,
+	host infrav1.ProvisionedHost,
+) {
+	t.Helper()
+	result, err := reconciler.claimHost(context.Background(), machine, clusterName, host)
 	require.NoError(t, err)
-	require.True(t, alive)
-}
-
-func TestMachineExistsTreatsTerminatingHolderAsGone(t *testing.T) {
-	holder := newInfraMachine("holder", "")
-	now := metav1.Now()
-	holder.DeletionTimestamp = &now
-	holder.Finalizers = []string{"test.finalizer"}
-	reconciler, _ := newMachineReconcilerForTest(t, holder)
-
-	alive, err := reconciler.machineExists(context.Background(), holder.Namespace, holder.Name, holder.UID)
-	require.NoError(t, err)
-	require.False(t, alive)
-}
-
-func TestReleaseClaimsDeletesClaimsHeldByMachine(t *testing.T) {
-	host := hostWithAddress("host-01", "10.0.0.11")
-	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		newInfraCluster(host),
-		newCAPICluster(),
-		newOwnerMachine(),
-		newInfraMachine(testMachineName, ""),
-	)
-
-	machine := getInfraMachine(t, k8sClient, testMachineName)
-	require.NoError(t, reconciler.claimHost(context.Background(), machine, testClusterName, host))
-	require.NoError(t, reconciler.releaseClaims(context.Background(), machine))
-
-	claim := &infrav1.ProvisionedHostClaim{}
-	err := k8sClient.Get(context.Background(),
-		client.ObjectKey{Name: infrav1.HostClaimName(host.IPAddress)}, claim)
-	require.True(t, apierrors.IsNotFound(err))
-}
-
-func TestReleaseClaimsKeepsClaimOfPreviousMachineUID(t *testing.T) {
-	host := hostWithAddress("host-01", "10.0.0.11")
-	machine := newInfraMachine(testMachineName, "")
-	claim := &infrav1.ProvisionedHostClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: infrav1.HostClaimName(host.IPAddress)},
-		Spec: infrav1.ProvisionedHostClaimSpec{
-			IPAddress:        host.IPAddress,
-			ClusterName:      testClusterName,
-			MachineNamespace: machine.Namespace,
-			MachineName:      machine.Name,
-			MachineUID:       "uid-previous-incarnation",
-		},
-	}
-	reconciler, k8sClient := newMachineReconcilerForTest(t, machine, claim)
-
-	require.NoError(t, reconciler.releaseClaims(context.Background(), machine))
-	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKey{Name: claim.Name}, claim))
+	require.Equal(t, ctrl.Result{}, result)
 }
