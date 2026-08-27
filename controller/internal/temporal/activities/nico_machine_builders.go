@@ -11,13 +11,11 @@ import (
 
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/kube"
 	"github.com/NVIDIA/nke/controller/internal/teleport"
 )
 
@@ -36,29 +34,12 @@ type templateLessForgeCAPINodeConfig struct {
 	nvLinkLogicalPartitionID *uuid.UUID
 }
 
-func (a *Activities) buildNicoMachineForNode(ctx context.Context, createCtx *capiMachineCreateContext) (*nicov1.NicoMachine, error) {
+func (a *Activities) buildNicoMachineForNode(createCtx *capiMachineCreateContext) (*nicov1.NicoMachine, error) {
 	provisioningConfig, err := resolveTemplateLessForgeCAPINodeConfig(createCtx)
 	if err != nil {
 		return nil, err
 	}
 	nicoProvider, err := createCtx.cluster.NicoProvider()
-	if err != nil {
-		return nil, err
-	}
-
-	var instanceType GetInstanceTypeOutput
-	if provisioningConfig.infinibandPartitionID != nil || provisioningConfig.nvLinkLogicalPartitionID != nil {
-		instanceType, err = a.getInstanceType(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), provisioningConfig.instanceTypeID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get instance type: %w", err)
-		}
-	}
-
-	infinibandInterfaces, err := buildNicoMachineInfinibandInterfaces(provisioningConfig.instanceTypeID, provisioningConfig.infinibandPartitionID, instanceType)
-	if err != nil {
-		return nil, err
-	}
-	nvLinkInterfaces, err := buildNicoMachineNVLinkInterfaces(provisioningConfig.instanceTypeID, provisioningConfig.nvLinkLogicalPartitionID, instanceType)
 	if err != nil {
 		return nil, err
 	}
@@ -69,17 +50,7 @@ func (a *Activities) buildNicoMachineForNode(ctx context.Context, createCtx *cap
 		return nil, fmt.Errorf("failed to get iPXE script for OS profile %s: %w", provisioningConfig.osProfile, err)
 	}
 
-	// CAPNICo forwards NicoMachine.spec.labels to the Forge instance create
-	// payload, so resolve the VPC name here when the Forge cache is available.
-	vpcName := ""
-	if a.forgeProvider != nil {
-		vpcName = a.resolveVPCName(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), nicoProvider.VpcID.String())
-	}
-
-	instanceLabels, err := buildNicoInstanceLabels(createCtx.node, createCtx.cluster, nicoProvider, provisioningConfig.nodePoolID, a.cfg.NKESiteControllerName, vpcName)
-	if err != nil {
-		return nil, err
-	}
+	instanceLabels := buildNicoInstanceLabels(createCtx.node, createCtx.cluster, provisioningConfig.nodePoolID)
 
 	nicoMachine, err := buildNicoMachine(
 		createCtx.node,
@@ -92,8 +63,8 @@ func (a *Activities) buildNicoMachineForNode(ctx context.Context, createCtx *cap
 		provisioningConfig.sshKeyGroupIDs,
 		provisioningConfig.subnetIDs,
 		provisioningConfig.vpcPrefixIDs,
-		infinibandInterfaces,
-		nvLinkInterfaces,
+		provisioningConfig.infinibandPartitionID,
+		provisioningConfig.nvLinkLogicalPartitionID,
 		ipxeScript,
 	)
 	if err != nil {
@@ -219,13 +190,22 @@ func buildNicoMachine(
 	sshKeyGroupIDs []uuid.UUID,
 	subnetIDs []uuid.UUID,
 	vpcPrefixIDs []uuid.UUID,
-	infinibandInterfaces []nicov1.NicoMachineInfiniBandInterface,
-	nvLinkInterfaces []nicov1.NicoMachineNVLinkInterface,
+	infinibandPartitionID *uuid.UUID,
+	nvLinkLogicalPartitionID *uuid.UUID,
 	ipxeScript string,
 ) (*nicov1.NicoMachine, error) {
 	interfaces, err := buildNicoMachineInterfaces(subnetIDs, vpcPrefixIDs)
 	if err != nil {
 		return nil, err
+	}
+
+	infinibandPartition := ""
+	if infinibandPartitionID != nil {
+		infinibandPartition = infinibandPartitionID.String()
+	}
+	nvLinkPartition := ""
+	if nvLinkLogicalPartitionID != nil {
+		nvLinkPartition = nvLinkLogicalPartitionID.String()
 	}
 
 	labels := capiMachineLabels(cluster.Name, controlPlane)
@@ -240,47 +220,31 @@ func buildNicoMachine(
 			Labels:    labels,
 		},
 		Spec: nicov1.NicoMachineSpec{
-			VPCID:                nicoProvider.VpcID.String(),
-			InstanceTypeID:       instanceTypeID.String(),
-			Interfaces:           interfaces,
-			InfinibandInterfaces: infinibandInterfaces,
-			NVLinkInterfaces:     nvLinkInterfaces,
-			SSHKeyGroupIDs:       uuidStrings(sshKeyGroupIDs),
-			IpxeScript:           ipxeScript,
-			// These labels are part of the VM payload contract for CAPNICo-based machines.
+			VPCID:                    nicoProvider.VpcID.String(),
+			InstanceTypeID:           instanceTypeID.String(),
+			Interfaces:               interfaces,
+			InfinibandPartitionID:    infinibandPartition,
+			NVLinkLogicalPartitionID: nvLinkPartition,
+			SSHKeyGroupIDs:           uuidStrings(sshKeyGroupIDs),
+			IpxeScript:               ipxeScript,
+			// Identity labels CWE knows before create. CAPNICo owns machine-id,
+			// site-id, site-name, vpc-id, vpc-name, and ip-address.
 			Labels: instanceLabels,
 		},
 	}, nil
 }
 
-// buildNicoInstanceLabels builds the labels CWE can know before CAPNICo creates
-// the backing VM. CAPNICo adds the machine-id later because Forge only returns
-// that value after instance creation.
-func buildNicoInstanceLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, siteName, vpcName string) (map[string]string, error) {
-	nicoNodeProvider, err := node.NicoProvider()
-	if err != nil {
-		return nil, err
-	}
-
+// buildNicoInstanceLabels is the subset of instance labels CWE still writes on
+// the CAPI path. CAPNICo fills in topology and machine identity after create.
+func buildNicoInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID uuid.UUID) map[string]string {
 	labels := map[string]string{
-		constants.LabelKeyNodeID:     node.ID.String(),
-		constants.LabelKeyClusterID:  cluster.ID.String(),
-		constants.LabelKeyNodeSiteID: nicoProvider.SiteID.String(),
-		constants.LabelKeyNodeVPCID:  nicoProvider.VpcID.String(),
+		constants.LabelKeyNodeID:    node.ID.String(),
+		constants.LabelKeyClusterID: cluster.ID.String(),
 	}
 	if nodePoolID != uuid.Nil {
 		labels[constants.LabelKeyNodePoolID] = nodePoolID.String()
 	}
-	if nicoNodeProvider.ForgeMachineID != "" {
-		labels[constants.LabelKeyMachineID] = nicoNodeProvider.ForgeMachineID
-	}
-	if name := kube.NormalizeLabelValue(siteName); name != "" {
-		labels[constants.LabelKeyNodeSiteName] = name
-	}
-	if name := kube.NormalizeLabelValue(vpcName); name != "" {
-		labels[constants.LabelKeyNodeVPCName] = name
-	}
-	return labels, nil
+	return labels
 }
 
 func buildNicoMachineInterfaces(subnetIDs, vpcPrefixIDs []uuid.UUID) ([]nicov1.NicoMachineInterface, error) {
@@ -292,48 +256,6 @@ func buildNicoMachineInterfaces(subnetIDs, vpcPrefixIDs []uuid.UUID) ([]nicov1.N
 	}
 
 	return nil, fmt.Errorf("both subnetIDs and vpcPrefixIDs are empty")
-}
-
-func buildNicoMachineInfinibandInterfaces(instanceTypeID uuid.UUID, infinibandPartitionID *uuid.UUID, instanceType GetInstanceTypeOutput) ([]nicov1.NicoMachineInfiniBandInterface, error) {
-	if infinibandPartitionID == nil {
-		return nil, nil
-	}
-	if instanceType.InfiniBandDeviceName == "" {
-		return nil, fmt.Errorf("instance type %s does not support InfiniBand", instanceTypeID)
-	}
-	if len(instanceType.InfiniBandActiveDeviceIDs) == 0 {
-		return nil, fmt.Errorf("instance type %s does not support InfiniBand", instanceTypeID)
-	}
-
-	nicoInterfaces := make([]nicov1.NicoMachineInfiniBandInterface, 0, len(instanceType.InfiniBandActiveDeviceIDs))
-	for _, deviceID := range instanceType.InfiniBandActiveDeviceIDs {
-		nicoInterfaces = append(nicoInterfaces, nicov1.NicoMachineInfiniBandInterface{
-			PartitionID:    infinibandPartitionID.String(),
-			Device:         instanceType.InfiniBandDeviceName,
-			DeviceInstance: ptr.To(deviceID),
-			IsPhysical:     ptr.To(true),
-		})
-	}
-	return nicoInterfaces, nil
-}
-
-func buildNicoMachineNVLinkInterfaces(instanceTypeID uuid.UUID, nvLinkLogicalPartitionID *uuid.UUID, instanceType GetInstanceTypeOutput) ([]nicov1.NicoMachineNVLinkInterface, error) {
-	if nvLinkLogicalPartitionID == nil {
-		return nil, nil
-	}
-	if instanceType.NVLinkInterfaceCount == 0 {
-		return nil, fmt.Errorf("instance type %s does not support NVLink Interface", instanceTypeID)
-	}
-
-	activeDeviceIDs := getNVLinkActiveDeviceIDs(instanceType)
-	nicoInterfaces := make([]nicov1.NicoMachineNVLinkInterface, 0, len(activeDeviceIDs))
-	for _, deviceID := range activeDeviceIDs {
-		nicoInterfaces = append(nicoInterfaces, nicov1.NicoMachineNVLinkInterface{
-			NVLinkLogicalPartitionID: nvLinkLogicalPartitionID.String(),
-			DeviceInstance:           ptr.To(deviceID),
-		})
-	}
-	return nicoInterfaces, nil
 }
 
 func uuidStrings(ids []uuid.UUID) []string {

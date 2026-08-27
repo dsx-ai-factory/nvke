@@ -121,7 +121,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("failed to render infra machine template: %w", err)
 	}
-	if err := a.applyNicoMachineInstanceLabels(ctx, createCtx, infraMachine); err != nil {
+	if err := a.applyNicoMachineInstanceLabels(createCtx, infraMachine); err != nil {
 		return err
 	}
 
@@ -200,7 +200,7 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 		return err
 	}
 
-	nicoMachine, err := a.buildNicoMachineForNode(ctx, createCtx)
+	nicoMachine, err := a.buildNicoMachineForNode(createCtx)
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,6 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 }
 
 func (a *Activities) applyNicoMachineInstanceLabels(
-	ctx context.Context,
 	createCtx *capiMachineCreateContext,
 	infraMachine *unstructured.Unstructured,
 ) error {
@@ -245,26 +244,11 @@ func (a *Activities) applyNicoMachineInstanceLabels(
 		return nil
 	}
 
-	nicoProvider := db.NicoClusterProvider{
-		OrgID:  createCtx.cluster.OrgID,
-		SiteID: createCtx.cluster.SiteID,
-		VpcID:  createCtx.cluster.VpcID,
-	}
-	vpcName := ""
-	if a.forgeProvider != nil {
-		vpcName = a.resolveVPCName(ctx, nicoProvider.OrgID, nicoProvider.SiteID.String(), nicoProvider.VpcID.String())
-	}
-	labels, err := buildNicoInstanceLabels(
+	labels := buildNicoInstanceLabels(
 		createCtx.node,
 		createCtx.cluster,
-		nicoProvider,
 		createCtx.nodePool.ID,
-		a.cfg.NKESiteControllerName,
-		vpcName,
 	)
-	if err != nil {
-		return fmt.Errorf("build NicoMachine instance labels: %w", err)
-	}
 	existingLabels, _, err := unstructured.NestedStringMap(infraMachine.Object, "spec", "labels")
 	if err != nil {
 		return fmt.Errorf("read NicoMachine instance labels: %w", err)

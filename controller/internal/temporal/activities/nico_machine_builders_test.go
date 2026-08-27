@@ -307,39 +307,6 @@ func TestNicoMachineBuilders_BuildNicoMachineInterfaces(t *testing.T) {
 	}
 }
 
-func TestNicoMachineBuilders_BuildNicoMachineInfinibandInterfaces(t *testing.T) {
-	instanceTypeID := uuid.New()
-	infinibandPartitionID := uuid.New()
-	instanceType := GetInstanceTypeOutput{
-		InfiniBandDeviceName:      "ib0",
-		InfiniBandActiveDeviceIDs: []int32{1, 3},
-	}
-
-	infinibandInterfaces, err := buildNicoMachineInfinibandInterfaces(instanceTypeID, &infinibandPartitionID, instanceType)
-	require.NoError(t, err)
-	require.Len(t, infinibandInterfaces, 2)
-	assert.Equal(t, infinibandPartitionID.String(), infinibandInterfaces[0].PartitionID)
-	assert.Equal(t, "ib0", infinibandInterfaces[0].Device)
-	assert.Equal(t, int32(1), *infinibandInterfaces[0].DeviceInstance)
-	assert.True(t, *infinibandInterfaces[0].IsPhysical)
-}
-
-func TestNicoMachineBuilders_BuildNicoMachineNVLinkInterfaces(t *testing.T) {
-	instanceTypeID := uuid.New()
-	nvLinkLogicalPartitionID := uuid.New()
-	instanceType := GetInstanceTypeOutput{
-		NVLinkInterfaceCount:  2,
-		NVLinkActiveDeviceIDs: []int32{0, 2},
-	}
-
-	nvLinkInterfaces, err := buildNicoMachineNVLinkInterfaces(instanceTypeID, &nvLinkLogicalPartitionID, instanceType)
-	require.NoError(t, err)
-	require.Len(t, nvLinkInterfaces, 2)
-	assert.Equal(t, nvLinkLogicalPartitionID.String(), nvLinkInterfaces[0].NVLinkLogicalPartitionID)
-	assert.Equal(t, int32(0), *nvLinkInterfaces[0].DeviceInstance)
-	assert.Equal(t, int32(2), *nvLinkInterfaces[1].DeviceInstance)
-}
-
 func TestNicoMachineBuilders_BuildAdoptedNicoMachineForNodeFromForgeInstance(t *testing.T) {
 	labels := map[string]string{
 		"nke.nvidia.com/ip-address": "10.0.0.10",
@@ -409,37 +376,4 @@ func TestNicoMachineBuilders_BuildAdoptedNicoMachineForNodeFromForgeInstance(t *
 	require.Len(t, got.NVLinkInterfaces, 1)
 	assert.Equal(t, "nvlink-partition-1", got.NVLinkInterfaces[0].NVLinkLogicalPartitionID)
 	assert.Equal(t, ptr.To(int32(0)), got.NVLinkInterfaces[0].DeviceInstance)
-}
-
-func TestNicoMachineBuilders_ValidateNicoMachineAcceleratorInterfaces(t *testing.T) {
-	instanceTypeID := uuid.New()
-	partitionID := uuid.New()
-
-	type parameters struct {
-		build          func() error
-		wantErrContain string
-	}
-
-	tests := map[string]parameters{
-		"requires infiniband support": {
-			build: func() error {
-				_, err := buildNicoMachineInfinibandInterfaces(instanceTypeID, &partitionID, GetInstanceTypeOutput{})
-				return err
-			},
-			wantErrContain: "does not support InfiniBand",
-		},
-		"requires nvlink support": {
-			build: func() error {
-				_, err := buildNicoMachineNVLinkInterfaces(instanceTypeID, &partitionID, GetInstanceTypeOutput{})
-				return err
-			},
-			wantErrContain: "does not support NVLink Interface",
-		},
-	}
-
-	for name, params := range tests {
-		t.Run(name, func(t *testing.T) {
-			require.ErrorContains(t, params.build(), params.wantErrContain)
-		})
-	}
 }

@@ -23,7 +23,7 @@ import (
 // labelNodeTestWorkflow is a thin wrapper so the unexported labelNode helper can
 // be driven through the Temporal test environment.
 func labelNodeTestWorkflow(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
-	return labelNode(ctx, nodeID, addConfigProfileLabels)
+	return labelNode(ctx, nodeID, addConfigProfileLabels, true)
 }
 
 // setupLabelNodeEnv builds a focused test env that registers the real DB

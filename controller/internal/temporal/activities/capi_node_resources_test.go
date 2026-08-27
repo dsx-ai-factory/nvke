@@ -99,7 +99,7 @@ func TestApplyNicoMachineInstanceLabels_MergesOntoTemplateSpec(t *testing.T) {
 		},
 	}}
 	a := &Activities{cfg: config.Config{NKESiteControllerName: "site-a"}}
-	err := a.applyNicoMachineInstanceLabels(context.Background(), &capiMachineCreateContext{
+	err := a.applyNicoMachineInstanceLabels(&capiMachineCreateContext{
 		node: db.Node{
 			ID:   nodeID,
 			Nico: &db.NicoNodeProvider{ForgeMachineID: "machine-abc123"},
@@ -121,10 +121,10 @@ func TestApplyNicoMachineInstanceLabels_MergesOntoTemplateSpec(t *testing.T) {
 	assert.Equal(t, nodeID.String(), labels[constants.LabelKeyNodeID])
 	assert.Equal(t, clusterID.String(), labels[constants.LabelKeyClusterID])
 	assert.Equal(t, nodePoolID.String(), labels[constants.LabelKeyNodePoolID])
-	assert.Equal(t, "machine-abc123", labels[constants.LabelKeyMachineID])
-	assert.Equal(t, siteID.String(), labels[constants.LabelKeyNodeSiteID])
-	assert.Equal(t, "site-a", labels[constants.LabelKeyNodeSiteName])
-	assert.Equal(t, vpcID.String(), labels[constants.LabelKeyNodeVPCID])
+	assert.Empty(t, labels[constants.LabelKeyMachineID])
+	assert.Empty(t, labels[constants.LabelKeyNodeSiteID])
+	assert.Empty(t, labels[constants.LabelKeyNodeSiteName])
+	assert.Empty(t, labels[constants.LabelKeyNodeVPCID])
 	assert.Empty(t, labels[constants.LabelKeyNodeVPCName])
 }
 

@@ -134,41 +134,19 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 }
 
 func TestBuildNicoInstanceLabels(t *testing.T) {
-	// This test locks the CAPNICo VM payload label contract so future changes do
-	// not drop machine, site, or VPC labels before they reach NicoMachine.spec.
 	nodeID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 	clusterID := uuid.MustParse("11111111-2222-3333-4444-555555555555")
-	siteID := uuid.MustParse("66666666-7777-8888-9999-000000000000")
-	vpcID := uuid.MustParse("abababab-cdcd-efef-0101-232323232323")
 	nodePoolID := uuid.MustParse("99999999-8888-7777-6666-555555555555")
 
-	labels, err := buildNicoInstanceLabels(
-		db.Node{
-			ID:             nodeID,
-			ForgeMachineID: "legacy-machine",
-			Nico: &db.NicoNodeProvider{
-				ForgeMachineID: "machine-abc123",
-			},
-		},
-		db.Cluster{
-			ID: clusterID,
-		},
-		db.NicoClusterProvider{
-			SiteID: siteID,
-			VpcID:  vpcID,
-		},
+	labels := buildNicoInstanceLabels(
+		db.Node{ID: nodeID},
+		db.Cluster{ID: clusterID},
 		nodePoolID,
-		"NICo VMs Site",
-		"Mock VPC",
 	)
-	require.NoError(t, err)
 
-	assert.Equal(t, nodeID.String(), labels[constants.LabelKeyNodeID])
-	assert.Equal(t, clusterID.String(), labels[constants.LabelKeyClusterID])
-	assert.Equal(t, nodePoolID.String(), labels[constants.LabelKeyNodePoolID])
-	assert.Equal(t, "machine-abc123", labels[constants.LabelKeyMachineID])
-	assert.Equal(t, siteID.String(), labels[constants.LabelKeyNodeSiteID])
-	assert.Equal(t, "nico-vms-site", labels[constants.LabelKeyNodeSiteName])
-	assert.Equal(t, vpcID.String(), labels[constants.LabelKeyNodeVPCID])
-	assert.Equal(t, "mock-vpc", labels[constants.LabelKeyNodeVPCName])
+	assert.Equal(t, map[string]string{
+		constants.LabelKeyNodeID:     nodeID.String(),
+		constants.LabelKeyClusterID:  clusterID.String(),
+		constants.LabelKeyNodePoolID: nodePoolID.String(),
+	}, labels)
 }

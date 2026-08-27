@@ -269,7 +269,7 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activ
 	postJoinStart := workflow.Now(ctx)
 	endPostJoin := func() { recordPhase("post_join", postJoinStart, workflow.Now(ctx)) }
 
-	if err := labelNode(ctx, input.NodeID, hasConfigProfile); err != nil {
+	if err := labelNode(ctx, input.NodeID, hasConfigProfile, nodeCtx.InfraMode != activities.InfraModeCAPI); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to label node: %w", err)
 	}
@@ -644,7 +644,7 @@ func joinNode(ctx workflow.Context, nodeID uuid.UUID) (bool, error) {
 	return false, nil
 }
 
-func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
+func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels, addTopologyLabels bool) error {
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
@@ -700,7 +700,7 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bo
 		a.LabelNode,
 		activities.LabelNodeInput{
 			AddConfigProfileLabels:           addConfigProfileLabels,
-			AddTopologyLabels:                true,
+			AddTopologyLabels:                addTopologyLabels,
 			Labels:                           labels,
 			NodeID:                           nodeID,
 			NodeProvisioningConditionMessage: "Labeling node",
