@@ -19,7 +19,6 @@ import (
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capiexternal "sigs.k8s.io/cluster-api/controllers/external"
-	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
@@ -483,29 +482,48 @@ func (c *ForgeCAPIMigrationController) recordCoverage(ctx context.Context, site 
 }
 
 // nicoAdoptionIncomplete treats every node expected to gain CAPI objects as
-// remaining work until its Machine is ready and its NicoMachine exists. Nodes
-// without the Forge and database identity required for adoption are excluded by
+// remaining work until its Machine and NicoMachine exist, neither is still
+// paused, and CAPNICo has claimed the backing instance. Nodes without the Forge
+// and database identity required for adoption are excluded by
 // expectsCAPIAdoption.
+//
+// Machine readiness is deliberately not consulted. A Machine reports NotReady
+// for as long as its Forge instance is unhealthy, which says nothing about
+// whether adoption ran, and would hold the gauge above zero on a site that
+// finished migrating.
 func (c *ForgeCAPIMigrationController) nicoAdoptionIncomplete(ctx context.Context, nodes []db.Node) bool {
 	for i := range nodes {
 		if !expectsCAPIAdoption(nodes[i]) {
 			continue
 		}
+		key := ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: nodes[i].Name}
+
 		machine := &clusterv1.Machine{}
-		err := c.k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: nodes[i].Name}, machine)
-		if err != nil || !capiconditions.IsTrue(machine, clusterv1.MachineReadyCondition) {
+		if err := c.k8sClient.Get(ctx, key, machine); err != nil || stillPaused(machine) {
 			return true
 		}
 
 		nicoMachine := &nicov1.NicoMachine{}
-		err = c.k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: nodes[i].Name}, nicoMachine)
-		if err != nil {
+		if err := c.k8sClient.Get(ctx, key, nicoMachine); err != nil || stillPaused(nicoMachine) {
+			return true
+		}
+		// CAPNICo sets InstanceID once it has imported the instance, before the
+		// instance reaches a healthy state, so an empty one means the import has
+		// not happened or was rejected.
+		if nicoMachine.Status.InstanceID == "" {
 			return true
 		}
 	}
 
 	// All nodes are adopted.
 	return false
+}
+
+// stillPaused reports whether the CAPI paused annotation survived migration.
+// unpause removes it once the copied objects are ready to reconcile.
+func stillPaused(obj ctrlclient.Object) bool {
+	_, paused := obj.GetAnnotations()[clusterv1.PausedAnnotation]
+	return paused
 }
 
 func countOrphanedLegacyNamespaces(namespaces []corev1.Namespace, clusters []db.Cluster) int {
