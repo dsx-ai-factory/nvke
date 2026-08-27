@@ -119,7 +119,9 @@ spec:
             - kube-dns-upstream
             - -setupinterface=false
             - -setupiptables=false
-          image: registry.k8s.io/dns/k8s-dns-node-cache:1.26.8
+          # Pinned by multi-arch index digest: the tag stays readable, the pull
+          # resolves by digest. Bump the tag and the digest together.
+          image: registry.k8s.io/dns/k8s-dns-node-cache:1.26.8@sha256:bc6e64e2c85956af2fcc0aa720086410d41b4f31f378c9a92646fecc85cd4739
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
