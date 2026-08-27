@@ -68,6 +68,31 @@ func TestABundleWhosePolicyReadsAResourceAttributeIsRefused(t *testing.T) {
 			 when { resource hasTag "site" };`,
 			shaped: false,
 		},
+		{
+			// The receiver is a literal rather than a variable. An adversarial
+			// review found this one: it is the same fail-open rule with the
+			// same consequence, and a check written as a list of forbidden
+			// receivers did not see it.
+			name: "an entity literal receiver",
+			policy: `forbid(principal, action, resource)
+			 when { NKE::Cluster::"11111111-1111-1111-1111-111111111111" has site };`,
+			shaped: true,
+		},
+		{
+			name: "an entity literal receiver, read directly",
+			policy: `forbid(principal, action, resource)
+			 when { NKE::Cluster::"11111111-1111-1111-1111-111111111111".site == "prod" };`,
+			shaped: true,
+		},
+		{
+			// Neither a variable nor a literal. The receivers that can name an
+			// entity are an open set, which is why the rule is written as what
+			// context allows rather than as what entities forbid.
+			name: "a receiver that is neither variable nor literal",
+			policy: `forbid(principal, action, resource)
+			 when { (if 1 == 1 then resource else resource) has site };`,
+			shaped: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -82,7 +107,7 @@ permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource
 			_, err := NewLocal(dir)
 			require.Error(t, err, "a rule that can never apply must not load as though it were enforced")
 			if tt.shaped {
-				assert.Contains(t, err.Error(), "nothing populates entity attributes")
+				assert.Contains(t, err.Error(), "context is the only thing whose attributes are populated")
 			}
 		})
 	}
@@ -109,4 +134,52 @@ when { context.issuer == "kube-apiserver" && context.method == "GET" };
 func TestTheShippedBundleReadsNoEntityAttribute(t *testing.T) {
 	_, err := NewLocal(bundleDir(t))
 	require.NoError(t, err)
+}
+
+// The error has to name the receiver, not only the attribute: an author who
+// wrote a literal needs to be told which expression to change, and "site" alone
+// does not say.
+func TestTheRefusalNamesTheReceiver(t *testing.T) {
+	for _, tt := range []struct{ name, policy, want string }{
+		{"a variable", `forbid(principal, action, resource) when { resource has site };`, "resource.site"},
+		{
+			"a literal",
+			`forbid(principal, action, resource) when { NKE::Cluster::"abc" has site };`,
+			`NKE::Cluster::"abc".site`,
+		},
+		{
+			"an expression",
+			`forbid(principal, action, resource) when { (if 1 == 1 then resource else resource) has site };`,
+			"an expression.site",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := writeBundle(t, `@id("readers-may-read")
+permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource);
+`+tt.policy, shippedActions(t), `[
+ {"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]},
+ {"uid":{"type":"NKE::Principal","id":"system:serviceaccount:nke-system:nke-cli"},
+  "attrs":{},"parents":[{"type":"NKE::Role","id":"reader"}]}
+]`)
+			_, err := NewLocal(dir)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+// context is read through an attribute chain in the shipped schema's shape, and
+// a chain rooted at context is still context.
+func TestAPolicyMayReadThroughTheContext(t *testing.T) {
+	local := bundleWith(t, `
+permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource)
+when { context has issuer && context.issuer == "kube-apiserver" };
+`)
+
+	decision, err := local.Authorize(t.Context(), Query{
+		Principal: subjectReader, Issuer: "kube-apiserver", Action: "getCluster",
+		ResourceType: "NKE::Cluster", ResourceID: someClusterID, Method: http.MethodGet,
+	})
+	require.NoError(t, err)
+	assert.True(t, decision.Allow)
 }

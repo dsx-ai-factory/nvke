@@ -7,19 +7,12 @@ import (
 	"fmt"
 
 	"github.com/cedar-policy/cedar-go"
+	"github.com/cedar-policy/cedar-go/types"
 	"github.com/cedar-policy/cedar-go/x/exp/ast"
 )
 
-// entityVariables are the three Cedar variables that name an entity. context is
-// deliberately absent: it is the one thing in a request whose attributes this
-// engine populates.
-var entityVariables = map[string]bool{ //nolint:gochecknoglobals // a fixed table
-	VariablePrincipal: true,
-	VariableAction:    true,
-	VariableResource:  true,
-}
-
-// checkPolicyShape refuses a policy that reads an attribute of an entity.
+// checkPolicyShape refuses a policy that reads an attribute of anything but the
+// request context.
 //
 // Nothing populates them. The generated schema declares no attribute on any
 // entity type, the entity files carry empty records, and the resource is
@@ -61,25 +54,42 @@ func checkPolicyShape(set *cedar.PolicySet) error {
 			name = string(annotated)
 		}
 		for _, condition := range policy.AST().Conditions {
-			if read, found := entityAttributeRead(condition.Body); found {
+			if read, found := attributeReadOutsideContext(condition.Body); found {
 				return fmt.Errorf(
-					"policy %s reads %s.%s, and nothing populates entity attributes: "+
-						"the rule would never apply, and a forbid written this way silently grants "+
-						"what it was written to refuse",
-					name, read.variable, read.attribute)
+					"policy %s reads %s.%s, and context is the only thing whose attributes are "+
+						"populated: the rule would never apply, and a forbid written this way "+
+						"silently grants what it was written to refuse",
+					name, read.receiver, read.attribute)
 			}
 		}
 	}
 	return nil
 }
 
-// entityAttributeRead returns the first entity attribute a condition reads.
+// attributeReadOutsideContext returns the first attribute or tag operation in a
+// condition whose receiver is anything but the context record.
+//
+// Stated as what is allowed rather than as what is refused, and that is the
+// whole design of it. The first version of this check listed the receivers it
+// rejected — the principal, action and resource variables — which made the rule
+// only as complete as that list. Cedar has more ways to name an entity than a
+// variable: an adversarial review found `NKE::Cluster::"…" has site`, whose
+// receiver is a literal, and measuring it turned up a second shape the same day,
+// `(if 1 == 1 then resource else resource) has site`, whose receiver is neither
+// a variable nor a literal. Both loaded, both were skipped at evaluation, and
+// both let the permit they existed to override win.
+//
+// The receivers that can name an entity are an open set, and an open set is one
+// this will always be a shape behind. The things whose attributes are populated
+// are a closed set with one member. So the question asked here is "is this
+// reading the context record", and everything else is refused, whatever
+// expression produced it.
 //
 // The walk is cedar-go's own Inspect, which knows every node type the parser can
 // produce. Enumerating them here instead would mean a node kind added upstream
 // is one this stops looking inside — and a check that quietly stops firing is
 // the shape of the defect it exists to catch.
-func entityAttributeRead(body ast.IsNode) (attributeRead, bool) {
+func attributeReadOutsideContext(body ast.IsNode) (attributeRead, bool) {
 	var read attributeRead
 	var found bool
 
@@ -88,13 +98,13 @@ func entityAttributeRead(body ast.IsNode) (attributeRead, bool) {
 			return false
 		}
 		switch n := node.(type) {
-		// `resource.site` and `resource has site`.
+		// `x.site` and `x has site`.
 		case ast.NodeTypeAccess:
 			read, found = readOf(n.Arg, string(n.Value))
 		case ast.NodeTypeHas:
 			read, found = readOf(n.Arg, string(n.Value))
-		// `resource.getTag(x)` and `resource hasTag x`. Tags are a second
-		// attribute namespace, populated by nothing here for the same reason.
+		// `x.getTag(k)` and `x hasTag k`. Tags are a second attribute namespace,
+		// populated by nothing here for the same reason.
 		case ast.NodeTypeGetTag:
 			read, found = readOf(n.Left, tagAttribute)
 		case ast.NodeTypeHasTag:
@@ -105,10 +115,10 @@ func entityAttributeRead(body ast.IsNode) (attributeRead, bool) {
 	return read, found
 }
 
-// attributeRead is what a policy reached for: the variable, and the attribute of
-// it.
+// attributeRead is what a policy reached for: the receiver, as far as it can be
+// named, and the attribute of it.
 type attributeRead struct {
-	variable  string
+	receiver  string
 	attribute string
 }
 
@@ -118,13 +128,42 @@ const (
 	tagAttribute = "<tag>"
 )
 
-// readOf reports the entity variable an access is rooted at, if it is one.
-// A nested access such as principal.a.b is caught at its inner node, so only the
-// direct case has to be recognized here.
+// readOf reports the read unless its receiver is the context record.
 func readOf(target ast.IsNode, attribute string) (attributeRead, bool) {
-	name, ok := target.(ast.NodeTypeVariable)
-	if !ok || !entityVariables[string(name.Name)] {
+	if rootedAtContext(target) {
 		return attributeRead{}, false
 	}
-	return attributeRead{variable: string(name.Name), attribute: attribute}, true
+	return attributeRead{receiver: describeReceiver(target), attribute: attribute}, true
+}
+
+// rootedAtContext reports whether an expression is the context record or an
+// attribute of it. `context.a.b` is still the context; anything that reaches a
+// variable other than context, a literal, or any other kind of node, is not.
+func rootedAtContext(node ast.IsNode) bool {
+	for {
+		switch n := node.(type) {
+		case ast.NodeTypeVariable:
+			return string(n.Name) == VariableContext
+		case ast.NodeTypeAccess:
+			node = n.Arg
+		default:
+			return false
+		}
+	}
+}
+
+// describeReceiver names the receiver in the error, so an author is told which
+// expression to change rather than only which attribute.
+func describeReceiver(node ast.IsNode) string {
+	switch n := node.(type) {
+	case ast.NodeTypeVariable:
+		return string(n.Name)
+	case ast.NodeValue:
+		if uid, ok := n.Value.(types.EntityUID); ok {
+			return uid.String()
+		}
+		return n.Value.String()
+	default:
+		return "an expression"
+	}
 }

@@ -79,13 +79,11 @@ const (
 	// nest, which is how one grant covers a set of operations.
 	RoleType = "NKE::Role"
 
-	// The Cedar request variables. The first three name an entity; only the
-	// fourth carries values this engine populates. checkPolicyShape is what the
-	// distinction is for.
-	VariablePrincipal = "principal"
-	VariableAction    = "action"
-	VariableResource  = "resource"
-	VariableContext   = "context"
+	// VariableContext is the Cedar request variable carrying the context record,
+	// and the only part of a request whose attributes this engine populates.
+	// checkPolicyShape refuses a policy that reads an attribute of anything
+	// else, so this is the one variable name it has to know.
+	VariableContext = "context"
 
 	// CollectionType is the resource for an operation with no object identifier.
 	CollectionType = "NKE::Collection"
