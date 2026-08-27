@@ -150,9 +150,7 @@ Key configuration (see `internal/config/config.go` for full list):
 
 ## Local Development
 
-Preferred day-to-day path is CAPI + Tilt (see root `README.md`). For editing on a
-Mac while Tilt/nico-vms runs on a Colossus (or other x86_64 Linux) host, see
-[`docs/remote-colossus-tilt.md`](docs/remote-colossus-tilt.md).
+Preferred day-to-day path is CAPI + Tilt (see root `README.md`).
 
 ### Full Local Setup
 1. Start local Temporal: `temporal server start-dev`

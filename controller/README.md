@@ -81,7 +81,6 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 ## Choose a Development Path
 
 - `CAPI + Tilt (recommended)`: bring up a local Kind management cluster with CAPD, then run `tilt up` for an end-to-end local stack.
-- `Remote Colossus Tilt (nico-vms on Linux)`: edit on a Mac, Mutagen-sync to a Colossus (or other x86_64 Linux) host that runs Tilt with real KVM VMs — see [docs/remote-colossus-tilt.md](docs/remote-colossus-tilt.md).
 - `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`.
 - `UI-only development`: port-forward a live CWE deployment and run the local UI dev server against it.
 
@@ -90,7 +89,7 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 This is the recommended local workflow for developing against a Kind management cluster with CAPD.
 Tilt improves the Kubernetes inner dev loop: it rebuilds and redeploys services when code or manifests change, keeps a multi-service local stack coordinated in one place, and gives you a single UI for logs, status, port-forwards, and helper actions.
 
-Full nico-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM. If you edit on a Mac and run Tilt remotely, follow [Remote Colossus Tilt](docs/remote-colossus-tilt.md) instead of the Colima steps below. 
+Full nico-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM.
 
 ### First Run
 

@@ -692,10 +692,6 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 # syncs to ~/dev/cloud-workflow-engine/nico-vms/ on the remote
 ```
 
-For the full CWE + nico-vms Tilt inner loop (edit on Mac, run on Colossus / Linux
-with Mutagen sync + UI forwards), see
-[Remote Colossus Tilt](../docs/remote-colossus-tilt.md).
-
 ## Helper Scripts
 
 
@@ -806,9 +802,7 @@ Ensure the nico-vms site is registered in the CWE DB so cache sync includes it.
 
 The Tilt workflow runs CWE and nico-vms locally with hot-reload. nico-vms registers as a pluggable provider in the parent Tiltfile.
 
-Prerequisites: [Tilt](https://tilt.dev), a Kind cluster, Docker. On macOS, full
-libvirt/amd64 nico-vms often requires a remote Linux host — see
-[Remote Colossus Tilt](../docs/remote-colossus-tilt.md).
+Prerequisites: [Tilt](https://tilt.dev), a Kind cluster, Docker.
 
 ```bash
 # From the cloud-workflow-engine root:

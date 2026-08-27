@@ -1,7 +1,5 @@
 # Mutagen project template for a remote Linux Tilt harness (e.g. Colossus).
 #
-# Docs: docs/remote-colossus-tilt.md
-#
 # Placeholders (substituted from env vars during setup):
 #   __LOCAL_NKE_ROOT__   Mac absolute path to the parent of the nke/ monorepo
 #                        (also parent of cluster-api-provider-nico/, forge-console/,
@@ -17,7 +15,7 @@
 #
 # Profiles resolve via ../../nke-site-deploy from controller/. CAPNICo defaults
 # to ../../cluster-api-provider-nico. forge-console is not a built-in provider —
-# opt in with an external dict entry in tilt_config.json (see remote-colossus-tilt.md).
+# opt in with an external dict entry in tilt_config.json.
 #
 # On the target, run Tilt from the controller module:
 #   cd ~/<REMOTE_NKE_ROOT>/nke/controller && TILT_LINK_PORT_OFFSET=1000 tilt up

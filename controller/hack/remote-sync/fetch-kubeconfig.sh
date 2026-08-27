@@ -6,8 +6,6 @@
 # locally-forwarded port and given a target-specific context name. Optionally
 # wires the matching Mutagen "kube-api" forward and restarts the project.
 #
-# Docs: docs/remote-colossus-tilt.md
-#
 # The remote kind API server binds 127.0.0.1:<random-port>; its TLS cert has a
 # 127.0.0.1 SAN, so kubectl works over the forwarded tunnel regardless of port.
 #

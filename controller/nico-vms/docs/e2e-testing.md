@@ -84,10 +84,7 @@ make test-integration-libvirt RUN_TESTS=TestIPXEProductionImageFlow
 
 The production image test requires KVM or TCG on Linux. If you're developing on macOS, sync code to a remote machine and run there.
 
-For the full CWE + nico-vms Tilt day-2 loop (Mutagen sync of multiple repos, UI
-and kubectl forwards from a Colossus host), see
-[Remote Colossus Tilt](../../docs/remote-colossus-tilt.md). The steps below are
-the lighter one-shot path for nico-vms integration tests only.
+The steps below are the one-shot path for nico-vms integration tests only.
 
 ### One-time setup
 

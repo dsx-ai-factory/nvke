@@ -139,7 +139,6 @@ provisioned so that Cluster API can bootstrap them.
 - `docs/go-workspace.md` — the workspace, and why `vendor/` is committed
 - `controller/docs/authenticating-to-the-api.md` — API authentication
 - `controller/docs/byo-os.md` — bring your own OS image
-- `controller/docs/remote-colossus-tilt.md` — local development on remote hardware
 - `controller/AGENTS.md` — AI agent development guide for CWE
 - `agent/docs/DESIGN.md` — node agent architecture and API surface
 - `agent/docs/SECURITY.md` — node agent security context
