@@ -234,6 +234,12 @@ jobs:
             capd-controller.log
             cwe.log
           )
+          # The Ginkgo output is the first thing anyone reads on a red run, and
+          # it was the one thing this dump left out. It is in the artifact
+          # either way; this saves a download.
+          for log in "${state_dir}"/e2e*.log; do
+            [[ -f "${log}" ]] && files+=("$(basename "${log}")")
+          done
           for file in "${files[@]}"; do
             [[ -f "${state_dir}/${file}" ]] || continue
             echo "::group::${file} (last 300 lines)"

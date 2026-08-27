@@ -152,6 +152,40 @@ runner_exec() {
     "${RUNNER_NAME}" "$@"
 }
 
+# Diagnostics run after something already went wrong, so the apiserver may be
+# gone and Docker may be wedged. Every collector call is bounded: one hung
+# command must not eat the rest of the job and leave no artifact at all.
+#
+# `timeout` runs a program, not a shell function, so these repeat the `docker
+# exec` line instead of wrapping runner_exec.
+DIAG_TIMEOUT="${NKE_E2E_DIAG_TIMEOUT:-30}"
+DIAG_KUBECTL_TIMEOUT="${NKE_E2E_DIAG_KUBECTL_TIMEOUT:-10s}"
+
+diag_docker() {
+  timeout "${DIAG_TIMEOUT}" docker "$@"
+}
+
+diag_runner_exec() {
+  timeout "${DIAG_TIMEOUT}" docker exec \
+    -e KUBECONFIG=/state/management.kubeconfig \
+    -e DOCKER_HOST="${RUNNER_DOCKER_HOST}" \
+    "${RUNNER_NAME}" "$@"
+}
+
+# kubectl has no default client-side timeout, so a dead apiserver hangs until
+# the outer `timeout` fires. Ask kubectl to give up first, so the file records
+# the API error rather than a kill.
+diag_kubectl() {
+  diag_runner_exec kubectl --request-timeout="${DIAG_KUBECTL_TIMEOUT}" "$@"
+}
+
+# True when NKE_E2E_PROVIDERS names this provider. Collectors for a provider
+# the lane never deployed write an error string into a file that then looks
+# like a log.
+provider_enabled() {
+  jq -e --arg p "$1" 'index($p) != null' <<<"${NKE_E2E_PROVIDERS:-[]}" >/dev/null 2>&1
+}
+
 configure_kind_dockerhub_mirror() {
   local node_name="${KIND_CLUSTER_NAME}-control-plane"
   local registry_host
@@ -326,70 +360,73 @@ collect_diagnostics() {
 
   mkdir -p "${STATE_DIR}"
   if [[ "${SKIP_DIAGNOSTICS}" != true ]]; then
-    docker info >"${STATE_DIR}/docker-info.txt" 2>&1
-    docker system df -v >"${STATE_DIR}/docker-system-df.txt" 2>&1
-    docker ps -a --no-trunc >"${STATE_DIR}/docker-ps.txt" 2>&1
-    docker network ls >"${STATE_DIR}/docker-networks.txt" 2>&1
+    diag_docker info >"${STATE_DIR}/docker-info.txt" 2>&1
+    diag_docker system df -v >"${STATE_DIR}/docker-system-df.txt" 2>&1
+    diag_docker ps -a --no-trunc >"${STATE_DIR}/docker-ps.txt" 2>&1
+    diag_docker network ls >"${STATE_DIR}/docker-networks.txt" 2>&1
     if [[ "${TARGETS_VALIDATED}" == true ]]; then
-      docker logs "${KIND_CLUSTER_NAME}-control-plane" >"${STATE_DIR}/kind-control-plane.log" 2>&1
-      docker logs "${BUNDLE_MIRROR_NAME}" >"${STATE_DIR}/bundle-mirror.log" 2>&1
-      docker logs "${BGP_CONTAINER_NAME}" >"${STATE_DIR}/bgp-containers.log" 2>&1
-      docker exec "${BGP_CONTAINER_NAME}" vtysh -c 'show bgp summary' >"${STATE_DIR}/bgp-containers-summary.txt" 2>&1
-      docker exec "${BGP_CONTAINER_NAME}" vtysh -c 'show bgp ipv4 unicast' >"${STATE_DIR}/bgp-containers-routes.txt" 2>&1
+      diag_docker logs "${KIND_CLUSTER_NAME}-control-plane" >"${STATE_DIR}/kind-control-plane.log" 2>&1
+      diag_docker logs "${BUNDLE_MIRROR_NAME}" >"${STATE_DIR}/bundle-mirror.log" 2>&1
+      diag_docker logs "${BGP_CONTAINER_NAME}" >"${STATE_DIR}/bgp-containers.log" 2>&1
+      diag_docker exec "${BGP_CONTAINER_NAME}" vtysh -c 'show bgp summary' >"${STATE_DIR}/bgp-containers-summary.txt" 2>&1
+      diag_docker exec "${BGP_CONTAINER_NAME}" vtysh -c 'show bgp ipv4 unicast' >"${STATE_DIR}/bgp-containers-routes.txt" 2>&1
 
       mkdir -p "${STATE_DIR}/nodes"
       while IFS= read -r node_name; do
         [[ -n "${node_name}" ]] || continue
-        docker logs "${node_name}" >"${STATE_DIR}/nodes/${node_name}-console.log" 2>&1
-        docker exec "${node_name}" systemctl status \
+        diag_docker logs "${node_name}" >"${STATE_DIR}/nodes/${node_name}-console.log" 2>&1
+        diag_docker exec "${node_name}" systemctl status \
           nke-agent spire-agent swtpm-local containerd kubelet --no-pager \
           >"${STATE_DIR}/nodes/${node_name}-systemd.txt" 2>&1
-        docker exec "${node_name}" journalctl --no-pager \
+        diag_docker exec "${node_name}" journalctl --no-pager \
           -u nke-agent -u spire-agent -u swtpm-local -u containerd -u kubelet \
           >"${STATE_DIR}/nodes/${node_name}-journal.log" 2>&1
-        docker exec "${node_name}" crictl ps -a \
+        diag_docker exec "${node_name}" crictl ps -a \
           >"${STATE_DIR}/nodes/${node_name}-crictl-ps.txt" 2>&1
-        docker exec "${node_name}" crictl pods \
+        diag_docker exec "${node_name}" crictl pods \
           >"${STATE_DIR}/nodes/${node_name}-crictl-pods.txt" 2>&1
-        docker exec "${node_name}" crictl images \
+        diag_docker exec "${node_name}" crictl images \
           >"${STATE_DIR}/nodes/${node_name}-crictl-images.txt" 2>&1
-        docker exec "${node_name}" crictl info \
+        diag_docker exec "${node_name}" crictl info \
           >"${STATE_DIR}/nodes/${node_name}-crictl-info.json" 2>&1
-        docker exec "${node_name}" cat /etc/containerd/certs.d/docker.io/hosts.toml \
+        diag_docker exec "${node_name}" cat /etc/containerd/certs.d/docker.io/hosts.toml \
           >"${STATE_DIR}/nodes/${node_name}-dockerhub-hosts.toml" 2>&1
-        docker exec "${node_name}" sh -c 'ip -brief address; ip route show; ip -6 route show' \
+        diag_docker exec "${node_name}" sh -c 'ip -brief address; ip route show; ip -6 route show' \
           >"${STATE_DIR}/nodes/${node_name}-network.txt" 2>&1
-      done < <(docker ps -a --filter "ancestor=${CAPD_NODE_IMAGE}" --format '{{.Names}}')
+      done < <(diag_docker ps -a --filter "ancestor=${CAPD_NODE_IMAGE}" --format '{{.Names}}')
 
-      if docker inspect "${RUNNER_NAME}" >/dev/null 2>&1; then
-        runner_exec kubectl get nodes -o wide >"${STATE_DIR}/management-nodes.txt" 2>&1
-        runner_exec kubectl get pods -A -o wide >"${STATE_DIR}/management-pods.txt" 2>&1
-        runner_exec kubectl get events -A --sort-by=.lastTimestamp >"${STATE_DIR}/management-events.txt" 2>&1
-        runner_exec kubectl -n capd-system logs deployment/capd-controller-manager --all-containers --tail=-1 \
+      if diag_docker inspect "${RUNNER_NAME}" >/dev/null 2>&1; then
+        diag_kubectl get nodes -o wide >"${STATE_DIR}/management-nodes.txt" 2>&1
+        diag_kubectl get pods -A -o wide >"${STATE_DIR}/management-pods.txt" 2>&1
+        diag_kubectl get events -A --sort-by=.lastTimestamp >"${STATE_DIR}/management-events.txt" 2>&1
+        diag_kubectl -n capd-system logs deployment/capd-controller-manager --all-containers --tail=-1 \
           >"${STATE_DIR}/capd-controller.log" 2>&1
-        runner_exec kubectl -n capi-system logs deployment/capi-controller-manager --all-containers --tail=-1 \
+        diag_kubectl -n capi-system logs deployment/capi-controller-manager --all-containers --tail=-1 \
           >"${STATE_DIR}/capi-controller.log" 2>&1
-        runner_exec kubectl -n capi-kubeadm-bootstrap-system \
+        diag_kubectl -n capi-kubeadm-bootstrap-system \
           logs deployment/capi-kubeadm-bootstrap-controller-manager --all-containers --tail=-1 \
           >"${STATE_DIR}/capi-kubeadm-bootstrap-controller.log" 2>&1
-        runner_exec kubectl -n capi-kubeadm-control-plane-system \
+        diag_kubectl -n capi-kubeadm-control-plane-system \
           logs deployment/capi-kubeadm-control-plane-controller-manager --all-containers --tail=-1 \
           >"${STATE_DIR}/capi-kubeadm-control-plane-controller.log" 2>&1
-        runner_exec kubectl -n capd-reboot-system logs deployment/capd-reboot-controller --all-containers --tail=-1 \
-          >"${STATE_DIR}/capd-reboot-controller.log" 2>&1
-        runner_exec kubectl -n cloud-workflow-engine logs deployment/cloud-workflow-engine --all-containers --tail=-1 \
+        if provider_enabled capd-reboot-controller; then
+          diag_kubectl -n capd-reboot-system logs deployment/capd-reboot-controller \
+            --all-containers --tail=-1 \
+            >"${STATE_DIR}/capd-reboot-controller.log" 2>&1
+        fi
+        diag_kubectl -n cloud-workflow-engine logs deployment/cloud-workflow-engine --all-containers --tail=-1 \
           >"${STATE_DIR}/cwe.log" 2>&1
-        runner_exec kubectl get \
+        diag_kubectl get \
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A -o yaml \
           >"${STATE_DIR}/capi-resources.yaml" 2>&1
-        runner_exec kubectl describe \
+        diag_kubectl describe \
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A \
           >"${STATE_DIR}/capi-describe.txt" 2>&1
-        for artifact in tilt.log tilt-snapshot.json e2e.log junit.xml \
+        for artifact in tilt.log tilt-snapshot.json junit.xml \
           junit-cp-controller.xml junit-nodepool.xml; do
-          docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
+          diag_docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done
       fi
     fi
