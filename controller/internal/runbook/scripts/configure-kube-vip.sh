@@ -380,6 +380,8 @@ ${health_check_env}
     name: kube-vip
     resources: {}
     securityContext:
+      seccompProfile:
+        type: RuntimeDefault
       capabilities:
         add:
         - NET_ADMIN

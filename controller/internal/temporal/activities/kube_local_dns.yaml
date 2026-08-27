@@ -163,7 +163,9 @@ spec:
       priorityClassName: system-node-critical
       restartPolicy: Always
       schedulerName: default-scheduler
-      securityContext: {}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccount: node-local-dns
       serviceAccountName: node-local-dns
       terminationGracePeriodSeconds: 30
