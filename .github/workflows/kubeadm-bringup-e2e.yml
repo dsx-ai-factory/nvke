@@ -132,8 +132,14 @@ jobs:
           set -euo pipefail
           make -C agent deb-amd64
           # The Makefile versions the file from the commit, so glob for it
-          # rather than restating the naming rule here.
-          deb=$(ls -t "${GITHUB_WORKSPACE}"/agent/bin/nke-agent_*_amd64.deb | head -1)
+          # rather than restating the naming rule here. find, not ls: actionlint
+          # runs shellcheck and SC2012 fails the required gate.
+          deb=$(find "${GITHUB_WORKSPACE}/agent/bin" -maxdepth 1 \
+                  -name 'nke-agent_*_amd64.deb' -printf '%T@ %p\n' \
+                | sort -rn | head -1 | cut -d' ' -f2-)
+          # Empty means the build produced nothing; without this the failure
+          # surfaces much later as a confusing "file not found" in the guest.
+          [ -n "${deb}" ] || { echo "::error::make deb-amd64 produced no .deb"; exit 1; }
           echo "path=${deb}" >> "$GITHUB_OUTPUT"
           echo "built ${deb}"
 
