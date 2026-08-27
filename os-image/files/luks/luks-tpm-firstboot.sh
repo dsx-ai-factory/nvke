@@ -16,8 +16,13 @@ exec &> >(tee -a /var/log/luks-tpm-firstboot.log)
 
 echo "$(date): Starting first-boot configuration..."
 
-# Must match the password set in autoinstall-fde.pkrtpl's storage.layout.
-PASSPHRASE="changeit"
+# Set by configure-fde.sh into /etc/luks-tpm-firstboot.env (see
+# luks-tpm-firstboot.service's EnvironmentFile=), matching the password set
+# in autoinstall-fde.pkrtpl's storage.layout at build time. Not hardcoded
+# here: a build with a non-default LUKS_PASSPHRASE would otherwise silently
+# ship a script with the wrong value, only discovered when first-boot
+# binding fails on real target hardware.
+: "${LUKS_PASSPHRASE:?LUKS_PASSPHRASE must be set (see /etc/luks-tpm-firstboot.env)}"
 # Empty = bind to the local TPM key hierarchy only (no measured-boot PCR
 # policy). This survives firmware/GRUB/kernel updates without a re-seal step.
 # Set e.g. "7" to add a Secure-Boot-state PCR policy; see the docs for the
@@ -38,7 +43,16 @@ PV_DEVICE=$(pvs --noheadings -o pv_name -S vg_name=${ROOT_VG} 2>/dev/null | tr -
 echo "PV device: ${PV_DEVICE}"
 
 if [[ -n "${PV_DEVICE}" ]]; then
-    if [[ "${PV_DEVICE}" == /dev/mapper/* ]]; then
+    # This script only ever runs on a LUKS-backed PV: configure-fde.sh
+    # requires at least one crypto_LUKS device before it will install or
+    # enable luks-tpm-firstboot.service at all (autoinstall-lvm.pkrtpl
+    # always sets luks_enabled = true for this variant). A non-LUKS PV here
+    # would mean something upstream is broken, not a legitimate second case
+    # to handle — the non-FDE variant has its own separate, LUKS-free
+    # lvm-growth-firstboot.sh for that.
+    if [[ "${PV_DEVICE}" != /dev/mapper/* ]]; then
+        echo "Warning: expected a LUKS mapper device for PV ${PV_DEVICE}, got something else. Skipping storage resize."
+    else
         LUKS_NAME=$(basename "${PV_DEVICE}")
         echo "LUKS device detected: ${LUKS_NAME}"
 
@@ -70,7 +84,7 @@ if [[ -n "${PV_DEVICE}" ]]; then
             fi
 
             echo "Resizing LUKS container ${LUKS_NAME}..."
-            LUKS_RESIZE_OUTPUT=$(echo -n "${PASSPHRASE}" | cryptsetup resize "${LUKS_NAME}" 2>&1) && LUKS_RESIZE_RC=0 || LUKS_RESIZE_RC=$?
+            LUKS_RESIZE_OUTPUT=$(echo -n "${LUKS_PASSPHRASE}" | cryptsetup resize "${LUKS_NAME}" 2>&1) && LUKS_RESIZE_RC=0 || LUKS_RESIZE_RC=$?
             if [[ ${LUKS_RESIZE_RC} -ne 0 ]]; then
                 echo "Passphrase resize failed (exit code: ${LUKS_RESIZE_RC}): ${LUKS_RESIZE_OUTPUT}"
                 echo "Attempting resize via clevis/TPM..."
@@ -85,27 +99,6 @@ if [[ -n "${PV_DEVICE}" ]]; then
                 echo "LUKS resize failed (exit code: ${LUKS_RESIZE_RC})"
                 echo "LUKS resize output: ${LUKS_RESIZE_OUTPUT}"
             fi
-        fi
-    else
-        echo "No LUKS detected, PV is on raw partition."
-
-        if [[ "${PV_DEVICE}" =~ ^/dev/nvme ]]; then
-            DISK=$(echo "${PV_DEVICE}" | sed 's/p[0-9]*$//')
-            PART_NUM=$(echo "${PV_DEVICE}" | grep -oE 'p[0-9]+$' | tr -d 'p')
-        else
-            DISK=$(echo "${PV_DEVICE}" | sed 's/[0-9]*$//')
-            PART_NUM=$(echo "${PV_DEVICE}" | grep -oE '[0-9]+$')
-        fi
-
-        echo "Growing partition ${DISK} partition ${PART_NUM}..."
-        udevadm settle 2>/dev/null || true
-        sgdisk -e "${DISK}" 2>/dev/null || true
-        if parted -s "${DISK}" resizepart "${PART_NUM}" 100% 2>/dev/null; then
-            echo "Partition grown successfully."
-            partx -u "${DISK}" 2>/dev/null || true
-            sleep 1
-        else
-            echo "Partition already at maximum size or parted failed."
         fi
     fi
 
@@ -256,7 +249,7 @@ for dev in ${LUKS_DEVICES}; do
     fi
 
     echo "  Binding to TPM2..."
-    if echo -n "${PASSPHRASE}" | clevis luks bind -d "${dev}" -k - tpm2 "${TPM_POLICY}"; then
+    if echo -n "${LUKS_PASSPHRASE}" | clevis luks bind -d "${dev}" -k - tpm2 "${TPM_POLICY}"; then
         echo "  Successfully bound to TPM2."
 
         # `clevis luks bind` returning 0 means the metadata was written; it
@@ -275,7 +268,7 @@ for dev in ${LUKS_DEVICES}; do
             fi
             CLEVIS_SLOT=$(clevis luks list -d "${dev}" 2>/dev/null | grep tpm2 | awk -F: '{print $1}' | tr -d ' ' | head -1)
             if [[ -n "${CLEVIS_SLOT}" ]]; then
-                echo -n "${PASSPHRASE}" | cryptsetup luksKillSlot "${dev}" "${CLEVIS_SLOT}" --key-file=- 2>/dev/null || true
+                echo -n "${LUKS_PASSPHRASE}" | cryptsetup luksKillSlot "${dev}" "${CLEVIS_SLOT}" --key-file=- 2>/dev/null || true
                 echo "  Rolled back Clevis binding (slot ${CLEVIS_SLOT})."
             fi
             exit 1
@@ -283,7 +276,7 @@ for dev in ${LUKS_DEVICES}; do
 
         if [[ "${REMOVE_PASSPHRASE}" == "true" ]]; then
             echo "  Removing passphrase slot..."
-            if echo -n "${PASSPHRASE}" | cryptsetup luksRemoveKey "${dev}" -; then
+            if echo -n "${LUKS_PASSPHRASE}" | cryptsetup luksRemoveKey "${dev}" -; then
                 echo "  Passphrase slot removed."
             else
                 echo "  Warning: Failed to remove passphrase (may already be removed)."
@@ -323,12 +316,10 @@ update-initramfs -u -k all
 echo "Cleaning up GRUB configuration..."
 GRUB_UPDATED=false
 
-if grep -q 'luks.key=' /etc/default/grub 2>/dev/null; then
-    sed -i 's/ luks.key=[^ "]*//g' /etc/default/grub
-    echo "Removed luks.key from /etc/default/grub"
-    GRUB_UPDATED=true
-fi
-
+# autoinstall-lvm.pkrtpl always writes luks.key= to
+# /etc/default/grub.d/99-luks-key.cfg, never to /etc/default/grub directly —
+# glob the drop-in dir rather than hardcode that filename, in case it ever
+# changes.
 for dropin in /etc/default/grub.d/*.cfg; do
     if [[ -f "$dropin" ]] && grep -q 'luks.key=' "$dropin" 2>/dev/null; then
         sed -i 's/ luks.key=[^ "]*//g' "$dropin"
@@ -355,3 +346,8 @@ echo "Wrote completion marker: ${FIRSTBOOT_DONE_MARKER}"
 
 systemctl disable luks-tpm-firstboot.service
 echo "First-boot service disabled."
+
+# LUKS_PASSPHRASE is moot once the passphrase slot above is removed — the
+# env file that held it (see configure-fde.sh) has no further use.
+rm -f /etc/luks-tpm-firstboot.env
+echo "Removed /etc/luks-tpm-firstboot.env."

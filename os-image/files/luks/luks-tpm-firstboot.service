@@ -9,6 +9,10 @@ ConditionPathExists=/usr/local/bin/luks-tpm-firstboot.sh
 
 [Service]
 Type=oneshot
+# Not "-/etc/...": a missing env file means the build never wrote
+# LUKS_PASSPHRASE (see configure-fde.sh), and this should fail loudly
+# rather than silently skip binding.
+EnvironmentFile=/etc/luks-tpm-firstboot.env
 ExecStart=/usr/local/bin/luks-tpm-firstboot.sh
 RemainAfterExit=yes
 StandardOutput=journal+console

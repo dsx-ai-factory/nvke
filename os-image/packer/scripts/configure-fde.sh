@@ -13,12 +13,16 @@
 #   1. installs clevis/tpm2-tools and the initramfs/kernel-hook plumbing
 #   2. removes the build keyfile slot (the passphrase slot set by
 #      storage.layout.password remains as the interim unlock method)
-#   3. installs and enables luks-tpm-firstboot.service, which performs the
+#   3. writes LUKS_PASSPHRASE (required, from the environment) to
+#      /etc/luks-tpm-firstboot.env for the first-boot service to source
+#   4. installs and enables luks-tpm-firstboot.service, which performs the
 #      actual TPM bind (and passphrase-slot removal) on the target hardware's
 #      own TPM at first real boot — TPM binding is machine-specific and
 #      cannot happen at build time.
 
 set -euo pipefail
+
+: "${LUKS_PASSPHRASE:?LUKS_PASSPHRASE must be set (passed via the shell provisioner environment_vars in nke-node-fde.pkr.hcl)}"
 
 SRC=/tmp/nke-image/luks
 
@@ -76,6 +80,10 @@ sudo install -m 0755 "${SRC}/copy-crypttab-hook" /etc/initramfs-tools/hooks/copy
 
 echo "Regenerating initramfs from scratch..."
 sudo update-initramfs -c -k all
+
+echo "Writing LUKS_PASSPHRASE for first-boot binding..."
+printf 'LUKS_PASSPHRASE=%s\n' "${LUKS_PASSPHRASE}" | sudo tee /etc/luks-tpm-firstboot.env >/dev/null
+sudo chmod 600 /etc/luks-tpm-firstboot.env
 
 echo "Installing first-boot binding script + service..."
 sudo install -m 0700 "${SRC}/luks-tpm-firstboot.sh" /usr/local/bin/luks-tpm-firstboot.sh

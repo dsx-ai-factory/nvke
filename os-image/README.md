@@ -24,6 +24,14 @@ Prereqs, on a Linux host:
 | [ORAS](https://oras.land/) | any | https://oras.land/docs/installation |
 | `curl` | any | via your package manager |
 
+The FDE/non-FDE variants (`make os-image-fde`/`make os-image-non-fde`) need
+more, since they boot the Ubuntu Server installer rather than a prebuilt
+cloud image: `qemu-system-x86_64`, `cloud-localds`, `swtpm`, OVMF
+(`/usr/share/OVMF/OVMF_CODE_4M.fd` + `OVMF_VARS_4M.fd`), and `xorriso` +
+`p7zip-full` (`7z`) for `prepare-installer-iso.sh`'s ISO patching — see
+`.github/workflows/os-image-artifact.yml`'s install step for the exact
+package list on Ubuntu.
+
 `/dev/kvm` is preferred, not required. `packer/Makefile` probes for it and picks
 `accelerator = kvm` when it is usable, `tcg` (software emulation) otherwise —
 correct but roughly an order of magnitude slower. Force either mode with
@@ -118,8 +126,12 @@ make run-vm QCOW=packer/output-fde/nke-node-fde OVMF_CODE=/usr/share/OVMF/OVMF_C
 ## Release
 
 An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
-`.github/workflows/os-image-artifact.yml` on a KVM runner. The job builds the
-qcow2, boots it (`make boot-smoke`), and **only then** publishes:
+`.github/workflows/os-image-artifact.yml`, which builds the qcow2, boots it
+(`make boot-smoke`), and **only then** publishes. The runner it uses
+(`linux-amd64-cpu16`) has not been observed to expose `/dev/kvm`, so the
+build falls back to `tcg` software emulation, same as the `/dev/kvm`-probing
+behavior described above — this makes the release build considerably slower
+than a local build with real KVM, not a correctness concern:
 
 ```bash
 oras pull ghcr.io/nvidia/nke/os-image:v0.1.0 --platform linux/amd64
@@ -127,6 +139,12 @@ oras pull ghcr.io/nvidia/nke/os-image:v0.1.0 --platform linux/amd64
 
 The GitHub Release for that tag attaches `nke-os-image-check` and `checksums.txt`.
 The disk stays on GHCR; it is not a GitHub Release asset.
+
+If the FDE/non-FDE build or boot-smoke steps fail in CI, download the
+`fde-install-console-logs` artifact from the run — it's the guest's own
+serial console output (boot + autoinstall), uploaded regardless of outcome
+since there's no VNC/monitor access on the runner to inspect a stuck build
+interactively.
 
 Default bake uses `NKE_AGENT_VERSION=edge`. Override on a `workflow_dispatch`
 run, or by passing `NKE_AGENT_VERSION=v0.3.0` to `make os-image` locally.

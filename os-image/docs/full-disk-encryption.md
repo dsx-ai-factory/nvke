@@ -15,10 +15,24 @@ Packer build (the base image has no installer stage).
 1. **Image build** (`autoinstall-fde.pkrtpl`): the Ubuntu Server installer
    lays down an LVM-on-LUKS2 root volume (`ubuntu-vg`/`ubuntu-lv`), unlocked
    at build time by a shared, documented passphrase (`changeit` by default,
-   overridable via `LUKS_PASSPHRASE`). A temporary keyfile lets the
+   overridable via `LUKS_PASSPHRASE` — **set this to a real value for any
+   build that will run on real hardware; `changeit` is a build-time-only
+   placeholder, not a secret**). A temporary keyfile lets the
    post-autoinstall reboot and Packer's SSH provisioning happen unattended;
    `configure-fde.sh` removes that keyfile before the image ships, leaving
    only the passphrase slot.
+
+   That same `LUKS_PASSPHRASE` also gets baked into the shipped disk's GRUB
+   config as a `luks.key=<passphrase>` kernel parameter (see "Building and
+   testing locally" below for the mechanism) — this is what lets a node's
+   very first real boot unlock unattended, before it has anything TPM-bound
+   yet. It is a real, unlock-capable secret on the disk for that window, not
+   just a build-time convenience: anyone with console/physical access to an
+   unbound node could read it out of GRUB and unlock the volume with it.
+   `luks-tpm-firstboot.sh` strips `luks.key=` from GRUB automatically once
+   TPM binding is verified (see step 3 below), which is what closes that
+   window — until that happens, a shared or default `LUKS_PASSPHRASE` is a
+   real exposure, not just bad hygiene.
 2. **Provisioning** (`configure-fde.sh`): installs `clevis`/`tpm2-tools`, the
    initramfs scripts that make Clevis unlock work reliably (waiting for the
    block device and the TPM to appear, copying `crypttab` into the
@@ -52,6 +66,13 @@ cloud-init, user-data, or the genesis medium. This design satisfies that:
   before the qcow2 is published.
 - The TPM binding itself happens entirely on-node, driven by the local TPM;
   nothing about it is templated in from outside.
+
+**This is narrower than "no unlock secret exists on the node at all."** The
+same build-time `LUKS_PASSPHRASE` is present both as a LUKS passphrase slot
+and as a `luks.key=` GRUB parameter on the shipped disk itself (not on any
+external medium) until the first successful TPM bind removes both — see the
+callout in "How it works" step 1 above. Off-medium and off-node are
+different guarantees; this design only makes the first one.
 
 ## Policy: TPM-only, no PCR binding, passphrase removed
 

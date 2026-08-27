@@ -236,7 +236,8 @@ build {
   # /home/ubuntu/.ssh/authorized_keys) must be the last step, or Packer loses
   # its SSH connection before configure-fde.sh can run.
   provisioner "shell" {
-    script = "${path.root}/scripts/configure-fde.sh"
+    environment_vars = ["LUKS_PASSPHRASE=${var.luks_passphrase}"]
+    script           = "${path.root}/scripts/configure-fde.sh"
   }
 
   provisioner "shell" {
