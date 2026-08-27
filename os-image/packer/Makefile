@@ -47,8 +47,15 @@ ACCELERATOR ?= $(shell if [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; els
 CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)
 
 # Emulated boot is minutes, not seconds. Overridable, so a slow runner can raise
-# it without editing this file.
-SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),15m,60m)
+# it without editing this file. 60m wasn't enough for the FDE/non-FDE
+# variants under tcg: a real CI run got through partitioning, curthooks, and
+# most package installs and was still legitimately working (mid
+# unattended-upgrades) when it hit the 60m wall — SSH only becomes reachable
+# after the *entire* autoinstall completes and reboots, so the whole install
+# has to fit inside this one window. The base (cloud-image) build only needs
+# a few minutes even under tcg, so the larger value here just gives it more
+# unused headroom, not a problem.
+SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),15m,120m)
 
 # FDE/non-FDE only: how long boot_command waits before typing into GRUB.
 # prepare-installer-iso.sh patches the ISO's own GRUB timeout to 300s, so
