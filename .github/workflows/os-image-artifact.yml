@@ -54,16 +54,21 @@ jobs:
   publish:
     if: github.repository == 'NVIDIA/nke'
     name: Build, verify, and publish
-    # Packer QEMU needs /dev/kvm. The GitHub-hosted 2-core runners do not
-    # expose it; this label is the same class image.yml already uses.
-    runs-on: linux-amd64-cpu16
-    # Sized for the emulated path. A KVM bake is well under 30 minutes; TCG
-    # boots the guest one interpreted instruction at a time and needs the room.
-    # Bumped from 240: this job now also builds and validates the FDE and
-    # non-FDE variants (installer-based, so each bake is on its own slower
-    # than the base cloud-image build), plus demo-fde.sh's three sequential
-    # boots — each with its own up-to-1800s BOOT_TIMEOUT under TCG.
-    timeout-minutes: 480
+    # Packer QEMU needs /dev/kvm. linux-amd64-cpu16 (a container-based pool)
+    # never exposed it, forcing every bake onto QEMU's tcg software emulation
+    # — confirmed directly: a full FDE bake took 1h39m under tcg vs a few
+    # minutes locally under real KVM, and tcg's much slower, less predictable
+    # timing was implicated in several failures (a GRUB boot-menu race, an
+    # intermittent overlayfs kernel oops under curtin's install). This label
+    # is expected to expose /dev/kvm; "Enable KVM access" below fails the job
+    # immediately if that assumption turns out wrong, rather than silently
+    # falling back to the ~10x-slower emulated path the way this job used to.
+    runs-on: linux-amd64-gpu-l4-latest-1
+    # Sized for real KVM: base bake + FDE bake + demo-fde.sh + non-FDE bake +
+    # two boot-smokes, each a few minutes, with real headroom. If this ever
+    # regresses to tcg somehow, the KVM gate below fails fast instead of
+    # burning the timeout finding out.
+    timeout-minutes: 120
     permissions:
       contents: write
       packages: write
@@ -141,25 +146,31 @@ jobs:
           qemu-img --version | head -1
           swtpm --version
 
-      # Not a gate. These runners are containers with no /dev/kvm, and neither
-      # do GitHub-hosted standard runners (Azure VMs without nested
-      # virtualization), so requiring it here failed every tag before Packer
-      # started. packer/Makefile and boot-smoke.sh probe the device themselves
-      # and fall back to TCG; this step only makes the device usable when it is
-      # there, and says which mode the bake will run in.
-      #
-      # FIXME: https://github.com/NVIDIA/nke/issues/219 — move this job to a
-      # bare-metal runner and drop the emulated path, which costs ~10x.
-      - name: Report the accelerator
+      # A gate, deliberately: this runner label is chosen specifically for
+      # /dev/kvm (see the comment on runs-on above). A missing device means
+      # something about the runner pool changed and every subsequent step
+      # would silently fall back to tcg (packer/Makefile and boot-smoke.sh
+      # both probe and fall back on their own) -- better to fail here in
+      # seconds than rediscover it 1-2 hours into a tcg bake. Same pattern
+      # NVIDIA/OpenShell uses for its own KVM-backed e2e VM tests.
+      - name: Enable KVM access
         run: |
           set -euo pipefail
-          if [[ -c /dev/kvm ]]; then
-            # Membership in group kvm does not apply until a new login.
-            sudo chmod 666 /dev/kvm
-            echo "::notice::/dev/kvm present; building with hardware acceleration"
-          else
-            echo "::warning::/dev/kvm is missing on this runner; building under QEMU software emulation (much slower)"
+          if [[ ! -c /dev/kvm ]]; then
+            echo "::error::This runner did not expose /dev/kvm (expected on linux-amd64-gpu-l4-latest-1)"
+            lscpu
+            grep -m1 -E '^(flags|Features)' /proc/cpuinfo || true
+            ls -la /dev
+            exit 1
           fi
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --settle --name-match=kvm
+          ls -l /dev/kvm
+          exec 3<>/dev/kvm
+          exec 3>&-
+          echo "::notice::/dev/kvm present and writable; building with hardware acceleration"
 
       - name: Install Packer
         env:
