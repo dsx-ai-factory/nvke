@@ -4,6 +4,7 @@
 package kube
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
@@ -321,12 +322,16 @@ func TestAdminAndCWEPathsMintDistinctIdentities(t *testing.T) {
 		transport := config.WrapTransport(roundTripperFunc(func(*http.Request) (*http.Response, error) {
 			return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(""))}, nil
 		}))
-		request, err := http.NewRequest(http.MethodGet, "https://tenant.example:6443/api", http.NoBody)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://tenant.example:6443/api", http.NoBody)
 		if err != nil {
-			t.Fatalf("http.NewRequest() error = %v", err)
+			t.Fatalf("http.NewRequestWithContext() error = %v", err)
 		}
-		if _, err := transport.RoundTrip(request); err != nil {
+		response, err := transport.RoundTrip(request)
+		if err != nil {
 			t.Fatalf("RoundTrip() error = %v", err)
+		}
+		if err := response.Body.Close(); err != nil {
+			t.Fatalf("closing response body: %v", err)
 		}
 		if gotURL == nil {
 			t.Fatal("no JWT was minted")
@@ -537,7 +542,7 @@ func newTestTenantClientFactory(t *testing.T, objects ...runtime.Object) *Tenant
 	if err != nil {
 		t.Fatalf("NewTenantClientFactory() error = %v", err)
 	}
-	factory.coreClient = k8sfake.NewSimpleClientset(objects...).CoreV1()
+	factory.coreClient = k8sfake.NewClientset(objects...).CoreV1()
 	return factory
 }
 
@@ -733,7 +738,7 @@ func TestAdminKubeconfigPassesThroughANonSPIREKubeconfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AdminKubeconfig() error = %v", err)
 	}
-	if string(rendered) != string(published) {
+	if !bytes.Equal(rendered, published) {
 		t.Fatal("AdminKubeconfig() rewrote a kubeconfig that needed no change")
 	}
 }

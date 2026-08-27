@@ -99,6 +99,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # Read the pin from make/versions.mk rather than repeating it here. It was
+      # written in this file and in codeql.yml and nowhere a developer could
+      # reach it, so `make govulncheck` locally could not match this job.
+      - name: Read pinned Go version
+        id: versions
+        run: echo "go=$(make --no-print-directory print-GOVULNCHECK_GO_VERSION)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         if: matrix.language == 'go'
         with:
@@ -113,7 +120,7 @@ jobs:
           #
           # Not `stable` either: setup-go resolves it from GitHub's manifest,
           # which lags upstream Go. Keep this in step with the Dockerfiles.
-          go-version: '1.26.6'
+          go-version: ${{ steps.versions.outputs.go }}
           cache: true
           # go.work.sum holds only the hashes NOT already in a member's go.sum,
           # so the versions actually linked often appear in it zero times. Keyed
@@ -124,7 +131,7 @@ jobs:
             **/go.sum
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -184,6 +191,6 @@ jobs:
           done <<< "$mods"
 
       - name: Run CodeQL analysis
-        uses: github/codeql-action/analyze@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           category: "/language:${{ matrix.language }}"

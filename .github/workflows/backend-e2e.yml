@@ -42,10 +42,38 @@ on:
         required: false
         type: number
         default: 90
+      require-authn:
+        description: >-
+          Fail rather than skip when the deployment is not authenticating. Only
+          meaningful for a backend whose label-filter selects the authn specs.
+        required: false
+        type: boolean
+        default: false
       needs-nico-provider:
         description: >-
           Check out NVIDIA/cluster-api-provider-nico next to the monorepo. It is
           an internal repository, so this needs NKE_INTERNAL_RO_TOKEN.
+        required: false
+        type: boolean
+        default: false
+      provision-cp-with-controller:
+        description: >-
+          Deploy CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true,
+          so the control plane is provisioned by the cluster-level control-plane
+          controller (no control-plane node pool). The caller pairs this with a
+          cp-controller label filter. Off by default: the flag-off lanes keep the
+          node-pool control plane. Ignored when single-runner-capd-control-plane-modes is set, which
+          drives the flag per leg inside the CI script.
+        required: false
+        type: boolean
+        default: false
+      single-runner-capd-control-plane-modes:
+        description: >-
+          Run both CAPD control-plane modes back to back on one runner and one
+          kind cluster: the cp-controller leg first (flag on), then the node-pool
+          leg (flag off) after a light CWE redeploy. The two legs' label filters
+          and flags are set inside the CI script, so label-filter and
+          provision-cp-with-controller are ignored on this path.
         required: false
         type: boolean
         default: false
@@ -69,6 +97,14 @@ jobs:
       NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
       NKE_E2E_LABEL_FILTER: ${{ inputs.label-filter }}
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
+      NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
+      # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
+      # to the Tilt deploy and the e2e binary. Empty/false keeps the node-pool
+      # control plane (CWE's own default).
+      PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER: ${{ inputs.provision-cp-with-controller }}
+      # When set, the CI script runs both control-plane modes sequentially on this
+      # one runner/cluster and drives the per-leg label filter and flag itself.
+      NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES: ${{ inputs.single-runner-capd-control-plane-modes }}
       KIND_CLUSTER_NAME: cwe-${{ inputs.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
       GOPROXY: "off"
       # Empty unless the caller asked for CAPNICo. The script stages the tree
@@ -107,16 +143,27 @@ jobs:
             go.work.sum
             **/go.sum
 
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          {
+            echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
+            echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
+            echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.20.2
+          version: ${{ steps.versions.outputs.helm_version }}
 
       - name: Set up Kind and kubectl
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
-          version: v0.32.0
-          kubectl_version: v1.36.0
+          version: ${{ steps.versions.outputs.kind_version }}
+          kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
           install_only: true
 
       - name: Show runner tools

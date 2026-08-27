@@ -79,3 +79,69 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Where the authentication ConfigMap is mounted, and the file within it.
+
+Not values: the chart owns both ends. AUTH_CONFIG_PATH is these two joined, and
+nothing outside the pod observes either, so making them configurable would only
+create a way for the mount and the path to disagree.
+*/}}
+{{- define "cloud-workflow-engine.apiAuth.mountPath" -}}
+/etc/nke/auth
+{{- end }}
+
+{{- define "cloud-workflow-engine.apiAuth.configFile" -}}
+auth.yaml
+{{- end }}
+
+{{/*
+Refuse the ways apiAuth's values can disagree with each other or with the chart,
+each of which otherwise renders clean and does the wrong thing silently.
+
+Called from deployment.yaml rather than from configmap-auth.yaml, because that
+template is itself gated on create and so cannot see a config set without it.
+
+Emits nothing. The shallow presence checks on audiences and issuers stop here:
+every other rule belongs to internal/auth/config.go, whose errors name the field
+at fault.
+*/}}
+{{- define "cloud-workflow-engine.apiAuth.validate" -}}
+{{- $auth := .Values.apiAuth -}}
+{{- $create := and $auth.enabled $auth.configMap.create -}}
+{{- if and $auth.config (not $create) -}}
+{{- fail "apiAuth.config is set but would not be rendered: it is only used when apiAuth.enabled and apiAuth.configMap.create are both true. Set both, or remove apiAuth.config and create the ConfigMap named by apiAuth.configMap.name yourself." -}}
+{{- end -}}
+{{- if and $auth.configMap.extraFiles (not $create) -}}
+{{- fail "apiAuth.configMap.extraFiles is set but would not be rendered: it is only used when apiAuth.enabled and apiAuth.configMap.create are both true. Set both, or drop extraFiles and put the files in the ConfigMap named by apiAuth.configMap.name yourself." -}}
+{{- end -}}
+{{- if and $create (not $auth.config) -}}
+{{- fail "apiAuth.configMap.create is true but apiAuth.config is empty, which would mount an AuthenticationConfiguration carrying no issuers. Populate apiAuth.config, or set create to false and manage the ConfigMap yourself." -}}
+{{- end -}}
+{{- if $create -}}
+{{- if or (hasKey $auth.config "apiVersion") (hasKey $auth.config "kind") -}}
+{{- fail "apiAuth.config must not carry apiVersion or kind. The chart supplies both, so a copy here renders them twice, and auth.Load refuses duplicate keys -- CWE would crash-loop rather than start. Keep audiences and issuers only. If you are pasting the file from the README, drop its first two lines." -}}
+{{- end -}}
+{{- if not $auth.config.audiences -}}
+{{- fail "apiAuth.config.audiences is required and must not be empty. The audience is per-install and has no default; a token minted for one install must fail at another." -}}
+{{- end -}}
+{{- if not $auth.config.issuers -}}
+{{- fail "apiAuth.config.issuers is required and must contain at least one issuer. NKE refuses to start with none, so this would be a crash loop rather than a permissive deployment." -}}
+{{- end -}}
+{{- $dir := printf "%s/" (include "cloud-workflow-engine.apiAuth.mountPath" .) -}}
+{{- $configFile := include "cloud-workflow-engine.apiAuth.configFile" . -}}
+{{- $extra := default dict $auth.configMap.extraFiles -}}
+{{- if hasKey $extra $configFile -}}
+{{- fail (printf "apiAuth.configMap.extraFiles must not contain %q: that key is the configuration file itself, and a second copy of it silently replaces the one rendered from apiAuth.config -- NKE would load whatever is here instead. Put the configuration under apiAuth.config, and use extraFiles only for files it refers to by path." $configFile) -}}
+{{- end -}}
+{{- range $auth.config.issuers -}}
+{{- $ca := (default dict .jwks).caBundlePath -}}
+{{- if and $ca (hasPrefix $dir $ca) -}}
+{{- $file := trimPrefix $dir $ca -}}
+{{- if and (ne $file $configFile) (not (hasKey $extra $file)) -}}
+{{- fail (printf "issuer %s sets jwks.caBundlePath to %s, but nothing puts %s there. The chart mounts only the ConfigMap it renders at that path, and that ConfigMap carries %s plus whatever apiAuth.configMap.extraFiles lists. Add the bundle under extraFiles (key %s), or point caBundlePath somewhere you mount yourself through .Values.volumes." (quote (default "<unnamed>" .name)) $ca $file $configFile $file) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end }}

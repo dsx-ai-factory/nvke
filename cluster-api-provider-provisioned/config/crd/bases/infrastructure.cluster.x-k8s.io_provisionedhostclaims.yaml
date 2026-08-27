@@ -1,0 +1,109 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  labels:
+    cluster.x-k8s.io/provider: infrastructure-provisioned
+  name: provisionedhostclaims.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: ProvisionedHostClaim
+    listKind: ProvisionedHostClaimList
+    plural: provisionedhostclaims
+    shortNames:
+    - phc
+    singular: provisionedhostclaim
+  scope: Cluster
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.ipAddress
+      name: IPAddress
+      type: string
+    - jsonPath: .spec.clusterName
+      name: Cluster
+      type: string
+    - jsonPath: .spec.machineName
+      name: Machine
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ProvisionedHostClaim locks one IP address across every cluster.
+
+          It is cluster-scoped on purpose. A physical machine is a singleton, but each
+          cluster carries its own inventory in its own namespace, so a namespaced lock
+          could not see across the boundary — which is exactly the case it exists to
+          stop. Creating the object is the mutual exclusion: two claimants race, and the
+          API server rejects the second with AlreadyExists.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ProvisionedHostClaimSpec records who holds one IP address.
+
+              The object's existence is the lock. Nothing reads this spec to make a
+              decision; it is here so an operator can see who holds what, and so a blocked
+              claimant can find the holder and check whether it still exists.
+            properties:
+              clusterName:
+                description: ClusterName is the cluster whose inventory listed the
+                  host.
+                minLength: 1
+                type: string
+              hostName:
+                description: |-
+                  HostName is the name the inventory gave the host, for operators. Two
+                  clusters may well call the same machine different things, which is the
+                  whole reason the lock keys on the IP address instead.
+                type: string
+              ipAddress:
+                description: IPAddress is the canonical address being locked.
+                minLength: 1
+                type: string
+              machineName:
+                minLength: 1
+                type: string
+              machineNamespace:
+                description: |-
+                  MachineNamespace and MachineName locate the ProvisionedMachine that
+                  holds the claim. A claimant that finds this machine gone reclaims the
+                  host rather than waiting forever.
+                minLength: 1
+                type: string
+            required:
+            - clusterName
+            - ipAddress
+            - machineName
+            - machineNamespace
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources: {}

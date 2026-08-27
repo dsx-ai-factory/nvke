@@ -211,11 +211,7 @@ jobs:
           # #124 and #125, both on controller/THIRD_PARTY_NOTICES.md, while this
           # job reported success.
           #
-          # Keep this list and the steps in notices-check.yml in step with each
-          # other. Adding a module there and not here re-opens exactly that gap.
-          make -C agent notices
-          make -C controller notices
-          make -C cli notices
+          make notices
 
       # GUARD 2 of 2, after running the generators and before committing.
       #
@@ -241,7 +237,8 @@ jobs:
             -e '^vendor/' \
             -e '^agent/THIRD_PARTY_NOTICES\.md$' \
             -e '^controller/THIRD_PARTY_NOTICES\.md$' \
-            -e '^cli/THIRD_PARTY_NOTICES\.md$' || true)"
+            -e '^cli/THIRD_PARTY_NOTICES\.md$' \
+            -e '^os-image/THIRD_PARTY_NOTICES\.md$' || true)"
           if [ -n "$bad" ]; then
             echo "::error::Refusing to commit files outside the derived set:"
             printf '%s\n' "$bad" | sed 's/^/    /'
@@ -274,7 +271,8 @@ jobs:
             vendor \
             agent/THIRD_PARTY_NOTICES.md \
             controller/THIRD_PARTY_NOTICES.md \
-            cli/THIRD_PARTY_NOTICES.md
+            cli/THIRD_PARTY_NOTICES.md \
+            os-image/THIRD_PARTY_NOTICES.md
 
           git commit -m "build: regenerate workspace, vendor and notices for this bump"
           git push "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:${HEAD_REF}"

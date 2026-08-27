@@ -53,7 +53,7 @@ jobs:
     with:
       backend: nico
       label-filter: nico-containers
-      # No capd here: the Tiltfile rejects nico alongside forge-vms, and the
+      # No capd here: the Tiltfile rejects nico alongside nico-vms, and the
       # NICo provider brings its own node image step. capi_core is required.
       providers: '["capi_core", "bgp-containers", "nico"]'
       # 15m provision + 10m delete for the spec itself, plus building CAPNICo

@@ -57,7 +57,9 @@ const (
 	spireExecPluginName = "k8s-spiffe-workload-jwt-exec-auth"
 	spireAudienceEnv    = "SPIFFE_JWT_AUDIENCE"
 
-	jwtRefreshBefore = time.Minute
+	jwtRefreshBefore    = time.Minute
+	tenantAdminAuthInfo = "admin"
+	tenantContextName   = "tenant"
 )
 
 type executorFactory func(string, *url.URL) (remotecommand.Executor, error)
@@ -280,14 +282,14 @@ func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName s
 	}
 
 	config := clientcmdapi.NewConfig()
-	config.Clusters["tenant"] = &clientcmdapi.Cluster{
+	config.Clusters[tenantContextName] = &clientcmdapi.Cluster{
 		Server:                   cluster.Server,
 		CertificateAuthorityData: cluster.CertificateAuthorityData,
 		InsecureSkipTLSVerify:    cluster.InsecureSkipTLSVerify,
 	}
-	config.AuthInfos["admin"] = &clientcmdapi.AuthInfo{Token: token}
-	config.Contexts["tenant"] = &clientcmdapi.Context{Cluster: "tenant", AuthInfo: "admin"}
-	config.CurrentContext = "tenant"
+	config.AuthInfos[tenantAdminAuthInfo] = &clientcmdapi.AuthInfo{Token: token}
+	config.Contexts[tenantContextName] = &clientcmdapi.Context{Cluster: tenantContextName, AuthInfo: tenantAdminAuthInfo}
+	config.CurrentContext = tenantContextName
 
 	rendered, err := clientcmd.Write(*config)
 	if err != nil {

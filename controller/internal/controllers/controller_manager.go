@@ -10,15 +10,14 @@ import (
 	"math/rand"
 	"time"
 
-	"go.temporal.io/sdk/client"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/controllers/nodehealth"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
-	"github.com/NVIDIA/nke/controller/internal/teleport"
+	"github.com/NVIDIA/nke/controller/internal/providers/forge"
+	temporalactivities "github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
 // ControllerManager runs the site reconciliation loop and manages controllers
@@ -29,59 +28,49 @@ type ControllerManager struct {
 	db     db.DB
 	stopCh chan struct{}
 
-	capiClusterScaffold          *CAPIClusterScaffoldController
-	nodeHealthController         *nodehealth.Controller
-	certRenewalController        *CertRenewalController
-	clusterStaticEntryController *NodeClusterStaticEntryController
-	tpmPubhashesCmController     *TpmPubhashesCmController
-	teleportTokenController      *TeleportTokenController
+	forgeCAPIMigration       *ForgeCAPIMigrationController
+	tpmPubhashesCmController *TpmPubhashesCmController
 }
 
 // NewControllerManager creates a new ControllerManager.
-//
-// - cweTemporalClient: Used by controllers that start CWE-owned workflows.
-// - teleportClient: Used by TeleportTokenController for TPM join token management (can be nil if Teleport disabled)
 func NewControllerManager(
 	cfg config.Config,
 	logger *slog.Logger,
 	dbInstance db.DB,
 	k8sClient ctrlclient.Client,
-	cweTemporalClient client.Client,
+	forgeProvider *forge.ForgeProvider,
 	nodeAgentClient agent.Client,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 	trustDomain string,
-	teleportClient teleport.Client,
 ) (*ControllerManager, error) {
 	controllerManagerLogger := logger.With("logger", "controller-manager")
 
-	var clusterStaticEntryController *NodeClusterStaticEntryController
 	var tpmPubhashesCmController *TpmPubhashesCmController
 	if cfg.SpiffeEnabled {
-		clusterStaticEntryController = NewClusterStaticEntryController(cfg, dbInstance, k8sClient, controllerManagerLogger, trustDomain)
 		tpmPubhashesCmController = NewTpmPubhashesCmController(cfg, k8sClient, controllerManagerLogger, trustDomain)
 	}
 
-	var teleportTokenController *TeleportTokenController
-	if cfg.Teleport.Enabled && teleportClient != nil {
-		teleportTokenController = NewTeleportTokenController(cfg, dbInstance, controllerManagerLogger, teleportClient)
-	}
-
-	var capiClusterScaffold *CAPIClusterScaffoldController
+	var forgeCAPIMigration *ForgeCAPIMigrationController
 	if cfg.EnableForgeCapi {
-		capiClusterScaffold = NewCAPIClusterScaffoldController(cfg, controllerManagerLogger, dbInstance, k8sClient, nodeAgentClient)
+		activities := temporalactivities.NewActivities(
+			cfg,
+			dbInstance,
+			k8sClient,
+			nodeAgentClient,
+			forgeProvider,
+			trustDomain,
+			tenantClientProvider,
+		)
+		forgeCAPIMigration = NewForgeCAPIMigrationController(controllerManagerLogger, dbInstance, k8sClient, activities)
 	}
 
 	return &ControllerManager{
-		cfg:                          cfg,
-		logger:                       controllerManagerLogger,
-		db:                           dbInstance,
-		stopCh:                       make(chan struct{}),
-		capiClusterScaffold:          capiClusterScaffold,
-		nodeHealthController:         nodehealth.NewController(cfg, logger, dbInstance, cweTemporalClient, nodeAgentClient, tenantClientProvider),
-		certRenewalController:        NewCertRenewalController(cfg, controllerManagerLogger, dbInstance, cweTemporalClient),
-		clusterStaticEntryController: clusterStaticEntryController,
-		tpmPubhashesCmController:     tpmPubhashesCmController,
-		teleportTokenController:      teleportTokenController,
+		cfg:                      cfg,
+		logger:                   controllerManagerLogger,
+		db:                       dbInstance,
+		stopCh:                   make(chan struct{}),
+		forgeCAPIMigration:       forgeCAPIMigration,
+		tpmPubhashesCmController: tpmPubhashesCmController,
 	}, nil
 }
 
@@ -191,43 +180,21 @@ func (a *ControllerManager) processSite(ctx context.Context, site db.Site) {
 
 	// These Reconciles are executed sequentially just for development simplicity.
 	// They are designed to be independent and may be run in parallel or separate go routines or processes in the future.
-	// FIXME: https://jirasw.nvidia.com/browse/NKX-13484: We are starting to get a lot of these we should evaluate concurrency options.
+	// FIXME: We are starting to get a lot of these we should evaluate concurrency options.
 
-	if err := a.nodeHealthController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile node health", "error", err, "siteID", site.ID.String())
-	}
-
-	if a.capiClusterScaffold != nil {
-		if err := a.capiClusterScaffold.Reconcile(ctx, site); err != nil {
+	if a.forgeCAPIMigration != nil {
+		if err := a.forgeCAPIMigration.Reconcile(ctx, site); err != nil {
 			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile CAPI cluster scaffold", "error", err, "siteID", site.ID.String())
-		}
-	}
-
-	if a.teleportTokenController != nil {
-		if err := a.teleportTokenController.Reconcile(ctx, site); err != nil {
-			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile Teleport tokens", "error", err, "siteID", site.ID.String())
+			a.logger.Error("Failed to reconcile Forge CAPI migration", "error", err, "siteID", site.ID.String())
 		}
 	}
 
 	if a.cfg.SpiffeEnabled {
-		if err := a.clusterStaticEntryController.Reconcile(ctx, site); err != nil {
-			// Log errors but continue processing the other controllers.
-			a.logger.Error("Failed to reconcile cluster static entries", "error", err, "siteID", site.ID.String())
-		}
-
 		if err := a.tpmPubhashesCmController.Reconcile(ctx); err != nil {
 			// Log errors but continue processing the other controllers.
 			a.logger.Error("Failed to reconcile tpm pubhashes configmap", "error", err)
 		}
 	} else {
 		a.logger.Debug("SPIFFE is disabled, skipping tpm pubhashes configmap reconciliation")
-	}
-
-	if err := a.certRenewalController.Reconcile(ctx, site); err != nil {
-		// Log errors but continue processing the other controllers.
-		a.logger.Error("Failed to reconcile cert renewal", "error", err, "siteID", site.ID.String())
 	}
 }

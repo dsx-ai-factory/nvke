@@ -1,0 +1,14 @@
+images
+var
+.gocache
+.gomodcache
+# Binaries `go build ./cmd/<name>` drops in the module root. The Makefile writes
+# to bin/, but a bare go build does not.
+/nico-vms
+/nico-vmsctl
+vendor
+!ui/vendor/
+!ui/vendor/**
+logs
+kubeconfig-*
+.dev

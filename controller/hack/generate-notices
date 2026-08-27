@@ -68,8 +68,8 @@ REL_MODULE="${MODULE_ROOT#"${WORK_ROOT}"/}"
 
 OUTPUT="${OUTPUT:-${MODULE_ROOT}/THIRD_PARTY_NOTICES.md}"
 
-# The binary shipped in the container image. forge-vms and
-# forge-vmsctl are development tooling and are not distributed.
+# The binary shipped in the container image. nico-vms and
+# nico-vmsctl are development tooling and are not distributed.
 # PACKAGES entries are given relative to the module and rewritten to WORK_ROOT.
 read -r -a _pkgs <<< "${PACKAGES:-./cmd/worker}"
 PACKAGES=()
@@ -95,8 +95,7 @@ if [[ ! -x "${GO_LICENSES}" ]]; then
         GO_LICENSES="$(command -v go-licenses)"
     else
         echo "ERROR: go-licenses not found." >&2
-        echo "Install it with 'make notices', which runs:" >&2
-        echo "  go install github.com/google/go-licenses/v2@v2.0.1" >&2
+        echo "Run 'make go-licenses' first." >&2
         exit 1
     fi
 fi

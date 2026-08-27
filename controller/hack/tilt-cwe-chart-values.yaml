@@ -55,12 +55,16 @@ temporal:
 
 profiles:
   path: /profiles
-  # Exercise the fleet profiles.image materialize path (NKX-13910). Tilt builds
+  # Exercise the fleet profiles.image materialize path. Tilt builds
   # docker.local/cwe-profiles:tilt from the sibling nke-site-deploy tree.
   image:
     enabled: true
     repository: docker.local/cwe-profiles
     tag: tilt
+
+# apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
+# NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
+# the one deploy/k8s/nke-auth-dev.yaml applies.
 
 spiffe:
   enabled: true

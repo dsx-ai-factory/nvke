@@ -10,8 +10,7 @@
 # executed on nodes, and that never detected a missing tool. All three parsed
 # fine under `bash -n`; only shellcheck saw them.
 #
-# Runs on ubuntu-latest. shellcheck is preinstalled on GitHub runners, so this
-# needs no download, no NVIDIA runner and no credentials.
+# Runs on ubuntu-latest with the pinned shellcheck release.
 #
 # Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
 # filtered check does not report on a pull request that misses the filter, and
@@ -63,6 +62,22 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install shellcheck
+        run: |
+          set -euo pipefail
+          version="$(make --no-print-directory print-SHELLCHECK_VERSION)"
+          archive="shellcheck-v${version}.linux.x86_64.tar.xz"
+          url="https://github.com/koalaman/shellcheck/releases/download/v${version}/${archive}"
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "${tmp}"' EXIT
+
+          curl -fsSL -o "${tmp}/${archive}" "${url}"
+          echo "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198  ${tmp}/${archive}" | sha256sum --check
+          tar -xJf "${tmp}/${archive}" -C "${tmp}"
+          mkdir -p "${HOME}/.local/bin"
+          install -m 0755 "${tmp}/shellcheck-v${version}/shellcheck" "${HOME}/.local/bin/shellcheck"
+          echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
       # -S error, not -S warning. The tree is clean at error severity as of
       # this commit, so the gate starts green and any new error-level bug fails
       # the build. It is NOT clean at warning severity: 31 findings remain,
@@ -81,59 +96,25 @@ jobs:
       #
       # Built once and read by both steps below, which previously kept identical
       # `find` lines by hand.
-      #
-      # Match shebangs narrowly: sibling files start `#!/usr/bin/env python3`
-      # and `#!ipxe`. Take the word after `env` when present, so `#!/bin/bash -e`
-      # and `#!/usr/bin/env bash` both resolve.
-      - name: Collect shell scripts
-        shell: bash
-        run: |
-          set -euo pipefail
-          list="${RUNNER_TEMP}/shell-scripts.list"
-          {
-            git ls-files -z -- '*.sh' ':(exclude)vendor/*'
-            while IFS= read -r -d '' path; do
-              # Extension-bearing files are already covered by the glob above.
-              case "${path##*/}" in *.*) continue ;; esac
-              [ -f "${path}" ] || continue
-              interp=$(
-                sed -n '1s/^#![[:space:]]*//p' "${path}" \
-                  | awk 'NR == 1 { if ($1 ~ /\/env$/) print $2; else print $1 }'
-              )
-              case "${interp##*/}" in
-                sh|bash|dash|ksh) printf '%s\0' "${path}" ;;
-              esac
-            done < <(git ls-files -z -- ':(exclude)vendor/*')
-          } | sort -zu > "${list}"
-          echo "SHELL_SCRIPT_LIST=${list}" >> "${GITHUB_ENV}"
-
       - name: Lint shell scripts
-        shell: bash
-        run: |
-          set -euo pipefail
-          mapfile -d '' -t scripts < "${SHELL_SCRIPT_LIST}"
-          echo "Checking ${#scripts[@]} shell scripts at severity=error"
-          shellcheck --severity=error --format=tty "${scripts[@]}"
+        run: make lint-shell
 
-      # Reported, not enforced, so the size of the backlog is visible in the
-      # log without gating on it. Remove this step when the gate above moves
-      # to -S warning.
+      # Reported, not enforced, so the size of the backlog is visible without
+      # gating on it. Remove when the gate above moves to -S warning.
       - name: Report the warning-level backlog
         if: always()
         shell: bash
         run: |
           set -uo pipefail
-          mapfile -d '' -t scripts < "${SHELL_SCRIPT_LIST}"
-          # `|| true` is required, not defensive. shellcheck exits non-zero
-          # when it finds anything, and the runner invokes this step with
-          # `bash -e -o pipefail` whatever the script itself sets -- so without
-          # it, a non-empty backlog fails a step whose entire job is to count
-          # the backlog.
-          count=$( { shellcheck --severity=warning --format=gcc "${scripts[@]}" 2>/dev/null || true; } | wc -l | tr -d ' ')
+          n=$(./hack/shell-scripts.sh | tr -dc '\\0' | wc -c | tr -d ' ')
+          # `|| true` is required. shellcheck exits non-zero on any finding, and
+          # the runner invokes this step with `bash -e -o pipefail`, so without
+          # it a non-empty backlog fails the step that counts the backlog.
+          count=$( { ./hack/shell-scripts.sh | xargs -0 shellcheck --severity=warning --format=gcc 2>/dev/null || true; } | wc -l | tr -d ' ')
           {
             echo "## shellcheck"
             echo
-            echo "Gate: \`--severity=error\` over ${#scripts[@]} scripts."
+            echo "Gate: \`--severity=error\` over ${n} scripts."
             echo
             echo "Not yet enforced: **${count}** finding(s) at \`--severity=warning\`."
           } >> "${GITHUB_STEP_SUMMARY}"

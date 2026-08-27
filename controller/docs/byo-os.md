@@ -200,7 +200,7 @@ OS profiles (or a successor “node environment” object) should evolve toward:
    installs begin.
 
 NKE may continue to ship **reference** OS profiles and example user-data for
-labs and forge-vms. Those are convenience implementations of phase 1, not
+labs and nico-vms. Those are convenience implementations of phase 1, not
 requirements. Reference images should prefer the thin contract over “kitchen
 sink” package lists.
 
@@ -289,7 +289,7 @@ those images — FDE images should still aim for the thin phase-1 package set.
   repo keys and phase-1 package provenance. Phase-2 packages are installed by
   NKE from the same signed apt repo after the agent is up.
 - **TPM:** sites that rely on TPM node attestation (or FDE unlock) must ensure
-  the guest has a usable TPM; software TPM in lab (e.g. forge-vms swtpm) is fine
+  the guest has a usable TPM; software TPM in lab (e.g. nico-vms swtpm) is fine
   for dev, not a production substitute unless explicitly accepted.
 - **Cluster secrets:** trust bundles, Teleport join tokens, and similar must not
   be baked into shared golden images reused across trust domains; prefer
@@ -310,7 +310,7 @@ See also `agent/docs/SECURITY.md`.
    keep FDE reference images as needed (§8).
 5. **Offer** BYO-OS as an opt-in node pool / profile mode for early operators.
 6. **Deprecate** NKE ownership of site-specific non-FDE golden image pipelines
-   once reference + contract are sufficient; keep forge-vms / CI images as test
+   once reference + contract are sufficient; keep nico-vms / CI images as test
    fixtures.
 
 No big-bang cutover is required. The current qcow + cloud-init path remains a

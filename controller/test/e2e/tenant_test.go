@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
+	"os"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ type tenantTest struct {
 	cascadePoolID uuid.UUID
 }
 
-var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
+var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	func(spec testSpec) {
 		var (
 			test    tenantTest
@@ -51,6 +52,16 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
 
 		It("creates the cluster", func(ctx context.Context) {
+			// The cp-controller lane needs a flag-on CWE (a flag-off CWE rejects the
+			// cluster-level controlPlaneConfig at create). Skip the whole entry rather
+			// than fail when the flag is not set, so a default local `capd` run against
+			// a flag-off CWE simply skips it. CI selects this entry only in its flag-on
+			// lane.
+			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
+				spec.validate.controlPlaneControllerRollingUpdate) &&
+				os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
+				Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+			}
 			test = expectSucceed(setupTenantTest(ctx, spec.options))
 			if spec.validate.brownfieldOIDC {
 				// A cluster on an OIDC-enabled site is always born OIDC-on, but
@@ -115,6 +126,15 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 			}
 			if spec.validate.cpRotation {
 				validateSingleNodeControlPlaneRotation(&test)
+			}
+			if spec.validate.controlPlaneController {
+				validateControllerManagedControlPlane(&test)
+			}
+			if spec.validate.controlPlaneControllerUpdate {
+				validateControllerManagedControlPlaneUpdate(&test)
+			}
+			if spec.validate.controlPlaneControllerRollingUpdate {
+				validateControllerManagedControlPlaneRollingUpdate(&test)
 			}
 			if spec.validate.nodePoolLifecycle {
 				validateAdditionalNodePool(&test)
@@ -185,6 +205,22 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{scale: true, reboot: true, postReadyChecks: true, csrApproval: true, nodePoolLifecycle: true},
 	}),
+	// Opt-in via the "cp-controller" label: it exercises cluster-level
+	// control-plane-controller provisioning (no control-plane node pool), so it
+	// only passes against CWE deployed with
+	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true. The CAPD E2E
+	// workflow runs it in a dedicated flag-on lane; the readiness spec also
+	// self-skips unless that flag is set (belt-and-suspenders).
+	Entry("CAPD control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("capd", "cp-controller"), testSpec{
+		buildSpec: capdControlPlaneControllerSpec,
+		shape: clusterShape{
+			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneVIP:    capdControlPlaneVIP,
+		},
+		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
+	}),
 	Entry("nico-containers", Ordered, ContinueOnFailure, Label("nico-containers", "happy-path"), testSpec{
 		buildSpec: nicoSpec,
 		shape: clusterShape{
@@ -194,8 +230,8 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{scale: true, reboot: true},
 	}),
-	Entry("forge-vms", Ordered, ContinueOnFailure, Label("forge-vms", "happy-path"), testSpec{
-		buildSpec: forgeSpec,
+	Entry("nico-vms", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path"), testSpec{
+		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
@@ -204,8 +240,8 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{scale: true, reboot: true},
 	}),
-	Entry("forge-vms k8s upgrade", Ordered, ContinueOnFailure, Label("forge-vms", "happy-path", "upgrade"), testSpec{
-		buildSpec: forgeSpec,
+	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
+		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: upgradeStartingKubernetesVersion,
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
@@ -239,35 +275,35 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{brownfieldOIDC: true},
 	}),
-	Entry("forge-vms OS profiles", Ordered, ContinueOnFailure, Label("forge-vms", "extended", "os-profiles"), testSpec{
-		buildSpec: forgeSpec,
+	Entry("nico-vms OS profiles", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "os-profiles"), testSpec{
+		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			cniPlugin:         CNIPluginCalico, // Simply to make this test run faster (520s vs 1011s).
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 			workerPools: []nke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
 				// So this osProfile test exists to prove that CWE can still provision nodePools that may still be pointed at older agent versions.
-				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, OSProfile: "nke-forge-vms-24.04-amd64-fde-old-agent"},
-				// forgeNodePoolSpec defaults kube/system reserved memory to 250Mi so the
-				// default forge-vms instance type has enough allocatable memory.
+				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, OSProfile: "nke-nico-vms-24.04-amd64-fde-old-agent"},
+				// nicoVMSNodePoolSpec defaults kube/system reserved memory to 250Mi so the
+				// default nico-vms instance type has enough allocatable memory.
 				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, OSProfile: "nke-260625-24.04-x86-fde"},
 				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, OSProfile: "nke-260602-24.04-x86-fde"},
 			},
 		},
 		options: nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 	}),
-	Entry("forge-vms multi pod CIDRs", Ordered, ContinueOnFailure, Label("forge-vms", "multi-pod-cidrs"), testSpec{
-		buildSpec: forgeMultiPodCIDRSpec,
+	Entry("nico-vms multi pod CIDRs", Ordered, ContinueOnFailure, Label("nico-vms", "multi-pod-cidrs"), testSpec{
+		buildSpec: nicoVMSMultiPodCIDRSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
 			cniPlugin:         CNIPluginOVN,
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: forgeLargeInstanceID}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: forgeLargeInstanceID}},
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options: nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 30 * time.Second},
 	}),
-	Entry("forge-vms node pool lifecycle", Ordered, ContinueOnFailure, Label("forge-vms", "extended", "nodepool"), testSpec{
-		buildSpec: forgeSpec,
+	Entry("nico-vms node pool lifecycle", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "nodepool"), testSpec{
+		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			cniPlugin:         CNIPluginOVN, // OVN provisions faster than the Calico default.
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
@@ -280,8 +316,8 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 	// override, so it only passes against CWE deployed with
 	// ALLOW_ETCD_SAFETY_OVERRIDES=true. The spec also self-skips unless
 	// E2E_ETCD_OVERRIDES_ENABLED=true (belt-and-suspenders).
-	Entry("forge-vms single-node control-plane rotation", Ordered, ContinueOnFailure, Label("forge-vms", "extended", "cp-rotation"), testSpec{
-		buildSpec: forgeSpec,
+	Entry("nico-vms single-node control-plane rotation", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "cp-rotation"), testSpec{
+		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			cniPlugin:         CNIPluginOVN, // OVN provisions faster than the Calico default.
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
@@ -292,8 +328,8 @@ var _ = DescribeTableSubtree("NKE with backend", withForgeVMSOSProfileEntries(
 	}),
 )...)
 
-func withForgeVMSOSProfileEntries(args ...any) []any {
-	for _, entry := range mustForgeVMSOSProfileTableEntries() {
+func withNicoVMSOSProfileEntries(args ...any) []any {
+	for _, entry := range mustNicoVMSOSProfileTableEntries() {
 		args = append(args, entry)
 	}
 	return args
@@ -319,6 +355,10 @@ type clusterShape struct {
 	workerPools       []nke.NodePoolSpec
 	etcdEncrypted     bool
 	controlPlaneVIP   string
+	// controlPlaneConfig, when set, provisions the control plane through the
+	// cluster-level control-plane controller (no control-plane node pool) instead
+	// of controlPlanePools. Consumed by capdControlPlaneControllerSpec.
+	controlPlaneConfig *nke.ControlPlaneConfigSpec
 }
 
 type validations struct {
@@ -361,13 +401,32 @@ type validations struct {
 	upgrade bool
 	// cpRotation rotates a single-node control plane using the etcd single-voter
 	// override. Requires a 1-CP shape and CWE deployed with
-	// ALLOW_ETCD_SAFETY_OVERRIDES=true (self-skips otherwise). See NKX-13160.
+	// ALLOW_ETCD_SAFETY_OVERRIDES=true (self-skips otherwise).
 	cpRotation bool
+	// controlPlaneController asserts the control plane is provisioned by the
+	// cluster-level control-plane controller with no control-plane node pool.
+	// Requires CWE deployed with
+	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true (self-skips
+	// otherwise).
+	controlPlaneController bool
+	// controlPlaneControllerUpdate PATCHes the cluster-level controlPlaneConfig
+	// desiredCount and asserts the controller-managed control plane converges on
+	// the new count in CWE and the tenant API. Requires the same flag-on CWE as
+	// controlPlaneController (self-skips otherwise).
+	controlPlaneControllerUpdate bool
+	// controlPlaneControllerRollingUpdate PATCHes the cluster-level
+	// controlPlaneConfig with a new config profile to bump the control-plane
+	// configuration revision and asserts the controller-managed control-plane
+	// nodes are rolled onto new nodes at the same desired count in CWE and the
+	// tenant API. Ordered after controlPlaneControllerUpdate so the control plane
+	// has enough nodes to keep quorum while rolling. Requires the same flag-on CWE
+	// as controlPlaneController (self-skips otherwise).
+	controlPlaneControllerRollingUpdate bool
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)
-// and preflights CWE reachability through the apiserver service-proxy. It does
-// not create a cluster.
+// and preflights NKE reachability over the port-forward. It does not create a
+// cluster.
 func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, error) {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -384,7 +443,7 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 		return tenantTest{}, fmt.Errorf("building management cluster client: %w", err)
 	}
 
-	cweClient, err := nke.NewClient(restConfig, timeouts)
+	cweClient, err := nke.NewClient(ctx, restConfig, timeouts)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("building CWE API client: %w", err)
 	}
@@ -403,7 +462,7 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 	defer cancel()
 	resp, err := cweClient.API().GetClusterWithResponse(pingCtx, uuid.New())
 	if err != nil {
-		return tenantTest{}, fmt.Errorf("reaching CWE through the apiserver service-proxy: %w", err)
+		return tenantTest{}, fmt.Errorf("reaching NKE over the port-forward: %w", err)
 	}
 	if resp.StatusCode() != 404 {
 		return tenantTest{}, fmt.Errorf("CWE preflight: want 404 for a random cluster UUID, got %s: %s", resp.Status(), resp.Body)
@@ -472,8 +531,8 @@ const (
 	CNIPluginOVN             = "ovn-kubernetes"
 	capdControlPlaneVIP      = "172.31.1.1"
 
-	forgeMultiPodCIDR        = "10.250.0.0/23,10.252.0.0/22"
-	forgeMultiPodServiceCIDR = "10.130.0.0/16"
+	nicoVMSMultiPodCIDR        = "10.250.0.0/23,10.252.0.0/22"
+	nicoVMSMultiPodServiceCIDR = "10.130.0.0/16"
 )
 
 // capdSpec builds a CAPD topology with the requested cluster shape.
@@ -492,6 +551,17 @@ func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpe
 		},
 		Workers: capdNodePoolSpecs(shape.workerPools, "worker", "w"),
 	}
+}
+
+// capdControlPlaneControllerSpec builds a CAPD topology whose control plane is
+// provisioned by the cluster-level control-plane controller: no control-plane
+// node pool, a cluster-level control plane config instead. Requires CWE deployed
+// with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+func capdControlPlaneControllerSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	spec := capdSpec(cfg, name, shape)
+	spec.ControlPlane.Pools = nil
+	spec.ControlPlane.Config = shape.controlPlaneConfig
+	return spec
 }
 
 func TestUnit_CAPDSpec(t *testing.T) {
@@ -574,53 +644,53 @@ func nicoNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePre
 	return out
 }
 
-// forge-vms Forge emulator seed identifiers, mirroring
-// cloud-workflow-engine/forge-vms/internal/seed/default-seed.yaml. The local
-// forge-vms environment always seeds these deterministic IDs.
+// nico-vms Forge emulator seed identifiers, mirroring
+// cloud-workflow-engine/nico-vms/internal/seed/default-seed.yaml. The local
+// nico-vms environment always seeds these deterministic IDs.
 const (
-	forgeOrgID           = "novxwn552ssc"
-	forgeSiteID          = "a1b2c3d4-0001-4000-8000-000000000001"
-	forgeVpcID           = "a1b2c3d4-0002-4000-8000-000000000001"
-	forgeVpcPrefixID     = "a1b2c3d4-0004-4000-8000-000000000001"
-	forgeInstanceTypeID  = "a1b2c3d4-0005-4000-8000-000000000001"
-	forgeLargeInstanceID = "a1b2c3d4-0005-4000-8000-000000000003"
-	forgeSSHKeyGroupID   = "a1b2c3d4-0006-4000-8000-000000000001"
-	forgeOSProfile       = "nke-forge-vms-24.04-amd64-fde"
-	forgeCPConfigProfile = "forge-vms-cp"
-	forgeWConfigProfile  = "forge-vms-worker"
-	forgeControlPlaneVIP = "172.31.0.10"
+	nicoVMSOrgID           = "novxwn552ssc"
+	nicoVMSSiteID          = "a1b2c3d4-0001-4000-8000-000000000001"
+	nicoVMSVpcID           = "a1b2c3d4-0002-4000-8000-000000000001"
+	nicoVMSVpcPrefixID     = "a1b2c3d4-0004-4000-8000-000000000001"
+	nicoVMSInstanceTypeID  = "a1b2c3d4-0005-4000-8000-000000000001"
+	nicoVMSLargeInstanceID = "a1b2c3d4-0005-4000-8000-000000000003"
+	nicoVMSSSHKeyGroupID   = "a1b2c3d4-0006-4000-8000-000000000001"
+	nicoVMSOSProfile       = "nke-nico-vms-24.04-amd64-fde"
+	nicoVMSCPConfigProfile = "nico-vms-cp"
+	nicoVMSWConfigProfile  = "nico-vms-worker"
+	nicoVMSControlPlaneVIP = "172.31.0.10"
 )
 
-// forgeSpec builds a forge-vms topology using the local emulator's seed
-// identifiers. kube-vip is left enabled (the forge-vms BGP speaker advertises
+// nicoVMSSpec builds a nico-vms topology using the local emulator's seed
+// identifiers. kube-vip is left enabled (the nico-vms BGP speaker advertises
 // the control-plane VIP), unlike the CAPD topology.
-func forgeSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
+func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec {
 	return nke.ClusterSpec{
 		Name:              name,
-		Backend:           nke.BackendForgeVMS,
+		Backend:           nke.BackendNicoVMS,
 		KubernetesVersion: defaultString(shape.kubernetesVersion, defaultKubernetesVersion),
 		CNIPlugin:         defaultString(shape.cniPlugin, CNIPluginOVN),
-		OrgID:             forgeOrgID,
-		SiteID:            forgeSiteID,
-		VpcID:             forgeVpcID,
+		OrgID:             nicoVMSOrgID,
+		SiteID:            nicoVMSSiteID,
+		VpcID:             nicoVMSVpcID,
 		ControlPlane: nke.ControlPlane{
-			Pools:           forgeNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", forgeOSProfile, forgeCPConfigProfile),
-			ControlPlaneVIP: defaultString(shape.controlPlaneVIP, forgeControlPlaneVIP),
+			Pools:           nicoVMSNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile),
+			ControlPlaneVIP: defaultString(shape.controlPlaneVIP, nicoVMSControlPlaneVIP),
 			EtcdEncrypted:   shape.etcdEncrypted,
 		},
-		Workers: forgeNodePoolSpecs(shape.workerPools, "worker", "w", forgeOSProfile, forgeWConfigProfile),
+		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSOSProfile, nicoVMSWConfigProfile),
 	}
 }
 
-func forgeControlPlaneVIPAtOffset(offset int) string {
-	vip := netip.MustParseAddr(forgeControlPlaneVIP)
-	for i := 0; i < offset; i++ {
+func nicoVMSControlPlaneVIPAtOffset(offset int) string {
+	vip := netip.MustParseAddr(nicoVMSControlPlaneVIP)
+	for range offset {
 		vip = vip.Next()
 	}
 	return vip.String()
 }
 
-func TestUnit_ForgeControlPlaneVIPAtOffset(t *testing.T) {
+func TestUnit_NicoVMSControlPlaneVIPAtOffset(t *testing.T) {
 	type parameters struct {
 		offset int
 		want   string
@@ -634,31 +704,31 @@ func TestUnit_ForgeControlPlaneVIPAtOffset(t *testing.T) {
 
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
-			if got := forgeControlPlaneVIPAtOffset(params.offset); got != params.want {
-				t.Fatalf("forgeControlPlaneVIPAtOffset(%d) = %q, want %q", params.offset, got, params.want)
+			if got := nicoVMSControlPlaneVIPAtOffset(params.offset); got != params.want {
+				t.Fatalf("nicoVMSControlPlaneVIPAtOffset(%d) = %q, want %q", params.offset, got, params.want)
 			}
 		})
 	}
 }
 
-func forgeNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) []nke.NodePoolSpec {
+func nicoVMSNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) []nke.NodePoolSpec {
 	out := make([]nke.NodePoolSpec, 0, len(pools))
 	for _, pool := range pools {
-		out = append(out, forgeNodePoolSpec(pool, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile))
+		out = append(out, nicoVMSNodePoolSpec(pool, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile))
 	}
 	return out
 }
 
-func forgeNodePoolSpec(pool nke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) nke.NodePoolSpec {
+func nicoVMSNodePoolSpec(pool nke.NodePoolSpec, defaultName, defaultNodeNamePrefix, defaultOSProfile, defaultConfigProfile string) nke.NodePoolSpec {
 	return nke.NodePoolSpec{
 		Name:                  defaultString(pool.Name, defaultName),
 		NodeNamePrefix:        defaultString(pool.NodeNamePrefix, defaultNodeNamePrefix),
 		DesiredNodeCount:      pool.DesiredNodeCount,
 		SystemReservedMemory:  defaultString(pool.SystemReservedMemory, "250Mi"),
 		KubeReservedMemory:    defaultString(pool.KubeReservedMemory, "250Mi"),
-		InstanceTypeID:        defaultString(pool.InstanceTypeID, forgeInstanceTypeID),
-		VpcPrefixIDs:          defaultStrings(pool.VpcPrefixIDs, forgeVpcPrefixID),
-		SSHKeyGroupIDs:        defaultStrings(pool.SSHKeyGroupIDs, forgeSSHKeyGroupID),
+		InstanceTypeID:        defaultString(pool.InstanceTypeID, nicoVMSInstanceTypeID),
+		VpcPrefixIDs:          defaultStrings(pool.VpcPrefixIDs, nicoVMSVpcPrefixID),
+		SSHKeyGroupIDs:        defaultStrings(pool.SSHKeyGroupIDs, nicoVMSSSHKeyGroupID),
 		OSProfile:             defaultString(pool.OSProfile, defaultOSProfile),
 		ConfigProfile:         defaultString(pool.ConfigProfile, defaultConfigProfile),
 		DiskSelectionStrategy: defaultString(pool.DiskSelectionStrategy, "smallest"),
@@ -679,12 +749,12 @@ func defaultStrings(s []string, defaultValue string) []string {
 	return s
 }
 
-func forgeMultiPodCIDRSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
-	spec := forgeSpec(cfg, name, shape)
+func nicoVMSMultiPodCIDRSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
+	spec := nicoVMSSpec(cfg, name, shape)
 	spec.Name = name + "-multi-pod-cidr"
 	spec.Network = &nke.ClusterNetworkSpec{
-		PodCIDR:          forgeMultiPodCIDR,
-		ServiceCIDR:      forgeMultiPodServiceCIDR,
+		PodCIDR:          nicoVMSMultiPodCIDR,
+		ServiceCIDR:      nicoVMSMultiPodServiceCIDR,
 		ExpectedPodCIDRs: []string{"10.250.0.0/23", "10.252.0.0/22"},
 	}
 	return spec

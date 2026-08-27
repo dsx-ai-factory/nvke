@@ -79,7 +79,7 @@ func (a *Activities) executeHostRunbook(ctx context.Context, input ExecuteHostRu
 	// Fails the named runbook without hanging, so e2e scenarios about retry
 	// budgets and failure tolerance do not have to wait out a heartbeat timeout
 	// per attempt. Models a runbook that cannot succeed — e.g. a teardown hook
-	// waiting on a node whose kubelet is gone (NKX-14344).
+	// waiting on a node whose kubelet is gone.
 	// gofail: var CWERunbookExecutionError string
 	// if CWERunbookExecutionError == input.RunbookName {
 	// 	fmt.Println("cwe-gofail-runbook-execution-error")

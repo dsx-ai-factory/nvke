@@ -46,16 +46,16 @@ func (a *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-pool-controller",
 		a,
-		a.db.NodePoolSource(dbfilters.NodePool{}),
-		a.db.NodeSource(dbfilters.Node{}, nodePoolKeysForNode),
+		dbwrapper.NewNodePoolSource(a.db, dbfilters.NodePool{}),
+		dbwrapper.NewNodeSource(a.db, dbfilters.Node{}, nodePoolKeysForNode),
 	)
 }
 
-func nodePoolKeysForNode(node db.Node) []dbreconcile.Key {
+func nodePoolKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodePoolID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(node.NodePoolID)}, nil
 }
 
 // Reconcile a NodePool:

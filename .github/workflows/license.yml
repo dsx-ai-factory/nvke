@@ -1,25 +1,6 @@
 ---
-# License enforcement for all Go modules in the monorepo.
-#
-# A discover-modules setup job finds every go.mod (excluding vendor/ and
-# testdata/), then two matrix jobs fan out over its outputs so new components
-# are covered automatically without workflow edits.
-#
-#   license-check — go-licenses (github.com/google/go-licenses) verifies all
-#     transitive dependency licenses are permissive (no restricted/reciprocal/
-#     forbidden/unknown types).  This is the same underlying tool used in the
-#     existing GitLab CI pipeline; no proprietary wrapper is required here.
-#     It covers every module.  controller used to be excluded because the check
-#     resolved dependencies over the network and could not reach the INTERNAL
-#     github.com/NVIDIA/cluster-api-provider-nico; it now reads the committed
-#     vendor tree, which carries that module, so nothing is excluded and no
-#     credential is needed.
-#
-#   header-check — `make file-license-check` verifies every source file carries
-#     the required copyright header via addlicense.  This runs over the *full*
-#     module list, including the modules excluded above: the target invokes
-#     addlicense as `go run <pkg>@<version>`, which ignores the current module's
-#     dependencies, so it needs no access to private imports.
+# Checks dependency licenses, source headers and shipped license copies.
+# Dependency checks use the same module list and command as local checks.
 #
 # Release gate: the release workflow calls this workflow via workflow_call and
 # gates publish jobs on it via `needs`.  See .github/workflows/release.yml.
@@ -38,6 +19,9 @@ on:
       - 'LICENSE'
       - 'NOTICE'
       - 'Makefile'
+      - 'make/tool-versions.mk'
+      - 'hack/workspace-modules.sh'
+      - 'controller/Makefile'
       - 'controller/licenses/**'
       - 'controller/deploy/charts/cloud-workflow-engine/LICENSE'
       - 'controller/deploy/charts/cloud-workflow-engine/NOTICE'
@@ -106,17 +90,7 @@ jobs:
       - name: Find Go modules
         id: find
         run: |
-          all=$(find . -name go.mod \
-            -not -path '*/vendor/*' \
-            -not -path '*/testdata/*' \
-            -exec dirname {} \; \
-            | sort)
-
-          # Every module, with no exclusion. controller used to be dropped here
-          # because go-licenses resolved dependencies over the network and could
-          # not reach the INTERNAL cluster-api-provider-nico. The check now runs
-          # from the vendor tree instead, which carries that module, so it needs
-          # no credential and no exclusion. See the check job below.
+          all="$(./hack/workspace-modules.sh)"
           modules=$(printf '%s\n' "$all" | jq -R . | jq -sc .)
           echo "modules=$modules" >> "$GITHUB_OUTPUT"
 
@@ -167,36 +141,11 @@ jobs:
             go.work.sum
             **/go.sum
 
-      # Runs from the repository root, not from the module, and names the module
-      # as a package pattern. go-licenses requires its root directory to CONTAIN
-      # the vendor tree it reads, and this repository vendors once at the
-      # workspace root, above every module. From inside a module it finds no
-      # vendor tree, resolves each dependency over the network, and cannot reach
-      # the INTERNAL cluster-api-provider-nico -- which is why controller was
-      # excluded from this matrix rather than fixed.
-      #
-      # Reading the vendor tree is also the more accurate test: it checks the
-      # dependencies that are committed and built, rather than whatever a fresh
-      # resolution returns today.
-      #
-      # controller/hack/generate-notices does the same thing for the same reason
-      # and has been generating the shipped attribution since #142.
       - name: Check dependency licenses
-        # GOTOOLCHAIN=local prevents Go from downloading a golang.org/toolchain
-        # module for stdlib, which confuses go-licenses into treating standard
-        # library packages as unrecognised external packages.
         env:
           GOTOOLCHAIN: local
           MODULE: ${{ matrix.module }}
-        run: |
-          go install github.com/google/go-licenses/v2@latest
-          # cluster-api-provider-nico is first-party NVIDIA code carried in
-          # vendor/, not a third-party dependency, and it ships no LICENSE of its
-          # own. Same ignore list as controller/Makefile's license-policy-check.
-          go-licenses check "./${MODULE#./}/..." \
-            --disallowed_types=restricted,reciprocal,forbidden,unknown \
-            --ignore github.com/NVIDIA/nke \
-            --ignore github.com/NVIDIA/cluster-api-provider-nico
+        run: make license-deps-check MODULE="${MODULE}"
 
   # One job for the whole repository, not one per module.
   #

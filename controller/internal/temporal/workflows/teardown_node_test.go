@@ -156,9 +156,9 @@ func TestTeardownNodeHooksSkippedWhenConfigProfileOmitted(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
-// NKX-13160: teardown hooks execute as cluster runbooks, so they must never be
-// dispatched to the node being removed — on a force-delete that node is exactly
-// the unreachable one.
+// Teardown hooks execute as cluster runbooks, so they must never be dispatched
+// to the node being removed — on a force-delete that node is exactly the
+// unreachable one.
 func TestTeardownNodeHooksExcludeTargetNodeAsExecutor(t *testing.T) {
 	database, res := setupTestDB(t, seedOpts{
 		clusterProvisioned: true,
@@ -191,9 +191,9 @@ func TestTeardownNodeHooksExcludeTargetNodeAsExecutor(t *testing.T) {
 	}
 }
 
-// NKX-13160: with no surviving joined CP there is no executor for the hooks —
+// With no surviving joined CP there is no executor for the hooks —
 // the only candidate would be the node under teardown. Same skip as the
-// live-removal path (NKX-13735).
+// live-removal path when there is no surviving joined CP.
 func TestTeardownNodeHooksSkippedWhenNoSurvivingJoinedCP(t *testing.T) {
 	database, res := setupTestDB(t, seedOpts{
 		clusterProvisioned:        true,
@@ -215,9 +215,9 @@ func TestTeardownNodeHooksSkippedWhenNoSurvivingJoinedCP(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
-// NKX-13160: a failing teardown hook must stall a normal teardown (the hooks
-// protect data) but must not stall a force-delete, where the hook's waits can
-// never be satisfied because the node is gone.
+// A failing teardown hook must stall a normal teardown (the hooks protect
+// data) but must not stall a force-delete, where the hook's waits can never
+// be satisfied because the node is gone.
 func TestTeardownNodeHookFailureToleratedOnlyWhenForceUnreachable(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -420,7 +420,7 @@ func TestTeardownNodeResetsOnlyWhenClusterIsDeletingDespiteInput(t *testing.T) {
 	require.ErrorIs(t, err, db.ErrNotFound, "node record should be deleted after infrastructure teardown")
 }
 
-// NKX-13735: tearing down the last joined CP with SkipRemoveFromCluster=false
+// Tearing down the last joined CP with SkipRemoveFromCluster=false
 // (e.g. DELETE /api/nodePools racing cluster delete) must not attempt drain —
 // ExecuteClusterRunbook excludes the target, leaving zero executor candidates.
 func TestTeardownNodeSkipsLiveRemovalWhenNoSurvivingJoinedCP(t *testing.T) {
@@ -471,10 +471,10 @@ func TestTeardownNodeSkipsLiveRemovalWhenNoSurvivingJoinedCP(t *testing.T) {
 	require.ErrorIs(t, err, db.ErrNotFound, "node record should be deleted after infrastructure teardown")
 }
 
-// NKX-14107: the only joined CP peer is itself being torn down, so it cannot be
-// relied on to serve the tenant API or execute runbooks. A check that only reads
-// Joined treats the doomed peer as a survivor, drains through it,
-// and fails terminally once its instance is gone.
+// When the only joined CP peer is itself being torn down, it cannot be relied
+// on to serve the tenant API or execute runbooks. A check that only reads
+// Joined treats the doomed peer as a survivor, drains through it, and fails
+// terminally once its instance is gone.
 func TestTeardownNodeSkipsLiveRemovalWhenOnlySurvivingCPIsDeleting(t *testing.T) {
 	database, res := setupTestDB(t, seedOpts{
 		clusterProvisioned:  true,

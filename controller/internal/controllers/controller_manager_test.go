@@ -41,15 +41,14 @@ func TestNewControllerManagerGatesCAPIClusterScaffold(t *testing.T) {
 				nil,
 				nil,
 				"",
-				nil,
 			)
 			require.NoError(t, err)
 
 			if params.wantScaffold {
-				require.NotNil(t, manager.capiClusterScaffold)
+				require.NotNil(t, manager.forgeCAPIMigration)
 				return
 			}
-			require.Nil(t, manager.capiClusterScaffold)
+			require.Nil(t, manager.forgeCAPIMigration)
 		})
 	}
 }

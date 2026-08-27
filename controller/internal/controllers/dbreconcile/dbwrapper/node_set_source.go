@@ -5,38 +5,82 @@ package dbwrapper
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/client-go/util/workqueue"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
-type nodeSetEventSource struct {
-	queries        db.NodeSetQueries
+// NodeSetEventSource is a controller-runtime source for DB node set changes.
+type NodeSetEventSource[T comparable] struct {
+	events         chan event.TypedGenericEvent[T]
+	done           <-chan struct{}
+	database       *DB
 	filters        dbfilters.NodeSet
-	keyMappers     []NodeSetKeyMapper
+	keyMappers     []NodeSetKeyMapper[T]
 	resyncInterval time.Duration
 	logger         *slog.Logger
 }
 
-func (s nodeSetEventSource) Start(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error) error {
-	if err := s.enqueueAll(ctx, enqueue); err != nil {
+func NewNodeSetSource(database *DB, filters dbfilters.NodeSet, keyMappers ...NodeSetKeyMapper[dbreconcile.Key]) *NodeSetEventSource[dbreconcile.Key] {
+	if len(keyMappers) == 0 {
+		keyMappers = []NodeSetKeyMapper[dbreconcile.Key]{defaultNodeSetKey}
+	}
+	return NewMappedNodeSetSource(database, filters, keyMappers...)
+}
+
+// NewMappedNodeSetSource returns a DB-backed controller-runtime source for node set changes.
+// The source is registered with database while controller-runtime is running it.
+func NewMappedNodeSetSource[T comparable](
+	database *DB,
+	filters dbfilters.NodeSet,
+	keyMappers ...NodeSetKeyMapper[T],
+) *NodeSetEventSource[T] {
+	return &NodeSetEventSource[T]{
+		events:         make(chan event.TypedGenericEvent[T], defaultSourceBufferSize),
+		database:       database,
+		filters:        filters,
+		keyMappers:     keyMappers,
+		resyncInterval: defaultSourceResyncInterval,
+		logger:         database.logger,
+	}
+}
+
+func (s *NodeSetEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
+	s.done = ctx.Done()
+	inner := crsource.TypedChannel[T, T](
+		s.events,
+		handler.TypedEnqueueRequestsFromMapFunc(func(_ context.Context, key T) []T {
+			return []T{key}
+		}),
+	)
+	if err := inner.Start(ctx, queue); err != nil {
 		return err
 	}
-	if s.resyncInterval <= 0 {
-		return nil
+
+	unregister := s.database.registerNodeSetSource(ctx, s.Enqueue)
+	if err := s.enqueueAll(ctx); err != nil {
+		unregister()
+		return err
+	}
+	if s.resyncInterval > 0 {
+		go s.resync(ctx)
 	}
 
-	go s.resync(ctx, enqueue)
 	return nil
 }
 
-func (s nodeSetEventSource) resync(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error) {
+func (s *NodeSetEventSource[T]) resync(ctx context.Context) {
 	for {
 		timer := time.NewTimer(wait.Jitter(s.resyncInterval, defaultSourceResyncJitterFactor))
 		select {
@@ -46,39 +90,60 @@ func (s nodeSetEventSource) resync(ctx context.Context, enqueue func(context.Con
 			}
 			return
 		case <-timer.C:
-			if err := s.enqueueAll(ctx, enqueue); err != nil {
+			if err := s.enqueueAll(ctx); err != nil {
 				s.logger.Warn("Failed to resync DB node set reconcile source", "error", err)
 			}
 		}
 	}
 }
 
-func (s nodeSetEventSource) enqueueAll(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error) error {
-	nodeSets, err := s.queries.ListNodeSets(ctx, db.NodeSetFilters{})
+func (s *NodeSetEventSource[T]) enqueueAll(ctx context.Context) error {
+	nodeSets, err := s.database.ListNodeSets(ctx, db.NodeSetFilters{})
 	if err != nil {
 		return fmt.Errorf("failed to list node sets: %w", err)
 	}
 
+	return s.Enqueue(ctx, nodeSets...)
+}
+
+func (s *NodeSetEventSource[T]) Enqueue(ctx context.Context, nodeSets ...db.NodeSet) error {
+	seen := map[T]struct{}{}
+	var enqueueErrs []error
 	for _, nodeSet := range nodeSets {
 		if !s.filters.Matches(nodeSet) {
 			continue
 		}
-		if err := enqueueKeysForNodeSet(ctx, enqueue, nodeSet, s.keyMappers...); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func enqueueKeysForNodeSet(ctx context.Context, enqueue func(context.Context, dbreconcile.Key) error, nodeSet db.NodeSet, keyMappers ...NodeSetKeyMapper) error {
-	for _, keyMapper := range keyMappers {
-		keys := keyMapper(nodeSet)
-		for _, key := range keys {
-			if err := enqueue(ctx, key); err != nil {
-				return fmt.Errorf("failed to enqueue node set %s key %s: %w", nodeSet.ID, key.String(), err)
+		for _, keyMapper := range s.keyMappers {
+			keys, err := keyMapper(ctx, nodeSet)
+			if err != nil {
+				enqueueErrs = append(enqueueErrs, fmt.Errorf("failed to map node set %s keys: %w", nodeSet.ID, err))
+				continue
+			}
+			for _, key := range keys {
+				if _, ok := seen[key]; ok {
+					continue
+				}
+				seen[key] = struct{}{}
+				if err := s.enqueueKey(ctx, key); err != nil {
+					enqueueErrs = append(enqueueErrs, fmt.Errorf("failed to enqueue node set %s key %v: %w", nodeSet.ID, key, err))
+				}
 			}
 		}
 	}
-	return nil
+
+	return errors.Join(enqueueErrs...)
+}
+
+func (s *NodeSetEventSource[T]) enqueueKey(ctx context.Context, key T) error {
+	if err := ctx.Err(); err != nil {
+		return errors.Join(err, fmt.Errorf("failed to enqueue DB node set reconcile event"))
+	}
+	select {
+	case <-s.done:
+		return fmt.Errorf("failed to enqueue DB node set reconcile event: source stopped")
+	case s.events <- event.TypedGenericEvent[T]{Object: key}:
+		return nil
+	case <-ctx.Done():
+		return errors.Join(ctx.Err(), fmt.Errorf("failed to enqueue DB node set reconcile event"))
+	}
 }

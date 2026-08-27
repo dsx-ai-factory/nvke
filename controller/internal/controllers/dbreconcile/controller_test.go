@@ -9,12 +9,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
-	dbsource "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/source"
 )
 
 func TestUnit_SetupController(t *testing.T) {
@@ -23,7 +23,7 @@ func TestUnit_SetupController(t *testing.T) {
 		return reconcile.Result{}, nil
 	})
 
-	err := dbreconcile.SetupController(mgr, "dbreconcile-test", reconciler, dbsource.NewSource[dbreconcile.Key](1))
+	err := dbreconcile.SetupController(mgr, "dbreconcile-test", reconciler, testSource{})
 	require.NoError(t, err)
 
 	assert.Len(t, mgr.runnables, 1)
@@ -45,7 +45,7 @@ func TestUnit_SetupControllerReturnsControllerError(t *testing.T) {
 		func(context.Context, dbreconcile.Key) (reconcile.Result, error) {
 			return reconcile.Result{}, nil
 		},
-	), dbsource.NewSource[dbreconcile.Key](1))
+	), testSource{})
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "must specify Name")
@@ -64,4 +64,10 @@ func (m *fakeManager) Add(runnable manager.Runnable) error {
 
 func (m *fakeManager) GetControllerOptions() config.Controller {
 	return config.Controller{}
+}
+
+type testSource struct{}
+
+func (testSource) Start(context.Context, workqueue.TypedRateLimitingInterface[dbreconcile.Key]) error {
+	return nil
 }

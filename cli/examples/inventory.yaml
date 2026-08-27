@@ -13,17 +13,27 @@ clusterName: "nke-site"
 
 cluster:
   # First control-plane node — kubeadm init runs here.
+  #
+  # tpmEkThumbprint is optional: the SHA-256 of the node's TPM endorsement key,
+  # read from the host before the bootstrap (spire-tpm-plugin's
+  # get_tpm_pubhash). Every thumbprint listed here is allowlisted on the SPIRE
+  # server nkectl deploys, and nothing else is — a node without one cannot
+  # attest, and a file with none deploys no TPM attestor at all. It is a public
+  # key hash, not a secret.
   initNode:
     name: "node1"
     ip: "10.0.0.1"
+    tpmEkThumbprint: "0000000000000000000000000000000000000000000000000000000000000000"
 
   # Remaining nodes. In M0 every node joins as a control-plane node.
   # Omit or leave empty for a single-node cluster.
   joinNodes:
     - name: "node2"
       ip: "10.0.0.2"
+      tpmEkThumbprint: "1111111111111111111111111111111111111111111111111111111111111111"
     - name: "node3"
       ip: "10.0.0.3"
+      tpmEkThumbprint: "2222222222222222222222222222222222222222222222222222222222222222"
 
   # Kubernetes version to install — plain semantic version, no leading "v".
   k8sVersion: "1.32.0"
@@ -45,6 +55,17 @@ cluster:
   kubeletConfig:
     systemReservedMemory: "16Gi"
 
+# Identity plane. Optional.
+#
+# A CA for SPIRE to chain its own CA to, so a node that was given this
+# certificate when it was provisioned can verify the SPIRE server the first time
+# it speaks to it. Paths, not inline PEM: the key must not be committed, and the
+# certificate already exists as a file because it has to be delivered to each
+# node. Both or neither — omitting them leaves SPIRE self-signed.
+# spire:
+#   caCertFile: "/etc/nke/spire-ca.crt"
+#   caKeyFile: "/etc/nke/spire-ca.key"
+
 # Container registry for the bootstrap engine image and chart. The version
 # (image/chart tag) is baked into the nkectl build, so it is not set here.
 registry:
@@ -56,3 +77,10 @@ registry:
   # secret at runtime via --registry-api-key or the REGISTRY_API_KEY env var so
   # the file can be committed safely. It is never defaulted.
   # apiKey: ""
+  #
+  # Credential for the registry account holding the SPIRE chart and its server
+  # image. Only needed when that is a different account from the one above —
+  # they can be the same host, and a registry login covers one account.
+  # Falls back to apiKey. Also settable via IDENTITY_REGISTRY_API_KEY or
+  # --identity-registry-api-key.
+  # identityApiKey: ""

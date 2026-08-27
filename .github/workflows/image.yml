@@ -100,6 +100,7 @@ jobs:
           # The controller Dockerfile builds from the repository root: the
           # module lives in the root Go workspace and needs go.work + vendor/.
           check controller/Dockerfile                    .
+          check cluster-api-provider-provisioned/Dockerfile .
           check controller/hack/nico-mock/Dockerfile     controller/hack/nico-mock
           check agent/Dockerfile.nke-builder             agent
 
@@ -284,7 +285,7 @@ jobs:
 
       - name: Upload the image scan SARIF
         if: always() && steps.image-scan.outputs.sarif != ''
-        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           sarif_file: ${{ steps.image-scan.outputs.sarif }}
           category: grype-image

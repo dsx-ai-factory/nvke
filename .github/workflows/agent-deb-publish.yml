@@ -278,10 +278,29 @@ jobs:
           merge-multiple: true
           path: agent/bin
 
+      # This job publishes downloaded artefacts and otherwise needs no source, so
+      # it checks out only the two paths that hold the version pins. Without it
+      # there is no Makefile to read and the step below cannot run.
+      - name: Check out the version pins
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            Makefile
+            make
+          sparse-checkout-cone-mode: false
+
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          echo "oras_version=$(make --no-print-directory print-ORAS_VERSION)" >> "$GITHUB_OUTPUT"
+
       - name: Set up ORAS
         uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
         with:
-          version: 1.3.3
+          version: ${{ steps.versions.outputs.oras_version }}
 
       - name: Log in to GHCR
         env:

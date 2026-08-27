@@ -158,7 +158,7 @@ func TestBuildNicoInstanceLabels(t *testing.T) {
 			VpcID:  vpcID,
 		},
 		nodePoolID,
-		"Forge VMs Site",
+		"NICo VMs Site",
 		"Mock VPC",
 	)
 	require.NoError(t, err)
@@ -168,7 +168,7 @@ func TestBuildNicoInstanceLabels(t *testing.T) {
 	assert.Equal(t, nodePoolID.String(), labels[constants.LabelKeyNodePoolID])
 	assert.Equal(t, "machine-abc123", labels[constants.LabelKeyMachineID])
 	assert.Equal(t, siteID.String(), labels[constants.LabelKeyNodeSiteID])
-	assert.Equal(t, "forge-vms-site", labels[constants.LabelKeyNodeSiteName])
+	assert.Equal(t, "nico-vms-site", labels[constants.LabelKeyNodeSiteName])
 	assert.Equal(t, vpcID.String(), labels[constants.LabelKeyNodeVPCID])
 	assert.Equal(t, "mock-vpc", labels[constants.LabelKeyNodeVPCName])
 }

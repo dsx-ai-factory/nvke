@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
@@ -333,6 +334,37 @@ func TestForbiddenFetchNamesTheMissingClusterRole(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "system:service-account-issuer-discovery",
 		"the likeliest cause of a 403 here should not need a log dive")
+}
+
+// The first fetch and a later refresh share fetchAndStore, but only the refresh
+// has a cache to fall back on. The log has to say which one failed: the no-cache
+// case is the one that stops an enforcing CWE from starting.
+func TestFetchFailureSaysWhetherAnythingIsCached(t *testing.T) {
+	t.Parallel()
+
+	var log bytes.Buffer
+	srv := newJWKSServer(t, nil)
+	srv.Serve([]byte("nope"), http.StatusServiceUnavailable)
+
+	src, err := newJWKSKeySource(testIssuer, srv.srv.URL+jwksPath, srv.srv.Client(),
+		slog.New(slog.NewJSONHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	require.NoError(t, err)
+
+	require.Error(t, src.refresh(context.Background()))
+	assert.Contains(t, log.String(), "no key set is cached yet")
+	assert.NotContains(t, log.String(), "serving the cached key set",
+		"nothing has been fetched yet, so there is no cache to serve")
+
+	// Succeed once, so there is something to fall back on.
+	jwkA, _ := rsaKey(t, "kid-a")
+	srv.Serve(jwksBody(t, jwkA), http.StatusOK)
+	require.NoError(t, src.refresh(context.Background()))
+
+	log.Reset()
+	srv.Serve([]byte("nope"), http.StatusServiceUnavailable)
+	require.Error(t, src.refresh(context.Background()))
+	assert.Contains(t, log.String(), "serving the cached key set")
+	assert.NotContains(t, log.String(), "no key set is cached yet")
 }
 
 func TestCachedKeysStayAuthoritativeUntilTheStalenessWindowPasses(t *testing.T) {

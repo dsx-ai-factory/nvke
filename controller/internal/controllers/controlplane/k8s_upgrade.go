@@ -134,7 +134,7 @@ func (r *reconciler) startK8sUpgrade(
 
 // isK8sVersionUpgradeNeeded checks if a cluster needs a Kubernetes version upgrade by examining
 // the current NodePool versions in all control plane node pools.
-// FIXME: https://jirasw.nvidia.com/browse/HIPPO-3881 - Get k8s version with periodic health checks instead of relying on OSProfile version
+// FIXME: Get k8s version with periodic health checks instead of relying on OSProfile version
 func (r *reconciler) isK8sVersionUpgradeNeeded(
 	cluster db.Cluster,
 	cp *controlPlane,
@@ -603,8 +603,8 @@ func (r *reconciler) startUpdateKubeadmConfigMapWorkflow(ctx context.Context, cl
 }
 
 // startKubeadmAddOnUpgradeWorkflow starts the CWE-owned UpgradeControlPlaneAddons
-// workflow, which runs the embedded upgrade-kubelet-kubeadm runbook through
-// agent on a healthy control plane node (selected by the activity).
+// workflow, which runs kubeadm upgrade apply through the node agent on a healthy
+// control-plane node selected by the activity.
 func (r *reconciler) startKubeadmAddOnUpgradeWorkflow(ctx context.Context, cluster db.Cluster, workflowID string, logger *slog.Logger) error {
 	// Start workflow asynchronously - don't wait for completion
 	options := client.StartWorkflowOptions{

@@ -14,12 +14,18 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
 )
 
 const (
-	cweNamespace      = "cloud-workflow-engine"
-	cweDeployment     = "cloud-workflow-engine"
 	oidcEnabledEnvVar = "NKE_OIDC_AUTH_ENABLED"
+	enabledValue      = "true"
+
+	// permissiveModeEnvVar is what NKE reads to decide whether a failed check
+	// rejects the request or is only counted.
+	permissiveModeEnvVar = "PERMISSIVE_MODE"
 )
 
 // OIDCEnabled reports whether the CWE deployment on the management cluster has
@@ -28,8 +34,8 @@ const (
 // to skip them on deployments where OIDC is off.
 func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
 	var deploy appsv1.Deployment
-	if err := c.Get(ctx, client.ObjectKey{Namespace: cweNamespace, Name: cweDeployment}, &deploy); err != nil {
-		return false, fmt.Errorf("getting CWE deployment %s/%s: %w", cweNamespace, cweDeployment, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: cwe.Namespace(), Name: cwe.DeploymentName}, &deploy); err != nil {
+		return false, fmt.Errorf("getting NKE deployment %s/%s: %w", cwe.Namespace(), cwe.DeploymentName, err)
 	}
 	for _, container := range deploy.Spec.Template.Spec.Containers {
 		for _, env := range container.Env {
@@ -39,7 +45,7 @@ func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
 			if env.ValueFrom != nil && env.ValueFrom.ConfigMapKeyRef != nil {
 				return oidcEnabledFromConfigMap(ctx, c, deploy.Namespace, env.ValueFrom.ConfigMapKeyRef.Name, env.ValueFrom.ConfigMapKeyRef.Key)
 			}
-			return env.Value == "true", nil
+			return env.Value == enabledValue, nil
 		}
 		for _, envFrom := range container.EnvFrom {
 			if envFrom.ConfigMapRef == nil {
@@ -71,26 +77,69 @@ func OIDCEnabled(ctx context.Context, c client.Client) (bool, error) {
 // an OIDC-enabled site is always born OIDC-on, so the spec creates its cluster with
 // the flag off, then flips it back on before enabling.
 func SetOIDCEnabled(ctx context.Context, c client.Client, enabled bool) error {
+	_, err := setNKEContainerEnv(ctx, c, oidcEnabledEnvVar, strconv.FormatBool(enabled))
+	return err
+}
+
+// SetPermissiveMode sets PERMISSIVE_MODE on the NKE container and waits for the
+// rollout, returning the value it replaced so a caller can put it back.
+//
+// An absent variable comes back as "", and restoring that sets it to the empty
+// string rather than removing it. NKE reads both as enforcing.
+func SetPermissiveMode(ctx context.Context, c client.Client, value string) (string, error) {
+	return setNKEContainerEnv(ctx, c, permissiveModeEnvVar, value)
+}
+
+// setNKEContainerEnv upserts an environment variable on the NKE container and
+// waits for the rollout. It returns the value it replaced.
+//
+// The container is found by name, with no fallback. Guessing container 0 writes
+// the variable onto whichever sidecar happens to be first, then waits out a
+// rollout that changed nothing.
+func setNKEContainerEnv(ctx context.Context, c client.Client, name, value string) (string, error) {
 	var deploy appsv1.Deployment
-	if err := c.Get(ctx, client.ObjectKey{Namespace: cweNamespace, Name: cweDeployment}, &deploy); err != nil {
-		return fmt.Errorf("getting CWE deployment %s/%s: %w", cweNamespace, cweDeployment, err)
+	if err := c.Get(ctx, client.ObjectKey{Namespace: cwe.Namespace(), Name: cwe.DeploymentName}, &deploy); err != nil {
+		return "", fmt.Errorf("getting NKE deployment %s/%s: %w", cwe.Namespace(), cwe.DeploymentName, err)
 	}
+
 	containers := deploy.Spec.Template.Spec.Containers
-	if len(containers) == 0 {
-		return fmt.Errorf("CWE deployment %s/%s has no containers", cweNamespace, cweDeployment)
-	}
-	idx := 0
+	idx := -1
 	for i := range containers {
-		if containers[i].Name == cweDeployment {
+		if containers[i].Name == cwe.DeploymentName {
 			idx = i
 			break
 		}
 	}
-	setContainerEnv(&containers[idx], oidcEnabledEnvVar, strconv.FormatBool(enabled))
-	if err := c.Update(ctx, &deploy); err != nil {
-		return fmt.Errorf("setting %s=%t on CWE deployment: %w", oidcEnabledEnvVar, enabled, err)
+	if idx < 0 {
+		return "", fmt.Errorf("NKE deployment %s/%s has no container named %q",
+			cwe.Namespace(), cwe.DeploymentName, cwe.DeploymentName)
 	}
-	return waitForDeploymentRollout(ctx, c, cweNamespace, cweDeployment)
+
+	var previous string
+	for _, env := range containers[idx].Env {
+		if env.Name == name {
+			previous = env.Value
+			break
+		}
+	}
+
+	setContainerEnv(&containers[idx], name, value)
+	if err := c.Update(ctx, &deploy); err != nil {
+		return "", fmt.Errorf("setting %s=%q on the NKE deployment: %w", name, value, err)
+	}
+	if err := waitForDeploymentRollout(ctx, c, cwe.Namespace(), cwe.DeploymentName); err != nil {
+		return "", err
+	}
+
+	// The rollout replaced the pod the shared forwards point at. Their local
+	// listeners stay up, so the next request through one reaches a pod that is
+	// gone and fails with EOF; only after that does the session end and rebuild.
+	// Dropping the sessions here means the next request builds a new tunnel.
+	//
+	// Reset rather than Close: the API client in this package holds a forwarder
+	// from before the rollout, and a closed one never reconnects.
+	kube.ResetSharedForwarders()
+	return previous, nil
 }
 
 // setContainerEnv upserts a plain-value env var, clearing any ValueFrom so the
@@ -133,7 +182,7 @@ func oidcEnabledFromConfigMap(ctx context.Context, c client.Client, namespace, n
 	if err := c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, cm); err != nil {
 		return false, fmt.Errorf("getting ConfigMap %s/%s: %w", namespace, name, err)
 	}
-	return cm.Data[key] == "true", nil
+	return cm.Data[key] == enabledValue, nil
 }
 
 func oidcEnabledFromConfigMapData(ctx context.Context, c client.Client, namespace, name string) (bool, bool, error) {
@@ -142,5 +191,5 @@ func oidcEnabledFromConfigMapData(ctx context.Context, c client.Client, namespac
 		return false, false, fmt.Errorf("getting ConfigMap %s/%s: %w", namespace, name, err)
 	}
 	value, found := cm.Data[oidcEnabledEnvVar]
-	return value == "true", found, nil
+	return value == enabledValue, found, nil
 }

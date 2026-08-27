@@ -35,6 +35,14 @@ else
 fi
 CLUSTERS_API_URL="${API_BASE_URL%/}/clusters"
 
+# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# this works either way.
+TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+AUTH_HEADER=()
+if [[ -n "${TOKEN}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
+fi
+
 CLUSTER_NAME="${CLUSTER_NAME:-capd}"
 CLUSTER_ID="${CLUSTER_ID:-}"
 TARGET_VERSION="${TARGET_VERSION:-1.35.0}"
@@ -71,7 +79,7 @@ normalize_version() {
 resolve_cluster_id() {
   if [[ -n "${CLUSTER_ID}" ]]; then
     local existing
-    existing="$(curl -fsS --max-time "${CURL_MAX_TIME}" "${CLUSTERS_API_URL}/${CLUSTER_ID}" 2>/dev/null | jq -r '.id // empty')" \
+    existing="$(curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME}" "${CLUSTERS_API_URL}/${CLUSTER_ID}" 2>/dev/null | jq -r '.id // empty')" \
       || die "CLUSTER_ID=${CLUSTER_ID} not found at ${CLUSTERS_API_URL}/${CLUSTER_ID}"
     [[ "${existing}" == "${CLUSTER_ID}" ]] || die "CLUSTER_ID=${CLUSTER_ID} not found"
     printf '%s\n' "${CLUSTER_ID}"
@@ -79,7 +87,7 @@ resolve_cluster_id() {
   fi
 
   local resp
-  resp="$(curl -fsS --max-time "${CURL_MAX_TIME}" "${CLUSTERS_API_URL}")" \
+  resp="$(curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME}" "${CLUSTERS_API_URL}")" \
     || die "failed to list clusters from ${CLUSTERS_API_URL}"
 
   local resolved
@@ -136,7 +144,7 @@ patch_cluster() {
     return
   fi
 
-  curl -fsS --max-time "${CURL_MAX_TIME}" -X PATCH "${CLUSTERS_API_URL}/${cluster_id}" \
+  curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME}" -X PATCH "${CLUSTERS_API_URL}/${cluster_id}" \
     -H "Content-Type: application/json" \
     --data-raw "${body}" | jq '{
       id, name,
@@ -161,7 +169,7 @@ wait_for_upgrade() {
   log "waiting for upgrade to ${target} (timeout ${WAIT_TIMEOUT_SECONDS}s)"
   while (( SECONDS < deadline )); do
     local resp status message version
-    resp="$(curl -fsS --max-time "${CURL_MAX_TIME}" "${CLUSTERS_API_URL}/${cluster_id}")" \
+    resp="$(curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME}" "${CLUSTERS_API_URL}/${cluster_id}")" \
       || die "failed to get cluster ${cluster_id}"
 
     status="$(printf '%s\n' "${resp}" | jq -r '.conditions.controlPlaneUpgrading.status // "False"')"

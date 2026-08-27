@@ -23,8 +23,12 @@ const (
 	BackendCAPD Backend = "capd"
 	// BackendNicoContainers is the local CAPNico backend backed by Docker containers.
 	BackendNicoContainers Backend = "nico-containers"
-	// BackendForgeVMS is the local forge-vms Forge emulator backend.
-	BackendForgeVMS Backend = "forge-vms"
+	// BackendNicoVMS is the local nico-vms Forge emulator backend.
+	BackendNicoVMS Backend = "nico-vms"
+
+	capiSpecKey          = "spec"
+	nodeRoleWorker       = "worker"
+	nodeRoleControlPlane = "control-plane"
 )
 
 // NodePoolSpec describes a single node pool to create.
@@ -36,7 +40,7 @@ type NodePoolSpec struct {
 	KubeReservedMemory   string // optional, e.g. "250Mi"
 
 	// Infrastructure-specific pool fields. Nico containers use InstanceTypeID,
-	// SubnetIDs, and SSHKeyGroupIDs; Forge VMs use InstanceTypeID,
+	// SubnetIDs, and SSHKeyGroupIDs; NICo VMs use InstanceTypeID,
 	// VpcPrefixIDs, SSHKeyGroupIDs, and the profile/disk fields.
 	InstanceTypeID        string
 	SubnetIDs             []string
@@ -52,6 +56,21 @@ type ControlPlane struct {
 	Pools           []NodePoolSpec
 	EtcdEncrypted   bool
 	ControlPlaneVIP string
+
+	// Config, when non-nil, provisions the control plane through the cluster-level
+	// control-plane controller (CreateClusterControlPlaneConfig) with no
+	// control-plane node pool. It is mutually exclusive with Pools and requires
+	// CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true.
+	Config *ControlPlaneConfigSpec
+}
+
+// ControlPlaneConfigSpec describes a cluster-level control-plane configuration
+// used by control-plane-controller provisioning (no control-plane node pool).
+// The CAPI infrastructure machine template is supplied by the backend builder
+// from the embedded skeleton, so only the topology knobs are needed here.
+type ControlPlaneConfigSpec struct {
+	DesiredCount int
+	MaxSurge     *int
 }
 
 // ClusterNetworkSpec describes the non-default network configuration to pass
@@ -76,7 +95,7 @@ type ClusterSpec struct {
 	Network           *ClusterNetworkSpec
 
 	// Infrastructure-specific cluster fields. Nico containers use SiteID and
-	// VpcID inside their CAPI manifests; Forge VMs use all three as API fields.
+	// VpcID inside their CAPI manifests; NICo VMs use all three as API fields.
 	OrgID  string
 	SiteID string
 	VpcID  string
@@ -87,11 +106,15 @@ var (
 	capdClusterJSON []byte
 	//go:embed capd_nodepool.json
 	capdNodePoolJSON []byte
+	//go:embed capd_control_plane_config.json
+	capdControlPlaneConfigJSON []byte
 )
 
-var containerCAPIReadyCommands = []string{
-	"mkdir -p /run/cluster-api",
-	"echo success > /run/cluster-api/bootstrap-success.complete",
+func containerCAPIReadyCommands() []string {
+	return []string{
+		"mkdir -p /run/cluster-api",
+		"echo success > /run/cluster-api/bootstrap-success.complete",
+	}
 }
 
 // buildCreateRequest dispatches to the backend-specific request builder.
@@ -101,8 +124,8 @@ func buildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		return buildCAPDRequest(spec)
 	case BackendNicoContainers:
 		return buildNicoRequest(spec)
-	case BackendForgeVMS:
-		return buildForgeRequest(spec)
+	case BackendNicoVMS:
+		return buildNicoVMSRequest(spec)
 	default:
 		return api.CreateClusterRequest{}, fmt.Errorf("unsupported backend %q", spec.Backend)
 	}
@@ -135,7 +158,7 @@ func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 			"metadata": map[string]any{
 				"name": name,
 			},
-			"spec": map[string]any{
+			capiSpecKey: map[string]any{
 				"siteID": siteID.String(),
 			},
 		},
@@ -181,9 +204,9 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 	for _, sshKeyGroupID := range sshKeyGroupIDs {
 		sshKeyGroups = append(sshKeyGroups, sshKeyGroupID.String())
 	}
-	role := "worker"
+	role := nodeRoleWorker
 	if spec.ControlPlane {
-		role = "control-plane"
+		role = nodeRoleControlPlane
 	}
 
 	pool := api.NodePoolCreateConfig{
@@ -193,16 +216,16 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 		DesiredNodeCount:           spec.DesiredNodeCount,
 		SystemReservedMemory:       spec.SystemReservedMemory,
 		CapiSpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
-		CapiPreKubeadmCommands:     append([]string(nil), containerCAPIReadyCommands...),
+		CapiPreKubeadmCommands:     containerCAPIReadyCommands(),
 		CapiInfraMachineTemplate: map[string]any{
 			"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 			"kind":       "NicoMachineTemplate",
 			"metadata": map[string]any{
 				"name": fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
 			},
-			"spec": map[string]any{
+			capiSpecKey: map[string]any{
 				"template": map[string]any{
-					"spec": map[string]any{
+					capiSpecKey: map[string]any{
 						"vpcID":                   vpcID.String(),
 						"instanceTypeID":          instanceTypeID.String(),
 						"cloudInitInjectHostname": true,
@@ -247,7 +270,32 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		*req.NodePools = append(*req.NodePools, pool)
 	}
 
+	if spec.ControlPlane.Config != nil {
+		cfg, err := buildCAPDControlPlaneConfig(spec)
+		if err != nil {
+			return api.CreateClusterRequest{}, fmt.Errorf("building control plane config: %w", err)
+		}
+		req.ControlPlaneConfig = cfg
+	}
+
 	return req, nil
+}
+
+// buildCAPDControlPlaneConfig stamps the embedded control-plane-config skeleton
+// (a DockerMachineTemplate carrying the CAPD node image) with the caller's
+// desired count and surge. It is used for control-plane-controller provisioning,
+// where the control plane has no owning node pool.
+func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPlaneConfig, error) {
+	var cfg api.CreateClusterControlPlaneConfig
+	if err := json.Unmarshal(capdControlPlaneConfigJSON, &cfg); err != nil {
+		return nil, fmt.Errorf("unmarshaling control plane config skeleton: %w", err)
+	}
+	cfg.DesiredCount = spec.ControlPlane.Config.DesiredCount
+	cfg.MaxSurge = spec.ControlPlane.Config.MaxSurge
+	if err := setMapPath(cfg.CapiInfraMachineTemplate, spec.CAPDNodeImage, "spec", "template", "spec", "customImage"); err != nil {
+		return nil, fmt.Errorf("setting control plane custom image: %w", err)
+	}
+	return &cfg, nil
 }
 
 func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateConfig, error) {
@@ -266,7 +314,7 @@ func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateC
 	if spec.KubeReservedMemory != "" {
 		pool.KubeReservedMemory = spec.KubeReservedMemory
 	}
-	if err := setMapPath(pool.CapiInfraMachineTemplate, nodeImage, "spec", "template", "spec", "customImage"); err != nil {
+	if err := setMapPath(pool.CapiInfraMachineTemplate, nodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("setting custom image: %w", err)
 	}
 
@@ -283,10 +331,10 @@ func CAPDNodePoolRequest(clusterID uuid.UUID, spec NodePoolSpec, nodeImage strin
 	return nodePoolRequest(clusterID, pool), nil
 }
 
-// buildForgeRequest builds a Forge-backed create request (no CAPI manifests).
+// buildNicoVMSRequest builds a Forge-backed create request (no CAPI manifests).
 // The Forge identifiers come from spec; see test/e2e/oidc_test.go for the
-// forge-vms seed values.
-func buildForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+// nico-vms seed values.
+func buildNicoVMSRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	siteID, err := uuid.Parse(spec.SiteID)
 	if err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("parsing site ID %q: %w", spec.SiteID, err)
@@ -311,7 +359,7 @@ func buildForgeRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	applyNetworkConfig(&req, spec.Network)
 
 	for _, ps := range orderedPools(spec) {
-		pool, err := buildForgeNodePool(ps)
+		pool, err := buildNicoVMSNodePool(ps)
 		if err != nil {
 			return api.CreateClusterRequest{}, fmt.Errorf("building node pool %q: %w", ps.Name, err)
 		}
@@ -334,7 +382,7 @@ func applyNetworkConfig(req *api.CreateClusterRequest, spec *ClusterNetworkSpec)
 	}
 }
 
-func buildForgeNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
+func buildNicoVMSNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 	instanceTypeID, err := uuid.Parse(spec.InstanceTypeID)
 	if err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("parsing instance type ID %q: %w", spec.InstanceTypeID, err)
@@ -370,13 +418,13 @@ func buildForgeNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 	return pool, nil
 }
 
-// ForgeNodePoolRequest builds a standalone create-node-pool request for a
-// forge-vms cluster from spec. It delegates the UUID parsing and field shaping
-// to buildForgeNodePool so the two stay in sync, adding only the owning cluster
+// NicoVMSNodePoolRequest builds a standalone create-node-pool request for a
+// nico-vms cluster from spec. It delegates the UUID parsing and field shaping
+// to buildNicoVMSNodePool so the two stay in sync, adding only the owning cluster
 // ID that the CreateNodePool endpoint requires (unlike the cluster-create path,
 // which nests the pool inside the cluster request).
-func ForgeNodePoolRequest(clusterID uuid.UUID, spec NodePoolSpec) (api.CreateNodePoolRequest, error) {
-	pool, err := buildForgeNodePool(spec)
+func NicoVMSNodePoolRequest(clusterID uuid.UUID, spec NodePoolSpec) (api.CreateNodePoolRequest, error) {
+	pool, err := buildNicoVMSNodePool(spec)
 	if err != nil {
 		return api.CreateNodePoolRequest{}, err
 	}

@@ -56,7 +56,7 @@ type ForgeCacheEngine struct {
 
 	// tenantSyncAuth records, per tenant id, whether the most recent tenant-sites sync was
 	// authorized (true) or rejected with a 403 (false). It is used to surface a warning when
-	// the configured API key can access no tenants at all (see NKX-13835).
+	// the configured API key can access no tenants at all.
 	tenantSyncAuth map[string]bool
 
 	// tenantSyncAuthMu protects tenantSyncAuth and tenantSyncAuthWarned
@@ -282,7 +282,7 @@ func (ce *ForgeCacheEngine) GetTenantsCache() *ResourceCache[forgesdk.Tenant, *f
 // RecordTenantSyncAuth records the authorization outcome of a tenant-sites sync. A 403 for an
 // individual tenant is expected when a single API key only covers a subset of tenants, but if
 // every known tenant is unauthorized it indicates a genuine credential/config problem, which is
-// surfaced once at Warn level (see NKX-13835).
+// surfaced once at Warn level.
 func (ce *ForgeCacheEngine) RecordTenantSyncAuth(tenantID string, authorized bool) {
 	ce.tenantSyncAuthMu.Lock()
 	defer ce.tenantSyncAuthMu.Unlock()

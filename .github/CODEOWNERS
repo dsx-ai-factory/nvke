@@ -2,11 +2,12 @@
 # pull request touches a matching path. The last matching rule wins, so the
 # default sits first and the per-path rules follow.
 #
-# This *requests* review; it does not require it. `require_code_owner_reviews`
-# is currently off in branch protection on `main`, so nothing here blocks a
-# merge today. See docs/branch-protection-settings.md for the admin steps.
+# This both requests review and requires it. A ruleset on `main` turns on
+# `require_code_owner_review`, so a pull request needs an approval from an owner
+# of the paths it touches. See docs/branch-protection-settings.md.
 #
-# Every rule names the same team for now. They are kept as the seam for when a
+# Every rule names the same team for now, so any other nke-write member can
+# satisfy the requirement. They are kept as the seam for when a
 # module gets its own owner, and as a record of the module boundaries. Keep the
 # paths honest: the previous `/node-agent/` rule pointed at a directory renamed
 # to `agent/` in #36 and matched nothing until this was fixed.

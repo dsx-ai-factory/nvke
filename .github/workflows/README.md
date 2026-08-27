@@ -245,7 +245,10 @@ Before submitting a workflow change:
 Run the static checks from the repository root:
 
 ```bash
-actionlint -color
+# Runs actionlint, and first checks it is the version CI pins.
+make lint-workflows
+
+# Not covered by that target:
 for workflow in .github/workflows/*.yml; do
   yq eval '.' "${workflow}" >/dev/null
 done
@@ -264,4 +267,4 @@ For an advisory workflow, confirm its expected trigger actually produced a
 check; an absent advisory check does not look like a failure.
 
 See [the branch-protection guide](../../docs/branch-protection-settings.md) for
-the repository settings that consume `gate` and `DCO`.
+what `main` requires of a pull request.

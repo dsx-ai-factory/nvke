@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Verifies the committed oapi-codegen output still matches controller/api/openapi.yaml.
+# Verifies that committed generated output matches its source definitions.
 #
 # controller/Makefile has had a `generate-check` target for exactly this, and
 # nothing ever called it: no workflow referenced generate-check, go generate or
@@ -94,3 +94,28 @@ jobs:
       - name: Verify generated API code is up to date
         working-directory: controller
         run: make generate-check
+
+  provisioned-generate-check:
+    name: Check generated provisioned provider code, CRDs, and RBAC
+    runs-on: ubuntu-latest
+    if: github.repository == 'NVIDIA/nke'
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            cluster-api-provider-provisioned/go.sum
+
+      - name: Verify generated provider code, CRDs, and RBAC are up to date
+        run: make -C cluster-api-provider-provisioned generate-check

@@ -47,230 +47,99 @@ env:
   GOWORK: "off"
 
 jobs:
+  # One matrix, not seven near-identical jobs. They differed in five values --
+  # the directory, GOWORK, the go-version file, the cache key and the timeout --
+  # and six of the seven already ran `make lint`. The seventh, controller/api,
+  # open-coded a golangci-lint install because it had no Makefile; it has one
+  # now, so every entry runs the same command.
+  #
+  # The matrix keeps the parallelism: GitHub still schedules one runner per
+  # entry, so the wall clock is unchanged.
   lint:
-    # Keep the name stable for readers of the aggregate gate and its history.
-    name: golangci-lint
+    name: golangci-lint (${{ matrix.name }})
     runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: agent/go.mod
-          cache: true
-          cache-dependency-path: agent/go.sum
-
-      - name: Run golangci-lint
-        working-directory: agent
-        run: make lint
-
-  lint-controller:
-    name: golangci-lint (controller)
-    runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
-    # make lint gives golangci-lint a 20m budget on this module; leave headroom
-    # for an uncached run.
-    timeout-minutes: 25
-    permissions:
-      contents: read
-    # Unlike the module-at-a-time jobs, this one runs in WORKSPACE mode
-    # (GOWORK back to its default, overriding the workflow-level "off"): the
-    # controller depends on github.com/NVIDIA/cluster-api-provider-nico, which
-    # is INTERNAL visibility until it is open-sourced, so its packages are only
-    # reachable through the committed root vendor/ tree — and vendor is a
-    # workspace-level construct here. go-version-file is go.work for the same
-    # reason: workspace mode requires the workspace's Go.
     env:
-      GOWORK: ""
+      # Workspace mode for controller and controller/api, which lint against the
+      # root vendor/ tree; module mode for the rest, which resolve their own
+      # go.mod. Empty means "use the default", overriding the workflow-level off.
+      GOWORK: ${{ matrix.gowork }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # controller is the long pole at about nine minutes, hence 25.
+          - name: controller
+            dir: controller
+            goversion: go.work
+            gowork: ""
+            timeout: 25
+          - name: controller/api
+            dir: controller/api
+            goversion: go.work
+            gowork: ""
+            timeout: 15
+          - name: provisioned-provider
+            dir: cluster-api-provider-provisioned
+            goversion: cluster-api-provider-provisioned/go.mod
+            gowork: "off"
+            timeout: 15
+          - name: agent
+            dir: agent
+            goversion: agent/go.mod
+            gowork: "off"
+            timeout: 15
+          - name: cli
+            dir: cli
+            goversion: cli/go.mod
+            gowork: "off"
+            timeout: 15
+          - name: nico-mock
+            dir: controller/hack/nico-mock
+            goversion: controller/hack/nico-mock/go.mod
+            gowork: "off"
+            timeout: 15
+          - name: nico-vms
+            dir: controller/nico-vms
+            goversion: controller/nico-vms/go.mod
+            gowork: "off"
+            timeout: 15
+          - name: controller/test/e2e
+            dir: controller/test/e2e
+            goversion: controller/test/e2e/go.mod
+            gowork: "off"
+            timeout: 15
+          - name: capd-reboot-controller
+            dir: controller/hack/capd-reboot-controller
+            goversion: go.work
+            gowork: ""
+            timeout: 15
+          - name: os-image
+            dir: os-image
+            goversion: os-image/go.mod
+            gowork: "off"
+            timeout: 15
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
+      # **/go.sum for every entry. Two jobs previously keyed on their own go.sum
+      # alone, with no reason recorded, so they would restore a stale cache after
+      # a cross-module dependency bump.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version-file: go.work
+          go-version-file: ${{ matrix.goversion }}
           cache: true
-          # go.work.sum holds only the hashes NOT already in a member's go.sum,
-          # so the versions actually linked often appear in it zero times. Keyed
-          # on it alone, a dependency bump leaves the key unchanged and restores
-          # a stale cache. Same block as go-build.yml.
           cache-dependency-path: |
             go.work.sum
             **/go.sum
 
       - name: Run golangci-lint
-        working-directory: controller
-        run: make lint
-
-  lint-cli:
-    name: golangci-lint (cli)
-    runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    # cli depends only on public modules, so it lints one module at a time like
-    # agent and forge-vms (workflow-level GOWORK=off applies). It is its own
-    # module, so no other lint job reaches it.
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: cli/go.mod
-          cache: true
-          cache-dependency-path: |
-            cli/go.sum
-            **/go.sum
-
-      - name: Run golangci-lint
-        working-directory: cli
-        run: make lint
-
-  lint-nico-mock:
-    name: golangci-lint (nico-mock)
-    runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    # A nested module: `go list ./...` in controller/ does not reach it, so
-    # controller's own lint job cannot cover it and this is the only thing that
-    # does. Every dependency is public, so it lints one module at a time like
-    # agent and forge-vms (workflow-level GOWORK=off applies).
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: controller/hack/nico-mock/go.mod
-          cache: true
-          cache-dependency-path: |
-            controller/hack/nico-mock/go.sum
-            **/go.sum
-
-      - name: Run golangci-lint
-        working-directory: controller/hack/nico-mock
-        run: make lint
-
-  # controller/api has no Makefile of its own, unlike every other module here,
-  # so this job runs golangci-lint directly rather than through `make lint`.
-  # It is the generated oapi-codegen client plus its models; it lints clean
-  # today and this job is what keeps it that way.
-  lint-api:
-    name: golangci-lint (controller/api)
-    runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    # WORKSPACE mode, for the same reason the controller job above uses it, and
-    # arrived at the hard way: this job failed with "inconsistent vendoring in
-    # controller/api" listing fourteen of its own direct requirements.
-    #
-    # controller/api has no .golangci.yml, so golangci-lint walks up and finds
-    # controller/.golangci.yml, which sets `modules-download-mode: vendor`. That
-    # setting is right for controller/ and is inherited here by accident. With
-    # the workflow-level GOWORK=off, -mod=vendor then resolves against the root
-    # vendor/ tree while treating controller/api as a lone main module, and the
-    # tree is a workspace-level construct whose explicit markers do not describe
-    # any single member. Turning the workspace back on makes the two agree.
-    env:
-      GOWORK: ""
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      # go.work, not controller/api/go.mod: workspace mode requires the
-      # workspace's Go, and setup-go pins GOTOOLCHAIN=local so the installed
-      # version is the only one available. Same block as the controller job.
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.work
-          cache: true
-          cache-dependency-path: |
-            go.work.sum
-            **/go.sum
-
-      # Pinned to the version controller/ and cli/ already use, so the whole
-      # workspace reports against one linter release.
-      - name: Run golangci-lint
-        working-directory: controller/api
-        run: |
-          set -euo pipefail
-          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
-          "$(go env GOPATH)/bin/golangci-lint" run --timeout 10m
-
-  lint-forge-vms:
-    name: golangci-lint (forge-vms)
-    runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    # forge-vms builds from public dependencies only, so it lints one module
-    # at a time like agent (workflow-level GOWORK=off applies).
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: controller/forge-vms/go.mod
-          cache: true
-          cache-dependency-path: controller/forge-vms/go.sum
-
-      - name: Run golangci-lint
-        working-directory: controller/forge-vms
-        run: make lint
-
-  lint-os-image:
-    name: golangci-lint (os-image)
-    runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: os-image/go.mod
-          cache: true
-          cache-dependency-path: |
-            os-image/go.sum
-            **/go.sum
-
-      - name: Run golangci-lint
-        working-directory: os-image
+        working-directory: ${{ matrix.dir }}
         run: make lint

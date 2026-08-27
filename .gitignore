@@ -21,6 +21,11 @@ os-image/packer/iso-cache/
 os-image/packer/build-logs/
 os-image/packer/.ssh/
 
+# Personal environment read by .envrc. It holds credentials, so the ignore has to
+# sit wherever .envrc does. The rule was in controller/.gitignore and scoped to
+# that directory.
+.env.local
+
 # Editor / OS
 .idea/
 .vscode/
@@ -30,6 +35,11 @@ os-image/packer/.ssh/
 .DS_Store
 
 # go.work and go.work.sum are tracked, not ignored. The usual advice to keep a
+# Per-checkout tool caches and scratch output. controller/.gitignore already
+# ignores its own .local/; make/golangci.mk puts the golangci-lint cache in this
+# one so two checkouts cannot replay each other's issues.
+.local/
+
 # workspace local applies to a workspace that papers over module boundaries
 # during development; this one is the build definition for every module that
 # releases, and CI verifies it is current (`make work-check`).

@@ -73,10 +73,11 @@ jobs:
       # from source on every run. The checksum is verified against the release
       # the version pins, so a compromised download fails closed.
       - name: Install actionlint
-        env:
-          ACTIONLINT_VERSION: "1.7.12"
         run: |
           set -euo pipefail
+          # One definition, in make/versions.mk, so `make show-versions` and this
+          # download cannot disagree.
+          ACTIONLINT_VERSION="$(make --no-print-directory print-ACTIONLINT_VERSION)"
           base="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}"
           tar="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
           tmp="$(mktemp -d)"
@@ -101,4 +102,4 @@ jobs:
           echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
 
       - name: Lint the workflows
-        run: actionlint
+        run: make lint-workflows

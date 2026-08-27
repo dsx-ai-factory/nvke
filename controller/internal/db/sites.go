@@ -43,7 +43,6 @@ type SiteQueries interface {
 
 	ListSitesDueForReconcile(ctx context.Context, batchSize int) ([]Site, error)
 	UpdateSiteReconcileDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error
-	UpdateSiteNextCertRenewalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error
 
 	ListVIPAllocations(ctx context.Context, siteID *uuid.UUID) ([]VIPAllocation, error)
 	GetVIPAllocation(ctx context.Context, id uuid.UUID) (VIPAllocation, error)
@@ -123,19 +122,6 @@ func (q *queriesImpl) UpdateSiteReconcileDue(ctx context.Context, siteID uuid.UU
 		Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to update site reconcile due: %w", err)
-	}
-
-	return nil
-}
-
-func (q *queriesImpl) UpdateSiteNextCertRenewalDue(ctx context.Context, siteID uuid.UUID, nextDue time.Time) error {
-	_, err := q.db.NewUpdate().
-		Model(&Site{}).
-		Set("next_cert_renewal_due = ?", nextDue).
-		Where("id = ?", siteID).
-		Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to update site next cert renewal due: %w", err)
 	}
 
 	return nil

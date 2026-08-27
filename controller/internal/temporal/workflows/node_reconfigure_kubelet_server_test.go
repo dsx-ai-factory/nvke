@@ -15,8 +15,65 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/testsuite"
 
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
+
+func TestNodeReconfigureKubeletServerActivityOrder(t *testing.T) {
+	nodeID := uuid.New()
+	server := "https://api.example.com:6443"
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+
+	var a *activities.Activities
+	env.OnActivity(
+		a.TaintNode,
+		mock.Anything,
+		activities.TaintNodeInput{
+			NodeID:      nodeID,
+			TaintKey:    constants.TaintKeyMaintenance,
+			TaintValue:  kubeVIPMaintenanceTaintValue,
+			TaintEffect: constants.TaintEffectNoSchedule,
+		},
+	).Return(activities.TaintNodeResult{}, nil).Once()
+	env.OnActivity(
+		a.ReconfigureKubeletAPIServer,
+		mock.Anything,
+		activities.ReconfigureKubeletAPIServerInput{NodeID: nodeID, Server: server},
+	).Return(activities.ReconfigureKubeletAPIServerResult{}, nil).Once()
+	env.OnActivity(
+		a.WaitForNodeLeaseRenewal,
+		mock.Anything,
+		activities.WaitForNodeLeaseRenewalInput{NodeID: nodeID},
+	).Return(activities.WaitForNodeLeaseRenewalResult{}, nil).Once()
+	env.OnActivity(
+		a.TaintNode,
+		mock.Anything,
+		activities.TaintNodeInput{
+			NodeID:      nodeID,
+			TaintKey:    constants.TaintKeyMaintenance,
+			TaintValue:  kubeVIPMaintenanceTaintValue,
+			TaintEffect: constants.TaintEffectNoSchedule + "-",
+		},
+	).Return(activities.TaintNodeResult{}, nil).Once()
+
+	var activityOrder []string
+	env.SetOnActivityStartedListener(func(info *activity.Info, _ context.Context, _ converter.EncodedValues) {
+		activityOrder = append(activityOrder, info.ActivityType.Name)
+	})
+
+	env.ExecuteWorkflow(NodeReconfigureKubeletServer, nodeID, NodeReconfigureKubeletServerInput{Server: server})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []string{
+		"TaintNode",
+		"ReconfigureKubeletAPIServer",
+		"WaitForNodeLeaseRenewal",
+		"TaintNode",
+	}, activityOrder)
+	env.AssertExpectations(t)
+}
 
 func TestWaitForKubeletToRenewNodeLeaseHasHeartbeatTimeout(t *testing.T) {
 	nodeID := uuid.New()

@@ -147,7 +147,7 @@ func validateMultiPodCIDRConnectivity(ctx context.Context, test *tenantTest, ten
 	primaryServer := podCIDRServerPod("primary", primaryNodeHostname, false, podCIDRServerPort)
 	secondaryServer := podCIDRServerPod("secondary", secondaryNodeHostname, false, podCIDRServerPort)
 	hostServer := podCIDRServerPod("host", primaryNodeHostname, true, podCIDRHostServerPort)
-	deferDeletePodCIDRObjects(tenantClient, primaryServer, secondaryServer, hostServer)
+	deferDeletePodCIDRObjects(ctx, tenantClient, primaryServer, secondaryServer, hostServer)
 	for _, pod := range []*corev1.Pod{primaryServer, secondaryServer, hostServer} {
 		Expect(tenantClient.Create(ctx, pod)).To(Succeed())
 	}
@@ -160,7 +160,7 @@ func validateMultiPodCIDRConnectivity(ctx context.Context, test *tenantTest, ten
 
 	service := podCIDRService()
 	Expect(tenantClient.Create(ctx, service)).To(Succeed())
-	deferDeletePodCIDRObjects(tenantClient, service)
+	deferDeletePodCIDRObjects(ctx, tenantClient, service)
 
 	By("Checking same-node, cross-node, Service, and pod-to-node connectivity from the secondary range")
 	secondaryProbe := podCIDRProbePod("secondary", secondaryNodeHostname, false, []string{
@@ -370,10 +370,10 @@ func podCIDRURL(host string, port int32) string {
 	return fmt.Sprintf("http://%s:%d/", host, port)
 }
 
-func deferDeletePodCIDRObjects(tenantClient client.Client, objects ...client.Object) {
+func deferDeletePodCIDRObjects(ctx context.Context, tenantClient client.Client, objects ...client.Object) {
 	GinkgoHelper()
 	DeferCleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
 		defer cancel()
 		for _, object := range objects {
 			_ = tenantClient.Delete(cleanupCtx, object)

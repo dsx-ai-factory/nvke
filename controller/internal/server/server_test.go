@@ -484,6 +484,29 @@ func TestOpenAPIValidator_UpdateCluster(t *testing.T) {
 	})
 }
 
+// TestOpenAPIValidator_UpdateNodePool verifies that node-pool updates reject
+// fields that are not part of the OpenAPI request schema.
+func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
+	handler := newTestServerWithValidator(t, &testutil.MockDB{})
+	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+
+	req := httptest.NewRequestWithContext(
+		t.Context(),
+		http.MethodPatch,
+		"/api/nodePools/"+nodePoolID.String(),
+		bytes.NewReader([]byte(`{"desiredNodeCounnt":2}`)),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	var errBody api.GenericError
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &errBody))
+	assert.Contains(t, errBody.Message, "desiredNodeCounnt")
+}
+
 // TestStdServerErrorStatus_MalformedPathUUID verifies that requests with a malformed
 // UUID path parameter return HTTP 400 (client error) rather than HTTP 500.
 func TestStdServerErrorStatus_MalformedPathUUID(t *testing.T) {

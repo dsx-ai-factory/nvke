@@ -2,6 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # The licence header template lives once, at the repository root.
+##@ Help
+
+# Same awk as the sibling modules: sections come from ##@ lines and entries from
+# the ## comment on each target, so the list is read from this file and cannot go
+# stale.
+.PHONY: help
+help: ## Show the available targets.
+	@awk 'BEGIN { FS = ":.*## " } \
+		/^##@ / { printf "\n%s\n", substr($$0, 5) } \
+		/^[a-z][a-z0-9-]*:.*## / { printf "  %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@echo
+
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
 
 # Module-level targets, matching the other workspace members. The root Makefile
@@ -22,8 +34,8 @@ ifeq (,$(GOBIN))
 GOBIN = $(shell $(GO) env GOPATH)/bin
 endif
 
-GOLANGCI_LINT_REPO    ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-GOLANGCI_LINT_VERSION ?= v2.12.2
+# golangci-lint pin and bootstrap, shared with every other module.
+include ../make/golangci.mk
 
 # Version stamping, mirroring cli/Makefile.
 #
@@ -63,16 +75,14 @@ build: ## Build nke-os-image-check into bin/.
 compile: ## Type-check every package, including the ones with no binary.
 	$(GO) build ./...
 
-test:
+test: ## Run this module's tests. (run by the merge gate)
 	$(GO) test $(GO_TEST_FLAGS) ./...
 
-fmt:
-	$(GO) install $(GOLANGCI_LINT_REPO)@$(GOLANGCI_LINT_VERSION)
-	$(GOBIN)/golangci-lint fmt ./...
+fmt: ## Format the source with golangci-lint's formatters.
+	@$(GOLANGCI_LINT_RUN) fmt ./...
 
-lint:
-	$(GO) install $(GOLANGCI_LINT_REPO)@$(GOLANGCI_LINT_VERSION)
-	$(GOBIN)/golangci-lint run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
+lint: ## Run golangci-lint over this module. (run by the merge gate)
+	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
 	$(GO) run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" .
@@ -112,7 +122,7 @@ notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nke-os-image-check binary.
 		bash ../controller/hack/generate-notices
 
 .PHONY: notices-check
-notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date.
+notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in the merge gate)
 	@# git diff says nothing about an untracked path, so check tracking first --
 	@# otherwise a deleted or never-committed notices file passes silently.
 	@git ls-files --error-unmatch THIRD_PARTY_NOTICES.md > /dev/null 2>&1 \

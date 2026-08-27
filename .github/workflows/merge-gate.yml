@@ -65,6 +65,20 @@ on:
   pull_request:
     branches-ignore: ["pull-request/[0-9]+"]
     types: [opened, synchronize, reopened, edited]
+  # Inert until someone enables a merge queue on `main`: with no queue, GitHub
+  # never sends this event. It is here so that enabling one is a settings change
+  # and not a settings change plus an outage.
+  #
+  # A merge queue builds its own commit on a gh-readonly-queue/ ref and requires
+  # the required contexts to report against THAT sha. Without this trigger `gate`
+  # would never report there, every entry would time out, and nothing would
+  # merge. The other required context, DCO, needs nothing from us: the app
+  # handles merge_group.checks_requested itself and reports on the merge group
+  # head sha.
+  #
+  # The 14 called workflows need no change. Each declares workflow_call and runs
+  # under this caller's event, and none reads github.event.pull_request.
+  merge_group:
   workflow_dispatch:
 
 permissions: {}
@@ -138,6 +152,11 @@ jobs:
     permissions:
       contents: read
 
+  docs-check:
+    uses: ./.github/workflows/docs-check.yml
+    permissions:
+      contents: read
+
   lint:
     uses: ./.github/workflows/lint.yml
     permissions:
@@ -179,6 +198,7 @@ jobs:
       - generated
       - actionlint
       - shellcheck
+      - docs-check
       - lint
       - gofail
       - govulncheck

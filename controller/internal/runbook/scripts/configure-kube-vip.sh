@@ -18,6 +18,11 @@ BGP_AS=${BGP_AS:-""}
 # IP address of the node used for BGP routing ID
 NODE_IP=${NODE_IP:-""}
 
+# Default kube-vip image pin. These two are a pair — DEFAULT_KUBE_VIP_DIGEST is
+# the multi-arch index digest of DEFAULT_KUBE_VIP_VERSION. Bump them together.
+DEFAULT_KUBE_VIP_VERSION="v1.2.0"
+DEFAULT_KUBE_VIP_DIGEST="sha256:fe8c7b6641ba7633a12b337821e9e83a6456e8edc3434f97577058edd4eecaf6"
+
 # Optional environment variables with defaults
 
 # BGP peer address (defaults to node's default gateway, i.e. the Forge subnet gateway IP)
@@ -32,7 +37,16 @@ BGP_PEER_AS="${BGP_PEER_AS:-"4294967000"}"
 BGP_PEERS=${BGP_PEERS:-""}
 # Kube-vip version. Must be >= v1.2.0 for the control-plane BGP health check
 # (CP_HEALTH_CHECK_* below); that feature was introduced in kube-vip v1.2.0.
-KUBE_VIP_VERSION="${KUBE_VIP_VERSION:-"v1.2.0"}"
+KUBE_VIP_VERSION="${KUBE_VIP_VERSION:-"$DEFAULT_KUBE_VIP_VERSION"}"
+# Image digest for the default version above. The rendered image reference is
+# tag@digest, so the tag stays readable while the pull resolves by digest and
+# cannot be moved under us by a re-push of the same tag.
+#
+# Set to "" to pull by mutable tag instead. If you override KUBE_VIP_VERSION you
+# must also set (or clear) KUBE_VIP_DIGEST; validate_image_pin below refuses the
+# mismatched combination rather than silently pulling the digest and ignoring
+# the tag you asked for.
+KUBE_VIP_DIGEST="${KUBE_VIP_DIGEST-"$DEFAULT_KUBE_VIP_DIGEST"}"
 # Explicit interface override. When set, kube-vip uses this interface for both
 # the BGP source (bgp_sourceif) and the VIP (vip_interface) instead of probing
 # the interface that currently owns NODE_IP. Needed when NODE_IP will live on
@@ -95,6 +109,18 @@ check_dependencies() {
   fi
 }
 
+# validate_image_pin refuses a KUBE_VIP_VERSION override that leaves the default
+# digest in place. `repo:tag@digest` resolves by digest and ignores the tag, so
+# that combination would silently run the default version while appearing to run
+# the requested one.
+validate_image_pin() {
+    [[ -z "${KUBE_VIP_DIGEST:-}" ]] && return 0
+    if [[ "$KUBE_VIP_VERSION" != "$DEFAULT_KUBE_VIP_VERSION" && \
+          "$KUBE_VIP_DIGEST" == "$DEFAULT_KUBE_VIP_DIGEST" ]]; then
+        error "KUBE_VIP_VERSION was overridden to $KUBE_VIP_VERSION but KUBE_VIP_DIGEST still holds the digest for $DEFAULT_KUBE_VIP_VERSION. Set KUBE_VIP_DIGEST to that version's digest, or KUBE_VIP_DIGEST=\"\" to pull by tag."
+    fi
+}
+
 # Validate required environment variables
 validate_environment() {
     local missing_vars=()
@@ -108,6 +134,8 @@ validate_environment() {
     if [[ ${#missing_vars[@]} -gt 0 ]]; then
         error "Missing required environment variables: ${missing_vars[*]}"
     fi
+
+    validate_image_pin
 
     # Multi-peer path replaces the single-peer validation wholesale.
     if [[ -n "${BGP_PEERS:-}" ]]; then
@@ -375,11 +403,18 @@ ${bgp_peer_env}
     - name: prometheus_server
       value: :2112
 ${health_check_env}
-    image: ghcr.io/kube-vip/kube-vip:${KUBE_VIP_VERSION}
+    image: ghcr.io/kube-vip/kube-vip:${KUBE_VIP_VERSION}${KUBE_VIP_DIGEST:+@${KUBE_VIP_DIGEST}}
     imagePullPolicy: IfNotPresent
     name: kube-vip
-    resources: {}
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
     securityContext:
+      seccompProfile:
+        type: RuntimeDefault
       capabilities:
         add:
         - NET_ADMIN
@@ -387,6 +422,7 @@ ${health_check_env}
     volumeMounts:
     - mountPath: /etc/kubernetes/admin.conf
       name: kubeconfig
+      readOnly: true
 ${health_check_vmount}
   hostAliases:
   - hostnames:

@@ -141,6 +141,20 @@ else
 fi
 tilt_config_staged=true
 
+# Sequential two-mode CAPD run (mirrors controller/hack/ci/backend-e2e.sh): a
+# default local run validates both control-plane paths on one cluster -- the
+# cp-controller leg (flag-on) first, then a light CWE redeploy to flag-off for
+# the node-pool leg. Set LOCAL_NKE_E2E_LABEL_FILTER to run a single explicit
+# filter instead, or LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES=false.
+sequential_modes="${LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES:-true}"
+if [[ -n "${LOCAL_NKE_E2E_LABEL_FILTER:-}" ]]; then
+  sequential_modes=false
+fi
+# The cp-controller leg needs a flag-on CWE, so deploy flag-on when sequential.
+if [[ "${sequential_modes}" == "true" ]]; then
+  export PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true
+fi
+
 log "deploying local CWE through Tilt"
 TILT_DISABLE_ANALYTICS=1 tilt ci \
   --port=0 \
@@ -180,24 +194,76 @@ docker cp "${e2e_binary}" "${runner_name}:/state/cwe-e2e.test"
 docker cp "${internal_kubeconfig}" "${runner_name}:/state/management.kubeconfig"
 docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
 
-label_filter="${LOCAL_NKE_E2E_LABEL_FILTER:-capd}"
-log "running E2E specs matching ${label_filter}"
-set +e
-docker exec "${runner_name}" \
-  /state/cwe-e2e.test \
-    -test.v \
-    -test.timeout=105m \
-    -e2e.config=/state/e2e-config.json \
-    -ginkgo.v \
-    -ginkgo.no-color \
-    -ginkgo.timeout=100m \
-    "-ginkgo.label-filter=${label_filter}" \
-    -ginkgo.junit-report=/state/junit.xml \
-  2>&1 | tee "${state_dir}/e2e.log"
-e2e_rc=${PIPESTATUS[0]}
-set -e
+# Run one Ginkgo leg against the already-deployed CWE. suffix keeps each leg's
+# log and JUnit report distinct (empty for a single-mode run).
+run_local_leg() {
+  local label_filter="$1" cp_flag="$2" suffix="$3"
+  log "running E2E specs matching ${label_filter} (PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag:-<unset>})"
+  set +e
+  docker exec \
+    -e "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
+    "${runner_name}" \
+    /state/cwe-e2e.test \
+      -test.v \
+      -test.timeout=105m \
+      -e2e.config=/state/e2e-config.json \
+      -ginkgo.v \
+      -ginkgo.no-color \
+      -ginkgo.timeout=100m \
+      "-ginkgo.label-filter=${label_filter}" \
+      "-ginkgo.junit-report=/state/junit${suffix}.xml" \
+    2>&1 | tee "${state_dir}/e2e${suffix}.log"
+  local rc=${PIPESTATUS[0]}
+  set -e
+  docker cp "${runner_name}:/state/junit${suffix}.xml" "${state_dir}/junit${suffix}.xml" >/dev/null 2>&1 || true
+  return "${rc}"
+}
 
-docker cp "${runner_name}:/state/junit.xml" "${state_dir}/junit.xml" >/dev/null 2>&1 || true
-((e2e_rc == 0)) || exit "${e2e_rc}"
+# Cleanup gate between legs: the cp-controller leg's delete spec should have
+# removed every tenant cluster before the node-pool leg starts. Count CAPI
+# Cluster objects directly (not the CWE API, which enforces auth); zero of them
+# is a faithful, auth-free "cluster is clean" signal.
+wait_for_zero_tenant_clusters() {
+  local deadline=$((SECONDS + 300)) list count
+  while true; do
+    if list="$(kubectl get clusters.cluster.x-k8s.io -A --no-headers 2>/dev/null)"; then
+      count="$(printf '%s' "${list}" | grep -c . || true)"
+      if [[ "${count}" == "0" ]]; then
+        log "cleanup gate: no tenant clusters remain"
+        return 0
+      fi
+    fi
+    ((SECONDS < deadline)) || fail "cleanup gate: ${count:-unknown} tenant cluster(s) still present after 5m"
+    sleep 10
+  done
+}
 
-log "E2E specs matching ${label_filter} passed"
+# Flip the deployment-wide control-plane-controller flag with a light redeploy
+# (no re-run of Tilt), wait for the rollout, and confirm the new value stuck.
+redeploy_cwe() {
+  local value="$1" got
+  log "redeploying CWE with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
+  kubectl -n cloud-workflow-engine set env deployment/cloud-workflow-engine \
+    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${value}"
+  kubectl -n cloud-workflow-engine rollout status deployment/cloud-workflow-engine --timeout=5m
+  got="$(kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
+    -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER\")].value}")"
+  [[ "${got}" == "${value}" ]] || \
+    fail "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER must be ${value} after redeploy, got ${got:-<empty>}"
+}
+
+if [[ "${sequential_modes}" == "true" ]]; then
+  log "sequential CAPD control-plane modes: cp-controller (flag-on) then node-pool (flag-off)"
+  run_local_leg "(capd && cp-controller) || health" "true" "-cp-controller" || \
+    fail "cp-controller leg failed with exit code $?; not running the node-pool leg"
+  log "cp-controller leg passed; confirming the cluster is clean before the node-pool leg"
+  wait_for_zero_tenant_clusters
+  redeploy_cwe false
+  run_local_leg "(capd || health) && !cp-controller" "false" "-nodepool" || \
+    fail "node-pool leg failed with exit code $?"
+  log "sequential CAPD control-plane E2E passed (cp-controller then node-pool)"
+else
+  label_filter="${LOCAL_NKE_E2E_LABEL_FILTER:-capd}"
+  run_local_leg "${label_filter}" "${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" "" || exit "$?"
+  log "E2E specs matching ${label_filter} passed"
+fi

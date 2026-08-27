@@ -95,16 +95,15 @@ go test -v ./internal/agent -run TestExecuteKubeadmInit
 ## Code Quality
 
 ```bash
-# Format code
 make fmt
-# or
-go fmt ./...
-
-# Run static analysis
 make vet
-# or
-go vet ./...
+make check-protos
+make lint
+make notices-check
 ```
+
+`make lint` is the CI lint gate. `make notices-check` verifies that
+`THIRD_PARTY_NOTICES.md` matches the shipped dependency set.
 
 ## Proto Generation
 
@@ -194,7 +193,7 @@ docs/               # Design and security context docs
 
 ## Dependencies
 
-- **Go 1.24+** (see `go.mod`)
+- **Go 1.26+** (see the root `go.work`)
 - **buf** (for proto generation; see `BUF_VERSION` in Makefile)
 - **protoc** plugins via buf remote plugins (`protoc-gen-go`, `protoc-gen-go-grpc`)
 

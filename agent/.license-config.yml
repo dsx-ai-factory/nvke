@@ -6,24 +6,24 @@
 - - :permit
   - Apache 2.0
   - :who: Mark Larter
-    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :why: Included in the automatic approvals for common open-source licenses
     :versions: []
     :when: 2025-02-05 12:27:56.175691000 Z
 - - :permit
   - BSD-3-Clause
   - :who: Mark Larter
-    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :why: Included in the automatic approvals for common open-source licenses
     :versions: []
     :when: 2025-02-05 12:27:56.175691000 Z
 - - :permit
   - MIT
   - :who: Mark Larter
-    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :why: Included in the automatic approvals for common open-source licenses
     :versions: []
     :when: 2025-02-05 12:27:56.175691000 Z
 - - :permit
   - Simplified BSD
   - :who: Mark Larter
-    :why: Included in the automatic approvals listed in https://confluence.nvidia.com/display/LEG/Open+Source+Software+Requests
+    :why: Included in the automatic approvals for common open-source licenses
     :versions: []
     :when: 2025-02-05 12:27:56.175691000 Z

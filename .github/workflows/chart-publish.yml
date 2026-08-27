@@ -86,10 +86,17 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          echo "helm_version=$(make --no-print-directory print-HELM_VERSION)" >> "$GITHUB_OUTPUT"
+
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.19.0
+          version: ${{ steps.versions.outputs.helm_version }}
 
       - name: Resolve version
         id: meta

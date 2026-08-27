@@ -31,7 +31,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capikubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -908,18 +907,6 @@ func TestPublish_CAPIClusterOIDCConsumedFromNKESystem(t *testing.T) {
 	tenantClient, err := dbProvider.ClientForDBCluster(ctx, cluster)
 	require.NoError(t, err)
 	require.NotNil(t, tenantClient)
-
-	capiCluster := &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{
-		Name:      cluster.Name,
-		Namespace: capi.ClusterNamespace(cluster.Name),
-	}}
-	require.NoError(t, k8sClient.Create(ctx, capiCluster))
-	require.NoError(t, k8sClient.Create(ctx, capikubeconfig.GenerateSecret(capiCluster, kubeconfigWithParseableCA(t))))
-
-	capiProvider := kube.NewCAPIKubeconfigTenantClientProvider(k8sClient)
-	capiClient, err := capiProvider.ClientForCluster(ctx, capiCluster)
-	require.NoError(t, err)
-	require.NotNil(t, capiClient)
 }
 
 func TestPublish_UsesLiveOIDCAuthEnabled(t *testing.T) {

@@ -4,6 +4,15 @@
 
 # etcd-member-remove.sh
 #
+# Requires bash 4. This script uses an associative array to hold per-member
+# health, and bash 3.2 does not reject `declare -A`: it warns on stderr, falls
+# back to an indexed array, resolves every non-numeric subscript to 0 and exits
+# 0. Every member would then report the last member's health, in the script that
+# decides whether removing one breaks quorum. The controller runs this on Linux
+# control-plane nodes with bash 5, so the guard below is for anyone testing it
+# on a Mac, where /bin/bash is 3.2. shellcheck cannot catch this at any
+# severity.
+#
 # Safely remove an etcd member with quorum safeguards.
 # - Blocks removals that would drop the cluster below quorum (unless --allow-quorum-loss).
 # - Blocks removals that would leave a single-voter cluster (unless --allow-single-voter).
@@ -184,6 +193,12 @@ healthy_endpoints=$(echo "${HEALTH_JSON}" | jq -r '.[] | select(.health==true) |
 while read -r endpoint; do
   HEALTHY_EPS+=("$endpoint")
 done <<< "$healthy_endpoints"
+
+if [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+  echo "ERROR: this script needs bash 4 or newer; found ${BASH_VERSION}." >&2
+  echo "       On macOS /bin/bash is 3.2. Run it with a newer bash." >&2
+  exit 1
+fi
 
 declare -A MEMBER_HEALTH=()  # ID -> healthy|unhealthy
 for line in "${VOTERS[@]}"; do

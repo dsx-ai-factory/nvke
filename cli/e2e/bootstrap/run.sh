@@ -32,13 +32,13 @@
 #      including the dispatch-stub error path stage 2 asserts on.
 #
 # NKECTL_BOOTSTRAP_PROVIDER selects the container runtime front end the
-# ephemeral cluster runs on (see cli/internal/bootstrapengine and NKX-14787).
+# ephemeral cluster runs on (see cli/internal/bootstrapengine).
 # Defaults to "docker" here specifically: that is the path this suite has
 # actually verified end to end (including on the ubuntu-latest CI runner);
 # nerdctl is the package's default everywhere else and is exercised by the
 # package's own unit tests, but rootless/cgroup-v2 provisioning for a real
-# nerdctl+containerd runtime on the CI runner is tracked as a NKX-14787
-# follow-up, not yet validated here. Override to try it locally.
+# nerdctl+containerd runtime on the CI runner is not yet validated here.
+# Override to try it locally.
 #
 # NKECTL_CWE_IMAGE must already be pulled locally (`docker pull`) before this
 # script runs -- nkectl loads it into the kind cluster via `kind load

@@ -1,6 +1,6 @@
 # Agent Security Context
 
-Vulnerability reporting for this monorepo lives in the repository-root [SECURITY.md](../SECURITY.md).
+Vulnerability reporting for this monorepo lives in the repository-root [SECURITY.md](../../SECURITY.md).
 
 ## Security Architecture and Context
 

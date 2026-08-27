@@ -30,7 +30,7 @@ func RunPod(ctx context.Context, c client.Client, pod *corev1.Pod, containerName
 		if keep {
 			return
 		}
-		delCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		delCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
 		_ = c.Delete(delCtx, pod)
 	}()

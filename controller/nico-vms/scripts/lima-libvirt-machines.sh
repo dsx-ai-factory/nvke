@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+set -euo pipefail
+
+usage() {
+	echo "Usage: $0 <list|clean>"
+	echo ""
+	echo "  list   List nico-vms libvirt domains (nico-vm-*) inside a Lima VM."
+	echo "  clean  Destroy/undefine matching domains and remove integration scratch paths."
+}
+
+if [[ $# -ne 1 ]]; then
+	usage
+	exit 1
+fi
+
+mode="$1"
+case "${mode}" in
+list | clean) ;;
+*)
+	usage
+	exit 1
+	;;
+esac
+
+if [[ "$(uname -s)" != "Darwin" ]]; then
+	echo "lima libvirt helper targets are only supported on Darwin hosts."
+	exit 1
+fi
+
+if ! command -v limactl >/dev/null 2>&1; then
+	echo "limactl is required"
+	exit 1
+fi
+
+vm_name="${LIMA_VM_NAME:-nico-vms}"
+
+if [[ "${mode}" == "list" ]]; then
+	limactl shell "${vm_name}" sudo bash -lc '\
+set -euo pipefail; \
+if ! command -v virsh >/dev/null 2>&1; then \
+  echo "virsh is not available in the Lima VM"; \
+  exit 1; \
+fi; \
+found=0; \
+while IFS= read -r domain; do \
+  [ -z "$domain" ] && continue; \
+  case "$domain" in \
+    nico-vm-*) \
+      found=1; \
+      state=$(virsh -c qemu:///system domstate "$domain" 2>/dev/null || echo unknown); \
+      printf "%-48s %s\n" "$domain" "$state"; \
+      ;; \
+  esac; \
+done < <(virsh -c qemu:///system list --all --name || true); \
+if [ "$found" -eq 0 ]; then \
+  echo "No nico-vm-* domains found."; \
+fi'
+	exit 0
+fi
+
+limactl shell "${vm_name}" sudo bash -lc '\
+set -euo pipefail; \
+if ! command -v virsh >/dev/null 2>&1; then \
+  echo "virsh is not available in the Lima VM"; \
+  exit 1; \
+fi; \
+cleaned=0; \
+while IFS= read -r domain; do \
+  [ -z "$domain" ] && continue; \
+  case "$domain" in \
+    nico-vm-*) \
+      echo "Cleaning $domain"; \
+      virsh -c qemu:///system destroy "$domain" >/dev/null 2>&1 || true; \
+      virsh -c qemu:///system undefine "$domain" --nvram >/dev/null 2>&1 || \
+        virsh -c qemu:///system undefine "$domain" >/dev/null 2>&1 || true; \
+      cleaned=$((cleaned + 1)); \
+      ;; \
+  esac; \
+done < <(virsh -c qemu:///system list --all --name || true); \
+rm -rf /tmp/nico-vms-integration /tmp/nico-vms-realvm* || true; \
+echo "Processed $cleaned domain(s)."'

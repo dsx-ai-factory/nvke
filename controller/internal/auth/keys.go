@@ -335,8 +335,18 @@ func (s *jwksKeySource) maybeRefresh(ctx context.Context) error {
 func (s *jwksKeySource) fetchAndStore(ctx context.Context) error {
 	keys, err := s.fetch(ctx)
 	if err != nil {
-		s.logger.Warn("JWKS fetch failed; serving the cached key set until it goes stale",
-			"issuer_url", s.issuer, "jwks_url", s.jwksURL, "error", err)
+		// The first fetch comes through here too, when nothing is cached yet.
+		// Only that case stops startup when enforcing.
+		s.mu.Lock()
+		cached := s.haveKeys
+		s.mu.Unlock()
+		if cached {
+			s.logger.Warn("JWKS fetch failed; serving the cached key set until it goes stale",
+				"issuer_url", s.issuer, "jwks_url", s.jwksURL, "error", err)
+		} else {
+			s.logger.Warn("JWKS fetch failed and no key set is cached yet",
+				"issuer_url", s.issuer, "jwks_url", s.jwksURL, "error", err)
+		}
 		return err
 	}
 

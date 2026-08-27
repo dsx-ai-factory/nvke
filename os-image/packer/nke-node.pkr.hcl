@@ -49,8 +49,8 @@ variable "disk_size" {
 # "kvm" when the host exposes /dev/kvm, "tcg" for software emulation. The
 # Makefile picks one by probing the device; a container-based CI runner has no
 # /dev/kvm and a hard kvm requirement fails there before Packer starts.
-# forge-vms already treats KVM and TCG as the two supported Linux modes
-# (controller/forge-vms/docs/e2e-testing.md).
+# nico-vms already treats KVM and TCG as the two supported Linux modes
+# (controller/nico-vms/docs/e2e-testing.md).
 variable "accelerator" {
   type        = string
   default     = "kvm"

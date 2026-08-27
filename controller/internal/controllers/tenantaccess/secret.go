@@ -9,6 +9,8 @@ import (
 	"log/slog"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -40,6 +42,29 @@ func upsertOwnedSecret(
 	cluster db.Cluster,
 	desired *corev1.Secret,
 ) error {
+	existing := &corev1.Secret{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(desired), existing); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("getting secret %s/%s before upsert: %w", desired.Namespace, desired.Name, err)
+	} else if err == nil && existing.Type != desired.Type {
+		if err := capi.ValidateSecretOwnership(existing, cluster); err != nil {
+			return err
+		}
+
+		logger.Info(
+			"Replacing tenant-access secret with incompatible type",
+			"clusterName", cluster.Name,
+			"secret", desired.Name,
+			"existingType", existing.Type,
+			"desiredType", desired.Type,
+		)
+		deleteOptions := &client.DeleteOptions{
+			Preconditions: &metav1.Preconditions{UID: &existing.UID},
+		}
+		if err := k8sClient.Delete(ctx, existing, deleteOptions); err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("deleting secret %s/%s with incompatible type: %w", desired.Namespace, desired.Name, err)
+		}
+	}
+
 	secret := &corev1.Secret{
 		ObjectMeta: desired.ObjectMeta,
 	}

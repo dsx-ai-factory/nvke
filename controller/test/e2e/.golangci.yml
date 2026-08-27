@@ -69,7 +69,7 @@ linters:
     - godox
     - goheader
     - gomoddirectives
-    - gomodguard
+    - gomodguard_v2
     - goprintffuncname
     - gosec
     - gosmopolitan
@@ -129,6 +129,10 @@ linters:
           deny:
             - pkg: github.com/pkg/errors
               desc: "use stdlib instead"
+    dupword:
+      ignore:
+        - done
+        - fi
     funlen:
       lines: 500
       statements: -1

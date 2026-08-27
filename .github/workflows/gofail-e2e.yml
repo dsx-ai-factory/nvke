@@ -73,7 +73,7 @@ jobs:
       # Unique key, so this always saves; restore-keys take the most recent
       # match. That is the difference from setup-go's behaviour above.
       - name: Cache Go build and module cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             ~/.cache/go-build
@@ -88,7 +88,7 @@ jobs:
       # than a guess at setup-envtest's platform-dependent default.
       # Keyed on the Makefile, which is where ENVTEST_K8S_VERSION lives.
       - name: Cache envtest binaries
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: controller/.go/envtest
           key: envtest-${{ runner.os }}-${{ hashFiles('controller/Makefile') }}

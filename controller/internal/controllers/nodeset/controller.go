@@ -47,16 +47,16 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-set-controller",
 		c,
-		c.db.NodeSetSource(dbfilters.NodeSet{}),
-		c.db.NodeSource(dbfilters.Node{}, nodeSetKeysForNode),
+		dbwrapper.NewNodeSetSource(c.db, dbfilters.NodeSet{}),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{}, nodeSetKeysForNode),
 	)
 }
 
-func nodeSetKeysForNode(node db.Node) []dbreconcile.Key {
+func nodeSetKeysForNode(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.NodeSetID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodeSetKey(node.NodeSetID)}
+	return []dbreconcile.Key{dbreconcile.NodeSetKey(node.NodeSetID)}, nil
 }
 
 // Reconcile NodeSets, for each NodeSet:

@@ -84,15 +84,20 @@ func TrustDomain(kubeconfig, context string) (string, error) {
 	return ctx[kindIndex+len("kind-"):] + ".nke.local", nil
 }
 
+// clientConfig resolves the file and the context independently; either can be
+// set without the other.
+//
+// ExplicitPath is set on the default rules rather than replacing them. A bare
+// ClientConfigLoadingRules has an empty Precedence and loads no file, so naming
+// a context without also naming a file fails with `context "X" does not exist`
+// against a kubeconfig that contains it.
 func clientConfig(kubeconfig, context string) clientcmd.ClientConfig {
-	if kubeconfig != "" || context != "" {
-		return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-			&clientcmd.ClientConfigLoadingRules{ExplicitPath: kubeconfig},
-			&clientcmd.ConfigOverrides{CurrentContext: context},
-		)
+	rules := clientcmd.NewDefaultClientConfigLoadingRules()
+	if kubeconfig != "" {
+		rules.ExplicitPath = kubeconfig
 	}
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		clientcmd.NewDefaultClientConfigLoadingRules(),
-		&clientcmd.ConfigOverrides{},
+		rules,
+		&clientcmd.ConfigOverrides{CurrentContext: context},
 	)
 }

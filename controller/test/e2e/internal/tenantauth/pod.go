@@ -27,6 +27,7 @@ const (
 	downloadContainerName = "download"
 	verifyContainerName   = "verify"
 	expectedUsernameEnv   = "EXPECTED_USERNAME"
+	binaryVolumeName      = "binary"
 
 	// downloadScript fetches and sha256-verifies the exec plugin into the
 	// shared binary volume.
@@ -101,7 +102,7 @@ func buildPod(id Identity, clusterName, expectedUsername string, checks []Check)
 						{Name: "URL", Value: fmt.Sprintf("%s/v%s", pluginDownloadBaseURL, pluginVersion)},
 					},
 					VolumeMounts: []corev1.VolumeMount{
-						{Name: "binary", MountPath: "/opt/spiffe/bin"},
+						{Name: binaryVolumeName, MountPath: "/opt/spiffe/bin"},
 					},
 				},
 			},
@@ -115,14 +116,14 @@ func buildPod(id Identity, clusterName, expectedUsername string, checks []Check)
 						{Name: expectedUsernameEnv, Value: expectedUsername},
 					},
 					VolumeMounts: []corev1.VolumeMount{
-						{Name: "binary", MountPath: "/opt/spiffe/bin"},
+						{Name: binaryVolumeName, MountPath: "/opt/spiffe/bin"},
 						{Name: "workload-api", MountPath: "/spiffe-workload-api", ReadOnly: true},
 						{Name: "work", MountPath: "/work"},
 					},
 				},
 			},
 			Volumes: []corev1.Volume{
-				{Name: "binary", VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
+				{Name: binaryVolumeName, VolumeSource: corev1.VolumeSource{EmptyDir: &corev1.EmptyDirVolumeSource{}}},
 				{Name: "workload-api", VolumeSource: corev1.VolumeSource{CSI: &corev1.CSIVolumeSource{
 					Driver:   "csi.spiffe.io",
 					ReadOnly: boolPtr(true),

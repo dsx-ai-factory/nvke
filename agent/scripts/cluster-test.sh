@@ -257,7 +257,7 @@ while [[ $# -gt 0 ]]; do
 		;;
 	--package)
 		EXTRA_PACKAGES+=("${2:-}")
-		[[ -n "${EXTRA_PACKAGES[-1]}" ]] || die "--package needs a value"
+		[[ -n "${EXTRA_PACKAGES[$((${#EXTRA_PACKAGES[@]} - 1))]}" ]] || die "--package needs a value"
 		shift 2
 		;;
 	-p | --port)

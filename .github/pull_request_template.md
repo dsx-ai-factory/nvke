@@ -2,9 +2,18 @@
 <!-- Provide a standalone description of changes in this PR. -->
 <!-- Reference any issues closed by this PR with "closes #1234". -->
 <!-- Note: CHANGELOG.md is generated from commit subjects by git-cliff.
-     Whichever subjects land on main become the entries, so write them
-     for a reader. This repository allows merge, squash and rebase, so
-     the pull request title is not necessarily one of them. -->
+     This repository squash-merges, so the pull request TITLE becomes the
+     single commit subject on main and therefore the changelog entry.
+     Write it for a reader. -->
+
+## Testing
+
+<!-- What you ran. `make preflight` lints and tests the modules you changed;
+     see docs/development.md for what it does not cover. -->
+
+```bash
+make preflight
+```
 
 ## Checklist
 - [ ] I am familiar with the [Contributing Guidelines](https://github.com/NVIDIA/nke/blob/main/CONTRIBUTING.md).

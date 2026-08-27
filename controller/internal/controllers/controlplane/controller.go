@@ -53,24 +53,24 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"control-plane-controller",
 		c,
-		c.db.ClusterSource(dbfilters.Cluster{}),
-		c.db.NodePoolSource(dbfilters.NodePool{ControlPlane: ptr.To(true)}, nodePoolClusterKeys),
-		c.db.NodeSource(dbfilters.Node{ControlPlane: ptr.To(true)}, nodeClusterKeys),
+		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}),
+		dbwrapper.NewNodePoolSource(c.db, dbfilters.NodePool{ControlPlane: ptr.To(true)}, nodePoolClusterKeys),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{ControlPlane: ptr.To(true)}, nodeClusterKeys),
 	)
 }
 
-func nodePoolClusterKeys(nodePool db.NodePool) []dbreconcile.Key {
+func nodePoolClusterKeys(_ context.Context, nodePool db.NodePool) ([]dbreconcile.Key, error) {
 	if nodePool.ClusterID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(nodePool.ClusterID)}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(nodePool.ClusterID)}, nil
 }
 
-func nodeClusterKeys(node db.Node) []dbreconcile.Key {
+func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.ClusterID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}, nil
 }
 
 // Reconcile reconciles one cluster's control plane from a ClusterID root key.

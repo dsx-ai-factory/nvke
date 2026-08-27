@@ -7,7 +7,7 @@
 # without either infrastructure provider owning or depending on the other.
 
 DEFAULT_SITE_ID = "00000000-0000-0000-0000-000000000000"
-# Distinct from forge-vms FORGE_VMS_VIP_CIDR (172.31.0.0/24); see NKX-13387.
+# Distinct from nico-vms NICO_VMS_VIP_CIDR (172.31.0.0/24); see NKX-13387.
 DEFAULT_VIP_RANGE = "172.31.1.0/24"
 BGP_RESOURCE = "bgp-containers"
 

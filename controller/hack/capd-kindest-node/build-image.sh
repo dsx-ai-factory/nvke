@@ -179,10 +179,12 @@ if [[ -n "${NKE_E2E_DOCKERHUB_MIRROR}" ]]; then
     echo "NKE_E2E_DOCKERHUB_MIRROR must be a registry host with an optional port" >&2
     exit 1
   fi
-  sed -i \
+  # -i.bak, not bare -i: see the note in controller/hack/ci/backend-e2e.sh.
+  sed -i.bak \
     -e "s#server = \"https://registry-1.docker.io\"#server = \"https://${NKE_E2E_DOCKERHUB_MIRROR}\"#" \
     -e "s#http://registry-mirror:5000#https://${NKE_E2E_DOCKERHUB_MIRROR}#" \
     "${build_context}/Dockerfile"
+  rm -f "${build_context}/Dockerfile.bak"
   mirror_occurrences="$(grep -Fc "https://${NKE_E2E_DOCKERHUB_MIRROR}" "${build_context}/Dockerfile" || true)"
   if [[ "${mirror_occurrences}" -lt 2 ]]; then
     echo "Failed to route the CAPD node image through ${NKE_E2E_DOCKERHUB_MIRROR}" >&2

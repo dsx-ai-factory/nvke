@@ -1,72 +1,145 @@
 # Architecture overview
 
-nke (NVIDIA Kubernetes Engine) consists of two independently deployable
-Go modules that together orchestrate the full lifecycle of Kubernetes
-clusters on NVIDIA infrastructure.
+nke (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
+on NVIDIA infrastructure. The repository is a Go workspace of ten modules. Three
+of them run in production: the Cloud Workflow Engine, deployed as a Helm chart,
+the node agent, installed on each node as a Debian package and run by systemd,
+and the Cluster API infrastructure provider, deployed into the same cluster as
+the engine. The rest are a CLI, the generated API module, and test and
+development tooling.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                     nke monorepo                    │
-│                                                     │
-│  ┌──────────────────┐   ┌────────────────────────┐  │
-│  │   controller/    │   │       agent/           │  │
-│  │                  │   │                        │  │
-│  │  Cloud Workflow  │   │  Runs on each node;    │  │
-│  │  Engine (CWE)    │   │  registers w/ control  │  │
-│  │                  │   │  plane, handles kubelet│  │
-│  │  - REST API      │   │  bootstrap & SPIFFE    │  │
-│  │  - Temporal WFs  │   │  attestation           │  │
-│  │  - PostgreSQL DB │   │                        │  │
-│  └────────┬─────────┘   └──────────┬─────────────┘  │
-│           │                        │                │
-└───────────┼────────────────────────┼────────────────┘
-            │                        │
-     ┌──────▼──────┐          ┌──────▼──────┐
-     │   Temporal  │          │  Forge API  │
-     │  (workflow  │          │  (bare-metal│
-     │  engine)    │          │  lifecycle) │
-     └─────────────┘          └─────────────┘
+              ┌──────────────────────────────────────────────┐
+              │   site controller cluster                    │
+              │                                              │
+   client ───▶│  Cloud Workflow Engine (controller/)         │
+  REST/HTTP   │                                              │
+              │   REST API ──▶ Postgres ──▶ outbox processor │
+              │                  ▲                │          │
+              │   reconcilers ───┘                │          │
+              │   (controller-runtime)            ▼          │
+              └───────────────────────────────┬──────────────┘
+                          │                   │
+                          │ gRPC              │ starts workflows
+                          │ (CWE dials out)   ▼
+                          │            ┌─────────────┐
+                          │            │  Temporal   │
+                          │            └──────┬──────┘
+                          │                   │ Forge API
+                          ▼                   ▼
+              ┌──────────────────────┐  ┌─────────────┐
+              │  nke-agent (agent/)  │  │    Forge    │
+              │  gRPC server on each │  │ (bare-metal │
+              │  node, systemd unit  │  │  lifecycle) │
+              └──────────────────────┘  └─────────────┘
 ```
+
+## The ten modules
+
+| Module | Binary | What it is |
+|---|---|---|
+| `controller/` | `worker` | The Cloud Workflow Engine: REST API, Temporal workflows, Postgres, reconcilers |
+| `agent/` | `agent` | The node agent, a gRPC server that runs on every managed node |
+| `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NKE provisions before CAPI bootstraps them |
+| `cli/` | `nkectl` | The command line client |
+| `controller/api/` | none | The OpenAPI spec and the generated server and client types |
+| `controller/nico-vms/` | `nico-vms`, `nico-vmsctl` | Local VM manager used by tests and development |
+| `controller/test/e2e/` | none | The end to end suite |
+| `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
+| `controller/hack/nico-mock/` | `nico-mock` | A stand-in for the NICo provider |
+| `os-image/` | `nke-os-image-check` | OS image checks |
+
+`go.work` is the list of record. See [go-workspace.md](go-workspace.md) for how
+the workspace fits together and why `vendor/` is committed.
 
 ## controller (Cloud Workflow Engine)
 
 | Component | Description |
 |---|---|
-| `api/` | OpenAPI 3.0 spec + oapi-codegen generated server/client |
+| `api/` | OpenAPI 3.0 spec and the oapi-codegen server and client |
 | `internal/server/` | HTTP handlers, authentication middleware |
-| `internal/temporal/workflows/` | Cluster provision/teardown/reboot workflows |
-| `internal/temporal/activities/` | Individual steps called by workflows |
-| `internal/db/` | Bun ORM + PostgreSQL migrations |
-| `internal/providers/forge/` | Forge bare-metal API client (cached) |
-| `profiles/` | OS image and Kubernetes config profiles (YAML) |
+| `internal/temporal/workflows/` | Cluster provision, teardown and reboot workflows |
+| `internal/temporal/activities/` | The individual steps workflows call |
+| `internal/temporal/outbox_processor.go` | Polls the outbox table and starts workflows |
+| `internal/controllers/` | The controller-runtime reconcilers |
+| `internal/db/` | Bun ORM and the PostgreSQL migrations |
+| `internal/providers/forge/` | Forge bare-metal API client, cached |
+| `profiles/` | OS image and Kubernetes config profiles, as YAML |
 
-Key data flows:
+### How a cluster request becomes work
 
-1. Client calls `POST /api/clusters` → CWE starts a `ProvisionCluster` Temporal workflow.
-2. Workflow orchestrates Forge API calls to provision bare-metal nodes, then bootstraps Kubernetes via kubeadm.
-3. `nke-agent` on each provisioned node registers itself with CWE over mTLS (SPIFFE/SPIRE).
-4. CWE marks the cluster `Ready` and returns the kubeconfig.
+The API does not call Temporal. It writes a row, and something else picks it up.
+That indirection is deliberate, and it is the part most people get wrong when
+they first read the handlers.
+
+1. A client calls `POST /api/clusters`.
+2. The handler opens one database transaction and writes both the cluster record
+   and a row in the `workflow_outbox` table, through
+   `CreateWorkflowOutboxEntry` in `internal/server/clusters.go`. Either both land
+   or neither does, so a committed cluster always has its work queued.
+3. `OutboxProcessor` polls that table, starts the matching Temporal workflow,
+   and marks the row processed (`internal/temporal/outbox_processor.go`).
+4. The workflow calls the Forge API to provision bare-metal nodes, then
+   bootstraps Kubernetes with kubeadm.
+5. The engine dials `nke-agent` on each node over gRPC to drive the node side of
+   the bootstrap (`internal/agent/client.go`).
+6. The cluster reaches `Ready` and the kubeconfig becomes available.
+
+Workflow activities queue further work the same way, through
+`CreateWorkflowOutboxEntry`, rather than starting workflows directly.
+
+### The reconcilers
+
+Alongside the workflow engine, the controller runs fifteen controller-runtime
+reconcilers under `internal/controllers/`. They cover node pools, control plane
+and node scheduling, certificate renewal, tenant access and secrets, TPM and
+SPIFFE identity for CAPI machines, and Teleport tokens.
+
+This is worth stating plainly, because the combination is unusual. One process
+runs a REST API backed by Postgres, a Temporal worker, and a set of Kubernetes
+reconcilers. Reading only the workflows, or only the reconcilers, gives an
+incomplete picture of what reacts to a change.
 
 ## nke-agent
 
-Runs as a systemd service on each managed node. Responsibilities:
+The agent runs as a systemd service on each managed node. It is a **gRPC
+server**: it listens, and the Cloud Workflow Engine dials it
+(`agent/cmd/agent/main.go`, `controller/internal/agent/client.go`). It does not
+call home, and the engine has no node-registration endpoint for it to call.
 
-- Bootstraps kubelet (downloads kubeconfig, starts kubelet)
-- Attests its identity via SPIRE (TPM or join-token)
-- Registers node readiness back to CWE
-- Handles node lifecycle events (drain, reboot, teardown)
+Responsibilities:
+
+- Runs `kubeadm init` and `kubeadm join` on the node, and installs a CNI
+- Bootstraps the kubelet
+- Attests its identity through SPIRE, by TPM or join token
+- Handles node lifecycle operations such as drain, reboot and teardown
+
+`make build` in `agent/` cross-compiles for Linux on amd64 and arm64, because
+that is where the agent runs.
 
 ## Deployment
 
-Both modules are deployed via Helm charts onto a *site controller* cluster —
-a dedicated Kubernetes cluster that manages the NKE tenant fleet for a given
-site. ArgoCD on the site controller keeps chart versions in sync with
-`nke-site-deploy`.
+The Cloud Workflow Engine is deployed as a Helm chart
+(`controller/deploy/charts/cloud-workflow-engine`) onto a *site controller*
+cluster, a dedicated Kubernetes cluster that manages the NKE tenant fleet for a
+site.
+
+The agent has no chart. It ships as a Debian package, installed on each node and
+run by systemd.
+
+The Cluster API infrastructure provider is a third deployed piece. It is a
+`manager` binary with its own container image and kustomize configuration under
+`cluster-api-provider-provisioned/config/`, and a `metadata.yaml` that makes it
+installable by `clusterctl`. It owns the `ProvisionedCluster` and
+`ProvisionedHostClaim` types, and it reconciles hosts that NKE has already
+provisioned so that Cluster API can bootstrap them.
 
 ## Further reading
 
-- `controller/docs/remote-colossus-tilt.md` — local dev on remote hardware
+- `docs/go-workspace.md` — the workspace, and why `vendor/` is committed
+- `controller/docs/authenticating-to-the-api.md` — API authentication
+- `controller/docs/byo-os.md` — bring your own OS image
 - `controller/AGENTS.md` — AI agent development guide for CWE
-- `agent/docs/DESIGN.md` — agent architecture and API surface
-- `agent/docs/SECURITY.md` — agent security context
+- `agent/docs/DESIGN.md` — node agent architecture and API surface
+- `agent/docs/SECURITY.md` — node agent security context
 - `agent/AGENTS.md` — AI agent development guide for the node agent

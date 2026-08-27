@@ -13,17 +13,16 @@
 # controller-test.yml because it needs a live cluster in KUBECONFIG), this
 # suite stands up everything it needs itself: fake node containers
 # (cli/e2e/bootstrap/substrate, `make -C cli nodes-up`) and, since the
-# cli/internal/bootstrapengine port (NKX-14787), a real ephemeral Kind
-# cluster that `nkectl bootstrap site` creates and tears down itself.
+# cli/internal/bootstrapengine, a real ephemeral Kind cluster that
+# `nkectl bootstrap site` creates and tears down itself.
 # ubuntu-latest ships Docker, so no self-hosted runner is needed for that;
 # `kind` itself is not preinstalled and is set up below the same way
 # capd-e2e.yml does it (helm/kind-action, install_only).
 #
 # Runs on the Docker provider (see run.sh) rather than nerdctl: that is the
 # path actually verified end to end on this runner image. nerdctl/containerd
-# rootless+cgroup-v2 provisioning on ubuntu-latest is tracked as a follow-up
-# on NKX-14787, not yet validated here — see run.sh's comment for the exact
-# rollback rationale.
+# rootless+cgroup-v2 provisioning on ubuntu-latest is not yet validated here
+# — see run.sh's comment for the exact rollback rationale.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -36,7 +35,7 @@
 # bootstrap-site code they exercise, so the job is expected to stay green
 # throughout rather than going red until some later change makes it pass.
 #
-# Since cli/internal/cwedeploy (NKX-13889), the job also deploys Postgres,
+# Since cli/internal/cwedeploy, the job also deploys Postgres,
 # Temporal and CWE onto the ephemeral cluster and asserts CWE reports healthy
 # on /readyz -- see run.sh's Stage 2. The CWE image is pulled from GHCR with
 # the built-in GITHUB_TOKEN.
@@ -107,10 +106,21 @@ jobs:
       # out to `helm` directly, so this action installs the binary rather
       # than the Helm chart-testing tooling `helm/kind-action` below would
       # otherwise pull in.
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          {
+            echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
+            echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
+            echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.20.2
+          version: ${{ steps.versions.outputs.helm_version }}
 
       # Same pinned version and install pattern as capd-e2e.yml, for the same
       # reason: install_only, since this suite drives kind itself rather than
@@ -118,8 +128,8 @@ jobs:
       - name: Set up Kind and kubectl
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
         with:
-          version: v0.32.0
-          kubectl_version: v1.36.0
+          version: ${{ steps.versions.outputs.kind_version }}
+          kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
           install_only: true
 
       - name: Log in to GHCR

@@ -1,8 +1,8 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# The plugin image is Chainguard static (no /bin/sh or cp). Mount the ko
-# binary from an Image volume at the kubeconfig exec path.
+# Containerd only supports directory subpaths for Image volumes. Stage the
+# plugin into an emptyDir so the manager still sees the expected executable.
 
 apiVersion: apps/v1
 kind: Deployment
@@ -12,6 +12,9 @@ metadata:
 spec:
   template:
     spec:
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
       volumes:
         - name: spiffe-workload-api
           csi:
@@ -21,6 +24,32 @@ spec:
           image:
             reference: ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.1.0@sha256:550fe75d87ed7a8a2312e27545a18ba21f93c75c68d13188baef1e7f6e77c8e8
             pullPolicy: IfNotPresent
+        - name: spiffe-exec-bin
+          emptyDir: {}
+      initContainers:
+        - name: install-spiffe-exec-plugin
+          image: alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+          imagePullPolicy: IfNotPresent
+          command:
+            - /bin/cp
+            - /plugin/cmd
+            - /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsGroup: 65532
+            runAsNonRoot: true
+            runAsUser: 65532
+          volumeMounts:
+            - name: spiffe-exec-plugin
+              mountPath: /plugin
+              subPath: ko-app
+              readOnly: true
+            - name: spiffe-exec-bin
+              mountPath: /opt/spiffe/bin
       containers:
         - name: manager
           env:
@@ -32,5 +61,7 @@ spec:
               readOnly: true
             - name: spiffe-exec-plugin
               mountPath: /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
-              subPath: ko-app/cmd
+              $patch: delete
+            - name: spiffe-exec-bin
+              mountPath: /opt/spiffe/bin
               readOnly: true

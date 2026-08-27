@@ -4,6 +4,8 @@
 package dbwrapper
 
 import (
+	"context"
+
 	"github.com/google/uuid"
 
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
@@ -11,36 +13,36 @@ import (
 )
 
 type (
-	ClusterKeyMapper  func(db.Cluster) []dbreconcile.Key
-	NodePoolKeyMapper func(db.NodePool) []dbreconcile.Key
-	NodeSetKeyMapper  func(db.NodeSet) []dbreconcile.Key
-	NodeKeyMapper     func(db.Node) []dbreconcile.Key
+	ClusterKeyMapper[T comparable]  func(context.Context, db.Cluster) ([]T, error)
+	NodePoolKeyMapper[T comparable] func(context.Context, db.NodePool) ([]T, error)
+	NodeSetKeyMapper[T comparable]  func(context.Context, db.NodeSet) ([]T, error)
+	NodeKeyMapper[T comparable]     func(context.Context, db.Node) ([]T, error)
 )
 
-func defaultClusterKey(cluster db.Cluster) []dbreconcile.Key {
+func defaultClusterKey(_ context.Context, cluster db.Cluster) ([]dbreconcile.Key, error) {
 	if cluster.ID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(cluster.ID)}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(cluster.ID)}, nil
 }
 
-func defaultNodePoolKey(nodePool db.NodePool) []dbreconcile.Key {
+func defaultNodePoolKey(_ context.Context, nodePool db.NodePool) ([]dbreconcile.Key, error) {
 	if nodePool.ID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodePoolKey(nodePool.ID)}
+	return []dbreconcile.Key{dbreconcile.NodePoolKey(nodePool.ID)}, nil
 }
 
-func defaultNodeSetKey(nodeSet db.NodeSet) []dbreconcile.Key {
+func defaultNodeSetKey(_ context.Context, nodeSet db.NodeSet) ([]dbreconcile.Key, error) {
 	if nodeSet.ID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodeSetKey(nodeSet.ID)}
+	return []dbreconcile.Key{dbreconcile.NodeSetKey(nodeSet.ID)}, nil
 }
 
-func defaultNodeKey(node db.Node) []dbreconcile.Key {
+func defaultNodeKey(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.ID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.NodeKey(node.ID)}
+	return []dbreconcile.Key{dbreconcile.NodeKey(node.ID)}, nil
 }

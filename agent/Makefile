@@ -56,8 +56,9 @@ LDFLAGS += -trimpath -ldflags="-X main.VERSION=$(VERSION)"
 
 ARCHES := amd64 arm64
 
-GOLANGCI_LINT_REPO      ?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-GOLANGCI_LINT_VERSION   ?= v2.12.2
+# golangci-lint pin and bootstrap, shared with every other module.
+include ../make/tool-versions.mk
+include ../make/golangci.mk
 
 BUF_VERSION := v1.65.0
 
@@ -167,15 +168,24 @@ vet: ## Run go vet
 	go vet ./...
 
 .PHONY: lint
-lint: ## Lint source files.
-	go install $(GOLANGCI_LINT_REPO)@$(GOLANGCI_LINT_VERSION)
-	$(GOBIN)/golangci-lint run --timeout 10m --show-stats ./...
+lint: ## Lint source files. (run by the merge gate)
+	@$(GOLANGCI_LINT_RUN) run --timeout 10m --show-stats ./...
 
 # GO_TEST_FLAGS lets CI add -race without the workflow having to restate the
 # test command, so `make test` stays the one definition of what "the tests" are.
 GO_TEST_FLAGS ?=
 
-test: ## Run tests
+# macOS puts TMPDIR under /var/folders, and /var there is a symlink to
+# /private/var. internal/agent refuses a destination whose parent path contains a
+# symlink, so 23 tests failed on a Mac with "invalid destination ...: parent path
+# /var is a symlink". The agent was right, and the tests were only reading the
+# developer's TMPDIR. /private/tmp is the same directory with the symlink already
+# resolved. Linux and CI are unaffected.
+ifeq ($(shell uname -s),Darwin)
+export TMPDIR := /private/tmp
+endif
+
+test: ## Run tests (run by the merge gate)
 	go test $(GO_TEST_FLAGS) ./...
 
 # Sources in this module carry the repository's Apache-2.0 identifier, per the
@@ -217,11 +227,32 @@ clean: ## Remove all build artifacts except protos
 ##@ Build
 .PHONY: build-amd64 build-arm64 build-all build
 
+# cgo is left to Go on a native host and turned off when cross-compiling.
+#
+# On a native Linux runner this is a no-op: cgo stays on, the binary links
+# against libc, and `Depends: libc6` in scripts/control is true. That is what
+# deb.yml relies on by giving each architecture a runner of its own arch.
+#
+# Cross-compiling is where it matters. Go turns cgo off by itself when there is
+# no C toolchain for the target, but an environment that exports CC -- the
+# repository's Flox environment sets CC=clang -- makes it try anyway, and the
+# build then fails against the host SDK:
+#
+#   /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/usr/include/unistd.h:609:6:
+#   note: 'setreuid' declared here
+#   make: *** [Makefile:230: build-amd64] Error 1
+#
+# So `make build` worked on a Mac outside Flox and failed inside it, for the same
+# checkout. Deciding here makes the result the same either way.
+GOHOSTOS   := $(shell go env GOHOSTOS)
+GOHOSTARCH := $(shell go env GOHOSTARCH)
+agent_cgo = $(if $(and $(filter linux,$(GOHOSTOS)),$(filter $(1),$(GOHOSTARCH))),,CGO_ENABLED=0)
+
 build-amd64:
-	GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/linux_amd64/nke-agent ./cmd/agent/main.go
+	$(call agent_cgo,amd64) GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/linux_amd64/nke-agent ./cmd/agent/main.go
 
 build-arm64:
-	GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o bin/linux_arm64/nke-agent ./cmd/agent/main.go
+	$(call agent_cgo,arm64) GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o bin/linux_arm64/nke-agent ./cmd/agent/main.go
 
 build-all: build-amd64 build-arm64
 build: build-all ## Default build = all arches
@@ -270,7 +301,11 @@ define build_deb
 		sed "s/{{VERSION}}/$(DEB_VERSION)/g" $$s > $(ARCH_BUILD_DIR)/etc/systemd/system/$$(basename $$s); \
 	done
 
-	sed -i "s/Architecture: .*/Architecture: $(1)/" $(ARCH_BUILD_DIR)/DEBIAN/control
+	@# Not `sed -i "s/..."`: BSD sed reads the script as the -i backup suffix and
+	@# the filename as the script, so this failed on a stock Mac before
+	@# `make deb-amd64` reached fakeroot.
+	sed "s/Architecture: .*/Architecture: $(1)/" $(ARCH_BUILD_DIR)/DEBIAN/control > $(ARCH_BUILD_DIR)/DEBIAN/control.new
+	mv $(ARCH_BUILD_DIR)/DEBIAN/control.new $(ARCH_BUILD_DIR)/DEBIAN/control
 
 	chmod 755 $(ARCH_BUILD_DIR)/DEBIAN/postinst
 	chmod 755 $(ARCH_BUILD_DIR)/DEBIAN/prerm
@@ -279,22 +314,55 @@ define build_deb
 endef
 
 ##@ Debian Packaging
+
+# The .deb declares `Depends: libc6` (scripts/control), so the binary inside it
+# must link against libc. That happens only when cgo is on, and Go turns cgo off
+# by itself when cross-compiling, because there is no C toolchain for the target.
+#
+# Nothing in this file sets CGO_ENABLED, so what you get is decided by the host:
+# native builds are dynamic and correct, cross builds are static and ship a
+# Depends that is false for them. deb.yml:24-33 records the same thing and solves
+# it by building each architecture on a runner of that architecture.
+#
+# The same build-amd64 and build-arm64 targets also feed the OCI artifact, which
+# wants the opposite: agent-artifact.yml sets CGO_ENABLED=0 and asserts
+# "statically linked". One pair of targets, two callers, opposite requirements,
+# and the Makefile said nothing about either.
+#
+# It says something now. assert_dynamic runs the check CI runs, so a cross build
+# fails here with the reason rather than producing a package whose Depends is
+# wrong. Set AGENT_SKIP_LINKAGE_CHECK=1 to build a deb you know is not for
+# release.
+define assert_dynamic
+	@if [ -z "$(AGENT_SKIP_LINKAGE_CHECK)" ] && command -v file >/dev/null 2>&1; then \
+		linkage=$$(file bin/linux_$(1)/nke-agent); \
+		case "$$linkage" in \
+			*"dynamically linked"*) ;; \
+			*) echo "ERROR: bin/linux_$(1)/nke-agent is not dynamically linked, so"; \
+			   echo "  'Depends: libc6' in scripts/control is wrong for it."; \
+			   echo "  Go disables cgo when cross-compiling, so build the $(1) package"; \
+			   echo "  on a $(1) host, as deb.yml does. Override with"; \
+			   echo "  AGENT_SKIP_LINKAGE_CHECK=1 for a package you will not release."; \
+			   echo "  file said: $$linkage"; \
+			   exit 1 ;; \
+		esac; \
+	fi
+endef
+
 .PHONY: deb-amd64 deb-arm64 deb-all debs
 
-deb-amd64: build-amd64 ## Build the amd64 Debian package
+deb-amd64: build-amd64 ## Build the amd64 Debian package (advisory; not in the merge gate)
+	$(call assert_dynamic,amd64)
 	$(call build_deb,amd64)
 
-deb-arm64: build-arm64 ## Build the arm64 Debian package
+deb-arm64: build-arm64 ## Build the arm64 Debian package (advisory; not in the merge gate)
+	$(call assert_dynamic,arm64)
 	$(call build_deb,arm64)
 
 deb-all: deb-amd64 deb-arm64 ## Build all Debian packages
 debs: deb-all
 
 ##@ Third-party notices
-
-# go-licenses is pinned here rather than taken from PATH so CI and a laptop
-# generate the same file. It installs into ./bin, not the shared GOBIN.
-GO_LICENSES_VERSION ?= v2.0.1
 
 # go-licenses embeds go/packages, and must be built with the *same* toolchain
 # that `go list` actually runs inside this module. A module's `go` directive can
@@ -317,7 +385,7 @@ notices: bin/go-licenses ## Regenerate THIRD_PARTY_NOTICES.md.
 	@bash hack/generate-notices.sh
 
 .PHONY: notices-check
-notices-check: ## Verify THIRD_PARTY_NOTICES.md matches the dependency tree.
+notices-check: ## Verify THIRD_PARTY_NOTICES.md matches the dependency tree. (advisory; not in the merge gate)
 	@echo "- Checking THIRD_PARTY_NOTICES.md is up to date..."
 	@# Cheap gate first, before spending minutes regenerating. git diff reports
 	@# nothing for an untracked path, so an uncommitted notices file would

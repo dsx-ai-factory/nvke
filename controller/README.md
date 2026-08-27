@@ -4,16 +4,25 @@ Orchestrate NKE cluster creation and lifecycle operations.
 
 ## Tool Dependencies
 
-We use Flox to manage repo-scoped command line tools such as `go`, `make`, `kind`, `clusterctl`, `helm`, `ko`, `tilt`, `temporal`, and `spire-agent`, so you'll need to install Flox if you don't have it:
+The Flox environment is **repository-wide** and lives at the repository root, not
+here. One environment serves every module, so the tools this module needs and the
+tools `agent/`, `cli/` and `os-image/` need cannot drift apart. It pins `go`,
+`make`, `golangci-lint`, `kind`, `clusterctl`, `helm`, `ko`, `tilt`, `temporal`,
+`spire-agent`, `actionlint` and `shellcheck` to the versions CI uses.
+
+Install Flox if you do not have it:
 ```bash
 brew install flox colima
 ```
 
-The supported Flox CLI version is pinned in `.flox-cli-version`. If your installed version differs, install the pinned release using the [official Flox installation instructions](https://flox.dev/docs/install-flox/install). The direnv integration refuses to auto-activate a different version so it cannot migrate tracked environment files unexpectedly.
+The supported Flox CLI version is pinned in `.flox-cli-version` at the repository root. If your installed version differs, install the pinned release using the [official Flox installation instructions](https://flox.dev/docs/install-flox/install). The direnv integration refuses to auto-activate a different version so it cannot migrate tracked environment files unexpectedly.
 
-Then activate the Flox environment (this changes your `PATH` automatically, just within that terminal session):
+Then activate it. `flox activate` searches upwards, so this works from here or from
+any other module; the version check needs the root path because that is where the
+pin lives:
 ```bash
-test "$(flox --version)" = "$(cat .flox-cli-version)" && flox activate
+root="$(git rev-parse --show-toplevel)"
+test "$(flox --version)" = "$(cat "${root}/.flox-cli-version")" && flox activate
 ```
 
 You'll want to ensure Flox is activated before running CLI commands related to this repo so you're using the pinned tool versions from this repository instead of whatever happens to be installed globally.
@@ -72,7 +81,6 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 ## Choose a Development Path
 
 - `CAPI + Tilt (recommended)`: bring up a local Kind management cluster with CAPD, then run `tilt up` for an end-to-end local stack.
-- `Remote Colossus Tilt (forge-vms on Linux)`: edit on a Mac, Mutagen-sync to a Colossus (or other x86_64 Linux) host that runs Tilt with real KVM VMs — see [docs/remote-colossus-tilt.md](docs/remote-colossus-tilt.md).
 - `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`.
 - `UI-only development`: port-forward a live CWE deployment and run the local UI dev server against it.
 
@@ -81,7 +89,7 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 This is the recommended local workflow for developing against a Kind management cluster with CAPD.
 Tilt improves the Kubernetes inner dev loop: it rebuilds and redeploys services when code or manifests change, keeps a multi-service local stack coordinated in one place, and gives you a single UI for logs, status, port-forwards, and helper actions.
 
-Full forge-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM. If you edit on a Mac and run Tilt remotely, follow [Remote Colossus Tilt](docs/remote-colossus-tilt.md) instead of the Colima steps below. 
+Full nico-vms (real libvirt VMs / amd64 OS profiles) usually needs an x86_64 Linux host with KVM.
 
 ### First Run
 
@@ -148,9 +156,9 @@ tilt up
 - Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
 - CWE defaults to `SPIRE_SERVER_ADDRESS=host.docker.internal` and `SPIRE_SERVER_PORT=30440`. On Linux Docker, if `host.docker.internal` is not available, override `SPIRE_SERVER_ADDRESS` in `.env.tilt` to your host's gateway IP (for example: `ip -4 route show default | awk '{print $3}'`).
 
-### CAPNICo bare-VM flow (forge-vms)
+### CAPNICo bare-VM flow (nico-vms)
 
-Boots a bare VM on the local `forge-vms` backend through the released CAPNICo
+Boots a bare VM on the local `nico-vms` backend through the released CAPNICo
 provider chart (or, optionally, a controller built from a local checkout — see
 below). The flow runs alongside the normal full stack: `tilt up` still
 brings up postgres, temporal, spire, cert-manager and cwe, and the CAPNICo
@@ -172,11 +180,11 @@ make capi-core-up
 
 ```json
 {
-  "providers": ["capi_core", "forge-vms", "nico-vm"]
+  "providers": ["capi_core", "nico-vms", "nico-vm"]
 }
 ```
 
-   `nico-vm` requires both `capi_core` and `forge-vms`, and is mutually
+   `nico-vm` requires both `capi_core` and `nico-vms`, and is mutually
    exclusive with `nico` (both install a CAPNICo controller into
    `capnico-system` and own the `nico-credentials` secret).
 
@@ -205,7 +213,7 @@ with the optional `capnico_source_dir` key:
 
 ```json
 {
-  "providers": ["capi_core", "forge-vms", "nico-vm"],
+  "providers": ["capi_core", "nico-vms", "nico-vm"],
   "capnico_source_dir": "../../cluster-api-provider-nico"
 }
 ```
@@ -460,10 +468,60 @@ rules keep every service account on the cluster from being an NKE administrator.
 NKE does no authorization: every admitted caller can do everything. That is a
 platform responsibility.
 
+### Local Development
+
+You don't need identity infrastructure to work on this. The cluster's own API
+server is an issuer, and the service account tokens it signs are JWTs, so NKE
+verifies them like any other issuer. The e2e suite takes the same path.
+
+For a step-by-step walkthrough of getting a token and calling the API, including
+what to check when you get an unexpected 401, see
+[Authenticating to the NKE API](docs/authenticating-to-the-api.md).
+
+`tilt up` deploys an enforcing NKE with the config in
+`deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
+and the binding described under RBAC Prerequisite.
+
+```bash
+./hack/nke-auth-demo.sh    # four credentials, prints the status code for each
+```
+
+Mint a token yourself:
+
+```bash
+kubectl create token nke-client -n nke-clients \
+  --audience=https://nke.tilt.local --duration=10m
+```
+
+Permissive mode is a different deployment, not a runtime switch:
+
+```bash
+NKE_PERMISSIVE_MODE=true tilt up
+```
+
 ### Enabling Authentication
 
-Two environment variables, read at startup. Changing either, or the configuration
-file, needs a pod restart.
+For a step-by-step guide to configuring authentication on a deployment you
+operate — writing the config, per-issuer recipes, and moving a running site from
+permissive to enforcing — see
+[Configuring NKE API Authentication](docs/configuring-api-authentication.md).
+
+With the Helm chart, set the `apiAuth` values:
+
+```yaml
+apiAuth:
+  enabled: true
+  permissive: false
+  configMap:
+    create: false               # true to render apiAuth.config into it
+    name: nke-auth-config       # mounted either way
+  clusterIssuerDiscovery: true  # see RBAC Prerequisite below
+```
+
+The chart renders those into the two environment variables NKE reads. Set them
+directly if you deploy without the chart. Both are read at startup, and so is
+the configuration file, so changing any of them needs a pod restart. The chart
+arranges that restart itself -- see *Authentication Configuration* below.
 
 | State | `AUTH_CONFIG_PATH` | `PERMISSIVE_MODE` | Result |
 | --- | --- | --- | --- |
@@ -484,8 +542,100 @@ starting with authentication disabled.
 
 ### Authentication Configuration
 
-One file, mounted at `AUTH_CONFIG_PATH`. The full schema and every validation
-rule live in `internal/auth/config.go`. The shape:
+One file, mounted at `AUTH_CONFIG_PATH` from a ConfigMap named by
+`apiAuth.configMap.name`. Two ways to get one there, and they are alternatives:
+setting `apiAuth.config` without `create`, or `create` without `apiAuth.config`,
+fails the render rather than quietly ignoring one of them.
+
+**The chart renders it** when `apiAuth.configMap.create` is true. Put the
+document under `apiAuth.config`, carrying `audiences` and `issuers` only --
+`apiVersion` and `kind` are supplied by the chart, which ships in lockstep with
+the build that accepts them:
+
+```yaml
+apiAuth:
+  enabled: true
+  configMap:
+    create: true
+    name: nke-auth-config
+  config:
+    # No apiVersion or kind: the chart supplies both, and repeating them here
+    # renders duplicate keys that auth.Load refuses. The render fails if you do.
+    audiences: ["https://nke.example.internal"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256, ES256]
+        admit:
+          serviceAccounts:
+            - namespace: cloud-workflow-engine
+              name: forge-console
+```
+
+So the document below is the shape of the *file*, and `apiAuth.config` takes it
+from its third line on.
+
+This is the option for a GitOps deployment, where the configuration belongs in
+the same values file as everything else and there is nowhere to put a loose
+manifest.
+
+The chart validates only that `audiences` and `issuers` are present. Everything
+else is checked by `internal/auth/config.go` at startup, which is strict and
+names the field at fault -- but it means a bad value is a `CrashLoopBackOff`
+rather than a failed render. Read the pod logs, not the Helm output.
+
+An issuer whose `jwks.uri` sits behind a private CA needs its bundle as a file
+in the same directory, which `extraFiles` puts there. The whole ConfigMap is
+mounted, so every key in it is a file at `/etc/nke/auth`:
+
+```yaml
+apiAuth:
+  configMap:
+    create: true
+    extraFiles:
+      spire-ca.crt: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+  config:
+    issuers:
+      - name: spire
+        jwks:
+          uri: "https://spire.example.internal:30443/keys"
+          caBundlePath: /etc/nke/auth/spire-ca.crt
+```
+
+A CA bundle is a public certificate, not a secret. A `caBundlePath` under
+`/etc/nke/auth` that names a file nothing supplies fails the render, rather than
+leaving the pod to crash-loop on a missing file; a path anywhere else is taken
+to be a volume you mount yourself and is left alone.
+
+**Or create it yourself** and leave `create` false, which is the default. The key
+must be `auth.yaml`:
+
+```bash
+# In the release namespace. The chart mounts the ConfigMap at /etc/nke/auth and
+# points AUTH_CONFIG_PATH at auth.yaml within it.
+kubectl create configmap nke-auth-config -n "${RELEASE_NAMESPACE}" \
+  --from-file=auth.yaml=./auth.yaml
+```
+
+Either way, editing the configuration only takes effect when the pods restart:
+`auth.Load` runs once at startup and Kubernetes does not restart anything when a
+mounted ConfigMap changes. So whenever `apiAuth.enabled` is true the chart
+annotates the Deployment for [Reloader](https://github.com/stakater/Reloader),
+which watches the ConfigMap and rolls the Deployment when it changes -- from any
+source, `kubectl edit` included. Set
+`deploymentAnnotations."configmap.reloader.stakater.com/reload"` to take that
+over; the chart leaves an annotation you set alone. Without Reloader running,
+restart the pods yourself.
+
+`deploy/k8s/nke-auth-dev.yaml` is a working example; the full schema and every
+validation rule live in `internal/auth/config.go`. The shape:
 
 ```yaml
 apiVersion: auth.nke.nvidia.com/v1alpha1
@@ -529,6 +679,52 @@ issuers:
         trustDomain: example.org     # bare host: no spiffe:// scheme, no path
         pathPrefixes: [/nke-e2e/]    # segment-wise; /nke-e2e/ never matches /nke-e2e-evil/
 ```
+
+### RBAC Prerequisite
+
+An issuer pointing at the cluster's own `/openid/v1/jwks` needs NKE's
+ServiceAccount to hold `system:service-account-issuer-discovery`. The endpoint
+requires authentication; an anonymous fetch is refused.
+
+Kubernetes already grants that role to every service account, so a stock cluster
+needs nothing here. The chart still creates its own binding when
+`apiAuth.clusterIssuerDiscovery` is true, which covers clusters that removed or
+narrowed the default.
+
+To create the binding by hand:
+
+```bash
+kubectl create clusterrolebinding nke-service-account-issuer-discovery \
+  --clusterrole=system:service-account-issuer-discovery \
+  --serviceaccount=cloud-workflow-engine:cloud-workflow-engine
+```
+
+### Calling the API from Scripts and CI
+
+`hack/nke-token.sh` prints a bearer token, or nothing when authentication is off,
+so the same call works either way:
+
+```bash
+TOKEN="$(hack/nke-token.sh)"
+curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/sites"
+```
+
+It reads the audience from the running Deployment and mints an audience-scoped
+token through the TokenRequest API, so the caller needs `create` on
+`serviceaccounts/token` for the service account being minted for.
+`deploy/k8s/nke-auth-dev.yaml` grants that locally.
+
+Useful overrides:
+
+| | |
+| --- | --- |
+| `NKE_AUTH_TOKEN` | Use this token and skip discovery. For CI that already holds one. |
+| `NKE_AUDIENCE` | Mint for this audience instead of reading it from the Deployment. |
+| `NKE_TOKEN_SERVICE_ACCOUNT`, `NKE_TOKEN_NAMESPACE` | Mint for a different identity. |
+| `NKE_TOKEN_TTL` | Requested lifetime. Defaults to 30m. |
+
+The bootstrap scripts under `hack/` call it themselves, so `create-capd-cluster.sh`
+and friends keep working whether authentication is on or off.
 
 ### Rejections and Status Codes
 

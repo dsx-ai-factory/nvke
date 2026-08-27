@@ -21,8 +21,14 @@ ifeq (,$(GOBIN))
 GOBIN = $(shell go env GOPATH)/bin
 endif
 
-GOLANGCI_LINT_REPO	?= github.com/golangci/golangci-lint/v2/cmd/golangci-lint
-GOLANGCI_LINT_VERSION	?= v2.12.2
+# golangci-lint pin and bootstrap, shared with every other module.
+#
+# Empty, not "off", because this module lints against the root vendor/ tree, so
+# the workspace stays on. .golangci.yml says the same with
+# modules-download-mode: vendor, and lint.yml:92 does the same for this job.
+GOLANGCI_LINT_GOWORK :=
+include ../make/tool-versions.mk
+include ../make/golangci.mk
 
 # Image URL to use all building/pushing image targets
 IMG_NAME ?= nvcr.io/j7sbcjl3qgta/cloud-workflow-engine
@@ -53,13 +59,12 @@ help: ## Display this help.
 ##@ Build
 
 .PHONY: lint
-lint: ## Lint source files.
-	go install $(GOLANGCI_LINT_REPO)@$(GOLANGCI_LINT_VERSION)
-	$(GOBIN)/golangci-lint run --timeout 20m --concurrency 4 --max-same-issues 0 --max-issues-per-linter 0 ./...
+lint: ## Lint source files. (run by the merge gate)
+	@$(GOLANGCI_LINT_RUN) run --timeout 20m --concurrency 4 --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 .PHONY: license
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'forge-vms/ui/vendor/**' -ignore 'forge-vms/test/integration/testutil/testdata/**' -ignore 'forge-vms/.dev/**' -ignore 'deploy/charts/**' .
+	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-vms/ui/vendor/**' -ignore 'nico-vms/test/integration/testutil/testdata/**' -ignore 'nico-vms/.dev/**' -ignore 'deploy/charts/**' .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check
@@ -92,7 +97,7 @@ generate-api: ## Regenerate the OpenAPI client, server and models.
 # un-pinned/wrong generator or an openapi.yaml edit that was not regenerated.
 # Expected to be run on a clean working directory.
 .PHONY: generate-check
-generate-check: generate-api ## Verify generated API code is up to date.
+generate-check: generate-api ## Verify generated API code is up to date. (run by the merge gate)
 	@if ! git diff --exit-code -- api/models.gen.go api/server.gen.go api/client.gen.go > /dev/null 2>&1; then \
 		echo "Generated API code is out of date. Please run 'make generate' locally and commit the changes."; \
 		echo "Out-of-date files:"; \
@@ -101,8 +106,10 @@ generate-check: generate-api ## Verify generated API code is up to date.
 	fi
 
 .PHONY: build
-build:
-	go build -ldflags "-X github.com/NVIDIA/nke/controller/internal/version.Version=${BUILD_VERSION}" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
+# -buildvcs=false because the version comes from the -X ldflag below. See the note
+# on work-check-offline in the root Makefile.
+build: ## Build cloud-workflow-engine into bin/.
+	go build -buildvcs=false -ldflags "-X github.com/NVIDIA/nke/controller/internal/version.Version=${BUILD_VERSION}" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
 
 .PHONY: fmt
 fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).
@@ -120,14 +127,14 @@ GO_TEST_FLAGS ?=
 GO_COVER_MODE ?= atomic
 
 .PHONY: test
-test: ## Execute unit tests (excludes integration tests).
+test: ## Execute unit tests (excludes integration tests). (run by the merge gate)
 	# coverage.txt is kept: `go tool cover` reads it, and producing it is free.
 	# The cobertura.xml conversion that used to follow is gone. It existed for
 	# GitLab's coverage visualisation, and that pipeline is gone -- no
 	# .gitlab-ci.yml, no workflow reading either file, and both are gitignored.
 	# It cost about 9 seconds of download and compile per run on a cold cache,
 	# and pulled golang.org/x/tools, 15 MB, to convert one file to XML.
-	# forge-vms already produces a coverprofile without it.
+	# nico-vms already produces a coverprofile without it.
 	#
 	# integration-test/ is behind the `integration_test` build tag, so
 	# `go list ./...` no longer needs filtering here. The old grep matched
@@ -143,6 +150,24 @@ test-integration: ## Execute tests against a running CWE deployment.
 test-health: ## Run the health-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
 	$(MAKE) test-e2e E2E_TIMEOUT=10m ARGS='--label-filter=health'
 
+# The authentication specs. Both need deploy/k8s/nke-auth-dev.yaml applied and
+# an enforcing NKE; the chart binds the JWKS read permission.
+#
+# The SPIRE spec carries both labels, so test-authn runs it too; it skips itself
+# with a message naming deploy/k8s/nke-spire-client.yaml when that scaffolding
+# is absent. test-authn-spire is the way to run only that one.
+#
+# The permissive specs have no target: they need an NKE deployed with
+# PERMISSIVE_MODE=true, which is a different deployment. Run them against one
+# with `make test-e2e ARGS='--label-filter=authn-permissive'`.
+.PHONY: test-authn
+test-authn: ## Run the authn-labeled subset of the test/e2e suite against the cluster in KUBECONFIG.
+	$(MAKE) test-e2e E2E_TIMEOUT=20m ARGS='--label-filter=authn'
+
+.PHONY: test-authn-spire
+test-authn-spire: ## Run the SPIRE JWT-SVID authentication spec against the cluster in KUBECONFIG.
+	$(MAKE) test-e2e E2E_TIMEOUT=20m ARGS='--label-filter=authn-spire'
+
 .PHONY: test-integration-teleport
 test-integration-teleport: ## Execute Teleport client integration tests (requires valid credentials).
 	@bash -c '[ -f .env.local ] && set -a && source .env.local && set +a; \
@@ -151,15 +176,15 @@ test-integration-teleport: ## Execute Teleport client integration tests (require
 E2E_DIR := test/e2e
 E2E_TIMEOUT ?= 2h
 GINKGO_VERSION ?= v2.27.2
-# Ginkgo CLI flags, e.g. ARGS='--label-filter="forge-vms && happy-path"'
+# Ginkgo CLI flags, e.g. ARGS='--label-filter="nico-vms && happy-path"'
 ARGS ?=
 
 .PHONY: test-e2e
-test-e2e: ## Run all NKE e2e tests; optional ARGS forwards ginkgo flags Example: make test-e2e ARGS='--label-filter="forge-vms && happy-path"'
+test-e2e: ## Run all NKE e2e tests; optional ARGS forwards ginkgo flags Example: make test-e2e ARGS='--label-filter="nico-vms && happy-path"'
 	cd $(E2E_DIR) && go run github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION) run -v --timeout=$(E2E_TIMEOUT) $(ARGS) .
 
 .PHONY: test-e2e-happy-path
-test-e2e-happy-path: ## Run CAPD and Forge VMs happy-path e2e tests
+test-e2e-happy-path: ## Run CAPD and NICo VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
 .PHONY: test-e2e-capd
@@ -170,13 +195,13 @@ test-e2e-capd: ## Run CAPD happy-path e2e tests
 test-e2e-capd-local: ## Bootstrap Colima and run all CAPD e2e tests with local CWE and agent source
 	./hack/local-backend-e2e.sh
 
-.PHONY: test-e2e-forge-vms
-test-e2e-forge-vms: ## Run Forge VMs happy-path e2e tests
-	make test-e2e ARGS='--label-filter="forge-vms && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
+.PHONY: test-e2e-nico-vms
+test-e2e-nico-vms: ## Run NICo VMs happy-path e2e tests
+	make test-e2e ARGS='--label-filter="nico-vms && happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
-.PHONY: test-e2e-forge-vms-os-profiles
-test-e2e-forge-vms-os-profiles: ## Run the opt-in Forge VMs OS profile provisioning matrix
-	$(MAKE) test-e2e E2E_TIMEOUT=6h ARGS='--label-filter="forge-vms && os-profiles"'
+.PHONY: test-e2e-nico-vms-os-profiles
+test-e2e-nico-vms-os-profiles: ## Run the opt-in NICo VMs OS profile provisioning matrix
+	$(MAKE) test-e2e E2E_TIMEOUT=6h ARGS='--label-filter="nico-vms && os-profiles"'
 
 .PHONY: e2e-gofail
 e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
@@ -292,7 +317,6 @@ run: ## Runs the worker.
 debug: ## Runs the worker with the delve debugger (attach on :12345).
 	dlv debug --headless --listen=:12345 ./cmd/worker/main.go
 
-GO_LICENSES_VERSION ?= v2.0.1
 # Installed into ./bin rather than the shared GOBIN so a stale global binary
 # cannot leak in — see the toolchain note below for why that matters.
 GO_LICENSES         ?= $(CURDIR)/bin/go-licenses
@@ -366,7 +390,7 @@ notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released wo
 # Not declared as depending on `notices`: the tracked-file gate below is cheap
 # and must run before spending minutes regenerating.
 .PHONY: notices-check
-notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date.
+notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in the merge gate)
 	@# git diff reports nothing for an untracked path, so without this an
 	@# uncommitted or accidentally-removed notices file would pass silently.
 	@git ls-files --error-unmatch THIRD_PARTY_NOTICES.md > /dev/null 2>&1 \

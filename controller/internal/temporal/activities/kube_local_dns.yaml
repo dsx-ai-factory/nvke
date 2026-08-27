@@ -50,19 +50,17 @@ data:
         }
         reload
         loop
-        bind 169.254.20.10 10.96.0.10
         forward . __PILLAR__CLUSTER__DNS__ {
                 force_tcp
         }
         prometheus :9253
-        health 169.254.20.10:8080
+        health :8080
         }
     in-addr.arpa:53 {
         errors
         cache 30
         reload
         loop
-        bind 169.254.20.10 10.96.0.10
         forward . __PILLAR__CLUSTER__DNS__ {
                 force_tcp
         }
@@ -73,7 +71,6 @@ data:
         cache 30
         reload
         loop
-        bind 169.254.20.10 10.96.0.10
         forward . __PILLAR__CLUSTER__DNS__ {
                 force_tcp
         }
@@ -84,7 +81,6 @@ data:
         cache 30
         reload
         loop
-        bind 169.254.20.10 10.96.0.10
         forward . __PILLAR__UPSTREAM__SERVERS__
         prometheus :9253
         }
@@ -111,21 +107,25 @@ spec:
       creationTimestamp: null
       labels:
         k8s-app: node-local-dns
+        dns-role: cluster-dns
     spec:
       containers:
         - args:
             - -localip
-            - 169.254.20.10,10.96.0.10
+            - 0.0.0.0
             - -conf
             - /etc/Corefile
             - -upstreamsvc
             - kube-dns-upstream
-          image: registry.k8s.io/dns/k8s-dns-node-cache:1.26.8
+            - -setupinterface=false
+            - -setupiptables=false
+          # Pinned by multi-arch index digest: the tag stays readable, the pull
+          # resolves by digest. Bump the tag and the digest together.
+          image: registry.k8s.io/dns/k8s-dns-node-cache:1.26.8@sha256:bc6e64e2c85956af2fcc0aa720086410d41b4f31f378c9a92646fecc85cd4739
           imagePullPolicy: IfNotPresent
           livenessProbe:
             failureThreshold: 3
             httpGet:
-              host: 169.254.20.10
               path: /health
               port: 8080
               scheme: HTTP
@@ -148,6 +148,8 @@ spec:
             requests:
               cpu: 25m
               memory: 5Mi
+            limits:
+              memory: 128Mi
           securityContext:
             capabilities:
               add:
@@ -162,11 +164,12 @@ spec:
             - mountPath: /etc/kube-dns
               name: kube-dns-config
       dnsPolicy: Default
-      hostNetwork: true
       priorityClassName: system-node-critical
       restartPolicy: Always
       schedulerName: default-scheduler
-      securityContext: {}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccount: node-local-dns
       serviceAccountName: node-local-dns
       terminationGracePeriodSeconds: 30
@@ -220,3 +223,29 @@ spec:
       targetPort: 9253
   selector:
     k8s-app: node-local-dns
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    prometheus.io/port: "9153"
+    prometheus.io/scrape: "true"
+  labels:
+    k8s-app: kube-dns-metrics
+    kubernetes.io/cluster-service: "true"
+  name: kube-dns-metrics
+  namespace: kube-system
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - name: metrics
+      port: 9153
+      protocol: TCP
+      targetPort: 9153
+  selector:
+    k8s-app: kube-dns
+  sessionAffinity: None
+  type: ClusterIP

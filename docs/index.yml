@@ -1,0 +1,30 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+navigation:
+  - page: Overview
+    path: overview.md
+  - page: Key Concepts
+    path: concepts.md
+  - page: Architecture
+    path: architecture.md
+
+  - section: Site Controller Bootstrap
+    contents:
+      - page: Overview
+        path: site-bootstrap/overview.md
+      - page: Installation
+        path: site-bootstrap/installation.md
+      - page: Configuration
+        path: site-bootstrap/configuration.md
+      - page: Deploy Repository
+        path: site-bootstrap/deploy-repository.md
+      - page: Pre-Provisioned Nodes
+        path: site-bootstrap/pre-provisioned-nodes.md
+      - page: Custom Base OS
+        path: site-bootstrap/custom-base-os.md
+
+  - section: Tenant Clusters
+    contents:
+      - page: Node Lifecycle
+        path: tenant-clusters/node-lifecycle.md

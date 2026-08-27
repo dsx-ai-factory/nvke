@@ -301,7 +301,7 @@ type CreateClusterControlPlaneConfig struct {
 
 // CreateClusterRequest defines model for CreateClusterRequest.
 type CreateClusterRequest struct {
-	// Name The name of the cluster. Must be a lowercase DNS label so CWE can derive the `cluster-<name>` namespace for CAPI resources.
+	// Name The name of the cluster. Must be a lowercase DNS label, because CWE derives the names of the cluster's CAPI resources and its node names from it.
 	Name string `json:"name"`
 
 	// OrgID The ID of the NGC organization that owns the cluster

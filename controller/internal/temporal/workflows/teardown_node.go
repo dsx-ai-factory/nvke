@@ -671,7 +671,7 @@ func runTeardownHooks(ctx workflow.Context, input TeardownNodeInput, hookType Ho
 	// be satisfied: evict-cnpg-node blocks on PVCs whose owning pod will never
 	// terminate because the kubelet is gone. Bound the retries so the tolerate
 	// branch below is actually reachable instead of the workflow spinning
-	// forever (NKX-13160).
+	// forever.
 	maximumAttempts := int32(0)
 	if input.ForceUnreachable {
 		maximumAttempts = forceUnreachableHookMaxAttempts

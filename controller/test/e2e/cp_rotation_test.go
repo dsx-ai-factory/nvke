@@ -15,8 +15,8 @@ import (
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
 )
 
-// validateSingleNodeControlPlaneRotation exercises the primary NKX-13160 use
-// case: manual single-node control-plane rotation. On a cluster whose only
+// validateSingleNodeControlPlaneRotation exercises the manual single-node
+// control-plane rotation path. On a cluster whose only
 // control-plane node is A, it stages a replacement B (scale to two), then
 // force-removes A with the etcd single-voter override.
 //
@@ -24,7 +24,7 @@ import (
 // takes etcd from two voters to one. CWE's etcd-member-remove dry-run reports
 // the single-voter condition (exit 3) and blocks the teardown unless
 // AllowSingleVoter is set. (Deleting the *last* CP would instead skip live
-// removal entirely per NKX-13735, so it does not exercise this path.)
+// removal entirely when the last joined CP is removed, so it does not exercise this path.)
 //
 // This asserts only the positive path — that the override lets the rotation
 // complete. The negative (blocked without the flag) is covered deterministically

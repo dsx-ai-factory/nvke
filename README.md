@@ -49,19 +49,54 @@ What distinguishes it from a generic CAPI distribution:
 | Directory | What it is |
 |---|---|
 | `controller/` | The control plane. REST API and UI, durable Temporal workflows, cluster and node inventory, and the infrastructure provider integrations. |
+| `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NKE provisions before CAPI bootstraps them. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
 | `cli/` | `nkectl`, the command-line interface. Validates a site inventory and drives bootstrap. |
-| `controller/forge-vms/` | VM lifecycle service used by the development and test environments. |
+| `controller/nico-vms/` | VM lifecycle service used by the development and test environments. |
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 
-**Nine Go modules**, tied together by a workspace at the repository root, each
+**Ten Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links six binaries: `agent`,
 `cloud-workflow-engine`, `nkectl`, `capd-reboot-controller`, `nico-mock` and
 `nke-os-image-check`.
 See [docs/go-workspace.md](docs/go-workspace.md) for how the workspace fits
 together and why `vendor/` is committed.
+
+What each binary is, and where it ends up running:
+
+| Binary | Module | What it does | Runs on |
+|---|---|---|---|
+| `cloud-workflow-engine` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The site controller cluster |
+| `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
+| `nkectl` | `cli/` | Validates a site inventory and drives bootstrap | Your machine |
+| `nke-os-image-check` | `os-image/` | Checks a node image against the contract in `os-image/SPEC.md` | Your machine, or an image build |
+| `capd-reboot-controller` | `controller/hack/capd-reboot-controller/` | Test helper that reboots CAPD machines | Test clusters |
+| `nico-mock` | `controller/hack/nico-mock/` | Stand-in for the NICo provider, so tests need no real hardware | Your machine |
+
+### Platforms
+
+Development works on Linux and on Apple Silicon. Most of CI is Linux amd64, so
+that is the platform with the most coverage. Packaging and image builds also run
+on Linux arm64 runners: `deb.yml` and `agent-deb-publish.yml` build the Debian
+packages on `ubuntu-24.04-arm`, and `image-nvcr.yml` builds images on
+`linux-arm64-cpu16`.
+
+There is no macOS runner, so nothing in CI exercises macOS. The Flox environment
+targets `x86_64-linux`, `aarch64-linux` and `aarch64-darwin`, which leaves Intel
+macOS out.
+
+The agent is built for Linux on both architectures, `linux/amd64` and
+`linux/arm64`, because that is where the agent runs. It is not built for macOS at
+all.
+
+The end-to-end path is the part that is amd64 only. `backend-e2e.yml` runs on
+`linux-amd64-cpu16`, and the bundles `controller/hack/ci/prepare-capd-bundles.sh`
+fetches are amd64 Linux binaries, so the CAPD end-to-end path does not run on
+Apple Silicon.
+
+Flox is offered, not required. Every target runs from whatever is on your `PATH`.
 
 ## Getting started
 
@@ -79,6 +114,10 @@ make test
 make lint
 ```
 
+The agent runs on cluster nodes, so `make build` cross-compiles it for Linux on
+amd64 and arm64 and writes to `agent/bin/linux_*`. The tests and the lint run
+against your own machine, but on macOS the binaries it produces will not.
+
 **Build and test the controller:**
 
 ```bash
@@ -88,12 +127,21 @@ make test           # unit tests
 make lint
 ```
 
-The controller pins its toolchain with [Flox](https://flox.dev/). If you have it
-installed, `flox activate` inside `controller/` before running the above; it is
-optional but keeps your toolchain matching CI.
+The repository pins its toolchain with [Flox](https://flox.dev/) in an
+environment at the root that covers every module. `flox activate` gives you the
+versions CI uses, including the GNU Make 4 that macOS lacks. It is optional, and
+every target runs from whatever is on your `PATH` without it.
 
-For the full local development setup, including the end-to-end suites, see
-**[docs/getting-started.md](docs/getting-started.md)**.
+For building, testing and what to run before opening a pull request, see
+**[docs/development.md](docs/development.md)**. For the end-to-end suites and the
+wider local setup, see **[docs/getting-started.md](docs/getting-started.md)**.
+[docs/README.md](docs/README.md) indexes everything else.
+
+The controller has its own guide in
+[controller/README.md](controller/README.md). For a worked `nkectl` input, see
+[cli/examples/inventory.yaml](cli/examples/inventory.yaml), which describes a
+site, and [cli/examples/capd-cluster.yaml](cli/examples/capd-cluster.yaml),
+which requests a cluster.
 
 ## Requirements
 
@@ -101,7 +149,8 @@ For the full local development setup, including the end-to-end suites, see
 |---|---|
 | Go | 1.26+ |
 | Docker | 24+ |
-| Flox | optional, for a reproducible controller toolchain |
+| GNU Make | 4.0+ |
+| Flox | optional, for a reproducible repository toolchain |
 
 Running NKE against real infrastructure additionally requires hosts already
 booted on an NKE-compatible OS image with the agent installed. NKE does not
@@ -113,7 +162,7 @@ publish OS images; it publishes the recipes for building them.
 |---|---|
 | [docs/architecture.md](docs/architecture.md) | System overview — modules, data flows, deployment model |
 | [docs/getting-started.md](docs/getting-started.md) | Local development setup for the controller and the agent |
-| [docs/branch-protection-settings.md](docs/branch-protection-settings.md) | Admin guide to the required GitHub branch protection rules |
+| [docs/branch-protection-settings.md](docs/branch-protection-settings.md) | What `main` requires of a pull request, and which checks block a merge |
 
 Module-specific documentation lives alongside the code, in `controller/docs/`,
 `agent/docs/` and the `AGENTS.md` files.

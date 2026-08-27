@@ -23,7 +23,13 @@ into three categories:
 ### Prerequisites
 
 - Go 1.26+ (`go version`) — the floor is set by `go.work`, not by any single module
-- [Flox](https://flox.dev/) for reproducible toolchains inside `controller/`
+- GNU Make 4.0+ (`make --version`) — ⚠️ **macOS ships 3.81, which cannot run the
+  root `Makefile`.** Run `brew install make`, which installs it as `gmake`, then
+  read every `make` below as `gmake`. Setting `alias make=gmake` in your shell is
+  the least error-prone way to do that. The module Makefiles work with either
+  version.
+- [Flox](https://flox.dev/), optional, for the pinned toolchain. The environment
+  is at the repository root and covers every module, GNU Make included.
 - Docker (for local integration tests)
 - A running Temporal server (for controller development)
 
@@ -40,46 +46,70 @@ cd nke
 make build   # builds agent, controller, nkectl, and helper binaries
 ```
 
-The repository holds nine Go modules, and `go.work` ties together **all nine**.
+The repository is a Go workspace, and `go.work` ties **every module** together.
 `make build` compiles every one of them, so you do not need to build any module
-from its own directory. `controller/` and `controller/forge-vms` used to be
-outside the workspace because they needed `gitlab-master.nvidia.com`; #76
+from its own directory. `controller/` and `controller/nico-vms` used to be
+outside the workspace because they had internal dependencies; #76
 removed that dependency and they joined it.
 
 ⚠️ **After changing any `go.mod` or `go.sum`, run `make work-sync` and commit
 `go.work` and `go.work.sum` with your change.** Nothing updates them for you,
 and CI fails on a stale workspace. See [`docs/go-workspace.md`](docs/go-workspace.md).
 
-**Controller (cloud-workflow-engine):**
+Work on a single module from the root, so you never have to remember which
+directory you are in:
 
 ```bash
-cd controller
-flox activate
-make build   # builds ./bin/cloud-workflow-engine
-make test    # unit tests with coverage
-make lint    # golangci-lint
+make -C controller build test lint
+make -C agent build test lint
 ```
 
-**Agent (nke-agent):**
-
-```bash
-cd agent
-make build   # builds for amd64 and arm64
-make test    # unit tests
-make lint    # golangci-lint
-```
+Every module answers the same four verbs — `build`, `test`, `lint`, `fmt` — and
+`make -C <module> help` lists the rest.
 
 ### Running tests
 
 ```bash
-# Unit tests (no external dependencies):
-cd controller && flox activate -- make test
-cd agent && make test
-
-# Integration tests (requires a running CWE deployment):
-cd controller/integration-test
-CWE_API_URL=http://localhost:8080/api go test -v -timeout=3h
+make test                      # every module's own suite
+make -C controller test        # one module
+make -C controller test-integration   # needs a running CWE deployment
 ```
+
+`make test-integration` is the correct entry point for the integration suite. It
+sits behind the `integration_test` build tag, so a plain `go test` in that
+directory reports "build constraints exclude all Go files" and runs nothing.
+
+On macOS the agent suite needs no special handling: `agent/Makefile` points
+`TMPDIR` at `/private/tmp`, because the default sits under `/var`, which is a
+symlink that the agent's own path checks reject.
+
+### Before you open a pull request
+
+```bash
+make preflight
+```
+
+It lints and tests the modules you actually changed, and adds the workspace and
+licence checks when your change touched what they cover. See
+[`docs/development.md`](docs/development.md) for what it does not cover.
+
+### Local development equals CI
+
+The same tools, at the same versions, run locally and in CI.
+
+**What.** Tool versions live in `make/versions.mk`, and the workflows read that
+file rather than repeating a number. `make show-versions` prints the set. The
+Flox environment at the repository root pins the same versions, and every target
+runs from whatever is on your `PATH` if you would rather not use Flox.
+
+**Why.** "Works on my machine" wastes a CI round trip to learn something a local
+run could have told you. This holds only while your toolchain matches: a
+golangci-lint older than the pin will silently miss findings that CI reports, so
+compare `make show-versions` with what `make help` says you are actually running.
+
+It does not hold everywhere, and `docs/development.md` lists the exceptions. The
+largest is `govulncheck`, which CI runs under a different Go than the workspace
+asks for.
 
 ## Code contributions
 

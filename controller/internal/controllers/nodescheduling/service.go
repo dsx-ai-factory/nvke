@@ -99,6 +99,31 @@ func (s *Service) ScheduleCAPIInfraNodes(ctx context.Context, _ *slog.Logger, pe
 // ScheduleForgeNodes starts ProvisionNode workflows up to the currently
 // available Forge and network capacity. When capacity or external provider
 // readiness is unavailable, it records that on pending nodes and requeues.
+// ForgeScheduleOptions tunes one ScheduleForgeNodes pass.
+type ForgeScheduleOptions struct {
+	// Account is the budget this pass draws from and debits, shared across the
+	// calling scheduler's reconciles so node pools of one instance type do not
+	// each see the whole of it. nil disables cross-pool accounting.
+	//
+	// Control-plane and worker passes must not share one account. A
+	// nodepool-managed control-plane node stays Pending while its provision
+	// workflow runs, so the reservation ledger counts it; if its own pool also
+	// debited the worker account, workers would subtract it a second time. With
+	// 3 free instances, 1 pending control-plane node and 2 pending workers that
+	// costs a worker its turn -- one starts where both should have.
+	Account *CapacityAccount
+
+	// SchedulingControlPlane marks a pass that is itself scheduling
+	// control-plane nodes, which suppresses the control-plane reservation.
+	//
+	// Without it such a pass reserves against the very nodes it is scheduling:
+	// the ledger is site-wide over Pending control-plane nodes, so a lone
+	// control-plane node with one free instance computes
+	// splitForgeSchedulable(1, 1, 1) = 0 and blocks itself forever. That is the
+	// exact outage this feature exists to prevent.
+	SchedulingControlPlane bool
+}
+
 func (s *Service) ScheduleForgeNodes(
 	ctx context.Context,
 	logger *slog.Logger,
@@ -106,6 +131,7 @@ func (s *Service) ScheduleForgeNodes(
 	pendingNodes []db.Node,
 	instanceTypeID uuid.UUID,
 	forgePlacement ForgePlacementSpec,
+	opts ForgeScheduleOptions,
 ) (reconcile.Result, error) {
 	if len(pendingNodes) == 0 {
 		logger.Debug("No pending nodes to schedule")
@@ -133,11 +159,47 @@ func (s *Service) ScheduleForgeNodes(
 		"availableNetworkCapacity", availableNetworkCapacity,
 	)
 
-	numberToSchedule := min(int(*forgeInstanceType.AllocationStats.UnusedUsable), availableNetworkCapacity, len(pendingNodes))
+	// Draw from the tick budget rather than the live reading where an account is
+	// in play: Forge's unused-usable count does not drop until an instance create
+	// lands, so a pool scheduled moments ago is still invisible here.
+	forgeCapacity, networkCapacity := opts.Account.remaining(
+		instanceTypeID, forgePlacement,
+		int(*forgeInstanceType.AllocationStats.UnusedUsable), availableNetworkCapacity,
+	)
+
+	// Built fresh on every pass on purpose: a control-plane node stays Pending
+	// until its Forge instance create succeeds, so this picks up types just
+	// stamped onto type-less nodes and excludes nodes that claimed an instance
+	// earlier.
+	var cpReserved int
+	reserved, err := map[uuid.UUID]cpReservation(nil), error(nil)
+	if !opts.SchedulingControlPlane {
+		reserved, err = s.controlPlaneReservedInstanceTypes(ctx, cluster.SiteID)
+	}
+	if err != nil {
+		// Fail open. A transient DB failure must not wedge worker provisioning
+		// across the whole site.
+		logger.Error("Failed to build control plane instance type reservations, scheduling without control-plane priority",
+			"error", err, "siteID", cluster.SiteID)
+	} else if res, ok := reserved[instanceTypeID]; ok {
+		cpReserved = res.count
+		logger = logger.With(
+			"controlPlaneReserved", res.count,
+			"controlPlaneSampleNodeID", res.sampleNodeID,
+			"controlPlaneSampleClusterID", res.sampleClusterID,
+		)
+	}
+
+	capacity := min(forgeCapacity, networkCapacity)
+	numberToSchedule, deferredForControlPlane := splitForgeSchedulable(capacity, len(pendingNodes), cpReserved)
 	logger = logger.With(
 		"pendingNodeCount", len(pendingNodes),
 		"numberToSchedule", numberToSchedule,
+		"deferredForControlPlane", deferredForControlPlane,
 	)
+	if deferredForControlPlane > 0 {
+		logger.Info("Deferring worker nodes so pending control-plane nodes can claim capacity")
+	}
 
 	schedulableNodes := pendingNodes[:numberToSchedule]
 	unschedulableNodes := pendingNodes[numberToSchedule:]
@@ -153,7 +215,14 @@ func (s *Service) ScheduleForgeNodes(
 		)
 	}
 
+	// Debited after the starts, so a workflow that failed to start leaves its
+	// capacity available to the next pool.
+	opts.Account.reserve(instanceTypeID, forgePlacement, len(schedulableNodes))
+
 	for _, unschedulableNode := range unschedulableNodes {
+		// Deliberately generic. This message reaches tenants through the public
+		// API, and the reservation is site-wide across clusters, so naming the
+		// blocking control-plane node would disclose another tenant's resources.
 		msg := fmt.Sprintf("Forge resources unavailable: pending since %s", unschedulableNode.CreatedAt.Format(time.RFC3339))
 		if err := s.updateNodeCondition(ctx, unschedulableNode, msg); err != nil {
 			logger.Error("Failed to update unschedulable node condition", "error", err, "nodeID", unschedulableNode.ID)

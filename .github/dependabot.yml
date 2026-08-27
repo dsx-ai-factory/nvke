@@ -1,7 +1,7 @@
 version: 2
 updates:
   # Go modules anywhere in the tree. This is a nested multi-module monorepo
-  # (agent, controller, controller/api, controller/forge-vms,
+  # (agent, controller, controller/api, controller/nico-vms,
   # controller/test/e2e, controller/hack/*, ...), so the recursive "/**/*" glob
   # is required — "/*" only matches depth-1 dirs and would miss the nested modules.
   # New components with their own go.mod are picked up automatically.
@@ -97,6 +97,14 @@ updates:
       docker-images:
         patterns:
           - "*"
+    ignore:
+      # Keep the Go minor version fixed. Patch bumps such as 1.26.6 to 1.26.7
+      # still come through. A minor bump such as 1.26 to 1.27 also needs the
+      # go directive in every go.mod to move, so we do that by hand.
+      - dependency-name: "golang"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
     # Note: golang RC tags (e.g. golang:1.27rc1) do not follow semver, so
     # Dependabot's `versions` filter cannot match them with a range expression.
     # Close any RC-bump PRs manually; they resolve on their own once the stable

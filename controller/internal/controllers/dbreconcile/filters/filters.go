@@ -4,6 +4,8 @@
 package filters
 
 import (
+	"github.com/google/uuid"
+
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
@@ -31,6 +33,7 @@ func (f NodeSet) Matches(_ db.NodeSet) bool {
 }
 
 type Node struct {
+	ClusterID    *uuid.UUID
 	ControlPlane *bool
 	TpmEKPubHash *string
 
@@ -44,6 +47,9 @@ type Node struct {
 }
 
 func (f Node) Matches(node db.Node) bool {
+	if f.ClusterID != nil && node.ClusterID != *f.ClusterID {
+		return false
+	}
 	if f.ControlPlane != nil && node.ControlPlane != *f.ControlPlane {
 		return false
 	}

@@ -9,7 +9,7 @@
 // containers end to end: it derives the node image, starts them, waits for
 // the agent, and destroys them afterwards.
 //
-// Modelled on CWE's own preprovisioned-provider E2E substrate
+// Modelled on CWE's own provisioned-provider E2E substrate
 // (test/e2e/internal/substrate in the CWE repo), with two differences that
 // follow from nkectl having no existing cluster to attach to:
 //

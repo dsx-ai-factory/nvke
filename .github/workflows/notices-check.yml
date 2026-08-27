@@ -55,11 +55,7 @@ concurrency:
   # workflows here.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# This workflow works one module at a time, as it did before the repository
-# gained a root go.work. GOWORK=off keeps it that way. It is also required:
-# actions/setup-go pins GOTOOLCHAIN=local, and the Go version installed from a
-# module's go.mod is older than the one go.work asks for, so leaving the
-# workspace on fails with "go.work requires go >= 1.26.0".
+# Module targets set their own workspace mode.
 env:
   GOWORK: "off"
 
@@ -77,12 +73,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # go.work, not agent/go.mod. setup-go pins GOTOOLCHAIN=local, so the
-      # installed Go is the only one available -- and the controller and nkectl
-      # steps below clear GOWORK, which puts go.work's floor in force. Installing
-      # from agent/go.mod would give an older Go and fail those steps with
-      # "go.work requires go >= 1.26.5". The workspace Go satisfies every module,
-      # including agent, so one version serves all three.
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -92,51 +82,6 @@ jobs:
             go.work.sum
             **/go.sum
 
-      # All three redistributed binaries are covered. This job used to check the
-      # agent alone, because go-licenses could not resolve the controller's
-      # graph with GOWORK=off: the module would have had to download the
-      # INTERNAL cluster-api-provider-nico.
-      #
-      # What runs now is the alternative the old comment called "worth trying;
-      # not attempted here" -- let go-licenses read the committed vendor tree
-      # and download nothing. Two things had to be true for that to work.
-      #
-      # First, go-licenses requires its rootDir to CONTAIN the vendor tree it
-      # reads, and this repository vendors once at the workspace root, above
-      # every module. Run from controller/ it fails outright: "rootDir
-      # /…/controller should contain dir /…/vendor/k8s.io/…". So
-      # hack/generate-notices now walks up to whichever directory owns vendor/
-      # and names packages relative to it, which lets one generator serve every
-      # module in the workspace.
-      #
-      # Second, go-licenses embeds golang.org/x/tools/go/packages and must be
-      # built with the SAME toolchain that `go list` runs under. On a mismatch
-      # it reports every stdlib package as "does not have module info" and
-      # produces nothing -- a failure that reads like a broken generator rather
-      # than a version skew. controller/Makefile pins that toolchain, and the
-      # two jobs below reuse the binary it builds.
-      - name: Verify agent THIRD_PARTY_NOTICES.md is up to date
-        working-directory: agent
-        run: make notices-check
-
-      # GOWORK is cleared for these two: they need the workspace, because the
-      # vendor tree they read is a workspace-level construct.
-      - name: Verify controller THIRD_PARTY_NOTICES.md is up to date
-        working-directory: controller
-        env:
-          GOWORK: ""
-        run: make notices-check
-
-      - name: Verify nkectl THIRD_PARTY_NOTICES.md is up to date
-        working-directory: cli
-        env:
-          GOWORK: ""
-        run: make notices-check
-
-      # os-image needs the workspace for the same reason cli and controller do:
-      # it requires github.com/NVIDIA/nke/agent, which resolves only there.
-      - name: Verify nke-os-image-check THIRD_PARTY_NOTICES.md is up to date
-        working-directory: os-image
-        env:
-          GOWORK: ""
+      # The root target owns the list of redistributed binaries.
+      - name: Verify THIRD_PARTY_NOTICES.md files
         run: make notices-check

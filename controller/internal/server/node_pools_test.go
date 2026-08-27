@@ -593,7 +593,6 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 	}
 }
 
-//nolint:funlen // table-driven test with many cases; splitting would reduce clarity
 func TestNodePoolService_UpdateNodePool(t *testing.T) {
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")

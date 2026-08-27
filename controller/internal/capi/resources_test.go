@@ -40,11 +40,11 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 	}
 
 	tests := map[string]parameters{
-		"applies namespace CAPI cluster and NicoCluster": {
+		"applies CAPI cluster and NicoCluster": {
 			cluster:         testCluster(),
 			wantNicoCluster: true,
 		},
-		"OIDC-mode still scaffolds into cluster-<name>": {
+		"OIDC-mode scaffolds into the shared namespace too": {
 			cluster:         testOIDCCluster(),
 			wantNicoCluster: true,
 		},
@@ -55,10 +55,10 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 			ctx := context.Background()
 			k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
 
-			err := capi.ApplyClusterScaffold(ctx, k8sClient, params.cluster)
+			err := capi.ApplyClusterScaffold(ctx, k8sClient, params.cluster, false)
 			require.NoError(t, err)
 
-			namespace := capi.ClusterNamespace(params.cluster.Name)
+			namespace := constants.NamespaceNKESystem
 
 			clusterObj := &clusterv1.Cluster{}
 			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Name: params.cluster.Name, Namespace: namespace}, clusterObj))
@@ -68,8 +68,12 @@ func TestResources_ApplyClusterScaffold(t *testing.T) {
 			assert.Equal(t, nicov1.GroupVersion.Group, clusterObj.Spec.InfrastructureRef.APIGroup)
 			assert.Equal(t, testNicoClusterKind, clusterObj.Spec.InfrastructureRef.Kind)
 			assert.Equal(t, params.cluster.Name, clusterObj.Spec.InfrastructureRef.Name)
+			require.NotNil(t, clusterObj.Spec.Paused)
+			assert.False(t, *clusterObj.Spec.Paused)
 
-			require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Name: namespace}, &corev1.Namespace{}))
+			// The chart owns nke-system, so the scaffold must not create it.
+			err = k8sClient.Get(ctx, client.ObjectKey{Name: namespace}, &corev1.Namespace{})
+			assert.True(t, apierrors.IsNotFound(err), "scaffold must not create the shared namespace")
 			assert.Equal(t, params.wantNicoCluster, hasNicoCluster(ctx, t, k8sClient, namespace, params.cluster.Name, params.cluster.Nico.SiteID.String()))
 		})
 	}

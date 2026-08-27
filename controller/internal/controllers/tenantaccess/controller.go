@@ -96,8 +96,8 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"tenant-access",
 		c,
-		c.db.ClusterSource(dbfilters.Cluster{}),
-		c.db.NodeSource(dbfilters.Node{
+		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{
 			ControlPlane: ptr.To(true),
 			Joined:       ptr.To(true),
 			Deleting:     ptr.To(false),
@@ -105,11 +105,11 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 	)
 }
 
-func nodeClusterKeys(node db.Node) []dbreconcile.Key {
+func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
 	if node.ClusterID == uuid.Nil {
-		return nil
+		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}
+	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}, nil
 }
 
 // Reconcile publishes access material for one cluster. The cluster row is

@@ -82,7 +82,7 @@ func capiMachineLabels(clusterName string, controlPlane bool) map[string]string 
 func capiMachineAnnotations(node db.Node) map[string]string {
 	// CWE owns drain / kube Node removal in teardown workflows. Tell CAPI to skip its
 	// drain and volume-detach waits so Machine deletion is not blocked when the
-	// workload API is unreachable (NKX-13398).
+	// workload API is unreachable.
 	return map[string]string{
 		constants.MachineAnnotationKeyHostID:               node.ID.String(),
 		clusterv1.ExcludeNodeDrainingAnnotation:            "cwe-controlled",

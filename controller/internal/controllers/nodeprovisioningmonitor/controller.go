@@ -48,7 +48,7 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		mgr,
 		"node-provisioning-monitor",
 		c,
-		c.db.NodeSource(dbfilters.Node{
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{
 			Provisioning: ptr.To(true),
 			Deleting:     ptr.To(false),
 		}),

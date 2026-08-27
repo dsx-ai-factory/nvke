@@ -1,0 +1,206 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Local-development scaffolding for NKE API authentication. Development only. A
+# real deployment needs just the JWKS discovery ClusterRoleBinding, which the
+# chart renders from apiAuth.clusterIssuerDiscovery.
+#
+# Two client identities, so the negative cases can be exercised by hand:
+#
+#   nke-clients/nke-client     admitted   -> 200
+#   nke-outsiders/nke-outsider unadmitted -> 403
+#
+#   kubectl create token nke-client -n nke-clients \
+#     --audience=https://nke.tilt.local --duration=10m
+#
+# See hack/nke-auth-demo.sh.
+---
+# Tilt owns the release namespace rather than Helm's --create-namespace: this
+# file is applied before the release runs. Same as nke-system-namespace.yaml.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloud-workflow-engine
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nke-client
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+# The unadmitted counterpart: its tokens authenticate and then fail admission, so
+# a 403 rather than a 401.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nke-outsiders
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nke-outsider
+  namespace: nke-outsiders
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+# The e2e suite mints its own tokens through the TokenRequest API. Each Role
+# below is pinned by resourceNames to a single service account, so neither grants
+# token minting across the namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nke-e2e
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nke-client-token-minter
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["nke-client"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nke-client-token-minter
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nke-client-token-minter
+subjects:
+  - kind: ServiceAccount
+    name: nke-e2e
+    namespace: nke-clients
+---
+# The unadmitted counterpart, so the negative specs prove a real 403.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nke-outsider-token-minter
+  namespace: nke-outsiders
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["nke-outsider"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nke-outsider-token-minter
+  namespace: nke-outsiders
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nke-outsider-token-minter
+subjects:
+  - kind: ServiceAccount
+    name: nke-e2e
+    namespace: nke-clients
+---
+# The authentication configuration, mounted at /etc/nke/auth/auth.yaml by the
+# chart. See internal/auth and the README for the schema. Only
+# auth.nke.nvidia.com/v1alpha1 is accepted: the apiserver's own
+# AuthenticationConfiguration shares the kind but not the group.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nke-auth-config
+  namespace: cloud-workflow-engine
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+data:
+  auth.yaml: |
+    apiVersion: auth.nke.nvidia.com/v1alpha1
+    kind: AuthenticationConfiguration
+    audiences: ["https://nke.tilt.local"]
+    issuers:
+      - name: local-kubernetes
+        issuer: "https://kubernetes.default.svc.cluster.local"
+        # Every issuer is fetched the same way, as a JWKS over HTTPS. The
+        # cluster's own endpoint is not anonymous, hence the bearer token and
+        # the issuer-discovery ClusterRole.
+        jwks:
+          uri: "https://kubernetes.default.svc/openid/v1/jwks"
+          caBundlePath: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+          bearerTokenPath: /var/run/secrets/kubernetes.io/serviceaccount/token
+        algorithms: [RS256, ES256]
+        admit:
+          serviceAccounts:
+            # Omitting `name` would widen the rule to every service account in
+            # the namespace, nke-e2e above included.
+            - namespace: nke-clients
+              name: nke-client
+      # SPIRE is omitted because it is not reachable yet, and an unreachable
+      # issuer is a startup failure in enforcing mode. Two things are missing: the
+      # discovery provider's serving certificate does not carry the in-cluster
+      # service name, which does not resolve from the pod network anyway, and
+      # caBundlePath needs secret oidc-provider-upstream-ca copied over from the
+      # spire-server namespace. Every value below was read off this cluster:
+      #
+      #   - name: spire
+      #     issuer: "https://nke.site-controller.internal"
+      #     jwks:
+      #       uri: "https://nke.site-controller.internal:30443/keys"
+      #       caBundlePath: /etc/nke/spire-ca/ca.crt
+      #     algorithms: [RS256]
+      #     admit:
+      #       spiffe:
+      #         trustDomain: cwe-capi.nke.local
+      #         pathPrefixes: ["/nke-e2e/"]

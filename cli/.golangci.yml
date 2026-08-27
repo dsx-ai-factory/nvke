@@ -29,7 +29,7 @@ linters:
     - unconvert
     - usestdlibvars
   settings:
-    # Mirrors controller/.golangci.yml and controller/forge-vms/.golangci.yml.
+    # Mirrors controller/.golangci.yml and controller/nico-vms/.golangci.yml.
     # goheader with no template silently passes everything, so the template is
     # the whole point of enabling it.
     goheader:
@@ -41,7 +41,7 @@ linters:
     # std-error-handling is what makes the default errcheck usable: it drops
     # the unchecked-return reports on fmt.Fprint* to os.Stdout/os.Stderr, which
     # a CLI does on nearly every line and cannot act on if they fail. Same four
-    # presets as agent/, controller/ and controller/forge-vms.
+    # presets as agent/, controller/ and controller/nico-vms.
     presets:
       - comments
       - common-false-positives
@@ -49,7 +49,7 @@ linters:
       - std-error-handling
 
 formatters:
-  # Enabled, as in controller/ and controller/forge-vms/. agent/ is the only
+  # Enabled, as in controller/ and controller/nico-vms/. agent/ is the only
   # module that disables them, pending a formatting sweep of existing code.
   enable:
     - gci

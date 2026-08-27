@@ -17,7 +17,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capikubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/NVIDIA/nke/controller/internal/agent"
@@ -34,50 +33,10 @@ const (
 
 var ErrTenantClientNotReady = errors.New("tenant client not ready")
 
-// TenantClientProvider gives controllers and activities a management-cluster
-// independent way to build clients for tenant clusters.
+// TenantClientProvider gives CAPI controllers, which are driven by CAPI objects
+// rather than CWE cluster rows, a way to reach the corresponding tenant cluster.
 type TenantClientProvider interface {
-	ClientForCluster(ctx context.Context, cluster *clusterv1.Cluster, addToSchemes ...AddToSchemeFunc) (client.Client, error)
-}
-
-// CAPIKubeconfigTenantClientProvider reads the standard Cluster API
-// <cluster-name>-kubeconfig Secret from the Cluster's namespace. That is the
-// CAPI object plane (still cluster-<name> until NKX-14454 moves those objects).
-// CWE DB consumers use DBClusterTenantClientProvider instead.
-type CAPIKubeconfigTenantClientProvider struct {
-	managementClient client.Reader
-}
-
-func NewCAPIKubeconfigTenantClientProvider(managementClient client.Reader) *CAPIKubeconfigTenantClientProvider {
-	return &CAPIKubeconfigTenantClientProvider{
-		managementClient: managementClient,
-	}
-}
-
-func (p *CAPIKubeconfigTenantClientProvider) ClientForCluster(
-	ctx context.Context,
-	cluster *clusterv1.Cluster,
-	addToSchemes ...AddToSchemeFunc,
-) (client.Client, error) {
-	// Re-read the kubeconfig on each request so kubeconfig rotation is observed
-	// without requiring controller restarts or explicit cache invalidation.
-	kubeconfigBytes, err := capikubeconfig.FromSecret(ctx, p.managementClient, client.ObjectKey{
-		Namespace: cluster.Namespace,
-		Name:      cluster.Name,
-	})
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("%w: CAPI kubeconfig secret %s/%s not found: %w", ErrTenantClientNotReady, cluster.Namespace, cluster.Name, err)
-		}
-		return nil, fmt.Errorf("failed to get CAPI kubeconfig secret: %w", err)
-	}
-
-	tenantClient, err := NewClientFromKubeconfig(kubeconfigBytes, addToSchemes...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create client from CAPI kubeconfig secret: %w", err)
-	}
-
-	return tenantClient, nil
+	ClientForCluster(ctx context.Context, cluster *clusterv1.Cluster) (client.Client, error)
 }
 
 func NewClientFromKubeconfig(kubeconfigBytes []byte, addToSchemes ...AddToSchemeFunc) (client.Client, error) {
@@ -120,8 +79,7 @@ func NewClientFromRESTConfig(restConfig *rest.Config, addToSchemes ...AddToSchem
 // DBClusterTenantClientProvider returns shared tenant-cluster Kubernetes clients
 // for CWE DB clusters. CAPI clusters, and Nico clusters when tenant-access
 // consume is enabled, read nke-system/<name>-kubeconfig (TenantAccess). Nico
-// keeps the node-agent path as the disabled-state rollout fallback. CAPI
-// Cluster/Machine objects stay in cluster-<name> (NKX-14454).
+// keeps the node-agent path as the disabled-state rollout fallback.
 type DBClusterTenantClientProvider struct {
 	database            db.DB
 	managementClient    client.Reader
@@ -181,6 +139,26 @@ func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, 
 	default:
 		return nil, fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
+}
+
+// ClientForCluster resolves the CWE cluster row a CAPI Cluster stands for and
+// returns that row's tenant client. Going through the row rather than reading a
+// kubeconfig out of the Cluster's own namespace is what keeps CAPI controllers
+// working for clusters whose objects have not been migrated into
+// constants.NamespaceNKESystem yet: TenantAccess publishes only there.
+//
+// clusters.name is uniquely indexed, and every CAPI Cluster CWE creates is named
+// after its row, so the name is an unambiguous key.
+func (p *DBClusterTenantClientProvider) ClientForCluster(ctx context.Context, cluster *clusterv1.Cluster) (client.Client, error) {
+	clusters, err := p.database.ListClusters(ctx, db.ClusterFilters{Name: &cluster.Name})
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up cluster row for CAPI cluster %s/%s: %w", cluster.Namespace, cluster.Name, err)
+	}
+	if len(clusters) == 0 {
+		return nil, fmt.Errorf("no cluster row found for CAPI cluster %s/%s: %w", cluster.Namespace, cluster.Name, db.ErrNotFound)
+	}
+
+	return p.ClientForDBCluster(ctx, clusters[0])
 }
 
 func (p *DBClusterTenantClientProvider) clientFromTenantAccessSecret(ctx context.Context, cluster db.Cluster) (client.Client, error) {

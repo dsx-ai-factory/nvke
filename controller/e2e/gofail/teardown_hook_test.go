@@ -40,8 +40,8 @@ const forceUnreachableHookAttemptBudget int32 = 3
 // making a blocked teardown look like it gave up on its own.
 const teardownRunTimeout = 30 * time.Minute
 
-// TestGofailTeardownHookBlocksUnlessForceUnreachable pins the NKX-14344
-// behavior against a real Temporal server and the production worker binary.
+// TestGofailTeardownHookBlocksUnlessForceUnreachable pins the teardown-hook
+// blocking behavior against a real Temporal server and the production worker binary.
 //
 // A beforeRemoveNode hook that can never succeed (modeled with the
 // CWERunbookExecutionError failpoint, standing in for evict-cnpg-node waiting

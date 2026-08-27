@@ -29,6 +29,10 @@ on:
     branches: [main]
     paths:
       - 'controller/deploy/charts/**'
+      - 'controller/hack/chart-*-assertions.*'
+      - 'make/checks.mk'
+      - 'make/versions.mk'
+      - 'Makefile'
       - '.github/workflows/chart.yml'
   workflow_call:
   workflow_dispatch:
@@ -69,158 +73,28 @@ jobs:
         with:
           persist-credentials: false
 
+      # Version pins come from make/versions.mk, so `make show-versions` and CI
+      # cannot disagree.
+      - name: Read pinned tool versions
+        id: versions
+        run: |
+          echo "helm_version=$(make --no-print-directory print-HELM_VERSION)" >> "$GITHUB_OUTPUT"
+
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
         with:
-          version: v3.19.0
+          version: ${{ steps.versions.outputs.helm_version }}
 
-      - name: Lint
-        run: helm lint "${CHART}"
-
-      - name: Render
-        shell: bash
+      # Install kubeconform before running the fail-closed chart target.
+      - name: Install kubeconform
         run: |
           set -euo pipefail
-          out="${RUNNER_TEMP}/rendered.yaml"
-          helm template cwe "${CHART}" > "${out}"
-          # A chart that renders to nothing passes `helm template` silently.
-          count=$(grep -c '^kind:' "${out}" || true)
-          if [ "${count}" -eq 0 ]; then
-            echo "::error::the chart rendered no resources"
-            exit 1
-          fi
-          echo "rendered ${count} resources"
-          echo "### Chart renders ${count} resources" >> "${GITHUB_STEP_SUMMARY}"
-
-      # Helm never parses its own output, so `helm lint` and `helm template`
-      # both pass on a manifest Kubernetes would reject. A duplicate
-      # app.kubernetes.io/name in the ServiceMonitor selector survived both for
-      # exactly that reason. kubeconform parses what was rendered.
-      - name: Validate the rendered manifests
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Recomputed, not inherited: a shell variable set in the Render step
-          # does not survive into this one. Same expression as there.
-          out="${RUNNER_TEMP}/rendered.yaml"
-          ver=v0.7.0
+          ver="$(make --no-print-directory print-KUBECONFORM_VERSION)"
           curl -sSfL --retry 3 \
             "https://github.com/yannh/kubeconform/releases/download/${ver}/kubeconform-linux-amd64.tar.gz" \
             | tar -xz -C "${RUNNER_TEMP}" kubeconform
-          # -strict rejects duplicate keys and unknown fields. ServiceMonitor is
-          # a CRD, so its schema comes from the datreeio catalogue; -ignore-missing-schemas
-          # keeps an unpublished CRD from failing the build while still
-          # validating everything with a schema.
-          "${RUNNER_TEMP}/kubeconform" \
-            -strict \
-            -summary \
-            -ignore-missing-schemas \
-            -schema-location default \
-            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-            "${out}"
+          echo "${RUNNER_TEMP}" >> "${GITHUB_PATH}"
 
-      # Nothing asserted the tenant RBAC before: the tenantaccess unit tests read
-      # a fixture, not the chart, so a missing rule only showed up in the CAPD
-      # E2E suite, which skips this scenario on a pull request.
-      #
-      # Add a case below whenever an activity or controller calls a new tenant API.
-      - name: Assert the tenant ClusterRole grants required permissions
-        shell: bash
-        run: |
-          set -euo pipefail
-          # nke-rbac renders only with a trust domain, and that needs the OIDC
-          # and tenant-access flags. All three are off by default.
-          helm template cwe "${CHART}" \
-            --set spiffe.trustDomain=example.test \
-            --set nkeOIDCAuth.enabled=true \
-            --set tenantAccess.enabled=true \
-            > "${RUNNER_TEMP}/rendered-rbac.yaml"
-          python3 - "${RUNNER_TEMP}/rendered-rbac.yaml" <<'PY'
-          import sys, yaml
-
-          # The RBAC sits inside a ConfigMap value, so it is parsed twice.
-          docs = [d for d in yaml.safe_load_all(open(sys.argv[1])) if d]
-          cms = [d for d in docs if d.get("kind") == "ConfigMap" and d["metadata"]["name"] == "nke-rbac"]
-          if not cms:
-              sys.exit("::error::no nke-rbac ConfigMap in the rendered chart")
-          inner = list(yaml.safe_load_all(cms[0]["data"]["manifest.yaml"]))
-          roles = {
-              (d.get("kind"), d["metadata"]["name"]): d
-              for d in inner if d and d.get("kind") in ("ClusterRole", "Role")
-          }
-
-          cr = roles.get(("ClusterRole", "nke:cwe"))
-          if cr is None:
-              sys.exit("::error::no nke:cwe ClusterRole in the nke-rbac manifest")
-
-          def granted(rule_set, api_group, resource, verb, resource_name=None):
-              for r in rule_set:
-                  if api_group not in (r.get("apiGroups") or []):
-                      continue
-                  if resource not in (r.get("resources") or []):
-                      continue
-                  if verb not in (r.get("verbs") or []):
-                      continue
-                  if resource_name is not None and r.get("resourceNames") != [resource_name]:
-                      continue
-                  return True
-              return False
-
-          # API group, resource, verb, optional resource name, and the caller
-          # that breaks without it. Keep the signer permission restricted to
-          # kubelet-serving rather than accepting approval of every signer.
-          required = [
-              ("", "nodes", "patch", None, "node updates"),
-              ("", "nodes", "delete", None, "node teardown"),
-              ("", "nodes/status", "patch", None, "ApplyNodeCondition"),
-              ("", "pods/eviction", "create", None, "node drain"),
-              ("certificates.k8s.io", "certificatesigningrequests", "get", None,
-               "CSR reconciliation"),
-              ("certificates.k8s.io", "certificatesigningrequests", "list", None,
-               "CSR controller cache"),
-              ("certificates.k8s.io", "certificatesigningrequests", "watch", None,
-               "CSR controller watch"),
-              ("certificates.k8s.io", "certificatesigningrequests/approval", "update", None,
-               "CSR approval update"),
-              ("certificates.k8s.io", "signers", "approve", "kubernetes.io/kubelet-serving",
-               "kubelet-serving approval"),
-          ]
-          missing = [
-              f"{group or '<core>'}/{res} ({verb}) — needed by {why}"
-              for group, res, verb, resource_name, why in required
-              if not granted(cr.get("rules") or [], group, res, verb, resource_name)
-          ]
-          if missing:
-              for m in missing:
-                  print(f"::error::nke:cwe ClusterRole is missing {m}")
-              sys.exit(1)
-          print(f"nke:cwe ClusterRole grants all {len(required)} required permissions")
-          PY
-
-      # Chart.yaml carries version and appVersion 0.0.0 and says in a comment
-      # that CI overrides both at package time. Nothing verified that, so a
-      # packaging path that dropped the flags would ship 0.0.0 to whoever
-      # installs it. This runs the documented recipe and fails if the
-      # placeholder survives.
-      - name: Package
-        shell: bash
-        run: |
-          set -euo pipefail
-          # A build version, not a release one. This job proves the flags work;
-          # a release would pass the tag without its leading v, as Chart.yaml
-          # describes.
-          version="0.0.0-${GITHUB_SHA::12}"
-
-          helm package "${CHART}" \
-            --version "${version}" \
-            --app-version "${version}" \
-            --destination "${RUNNER_TEMP}/chart-dist"
-
-          tgz=$(ls "${RUNNER_TEMP}"/chart-dist/*.tgz)
-          packaged=$(tar -xOf "${tgz}" --wildcards '*/Chart.yaml' | grep '^version:' | awk '{print $2}' | tr -d '"')
-
-          if [ "${packaged}" = "0.0.0" ]; then
-            echo "::error::the packaged chart is version 0.0.0; --version did not apply"
-            exit 1
-          fi
-          echo "packaged ${tgz##*/} at version ${packaged}"
-          echo "### Chart packages as \`${packaged}\`" >> "${GITHUB_STEP_SUMMARY}"
+      # One entry point covers linting, rendered-manifest validation, apiAuth,
+      # tenant RBAC, and package-version assertions locally and in CI.
+      - name: Check the chart
+        run: make chart-check

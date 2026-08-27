@@ -29,7 +29,6 @@ var (
 // and/or only return the information we need in the body.message,
 // so we need to parse the response body to determine the error and return a specific error.
 // This allows consumers to make business logic decisions based on the error type.
-// See for at least one example: https://nvbugspro.nvidia.com/bug/4971173
 func asForgeAPIError(res *http.Response, err error) error {
 	body := ""
 	if res != nil && res.Body != nil {
@@ -83,7 +82,7 @@ func asForgeAPIError(res *http.Response, err error) error {
 	}
 
 	// A 403 Forbidden means the configured API key has no access to this tenant/org.
-	// See NKX-13835: a single key typically only covers a subset of Forge tenants.
+	// A single key typically only covers a subset of Forge tenants.
 	if res != nil && res.StatusCode == http.StatusForbidden {
 		return fmt.Errorf("%w: %s", ErrTenantNotAuthorized, body)
 	}

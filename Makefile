@@ -7,6 +7,14 @@
 #
 # See docs/go-workspace.md.
 
+# GNU Make 4.0+ is required. macOS ships 3.81, which fails on cmd_version below
+# with "unterminated call to function `shell'" and never says why. Fail here
+# instead, and say what to install.
+# filter-out, not `4.%`: this stays correct at Make 5.
+ifeq ($(filter-out 0 1 2 3,$(firstword $(subst ., ,$(MAKE_VERSION)))),)
+$(error GNU Make 4.0+ is required, but this is GNU Make $(MAKE_VERSION). On macOS: `brew install make`, then use `gmake` in place of `make`. See CONTRIBUTING.md)
+endif
+
 # The docs teach `GOWORK=off` for the modules outside the workspace. Inherited
 # here it would make every workspace target fail with "no go.work file found",
 # so it is dropped from the environment the recipes pass on.
@@ -47,9 +55,10 @@ LICENSE_FILES = git ls-files -- '*.go' '*.sh' '*.py' '*.js' '*.css' '*.html' '*.
 # vendor/ tree, so `build` gives an outside contributor the same result as CI.
 # Re-vendoring (inside `work-sync`) is the only step that needs access to it.
 WORK_MODULES := agent \
+                cluster-api-provider-provisioned \
                 controller \
                 controller/api \
-                controller/forge-vms \
+                controller/nico-vms \
                 controller/hack/capd-reboot-controller \
                 controller/hack/nico-mock \
                 cli \
@@ -63,7 +72,7 @@ WORK_MODULES := agent \
 #
 # controller does not belong here: its command is ./cmd/worker, but the binary
 # it ships is named cloud-workflow-engine, so this loop would produce the wrong
-# name. `build` delegates to controller/Makefile for it. controller/forge-vms
+# name. `build` delegates to controller/Makefile for it. controller/nico-vms
 # ships through its own Makefile and the container image.
 #
 # cli is absent because its Makefile stamps four symbols, not one,
@@ -119,17 +128,46 @@ PRIVATE_MODULES :=
 LICENSE_DESTS := controller/licenses \
                  controller/deploy/charts/cloud-workflow-engine
 
-.DEFAULT_GOAL := help
-.PHONY: help test-e2e-backend-ci work work-sync work-check work-check-offline build test version-check clean licenses licenses-check
+# Redistributed binaries with generated third-party attribution.
+NOTICE_MODULES := agent controller cli os-image
 
+# Tool versions that CI pins, in one place. Included rather than repeated here so
+# `make show-versions` and the workflows read the same definitions.
+include make/versions.mk
+
+# The merge-gate checks that had no target, plus root fmt, lint and gate.
+include make/checks.mk
+
+.DEFAULT_GOAL := help
+.PHONY: help show-versions tools-check lint-workflows lint-shell docs-check lint-chart chart-rbac-check chart-package-check chart-check vulncheck fmt lint gate test-compile test-e2e-backend-ci work work-sync work-check work-check-offline build test preflight version-check clean licenses licenses-check license-deps-check notices notices-check license-header-check
+
+##@ Help
+
+# %-22s, not %-12s, because five target names are longer than twelve characters
+# and the descriptions had stopped lining up. license-header-check is the longest
+# at twenty.
+#
+# The ##@ line starts a section, and agent/Makefile and controller/Makefile
+# already use the same convention. Grouping this way is read from the file, so a
+# renamed or deleted target cannot leave a stale entry behind. Writing the groups
+# out as echo lines instead, the way some sibling repositories do, duplicates
+# every name and description and nothing checks the copy.
 help: ## Show the available targets.
 	@echo "Usage: make <target>"
+	@awk 'BEGIN { FS = ":.*## " } \
+		/^##@ / { printf "\n%s\n", substr($$0, 5) } \
+		/^[a-z][a-z0-9-]*:.*## / { printf "  %-22s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo
-	@awk 'BEGIN { FS = ":.*## " } /^[a-z][a-z0-9-]*:.*## / { printf "  %-12s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@# Resolved by make at the moment you ask, so it cannot disagree with what
+	@# the build will do. `make show-versions` prints the rest.
+	@echo "Toolchain in use:"
+	@printf '  %s, %s, golangci-lint %s\n' \
+		"$$(command -v go >/dev/null && go version | awk '{print $$3}' || echo 'go not on PATH')" \
+		"GNU Make $(MAKE_VERSION)" \
+		"$$(command -v golangci-lint >/dev/null && golangci-lint --version | awk '{print $$4}' || echo 'not on PATH')"
 	@echo
 
-test-e2e-backend-ci: ## Run a backend E2E suite (CAPD by default) with local controller and agent source.
-	./controller/hack/ci/backend-e2e.sh
+##@ Workspace
 
 work: ## Reset go.work to exactly the public modules, creating it if absent.
 	@test -f go.work || $(GO) work init
@@ -175,7 +213,7 @@ work-sync: work ## Refresh go.work.sum and the modules' go.mod and go.sum.
 	@echo "Workspace refreshed. Commit go.work, go.work.sum, vendor/ and every"
 	@echo "go.mod and go.sum this changed, together."
 
-work-check: ## Verify go.work and go.work.sum are complete and current.
+work-check: ## Verify go.work and go.work.sum are complete and current. (run by the merge gate)
 	@# git diff reports nothing for an untracked path, so an uncommitted
 	@# workspace file would otherwise pass this check in silence.
 	@git ls-files --error-unmatch go.work go.work.sum >/dev/null 2>&1 \
@@ -281,44 +319,250 @@ work-check: ## Verify go.work and go.work.sum are complete and current.
 # -mod=vendor is passed as a flag rather than through GOFLAGS, because setting
 # GOFLAGS here would discard whatever the caller already had in it. -C has to be
 # the first flag on the command line.
+#
+# -buildvcs=false because this lists rather than builds, so nothing is stamped
+# with a commit. Reading the VCS can also fail outright: Go searches upwards from
+# the module, and in a git worktree the search passes the worktree root, so a
+# broken repository above it exits 128 and Go reports only "error obtaining VCS
+# status".
+#
+# This target used to blame the vendor tree for that, and for any other `go list`
+# failure. It printed "vendor/ is inconsistent" and sent the reader to
+# `make work-sync`, which rewrites go.mod, go.sum and vendor/ across nine
+# modules. The case below reports what actually failed.
 work-check-offline: ## Verify vendor/ agrees with every go.mod. Needs no network.
 	@echo "- Checking vendor/ agrees with every go.mod (offline)..."
 	@for m in $(WORK_MODULES); do \
-		GOPROXY=off $(GO) list -C $$m -mod=vendor ./... >/dev/null \
-			|| { echo "ERROR: vendor/ is inconsistent with the workspace -- Go's own message is above."; \
-			     echo "  Detected from $$m; a root vendor tree is workspace-wide, so the module named"; \
-			     echo "  there is where it was noticed, not necessarily where it originates."; \
-			     echo "  Run 'make work-sync' and commit every file it changes."; exit 1; }; \
+		err=$$(GOPROXY=off $(GO) list -C $$m -mod=vendor -buildvcs=false ./... 2>&1 >/dev/null) || { \
+			printf '%s\n' "$$err" | sed 's/^/    /'; \
+			case "$$err" in \
+			  *vendor*|*"missing go.sum entry"*|*"inconsistent"*) \
+			    echo "ERROR: vendor/ is inconsistent with the workspace -- Go's own message is above."; \
+			    echo "  Detected from $$m; a root vendor tree is workspace-wide, so the module named"; \
+			    echo "  there is where it was noticed, not necessarily where it originates."; \
+			    echo "  Run 'make work-sync' and commit every file it changes." ;; \
+			  *) \
+			    echo "ERROR: 'go list' failed in $$m for a reason unrelated to vendoring."; \
+			    echo "  Go's own message is above. vendor/ was NOT assessed, so do not run"; \
+			    echo "  'make work-sync' on the strength of this failure -- fix the cause first." ;; \
+			esac; \
+			exit 1; }; \
 	done
 	@echo "  vendor/ is consistent with every module."
+
+##@ Build and test
 
 test: ## Run each module's own test suite.
 	@# The root builds every module but used to test none, which invites the
 	@# assumption that `make test` here does what `make test` in a module does.
 	@# Each module keeps its own exclusions, so defer to its Makefile when it
 	@# has one and fall back to `go test ./...` when it does not.
+	@#
+	@# The fallback keeps the live Ginkgo TestE2E entry point out of local tests.
 	@for m in $(WORK_MODULES); do \
 		echo "- testing $$m"; \
 		if [ -f $$m/Makefile ] && $(MAKE) -C $$m -n test >/dev/null 2>&1; then \
 			$(MAKE) -C $$m test || exit 1; \
 		else \
-			$(GO) test -C $$m ./... || exit 1; \
+			$(GO) -C $$m test $(GO_TEST_FLAGS) -skip '^TestE2E$$' ./... || exit 1; \
 		fi; \
 	done
+
+test-compile: ## Type-check test variants that need external services to run.
+	@echo "- compile controller/test/e2e"
+	@cd controller/test/e2e && CGO_ENABLED=1 $(GO) vet ./...
+	@echo "- compile controller/e2e with gofail"
+	@cd controller && CGO_ENABLED=1 $(GO) vet -tags gofail ./e2e/...
+	@echo "- compile controller Teleport integration tests"
+	@cd controller && CGO_ENABLED=1 $(GO) vet -tags integration ./internal/teleport/...
+	@echo "- compile nico-vms integration tests"
+	@cd controller/nico-vms && CGO_ENABLED=1 $(GO) vet -tags integration ./test/integration/...
+	@echo "- compile controller integration tests"
+	@cd controller && CGO_ENABLED=1 $(GO) vet -tags integration_test ./integration-test/...
+
+# The modules that own lint and test targets.
+#
+# Deepest first, so the first match wins. controller/nico-vms/x.go sits inside
+# both controller/nico-vms and controller, and only the first is right.
+#
+# controller/api has no fmt target because its Go is generated.
+PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
+                     controller/hack/nico-mock \
+                     controller/test/e2e \
+                     controller/nico-vms \
+                     controller/api \
+                     agent \
+                     cli \
+                     controller \
+                     os-image
+
+# controller/api ships no tests of its own, so linting and testing it alone
+# compiles nothing that uses it. These are the modules that import it, and a
+# change to the API has to build them to mean anything.
+API_DEPENDENTS := controller cli controller/test/e2e
+
+# The modules CI tests with -race. agent-test.yml races agent; the unit-test
+# matrix in controller-test.yml sets GO_TEST_FLAGS: -race for the whole job, so
+# every module in that matrix is raced, not just controller.
+#
+# Preflight runs these with CGO_ENABLED=1, which is what controller-test.yml
+# and `make gate` already do. Recent Go no longer needs cgo for the race
+# detector everywhere, so this is not always load-bearing -- but a host that
+# exports CGO_ENABLED=0 should not get a different answer from the gate, and
+# matching it costs nothing.
+RACE_MODULES := agent \
+                cli \
+                controller \
+                controller/nico-vms \
+                controller/hack/nico-mock \
+                controller/test/e2e
+
+# Root lint covers every module CI lints. Root fmt excludes generated API code,
+# whose formatting belongs to controller's generator.
+LINT_MODULES := $(PREFLIGHT_MODULES)
+FORMAT_MODULES := $(filter-out controller/api,$(PREFLIGHT_MODULES))
+
+# What "changed" is measured against.
+PREFLIGHT_BASE ?= origin/main
+
+# Answers "will my pull request be green?" without running the whole gate.
+#
+# The gate runs all thirteen members on every pull request whatever you touched,
+# because a called workflow ignores its own paths filter. See
+# .github/workflows/README.md, invariant 3. So this cannot narrow what runs. It
+# narrows what can newly fail: when main is green and you only changed cli/, only
+# the checks that read cli/ and the workspace-wide ones can go red.
+#
+# Whole-workspace and environment-dependent members stay opt-in. The target
+# prints that list before it runs.
+#
+# The module match reads ("$$m"/*) because the case sits inside a $$( )
+# substitution. Without the leading parenthesis, /bin/sh reads the pattern's
+# closing ) as the end of the substitution and fails with "syntax error near
+# unexpected token ;;".
+preflight: ## Lint and test the modules you changed. MODULES=... to choose them yourself.
+	@set -e; \
+	base=$$(git merge-base $(PREFLIGHT_BASE) HEAD 2>/dev/null || true); \
+	if [ -z "$$base" ]; then \
+		echo "NOTE: no merge base with $(PREFLIGHT_BASE); using uncommitted changes only."; \
+		echo "      Fetch it, or pass PREFLIGHT_BASE=<ref>."; \
+	fi; \
+	changed=$$( { [ -n "$$base" ] && git diff --name-only "$$base"...HEAD; \
+	              git diff --cached --name-only; \
+	              git diff --name-only; \
+	              git ls-files --others --exclude-standard; } | sort -u ); \
+	build_system=no; workflows=no; shell=no; chart=no; workspace=no; licences=no; \
+	printf '%s\n' "$$changed" | grep -qE '^Makefile$$|^make/[^/]+\.mk$$' && build_system=yes || true; \
+	printf '%s\n' "$$changed" | grep -qE '^\.github/workflows/.*\.ya?ml$$' && workflows=yes || true; \
+	printf '%s\n' "$$changed" | grep -qE '^controller/deploy/charts/|^controller/hack/chart-.*-assertions\.(py|sh)$$|^\.github/workflows/chart\.yml$$' && chart=yes || true; \
+	printf '%s\n' "$$changed" | grep -qE '(^|/)(go\.mod|go\.sum)$$|^go\.work|^vendor/' && workspace=yes || true; \
+	printf '%s\n' "$$changed" | grep -qE '\.(go|sh|py|js|css|html|ya?ml)$$' && licences=yes || true; \
+	for f in $$changed; do \
+		case "$$f" in \
+			*.sh) shell=yes ;; \
+			*) [ -f "$$f" ] && head -n 1 "$$f" | grep -qE '^#!.*(bash|dash|ksh|/sh| sh)([[:space:]]|$$)' && shell=yes || true ;; \
+		esac; \
+	done; \
+	if [ "$$build_system" = yes ]; then \
+		workflows=yes; shell=yes; chart=yes; workspace=yes; licences=yes; \
+	fi; \
+	if [ -n "$(MODULES)" ]; then \
+		mods="$(MODULES)"; \
+		echo "Modules (from MODULES=): $$mods"; \
+	elif [ "$$build_system" = yes ]; then \
+		mods="$(PREFLIGHT_MODULES)"; \
+	else \
+		mods=$$(for f in $$changed; do \
+			for m in $(PREFLIGHT_MODULES); do \
+				case "$$f" in ("$$m"/*) echo "$$m"; break ;; esac; \
+			done; \
+		done | sort -u); \
+		mods=$$(for m in $$mods; do \
+			echo "$$m"; \
+			case "$$m" in \
+				(controller/api) printf '%s\n' $(API_DEPENDENTS) ;; \
+			esac; \
+		done | sort -u); \
+	fi; \
+	echo "Will run:"; \
+	if [ -n "$$mods" ]; then \
+		for m in $$mods; do echo "  lint + test   $$m"; done; \
+	else \
+		echo "  (nothing: no changed module has its own lint/test)"; \
+	fi; \
+	[ "$$workspace" = yes ] && echo "  work-check-offline   (the workspace moved)" || true; \
+	[ "$$workspace" = yes ] && echo "  license-deps-check   (dependencies changed)" || true; \
+	[ "$$licences" = yes ] && echo "  license-header-check (source files changed)" || true; \
+	[ "$$workflows" = yes ] && echo "  lint-workflows       (workflow or build-system changes)" || true; \
+	[ "$$shell" = yes ] && echo "  lint-shell           (shell or build-system changes)" || true; \
+	[ "$$chart" = yes ] && echo "  chart-check          (chart or build-system changes)" || true; \
+	echo; \
+	echo "Will NOT run, and is not covered:"; \
+	echo "  - the e2e lanes (kind, Docker; CAPD additionally needs Linux amd64)"; \
+	echo "  - the gofail suite  -- make -C controller e2e-gofail"; \
+	echo "  - govulncheck       -- make vulncheck (whole workspace and slow)"; \
+	echo "  - generate-check, version-check, test-compile, licenses-check"; \
+	echo "                      -- make gate runs all four"; \
+	echo; \
+	failed=""; \
+	for m in $$mods; do \
+		echo "==> $$m lint"; \
+		$(MAKE) --no-print-directory -C $$m lint || failed="$$failed $$m:lint"; \
+		echo "==> $$m test"; \
+		race=no; \
+		case " $(RACE_MODULES) " in (*" $$m "*) race=yes ;; esac; \
+		if [ "$$race" = yes ]; then \
+			CGO_ENABLED=1 $(MAKE) --no-print-directory -C $$m test GO_TEST_FLAGS=-race \
+				|| failed="$$failed $$m:test"; \
+		else \
+			$(MAKE) --no-print-directory -C $$m test || failed="$$failed $$m:test"; \
+		fi; \
+	done; \
+	if [ "$$workspace" = yes ]; then \
+		echo "==> work-check-offline"; \
+		$(MAKE) --no-print-directory work-check-offline || failed="$$failed workspace"; \
+		echo "==> license-deps-check"; \
+		$(MAKE) --no-print-directory license-deps-check || failed="$$failed dependency-licenses"; \
+	fi; \
+	if [ "$$licences" = yes ]; then \
+		echo "==> license-header-check"; \
+		$(MAKE) --no-print-directory license-header-check || failed="$$failed licences"; \
+	fi; \
+	if [ "$$workflows" = yes ]; then \
+		echo "==> lint-workflows"; \
+		$(MAKE) --no-print-directory lint-workflows || failed="$$failed workflows"; \
+	fi; \
+	if [ "$$shell" = yes ]; then \
+		echo "==> lint-shell"; \
+		$(MAKE) --no-print-directory lint-shell || failed="$$failed shell"; \
+	fi; \
+	if [ "$$chart" = yes ]; then \
+		echo "==> chart-check"; \
+		$(MAKE) --no-print-directory chart-check || failed="$$failed chart"; \
+	fi; \
+	echo; \
+	if [ -n "$$failed" ]; then \
+		echo "preflight FAILED:$$failed"; \
+		exit 1; \
+	fi; \
+	echo "preflight passed."
 
 build: ## Build every workspace package, and the released commands into bin/.
 	@# Compile everything first. Building only ./cmd/... left controller/api and
 	@# controller/test/e2e with no compile coverage anywhere in CI, and this
 	@# change re-versioned both of them.
+	@# -buildvcs=false because every binary here takes its version from the -X
+	@# ldflags below, not from Go's VCS stamp. See the note on work-check-offline
+	@# for how reading the VCS can fail in a git worktree.
 	@for m in $(WORK_MODULES); do \
 		echo "- checking $$m"; \
-		$(GO) build -C $$m ./... || exit 1; \
+		$(GO) build -C $$m -buildvcs=false ./... || exit 1; \
 	done
 	@mkdir -p $(BIN_DIR)
 	@# foreach, not a shell loop: $(call) cannot read a shell variable.
 	@$(foreach m,$(CMD_MODULES), \
 		echo "- building $(m) $(call cmd_version,$(m))"; \
-		$(GO) build -C $(m) -ldflags "$(call cmd_ldflags,$(m))" -o $(BIN_DIR)/ ./cmd/... || exit 1; \
+		$(GO) build -C $(m) -buildvcs=false -ldflags "$(call cmd_ldflags,$(m))" -o $(BIN_DIR)/ ./cmd/... || exit 1; \
 	)
 	@# controller/Makefile owns this binary's name and its version ldflag, so
 	@# delegate rather than repeat either here. See CMD_MODULES above.
@@ -347,7 +591,7 @@ VERSION_CMDS := agent:--version \
                 nke-os-image-check:--version \
                 nkectl:version
 
-version-check: build ## Verify every built binary reports a real version.
+version-check: build ## Verify every built binary reports a real version. (run by the merge gate)
 	@# Two tests. The name list catches a placeholder version. The emptiness test
 	@# catches a variable with no default, which prints a label and nothing else.
 	@# A shell function, because a `case` pattern inside $(foreach) would end it
@@ -389,13 +633,40 @@ version-check: build ## Verify every built binary reports a real version.
 		echo "ERROR: a binary does not report a build version. See the -X notes on cmd_ldflags."; \
 		exit 1; }
 
+##@ Licences
+
+license-deps-check: ## Check dependency licenses in every workspace module. (run by the merge gate)
+	@$(MAKE) --no-print-directory -C controller go-licenses
+	@modules="$(MODULE)"; \
+	 if [ -z "$$modules" ]; then modules="$$(./hack/workspace-modules.sh)"; fi; \
+	 for module in $$modules; do \
+		module="$${module#./}"; \
+		echo "- dependency licences: $$module"; \
+		GOTOOLCHAIN=local ./controller/bin/go-licenses check "./$$module/..." \
+			--disallowed_types=restricted,reciprocal,forbidden,unknown \
+			--ignore github.com/NVIDIA/nke \
+			--ignore github.com/NVIDIA/cluster-api-provider-nico || exit 1; \
+	 done
+
+notices: ## Regenerate third-party notices for redistributed binaries.
+	@for module in $(NOTICE_MODULES); do \
+		echo "- notices: $$module"; \
+		$(MAKE) --no-print-directory -C "$$module" notices || exit 1; \
+	 done
+
+notices-check: ## Verify all redistributed binaries have current notices.
+	@for module in $(NOTICE_MODULES); do \
+		echo "- notices-check: $$module"; \
+		$(MAKE) --no-print-directory -C "$$module" notices-check || exit 1; \
+	 done
+
 licenses: ## Copy LICENSE and NOTICE everywhere an artefact ships them from.
 	@for d in $(LICENSE_DESTS); do \
 		mkdir -p $$d && cp LICENSE NOTICE $$d/ || exit 1; \
 	done
 	@echo "LICENSE and NOTICE copied to: $(LICENSE_DESTS)"
 
-licenses-check: licenses ## Verify the shipped LICENSE and NOTICE copies match the root files.
+licenses-check: licenses ## Verify the shipped LICENSE and NOTICE copies match the root files. (run by the merge gate)
 	@# The image and the chart redistribute this work, so they carry its terms.
 	@# Both read from a copy inside their own build context, and a copy is a
 	@# thing that goes stale -- this is the assertion that it has not.
@@ -408,7 +679,7 @@ licenses-check: licenses ## Verify the shipped LICENSE and NOTICE copies match t
 		|| { echo "ERROR: these shipped licence files are not tracked:"; printf '%s\n' "$$untracked" | sed 's/^/    /'; exit 1; }
 	@echo "Shipped LICENSE and NOTICE copies are current."
 
-license-header-check: ## Verify every source file carries the Apache-2.0 SPDX header.
+license-header-check: ## Verify every source file carries the Apache-2.0 SPDX header. (run by the merge gate)
 	@# Two assertions, because either one alone passes while the tree is wrong.
 	@#
 	@# addlicense only ADDS a header to a file that has none. It never rewrites
@@ -445,5 +716,12 @@ license-header-check: ## Verify every source file carries the Apache-2.0 SPDX he
 	 fi
 	@echo "Licence headers: every tracked source file declares Apache-2.0."
 
+##@ Housekeeping
+
 clean: ## Remove the built binaries.
 	@rm -rf $(BIN_DIR)
+
+##@ End-to-end
+
+test-e2e-backend-ci: ## Run a backend E2E suite (CAPD by default) with local controller and agent source.
+	./controller/hack/ci/backend-e2e.sh

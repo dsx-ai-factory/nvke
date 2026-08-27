@@ -4,9 +4,19 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 CWE_HTTP_PORT="${CWE_HTTP_PORT:-8080}"
 API_URL="${API_URL:-http://localhost:${CWE_HTTP_PORT}/api}"
 CLUSTERS_API_URL="${API_URL%/}/clusters"
+
+# /api/* is authenticated. hack/nke-token.sh prints nothing when NKE is not, so
+# this works either way.
+TOKEN="$("${SCRIPT_DIR}/nke-token.sh")"
+AUTH_HEADER=()
+if [[ -n "${TOKEN}" ]]; then
+  AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
+fi
 
 CLUSTER_NAME="${CLUSTER_NAME:-forge}"
 ORG_ID="${ORG_ID:-local-dev-org}"
@@ -71,6 +81,6 @@ BODY=$(cat <<EOF
 EOF
 )
 
-curl -sS "${CLUSTERS_API_URL}" \
+curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -sS "${CLUSTERS_API_URL}" \
   -H "Content-Type: application/json" \
   --data-raw "${BODY}" | jq

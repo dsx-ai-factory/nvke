@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Checks documented facts against the repository.
+#
+# Prose restated facts the tree already owns, and then the tree moved. The
+# architecture overview said two Go modules for months while go.work listed
+# nine, and it is the document README.md and AGENTS.md both point at. A tenth
+# module landed while the correction was still in review. Two relative links
+# pointed at files that do not exist, one of them in a security document.
+#
+# Every fact here is read back from its source: go.work through
+# hack/workspace-modules.sh, the binary names from the Makefile, the merge-gate
+# members from merge-gate.yml, and links from the filesystem.
+#
+# Runs on ubuntu-latest and installs nothing. The script needs bash, git, awk
+# and grep, so there is no version to pin.
+#
+# Deliberately NOT path-filtered, for the reason recorded in actionlint.yml: a
+# filtered check does not report on a pull request that misses the filter, and
+# a required check that never reports leaves that pull request waiting forever.
+# See docs/branch-protection-settings.md.
+
+name: Docs Check
+
+# All pull requests, including forks and Dependabot, reach this through
+# merge-gate.yml. The standalone push trigger is post-merge coverage on main;
+# naming mirror or Dependabot branches here too would run it a second time.
+on:
+  push:
+    branches: [main]
+  workflow_call:
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  # The sha is part of the group on main, so every commit gets its own. See the
+  # longer note in shellcheck.yml for why, and why this is a literal name rather
+  # than ${{ github.workflow }}.
+  group: Docs Check-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  docs-check:
+    name: docs-check
+    runs-on: ubuntu-latest
+    if: github.repository == 'NVIDIA/nke'
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the documented facts against the repository
+        run: make --no-print-directory docs-check

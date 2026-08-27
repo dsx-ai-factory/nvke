@@ -32,7 +32,7 @@
 # agent.startSecureServer to grpc.Server.Serve, and it reached main behind a
 # green check because this job reported it without failing on it. See #89.
 #
-# controller/forge-vms is waived rather than gated:
+# controller/nico-vms is waived rather than gated:
 #
 #   GO-2026-4736  github.com/osrg/gobgp/v3 v3.37.0  Fixed in: N/A
 #
@@ -110,19 +110,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The use(...) block, one ./path per line. Reading go.work keeps this
-          # in step with the workspace by construction. `go list -m` would need
-          # a toolchain on a job that otherwise needs none.
-          mods=$(sed -n '/^use (/,/^)/p' go.work \
-            | sed -n 's#^[[:space:]]*\./##p' \
-            | sed 's/[[:space:]]*$//' \
-            | grep -v '^$' \
-            | sort)
-
-          if [ -z "$mods" ]; then
-            echo "::error::no modules found in go.work; the use() block did not parse"
-            exit 1
-          fi
+          mods="$(./hack/workspace-modules.sh)"
 
           # id is the category suffix and the job name: SARIF categories must be
           # distinct or each upload overwrites the last, which would silently
@@ -154,6 +142,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # Read the pin from make/versions.mk rather than repeating it here. It was
+      # written in this file and in codeql.yml and nowhere a developer could
+      # reach it, so `make govulncheck` locally could not match this job.
+      - name: Read pinned versions
+        id: versions
+        run: |
+          {
+            echo "go=$(make --no-print-directory print-GOVULNCHECK_GO_VERSION)"
+            echo "tool=$(make --no-print-directory print-GOVULNCHECK_VERSION)"
+            echo "waived=$(make --no-print-directory print-GOVULNCHECK_WAIVED_MODULES)"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           # Pin the version the Dockerfiles build with, so the scan reports on
@@ -167,7 +167,7 @@ jobs:
           # This is not cosmetic. On 2026-08-13 the same controller/ tree
           # reported 7 reachable standard-library vulnerabilities under 1.26.5
           # and 0 under 1.26.6.
-          go-version: '1.26.6'
+          go-version: ${{ steps.versions.outputs.go }}
           cache: true
           # go.work.sum holds only the hashes NOT already in a member's go.sum,
           # so the versions actually linked often appear in it zero times. Keyed
@@ -185,7 +185,7 @@ jobs:
         # tool, which is deliberately not vendored. `go install pkg@version`
         # ignores the surrounding workspace, so it resolves the tool's own
         # dependencies rather than the repository's build list.
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.6.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@${{ steps.versions.outputs.tool }}
 
       - name: Run govulncheck
         id: scan
@@ -237,7 +237,7 @@ jobs:
         # paths under GITHUB_WORKSPACE, so against RUNNER_TEMP it silently
         # returns '' and skips the upload while the job still reports green.
         if: always() && steps.scan.outputs.sarif != ''
-        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
         with:
           sarif_file: ${{ steps.scan.outputs.sarif }}
           checkout_path: ${{ github.workspace }}/${{ matrix.module.dir }}
@@ -254,43 +254,7 @@ jobs:
         # Exit 3 is a called vulnerability, 0 is clean, anything else is the
         # tool failing.
         shell: bash
-        working-directory: ${{ matrix.module.dir }}
         env:
           GOPROXY: "off"
-          # Modules whose reachable set is known non-empty with no fix
-          # available. Space-separated, and every entry needs a reason in the
-          # header of this file. Waived is not ignored: the SARIF above still
-          # reports everything, and the check below still runs.
-          GATE_WAIVED: "controller/forge-vms"
-        run: |
-          set +e
-          govulncheck ./...
-          rc=$?
-          set -e
-
-          waived=false
-          for m in ${GATE_WAIVED}; do
-            [ "$m" = "${{ matrix.module.dir }}" ] && waived=true
-          done
-
-          if [ "$rc" -ne 0 ] && [ "$rc" -ne 3 ]; then
-            echo "::error::govulncheck failed to run (exit ${rc}), which is not a finding either way"
-            exit "$rc"
-          fi
-
-          if [ "$waived" = false ]; then
-            [ "$rc" -eq 0 ] && exit 0
-            echo "::error::${{ matrix.module.dir }} calls a vulnerable symbol. Fix it, or waive it in GATE_WAIVED with a reason in this file's header."
-            exit 3
-          fi
-
-          # Waived from here down.
-          if [ "$rc" -eq 3 ]; then
-            echo "::warning::${{ matrix.module.dir }} is waived from this gate and still has a reachable vulnerability. See the header of this file."
-            exit 0
-          fi
-
-          # rc == 0 on a waived module: the reason for the waiver is gone.
-          # Failing here is what stops the exclusion outliving its cause.
-          echo "::error::${{ matrix.module.dir }} is clean but still listed in GATE_WAIVED. Remove it from that list and delete its note from this file's header."
-          exit 1
+          GOVULNCHECK_WAIVED_MODULES: ${{ steps.versions.outputs.waived }}
+        run: ./hack/govulncheck-gate.sh "${{ matrix.module.dir }}"

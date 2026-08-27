@@ -1,7 +1,9 @@
 # Getting started
 
 This guide walks you through setting up a local development environment
-for nke and verifying that both modules build and test cleanly.
+for nke and verifying that the modules build and test cleanly. The repository is
+a Go workspace of several modules, listed in `go.work`. The repository README
+says what each one is.
 
 ## Prerequisites
 
@@ -9,7 +11,8 @@ for nke and verifying that both modules build and test cleanly.
 |---|---|---|
 | Go | 1.26+ | https://go.dev/dl/ |
 | Docker | 24+ | https://docs.docker.com/get-docker/ |
-| Flox (optional) | latest | https://flox.dev/ — used for reproducible controller toolchain |
+| Flox (optional) | latest | https://flox.dev/ — pins the whole toolchain, repository-wide |
+| GNU Make | 4.0+ | macOS ships 3.81; `brew install make` gives you `gmake` |
 
 ## Clone the repository
 
@@ -25,42 +28,45 @@ cd nke
 > `github.com/NVIDIA/ncx-infra-controller-rest`. The one internal dependency
 > left, `cluster-api-provider-nico`, is carried in the committed `vendor/` tree,
 > so the commands in this section need no credentials. From the repository root,
-> `GOPROXY=off make build` compiles all nine modules and proves it. See
+> `GOPROXY=off make build` compiles all ten modules and proves it. See
 > [AGENTS.md](../AGENTS.md).
 
-The controller uses [Flox](https://flox.dev/) to pin its toolchain. For
-day-to-day work, activate the Flox environment first:
+The repository uses [Flox](https://flox.dev/) to pin its toolchain, in one
+environment at the root that serves every module. Activate it from anywhere in
+the tree:
 
 ```bash
-cd controller
 flox activate
 ```
+
+It is optional. Every target runs from whatever is on your `PATH` without it, and
+a target that needs a missing tool says which one and how to install it.
 
 ### Build
 
 ```bash
-make build          # → ./bin/cloud-workflow-engine
+make -C controller build          # → controller/bin/cloud-workflow-engine
 ```
 
 ### Lint
 
 ```bash
-make lint           # golangci-lint (5 min timeout)
-make fmt            # gofmt + goimports
+make -C controller lint           # golangci-lint (20 min timeout)
+make -C controller fmt            # gofumpt + goimports
 ```
 
 ### Test
 
 ```bash
-make test           # unit tests with coverage
+make -C controller test           # unit tests with coverage
 ```
 
 ### Code generation
 
-If you change `api/openapi.yaml`, regenerate Go bindings:
+If you change `controller/api/openapi.yaml`, regenerate Go bindings:
 
 ```bash
-flox activate -- make generate
+flox activate -- make -C controller generate
 ```
 
 Never hand-edit `*.gen.go` files — they will be overwritten.
@@ -80,7 +86,7 @@ temporal server start-dev
 Then run CWE:
 
 ```bash
-FWE_API_KEY=<your-NGC-api-key> make run
+FWE_API_KEY=<your-NGC-api-key> make -C controller run
 # UI:      http://localhost:8080
 # Swagger: http://localhost:8080/api/docs
 ```
@@ -90,7 +96,7 @@ self-signed JWT rather than authenticating against NGC, so it needs no
 `FWE_API_KEY`:
 
 ```bash
-FORGE_ENVIRONMENT=test make run
+FORGE_ENVIRONMENT=test make -C controller run
 ```
 
 ## agent (nke-agent)
@@ -103,9 +109,6 @@ cd agent
 go build ./cmd/...
 go test ./...          # or: make test
 ```
-
-> The tests assume a Linux filesystem. Several fail on macOS, where `/var` is
-> a symlink to `/private/var` and the kubeadm file checks reject it.
 
 `nke-agent` and `spire-agent` must be present on each managed node before
 the NKE controller can communicate with it. The binaries are typically

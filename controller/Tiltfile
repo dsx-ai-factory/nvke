@@ -12,10 +12,10 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "capi_core"               -- built-in CAPI core support
 #   "bgp-containers"          -- shared BGP router and default-site VIP pool for container nodes
 #   "capd"                    -- built-in CAPD support
-#   "nico"                    -- NCX Infra Controller support
+#   "nico"                    -- NCX Infra Controller support (nico-mock, container-backed)
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
-#   "forge-vms"               -- Forge-compatible local VM provider
+#   "nico-vms"                -- Forge-compatible local VM backend (real KVM/libvirt VMs)
 #   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
 # Default: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]
@@ -57,7 +57,7 @@ _builtin_provider_dirs = {
     "nico": os.path.join(config.main_dir, "hack/nico-provider"),
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
-    "forge-vms": os.path.join(config.main_dir, "forge-vms"),
+    "nico-vms": os.path.join(config.main_dir, "nico-vms"),
     "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
 }
 
@@ -87,25 +87,32 @@ if "capi-syscmp" in _provider_entries and "capi_core" not in _provider_entries:
 if "nico-vm" in _provider_entries and "capi_core" not in _provider_entries:
     fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
 
-# nico-vm points nico-credentials at the local forge-vms backend and its
-# credentials resource depends on the 'forge-vms' Tilt resource by name.
-if "nico-vm" in _provider_entries and "forge-vms" not in _provider_entries:
-    fail("Provider 'nico-vm' requires 'forge-vms' in the provider list: it points " +
-         "nico-credentials at the local forge-vms backend and depends on its Tilt resource.")
+# nico-vm points nico-credentials at the local nico-vms backend and its
+# credentials resource depends on the 'nico-vms' Tilt resource by name.
+#
+# 'nico-vm' and 'nico-vms' are one character apart, so both fail() messages
+# below name what each provider IS rather than relying on the key alone.
+if "nico-vm" in _provider_entries and "nico-vms" not in _provider_entries:
+    fail("Provider 'nico-vm' (the CAPNICo controller, installed from the NGC Helm chart) " +
+         "requires 'nico-vms' (the local VM backend that serves the Forge API on port 18080) " +
+         "in the provider list: it points nico-credentials at that backend and depends on " +
+         "its Tilt resource by name.")
 
-# 'nico' and 'forge-vms' are mutually exclusive Forge backends for CWE: both set
-# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs forge-vms's
+# 'nico' and 'nico-vms' are mutually exclusive Forge backends for CWE: both set
+# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-vms's
 # listener). Enable at most one. (capd is orthogonal and may accompany either.)
-if "nico" in _provider_entries and "forge-vms" in _provider_entries:
-    fail("Providers 'nico' and 'forge-vms' are mutually exclusive: both set CWE's FORGE_URL " +
+if "nico" in _provider_entries and "nico-vms" in _provider_entries:
+    fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-vms' (real " +
+         "KVM/libvirt VMs) are mutually exclusive CWE backends: both set CWE's FORGE_URL " +
          "and bind host port 18080. Enable only one (capd may accompany either).")
 
 # 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
 # controller: both install one into the capnico-system namespace and own the
 # 'nico-credentials' secret it reads. Enable at most one.
 if "nico" in _provider_entries and "nico-vm" in _provider_entries:
-    fail("Providers 'nico' and 'nico-vm' are mutually exclusive: both install a CAPNICo " +
-         "controller into capnico-system and own the 'nico-credentials' secret. Enable only one.")
+    fail("Providers 'nico' (nico-mock, container-backed) and 'nico-vm' (the CAPNICo chart " +
+         "from NGC) are mutually exclusive: both install a CAPNICo controller into " +
+         "capnico-system and own the 'nico-credentials' secret. Enable only one.")
 
 CWE_NAMESPACE = "cloud-workflow-engine"
 TEMPORAL_NAMESPACE = "temporal"
@@ -367,8 +374,7 @@ _tilt_env.update(_all_cwe_env_overrides)
 
 # Credentials with no defaults anywhere in the repo. The developer supplies each
 # one via .env.tilt or the shell environment; `tilt up` fails fast rather than
-# standing the stack up on placeholder credentials (NKX-11689). CNPG_SITE_PASSWORD
-# is deliberately absent — it is consumed by site-workflow-engine, not CWE.
+# standing the stack up on placeholder credentials.
 _required_cred_names = [
     "DGXC_TENANT_USER",
     "DGXC_TENANT_PASSWORD",
@@ -725,6 +731,8 @@ k8s_yaml([
     "deploy/k8s/spire-oidc-provider-nodeport.yaml",
     "deploy/k8s/spire-nke-services-spiffe-id.yaml",
     "deploy/k8s/spire-tpm-pubhashes-configmap.yaml",
+    "deploy/k8s/nke-auth-dev.yaml",
+    "deploy/k8s/nke-spire-client.yaml",
 ])
 
 k8s_resource(
@@ -775,6 +783,48 @@ k8s_resource(
     labels=["1-infra"],
     objects=["nke-system:namespace"],
     resource_deps=["check-management-cluster"],
+    pod_readiness="ignore",
+)
+
+# NKE API authentication scaffolding: the client namespaces and service accounts
+# the demo mints tokens for, the token-minter RBAC, and the auth config the
+# deployment mounts at /etc/nke/auth/auth.yaml. The NKE release depends on this
+# so the ConfigMap exists before the pod mounts it.
+k8s_resource(
+    new_name="nke-auth-dev",
+    labels=["1-infra"],
+    objects=[
+        "cloud-workflow-engine:namespace",
+        "nke-clients:namespace",
+        "nke-outsiders:namespace",
+        "nke-client:serviceaccount:nke-clients",
+        "nke-outsider:serviceaccount:nke-outsiders",
+        "nke-e2e:serviceaccount:nke-clients",
+        "nke-client-token-minter:role:nke-clients",
+        "nke-client-token-minter:rolebinding:nke-clients",
+        "nke-outsider-token-minter:role:nke-outsiders",
+        "nke-outsider-token-minter:rolebinding:nke-outsiders",
+        "nke-auth-config:configmap:cloud-workflow-engine",
+    ],
+    resource_deps=["check-management-cluster"],
+    pod_readiness="ignore",
+)
+
+# The SPIRE-attested client identity for the authentication specs: a namespace, a
+# service account, the ClusterSPIFFEID that gets it an SVID, and the probe script
+# test/e2e/authn_spire_test.go runs in a one-shot pod. Depends on spire-server
+# for the ClusterSPIFFEID CRD and controller manager. Tilt does not create the
+# probe pod; the spec does.
+k8s_resource(
+    new_name="nke-spire-client",
+    labels=["1-infra"],
+    objects=[
+        "nke-spire-clients:namespace",
+        "nke-spire-client:serviceaccount:nke-spire-clients",
+        "nke-spire-client:clusterspiffeid",
+        "nke-spire-probe:configmap:nke-spire-clients",
+    ],
+    resource_deps=["spire-server"],
     pod_readiness="ignore",
 )
 
@@ -873,6 +923,23 @@ _cwe_tenant_access_enabled = os.getenv(
 _cwe_oidc_enabled = os.getenv(
     "NKE_OIDC_AUTH_ENABLED", _tilt_env.get("NKE_OIDC_AUTH_ENABLED", "true")) == "true"
 
+# NKE API authentication. Enforcing by default now that the suite mints its own
+# token: internal/authtoken discovers the audience from the nke-auth-config
+# ConfigMap and nke.NewClient presents it on every call, so the ordinary specs
+# exercise the shipping authentication path rather than bypassing it.
+#
+# The config file comes from the nke-auth-config ConfigMap in
+# deploy/k8s/nke-auth-dev.yaml, and the chart mounts it from the apiAuth values
+# set below. To drive it by hand, use hack/nke-token.sh for the bearer token.
+#
+#   NKE_AUTH_ENABLED=false tilt up     -> AUTH_CONFIG_PATH unset, authn off
+#   NKE_PERMISSIVE_MODE=true tilt up   -> evaluate and count, never reject
+#
+_cwe_auth_enabled = os.getenv(
+    "NKE_AUTH_ENABLED", _tilt_env.get("NKE_AUTH_ENABLED", "true")) == "true"
+_cwe_permissive_mode = os.getenv(
+    "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
+
 _cwe_chart_extra_env_names = [
     "TEMPORAL_UI_URL",
     "CONTROLLER_MANAGER_POLLING_INTERVAL",
@@ -885,7 +952,6 @@ _cwe_chart_extra_env_names = [
     "FORGE_URL",
     "FORGE_ENVIRONMENT",
     "LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP",
-    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
     "SPIRE_SERVER_API_ADDRESS",
 ]
 _cwe_chart_extra_env = []
@@ -897,13 +963,28 @@ if _tilt_env.get("FWE_API_KEY", "") != "":
         "name": "FWE_API_KEY",
         "value": _tilt_env["FWE_API_KEY"],
     })
+# PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER is honored from the
+# process environment first (with the .env.tilt value as a fallback) so CI lanes
+# can toggle control-plane-controller provisioning per run without editing a file.
+_cwe_provision_cp_with_controller = os.getenv(
+    "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
+    _tilt_env.get("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", ""))
+if _cwe_provision_cp_with_controller != "":
+    _cwe_chart_extra_env.append({
+        "name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
+        "value": _cwe_provision_cp_with_controller,
+    })
 for _name in _required_cred_names:
     _cwe_chart_extra_env.append({"name": _name, "value": _required_creds[_name]})
+# AUTH_CONFIG_PATH and PERMISSIVE_MODE come from the apiAuth values below, not
+# from this env list: the chart owns the mount they point at.
 
 _cwe_chart_flags = [
     "--create-namespace",
     "--values", "hack/tilt-cwe-chart-values.yaml",
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
+    "--set", "apiAuth.enabled=%s" % ("true" if _cwe_auth_enabled else "false"),
+    "--set", "apiAuth.permissive=%s" % ("true" if _cwe_permissive_mode else "false"),
     "--set", "capi.enabled=%s" % ("true" if _cwe_capi_enabled else "false"),
     "--set", "capi.forgeCapiEnabled=%s" % ("true" if _cwe_forge_capi_enabled else "false"),
     "--set", "capi.rbac.create=%s" % ("true" if _cwe_capi_enabled else "false"),
@@ -936,7 +1017,7 @@ if CWE_IMAGE:
 
 _cwe_local_debug_active = os.path.exists(CWE_LOCAL_DEBUG_MARKER)
 _cwe_tilt_goarch = local_arch()
-_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace"] + _all_cwe_resource_deps
+_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev"] + _all_cwe_resource_deps
 if _cwe_oidc_enabled:
     _cwe_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 

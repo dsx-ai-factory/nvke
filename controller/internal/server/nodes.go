@@ -24,7 +24,7 @@ type nodeService struct {
 
 	// allowEtcdSafetyOverrides gates the dangerous etcd member-removal overrides
 	// (allowQuorumLoss / allowSingleVoter) on DeleteNode. When false, requests that
-	// set either override are rejected with a 400 (NKX-13160).
+	// set either override are rejected with a 400.
 	allowEtcdSafetyOverrides bool
 }
 
@@ -88,7 +88,7 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 	}
 
 	// The etcd safety overrides can break etcd quorum or leave a single-voter
-	// cluster, so they are gated behind a server-side flag (NKX-13160). Reject
+	// cluster, so they are gated behind a server-side flag. Reject
 	// rather than silently ignore, so operators get clear feedback.
 	if (allowQuorumLoss || allowSingleVoter) && !s.allowEtcdSafetyOverrides {
 		return api.DeleteNode400JSONResponse{

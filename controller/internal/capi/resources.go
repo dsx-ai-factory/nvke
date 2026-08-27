@@ -8,13 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	corev1 "k8s.io/api/core/v1"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capikubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
@@ -23,11 +21,8 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
-func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster) error {
-	namespace := ClusterNamespace(cluster.Name)
-	if err := ApplyNamespace(ctx, k8sClient, namespace); err != nil {
-		return err
-	}
+func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster db.Cluster, paused bool) error {
+	namespace := constants.NamespaceNKESystem
 
 	manifest, err := ClusterScaffoldManifest(cluster)
 	if err != nil {
@@ -39,6 +34,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 	}
 	infraCluster.SetNamespace(namespace)
 	infraCluster.SetName(cluster.Name)
+	SetPausedAnnotation(infraCluster, paused)
 	if err := k8sClient.Patch(ctx, infraCluster, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra cluster: %w", err)
 	}
@@ -64,6 +60,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 			},
 		},
 		Spec: clusterv1.ClusterSpec{
+			Paused: ptr.To(paused),
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: infraGV.Group,
 				Kind:     infraCluster.GetKind(),
@@ -71,12 +68,27 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 			},
 		},
 	}
+	SetPausedAnnotation(clusterObj, paused)
 
 	if err := k8sClient.Patch(ctx, clusterObj, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply CAPI cluster: %w", err)
 	}
 
 	return nil
+}
+
+// SetPausedAnnotation sets or removes the CAPI paused annotation.
+func SetPausedAnnotation(obj metav1.Object, paused bool) {
+	annotations := obj.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	if paused {
+		annotations[clusterv1.PausedAnnotation] = "true"
+	} else {
+		delete(annotations, clusterv1.PausedAnnotation)
+	}
+	obj.SetAnnotations(annotations)
 }
 
 func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
@@ -111,31 +123,6 @@ func ClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, error) {
 	}
 }
 
-// ApplyClusterKubeconfigSecret preserves the legacy CAPI kubeconfig activity
-// for replay of provisioning workflows started before TenantAccess became the
-// sole publisher. New workflows do not call this path.
-func ApplyClusterKubeconfigSecret(ctx context.Context, k8sClient client.Client, cluster db.Cluster, kubeconfigBytes []byte) error {
-	namespace := ClusterNamespace(cluster.Name)
-	clusterObj := &clusterv1.Cluster{}
-	if err := k8sClient.Get(ctx, client.ObjectKey{
-		Name:      cluster.Name,
-		Namespace: namespace,
-	}, clusterObj); err != nil {
-		return fmt.Errorf("failed to get CAPI cluster %s/%s: %w", namespace, cluster.Name, err)
-	}
-
-	secretObj := capikubeconfig.GenerateSecret(clusterObj, kubeconfigBytes)
-	secretObj.TypeMeta = metav1.TypeMeta{
-		APIVersion: corev1.SchemeGroupVersion.String(),
-		Kind:       "Secret",
-	}
-
-	if err := k8sClient.Create(ctx, secretObj); err != nil && !apierrors.IsAlreadyExists(err) {
-		return fmt.Errorf("creating CAPI kubeconfig secret %s/%s: %w", secretObj.Namespace, secretObj.Name, err)
-	}
-	return nil
-}
-
 func ParseManifest(raw []byte) (*unstructured.Unstructured, error) {
 	var obj map[string]any
 	if err := json.Unmarshal(raw, &obj); err != nil {
@@ -146,20 +133,4 @@ func ParseManifest(raw []byte) (*unstructured.Unstructured, error) {
 		return nil, fmt.Errorf("manifest must include apiVersion and kind")
 	}
 	return u, nil
-}
-
-func ApplyNamespace(ctx context.Context, k8sClient client.Client, namespace string) error {
-	if err := k8sClient.Patch(ctx, &corev1.Namespace{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: corev1.SchemeGroupVersion.String(),
-			Kind:       "Namespace",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name: namespace,
-		},
-	}, client.Apply, client.FieldOwner(constants.FieldManagerCWE), client.ForceOwnership); err != nil {
-		return fmt.Errorf("failed to apply namespace %q: %w", namespace, err)
-	}
-
-	return nil
 }

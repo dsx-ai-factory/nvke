@@ -4,10 +4,10 @@
 package capi
 
 const (
-	ClusterNamespacePrefix = "cluster-"
-	ClusterNameMaxLength   = 63 - len(ClusterNamespacePrefix)
+	clusterNamespacePrefix = "cluster-"
+	ClusterNameMaxLength   = 63 - len(clusterNamespacePrefix)
 )
 
-func ClusterNamespace(clusterName string) string {
-	return ClusterNamespacePrefix + clusterName
+func LegacyClusterNamespace(clusterName string) string {
+	return clusterNamespacePrefix + clusterName
 }
