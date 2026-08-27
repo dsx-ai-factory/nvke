@@ -11,6 +11,29 @@ Cloud Workflow Engine (CWE) orchestrates NKE (NVIDIA Kubernetes Engine) cluster 
 - **API**: OpenAPI 3.0 with oapi-codegen for Go server/client generation
 - **Dependencies**: Managed via Flox
 
+## Architecture invariants — read before touching any handler, reconciler, or workflow
+
+### One process, three programming models
+
+A single `worker` binary runs three distinct subsystems concurrently:
+
+- **REST API** (`internal/server/`) — HTTP handlers backed by Postgres
+- **Temporal worker** (`internal/temporal/`) — workflow and activity implementations
+- **Controllers** (`internal/controllers/`) — a mix of k8s controller-runtime reconcilers and postgres state reconcilers for various tasks
+
+Reading only one subsystem gives an incomplete picture of what reacts to a change.
+Any change that touches cluster or node state should be checked against all three.
+
+### The outbox pattern — never call Temporal from a handler
+
+The API does not start workflows. A handler should not call Temporal directly.
+
+The correct flow:
+1. The handler opens one database transaction and writes the cluster record *and* a row in `workflow_outbox` — both land or neither does (`internal/server/clusters.go`, `CreateWorkflowOutboxEntry`)
+2. `OutboxProcessor` polls `workflow_outbox`, starts the Temporal workflow, and marks the row processed (`internal/temporal/outbox_processor.go`)
+
+This indirection is deliberate. It guarantees that a committed cluster always has its work queued, with no window where the cluster record exists but the workflow does not.
+
 ## Setup Commands
 
 Before running any CLI commands, activate the Flox environment. It is
