@@ -197,9 +197,25 @@ kubectl -n spire-server get secret oidc-provider-upstream-ca \
   -o jsonpath='{.data.tls\.crt}' | base64 -d > spire-ca.crt
 ```
 
-NKE reads it from a file inside its container, so it has to be mounted there.
-The simplest way is to put it in the same ConfigMap as the config — NKE mounts
-that whole ConfigMap as a directory, so the certificate appears alongside:
+NKE reads it from a file inside its container. It goes beside the configuration,
+under `extraFiles` — the whole ConfigMap is mounted as a directory, so anything
+listed here is a file next to `auth.yaml`:
+
+```yaml
+apiAuth:
+  configMap:
+    create: true
+    extraFiles:
+      spire-ca.crt: |
+        -----BEGIN CERTIFICATE-----
+        ...
+        -----END CERTIFICATE-----
+```
+
+It is then at `/etc/nke/auth/spire-ca.crt`, which is what `caBundlePath` points
+at below. A CA bundle is a public certificate, not a secret.
+
+If you manage the ConfigMap yourself instead, put the file in it directly:
 
 ```bash
 kubectl -n "$NS" create configmap nke-auth-config \
@@ -207,15 +223,6 @@ kubectl -n "$NS" create configmap nke-auth-config \
   --from-file=spire-ca.crt=spire-ca.crt \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
-
-It is then at `/etc/nke/auth/spire-ca.crt`.
-
-> **This means you cannot use `configMap.create: true` with SPIRE.** A ConfigMap
-> the chart builds holds the config file and nothing else, so there is nowhere
-> to put the certificate. Either create the ConfigMap yourself as above, or put
-> the certificate in its own ConfigMap and mount it with the chart's `volumes`
-> and `volumeMounts` values. The same applies to any issuer whose keys endpoint
-> uses a private CA.
 
 ### 3. Write the issuer
 
@@ -292,7 +299,7 @@ a warning.
 | `issuers[].issuer` | yes | Must match the token's `iss` exactly. |
 | `issuers[].audiences` | no | Overrides the top-level list for this issuer. |
 | `issuers[].jwks.uri` | yes | Must be `https`. |
-| `issuers[].jwks.caBundlePath` | no | CA file inside the container. Omit for a publicly trusted certificate. |
+| `issuers[].jwks.caBundlePath` | no | CA file inside the container, usually one you listed under `apiAuth.configMap.extraFiles`. Omit for a publicly trusted certificate. |
 | `issuers[].jwks.bearerTokenPath` | no | Token file, if the keys endpoint needs one. Re-read on every fetch. |
 | `issuers[].algorithms` | yes | `RS256` and `ES256` cover most issuers. Asymmetric only. |
 | `issuers[].admit` | yes | `serviceAccounts` or `spiffe`, not both. |
@@ -315,6 +322,7 @@ something NKE trims.
 | `apiAuth.permissive` | `false` | |
 | `apiAuth.configMap.name` | `nke-auth-config` | Mounted either way. |
 | `apiAuth.configMap.create` | `false` | Build the ConfigMap from `apiAuth.config`. |
+| `apiAuth.configMap.extraFiles` | empty | Files to place beside `auth.yaml`, keyed by filename. A CA bundle goes here. |
 | `apiAuth.config` | empty | The document, `audiences` and `issuers` only. |
 | `apiAuth.clusterIssuerDiscovery` | `true` | Lets NKE read the cluster's own keys. Already granted on a stock cluster; leave it on unless you bind that permission yourself. |
 
@@ -351,7 +359,8 @@ call to `/api/version` tells you nothing about whether authentication is on.
 **NKE will not start, and the log says it could not set up authentication.**
 When enforcing, every issuer's keys must be reachable at startup. The message
 names the issuer and the error. Check the keys URL is reachable from inside the
-pod, and that any `caBundlePath` points at a file that is actually mounted.
+pod, and that any `caBundlePath` points at a file that is actually mounted — if
+it sits under `/etc/nke/auth`, it has to be listed in `extraFiles`.
 
 **Everything returns 401, including tokens that look right.**
 Check the audience first — it is the usual cause. A token minted for the wrong
