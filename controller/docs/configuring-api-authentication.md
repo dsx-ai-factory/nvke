@@ -72,7 +72,41 @@ in-cluster name instead, which is stable and serves the same thing:
 https://kubernetes.default.svc/openid/v1/jwks
 ```
 
-### 2. Write the configuration
+### 2. Create the identity your callers will use
+
+NKE admits callers by name, so the account has to exist before you name it in
+the configuration:
+
+```bash
+kubectl create namespace nke-clients
+kubectl -n nke-clients create serviceaccount nke-client
+```
+
+Any names will do — they just have to match the `admit` rule you write next. One
+account per caller is easier to revoke than one shared between them.
+
+Minting a token for that account needs `create` on `serviceaccounts/token` in
+its namespace. A cluster administrator already has it. To let something else
+mint — a CI job, or an application that renews its own token — grant it:
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nke-client-token-minter
+  namespace: nke-clients
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["nke-client"]
+    verbs: ["create"]
+```
+
+`resourceNames` holds that grant to the one account, so it does not become a way
+to mint tokens for anything else in the namespace. Bind it to whoever is doing
+the minting.
+
+### 3. Write the configuration
 
 ```yaml
 audiences: ["https://nke.example.com"]
@@ -105,7 +139,7 @@ namespace.
 The two CA and token paths are files Kubernetes puts in every pod, so they work
 as written.
 
-### 3. Set the chart values
+### 4. Set the chart values
 
 ```yaml
 apiAuth:
@@ -115,7 +149,7 @@ apiAuth:
     create: true
     name: nke-auth-config
   config:
-    # the YAML from step 2 goes here
+    # the YAML from step 3 goes here
     audiences: ["https://nke.example.com"]
     issuers:
       - name: local-kubernetes
@@ -137,7 +171,7 @@ kubectl -n "$NS" create configmap nke-auth-config \
 Set one or the other. Setting `config` without `create`, or `create` without
 `config`, fails the install rather than silently ignoring one of them.
 
-### 4. Check it came up
+### 5. Check it came up
 
 ```bash
 kubectl -n "$NS" logs deploy/cloud-workflow-engine | grep 'API authentication'
@@ -152,7 +186,7 @@ You want one `fetched issuer signing keys` line per issuer. If one is missing,
 fix it now — while permissive, a failed fetch is only a warning, but when
 enforcing it stops NKE from starting at all.
 
-### 5. Tell callers what to ask for
+### 6. Tell callers what to ask for
 
 ```bash
 kubectl create token nke-client -n nke-clients \
