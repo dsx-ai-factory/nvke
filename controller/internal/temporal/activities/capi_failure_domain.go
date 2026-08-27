@@ -85,9 +85,9 @@ func (a *Activities) selectControlPlaneFailureDomain(ctx context.Context, create
 		}
 	}
 
-	algorithm := a.failureDomainSpread
+	algorithm := a.failureDomainSelection
 	if algorithm == nil {
-		algorithm = capi.LeastUsedFailureDomainSpread{}
+		algorithm = capi.LeastUsedFailureDomainSelection{}
 	}
 	failureDomain, err := algorithm.Select(eligibleDomains, assignments)
 	if err != nil {

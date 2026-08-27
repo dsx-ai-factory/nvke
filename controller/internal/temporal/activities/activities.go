@@ -30,7 +30,7 @@ type Activities struct {
 	trustDomain              string
 	controllerClientCABundle string
 	getTrustDomainBundle     trustDomainAndBundleGetter
-	failureDomainSpread      capi.FailureDomainSpreadAlgorithm
+	failureDomainSelection   capi.FailureDomainSelectionAlgorithm
 }
 
 func NewActivities(
@@ -51,7 +51,7 @@ func NewActivities(
 		trustDomain:              trustDomain,
 		controllerClientCABundle: controllerClientCABundle,
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
-		failureDomainSpread:      capi.LeastUsedFailureDomainSpread{},
+		failureDomainSelection:   capi.LeastUsedFailureDomainSelection{},
 	}
 }
 

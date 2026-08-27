@@ -7,19 +7,19 @@ import (
 	"slices"
 )
 
-// FailureDomainSpreadAlgorithm selects a failure domain from the eligible
+// FailureDomainSelectionAlgorithm selects a failure domain from the eligible
 // domains using the assignments of existing Machines.
-type FailureDomainSpreadAlgorithm interface {
+type FailureDomainSelectionAlgorithm interface {
 	Select(eligibleDomains, assignments []string) (string, error)
 }
 
-// LeastUsedFailureDomainSpread selects the eligible domain with the fewest
+// LeastUsedFailureDomainSelection selects the eligible domain with the fewest
 // existing assignments and breaks ties by domain name.
-type LeastUsedFailureDomainSpread struct{}
+type LeastUsedFailureDomainSelection struct{}
 
 // Select returns the least-used eligible domain, or an empty string when no
 // eligible domains are available.
-func (LeastUsedFailureDomainSpread) Select(eligibleDomains, assignments []string) (string, error) {
+func (LeastUsedFailureDomainSelection) Select(eligibleDomains, assignments []string) (string, error) {
 	counts := make(map[string]int, len(eligibleDomains))
 	for _, domain := range eligibleDomains {
 		if domain != "" {

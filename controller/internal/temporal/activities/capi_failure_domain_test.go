@@ -190,11 +190,11 @@ func TestActivitiesApplyCAPIMachineSerializesConcurrentAssignments(t *testing.T)
 	tx := &testutil.MockTx{}
 	tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil).Times(machineCount)
 	database := &serializingFailureDomainDB{tx: tx}
-	spread := &concurrencyProbeSpread{}
+	selection := &concurrencyProbeSelection{}
 	activity := &Activities{
-		k8sClient:           k8sClient,
-		db:                  database,
-		failureDomainSpread: spread,
+		k8sClient:              k8sClient,
+		db:                     database,
+		failureDomainSelection: selection,
 	}
 	createCtx := &capiMachineCreateContext{
 		cluster:   cluster,
@@ -241,7 +241,7 @@ func TestActivitiesApplyCAPIMachineSerializesConcurrentAssignments(t *testing.T)
 		counts[machine.Spec.FailureDomain]++
 	}
 	assert.Equal(t, map[string]int{"fd-a": 2, "fd-b": 2, "fd-c": 2}, counts)
-	assert.Equal(t, 1, spread.maxConcurrent())
+	assert.Equal(t, 1, selection.maxConcurrent())
 	tx.AssertExpectations(t)
 }
 
@@ -258,20 +258,20 @@ func (d *serializingFailureDomainDB) RunInTx(ctx context.Context, fn func(contex
 	return fn(ctx, d.tx)
 }
 
-type concurrencyProbeSpread struct {
+type concurrencyProbeSelection struct {
 	mu            sync.Mutex
 	active        int
 	maxActiveSeen int
 }
 
-func (s *concurrencyProbeSpread) Select(eligibleDomains, assignments []string) (string, error) {
+func (s *concurrencyProbeSelection) Select(eligibleDomains, assignments []string) (string, error) {
 	s.mu.Lock()
 	s.active++
 	s.maxActiveSeen = max(s.maxActiveSeen, s.active)
 	s.mu.Unlock()
 
 	time.Sleep(time.Millisecond)
-	selected, err := (capi.LeastUsedFailureDomainSpread{}).Select(eligibleDomains, assignments)
+	selected, err := (capi.LeastUsedFailureDomainSelection{}).Select(eligibleDomains, assignments)
 
 	s.mu.Lock()
 	s.active--
@@ -279,7 +279,7 @@ func (s *concurrencyProbeSpread) Select(eligibleDomains, assignments []string) (
 	return selected, err
 }
 
-func (s *concurrencyProbeSpread) maxConcurrent() int {
+func (s *concurrencyProbeSelection) maxConcurrent() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.maxActiveSeen
