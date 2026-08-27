@@ -198,8 +198,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
-			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
-			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			// Default cpu2-mem2gb cannot schedule ovnkube-node (500m/1500Mi).
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{scale: true, reboot: true},
