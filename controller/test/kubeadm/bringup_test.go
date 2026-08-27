@@ -233,7 +233,7 @@ func launchNicoVMS(ctx context.Context, t *testing.T, cfg config, workDir string
 
 func createNodes(ctx context.Context, t *testing.T, cfg config, proc *nicovms.Process, workDir string, specs []nicovms.NodeSpec) []nicovms.Node {
 	t.Helper()
-	t.Logf("creating %d VMs concurrently", len(specs))
+	t.Logf("creating %d VMs (sequentially; see nicovms.CreateNodes)", len(specs))
 	nodes, err := proc.CreateNodes(ctx, specs)
 	if err != nil {
 		t.Fatalf("create nodes: %v", err)
