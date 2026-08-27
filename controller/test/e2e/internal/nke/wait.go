@@ -295,17 +295,17 @@ func (c *Client) WaitForControlPlaneNodesRolled(ctx context.Context, clusterID o
 	ticker := time.NewTicker(c.opts.Poll)
 	defer ticker.Stop()
 
-	var lastErr error
+	lastError := "<none>"
 	for {
 		select {
 		case <-deadline:
-			return fmt.Errorf("timeout after %v waiting for control-plane roll on cluster %s (last error: %v)", c.opts.Provision, clusterID, lastErr)
+			return fmt.Errorf("timeout after %v waiting for control-plane roll on cluster %s (last error: %s)", c.opts.Provision, clusterID, lastError)
 		case <-ctx.Done():
-			return fmt.Errorf("waiting for control-plane roll on cluster %s (last error: %v): %w", clusterID, lastErr, ctx.Err())
+			return fmt.Errorf("waiting for control-plane roll on cluster %s (last error: %s): %w", clusterID, lastError, ctx.Err())
 		case <-ticker.C:
 			nodes, err := c.ListClusterNodes(ctx, clusterID)
 			if err != nil {
-				lastErr = err
+				lastError = err.Error()
 				continue
 			}
 			controlPlaneNodes := make([]api.Node, 0, desired)
@@ -315,11 +315,11 @@ func (c *Client) WaitForControlPlaneNodesRolled(ctx context.Context, clusterID o
 				}
 			}
 			if len(controlPlaneNodes) != desired {
-				lastErr = fmt.Errorf("%d control-plane nodes present; want %d", len(controlPlaneNodes), desired)
+				lastError = fmt.Sprintf("%d control-plane nodes present; want %d", len(controlPlaneNodes), desired)
 				continue
 			}
 			if err := controlPlaneNodesRolled(controlPlaneNodes, oldNodeIDs); err != nil {
-				lastErr = err
+				lastError = err.Error()
 				continue
 			}
 			return nil
