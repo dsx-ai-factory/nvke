@@ -17,6 +17,8 @@ import (
 const (
 	// nodeRebootStartTimeout bounds how long CWE may take to observe a reboot.
 	nodeRebootStartTimeout = 5 * time.Minute
+	// noLastError is the placeholder used before a poll loop records a failure.
+	noLastError = "<none>"
 )
 
 // WaitForClusterReady polls the cluster until its Provisioned condition is True,
@@ -145,7 +147,7 @@ func (c *Client) WaitForProvisionedNodeCount(ctx context.Context, nodePoolID ope
 	defer ticker.Stop()
 
 	lastProvisionedCount := 0
-	lastError := "<none>"
+	lastError := noLastError
 
 	for {
 		select {
@@ -295,7 +297,7 @@ func (c *Client) WaitForControlPlaneNodesRolled(ctx context.Context, clusterID o
 	ticker := time.NewTicker(c.opts.Poll)
 	defer ticker.Stop()
 
-	lastError := "<none>"
+	lastError := noLastError
 	for {
 		select {
 		case <-deadline:
@@ -391,7 +393,7 @@ func (c *Client) WaitForReadyNodeInPool(ctx context.Context, nodePoolID openapi_
 	ticker := time.NewTicker(c.opts.Poll)
 	defer ticker.Stop()
 
-	lastError := "<none>"
+	lastError := noLastError
 	for {
 		select {
 		case <-deadline:
