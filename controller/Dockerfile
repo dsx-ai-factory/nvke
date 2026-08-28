@@ -15,7 +15,7 @@
 # callers override, so it needs agreement from whoever runs internal builds.
 ARG BASE_REGISTRY=docker.io
 
-FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.2.0@sha256:cffed83b451236bad4347110f116e0808a132b57b799acd7c9d8a4ce7cf6b781 AS spiffe-jwt-exec-auth
+FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.3.0@sha256:6402624276b66ef7a733e126488397c9cf33c6706ee1f52a9c7ffad2a540aa7c AS spiffe-jwt-exec-auth
 
 # Set up golang build container
 FROM ${BASE_REGISTRY}/golang:1.26.6 AS builder

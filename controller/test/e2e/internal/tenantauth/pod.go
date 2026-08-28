@@ -16,7 +16,7 @@ import (
 const (
 	// The upstream SPIFFE exec-credential plugin, fetched from GitHub Releases.
 	pluginDownloadBaseURL = "https://github.com/spiffe/k8s-spiffe-workload-jwt-exec-auth/releases/download"
-	pluginVersion         = "0.0.7"
+	pluginVersion         = "0.3.0"
 	pluginAsset           = "k8s-spiffe-workload-jwt-exec-auth_Linux_x86_64.tar.gz"
 	// pluginChecksums is goreleaser's per-release checksum file
 	// (<project>_<version>_checksums.txt); there is no plain "checksums.txt".
