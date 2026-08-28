@@ -2,22 +2,21 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Smoke test: boot the qcow2 nke-node build produced and confirm it comes up
+# Smoke test: boot a qcow2 the non-FDE build produced and confirm it comes up
 # clean (cloud-init completes, SSH answers, nke-agent and spire-agent units
 # are installed and enabled). Does not exercise SPIRE/nke-agent against a real
-# server -- just proves the golden image boots on its own.
+# server -- just proves the image boots on its own.
 #
-# Set OVMF_CODE (and optionally OVMF_VARS_TEMPLATE) to boot a UEFI-installed
-# image, e.g. the nke-node-non-fde.pkr.hcl / nke-node-fde.pkr.hcl variants:
+# QCOW is required, and this variant is UEFI-installed, so OVMF_CODE
+# (and optionally OVMF_VARS_TEMPLATE) is too:
 #   QCOW=../output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./boot-smoke.sh
-# Unset (the default), this boots BIOS-style, matching the base nke-node.pkr.hcl
-# image. The FDE variant needs its own passphrase/TPM handling instead of
-# this script -- see ../../demo-fde.sh.
+# The FDE variant needs its own passphrase/TPM handling instead of this
+# script -- see ../../demo-fde.sh.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-QCOW="${QCOW:-${ROOT}/output/nke-node}"
+QCOW="${QCOW:?QCOW is required, e.g. QCOW=../output-non-fde/nke-node-non-fde}"
 SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
 OVMF_CODE="${OVMF_CODE:-}"
@@ -36,7 +35,7 @@ else
 fi
 
 if [[ ! -f "${QCOW}" ]]; then
-  echo "boot-smoke: no image at ${QCOW}, run 'make os-image' first" >&2
+  echo "boot-smoke: no image at ${QCOW}, run 'make os-image-non-fde' first" >&2
   exit 1
 fi
 if [[ ! -f "${SSH_KEY}" ]]; then

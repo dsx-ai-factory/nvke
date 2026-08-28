@@ -10,7 +10,6 @@
 # itself down on its own — it's for manual, interactive use.
 #
 # Usage:
-#   QCOW=packer/output/nke-node ./packer/scripts/run-vm.sh
 #   QCOW=packer/output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd \
 #     ./packer/scripts/run-vm.sh
 #   QCOW=packer/output-fde/nke-node-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1 \
@@ -20,8 +19,9 @@
 #   QCOW          path to the qcow2 to boot (required)
 #   SSH_KEY       ssh key to inject (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
-#   OVMF_CODE     set to boot UEFI (needed for the FDE/non-FDE variants);
-#                 unset boots BIOS-style, matching the base nke-node.pkr.hcl
+#   OVMF_CODE     needed for the FDE/non-FDE variants (both UEFI-installed);
+#                 unset boots BIOS-style, for whatever other qcow2 you point
+#                 this at
 #   OVMF_VARS_TEMPLATE  default: /usr/share/OVMF/OVMF_VARS_4M.fd
 #   TPM           set to 1 to attach a fresh swtpm (the FDE image's first
 #                 real boot needs one to complete its TPM bind; the shipped
@@ -35,7 +35,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QCOW="${QCOW:-}"
 if [[ -z "${QCOW}" ]]; then
-  echo "run-vm: QCOW is required, e.g. QCOW=packer/output/nke-node $0" >&2
+  echo "run-vm: QCOW is required, e.g. QCOW=packer/output-non-fde/nke-node-non-fde $0" >&2
   exit 1
 fi
 if [[ ! -f "${QCOW}" ]]; then

@@ -56,8 +56,7 @@ variable "disk_size" {
   description = "Build-time disk size, matching the FDE variant for comparability (see its comment about sizing-policy). The real deploy disk is grown to full size on first boot."
 }
 
-# "kvm" when the host exposes /dev/kvm, "tcg" for software emulation — see
-# nke-node.pkr.hcl for why this is probed rather than declared.
+# See the same variable in nke-node-fde.pkr.hcl.
 variable "accelerator" {
   type        = string
   default     = "kvm"

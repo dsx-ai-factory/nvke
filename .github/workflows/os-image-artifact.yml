@@ -3,20 +3,25 @@
 
 name: OS Image Artifact
 
-# Builds the Packer reference node qcow2 on an os-image/v* tag, boots it for the
-# smoke test, and only then publishes. The GitHub Release is created here (not
-# in release.yml) so a failed bake or smoke test never cuts a release.
+# Builds and validates the FDE and non-FDE Packer node images on an
+# os-image/v* tag (or a manual dispatch), and on a real tag cuts a GitHub
+# Release carrying nke-os-image-check + its checksum. The GitHub Release is
+# created here (not in release.yml) so a failed bake or validation never cuts
+# a release.
 #
-# The payload is an OCI artifact, not a container image:
-#
-#   ghcr.io/nvidia/nke/os-image:v0.1.0
-#     `-- platform linux/amd64   layer: nke-node.qcow2
-#
-#   oras pull ghcr.io/nvidia/nke/os-image:v0.1.0 --platform linux/amd64
+# Neither qcow2 is published anywhere: FDE's build-time LUKS_PASSPHRASE
+# defaults to a shared, documented placeholder ("changeit", see
+# os-image/docs/full-disk-encryption.md) that's only safe because it never
+# leaves the build -- shipping that image as a public, downloadable artifact
+# would publish its own unlock passphrase for the window before a node's
+# first real boot completes TPM binding. Until there's a real
+# secret-provisioning story for a published build, both variants are
+# build-and-validate-only, discarded at the end of the job like every other
+# Packer output.
 #
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
 # nothing. Distinct from image-nvcr.yml, which publishes the controller
-# container. This is the Ubuntu node disk the site controller boots.
+# container.
 on:
   push:
     tags:
@@ -29,11 +34,6 @@ on:
         required: false
         default: "edge"
         type: string
-      dry_run:
-        description: "Build and validate everything, but skip the GHCR push. The tag trigger always publishes; this only applies to a manual run."
-        required: false
-        default: false
-        type: boolean
 
 permissions: {}
 
@@ -42,18 +42,15 @@ concurrency:
   # expression is the CALLER's name, so any workflow merge-gate.yml calls would
   # share a group with its siblings and cancel them.
   group: OS Image Artifact-${{ github.ref }}
-  # Never cancel a publish midway: a half-pushed qcow2 would leave a tag
-  # pointing at a truncated layer.
   cancel-in-progress: false
 
 env:
-  REPO: ghcr.io/nvidia/nke/os-image
   PACKER_SHA256: "cfefdea4ac580eba7b254ef34d25b756d4961741004e3e701a1476594d13e64a"
 
 jobs:
   publish:
     if: github.repository == 'NVIDIA/nke'
-    name: Build, verify, and publish
+    name: Build, verify, and release
     # Packer QEMU needs /dev/kvm. linux-amd64-cpu16 (a container-based pool)
     # never exposed it, forcing every bake onto QEMU's tcg software emulation
     # — confirmed directly: a full FDE bake took 1h39m under tcg vs a few
@@ -64,14 +61,16 @@ jobs:
     # immediately if that assumption turns out wrong, rather than silently
     # falling back to the ~10x-slower emulated path the way this job used to.
     runs-on: linux-amd64-gpu-l4-latest-1
-    # Sized for real KVM: base bake + FDE bake + demo-fde.sh + non-FDE bake +
-    # two boot-smokes, each a few minutes, with real headroom. If this ever
-    # regresses to tcg somehow, the KVM gate below fails fast instead of
-    # burning the timeout finding out.
+    # Sized for real KVM: FDE bake + demo-fde.sh + non-FDE bake + boot-smoke,
+    # each a few minutes, with real headroom. If this ever regresses to tcg
+    # somehow, the KVM gate below fails fast instead of burning the timeout
+    # finding out.
     timeout-minutes: 120
     permissions:
       contents: write
-      packages: write
+      # Not "write": nothing is pushed to GHCR here. fetch-artifacts.sh (run
+      # by every `make os-image-*` build) only pulls nke-agent/spire-agent.
+      packages: read
     env:
       NKE_AGENT_VERSION: ${{ github.event.inputs.nke_agent_version || 'edge' }}
     steps:
@@ -105,7 +104,7 @@ jobs:
         with:
           version: ${{ steps.versions.outputs.oras_version }}
 
-      - name: Resolve version and tags
+      - name: Resolve version
         id: meta
         shell: bash
         run: |
@@ -118,17 +117,8 @@ jobs:
             version="${version#os-image/}"
           fi
 
-          aliases=("sha-${GITHUB_SHA}")
-          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            aliases+=("${version}")
-          fi
-
-          {
-            echo "version=${version}"
-            echo "aliases=${aliases[*]}"
-          } >> "${GITHUB_OUTPUT}"
-          echo "Publishing ${version} as: ${aliases[*]}"
-          echo "Baking nke-agent ${NKE_AGENT_VERSION}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          echo "Building ${version}, baking nke-agent ${NKE_AGENT_VERSION}"
 
       - name: Build and test nke-os-image-check
         working-directory: os-image
@@ -191,9 +181,8 @@ jobs:
           sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
           packer version
 
-      # Needed even in a dry run: fetch-artifacts.sh (run by every `make
-      # os-image*` build below) pulls nke-agent/spire-agent from the same
-      # registry via oras, not just the final push.
+      # fetch-artifacts.sh (run by every `make os-image-*` build below) pulls
+      # nke-agent/spire-agent from GHCR via oras.
       - name: Log in to GHCR
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -202,20 +191,9 @@ jobs:
           echo "${GHCR_TOKEN}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
-      - name: Build the node image
-        env:
-          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make -C os-image/packer os-image NKE_AGENT_VERSION="${NKE_AGENT_VERSION}"
-
-      - name: Boot-smoke the qcow2
-        run: make -C os-image boot-smoke
-
-      # FDE and non-FDE are opt-in installer-based variants (see
-      # os-image/nke-node-fde.pkr.hcl, nke-node-non-fde.pkr.hcl) — built and
-      # validated here so a regression in either blocks publish of the base
-      # image too, same as boot-smoke above. Neither is published: they have
-      # no stated consumer yet, so this is build+validate only, discarded at
-      # the end of the job like every other Packer output.
+      # See the header comment: neither variant is published. Built and
+      # validated here so a regression in either fails the job before any
+      # release gets cut.
       - name: Build the FDE node image
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -255,57 +233,15 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Compress the qcow2 for publish
-        id: disk
+      - name: Prepare release assets
         run: |
           set -euo pipefail
-          src="os-image/packer/output/nke-node"
-          if [[ ! -f "${src}" ]]; then
-            echo "::error::Packer did not write ${src}"
-            ls -la os-image/packer/output || true
-            exit 1
-          fi
           mkdir -p dist
-          qemu-img convert -p -c -O qcow2 "${src}" dist/nke-node.qcow2
-          qemu-img info dist/nke-node.qcow2
           cp os-image/bin/nke-os-image-check dist/nke-os-image-check
-          ( cd dist && sha256sum nke-node.qcow2 nke-os-image-check > checksums.txt )
+          ( cd dist && sha256sum nke-os-image-check > checksums.txt )
           echo "::group::checksums"
           cat dist/checksums.txt
           echo "::endgroup::"
-          echo "qcow=dist/nke-node.qcow2" >> "${GITHUB_OUTPUT}"
-
-      # --artifact-platform is still marked experimental in the ORAS CLI. It is
-      # load-bearing: without it the manifest has no platform in its config and
-      # `oras pull --platform linux/amd64` cannot select this disk.
-      - name: Push the qcow2 to GHCR
-        if: github.event.inputs.dry_run != 'true'
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          ALIASES: ${{ steps.meta.outputs.aliases }}
-        run: |
-          set -euo pipefail
-          read -ra aliases <<< "${ALIASES}"
-          tags=""
-          for alias in "${aliases[@]}"; do
-            tags="${tags:+${tags},}${alias}"
-          done
-
-          ( cd dist && oras push "${REPO}:${tags}" \
-              --artifact-type application/vnd.nvidia.nke.node.qcow2.v1 \
-              --artifact-platform linux/amd64 \
-              --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
-              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
-              --annotation "org.opencontainers.image.version=${VERSION}" \
-              --annotation "org.opencontainers.image.licenses=Apache-2.0" \
-              --annotation "org.opencontainers.image.title=nke-node.qcow2" \
-              nke-node.qcow2:application/vnd.qemu.qcow2 )
-
-      - name: Show published manifest
-        if: github.event.inputs.dry_run != 'true'
-        run: |
-          set -euo pipefail
-          oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
 
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/os-image/')
@@ -316,18 +252,12 @@ jobs:
           name: os-image ${{ steps.meta.outputs.version }}
           draft: true
           body: |
-            Reference node OS image ${{ steps.meta.outputs.version }} (Ubuntu 26.04, linux/amd64).
+            os-image ${{ steps.meta.outputs.version }}: the FDE and non-FDE Packer
+            node images built and validated against nke-agent `${{ env.NKE_AGENT_VERSION }}`
+            (Ubuntu 26.04, linux/amd64) at this tag. Neither disk is published --
+            see the workflow header comment in os-image-artifact.yml for why.
 
-            Baked nke-agent: `${{ env.NKE_AGENT_VERSION }}`.
-
-            Pull the qcow2 with oras (not docker):
-
-            ```
-            oras pull ghcr.io/nvidia/nke/os-image:${{ steps.meta.outputs.version }} --platform linux/amd64
-            ```
-
-            The GitHub Release attaches `nke-os-image-check` and checksums. The disk
-            itself is the OCI artifact above; it is too large to attach here.
+            This release attaches `nke-os-image-check` and its checksum.
           files: |
             dist/nke-os-image-check
             dist/checksums.txt

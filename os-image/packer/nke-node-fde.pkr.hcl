@@ -1,15 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# FDE (full-disk-encryption) variant of nke-node.pkr.hcl. Opt-in build: same
-# nke-agent/spire-agent provisioning as the base image, plus an LVM-on-LUKS
-# storage layout sealed to the node's TPM 2.0 on first boot. See
-# os-image/docs/full-disk-encryption.md.
-#
-# Structurally different from nke-node.pkr.hcl: the base image boots the
-# prebuilt Ubuntu cloud .img directly, but LUKS/LVM partitioning requires the
-# Ubuntu Server *installer* ISO with an autoinstall storage layout, so this
-# variant has its own Packer source rather than a variable on the base one.
+# FDE (full-disk-encryption) build: boots the Ubuntu Server *installer* ISO
+# with an autoinstall LVM-on-LUKS storage layout, provisions nke-agent and
+# spire-agent, and seals the LUKS key to the node's TPM 2.0 on first boot.
+# See os-image/docs/full-disk-encryption.md.
 #
 # See nke-node-non-fde.pkr.hcl for the same installer+autoinstall+LVM flow with
 # LUKS turned off — useful for telling FDE-specific issues apart from
@@ -69,8 +64,10 @@ variable "luks_passphrase" {
   description = "Build-time-only LUKS passphrase (must match the autoinstall storage password). Replaced by a TPM binding on first boot; see docs/full-disk-encryption.md."
 }
 
-# "kvm" when the host exposes /dev/kvm, "tcg" for software emulation — see
-# nke-node.pkr.hcl for why this is probed rather than declared.
+# "kvm" when the host exposes /dev/kvm, "tcg" for software emulation.
+# Probed rather than declared: not every build host (or CI runner) exposes
+# /dev/kvm, and a fixed value would either fail to build at all where it's
+# missing or emulate needlessly where it's present.
 variable "accelerator" {
   type        = string
   default     = "kvm"
