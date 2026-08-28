@@ -4,20 +4,31 @@
 name: OS Image Artifact
 
 # Builds and validates the FDE and non-FDE Packer node images on an
-# os-image/v* tag (or a manual dispatch), and on a real tag cuts a GitHub
-# Release carrying nke-os-image-check + its checksum. The GitHub Release is
-# created here (not in release.yml) so a failed bake or validation never cuts
-# a release.
+# os-image/v* tag (or a manual dispatch), pushes both qcow2s to GHCR as OCI
+# artifacts, and on a real tag cuts a GitHub Release carrying
+# nke-os-image-check + checksums covering all three files. The GitHub
+# Release is created here (not in release.yml) so a failed bake or
+# validation never cuts a release.
 #
-# Neither qcow2 is published anywhere: FDE's build-time LUKS_PASSPHRASE
-# defaults to a shared, documented placeholder ("changeit", see
-# os-image/docs/full-disk-encryption.md) that's only safe because it never
-# leaves the build -- shipping that image as a public, downloadable artifact
-# would publish its own unlock passphrase for the window before a node's
-# first real boot completes TPM binding. Until there's a real
-# secret-provisioning story for a published build, both variants are
-# build-and-validate-only, discarded at the end of the job like every other
-# Packer output.
+# FDE security note: its build-time LUKS_PASSPHRASE defaults to a shared,
+# documented placeholder ("changeit", see
+# os-image/docs/full-disk-encryption.md) baked into both a LUKS passphrase
+# slot and GRUB's luks.key= kernel parameter until a node's first real boot
+# completes a verified TPM bind -- anyone with console/physical access to an
+# unbound node can read it and unlock the volume with it. This is a known,
+# accepted tradeoff for publishing a build-and-go FDE image without a
+# per-node secret-provisioning story: operators deploying this image to real
+# hardware are relying on prompt first-boot TPM binding to close that
+# window (verify with luks-tpm-verify; see
+# os-image/docs/full-disk-encryption.md).
+#
+# The payload is an OCI artifact, not a container image:
+#
+#   ghcr.io/nvidia/nke/os-image-fde:v0.1.0
+#   ghcr.io/nvidia/nke/os-image-non-fde:v0.1.0
+#     `-- platform linux/amd64   layer: nke-node-{fde,non-fde}.qcow2
+#
+#   oras pull ghcr.io/nvidia/nke/os-image-fde:v0.1.0 --platform linux/amd64
 #
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
 # nothing. Distinct from image-nvcr.yml, which publishes the controller
@@ -34,6 +45,11 @@ on:
         required: false
         default: "edge"
         type: string
+      dry_run:
+        description: "Build and validate everything, but skip the GHCR push. The tag trigger always publishes; this only applies to a manual run."
+        required: false
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -42,10 +58,14 @@ concurrency:
   # expression is the CALLER's name, so any workflow merge-gate.yml calls would
   # share a group with its siblings and cancel them.
   group: OS Image Artifact-${{ github.ref }}
+  # Never cancel a publish midway: a half-pushed qcow2 would leave a tag
+  # pointing at a truncated layer.
   cancel-in-progress: false
 
 env:
   PACKER_SHA256: "cfefdea4ac580eba7b254ef34d25b756d4961741004e3e701a1476594d13e64a"
+  REPO_FDE: ghcr.io/nvidia/nke/os-image-fde
+  REPO_NON_FDE: ghcr.io/nvidia/nke/os-image-non-fde
 
 jobs:
   publish:
@@ -68,9 +88,7 @@ jobs:
     timeout-minutes: 120
     permissions:
       contents: write
-      # Not "write": nothing is pushed to GHCR here. fetch-artifacts.sh (run
-      # by every `make os-image-*` build) only pulls nke-agent/spire-agent.
-      packages: read
+      packages: write
     env:
       NKE_AGENT_VERSION: ${{ github.event.inputs.nke_agent_version || 'edge' }}
     steps:
@@ -104,7 +122,7 @@ jobs:
         with:
           version: ${{ steps.versions.outputs.oras_version }}
 
-      - name: Resolve version
+      - name: Resolve version and tags
         id: meta
         shell: bash
         run: |
@@ -117,8 +135,17 @@ jobs:
             version="${version#os-image/}"
           fi
 
-          echo "version=${version}" >> "${GITHUB_OUTPUT}"
-          echo "Building ${version}, baking nke-agent ${NKE_AGENT_VERSION}"
+          aliases=("sha-${GITHUB_SHA}")
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            aliases+=("${version}")
+          fi
+
+          {
+            echo "version=${version}"
+            echo "aliases=${aliases[*]}"
+          } >> "${GITHUB_OUTPUT}"
+          echo "Publishing ${version} as: ${aliases[*]}"
+          echo "Baking nke-agent ${NKE_AGENT_VERSION}"
 
       - name: Build and test nke-os-image-check
         working-directory: os-image
@@ -191,9 +218,6 @@ jobs:
           echo "${GHCR_TOKEN}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
-      # See the header comment: neither variant is published. Built and
-      # validated here so a regression in either fails the job before any
-      # release gets cut.
       - name: Build the FDE node image
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -231,12 +255,61 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Prepare release assets
+      - name: Compress the qcow2s for publish
         run: |
           set -euo pipefail
           mkdir -p dist
+          fde_src="$(ls os-image/packer/output-fde/*.qcow2)"
+          non_fde_src="$(ls os-image/packer/output-non-fde/*.qcow2)"
+          qemu-img convert -p -c -O qcow2 "${fde_src}" dist/nke-node-fde.qcow2
+          qemu-img convert -p -c -O qcow2 "${non_fde_src}" dist/nke-node-non-fde.qcow2
+          qemu-img info dist/nke-node-fde.qcow2
+          qemu-img info dist/nke-node-non-fde.qcow2
+
+      # --artifact-platform is still marked experimental in the ORAS CLI. It is
+      # load-bearing: without it the manifest has no platform in its config and
+      # `oras pull --platform linux/amd64` cannot select this disk.
+      - name: Push the qcow2s to GHCR
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          ALIASES: ${{ steps.meta.outputs.aliases }}
+        run: |
+          set -euo pipefail
+          read -ra aliases <<< "${ALIASES}"
+          tags=""
+          for alias in "${aliases[@]}"; do
+            tags="${tags:+${tags},}${alias}"
+          done
+
+          for variant in fde non-fde; do
+            case "${variant}" in
+              fde) repo="${REPO_FDE}" ;;
+              non-fde) repo="${REPO_NON_FDE}" ;;
+            esac
+            ( cd dist && oras push "${repo}:${tags}" \
+                --artifact-type application/vnd.nvidia.nke.node.qcow2.v1 \
+                --artifact-platform linux/amd64 \
+                --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
+                --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+                --annotation "org.opencontainers.image.version=${VERSION}" \
+                --annotation "org.opencontainers.image.licenses=Apache-2.0" \
+                --annotation "org.opencontainers.image.title=nke-node-${variant}.qcow2" \
+                "nke-node-${variant}.qcow2:application/vnd.qemu.qcow2" )
+          done
+
+      - name: Show published manifests
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          set -euo pipefail
+          oras manifest fetch --pretty "${REPO_FDE}:sha-${GITHUB_SHA}"
+          oras manifest fetch --pretty "${REPO_NON_FDE}:sha-${GITHUB_SHA}"
+
+      - name: Prepare release assets
+        run: |
+          set -euo pipefail
           cp os-image/bin/nke-os-image-check dist/nke-os-image-check
-          ( cd dist && sha256sum nke-os-image-check > checksums.txt )
+          ( cd dist && sha256sum nke-node-fde.qcow2 nke-node-non-fde.qcow2 nke-os-image-check > checksums.txt )
           echo "::group::checksums"
           cat dist/checksums.txt
           echo "::endgroup::"
@@ -251,11 +324,28 @@ jobs:
           draft: true
           body: |
             os-image ${{ steps.meta.outputs.version }}: the FDE and non-FDE Packer
-            node images built and validated against nke-agent `${{ env.NKE_AGENT_VERSION }}`
-            (Ubuntu 26.04, linux/amd64) at this tag. Neither disk is published --
-            see the workflow header comment in os-image-artifact.yml for why.
+            node images, built and validated against nke-agent `${{ env.NKE_AGENT_VERSION }}`
+            (Ubuntu 26.04, linux/amd64).
 
-            This release attaches `nke-os-image-check` and its checksum.
+            Pull the qcow2s with oras (not docker):
+
+            ```
+            oras pull ghcr.io/nvidia/nke/os-image-fde:${{ steps.meta.outputs.version }} --platform linux/amd64
+            oras pull ghcr.io/nvidia/nke/os-image-non-fde:${{ steps.meta.outputs.version }} --platform linux/amd64
+            ```
+
+            **FDE security note**: this image's `LUKS_PASSPHRASE` is the shared,
+            documented build-time placeholder (`changeit`), baked into both a LUKS
+            passphrase slot and GRUB's `luks.key=` kernel parameter until a node's
+            first real boot completes a verified TPM bind (see
+            `os-image/docs/full-disk-encryption.md`). Anyone with console/physical
+            access to an unbound node can read it and unlock the volume with it.
+            Verify a node closed that window with `luks-tpm-verify` before trusting
+            TPM-only unlock in production.
+
+            The GitHub Release attaches `nke-os-image-check` and checksums covering
+            both qcow2s and the checker binary. The disks themselves are the OCI
+            artifacts above; they are too large to attach here.
           files: |
             dist/nke-os-image-check
             dist/checksums.txt

@@ -128,17 +128,26 @@ make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 OVMF_CO
 
 An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
 `.github/workflows/os-image-artifact.yml`, which builds and validates both
-the FDE and non-FDE images and, only if that succeeds, cuts a GitHub Release
-for the tag attaching `nke-os-image-check` and `checksums.txt`.
+the FDE and non-FDE images and, only if that succeeds, pushes both qcow2s to
+GHCR as OCI artifacts and cuts a GitHub Release for the tag attaching
+`nke-os-image-check` and `checksums.txt` (covering both qcow2s and the
+checker binary).
 
-**Neither qcow2 is published anywhere** — not to GHCR, not as a Release
-asset. FDE's build-time `LUKS_PASSPHRASE` defaults to a shared, documented
-placeholder (`changeit`) that's only safe because it never leaves the build;
-publishing that image would publish its own unlock passphrase for the
-window before a node's first real boot completes TPM binding. Until there's
-a real secret-provisioning story for a published build, both variants stay
-build-and-validate-only in CI, same as running `make os-image-fde`/
-`make os-image-non-fde` locally.
+```bash
+oras pull ghcr.io/nvidia/nke/os-image-fde:vX.Y.Z --platform linux/amd64
+oras pull ghcr.io/nvidia/nke/os-image-non-fde:vX.Y.Z --platform linux/amd64
+```
+
+**FDE security note**: the published image's `LUKS_PASSPHRASE` is the
+shared, documented build-time placeholder (`changeit`), baked into both a
+LUKS passphrase slot and GRUB's `luks.key=` kernel parameter until a node's
+first real boot completes a verified TPM bind (see
+[docs/full-disk-encryption.md](docs/full-disk-encryption.md)). Anyone with
+console/physical access to an unbound node can read it and unlock the
+volume with it — this is a known, accepted tradeoff for publishing a
+build-and-go FDE image without a per-node secret-provisioning story.
+Verify a node closed that window with `luks-tpm-verify` before trusting
+TPM-only unlock in production.
 
 The workflow runs on `linux-amd64-gpu-l4-latest-1`, chosen specifically for
 real `/dev/kvm` — a container-based pool tried earlier had none, forcing
