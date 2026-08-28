@@ -452,6 +452,12 @@ spiffe:
   # -- Enable SPIFFE identity for mTLS to tenant clusters
   enabled: false
   endpointSocket: "unix:///spiffe-workload-api/spire-agent.sock"
+  # -- RFC 8693 token-exchange endpoint the exec credential plugin trades its
+  # JWT-SVID at before calling a tenant API server. Leave empty to present the
+  # JWT-SVID directly, which is what every site does today. Set it only where the
+  # tenant clusters trust the exchange's issuer, otherwise the controller's calls
+  # to them will start failing authentication.
+  jwtExchangeEndpoint: ""
   # -- SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac.
   # Required when nkeOIDCAuth.enabled is true: builds the
   # nke:cwe SPIFFE subject ID in that ConfigMap. Must equal the

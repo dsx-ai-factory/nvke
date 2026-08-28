@@ -281,6 +281,10 @@ spec:
               value: {{ .Values.spiffe.enabled | quote }}
             - name: SPIFFE_ENDPOINT_SOCKET
               value: {{ .Values.spiffe.endpointSocket | quote }}
+            {{- with .Values.spiffe.jwtExchangeEndpoint }}
+            - name: SPIFFE_JWT_EXCHANGE_ENDPOINT
+              value: {{ . | quote }}
+            {{- end }}
             - name: SPIRE_SERVER_NAMESPACE
               value: {{ .Values.spiffe.spire.serverNamespace | quote }}
             - name: SPIRE_CLASS_NAME

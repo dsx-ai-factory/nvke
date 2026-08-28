@@ -41,16 +41,22 @@ func TestBuildSpireKubeconfig(t *testing.T) {
 		clusterName string
 		server      string
 		ca          []byte
+		exchange    string
 	}{
 		{name: "with CA", golden: "spire_kubeconfig_with_ca.yaml", clusterName: "alpha", server: "https://1.2.3.4:6443", ca: []byte(testCAPEM)},
 		{name: "empty CA", golden: "spire_kubeconfig_empty_ca.yaml", clusterName: "beta", server: "https://5.6.7.8:6443", ca: nil},
+		// The exchange case carries one extra env var and nothing else: the audience
+		// and the socket are unchanged, so turning the exchange on at a site does not
+		// change what the tenant cluster is asked to trust beyond the issuer of the
+		// token it receives.
+		{name: "with exchange", golden: "spire_kubeconfig_with_exchange.yaml", clusterName: "gamma", server: "https://9.10.11.12:6443", ca: []byte(testCAPEM), exchange: "https://exchange.example/token"},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			out, err := buildSpireKubeconfig(tc.clusterName, tc.server, tc.ca, testEndpointSocket)
+			out, err := buildSpireKubeconfig(tc.clusterName, tc.server, tc.ca, testEndpointSocket, tc.exchange)
 			require.NoError(t, err)
 
 			assertGolden(t, tc.golden, out)

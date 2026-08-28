@@ -231,7 +231,7 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 		return err
 	}
 
-	kubeconfig, err := buildSpireKubeconfig(cluster.Name, server, ca, c.cfg.SpiffeEndpointSocket)
+	kubeconfig, err := buildSpireKubeconfig(cluster.Name, server, ca, c.cfg.SpiffeEndpointSocket, c.cfg.SpiffeJWTExchangeEndpoint)
 	if err != nil {
 		return fmt.Errorf("building SPIRE kubeconfig for cluster %s: %w", cluster.Name, err)
 	}

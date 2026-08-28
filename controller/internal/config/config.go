@@ -201,6 +201,17 @@ type Config struct {
 	// SpiffeEndpointSocket is the socket path for the SPIFFE endpoint. Note this is the same env var used by SPIRE agent by default.
 	SpiffeEndpointSocket string `env:"SPIFFE_ENDPOINT_SOCKET" default:"unix:///tmp/spire-agent/agent.sock"`
 
+	// SpiffeJWTExchangeEndpoint, when set, is the RFC 8693 token-exchange endpoint
+	// the exec credential plugin trades its JWT-SVID at before presenting the
+	// result to a tenant API server. It is written into the kubeconfigs the
+	// tenant-access controller publishes, so it takes effect on the next reconcile.
+	//
+	// Leave it empty to present the JWT-SVID from the local SPIRE server directly,
+	// which is the behavior every site has today. Set it only where the tenant
+	// clusters trust the exchange's issuer rather than that SPIRE server's, or
+	// CWE's calls to them will start failing authentication.
+	SpiffeJWTExchangeEndpoint string `env:"SPIFFE_JWT_EXCHANGE_ENDPOINT"`
+
 	// SpireServerNamespace is the namespace of the SPIRE server.
 	SpireServerNamespace string `env:"SPIRE_SERVER_NAMESPACE" default:"spire-server"`
 
