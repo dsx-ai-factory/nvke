@@ -52,6 +52,9 @@ metadata:
   derived from spiffe.trustDomain and has to be given whole via spiffe.cweSubject.
   Set the two together or the controller authenticates and is then denied everything.
 */}}
+{{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.cweSubject) }}
+{{- fail "spiffe.cweSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites sub, so the default subject (this controller's SPIFFE ID) would match nothing and every call into a tenant cluster would authenticate and then be denied" }}
+{{- end }}
 {{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/cloud-workflow-engine" $td) }}
 ---
 apiVersion: v1
@@ -137,7 +140,7 @@ data:
       name: nke:cwe
     subjects:
       - kind: User
-        name: {{ $cweSubject }}
+        name: {{ $cweSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: ClusterRole
@@ -151,7 +154,7 @@ data:
       namespace: kube-system
     subjects:
       - kind: User
-        name: {{ $cweSubject }}
+        name: {{ $cweSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role
@@ -165,7 +168,7 @@ data:
       namespace: kube-node-lease
     subjects:
       - kind: User
-        name: {{ $cweSubject }}
+        name: {{ $cweSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role
