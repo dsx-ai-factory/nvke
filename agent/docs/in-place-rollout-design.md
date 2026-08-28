@@ -59,7 +59,7 @@ sequenceDiagram
 
     Reconciler->>DB: Load role target, generation,<br/>observed versions, and phase state
     alt This role phase is Failed for the generation
-        Reconciler-->>DB: No action; wait for explicit API retry
+        Reconciler-->>DB: No action and wait for explicit API retry
     else The role has drift
         Reconciler->>DB: Record Running + owner + CWE method<br/>and write workflow outbox
         opt Control-plane phase
