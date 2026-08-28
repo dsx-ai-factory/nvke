@@ -709,7 +709,8 @@ func (n *NodeAgentServer) restartAPIServer() error {
 		},
 		&nkeutils.CommandOptions{
 			Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
-		})
+		},
+	)
 	if err != nil {
 		logger.Errorf("failed to delete api-server pod: %v\n", err)
 		return err

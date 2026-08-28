@@ -50,7 +50,8 @@ func chartsDebPresenceDefault(ctx context.Context, binPkg string) error {
 
 // errOvnRequiresHostOpenVSwitch is returned when ovn-kubernetes cannot use host Open vSwitch (ovs-vsctl).
 var errOvnRequiresHostOpenVSwitch = errors.New(
-	"openvswitch is required on the host for ovn-kubernetes (install a package such as openvswitch-switch and ensure ovs-vsctl can reach ovs-vswitchd)")
+	"openvswitch is required on the host for ovn-kubernetes (install a package such as openvswitch-switch and ensure ovs-vsctl can reach ovs-vswitchd)",
+)
 
 const (
 	ovnKubernetesHelmChartDir = "/etc/dgx/ovn-kubernetes"

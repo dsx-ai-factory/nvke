@@ -164,7 +164,8 @@ func renderCloudInit(t *testing.T, cfg config, workDir string) []nicovms.NodeSpe
 
 	provision := cloudinit.AptProvision(
 		cfg.aptRepoURL, cfg.aptGpgURL, cfg.aptSuite, cfg.aptComp,
-		cfg.kubeadmDeb, cfg.kubeadmDebVersion)
+		cfg.kubeadmDeb, cfg.kubeadmDebVersion,
+	)
 	if cfg.provisionMode == provisionCommunity {
 		provision = cloudinit.CommunityProvision(serveArtifacts(t, cfg))
 	}

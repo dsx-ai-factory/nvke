@@ -107,7 +107,8 @@ func TestNicoVMSSmoke(t *testing.T) {
 	}
 
 	out, err := sshRun(ctx, keyPath, a.IP, fmt.Sprintf(
-		"ping -c3 -W5 %s && timeout 10 bash -c 'echo > /dev/tcp/%s/22' && echo VM_TO_VM_OK", b.IP, b.IP))
+		"ping -c3 -W5 %s && timeout 10 bash -c 'echo > /dev/tcp/%s/22' && echo VM_TO_VM_OK", b.IP, b.IP,
+	))
 	t.Logf("--- %s -> %s ---\n%s", a.Name, b.Name, out)
 	if err != nil {
 		t.Fatalf("%s could not reach %s across the bridge: %v", a.Name, b.Name, err)

@@ -51,12 +51,14 @@ var _ = Describe("NKE API authentication", Label("authn"), func() {
 		if !found {
 			authnAbsentf(
 				"authentication is OFF: ConfigMap %s/%s does not exist, so this NKE is configured to authenticate nobody and there is no audience to mint against",
-				cwe.Namespace(), authtoken.ConfigMapName)
+				cwe.Namespace(), authtoken.ConfigMapName,
+			)
 		}
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF: %s is not set on Deployment %s/%s, so the authentication middleware is not in the request chain even though ConfigMap %s carries an audience",
-				authnConfigPathEnv, cwe.Namespace(), cwe.DeploymentName, authtoken.ConfigMapName)
+				authnConfigPathEnv, cwe.Namespace(), cwe.DeploymentName, authtoken.ConfigMapName,
+			)
 		}
 	})
 
@@ -67,7 +69,8 @@ var _ = Describe("NKE API authentication", Label("authn"), func() {
 		if mode == authnModePermissive {
 			Skip(fmt.Sprintf(
 				"authentication is PERMISSIVE: %s=true on Deployment %s/%s, so a rejected request is counted and then served, and 200 is the correct answer to this case",
-				authnPermissiveEnv, cwe.Namespace(), cwe.DeploymentName))
+				authnPermissiveEnv, cwe.Namespace(), cwe.DeploymentName,
+			))
 		}
 	}
 

@@ -50,12 +50,14 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		if !found {
 			authnAbsentf(
 				"authentication is OFF: ConfigMap %s/%s does not exist, so there is no audience to mint against and nothing to count",
-				cwe.Namespace(), authtoken.ConfigMapName)
+				cwe.Namespace(), authtoken.ConfigMapName,
+			)
 		}
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF: %s is not set on Deployment %s/%s, so there is no middleware to put into permissive mode",
-				authnConfigPathEnv, cwe.Namespace(), cwe.DeploymentName)
+				authnConfigPathEnv, cwe.Namespace(), cwe.DeploymentName,
+			)
 		}
 
 		runtimeClient, err := kube.RuntimeClient(restConfig)

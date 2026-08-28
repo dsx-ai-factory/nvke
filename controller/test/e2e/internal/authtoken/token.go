@@ -264,7 +264,8 @@ func (s *Source) mint(ctx context.Context) (string, error) {
 		return "", fmt.Errorf(
 			"authtoken: TokenRequest for %s returned a token that expired at %s, already past at %s; "+
 				"check clock skew between this host and the apiserver",
-			s.Identity(), expires.Format(time.RFC3339), s.now().Format(time.RFC3339))
+			s.Identity(), expires.Format(time.RFC3339), s.now().Format(time.RFC3339),
+		)
 	}
 
 	s.token = response.Status.Token

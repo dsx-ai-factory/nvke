@@ -294,7 +294,8 @@ func TestTokenErrorNamesTheRBACItNeeds(t *testing.T) {
 	source, recorder, _ := newTestSource(t)
 	recorder.err = apierrors.NewForbidden(
 		schema.GroupResource{Resource: "serviceaccounts"}, "nke-client",
-		errors.New("cannot create resource \"serviceaccounts/token\""))
+		errors.New("cannot create resource \"serviceaccounts/token\""),
+	)
 
 	_, err := source.Token(context.Background())
 	if err == nil {

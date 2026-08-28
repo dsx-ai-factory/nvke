@@ -119,7 +119,8 @@ func (s *metricsSequencer) fetch() ([]byte, error) {
 
 func metricsOutput(count int) []byte {
 	return []byte(fmt.Sprintf(
-		`apiserver_encryption_config_controller_automatic_reloads_total{status="success"} %d`, count))
+		`apiserver_encryption_config_controller_automatic_reloads_total{status="success"} %d`, count,
+	))
 }
 
 // metricsWithReload: Phase 2 already-confirmed check sees R > baseline → fast exit.

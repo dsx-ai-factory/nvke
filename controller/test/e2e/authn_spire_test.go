@@ -56,14 +56,16 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		if mode == authnModeDisabled {
 			authnAbsentf(
 				"authentication is OFF on Deployment %s/%s: %s is not set, so the middleware is not in the request chain and no SVID could be rejected",
-				cwe.Namespace(), cwe.DeploymentName, authnConfigPathEnv)
+				cwe.Namespace(), cwe.DeploymentName, authnConfigPathEnv,
+			)
 		}
 		if mode != authnModeEnforcing {
 			// Permissive answers 200 to everything, so both cases below would
 			// pass against an NKE that never heard of SPIRE.
 			Skip(fmt.Sprintf(
 				"authentication is %s on Deployment %s/%s: a SPIRE acceptance that is not allowed to reject proves nothing",
-				mode, cwe.Namespace(), cwe.DeploymentName))
+				mode, cwe.Namespace(), cwe.DeploymentName,
+			))
 		}
 
 		found := false
@@ -72,7 +74,8 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		if !found {
 			Skip(fmt.Sprintf(
 				"ConfigMap %s/%s configures no issuer named %q, so this NKE trusts no SPIRE and there is nothing to accept",
-				cwe.Namespace(), authtoken.ConfigMapName, spireIssuerName))
+				cwe.Namespace(), authtoken.ConfigMapName, spireIssuerName,
+			))
 		}
 
 		_, err = clientset.CoreV1().ServiceAccounts(spireProbeNamespace).
@@ -80,7 +83,8 @@ var _ = Describe("NKE API authentication with a SPIRE JWT-SVID", Label("authn", 
 		if apierrors.IsNotFound(err) {
 			Skip(fmt.Sprintf(
 				"ServiceAccount %s/%s does not exist: apply deploy/k8s/nke-spire-client.yaml, or run tilt up, so SPIRE has an identity to attest",
-				spireProbeNamespace, spireProbeServiceAccount))
+				spireProbeNamespace, spireProbeServiceAccount,
+			))
 		}
 		Expect(err).NotTo(HaveOccurred(), "read the probe's service account")
 
@@ -195,12 +199,14 @@ func parseSpireAdmission(raw []byte) (spireAdmission, bool, error) {
 			// An error rather than found=false, or this would report "no SPIRE
 			// configured" about a deployment that plainly configures one.
 			return spireAdmission{}, false, fmt.Errorf(
-				"issuer %q sets no admit.spiffe rule, so no SPIFFE ID can be admitted through it", spireIssuerName)
+				"issuer %q sets no admit.spiffe rule, so no SPIFFE ID can be admitted through it", spireIssuerName,
+			)
 		}
 		if issuer.Admit.SPIFFE.TrustDomain == "" || len(issuer.Admit.SPIFFE.PathPrefixes) == 0 {
 			return spireAdmission{}, false, fmt.Errorf(
 				"issuer %q has an incomplete admit.spiffe rule (trustDomain=%q, pathPrefixes=%v)",
-				spireIssuerName, issuer.Admit.SPIFFE.TrustDomain, issuer.Admit.SPIFFE.PathPrefixes)
+				spireIssuerName, issuer.Admit.SPIFFE.TrustDomain, issuer.Admit.SPIFFE.PathPrefixes,
+			)
 		}
 
 		// The per-issuer list supersedes the deployment-wide one rather than
@@ -211,7 +217,8 @@ func parseSpireAdmission(raw []byte) (spireAdmission, bool, error) {
 		}
 		if len(audiences) == 0 || audiences[0] == "" {
 			return spireAdmission{}, false, fmt.Errorf(
-				"issuer %q resolves to no audience, and NKE requires at least one", spireIssuerName)
+				"issuer %q resolves to no audience, and NKE requires at least one", spireIssuerName,
+			)
 		}
 		audience := audiences[0]
 

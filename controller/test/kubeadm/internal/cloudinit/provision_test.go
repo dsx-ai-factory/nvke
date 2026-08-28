@@ -26,10 +26,14 @@ func TestProvisionModesRenderValidYAML(t *testing.T) {
 		name, block string
 		want        []string
 	}{
-		{"apt", AptProvision("https://r/", "https://g/", "nke-noble", "main", "pkg", "6"),
-			[]string{"apt-get install -y pkg=6 nke-agent"}},
-		{"community", CommunityProvision("http://172.30.0.1:8080/install-k8s.sh", "http://172.30.0.1:8080/a.deb"),
-			[]string{"install-k8s.sh", "nke-agent.deb"}},
+		{
+			"apt", AptProvision("https://r/", "https://g/", "nke-noble", "main", "pkg", "6"),
+			[]string{"apt-get install -y pkg=6 nke-agent"},
+		},
+		{
+			"community", CommunityProvision("http://172.30.0.1:8080/install-k8s.sh", "http://172.30.0.1:8080/a.deb"),
+			[]string{"install-k8s.sh", "nke-agent.deb"},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			v := base()

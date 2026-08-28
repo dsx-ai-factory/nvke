@@ -185,7 +185,8 @@ func loadConfig(t *testing.T) config {
 	if c.seedPath == "" {
 		c.seedPath = filepath.Join(
 			filepath.Dir(filepath.Dir(c.nicoVMSBin)),
-			"internal", "seed", "default-seed.yaml")
+			"internal", "seed", "default-seed.yaml",
+		)
 	}
 	if c.seedPath, err = filepath.Abs(c.seedPath); err != nil {
 		t.Fatalf("resolve seed path: %v", err)
