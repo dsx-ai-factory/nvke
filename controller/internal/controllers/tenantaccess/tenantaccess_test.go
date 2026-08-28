@@ -112,6 +112,9 @@ const (
 
 func TestKubeconfigSecretName(t *testing.T) {
 	assert.Equal(t, "prod-a-kubeconfig", KubeconfigSecretName("prod-a"))
+	assert.Equal(t, "prod-a-admin-kubeconfig", AdminKubeconfigSecretName("prod-a"))
+	assert.True(t, IsCWEKubeconfigSecretName("prod-a-kubeconfig"))
+	assert.False(t, IsCWEKubeconfigSecretName("prod-a-admin-kubeconfig"))
 }
 
 func TestExtractCAFromKubeconfig(t *testing.T) {
@@ -196,8 +199,9 @@ func TestController_Reconcile(t *testing.T) {
 	activeNodeID := uuid.New()
 
 	mockDB := &testutil.MockDB{}
-	// Active is read by Reconcile and the mode refresh.
-	mockDB.On("GetCluster", mock.Anything, activeCluster.ID).Return(activeCluster, nil).Times(3)
+	// Active is read by Reconcile, the mode refresh, admin Secret upsert, and
+	// CWE kubeconfig Secret upsert.
+	mockDB.On("GetCluster", mock.Anything, activeCluster.ID).Return(activeCluster, nil).Times(4)
 	mockDB.On("GetCluster", mock.Anything, deletingCluster.ID).Return(deletingCluster, nil).Once()
 	mockDB.On("GetCluster", mock.Anything, notReadyCluster.ID).Return(notReadyCluster, nil).Once()
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
@@ -393,7 +397,7 @@ func TestController_ReconcileOIDC(t *testing.T) {
 
 	mockDB := &testutil.MockDB{}
 	// Reconcile reads once and the mode refresh reads once.
-	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(4)
+	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(5)
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
 		return f.ClusterID != nil && *f.ClusterID == oidcID
 	})).Return([]db.Node{joinedCPNode(oidcNodeID, oidcID)}, nil)
@@ -471,6 +475,9 @@ func TestController_ReconcileOIDC(t *testing.T) {
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[constants.LabelKeyKubeconfigMode])
 	assert.Equal(t, corev1.SecretTypeOpaque, kcSecret.Type)
 
+	// Always-admin Secret carries verbatim admin.conf even when OIDC is on.
+	assertAdminSecret(t, ctx, k8sClient, oidcCluster, testAdminConf)
+
 	mockDB.AssertExpectations(t)
 }
 
@@ -486,8 +493,8 @@ func TestController_ReconcileMixed(t *testing.T) {
 	oidcCluster := db.Cluster{ID: oidcID, Name: "oidc", OIDCAuthEnabled: true}
 
 	mockDB := &testutil.MockDB{}
-	mockDB.On("GetCluster", mock.Anything, plainID).Return(plainCluster, nil).Times(3)
-	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(4)
+	mockDB.On("GetCluster", mock.Anything, plainID).Return(plainCluster, nil).Times(4)
+	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(5)
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
 		return f.ClusterID != nil && *f.ClusterID == plainID
 	})).Return([]db.Node{joinedCPNode(plainNodeID, plainID)}, nil)
@@ -548,6 +555,8 @@ func TestController_ReconcileMixed(t *testing.T) {
 	}, tbSecret))
 	assert.Equal(t, []byte("test-ca"), tbSecret.Data[TrustBundleSecretKey])
 
+	assertAdminSecret(t, ctx, k8sClient, oidcCluster, testAdminConf)
+
 	mockDB.AssertExpectations(t)
 }
 
@@ -575,11 +584,34 @@ func assertSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client
 	}, secret)
 	if !want {
 		assert.True(t, apierrors.IsNotFound(err), "expected no secret for cluster %s", cluster.Name)
+		adminErr := k8sClient.Get(ctx, types.NamespacedName{
+			Name:      AdminKubeconfigSecretName(cluster.Name),
+			Namespace: SecretsNamespace,
+		}, &corev1.Secret{})
+		assert.True(t, apierrors.IsNotFound(adminErr), "expected no admin secret for cluster %s", cluster.Name)
 		return
 	}
 
 	require.NoError(t, err)
 	assert.Equal(t, []byte(testKubeconfig), secret.Data[KubeconfigSecretKey])
+	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
+	assert.Equal(t, cluster.Name, secret.Labels[clusterv1.ClusterNameLabel])
+	assert.Equal(t, constants.LabelValueNkeManagedBy, secret.Labels[constants.LabelKeyNkeManagedBy])
+	assert.Equal(t, cluster.ID.String(), secret.Labels[constants.LabelKeyClusterID])
+	assert.Equal(t, constants.LabelValueKubeconfigModeAdmin, secret.Labels[constants.LabelKeyKubeconfigMode])
+
+	assertAdminSecret(t, ctx, k8sClient, cluster, testKubeconfig)
+}
+
+func assertAdminSecret(t *testing.T, ctx context.Context, k8sClient ctrlclient.Client, cluster db.Cluster, wantKubeconfig string) {
+	t.Helper()
+
+	secret := &corev1.Secret{}
+	require.NoError(t, k8sClient.Get(ctx, types.NamespacedName{
+		Name:      AdminKubeconfigSecretName(cluster.Name),
+		Namespace: SecretsNamespace,
+	}, secret))
+	assert.Equal(t, []byte(wantKubeconfig), secret.Data[KubeconfigSecretKey])
 	assert.Equal(t, corev1.SecretTypeOpaque, secret.Type)
 	assert.Equal(t, cluster.Name, secret.Labels[clusterv1.ClusterNameLabel])
 	assert.Equal(t, constants.LabelValueNkeManagedBy, secret.Labels[constants.LabelKeyNkeManagedBy])
@@ -723,7 +755,7 @@ func TestController_PublishesOIDCWhenTenantAccessDisabled(t *testing.T) {
 	oidcCluster := db.Cluster{ID: oidcID, Name: "oidc", OIDCAuthEnabled: true}
 
 	mockDB := &testutil.MockDB{}
-	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(4)
+	mockDB.On("GetCluster", mock.Anything, oidcID).Return(oidcCluster, nil).Times(5)
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(oidcNodeID, oidcID)}, nil)
 
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).WithObjects(nkeRBACConfigMap()).Build()
@@ -745,6 +777,7 @@ func TestController_PublishesOIDCWhenTenantAccessDisabled(t *testing.T) {
 		Namespace: SecretsNamespace,
 	}, kcSecret))
 	assert.Equal(t, constants.LabelValueKubeconfigModeSPIRE, kcSecret.Labels[constants.LabelKeyKubeconfigMode])
+	assertAdminSecret(t, ctx, k8sClient, oidcCluster, testAdminConf)
 }
 
 func TestController_PublishesAdminWhenTenantAccessDisabled(t *testing.T) {
@@ -753,7 +786,7 @@ func TestController_PublishesAdminWhenTenantAccessDisabled(t *testing.T) {
 	cluster := db.Cluster{ID: clusterID, Name: "plain"}
 
 	mockDB := &testutil.MockDB{}
-	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Times(3)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Times(4)
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(nodeID, clusterID)}, nil)
 
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
@@ -807,7 +840,7 @@ func TestController_PublishesAdminForCAPIWhenFlagsOff(t *testing.T) {
 	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: []byte(`{"kind":"DockerCluster"}`)})
 
 	mockDB := &testutil.MockDB{}
-	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Times(3)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Times(4)
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{joinedCPNode(nodeID, clusterID)}, nil)
 
 	k8sClient := fake.NewClientBuilder().WithScheme(testScheme(t)).Build()
@@ -944,7 +977,17 @@ func TestPublish_RefusesSPIREWithoutRBAC(t *testing.T) {
 	err := c.publish(ctx, cluster, []byte(testAdminConf))
 	require.Error(t, err)
 	assert.True(t, apierrors.IsNotFound(err), err)
-	assertSecret(t, ctx, k8sClient, cluster, false)
+
+	// The always-admin Secret is written before the SPIRE path; missing nke-rbac
+	// must not leave operators without break-glass admin.conf.
+	assertAdminSecret(t, ctx, k8sClient, cluster, testAdminConf)
+
+	cweSecret := &corev1.Secret{}
+	cweErr := k8sClient.Get(ctx, types.NamespacedName{
+		Name:      KubeconfigSecretName(cluster.Name),
+		Namespace: SecretsNamespace,
+	}, cweSecret)
+	assert.True(t, apierrors.IsNotFound(cweErr), "SPIRE kubeconfig must not publish without RBAC")
 }
 
 func kubeconfigWithParseableCA(t *testing.T) []byte {

@@ -42,6 +42,7 @@ func (a *Activities) DeleteTenantAccessSecrets(ctx context.Context, input Delete
 
 	names := []string{
 		tenantaccess.KubeconfigSecretName(input.ClusterName),
+		tenantaccess.AdminKubeconfigSecretName(input.ClusterName),
 		tenantaccess.TrustBundleSecretName(input.ClusterName),
 	}
 	for _, name := range names {

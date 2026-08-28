@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -103,7 +102,7 @@ func (r *SecretReconciler) Reconcile(ctx context.Context, request ctrl.Request) 
 func clusterIDForKubeconfigSecret(secret *corev1.Secret) (uuid.UUID, bool) {
 	if secret.Namespace != tenantaccess.SecretsNamespace ||
 		secret.Labels[constants.LabelKeyNkeManagedBy] != constants.LabelValueNkeManagedBy ||
-		!strings.HasSuffix(secret.Name, "-kubeconfig") {
+		!tenantaccess.IsCWEKubeconfigSecretName(secret.Name) {
 		return uuid.Nil, false
 	}
 	clusterID, err := uuid.Parse(secret.Labels[constants.LabelKeyClusterID])

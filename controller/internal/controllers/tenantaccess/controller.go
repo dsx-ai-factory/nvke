@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"github.com/google/uuid"
 	corev1 "k8s.io/api/core/v1"
@@ -47,8 +48,19 @@ const (
 )
 
 // KubeconfigSecretName returns the Secret name that holds the per-cluster
-// kubeconfig published into SecretsNamespace.
+// kubeconfig CWE consumes to access tenant clusters.
 func KubeconfigSecretName(clusterName string) string { return clusterName + "-kubeconfig" }
+
+// AdminKubeconfigSecretName returns the Secret name that always holds the
+// verbatim control-plane admin.conf
+func AdminKubeconfigSecretName(clusterName string) string {
+	return clusterName + "-admin-kubeconfig"
+}
+
+// IsCWEKubeconfigSecretName reports whether name is the CWE-consumed kubeconfig secret.
+func IsCWEKubeconfigSecretName(name string) bool {
+	return strings.HasSuffix(name, "-kubeconfig") && !strings.HasSuffix(name, "-admin-kubeconfig")
+}
 
 // TenantManagerSet stops the per-cluster controller manager when its cluster
 // enters deletion.
@@ -148,7 +160,7 @@ func (c *Controller) reconcileCluster(ctx context.Context, cluster db.Cluster) e
 	return c.publish(ctx, cluster, adminConf)
 }
 
-// publish writes the kubeconfig Secret for one cluster. Split from
+// publish writes the kubeconfig Secrets for one cluster. Split from
 // reconcileCluster so the publish decision can be exercised without standing up
 // a node-agent to serve admin.conf.
 func (c *Controller) publish(ctx context.Context, cluster db.Cluster, adminConf []byte) error {
@@ -165,29 +177,39 @@ func (c *Controller) publish(ctx context.Context, cluster db.Cluster, adminConf 
 		return err
 	}
 
+	if err := c.upsertKubeconfigSecret(ctx, live, AdminKubeconfigSecretName(live.Name), adminConf, constants.LabelValueKubeconfigModeAdmin); err != nil {
+		return err
+	}
+
 	if live.OIDCAuthEnabled {
 		return c.publishSPIRE(ctx, live, adminConf)
 	}
 
+	return c.upsertKubeconfigSecret(ctx, live, KubeconfigSecretName(live.Name), adminConf, constants.LabelValueKubeconfigModeAdmin)
+}
+
+// upsertKubeconfigSecret upserts one Opaque kubeconfig Secret in SecretsNamespace.
+//
+// Opaque, not clusterv1.ClusterSecretType: nothing reads the type — CAPI resolves
+// a kubeconfig by name and data key — and Opaque is CAPI's marker for a Secret
+// its core components did not create, which is what a TenantAccess-published
+// kubeconfig is. It also matches what the retired SWE controller left on the
+// fleet, so taking those Secrets over is an in-place update rather than a
+// collision on an immutable field.
+func (c *Controller) upsertKubeconfigSecret(ctx context.Context, cluster db.Cluster, name string, kubeconfig []byte, mode string) error {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      KubeconfigSecretName(live.Name),
+			Name:      name,
 			Namespace: SecretsNamespace,
 			Labels: map[string]string{
-				clusterv1.ClusterNameLabel: live.Name,
+				clusterv1.ClusterNameLabel: cluster.Name,
 			},
 		},
-		// Opaque, not clusterv1.ClusterSecretType. Nothing reads the type -- CAPI
-		// resolves a kubeconfig by name and data key -- and Opaque is CAPI's marker
-		// for a Secret its core components did not create, which is what a
-		// TenantAccess-published kubeconfig is. It also matches what the retired SWE
-		// controller left on the fleet, so taking those Secrets over is an in-place
-		// update rather than a collision on an immutable field.
 		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{KubeconfigSecretKey: adminConf},
+		Data: map[string][]byte{KubeconfigSecretKey: kubeconfig},
 	}
-	capi.SetSecretOwnership(secret, live, constants.LabelValueKubeconfigModeAdmin)
-	return c.upsertSecret(ctx, live, secret)
+	capi.SetSecretOwnership(secret, cluster, mode)
+	return c.upsertSecret(ctx, cluster, secret)
 }
 
 // refreshCluster returns the live DB row. skip means do not publish because the
@@ -236,19 +258,7 @@ func (c *Controller) publishSPIRE(ctx context.Context, cluster db.Cluster, admin
 		return fmt.Errorf("building SPIRE kubeconfig for cluster %s: %w", cluster.Name, err)
 	}
 
-	kubeconfigSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      KubeconfigSecretName(cluster.Name),
-			Namespace: SecretsNamespace,
-			Labels: map[string]string{
-				clusterv1.ClusterNameLabel: cluster.Name,
-			},
-		},
-		Type: corev1.SecretTypeOpaque,
-		Data: map[string][]byte{KubeconfigSecretKey: kubeconfig},
-	}
-	capi.SetSecretOwnership(kubeconfigSecret, cluster, constants.LabelValueKubeconfigModeSPIRE)
-	if err := c.upsertSecret(ctx, cluster, kubeconfigSecret); err != nil {
+	if err := c.upsertKubeconfigSecret(ctx, cluster, KubeconfigSecretName(cluster.Name), kubeconfig, constants.LabelValueKubeconfigModeSPIRE); err != nil {
 		return err
 	}
 

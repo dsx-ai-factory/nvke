@@ -46,6 +46,7 @@ func TestDeleteTenantAccessSecrets_DeletesBothAndIsIdempotent(t *testing.T) {
 	clusterID := uuid.New()
 	clusterName := "tenant-a"
 	kubeconfigName := tenantaccess.KubeconfigSecretName(clusterName)
+	adminKubeconfigName := tenantaccess.AdminKubeconfigSecretName(clusterName)
 	trustBundleName := tenantaccess.TrustBundleSecretName(clusterName)
 
 	newSecret := func(name string) *corev1.Secret {
@@ -60,7 +61,7 @@ func TestDeleteTenantAccessSecrets_DeletesBothAndIsIdempotent(t *testing.T) {
 
 	k8sClient := fake.NewClientBuilder().
 		WithScheme(tenantAccessScheme(t)).
-		WithObjects(newSecret(kubeconfigName), newSecret(trustBundleName)).
+		WithObjects(newSecret(kubeconfigName), newSecret(adminKubeconfigName), newSecret(trustBundleName)).
 		Build()
 
 	mockDB := &testutil.MockDB{}
@@ -73,6 +74,7 @@ func TestDeleteTenantAccessSecrets_DeletesBothAndIsIdempotent(t *testing.T) {
 
 	require.NoError(t, a.DeleteTenantAccessSecrets(context.Background(), DeleteTenantAccessSecretsInput{ClusterID: clusterID, ClusterName: clusterName}))
 	assert.False(t, tenantAccessSecretExists(t, k8sClient, kubeconfigName), "kubeconfig secret should be deleted")
+	assert.False(t, tenantAccessSecretExists(t, k8sClient, adminKubeconfigName), "admin kubeconfig secret should be deleted")
 	assert.False(t, tenantAccessSecretExists(t, k8sClient, trustBundleName), "trust-bundle secret should be deleted")
 
 	require.NoError(t, a.DeleteTenantAccessSecrets(context.Background(), DeleteTenantAccessSecretsInput{ClusterID: clusterID, ClusterName: clusterName}))
