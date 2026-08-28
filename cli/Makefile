@@ -66,11 +66,15 @@ NKECTL_DATE     ?= $(shell git log -1 --format=%cI 2>/dev/null || echo "unknown"
 # just a binary that still reports "dev". Hence the version assertion in
 # `make build`.
 NKECTL_PKG := main
+
+RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
+
 NKECTL_LDFLAGS := \
 	-X '$(NKECTL_PKG).version=$(NKECTL_VERSION)' \
 	-X '$(NKECTL_PKG).gitCommit=$(NKECTL_COMMIT)' \
 	-X '$(NKECTL_PKG).gitTreeState=$(NKECTL_TREE)' \
-	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)'
+	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)' \
+	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \
 	ensure-capd-image ensure-profiles-image nodes-up nodes-down nodes-status
@@ -111,7 +115,7 @@ build-cross: ## Build nkectl for every NKECTL_PLATFORMS entry into DIST.
 # NKECTL_LDFLAGS, asserted just below. See the note on work-check-offline in the
 # root Makefile.
 build: ## Build nkectl into bin/, and assert the version stamp took.
-	$(GO) build -buildvcs=false -ldflags "$(NKECTL_LDFLAGS)" -o $(BINARY) ./cmd/nkectl
+	CGO_ENABLED=0 $(GO) build -buildvcs=false -trimpath -ldflags "$(NKECTL_LDFLAGS)" -o $(BINARY) ./cmd/nkectl
 	@# A wrong -X symbol is silently ignored by the linker, so the only way to
 	@# know the stamping worked is to ask the binary. Cheap, and it fails loudly.
 	@out="$$($(BINARY) version)"; \

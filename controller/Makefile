@@ -105,11 +105,13 @@ generate-check: generate-api ## Verify generated API code is up to date. (run by
 		exit 1; \
 	fi
 
+RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
+
 .PHONY: build
 # -buildvcs=false because the version comes from the -X ldflag below. See the note
 # on work-check-offline in the root Makefile.
 build: ## Build cloud-workflow-engine into bin/.
-	go build -buildvcs=false -ldflags "-X github.com/NVIDIA/nke/controller/internal/version.Version=${BUILD_VERSION}" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
+	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/NVIDIA/nke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
 
 .PHONY: fmt
 fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).

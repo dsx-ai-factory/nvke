@@ -107,7 +107,10 @@ cmd_version = $(shell \
 # linker ignores an -X for a symbol the binary lacks, so passing both is safe.
 # It ignores it silently, which is why version-check exists.
 cmd_ldflags = -X 'main.version=$(call cmd_version,$(1))' \
-              -X 'main.VERSION=$(call cmd_version,$(1))'
+              -X 'main.VERSION=$(call cmd_version,$(1))' \
+              $(RELEASE_LDFLAGS)
+
+RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
 CWE_BIN_NAME ?= cloud-workflow-engine
@@ -562,7 +565,7 @@ build: ## Build every workspace package, and the released commands into bin/.
 	@# foreach, not a shell loop: $(call) cannot read a shell variable.
 	@$(foreach m,$(CMD_MODULES), \
 		echo "- building $(m) $(call cmd_version,$(m))"; \
-		$(GO) build -C $(m) -buildvcs=false -ldflags "$(call cmd_ldflags,$(m))" -o $(BIN_DIR)/ ./cmd/... || exit 1; \
+		CGO_ENABLED=0 $(GO) build -C $(m) -buildvcs=false -trimpath -ldflags "$(call cmd_ldflags,$(m))" -o $(BIN_DIR)/ ./cmd/... || exit 1; \
 	)
 	@# controller/Makefile owns this binary's name and its version ldflag, so
 	@# delegate rather than repeat either here. See CMD_MODULES above.

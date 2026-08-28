@@ -48,11 +48,13 @@ DEB_VERSION := $(if $(filter v%,$(VERSION)),$(patsubst v%,%,$(VERSION)),0.0.0-$(
 $(info $$VERSION is [${VERSION}])
 $(info $$DEB_VERSION is [${DEB_VERSION}])
 
+RELEASE_LDFLAGS ?= -s -w -buildid=
+
 # -trimpath removes the build machine's filesystem paths from the binary. These
 # binaries are published to ghcr.io/nvidia/nke-agent, so without it every
 # release carries the layout of whatever machine built it, and two builds of the
 # same commit from different directories differ.
-LDFLAGS += -trimpath -ldflags="-X main.VERSION=$(VERSION)"
+LDFLAGS += -trimpath -ldflags="-X main.VERSION=$(VERSION) $(RELEASE_LDFLAGS)"
 
 ARCHES := amd64 arm64
 
