@@ -17,32 +17,4 @@
 # Everything from `medium` up is still reported to Security -> Code scanning
 # either way; this only affects what fails the build.
 
-ignore:
-  # The Go standard library baked into
-  # /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth, which is copied into the
-  # controller image from ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth.
-  #
-  # Scoped to the stale toolchain rather than to individual advisories. Four
-  # criticals currently match it -- GO-2026-4337, CVE-2026-27143,
-  # CVE-2026-27140, CVE-2025-68121 -- but listing IDs is the wrong shape here:
-  # they are all one problem, an unrebuilt binary, and a new stdlib advisory
-  # published tomorrow would break the build for the same unfixable reason.
-  #
-  # Verified narrow: `stdlib go1.25.0` appears at exactly one path in the
-  # image. The controller's own binary builds on golang 1.26.6, so this cannot
-  # mask a finding in our code, and it stops applying the moment that binary is
-  # rebuilt on a newer Go.
-  #
-  # There is nothing newer to upgrade to: v0.2.0 (2026-08-07) is the latest
-  # release, `latest` is the same digest, `main` is zero commits ahead, and its
-  # go.mod pins go 1.25.0.
-  #
-  # Removable by either: upstream re-releasing on go >= 1.25.7, or us building
-  # the binary ourselves in a builder stage. Building it locally with go1.26.5
-  # was measured to clear every one of these, so the second route is proven and
-  # is the intended fix.
-  #
-  # Review: 2026-11-01
-  - package:
-      name: stdlib
-      version: go1.25.0
+ignore: []
