@@ -1,0 +1,40 @@
+// SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+package main
+
+import (
+	"context"
+	"flag"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+
+	"github.com/NVIDIA/nke/agent/pkg/agentupgrade"
+)
+
+const defaultOperationRoot = "/var/lib/nke/agent-upgrades"
+
+func main() {
+	operationID := flag.String("operation-id", "", "durable node-agent upgrade operation ID")
+	operationRoot := flag.String("operation-root", defaultOperationRoot, "durable node-agent upgrade operation root")
+	flag.Parse()
+
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+	if err := agentupgrade.ValidateOperationID(*operationID); err != nil {
+		slog.Error("invalid node-agent upgrade operation", "operationID", *operationID, "err", err)
+		os.Exit(2)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	store := agentupgrade.NewStore(*operationRoot)
+	updater := agentupgrade.NewUpdater(store)
+	if err := updater.Run(ctx, *operationID); err != nil {
+		slog.Error("node-agent updater operation failed", "operationID", *operationID, "err", err)
+		os.Exit(1)
+	}
+	slog.Info("node-agent updater operation completed", "operationID", *operationID)
+}

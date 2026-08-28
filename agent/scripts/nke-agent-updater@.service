@@ -1,0 +1,17 @@
+[Unit]
+Description=NKE Node Agent Updater (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nke-agent-updater --operation-id %i
+TimeoutStartSec=30min
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+# This unit deliberately has no PartOf=, Requires=, or shared cgroup with
+# nke-agent.service. Debian prerm stops nke-agent.service during replacement;
+# the package transaction must continue in this independent unit.

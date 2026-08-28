@@ -169,6 +169,20 @@ service NodeAgent {
 
   // Debian package management
 
+  // StartNodeAgentUpgrade persists an idempotent node-agent replacement
+  // request and starts the independent nke-agent-updater systemd service. The
+  // caller must poll GetNodeAgentUpgradeStatus because a successful package
+  // replacement restarts this gRPC server.
+  rpc StartNodeAgentUpgrade(StartNodeAgentUpgradeRequest) returns (StartNodeAgentUpgradeResponse) {}
+
+  // GetNodeAgentUpgradeStatus returns durable updater state that survives an
+  // nke-agent restart.
+  rpc GetNodeAgentUpgradeStatus(GetNodeAgentUpgradeStatusRequest) returns (GetNodeAgentUpgradeStatusResponse) {}
+
+  // StartNodeAgentRollback restores the exact artifact retained by a prior
+  // successful StartNodeAgentUpgrade operation.
+  rpc StartNodeAgentRollback(StartNodeAgentRollbackRequest) returns (StartNodeAgentRollbackResponse) {}
+
   rpc InstallPackages(InstallPackagesRequest) returns (InstallPackagesResponse) {}
 
   rpc ListPackages(ListPackagesRequest) returns (ListPackagesResponse) {}
@@ -816,6 +830,59 @@ message InstallPackagesRequest {
 
 message InstallPackagesResponse {
   string request_id = 1;
+}
+
+enum NodeAgentUpgradeMethod {
+  NODE_AGENT_UPGRADE_METHOD_UNSPECIFIED = 0;
+  NODE_AGENT_UPGRADE_METHOD_APT = 1;
+  NODE_AGENT_UPGRADE_METHOD_BUNDLE = 2;
+}
+
+enum NodeAgentUpgradePhase {
+  NODE_AGENT_UPGRADE_PHASE_UNSPECIFIED = 0;
+  NODE_AGENT_UPGRADE_PHASE_PENDING = 1;
+  NODE_AGENT_UPGRADE_PHASE_RUNNING = 2;
+  NODE_AGENT_UPGRADE_PHASE_SUCCEEDED = 3;
+  NODE_AGENT_UPGRADE_PHASE_FAILED_RESTORED = 4;
+  NODE_AGENT_UPGRADE_PHASE_FAILED_NOT_RESTORED = 5;
+}
+
+message NodeAgentUpgradeOperation {
+  string operation_id = 1;
+  string target_version = 2;
+  string previous_version = 3;
+  NodeAgentUpgradeMethod method = 4;
+  NodeAgentUpgradePhase phase = 5;
+  string step = 6;
+  string error_message = 7;
+}
+
+message StartNodeAgentUpgradeRequest {
+  string operation_id = 1;
+  // Canonical node-agent release version, for example v0.1.31.
+  string target_version = 2;
+  NodeAgentUpgradeMethod method = 3;
+}
+
+message StartNodeAgentUpgradeResponse {
+  NodeAgentUpgradeOperation operation = 1;
+}
+
+message GetNodeAgentUpgradeStatusRequest {
+  string operation_id = 1;
+}
+
+message GetNodeAgentUpgradeStatusResponse {
+  NodeAgentUpgradeOperation operation = 1;
+}
+
+message StartNodeAgentRollbackRequest {
+  string operation_id = 1;
+  string upgrade_operation_id = 2;
+}
+
+message StartNodeAgentRollbackResponse {
+  NodeAgentUpgradeOperation operation = 1;
 }
 
 message ListPackagesRequest {}

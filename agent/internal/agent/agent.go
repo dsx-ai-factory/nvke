@@ -37,6 +37,7 @@ import (
 
 	"github.com/NVIDIA/nke/agent/internal/k8s"
 	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	"github.com/NVIDIA/nke/agent/pkg/agentupgrade"
 	"github.com/NVIDIA/nke/agent/pkg/deb"
 	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
 )
@@ -121,6 +122,7 @@ type NodeAgentServer struct {
 	rewriteActive                 bool                // protected by mu; true when a rewrite goroutine is active in this process.
 	activeOperations              map[string]struct{} // protected by mu; in-process liveness for generic async operations.
 	operationStartMu              sync.Mutex          // serializes generic operation start persistence and publish.
+	agentUpgradeMu                sync.Mutex          // serializes durable self-upgrade admission on this node.
 	nodeAgentCfgMu                sync.Mutex          // serializes NodeSpec/config.yaml writes
 	reloadPollInterval            time.Duration       // overrides the 2s poll interval in tests
 	drainKubeVipPollInterval      time.Duration       // overrides kube-vip drain polling in tests
@@ -157,6 +159,10 @@ type NodeAgentServer struct {
 	// ScriptExecutionLogger logs ExecuteScript/StreamExecuteScript call info and results to e.g. /var/log/nke-execute-scripts.log.
 	// If nil, script execution is not logged to a dedicated file.
 	ScriptExecutionLogger *slog.Logger
+	// AgentUpgradeStore is separate from NodeStatus because package replacement
+	// restarts this process while the independent updater continues.
+	AgentUpgradeStore    *agentupgrade.Store
+	AgentUpgradeLauncher agentUpgradeLauncher
 
 	kubeletConfigMu          sync.Mutex // serializes kubelet.conf reconfiguration transactions
 	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
@@ -349,10 +355,15 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 	}
 
 	clientRegistry := k8s.NewClientRegistry(KubeConfig)
+	runner := &nkeutils.ExecRunner{}
 	server := &NodeAgentServer{
-		Runner:           &nkeutils.ExecRunner{},
-		FileWriter:       &nkeutils.OSFileWriter{},
-		Persister:        &JSONFilePersister{Path: StateFile},
+		Runner:            runner,
+		FileWriter:        &nkeutils.OSFileWriter{},
+		Persister:         &JSONFilePersister{Path: StateFile},
+		AgentUpgradeStore: agentupgrade.NewStore(filepath.Join(NKEDir, "agent-upgrades")),
+		AgentUpgradeLauncher: systemdAgentUpgradeLauncher{
+			runner: runner,
+		},
 		BundleSource:     bundleSource,
 		BundleServerURL:  parsedBundleURL,
 		CniImageRegistry: cniImageRegistry,
@@ -1860,6 +1871,9 @@ func (s *NodeAgentServer) InstallBundle(
 	req *pb.InstallBundleRequest,
 ) (*pb.InstallBundleResponse, error) {
 	defer logRPCSpan(ctx, "InstallBundle")()
+	if strings.EqualFold(strings.TrimSpace(req.GetName()), "agent") {
+		return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+	}
 	if s.BundleIndexFile == "" {
 		return nil, status.Error(codes.FailedPrecondition, bundleIndexUnconfiguredMessage(s.BundleServerURL))
 	}
@@ -2002,6 +2016,11 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 			slog.Error("failed to fetch collection", "url", req.CollectionURL, "err", err)
 			return nil, status.Errorf(codes.Internal, "failed to fetch collection from %s: %v", req.CollectionURL, err)
 		}
+		for _, bundleReq := range profile.Bundles {
+			if strings.EqualFold(strings.TrimSpace(bundleReq.Name), "agent") {
+				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+			}
+		}
 
 		index, err := nkeutils.FetchIndex(ctx, s.BundleIndexFile)
 		if err != nil {
@@ -2057,6 +2076,11 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 		if len(packages) == 0 {
 			slog.ErrorContext(ctx, "collection file contains no packages", "url", req.CollectionURL)
 			return nil, status.Errorf(codes.InvalidArgument, "collection file contains no packages")
+		}
+		for _, pkg := range packages {
+			if isNodeAgentPackageArgument(pkg) {
+				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+			}
 		}
 
 		// Add status entry for tracking; caller uses GetBundleStatus(request_id) for both .json and .txt
