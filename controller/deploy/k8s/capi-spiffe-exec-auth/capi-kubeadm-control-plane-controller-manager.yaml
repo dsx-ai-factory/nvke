@@ -22,7 +22,7 @@ spec:
             readOnly: true
         - name: spiffe-exec-plugin
           image:
-            reference: ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.1.0@sha256:550fe75d87ed7a8a2312e27545a18ba21f93c75c68d13188baef1e7f6e77c8e8
+            reference: ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:0.3.0@sha256:6402624276b66ef7a733e126488397c9cf33c6706ee1f52a9c7ffad2a540aa7c
             pullPolicy: IfNotPresent
         - name: spiffe-exec-bin
           emptyDir: {}
