@@ -109,7 +109,21 @@ autoinstall:
     - curtin in-target --target=/target -- sh -c 'echo -n "${luks_passphrase}" > /etc/luks-build.key && chmod 600 /etc/luks-build.key'
     - curtin in-target --target=/target -- sh -c 'LUKS_DEV=$(blkid -t TYPE=crypto_LUKS -o device | head -1) && echo -n "${luks_passphrase}" | cryptsetup luksAddKey "$LUKS_DEV" /etc/luks-build.key -'
     - curtin in-target --target=/target -- sh -c 'mkdir -p /etc/cryptsetup-initramfs && echo "KEYFILE_PATTERN=\"/etc/luks-build.key\"" > /etc/cryptsetup-initramfs/conf-hook'
-    - curtin in-target --target=/target -- sh -c 'sed -i "s| none | /etc/luks-build.key |g" /etc/crypttab'
+    # ========================================================================
+    # Discard passthrough (filesystem -> LVM -> LUKS -> qcow2), set up now,
+    # before the LVM-on-LUKS stack is ever activated for the first time.
+    # Retrofitting this after boot (pvscan --cache / lvchange --refresh) does
+    # NOT recompute an already-active LV's own queue limits -- confirmed by
+    # testing: the LUKS layer picks up allow_discards live fine, but the LVM
+    # layer above it stays stuck at 0 discard_max_bytes regardless. Doing it
+    # here means the LV's limits are computed correctly the first time it's
+    # ever activated (the post-install reboot), same as node-images' approach.
+    # This also gives the crypttab entry its final luks-<UUID> name from the
+    # start, instead of the default curtin name getting renamed later.
+    # ========================================================================
+    - curtin in-target --target=/target -- sh -c 'sed -i "/issue_discards/d" /etc/lvm/lvm.conf && sed -i "/devices[[:space:]]*{/a\\        issue_discards = 1" /etc/lvm/lvm.conf'
+    - curtin in-target --target=/target -- sh -c 'LUKS_UUID=$(blkid -t TYPE=crypto_LUKS -s UUID -o value | head -1) && printf "luks-%s UUID=%s /etc/luks-build.key luks,discard,initramfs\n" "$LUKS_UUID" "$LUKS_UUID" > /etc/crypttab'
+    - curtin in-target --target=/target -- sh -c 'LUKS_UUID=$(blkid -t TYPE=crypto_LUKS -s UUID -o value | head -1) && mkdir -p /etc/initramfs-tools/conf.d && printf "CRYPTROOT=target=luks-%s,source=UUID=%s,discard\n" "$LUKS_UUID" "$LUKS_UUID" > /etc/initramfs-tools/conf.d/cryptroot'
     - curtin in-target --target=/target -- update-initramfs -u -k all
     # Second, independent auto-unlock path for real (non-build-VM) boots:
     # luks-cmdline-script (files/luks/) reads luks.key= off the kernel

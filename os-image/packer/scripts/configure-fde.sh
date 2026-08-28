@@ -57,8 +57,25 @@ fi
 echo "Regenerating crypttab with luks-<UUID> naming..."
 LUKS_UUID=$(sudo blkid -t TYPE=crypto_LUKS -s UUID -o value | head -1)
 if [[ -n "${LUKS_UUID}" ]]; then
-    printf 'luks-%s UUID=%s none luks,initramfs\n' "${LUKS_UUID}" "${LUKS_UUID}" | sudo tee /etc/crypttab >/dev/null
+    # "discard": lets fstrim's TRIM commands pass through LUKS to the
+    # backing qcow2 (LUKS blocks this by default -- a real privacy
+    # tradeoff, since it lets anyone with raw disk access infer block
+    # usage patterns through the encryption layer). Ships permanently in
+    # the shipped image, same tradeoff node-images' cleanup role accepts.
+    printf 'luks-%s UUID=%s none luks,discard,initramfs\n' "${LUKS_UUID}" "${LUKS_UUID}" | sudo tee /etc/crypttab >/dev/null
 fi
+
+# issue_discards (lvm.conf), crypttab's "discard" option, and the
+# cryptroot initramfs config are all set by autoinstall-lvm.pkrtpl's
+# late-commands, before this stack was ever activated for the first time --
+# retrofitting them post-boot (pvscan --cache / lvchange --refresh) does NOT
+# recompute an already-active LV's own queue limits, confirmed by testing:
+# the LUKS layer picks up allow_discards live fine, the LVM layer above it
+# stays stuck at 0 discard_max_bytes regardless. Just verify it's actually
+# live here, matching this build's own fstrim (end of provision.sh) against
+# what it should see.
+echo "Verifying discard passthrough (filesystem -> LVM -> LUKS -> qcow2)..."
+lsblk -D || true
 
 echo "Disabling cryptsetup-initramfs automatic keyfile generation..."
 sudo install -d -m 0755 /etc/cryptsetup-initramfs
