@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+hooks:
+  beforeJoinNode:
+    - runbook:
+        name: example-sysctl
+        env:
+          EXAMPLE_SYSCTL_VALUE: "REPLACE_SYSCTL_VALUE"
+
+preJoinNodeReboot: false
+labels:
+  - node-role.kubernetes.io/worker=

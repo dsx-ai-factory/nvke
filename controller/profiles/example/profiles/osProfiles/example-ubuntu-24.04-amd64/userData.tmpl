@@ -1,0 +1,33 @@
+#cloud-config
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+autoinstall:
+  version: 1
+  identity:
+    hostname: {{ .Hostname }}
+    username: {{ .Username }}
+    password: "{{ .HashedPassword }}"
+  keyboard:
+    layout: us
+  locale: en_US.UTF-8
+  ssh:
+    allow-pw: true
+    install-server: true
+  storage:
+    layout:
+      name: lvm
+  user-data:
+    package_update: true
+    runcmd:
+      - |
+          set -eu
+          REPLACE_APT_REPOSITORY_SETUP_COMMAND
+          apt-get update
+          install -d -m 0755 /etc/default
+          printf 'AGENT_ARGS="--disable-mtls --secure-server-port {{ .NodeAgentPort }}"\n' >/etc/default/nke-agent
+          DEBIAN_FRONTEND=noninteractive apt-get install -y REPLACE_APT_PACKAGES {{ .CNIImagePackage }}
+          systemctl enable nke-agent
+          systemctl restart nke-agent
+          install -d -m 0755 /run/cluster-api
+          touch /run/cluster-api/bootstrap-success.complete

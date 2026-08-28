@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+profiles:
+  example-ubuntu-24.04-amd64:
+    kubernetes_version: "REPLACE_KUBERNETES_VERSION"
+    kubernetes_version_injected: false
+    architecture: amd64
+    build_date: "REPLACE_BUILD_DATE"
+    ubuntu_version: "24.04"
+    image_base_url: "REPLACE_BOOT_ASSET_BASE_URL"

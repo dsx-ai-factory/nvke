@@ -1,0 +1,9 @@
+#!ipxe
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+set boot_assets REPLACE_BOOT_ASSET_BASE_URL
+
+kernel ${boot_assets}/vmlinuz console=tty0 console=ttyS0,115200 ip=dhcp url=REPLACE_UBUNTU_24_04_SERVER_ISO_URL autoinstall ds=nocloud-net;s=${cloudinit-url} initrd=initrd
+initrd ${boot_assets}/initrd
+boot
