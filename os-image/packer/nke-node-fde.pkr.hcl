@@ -122,6 +122,11 @@ locals {
   # that patched copy.
   iso_cache = "${path.root}/iso-cache"
   iso_path  = "${local.iso_cache}/${basename(var.iso_url)}.patched.iso"
+  # Derived from iso_url rather than a separate variable, so the output
+  # filename can't drift out of sync with the ISO actually being built.
+  iso_name_parts = regex("ubuntu-([0-9.]+)-live-server-([a-z0-9_]+)\\.iso$", var.iso_url)
+  ubuntu_version = local.iso_name_parts[0]
+  arch           = local.iso_name_parts[1]
   # Also not under local.artifacts, for the same reason. CI has no way to
   # inspect a stuck build interactively (no VNC/monitor access), so this
   # captures the guest's own boot/install console output to a file the
@@ -191,7 +196,7 @@ source "qemu" "nke-fde" {
   ssh_handshake_attempts = 1000
 
   shutdown_command = "sudo shutdown -P now"
-  vm_name          = "nke-node-fde"
+  vm_name          = "nke-node-fde-ubuntu-${local.ubuntu_version}-${local.arch}.qcow2"
   output_directory = "${path.root}/output-fde"
   headless         = true
   memory           = 8192

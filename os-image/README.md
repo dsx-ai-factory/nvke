@@ -75,7 +75,8 @@ cd packer
 make os-image-fde NKE_AGENT_VERSION=edge
 ```
 
-Output: `packer/output-fde/nke-node-fde` (qcow2). `LUKS_PASSPHRASE` (default
+Output: `packer/output-fde/nke-node-fde-ubuntu-<version>-<arch>.qcow2` (e.g.
+`nke-node-fde-ubuntu-26.04-amd64.qcow2`). `LUKS_PASSPHRASE` (default
 `changeit` — **set this to a real value for any build that will run on real
 hardware**; see [docs/full-disk-encryption.md](docs/full-disk-encryption.md))
 sets the build-time-only passphrase, which the shipped image never retains
@@ -95,27 +96,32 @@ cd packer
 make os-image-non-fde NKE_AGENT_VERSION=edge
 ```
 
-Output: `packer/output-non-fde/nke-node-non-fde` (qcow2). Boot it with
+Output: `packer/output-non-fde/nke-node-non-fde-ubuntu-<version>-<arch>.qcow2`
+(e.g. `nke-node-non-fde-ubuntu-26.04-amd64.qcow2`). Boot it with
 `boot-smoke.sh` (it needs `OVMF_CODE` set, since this variant boots UEFI —
-see the comment at the top of that script):
+see the comment at the top of that script; `QCOW` defaults to the single
+qcow2 under `output-non-fde/`, so it usually doesn't need to be passed):
 
 ```bash
-QCOW=../output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
+OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
 ```
 
 ## Interactive VM
 
 `make run-vm QCOW=<path>` boots any qcow2 this repo produces and leaves it
 running with SSH forwarded, for poking around manually — unlike
-`boot-smoke`/`demo-fde.sh`, it runs no checks and doesn't tear itself down;
-Ctrl-C stops it. See the comment at the top of
+`boot-smoke`/`demo-fde.sh`, it runs no checks and doesn't tear itself down.
+**To quit, use `Ctrl-A` then `X`, not plain `Ctrl-C`**: QEMU runs with
+`-nographic`, so your terminal is the guest's serial console, and plain
+`Ctrl-C` is sent to the guest as literal input (garbling a login prompt)
+instead of stopping QEMU. See the comment at the top of
 [`packer/scripts/run-vm.sh`](packer/scripts/run-vm.sh) for the full env var
 list (`OVMF_CODE` for the UEFI variants, `TPM=1` to attach a TPM for the FDE
 image). Examples:
 
 ```bash
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
-make run-vm QCOW=packer/output-fde/nke-node-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1
 ```
 
 ## Release

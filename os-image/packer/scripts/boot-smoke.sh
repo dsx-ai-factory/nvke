@@ -7,16 +7,29 @@
 # are installed and enabled). Does not exercise SPIRE/nke-agent against a real
 # server -- just proves the image boots on its own.
 #
-# QCOW is required, and this variant is UEFI-installed, so OVMF_CODE
-# (and optionally OVMF_VARS_TEMPLATE) is too:
-#   QCOW=../output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./boot-smoke.sh
+# QCOW defaults to the single *.qcow2 under output-non-fde/ (its filename
+# encodes the Ubuntu version/arch, e.g. nke-node-non-fde-ubuntu-26.04-amd64.qcow2
+# -- see vm_name in nke-node-non-fde.pkr.hcl). This variant is UEFI-installed,
+# so OVMF_CODE (and optionally OVMF_VARS_TEMPLATE) is required:
+#   OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./boot-smoke.sh
 # The FDE variant needs its own passphrase/TPM handling instead of this
 # script -- see ../../demo-fde.sh.
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-QCOW="${QCOW:?QCOW is required, e.g. QCOW=../output-non-fde/nke-node-non-fde}"
+QCOW="${QCOW:-}"
+if [[ -z "${QCOW}" ]]; then
+  shopt -s nullglob
+  non_fde_qcows=("${ROOT}/output-non-fde"/*.qcow2)
+  shopt -u nullglob
+  if [[ ${#non_fde_qcows[@]} -eq 1 ]]; then
+    QCOW="${non_fde_qcows[0]}"
+  else
+    echo "boot-smoke: QCOW not set and found ${#non_fde_qcows[@]} qcow2 files under output-non-fde/ (need exactly 1); run 'make os-image-non-fde' or set QCOW explicitly" >&2
+    exit 1
+  fi
+fi
 SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
 OVMF_CODE="${OVMF_CODE:-}"

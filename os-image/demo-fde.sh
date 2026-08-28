@@ -13,7 +13,8 @@
 # Usage: ./demo-fde.sh [--help]
 #
 # Env overrides:
-#   QCOW          path to the FDE qcow2 (default: packer/output-fde/nke-node-fde)
+#   QCOW          path to the FDE qcow2 (default: the single *.qcow2 under
+#                 packer/output-fde/, e.g. nke-node-fde-ubuntu-26.04-amd64.qcow2)
 #   SSH_KEY       ssh key used for the build (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
 #   BOOT_TIMEOUT  seconds to wait for SSH per boot (default: 360 kvm / 1800 tcg)
@@ -35,7 +36,20 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 fi
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-QCOW="${QCOW:-${ROOT}/packer/output-fde/nke-node-fde}"
+QCOW="${QCOW:-}"
+if [[ -z "${QCOW}" ]]; then
+  # The output filename encodes the Ubuntu version/arch (see vm_name in
+  # nke-node-fde.pkr.hcl), so glob for it instead of hardcoding it here.
+  shopt -s nullglob
+  fde_qcows=("${ROOT}/packer/output-fde"/*.qcow2)
+  shopt -u nullglob
+  if [[ ${#fde_qcows[@]} -eq 1 ]]; then
+    QCOW="${fde_qcows[0]}"
+  else
+    echo "demo-fde: QCOW not set and found ${#fde_qcows[@]} qcow2 files under packer/output-fde/ (need exactly 1); run 'make os-image-fde' or set QCOW explicitly" >&2
+    exit 1
+  fi
+fi
 SSH_KEY="${SSH_KEY:-${ROOT}/packer/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
 

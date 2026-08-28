@@ -214,9 +214,7 @@ jobs:
 
       - name: Boot-smoke the non-FDE qcow2
         run: |
-          make -C os-image boot-smoke \
-            QCOW="${GITHUB_WORKSPACE}/os-image/packer/output-non-fde/nke-node-non-fde" \
-            OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+          make -C os-image boot-smoke OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
 
       # Runs regardless of outcome: this runner has no VNC/monitor access to
       # inspect a stuck or failed FDE/non-FDE build interactively, so the

@@ -4,16 +4,25 @@
 #
 # Boots any qcow2 this repo produces in QEMU, with an SSH key injected via
 # cloud-init and the guest's :22 forwarded to the host, and leaves it running
-# in the foreground so you can `ssh` in and poke around. Ctrl-C stops it.
+# in the foreground so you can `ssh` in and poke around.
+#
+# To quit: Ctrl-A then X (release Ctrl-A, then press X) -- NOT plain Ctrl-C.
+# QEMU runs with -nographic, so the host terminal is the guest's serial
+# console; plain Ctrl-C is sent to the guest as literal input (e.g. garbling
+# a login prompt) instead of interrupting QEMU. Ctrl-A C instead drops into
+# the QEMU monitor (type `quit` there). Either way triggers this script's
+# cleanup trap (kills swtpm if attached, removes the scratch workdir).
 #
 # Unlike boot-smoke.sh / demo-fde.sh, this runs no checks and never tears
 # itself down on its own — it's for manual, interactive use.
 #
-# Usage:
-#   QCOW=packer/output-non-fde/nke-node-non-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd \
-#     ./packer/scripts/run-vm.sh
-#   QCOW=packer/output-fde/nke-node-fde OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1 \
-#     ./packer/scripts/run-vm.sh
+# Usage (QCOW filenames encode the Ubuntu version/arch -- see vm_name in
+# nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl -- check output-fde/ or
+# output-non-fde/ for the exact name):
+#   QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2 \
+#     OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./packer/scripts/run-vm.sh
+#   QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 \
+#     OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1 ./packer/scripts/run-vm.sh
 #
 # Env:
 #   QCOW          path to the qcow2 to boot (required)
@@ -35,7 +44,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QCOW="${QCOW:-}"
 if [[ -z "${QCOW}" ]]; then
-  echo "run-vm: QCOW is required, e.g. QCOW=packer/output-non-fde/nke-node-non-fde $0" >&2
+  echo "run-vm: QCOW is required, e.g. QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2 $0" >&2
   exit 1
 fi
 if [[ ! -f "${QCOW}" ]]; then
@@ -127,7 +136,7 @@ fi
 echo "run-vm: booting ${QCOW}"
 echo "run-vm: once cloud-init finishes, ssh in with:"
 echo "run-vm:   ssh -i ${SSH_KEY} -p ${SSH_PORT} -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@127.0.0.1"
-echo "run-vm: Ctrl-C stops the VM and cleans up."
+echo "run-vm: Ctrl-A then X stops the VM and cleans up (plain Ctrl-C won't -- see header comment)."
 echo
 
 # Not `exec`: the EXIT trap (swtpm teardown, workdir cleanup) needs this

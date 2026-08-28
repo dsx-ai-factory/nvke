@@ -92,6 +92,11 @@ locals {
   iso_path  = "${local.iso_cache}/${basename(var.iso_url)}.patched.iso"
   # See the same local in nke-node-fde.pkr.hcl.
   build_logs = "${path.root}/build-logs"
+  # See the same locals in nke-node-fde.pkr.hcl: derived from iso_url so the
+  # output filename can't drift out of sync with the ISO actually being built.
+  iso_name_parts = regex("ubuntu-([0-9.]+)-live-server-([a-z0-9_]+)\\.iso$", var.iso_url)
+  ubuntu_version = local.iso_name_parts[0]
+  arch           = local.iso_name_parts[1]
 }
 
 source "qemu" "nke-non-fde" {
@@ -144,7 +149,7 @@ source "qemu" "nke-non-fde" {
   ssh_handshake_attempts = 1000
 
   shutdown_command = "sudo shutdown -P now"
-  vm_name          = "nke-node-non-fde"
+  vm_name          = "nke-node-non-fde-ubuntu-${local.ubuntu_version}-${local.arch}.qcow2"
   output_directory = "${path.root}/output-non-fde"
   headless         = true
   memory           = 8192
