@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/NVIDIA/nke/controller/api"
@@ -113,71 +112,53 @@ func (c *Client) ListExpectedNodes(
 	return expectedNodes, nil
 }
 
-// AssertControlPlaneNodesReady verifies that exactly desired cluster-level
-// control-plane nodes are present and KubernetesReady. In control-plane-controller
-// provisioning mode the control plane has no owning node pool, so its nodes carry
-// no node pool ID (NodePoolID == uuid.Nil); that is how they are distinguished
-// from worker nodes here. The caller controls retries.
+// AssertControlPlaneNodesReady verifies that exactly desired control-plane nodes
+// are present and KubernetesReady, from the cluster control-plane resource's
+// aggregate status (readyNodeCount counts control-plane nodes whose
+// KubernetesReady condition is true). The caller controls retries.
 func (c *Client) AssertControlPlaneNodesReady(ctx context.Context, clusterID openapi_types.UUID, desired int) error {
-	nodes, err := c.ListClusterNodes(ctx, clusterID)
+	cp, err := c.GetClusterControlPlane(ctx, clusterID)
 	if err != nil {
 		return fmt.Errorf("asserting control-plane nodes for cluster %s: %w", clusterID, err)
 	}
-
-	controlPlaneNodes := make([]api.Node, 0, desired)
-	for _, node := range nodes {
-		if node.NodePoolID == uuid.Nil {
-			controlPlaneNodes = append(controlPlaneNodes, node)
-		}
+	if cp.Status.NodeCount != desired {
+		return fmt.Errorf("cluster %s has %d control-plane nodes; want %d", clusterID, cp.Status.NodeCount, desired)
 	}
-	if len(controlPlaneNodes) != desired {
-		return fmt.Errorf("cluster %s has %d cluster-level control-plane nodes; want %d", clusterID, len(controlPlaneNodes), desired)
-	}
-
-	for _, node := range controlPlaneNodes {
-		if ready, reason := IsNodeReady(node); !ready {
-			return fmt.Errorf("control-plane node %q not ready in cluster %s: %s", node.Name, clusterID, reason)
-		}
+	if cp.Status.ReadyNodeCount != desired {
+		return fmt.Errorf("cluster %s has %d control-plane nodes KubernetesReady; want %d", clusterID, cp.Status.ReadyNodeCount, desired)
 	}
 	return nil
 }
 
-// ControlPlaneNodeNames returns the names of the controller-managed
-// control-plane nodes in the cluster. In control-plane-controller provisioning
-// mode the control plane has no owning node pool, so its nodes carry no node
-// pool ID (NodePoolID == uuid.Nil); that is how they are distinguished from
-// worker nodes here. Callers use the names to cross-check the same nodes in the
-// tenant Kubernetes API.
+// ControlPlaneNodeNames returns the names of the cluster's control-plane nodes,
+// from the ListNodes controlPlane filter. Callers use the names to cross-check
+// the same nodes in the tenant Kubernetes API.
 func (c *Client) ControlPlaneNodeNames(ctx context.Context, clusterID openapi_types.UUID) ([]string, error) {
-	nodes, err := c.ListClusterNodes(ctx, clusterID)
+	nodes, err := c.ListClusterNodesByControlPlane(ctx, clusterID, true)
 	if err != nil {
 		return nil, fmt.Errorf("listing control-plane node names for cluster %s: %w", clusterID, err)
 	}
 
-	names := make([]string, 0)
+	names := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		if node.NodePoolID == uuid.Nil {
-			names = append(names, node.Name)
-		}
+		names = append(names, node.Name)
 	}
 	return names, nil
 }
 
-// ControlPlaneNodeIDs returns the IDs of the controller-managed control-plane
-// nodes (NodePoolID == uuid.Nil) in the cluster, as a set. It captures the
-// pre-roll node set so a config-revision rolling replacement can be detected by
-// comparing against the post-roll set.
+// ControlPlaneNodeIDs returns the IDs of the cluster's control-plane nodes as a
+// set, from the ListNodes controlPlane filter. It captures the pre-roll node set
+// so a config-revision rolling replacement can be detected by comparing against
+// the post-roll set.
 func (c *Client) ControlPlaneNodeIDs(ctx context.Context, clusterID openapi_types.UUID) (map[openapi_types.UUID]struct{}, error) {
-	nodes, err := c.ListClusterNodes(ctx, clusterID)
+	nodes, err := c.ListClusterNodesByControlPlane(ctx, clusterID, true)
 	if err != nil {
 		return nil, fmt.Errorf("listing control-plane node IDs for cluster %s: %w", clusterID, err)
 	}
 
-	ids := make(map[openapi_types.UUID]struct{})
+	ids := make(map[openapi_types.UUID]struct{}, len(nodes))
 	for _, node := range nodes {
-		if node.NodePoolID == uuid.Nil {
-			ids[node.ID] = struct{}{}
-		}
+		ids[node.ID] = struct{}{}
 	}
 	return ids, nil
 }

@@ -230,6 +230,115 @@ func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.
 	require.Contains(t, badReq.Message, "control-plane node pools are not allowed")
 }
 
+// TestGetClusterControlPlane covers the read-only control-plane resource:
+// it returns the persisted config plus an aggregate status for both
+// node-pool-managed and controller-managed control planes, and 404s when the
+// cluster does not exist.
+func TestGetClusterControlPlane(t *testing.T) {
+	ctx := context.Background()
+	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
+	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
+	instanceType := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
+
+	newCluster := func() db.Cluster {
+		return db.Cluster{
+			ID:                clusterID,
+			KubernetesVersion: "1.29.0",
+			ControlPlaneConfig: db.ControlPlaneConfig{
+				DesiredCount: 3,
+				ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
+					InstanceTypePreference: []uuid.UUID{instanceType},
+					OSProfile:              "ubuntu",
+					ConfigProfile:          "default",
+				},
+			},
+			Conditions: db.ClusterConditions{
+				ControlPlaneUpgrading: db.NewCondition(true, "upgrading to 1.29.0"),
+				CPNodesRecycling:      db.NewCondition(false, "not recycling"),
+			},
+		}
+	}
+
+	cpFilter := func(f db.NodeFilters) bool {
+		return f.ClusterID != nil && *f.ClusterID == clusterID &&
+			f.ControlPlane != nil && *f.ControlPlane
+	}
+
+	t.Run("node-pool-managed control plane", func(t *testing.T) {
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(newCluster(), nil)
+		mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(cpFilter)).Return([]db.Node{
+			{
+				ID:           uuid.New(),
+				ClusterID:    clusterID,
+				NodePoolID:   nodePoolID,
+				ControlPlane: true,
+				Conditions:   db.NodeConditions{KubernetesReady: db.NewCondition(true, "ready")},
+			},
+			{
+				ID:           uuid.New(),
+				ClusterID:    clusterID,
+				NodePoolID:   nodePoolID,
+				ControlPlane: true,
+				Conditions:   db.NodeConditions{KubernetesReady: db.NewCondition(false, "not ready")},
+			},
+		}, nil)
+
+		svc := clusterService{db: mockDB}
+		resp, err := svc.GetClusterControlPlane(ctx, api.GetClusterControlPlaneRequestObject{ClusterID: clusterID})
+		require.NoError(t, err)
+
+		out, ok := resp.(api.GetClusterControlPlane200JSONResponse)
+		require.True(t, ok, "expected 200 response, got %T", resp)
+		require.Equal(t, 3, out.Config.DesiredCount)
+		require.Equal(t, "ubuntu", out.Config.OSProfile)
+		require.Equal(t, 2, out.Status.NodeCount)
+		require.Equal(t, 1, out.Status.ReadyNodeCount)
+		require.Equal(t, "1.29.0", out.Status.KubernetesVersion)
+		require.Equal(t, api.ConditionStatusTrue, out.Status.ControlPlaneUpgrading.Status)
+		require.Equal(t, api.ConditionStatusFalse, out.Status.CpNodesRecycling.Status)
+		mockDB.AssertExpectations(t)
+	})
+
+	t.Run("controller-managed control plane", func(t *testing.T) {
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(newCluster(), nil)
+		// Controller-managed CP nodes have a nil node pool ID; the read model
+		// still surfaces them because ControlPlane is set on the node row.
+		mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(cpFilter)).Return([]db.Node{
+			{
+				ID:           uuid.New(),
+				ClusterID:    clusterID,
+				NodePoolID:   uuid.Nil,
+				ControlPlane: true,
+				Conditions:   db.NodeConditions{KubernetesReady: db.NewCondition(true, "ready")},
+			},
+		}, nil)
+
+		svc := clusterService{db: mockDB}
+		resp, err := svc.GetClusterControlPlane(ctx, api.GetClusterControlPlaneRequestObject{ClusterID: clusterID})
+		require.NoError(t, err)
+
+		out, ok := resp.(api.GetClusterControlPlane200JSONResponse)
+		require.True(t, ok, "expected 200 response, got %T", resp)
+		require.Equal(t, 1, out.Status.NodeCount)
+		require.Equal(t, 1, out.Status.ReadyNodeCount)
+		require.Equal(t, 3, out.Config.DesiredCount)
+		mockDB.AssertExpectations(t)
+	})
+
+	t.Run("404 when cluster not found", func(t *testing.T) {
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)
+
+		svc := clusterService{db: mockDB}
+		resp, err := svc.GetClusterControlPlane(ctx, api.GetClusterControlPlaneRequestObject{ClusterID: clusterID})
+		require.NoError(t, err)
+		require.IsType(t, api.GetClusterControlPlane404Response{}, resp)
+		mockDB.AssertExpectations(t)
+	})
+}
+
 // TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField proves a
 // PATCH that clears a create-time-required control-plane field is rejected before
 // the merged spec is persisted (mirroring create-time validation on update).

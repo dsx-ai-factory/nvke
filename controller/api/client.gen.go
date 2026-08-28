@@ -112,6 +112,9 @@ type ClientInterface interface {
 
 	UpdateCluster(ctx context.Context, clusterID openapi_types.UUID, body UpdateClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetClusterControlPlane request
+	GetClusterControlPlane(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListCNIPlugins request
 	ListCNIPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -260,6 +263,18 @@ func (c *Client) UpdateClusterWithBody(ctx context.Context, clusterID openapi_ty
 
 func (c *Client) UpdateCluster(ctx context.Context, clusterID openapi_types.UUID, body UpdateClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateClusterRequest(c.Server, clusterID, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetClusterControlPlane(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetClusterControlPlaneRequest(c.Server, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -784,6 +799,40 @@ func NewUpdateClusterRequestWithBody(server string, clusterID openapi_types.UUID
 	return req, nil
 }
 
+// NewGetClusterControlPlaneRequest generates requests for GetClusterControlPlane
+func NewGetClusterControlPlaneRequest(server string, clusterID openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "clusterID", runtime.ParamLocationPath, clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/clusters/%s/control-plane", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListCNIPluginsRequest generates requests for ListCNIPlugins
 func NewListCNIPluginsRequest(server string) (*http.Request, error) {
 	var err error
@@ -1261,6 +1310,20 @@ func NewListNodesRequest(server string, params *ListNodesParams) (*http.Request,
 			}
 		}
 
+		if params.ControlPlane != nil {
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "controlPlane", runtime.ParamLocationQuery, *params.ControlPlane); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+		}
+
 		queryURL.RawQuery = queryValues.Encode()
 	}
 
@@ -1698,6 +1761,9 @@ type ClientWithResponsesInterface interface {
 
 	UpdateClusterWithResponse(ctx context.Context, clusterID openapi_types.UUID, body UpdateClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateClusterClientResponse, error)
 
+	// GetClusterControlPlaneWithResponse request
+	GetClusterControlPlaneWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterControlPlaneClientResponse, error)
+
 	// ListCNIPluginsWithResponse request
 	ListCNIPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCNIPluginsClientResponse, error)
 
@@ -1888,6 +1954,28 @@ func (r UpdateClusterClientResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r UpdateClusterClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetClusterControlPlaneClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ClusterControlPlane
+}
+
+// Status returns HTTPResponse.Status
+func (r GetClusterControlPlaneClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetClusterControlPlaneClientResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2464,6 +2552,15 @@ func (c *ClientWithResponses) UpdateClusterWithResponse(ctx context.Context, clu
 	return ParseUpdateClusterClientResponse(rsp)
 }
 
+// GetClusterControlPlaneWithResponse request returning *GetClusterControlPlaneClientResponse
+func (c *ClientWithResponses) GetClusterControlPlaneWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterControlPlaneClientResponse, error) {
+	rsp, err := c.GetClusterControlPlane(ctx, clusterID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetClusterControlPlaneClientResponse(rsp)
+}
+
 // ListCNIPluginsWithResponse request returning *ListCNIPluginsClientResponse
 func (c *ClientWithResponses) ListCNIPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCNIPluginsClientResponse, error) {
 	rsp, err := c.ListCNIPlugins(ctx, reqEditors...)
@@ -2902,6 +2999,31 @@ func ParseUpdateClusterClientResponse(rsp *http.Response) (*UpdateClusterClientR
 		}
 		response.JSON409 = &dest
 
+	}
+
+	return response, nil
+}
+
+// ParseGetClusterControlPlaneClientResponse parses an HTTP response from a GetClusterControlPlaneWithResponse call
+func ParseGetClusterControlPlaneClientResponse(rsp *http.Response) (*GetClusterControlPlaneClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetClusterControlPlaneClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ClusterControlPlane
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 	}
 
 	return response, nil

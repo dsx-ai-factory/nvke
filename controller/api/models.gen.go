@@ -147,6 +147,16 @@ type ClusterConditions struct {
 	UpdateInProgress *UpdateInProgress `json:"updateInProgress,omitempty"`
 }
 
+// ClusterControlPlane Read-only view of a cluster's control plane: its persisted configuration
+// plus an aggregate runtime status.
+type ClusterControlPlane struct {
+	// Config Cluster-level control plane configuration.
+	Config ControlPlaneConfig `json:"config"`
+
+	// Status Aggregate runtime status of a cluster's control plane.
+	Status ControlPlaneStatus `json:"status"`
+}
+
 // ClusterNetwork defines model for ClusterNetwork.
 type ClusterNetwork struct {
 	// PodCIDR Canonical comma-separated IPv4 pod network CIDRs applied to the cluster.
@@ -245,6 +255,20 @@ type ControlPlaneConfig struct {
 
 	// VpcPrefixIDs The IDs of the VPC prefixes used for control plane nodes. Present when the site has native networking enabled.
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
+// ControlPlaneStatus Aggregate runtime status of a cluster's control plane.
+type ControlPlaneStatus struct {
+	// NodeCount Total number of control-plane nodes for the cluster.
+	NodeCount int `json:"nodeCount"`
+
+	// ReadyNodeCount Number of control-plane nodes currently reporting Kubernetes-ready.
+	ReadyNodeCount int `json:"readyNodeCount"`
+
+	// KubernetesVersion The current control-plane Kubernetes version.
+	KubernetesVersion     string    `json:"kubernetesVersion"`
+	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
+	CpNodesRecycling      Condition `json:"cpNodesRecycling"`
 }
 
 // CreateClusterControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
@@ -590,6 +614,9 @@ type Node struct {
 
 	// InstanceTypeID The Forge instance type ID used to provision this node
 	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
+
+	// ControlPlane True if this is a control-plane node (managed by a control-plane node pool or the control-plane controller)
+	ControlPlane bool `json:"controlPlane"`
 
 	// Conditions Conditions representing various aspects of the node's state
 	Conditions NodeConditions `json:"conditions"`
@@ -1194,6 +1221,9 @@ type ListNodesParams struct {
 
 	// Name Filter nodes by node name
 	Name *string `form:"name,omitempty" json:"name,omitempty"`
+
+	// ControlPlane Filter nodes by control-plane membership (true returns only control-plane nodes, false only workers)
+	ControlPlane *bool `form:"controlPlane,omitempty" json:"controlPlane,omitempty"`
 }
 
 // ListVIPAllocationsParams defines parameters for ListVIPAllocations.

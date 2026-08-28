@@ -6,6 +6,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -13,6 +14,50 @@ import (
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
+
+// GetClusterControlPlane returns a read-only view of a cluster's control plane:
+// the persisted control-plane configuration plus an aggregate runtime status.
+func (s *clusterService) GetClusterControlPlane(
+	ctx context.Context,
+	req api.GetClusterControlPlaneRequestObject,
+) (api.GetClusterControlPlaneResponseObject, error) {
+	dbCluster, err := s.db.GetCluster(ctx, req.ClusterID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return api.GetClusterControlPlane404Response{}, nil
+		}
+		return nil, fmt.Errorf("failed to get cluster: %w", err)
+	}
+
+	controlPlane := true
+	cpNodes, err := s.db.ListNodes(ctx, db.NodeFilters{
+		ClusterID:    &req.ClusterID,
+		ControlPlane: &controlPlane,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list control-plane nodes: %w", err)
+	}
+
+	var readyNodeCount int
+	for i := range cpNodes {
+		if db.BoolFromConditionStatus(cpNodes[i].Conditions.KubernetesReady.Status) {
+			readyNodeCount++
+		}
+	}
+
+	status := api.ControlPlaneStatus{
+		NodeCount:             len(cpNodes),
+		ReadyNodeCount:        readyNodeCount,
+		KubernetesVersion:     dbCluster.KubernetesVersion,
+		ControlPlaneUpgrading: apiConditionFromDB(dbCluster.Conditions.ControlPlaneUpgrading),
+		CpNodesRecycling:      apiConditionFromDB(dbCluster.Conditions.CPNodesRecycling),
+	}
+
+	return api.GetClusterControlPlane200JSONResponse(api.ClusterControlPlane{
+		Config: *apiControlPlaneConfigFromDB(dbCluster.ControlPlaneConfig),
+		Status: status,
+	}), nil
+}
 
 func unsupportedControlPlaneConfigFieldError(fieldName, clusterType string) error {
 	return fmt.Errorf("controlPlaneConfig.%s is not supported for %s", fieldName, clusterType)

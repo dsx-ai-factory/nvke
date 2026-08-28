@@ -146,6 +146,23 @@ func (c *Client) ListClusterNodes(ctx context.Context, clusterID openapi_types.U
 	return resp.JSON200.Nodes, nil
 }
 
+// ListClusterNodesByControlPlane returns the cluster's nodes filtered by
+// control-plane membership: controlPlane=true returns only control-plane nodes,
+// false only workers. It exercises the ListNodes controlPlane query filter.
+func (c *Client) ListClusterNodesByControlPlane(ctx context.Context, clusterID openapi_types.UUID, controlPlane bool) ([]api.Node, error) {
+	resp, err := c.api.ListNodesWithResponse(ctx, &api.ListNodesParams{ClusterID: &clusterID, ControlPlane: &controlPlane})
+	if err != nil {
+		return nil, fmt.Errorf("listing nodes for cluster %s (controlPlane=%t): %w", clusterID, controlPlane, err)
+	}
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("listing nodes for cluster %s (controlPlane=%t): unexpected status %s: %s", clusterID, controlPlane, resp.Status(), resp.Body)
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("listing nodes for cluster %s (controlPlane=%t): empty response body", clusterID, controlPlane)
+	}
+	return resp.JSON200.Nodes, nil
+}
+
 // ListNodePoolNodes returns the nodes owned by node pool id.
 func (c *Client) ListNodePoolNodes(ctx context.Context, nodePoolID openapi_types.UUID) ([]api.Node, error) {
 	resp, err := c.api.ListNodesWithResponse(ctx, &api.ListNodesParams{NodePoolID: &nodePoolID})

@@ -181,6 +181,94 @@ func TestNodeService_ListNodes(t *testing.T) {
 			},
 		},
 		{
+			name:    "surfaces control-plane indicator",
+			filters: db.NodeFilters{},
+			dbNodes: []db.Node{
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440010"),
+					NodePoolID:   nodePoolID,
+					Name:         "cp-node",
+					IP:           "10.0.0.2",
+					ControlPlane: true,
+					Conditions:   mockDBNodeConditions(now),
+				},
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440011"),
+					NodePoolID:   nodePoolID,
+					Name:         "worker-node",
+					IP:           "10.0.0.3",
+					ControlPlane: false,
+					Conditions:   mockDBNodeConditions(now),
+				},
+			},
+			wantNodes: []api.Node{
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440010"),
+					NodePoolID:   nodePoolID,
+					Name:         "cp-node",
+					IP:           "10.0.0.2",
+					ControlPlane: true,
+					Conditions:   mockAPINodeConditions(now),
+				},
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440011"),
+					NodePoolID:   nodePoolID,
+					Name:         "worker-node",
+					IP:           "10.0.0.3",
+					ControlPlane: false,
+					Conditions:   mockAPINodeConditions(now),
+				},
+			},
+		},
+		{
+			name:    "filter control-plane true returns only control-plane nodes",
+			filters: db.NodeFilters{ControlPlane: testutil.PtrTo(true)},
+			dbNodes: []db.Node{
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440010"),
+					NodePoolID:   nodePoolID,
+					Name:         "cp-node",
+					IP:           "10.0.0.2",
+					ControlPlane: true,
+					Conditions:   mockDBNodeConditions(now),
+				},
+			},
+			wantNodes: []api.Node{
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440010"),
+					NodePoolID:   nodePoolID,
+					Name:         "cp-node",
+					IP:           "10.0.0.2",
+					ControlPlane: true,
+					Conditions:   mockAPINodeConditions(now),
+				},
+			},
+		},
+		{
+			name:    "filter control-plane false returns only worker nodes",
+			filters: db.NodeFilters{ControlPlane: testutil.PtrTo(false)},
+			dbNodes: []db.Node{
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440011"),
+					NodePoolID:   nodePoolID,
+					Name:         "worker-node",
+					IP:           "10.0.0.3",
+					ControlPlane: false,
+					Conditions:   mockDBNodeConditions(now),
+				},
+			},
+			wantNodes: []api.Node{
+				{
+					ID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440011"),
+					NodePoolID:   nodePoolID,
+					Name:         "worker-node",
+					IP:           "10.0.0.3",
+					ControlPlane: false,
+					Conditions:   mockAPINodeConditions(now),
+				},
+			},
+		},
+		{
 			name:      "db error",
 			filters:   db.NodeFilters{},
 			dbError:   errors.New("db error"),
@@ -197,10 +285,11 @@ func TestNodeService_ListNodes(t *testing.T) {
 
 			resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{
 				Params: api.ListNodesParams{
-					ClusterID:   tt.filters.ClusterID,
-					NodePoolID:  tt.filters.NodePoolID,
-					ClusterName: tt.filters.ClusterName,
-					Name:        tt.filters.Name,
+					ClusterID:    tt.filters.ClusterID,
+					NodePoolID:   tt.filters.NodePoolID,
+					ClusterName:  tt.filters.ClusterName,
+					Name:         tt.filters.Name,
+					ControlPlane: tt.filters.ControlPlane,
 				},
 			})
 
@@ -247,6 +336,28 @@ func TestNodeService_GetNode(t *testing.T) {
 				Name:       "test-node",
 				IP:         "10.0.0.1",
 				Conditions: mockAPINodeConditions(now),
+			},
+		},
+		{
+			name:   "surfaces control-plane indicator",
+			nodeID: nodeID,
+			dbNode: db.Node{
+				ID:           nodeID,
+				NodePoolID:   uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+				NodeSetID:    uuid.MustParse("de58d168-75d7-4cb8-aae8-b1f4691440db"),
+				Name:         "cp-node",
+				IP:           "10.0.0.2",
+				ControlPlane: true,
+				Conditions:   mockDBNodeConditions(now),
+			},
+			wantNode: api.GetNode200JSONResponse{
+				ID:           nodeID,
+				NodePoolID:   uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+				NodeSetID:    uuid.MustParse("de58d168-75d7-4cb8-aae8-b1f4691440db"),
+				Name:         "cp-node",
+				IP:           "10.0.0.2",
+				ControlPlane: true,
+				Conditions:   mockAPINodeConditions(now),
 			},
 		},
 		{

@@ -155,6 +155,31 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /clusters/{clusterID}/control-plane:
+    parameters:
+      - name: clusterID
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: Get a Cluster's Control Plane
+      description: |
+        Read-only view of the cluster control plane: the persisted control-plane
+        configuration plus an aggregate runtime status (node counts, current
+        Kubernetes version, and the control-plane upgrade/recycling conditions).
+      operationId: getClusterControlPlane
+      responses:
+        "200":
+          description: Returns the cluster's control-plane configuration and status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClusterControlPlane"
+        "404":
+          description: Cluster not found
+
   /nodePools:
     get:
       summary: List Node Pools
@@ -405,6 +430,12 @@ paths:
           schema:
             type: string
           description: Filter nodes by node name
+        - name: controlPlane
+          in: query
+          required: false
+          schema:
+            type: boolean
+          description: Filter nodes by control-plane membership (true returns only control-plane nodes, false only workers)
       responses:
         "200":
           description: A list of nodes
@@ -914,6 +945,60 @@ components:
             type: string
           description: Custom cloud-init `runcmd` entries for CAPI-backed control plane nodes.
           x-go-type-skip-optional-pointer: true
+
+    ClusterControlPlane:
+      type: object
+      additionalProperties: false
+      description: |
+        Read-only view of a cluster's control plane: its persisted configuration
+        plus an aggregate runtime status.
+      required:
+        - config
+        - status
+      properties:
+        config:
+          $ref: "#/components/schemas/ControlPlaneConfig"
+          description: The cluster-level control plane configuration.
+          x-order: 1
+        status:
+          $ref: "#/components/schemas/ControlPlaneStatus"
+          description: Aggregate runtime status of the control plane.
+          x-order: 2
+
+    ControlPlaneStatus:
+      type: object
+      additionalProperties: false
+      description: Aggregate runtime status of a cluster's control plane.
+      required:
+        - nodeCount
+        - readyNodeCount
+        - kubernetesVersion
+        - controlPlaneUpgrading
+        - cpNodesRecycling
+      properties:
+        nodeCount:
+          type: integer
+          description: Total number of control-plane nodes for the cluster.
+          x-go-type-skip-optional-pointer: true
+          x-order: 1
+        readyNodeCount:
+          type: integer
+          description: Number of control-plane nodes currently reporting Kubernetes-ready.
+          x-go-type-skip-optional-pointer: true
+          x-order: 2
+        kubernetesVersion:
+          type: string
+          description: The current control-plane Kubernetes version.
+          x-go-type-skip-optional-pointer: true
+          x-order: 3
+        controlPlaneUpgrading:
+          $ref: "#/components/schemas/Condition"
+          description: The condition indicating whether the control plane is currently being upgraded.
+          x-order: 4
+        cpNodesRecycling:
+          $ref: "#/components/schemas/Condition"
+          description: The condition indicating whether the control-plane nodes are currently being recycled.
+          x-order: 5
 
     CreateClusterControlPlaneConfig:
       type: object
@@ -1945,6 +2030,7 @@ components:
         - nodePoolID
         - nodeSetID
         - name
+        - controlPlane
         - conditions
       properties:
         id:
@@ -1988,10 +2074,14 @@ components:
           description: The Forge instance type ID used to provision this node
           x-go-type-skip-optional-pointer: true
           x-order: 8
+        controlPlane:
+          type: boolean
+          description: True if this is a control-plane node (managed by a control-plane node pool or the control-plane controller)
+          x-order: 9
         conditions:
           $ref: "#/components/schemas/NodeConditions"
           description: Conditions representing various aspects of the node's state
-          x-order: 9
+          x-order: 10
 
     ListNodesResponse:
       type: object

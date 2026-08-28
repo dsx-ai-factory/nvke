@@ -24,6 +24,19 @@ func (c *Client) GetCluster(ctx context.Context, id openapi_types.UUID) (*api.Cl
 	return resp.JSON200, nil
 }
 
+// GetClusterControlPlane returns the read-only control-plane view (persisted
+// config plus aggregate runtime status) for the cluster with the given id.
+func (c *Client) GetClusterControlPlane(ctx context.Context, id openapi_types.UUID) (*api.ClusterControlPlane, error) {
+	resp, err := c.api.GetClusterControlPlaneWithResponse(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("getting control plane for cluster %s: %w", id, err)
+	}
+	if resp.StatusCode() != 200 || resp.JSON200 == nil {
+		return nil, fmt.Errorf("getting control plane for cluster %s: unexpected status %s: %s", id, resp.Status(), resp.Body)
+	}
+	return resp.JSON200, nil
+}
+
 // UpgradeClusterControlPlane requests a control-plane Kubernetes version upgrade
 // and enables control-plane node recycling.
 func (c *Client) UpgradeClusterControlPlane(ctx context.Context, id openapi_types.UUID, version string) (*api.Cluster, error) {

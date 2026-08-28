@@ -39,10 +39,11 @@ func NewNodeService(logger *slog.Logger, database db.DB, temporalClient client.C
 
 func (s *nodeService) ListNodes(ctx context.Context, req api.ListNodesRequestObject) (api.ListNodesResponseObject, error) {
 	filters := db.NodeFilters{
-		ClusterID:   req.Params.ClusterID,
-		NodePoolID:  req.Params.NodePoolID,
-		ClusterName: req.Params.ClusterName,
-		Name:        req.Params.Name,
+		ClusterID:    req.Params.ClusterID,
+		NodePoolID:   req.Params.NodePoolID,
+		ClusterName:  req.Params.ClusterName,
+		Name:         req.Params.Name,
+		ControlPlane: req.Params.ControlPlane,
 	}
 
 	dbNodes, err := s.db.ListNodes(ctx, filters)
@@ -156,6 +157,7 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		ForgeMachineID:  dbNode.ForgeMachineID,
 		IP:              dbNode.IP,
 		InstanceTypeID:  dbNode.InstanceTypeID,
+		ControlPlane:    dbNode.ControlPlane,
 		Conditions:      nodeConditions,
 	}
 }
