@@ -70,7 +70,7 @@ Deeper module documentation:
 | [../controller/profiles/README.md](../controller/profiles/README.md) | External profiles |
 | [../controller/deploy/charts/cloud-workflow-engine/README.md](../controller/deploy/charts/cloud-workflow-engine/README.md) | The engine's Helm chart and its values |
 | [../build/README.md](../build/README.md) | The per-component build and publish scripts |
-| [../node-images/README.md](../node-images/README.md) | Node image build inputs |
+| [../os-image/README.md](../os-image/README.md) | Node image build, FDE/non-FDE variants, release |
 
 ## Tests
 
