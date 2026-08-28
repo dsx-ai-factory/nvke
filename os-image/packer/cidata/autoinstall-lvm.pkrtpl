@@ -69,7 +69,11 @@ autoinstall:
     - python3-apt
     - openssh-server
 
-  updates: security
+  # all, not security-only: a golden image should ship current, not with
+  # whatever was on the ISO when it was cut. Applied by curtin during
+  # install, before the late-commands below, so any kernel upgrade here is
+  # already in place when those regenerate the initramfs.
+  updates: all
 
   late-commands:
     - curtin in-target --target=/target -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu'
