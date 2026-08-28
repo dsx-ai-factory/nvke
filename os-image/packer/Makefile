@@ -49,8 +49,13 @@ CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)
 # run got through partitioning, curthooks, and most package installs and was
 # still legitimately working (mid unattended-upgrades) when it hit the 60m
 # wall — SSH only becomes reachable after the *entire* autoinstall completes
-# and reboots, so the whole install has to fit inside this one window.
-SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),15m,120m)
+# and reboots, so the whole install has to fit inside this one window. 15m
+# wasn't enough under kvm either: a real CI run on a GPU-labeled runner with
+# genuine /dev/kvm was still mid-autoinstall/second-boot (confirmed clean via
+# the serial console log, no crash) when it hit that wall at 15m48s — FDE's
+# LUKS/LVM/package-install work is heavier than the boot times this value was
+# originally set from.
+SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),30m,120m)
 
 # FDE/non-FDE only: how long boot_command waits before typing into GRUB.
 # prepare-installer-iso.sh patches the ISO's own GRUB timeout to 300s, so
