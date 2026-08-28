@@ -105,6 +105,7 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 	NKE_AGENT_VERSION=$(NKE_AGENT_VERSION) \
 	NKE_AGENT_REGISTRY=$(NKE_AGENT_REGISTRY) \
 	NKE_AGENT_DEB_REGISTRY=$(NKE_AGENT_DEB_REGISTRY) \
+	PKR_VAR_luks_passphrase=$(LUKS_PASSPHRASE) \
 	$(PACKER) build \
 		-var nke_agent_version=$(NKE_AGENT_VERSION) \
 		-var nke_agent_registry=$(NKE_AGENT_REGISTRY) \
@@ -115,7 +116,6 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 		-var boot_wait=$(BOOT_WAIT) \
 		-var iso_url=$(ISO_URL) \
 		-var iso_checksum=$(ISO_CHECKSUM) \
-		-var luks_passphrase=$(LUKS_PASSPHRASE) \
 		$(PKR_FILE_FDE)
 
 # Non-FDE variant: same installer+autoinstall+LVM flow as os-image-fde,
