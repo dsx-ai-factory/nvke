@@ -58,8 +58,8 @@ What distinguishes it from a generic CAPI distribution:
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 
 **Ten Go modules**, tied together by a workspace at the repository root, each
-independently buildable. `make build` links six binaries: `agent`,
-`cloud-workflow-engine`, `nkectl`, `capd-reboot-controller`, `nico-mock` and
+independently buildable. `make build` links seven binaries: `agent`, `updater`,
+`controller`, `nkectl`, `capd-reboot-controller`, `nico-mock` and
 `nke-os-image-check`.
 See [docs/go-workspace.md](docs/go-workspace.md) for how the workspace fits
 together and why `vendor/` is committed.
@@ -68,8 +68,9 @@ What each binary is, and where it ends up running:
 
 | Binary | Module | What it does | Runs on |
 |---|---|---|---|
-| `cloud-workflow-engine` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The site controller cluster |
+| `controller` | `controller/` | The control plane: REST API, Temporal workflows, and the Kubernetes reconcilers | The site controller cluster |
 | `agent` | `agent/` | gRPC server the control plane drives to run `kubeadm`, install a CNI, and configure encryption | Every managed node |
+| `updater` | `agent/` | Independent helper that replaces the node agent without depending on the agent process | Every managed node |
 | `nkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |
 | `nke-os-image-check` | `os-image/` | Checks a node image against the contract in `os-image/SPEC.md` | Your machine, or an image build |
 | `capd-reboot-controller` | `controller/hack/capd-reboot-controller/` | Test helper that reboots CAPD machines | Test clusters |
