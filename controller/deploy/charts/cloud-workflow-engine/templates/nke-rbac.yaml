@@ -43,6 +43,16 @@ metadata:
 {{- end }}
 {{- if .Values.spiffe.trustDomain }}
 {{- $td := .Values.spiffe.trustDomain }}
+{{- /*
+  The nke:cwe bindings name whatever subject the tenant apiserver will see in the
+  token's sub claim (username maps from sub with an empty prefix). That is this
+  controller's own SPIFFE ID by default. It is NOT the same string once
+  spiffe.jwtExchangeEndpoint is set: an RFC 8693 exchange re-issues the token under
+  its own trust domain and rewrites the path, so the exchanged subject cannot be
+  derived from spiffe.trustDomain and has to be given whole via spiffe.cweSubject.
+  Set the two together or the controller authenticates and is then denied everything.
+*/}}
+{{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/cloud-workflow-engine" $td) }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -127,7 +137,7 @@ data:
       name: nke:cwe
     subjects:
       - kind: User
-        name: spiffe://{{ $td }}/nke-service/cloud-workflow-engine
+        name: {{ $cweSubject }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: ClusterRole
@@ -141,7 +151,7 @@ data:
       namespace: kube-system
     subjects:
       - kind: User
-        name: spiffe://{{ $td }}/nke-service/cloud-workflow-engine
+        name: {{ $cweSubject }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role
@@ -155,7 +165,7 @@ data:
       namespace: kube-node-lease
     subjects:
       - kind: User
-        name: spiffe://{{ $td }}/nke-service/cloud-workflow-engine
+        name: {{ $cweSubject }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role
