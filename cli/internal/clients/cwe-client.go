@@ -26,8 +26,9 @@ type CWEClient struct {
 // New builds a CWEClient from a SiteConfig.
 // The URL should be the site controller base URL (e.g. http://localhost:8080).
 // The /api prefix is added automatically so callers never need to include it.
-// FIXME: add mTLS support: accept cert/key paths from SiteConfig so
-// operators can authenticate via Teleport app certs (tsh apps login → --cert/--key).
+// FIXME: NKX-15055 — add TokenRequest JWT auth: mint a short-lived JWT from
+// the management cluster kubeconfig stored in SiteConfig and attach it as a
+// bearer token on every request.
 func New(cfg config.SiteConfig) (*CWEClient, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("site URL is empty: run 'nkectl config set-site --url <url>'")

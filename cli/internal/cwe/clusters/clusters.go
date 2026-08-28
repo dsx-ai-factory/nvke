@@ -6,11 +6,9 @@
 package clusters
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -27,7 +25,10 @@ type ClientFn func() (*clients.CWEClient, error)
 
 // NewGetCmd returns the "nkectl get clusters" subcommand.
 func NewGetCmd(clientFn ClientFn) *cobra.Command {
-	var outputFormat string
+	var (
+		outputFormat  string
+		clusterFilter string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "clusters",
@@ -42,19 +43,28 @@ func NewGetCmd(clientFn ClientFn) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			clusters, err := c.ListClusters(cmd.Context())
-			if err != nil {
-				return err
+			var cls []api.Cluster
+			if clusterFilter != "" {
+				cl, err := c.FindClusterByName(cmd.Context(), clusterFilter)
+				if err != nil {
+					return err
+				}
+				cls = []api.Cluster{*cl}
+			} else {
+				if cls, err = c.ListClusters(cmd.Context()); err != nil {
+					return err
+				}
 			}
 			if f != util.FormatTable {
-				return util.Print(os.Stdout, f, clusters)
+				return util.Print(os.Stdout, f, cls)
 			}
-			printClusters(clusters)
+			printClusters(cls)
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format: json or yaml (default: table)")
+	cmd.Flags().StringVarP(&clusterFilter, "cluster", "c", "", "Filter output to the named cluster")
 	return cmd
 }
 
@@ -95,86 +105,47 @@ func NewDescribeCmd(clientFn ClientFn) *cobra.Command {
 }
 
 // NewCreateCmd returns the "nkectl create cluster" subcommand.
-//
-// Primary input: a positional spec file whose fields match the CWE
-// CreateClusterRequest schema exactly (see /api/docs on your site controller).
-// Flags override individual fields — only flags explicitly set on the command
-// line take effect; absent flags never clobber values from the spec file.
 func NewCreateCmd(clientFn ClientFn) *cobra.Command {
-	var (
-		name                          string
-		controlPlaneKubernetesVersion string
-		orgID                         string
-	)
+	var filename string
 
 	cmd := &cobra.Command{
-		Use:   "cluster <spec-file|->",
+		Use:   "cluster",
 		Short: "Create a tenant cluster",
 		Long: `Create a tenant cluster on the site controller.
 
 The spec must be a YAML document whose fields match the CWE
-CreateClusterRequest schema exactly. Validation and default values are
-handled by the CWE API — see /api/docs on your site controller.
+CreateClusterRequest schema exactly. See /api/docs on your site controller.
 
 Pass a file path or '-' to read from stdin (e.g. via a pipe or heredoc).
-Flags override the corresponding fields in the spec. Only flags explicitly
-set on the command line take effect.
 
-Example — spec file:
-  nkectl create cluster examples/capd-cluster.yaml
+Example:
+  nkectl create cluster -f examples/capd-cluster.yaml
 
 Example — stdin via pipe:
-  cat examples/capd-cluster.yaml | nkectl create cluster -
-
-Example — override the cluster name at runtime:
-  nkectl create cluster examples/capd-cluster.yaml --name prod-cluster`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			req, err := loadCreateClusterRequest(cmd, args[0])
+  cat examples/capd-cluster.yaml | nkectl create cluster -f -`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			req, err := loadCreateClusterRequest(cmd, filename)
 			if err != nil {
 				return err
 			}
-
-			applyCreateClusterOverrides(cmd, &req, name, controlPlaneKubernetesVersion, orgID)
-
 			c, err := clientFn()
 			if err != nil {
 				return err
 			}
-
 			cluster, err := c.CreateCluster(cmd.Context(), req)
 			if err != nil {
 				return err
 			}
-
 			fmt.Fprintf(os.Stdout, "Cluster %q created (id: %s)\n", cluster.Name, cluster.ID)
 			fmt.Fprintf(os.Stdout, "Provisioning is async — run 'nkectl get clusters' to check status.\n")
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Override: cluster name")
-	cmd.Flags().StringVar(&controlPlaneKubernetesVersion, "controlPlaneKubernetesVersion", "", "Override: Kubernetes version (e.g. 1.34.2)")
-	cmd.Flags().StringVar(&orgID, "orgID", "", "Override: NGC organization ID")
-
+	cmd.Flags().StringVarP(&filename, "filename", "f", "", "Path to YAML spec file, or '-' to read from stdin")
+	_ = cmd.MarkFlagRequired("filename")
 	return cmd
-}
-
-// applyCreateClusterOverrides applies CLI flag values onto req.
-// cmd.Flags().Changed() is true only when a flag was explicitly set,
-// so absent flags never overwrite values loaded from the YAML file.
-// This mirrors the mergeSpec pattern used in nkectl site bootstrap (MR 931).
-func applyCreateClusterOverrides(cmd *cobra.Command, req *api.CreateClusterJSONRequestBody, name, k8sVersion, orgID string) {
-	flagSet := cmd.Flags().Changed
-	if flagSet("name") {
-		req.Name = name
-	}
-	if flagSet("controlPlaneKubernetesVersion") {
-		req.ControlPlaneKubernetesVersion = k8sVersion
-	}
-	if flagSet("orgID") {
-		req.OrgID = orgID
-	}
 }
 
 // loadCreateClusterRequest reads YAML from path (or stdin when path is "-")
@@ -200,25 +171,12 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 
 // NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.
 func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
-	var yes bool
 	cmd := &cobra.Command{
 		Use:   "cluster <name>",
 		Short: "Delete a tenant cluster",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if !yes {
-				fmt.Fprintf(cmd.OutOrStdout(), "Delete cluster %q? This cannot be undone. [y/N] ", name)
-				scanner := bufio.NewScanner(cmd.InOrStdin())
-				if !scanner.Scan() {
-					fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-					return nil
-				}
-				if strings.ToLower(strings.TrimSpace(scanner.Text())) != "y" {
-					fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
-					return nil
-				}
-			}
 			c, err := clientFn()
 			if err != nil {
 				return err
@@ -235,7 +193,6 @@ func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVarP(&yes, "yes", "y", false, "Skip confirmation prompt")
 	return cmd
 }
 
