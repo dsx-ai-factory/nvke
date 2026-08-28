@@ -65,16 +65,34 @@ func SeedTeardownScenario(t testing.TB, dsn, name string) TeardownScenario {
 	return scenario
 }
 
+// seedTeardownScenario inserts the whole fixture in one transaction.
+//
+// The transaction is load-bearing, not tidiness. The worker is already running
+// and reconciling when this is called, and the node pool it inserts has no
+// CurrentNodeSetID, so the node-pool controller treats the pool's config as
+// changed, mints its own current NodeSet, and then garbage-collects every
+// non-current NodeSet that has no nodes -- the ListNodeSets sweep in
+// nodepool.Controller.reconcile. Committing the NodeSet before its
+// nodes exposes exactly that state, and the controller deletes the NodeSet out
+// from under the pending CreateNode calls -- surfacing as an
+// fk_nodes_node_set_id violation. Inserting the set and its nodes atomically
+// means the childless window is never visible outside this transaction.
 func seedTeardownScenario(ctx context.Context, database db.DB, scenario TeardownScenario) error {
+	return database.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		return seedTeardownScenarioTx(ctx, tx, scenario)
+	})
+}
+
+func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScenario) error {
 	siteID := uuid.New()
-	if _, err := database.RegisterSite(ctx, &db.Site{
+	if _, err := tx.RegisterSite(ctx, &db.Site{
 		ID:        siteID,
 		VIPRanges: []string{},
 	}); err != nil {
 		return fmt.Errorf("create site: %w", err)
 	}
 
-	if _, err := database.CreateCluster(ctx, &db.Cluster{
+	if _, err := tx.CreateCluster(ctx, &db.Cluster{
 		ID:                scenario.ClusterID,
 		Name:              "cwe-gofail-" + scenario.Name,
 		OrgID:             "cwe-gofail-org",
@@ -92,7 +110,7 @@ func seedTeardownScenario(ctx context.Context, database db.DB, scenario Teardown
 	nodeSetID := uuid.New()
 	instanceTypeID := uuid.New()
 
-	if _, err := database.CreateNodePool(ctx, &db.NodePool{
+	if _, err := tx.CreateNodePool(ctx, &db.NodePool{
 		ID:                    nodePoolID,
 		ClusterID:             scenario.ClusterID,
 		Name:                  "cp",
@@ -115,7 +133,7 @@ func seedTeardownScenario(ctx context.Context, database db.DB, scenario Teardown
 		return fmt.Errorf("create node pool: %w", err)
 	}
 
-	if _, err := database.CreateNodeSet(ctx, &db.NodeSet{
+	if _, err := tx.CreateNodeSet(ctx, &db.NodeSet{
 		ID:                    nodeSetID,
 		NodePoolID:            nodePoolID,
 		DesiredCount:          2,
@@ -138,7 +156,7 @@ func seedTeardownScenario(ctx context.Context, database db.DB, scenario Teardown
 		{scenario.SurvivorNde, scenario.Name + "-survivor"},
 	}
 	for _, node := range nodes {
-		if _, err := database.CreateNode(ctx, &db.Node{
+		if _, err := tx.CreateNode(ctx, &db.Node{
 			ID:              node.id,
 			ClusterID:       scenario.ClusterID,
 			NodePoolID:      nodePoolID,
