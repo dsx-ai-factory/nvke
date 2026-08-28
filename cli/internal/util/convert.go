@@ -22,6 +22,9 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return *new(T), fmt.Errorf("unmarshal yaml: %w", err)
 	}
+	if raw == nil {
+		return *new(T), fmt.Errorf("spec file is empty")
+	}
 	j, err := json.Marshal(raw)
 	if err != nil {
 		return *new(T), fmt.Errorf("marshal json: %w", err)

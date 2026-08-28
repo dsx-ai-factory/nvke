@@ -1,13 +1,12 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package util_test
+package util
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/NVIDIA/nke/cli/internal/util"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
@@ -19,7 +18,7 @@ controlPlaneKubernetesVersion: "1.30.0"
 cniPlugin: calico
 etcdEncrypted: false
 `)
-	req, err := util.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
+	req, err := YAMLToRequest[api.CreateClusterJSONRequestBody](data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -35,7 +34,7 @@ etcdEncrypted: false
 }
 
 func TestYAMLToRequest_InvalidYAML(t *testing.T) {
-	_, err := util.YAMLToRequest[api.CreateClusterJSONRequestBody]([]byte(":\t:"))
+	_, err := YAMLToRequest[api.CreateClusterJSONRequestBody]([]byte(":\t:"))
 	if err == nil {
 		t.Error("expected error for invalid YAML, got nil")
 	}
@@ -46,7 +45,7 @@ func TestYAMLToRequest_UnknownFieldRejected(t *testing.T) {
 name: test-cluster
 unknownField: should-fail
 `)
-	_, err := util.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
+	_, err := YAMLToRequest[api.CreateClusterJSONRequestBody](data)
 	if err == nil {
 		t.Error("expected error for unknown field, got nil")
 	}
@@ -56,11 +55,8 @@ unknownField: should-fail
 }
 
 func TestYAMLToRequest_EmptyDocument(t *testing.T) {
-	req, err := util.YAMLToRequest[api.CreateClusterJSONRequestBody]([]byte(""))
-	if err != nil {
-		t.Fatalf("empty YAML should succeed with zero value, got: %v", err)
-	}
-	if req.Name != "" {
-		t.Errorf("empty YAML should produce zero-value Name, got %q", req.Name)
+	_, err := YAMLToRequest[api.CreateClusterJSONRequestBody]([]byte(""))
+	if err == nil {
+		t.Error("expected error for empty spec, got nil")
 	}
 }

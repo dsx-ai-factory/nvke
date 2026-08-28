@@ -1,32 +1,30 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package util_test
+package util
 
 import (
 	"bytes"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/NVIDIA/nke/cli/internal/util"
 )
 
 func TestParseFormat(t *testing.T) {
 	tests := []struct {
 		input   string
-		want    util.Format
+		want    Format
 		wantErr bool
 	}{
-		{"", util.FormatTable, false},
-		{"json", util.FormatJSON, false},
-		{"yaml", util.FormatYAML, false},
-		{"xml", util.FormatTable, true},
-		{"JSON", util.FormatTable, true},
-		{"table", util.FormatTable, true},
+		{"", FormatTable, false},
+		{"json", FormatJSON, false},
+		{"yaml", FormatYAML, false},
+		{"xml", FormatTable, true},
+		{"JSON", FormatTable, true},
+		{"table", FormatTable, true},
 	}
 	for _, tt := range tests {
-		got, err := util.ParseFormat(tt.input)
+		got, err := ParseFormat(tt.input)
 		if (err != nil) != tt.wantErr {
 			t.Errorf("ParseFormat(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
 		}
@@ -41,7 +39,7 @@ func TestPrint_JSON(t *testing.T) {
 		Name string `json:"name"`
 	}
 	var buf bytes.Buffer
-	if err := util.Print(&buf, util.FormatJSON, payload{Name: "my-cluster"}); err != nil {
+	if err := Print(&buf, FormatJSON, payload{Name: "my-cluster"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), `"name": "my-cluster"`) {
@@ -54,7 +52,7 @@ func TestPrint_YAML(t *testing.T) {
 		Name string `json:"name"`
 	}
 	var buf bytes.Buffer
-	if err := util.Print(&buf, util.FormatYAML, payload{Name: "my-cluster"}); err != nil {
+	if err := Print(&buf, FormatYAML, payload{Name: "my-cluster"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "name: my-cluster") {
@@ -64,7 +62,7 @@ func TestPrint_YAML(t *testing.T) {
 
 func TestPrint_TableReturnsError(t *testing.T) {
 	var buf bytes.Buffer
-	if err := util.Print(&buf, util.FormatTable, struct{}{}); err == nil {
+	if err := Print(&buf, FormatTable, struct{}{}); err == nil {
 		t.Error("expected error for table format, got nil")
 	}
 }
@@ -78,7 +76,7 @@ func TestPrintFields_FlatAndNested(t *testing.T) {
 		Detail inner  `json:"detail"`
 	}
 	var buf bytes.Buffer
-	if err := util.PrintFields(&buf, payload{Name: "x", Detail: inner{Count: 3}}); err != nil {
+	if err := PrintFields(&buf, payload{Name: "x", Detail: inner{Count: 3}}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -98,7 +96,7 @@ func TestPrintFields_NilValue(t *testing.T) {
 		Val *string `json:"val"`
 	}
 	var buf bytes.Buffer
-	if err := util.PrintFields(&buf, payload{Val: nil}); err != nil {
+	if err := PrintFields(&buf, payload{Val: nil}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "val: null") {
@@ -111,7 +109,7 @@ func TestPrintFields_ArrayItems(t *testing.T) {
 		Tags []string `json:"tags"`
 	}
 	var buf bytes.Buffer
-	if err := util.PrintFields(&buf, payload{Tags: []string{"a", "b"}}); err != nil {
+	if err := PrintFields(&buf, payload{Tags: []string{"a", "b"}}); err != nil {
 		t.Fatal(err)
 	}
 	out := buf.String()
@@ -132,7 +130,7 @@ func TestFormatAge(t *testing.T) {
 		{48 * time.Hour, "2d"},
 	}
 	for _, tt := range tests {
-		got := util.FormatAge(now.Add(-tt.age))
+		got := FormatAge(now.Add(-tt.age))
 		if got != tt.want {
 			t.Errorf("FormatAge(-%v) = %q, want %q", tt.age, got, tt.want)
 		}
@@ -140,7 +138,7 @@ func TestFormatAge(t *testing.T) {
 }
 
 func TestFormatAge_Future(t *testing.T) {
-	got := util.FormatAge(time.Now().Add(10 * time.Minute))
+	got := FormatAge(time.Now().Add(10 * time.Minute))
 	if got != "0s" {
 		t.Errorf("future time should report 0s, got %q", got)
 	}
