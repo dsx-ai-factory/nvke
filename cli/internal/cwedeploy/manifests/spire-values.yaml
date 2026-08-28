@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Minimal values for the SPIFFE project's hardened SPIRE umbrella chart on
+# nkectl's ephemeral Kind cluster. The chart supplies the SPIRE server, agent,
+# CSI driver, and controller manager. Cluster name, trust domain, and CWE's
+# server-admin identity are set by Engine.Deploy.
+
+global:
+  installAndUpgradeHooks:
+    enabled: false
+  deleteHooks:
+    enabled: false
+
+spire-server:
+  controllerManager:
+    # The chart applies its ClusterSPIFFEID objects as part of the same release
+    # that creates the controller manager serving the webhook that validates
+    # them, so on a fresh install the API server calls a webhook that is not
+    # listening yet. With the chart's default failurePolicy of Fail that is a
+    # hard error and the whole install rolls back:
+    #
+    #   failed calling webhook "vclusterspiffeid.kb.io": … connection refused
+    #
+    # It is a race, so it passes on a warm machine and fails on a cold CI
+    # runner, which is the worst way for it to behave.
+    #
+    # The chart's own answer is a pair of helm hooks that flip this to Ignore
+    # for the duration of an install and back afterwards — which is why they
+    # are only rendered when failurePolicy is Fail. Setting Ignore outright
+    # reaches the same place with no hook Jobs, RBAC or extra image in a
+    # cluster that exists for about five minutes. The webhook still validates
+    # once it is up; it just no longer blocks admission while it is starting.
+    validatingWebhookConfiguration:
+      failurePolicy: Ignore
+    identities:
+      clusterSPIFFEIDs:
+        default:
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - cloud-workflow-engine
+        nke-service:
+          enabled: true
+          spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/nke-service/{{ .PodSpec.ServiceAccountName }}"
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - cloud-workflow-engine
+          fallback: false
+
+# Workload identity does not require an OIDC provider. Disabling it also
+# avoids adding cert-manager to this short-lived bootstrap cluster.
+spiffe-oidc-discovery-provider:
+  enabled: false

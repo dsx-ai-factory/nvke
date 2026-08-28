@@ -174,6 +174,10 @@ func TestRunBootstrapSiteUsesTheProviderCLI(t *testing.T) {
 // TestRunBootstrapSiteMissingCWEImage confirms the command fails with a
 // clear, actionable error when NKECTL_CWE_IMAGE is not set, rather than
 // reaching helm with an empty image reference.
+//
+// It must also fail before the Kind cluster is built. What to deploy is
+// settled up front, so a setting the operator never provided costs them a
+// message rather than a cluster that is stood up only to be torn down.
 func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
 	t.Setenv("NKECTL_CWE_IMAGE", "")
 
@@ -190,8 +194,8 @@ func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
 		t.Errorf("error does not name the missing setting: %v", err)
 	}
 
-	if !runner.sawArgs("delete", "cluster") {
-		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster on this error path; calls: %v", runner.calls)
+	if runner.sawArgs("create", "cluster") {
+		t.Errorf("a missing NKECTL_CWE_IMAGE should be caught before the cluster is built; calls: %v", runner.calls)
 	}
 }
 

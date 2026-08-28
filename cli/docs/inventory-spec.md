@@ -31,7 +31,6 @@ A ready-to-copy example is in [`examples/inventory.yaml`](../examples/inventory.
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine image and chart. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
-| `registry.identityApiKey` | string | no | Credential for the registry account holding the SPIRE chart and its server image. Falls back to `registry.apiKey`. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 
@@ -70,7 +69,6 @@ A set variable takes precedence over the file value.
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
-| `IDENTITY_REGISTRY_API_KEY` | `registry.identityApiKey` |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `JOIN_NODES` | `cluster.joinNodes` — format `name:ip,name:ip`, applied only when the file lists no join nodes |
@@ -119,17 +117,6 @@ nothing outside the cluster has to verify it — and means nodes cannot be given
 trust anchor in advance. Both files are checked for existence at load, while
 nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
 helm failure naming a temporary file rather than the field that was wrong.
-
-## Two registry credentials
-
-`registry.apiKey` covers the bootstrap engine image and chart.
-`registry.identityApiKey` covers the SPIRE chart and its server image, and falls
-back to `registry.apiKey` when unset.
-
-They are two credentials rather than two hosts because the two can be the *same*
-host: the bootstrap image and the identity chart both live on `nvcr.io`, in
-different accounts. A registry login covers one account, so one credential
-cannot reach both, and keying them by hostname would not tell them apart.
 
 ## Relationship to the tier-0 bootstrap template
 

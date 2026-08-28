@@ -53,7 +53,6 @@ const (
 	pathBootstrapRepo        = "registry.bootstrapRepo"
 	pathBootstrapChart       = "registry.bootstrapChart"
 	pathAPIKey               = "registry.apiKey"
-	pathIdentityAPIKey       = "registry.identityApiKey"
 	pathSpireCACertFile      = "spire.caCertFile"
 	pathSpireCAKeyFile       = "spire.caKeyFile"
 )
@@ -189,26 +188,6 @@ type Registry struct {
 	// secret is only ever used when the operator supplies one, via this field,
 	// a CLI flag, or an environment variable. See the SetDefaults note.
 	APIKey string `yaml:"apiKey,omitempty"`
-
-	// IdentityAPIKey is the credential for the registry account holding the
-	// SPIRE chart and its server image.
-	//
-	// It is a second key rather than a second host because the two can be the
-	// same host: the bootstrap image and the identity chart both live on
-	// nvcr.io, in different accounts. A registry login covers one account, so
-	// one credential cannot reach both, and keying these by hostname would not
-	// tell them apart. Empty falls back to APIKey, which is right when one
-	// account does hold everything.
-	IdentityAPIKey string `yaml:"identityApiKey,omitempty"`
-}
-
-// IdentityCredential returns the credential for the SPIRE chart's registry,
-// falling back to the bootstrap one when only a single account is in play.
-func (r Registry) IdentityCredential() string {
-	if r.IdentityAPIKey != "" {
-		return r.IdentityAPIKey
-	}
-	return r.APIKey
 }
 
 // envBindings maps environment variable names to their inventory field paths.
@@ -229,7 +208,6 @@ func envBindings() map[string]string {
 		"REGISTRY_BOOTSTRAP_REPO":        pathBootstrapRepo,
 		"REGISTRY_BOOTSTRAP_CHART":       pathBootstrapChart,
 		"REGISTRY_API_KEY":               pathAPIKey,
-		"IDENTITY_REGISTRY_API_KEY":      pathIdentityAPIKey,
 		"SPIRE_CA_CERT_FILE":             pathSpireCACertFile,
 		"SPIRE_CA_KEY_FILE":              pathSpireCAKeyFile,
 	}

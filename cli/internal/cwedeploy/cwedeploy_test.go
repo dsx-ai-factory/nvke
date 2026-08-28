@@ -66,22 +66,25 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 	}
 }
 
-func TestDeploy_InstallsPostgresTemporalThenCWEInOrder(t *testing.T) {
+func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	runner := &fakeRunner{}
 	e := New(runner, nil)
 
 	cfg := Config{
-		CWEImage:         "nvcr.io/org/controller:edge",
-		ProfilesImage:    "nvcr.io/org/cwe-profiles:v1",
-		ChartPath:        t.TempDir(), // any existing dir stands in for the chart
-		PostgresPassword: "test-password",
+		CWEImage:          "nvcr.io/org/controller:edge",
+		ProfilesImage:     "nvcr.io/org/cwe-profiles:v1",
+		ChartPath:         t.TempDir(), // any existing dir stands in for the chart
+		PostgresPassword:  "test-password",
+		SPIFFEClusterName: "test-kind",
+		SPIFFETrustDomain: "test-kind.nke.local",
 	}
 	if err := e.Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
 
-	if len(runner.calls) != 3 {
-		t.Fatalf("expected 3 helm calls (postgres, temporal, cwe), got %d: %+v", len(runner.calls), runner.calls)
+	if len(runner.calls) != 5 {
+		t.Fatalf("expected 5 helm calls (postgres, temporal, SPIRE CRDs, SPIRE, cwe), got %d: %+v",
+			len(runner.calls), runner.calls)
 	}
 
 	for i, call := range runner.calls {
@@ -93,7 +96,11 @@ func TestDeploy_InstallsPostgresTemporalThenCWEInOrder(t *testing.T) {
 		}
 	}
 
-	postgres, temporal, cwe := joinArgs(runner.calls[0].args), joinArgs(runner.calls[1].args), joinArgs(runner.calls[2].args)
+	postgres := joinArgs(runner.calls[0].args)
+	temporal := joinArgs(runner.calls[1].args)
+	spireCRDs := joinArgs(runner.calls[2].args)
+	spire := joinArgs(runner.calls[3].args)
+	cwe := joinArgs(runner.calls[4].args)
 
 	if !strings.Contains(postgres, "upgrade --install postgres "+postgresChartRef) {
 		t.Errorf("postgres call = %q, want the postgres release/chart", postgres)
@@ -109,6 +116,17 @@ func TestDeploy_InstallsPostgresTemporalThenCWEInOrder(t *testing.T) {
 		t.Errorf("temporal call = %q, want the shared postgres password set on both persistence stores", temporal)
 	}
 
+	if !strings.Contains(spireCRDs, "upgrade --install spire-crds "+spireCRDsChartName) ||
+		!strings.Contains(spireCRDs, "--repo "+spireChartRepo) {
+		t.Errorf("SPIRE CRDs call = %q, want the pinned CRD chart", spireCRDs)
+	}
+	if !strings.Contains(spire, "upgrade --install spire "+spireChartName) ||
+		!strings.Contains(spire, "global.spire.clusterName=test-kind") ||
+		!strings.Contains(spire, "global.spire.trustDomain=test-kind.nke.local") ||
+		!strings.Contains(spire, "spire-server.adminIDs[0]=spiffe://test-kind.nke.local/nke-service/cloud-workflow-engine") {
+		t.Errorf("SPIRE call = %q, want the pinned chart and CWE identity", spire)
+	}
+
 	if !strings.Contains(cwe, "upgrade --install cloud-workflow-engine "+cfg.ChartPath) {
 		t.Errorf("cwe call = %q, want the cwe release/chart path", cwe)
 	}
@@ -119,6 +137,12 @@ func TestDeploy_InstallsPostgresTemporalThenCWEInOrder(t *testing.T) {
 		!strings.Contains(cwe, "profiles.image.repository=nvcr.io/org/cwe-profiles") ||
 		!strings.Contains(cwe, "profiles.path="+profilesPath) {
 		t.Errorf("cwe call = %q, want the profiles init container enabled and pointed at the image", cwe)
+	}
+	if !strings.Contains(cwe, "spiffe.enabled=true") ||
+		!strings.Contains(cwe, "spiffe.trustDomain=test-kind.nke.local") ||
+		!strings.Contains(cwe, "spiffe.spire.serverAddress="+spireServiceHost()) ||
+		!strings.Contains(cwe, "spiffe.spire.serverPort="+spireServerPort) {
+		t.Errorf("cwe call = %q, want SPIFFE enabled with the SPIRE trust domain", cwe)
 	}
 }
 
@@ -290,7 +314,7 @@ func TestDeploy_PinsImageByDigest(t *testing.T) {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
 
-	cwe := joinArgs(runner.calls[2].args)
+	cwe := joinArgs(runner.calls[len(runner.calls)-1].args)
 	if !strings.Contains(cwe, "image.repository=ghcr.io/nvidia/nke/controller") ||
 		!strings.Contains(cwe, "image.digest="+digest) {
 		t.Errorf("cwe call = %q, want the digest split into repository/digest", cwe)
@@ -338,5 +362,172 @@ func TestDumpDiagnostics_SurvivesAFailingCluster(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "exit status 1") {
 		t.Errorf("the file should record why the command failed, got %q", body)
+	}
+}
+
+// TestSpireInstallArgs pins what nkectl computes rather than what the values
+// file carries: the chart it resolves, and the depth the computed values are
+// set at. A value set at the wrong depth is silently ignored by helm rather
+// than rejected, so nothing else would catch it.
+func TestSpireInstallArgs(t *testing.T) {
+	got := joinArgs(spireInstallArgs(Config{}, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
+	for _, want := range []string{
+		"upgrade --install spire " + spireChartName,
+		"--repo " + spireChartRepo,
+		"--version " + spireChartVersion,
+		"--values /tmp/values.yaml",
+		"global.spire.clusterName=kind",
+		"global.spire.trustDomain=kind.nke.local",
+		spireServerValuesPrefix + ".adminIDs[0]=spiffe://kind.nke.local/nke-service/cloud-workflow-engine",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("install = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestUpstreamCAArgs covers both states: a CA from the inventory is chained to,
+// and no CA leaves SPIRE self-signed rather than half-configured.
+func TestUpstreamCAArgs(t *testing.T) {
+	if got := upstreamCAArgs(Config{}, "spire-server"); len(got) != 0 {
+		t.Errorf("upstreamCAArgs with no CA = %v, want none", got)
+	}
+	// A cert without a key is not a CA; neither half alone should configure one.
+	if got := upstreamCAArgs(Config{SPIFFEUpstreamCACertPath: "/ca.crt"}, "spire-server"); len(got) != 0 {
+		t.Errorf("upstreamCAArgs with no key = %v, want none", got)
+	}
+
+	got := joinArgs(upstreamCAArgs(Config{
+		SPIFFEUpstreamCACertPath: "/ca.crt",
+		SPIFFEUpstreamCAKeyPath:  "/ca.key",
+	}, "spire-server"))
+	for _, want := range []string{
+		"spire-server.upstreamAuthority.disk.enabled=true",
+		"--set-file spire-server.upstreamAuthority.disk.secret.data.certificate=/ca.crt",
+		"--set-file spire-server.upstreamAuthority.disk.secret.data.key=/ca.key",
+		// A self-signed root is its own bundle; without this SPIRE publishes
+		// no trust anchor for the agents that already hold it.
+		"--set-file spire-server.upstreamAuthority.disk.secret.data.bundle=/ca.crt",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("upstreamCAArgs = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestTPMAttestorArgs covers the two states that matter: an allowlist turns the
+// attestor on, and no allowlist leaves it off.
+func TestTPMAttestorArgs(t *testing.T) {
+	// Reaching the server from outside is the bundle's external-service
+	// manifest, not a chart value, so nothing here should touch the Service.
+	if strings.Contains(joinArgs(tpmAttestorArgs(
+		Config{TPMEKFingerprints: []string{"aaa"}}, "spire-server")), "service.type") {
+		t.Error("tpmAttestorArgs should not change the chart's Service")
+	}
+
+	none := tpmAttestorArgs(Config{}, "spire-server")
+	if len(none) != 0 {
+		t.Errorf("tpmAttestorArgs with no fingerprints = %v, want none: a bootstrap that "+
+			"has not been told which hardware to admit must admit none", none)
+	}
+
+	got := joinArgs(tpmAttestorArgs(
+		Config{TPMEKFingerprints: []string{"aaa", "bbb"}}, "spire.spire-server"))
+	for _, want := range []string{
+		"spire.spire-server.nodeAttestor.tpmDirect.enabled=true",
+		"spire.spire-server.nodeAttestor.tpmDirect.hashes[0]=aaa",
+		"spire.spire-server.nodeAttestor.tpmDirect.hashes[1]=bbb",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("tpmAttestorArgs = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// TestSpireAndCWEAgreeOnTheClassName is the guard for a mismatch neither side
+// reports. CWE stamps its ClusterStaticEntry objects with its configured class
+// and the SPIRE controller manager only acts on objects carrying its own, so
+// two different strings mean CWE writes entries nobody reads and a node never
+// gets an identity -- with both components healthy and nothing logged.
+//
+// Neither default reaches the same string on its own: the chart derives
+// <namespace>-<release>, CWE defaults to spire-mgmt-spire.
+//
+// The expected class is spelled out rather than taken from the constant, for
+// the same reason the port test spells out its address: asserting the constant
+// against itself would survive any drift. This pins our value to the literal
+// CWE's SPIRE_CLASS_NAME defaults to. It cannot catch CWE changing that default
+// -- that lives in another module -- but it does catch this side moving.
+func TestSpireAndCWEAgreeOnTheClassName(t *testing.T) {
+	const cweClassNameDefault = "spire-mgmt-spire"
+
+	if spireControllerManagerClass != cweClassNameDefault {
+		t.Errorf("the class is %q, but CWE's SPIRE_CLASS_NAME defaults to %q; "+
+			"CWE would write ClusterStaticEntry objects the controller manager ignores",
+			spireControllerManagerClass, cweClassNameDefault)
+	}
+
+	runner := &fakeRunner{}
+	cfg := Config{
+		CWEImage:          "nvcr.io/org/controller:edge",
+		ProfilesImage:     "nvcr.io/org/cwe-profiles:v1",
+		ChartPath:         t.TempDir(),
+		PostgresPassword:  "test-password",
+		SPIFFEClusterName: "test-kind",
+		SPIFFETrustDomain: "test-kind.nke.local",
+	}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	var spire, cwe string
+	for _, call := range runner.calls {
+		args := joinArgs(call.args)
+		switch {
+		case strings.Contains(args, "upgrade --install "+spireReleaseName+" "+spireChartName):
+			spire = args
+		case strings.Contains(args, "upgrade --install "+cweReleaseName):
+			cwe = args
+		}
+	}
+	if spire == "" || cwe == "" {
+		t.Fatalf("expected both installs; spire=%q cwe=%q", spire, cwe)
+	}
+
+	if !strings.Contains(spire,
+		spireServerValuesPrefix+".controllerManager.className="+spireControllerManagerClass) {
+		t.Errorf("SPIRE install does not pin the controller-manager class: %s", spire)
+	}
+	if !strings.Contains(cwe, "spiffe.spire.className="+spireControllerManagerClass) {
+		t.Errorf("CWE install does not pin the same class: %s", cwe)
+	}
+}
+
+// TestSpireServesThePortCWEExpects covers the other silent mismatch: CWE reads
+// SPIRE_SERVER_API_ADDRESS for join-token calls and nkectl never sets it, so
+// the Service has to listen where that default already points. The literal is
+// spelled out rather than built from spireServerPort, because the thing under
+// test is that our constant still matches CWE's default -- writing both sides
+// from the same constant would assert nothing.
+func TestSpireServesThePortCWEExpects(t *testing.T) {
+	const cweAPIAddressDefault = "spire-server.spire-server.svc.cluster.local:8081"
+
+	if got := spireServiceHost() + ":" + spireServerPort; got != cweAPIAddressDefault {
+		t.Errorf("the SPIRE Service is at %q, but CWE's SPIRE_SERVER_API_ADDRESS defaults to %q; "+
+			"join-token operations would dial a port nothing serves", got, cweAPIAddressDefault)
+	}
+
+	args := joinArgs(spireInstallArgs(Config{}, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
+	if !strings.Contains(args, "--set "+spireServerValuesPrefix+".service.port="+spireServerPort) {
+		t.Errorf("SPIRE install does not move the Service off the chart's default port: %s", args)
+	}
+
+	// The agent's port is its own value in the chart and does not follow the
+	// Service. Moving one without the other leaves the agent dialling a port
+	// the Service does not publish, which a ClusterIP blackholes rather than
+	// refuses -- so it fails as an attestation timeout naming no port at all.
+	if !strings.Contains(args, "--set "+spireAgentValuesPrefix+".server.port="+spireServerPort) {
+		t.Errorf("SPIRE install moves the Service but not the agent, so the agent would "+
+			"dial a port nothing publishes: %s", args)
 	}
 }

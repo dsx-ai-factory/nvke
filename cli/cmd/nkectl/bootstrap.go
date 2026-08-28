@@ -44,9 +44,6 @@ type bootstrapSiteOptions struct {
 	inventory      string
 	dryRun         bool
 	registryAPIKey string
-	// identityRegistryAPIKey is separate because the SPIRE chart's registry
-	// account need not be the bootstrap image's; see Registry.IdentityAPIKey.
-	identityRegistryAPIKey string
 	// diagnosticsDir is where a failed bootstrap writes what the cluster had
 	// to say for itself, before it is torn down.
 	diagnosticsDir    string
@@ -102,10 +99,6 @@ inventory file format.`,
 		"Load and validate the inventory and print it, but do not dispatch any workflow")
 	cmd.Flags().StringVar(&opts.registryAPIKey, "registry-api-key", "",
 		"Container registry credential (overrides registry.apiKey and the "+registryAPIKeyEnv+" env var)")
-	cmd.Flags().StringVar(&opts.identityRegistryAPIKey, "identity-registry-api-key", "",
-		"Credential for the registry holding the SPIRE chart and its server image "+
-			"(overrides registry.identityApiKey and the IDENTITY_REGISTRY_API_KEY env var). "+
-			"Defaults to the bootstrap registry credential.")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
 		envOrDefault("NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
@@ -136,9 +129,6 @@ func runBootstrapSite(opts *bootstrapSiteOptions) (err error) {
 	if opts.registryAPIKey != "" {
 		inv.Registry.APIKey = opts.registryAPIKey
 	}
-	if opts.identityRegistryAPIKey != "" {
-		inv.Registry.IdentityAPIKey = opts.identityRegistryAPIKey
-	}
 
 	if err := dumpInventory(inv); err != nil {
 		return err
@@ -156,6 +146,11 @@ func runBootstrapSite(opts *bootstrapSiteOptions) (err error) {
 	cfg := bootstrapengine.DefaultConfig()
 	if opts.provider != "" {
 		cfg.Provider = bootstrapengine.Provider(opts.provider)
+	}
+
+	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName)
+	if err != nil {
+		return err
 	}
 
 	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
@@ -189,10 +184,10 @@ func runBootstrapSite(opts *bootstrapSiteOptions) (err error) {
 		}
 	}()
 
-	// Step 3: deploy Postgres, Temporal and CWE onto the bootstrap cluster and
-	// wait for CWE to report healthy on /readyz before going any further —
-	// there is nothing to dispatch a workflow to otherwise.
-	if err := deployAndWaitForCWE(ctx, engine, cluster, opts.cweRunner, logger); err != nil {
+	// Step 3: deploy Postgres, Temporal, SPIRE, and CWE onto the bootstrap
+	// cluster and wait for CWE to report healthy on /readyz before going any
+	// further — there is nothing to dispatch a workflow to otherwise.
+	if err := deployAndWaitForCWE(ctx, engine, cluster, cweCfg, opts.cweRunner, logger); err != nil {
 		return err
 	}
 
@@ -221,16 +216,63 @@ func envOrDefault(key, fallback string) string {
 	return fallback
 }
 
-// deployAndWaitForCWE installs Postgres, Temporal and CWE onto cluster and
-// polls CWE's /readyz until it reports healthy or a bounded timeout elapses.
+// cweDeployConfig assembles everything the CWE deploy needs into one value,
+// from the inventory and the environment, before any of it is used.
+//
+// It is separate from deployAndWaitForCWE so that the two questions stay apart:
+// this one is "what did the operator ask for", and everything it can get wrong
+// is answered here, where the answer costs a message rather than a Kind cluster
+// that then has to be torn down.
+//
+// clusterName is the ephemeral cluster's name, which is settled before the
+// cluster is created; SPIRE is told it, and it seeds the default trust domain.
+func cweDeployConfig(inv *inventory.Inventory, clusterName string) (cwedeploy.Config, error) {
+	cfg := cwedeploy.DefaultConfig()
+
+	if cfg.CWEImage == "" {
+		return cfg, errors.New("NKECTL_CWE_IMAGE is not set; it must name the CWE image to deploy " +
+			"(e.g. nvcr.io/<org>/controller:edge — see .github/workflows/image-nvcr.yml)")
+	}
+	if cfg.ProfilesImage == "" {
+		return cfg, errors.New("NKECTL_CWE_PROFILES_IMAGE is not set; it must name an image " +
+			"holding the OS profiles tree at /profiles")
+	}
+
+	// SPIRE is told the Kind cluster's own name. There is no separate variable
+	// for it: the bootstrap cluster has one name, and two ways to say it could
+	// only ever disagree. NKECTL_SPIFFE_TRUST_DOMAIN still overrides the domain
+	// derived from it, which is a genuinely different thing to want.
+	cfg.SPIFFEClusterName = clusterName
+	if cfg.SPIFFETrustDomain == "" {
+		cfg.SPIFFETrustDomain = clusterName + ".nke.local"
+	}
+
+	// The CA SPIRE chains to, straight from the inventory, which is where an
+	// operator declares what this bootstrap is entitled to trust.
+	cfg.SPIFFEUpstreamCACertPath = inv.Spire.CACertFile
+	cfg.SPIFFEUpstreamCAKeyPath = inv.Spire.CAKeyFile
+
+	// The allowlist of hardware allowed to attest, also from the inventory. A
+	// bootstrap is only entitled to admit machines it was told about, so this
+	// is the whole of it: no node listed, no node admitted.
+	cfg.TPMEKFingerprints = inv.Cluster.TPMEKThumbprints()
+
+	return cfg, nil
+}
+
+// deployAndWaitForCWE installs Postgres, Temporal, SPIRE, and CWE onto cluster
+// and polls CWE's /readyz until it reports healthy or a bounded timeout
+// elapses. What to install is decided by cweDeployConfig; this only carries it
+// out.
 //
 // The CWE and profiles images are loaded into the kind cluster directly
 // (bootstrapengine's existing Engine.LoadImage, via `kind load docker-image`)
-// rather than pulled from inside the cluster: the cluster is ephemeral and
-// has no image pull secret configured, and this way authenticating to
-// whatever registry hosts them is the caller's problem, not nkectl's —
-// `docker login` once on the host, same as any other pull, before running
-// this command.
+// rather than pulled from inside the cluster: the cluster is ephemeral and has
+// no image pull secret configured, and this way authenticating to whatever
+// registry hosts them is the caller's problem, not nkectl's — `docker login`
+// once on the host, same as any other pull, before running this command.
+//
+// SPIRE needs no such handling: its chart and images are public.
 //
 // CWE reads osProfiles/metadata.yaml during schema migration, so it
 // crash-loops without a profiles tree.
@@ -238,20 +280,10 @@ func deployAndWaitForCWE(
 	ctx context.Context,
 	engine *bootstrapengine.Engine,
 	cluster *bootstrapengine.Cluster,
+	cweCfg cwedeploy.Config,
 	cweRunner cwedeploy.CommandRunner,
 	logger *slog.Logger,
 ) error {
-	cweCfg := cwedeploy.DefaultConfig()
-	if cweCfg.CWEImage == "" {
-		return errors.New("NKECTL_CWE_IMAGE is not set; it must name the CWE image to deploy " +
-			"(e.g. nvcr.io/<org>/controller:edge — see .github/workflows/image-nvcr.yml)")
-	}
-
-	if cweCfg.ProfilesImage == "" {
-		return errors.New("NKECTL_CWE_PROFILES_IMAGE is not set; it must name an image " +
-			"holding the OS profiles tree at /profiles")
-	}
-
 	for _, image := range []string{cweCfg.CWEImage, cweCfg.ProfilesImage} {
 		if err := ensureImageAvailable(ctx, engine, cluster, image, logger); err != nil {
 			return fmt.Errorf("loading %s into bootstrap kind cluster: %w", image, err)
@@ -287,7 +319,7 @@ func ensureImageAvailable(
 ) error {
 	cli := string(cluster.Provider)
 	if _, err := engine.Runner.Run(ctx, nil, cli, "image", "inspect", image); err != nil {
-		logger.Info("cwe image not cached locally; pulling", "image", image, "runtime", cli)
+		logger.Info("image not cached locally; pulling", "image", image, "runtime", cli)
 		if out, err := engine.Runner.Run(ctx, nil, cli, "pull", image); err != nil {
 			return fmt.Errorf("%s pull %s: %w\n%s\n"+
 				"if this is an authentication failure, log in to the image's registry "+

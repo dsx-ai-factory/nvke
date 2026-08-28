@@ -375,17 +375,6 @@ func TestValidate_TPMEKThumbprint(t *testing.T) {
 	}
 }
 
-// TestIdentityCredential covers the fallback: one registry account holding
-// everything is the common case, two is the one that needs the extra key.
-func TestIdentityCredential(t *testing.T) {
-	if got := (Registry{APIKey: "shared"}).IdentityCredential(); got != "shared" {
-		t.Errorf("IdentityCredential() = %q, want the bootstrap key when no identity key is set", got)
-	}
-	if got := (Registry{APIKey: "shared", IdentityAPIKey: "identity"}).IdentityCredential(); got != "identity" {
-		t.Errorf("IdentityCredential() = %q, want the identity key to win", got)
-	}
-}
-
 // TestValidate_SpireCA covers the CA the operator brings to the bootstrap.
 // Both files or neither, and both must be readable before anything is touched.
 func TestValidate_SpireCA(t *testing.T) {

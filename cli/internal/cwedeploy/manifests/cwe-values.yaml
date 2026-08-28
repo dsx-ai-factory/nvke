@@ -4,10 +4,9 @@
 # Values for controller/deploy/charts/cloud-workflow-engine on the ephemeral
 # bootstrap Kind cluster. Adapted from controller/hack/tilt-cwe-chart-values.yaml
 # (the chart's own local-dev override), trimmed to what this single-purpose
-# ephemeral deployment needs: no SPIFFE/SPIRE (no SPIRE server exists on the
-# bootstrap cluster, and the csi.spiffe.io CSI driver isn't installed either),
-# no OIDC, no ServiceMonitor (no Prometheus Operator CRDs on a vanilla Kind
-# cluster).
+# ephemeral deployment needs. SPIFFE is enabled at runtime after the SPIRE
+# umbrella chart installs its server, agent, CSI driver, and controller
+# manager. OIDC and ServiceMonitor stay disabled on the vanilla Kind cluster.
 #
 # image.* and profiles.* are NOT set here -- Engine.Deploy passes them via
 # --set-string from Config.CWEImage and Config.ProfilesImage, since an image
@@ -62,7 +61,7 @@ temporal:
   port: 7233
 
 spiffe:
-  enabled: false
+  enabled: true
 
 nkeOIDCAuth:
   enabled: false

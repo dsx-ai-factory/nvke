@@ -77,10 +77,3 @@ registry:
   # secret at runtime via --registry-api-key or the REGISTRY_API_KEY env var so
   # the file can be committed safely. It is never defaulted.
   # apiKey: ""
-  #
-  # Credential for the registry account holding the SPIRE chart and its server
-  # image. Only needed when that is a different account from the one above —
-  # they can be the same host, and a registry login covers one account.
-  # Falls back to apiKey. Also settable via IDENTITY_REGISTRY_API_KEY or
-  # --identity-registry-api-key.
-  # identityApiKey: ""

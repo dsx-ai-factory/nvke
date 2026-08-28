@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cwedeploy stands up Postgres, Temporal and the CWE worker onto a
+// Package cwedeploy stands up Postgres, Temporal, SPIRE, and the CWE worker onto a
 // Kubernetes cluster (the ephemeral bootstrap Kind cluster
 // cli/internal/bootstrapengine creates), then waits for CWE to report
 // healthy on /readyz.
@@ -41,11 +41,14 @@ const (
 	// so the namespace and the values file have to change together.
 	postgresNamespace = "postgres"
 	temporalNamespace = "temporal"
+	spireNamespace    = "spire-server"
 	cweNamespace      = "cloud-workflow-engine"
 
-	postgresReleaseName = "postgres"
-	temporalReleaseName = "temporal"
-	cweReleaseName      = "cloud-workflow-engine"
+	postgresReleaseName  = "postgres"
+	temporalReleaseName  = "temporal"
+	spireCRDsReleaseName = "spire-crds"
+	spireReleaseName     = "spire"
+	cweReleaseName       = "cloud-workflow-engine"
 
 	// postgresChartRef is the Bitnami postgresql chart, pulled over OCI to
 	// avoid the classic HTTP repo's full index.yaml download. Version pin
@@ -60,6 +63,66 @@ const (
 	temporalChartRepo    = "https://go.temporal.io/helm-charts"
 	temporalChartName    = "temporal"
 	temporalChartVersion = "0.74.0"
+
+	// The SPIFFE project's hardened SPIRE charts, passed via `helm ... --repo`
+	// for the same reason Temporal is: this package does not mutate the
+	// caller's global Helm repo list. Everything here is public, so a
+	// bootstrap needs no registry credential to install it.
+	//
+	// The CRDs are their own release because a chart cannot depend on its own
+	// CRDs being applied first.
+	spireChartRepo        = "https://spiffe.github.io/helm-charts-hardened/"
+	spireChartName        = "spire"
+	spireChartVersion     = "0.30.1"
+	spireCRDsChartName    = "spire-crds"
+	spireCRDsChartVersion = "0.6.1"
+
+	// spireServerPort is the port the SPIRE server is reached on inside the
+	// cluster: the port its Service listens on, the port its own agents dial,
+	// and the port CWE is told to dial.
+	//
+	// 8081 rather than the chart's own default of 443, so that CWE's
+	// SPIRE_SERVER_API_ADDRESS -- the address it uses for join-token
+	// operations, which it reads separately from the address above -- is
+	// correct without being configured at all: it defaults to
+	// spire-server.spire-server.svc.cluster.local:8081, which is exactly this
+	// Service. Change this and that default stops matching.
+	//
+	// It has to be set on the agent as well as on the Service. The chart keeps
+	// the agent's server port as its own value defaulting to 443, and does not
+	// derive it from the Service, so moving one without the other leaves the
+	// agent dialling a port the Service does not publish. A ClusterIP silently
+	// blackholes traffic to an undeclared port rather than refusing it, so that
+	// mistake surfaces as a node-attestation i/o timeout rather than as
+	// anything naming a port.
+	//
+	// Reaching the server from outside the cluster is
+	// spire-server-nodeport.yaml, not this.
+	spireServerPort = "8081"
+
+	// spireControllerManagerClass is the class the SPIRE controller manager
+	// claims objects under, and the class CWE stamps on the ClusterStaticEntry
+	// objects it writes. The two have to be the same string: the controller
+	// manager ignores an entry whose class is not its own, so a mismatch means
+	// CWE writes entries nobody acts on and a node never gets its identity.
+	//
+	// Neither side's default gets there on its own. The chart derives
+	// <namespace>-<release> when className is empty, which here would be
+	// "spire-server-spire", while CWE defaults to "spire-mgmt-spire". So both
+	// are set explicitly, from this one constant, rather than left to agree by
+	// coincidence. The value is CWE's default, which keeps it the same string
+	// a site controller already uses.
+	spireControllerManagerClass = "spire-mgmt-spire"
+
+	// spireAgentValuesPrefix is where the hardened chart keeps its agent's
+	// settings, which are a sibling of the server's rather than inside them.
+	spireAgentValuesPrefix = "spire-agent"
+
+	// spireServerValuesPrefix is where the hardened chart keeps its server's
+	// settings. A value set at the wrong depth is silently ignored by helm
+	// rather than rejected, so the values computed below are all addressed
+	// through it.
+	spireServerValuesPrefix = "spire-server"
 
 	// readyzPath is polled through the API server's service proxy rather
 	// than a port-forward, so no local port has to be reserved or cleaned
@@ -95,6 +158,37 @@ type Config struct {
 	// controller/test/fixtures is the sanitized stand-in.
 	ProfilesImage string
 
+	// SPIFFEClusterName identifies the ephemeral Kind cluster to SPIRE. It is
+	// the Kind cluster's own name, which is the only name this cluster has.
+	// Empty defaults to "nkectl-bootstrap", matching bootstrapengine's default.
+	SPIFFEClusterName string
+
+	// SPIFFETrustDomain is the trust domain used for CWE's workload identity.
+	// Empty defaults to <SPIFFEClusterName>.nke.local.
+	SPIFFETrustDomain string
+
+	// SPIFFEUpstreamCACertPath and SPIFFEUpstreamCAKeyPath are a CA the
+	// operator brings to the bootstrap, from the inventory's spire section.
+	// SPIRE chains its own CA to it, so a host that was given the certificate
+	// ahead of time can verify the server the first time it speaks to it,
+	// instead of trusting it blindly.
+	//
+	// Not read from the environment: this describes the site, so the inventory
+	// is the one place it comes from.
+	SPIFFEUpstreamCACertPath string
+	SPIFFEUpstreamCAKeyPath  string
+
+	// TPMEKFingerprints are the SHA-256 endorsement-key thumbprints of the
+	// hosts allowed to attest to this SPIRE server, seeded into the TPM node
+	// attestor's allowlist. They come from the inventory, one per node, which
+	// is where the operator declares which machines it is entitled to admit.
+	// Empty leaves the attestor off, which is what a bootstrap that was told
+	// about no hardware identities wants.
+	//
+	// When set, the server is also published on a NodePort: the hosts that
+	// attest are outside the cluster, and a ClusterIP is not a route they have.
+	TPMEKFingerprints []string
+
 	// ChartPath is the local filesystem path to
 	// controller/deploy/charts/cloud-workflow-engine. Empty triggers
 	// repo-root discovery from the working directory (see resolveChartPath).
@@ -106,7 +200,7 @@ type Config struct {
 	ChartPath string
 
 	// PostgresPassword is the Postgres superuser password shared by the
-	// Postgres, Temporal and CWE releases. Generated if empty.
+	// Postgres, Temporal, and CWE releases. Generated if empty.
 	PostgresPassword string
 
 	// HelmTimeout bounds each `helm upgrade --install --wait` call.
@@ -122,9 +216,14 @@ func DefaultConfig() Config {
 	return Config{
 		CWEImage:      os.Getenv("NKECTL_CWE_IMAGE"),
 		ProfilesImage: os.Getenv("NKECTL_CWE_PROFILES_IMAGE"),
-		ChartPath:     os.Getenv("NKECTL_CWE_CHART_PATH"),
-		HelmTimeout:   envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
-		ReadyTimeout:  envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
+		// No cluster-name variable of its own: the bootstrap cluster has one
+		// name, NKECTL_BOOTSTRAP_CLUSTER_NAME, and SPIRE is told that one.
+		// Callers set SPIFFEClusterName; an empty trust domain is derived from
+		// it below.
+		SPIFFETrustDomain: os.Getenv("NKECTL_SPIFFE_TRUST_DOMAIN"),
+		ChartPath:         os.Getenv("NKECTL_CWE_CHART_PATH"),
+		HelmTimeout:       envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
+		ReadyTimeout:      envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
 	}
 }
 
@@ -167,8 +266,8 @@ func New(runner CommandRunner, log *slog.Logger) *Engine {
 	return &Engine{Runner: runner, log: log.With("component", "cwedeploy")}
 }
 
-// Deploy installs Postgres, Temporal and CWE (in that order -- each depends
-// on the one before it) onto the cluster kubeconfigPath points at, waiting
+// Deploy installs Postgres, Temporal, SPIRE, and CWE (in that order -- each
+// depends on the one before it) onto the cluster kubeconfigPath points at, waiting
 // for each Helm release to report ready before moving to the next. It does
 // not wait for CWE's own /readyz; call WaitReady for that once Deploy
 // returns, so callers can log "helm release installed" and
@@ -207,6 +306,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	helmTimeout := cfg.HelmTimeout
 	if helmTimeout <= 0 {
 		helmTimeout = 5 * time.Minute
+	}
+	spireClusterName := cfg.SPIFFEClusterName
+	if spireClusterName == "" {
+		spireClusterName = "nkectl-bootstrap"
+	}
+	spireTrustDomain := cfg.SPIFFETrustDomain
+	if spireTrustDomain == "" {
+		spireTrustDomain = spireClusterName + ".nke.local"
 	}
 
 	postgresValues, cleanup, err := writeEmbeddedFile(postgresValuesFile)
@@ -247,6 +354,32 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return fmt.Errorf("cwedeploy: installing temporal: %w", err)
 	}
 
+	e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion)
+	if _, err := e.helm(ctx, kubeconfigPath,
+		"upgrade", "--install", spireCRDsReleaseName, spireCRDsChartName,
+		"--repo", spireChartRepo,
+		"--namespace", spireNamespace, "--create-namespace",
+		"--version", spireCRDsChartVersion,
+		"--wait", "--timeout", helmTimeout.String(),
+	); err != nil {
+		return fmt.Errorf("cwedeploy: installing SPIRE CRDs: %w", err)
+	}
+
+	spireValues, cleanup, err := writeEmbeddedFile(spireValuesFile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
+		"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
+		"tpmThumbprints", len(cfg.TPMEKFingerprints))
+	if _, err := e.helm(ctx, kubeconfigPath,
+		spireInstallArgs(cfg, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
+	); err != nil {
+		return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
+	}
+
 	cweValues, cleanup, err := writeEmbeddedFile(cweValuesFile)
 	if err != nil {
 		return err
@@ -273,6 +406,11 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "profiles.image.repository="+profRepo,
 		"--set-string", "profiles.image.tag="+profTag,
 		"--set-string", "profiles.image.digest="+profDigest,
+		"--set", "spiffe.enabled=true",
+		"--set-string", "spiffe.trustDomain="+spireTrustDomain,
+		"--set-string", "spiffe.spire.className="+spireControllerManagerClass,
+		"--set-string", "spiffe.spire.serverAddress="+spireServiceHost(),
+		"--set-string", "spiffe.spire.serverPort="+spireServerPort,
 		"--wait", "--timeout", helmTimeout.String(),
 	); err != nil {
 		return fmt.Errorf("cwedeploy: installing cwe: %w", err)
@@ -431,6 +569,82 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return d
+}
+
+// spireServiceHost is the in-cluster address CWE dials the SPIRE server on.
+// The Service is named after the release.
+func spireServiceHost() string {
+	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
+}
+
+// spireInstallArgs builds the `helm upgrade --install` for the SPIRE chart.
+//
+// Everything static about the deployment is in spire-values.yaml. Only what
+// nkectl cannot know ahead of time is computed here — the trust domain and
+// cluster name, CWE's admin identity, the CA to chain to, and the thumbprints
+// allowed to attest.
+func spireInstallArgs(cfg Config, valuesPath, clusterName, trustDomain string, timeout time.Duration) []string {
+	prefix := spireServerValuesPrefix
+	args := []string{
+		"upgrade", "--install", spireReleaseName, spireChartName,
+		"--repo", spireChartRepo,
+		"--namespace", spireNamespace, "--create-namespace",
+		"--version", spireChartVersion,
+		"--values", valuesPath,
+		"--set-string", "global.spire.clusterName=" + clusterName,
+		"--set-string", "global.spire.trustDomain=" + trustDomain,
+		"--set-string", prefix + ".adminIDs[0]=spiffe://" + trustDomain + "/nke-service/cloud-workflow-engine",
+		// Both halves of the two agreements CWE depends on. See the constants.
+		"--set-string", prefix + ".controllerManager.className=" + spireControllerManagerClass,
+		// --set, not --set-string: the chart's schema types these as integers.
+		"--set", prefix + ".service.port=" + spireServerPort,
+		// The agent's port is a separate value that does not follow the
+		// Service. Both or neither; see the constant.
+		"--set", spireAgentValuesPrefix + ".server.port=" + spireServerPort,
+	}
+	args = append(args, upstreamCAArgs(cfg, prefix)...)
+	args = append(args, tpmAttestorArgs(cfg, prefix)...)
+	return append(args, "--wait", "--timeout", timeout.String())
+}
+
+// tpmAttestorArgs turns the EK allowlist into chart values.
+//
+// No fingerprints means no TPM attestor: a bootstrap that has not been told
+// which hardware it is entitled to admit must not admit any, and the hosts on
+// that path run without a SPIRE identity at all.
+//
+// Reaching the server from outside is a separate concern, handled by
+// spire-server-nodeport.yaml rather than by the chart's own Service.
+func tpmAttestorArgs(cfg Config, prefix string) []string {
+	if len(cfg.TPMEKFingerprints) == 0 {
+		return nil
+	}
+	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
+	for i, fingerprint := range cfg.TPMEKFingerprints {
+		args = append(args, "--set-string",
+			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
+	}
+	return args
+}
+
+// upstreamCAArgs points SPIRE at a CA the operator supplied.
+//
+// The PEM goes in with --set-file rather than --set: it is multi-line, and
+// --set would mangle it. The paths are files rather than inline values so the
+// key never has to be passed around as a string.
+func upstreamCAArgs(cfg Config, prefix string) []string {
+	if cfg.SPIFFEUpstreamCACertPath == "" || cfg.SPIFFEUpstreamCAKeyPath == "" {
+		return nil
+	}
+	return []string{
+		"--set", prefix + ".upstreamAuthority.disk.enabled=true",
+		"--set-file", prefix + ".upstreamAuthority.disk.secret.data.certificate=" + cfg.SPIFFEUpstreamCACertPath,
+		"--set-file", prefix + ".upstreamAuthority.disk.secret.data.key=" + cfg.SPIFFEUpstreamCAKeyPath,
+		// A self-signed root is its own bundle. Without this the chart mounts
+		// no bundle.crt and SPIRE has nothing to publish as the trust anchor
+		// the agents already hold.
+		"--set-file", prefix + ".upstreamAuthority.disk.secret.data.bundle=" + cfg.SPIFFEUpstreamCACertPath,
+	}
 }
 
 // DumpDiagnostics writes everything the cluster can say about why a bootstrap
