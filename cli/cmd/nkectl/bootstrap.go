@@ -47,8 +47,11 @@ type bootstrapSiteOptions struct {
 	// identityRegistryAPIKey is separate because the SPIRE chart's registry
 	// account need not be the bootstrap image's; see Registry.IdentityAPIKey.
 	identityRegistryAPIKey string
-	provider               string
-	keepBootstrapKind      bool
+	// diagnosticsDir is where a failed bootstrap writes what the cluster had
+	// to say for itself, before it is torn down.
+	diagnosticsDir    string
+	provider          string
+	keepBootstrapKind bool
 
 	// bootstrapRunner overrides the CommandRunner the bootstrap engine uses.
 	// Nil in production (bootstrapengine.New defaults to the real exec-backed
@@ -103,6 +106,10 @@ inventory file format.`,
 		"Credential for the registry holding the SPIRE chart and its server image "+
 			"(overrides registry.identityApiKey and the IDENTITY_REGISTRY_API_KEY env var). "+
 			"Defaults to the bootstrap registry credential.")
+	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
+		envOrDefault("NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
+		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
+			"Overrides NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
 	cmd.Flags().StringVar(&opts.provider, "bootstrap-provider", "",
 		"Container runtime front end for the ephemeral bootstrap Kind cluster: "+
 			string(bootstrapengine.ProviderNerdctl)+" (default) or "+string(bootstrapengine.ProviderDocker)+
@@ -113,7 +120,7 @@ inventory file format.`,
 	return cmd
 }
 
-func runBootstrapSite(opts *bootstrapSiteOptions) error {
+func runBootstrapSite(opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
 
 	// Step 1: load and validate the inventory. Fail fast on any problem.
@@ -159,15 +166,26 @@ func runBootstrapSite(opts *bootstrapSiteOptions) error {
 		return fmt.Errorf("standing up bootstrap kind cluster: %w", err)
 	}
 	defer func() {
+		// Collect diagnostics before anything is torn down: this cluster is
+		// removed on every exit path, so this is the only moment the evidence
+		// still exists. Only on failure — a successful bootstrap has nothing
+		// to explain.
+		if err != nil && !errors.Is(err, errDispatchNotImplemented) {
+			dir := opts.diagnosticsDir
+			logger.Info("bootstrap failed; collecting cluster diagnostics", "dir", dir)
+			cwedeploy.New(opts.cweRunner, logger).
+				DumpDiagnostics(ctx, cluster.KubeconfigPath, dir)
+		}
+
 		if opts.keepBootstrapKind {
 			logger.Info("--keep-bootstrap-cluster set: leaving the bootstrap kind cluster running",
 				"cluster", cluster.Name, "kubeconfig", cluster.KubeconfigPath)
 			return
 		}
 		logger.Info("tearing down bootstrap kind cluster", "cluster", cluster.Name)
-		if err := engine.Delete(ctx, cluster.Name, cluster.Provider); err != nil {
+		if deleteErr := engine.Delete(ctx, cluster.Name, cluster.Provider); deleteErr != nil {
 			logger.Error("failed to tear down bootstrap kind cluster",
-				"cluster", cluster.Name, "err", err)
+				"cluster", cluster.Name, "err", deleteErr)
 		}
 	}()
 
@@ -181,7 +199,26 @@ func runBootstrapSite(opts *bootstrapSiteOptions) error {
 	// Step 4+ (subsequent tickets): dispatch the init/join/untaint workflows
 	// against the now-healthy CWE. Stubbed for now so the command is runnable
 	// end-to-end while the rest of the bootstrap core is ported.
-	return errors.New("bootstrap dispatch is not yet implemented; re-run with --dry-run to validate the inventory")
+	return errDispatchNotImplemented
+}
+
+// errDispatchNotImplemented is how `bootstrap site` ends today: everything
+// before workflow dispatch runs, and then it stops.
+//
+// It is a sentinel rather than an inline error because the diagnostics path has
+// to tell it apart from a real failure. Every run returns an error right now,
+// so treating "returned an error" as "something went wrong" would dump the
+// cluster on every successful bootstrap. It goes away when dispatch lands, and
+// the check with it.
+var errDispatchNotImplemented = errors.New(
+	"bootstrap dispatch is not yet implemented; re-run with --dry-run to validate the inventory")
+
+// envOrDefault reads an environment variable, falling back to a default.
+func envOrDefault(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 
 // deployAndWaitForCWE installs Postgres, Temporal and CWE onto cluster and

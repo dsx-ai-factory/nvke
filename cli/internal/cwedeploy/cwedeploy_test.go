@@ -296,3 +296,47 @@ func TestDeploy_PinsImageByDigest(t *testing.T) {
 		t.Errorf("cwe call = %q, want the digest split into repository/digest", cwe)
 	}
 }
+
+// TestDumpDiagnostics covers the failure-path bundle: it must collect the
+// cluster dump plus the extras that explain a pod which never started, and it
+// must not turn a diagnostics problem into the error the caller sees.
+func TestDumpDiagnostics(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+	runner := &fakeRunner{outputs: []fakeOutput{{output: "collected"}}}
+
+	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	var dumped bool
+	for _, call := range runner.calls {
+		if strings.Contains(joinArgs(call.args), "cluster-info dump") &&
+			strings.Contains(joinArgs(call.args), "--output-directory "+dir) {
+			dumped = true
+		}
+	}
+	if !dumped {
+		t.Errorf("no cluster-info dump into %s; calls were %+v", dir, runner.calls)
+	}
+	for _, name := range []string{"all-resources.txt", "pods-described.txt", "helm-releases.txt"} {
+		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+			t.Errorf("%s was not written: %v", name, err)
+		}
+	}
+}
+
+// TestDumpDiagnostics_SurvivesAFailingCluster is the property that matters on
+// the path this runs on: every command failing must still leave a bundle and
+// must not panic, because the caller already has a real error to report.
+func TestDumpDiagnostics_SurvivesAFailingCluster(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+	runner := &fakeRunner{outputs: []fakeOutput{{output: "unreachable", err: errors.New("exit status 1")}}}
+
+	New(runner, nil).DumpDiagnostics(context.Background(), "/tmp/kubeconfig", dir)
+
+	body, err := os.ReadFile(filepath.Join(dir, "all-resources.txt"))
+	if err != nil {
+		t.Fatalf("no bundle written when every command failed: %v", err)
+	}
+	if !strings.Contains(string(body), "exit status 1") {
+		t.Errorf("the file should record why the command failed, got %q", body)
+	}
+}

@@ -70,6 +70,13 @@ export NKECTL_CWE_IMAGE
 # nke-site-deploy, which this suite does not depend on.
 export NKECTL_CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE:-cwe-profiles:local}"
 
+# Where a failed bootstrap writes its cluster dump. Set explicitly rather than
+# left to nkectl's default, which is relative to the working directory: CI runs
+# this from cli/, but a developer running it from the repo root would otherwise
+# scatter the bundle somewhere the CI artifact path does not match.
+DIAGNOSTICS_DIR="${CLI_DIR}/cluster-diagnostics"
+export NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
+
 # `kind create cluster` merges into $KUBECONFIG, defaulting to ~/.kube/config
 # if unset -- own scratch path instead, so this run never touches (or takes
 # ownership of) the caller's default kubeconfig. This matters most for the
@@ -97,6 +104,19 @@ cleanup() {
     log "tearing down fake node containers"
     make -C "${CLI_DIR}" nodes-down || true
   fi
+
+  # Same class of bug as the KUBECONFIG one above, and the same cause: under
+  # `sudo -E` (the nerdctl leg) nkectl wrote this bundle as root. The CI step
+  # that uploads it runs as the normal user, which cannot so much as traverse
+  # into a root-owned 0750 directory -- so without this the diagnostics are
+  # collected and then silently dropped, on exactly the failing runs they
+  # exist for. Hand ownership back instead of loosening nkectl's file modes:
+  # the bundle contains whatever the pod logs contained.
+  if [ -n "${SUDO_UID:-}" ] && [ -d "${DIAGNOSTICS_DIR}" ]; then
+    log "restoring ownership of ${DIAGNOSTICS_DIR} to uid ${SUDO_UID}"
+    chown -R "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${DIAGNOSTICS_DIR}" || true
+  fi
+
   rm -rf "${KUBECONFIG_DIR}"
 }
 trap cleanup EXIT

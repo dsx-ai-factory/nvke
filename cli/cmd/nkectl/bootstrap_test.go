@@ -301,3 +301,60 @@ func captureStdout(t *testing.T, fn func()) string {
 	}
 	return <-done
 }
+
+// TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures guards the distinction the
+// dump depends on. Every run ends in an error today — the dispatch stub — so
+// dumping on "returned an error" would collect a cluster bundle on every
+// successful bootstrap, and bury the real ones.
+func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
+	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
+	t.Setenv("NKECTL_CWE_PROFILES_IMAGE", "nvcr.io/org/cwe-profiles:v1")
+	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
+
+	t.Run("the dispatch stub writes nothing", func(t *testing.T) {
+		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+		err := runBootstrapSite(&bootstrapSiteOptions{
+			inventory:       writeInventory(t, validInventory),
+			diagnosticsDir:  dir,
+			bootstrapRunner: fakeBootstrapRunner{},
+			cweRunner:       fakeCWERunner{},
+		})
+		if !errors.Is(err, errDispatchNotImplemented) {
+			t.Fatalf("expected the dispatch stub, got %v", err)
+		}
+		if _, statErr := os.Stat(dir); statErr == nil {
+			t.Error("a successful bootstrap should leave no diagnostics behind")
+		}
+	})
+
+	t.Run("a real failure writes a bundle", func(t *testing.T) {
+		// Short, so the suite does not sit through the default five minutes
+		// waiting for a CWE that will never report healthy.
+		t.Setenv("NKECTL_CWE_READY_TIMEOUT", "1s")
+		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
+		// CWE never reports healthy: the failure this exists for.
+		err := runBootstrapSite(&bootstrapSiteOptions{
+			inventory:       writeInventory(t, validInventory),
+			diagnosticsDir:  dir,
+			bootstrapRunner: fakeBootstrapRunner{},
+			cweRunner:       unhealthyCWERunner{},
+		})
+		if err == nil || errors.Is(err, errDispatchNotImplemented) {
+			t.Fatalf("expected a real failure, got %v", err)
+		}
+		if _, statErr := os.Stat(dir); statErr != nil {
+			t.Errorf("no diagnostics written for a real failure: %v", statErr)
+		}
+	})
+}
+
+// unhealthyCWERunner deploys fine but never reports healthy, which is the
+// shape of the failure the diagnostics bundle is meant to explain.
+type unhealthyCWERunner struct{ fakeCWERunner }
+
+func (u unhealthyCWERunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if name == "kubectl" && strings.Contains(strings.Join(args, " "), "readyz") {
+		return `{"status":"starting"}`, nil
+	}
+	return u.fakeCWERunner.Run(ctx, name, args...)
+}

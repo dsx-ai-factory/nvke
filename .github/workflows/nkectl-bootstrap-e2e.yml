@@ -318,3 +318,21 @@ jobs:
           NKECTL_CWE_IMAGE: ${{ env.CWE_IMAGE }}
           NKECTL_BOOTSTRAP_PROVIDER: nerdctl
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
+
+      # Written by `nkectl bootstrap site` itself when a bootstrap fails: a
+      # `kubectl cluster-info dump` of the ephemeral cluster, plus the object
+      # state and helm releases that explain a pod which never started. The
+      # command collects it before tearing the cluster down, which is the only
+      # moment it can — afterwards there is nothing left to ask, and a CI
+      # failure says only that something timed out.
+      #
+      # if-no-files-found: ignore, because the directory is absent on every
+      # successful run — which is most of them.
+      - name: Upload bootstrap cluster diagnostics
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nkectl-bootstrap-e2e-diagnostics-${{ matrix.provider }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cli/cluster-diagnostics/
+          if-no-files-found: ignore
+          retention-days: 7

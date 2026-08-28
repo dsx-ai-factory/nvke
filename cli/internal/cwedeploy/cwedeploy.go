@@ -432,3 +432,55 @@ func envDuration(key string, fallback time.Duration) time.Duration {
 	}
 	return d
 }
+
+// DumpDiagnostics writes everything the cluster can say about why a bootstrap
+// failed into dir.
+//
+// It runs before the cluster is torn down, which is the only moment it can:
+// `bootstrap site` removes the cluster on every exit path, so by the time a
+// caller sees the error the evidence is gone. That is fine when the failure
+// explains itself and useless when it does not — "CWE never reported healthy"
+// can be a crash-looping pod, an unschedulable one, an image that never pulled
+// or a webhook refusing admission, and the timeout alone tells those apart not
+// at all.
+//
+// `kubectl cluster-info dump` is the bulk of it: every namespace's objects and
+// pod logs, one file each. The rest covers what it omits — the events and
+// object state that explain a pod which never started, and which helm releases
+// actually landed.
+//
+// Every step is best-effort. This runs on a path where something has already
+// gone wrong, and failing to collect diagnostics must not replace the original
+// error with one about diagnostics.
+func (e *Engine) DumpDiagnostics(ctx context.Context, kubeconfigPath, dir string) {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		e.log.Warn("could not create the diagnostics directory", "dir", dir, "err", err)
+		return
+	}
+
+	if _, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"cluster-info", "dump", "--all-namespaces", "--output-directory", dir); err != nil {
+		e.log.Warn("cluster-info dump did not complete", "err", err)
+	}
+
+	for name, args := range map[string][]string{
+		"all-resources.txt":  {"get", "all,events", "-A", "-o", "wide"},
+		"pods-described.txt": {"describe", "pods", "-A"},
+	} {
+		out, err := e.Runner.Run(ctx, "kubectl", append([]string{"--kubeconfig", kubeconfigPath}, args...)...)
+		if err != nil {
+			out += "\n" + err.Error()
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(out), 0o600); err != nil {
+			e.log.Warn("could not write a diagnostics file", "file", name, "err", err)
+		}
+	}
+
+	out, err := e.Runner.Run(ctx, "helm", "--kubeconfig", kubeconfigPath, "list", "-A")
+	if err != nil {
+		out += "\n" + err.Error()
+	}
+	if err := os.WriteFile(filepath.Join(dir, "helm-releases.txt"), []byte(out), 0o600); err != nil {
+		e.log.Warn("could not write a diagnostics file", "file", "helm-releases.txt", "err", err)
+	}
+}

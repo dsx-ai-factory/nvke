@@ -57,6 +57,19 @@ nkectl create cluster [spec-file]      # or: cat spec.yaml | nkectl create clust
 nkectl delete cluster <name>           # prompts [y/N]; use --yes to skip
 ```
 
+## When a bootstrap fails
+
+`bootstrap site` removes the ephemeral Kind cluster on every exit path, so by
+the time the error reaches you there is nothing left to ask. To keep the
+evidence, a failed run collects a `kubectl cluster-info dump` — every
+namespace's objects and pod logs — plus the events, object state and helm
+releases that explain a pod which never started, and writes it out *before* the
+teardown.
+
+It lands in `cluster-diagnostics/`, overridable with `--diagnostics-dir` or
+`NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR`. A successful run writes nothing. CI uploads
+the directory as an artifact when the bootstrap E2E fails.
+
 ## Build from source
 
 ```bash
