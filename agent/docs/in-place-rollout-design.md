@@ -11,12 +11,15 @@ desired agent configuration or controller that converges nodes to it. APT also
 cannot safely replace the agent from inside `nke-agent.service`: the Debian
 `prerm` stops that service, so systemd can terminate the package transaction.
 
-**Solution summary:** `UpdateCluster` persists a required control-plane version
-and an optional worker version. A DB-backed controller resolves the site-wide
-APT or bundle method from CWE configuration, then uses the existing in-place
-rollout framework one node at a time, control-plane first. Control-plane rollout
-holds the cluster update lock; worker rollout does not. The agent RPC delegates
-self-replacement to an independent systemd updater.
+**Solution summary:** `UpdateCluster` persists the desired node-agent version. A
+DB-backed controller reconciles the actual node-agent version to the desired
+version by invoking a Temporal workflow through the existing in-place rollout
+framework, one node at a time. This design prioritizes in-place rollout for
+control-plane node agents while preserving the capability to roll out node
+agents installed on worker nodes. Control-plane rollout holds the cluster update
+lock; worker rollout does not. The APT or bundle update method is configured
+through CWE configuration. The agent RPC delegates self-replacement to an
+independent systemd updater.
 
 ## Architecture sequences
 
