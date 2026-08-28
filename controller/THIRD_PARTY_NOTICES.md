@@ -135,7 +135,7 @@ notices-check` verifies it is up to date.
 | `go.uber.org/automaxprocs` | MIT | `go.uber.org/automaxprocs@v1.6.0` | Unknown |
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.3` | Unknown |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.4` | Unknown |
-| `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.4` | Unknown |
+| `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.6` | Unknown |
 | `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.55.0` | Unknown |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.57.0` | Unknown |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.36.0` | Unknown |
@@ -154,12 +154,12 @@ notices-check` verifies it is up to date.
 | `gopkg.in/yaml.v2` | Apache-2.0 | `gopkg.in/yaml.v2@v2.4.0` | Unknown |
 | `gopkg.in/yaml.v3` | MIT | `gopkg.in/yaml.v3@v3.0.1` | Unknown |
 | `k8s.io/api` | Apache-2.0 | `k8s.io/api@v0.36.3` | Unknown |
-| `k8s.io/apiextensions-apiserver/pkg/apis/apiextensions` | Apache-2.0 | `k8s.io/apiextensions-apiserver@v0.36.0` | Unknown |
+| `k8s.io/apiextensions-apiserver/pkg/apis/apiextensions` | Apache-2.0 | `k8s.io/apiextensions-apiserver@v0.36.3` | Unknown |
 | `k8s.io/apimachinery/pkg` | Apache-2.0 | `k8s.io/apimachinery@v0.36.3` | Unknown |
 | `k8s.io/apimachinery/third_party/forked/golang` | BSD-3-Clause | `k8s.io/apimachinery@v0.36.3` | Unknown |
-| `k8s.io/apiserver/pkg` | Apache-2.0 | `k8s.io/apiserver@v0.36.0` | Unknown |
+| `k8s.io/apiserver/pkg` | Apache-2.0 | `k8s.io/apiserver@v0.36.3` | Unknown |
 | `k8s.io/client-go` | Apache-2.0 | `k8s.io/client-go@v0.36.3` | Unknown |
-| `k8s.io/component-base` | Apache-2.0 | `k8s.io/component-base@v0.36.1` | Unknown |
+| `k8s.io/component-base` | Apache-2.0 | `k8s.io/component-base@v0.36.3` | Unknown |
 | `k8s.io/klog/v2` | Apache-2.0 | `k8s.io/klog/v2@v2.140.0` | Unknown |
 | `k8s.io/kube-openapi/pkg` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260317180543-43fb72c5454a` | Unknown |
 | `k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json` | BSD-3-Clause | `k8s.io/kube-openapi@v0.0.0-20260317180543-43fb72c5454a` | Unknown |
@@ -170,7 +170,7 @@ notices-check` verifies it is up to date.
 | `k8s.io/utils/internal/third_party/forked/golang` | BSD-3-Clause | `k8s.io/utils@v0.0.0-20260210185600-b8788abfbbc2` | Unknown |
 | `k8s.io/utils/third_party/forked/golang/btree` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260210185600-b8788abfbbc2` | Unknown |
 | `mellium.im/sasl` | BSD-2-Clause | `mellium.im/sasl@v0.3.2` | Unknown |
-| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.12.4` | Unknown |
+| `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.4` | Unknown |
 | `sigs.k8s.io/controller-runtime` | Apache-2.0 | `sigs.k8s.io/controller-runtime@v0.24.1` | Unknown |
 | `sigs.k8s.io/json` | Apache-2.0 / BSD-3-Clause | `sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730` | Unknown |
 | `sigs.k8s.io/randfill` | Apache-2.0 | `sigs.k8s.io/randfill@v1.0.0` | Unknown |
@@ -14149,7 +14149,7 @@ limitations under the License.
 
 ### go.yaml.in/yaml/v4
 
-_Apache-2.0 — go.yaml.in/yaml/v4@v4.0.0-rc.4_
+_Apache-2.0 — go.yaml.in/yaml/v4@v4.0.0-rc.6_
 
 #### LICENSE
 
@@ -16182,7 +16182,7 @@ _Apache-2.0 — k8s.io/api@v0.36.3_
 
 ### k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 
-_Apache-2.0 — k8s.io/apiextensions-apiserver@v0.36.0_
+_Apache-2.0 — k8s.io/apiextensions-apiserver@v0.36.3_
 
 #### LICENSE
 
@@ -16643,7 +16643,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### k8s.io/apiserver/pkg
 
-_Apache-2.0 — k8s.io/apiserver@v0.36.0_
+_Apache-2.0 — k8s.io/apiserver@v0.36.3_
 
 #### LICENSE
 
@@ -17067,7 +17067,7 @@ _Apache-2.0 — k8s.io/client-go@v0.36.3_
 
 ### k8s.io/component-base
 
-_Apache-2.0 — k8s.io/component-base@v0.36.1_
+_Apache-2.0 — k8s.io/component-base@v0.36.3_
 
 #### LICENSE
 
@@ -18858,7 +18858,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### sigs.k8s.io/cluster-api
 
-_Apache-2.0 — sigs.k8s.io/cluster-api@v1.12.4_
+_Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.4_
 
 #### LICENSE
 

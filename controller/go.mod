@@ -1,10 +1,10 @@
 module github.com/NVIDIA/nke/controller
 
-go 1.26.5
+go 1.26.6
 
 require (
 	github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5
-	github.com/NVIDIA/cluster-api-provider-nico v0.0.0-20260812152823-b1de7af745d1
+	github.com/NVIDIA/cluster-api-provider-nico v0.0.44-rc.1
 	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0
 	github.com/NVIDIA/nke/agent v0.0.0-00010101000000-000000000000
 	github.com/NVIDIA/nke/controller/api v0.0.0-00010101000000-000000000000
@@ -39,18 +39,18 @@ require (
 	go.temporal.io/sdk v1.46.0
 	go.temporal.io/sdk/contrib/opentelemetry v0.8.1
 	go.uber.org/automaxprocs v1.6.0
-	go.yaml.in/yaml/v4 v4.0.0-rc.4
+	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/sync v0.22.0
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/apiextensions-apiserver v0.36.0
+	k8s.io/apiextensions-apiserver v0.36.3
 	k8s.io/apimachinery v0.36.3
-	k8s.io/apiserver v0.36.0
-	k8s.io/component-base v0.36.1
+	k8s.io/apiserver v0.36.3
+	k8s.io/component-base v0.36.3
 	k8s.io/kube-proxy v0.35.3
 	k8s.io/kubelet v0.35.3
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
-	sigs.k8s.io/cluster-api v1.12.4
+	sigs.k8s.io/cluster-api v1.13.4
 	sigs.k8s.io/controller-runtime v0.24.1
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730
 	sigs.k8s.io/yaml v1.6.0
@@ -92,7 +92,6 @@ require (
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.1-0.20260629224650-76486e7cc189 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
-	github.com/onsi/ginkgo/v2 v2.32.0 // indirect
 	github.com/onsi/gomega v1.42.1 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/russellhaering/gosaml2 v0.11.0 // indirect

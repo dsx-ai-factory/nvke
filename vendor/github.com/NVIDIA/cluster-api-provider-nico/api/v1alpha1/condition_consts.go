@@ -3,7 +3,24 @@
 
 package v1alpha1
 
+// Condition types published by the provider's reconcilers.
 const (
+	// NicoReadyCondition reports whether NICo is ready for use by the cluster.
+	NicoReadyCondition = "NicoReady"
+
+	// SyncedCondition reports whether the desired infrastructure was reconciled.
+	SyncedCondition = "Synced"
+
+	// MachineProvisionedCondition tracks provisioning of the backing instance
+	// for a machine.
+	MachineProvisionedCondition = "MachineProvisioned"
+)
+
+// Condition reasons shared by both reconcilers.
+const (
+	// UnknownReason indicates a condition has not been reported yet.
+	UnknownReason = "Unknown"
+
 	// DeletingReason indicates the resource is being deleted.
 	DeletingReason = "Deleting"
 
@@ -18,6 +35,19 @@ const (
 
 	// InfrastructureReadyReason indicates the infrastructure resource is ready.
 	InfrastructureReadyReason = "InfrastructureReady"
+
+	// SyncedReason indicates the desired infrastructure was reconciled.
+	SyncedReason = "Synced"
+
+	// NotSyncedReason indicates the desired infrastructure was not reconciled.
+	NotSyncedReason = "NotSynced"
+
+	// SyncUnknownReason indicates the reconciliation state is unknown.
+	SyncUnknownReason = "SyncUnknown"
+
+	// WaitingForClusterInfrastructureReason indicates the owning cluster scope
+	// is not ready yet.
+	WaitingForClusterInfrastructureReason = "WaitingForClusterInfrastructure"
 
 	// WaitingForBootstrapDataReason indicates bootstrap data is not available yet.
 	WaitingForBootstrapDataReason = "WaitingForBootstrapData"

@@ -4,6 +4,7 @@
 package v1alpha1
 
 import (
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -82,6 +83,10 @@ type NicoMachineNVLinkInterface struct {
 
 // NicoMachineSpec defines the desired state of NicoMachine.
 // +kubebuilder:validation:XValidation:rule="has(self.instanceTypeID) != has(self.machineID)",message="exactly one of instanceTypeID or machineID must be set"
+// +kubebuilder:validation:XValidation:rule="!(has(self.infinibandPartitionID) && has(self.infinibandInterfaces))",message="infinibandPartitionID and infinibandInterfaces are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.infinibandPartitionID) || has(self.instanceTypeID)",message="infinibandPartitionID requires instanceTypeID"
+// +kubebuilder:validation:XValidation:rule="!(has(self.nvLinkLogicalPartitionID) && has(self.nvLinkInterfaces))",message="nvLinkLogicalPartitionID and nvLinkInterfaces are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)",message="nvLinkLogicalPartitionID requires instanceTypeID"
 type NicoMachineSpec struct {
 	// VPCID is the VPC where this provider should create the instance.
 	VPCID string `json:"vpcID"`
@@ -102,10 +107,24 @@ type NicoMachineSpec struct {
 	// +optional
 	InfinibandInterfaces []NicoMachineInfiniBandInterface `json:"infinibandInterfaces,omitempty"`
 
+	// InfinibandPartitionID requests that the partition be attached to every active
+	// InfiniBand device exposed by InstanceTypeID.
+	// Set this instead of InfinibandInterfaces when every device should use the same partition.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	InfinibandPartitionID string `json:"infinibandPartitionID,omitempty"`
+
 	// NVLinkInterfaces requests that one or more NVLink Logical Partitions be attached
 	// to the instance.
 	// +optional
 	NVLinkInterfaces []NicoMachineNVLinkInterface `json:"nvLinkInterfaces,omitempty"`
+
+	// NVLinkLogicalPartitionID requests that the logical partition be attached to
+	// every active NVLink device exposed by InstanceTypeID.
+	// Set this instead of NVLinkInterfaces when every device should use the same logical partition.
+	// +optional
+	// +kubebuilder:validation:MinLength=1
+	NVLinkLogicalPartitionID string `json:"nvLinkLogicalPartitionID,omitempty"`
 
 	// SSHKeyGroupIDs are the allowed SSH key group IDs for Serial over LAN access.
 	// +optional
@@ -156,6 +175,9 @@ type NicoMachineStatus struct {
 
 	// Conditions describes the current machine state.
 	// +optional
+	// +listType=map
+	// +listMapKey=type
+	// +kubebuilder:validation:MaxItems=32
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
 	// Ready is true once the backing instance reaches Ready.
@@ -198,6 +220,11 @@ type NicoMachineStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=cluster-api,shortName=nicom
+// +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type=='Available')].status",description="Current machine infrastructure availability"
+// +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status",description="Machine infrastructure reconciled"
+// +kubebuilder:printcolumn:name="Provisioned",type="string",JSONPath=".status.initialization.provisioned",description="Initial machine infrastructure provisioning completed"
+// +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".status.instanceID",description="NICo instance"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
 // NicoMachine is the Schema for the nicomachines API.
 type NicoMachine struct {
@@ -224,6 +251,16 @@ func init() {
 // GetConditions returns the set of conditions for this object.
 func (m *NicoMachine) GetConditions() []metav1.Condition {
 	return m.Status.Conditions
+}
+
+// GetCondition returns the condition with the given type, or Unknown when it
+// has not been reported.
+func (m *NicoMachine) GetCondition(conditionType string) metav1.Condition {
+	condition := apimeta.FindStatusCondition(m.Status.Conditions, conditionType)
+	if condition == nil {
+		return metav1.Condition{Type: conditionType, Status: metav1.ConditionUnknown, Reason: UnknownReason}
+	}
+	return *condition
 }
 
 // SetConditions sets conditions for this object.
