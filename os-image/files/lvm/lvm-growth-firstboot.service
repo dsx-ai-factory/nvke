@@ -1,7 +1,10 @@
 [Unit]
 Description=LVM First-Boot Storage Growth
+DefaultDependencies=no
 After=local-fs.target
 Before=cloud-init-local.service
+Conflicts=shutdown.target reboot.target
+Before=shutdown.target reboot.target
 ConditionPathExists=/usr/local/bin/lvm-growth-firstboot.sh
 
 [Service]
