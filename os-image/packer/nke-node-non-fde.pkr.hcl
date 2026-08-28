@@ -114,6 +114,9 @@ source "qemu" "nke-non-fde" {
   disk_interface = "virtio"
   format         = "qcow2"
   accelerator    = var.accelerator
+  # See the same setting in nke-node-fde.pkr.hcl: required for provision.sh's
+  # fstrim to actually shrink the output qcow2.
+  disk_discard = "unmap"
 
   efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
   efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"

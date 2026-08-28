@@ -54,3 +54,15 @@ if [[ -f /etc/machine-id ]]; then
 fi
 sudo rm -f /var/lib/dbus/machine-id
 sudo rm -f /home/ubuntu/.ssh/authorized_keys
+
+# Smaller qcow2: apt's package cache and now-unreferenced blocks (deleted
+# files, old package versions) don't shrink the disk image on their own --
+# fstrim tells the guest kernel to discard them, which the disk_discard =
+# "unmap" builder setting (nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl)
+# passes through to the backing qcow2 so Packer's own post-build compaction
+# ("Converting hard drive...") actually has free space to reclaim. Must run
+# last: any write after this leaves blocks un-trimmed again.
+echo "Cleaning up package cache and trimming filesystem..."
+sudo apt-get -y autoremove
+sudo apt-get clean
+sudo fstrim -av || true

@@ -157,6 +157,10 @@ source "qemu" "nke-fde" {
   disk_interface = "virtio"
   format         = "qcow2"
   accelerator    = var.accelerator
+  # Lets provision.sh's fstrim actually shrink the output qcow2: without
+  # this, QEMU silently drops the guest's TRIM/discard commands, so freed
+  # blocks still look "used" to Packer's post-build compaction step.
+  disk_discard = "unmap"
 
   efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
   efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
