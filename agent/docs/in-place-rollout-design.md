@@ -118,26 +118,6 @@ sequenceDiagram
     end
 ```
 
-## Decision and alternatives considered
-
-The sources of truth remain separate:
-
-| Concern | Owner |
-|---|---|
-| Qualified artifacts, compatibility, and provenance | Release metadata and SBOM |
-| Desired version for each cluster role | `Cluster.nodeAgentConfig` |
-| APT or bundle delivery method for the site | CWE configuration |
-| Observed running version | Node status in the CWE database |
-| Safe convergence and attempt history | Reconciler and Temporal rollout |
-
-An SBOM or OS image can describe or seed a release, but cannot express a
-per-cluster target or converge retained nodes. ArgoCD is not the owner because
-the host systemd agent must remain manageable when Kubernetes is unavailable.
-A node-local auto-updater would lose coordinated serial rollback; an imperative
-upgrade endpoint would not preserve intent for replacement or drifted nodes. A
-separate upgrade resource was not selected because the target is durable cluster
-configuration rather than an independently approved or scheduled operation.
-
 ## Non-goals
 
 - Parallel node-agent upgrades.
