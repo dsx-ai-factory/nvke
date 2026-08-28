@@ -109,6 +109,33 @@ func GetVersionInfo() (string, error) {
 	return string(version), nil
 }
 
+// callerPathPrefixes are the SPIFFE ID paths permitted to drive this agent, matched
+// as prefixes: "/nke-service/" does not admit "/nke-service-evil/". Both name the
+// same callers -- NKE is migrating its IDs onto the tenant grammar, and agents have
+// to accept the old form until the ClusterSPIFFEID template changes and the new one
+// after. Drop "/nke-service/" once nothing issues it.
+var callerPathPrefixes = []string{
+	"/nke-service/",
+	"/tenant/nke/service/",
+}
+
+// authorizeClient returns the matcher deciding which peer SPIFFE IDs may call this
+// agent: same trust domain, and a path under callerPathPrefixes.
+func authorizeClient(agentTrustDomain string) func(spiffeid.ID) error {
+	return func(clientID spiffeid.ID) error {
+		if clientID.TrustDomain().Name() != agentTrustDomain {
+			return errors.New("unauthorized: trust domain mismatch")
+		}
+		for _, prefix := range callerPathPrefixes {
+			if strings.HasPrefix(clientID.Path(), prefix) {
+				return nil
+			}
+		}
+		return fmt.Errorf("unauthorized: path %q does not start with one of %s",
+			clientID.Path(), strings.Join(callerPathPrefixes, ", "))
+	}
+}
+
 func buildSpiffeMtlsConfig(ctx context.Context, socketPath string) (*tls.Config, error) {
 	source, err := workloadapi.NewX509Source(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(socketPath)))
 	if err != nil {
@@ -122,15 +149,7 @@ func buildSpiffeMtlsConfig(ctx context.Context, socketPath string) (*tls.Config,
 
 	agentTrustDomain := svid.ID.TrustDomain().Name()
 
-	authorizer := tlsconfig.AdaptMatcher(func(clientID spiffeid.ID) error {
-		if clientID.TrustDomain().Name() != agentTrustDomain {
-			return errors.New("unauthorized: trust domain mismatch")
-		}
-		if !strings.HasPrefix(clientID.Path(), "/nke-service/") {
-			return errors.New("unauthorized: path does not start with /nke-service/")
-		}
-		return nil
-	})
+	authorizer := tlsconfig.AdaptMatcher(authorizeClient(agentTrustDomain))
 
 	return tlsconfig.MTLSServerConfig(source, source, authorizer), nil
 }
