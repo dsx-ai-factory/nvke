@@ -69,11 +69,14 @@ autoinstall:
     - python3-apt
     - openssh-server
 
-  # all, not security-only: a golden image should ship current, not with
-  # whatever was on the ISO when it was cut. Applied by curtin during
+  # security, not all: "all" was tried and reverted -- it pulls in every
+  # linux-firmware-* split package (AMD/Intel/Broadcom/Qualcomm/Mellanox/
+  # Realtek graphics+wireless blobs, individually large), which took a
+  # confirmed FDE build from ~5-7min to 24m27s under real KVM, risking the
+  # ssh_timeout budget for an unrelated reason. Applied by curtin during
   # install, before the late-commands below, so any kernel upgrade here is
   # already in place when those regenerate the initramfs.
-  updates: all
+  updates: security
 
   late-commands:
     - curtin in-target --target=/target -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu'
