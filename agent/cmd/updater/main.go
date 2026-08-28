@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -16,10 +17,18 @@ import (
 
 const defaultOperationRoot = "/var/lib/nke/agent-upgrades"
 
+// version is set at build time via -ldflags "-X main.version=<version>".
+var version = "dev"
+
 func main() {
+	versionFlag := flag.Bool("version", false, "Print the version and exit")
 	operationID := flag.String("operation-id", "", "durable node-agent upgrade operation ID")
 	operationRoot := flag.String("operation-root", defaultOperationRoot, "durable node-agent upgrade operation root")
 	flag.Parse()
+	if *versionFlag {
+		_, _ = fmt.Fprintf(os.Stdout, "NKE Agent Updater Version: %s\n", version)
+		return
+	}
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(logger)
