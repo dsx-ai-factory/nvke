@@ -2,6 +2,13 @@ bin/
 /nkectl
 /nkectl.exe
 
+# E2E scratch: the bootstrap CA the substrate generates (see
+# e2e/bootstrap/substrate/ca.go). A private key, and reproducible on demand.
+.local/
+
+# E2E scratch: the inventory run.sh renders with live TPM thumbprints.
+e2e/bootstrap/.inventory.rendered.yaml
+
 # E2E scratch: the cluster dump `nkectl bootstrap site` collects when a
 # bootstrap fails, and CI uploads as an artifact. Regenerated on every
 # failing run.

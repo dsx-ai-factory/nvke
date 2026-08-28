@@ -104,7 +104,10 @@ concurrency:
 jobs:
   e2e:
     name: e2e (${{ matrix.provider }})
-    runs-on: ubuntu-latest
+    # ubuntu-22.04, not ubuntu-latest, and pinned for one reason: the software
+    # TPM below. See the "Load the vTPM proxy driver" step -- 24.04's kernel
+    # cannot host one at all, so this is not a version we can float.
+    runs-on: ubuntu-22.04
     if: github.repository == 'NVIDIA/nke'
     # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
     # bundle fetch, local agent compile) plus the thin derivation on top has
@@ -187,6 +190,37 @@ jobs:
           version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
           install_only: true
+
+      # The fake nodes emulate a TPM with swtpm, which asks the *host* kernel to
+      # allocate a device through /dev/vtpmx. That comes from tpm_vtpm_proxy,
+      # which Ubuntu builds per kernel flavour and version rather than once:
+      #
+      #   6.8-azure    CONFIG_TCG_VTPM_PROXY=m     in linux-modules-extra
+      #   6.11-azure   # ... is not set            never built
+      #   6.17-azure   # ... is not set            never built
+      #
+      # Measured, not inferred: .github/workflows/probe-vtpm.yml reported this
+      # across the labels, and it is why this job pins ubuntu-22.04 (6.8-azure)
+      # instead of ubuntu-latest. ubuntu-24.04 and ubuntu-latest are the same
+      # 6.17-azure image, where no package can supply the module because the
+      # kernel never built it. Nothing about that is visible in the runner-image
+      # docs, so re-measure with the probe before moving this job.
+      #
+      # The module is in linux-modules-extra, which the runner images do not
+      # install, so it has to be pulled in before modprobe can find it.
+      #
+      # Done here rather than left to run.sh (which does the same for a local
+      # run) so a runner image that stops shipping it fails on this line,
+      # naming it, instead of ten minutes later underneath a node container
+      # that could not find a TPM. Both legs need it, so this is not
+      # conditioned on the provider.
+      - name: Load the vTPM proxy driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          sudo modprobe tpm_vtpm_proxy
+          # -c, not -e: it has to be the character device swtpm opens.
+          test -c /dev/vtpmx
 
       # Standalone nerdctl + containerd for the nerdctl leg only. Installed
       # from the upstream nerdctl-full bundle (containerd, runc, CNI plugins,

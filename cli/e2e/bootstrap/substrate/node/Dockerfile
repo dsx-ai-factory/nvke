@@ -23,6 +23,7 @@ FROM ${BASE_IMAGE}
 
 ARG NODE_AGENT_PORT=15005
 
+
 # The one difference between "a CAPD machine" and "a pre-provisioned host".
 #
 # A CAPD machine receives SPIRE config through the CAPI bootstrap secret at
@@ -53,13 +54,41 @@ RUN set -eux; \
 # surface as an unexplained readiness timeout.
 RUN grep -q -- "--secure-server-port ${NODE_AGENT_PORT}" /etc/default/nke-agent
 
-# spire-agent and swtpm are enabled in the base image because CAPD nodes attest
-# via TPM. A pre-provisioned bootstrap node has no SPIRE identity, and
-# spire-agent would crash-loop without an agent.conf. Disable both so the
-# journal stays readable and `systemctl is-active nke-agent` is unambiguous.
+# SPIRE.
+#
+# The base image already installs spire-agent, the TPM attestor plugin and a
+# software TPM, because CAPD nodes attest via TPM. All this has to do is stop
+# disabling them and drop in the config and trust anchor.
+#
+# The result is a host that already has a hardware identity and is already
+# looking for its SPIRE server — which is what a pre-provisioned machine looks
+# like by the time nkectl hears about it. The server does not exist yet;
+# spire-agent retries until `nkectl bootstrap site` puts one where agent.conf
+# says. That is why the E2E has nothing to configure and nothing to start: it
+# reads the fingerprints, lets the command deploy SPIRE, and checks the agents
+# got in.
+#
+#   agent.conf         rendered from node/agent.conf.tmpl by image.go, which is
+#                      where the server address and trust domain are decided
+#   bootstrap-ca.crt   the CA the suite generated and also handed to the
+#                      command, which chains SPIRE's own CA to it — so the
+#                      agent verifies the server rather than trusting it on
+#                      first use
+#   get_tpm_pubhash    the upstream spire-tpm-plugin tool, used to read the EK
+#                      fingerprint the server's allowlist is keyed on. The same
+#                      tool the DSX ansible runbook reads over SSH.
+#
+# data_dir is on /run, a tmpfs, so no agent state survives a restart: a cached
+# SVID is signed by a SPIRE CA that will not exist next run, and the agent would
+# fail rather than re-attest.
+COPY agent.conf /etc/spire-agent/agent.conf
+COPY tools/ca.crt /etc/spire-agent/bootstrap-ca.crt
+COPY tools/get_tpm_pubhash /usr/local/bin/get_tpm_pubhash
 RUN set -eux; \
-    SYSTEMD_OFFLINE=1 systemctl disable spire-agent.service 2>/dev/null || true; \
-    SYSTEMD_OFFLINE=1 systemctl disable swtpm-local.service 2>/dev/null || true
+    chmod 0644 /etc/spire-agent/agent.conf /etc/spire-agent/bootstrap-ca.crt; \
+    chmod 0755 /usr/local/bin/get_tpm_pubhash; \
+    grep -q TPM_PLUGIN_CHECKSUM= /etc/spire-agent/spire-agent.env; \
+    SYSTEMD_OFFLINE=1 systemctl enable swtpm-local.service spire-agent.service
 
 # Keep the base image's entrypoint. kindest/node's entrypoint performs the
 # iptables / cgroup / mount setup kubeadm and containerd depend on before

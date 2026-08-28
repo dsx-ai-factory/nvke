@@ -61,6 +61,24 @@ type Config struct {
 	// AgentPort is the nke-agent gRPC port.
 	AgentPort string
 
+	// SpireServerAddress and SpireServerPort are baked into the node image's
+	// spire-agent config. They must be where `nkectl bootstrap site` will put
+	// the SPIRE server: the agents start looking before it exists and retry
+	// until it answers, so the address is chosen here and the command is made
+	// to match it, not the other way round.
+	SpireServerAddress string
+	SpireServerPort    string
+
+	// SpireTrustDomain must match what the command deploys SPIRE with.
+	SpireTrustDomain string
+
+	// CacheDir holds downloaded build inputs that outlive a single run.
+	CacheDir string
+
+	// CADir holds the bootstrap CA both ends of attestation are anchored to.
+	// See EnsureBootstrapCA.
+	CADir string
+
 	// NamePrefix prefixes both the Kubernetes node name and the container name.
 	NamePrefix string
 
@@ -77,16 +95,22 @@ type Config struct {
 // has a working default for a local or CI run.
 func DefaultConfig() Config {
 	return Config{
-		Network:      envOr("NKECTL_E2E_NETWORK", "nkectl-e2e-nodes"),
-		Subnet:       envOr("NKECTL_E2E_SUBNET", "172.26.0.0/24"),
-		NodeCount:    envInt("NKECTL_E2E_NODES", 3),
-		BaseImage:    envOr("NKECTL_E2E_BASE_IMAGE", "cwe-capd-kindest-node:local"),
-		Image:        os.Getenv("NKECTL_E2E_IMAGE"),
-		AgentPort:    envOr("NKECTL_E2E_AGENT_PORT", "15005"),
-		NamePrefix:   envOr("NKECTL_E2E_NAME_PREFIX", "node"),
-		Keep:         os.Getenv("NKECTL_E2E_KEEP") == "1",
-		Reuse:        os.Getenv("NKECTL_E2E_REUSE") == "1",
-		ReadyTimeout: envDuration("NKECTL_E2E_READY_TIMEOUT", 3*time.Minute),
+		Network:   envOr("NKECTL_E2E_NETWORK", "nkectl-e2e-nodes"),
+		Subnet:    envOr("NKECTL_E2E_SUBNET", "172.26.0.0/24"),
+		NodeCount: envInt("NKECTL_E2E_NODES", 3),
+		BaseImage: envOr("NKECTL_E2E_BASE_IMAGE", "cwe-capd-kindest-node:local"),
+		Image:     os.Getenv("NKECTL_E2E_IMAGE"),
+		AgentPort: envOr("NKECTL_E2E_AGENT_PORT", "15005"),
+
+		SpireServerAddress: envOr("NKECTL_E2E_SPIRE_SERVER_ADDRESS", DefaultSpireServerAddress),
+		SpireServerPort:    envOr("NKECTL_E2E_SPIRE_SERVER_PORT", DefaultSpireServerPort),
+		SpireTrustDomain:   envOr("NKECTL_E2E_SPIRE_TRUST_DOMAIN", "nkectl-bootstrap.nke.local"),
+		CacheDir:           envOr("NKECTL_E2E_CACHE_DIR", defaultCacheDir()),
+		CADir:              envOr("NKECTL_E2E_CA_DIR", defaultCADir()),
+		NamePrefix:         envOr("NKECTL_E2E_NAME_PREFIX", "node"),
+		Keep:               os.Getenv("NKECTL_E2E_KEEP") == "1",
+		Reuse:              os.Getenv("NKECTL_E2E_REUSE") == "1",
+		ReadyTimeout:       envDuration("NKECTL_E2E_READY_TIMEOUT", 3*time.Minute),
 	}
 }
 
@@ -102,6 +126,11 @@ type Node struct {
 	Container string
 	// AgentPort is the nke-agent gRPC port.
 	AgentPort string
+
+	// EKPubhash is the SHA-256 of this host's TPM endorsement key. It is what
+	// the SPIRE server allowlists and the last element of the SPIFFE ID the
+	// host is issued. Only populated for AttestationTPM.
+	EKPubhash string
 }
 
 // Substrate is the running set of host containers.

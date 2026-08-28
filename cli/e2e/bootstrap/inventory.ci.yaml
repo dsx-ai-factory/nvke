@@ -32,6 +32,12 @@ cluster:
     - name: "node3"
       ip: "172.26.0.12"
 
+  # Each node also carries a tpmEkThumbprint, the SHA-256 of its TPM
+  # endorsement key, which is what the SPIRE server's allowlist is keyed on.
+  # They are not committed here: a fake node's TPM is created along with its
+  # container, so run.sh fills them in against whichever hosts are running and
+  # passes the rendered file to `bootstrap site`.
+
   # Kubernetes version to install — plain semantic version, no leading "v".
   k8sVersion: "1.32.0"
 
@@ -58,3 +64,6 @@ cluster:
 registry:
   bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
   bootstrapChart: "cloud-workflow-engine"
+  # apiKey is a credential and is never committed. The runner supplies it
+  # through REGISTRY_API_KEY. SPIRE needs none of its own: it installs from
+  # the SPIFFE project's public charts.

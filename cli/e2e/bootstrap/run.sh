@@ -19,17 +19,20 @@
 #      substrate package (cli/e2e/bootstrap/substrate), not here: `nodes-up`
 #      does not return until every node's agent is confirmed active.
 #   2. `bootstrap site` stands up the ephemeral bootstrap Kind cluster
-#      (cli/internal/bootstrapengine), deploys Postgres, Temporal and CWE onto
-#      it (cli/internal/cwedeploy) and waits for CWE to report healthy on
+#      (cli/internal/bootstrapengine), deploys Postgres, Temporal, SPIRE and CWE
+#      onto it (cli/internal/cwedeploy) and waits for CWE to report healthy on
 #      /readyz, then stops at its not-yet-implemented workflow-dispatch stub.
-#      This script asserts both the CWE-healthy line and the stub error by
-#      name, so a change that silently skips the deploy (or stops validating
-#      it) is caught here rather than downstream. Nothing dials the fake
-#      nodes yet -- that is Track E, wiring `bootstrap site` to actually
-#      dispatch a workflow against the now-healthy CWE.
-#   3. The ephemeral Kind cluster is confirmed gone after the command exits —
-#      `bootstrap site` tears it down unconditionally on every exit path,
-#      including the dispatch-stub error path stage 2 asserts on.
+#      Both the CWE-healthy line and the stub error are asserted by name, so a
+#      change that silently skips the deploy is caught here.
+#   3. The Kind cluster is confirmed gone afterwards. It is torn down by this
+#      script rather than by the command, because stage 4 needs it kept alive.
+#   4. TPM node attestation, on the docker provider only. The fake nodes boot
+#      with a software TPM and a spire-agent already looking for the SPIRE
+#      server. `bootstrap site` is given their EK thumbprints, in the
+#      inventory, and deploys SPIRE with them allowlisted; the check is that
+#      the agents got in. The nodes are Docker's whichever provider is under
+#      test, so under nerdctl there is no network they and the kind cluster can
+#      share -- see the stage itself for why that is not addressable.
 #
 # NKECTL_BOOTSTRAP_PROVIDER selects the container runtime front end the
 # ephemeral cluster runs on (see cli/internal/bootstrapengine).
@@ -44,6 +47,10 @@
 # than required while it earns a track record. Override this var to try the
 # nerdctl provider locally too, once nerdctl/containerd are set up on the
 # host (see the workflow for the exact install this repo has verified).
+#
+# The fake nodes emulate a TPM with swtpm, which asks the kernel for a device
+# through /dev/vtpmx. This script loads tpm_vtpm_proxy if it is not already
+# there; a host that cannot load it cannot run this suite.
 #
 # NKECTL_CWE_IMAGE must already be pulled locally, through whichever runtime
 # NKECTL_BOOTSTRAP_PROVIDER names (`docker pull`/`nerdctl pull`), before this
@@ -61,6 +68,11 @@ CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 NKECTL="${CLI_DIR}/bin/nkectl"
 INVENTORY="${SCRIPT_DIR}/inventory.ci.yaml"
 BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
+# Inventory generation records the exact journal boundary and expected result
+# for every node here. The later check reads the same file after bootstrap.
+export NKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.json"
+# Where the node images' spire-agents were built to look for the SPIRE server.
+SPIRE_VIP="${NKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
 export NKECTL_BOOTSTRAP_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER:-docker}"
 : "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already pulled locally (see comment above)}"
 export NKECTL_CWE_IMAGE
@@ -99,7 +111,16 @@ export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
 log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
 
 nodes_up=false
+bootstrap_cluster_cleanup_pending=false
 cleanup() {
+  # --keep-bootstrap-cluster means the command no longer cleans up after
+  # itself, so a failure between it and the explicit teardown below would
+  # otherwise leak a cluster that the next run's stage 3 then trips over.
+  if [ "${bootstrap_cluster_cleanup_pending}" = true ]; then
+    log "tearing down the kept bootstrap kind cluster"
+    KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" \
+      kind delete cluster --name "${BOOTSTRAP_KIND_CLUSTER}" || true
+  fi
   if [ "${nodes_up}" = true ]; then
     log "tearing down fake node containers"
     make -C "${CLI_DIR}" nodes-down || true
@@ -135,7 +156,50 @@ make -C "${CLI_DIR}" nodes-up
 
 log "PASS: all fake nodes are up and node-agent is reachable"
 
-# ── Stage 2: CWE deploys and reports healthy, then the dispatch stub ────
+# ── Stages 2-4: bootstrap, then TPM attestation ─────────────────────────
+#
+# The fake nodes booted with a software TPM and a spire-agent already pointed at
+# SPIRE_VIP:30081 — the address `bootstrap site` puts its SPIRE server on. They
+# have been retrying since. So this stage does not configure or start anything
+# on them: it records their EK thumbprints in the inventory, runs the command,
+# and checks the agents got in.
+#
+# That ordering is the point. The thumbprints are an *input* to `bootstrap
+# site`, which seeds them into the SPIRE server it installs. A bootstrap that
+# deployed SPIRE without wiring the TPM attestor, or dropped the allowlist, or
+# put the server somewhere else, leaves every agent locked out and fails here.
+#
+# The command is given --keep-bootstrap-cluster, because the agents need the
+# cluster to still be there when they reach it, and this stage tears it down
+# itself afterwards. The "cluster is gone" assertion is kept, at the end,
+# against that explicit teardown.
+if [ ! -c /dev/vtpmx ]; then
+  log "loading the vTPM proxy driver (/dev/vtpmx)"
+  sudo modprobe tpm_vtpm_proxy 2>/dev/null || {
+    log "not loadable as shipped; it usually lives in linux-modules-extra"
+    sudo apt-get install -y "linux-modules-extra-$(uname -r)" >/dev/null 2>&1 || true
+    sudo modprobe tpm_vtpm_proxy 2>/dev/null || true
+  }
+fi
+if [ ! -c /dev/vtpmx ]; then
+  log "FAIL: no /dev/vtpmx. The fake nodes emulate a TPM with swtpm, which asks"
+  log "  the kernel to allocate one through that device, so this suite cannot run"
+  log "  without it. There are two causes, and the kernel config separates them:"
+  log ""
+  log "    grep CONFIG_TCG_VTPM_PROXY /boot/config-$(uname -r)"
+  log ""
+  log "  =m       built, just not installed or loaded. Install"
+  log "           linux-modules-extra-$(uname -r) and modprobe tpm_vtpm_proxy."
+  log "           Persist it with:"
+  log "             echo tpm_vtpm_proxy | sudo tee /etc/modules-load.d/tpm_vtpm_proxy.conf"
+  log "  not set  this kernel never built it, and no package will supply it."
+  log "           Ubuntu enables it on some flavours and versions and not others"
+  log "           (6.8-azure yes; 6.11-azure and 6.17-azure no), so this is an"
+  log "           ordinary outcome rather than a broken machine. Run on a host"
+  log "           whose kernel has it -- the CI workflow pins its runner for"
+  log "           exactly this reason."
+  exit 1
+fi
 
 log "building the profiles image (${NKECTL_CWE_PROFILES_IMAGE})"
 make -C "${CLI_DIR}" ensure-profiles-image CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE}"
@@ -154,50 +218,106 @@ if [ "${NKECTL_BOOTSTRAP_PROVIDER}" = "nerdctl" ]; then
   docker save "${NKECTL_CWE_PROFILES_IMAGE}" | nerdctl load
 fi
 
-log "running: nkectl bootstrap site -i ${INVENTORY}" \
+# The thumbprints and the bootstrap CA reach the command the way an operator's
+# would: named in the inventory. Neither can be committed to the fixture — a
+# TPM's endorsement key is created along with the container, and a private key
+# does not belong in a repository — so both are filled in here against whatever
+# this run generated.
+log "recording each node's TPM EK thumbprint and the bootstrap CA in the inventory"
+RENDERED_INVENTORY="${SCRIPT_DIR}/.inventory.rendered.yaml"
+NKECTL_E2E_INVENTORY_IN="${INVENTORY}" NKECTL_E2E_INVENTORY_OUT="${RENDERED_INVENTORY}" \
+  make -C "${CLI_DIR}" --no-print-directory nodes-inventory >/dev/null
+grep -q tpmEkThumbprint "${RENDERED_INVENTORY}" ||
+  { log "FAIL: no TPM EK thumbprints were recorded in ${RENDERED_INVENTORY}"; exit 1; }
+grep -q caCertFile "${RENDERED_INVENTORY}" ||
+  { log "FAIL: no bootstrap CA was recorded in ${RENDERED_INVENTORY}"; exit 1; }
+log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_INVENTORY}") EK thumbprint(s)"
+
+# No chart is named here. What gets installed is pinned in
+# cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
+# public hardened charts, needing no registry credential of their own.
+log "running: nkectl bootstrap site -i ${RENDERED_INVENTORY} --keep-bootstrap-cluster" \
   "(NKECTL_BOOTSTRAP_PROVIDER=${NKECTL_BOOTSTRAP_PROVIDER}, NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
   "NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE})"
+# Set before the call, not after: the command can fail after creating the
+# cluster it was told to keep, and cleanup has to already know to remove it.
+bootstrap_cluster_cleanup_pending=true
 set +e
-output="$("${NKECTL}" bootstrap site -i "${INVENTORY}" 2>&1)"
+output="$("${NKECTL}" bootstrap site -i "${RENDERED_INVENTORY}" --keep-bootstrap-cluster 2>&1)"
 status=$?
 set -e
 printf '%s\n' "${output}"
 
+# Same contract as stage 2 — the command still stops at the dispatch stub.
 if [ "${status}" -eq 0 ]; then
   log "FAIL: expected the bootstrap-dispatch stub to error, but the command exited 0"
   exit 1
 fi
-if ! grep -q "not yet implemented" <<<"${output}"; then
-  log "FAIL: command failed, but not with the expected dispatch stub error"
-  exit 1
-fi
-if ! grep -q "bootstrap kind cluster ready" <<<"${output}"; then
-  log "FAIL: command reached the dispatch stub, but never reported the bootstrap kind cluster ready"
-  exit 1
-fi
 if ! grep -q "cwe deployment healthy" <<<"${output}"; then
-  log "FAIL: command reached the dispatch stub, but CWE was never confirmed healthy on /readyz"
+  log "FAIL: CWE was never confirmed healthy on /readyz"
   exit 1
 fi
 
-log "PASS: inventory loaded and validated; ephemeral kind cluster came up; CWE deployed and reported healthy; reached the bootstrap-dispatch stub"
+# TPM attestation needs the agents and the SPIRE server to share a network, and
+# that is only arrangeable when one runtime owns both ends.
+#
+# The fake hosts are Docker's, unconditionally: the substrate shells out to
+# `docker` for every container, network and exec it does (see substrate.go), and
+# the node image is built through docker on both legs for the reasons the
+# profiles-image step above already explains. Under the nerdctl provider,
+# though, `bootstrap site` builds its kind cluster in nerdctl's own containerd,
+# which keeps its own networks. `docker network connect` cannot reach into that
+# -- it fails with "No such container" -- and no amount of addressing fixes it,
+# because the two ends are on different network stacks rather than different
+# networks.
+#
+# So this stage is docker-only, and says so rather than pretending to have run.
+# The nerdctl leg exists to prove bootstrapengine and cwedeploy drive that
+# provider correctly, and it still does all of that above: kind cluster, image
+# side-load, Postgres, Temporal, SPIRE, CWE healthy. Attestation is a property
+# of the SPIRE deployment, not of the container runtime that hosted it, so
+# proving it once on the docker leg is proving it.
+if [ "${NKECTL_BOOTSTRAP_PROVIDER}" != "nerdctl" ]; then
+  # The hosts and the bootstrap cluster are on different docker networks: the
+  # nodes come up before the cluster exists, so there is nothing for them to
+  # join. Attaching the cluster at the fixed address the agents were built to
+  # look for stands in for the VIP a real site controller has.
+  log "attaching the bootstrap cluster to the node network at ${SPIRE_VIP}"
+  docker network connect --ip "${SPIRE_VIP}" \
+    "${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}" "${BOOTSTRAP_KIND_CLUSTER}-control-plane"
 
-# ── Stage 3: ephemeral kind cluster is gone after ───────────────────────
+  log "waiting for every node's spire-agent to attest"
+  make -C "${CLI_DIR}" nodes-attested
 
-log "confirming the ephemeral bootstrap kind cluster (${BOOTSTRAP_KIND_CLUSTER}) was torn down"
-if ! grep -q "tearing down bootstrap kind cluster" <<<"${output}"; then
-  log "FAIL: command never logged tearing down the bootstrap kind cluster"
-  exit 1
+  log "PASS: bootstrap site deployed SPIRE and every node attested to it over TPM"
+else
+  log "SKIP: TPM attestation is docker-only. The fake hosts are Docker containers"
+  log "  and this leg's kind cluster lives in nerdctl's containerd, so there is no"
+  log "  network both ends can share. Everything up to and including CWE reporting"
+  log "  healthy has been checked above; the docker leg covers attestation."
 fi
+
+log "tearing down the bootstrap kind cluster kept for attestation"
+KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" \
+  kind delete cluster --name "${BOOTSTRAP_KIND_CLUSTER}"
+bootstrap_cluster_cleanup_pending=false
+
+# This checks the delete above, not the command's own cleanup: `bootstrap site`
+# was given --keep-bootstrap-cluster, so it deliberately left the cluster
+# running and this suite owns tearing it down. What it earns is the next run --
+# a cluster left registered here makes stage 1 trip over it. That `bootstrap
+# site` removes its own cluster when it is not told to keep one is checked in
+# TestRunBootstrapSiteValidReachesStub, which can assert on the kind call
+# itself rather than inferring it from what is left behind.
+#
 # kind resolves a cluster through its provider, so ask the same one bootstrap
 # site used. Bare, the nerdctl leg asks Docker, sees none of nerdctl's
 # clusters, and passes without checking anything. kind accepts "docker" here
 # as well as its own default.
 if KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters 2>/dev/null |
   grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"; then
-  log "FAIL: kind cluster ${BOOTSTRAP_KIND_CLUSTER} is still registered after bootstrap site exited"
+  log "FAIL: kind cluster ${BOOTSTRAP_KIND_CLUSTER} is still registered after this suite deleted it"
   KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters || true
   exit 1
 fi
-
-log "PASS: ephemeral kind cluster ${BOOTSTRAP_KIND_CLUSTER} is gone after the command exited"
+log "PASS: this suite's teardown left no ${BOOTSTRAP_KIND_CLUSTER} cluster behind"

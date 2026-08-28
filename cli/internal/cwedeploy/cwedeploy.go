@@ -371,6 +371,8 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	defer cleanup()
 
+	// CWE uses SPIFFE workload identity even when the inventory contains no
+	// external TPM nodes, so the SPIRE deployment is always required.
 	e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
 		"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
 		"tpmThumbprints", len(cfg.TPMEKFingerprints))
@@ -378,6 +380,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		spireInstallArgs(cfg, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
 	); err != nil {
 		return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
+	}
+
+	// Only external TPM nodes need the NodePort. CWE and the in-cluster agents
+	// use SPIRE's ClusterIP service.
+	if len(cfg.TPMEKFingerprints) > 0 {
+		if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
+			return err
+		}
 	}
 
 	cweValues, cleanup, err := writeEmbeddedFile(cweValuesFile)
@@ -645,6 +655,28 @@ func upstreamCAArgs(cfg Config, prefix string) []string {
 		// the agents already hold.
 		"--set-file", prefix + ".upstreamAuthority.disk.secret.data.bundle=" + cfg.SPIFFEUpstreamCACertPath,
 	}
+}
+
+// publishSpireExternally applies spire-server-nodeport.yaml.
+//
+// The chart's own Service stays exactly as it installed it. This adds a second
+// one beside it, selecting the same pods on a port decided in advance, because
+// the nodes that attest were configured with an address and a port when they
+// were provisioned — long before this cluster existed. Applying a manifest
+// keeps that a declaration rather than surgery on somebody else's release.
+func (e *Engine) publishSpireExternally(ctx context.Context, kubeconfigPath string) error {
+	manifest, cleanup, err := writeEmbeddedFile(spireNodePortFile)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	e.log.Info("publishing SPIRE for out-of-cluster hosts", "namespace", spireNamespace)
+	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
+		"-n", spireNamespace, "apply", "-f", manifest); err != nil {
+		return fmt.Errorf("cwedeploy: publishing SPIRE with %s: %w\n%s", spireNodePortFile, err, out)
+	}
+	return nil
 }
 
 // DumpDiagnostics writes everything the cluster can say about why a bootstrap

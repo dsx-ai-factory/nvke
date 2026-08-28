@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Publishes the SPIRE server to hosts outside the cluster.
+#
+# A bare-metal node is already looking for its SPIRE server by the time anything
+# bootstraps it: its spire-agent was configured with an address and a port when
+# the machine was provisioned. So the port has to be a decision made in advance,
+# not a number Kubernetes happens to pick — and the SPIFFE chart's Service
+# template has no nodePort field to set.
+#
+# Rather than install the chart and then reach in and patch what it created,
+# this is a second Service alongside it. Services are only a selector and a set
+# of ports, and nothing stops two of them pointing at the same pods: the chart
+# keeps its ClusterIP for CWE and everything else inside the cluster, and this
+# one carries the fixed external route. Neither knows about the other.
+#
+# Two values have to agree with things outside this file:
+#
+#   selector   the labels the SPIFFE hardened chart puts on its server pods.
+#   nodePort   the port the nodes' spire-agent config was built with. In the
+#              E2E that is NKECTL_E2E_SPIRE_SERVER_PORT; on real hardware it is
+#              whatever provisioned the machine.
+#
+# The namespace is deliberately absent: it is applied into the namespace
+# cwedeploy installs SPIRE in.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server-external
+  labels:
+    app.kubernetes.io/name: server
+    app.kubernetes.io/managed-by: nkectl
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: server
+    app.kubernetes.io/instance: spire
+  ports:
+    - name: grpc
+      protocol: TCP
+      # The chart names its server's container port "grpc"; resolving by name
+      # rather than number means this keeps working if the chart moves it.
+      targetPort: grpc
+      port: 8081
+      nodePort: 30081

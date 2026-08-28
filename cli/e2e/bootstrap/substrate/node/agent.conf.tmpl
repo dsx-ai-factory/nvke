@@ -1,0 +1,43 @@
+# SPIRE agent config for a fake pre-provisioned host, rendered into the node
+# image at build time (cli/e2e/bootstrap/substrate/image.go).
+#
+# The host boots with this already in place and spire-agent already running, so
+# it is looking for its SPIRE server before `nkectl bootstrap site` deploys one
+# and simply retries until it appears. That is what a real pre-provisioned
+# machine looks like by the time nkectl hears about it.
+#
+# ${TPM_PLUGIN_CHECKSUM} is left for spire-agent to expand at run time (its unit
+# runs with -expandEnv and reads /etc/spire-agent/spire-agent.env), so the
+# checksum stays owned by whichever agent bundle the base image installed rather
+# than being pinned here and drifting.
+agent {
+    data_dir = "/run/spire-agent"
+    log_level = "DEBUG"
+
+    server_address = "{{ .ServerAddress }}"
+    server_port = "{{ .ServerPort }}"
+    trust_domain = "{{ .TrustDomain }}"
+
+    # The bootstrap cluster and its SPIRE CA are ephemeral. Re-attest when the
+    # server is replaced instead of retaining trust in a CA that no longer
+    # exists.
+    rebootstrap_mode = "always"
+
+    # A real trust anchor, not trust-on-first-use: this is the CA the suite
+    # generated and also handed to `nkectl bootstrap site`, which configures
+    # SPIRE to chain its own CA to it. The agent can therefore verify the
+    # server the first time it speaks to it.
+    trust_bundle_path = "{{ .TrustBundlePath }}"
+}
+
+plugins {
+    NodeAttestor "tpm" {
+        plugin_cmd = "/usr/local/lib/spire-agent/tpm_attestor_agent"
+        plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"
+        plugin_data {}
+    }
+
+    KeyManager "memory" { plugin_data {} }
+
+    WorkloadAttestor "unix" { plugin_data {} }
+}
