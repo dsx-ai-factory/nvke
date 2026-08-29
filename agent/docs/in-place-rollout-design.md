@@ -11,7 +11,9 @@ desired agent configuration or controller that converges nodes to it. APT also
 cannot safely replace the agent from inside `nke-agent.service`: the Debian
 `prerm` stops that service, so systemd can terminate the package transaction.
 
-**Solution summary:** `UpdateCluster` persists the desired node-agent version. A
+## Solution summary
+
+`UpdateCluster` persists the desired node-agent version. A
 DB-backed controller reconciles the actual node-agent version to the desired
 version by invoking a Temporal workflow through the existing in-place rollout
 framework, one node at a time. This design prioritizes in-place rollout for
