@@ -35,6 +35,8 @@ const (
 
 	certificateRenewalStagingDir = "/etc/kubernetes/nke-cert-renewal-manifests"
 
+	// Preserve the runbook's operational envelope: stopping static pods should
+	// be quick, while startup gets longer for image/runtime and etcd recovery.
 	defaultCertificateRenewalStopTimeout  = 2 * time.Minute
 	defaultCertificateRenewalStartTimeout = 5 * time.Minute
 	defaultCertificateRenewalPollInterval = 3 * time.Second
@@ -116,6 +118,8 @@ func (s *NodeAgentServer) runKubernetesCertificateRenewal(
 	progress nodeAgentOperationProgress,
 	thresholdDays int,
 ) (operationErr error) {
+	// Certificate renewal and graceful shutdown both move static-pod manifests.
+	// Serialize them so one operation cannot restore another operation's files.
 	s.staticPodMutationMu.Lock()
 	defer s.staticPodMutationMu.Unlock()
 
@@ -126,6 +130,8 @@ func (s *NodeAgentServer) runKubernetesCertificateRenewal(
 
 	state := s.kubernetesCertificateRenewalState()
 	progress.SetStep("checking_control_plane_health")
+	// Inspect the container runtime rather than the Kubernetes API because this
+	// transaction deliberately stops the API server while manifests are staged.
 	switch state {
 	case certificateRenewalStateRenewing, certificateRenewalStateRestartPending:
 		if err := s.waitForCertificateRenewalComponentState(ctx, runner, true, s.certificateRenewalStartTimeoutOrDefault()); err != nil {
@@ -193,6 +199,7 @@ func (s *NodeAgentServer) runKubernetesCertificateRenewal(
 		return err
 	}
 
+	// Once any manifest is staged, every exit path must attempt restoration.
 	needsRestore := true
 	defer func() {
 		if !needsRestore {
@@ -236,6 +243,9 @@ func (s *NodeAgentServer) runKubernetesCertificateRenewal(
 	return nil
 }
 
+// expiringKubernetesCertificates parses kubeadm's leaf-certificate table. The
+// residual duration is field seven; the later CA table is intentionally out of
+// scope, missing certificates are ignored, and hours or <invalid> mean renew.
 func expiringKubernetesCertificates(output string, thresholdDays int) ([]string, error) {
 	if thresholdDays <= 0 {
 		return nil, fmt.Errorf("threshold must be positive")
@@ -278,6 +288,8 @@ func expiringKubernetesCertificates(output string, thresholdDays int) ([]string,
 	return expiring, nil
 }
 
+// allCertificateRenewalComponentsRunning uses CRI state so it remains usable
+// before, during, and after an API-server restart.
 func allCertificateRenewalComponentsRunning(runner nkeutils.CommandRunner) error {
 	var missing []string
 	for _, component := range certificateRenewalControlPlaneComponents {
@@ -328,6 +340,9 @@ func (s *NodeAgentServer) waitForCertificateRenewalComponentState(
 	}
 }
 
+// stageCertificateRenewalManifests verifies the complete kubeadm control-plane
+// set before moving anything. The persistent staging directory shares the
+// /etc/kubernetes filesystem, so renames are atomic and survive agent restarts.
 func (s *NodeAgentServer) stageCertificateRenewalManifests() (bool, bool, error) {
 	staged := false
 	manifestDir := s.rootedPath(defaultStaticPodManifestDir)
@@ -403,6 +418,9 @@ func (s *NodeAgentServer) restoreCertificateRenewalManifests() error {
 		src := filepath.Join(stagingDir, entry.Name())
 		dst := filepath.Join(manifestDir, entry.Name())
 		if _, err := os.Lstat(dst); err == nil {
+			// A concurrent recovery may already have restored this manifest. Remove
+			// only an identical staged copy; never overwrite independently changed
+			// active state.
 			same, compareErr := filesHaveSameContents(src, dst)
 			if compareErr != nil {
 				restoreErr = errors.Join(restoreErr, fmt.Errorf("compare staged manifest %s: %w", entry.Name(), compareErr))
