@@ -143,7 +143,7 @@ func TestUnit_ControlPlaneNodeSchedulerRequeuesWhenNoPreferredInstanceTypeHasCap
 	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 
 	scheduler := NewControlPlaneNodeScheduler(config.Config{
-		ControllerManagerInterval: 4 * time.Minute,
+		NodeSchedulingRetryInterval: 4 * time.Minute,
 	}, slog.Default(), dbwrapper.New(database, slog.Default()), nil, &fakeForgeReader{
 		instanceType: instanceTypeWithUnusedUsable(0),
 		subnet:       subnet(subnetID.String(), "10.0.0.0", 30),
@@ -170,7 +170,7 @@ func TestUnit_ControlPlaneNodeSchedulerReturnsErrorForDeterministicForgeResource
 	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 
 	scheduler := NewControlPlaneNodeScheduler(config.Config{
-		ControllerManagerInterval: 4 * time.Minute,
+		NodeSchedulingRetryInterval: 4 * time.Minute,
 	}, slog.Default(), dbwrapper.New(database, slog.Default()), nil, &fakeForgeReader{
 		instanceType: instanceTypeWithUnusedUsable(1),
 		subnet:       subnet(subnetID.String(), "not-a-cidr-prefix", 30),
@@ -198,7 +198,7 @@ func TestUnit_ControlPlaneNodeSchedulerRequeuesForTemporaryForgeResourceFailures
 	database.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 
 	scheduler := NewControlPlaneNodeScheduler(config.Config{
-		ControllerManagerInterval: 4 * time.Minute,
+		NodeSchedulingRetryInterval: 4 * time.Minute,
 	}, slog.Default(), dbwrapper.New(database, slog.Default()), nil, &fakeForgeReader{
 		instanceTypeErr: errors.New("cache expired"),
 	})

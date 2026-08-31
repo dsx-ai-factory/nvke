@@ -79,8 +79,8 @@ func NewService(
 // RetryAfter returns the scheduler retry interval for temporary external
 // unavailability such as Forge capacity or provider readiness.
 func (s *Service) RetryAfter() time.Duration {
-	if s.cfg.ControllerManagerInterval > 0 {
-		return s.cfg.ControllerManagerInterval
+	if s.cfg.NodeSchedulingRetryInterval > 0 {
+		return s.cfg.NodeSchedulingRetryInterval
 	}
 	return 2 * time.Minute
 }

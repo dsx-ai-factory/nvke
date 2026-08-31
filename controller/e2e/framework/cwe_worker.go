@@ -125,7 +125,6 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 		"TEMPORAL_NAMESPACE=" + cfg.Namespace,
 		"TEMPORAL_TASK_QUEUE=" + cfg.TaskQueue,
 		"PROFILES_DIR=" + profilesDir,
-		"CONTROLLER_MANAGER_DISABLED=true",
 		"NODE_HEALTH_CHECK_DISABLED=true",
 		"SPIFFE_ENABLED=false",
 		"ENABLE_CAPI=false",

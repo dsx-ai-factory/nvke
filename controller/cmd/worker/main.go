@@ -25,7 +25,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/auth"
 	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/controllers"
 	"github.com/NVIDIA/nke/controller/internal/controllers/automode"
 	"github.com/NVIDIA/nke/controller/internal/controllers/capi"
 	"github.com/NVIDIA/nke/controller/internal/controllers/certrenewal"
@@ -525,23 +524,6 @@ func main() {
 	outboxLogger := logger.With("logger", "outbox-processor")
 	outboxProcessor := temporal.NewOutboxProcessor(cfg, outboxLogger, dbInstance, temporalClient)
 
-	// Create ControllerManager (creates all controllers internally)
-	controllerManagerLogger := logger.With("logger", "controller-manager")
-	controllerManager, err := controllers.NewControllerManager(
-		cfg,
-		controllerManagerLogger,
-		dbInstance,
-		managementK8sClient,
-		forgeProvider,
-		nodeAgentClient,
-		tenantClientProvider,
-		trustDomain,
-	)
-	if err != nil {
-		logger.Error("Failed to create controller-manager", "error", err)
-		os.Exit(1)
-	}
-
 	// Use errgroup to manage all services
 	var g errgroup.Group
 
@@ -585,15 +567,6 @@ func main() {
 		outboxProcessor.Start(ctx)
 		return nil
 	})
-
-	// Start the controller-manager
-	if !cfg.ControllerManagerDisabled {
-		g.Go(func() error {
-			logger.Info("Starting controller-manager")
-			controllerManager.Start(ctx)
-			return nil
-		})
-	}
 
 	g.Go(func() error {
 		logger.Info("Starting Kubernetes controller-runtime manager")

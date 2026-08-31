@@ -26,7 +26,7 @@ import (
 
 func TestUnit_ServiceRetryAfter(t *testing.T) {
 	require.Equal(t, 3*time.Minute, NewService(config.Config{
-		ControllerManagerInterval: 3 * time.Minute,
+		NodeSchedulingRetryInterval: 3 * time.Minute,
 	}, slog.Default(), nil, nil, nil).RetryAfter())
 
 	require.Equal(t, 2*time.Minute, NewService(config.Config{}, slog.Default(), nil, nil, nil).RetryAfter())
@@ -53,9 +53,9 @@ func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T
 	})).Return(mockWorkflowRun{id: "second"}, nil).Once()
 
 	service := NewService(config.Config{
-		TemporalTaskQueue:         "test-task-queue",
-		NodeRebootMaxTimeout:      7 * time.Minute,
-		ControllerManagerInterval: time.Minute,
+		TemporalTaskQueue:           "test-task-queue",
+		NodeRebootMaxTimeout:        7 * time.Minute,
+		NodeSchedulingRetryInterval: time.Minute,
 	}, slog.Default(), nil, temporalClient, nil)
 
 	result, err := service.ScheduleCAPIInfraNodes(ctx, slog.Default(), []db.Node{
@@ -104,8 +104,8 @@ func TestUnit_ServiceScheduleForgeNodesLimitsByCapacityAndUpdatesUnschedulableNo
 	})).Return(mockWorkflowRun{id: "first"}, nil).Once()
 
 	service := NewService(config.Config{
-		TemporalTaskQueue:         "test-task-queue",
-		ControllerManagerInterval: 4 * time.Minute,
+		TemporalTaskQueue:           "test-task-queue",
+		NodeSchedulingRetryInterval: 4 * time.Minute,
 	}, slog.Default(), database, temporalClient, &fakeForgeReader{
 		instanceType: instanceTypeWithUnusedUsable(1),
 		subnet:       subnet(subnetID.String(), "10.0.0.0", 30),
@@ -128,14 +128,14 @@ func TestUnit_ServiceScheduleForgeNodesRequeuesOnlyTemporaryForgeResourceErrors(
 	nodeID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 	instanceTypeID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
 
-	service := NewService(config.Config{ControllerManagerInterval: 4 * time.Minute}, slog.Default(), nil, nil, &fakeForgeReader{
+	service := NewService(config.Config{NodeSchedulingRetryInterval: 4 * time.Minute}, slog.Default(), nil, nil, &fakeForgeReader{
 		instanceTypeErr: errors.New("cache expired"),
 	})
 	result, err := service.ScheduleForgeNodes(ctx, slog.Default(), cluster, []db.Node{{ID: nodeID}}, instanceTypeID, ForgePlacementSpec{}, ForgeScheduleOptions{})
 	require.NoError(t, err)
 	require.Equal(t, 4*time.Minute, result.RequeueAfter)
 
-	service = NewService(config.Config{ControllerManagerInterval: 4 * time.Minute}, slog.Default(), nil, nil, &fakeForgeReader{
+	service = NewService(config.Config{NodeSchedulingRetryInterval: 4 * time.Minute}, slog.Default(), nil, nil, &fakeForgeReader{
 		instanceType: instanceTypeWithUnusedUsable(1),
 		subnet:       subnet(uuid.New().String(), "not-a-cidr-prefix", 30),
 	})
