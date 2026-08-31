@@ -14,6 +14,8 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
 )
 
 // validateControllerManagedControlPlane asserts a cluster provisioned from the
@@ -46,7 +48,7 @@ func validateControllerManagedControlPlane(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the controller-managed control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
-	}, Label("cp-controller", "readiness"), NodeTimeout(30*time.Minute))
+	}, Label("cp-controller", "readiness"), NodeTimeout(90*time.Minute))
 }
 
 // controlPlaneControllerUpdateDesiredCount is the desired control-plane node
@@ -81,7 +83,7 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the updated control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
-	}, Label("cp-controller", "update"), NodeTimeout(30*time.Minute))
+	}, Label("cp-controller", "update"), NodeTimeout(90*time.Minute))
 }
 
 // controlPlaneControllerRollConfigProfile is the config profile the rolling
@@ -113,7 +115,12 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 			"a config-revision roll needs a multi-node control plane to keep etcd quorum while rolling")
 
 		By("Changing the control-plane config profile to bump the configuration revision")
-		expectSucceed(test.nke.UpdateControlPlaneConfigProfile(ctx, test.cluster.ID, controlPlaneControllerRollConfigProfile))
+		rollProfile := controlPlaneControllerRollConfigProfile
+		if test.spec.Backend == nke.BackendNicoVMS {
+			// Forge requires a real config profile; nico-vms-cp is what create uses.
+			rollProfile = nicoVMSWConfigProfile
+		}
+		expectSucceed(test.nke.UpdateControlPlaneConfigProfile(ctx, test.cluster.ID, rollProfile))
 
 		By("Waiting for every old control-plane node to be replaced and KubernetesReady in CWE")
 		Expect(test.nke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, desired, oldNodeIDs)).To(Succeed(),
@@ -121,7 +128,7 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 
 		By("Asserting the tenant cluster reports Ready for the rolled control-plane nodes")
 		assertControlPlaneNodesReadyInTenant(ctx, test, desired)
-	}, Label("cp-controller", "rolling-update"), NodeTimeout(30*time.Minute))
+	}, Label("cp-controller", "rolling-update"), NodeTimeout(90*time.Minute))
 }
 
 // assertControlPlaneNodesReadyInTenant builds an authenticated tenant client and

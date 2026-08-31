@@ -39,16 +39,16 @@ var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure
 		shapes := []clusterShape{
 			{
 				cniPlugin:         CNIPluginOVN,
-				controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-				workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+				controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+				workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			},
 			{
 				cniPlugin:         CNIPluginCalico,
-				controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-				workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+				controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+				workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 			},
 		}
-		timeouts := nke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second}
+		timeouts := nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second}
 
 		var (
 			test     tenantTest

@@ -266,6 +266,8 @@ def register(ctx):
     # -----------------------------------------------------------------------
     # Site registration — register the nico-vms site in CWE with VIP range.
     # Runs once after CWE is healthy. Idempotent (skips if site exists).
+    # Uses hack/register-default-site.sh so GET/POST carry a bearer token when
+    # NKE_AUTH_ENABLED=true (bare curl 401s and Tilt reports Update Error).
     # -----------------------------------------------------------------------
     _seed_site_id = "a1b2c3d4-0001-4000-8000-000000000001"
     _cwe_port = os.getenv("CWE_HTTP_PORT", "8080")
@@ -273,21 +275,12 @@ def register(ctx):
         "nico-vms-register-site",
         cmd=["bash", "-c", """
           set -euo pipefail
-          CWE="http://localhost:%s"
-          SITE_ID="%s"
-          VIP_CIDR="%s"
-
-          if curl -fsS "${CWE}/api/sites/${SITE_ID}" >/dev/null 2>&1; then
-            echo "Site ${SITE_ID} already registered"
-            exit 0
-          fi
-
-          curl -fsS -X POST "${CWE}/api/sites" \
-            -H "Content-Type: application/json" \
-            -d '{"id":"'"${SITE_ID}"'","vipRanges":["'"${VIP_CIDR}"'"]}'
-
-          echo "Registered nico-vms site with VIP range ${VIP_CIDR}"
-        """ % (_cwe_port, _seed_site_id, _vip_cidr)],
+          cd %s
+          API_URL="http://localhost:%s/api" \
+          DEFAULT_SITE_ID="%s" \
+          DEFAULT_VIP_RANGE="%s" \
+          ./hack/register-default-site.sh
+        """ % (ctx.main_dir, _cwe_port, _seed_site_id, _vip_cidr)],
         resource_deps=["cwe"],
         labels=["5-nico-vms"],
     )

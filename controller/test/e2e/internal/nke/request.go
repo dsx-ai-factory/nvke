@@ -66,11 +66,18 @@ type ControlPlane struct {
 
 // ControlPlaneConfigSpec describes a cluster-level control-plane configuration
 // used by control-plane-controller provisioning (no control-plane node pool).
-// The CAPI infrastructure machine template is supplied by the backend builder
-// from the embedded skeleton, so only the topology knobs are needed here.
+// CAPD supplies the CAPI machine template from an embedded skeleton. NICo VMs
+// fill the Forge fields below instead.
 type ControlPlaneConfigSpec struct {
 	DesiredCount int
 	MaxSurge     *int
+
+	InstanceTypeID       string
+	OSProfile            string
+	ConfigProfile        string
+	VpcPrefixIDs         []string
+	SSHKeyGroupIDs       []string
+	SystemReservedMemory string
 }
 
 // ClusterNetworkSpec describes the non-default network configuration to pass
@@ -369,7 +376,57 @@ func buildNicoVMSRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		*req.NodePools = append(*req.NodePools, pool)
 	}
 
+	if spec.ControlPlane.Config != nil {
+		cfg, err := buildNicoVMSControlPlaneConfig(spec)
+		if err != nil {
+			return api.CreateClusterRequest{}, fmt.Errorf("building control plane config: %w", err)
+		}
+		req.ControlPlaneConfig = cfg
+	}
+
 	return req, nil
+}
+
+func buildNicoVMSControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPlaneConfig, error) {
+	cp := spec.ControlPlane.Config
+	if cp.InstanceTypeID == "" {
+		return nil, fmt.Errorf("control plane config requires instanceTypeID")
+	}
+	instanceTypeID, err := uuid.Parse(cp.InstanceTypeID)
+	if err != nil {
+		return nil, fmt.Errorf("parsing instance type ID %q: %w", cp.InstanceTypeID, err)
+	}
+	vpcPrefixIDs, err := parseUUIDs(cp.VpcPrefixIDs)
+	if err != nil {
+		return nil, fmt.Errorf("parsing VPC prefix IDs: %w", err)
+	}
+	sshKeyGroupIDs, err := parseUUIDs(cp.SSHKeyGroupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("parsing SSH key group IDs: %w", err)
+	}
+	if len(vpcPrefixIDs) == 0 {
+		return nil, fmt.Errorf("control plane config requires vpcPrefixIDs")
+	}
+	if cp.OSProfile == "" || cp.ConfigProfile == "" {
+		return nil, fmt.Errorf("control plane config requires osProfile and configProfile")
+	}
+
+	teleportDisabled := false
+	systemReserved := cp.SystemReservedMemory
+	if systemReserved == "" {
+		systemReserved = "1Gi"
+	}
+	return &api.CreateClusterControlPlaneConfig{
+		DesiredCount:           cp.DesiredCount,
+		MaxSurge:               cp.MaxSurge,
+		InstanceTypePreference: []uuid.UUID{instanceTypeID},
+		VpcPrefixIDs:           vpcPrefixIDs,
+		SSHKeyGroupIDs:         sshKeyGroupIDs,
+		OSProfile:              cp.OSProfile,
+		ConfigProfile:          cp.ConfigProfile,
+		SystemReservedMemory:   systemReserved,
+		TeleportEnabled:        &teleportDisabled,
+	}, nil
 }
 
 func applyNetworkConfig(req *api.CreateClusterRequest, spec *ClusterNetworkSpec) {

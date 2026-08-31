@@ -159,6 +159,60 @@ func TestUnit_BuildNicoVMSRequestControlPlaneVIP(t *testing.T) {
 	}
 }
 
+func TestUnit_BuildNicoVMSRequestControlPlaneConfig(t *testing.T) {
+	spec := ClusterSpec{
+		Name:              "nico-cp-controller",
+		Backend:           BackendNicoVMS,
+		KubernetesVersion: "1.34.2",
+		CNIPlugin:         "ovn-kubernetes",
+		OrgID:             "org-1",
+		SiteID:            "a1b2c3d4-0001-4000-8000-000000000001",
+		VpcID:             "a1b2c3d4-0002-4000-8000-000000000001",
+		ControlPlane: ControlPlane{
+			Config: &ControlPlaneConfigSpec{
+				DesiredCount:         1,
+				InstanceTypeID:       "a1b2c3d4-0005-4000-8000-000000000003",
+				OSProfile:            "nke-nico-vms-24.04-amd64-fde",
+				ConfigProfile:        "nico-vms-cp",
+				VpcPrefixIDs:         []string{"a1b2c3d4-0004-4000-8000-000000000001"},
+				SSHKeyGroupIDs:       []string{"a1b2c3d4-0006-4000-8000-000000000001"},
+				SystemReservedMemory: "1Gi",
+			},
+		},
+		Workers: []NodePoolSpec{{
+			Name:                  "worker",
+			NodeNamePrefix:        "w",
+			DesiredNodeCount:      1,
+			InstanceTypeID:        "a1b2c3d4-0005-4000-8000-000000000003",
+			VpcPrefixIDs:          []string{"a1b2c3d4-0004-4000-8000-000000000001"},
+			SSHKeyGroupIDs:        []string{"a1b2c3d4-0006-4000-8000-000000000001"},
+			OSProfile:             "nke-nico-vms-24.04-amd64-fde",
+			ConfigProfile:         "nico-vms-worker",
+			DiskSelectionStrategy: "smallest",
+		}},
+	}
+
+	req, err := buildNicoVMSRequest(spec)
+	if err != nil {
+		t.Fatalf("buildNicoVMSRequest failed: %v", err)
+	}
+	if req.ControlPlaneConfig == nil {
+		t.Fatal("ControlPlaneConfig is nil")
+	}
+	if req.ControlPlaneConfig.DesiredCount != 1 {
+		t.Fatalf("DesiredCount = %d, want 1", req.ControlPlaneConfig.DesiredCount)
+	}
+	if req.ControlPlaneConfig.OSProfile != "nke-nico-vms-24.04-amd64-fde" {
+		t.Fatalf("OSProfile = %q", req.ControlPlaneConfig.OSProfile)
+	}
+	if len(req.ControlPlaneConfig.InstanceTypePreference) != 1 {
+		t.Fatalf("InstanceTypePreference len = %d, want 1", len(req.ControlPlaneConfig.InstanceTypePreference))
+	}
+	if req.NodePools == nil || len(*req.NodePools) != 1 || (*req.NodePools)[0].ControlPlane {
+		t.Fatalf("expected a single worker node pool, got %#v", req.NodePools)
+	}
+}
+
 func TestBuildNicoRequestNodePools(t *testing.T) {
 	instanceTypeID := uuid.NewString()
 	subnetID := uuid.NewString()
