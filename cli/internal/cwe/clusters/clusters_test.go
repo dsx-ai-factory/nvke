@@ -158,16 +158,16 @@ etcdEncrypted: false
 `)
 
 	tests := []struct {
-		label string
+		label  string
 		newCmd func() *cobra.Command
-		args  []string
+		args   []string
 	}{
 		{"get clusters", func() *cobra.Command { return NewGetCmd(clientFnErr) }, []string{"clusters"}},
-		{"get cluster",  func() *cobra.Command { return NewGetCmd(clientFnErr) }, []string{"cluster"}},
+		{"get cluster", func() *cobra.Command { return NewGetCmd(clientFnErr) }, []string{"cluster"}},
 		{"create clusters", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"clusters", "-f", validSpec}},
-		{"create cluster",  func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"cluster", "-f", validSpec}},
+		{"create cluster", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"cluster", "-f", validSpec}},
 		{"delete clusters", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"clusters", "my-cluster"}},
-		{"delete cluster",  func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"cluster", "my-cluster"}},
+		{"delete cluster", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"cluster", "my-cluster"}},
 	}
 
 	for _, tt := range tests {
