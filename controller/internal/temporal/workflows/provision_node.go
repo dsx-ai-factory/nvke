@@ -150,16 +150,16 @@ func provisionCAPINode(ctx workflow.Context, nodeID uuid.UUID) error {
 		NodeID: nodeID,
 		Conditions: activities.NodeConditions{
 			Pending: &activities.ConditionUpdate{
+				Status:  db.ConditionStatusTrue,
+				Message: "Waiting for infrastructure allocation",
+			},
+			Provisioning: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusFalse,
 				Message: "",
 			},
-			Provisioning: &activities.ConditionUpdate{
-				Status:  db.ConditionStatusTrue,
-				Message: "Creating CAPI infra machine",
-			},
 		},
 	}).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to mark node as provisioning: %w", err)
+		return fmt.Errorf("failed to mark node as waiting for infrastructure allocation: %w", err)
 	}
 
 	if err := workflow.ExecuteActivity(

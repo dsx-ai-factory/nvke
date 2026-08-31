@@ -256,6 +256,11 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == node.ID &&
+				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
+		})).Return(node, nil).Once()
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID && nodeForUpdate.IP == "10.0.0.10"
 		})).Return(updatedNode, nil)
 
@@ -299,6 +304,11 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockTx.On("GetNodeForUpdate", mock.Anything, typelessNode.ID).Return(typelessNode, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == typelessNode.ID &&
+				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
+		})).Return(typelessNode, nil).Once()
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == typelessNode.ID &&
 				nodeForUpdate.IP == "10.0.0.10" &&
 				nodeForUpdate.InstanceTypeID == instanceTypeID
 		})).Return(typelessNode, nil)
@@ -325,6 +335,13 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 			}),
 		)
 		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
+		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == node.ID &&
+				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
+		})).Return(node, nil).Once()
 
 		a := &Activities{db: mockDB, k8sClient: k8sClient}
 
@@ -336,10 +353,81 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		require.Len(t, nicoMachine.Spec.Interfaces, 1)
 		assert.Equal(t, secondVpcPrefixID.String(), nicoMachine.Spec.Interfaces[0].VPCPrefixID)
 		assert.Empty(t, nicoMachine.Spec.Interfaces[0].SubnetID)
-		mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
 		mockDB.AssertExpectations(t)
 		mockTx.AssertExpectations(t)
 	})
+}
+
+func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
+	nodeID := uuid.MustParse("73000000-0000-0000-0000-000000000001")
+	baseNode := db.Node{
+		ID:   nodeID,
+		Name: "worker-0",
+	}
+
+	tests := map[string]struct {
+		machine        *clusterv1.Machine
+		expectedStatus db.ConditionStatus
+		expectedType   string
+		expectedMsg    string
+	}{
+		"keeps node pending until providerID exists": {
+			machine: &clusterv1.Machine{
+				Spec: clusterv1.MachineSpec{},
+				Status: clusterv1.MachineStatus{
+					Conditions: []metav1.Condition{{
+						Type:    clusterv1.MachineInfrastructureReadyCondition,
+						Status:  metav1.ConditionFalse,
+						Message: "instance type has no unused usable allocations",
+					}},
+				},
+			},
+			expectedStatus: db.ConditionStatusTrue,
+			expectedType:   "pending",
+			expectedMsg:    "instance type has no unused usable allocations",
+		},
+		"marks node provisioning after providerID exists": {
+			machine: &clusterv1.Machine{
+				Spec: clusterv1.MachineSpec{
+					ProviderID: "nico://instance-1",
+				},
+			},
+			expectedStatus: db.ConditionStatusTrue,
+			expectedType:   "provisioning",
+			expectedMsg:    "Waiting for CAPI machine to be ready",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			mockDB := &testutil.MockDB{}
+			mockTx := &testutil.MockTx{}
+			mockDB.MockTx = mockTx
+			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+			mockTx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(baseNode, nil)
+			mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
+				switch tt.expectedType {
+				case "pending":
+					return updated.Conditions.Pending.Status == tt.expectedStatus &&
+						updated.Conditions.Pending.Message == tt.expectedMsg &&
+						updated.Conditions.Provisioning.Status == db.ConditionStatusFalse
+				case "provisioning":
+					return updated.Conditions.Provisioning.Status == tt.expectedStatus &&
+						updated.Conditions.Provisioning.Message == tt.expectedMsg &&
+						updated.Conditions.Pending.Status == db.ConditionStatusFalse
+				default:
+					return false
+				}
+			})).Return(baseNode, nil)
+
+			a := &Activities{db: mockDB}
+			err := a.updateCAPIMachineWaitNodeCondition(context.Background(), nodeID, tt.machine, "Waiting for CAPI machine to be ready")
+
+			require.NoError(t, err)
+			mockDB.AssertExpectations(t)
+			mockTx.AssertExpectations(t)
+		})
+	}
 }
 
 func testInfrastructureRef() clusterv1.ContractVersionedObjectReference {

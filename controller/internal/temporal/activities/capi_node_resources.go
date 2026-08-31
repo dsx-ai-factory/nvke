@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capiexternal "sigs.k8s.io/cluster-api/controllers/external"
+	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
@@ -335,16 +336,7 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 }
 
 func (a *Activities) WaitForCAPIMachineReady(ctx context.Context, input WaitForCAPIMachineReadyInput) (string, error) {
-	conditionUpdateWrapper := ActivityStatusConditionUpdateWrapper[string]{
-		Message:         input.NodeProvisioningConditionMessage,
-		UpdateCondition: a.nodeProvisioningConditionMessageUpdater(input.NodeID),
-		RenderError:     messageForTemporalError,
-		ActivityBody: func() (string, error) {
-			return a.waitForCAPIMachineReady(ctx, input)
-		},
-	}
-
-	return conditionUpdateWrapper.Run(ctx)
+	return a.waitForCAPIMachineReady(ctx, input)
 }
 
 func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForCAPIMachineReadyInput) (string, error) {
@@ -369,6 +361,9 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		Name:      node.Name,
 	}, machine); err != nil {
 		return "", fmt.Errorf("failed to get CAPI machine: %w", err)
+	}
+	if err := a.updateCAPIMachineWaitNodeCondition(ctx, input.NodeID, machine, input.NodeProvisioningConditionMessage); err != nil {
+		return "", err
 	}
 
 	ipAddress := firstMachineIPAddress(machine.Status.Addresses)
@@ -441,6 +436,52 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	)
 
 	return ipAddress, nil
+}
+
+func (a *Activities) updateCAPIMachineWaitNodeCondition(ctx context.Context, nodeID uuid.UUID, machine *clusterv1.Machine, message string) error {
+	// In the legacy NICo path, Pending meant no backing instance existed yet,
+	// commonly because capacity was unavailable. For CAPI, providerID is the
+	// provider-agnostic signal that backing infrastructure has been allocated.
+	if machine.Spec.ProviderID == "" {
+		if conditionMessage := capiMachineInfrastructureReadyMessage(machine); conditionMessage != "" {
+			message = conditionMessage
+		}
+		return a.UpdateNodeConditions(ctx, NodeConditionsUpdate{
+			NodeID: nodeID,
+			Conditions: NodeConditions{
+				Pending: &ConditionUpdate{
+					Status:  db.ConditionStatusTrue,
+					Message: message,
+				},
+				Provisioning: &ConditionUpdate{
+					Status:  db.ConditionStatusFalse,
+					Message: "",
+				},
+			},
+		})
+	}
+
+	return a.UpdateNodeConditions(ctx, NodeConditionsUpdate{
+		NodeID: nodeID,
+		Conditions: NodeConditions{
+			Pending: &ConditionUpdate{
+				Status:  db.ConditionStatusFalse,
+				Message: "",
+			},
+			Provisioning: &ConditionUpdate{
+				Status:  db.ConditionStatusTrue,
+				Message: message,
+			},
+		},
+	})
+}
+
+func capiMachineInfrastructureReadyMessage(machine *clusterv1.Machine) string {
+	condition := capiconditions.Get(machine, clusterv1.MachineInfrastructureReadyCondition)
+	if condition == nil {
+		return ""
+	}
+	return condition.Message
 }
 
 func firstMachineIPAddress(addresses clusterv1.MachineAddresses) string {
