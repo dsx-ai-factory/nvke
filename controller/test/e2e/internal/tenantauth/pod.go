@@ -5,6 +5,7 @@ package tenantauth
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	corev1 "k8s.io/api/core/v1"
@@ -17,7 +18,6 @@ const (
 	// The upstream SPIFFE exec-credential plugin, fetched from GitHub Releases.
 	pluginDownloadBaseURL = "https://github.com/spiffe/k8s-spiffe-workload-jwt-exec-auth/releases/download"
 	pluginVersion         = "0.3.0"
-	pluginAsset           = "k8s-spiffe-workload-jwt-exec-auth_Linux_x86_64.tar.gz"
 	// pluginChecksums is goreleaser's per-release checksum file
 	// (<project>_<version>_checksums.txt); there is no plain "checksums.txt".
 	pluginChecksums   = "k8s-spiffe-workload-jwt-exec-auth_" + pluginVersion + "_checksums.txt"
@@ -30,13 +30,15 @@ const (
 	binaryVolumeName      = "binary"
 
 	// downloadScript fetches and sha256-verifies the exec plugin into the
-	// shared binary volume.
+	// shared binary volume. ASSET and CHECKSUMS come in as env vars, set per
+	// pod from the runner's own GOARCH -- the plugin ships separate x86_64
+	// and arm64 builds under one checksums file.
 	downloadScript = `set -e
 cd /tmp
-wget -qO "` + pluginAsset + `" "$URL/` + pluginAsset + `"
-wget -qO checksums.txt "$URL/` + pluginChecksums + `"
-grep " ` + pluginAsset + `$" checksums.txt | sha256sum -c -
-tar xzf "` + pluginAsset + `"
+wget -qO "$ASSET" "$URL/$ASSET"
+wget -qO checksums.txt "$URL/$CHECKSUMS"
+grep " $ASSET$" checksums.txt | sha256sum -c -
+tar xzf "$ASSET"
 install -m 0755 k8s-spiffe-workload-jwt-exec-auth ` + pluginInstallPath + `
 `
 
@@ -100,6 +102,8 @@ func buildPod(id Identity, clusterName, expectedUsername string, checks []Check)
 					Command: []string{"sh", "-c", downloadScript},
 					Env: []corev1.EnvVar{
 						{Name: "URL", Value: fmt.Sprintf("%s/v%s", pluginDownloadBaseURL, pluginVersion)},
+						{Name: "ASSET", Value: pluginAssetName()},
+						{Name: "CHECKSUMS", Value: pluginChecksums},
 					},
 					VolumeMounts: []corev1.VolumeMount{
 						{Name: binaryVolumeName, MountPath: "/opt/spiffe/bin"},
@@ -132,6 +136,17 @@ func buildPod(id Identity, clusterName, expectedUsername string, checks []Check)
 			},
 		},
 	}
+}
+
+// pluginAssetName maps the runner's own GOARCH to the plugin's release asset.
+// The project's Linux builds are named x86_64/arm64, not Go's amd64/arm64,
+// and one checksums.txt file covers every platform in the release.
+func pluginAssetName() string {
+	arch := runtime.GOARCH
+	if arch == "amd64" {
+		arch = "x86_64"
+	}
+	return fmt.Sprintf("k8s-spiffe-workload-jwt-exec-auth_Linux_%s.tar.gz", arch)
 }
 
 // encodeChecks renders each Check as "verb:resource:ns" where ns is empty / "*"
