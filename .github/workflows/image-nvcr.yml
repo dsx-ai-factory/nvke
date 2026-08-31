@@ -342,7 +342,7 @@ jobs:
       # to come out of the build job. An arm64 image scans fine on an amd64
       # runner: the scanner reads layers, it does not run them.
       - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           image: nvcr.io/${{ vars.NKE_NGC_ORG }}/controller:sha-${{ github.sha }}-${{ matrix.arch }}
           format: spdx-json
