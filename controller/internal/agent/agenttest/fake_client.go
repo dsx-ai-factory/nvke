@@ -5,6 +5,7 @@ package agenttest
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
@@ -66,6 +67,10 @@ type FakeClient struct {
 	ReconcileKubeVipRequests                []*nkeproto.ReconcileKubeVipRequest
 	ReconcileKubeVipResponse                *nkeproto.ReconcileKubeVipResponse
 	ReconcileKubeVipError                   error
+	StartKubernetesCertificateRenewalCalls  []uuid.UUID
+	StartKubernetesCertificateRenewalHook   func(db.Node, *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
+	GetKubernetesCertificateRenewalCalls    []uuid.UUID
+	GetKubernetesCertificateRenewalHook     func(db.Node, *nkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
 
 	// ExecuteScriptHook, when set, produces the response for ExecuteScript calls,
 	// letting tests drive per-node script output (e.g. /readyz probes).
@@ -190,6 +195,30 @@ func (f *FakeClient) ReconcileKubeVip(_ context.Context, node db.Node, req *nkep
 	f.ReconcileKubeVipCalls = append(f.ReconcileKubeVipCalls, node.ID)
 	f.ReconcileKubeVipRequests = append(f.ReconcileKubeVipRequests, req)
 	return f.ReconcileKubeVipResponse, f.ReconcileKubeVipError
+}
+
+func (f *FakeClient) StartKubernetesCertificateRenewal(
+	_ context.Context,
+	node db.Node,
+	req *nkeproto.StartKubernetesCertificateRenewalRequest,
+) (*nkeproto.StartKubernetesCertificateRenewalResponse, error) {
+	f.StartKubernetesCertificateRenewalCalls = append(f.StartKubernetesCertificateRenewalCalls, node.ID)
+	if f.StartKubernetesCertificateRenewalHook == nil {
+		return nil, errors.New("StartKubernetesCertificateRenewalHook is nil")
+	}
+	return f.StartKubernetesCertificateRenewalHook(node, req)
+}
+
+func (f *FakeClient) GetKubernetesCertificateRenewalStatus(
+	_ context.Context,
+	node db.Node,
+	req *nkeproto.GetKubernetesCertificateRenewalStatusRequest,
+) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
+	f.GetKubernetesCertificateRenewalCalls = append(f.GetKubernetesCertificateRenewalCalls, node.ID)
+	if f.GetKubernetesCertificateRenewalHook == nil {
+		return nil, errors.New("GetKubernetesCertificateRenewalHook is nil")
+	}
+	return f.GetKubernetesCertificateRenewalHook(node, req)
 }
 
 func (f *FakeClient) ExecuteNodePreflight(_ context.Context, _ db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error) {

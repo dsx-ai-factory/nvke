@@ -44,6 +44,14 @@ service NodeAgent {
   // reads, creates, or mounts the host's admin.conf or super-admin.conf.
   rpc ReconcileKubeVip(ReconcileKubeVipRequest) returns (ReconcileKubeVipResponse) {}
 
+  // StartKubernetesCertificateRenewal starts an asynchronous control-plane
+  // certificate renewal operation. The operation_id is an idempotency key.
+  rpc StartKubernetesCertificateRenewal(StartKubernetesCertificateRenewalRequest) returns (StartKubernetesCertificateRenewalResponse) {}
+
+  // GetKubernetesCertificateRenewalStatus returns the current status for a
+  // previously started certificate renewal operation.
+  rpc GetKubernetesCertificateRenewalStatus(GetKubernetesCertificateRenewalStatusRequest) returns (GetKubernetesCertificateRenewalStatusResponse) {}
+
   // StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
   // control-plane node graceful shutdown operation. The operation_id is an
   // idempotency key; retrying with the same operation_id returns the existing
@@ -1143,4 +1151,42 @@ message ReconcileKubeVipResponse {
   repeated string cleaned_interfaces = 7;
   // True when the credential-less kubeconfig was created or repaired.
   bool kubeconfig_changed = 8;
+}
+
+message StartKubernetesCertificateRenewalRequest {
+  // Stable caller-provided idempotency key.
+  string operation_id = 1;
+  // Renew certificates whose residual lifetime is less than this many days.
+  int32 threshold_days = 2;
+}
+
+message StartKubernetesCertificateRenewalResponse {
+  KubernetesCertificateRenewalOperation operation = 1;
+}
+
+message GetKubernetesCertificateRenewalStatusRequest {
+  string operation_id = 1;
+}
+
+message GetKubernetesCertificateRenewalStatusResponse {
+  KubernetesCertificateRenewalOperation operation = 1;
+}
+
+message KubernetesCertificateRenewalOperation {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    // No certificate was inside the requested renewal window.
+    OUTCOME_UNCHANGED = 1;
+    // Certificates were renewed and all static control-plane pods restarted.
+    OUTCOME_RENEWED = 2;
+    // The operation failed before static-pod manifests were moved.
+    OUTCOME_FAILED_BEFORE_RESTART = 3;
+    // The operation failed after manifests were moved, but all manifests were restored.
+    OUTCOME_FAILED_RESTORED = 4;
+    // The operation failed and one or more manifests could not be restored.
+    OUTCOME_FAILED_NOT_RESTORED = 5;
+  }
+
+  NodeAgentOperationStatus operation = 1;
+  Outcome outcome = 2;
 }

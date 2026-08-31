@@ -15,10 +15,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
-const (
-	runbookK8sCertRenewal = "k8s-cert-renewal"
-)
-
 type RenewK8sCertsInput struct {
 	ClusterID     uuid.UUID `json:"clusterID"`
 	ThresholdDays int       `json:"thresholdDays"`
@@ -61,7 +57,14 @@ func RenewK8sCerts(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCert
 	// control-plane pods, including etcd, so parallel renewal could risk quorum
 	// loss or API disruption.
 	for _, node := range controlPlaneNodes {
-		var result activities.ExecuteHostRunbookResult
+		var result activities.KubernetesCertificateRenewalResult
+		workflowInfo := workflow.GetInfo(ctx)
+		operationID := fmt.Sprintf(
+			"k8s-cert-renewal/%s/%s/%s",
+			workflowInfo.WorkflowExecution.ID,
+			workflowInfo.WorkflowExecution.RunID,
+			node.ID,
+		)
 		if err := workflow.ExecuteActivity(
 			workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 				StartToCloseTimeout: 30 * time.Minute,
@@ -72,13 +75,11 @@ func RenewK8sCerts(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCert
 					MaximumAttempts: 3,
 				},
 			}),
-			a.ExecuteHostRunbook,
-			activities.ExecuteHostRunbookInput{
-				HostID:      node.ID,
-				RunbookName: runbookK8sCertRenewal,
-				RunbookEnv: map[string]string{
-					"THRESHOLD_DAYS": fmt.Sprintf("%d", input.ThresholdDays),
-				},
+			a.RenewKubernetesCertificates,
+			activities.KubernetesCertificateRenewalInput{
+				NodeID:        node.ID,
+				OperationID:   operationID,
+				ThresholdDays: input.ThresholdDays,
 			},
 		).Get(ctx, &result); err != nil {
 			return RenewK8sCertsResult{}, fmt.Errorf("failed to renew certs on node %s: %w", node.ID, err)

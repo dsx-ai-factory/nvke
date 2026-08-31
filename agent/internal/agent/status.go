@@ -45,6 +45,7 @@ type NodeStatus struct {
 	K8sAPIEncryption      K8sAPIEncryption              `json:"k8sAPIEncryption"`
 	K8sAPIRewrite         K8sAPIRewriteOperation        `json:"k8sAPIRewriteOperation"`
 	NodeAgentOperations   map[string]NodeAgentOperation `json:"nodeAgentOperations,omitempty"`
+	K8sCertRenewalState   string                        `json:"k8sCertRenewalState,omitempty"`
 	KubetrustIsConfigured bool                          `json:"kubetrustIsConfigured"`
 	CalicoInstallLog      string                        `json:"calicoInstallLog"`
 	KubeadmStatus         string                        `json:"kubeadmStatus"`
@@ -158,6 +159,7 @@ type NodeAgentOperation struct {
 	Type         string                  `json:"type"`
 	Phase        NodeAgentOperationPhase `json:"phase"`
 	Step         string                  `json:"step"`
+	Result       string                  `json:"result,omitempty"`
 	ErrorMessage string                  `json:"errorMessage"`
 }
 

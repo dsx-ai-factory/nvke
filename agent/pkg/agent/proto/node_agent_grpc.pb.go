@@ -31,6 +31,8 @@ const (
 	NodeAgent_ReconfigureKubeletAPIServer_FullMethodName                  = "/proto.NodeAgent/ReconfigureKubeletAPIServer"
 	NodeAgent_KubeadmUpgradeApply_FullMethodName                          = "/proto.NodeAgent/KubeadmUpgradeApply"
 	NodeAgent_ReconcileKubeVip_FullMethodName                             = "/proto.NodeAgent/ReconcileKubeVip"
+	NodeAgent_StartKubernetesCertificateRenewal_FullMethodName            = "/proto.NodeAgent/StartKubernetesCertificateRenewal"
+	NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName        = "/proto.NodeAgent/GetKubernetesCertificateRenewalStatus"
 	NodeAgent_StartK8SControlPlaneNodeGracefulShutdown_FullMethodName     = "/proto.NodeAgent/StartK8sControlPlaneNodeGracefulShutdown"
 	NodeAgent_GetK8SControlPlaneNodeGracefulShutdownStatus_FullMethodName = "/proto.NodeAgent/GetK8sControlPlaneNodeGracefulShutdownStatus"
 	NodeAgent_StartKubeVipRestore_FullMethodName                          = "/proto.NodeAgent/StartKubeVipRestore"
@@ -100,6 +102,12 @@ type NodeAgentClient interface {
 	// the pod receives a kubeconfig with no client credential; this RPC never
 	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
 	ReconcileKubeVip(ctx context.Context, in *ReconcileKubeVipRequest, opts ...grpc.CallOption) (*ReconcileKubeVipResponse, error)
+	// StartKubernetesCertificateRenewal starts an asynchronous control-plane
+	// certificate renewal operation. The operation_id is an idempotency key.
+	StartKubernetesCertificateRenewal(ctx context.Context, in *StartKubernetesCertificateRenewalRequest, opts ...grpc.CallOption) (*StartKubernetesCertificateRenewalResponse, error)
+	// GetKubernetesCertificateRenewalStatus returns the current status for a
+	// previously started certificate renewal operation.
+	GetKubernetesCertificateRenewalStatus(ctx context.Context, in *GetKubernetesCertificateRenewalStatusRequest, opts ...grpc.CallOption) (*GetKubernetesCertificateRenewalStatusResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -350,6 +358,26 @@ func (c *nodeAgentClient) ReconcileKubeVip(ctx context.Context, in *ReconcileKub
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReconcileKubeVipResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_ReconcileKubeVip_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) StartKubernetesCertificateRenewal(ctx context.Context, in *StartKubernetesCertificateRenewalRequest, opts ...grpc.CallOption) (*StartKubernetesCertificateRenewalResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartKubernetesCertificateRenewalResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_StartKubernetesCertificateRenewal_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetKubernetesCertificateRenewalStatus(ctx context.Context, in *GetKubernetesCertificateRenewalStatusRequest, opts ...grpc.CallOption) (*GetKubernetesCertificateRenewalStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetKubernetesCertificateRenewalStatusResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -795,6 +823,12 @@ type NodeAgentServer interface {
 	// the pod receives a kubeconfig with no client credential; this RPC never
 	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
 	ReconcileKubeVip(context.Context, *ReconcileKubeVipRequest) (*ReconcileKubeVipResponse, error)
+	// StartKubernetesCertificateRenewal starts an asynchronous control-plane
+	// certificate renewal operation. The operation_id is an idempotency key.
+	StartKubernetesCertificateRenewal(context.Context, *StartKubernetesCertificateRenewalRequest) (*StartKubernetesCertificateRenewalResponse, error)
+	// GetKubernetesCertificateRenewalStatus returns the current status for a
+	// previously started certificate renewal operation.
+	GetKubernetesCertificateRenewalStatus(context.Context, *GetKubernetesCertificateRenewalStatusRequest) (*GetKubernetesCertificateRenewalStatusResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -984,6 +1018,12 @@ func (UnimplementedNodeAgentServer) KubeadmUpgradeApply(context.Context, *Kubead
 }
 func (UnimplementedNodeAgentServer) ReconcileKubeVip(context.Context, *ReconcileKubeVipRequest) (*ReconcileKubeVipResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReconcileKubeVip not implemented")
+}
+func (UnimplementedNodeAgentServer) StartKubernetesCertificateRenewal(context.Context, *StartKubernetesCertificateRenewalRequest) (*StartKubernetesCertificateRenewalResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartKubernetesCertificateRenewal not implemented")
+}
+func (UnimplementedNodeAgentServer) GetKubernetesCertificateRenewalStatus(context.Context, *GetKubernetesCertificateRenewalStatusRequest) (*GetKubernetesCertificateRenewalStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetKubernetesCertificateRenewalStatus not implemented")
 }
 func (UnimplementedNodeAgentServer) StartK8SControlPlaneNodeGracefulShutdown(context.Context, *StartK8SControlPlaneNodeGracefulShutdownRequest) (*StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartK8SControlPlaneNodeGracefulShutdown not implemented")
@@ -1264,6 +1304,42 @@ func _NodeAgent_ReconcileKubeVip_Handler(srv interface{}, ctx context.Context, d
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).ReconcileKubeVip(ctx, req.(*ReconcileKubeVipRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_StartKubernetesCertificateRenewal_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartKubernetesCertificateRenewalRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).StartKubernetesCertificateRenewal(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_StartKubernetesCertificateRenewal_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).StartKubernetesCertificateRenewal(ctx, req.(*StartKubernetesCertificateRenewalRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetKubernetesCertificateRenewalStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetKubernetesCertificateRenewalStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetKubernetesCertificateRenewalStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetKubernetesCertificateRenewalStatus(ctx, req.(*GetKubernetesCertificateRenewalStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1969,6 +2045,14 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReconcileKubeVip",
 			Handler:    _NodeAgent_ReconcileKubeVip_Handler,
+		},
+		{
+			MethodName: "StartKubernetesCertificateRenewal",
+			Handler:    _NodeAgent_StartKubernetesCertificateRenewal_Handler,
+		},
+		{
+			MethodName: "GetKubernetesCertificateRenewalStatus",
+			Handler:    _NodeAgent_GetKubernetesCertificateRenewalStatus_Handler,
 		},
 		{
 			MethodName: "StartK8sControlPlaneNodeGracefulShutdown",

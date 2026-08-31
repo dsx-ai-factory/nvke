@@ -23,6 +23,7 @@ type nodeAgentOperationSpec struct {
 
 type nodeAgentOperationProgress interface {
 	SetStep(step string)
+	SetResult(result string)
 }
 
 type nodeAgentOperationFunc func(context.Context, nodeAgentOperationProgress) error
@@ -37,6 +38,15 @@ func (p nodeAgentOperationProgressImpl) SetStep(step string) {
 		slog.Error("failed to persist agent operation step",
 			"operationID", p.operationID,
 			"step", step,
+			"err", err)
+	}
+}
+
+func (p nodeAgentOperationProgressImpl) SetResult(result string) {
+	if err := p.server.setNodeAgentOperationResult(p.operationID, result); err != nil {
+		slog.Error("failed to persist agent operation result",
+			"operationID", p.operationID,
+			"result", result,
 			"err", err)
 	}
 }
@@ -221,6 +231,22 @@ func (n *NodeAgentServer) setNodeAgentOperationStep(operationID, step string) er
 		return fmt.Errorf("operation %s not found", operationID)
 	}
 	op.Step = strings.TrimSpace(step)
+	n.NodeStatus.NodeAgentOperations[operationID] = op
+	statusCopy := n.nodeStatusSnapshotLocked()
+	n.mu.Unlock()
+
+	return n.persistNodeAgentOperationSnapshot(statusCopy, op)
+}
+
+func (n *NodeAgentServer) setNodeAgentOperationResult(operationID, result string) error {
+	n.mu.Lock()
+	n.ensureNodeAgentOperationStateLocked()
+	op, ok := n.NodeStatus.NodeAgentOperations[operationID]
+	if !ok {
+		n.mu.Unlock()
+		return fmt.Errorf("operation %s not found", operationID)
+	}
+	op.Result = strings.TrimSpace(result)
 	n.NodeStatus.NodeAgentOperations[operationID] = op
 	statusCopy := n.nodeStatusSnapshotLocked()
 	n.mu.Unlock()

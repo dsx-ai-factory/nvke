@@ -118,20 +118,23 @@ type NodeAgentServer struct {
 	NodeStatus *NodeStatus
 	mu         sync.Mutex // protects NodeStatus
 
-	encryptionMu                  sync.Mutex          // encryptionMu serializes all encryption-config mutations on this node.
-	rewriteActive                 bool                // protected by mu; true when a rewrite goroutine is active in this process.
-	activeOperations              map[string]struct{} // protected by mu; in-process liveness for generic async operations.
-	operationStartMu              sync.Mutex          // serializes generic operation start persistence and publish.
-	agentUpgradeMu                sync.Mutex          // serializes durable self-upgrade admission on this node.
-	nodeAgentCfgMu                sync.Mutex          // serializes NodeSpec/config.yaml writes
-	reloadPollInterval            time.Duration       // overrides the 2s poll interval in tests
-	drainKubeVipPollInterval      time.Duration       // overrides kube-vip drain polling in tests
-	drainKubeVipSocketQuietWindow time.Duration       // overrides kube-vip socket quiet window in tests
-	staticPodStartTimeout         time.Duration       // overrides static-pod restore timeout in tests
-	rebootLockPollInterval        time.Duration       // overrides the package-lock poll interval in tests
-	rebootLockWaitTimeout         time.Duration       // overrides the package-lock wait timeout in tests
-	now                           func() time.Time    // overrides wall-clock reads in tests
-	clientRegistry                kubernetesClientRegistry
+	encryptionMu                   sync.Mutex          // encryptionMu serializes all encryption-config mutations on this node.
+	rewriteActive                  bool                // protected by mu; true when a rewrite goroutine is active in this process.
+	activeOperations               map[string]struct{} // protected by mu; in-process liveness for generic async operations.
+	operationStartMu               sync.Mutex          // serializes generic operation start persistence and publish.
+	agentUpgradeMu                 sync.Mutex          // serializes durable self-upgrade admission on this node.
+	nodeAgentCfgMu                 sync.Mutex          // serializes NodeSpec/config.yaml writes
+	reloadPollInterval             time.Duration       // overrides the 2s poll interval in tests
+	drainKubeVipPollInterval       time.Duration       // overrides kube-vip drain polling in tests
+	drainKubeVipSocketQuietWindow  time.Duration       // overrides kube-vip socket quiet window in tests
+	staticPodStartTimeout          time.Duration       // overrides static-pod restore timeout in tests
+	certificateRenewalStopTimeout  time.Duration       // overrides certificate-renewal stop timeout in tests
+	certificateRenewalStartTimeout time.Duration       // overrides certificate-renewal start timeout in tests
+	certificateRenewalPollInterval time.Duration       // overrides certificate-renewal polling in tests
+	rebootLockPollInterval         time.Duration       // overrides the package-lock poll interval in tests
+	rebootLockWaitTimeout          time.Duration       // overrides the package-lock wait timeout in tests
+	now                            func() time.Time    // overrides wall-clock reads in tests
+	clientRegistry                 kubernetesClientRegistry
 
 	BundleServerURL string
 	BundleSource    *nkeutils.BundleSource // Parsed bundle source configuration
@@ -167,6 +170,7 @@ type NodeAgentServer struct {
 	kubeletConfigMu          sync.Mutex // serializes kubelet.conf reconfiguration transactions
 	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
 	kubeVipFetchASN          func(context.Context) (uint32, error)
+	staticPodMutationMu      sync.Mutex // serializes agent-owned static-pod manifest transactions
 }
 
 // Real implementations
