@@ -40,13 +40,14 @@ sequenceDiagram
     alt Another cluster update is active
         API-->>Client: 409 Conflict
     else Update is admitted
-        API->>DB: Persist desired config + next generation + Pending
+        API->>DB: Persist desired versions<br/>increment rollout generation<br/>set rollout state to Pending
         opt Control-plane target changes or is retried
-            API->>DB: Set node_agent_upgrade lock<br/>with generation + owner
+            API->>DB: Set node_agent_upgrade lock<br/>with rollout generation + workflow ID
         end
         API-->>Client: 200 NodeAgentUpgrade=Pending
         DB-->>Reconciler: Desired-state change event
     end
+    Note over API,DB: Generation identifies this rollout request<br/>Pending means accepted but not started
     Note over DB: Cluster rows hold desired versions<br/>Node rows hold observed versions
     DB-->>Reconciler: Observed node version change event
 ```
@@ -66,7 +67,7 @@ sequenceDiagram
     alt This role phase is Failed for the generation
         Reconciler-->>DB: No action and wait for explicit API retry
     else The role has drift
-        Reconciler->>DB: Record Running + owner + CWE method<br/>and write workflow outbox
+        Reconciler->>DB: Record Running + workflow ID + CWE method<br/>and write workflow outbox
         opt Control-plane phase
             Reconciler->>DB: Confirm generation-owned cluster lock
         end
@@ -84,7 +85,7 @@ sequenceDiagram
             Temporal->>DB: Record terminal Failed if fence matches<br/>Clear CP lock only if every node is restored
         end
     end
-    Note over DB,Temporal: Status writes and lock clears compare generation + owner<br/>Stale attempts cannot mutate current state
+    Note over DB,Temporal: Status writes and lock clears compare rollout generation + workflow ID<br/>Stale attempts cannot mutate current state
 ```
 
 ### 3. Per-node agent upgrade and restore
@@ -130,7 +131,8 @@ sequenceDiagram
 
 ## Existing integration points
 
-- `nodeagentreadiness` gets `agent_version` from `GetKubeadmStatus` and writes
+- `nodeagentreadiness` runs as the `node-agent-health` controller roughly every
+  two minutes. It gets `agent_version` from `GetKubeadmStatus` and writes
   `nodes.agent_version`.
 - `UpdateCluster` already locks the cluster row and uses
   `conditions.updateInProgress` to serialize cluster updates.
@@ -182,6 +184,11 @@ Add `nodeAgentConfig` to `UpdateClusterRequest` and the `Cluster` response:
   not set the cluster lock. Return `200` with the node-agent state; the HTTP
   handler does not start Temporal.
 
+The generation is a monotonically increasing revision for an accepted desired
+configuration or explicit retry. `Pending` means that revision is committed in
+PostgreSQL but the reconciler has not yet recorded `Running` or started its
+Temporal workflow.
+
 ### CWE update method
 
 A required site-scoped CWE setting, `NODE_AGENT_UPDATE_METHOD`, selects `apt` or
@@ -207,12 +214,13 @@ post-upgrade verification.
 
 The cluster's `nodeAgentUpgrade` condition stores the desired-config snapshot,
 resolved method, generation, and separate control-plane and worker phase status.
-Each phase stores its workflow owner ID, `Pending | Running | Succeeded |
-Failed`, attempt timing, and a sanitized message. `Failed` is terminal for that
-role phase and generation. `UpdateInProgress` remains the shared cluster
-mutation lock; add `node_agent_upgrade` to its operation-type enum for the
-control-plane phase only. Its entry also carries the generation and owner ID
-used to fence lock release.
+Each phase stores the unique Temporal workflow ID that owns that rollout
+attempt, `Pending | Running | Succeeded | Failed`, attempt timing, and a
+sanitized message. `Failed` is terminal for that role phase and generation.
+`UpdateInProgress` remains the shared cluster mutation lock; add
+`node_agent_upgrade` to its operation-type enum for the control-plane phase only.
+Its entry also carries the rollout generation and Temporal workflow ID used to
+ensure that only the same rollout attempt can clear the lock.
 
 ## Reconciliation and topology lock
 
@@ -226,17 +234,22 @@ Add a cluster-scoped `nodeagentupgrade` controller:
 3. Target provisioned, non-deleting control-plane nodes. Include workers only
    when `nodeAgentConfig.workers` is present. Wait while a target node is
    provisioning, deleting, recycling, or under repair.
-4. Compare each target with its role's exact version and require a fresh
-   observation. Reconcile control-plane nodes before starting the optional worker
-   phase.
+4. Compare each target with its role's exact version. The `node-agent-health`
+   controller refreshes the stored version roughly every two minutes. After
+   changing a node, the per-node operation also reconnects and calls
+   `GetKubeadmStatus`; require that post-restart call to report the exact target
+   version. A stored pre-upgrade version does not satisfy verification.
+   Reconcile control-plane nodes before starting the optional worker phase.
 5. On control-plane drift, atomically acquire the cluster update lock with the
-   generation and workflow owner ID. Worker drift does not acquire that lock.
+   rollout generation and Temporal workflow ID. Worker drift does not acquire
+   that lock.
 6. Record `Running`, snapshot `NODE_AGENT_UPDATE_METHOD`, and write the workflow
    outbox entry. The workflow rechecks node lifecycle, agent readiness, and RPC
    support before changing each node.
 7. Every workflow status write and lock clear performs a compare-and-swap on the
-   cluster ID, desired generation, and workflow owner ID. A zero-row update means
-   the workflow is stale; it stops without changing status or releasing a lock.
+   cluster ID, desired generation, and Temporal workflow ID. A zero-row update
+   means the workflow is stale; it stops without changing status or releasing a
+   lock.
 
 Temporal may perform bounded activity retries inside one running workflow. Once
 they are exhausted and the workflow finishes unsuccessfully, the controller
@@ -255,10 +268,18 @@ fully restores every affected control-plane node. Retain it when any such node
 is not proven restored.
 
 A failed-and-restored control-plane phase clears its matching lock but remains
-`Failed` until explicit retry. `FailedNotRestored` retains the lock. In that
-case, a separate administrative recovery action must restore and verify every
-affected control-plane node, then compare-and-swap the same generation and owner
-before clearing the lock. Periodic reconciliation never clears a failed lock.
+`Failed` until explicit retry. `FailedNotRestored` means both the requested
+upgrade and the automatic rollback failed. Keep the same
+`UpdateInProgress=node_agent_upgrade` topology lock and emit a critical alert;
+this is not a separate failed-lock type. The retained lock prevents normal
+topology changes while the control-plane agent state is unknown. Using
+out-of-band node access, the on-call operator restores and verifies the exact
+previous version on every affected control-plane node. An operator-only recovery
+command then clears the lock only if it still belongs to the same failed rollout
+attempt. It checks the stored generation (the rollout revision) and Temporal
+workflow ID. If either value changed, the command leaves the lock in place
+because the recovery request is based on stale state. Periodic reconciliation
+never clears a retained lock after `FailedNotRestored`.
 
 Worker rollout is serial but does not set `UpdateInProgress` or block unrelated
 cluster mutations. It rechecks the selected worker's lifecycle immediately
@@ -282,8 +303,8 @@ RollbackPolicy: HaltOnAnyFailure
 Run control-plane and worker rollout as separate role phases. The worker phase
 starts only after control-plane convergence and does not inherit the
 control-plane cluster lock. Order each role by node name. Snapshot the desired
-generation, resolved method, role target, and workflow owner when a phase starts;
-derive each per-node operation ID from the rollout and node IDs.
+generation, resolved method, role target, and Temporal workflow ID when a phase
+starts; derive each per-node operation ID from the rollout and node IDs.
 
 For each target node, the rollout operation:
 
@@ -300,8 +321,8 @@ For each target node, the rollout operation:
 The first failure stops forward progress. Even `OutcomeFailedRestored` causes
 all previously applied nodes in that role phase to roll back in reverse order.
 A worker failure does not roll back an already-converged control plane. Clear a
-control-plane cluster lock only when its generation and owner still match and
-every affected control-plane node is proven restored.
+control-plane cluster lock only when it still belongs to the same rollout
+attempt and every affected control-plane node is proven restored.
 
 ## Agent RPC and independent updater
 
@@ -315,8 +336,11 @@ StartNodeAgentRollback(operation_id, upgrade_operation_id)
 
 `method` is `APT` or `BUNDLE` and is supplied only by the controller from its CWE
 configuration; it is not cluster API input. The RPCs accept no package name,
-URL, path, install arguments, or command. `InstallPackages` must reject
-`nke-agent`, and `InstallBundle` must reject the `agent` component. Capability
+URL, path, install arguments, or command. The Debian package remains named
+`nke-agent`. `InstallPackages` normalizes each package argument by removing an
+`=version` or `:architecture` qualifier and also recognizes
+`nke-agent_*.deb` paths; it rejects every match.
+`InstallBundle` rejects the existing `agent` bundle component. Capability
 preflight must not fall back to either generic RPC.
 
 The same operation ID and request returns existing status; different inputs for
