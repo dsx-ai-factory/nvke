@@ -52,11 +52,22 @@ jobs:
   # cluster. The node-pool leg runs only after cp-controller passes and the cluster
   # is confirmed empty. `health` rides along with each leg (flag-on and flag-off).
   capd-e2e:
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+          - arch: arm64
+            runner: linux-arm64-cpu16
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
     with:
       backend: capd
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
       # Ignored under single-runner-capd-control-plane-modes: the CI script drives
       # each leg's label filter itself (cp-controller+health first, then
       # node-pool+health+authn). This value mirrors the node-pool leg's filter to

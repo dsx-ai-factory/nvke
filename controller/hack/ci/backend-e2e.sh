@@ -67,6 +67,19 @@ if [[ "${RUNNER_DOCKER_HOST}" == "unix:///var/run/docker.sock" ]]; then
   RUNNER_DOCKER_ARGS=(-v /var/run/docker.sock:/var/run/docker.sock)
 fi
 
+# Mirrors local-backend-e2e.sh's detection: this runner's own architecture,
+# used to build the CWE image, the E2E binary, and the CAPD node image for
+# the platform actually running them, instead of the amd64 this script used
+# to hardcode everywhere.
+case "$(uname -m)" in
+  arm64 | aarch64) host_arch=arm64 ;;
+  x86_64) host_arch=amd64 ;;
+  *)
+    printf '[capd-e2e] unsupported architecture %s\n' "$(uname -m)" >&2
+    exit 1
+    ;;
+esac
+
 log() {
   printf '[capd-e2e] %s\n' "$*"
 }
@@ -493,16 +506,20 @@ TARGETS_VALIDATED=true
   log "this entrypoint requires a Linux Docker host" >&2
   exit 1
 }
-[[ "$(uname -m)" == x86_64 ]] || {
-  log "this entrypoint currently requires an AMD64 Docker host" >&2
-  exit 1
-}
-
 : "${CAPI_CORE_VERSION:=v1.12.3}"
 : "${CAPD_PROVIDER_VERSION:=v1.12.3}"
-: "${CLUSTERCTL_SHA256:=9b75287b15656a62ece65c8ad7491412cebfd30c78e085a9d61396a50df17349}"
 : "${TILT_VERSION:=v0.37.5}"
-: "${TILT_SHA256:=9efb56969c48ddea4adfb56a604b9ca5ed254924ddf140fc3e068a305cacf558}"
+# Per-arch pins. host_arch was already validated above, so this is exhaustive.
+case "${host_arch}" in
+  amd64)
+    : "${CLUSTERCTL_SHA256:=9b75287b15656a62ece65c8ad7491412cebfd30c78e085a9d61396a50df17349}"
+    : "${TILT_SHA256:=9efb56969c48ddea4adfb56a604b9ca5ed254924ddf140fc3e068a305cacf558}"
+    ;;
+  arm64)
+    : "${CLUSTERCTL_SHA256:=974bdf47fc58864df3d87766f4bdc72164171655c54b759e73596efc98f5e3e1}"
+    : "${TILT_SHA256:=1f9c62dcce0608aeb0c63533b14e260fc2e8c5797f81589b0914c398ba53d5b0}"
+    ;;
+esac
 
 git_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse HEAD)"
 git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
@@ -512,16 +529,16 @@ CWE_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
 
 log "building the sanitized profiles fixture image"
 docker build \
-  --platform linux/amd64 \
+  --platform "linux/${host_arch}" \
   --file test/fixtures/Dockerfile \
   --tag "${CWE_PROFILES_TILT_IMAGE}" \
   test/fixtures
 printf '%s\n' "${CWE_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-profiles-image-ref.txt"
 docker image inspect "${CWE_PROFILES_TILT_IMAGE}" >"${STATE_DIR}/cwe-profiles-image.json"
 
-log "building controller image ${CWE_IMAGE} for the AMD64 CAPD runner"
+log "building controller image ${CWE_IMAGE} for the ${host_arch} CAPD runner"
 DOCKER_BUILDKIT=1 docker build \
-  --platform linux/amd64 \
+  --platform "linux/${host_arch}" \
   --file "${CONTROLLER_ROOT}/Dockerfile" \
   --build-arg "BUILD_VERSION=${CWE_BUILD_VERSION}" \
   --build-arg "GIT_VERSION=${git_sha}" \
@@ -539,7 +556,7 @@ printf '%s\n' "${NODE_AGENT_VERSION}" >"${STATE_DIR}/agent-version.txt"
 log "using agent source version ${NODE_AGENT_VERSION}"
 
 log "preparing verified SPIRE and local Calico bundles"
-bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
+BUNDLE_ARCH="${host_arch}" bash hack/ci/prepare-capd-bundles.sh "${BUNDLE_DIR}"
 CALICO_MANIFESTS_DEB="${BUNDLE_DIR}/nke-cni-calico-manifests-3.30.1_3.30.1_all.deb"
 [[ -f "${CALICO_MANIFESTS_DEB}" ]] || {
   log "Calico manifests package was not produced: ${CALICO_MANIFESTS_DEB}" >&2
@@ -547,17 +564,11 @@ CALICO_MANIFESTS_DEB="${BUNDLE_DIR}/nke-cni-calico-manifests-3.30.1_3.30.1_all.d
 }
 
 log "installing clusterctl ${CAPD_PROVIDER_VERSION}"
-arch="$(uname -m)"
-case "${arch}" in
-  x86_64) arch=amd64 ;;
-  aarch64 | arm64) arch=arm64 ;;
-  *) log "unsupported runner architecture ${arch}"; exit 1 ;;
-esac
-if [[ "${arch}" != amd64 || ! "${CLUSTERCTL_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
-  log "clusterctl checksum is not configured for linux/${arch}"
+if [[ ! "${CLUSTERCTL_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
+  log "clusterctl checksum is not configured for linux/${host_arch}"
   exit 1
 fi
-clusterctl_url="https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPD_PROVIDER_VERSION}/clusterctl-linux-${arch}"
+clusterctl_url="https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPD_PROVIDER_VERSION}/clusterctl-linux-${host_arch}"
 curl_with_retry "downloading clusterctl ${CAPD_PROVIDER_VERSION}" \
   "${clusterctl_url}" \
   -o "${CLUSTERCTL_BIN}"
@@ -565,7 +576,11 @@ printf '%s  %s\n' "${CLUSTERCTL_SHA256}" "${CLUSTERCTL_BIN}" | sha256sum -c -
 chmod +x "${CLUSTERCTL_BIN}"
 
 log "installing Tilt ${TILT_VERSION}"
-tilt_asset_name="tilt.${TILT_VERSION#v}.linux.x86_64.tar.gz"
+# Tilt's own release asset names use x86_64, not amd64, for that one arch;
+# arm64 matches host_arch directly.
+tilt_release_arch="${host_arch}"
+[[ "${host_arch}" == amd64 ]] && tilt_release_arch=x86_64
+tilt_asset_name="tilt.${TILT_VERSION#v}.linux.${tilt_release_arch}.tar.gz"
 if [[ ! "${TILT_SHA256}" =~ ^[0-9a-f]{64}$ ]]; then
   log "Tilt checksum is invalid for ${TILT_VERSION}"
   exit 1
@@ -595,10 +610,10 @@ git -C "${WORKSPACE_ROOT}" ls-files --cached --others --exclude-standard -z cont
     --gzip \
     --file "${SOURCE_ARCHIVE}"
 
-log "compiling the CAPD E2E suite"
+log "compiling the CAPD E2E suite for linux/${host_arch}"
 e2e_built=false
 for attempt in 1 2 3; do
-  if (cd test/e2e && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go test -c -o "${E2E_BIN}" .); then
+  if (cd test/e2e && CGO_ENABLED=0 GOOS=linux GOARCH="${host_arch}" go test -c -o "${E2E_BIN}" .); then
     e2e_built=true
     break
   fi
@@ -620,7 +635,7 @@ CAPD_SPIRE_ATTESTATION_METHOD="$(e2e_attestation_method)" \
 BUNDLE_SERVER_URL="http://${BUNDLE_MIRROR_NAME}/" \
 INDEX_FILE_URL="http://${BUNDLE_MIRROR_NAME}/index.json" \
 CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
-CAPD_KINDEST_NODE_PLATFORM="${CAPD_KINDEST_NODE_PLATFORM:-linux/amd64}" \
+CAPD_KINDEST_NODE_PLATFORM="${CAPD_KINDEST_NODE_PLATFORM:-linux/${host_arch}}" \
 NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
   bash hack/capd-kindest-node/build-image.sh
 CAPD_NODE_IMAGE_OWNED=true

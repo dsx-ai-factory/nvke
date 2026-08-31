@@ -26,6 +26,20 @@ on:
         description: Backend name, used for the run id, artifact name and logs.
         required: true
         type: string
+      arch:
+        description: >-
+          Short label for the runner architecture, used only for naming and
+          disambiguation (job name, run id, artifact name) so two arches of
+          the same backend in one workflow run don't collide. Does not
+          control scheduling -- see `runner`.
+        required: false
+        type: string
+        default: amd64
+      runner:
+        description: The runs-on label. Controls which architecture actually runs.
+        required: false
+        type: string
+        default: linux-amd64-cpu16
       label-filter:
         description: Ginkgo label filter selecting this backend's specs.
         required: true
@@ -86,14 +100,14 @@ permissions: {}
 
 jobs:
   e2e:
-    name: ${{ inputs.backend }}-e2e
-    runs-on: linux-amd64-cpu16
+    name: ${{ inputs.backend }}-e2e (${{ inputs.arch }})
+    runs-on: ${{ inputs.runner }}
     if: github.repository == 'NVIDIA/nke'
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
     env:
-      NKE_E2E_RUN_ID: github-${{ inputs.backend }}-${{ github.run_id }}-${{ github.run_attempt }}
+      NKE_E2E_RUN_ID: github-${{ inputs.backend }}-${{ inputs.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
       NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
       NKE_E2E_LABEL_FILTER: ${{ inputs.label-filter }}
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
@@ -261,7 +275,7 @@ jobs:
         if: always() && steps.diagnostics.outputs.safe == 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ inputs.backend }}-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ inputs.backend }}-${{ inputs.arch }}-e2e-${{ github.run_id }}-${{ github.run_attempt }}
           path: controller/.local/backend-e2e/${{ env.NKE_E2E_RUN_ID }}/
           if-no-files-found: error
           retention-days: 7
