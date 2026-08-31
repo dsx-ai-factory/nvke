@@ -12,10 +12,10 @@ import (
 )
 
 // SiteConfig holds connection details for one site controller.
-// Auth is intentionally minimal for now — the design for how nkectl
-// authenticates with CWE is an open question being discussed with the team.
 type SiteConfig struct {
 	URL string `yaml:"url"`
+	// Kubeconfig is the path to the management cluster kubeconfig.
+	Kubeconfig string `yaml:"kubeconfig"`
 }
 
 // Config is the top-level nkectl config file.

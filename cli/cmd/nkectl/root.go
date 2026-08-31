@@ -15,8 +15,9 @@ import (
 )
 
 var (
-	verbose  bool //nolint:gochecknoglobals // cobra PersistentFlags binding requires package-level var
-	jsonLogs bool //nolint:gochecknoglobals // cobra PersistentFlags binding requires package-level var
+	verbose  bool   //nolint:gochecknoglobals // cobra PersistentFlags binding requires package-level var
+	jsonLogs bool   //nolint:gochecknoglobals // cobra PersistentFlags binding requires package-level var
+	site     string //nolint:gochecknoglobals // cobra PersistentFlags binding requires package-level var
 )
 
 func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
@@ -31,6 +32,7 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 
 	root.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "Enable debug logging")
 	root.PersistentFlags().BoolVar(&jsonLogs, "json-logs", false, "Emit logs as JSON")
+	root.PersistentFlags().StringVar(&site, "site", "", "Override the active site for this invocation")
 
 	root.AddCommand(newVersionCmd(ver, commit, treeState, date))
 	root.AddCommand(newConfigCmd())
@@ -45,17 +47,30 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 
 // loadClient is the shared client factory injected into all CWE-backed commands.
 // It is called lazily (when a command runs, not at startup) so that --help and
-// non-API commands work without a configured site.
+// non-API commands work without a configured site. If --site was passed, it
+// overrides the active site for this invocation only, without touching the
+// config file.
 func loadClient() (*clients.CWEClient, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
-	site, err := cfg.CurrentSiteConfig()
+	siteCfg, err := resolveSiteConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return clients.New(site)
+	return clients.New(siteCfg)
+}
+
+func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
+	if site == "" {
+		return cfg.CurrentSiteConfig()
+	}
+	siteCfg, ok := cfg.Sites[site]
+	if !ok {
+		return config.SiteConfig{}, fmt.Errorf("site %q not found in config", site)
+	}
+	return siteCfg, nil
 }
 
 // Execute is the entry point called from main.
