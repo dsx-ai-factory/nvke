@@ -63,7 +63,9 @@ type kubeVipRoute struct {
 
 // ReconcileKubeVip converges NKE's credential-less, active/active BGP
 // kube-vip static pod. The fixed manifest deliberately excludes every
-// Kubernetes API-backed kube-vip feature.
+// Kubernetes API-backed kube-vip feature and models the single-peer settings
+// CWE historically supplied to the runbook rather than its operator-only
+// environment overrides.
 func (s *NodeAgentServer) ReconcileKubeVip(
 	ctx context.Context,
 	req *pb.ReconcileKubeVipRequest,
@@ -77,13 +79,12 @@ func (s *NodeAgentServer) ReconcileKubeVip(
 		return nil, status.Errorf(codes.InvalidArgument, "invalid kube-vip request: %v", err)
 	}
 
-	s.kubeVipMu.Lock()
-	defer s.kubeVipMu.Unlock()
-
 	addresses, err := s.readKubeVipAddresses()
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "discover node interfaces: %v", err)
 	}
+	// NODE_IP selects the BGP source interface. The advertised /32 VIP remains
+	// on loopback so it is independent of physical-interface address changes.
 	bgpInterface, err := interfaceForAddress(addresses, req.GetNodeIp())
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "discover BGP interface: %v", err)
@@ -91,6 +92,7 @@ func (s *NodeAgentServer) ReconcileKubeVip(
 
 	peerAddress := req.GetBgpPeerAddress()
 	if peerAddress == "" {
+		// Forge's subnet gateway is the historical single-peer default.
 		peerAddress, err = s.defaultKubeVipGateway()
 		if err != nil {
 			return nil, status.Errorf(codes.FailedPrecondition, "discover BGP peer address: %v", err)
@@ -114,6 +116,8 @@ func (s *NodeAgentServer) ReconcileKubeVip(
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reconcile credential-less kubeconfig: %v", err)
 	}
+	// Preserve runbook convergence after an interface change: remove stale
+	// copies without flapping the desired loopback address on a no-op rerun.
 	cleanedInterfaces := s.cleanupKubeVipInterfaces(addresses, req.GetVipAddress(), loopbackInterface)
 	outcome, err := s.writeKubeVipManifest(manifest)
 	if err != nil {
@@ -252,6 +256,9 @@ func (s *NodeAgentServer) resolveKubeVipPeerASN(ctx context.Context, req *pb.Rec
 }
 
 func fetchKubeVipASNFromFMDS(ctx context.Context) (uint32, error) {
+	// FNN sites learn the DPU peer ASN from Forge Metadata Service. Bound both
+	// connection establishment and the complete request so reconciliation does
+	// not hang during metadata-service failures.
 	dialer := &net.Dialer{Timeout: kubeVipFMDSConnectTimeout}
 	transport := &http.Transport{DialContext: dialer.DialContext}
 	defer transport.CloseIdleConnections()
@@ -354,6 +361,11 @@ func (s *NodeAgentServer) writeKubeVipManifest(manifest []byte) (pb.ReconcileKub
 	return pb.ReconcileKubeVipResponse_OUTCOME_CREATED, nil
 }
 
+// writeKubeVipFile compares the complete desired state before an atomic write.
+// This catches every manifest change while avoiding an unnecessary static-pod
+// restart when the content is already current. atomicWriteFile renders through
+// a hidden file in the destination directory, which kubelet ignores until the
+// same-filesystem rename makes the complete manifest visible.
 func (s *NodeAgentServer) writeKubeVipFile(path string, desired []byte) (bool, error) {
 	resolved := s.rootedPath(path)
 	if err := validateKubeVipFileDestination(resolved); err != nil {
@@ -426,6 +438,8 @@ func renderKubeVipManifest(
 				IP:        "127.0.0.1",
 				Hostnames: []string{"kubernetes"},
 			}},
+			// v1.2.0 introduced the control-plane health check used below. Keep
+			// the readable tag and immutable multi-arch digest together.
 			Containers: []corev1.Container{{
 				Name:            kubeVipContainerName,
 				Image:           kubeVipImage,
@@ -478,6 +492,14 @@ func kubeVipEnvironment(
 	bgpInterface, peerAddress string,
 	peerASN uint32,
 ) []corev1.EnvVar {
+	// Probe the node IP rather than localhost because kubeadm's serving
+	// certificate covers node addresses and the VIP, not 127.0.0.1. /readyz is
+	// intentional: a starting or gracefully stopping API server must withdraw
+	// its ECMP path even while /livez still reports the process alive. Because
+	// readyz includes dependencies, the five-second period and three-failure
+	// threshold damp transient route churn. The 10s timeout accommodates its
+	// etcd linearizable-read path under load, and the mounted kubeadm CA verifies
+	// the private HTTPS serving certificate.
 	return []corev1.EnvVar{
 		{Name: "vip_arp", Value: kubeVipFalse},
 		{Name: "port", Value: "6443"},

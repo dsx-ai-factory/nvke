@@ -116,7 +116,6 @@ type NodeAgentServer struct {
 
 	NodeStatus *NodeStatus
 	mu         sync.Mutex // protects NodeStatus
-	kubeVipMu  sync.Mutex // serializes kube-vip manifest reconciliation
 
 	encryptionMu                  sync.Mutex          // encryptionMu serializes all encryption-config mutations on this node.
 	rewriteActive                 bool                // protected by mu; true when a rewrite goroutine is active in this process.
