@@ -22,13 +22,24 @@ type nodeService struct {
 	logger         *slog.Logger
 	db             db.DB
 	temporalClient client.Client
+
+	// useControlPlaneController makes DeleteNode record a control-plane node
+	// delete as intent for the control-plane controller instead of starting the
+	// teardown inline. Worker deletes are unaffected either way.
+	useControlPlaneController bool
 }
 
-func NewNodeService(logger *slog.Logger, database db.DB, temporalClient client.Client) *nodeService {
+func NewNodeService(
+	logger *slog.Logger,
+	database db.DB,
+	temporalClient client.Client,
+	useControlPlaneController bool,
+) *nodeService {
 	return &nodeService{
-		logger:         logger,
-		db:             database,
-		temporalClient: temporalClient,
+		logger:                    logger,
+		db:                        database,
+		temporalClient:            temporalClient,
+		useControlPlaneController: useControlPlaneController,
 	}
 }
 
@@ -98,12 +109,19 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 			nodes.WithAllowCPNode(true),
 			nodes.WithMachineHealthIssue(machineHealthIssue),
 			nodes.WithForceUnreachable(forceUnreachable),
+			nodes.WithControlPlaneControllerDelete(s.useControlPlaneController),
 		)
 	})
 	if err != nil {
-		if errors.Is(err, errClusterDeleting) || errors.Is(err, errNodePoolDeleting) || errors.Is(err, errNodeDeleting) {
-			// Teardown already in progress via cluster, pool, or a prior node delete.
+		if errors.Is(err, errClusterDeleting) || errors.Is(err, errNodePoolDeleting) || errors.Is(err, errNodeDeleting) ||
+			errors.Is(err, nodes.ErrDeleteAlreadyRequested) {
+			// Teardown already in progress via cluster, pool, or a prior node delete,
+			// or already accepted and waiting on the control-plane controller.
 			return api.DeleteNode202Response{}, nil
+		}
+		var quorumFloor *nodes.ControlPlaneQuorumFloorError
+		if errors.As(err, &quorumFloor) {
+			return api.DeleteNode400JSONResponse{Message: quorumFloor.Error()}, nil
 		}
 		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNode) {
 			return api.DeleteNode400JSONResponse{Message: err.Error()}, nil
@@ -126,6 +144,7 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		Joined:                  apiConditionFromDB(dbNode.Conditions.Joined),
 		Provisioned:             apiConditionFromDB(dbNode.Conditions.Provisioned),
 		Deleting:                apiConditionFromDB(dbNode.Conditions.Deleting),
+		DeleteRequested:         apiConditionFromDB(dbNode.Conditions.DeleteRequested),
 		KubernetesReady:         apiConditionFromDB(dbNode.Conditions.KubernetesReady),
 		KubernetesUnschedulable: apiConditionFromDB(dbNode.Conditions.KubernetesUnschedulable),
 		NodeAgentReady:          apiConditionFromDB(dbNode.Conditions.NodeAgentReady),

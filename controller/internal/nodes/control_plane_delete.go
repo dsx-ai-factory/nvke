@@ -190,6 +190,21 @@ func hasSurvivingJoinedControlPlane(
 	clusterID uuid.UUID,
 	exclusion liveControlPlaneDeleteExclusion,
 ) (bool, error) {
+	count, err := countSurvivingJoinedControlPlane(ctx, tx, clusterID, exclusion)
+	return count > 0, err
+}
+
+// countSurvivingJoinedControlPlane counts the joined control-plane nodes that
+// would remain after the described delete. A node is not counted when it is the
+// delete target, when it belongs to a node pool being deleted, when its own
+// teardown is already in flight, or when a delete has been accepted for it but
+// not started yet: all four are on their way out of the etcd membership.
+func countSurvivingJoinedControlPlane(
+	ctx context.Context,
+	tx db.Tx,
+	clusterID uuid.UUID,
+	exclusion liveControlPlaneDeleteExclusion,
+) (int, error) {
 	controlPlane := true
 
 	// Nodes don't carry their pool's Deleting bit, so we need the CP pools to
@@ -199,7 +214,7 @@ func hasSurvivingJoinedControlPlane(
 		ControlPlane: &controlPlane,
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to list control-plane node pools: %w", err)
+		return 0, fmt.Errorf("failed to list control-plane node pools: %w", err)
 	}
 
 	cpPoolsMap := make(map[uuid.UUID]db.NodePool, len(cpPools))
@@ -212,9 +227,10 @@ func hasSurvivingJoinedControlPlane(
 		ControlPlane: &controlPlane,
 	})
 	if err != nil {
-		return false, fmt.Errorf("failed to list control-plane nodes: %w", err)
+		return 0, fmt.Errorf("failed to list control-plane nodes: %w", err)
 	}
 
+	survivors := 0
 	for _, node := range cpNodes {
 		if exclusion.ExcludeNodeID != nil && node.ID == *exclusion.ExcludeNodeID {
 			continue
@@ -225,6 +241,11 @@ func hasSurvivingJoinedControlPlane(
 		if node.Conditions.Deleting.Status == db.ConditionStatusTrue {
 			continue
 		}
+		// An accepted-but-not-yet-started delete removes this node too, so two
+		// requests in a row cannot each count the other as a survivor.
+		if node.Conditions.DeleteRequested.Status == db.ConditionStatusTrue {
+			continue
+		}
 		// node.NodePoolID may be uuid.Nil; that won't be in the map, so lookup is safe.
 		nodePool := cpPoolsMap[node.NodePoolID]
 		if nodePool.Conditions.Deleting.Status == db.ConditionStatusTrue {
@@ -233,8 +254,8 @@ func hasSurvivingJoinedControlPlane(
 		if node.Conditions.Joined.Status != db.ConditionStatusTrue {
 			continue
 		}
-		return true, nil
+		survivors++
 	}
 
-	return false, nil
+	return survivors, nil
 }

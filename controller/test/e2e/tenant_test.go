@@ -83,7 +83,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			// a flag-off CWE simply skips it. CI selects this entry only in its flag-on
 			// lane.
 			if (spec.validate.controlPlaneController || spec.validate.controlPlaneControllerUpdate ||
-				spec.validate.controlPlaneControllerRollingUpdate) &&
+				spec.validate.controlPlaneControllerRollingUpdate || spec.validate.controlPlaneControllerDelete) &&
 				os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
 				Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
 			}
@@ -175,6 +175,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 			if spec.validate.controlPlaneControllerRollingUpdate {
 				validateControllerManagedControlPlaneRollingUpdate(&test)
+			}
+			if spec.validate.controlPlaneControllerDelete {
+				validateControllerManagedControlPlaneDeleteRefused(&test)
+				validateControllerManagedControlPlaneSerializedDelete(&test)
 			}
 			if spec.validate.nodePoolLifecycle {
 				validateAdditionalNodePool(&test)
@@ -334,20 +338,33 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
+		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{
+			controlPlaneController:              true,
+			controlPlaneControllerUpdate:        true,
+			controlPlaneControllerRollingUpdate: true,
+			controlPlaneControllerDelete:        true,
+		},
 	}),
 	// The same for nico-containers, so the cp-controller path is not CAPD-only.
 	// Three control-plane nodes because the rolling-update spec needs a
-	// multi-node control plane to keep etcd quorum while it rolls.
+	// multi-node control plane to keep etcd quorum while it rolls, and because
+	// the delete specs assert the quorum floor refuses a delete at exactly that
+	// size. The delete specs grow the control plane to four and back, which is
+	// cheap here (containers) but is why nico-vms does not run them.
 	Entry("nico-containers control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-containers", "cp-controller"), testSpec{
 		buildSpec: nicoControlPlaneControllerSpec,
 		shape: clusterShape{
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 3},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
-		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
+		options: nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{
+			controlPlaneController:              true,
+			controlPlaneControllerUpdate:        true,
+			controlPlaneControllerRollingUpdate: true,
+			controlPlaneControllerDelete:        true,
+		},
 	}),
 	Entry("nico-vms control-plane controller (no CP node pool)", Ordered, ContinueOnFailure, Label("nico-vms", "cp-controller"), testSpec{
 		buildSpec: nicoVMSControlPlaneControllerSpec,
@@ -640,6 +657,14 @@ type validations struct {
 	// has enough nodes to keep quorum while rolling. Requires the same flag-on CWE
 	// as controlPlaneController (self-skips otherwise).
 	controlPlaneControllerRollingUpdate bool
+	// controlPlaneControllerDelete asserts the controller-owned, serialized
+	// control-plane delete: a delete that would leave fewer than three joined
+	// control-plane nodes is refused at the API, and an accepted one runs one
+	// teardown at a time with no control-plane join overlapping it. Ordered after
+	// controlPlaneControllerRollingUpdate so the control plane is already at three
+	// nodes. Requires the same flag-on CWE as controlPlaneController (self-skips
+	// otherwise).
+	controlPlaneControllerDelete bool
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)

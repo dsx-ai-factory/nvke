@@ -12,7 +12,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
-func TestControlPlane_HasNodesMarkedForDeletion(t *testing.T) {
+func TestControlPlane_HasDeleteInFlight(t *testing.T) {
 	tests := []struct {
 		name  string
 		nodes []db.Node
@@ -55,7 +55,7 @@ func TestControlPlane_HasNodesMarkedForDeletion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cp := &controlPlane{nodes: tt.nodes}
-			assert.Equal(t, tt.want, cp.hasNodesMarkedForDeletion())
+			assert.Equal(t, tt.want, cp.hasDeleteInFlight())
 		})
 	}
 }

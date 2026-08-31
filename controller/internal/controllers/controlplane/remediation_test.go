@@ -4,14 +4,19 @@
 package controlplane
 
 import (
+	"context"
 	"log/slog"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/NVIDIA/nke/controller/internal/nodes"
+	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
 func TestSelectNodeToRemediate(t *testing.T) {
@@ -660,5 +665,87 @@ func makeNodeToRemove(nodeSetID uuid.UUID) db.Node {
 			MarkedForRecycling: db.Condition{Status: db.ConditionStatusTrue},
 			Deleting:           db.Condition{Status: db.ConditionStatusFalse},
 		},
+	}
+}
+
+// TestRemediateMachinesRecordsIntentUnderTheController pins the path remediation
+// takes. With the control-plane controller owning the control plane, remediation
+// records the delete the same way a user-initiated one does and leaves
+// reconcileRequestedDeletes to start the teardown, so both kinds queue in one
+// place. With the flag off it still tears down inline, unchanged.
+func TestRemediateMachinesRecordsIntentUnderTheController(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		useController   bool
+		wantIntent      bool
+		wantOutboxEntry bool
+	}{
+		{name: "controller owns the control plane: record intent", useController: true, wantIntent: true},
+		{name: "flag off: tear down inline as before", useController: false, wantOutboxEntry: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			clusterID := uuid.New()
+			cluster := db.Cluster{ID: clusterID, Name: "test-cluster"}
+
+			// Three healthy nodes, one of them marked: enough for canStartRemediation,
+			// and deliberately at the quorum floor so the exemption is exercised.
+			healthy := func(name string) db.Node {
+				return db.Node{
+					ID: uuid.New(), ClusterID: clusterID, ControlPlane: true, Name: name,
+					Conditions: db.NodeConditions{
+						Joined:          db.NewCondition(true, "Joined"),
+						Provisioned:     db.NewCondition(true, "Provisioned"),
+						KubernetesReady: db.NewCondition(true, "Ready"),
+						NodeAgentReady:  db.NewCondition(true, "Ready"),
+					},
+				}
+			}
+			a, b := healthy("cp-a"), healthy("cp-b")
+			marked := healthy("cp-marked")
+			marked.Conditions.MarkedForRecycling = db.NewCondition(true, "Marked")
+
+			mockTx := &testutil.MockTx{}
+			mockTx.On("GetNodeForUpdate", mock.Anything, marked.ID).Return(marked, nil)
+			mockTx.On("ListNodePools", mock.Anything, mock.Anything).Return([]db.NodePool{}, nil).Maybe()
+			mockTx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{a, b, marked}, nil).Maybe()
+
+			var written db.Node
+			mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(n *db.Node) bool {
+				written = *n
+				return true
+			})).Return(marked, nil)
+			mockTx.On("CreateWorkflowOutboxEntry",
+				mock.Anything, mock.Anything, mock.Anything, mock.Anything,
+			).Return(db.WorkflowOutbox{}, nil).Maybe()
+
+			r := &reconciler{cfg: cpControllerConfig(tt.useController), db: mockTx, logger: slog.Default()}
+			cp := &controlPlane{
+				nodes:                     []db.Node{a, b, marked},
+				clusterControlPlaneConfig: db.ControlPlaneConfig{DesiredCount: 3},
+				useController:             tt.useController,
+			}
+
+			requeue, err := r.remediateMachines(context.Background(), cluster, cp)
+			require.NoError(t, err, "the quorum floor must not refuse a replacement at three nodes")
+			assert.True(t, requeue)
+
+			if tt.wantIntent {
+				assert.True(t, nodes.IsDeleteRequested(written), "remediation should record intent")
+				assert.False(t, nodes.IsDeleting(written), "the teardown must wait for the serialized loop")
+				mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry",
+					mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			}
+			if tt.wantOutboxEntry {
+				assert.True(t, nodes.IsDeleting(written), "the legacy path still tears down inline")
+				mockTx.AssertCalled(t, "CreateWorkflowOutboxEntry",
+					mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+			}
+		})
 	}
 }

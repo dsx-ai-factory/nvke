@@ -49,13 +49,21 @@ func (r *reconciler) remediateMachines(ctx context.Context, cluster db.Cluster, 
 
 	log.Info("Starting control plane node deletion as part of remediation")
 
-	// Trigger deletion of the selected node
+	// Same path as a user-initiated delete when the control-plane controller owns
+	// the control plane: record the intent and let reconcileRequestedDeletes start
+	// the teardown. Both kinds of delete then queue in one place, so serializing
+	// them is a property of that loop rather than something each caller has to
+	// re-check before acting.
 	if err := nodes.DeleteWithTx(ctx, r.db, nodeToRemediate.ID,
 		nodes.WithReason("Control plane node remediation"),
 		nodes.WithAllowCPNode(true),
 		// Controllers enforce their own preconditions; skip the live-API guard
 		// (also avoids SELECT FOR UPDATE, which SQLite unit tests cannot run).
 		nodes.WithSkipLiveDeleteGuard(),
+		nodes.WithControlPlaneControllerDelete(r.cfg.UseControlPlaneControllerForControlPlane()),
+		// canStartRemediation already ran the etcd-quorum check against live node
+		// health, and this delete is a replacement rather than a shrink.
+		nodes.WithSkipQuorumFloor(),
 	); err != nil {
 		return false, fmt.Errorf("deleting node %s (%s) marked for remediation: %w", nodeToRemediate.ID, nodeToRemediate.Name, err)
 	}
@@ -134,9 +142,11 @@ func canStartRemediation(log *slog.Logger, controlPlane *controlPlane, nodeToRem
 		return false
 	}
 
-	// Pre-condition 4: Stable State Deletion - no nodes currently marked for deletion
-	if controlPlane.hasNodesMarkedForDeletion() {
-		log.Info("Control plane has nodes marked for deletion, skipping remediation")
+	// Pre-condition 4: Stable State Deletion - no node has an accepted delete that
+	// has not finished, whether its teardown is running or still queued behind the
+	// serialized delete loop.
+	if controlPlane.hasDeleteInFlight() {
+		log.Info("Control plane has a node delete in flight, skipping remediation")
 		return false
 	}
 

@@ -317,9 +317,17 @@ type ControlPlaneStatus struct {
 	ReadyNodeCount int `json:"readyNodeCount"`
 
 	// KubernetesVersion The current control-plane Kubernetes version.
-	KubernetesVersion     string    `json:"kubernetesVersion"`
+	KubernetesVersion string `json:"kubernetesVersion"`
+
+	// DeletingNodeCount Number of control-plane nodes whose teardown is in flight. Control-plane
+	// deletes are serialized, so this is at most 1.
+	DeletingNodeCount     int       `json:"deletingNodeCount"`
 	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
 	CpNodesRecycling      Condition `json:"cpNodesRecycling"`
+
+	// DeleteRequestedNodeCount Number of control-plane nodes with an accepted delete whose teardown has
+	// not started yet, because it is queued behind the in-flight one.
+	DeleteRequestedNodeCount int `json:"deleteRequestedNodeCount"`
 
 	// Rollout Cluster-level rollout rollup for a control-plane-controller-managed control plane: how many managed control-plane nodes are up to date, still pending, and currently rolling out, whether a rollout is in progress, and whether pending drift will be reconciled automatically. The three node counts are mutually exclusive and sum to managedNodeCount. Present only for clusters whose control plane is managed by the control-plane controller.
 	Rollout *ControlPlaneRolloutSummary `json:"rollout,omitempty"`
@@ -828,6 +836,7 @@ type Node struct {
 // NodeConditions Conditions representing various aspects of the node's state
 type NodeConditions struct {
 	ControlPlaneRolloutRequired *Condition `json:"controlPlaneRolloutRequired,omitempty"`
+	DeleteRequested             Condition  `json:"deleteRequested"`
 	Deleting                    Condition  `json:"deleting"`
 	Joined                      Condition  `json:"joined"`
 	KubernetesReady             Condition  `json:"kubernetesReady"`

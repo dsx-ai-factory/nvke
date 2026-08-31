@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
@@ -179,4 +180,115 @@ func IsNodeReady(node api.Node) (bool, string) {
 		detail += fmt.Sprintf(" (%q)", condition.Message)
 	}
 	return false, detail
+}
+
+// DeleteNodeExpectingRefusal requires DeleteNode to be refused with a 400 and
+// returns the API's message, so a spec can assert on why it was refused rather
+// than only that something failed.
+func (c *Client) DeleteNodeExpectingRefusal(ctx context.Context, id openapi_types.UUID, opts ...DeleteNodeOption) (string, error) {
+	req := api.DeleteNodeRequest{}
+	for _, opt := range opts {
+		opt(&req)
+	}
+	resp, err := c.api.DeleteNodeWithResponse(ctx, id, req)
+	if err != nil {
+		return "", fmt.Errorf("deleting node %s: %w", id, err)
+	}
+	if resp.StatusCode() != 400 || resp.JSON400 == nil {
+		return "", fmt.Errorf("deleting node %s: expected the delete to be refused with 400, got %s: %s", id, resp.Status(), resp.Body)
+	}
+	return resp.JSON400.Message, nil
+}
+
+// ControlPlaneDeleteState is a point-in-time view of control-plane deletion for a
+// cluster: the cluster-level counters plus the joined node set the join gate must
+// hold still while a delete is in flight.
+type ControlPlaneDeleteState struct {
+	// Deleting is the number of control-plane nodes whose teardown is running.
+	Deleting int
+	// DeleteRequested is the number whose delete was accepted but not started.
+	DeleteRequested int
+	// JoinedNodeIDs is the set of control-plane nodes reporting Joined.
+	JoinedNodeIDs map[openapi_types.UUID]struct{}
+	// NodeIDs is the set of control-plane nodes that exist at all.
+	NodeIDs map[openapi_types.UUID]struct{}
+	// ReadyNodeCount is how many control-plane nodes are KubernetesReady.
+	ReadyNodeCount int
+}
+
+// InFlight reports whether any control-plane delete has been accepted and not
+// yet finished, whether it is running or still queued behind another.
+func (s ControlPlaneDeleteState) InFlight() bool {
+	return s.Deleting > 0 || s.DeleteRequested > 0
+}
+
+// ControlPlaneDeleteStateAt samples the cluster's control-plane delete state from
+// the control-plane read API plus the control-plane node list.
+func (c *Client) ControlPlaneDeleteStateAt(ctx context.Context, clusterID openapi_types.UUID) (ControlPlaneDeleteState, error) {
+	cp, err := c.GetClusterControlPlane(ctx, clusterID)
+	if err != nil {
+		return ControlPlaneDeleteState{}, fmt.Errorf("reading control-plane delete state for cluster %s: %w", clusterID, err)
+	}
+
+	nodes, err := c.ListClusterNodesByControlPlane(ctx, clusterID, true)
+	if err != nil {
+		return ControlPlaneDeleteState{}, fmt.Errorf("listing control-plane nodes for cluster %s: %w", clusterID, err)
+	}
+
+	state := ControlPlaneDeleteState{
+		Deleting:        cp.Status.DeletingNodeCount,
+		DeleteRequested: cp.Status.DeleteRequestedNodeCount,
+		ReadyNodeCount:  cp.Status.ReadyNodeCount,
+		JoinedNodeIDs:   make(map[openapi_types.UUID]struct{}, len(nodes)),
+		NodeIDs:         make(map[openapi_types.UUID]struct{}, len(nodes)),
+	}
+	for _, node := range nodes {
+		state.NodeIDs[node.ID] = struct{}{}
+		if node.Conditions.Joined.Status == api.ConditionStatusTrue {
+			state.JoinedNodeIDs[node.ID] = struct{}{}
+		}
+	}
+	return state, nil
+}
+
+// WaitForJoinedControlPlaneNodes polls until the cluster reports exactly desired
+// control-plane nodes and all of them report Joined.
+//
+// AssertControlPlaneNodesReady is not a substitute. KubernetesReady is written by
+// the tenant node-status controller as soon as the kubelet registers and goes
+// Ready, while Joined is written by a later activity in the ProvisionNode
+// workflow, so a node can be KubernetesReady with Joined not yet committed. Any
+// spec whose next step depends on the joined count -- as the control-plane quorum
+// floor does -- has to wait on Joined, or it races that window.
+func (c *Client) WaitForJoinedControlPlaneNodes(ctx context.Context, clusterID openapi_types.UUID, desired int) error {
+	deadline := time.After(c.opts.Provision)
+	ticker := time.NewTicker(c.opts.Poll)
+	defer ticker.Stop()
+
+	lastError := noLastError
+	for {
+		select {
+		case <-deadline:
+			return fmt.Errorf("timeout after %v waiting for %d joined control-plane nodes on cluster %s (last error: %s)",
+				c.opts.Provision, desired, clusterID, lastError)
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for %d joined control-plane nodes on cluster %s (last error: %s): %w",
+				desired, clusterID, lastError, ctx.Err())
+		case <-ticker.C:
+			state, err := c.ControlPlaneDeleteStateAt(ctx, clusterID)
+			if err != nil {
+				lastError = err.Error()
+				continue
+			}
+			if len(state.NodeIDs) != desired {
+				lastError = fmt.Sprintf("%d control-plane nodes present; want %d", len(state.NodeIDs), desired)
+				continue
+			}
+			if len(state.JoinedNodeIDs) != desired {
+				lastError = fmt.Sprintf("%d control-plane nodes report Joined; want %d", len(state.JoinedNodeIDs), desired)
+				continue
+			}
+			return nil
+		}
+	}
 }

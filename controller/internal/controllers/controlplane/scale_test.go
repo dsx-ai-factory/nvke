@@ -47,9 +47,10 @@ func TestDeleteNode_UnhealthySkips(t *testing.T) {
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 	got, err := r.deleteNode(context.Background(), cluster, cp, surgeNode, "test", slog.Default())
-	require.Error(t, err)
+	// An unhealthy control plane is a reason to wait, not a reconcile failure, so
+	// this reports "did not start" rather than returning an error.
+	require.NoError(t, err)
 	assert.False(t, got)
-	assert.Contains(t, err.Error(), "not healthy")
 	mockTx.AssertExpectations(t)
 }
 
@@ -101,9 +102,8 @@ func TestScaleDownSurgeNodes_UnhealthySkips(t *testing.T) {
 	r := &reconciler{db: mockTx, logger: slog.Default()}
 	cp := &controlPlane{clusterControlPlaneConfig: cluster.ControlPlaneConfig}
 	handled, err := r.scaleDownSurgeNodes(context.Background(), cluster, cp, cpNodePools, slog.Default())
-	require.Error(t, err)
+	require.NoError(t, err)
 	assert.False(t, handled)
-	assert.Contains(t, err.Error(), "not healthy")
 	mockTx.AssertExpectations(t)
 }
 

@@ -50,37 +50,51 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reading control plane: %w", err)
 	}
 
-	// Refresh each managed node's rollout-required condition before acting, so the
-	// reported state reflects current drift regardless of which branch runs below.
+	// The order below is deliberate: everything that does not change etcd
+	// membership runs first and is never held up by a delete, and the two steps
+	// that do change it -- join and teardown -- are ordered grow before shrink.
+
+	// Status only; no membership change.
 	if err := r.reconcileControlPlaneRolloutRequiredCondition(ctx, controlPlane); err != nil {
 		return fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
 	}
 
+	// Host creation only. A pending or in-flight delete must not stall it: the
+	// replacement host is exactly what lets the control plane shrink safely.
 	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane); err != nil {
 		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
-	// Join ready control-plane hosts one at a time (serial join). Host
-	// provisioning may run in parallel; only the kubeadm join is serialized.
-	if err := r.reconcileControlPlaneJoins(ctx, cluster, controlPlane); err != nil {
-		return fmt.Errorf("reconciling control plane joins: %w", err)
-	}
-
-	// Reconcile node remediation (replace marked nodes)
-	if requeue, err := r.remediateMachines(ctx, cluster, controlPlane); err != nil {
+	// Records delete intent only; the teardown itself is started at the bottom.
+	if _, err := r.remediateMachines(ctx, cluster, controlPlane); err != nil {
 		return err
-	} else if requeue {
-		return nil
 	}
 
-	// Reconcile Kubernetes version upgrades (if cluster K8s version changed)
+	// ConfigMap changes only.
 	if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane); err != nil {
 		return fmt.Errorf("reconciling k8s upgrade: %w", err)
 	}
 
-	// Tear down control plane nodes needing rollout (e.g. OS profile rolling upgrades).
+	// FIXME: https://github.com/dsx-ai-factory/nke/issues/784 - reconcileNodesNeedingRollout
+	// still tears a node down directly instead of recording intent and letting the
+	// promotion below start it, so rollout teardowns bypass the serialized path.
 	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane); err != nil {
 		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
+	}
+
+	// Grow before shrink: join a ready host if one is waiting, and leave any
+	// queued delete alone until that join is done.
+	joinInFlight, err := r.reconcileControlPlaneJoins(ctx, cluster, controlPlane)
+	if err != nil {
+		return fmt.Errorf("reconciling control plane joins: %w", err)
+	}
+	if joinInFlight {
+		return nil
+	}
+
+	// Promote the oldest accepted delete into a teardown, one at a time.
+	if _, err := r.reconcileRequestedDeletes(ctx, cluster, controlPlane); err != nil {
+		return fmt.Errorf("reconciling requested control plane deletes: %w", err)
 	}
 
 	return nil

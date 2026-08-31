@@ -69,27 +69,46 @@ type joinCandidate struct {
 // join is serialized. A node that exhausts its retry budget is rotated to the back
 // so it does not block others, and is retried once every other ready node has had
 // a turn.
-// FIXME: after all CP deletes go through the controller, skip JoinNode while any CP node has Deleting=True.
-func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.Cluster, cp *controlPlane) error {
+//
+// It reports whether a join holds the serial slot: one was started here, or one is
+// already in flight. The caller uses that to leave a queued delete alone until the
+// control plane has finished growing, so a cluster that is both adding and removing
+// a member does the addition first.
+func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.Cluster, cp *controlPlane) (bool, error) {
 	// The control-plane controller only owns joins when it owns the control
 	// plane; otherwise control-plane nodes auto-join inline in ProvisionNode.
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		return nil
+		return false, nil
 	}
 	if r.cweTemporalClient == nil {
-		return nil
+		return false, nil
 	}
 	if cluster.Conditions.Provisioned.Status != db.ConditionStatusTrue {
 		r.logger.Debug("Skipping control-plane joins: cluster is not provisioned",
 			"clusterID", cluster.ID,
 			"clusterName", cluster.Name,
 		)
-		return nil
+		return false, nil
+	}
+
+	// A join and an etcd member removal both mutate etcd membership, and
+	// overlapping them can move the cluster through a state where the removal's
+	// quorum arithmetic no longer holds. Only a teardown actually in flight blocks
+	// a join: a delete that is merely queued has not touched etcd yet, and the
+	// reconcile order leaves it queued until the join finishes.
+	if leaving, inFlight := cp.nodeTearingDown(); inFlight {
+		r.logger.Info("Skipping control-plane joins: a control-plane node delete is in flight",
+			"clusterID", cluster.ID,
+			"clusterName", cluster.Name,
+			"deletingNodeID", leaving.ID,
+			"deletingNodeName", leaving.Name,
+		)
+		return false, nil
 	}
 
 	nodes := controlPlaneJoinCandidates(cp.nodes)
 	if len(nodes) == 0 {
-		return nil
+		return false, nil
 	}
 
 	// Resolve every candidate's join workflow state. Host provisioning runs in
@@ -100,7 +119,7 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 	for i, node := range nodes {
 		status, closeTime, err := r.joinWorkflowStatus(ctx, node)
 		if err != nil {
-			return err
+			return false, err
 		}
 		candidates[i] = joinCandidate{node: node, status: status, closeTime: closeTime}
 	}
@@ -113,8 +132,9 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 				"nodeID", blocker.node.ID,
 				"nodeName", blocker.node.Name,
 			)
+			return true, nil
 		}
-		return nil
+		return false, nil
 	}
 
 	workflowID := constants.JoinNodeWorkflowPrefix + node.ID.String()
@@ -137,7 +157,7 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 		NodeID: node.ID,
 	})
 	if err != nil {
-		return fmt.Errorf("starting JoinNode workflow for node %s: %w", node.Name, err)
+		return false, fmt.Errorf("starting JoinNode workflow for node %s: %w", node.Name, err)
 	}
 
 	r.logger.Info("Started control-plane JoinNode workflow",
@@ -147,7 +167,7 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 		"workflowID", run.GetID(),
 		"runID", run.GetRunID(),
 	)
-	return nil
+	return true, nil
 }
 
 // joinWorkflowStatus reports the state of a node's JoinNode workflow by

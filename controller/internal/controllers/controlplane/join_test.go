@@ -207,3 +207,71 @@ func nodeIDs(nodes []db.Node) []uuid.UUID {
 	}
 	return ids
 }
+
+// TestControlPlaneJoinDeleteGate covers what reconcileControlPlaneJoins holds
+// joins on. A join and an etcd member removal both mutate etcd membership, so a
+// teardown actually in flight blocks a join. A delete that is only queued does
+// not: it has not touched etcd, and the reconcile order deliberately finishes
+// growing before it starts shrinking.
+func TestControlPlaneJoinDeleteGate(t *testing.T) {
+	t.Parallel()
+
+	healthy := db.Node{
+		ID:   uuid.MustParse("00000000-0000-0000-0000-0000000000a1"),
+		Name: "cp-healthy",
+		Conditions: db.NodeConditions{
+			Joined:          db.NewCondition(true, "Joined"),
+			KubernetesReady: db.NewCondition(true, "Ready"),
+		},
+	}
+	tearingDown := db.Node{
+		ID:         uuid.MustParse("00000000-0000-0000-0000-0000000000b2"),
+		Name:       "cp-tearing-down",
+		Conditions: db.NodeConditions{Deleting: db.NewCondition(true, "Node deletion in progress")},
+	}
+	deleteRequested := db.Node{
+		ID:         uuid.MustParse("00000000-0000-0000-0000-0000000000c3"),
+		Name:       "cp-delete-requested",
+		Conditions: db.NodeConditions{DeleteRequested: db.NewCondition(true, "Delete accepted")},
+	}
+
+	tests := []struct {
+		name        string
+		nodes       []db.Node
+		wantInFlght bool
+		wantName    string
+	}{
+		{
+			name:  "no delete in flight lets joins proceed",
+			nodes: []db.Node{healthy},
+		},
+		{
+			name:        "a running teardown holds joins",
+			nodes:       []db.Node{healthy, tearingDown},
+			wantInFlght: true,
+			wantName:    "cp-tearing-down",
+		},
+		{
+			// Grow before shrink: a queued delete waits for the join, not the
+			// other way round, so it must not register here.
+			name:  "an accepted but not yet started delete does not hold joins",
+			nodes: []db.Node{healthy, deleteRequested},
+		},
+		{
+			name:  "no control-plane nodes at all",
+			nodes: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			node, inFlight := (&controlPlane{nodes: tt.nodes}).nodeTearingDown()
+			assert.Equal(t, tt.wantInFlght, inFlight)
+			if tt.wantInFlght {
+				assert.Equal(t, tt.wantName, node.Name, "the blocked-on node should be named for the log line")
+			}
+		})
+	}
+}

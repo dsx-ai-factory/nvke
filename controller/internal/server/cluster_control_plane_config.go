@@ -13,6 +13,7 @@ import (
 
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/NVIDIA/nke/controller/internal/nodes"
 )
 
 // GetClusterControlPlane returns a read-only view of a cluster's control plane:
@@ -38,10 +39,17 @@ func (s *clusterService) GetClusterControlPlane(
 		return nil, fmt.Errorf("failed to list control-plane nodes: %w", err)
 	}
 
-	var readyNodeCount int
+	var readyNodeCount, deletingNodeCount, deleteRequestedNodeCount int
 	for i := range cpNodes {
 		if db.BoolFromConditionStatus(cpNodes[i].Conditions.KubernetesReady.Status) {
 			readyNodeCount++
+		}
+		// Deleting and DeleteRequested are mutually exclusive, so a node counts
+		// toward exactly one of these: teardown running, or accepted and queued.
+		if nodes.IsDeleting(cpNodes[i]) {
+			deletingNodeCount++
+		} else if nodes.IsDeleteRequested(cpNodes[i]) {
+			deleteRequestedNodeCount++
 		}
 	}
 
@@ -51,12 +59,14 @@ func (s *clusterService) GetClusterControlPlane(
 	}
 
 	status := api.ControlPlaneStatus{
-		NodeCount:             len(cpNodes),
-		ReadyNodeCount:        readyNodeCount,
-		KubernetesVersion:     dbCluster.KubernetesVersion,
-		ControlPlaneUpgrading: apiConditionFromDB(dbCluster.Conditions.ControlPlaneUpgrading),
-		CpNodesRecycling:      apiConditionFromDB(dbCluster.Conditions.CPNodesRecycling),
-		Rollout:               controlPlaneRolloutSummary(dbCluster, cpNodes, rolloutByNode),
+		NodeCount:                len(cpNodes),
+		ReadyNodeCount:           readyNodeCount,
+		DeletingNodeCount:        deletingNodeCount,
+		DeleteRequestedNodeCount: deleteRequestedNodeCount,
+		KubernetesVersion:        dbCluster.KubernetesVersion,
+		ControlPlaneUpgrading:    apiConditionFromDB(dbCluster.Conditions.ControlPlaneUpgrading),
+		CpNodesRecycling:         apiConditionFromDB(dbCluster.Conditions.CPNodesRecycling),
+		Rollout:                  controlPlaneRolloutSummary(dbCluster, cpNodes, rolloutByNode),
 	}
 
 	return api.GetClusterControlPlane200JSONResponse(api.ClusterControlPlane{

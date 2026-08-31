@@ -208,7 +208,7 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 		),
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database, temporalClient),
+		nodeService:          *NewNodeService(logger, database, temporalClient, cfg.UseControlPlaneControllerForControlPlane()),
 		osProfileService:     *NewOSProfileService(cfg, logger),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 		cniPluginsService:    *NewCNIPluginsService(),

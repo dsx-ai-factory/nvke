@@ -10,8 +10,8 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/NVIDIA/nke/controller/internal/nodes"
 )
 
 func cpNodePoolMaxSurgeEnabled(pools []db.NodePool) bool {
@@ -127,7 +127,7 @@ func (r *reconciler) reconcileNodesNeedingRollout(ctx context.Context, cluster d
 	}
 
 	for _, nodeNeedingRollout := range nodesNeedingRollout {
-		if nodeNeedingRollout.Conditions.Deleting.Status == db.ConditionStatusTrue {
+		if nodes.IsDeleteInFlight(nodeNeedingRollout) {
 			logger.Info("Skipping node for deletion - node delete already in progress", "nodeID", nodeNeedingRollout.ID, "nodeName", nodeNeedingRollout.Name)
 			return nil
 		}
@@ -145,16 +145,21 @@ func (r *reconciler) reconcileNodesNeedingRollout(ctx context.Context, cluster d
 
 	nodeLogger.Info("Processing node for deletion in rolling upgrade")
 
-	// Teardown old node
-	if err := r.teardownOldNode(
+	// Teardown old node. A delete already in flight is a skip, not a failure: the
+	// next reconcile picks this up once that teardown finishes.
+	started, err := r.teardownOldNode(
 		ctx,
-		cluster.ID,
+		cp,
 		targetNode,
 		"OS version upgrade - replacing with new version",
 		"os-version-upgrade",
 		nodeLogger,
-	); err != nil {
+	)
+	if err != nil {
 		return fmt.Errorf("failed to teardown old node: %w", err)
+	}
+	if !started {
+		return nil
 	}
 
 	nodeLogger.Info("Node marked for deletion - will be replaced on next reconcile")
@@ -178,59 +183,42 @@ func (r *reconciler) getControlPlaneControllerManagedNodes(ctx context.Context, 
 	return controlPlaneManagedNodes, nil
 }
 
-// teardownOldNode marks a control-plane node for deletion.
+// teardownOldNode marks a control-plane node for deletion and queues its
+// teardown. It reports whether it started one: a delete already in flight is an
+// ordinary outcome, not a failure, so it comes back as (false, nil) rather than
+// as an error the caller has to recognize by its message.
+//
+// The in-flight check reads the control plane the reconcile already loaded
+// rather than re-querying, so every caller decides from one snapshot.
 func (r *reconciler) teardownOldNode(
 	ctx context.Context,
-	clusterID uuid.UUID,
+	cp *controlPlane,
 	node db.Node,
 	deletingMessage string,
 	workflowReason string,
 	logger *slog.Logger,
-) error {
-	// Check if any other control plane node is being deleted
-	// This ensures atomic check-and-set to prevent race conditions (within the reconciler's transaction)
-	cpTrue := true
-	allCPNodes, err := r.db.ListNodes(ctx, db.NodeFilters{
-		ClusterID:    &clusterID,
-		ControlPlane: &cpTrue,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to list control plane nodes: %w", err)
-	}
-
-	for _, cpNode := range allCPNodes {
-		if cpNode.Conditions.Deleting.Status == db.ConditionStatusTrue {
-			// Return a special error to indicate this is not a failure, just a skip
-			return fmt.Errorf("another control plane node %s is being deleted - aborting this deletion", cpNode.ID)
-		}
+) (bool, error) {
+	if inFlight, ok := cp.nodeWithDeleteInFlight(); ok {
+		logger.Info("Skipping control-plane node teardown: another delete is in flight",
+			"inFlightNodeID", inFlight.ID,
+			"inFlightNodeName", inFlight.Name,
+		)
+		return false, nil
 	}
 
 	nodeToDelete, err := r.db.GetNodeForUpdate(ctx, node.ID)
 	if err != nil {
-		return fmt.Errorf("failed to get node: %w", err)
+		return false, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	// Mark node for deletion
-	nodeToDelete.Conditions.Deleting = db.NewCondition(true, deletingMessage)
-
-	if _, err = r.db.UpdateNode(ctx, &nodeToDelete); err != nil {
-		return fmt.Errorf("failed to update node: %w", err)
-	}
-
-	// Create workflow outbox entry to trigger TeardownNode
-	workflowID := constants.TeardownNodeWorkflowPrefix + nodeToDelete.ID.String()
-	_, err = r.db.CreateWorkflowOutboxEntry(ctx, "TeardownNode", workflowID, map[string]interface{}{
-		"nodeID":                nodeToDelete.ID,
-		"skipRemoveFromCluster": false,
-		"allowCPNode":           true,
-		"reason":                workflowReason,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create teardown workflow: %w", err)
+	if err := nodes.StartTeardown(ctx, r.db, nodeToDelete, nodes.TeardownNodeInput{
+		Reason: workflowReason,
+	}, deletingMessage); err != nil {
+		return false, err
 	}
 
 	logger.Info("Marked node for deletion", "nodeID", nodeToDelete.ID, "nodeName", nodeToDelete.Name)
-	return nil
+	return true, nil
 }
 
 // updateClusterCPNodesRecyclingCondition updates the cluster's CP nodes recycling condition with the given status and message.

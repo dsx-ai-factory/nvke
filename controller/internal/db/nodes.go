@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -23,19 +24,24 @@ type Node struct {
 	// - worker nodes remain nodepool-managed with non-null node_pool_id/node_set_id
 	// Today active flows still create control-plane nodes with non-null node_pool_id/node_set_id;
 	// null values are reserved for the future no-nodepool control-plane path.
-	NodePoolID                  uuid.UUID         `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
-	NodeSetID                   uuid.UUID         `bun:"type:uuid,nullzero"`
-	ClusterID                   uuid.UUID         `bun:"type:uuid,notnull"`
-	ControlPlane                bool              `bun:"type:boolean,notnull,default:false"`
-	Name                        string            `bun:"type:text,notnull"`
-	IP                          string            `bun:"type:text,notnull"`
-	SpiffeEnabled               bool              `bun:"type:boolean,notnull,default:false"`
-	Conditions                  NodeConditions    `bun:"type:jsonb"`
-	AgentVersion                string            `bun:"type:text,notnull,default:''"`
-	ControlPlaneConfigurationID uuid.UUID         `bun:"configuration_id,type:uuid,nullzero"`
-	CreatedAt                   time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	UpdatedAt                   time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	Nico                        *NicoNodeProvider `bun:"nico,type:jsonb"`
+	NodePoolID                  uuid.UUID      `bun:"type:uuid,nullzero"` // Denormalized for api/join performance, also Node's will never change NodePools.
+	NodeSetID                   uuid.UUID      `bun:"type:uuid,nullzero"`
+	ClusterID                   uuid.UUID      `bun:"type:uuid,notnull"`
+	ControlPlane                bool           `bun:"type:boolean,notnull,default:false"`
+	Name                        string         `bun:"type:text,notnull"`
+	IP                          string         `bun:"type:text,notnull"`
+	SpiffeEnabled               bool           `bun:"type:boolean,notnull,default:false"`
+	Conditions                  NodeConditions `bun:"type:jsonb"`
+	AgentVersion                string         `bun:"type:text,notnull,default:''"`
+	ControlPlaneConfigurationID uuid.UUID      `bun:"configuration_id,type:uuid,nullzero"`
+	// DeleteRequest holds the TeardownNode input recorded when a delete was
+	// accepted but not yet started. It is set only on the control-plane-controller
+	// delete path, where the API records intent and the control-plane controller
+	// starts the teardown one node at a time; nil everywhere else.
+	DeleteRequest json.RawMessage   `bun:"delete_request,type:jsonb,nullzero"`
+	CreatedAt     time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	UpdatedAt     time.Time         `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	Nico          *NicoNodeProvider `bun:"nico,type:jsonb"`
 }
 
 type NicoNodeProvider struct {
@@ -60,12 +66,16 @@ func (n *Node) GetSpiffeID(trustDomain string) string {
 }
 
 type NodeConditions struct {
-	Pending                 Condition `json:"pending"`
-	ProvisioningClaimed     Condition `json:"provisioningClaimed"`
-	Provisioning            Condition `json:"provisioning"`
-	ReadyToJoin             Condition `json:"readyToJoin"`
-	Joined                  Condition `json:"joined"`
-	Provisioned             Condition `json:"provisioned"`
+	Pending             Condition `json:"pending"`
+	ProvisioningClaimed Condition `json:"provisioningClaimed"`
+	Provisioning        Condition `json:"provisioning"`
+	ReadyToJoin         Condition `json:"readyToJoin"`
+	Joined              Condition `json:"joined"`
+	Provisioned         Condition `json:"provisioned"`
+	// DeleteRequested marks a delete that has been accepted but whose teardown
+	// has not started yet. Deleting means the teardown itself is in flight, so at
+	// most one of the two is true at a time.
+	DeleteRequested         Condition `json:"deleteRequested"`
 	Deleting                Condition `json:"deleting"`
 	KubernetesReady         Condition `json:"kubernetesReady"`
 	KubernetesUnschedulable Condition `json:"kubernetesUnschedulable"`
@@ -169,6 +179,7 @@ type NodeFilters struct {
 	ProvisioningClaimed     *bool
 	Provisioning            *bool
 	Joined                  *bool
+	DeleteRequested         *bool
 	Deleting                *bool
 	KubernetesReady         *bool
 	KubernetesUnschedulable *bool
@@ -258,6 +269,9 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 	}
 	if filters.Joined != nil {
 		query = whereNodeConditionStatus(query, "joined", *filters.Joined)
+	}
+	if filters.DeleteRequested != nil {
+		query = whereNodeConditionStatus(query, "deleteRequested", *filters.DeleteRequested)
 	}
 	if filters.Deleting != nil {
 		query = whereNodeConditionStatus(query, "deleting", *filters.Deleting)

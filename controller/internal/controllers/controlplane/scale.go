@@ -117,26 +117,8 @@ func (r *reconciler) deleteNode(
 	reason string,
 	logger *slog.Logger,
 ) (bool, error) {
-	cpTrue := true
-	cpNodes, err := r.db.ListNodes(ctx, db.NodeFilters{
-		ClusterID:    &cluster.ID,
-		ControlPlane: &cpTrue,
-	})
-	if err != nil {
-		return false, fmt.Errorf("listing control-plane nodes for delete: %w", err)
-	}
-
-	// Do not attempt another delete while any control-plane delete is in progress.
-	for _, cpNode := range cpNodes {
-		if isMarkedForDeletion(cpNode) {
-			logger.Info("Skipping control-plane node delete: node delete already in progress",
-				"nodeID", cpNode.ID,
-				"nodeName", cpNode.Name,
-			)
-			return false, fmt.Errorf("can not delete while another node delete is in progress")
-		}
-	}
-
+	// The in-flight check lives in teardownOldNode, against the control plane this
+	// reconcile already loaded. Health is this caller's own precondition.
 	healthy, err := r.isControlPlaneHealthy(ctx, cluster, cp, logger)
 	if err != nil {
 		return false, err
@@ -145,7 +127,7 @@ func (r *reconciler) deleteNode(
 		logger.Info("Control plane not ready for node delete - waiting for sufficient healthy nodes",
 			"nodeName", node.Name,
 		)
-		return false, fmt.Errorf("control plane is not healthy, node delete failed")
+		return false, nil
 	}
 
 	nodeLogger := logger.With(
@@ -153,17 +135,18 @@ func (r *reconciler) deleteNode(
 		"nodeName", node.Name,
 	)
 	nodeLogger.Info("Deleting surplus no-nodepool control-plane node", "reason", reason)
-	if err := r.teardownOldNode(
+	started, err := r.teardownOldNode(
 		ctx,
-		cluster.ID,
+		cp,
 		node,
 		reason,
 		"control-plane-scale-down",
 		nodeLogger,
-	); err != nil {
+	)
+	if err != nil {
 		return false, fmt.Errorf("tearing down surplus control-plane node %q: %w", node.Name, err)
 	}
-	return true, nil
+	return started, nil
 }
 
 // scaleDownSurgeNodes removes cluster-level surge control-plane nodes when max surge

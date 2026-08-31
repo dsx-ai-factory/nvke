@@ -6,12 +6,12 @@ package controlplane
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 
 	"github.com/google/uuid"
 
 	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/NVIDIA/nke/controller/internal/nodes"
 )
 
 // controlPlane represents a control plane in the database.
@@ -121,11 +121,6 @@ func preloadControlPlaneConfigs(
 		configs[row.ID] = row.Config
 	}
 	return configs, nil
-}
-
-// hasNodesMarkedForDeletion returns true if there is at least one node that is marked for deletion.
-func (c *controlPlane) hasNodesMarkedForDeletion() bool {
-	return slices.ContainsFunc(c.nodes, isMarkedForDeletion)
 }
 
 // hasNodesProvisioning returns true if there is at least one node that is not marked for
@@ -380,4 +375,46 @@ func isProvisioned(node db.Node) bool {
 // isNodeAgentReady returns true if the node has a NodeAgentReady condition that is true.
 func isNodeAgentReady(node db.Node) bool {
 	return node.Conditions.NodeAgentReady.Status == db.ConditionStatusTrue
+}
+
+// nodesWithDeleteRequested returns the nodes whose delete has been accepted but
+// whose teardown has not started yet.
+func (c *controlPlane) nodesWithDeleteRequested() []db.Node {
+	var requested []db.Node
+	for _, node := range c.nodes {
+		if nodes.IsDeleteRequested(node) {
+			requested = append(requested, node)
+		}
+	}
+	return requested
+}
+
+// nodeTearingDown returns the first node whose teardown is in flight, if any.
+func (c *controlPlane) nodeTearingDown() (db.Node, bool) {
+	for _, node := range c.nodes {
+		if isMarkedForDeletion(node) {
+			return node, true
+		}
+	}
+	return db.Node{}, false
+}
+
+// nodeWithDeleteInFlight returns the first node with an accepted delete that has
+// not finished, recorded or already tearing down, and whether there was one.
+func (c *controlPlane) nodeWithDeleteInFlight() (db.Node, bool) {
+	for _, node := range c.nodes {
+		if nodes.IsDeleteInFlight(node) {
+			return node, true
+		}
+	}
+	return db.Node{}, false
+}
+
+// hasDeleteInFlight reports whether any control-plane node has an accepted
+// delete that has not finished: recorded and waiting, or already tearing down.
+// Anything that would add or replace a control-plane node has to wait on this,
+// so a join never overlaps an etcd member removal.
+func (c *controlPlane) hasDeleteInFlight() bool {
+	_, ok := c.nodeWithDeleteInFlight()
+	return ok
 }

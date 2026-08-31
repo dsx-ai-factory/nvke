@@ -810,6 +810,8 @@ components:
         - kubernetesVersion
         - controlPlaneUpgrading
         - cpNodesRecycling
+        - deletingNodeCount
+        - deleteRequestedNodeCount
       properties:
         nodeCount:
           type: integer
@@ -841,6 +843,20 @@ components:
             plane is managed by the control-plane controller; absent for
             node-pool-managed control planes.
           x-order: 6
+        deletingNodeCount:
+          type: integer
+          description: |
+            Number of control-plane nodes whose teardown is in flight. Control-plane
+            deletes are serialized, so this is at most 1.
+          x-go-type-skip-optional-pointer: true
+          x-order: 7
+        deleteRequestedNodeCount:
+          type: integer
+          description: |
+            Number of control-plane nodes with an accepted delete whose teardown has
+            not started yet, because it is queued behind the in-flight one.
+          x-go-type-skip-optional-pointer: true
+          x-order: 8
 
     CreateClusterControlPlaneConfig:
       type: object
@@ -2082,6 +2098,7 @@ components:
         - joined
         - provisioned
         - deleting
+        - deleteRequested
         - kubernetesReady
         - kubernetesUnschedulable
         - nodeAgentReady
@@ -2156,6 +2173,15 @@ components:
             control-plane controller.
           $ref: "#/components/schemas/Condition"
           x-order: 15
+        deleteRequested:
+          description: |
+            The condition indicating that a delete has been accepted for this node
+            but its teardown has not started yet. Control-plane deletes are recorded
+            here first and started by the control-plane controller one at a time;
+            `deleting` then reports the teardown itself. At most one of the two is
+            true at a time.
+          $ref: "#/components/schemas/Condition"
+          x-order: 16
 
     GenericError:
       type: object
