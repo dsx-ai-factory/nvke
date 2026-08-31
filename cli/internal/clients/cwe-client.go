@@ -26,10 +26,10 @@ type CWEClient struct {
 // New builds a CWEClient from a SiteConfig.
 // The URL should be the site controller base URL (e.g. http://localhost:8080).
 // The /api prefix is added automatically so callers never need to include it.
-// FIXME: auth is not yet implemented. NKX-15055 will add --kubeconfig support
-// to set-site, storing the management cluster kubeconfig in SiteConfig; a
-// separate epic will use it to mint a short-lived JWT and attach it as a
-// bearer token on every request.
+// FIXME: auth is not yet implemented. A future change will add --kubeconfig
+// support to set-site, storing the management cluster kubeconfig in SiteConfig;
+// that kubeconfig will be used to mint a short-lived JWT attached as a bearer
+// token on every request.
 func New(cfg config.SiteConfig) (*CWEClient, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("site URL is empty: run 'nkectl config set-site --url <url>'")

@@ -31,9 +31,10 @@ func NewGetCmd(clientFn ClientFn) *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "clusters",
-		Short: "List tenant clusters on the site controller",
-		Args:  cobra.NoArgs,
+		Use:     "clusters",
+		Aliases: []string{"cluster"},
+		Short:   "List tenant clusters on the site controller",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			f, err := util.ParseFormat(outputFormat)
 			if err != nil {
@@ -73,9 +74,10 @@ func NewDescribeCmd(clientFn ClientFn) *cobra.Command {
 	var outputFormat string
 
 	cmd := &cobra.Command{
-		Use:   "cluster <name>",
-		Short: "Show details of a tenant cluster",
-		Args:  cobra.ExactArgs(1),
+		Use:     "cluster <name>",
+		Aliases: []string{"clusters"},
+		Short:   "Show details of a tenant cluster",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			f, err := util.ParseFormat(outputFormat)
 			if err != nil {
@@ -109,8 +111,9 @@ func NewCreateCmd(clientFn ClientFn) *cobra.Command {
 	var filename string
 
 	cmd := &cobra.Command{
-		Use:   "cluster",
-		Short: "Create a tenant cluster",
+		Use:     "cluster",
+		Aliases: []string{"clusters"},
+		Short:   "Create a tenant cluster",
 		Long: `Create a tenant cluster on the site controller.
 
 The spec must be a YAML document whose fields match the CWE
@@ -172,9 +175,10 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 // NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.
 func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "cluster <name>",
-		Short: "Delete a tenant cluster",
-		Args:  cobra.ExactArgs(1),
+		Use:     "cluster <name>",
+		Aliases: []string{"clusters"},
+		Short:   "Delete a tenant cluster",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			c, err := clientFn()
