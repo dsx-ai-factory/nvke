@@ -92,6 +92,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 				validatePostReadyClusterState(&test)
 				validatePostReadyNodeOperations(&test)
 			}
+			if spec.validate.kubeVipRouteWithdrawal {
+				validatePostReadyKubeVipRouteWithdrawal(&test)
+			}
 			if spec.validate.csrApproval {
 				validateKubeletServingCSRApproval(&test)
 			}
@@ -196,7 +199,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 		}, NodeTimeout(1*time.Hour))
 	},
-	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path"), testSpec{
+	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
@@ -212,6 +215,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			csrApproval: true, nodePoolLifecycle: true,
 			nodePoolCascade: true, nodeReplacement: true,
 			manualScaleDown: true, clusterConfig: true,
+			kubeVipRouteWithdrawal: true,
 		},
 	}),
 	// This row is selected only by the dedicated identity-exchange lane. Keeping
@@ -457,6 +461,9 @@ type validations struct {
 	// postReadyChecks verifies intended cluster state after the initial CAPD
 	// cluster and all desired nodes are Ready.
 	postReadyChecks bool
+	// kubeVipRouteWithdrawal stops one CAPD kube-apiserver and verifies kube-vip
+	// withdraws only that node's BGP path before restoring it.
+	kubeVipRouteWithdrawal bool
 	// csrApproval rotates a Ready worker's kubelet serving certificate and
 	// verifies that the tenant CSR controller approves and obtains a new one.
 	csrApproval bool

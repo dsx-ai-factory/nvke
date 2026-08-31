@@ -30,6 +30,7 @@ const (
 	NodeAgent_ExecuteKubeadmReset_FullMethodName                          = "/proto.NodeAgent/ExecuteKubeadmReset"
 	NodeAgent_ReconfigureKubeletAPIServer_FullMethodName                  = "/proto.NodeAgent/ReconfigureKubeletAPIServer"
 	NodeAgent_KubeadmUpgradeApply_FullMethodName                          = "/proto.NodeAgent/KubeadmUpgradeApply"
+	NodeAgent_ReconcileKubeVip_FullMethodName                             = "/proto.NodeAgent/ReconcileKubeVip"
 	NodeAgent_StartK8SControlPlaneNodeGracefulShutdown_FullMethodName     = "/proto.NodeAgent/StartK8sControlPlaneNodeGracefulShutdown"
 	NodeAgent_GetK8SControlPlaneNodeGracefulShutdownStatus_FullMethodName = "/proto.NodeAgent/GetK8sControlPlaneNodeGracefulShutdownStatus"
 	NodeAgent_StartKubeVipRestore_FullMethodName                          = "/proto.NodeAgent/StartKubeVipRestore"
@@ -90,6 +91,12 @@ type NodeAgentClient interface {
 	// Retrying the same target is safe because kubeadm upgrade apply is
 	// idempotent and is run again to finish any incomplete add-on convergence.
 	KubeadmUpgradeApply(ctx context.Context, in *KubeadmUpgradeApplyRequest, opts ...grpc.CallOption) (*KubeadmUpgradeApplyResponse, error)
+	// ReconcileKubeVip atomically converges the kube-vip static-pod manifest for
+	// NKE's active/active BGP control-plane mode. The fixed mode disables every
+	// Kubernetes API-backed kube-vip feature. For kube-vip v1.2.0 compatibility,
+	// the pod receives a kubeconfig with no client credential; this RPC never
+	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
+	ReconcileKubeVip(ctx context.Context, in *ReconcileKubeVipRequest, opts ...grpc.CallOption) (*ReconcileKubeVipResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -319,6 +326,16 @@ func (c *nodeAgentClient) KubeadmUpgradeApply(ctx context.Context, in *KubeadmUp
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KubeadmUpgradeApplyResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_KubeadmUpgradeApply_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) ReconcileKubeVip(ctx context.Context, in *ReconcileKubeVipRequest, opts ...grpc.CallOption) (*ReconcileKubeVipResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconcileKubeVipResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_ReconcileKubeVip_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -728,6 +745,12 @@ type NodeAgentServer interface {
 	// Retrying the same target is safe because kubeadm upgrade apply is
 	// idempotent and is run again to finish any incomplete add-on convergence.
 	KubeadmUpgradeApply(context.Context, *KubeadmUpgradeApplyRequest) (*KubeadmUpgradeApplyResponse, error)
+	// ReconcileKubeVip atomically converges the kube-vip static-pod manifest for
+	// NKE's active/active BGP control-plane mode. The fixed mode disables every
+	// Kubernetes API-backed kube-vip feature. For kube-vip v1.2.0 compatibility,
+	// the pod receives a kubeconfig with no client credential; this RPC never
+	// reads, creates, or mounts the host's admin.conf or super-admin.conf.
+	ReconcileKubeVip(context.Context, *ReconcileKubeVipRequest) (*ReconcileKubeVipResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -903,6 +926,9 @@ func (UnimplementedNodeAgentServer) ReconfigureKubeletAPIServer(context.Context,
 }
 func (UnimplementedNodeAgentServer) KubeadmUpgradeApply(context.Context, *KubeadmUpgradeApplyRequest) (*KubeadmUpgradeApplyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method KubeadmUpgradeApply not implemented")
+}
+func (UnimplementedNodeAgentServer) ReconcileKubeVip(context.Context, *ReconcileKubeVipRequest) (*ReconcileKubeVipResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReconcileKubeVip not implemented")
 }
 func (UnimplementedNodeAgentServer) StartK8SControlPlaneNodeGracefulShutdown(context.Context, *StartK8SControlPlaneNodeGracefulShutdownRequest) (*StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartK8SControlPlaneNodeGracefulShutdown not implemented")
@@ -1156,6 +1182,24 @@ func _NodeAgent_KubeadmUpgradeApply_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).KubeadmUpgradeApply(ctx, req.(*KubeadmUpgradeApplyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_ReconcileKubeVip_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconcileKubeVipRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).ReconcileKubeVip(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_ReconcileKubeVip_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).ReconcileKubeVip(ctx, req.(*ReconcileKubeVipRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1803,6 +1847,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "KubeadmUpgradeApply",
 			Handler:    _NodeAgent_KubeadmUpgradeApply_Handler,
+		},
+		{
+			MethodName: "ReconcileKubeVip",
+			Handler:    _NodeAgent_ReconcileKubeVip_Handler,
 		},
 		{
 			MethodName: "StartK8sControlPlaneNodeGracefulShutdown",
