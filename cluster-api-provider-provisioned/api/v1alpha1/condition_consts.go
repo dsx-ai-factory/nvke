@@ -45,4 +45,13 @@ const (
 	// locked by another cluster. The inventories overlap: two clusters list the
 	// same physical machine, and the other one got there first.
 	HostsClaimedElsewhereReason = "HostsClaimedElsewhere"
+
+	// StaleHostClaimReason means a permanent host claim belongs to a previous
+	// machine of this cluster. The host must be verified safe before an operator
+	// deletes the claim.
+	StaleHostClaimReason = "StaleHostClaim"
+
+	// NodeProviderIDConflictReason means the tenant Node already has a provider
+	// ID that does not match its ProvisionedMachine.
+	NodeProviderIDConflictReason = "NodeProviderIDConflict"
 )

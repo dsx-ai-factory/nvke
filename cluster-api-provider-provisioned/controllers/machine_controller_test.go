@@ -208,6 +208,33 @@ func TestMachineReconcilerRejectsABoundHostClaimedByAnotherMachine(t *testing.T)
 		metav1.ConditionFalse, infrav1.HostsClaimedElsewhereReason)
 }
 
+func TestMachineReconcilerReportsABoundHostClaimedByAPreviousMachine(t *testing.T) {
+	host := hostWithAddress("host-01", "10.0.0.11")
+	machine := newInfraMachine(testMachineName, infrav1.FormatProviderID(testClusterName, host.IPAddress))
+	staleClaim := &infrav1.ProvisionedHostClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: infrav1.HostClaimName(host.IPAddress)},
+		Spec: infrav1.ProvisionedHostClaimSpec{
+			IPAddress:        host.IPAddress,
+			ClusterName:      testClusterName,
+			MachineNamespace: machine.Namespace,
+			MachineName:      machine.Name,
+			MachineUID:       "uid-previous-incarnation",
+		},
+	}
+	reconciler, k8sClient := newMachineReconcilerForTest(t,
+		newInfraCluster(host), newCAPICluster(), newOwnerMachine(), machine, staleClaim,
+	)
+
+	result, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
+	require.NoError(t, err)
+	require.Equal(t, retryAfter, result.RequeueAfter)
+
+	machine = getInfraMachine(t, k8sClient, testMachineName)
+	require.Nil(t, machine.Status.Initialization.Provisioned)
+	requireReadyCondition(t, machine.Status.Conditions,
+		metav1.ConditionFalse, infrav1.StaleHostClaimReason)
+}
+
 func TestMachineReconcilerTreatsAClaimWithNoHolderAsPermanent(t *testing.T) {
 	host := hostWithAddress("host-01", "10.0.0.11")
 	abandoned := &infrav1.ProvisionedHostClaim{
@@ -274,8 +301,9 @@ func TestMachineReconcilerKeepsAnExistingBinding(t *testing.T) {
 		newInfraMachine(testMachineName, "provisioned://test/10.0.0.12"),
 	)
 
-	_, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
+	result, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
 	require.NoError(t, err)
+	require.Equal(t, retryAfter, result.RequeueAfter)
 
 	machine := getInfraMachine(t, k8sClient, testMachineName)
 	require.Equal(t, "provisioned://test/10.0.0.12", machine.Spec.ProviderID)

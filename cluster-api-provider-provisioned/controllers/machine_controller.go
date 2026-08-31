@@ -28,7 +28,7 @@ import (
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=provisionedmachines,verbs=get;list;patch;update;watch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=provisionedmachines/status,verbs=get;patch;update
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=provisionedhostclaims,verbs=create;get;list
-// +kubebuilder:rbac:groups="",resources=secrets,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=secrets,verbs=get
 
 const (
 	// retryAfter is the wait before the provider looks again for a free host.
@@ -58,7 +58,7 @@ func NewMachineReconciler(k8sClient client.Client, apiReader client.Reader, logg
 	return &MachineReconciler{
 		client:        k8sClient,
 		apiReader:     apiReader,
-		tenantClients: newKubeconfigTenantClientFactory(k8sClient, k8sClient.Scheme()),
+		tenantClients: newKubeconfigTenantClientFactory(apiReader, k8sClient.Scheme()),
 		logger:        logger,
 	}
 }
@@ -260,12 +260,16 @@ func (r *MachineReconciler) allocateHost(
 	var host infrav1.ProvisionedHost
 	var claimed bool
 	var lastConflict error
+	var staleConflict error
 	for _, candidate := range candidates {
 		claimResult, err := r.claimHost(ctx, machine, infraCluster.Name, candidate)
-		if errors.Is(err, errHostClaimedElsewhere) {
-			logger.Info("Host is locked by another cluster, trying the next one",
+		if errors.Is(err, errHostClaimedElsewhere) || errors.Is(err, errHostClaimedByStaleMachine) {
+			logger.Info("Host has a permanent claim, trying the next one",
 				"host", candidate.Hostname, "reason", err.Error())
 			lastConflict = err
+			if errors.Is(err, errHostClaimedByStaleMachine) {
+				staleConflict = err
+			}
 			continue
 		}
 		if err != nil {
@@ -282,11 +286,18 @@ func (r *MachineReconciler) allocateHost(
 		break
 	}
 	if !claimed {
+		reason := infrav1.HostsClaimedElsewhereReason
+		conflict := lastConflict
 		message := fmt.Sprintf(
-			"Every free host is locked by another cluster, so the inventories overlap: %v", lastConflict)
-		logger.Error("No host could be locked", "error", lastConflict)
+			"Every free host is locked by another cluster, so the inventories overlap: %v", conflict)
+		if staleConflict != nil {
+			reason = infrav1.StaleHostClaimReason
+			conflict = staleConflict
+			message = fmt.Sprintf("A permanent host claim belongs to a previous machine of this cluster: %v", conflict)
+		}
+		logger.Error("No host could be locked", "error", conflict)
 		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.HostsClaimedElsewhereReason, message)
+			r.setNotReady(ctx, machine, reason, message)
 	}
 
 	machine.Spec.ProviderID = infrav1.FormatProviderID(infraCluster.Name, host.IPAddress)
@@ -334,10 +345,17 @@ func (r *MachineReconciler) reconcileBoundMachine(
 		// give a running node to a second machine.
 		logger.Warn("Host of a bound machine is no longer in the inventory", "ipAddress", ipAddress)
 		message := fmt.Sprintf("Host with IP address %q is no longer in the inventory of the cluster", ipAddress)
-		return ctrl.Result{}, r.setNotReady(ctx, machine, infrav1.HostNotFoundReason, message)
+		return ctrl.Result{RequeueAfter: retryAfter},
+			r.setNotReady(ctx, machine, infrav1.HostNotFoundReason, message)
 	}
 
 	claimResult, err := r.claimHost(ctx, machine, infraCluster.Name, host)
+	if errors.Is(err, errHostClaimedByStaleMachine) {
+		message := fmt.Sprintf("Host %q has a permanent claim from a previous machine of this cluster: %v", host.Hostname, err)
+		logger.Error("Host of a bound machine has a stale claim", "host", host.Hostname, "error", err)
+		return ctrl.Result{RequeueAfter: retryAfter},
+			r.setNotReady(ctx, machine, infrav1.StaleHostClaimReason, message)
+	}
 	if errors.Is(err, errHostClaimedElsewhere) {
 		message := fmt.Sprintf("Host %q cannot be used because its IP address is claimed by another machine: %v", host.Hostname, err)
 		logger.Error("Host of a bound machine is claimed elsewhere", "host", host.Hostname, "error", err)
@@ -371,7 +389,10 @@ func (r *MachineReconciler) reconcileNodeProviderID(
 		return ctrl.Result{}, fmt.Errorf("failed to get Cluster for tenant Node: %w", err)
 	}
 
-	tenantClient, err := r.tenantClients.ClientForCluster(ctx, cluster)
+	tenantCtx, cancel := context.WithTimeout(ctx, tenantAPITimeout)
+	defer cancel()
+
+	tenantClient, err := r.tenantClients.ClientForCluster(tenantCtx, cluster)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Waiting for the tenant kubeconfig Secret", "cluster", cluster.Name)
@@ -381,7 +402,7 @@ func (r *MachineReconciler) reconcileNodeProviderID(
 	}
 
 	node := &corev1.Node{}
-	if err := tenantClient.Get(ctx, client.ObjectKey{Name: ownerMachine.Name}, node); err != nil {
+	if err := tenantClient.Get(tenantCtx, client.ObjectKey{Name: ownerMachine.Name}, node); err != nil {
 		if apierrors.IsNotFound(err) {
 			logger.Info("Waiting for the tenant Node", "node", ownerMachine.Name)
 			return ctrl.Result{RequeueAfter: retryAfter}, nil
@@ -392,15 +413,16 @@ func (r *MachineReconciler) reconcileNodeProviderID(
 		return ctrl.Result{}, nil
 	}
 	if node.Spec.ProviderID != "" {
-		return ctrl.Result{}, fmt.Errorf(
-			"tenant Node %s has provider ID %q, expected %q",
-			node.Name, node.Spec.ProviderID, machine.Spec.ProviderID,
-		)
+		message := fmt.Sprintf("Tenant Node %s has provider ID %q, expected %q",
+			node.Name, node.Spec.ProviderID, machine.Spec.ProviderID)
+		logger.Error("Tenant Node holds a different provider ID", "node", node.Name,
+			"providerID", node.Spec.ProviderID, "expectedProviderID", machine.Spec.ProviderID)
+		return ctrl.Result{}, r.setNotReady(ctx, machine, infrav1.NodeProviderIDConflictReason, message)
 	}
 
 	patch := client.MergeFromWithOptions(node.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	node.Spec.ProviderID = machine.Spec.ProviderID
-	if err := tenantClient.Patch(ctx, node, patch); err != nil {
+	if err := tenantClient.Patch(tenantCtx, node, patch); err != nil {
 		if apierrors.IsConflict(err) {
 			logger.Info("Tenant Node changed while setting its provider ID; retrying", "node", node.Name)
 			return ctrl.Result{Requeue: true}, nil

@@ -43,9 +43,13 @@ func TestMachineReconcilerKeepsMatchingTenantNodeProviderID(t *testing.T) {
 func TestMachineReconcilerRejectsDifferentTenantNodeProviderID(t *testing.T) {
 	reconciler, tenantClient, _ := newMachineReconcilerWithTenant(t, "provisioned://other/10.0.0.12", nil)
 
-	_, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
-	require.ErrorContains(t, err, "has provider ID")
+	result, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
+	require.NoError(t, err)
+	require.Equal(t, ctrl.Result{}, result)
 	require.Equal(t, "provisioned://other/10.0.0.12", getTenantNode(t, tenantClient).Spec.ProviderID)
+	machine := getInfraMachine(t, reconciler.client, testMachineName)
+	requireReadyCondition(t, machine.Status.Conditions,
+		metav1.ConditionFalse, infrav1.NodeProviderIDConflictReason)
 }
 
 func TestMachineReconcilerDoesNotOverwriteAConcurrentTenantNodeProviderID(t *testing.T) {

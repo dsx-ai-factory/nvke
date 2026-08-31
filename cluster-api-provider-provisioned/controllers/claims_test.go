@@ -156,7 +156,9 @@ func TestClaimHostDoesNotAdoptClaimFromPreviousMachineUID(t *testing.T) {
 	reconciler, k8sClient := newMachineReconcilerForTest(t, machine, oldClaim)
 
 	_, err := reconciler.claimHost(context.Background(), machine, testClusterName, host)
-	require.ErrorIs(t, err, errHostClaimedElsewhere)
+	require.ErrorIs(t, err, errHostClaimedByStaleMachine)
+	require.ErrorContains(t, err, oldClaim.Name)
+	require.ErrorContains(t, err, "verify the host is safe before deleting the claim")
 
 	claim := &infrav1.ProvisionedHostClaim{}
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKey{Name: oldClaim.Name}, claim))

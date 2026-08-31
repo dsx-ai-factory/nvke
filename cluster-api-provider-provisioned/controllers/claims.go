@@ -16,11 +16,15 @@ import (
 	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
 
-// errHostClaimedElsewhere means another cluster holds this host. The caller
-// moves on to the next candidate rather than failing: an inventory that names a
-// machine someone else took is an operator mistake to report, not a reason to
-// stop using the hosts that are free.
-var errHostClaimedElsewhere = errors.New("host is claimed by another cluster")
+var (
+	// errHostClaimedElsewhere means another cluster holds this host.
+	errHostClaimedElsewhere = errors.New("host is claimed by another cluster")
+
+	// errHostClaimedByStaleMachine means this cluster has a permanent claim from
+	// a previous incarnation of a machine. An operator must verify the host is
+	// safe before deleting that claim manually.
+	errHostClaimedByStaleMachine = errors.New("host is claimed by a previous machine of this cluster")
+)
 
 // machineHasClaim reports whether a permanent host claim belongs to the
 // current incarnation of a machine. It is used only during deletion, to avoid
@@ -107,6 +111,13 @@ func (r *MachineReconciler) claimIPAddress(
 		existing.Spec.MachineName == machine.Name &&
 		existing.Spec.MachineUID == string(machine.UID) {
 		return ctrl.Result{}, nil
+	}
+	if existing.Spec.ClusterName == clusterName {
+		return ctrl.Result{}, fmt.Errorf(
+			"%w: claim %q for IP address %q belongs to machine %s/%s with UID %q; verify the host is safe before deleting the claim",
+			errHostClaimedByStaleMachine, existing.Name, ipAddress,
+			existing.Spec.MachineNamespace, existing.Spec.MachineName, existing.Spec.MachineUID,
+		)
 	}
 
 	// Claims are permanent for the life of this bootstrap management cluster.
