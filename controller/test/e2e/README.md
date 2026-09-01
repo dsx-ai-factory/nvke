@@ -211,11 +211,13 @@ The `nico-vms && os-profiles` matrix gives each supported active OS profile an
 isolated sanity lifecycle: create a one-control-plane/one-worker tenant cluster,
 wait for both nodes to become Ready in CWE, and delete the cluster. The matrix
 reads active profile names, architectures, and Kubernetes versions from fleet
-OS profile metadata (NKX-13910). Resolution order:
+OS profile metadata, which is maintained outside this repository. Resolution order:
 
 1. `$CWE_PROFILES_DIR/osProfiles/metadata.yaml`
 2. `$PROFILES_DIR/osProfiles/metadata.yaml`
 3. sibling `../nke-site-deploy/cwe-profiles/profiles/osProfiles/metadata.yaml`
+   (an NVIDIA-internal fleet repository; external contributors use the
+   environment variables above instead)
 
 If fleet metadata is unavailable, nico-vms matrix table entries are skipped at
 suite init (no panic) so CAPD and other label filters can still run.
@@ -239,8 +241,9 @@ make test-e2e ARGS='--label-filter="os-profiles && nke-260625-24.04-x86-fde"'
 
 When adding an OS profile:
 
-1. Add its directory and active metadata entry under
-   `nke-site-deploy/cwe-profiles/profiles/osProfiles/`.
+1. Add its directory and active metadata entry to the fleet profiles
+   directory (for NVIDIA maintainers, the internal fleet repository; otherwise
+   the directory `$CWE_PROFILES_DIR` points at).
 2. For an amd64 tenant profile, no separate e2e list update is required; the
    matrix includes it automatically.
 3. If nico-vms cannot support it, add it to

@@ -19,7 +19,7 @@ type: application
 # image the same pipeline builds:
 #   --version <BUILD_VERSION without leading v>   (OCI-safe SemVer tag)
 #   --app-version <BUILD_VERSION>                 (drives image.tag)
-# See .gitlab/ci/publish.yml (publish-chart-nvcr).
+# See .github/workflows/chart-publish-nvcr.yml.
 version: "0.0.0"
 
 appVersion: "0.0.0"

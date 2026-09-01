@@ -56,7 +56,7 @@ flox activate -- make test
 flox activate -- make lint
 ```
 
-This is especially important for code generation. Do not invoke `oapi-codegen` directly; always run `make generate` through Flox so the repo's expected toolchain and post-generation steps are used.
+For code generation, do not invoke `oapi-codegen` directly; run `make generate`. The generator version is pinned in `api/oapi-codegen.mod` and run through `go generate`, so the output does not depend on whatever is on `PATH`. Flox is optional here as everywhere, but prefer `flox activate -- make <target>` when `flox` is available and you are not already inside the environment.
 
 ### Build
 ```bash
@@ -77,7 +77,7 @@ make test-integration      # Run integration tests (requires running CWE deploym
 
 ### Code Generation
 ```bash
-flox activate -- make generate     # Regenerate Go code from OpenAPI spec
+make generate     # Regenerate Go code from OpenAPI spec
 make license      # Add/update license headers on code files
 ```
 
@@ -115,7 +115,7 @@ All Go files must use the repository's Apache-2.0 SPDX header. Run `make license
 │   └── client.gen.go       # Generated client
 ├── cmd/
 │   └── worker/             # Main CWE worker entrypoint
-├── docs/                   # Developer guides (e.g. remote Colossus Tilt)
+├── docs/                   # Developer guides (API authentication, BYO OS)
 ├── hack/
 │   └── remote-sync/        # Mutagen templates for Mac→Linux Tilt
 ├── internal/
@@ -139,7 +139,7 @@ All Go files must use the repository's Apache-2.0 SPDX header. Run `make license
 When modifying the API:
 
 1. Edit `api/openapi.yaml`
-2. Run `flox activate -- make generate` to regenerate Go code
+2. Run `make generate` to regenerate Go code
 3. Implement new handlers in `internal/server/`
 4. Generated files: `api/models.gen.go`, `api/server.gen.go`, `api/client.gen.go`
 
@@ -166,7 +166,7 @@ Key configuration (see `internal/config/config.go` for full list):
 | `DB_CONNECTION_STRING` | `postgres://...` | PostgreSQL connection string |
 | `TEMPORAL_HOST_PORT` | `localhost:7233` | Temporal server for CWE workflows |
 | `FWE_API_KEY` | (required) | NGC API key for Forge API |
-| `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles (fleet content supplied at runtime from nke-site-deploy; see NKX-13910) |
+| `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. |
 | `SPIFFE_ENDPOINT_SOCKET` | (optional) | SPIRE agent socket path for SPIFFE identity (e.g., `unix:///tmp/spire-agent/agent.sock`) |
 | `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what a host-local `go run` gets. Set but unreadable is a startup failure, never "disabled". |
 | `PERMISSIVE_MODE` | `false` | Only read when `AUTH_CONFIG_PATH` is set. `true` evaluates, logs and counts every request, then serves it anyway — nothing is rejected. |
@@ -274,7 +274,7 @@ the release and publishes the controller image and Helm chart. Follow the root
 - Run `make lint` and `make test` before committing
 - Ensure all `TODO:` comments are resolved
 - Add license headers: `make license`
-- Regenerate API code if OpenAPI spec changed: `flox activate -- make generate`
+- Regenerate API code if OpenAPI spec changed: `make generate`
 
 ### PR Format
 - Use a Conventional Commit title, such as `fix: handle node reset timeout`

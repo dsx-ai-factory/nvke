@@ -3,20 +3,20 @@
 
 version: "1.0"
 project: "cloud-workflow-engine"
-last_updated: "2026-07-23T20:41:47Z"
+last_updated: "2026-09-01T00:00:00Z"
 
 repository_exposure_classification:
-  visibility: "Internal"
-  basis: "origin remote is hosted on NVIDIA's internal GitLab service"
-  confirmed_by: "apatten@nvidia.com"
-  date: "2026-07-23"
+  visibility: "Public"
+  basis: "repository is published at github.com/NVIDIA/nke under the Apache-2.0 license"
+  confirmed_by: "nke maintainers (see MAINTAINERS.md)"
+  date: "2026-09-01"
 
 service_exposure_classification:
-  tier: "Internal-Sensitive"
+  tier: "Sensitive"
   confidence: "high"
-  basis: "user-confirmed internal production orchestration service; handles credentials, privileged cluster and node lifecycle operations, security identity material, and deployment and release automation"
-  confirmed_by: "apatten@nvidia.com"
-  date: "2026-07-23"
+  basis: "orchestration service that handles credentials, privileged cluster and node lifecycle operations, and security identity material; intended for trusted management-plane deployment, not public exposure"
+  confirmed_by: "nke maintainers (see MAINTAINERS.md)"
+  date: "2026-09-01"
 
 false_positives: []
 accepted_risks: []

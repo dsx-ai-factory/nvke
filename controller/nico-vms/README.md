@@ -4,7 +4,7 @@ A standalone Forge-compatible VM management service. It implements the Forge API
 
 ## Migrating from `forge-vms`
 
-This service was called `forge-vms` until NKX-15090. The rename is a hard cut with
+This service was called `forge-vms` until [#279](https://github.com/NVIDIA/nke/pull/279). The rename is a hard cut with
 no compatibility shims, so a host that ran the old build needs a one-time migration.
 
 First destroy any VMs the old build left behind. They are named `forge-vm-*`, and the
@@ -197,10 +197,10 @@ Ranges used by a nico-vms deployment and the tenant clusters it creates — keep
 
 > **Why `172.30`/`172.31`?** The bridge and VIP ranges are deliberately kept clear of every other consumer:
 > - tenant **pod CIDR** `192.168.0.0/16` (class C, Calico default) — a node or VIP inside it gets shadowed by Calico's per-node `/26` `blackhole` routes;
-> - tenant **service CIDR** `10.96.0.0/12` and NVIDIA's corporate `10.0.0.0/8` (class A) — a `10.x` bridge could shadow a real corporate route on the host;
+> - tenant **service CIDR** `10.96.0.0/12` and the commonly used corporate/VPN `10.0.0.0/8` (class A) — a `10.x` bridge could shadow a real corporate route on the host;
 > - Docker's default pool `172.16.0.0/12` (class B), which fills bottom-up — today only `172.17` (docker0) and `172.18` (kind) are used, so `172.30`/`172.31` (top of the pool) are reached last. If Docker's `default-address-pools` are reconfigured to reach that high, revisit these.
 >
-> The bridge previously lived at `192.168.200.0/24`, *inside* the pod CIDR, which intermittently blackholed nodes whose IP landed in a Calico `/26` (`ip route get <nodeIP>` → `Invalid argument`; apiserver→kubelet dials fail `connect: invalid argument`). Moved out under NKX-12754; NKX-12610 (configurable pod/service CIDR) is the complementary root-cause fix.
+> The bridge previously lived at `192.168.200.0/24`, *inside* the pod CIDR, which intermittently blackholed nodes whose IP landed in a Calico `/26` (`ip route get <nodeIP>` → `Invalid argument`; apiserver→kubelet dials fail `connect: invalid argument`). The bridge and VIP ranges were moved out of the pod CIDR to fix this, and pod/service CIDRs were made configurable as the complementary root-cause fix.
 
 **Key config:**
 

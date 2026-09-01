@@ -4,6 +4,11 @@ Guidance for AI coding agents (Claude Code, Codex, Copilot Workspace, Cursor)
 working in this repository. Humans should read [CONTRIBUTING.md](CONTRIBUTING.md);
 this file adds the constraints an agent needs before it starts editing.
 
+`AGENTS.md` is canonical. The `CLAUDE.md` next to each one is a one-line
+`@AGENTS.md` import shim for Claude Code, which does not read `AGENTS.md`
+directly — keep the shims content-free so no harness sees different
+instructions.
+
 ## Always read
 
 - [README.md](README.md) — what NKE is and how the pieces fit together
@@ -12,7 +17,9 @@ this file adds the constraints an agent needs before it starts editing.
   module has its own toolchain:
   - [controller/AGENTS.md](controller/AGENTS.md) — Flox, code generation, database, Temporal
   - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, packaging, gRPC conventions
+  - [cli/AGENTS.md](cli/AGENTS.md) — nkectl, verification, doc-comment conventions
   - [os-image/AGENTS.md](os-image/AGENTS.md) — reference node OS image spec, Packer, connectivity checker
+  - [controller/nico-vms/AGENTS.md](controller/nico-vms/AGENTS.md) — local VM-backed Forge emulator
 
 ## Read if needed
 
@@ -70,6 +77,7 @@ build pass. Removing those dependencies is tracked work with its own design.
 | Path | Contents | Edit? |
 |---|---|---|
 | `agent/cmd/`, `agent/internal/`, `agent/pkg/` | Node agent implementation | Yes |
+| `cli/` | nkectl CLI implementation and e2e fixtures | Yes |
 | `cluster-api-provider-provisioned/` | Provisioned Cluster API infrastructure provider | Yes |
 | `controller/internal/` | CWE server, controllers, Temporal workflows and activities, database layer | Yes |
 | `controller/api/openapi.yaml` | OpenAPI 3.0 spec — **the source of truth for the REST API** | Yes |
@@ -90,7 +98,8 @@ build pass. Removing those dependencies is tracked work with its own design.
 - Implement or fix logic under `agent/internal/`, `agent/pkg/`,
   `controller/internal/`, and `os-image/`.
 - Change the REST API by editing `controller/api/openapi.yaml`, **then running
-  `flox activate -- make generate`** so the generated Go matches.
+  `make generate`** so the generated Go matches. The generator version is
+  pinned in `api/oapi-codegen.mod`; never invoke `oapi-codegen` directly.
 - Change the gRPC API by editing `agent/pkg/agent/proto/node_agent.proto`,
   **then running `make protos`** and committing the regenerated `*.pb.go` in the
   same commit.
@@ -130,7 +139,9 @@ build pass. Removing those dependencies is tracked work with its own design.
   the project's standard. Fix the code instead. Do not add `//nolint` without a
   reason on the same line.
 - **Do not add `TODO:` comments in `controller/`** — they fail the linter. Use
-  `FIXME:` with a tracking link, which is the established convention.
+  `FIXME:` with a tracking link, which is the established convention. A
+  tracking link means a GitHub issue on this repository, not an internal
+  tracker.
 - **Do not commit build output** — `bin/`, `release/`, `agent/build/deb_*`, or
   `controller/.local/`. All of it is already in `.gitignore`; keep it that way.
 - **Do not change the release or CI workflows** in `.github/workflows/` as part
@@ -191,14 +202,14 @@ func (s *NodeAgentServer) reset(ctx context.Context) error {
 
 ```go
 // Preferred: FIXME with a tracking link. TODO: fails the linter in controller/.
-// FIXME: <tracker URL> — drop once the provider interface lands.
+// FIXME: https://github.com/NVIDIA/nke/issues/<N> — drop once the provider interface lands.
 
 // Deprecated: an unbounded TODO with no owner and no ticket.
 // TODO: clean this up later
 ```
 
 ```yaml
-# Preferred: change the spec, then run `flox activate -- make generate`.
+# Preferred: change the spec, then run `make generate`.
 # controller/api/openapi.yaml
     nodePoolName:
       type: string
@@ -215,9 +226,15 @@ func (s *NodeAgentServer) reset(ctx context.Context) error {
 Each module pins its own tooling and downloads it on demand. Use `make`, not the
 underlying binary, so versions stay pinned.
 
+Flox is optional, but prefer it when it is available: if `flox` is on `PATH`
+and you are not already inside the environment (`FLOX_ENV` is unset), run
+one-shot commands as `flox activate -- make <target>` so tool versions match
+CI (a `golangci-lint` older than the pin silently misses findings CI reports).
+Without Flox, plain `make` works from whatever is on `PATH`.
+
 | Tool | Module | Used for |
 |---|---|---|
-| Flox | `controller/` | Reproducible toolchain. **Required for `make generate`.** |
+| Flox | all modules | Optional reproducible toolchain, pinned at the repository root. |
 | `oapi-codegen` | `controller/` | Go server, client and models from the OpenAPI spec |
 | `addlicense` | `controller/` | License headers (`make license`) |
 | `buf` | `agent/` | Proto formatting and generation |
@@ -240,7 +257,7 @@ make notices-check    # fails if THIRD_PARTY_NOTICES.md has drifted
 In `controller/`:
 
 ```bash
-flox activate -- make generate   # only if you changed openapi.yaml
+make generate     # only if you changed openapi.yaml
 make license
 make fmt
 make lint
@@ -285,6 +302,13 @@ gh pr checks <number> --repo NVIDIA/nke --json name,workflow
 
 See [docs/branch-protection-settings.md](docs/branch-protection-settings.md) for
 which checks fall into which group.
+
+## Skills
+
+Procedural workflows live under [.claude/skills/](.claude/skills/) — opening a
+pull request and regenerating generated artifacts. They are plain markdown;
+agents other than Claude Code should read them as documents when performing
+those tasks.
 
 ## See also
 

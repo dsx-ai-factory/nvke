@@ -271,7 +271,7 @@ jobs:
 
           sudo tee /etc/systemd/system/containerd-nerdctl.service >/dev/null <<'UNIT'
           [Unit]
-          Description=standalone containerd for the nerdctl kind provider (NKX-14787)
+          Description=standalone containerd for the nerdctl kind provider
           After=network.target
 
           [Service]

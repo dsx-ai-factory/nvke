@@ -57,7 +57,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | nkeOIDCAuth.caBundleSecret.namespace | string | `""` | Namespace of the Secret containing the OIDC CA bundle. |
 | nkeOIDCAuth.discoveryURL | string | `""` | Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers. |
 | nkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers. |
-| nodeTeardown.allowEtcdSafetyOverrides | bool | `false` | Allow the DeleteNode API to accept the dangerous etcd safety overrides (allowQuorumLoss / allowSingleVoter). Disabled by default so production site controllers reject them; enable on development site controllers that need manual single-node control-plane rotation (NKX-13160). |
+| nodeTeardown.allowEtcdSafetyOverrides | bool | `false` | Allow the DeleteNode API to accept the dangerous etcd safety overrides (allowQuorumLoss / allowSingleVoter). Disabled by default so production site controllers reject them; enable on development site controllers that need manual single-node control-plane rotation. |
 | nkeOIDCAuth.issuerURL | string | `""` | OIDC issuer URL trusted by tenant kube-apiservers. |
 | deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`; when the Forge Secret is enabled, the chart adds a default Reloader annotation unless one is provided) |
 | podAnnotations | object | `{}` |  |

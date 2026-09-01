@@ -244,6 +244,19 @@ while IFS= read -r -d '' file; do
 done < <(markdown_files)
 
 # ---------------------------------------------------------------------------
+# Check 6: no internal tracker identifiers
+# ---------------------------------------------------------------------------
+
+# Internal ticket IDs are dead links to an external reader. CHANGELOG.md is
+# exempt: it is generated from commit history, which is public anyway. This
+# script exempts itself, since the pattern below must name what it forbids.
+while IFS=: read -r file line match; do
+	error "${file}:${line}: internal tracker reference '${match}' — replace it with a GitHub issue or the context it stood for"
+done < <(git ls-files -z -- ':(exclude)vendor/*' ':(exclude)generated/*' \
+	':(exclude)CHANGELOG.md' ':(exclude)hack/docs-check.sh' ':(exclude)go.sum' |
+	xargs -0 grep -nHoE 'NKX-[0-9]+|DGXCINC-[0-9]+|jirasw\.nvidia\.com' || true)
+
+# ---------------------------------------------------------------------------
 
 if [[ ${fail} -ne 0 ]]; then
 	echo >&2

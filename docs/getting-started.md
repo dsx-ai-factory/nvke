@@ -66,7 +66,7 @@ make -C controller test           # unit tests with coverage
 If you change `controller/api/openapi.yaml`, regenerate Go bindings:
 
 ```bash
-flox activate -- make -C controller generate
+make -C controller generate
 ```
 
 Never hand-edit `*.gen.go` files — they will be overwritten.

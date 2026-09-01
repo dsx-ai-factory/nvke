@@ -1,0 +1,34 @@
+---
+name: regenerate
+description: Regenerate generated artifacts (OpenAPI Go code, gRPC protos, CAPI deepcopy/CRD/RBAC, third-party notices, go.work) after editing their sources. Use whenever a change touches openapi.yaml, a .proto file, CAPI types/markers, dependencies, or when a *-check CI gate reports drift.
+---
+
+# Regenerate, never hand-edit
+
+Generated files are listed in the root [AGENTS.md](../../../AGENTS.md)
+directory table. Change the source, run the matching generator, and commit
+source + output together.
+
+| You changed | Run | Commit together |
+|---|---|---|
+| `controller/api/openapi.yaml` | `make generate` in `controller/` | spec + `api/*.gen.go` |
+| `agent/pkg/agent/proto/node_agent.proto` | `make protos` in `agent/` | `.proto` + `*.pb.go` |
+| CAPI types/markers in `cluster-api-provider-provisioned/` | `make generate manifests` there | types + deepcopy, CRDs, `config/rbac/role.yaml` |
+| `agent/go.mod` dependencies | `make notices` in `agent/` | `go.mod`/`go.sum` + `THIRD_PARTY_NOTICES.md` |
+| any module `go.mod`/`go.sum` | `make work-sync` at the root | `go.work` + `go.work.sum` |
+
+Rules that trip people up:
+
+- **Use `make generate`, never invoke `oapi-codegen` directly.** The generator
+  version is pinned in `api/oapi-codegen.mod` and run through `go generate`,
+  so the output does not depend on whatever `oapi-codegen` is on `PATH`.
+- **Prefer Flox when available.** If `flox` is on `PATH` and you are not
+  already inside the environment (`FLOX_ENV` is unset), run generators as
+  `flox activate -- make <target>` so the rest of the toolchain matches CI.
+  Flox is optional — plain `make` works without it. If you do activate it,
+  match the CLI version in `.flox-cli-version`.
+- Drift gates in CI: `make check-protos` and `make notices-check` (agent),
+  `make generate-check` (provisioned provider), `go-work-check` (workspace).
+  If one fails, regenerate and commit the result — do not revert the output.
+- `controller/deploy/charts/` READMEs are helm-docs output of `values.yaml`
+  comments; edit the comment, not just the README.

@@ -44,7 +44,7 @@ FROM ${BASE_REGISTRY}/alpine:3.24.1
 # Runtime + in-container debug tooling, installed in a single --no-cache layer
 # so the apk index is not shipped. Documentation (*-doc) packages and packages
 # with no function inside this pod (binutils, pciutils, usbutils) are
-# intentionally excluded to minimize the image's CVE surface (NKX-13061).
+# intentionally excluded to minimize the image's CVE surface.
 #
 # apk add leaves packages the base tag already carries at their old version,
 # and Alpine patches a branch without always cutting a new tag. So upgrade

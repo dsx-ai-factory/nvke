@@ -4,12 +4,15 @@
 
 If you discover a potential security vulnerability, please **do not open a public issue, merge request, or discussion**.
 
-Report it privately through one of these channels:
+Report it privately through the channels in the repository root
+[SECURITY.md](../SECURITY.md):
 
 1. **Preferred:** [NVIDIA Vulnerability Disclosure Program](https://www.nvidia.com/en-us/security/)
 2. **Email:** [psirt@nvidia.com](mailto:psirt@nvidia.com)
    - Use the [NVIDIA public PGP key](https://www.nvidia.com/en-us/security/pgp-key) for encrypted communication.
-3. **GitLab:** Use this repository's **Security** tab and select **Report a vulnerability**.
+
+Do not open a GitHub issue, pull request, or GitHub Security Advisory for a
+vulnerability report; NVIDIA routes every report through PSIRT.
 
 Include:
 
@@ -32,11 +35,11 @@ The repository also contains the `api` Go module used by other components and th
 
 CWE operates as a privileged infrastructure service. Its primary security responsibilities are preserving authorization and integrity for cluster lifecycle actions and protecting infrastructure credentials, tenant kubeconfigs, bootstrap data, encryption keys, and machine identity material.
 
-**Repository Exposure Classification:** Internal.
-Basis: the origin is hosted on NVIDIA's internal GitLab service.
+**Repository Exposure Classification:** Public (open source).
+Basis: the repository is published at [github.com/NVIDIA/nke](https://github.com/NVIDIA/nke) under the Apache-2.0 license.
 
-**Service Exposure Classification:** Internal-Sensitive (high confidence).
-Basis: user-confirmed internal production orchestration service that handles credentials, privileged cluster and node lifecycle operations, security identity material, and deployment and release automation.
+**Service Exposure Classification:** Sensitive — intended for management-plane deployment, not public exposure.
+Basis: the service handles credentials, privileged cluster and node lifecycle operations, and security identity material. Operators should treat any deployment as security-sensitive and restrict it to trusted management networks (see [Deployment Assumptions and Hardening](#deployment-assumptions-and-hardening)).
 
 The principal security boundaries are:
 
@@ -49,7 +52,7 @@ The principal security boundaries are:
 - **Identity boundary:** CWE reads its SPIFFE workload identity, creates SPIRE join tokens and static entries, and uses a mounted Teleport identity to manage CWE-owned provisioning tokens and node records.
 - **Provisioning-content boundary:** Profiles, CAPI infrastructure manifests, cloud-init files, bootstrap data, embedded runbooks, OIDC configuration, and registry settings influence software and commands executed on provisioned nodes.
 - **Operational endpoint boundary:** The primary service listens on configurable HTTP port 8080. Prometheus metrics use a separate listener and the Helm chart enables a namespace-scoped metrics NetworkPolicy by default.
-- **Release boundary:** GitLab CI builds and publishes multi-architecture images, Helm charts, and API module tags, and triggers production deployment-template updates using registry, repository, and automation credentials.
+- **Release boundary:** GitHub Actions builds and publishes multi-architecture images, Helm charts, and API module tags using registry, repository, and automation credentials.
 - **Development tooling boundary:** `nico-vms` can create, reboot, and delete local VMs, install host routes, expose VM metadata and diagnostic output, and stream console logs. It is intended for isolated development and test use.
 
 ### Threat Model
@@ -66,7 +69,7 @@ The principal security boundaries are:
 
 6. **Development Emulator Host and VM Compromise:** `nico-vms` listens on all interfaces by default, accepts any non-empty bearer token, exposes selected files and UI paths without authentication, runs an unauthenticated console SSH server, injects a default diagnostic account, and stores cloud-init user data in host-readable files. Its VM, BGP, metadata, diagnostics, and console capabilities can expose bootstrap data or alter host networking if the tool is run outside an isolated development environment.
 
-7. **Release Pipeline or Artifact Compromise:** GitLab CI consumes shared templates from a mutable branch, uses privileged repository and registry tokens, publishes images and Helm charts to multiple registries, creates API tags, and triggers deployment-repository updates. Compromise of a runner, shared template, builder image, dependency source, credential, or registry could distribute modified code or automatically propagate an untrusted version into production configuration.
+7. **Release Pipeline or Artifact Compromise:** The GitHub Actions release workflows use privileged repository and registry tokens, publish images and Helm charts to multiple registries, and create API tags. Compromise of a runner, reusable workflow, builder image, dependency source, credential, or registry could distribute modified code or automatically propagate an untrusted version into downstream deployments.
 
 ### Critical Security Assumptions
 

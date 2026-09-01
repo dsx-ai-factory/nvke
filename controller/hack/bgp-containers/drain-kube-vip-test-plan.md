@@ -7,7 +7,8 @@ local CAPD cluster with kube-vip active/active BGP and host-mode FRR.
 
 - Validate normal kube-vip withdrawal from one control-plane node.
 - Compare stale apiserver TCP behavior with and without `ss -K`.
-- Reproduce the DGXCINC-3648-style stale ARP condition.
+- Reproduce the stale-ARP condition, where a downstream neighbor cache still
+  maps the VIP to a drained control-plane node's MAC.
 - Validate that explicitly removing the VIP from `lo` makes stale ARP recover.
 - Collect enough logs and timing evidence to attach to the CWE MR.
 
@@ -103,7 +104,7 @@ Measure:
 - worker-side socket transition timestamp.
 - kubelet/kube-proxy reconnect timestamp.
 
-## Scenario 3: DGXCINC-3648 stale ARP reproduction
+## Scenario 3: stale ARP reproduction
 
 Goal: simulate a stale downstream ARP cache by forcing the worker to keep a
 reachable neighbor entry that maps the VIP to the target CP MAC.
