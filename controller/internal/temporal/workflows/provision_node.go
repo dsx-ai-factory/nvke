@@ -33,6 +33,12 @@ const (
 type ProvisionNodeInput struct {
 	NodeID                         uuid.UUID
 	RebootNodeWaitForUptimeTimeout time.Duration
+	// SkipJoin leaves the host at ReadyToJoin without running kubeadm join.
+	// Control-plane nodes set this true so the control-plane controller can
+	// start JoinNode one node at a time. Workers leave it false (auto-join).
+	// The zero value must be false so in-flight ProvisionNode workflows keep
+	// joining after a worker upgrade.
+	SkipJoin bool
 }
 
 func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
@@ -100,6 +106,29 @@ func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
 			metrics.RecordProvisionFailed(labels.ClusterName, labels.NodeType, workflow.Now(ctx).Sub(workflowStart))
 		}
 		return fmt.Errorf("failed to provision node: %w", err)
+	}
+
+	if input.SkipJoin {
+		logger.Info("Node host provisioned; join deferred to control-plane controller",
+			"nodeID", input.NodeID,
+			"clusterName", labels.ClusterName,
+			"nodeType", labels.NodeType,
+		)
+		return nil
+	}
+
+	// Workers auto-join inline and retry the join indefinitely (boundJoinAttempt
+	// false); only the control-plane JoinNode workflow bounds the attempt.
+	if err := joinProvisionedNode(ctx, input.NodeID, nodeCtx, labels, false); err != nil {
+		// Best effort to update the node conditions to indicate the join failed
+		if err := updateNodeProvisioningMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
+			logger.Error("failed to update node conditions", "error", err)
+		}
+
+		if !workflow.IsReplaying(ctx) {
+			metrics.RecordProvisionFailed(labels.ClusterName, labels.NodeType, workflow.Now(ctx).Sub(workflowStart))
+		}
+		return fmt.Errorf("failed to join node: %w", err)
 	}
 
 	totalDuration := workflow.Now(ctx).Sub(workflowStart)
@@ -221,7 +250,6 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activ
 		return fmt.Errorf("failed to wait for node preflight to succeed: %w", err)
 	}
 
-	hasConfigProfile := nodeCtx.ConfigProfile != ""
 	configProfile, err := getConfigProfile(ctx, input.NodeID)
 	if err != nil {
 		endHostPrep()
@@ -252,29 +280,72 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activ
 		return fmt.Errorf("failed to mark node as ready to join: %w", err)
 	}
 
+	return nil
+}
+
+// joinProvisionedNode runs kubeadm join and the post-join steps for a host that
+// has already completed host provisioning and is marked ReadyToJoin. It is
+// called inline by ProvisionNode for auto-join nodes (workers) and by the
+// JoinNode workflow for control-plane nodes the control-plane controller joins
+// one at a time.
+func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activities.NodeProvisioningContext, labels nodeMetricLabels, boundJoinAttempt bool) error {
+	recordPhase := func(phase string, start, end time.Time) {
+		if !workflow.IsReplaying(ctx) {
+			metrics.RecordProvisionPhase(labels.ClusterName, labels.NodeType, phase, end.Sub(start))
+		}
+	}
+
+	hasConfigProfile := nodeCtx.ConfigProfile != ""
+	configProfile, err := getConfigProfile(ctx, nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to get config profile: %w", err)
+	}
+
 	if nodeCtx.ManagedByNodePool {
-		if err := waitForNodePoolProvisioning(ctx, input.NodeID); err != nil {
+		if err := waitForNodePoolProvisioning(ctx, nodeID); err != nil {
 			return fmt.Errorf("failed to wait for node pool provisioning: %w", err)
 		}
 	}
 
-	joinStart := workflow.Now(ctx)
-	isInitialNode, err := joinNode(ctx, input.NodeID)
+	// Skip kubeadm join if it already succeeded in a prior attempt. The join
+	// changes etcd membership and is serialized across control-plane nodes by the
+	// control-plane controller, which releases the serial slot once the node is
+	// Joined so the next node can join while this one finishes post-join. A retry
+	// (e.g. a failed post-join step) must therefore never re-run the join, or it
+	// could overlap another node's join. A joined node is never the initial node.
+	alreadyJoined, err := isNodeJoined(ctx, nodeID)
 	if err != nil {
-		recordPhase("join", joinStart, workflow.Now(ctx))
-		return fmt.Errorf("failed to join node: %w", err)
+		return fmt.Errorf("failed to check node joined status: %w", err)
+	}
+
+	joinStart := workflow.Now(ctx)
+	isInitialNode := false
+	if alreadyJoined {
+		workflow.GetLogger(ctx).Info("Node already joined; skipping kubeadm join and resuming post-join", "nodeID", nodeID)
+	} else {
+		// A bounded join is the serialized control-plane path. kubeadm join is not
+		// idempotent, so clean up any leftovers from a prior failed attempt before
+		// re-joining (no-op on a freshly provisioned node).
+		if boundJoinAttempt {
+			cleanBeforeControlPlaneRejoin(ctx, nodeID)
+		}
+		isInitialNode, err = joinNode(ctx, nodeID, boundJoinAttempt)
+		if err != nil {
+			recordPhase("join", joinStart, workflow.Now(ctx))
+			return fmt.Errorf("failed to join node: %w", err)
+		}
 	}
 	recordPhase("join", joinStart, workflow.Now(ctx))
 
 	postJoinStart := workflow.Now(ctx)
 	endPostJoin := func() { recordPhase("post_join", postJoinStart, workflow.Now(ctx)) }
 
-	if err := labelNode(ctx, input.NodeID, hasConfigProfile, nodeCtx.InfraMode != activities.InfraModeCAPI); err != nil {
+	if err := labelNode(ctx, nodeID, hasConfigProfile, nodeCtx.InfraMode != activities.InfraModeCAPI); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to label node: %w", err)
 	}
 
-	if err := runHooks(ctx, input.NodeID, AfterJoinNode, configProfile); err != nil {
+	if err := runHooks(ctx, nodeID, AfterJoinNode, configProfile); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to run afterJoinNode hooks: %w", err)
 	}
@@ -282,7 +353,7 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activ
 	// If the node is the initial control plane node, we don't need to configure KubeVip, because the cluster creation process does it.
 	if !isInitialNode {
 		// This is really only needed for control plane nodes -- will be a no-op if it's a worker node
-		if err := configureKubeVip(ctx, input.NodeID); err != nil {
+		if err := configureKubeVip(ctx, nodeID); err != nil {
 			endPostJoin()
 			return fmt.Errorf("failed to configure KubeVip: %w", err)
 		}
@@ -292,12 +363,12 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activ
 	// This taint is added via kubeadm join config.
 	// Hyphen at the end of the taint effect removes the taint
 	taintToRemove := constants.NodeTaintProvisioning()
-	if err := taintNode(ctx, input.NodeID, taintToRemove.Key, taintToRemove.Value, taintToRemove.Effect+"-"); err != nil {
+	if err := taintNode(ctx, nodeID, taintToRemove.Key, taintToRemove.Value, taintToRemove.Effect+"-"); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to untaint node: %w", err)
 	}
 
-	if err := markNodeAsProvisioned(ctx, input.NodeID); err != nil {
+	if err := markNodeAsProvisioned(ctx, nodeID); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to mark node as provisioned: %w", err)
 	}
@@ -601,15 +672,56 @@ func waitForNodePoolProvisioning(ctx workflow.Context, nodeID uuid.UUID) error {
 	return nil
 }
 
-func joinNode(ctx workflow.Context, nodeID uuid.UUID) (bool, error) {
+// nodeProvisioningStart returns the node's provisioning-start time: the
+// Provisioning condition's transition time, falling back to CreatedAt. It anchors
+// JoinNode's end-to-end provision-completed metric.
+func nodeProvisioningStart(ctx workflow.Context, nodeID uuid.UUID) (time.Time, error) {
 	var a *activities.Activities
+
+	var node db.Node
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNode, nodeID).Get(ctx, &node); err != nil {
+		return time.Time{}, fmt.Errorf("failed to get node: %w", err)
+	}
+
+	provisioningStartedAt := node.Conditions.Provisioning.LastTransitionTime
+	if provisioningStartedAt.IsZero() {
+		provisioningStartedAt = node.CreatedAt
+	}
+	return provisioningStartedAt, nil
+}
+
+// isNodeJoined reports whether the node's Joined condition is already true, i.e.
+// kubeadm join completed on a prior attempt.
+func isNodeJoined(ctx workflow.Context, nodeID uuid.UUID) (bool, error) {
+	var a *activities.Activities
+
+	var node db.Node
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNode, nodeID).Get(ctx, &node); err != nil {
+		return false, fmt.Errorf("failed to get node: %w", err)
+	}
+	return node.Conditions.Joined.Status == db.ConditionStatusTrue, nil
+}
+
+// joinNode runs the kubeadm join activity. When boundJoinAttempt is true the
+// activity is limited to a single attempt so a failed join surfaces to the
+// caller and the workflow can fail; the control-plane JoinNode workflow uses
+// this so its workflow-level RetryPolicy owns the retry budget (retry X times,
+// then the control-plane controller rotates to the next node). Workers pass
+// false and keep retrying the join indefinitely inline.
+func joinNode(ctx workflow.Context, nodeID uuid.UUID, boundJoinAttempt bool) (bool, error) {
+	var a *activities.Activities
+
+	joinMaximumAttempts := int32(0) // Retry indefinitely.
+	if boundJoinAttempt {
+		joinMaximumAttempts = 1
+	}
 
 	activityOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval: 1 * time.Minute,
 			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 0, // Retry indefinitely
+			MaximumAttempts: joinMaximumAttempts,
 		},
 	}
 
@@ -642,6 +754,98 @@ func joinNode(ctx workflow.Context, nodeID uuid.UUID) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// cleanBeforeControlPlaneRejoin makes a serialized control-plane join repeatable.
+// kubeadm join is not idempotent: a prior attempt can leave local kubeadm state
+// (certs, manifests, kubelet config) that trips preflight on every retry, and --
+// if it failed after `etcdctl member add` -- a stale voting member that a
+// re-join cannot re-add. This runs before each bounded control-plane join and is
+// a no-op on a freshly provisioned node: kubeadm reset on a clean node does
+// nothing, and etcd-member-remove exits 0 when the name is not a member.
+//
+// It is unconditional rather than gated on a retry count because the
+// control-plane controller starts a fresh JoinNode workflow (attempt resets to
+// 1) once a node exhausts its retry budget, so the workflow attempt number is
+// not a reliable "is this a retry" signal -- only node/cluster state is, and
+// unconditional cleanup sidesteps having to read it. Both steps are best-effort
+// so a transient runbook/agent failure never fails an otherwise-healthy first
+// join; a genuinely dirty node is simply cleaned again on the next attempt.
+//
+// FIXME: kubeadm reset belongs in the node-agent, run before every kubeadm join,
+// and is needed for workers too: a worker that partially joins then fails loops
+// on preflight leftovers, because the agent re-runs join without a reset and the
+// worker retry lives in the KubeadmJoin activity loop rather than here. This
+// CWE-side, control-plane-only cleanup is a fallback until the agent does
+// reset-before-join for all nodes.
+func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
+	logger := workflow.GetLogger(ctx)
+	var a *activities.Activities
+
+	var node db.Node
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNode, nodeID).Get(ctx, &node); err != nil {
+		logger.Warn("Skipping pre-join cleanup; failed to get node", "nodeID", nodeID, "error", err)
+		return
+	}
+	if !node.ControlPlane {
+		return
+	}
+
+	// Run only the single etcd-member-remove runbook (not the teardown flow) on a
+	// surviving control-plane node, with join-scoped activity options so this path
+	// does not inherit teardown's retry/timeout preset or any future
+	// teardown-specific behavior. --allow-single-voter because dropping a 2-voter
+	// cluster back to the lone survivor before re-adding this node is expected
+	// during control-plane scale-up. Quorum loss is intentionally not forced: if
+	// removing this member would break quorum, the node is unexpectedly a healthy
+	// voter and we would rather fail loudly than proceed.
+	runbookOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: 5 * time.Minute,
+		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 30 * time.Second,
+			MaximumInterval: 1 * time.Minute,
+			MaximumAttempts: 3,
+		},
+	}
+	if err := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, runbookOptions),
+		a.ExecuteClusterRunbook,
+		activities.ExecuteClusterRunbookInput{
+			ClusterID:     node.ClusterID,
+			RunbookName:   runbookEtcdMemberRemove,
+			RunbookArgs:   []string{node.Name, "--allow-single-voter"},
+			ExcludeNodeID: &nodeID,
+		},
+	).Get(ctx, nil); err != nil {
+		logger.Warn("Best-effort etcd member cleanup before rejoin failed; continuing",
+			"nodeID", nodeID, "nodeName", node.Name, "error", err)
+	}
+
+	// Reset local kubeadm state so the join does not trip preflight on leftovers.
+	// Call the activity directly rather than the teardown helper: an empty
+	// condition message tells the activity to skip the condition update, so a
+	// joining node's Deleting condition is never touched (the teardown helper
+	// writes it). Skip the etcd phase -- CWE removed the member above.
+	resetOptions := workflow.ActivityOptions{
+		StartToCloseTimeout: 7 * time.Minute,
+		RetryPolicy: &temporal.RetryPolicy{
+			InitialInterval: 30 * time.Second,
+			MaximumInterval: 30 * time.Second,
+			MaximumAttempts: 3,
+		},
+	}
+	if err := workflow.ExecuteActivity(
+		workflow.WithActivityOptions(ctx, resetOptions),
+		a.KubeadmReset,
+		activities.KubeadmResetInput{
+			NodeID:     nodeID,
+			SkipPhases: []string{removeEtcdMember},
+		},
+	).Get(ctx, nil); err != nil {
+		logger.Warn("Best-effort kubeadm reset before rejoin failed; continuing",
+			"nodeID", nodeID, "nodeName", node.Name, "error", err)
+	}
 }
 
 func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels, addTopologyLabels bool) error {

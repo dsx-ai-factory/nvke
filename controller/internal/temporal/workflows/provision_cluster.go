@@ -66,7 +66,7 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 		return fmt.Errorf("failed to configure initial node KubeVip: %w", err)
 	}
 
-	// Create the cluster with a single node -- the rest of the nodes, including other CP nodes, will join from ProvisionNode
+	// Create the cluster with a single node -- remaining CP nodes join via JoinNode (started by the control-plane controller)
 	if err := kubeadmInitWithCNI(ctx, input.ClusterID, initialNodeID); err != nil {
 		return err
 	}

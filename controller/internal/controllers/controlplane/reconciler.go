@@ -53,6 +53,12 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
+	// Join ready control-plane hosts one at a time (serial join). Host
+	// provisioning may run in parallel; only the kubeadm join is serialized.
+	if err := r.reconcileControlPlaneJoins(ctx, cluster, controlPlane); err != nil {
+		return fmt.Errorf("reconciling control plane joins: %w", err)
+	}
+
 	// Reconcile node remediation (replace marked nodes)
 	if requeue, err := r.remediateMachines(ctx, cluster, controlPlane); err != nil {
 		return err

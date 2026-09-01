@@ -158,6 +158,14 @@ func shouldRecycleProvisioningNode(now time.Time, node db.Node, timeout time.Dur
 		return 0, false
 	}
 
+	// Control-plane nodes only: their join is serialized by the control-plane
+	// controller and handled separately, so stop at ReadyToJoin instead of
+	// counting the serial-join queue wait as stuck host provisioning. Workers
+	// auto-join inline, so keep monitoring them through join (until Provisioned).
+	if node.ControlPlane && node.Conditions.ReadyToJoin.Status == db.ConditionStatusTrue {
+		return 0, false
+	}
+
 	provisioningStartedAt := node.Conditions.Provisioning.LastTransitionTime
 	if provisioningStartedAt.IsZero() {
 		provisioningStartedAt = node.CreatedAt

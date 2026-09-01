@@ -73,6 +73,7 @@ func (s *nodeService) GetNodeHistory(ctx context.Context, req api.GetNodeHistory
 	nodeIDStr := req.NodeID.String()
 	workflowIDs := []string{
 		constants.ProvisionNodeWorkflowPrefix + nodeIDStr,
+		constants.JoinNodeWorkflowPrefix + nodeIDStr,
 		constants.TeardownNodeWorkflowPrefix + nodeIDStr,
 		constants.RebootNodeWorkflowPrefix + nodeIDStr,
 		constants.RebootNodeUptimeWorkflowPrefix + nodeIDStr,

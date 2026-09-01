@@ -179,6 +179,7 @@ func NewWorker(
 	w.RegisterWorkflow(workflows.ProvisionCluster)
 	w.RegisterWorkflow(workflows.ProvisionNodePool)
 	w.RegisterWorkflow(workflows.ProvisionNode)
+	w.RegisterWorkflow(workflows.JoinNode)
 	w.RegisterWorkflow(workflows.RebootNode)
 	w.RegisterWorkflow(workflows.RebootNodeWaitForUptime)
 	w.RegisterWorkflow(workflows.TeardownCluster)

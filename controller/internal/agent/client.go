@@ -270,6 +270,11 @@ func (c *NodeAgentClient) ExecuteKubeadmJoin(ctx context.Context, node db.Node, 
 	}
 	defer cleanup()
 
+	// Returns only the RPC execution error; resp.Status is parsed by the caller
+	// via the GetKubeadmStatus poll loop (see Activities.kubeadmJoin). Do not
+	// promote resp.Status to a Go error here: a re-fired join on an already
+	// joining/joined agent returns an error status, and callers rely on that
+	// being a non-error to stay idempotent under retries.
 	resp, err := nkeproto.NewNodeAgentClient(conn).ExecuteKubeadmJoin(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute kubeadm join on node %s: %w", node.Name, err)

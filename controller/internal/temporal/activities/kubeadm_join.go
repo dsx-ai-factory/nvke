@@ -145,6 +145,14 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 		}
 	}
 
+	// ExecuteKubeadmJoin only starts the join; the agent runs kubeadm join in a
+	// goroutine and reports progress via GetKubeadmStatus, which we poll below.
+	// This is load-bearing for retries: if this activity times out or the
+	// workflow retries while the agent is still joining, the re-fired
+	// ExecuteKubeadmJoin returns an "already joining/joined" status that the
+	// client intentionally does not surface as an error (see NodeAgentClient),
+	// so we fall through to polling the in-flight join instead of starting a
+	// second, overlapping kubeadm join.
 	if _, err := a.nodeAgentClient.ExecuteKubeadmJoin(ctx, node, req); err != nil {
 		return KubeadmJoinResult{}, fmt.Errorf("failed to execute kubeadm join on node %s: %w", node.Name, err)
 	}

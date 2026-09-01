@@ -134,6 +134,10 @@ func teardownNode(ctx workflow.Context, input TeardownNodeInput, labels nodeMetr
 		return fmt.Errorf("failed to cancel node provision workflow: %w", err)
 	}
 
+	if err := cancelNodeJoinWorkflow(ctx, input.NodeID); err != nil {
+		return fmt.Errorf("failed to cancel node join workflow: %w", err)
+	}
+
 	if err := cancelNodeRebootWorkflow(ctx, input.NodeID); err != nil {
 		return fmt.Errorf("failed to cancel node reboot workflow: %w", err)
 	}
@@ -516,6 +520,28 @@ func cancelNodeProvisionWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
 		var notFound *temporal.UnknownExternalWorkflowExecutionError
 		if !errors.As(err, &notFound) {
 			return fmt.Errorf("failed to cancel provision workflow: %w", err)
+		}
+		// Workflow doesn't exist, which we'll consider to be a successful cancellation
+	}
+
+	return nil
+}
+
+// cancelNodeJoinWorkflow cancels the node's JoinNode workflow. Note this stops
+// only CWE-side orchestration: the agent runs kubeadm join out-of-band in its
+// own goroutine, so a join already in flight is not interrupted by this cancel.
+// The subsequent kubeadm reset in teardown is what actually reconciles the
+// node's local and etcd state, overriding whatever the join goroutine left.
+func cancelNodeJoinWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
+	if err := updateNodeDeletingMessage(ctx, nodeID, "Canceling join workflow"); err != nil {
+		return fmt.Errorf("failed to update node conditions: %w", err)
+	}
+
+	joinWorkflowID := fmt.Sprintf("%s%s", constants.JoinNodeWorkflowPrefix, nodeID)
+	if err := workflow.RequestCancelExternalWorkflow(ctx, joinWorkflowID, "").Get(ctx, nil); err != nil {
+		var notFound *temporal.UnknownExternalWorkflowExecutionError
+		if !errors.As(err, &notFound) {
+			return fmt.Errorf("failed to cancel join workflow: %w", err)
 		}
 		// Workflow doesn't exist, which we'll consider to be a successful cancellation
 	}

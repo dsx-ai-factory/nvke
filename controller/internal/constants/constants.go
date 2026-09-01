@@ -22,6 +22,7 @@ const (
 	TeardownNodePoolWorkflowPrefix  = "teardown-node-pool-"
 
 	ProvisionNodeWorkflowPrefix = "provision-node-"
+	JoinNodeWorkflowPrefix      = "join-node-"
 	TeardownNodeWorkflowPrefix  = "teardown-node-"
 	PatchNodeWorkflowPrefix     = "patch-node-"
 
