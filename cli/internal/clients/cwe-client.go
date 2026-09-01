@@ -8,15 +8,30 @@
 package clients
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"time"
 
 	"github.com/NVIDIA/nke/cli/internal/config"
 	api "github.com/NVIDIA/nke/controller/api"
 )
+
+// devTokenEnvVar, when set, is sent as a static bearer token on every CWE
+// request. This is a stopgap for local/dev testing only — it is not the
+// TokenRequest-based auth flow described in the SADD, which mints a
+// short-lived JWT per call from the management cluster kubeconfig and is
+// being implemented separately.
+//
+// To test against a CWE instance that enforces auth:
+//
+//	export NKECTL_DEV_TOKEN=$(kubectl create token nke-client -n nke-clients --audience https://nke.tilt.local --duration 1h)
+//
+// FIXME: remove once real auth lands in nkectl.
+const devTokenEnvVar = "NKECTL_DEV_TOKEN"
 
 // CWEClient is a high-level client for the CWE REST API.
 type CWEClient struct {
@@ -39,7 +54,14 @@ func New(cfg config.SiteConfig) (*CWEClient, error) {
 		return nil, fmt.Errorf("building API URL: %w", err)
 	}
 	httpClient := &http.Client{Timeout: 30 * time.Second}
-	raw, err := api.NewClientWithResponses(apiURL, api.WithHTTPClient(httpClient))
+	opts := []api.ClientOption{api.WithHTTPClient(httpClient)}
+	if token := os.Getenv(devTokenEnvVar); token != "" {
+		opts = append(opts, api.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
+			req.Header.Set("Authorization", "Bearer "+token)
+			return nil
+		}))
+	}
+	raw, err := api.NewClientWithResponses(apiURL, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("building CWE client: %w", err)
 	}
