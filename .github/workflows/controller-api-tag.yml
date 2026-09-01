@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Tag controller API module
+
+# The generated OpenAPI client is a Go submodule. Go resolves a submodule at a
+# tag named <module-directory>/vX.Y.Z, so every API change on main receives an
+# immutable controller/api/vX.Y.Z tag that downstream modules can pin.
+on:
+  push:
+    branches: [main]
+    paths:
+      - controller/api/**
+  workflow_dispatch: {}
+
+permissions: {}
+
+# Prevent concurrent tag allocation. GitHub does not guarantee FIFO ordering of
+# queued runs, so the stale-run check below also protects release ordering.
+concurrency:
+  group: controller-api-tag
+  cancel-in-progress: false
+
+jobs:
+  publish-controller-api-tag:
+    name: Publish controller/api version tag
+    if: github.repository == 'NVIDIA/nke' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Create the next API module tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          prefix='controller/api/v'
+          stable_tag_glob="${prefix}[0-9]*.[0-9]*.[0-9]*"
+          version_re='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          git fetch --force --tags --prune origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+
+          # If main advanced only with unrelated changes, this API commit can
+          # still be tagged. If a newer API change exists, its workflow owns
+          # the next version instead.
+          if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]] &&
+            ! git diff --quiet HEAD..origin/main -- controller/api; then
+            echo "A newer controller API change exists on main; skipping stale run."
+            exit 0
+          fi
+
+          first_stable_tag() {
+            local candidate version
+            while IFS= read -r candidate; do
+              version="${candidate#"${prefix}"}"
+              if [[ "${version}" =~ ${version_re} ]]; then
+                printf '%s\n' "${candidate}"
+                return 0
+              fi
+            done
+            return 1
+          }
+
+          # A re-run must be idempotent: if a version tag already names this
+          # commit, it has already been published and there is nothing to do.
+          if existing="$(first_stable_tag < <(git tag --points-at HEAD -l "${stable_tag_glob}" --sort=-version:refname))"; then
+            echo "${existing} already names ${GITHUB_SHA}; skipping."
+            exit 0
+          fi
+
+          # Retry from freshly fetched tags: a competing run wins one version
+          # and this run allocates the next.
+          for attempt in {1..10}; do
+            if latest="$(first_stable_tag < <(git tag -l "${stable_tag_glob}" --sort=-version:refname))"; then
+              version="${latest#"${prefix}"}"
+              major="${version%%.*}"
+              remainder="${version#*.}"
+              minor="${remainder%%.*}"
+              patch="${remainder##*.}"
+              tag="${prefix}${major}.${minor}.$((10#${patch} + 1))"
+            else
+              tag="${prefix}0.0.1"
+            fi
+
+            if git ls-remote --exit-code --tags --refs origin "refs/tags/${tag}" >/dev/null 2>&1; then
+              git fetch --force --tags --prune
+              continue
+            fi
+
+            git tag "${tag}"
+            if git push origin "refs/tags/${tag}"; then
+              echo "Published ${tag}."
+              exit 0
+            fi
+
+            git tag -d "${tag}"
+            git fetch --force --tags --prune
+          done
+
+          echo "::error::could not allocate a unique controller API tag after ${attempt} attempts"
+          exit 1
