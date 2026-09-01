@@ -346,7 +346,7 @@ jobs:
         with:
           image: nvcr.io/${{ vars.NKE_NGC_ORG }}/controller:sha-${{ github.sha }}-${{ matrix.arch }}
           format: spdx-json
-          artifact-name: nke-controller-sbom-linux-${{ matrix.arch }}.spdx.json
+          artifact-name: controller-sbom-linux-${{ matrix.arch }}.spdx.json
           upload-artifact: true
           # No release exists to attach to yet. Flip this when one does.
           upload-release-assets: false
