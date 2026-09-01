@@ -94,9 +94,13 @@ func labelsMatch(hostLabels, selector map[string]string) bool {
 // A repeated hostname would make the inventory ambiguous to an operator. A
 // repeated canonical IP address would let two machines believe they hold
 // different hosts while they share one, so both are rejected.
-func validateInventory(hosts []infrav1.ProvisionedHost) error {
+func validateInventory(hosts []infrav1.ProvisionedHost, initNode string) error {
+	if initNode == "" {
+		return fmt.Errorf("initNode must identify one configured host")
+	}
 	seenHostnames := make(map[string]struct{}, len(hosts))
 	seenIPAddresses := make(map[string]string, len(hosts))
+	initNodeMatches := 0
 
 	for _, host := range hosts {
 		if host.Hostname == "" {
@@ -104,6 +108,12 @@ func validateInventory(hosts []infrav1.ProvisionedHost) error {
 		}
 		if problems := validation.IsDNS1123Subdomain(host.Hostname); len(problems) != 0 {
 			return fmt.Errorf("host %q has an invalid hostname: %s", host.Hostname, problems[0])
+		}
+		if host.Hostname == initNode {
+			initNodeMatches++
+			if initNodeMatches > 1 {
+				return fmt.Errorf("initNode %q identifies more than one configured host", initNode)
+			}
 		}
 		if _, exists := seenHostnames[host.Hostname]; exists {
 			return fmt.Errorf("hostname %q is used more than once", host.Hostname)
@@ -123,7 +133,9 @@ func validateInventory(hosts []infrav1.ProvisionedHost) error {
 		}
 		seenIPAddresses[canonicalIP] = host.Hostname
 	}
-
+	if initNodeMatches == 0 {
+		return fmt.Errorf("initNode %q does not identify a configured host", initNode)
+	}
 	return nil
 }
 

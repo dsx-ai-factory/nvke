@@ -89,7 +89,7 @@ func TestValidateInventory(t *testing.T) {
 				host("host-01", "10.0.0.1", nil),
 				host("host-01", "10.0.0.2", nil),
 			},
-			wantErr: `hostname "host-01" is used more than once`,
+			wantErr: `initNode "host-01" identifies more than one configured host`,
 		},
 		{
 			name: "repeated canonical IP address",
@@ -118,7 +118,11 @@ func TestValidateInventory(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateInventory(test.hosts)
+			initNode := "host-01"
+			if len(test.hosts) != 0 && test.hosts[0].Hostname != "" {
+				initNode = test.hosts[0].Hostname
+			}
+			err := validateInventory(test.hosts, initNode)
 			if test.wantErr == "" {
 				require.NoError(t, err)
 				return

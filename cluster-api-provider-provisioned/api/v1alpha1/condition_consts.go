@@ -41,6 +41,18 @@ const (
 	// does not exist yet.
 	WaitingForClusterReason = "WaitingForCluster"
 
+	// WaitingForInitNodeReason means this machine cannot allocate a normal host
+	// until a control plane machine holds the configured init node.
+	WaitingForInitNodeReason = "WaitingForInitNode"
+
+	// NoEligibleInitMachineReason means the machine cannot claim the configured
+	// init node because it is not an eligible control plane machine.
+	NoEligibleInitMachineReason = "NoEligibleInitMachine"
+
+	// InitNodeAllocationConflictReason means the configured init node has a
+	// claim or binding that is inconsistent with the required first allocation.
+	InitNodeAllocationConflictReason = "InitNodeAllocationConflict"
+
 	// HostsClaimedElsewhereReason means every host this machine could use is
 	// locked by another cluster. The inventories overlap: two clusters list the
 	// same physical machine, and the other one got there first.

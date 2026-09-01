@@ -36,10 +36,15 @@ Each inventory entry is one explicit hostname and IP-address pair:
 
 ```yaml
 spec:
+  initNode: host-01.example.internal
   hosts:
     - hostname: host-01.example.internal
       ipAddress: 10.0.0.11
 ```
+
+`initNode` is required. It names exactly one host in the inventory. The
+provider allocates that host to a control-plane machine before it allocates any
+other host.
 
 The binding lives in `ProvisionedMachine.spec.providerID`, in the form
 `provisioned://<cluster-name>/<canonical-ip-address>`. The cluster component
@@ -51,10 +56,13 @@ table.
 2. If spec.providerID is set, refresh the status from the inventory and stop.
 3. List every ProvisionedMachine of the cluster. Read the IP address out of
    each provider ID. That is the set of used hosts.
-4. Take the first free hostname/IP pair whose labels match spec.hostSelector.
-5. Write spec.providerID with optimistic concurrency. On a conflict, repeat
+4. If no machine holds `spec.initNode`, allow an eligible control-plane machine
+   to claim it. All other machines wait.
+5. After the init-node binding exists, take the first free hostname/IP pair
+   whose labels match `spec.hostSelector`.
+6. Write `spec.providerID` with optimistic concurrency. On a conflict, repeat
    from step 3 against a fresh view. This enforces that no two machines or clusters can represent the same provisioned host.
-6. Write status.hostName, status.addresses and
+7. Write `status.hostName`, `status.addresses` and
    status.initialization.provisioned.
 ```
 
