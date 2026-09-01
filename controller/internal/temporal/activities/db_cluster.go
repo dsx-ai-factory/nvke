@@ -55,10 +55,6 @@ func (a *Activities) UpdateClusterConditions(ctx context.Context, update Cluster
 // DeleteCluster deletes a cluster from the database.
 func (a *Activities) DeleteCluster(ctx context.Context, clusterID uuid.UUID) error {
 	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		if err := tx.DeleteVIPAllocationForCluster(ctx, clusterID); err != nil {
-			return fmt.Errorf("failed to delete VIP allocation: %w", err)
-		}
-
 		if err := tx.DeleteCluster(ctx, clusterID); err != nil {
 			return fmt.Errorf("failed to delete cluster from database: %w", err)
 		}

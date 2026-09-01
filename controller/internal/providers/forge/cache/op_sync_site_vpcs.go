@@ -5,14 +5,10 @@ package cache
 
 import (
 	"context"
-	"errors"
 	"fmt"
-
-	"github.com/google/uuid"
 
 	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
-	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/providers/forge/api"
 )
 
@@ -49,34 +45,9 @@ func NewOpSyncSiteVPCs(cacheEngine *ForgeCacheEngine, tenant *forgesdk.Tenant, s
 	return &op
 }
 
-func (op *OpSyncSiteVPCs) IsSiteRegistered(ctx context.Context) (bool, error) {
-	siteID, err := uuid.Parse(op.site.GetId())
-	if err != nil {
-		op.logger.Error("Failed to parse site ID as UUID")
-		return false, err
-	}
-
-	_, err = op.cacheEngine.db.GetSite(ctx, siteID, false)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return false, nil
-		}
-
-		op.logger.Error("Failed to check if site is registered")
-		return false, err
-	}
-
-	return true, nil
-}
-
 func (op *OpSyncSiteVPCs) Execute(ctx context.Context) {
 	var err error
 	defer func() { op.onExecutionFinished(err) }()
-
-	siteIsRegistered, err := op.IsSiteRegistered(ctx)
-	if !siteIsRegistered || err != nil {
-		return
-	}
 
 	op.logger.Debug("Executing operation")
 	cache := op.cacheEngine.GetSiteVPCsCache(op.tenant.GetOrg(), op.site.GetId())

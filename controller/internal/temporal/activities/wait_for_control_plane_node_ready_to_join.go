@@ -5,13 +5,11 @@ package activities
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/temporal"
 
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
@@ -51,15 +49,6 @@ func (a *Activities) waitForControlPlaneNodeReadyToJoin(
 
 	logger.Info("Waiting for a control plane node to be ready to join", "clusterID", input.ClusterID)
 
-	// Fail fast when the cluster's site is not registered. The scheduler only
-	// works through registered sites, so with none there nothing is scheduled,
-	// no node ever becomes ready, and this polls for the full hour before
-	// Temporal retries it -- all while reporting "waiting for a control plane
-	// node", which names a symptom rather than the cause.
-	if err := a.assertSiteRegistered(ctx, input.ClusterID); err != nil {
-		return WaitForControlPlaneNodeReadyToJoinResult{}, err
-	}
-
 	for {
 		// Record heartbeat to prevent activity timeout
 		activity.RecordHeartbeat(ctx)
@@ -89,25 +78,4 @@ func (a *Activities) waitForControlPlaneNodeReadyToJoin(
 			// Continue polling
 		}
 	}
-}
-
-// assertSiteRegistered returns a non-retryable error when the cluster's site
-// does not exist, so a missing site surfaces as an error naming the site rather
-// than as provisioning that appears merely slow.
-func (a *Activities) assertSiteRegistered(ctx context.Context, clusterID uuid.UUID) error {
-	cluster, err := a.db.GetCluster(ctx, clusterID)
-	if err != nil {
-		// Leave cluster lookup problems to the normal retry path.
-		return nil //nolint:nilerr // not this check's job to report
-	}
-	if _, err := a.db.GetSite(ctx, cluster.SiteID, false); err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return temporal.NewNonRetryableApplicationError(
-				fmt.Sprintf("site %s is not registered, so no node can be scheduled for cluster %s",
-					cluster.SiteID, clusterID),
-				"site.NotRegistered", err,
-			)
-		}
-	}
-	return nil
 }

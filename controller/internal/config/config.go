@@ -131,20 +131,17 @@ type Config struct {
 	// automatic timeout-based provisioning remediation.
 	NodeProvisioningTimeout time.Duration `env:"NODE_PROVISIONING_TIMEOUT" default:"2h"`
 
-	// ControllerManagerDisabled is a flag to disable the controller-manager (site reconciliation loop).
-	// This can act as an emergency switch to disable reconciliation for the site.
+	// ControllerManagerDisabled is a flag to disable the controller-manager (cluster reconciliation loop).
+	// This can act as an emergency switch to disable reconciliation.
 	ControllerManagerDisabled bool `env:"CONTROLLER_MANAGER_DISABLED" default:"false"`
 
-	// ControllerManagerPollingInterval is the interval to wait between polling for sites due for reconciliation
+	// ControllerManagerPollingInterval is the interval to wait between polling for clusters due for reconciliation
 	ControllerManagerPollingInterval time.Duration `env:"CONTROLLER_MANAGER_POLLING_INTERVAL" default:"30s"`
 
 	// ControllerManagerJitterFactor is the multiplier for how much to randomly vary the controller-manager polling interval
 	ControllerManagerJitterFactor float64 `env:"CONTROLLER_MANAGER_JITTER_FACTOR" default:"0.2"`
 
-	// ControllerManagerBatchSize is the maximum number of sites to process in a single controller-manager batch
-	ControllerManagerBatchSize int `env:"CONTROLLER_MANAGER_BATCH_SIZE" default:"5"`
-
-	// ControllerManagerInterval is the interval between reconciliation runs for a site
+	// ControllerManagerInterval is the interval between reconciliation runs for a cluster
 	ControllerManagerInterval time.Duration `env:"CONTROLLER_MANAGER_INTERVAL" default:"2m"`
 
 	// CertRenewalControllerEnabled enables CWE-owned periodic Kubernetes control-plane certificate renewal.

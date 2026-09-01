@@ -60,14 +60,14 @@ func NewForgeCAPIMigrationController(
 	}
 }
 
-func (c *ForgeCAPIMigrationController) Reconcile(ctx context.Context, site db.Site) error {
-	clusters, err := c.db.ListClusters(ctx, db.ClusterFilters{SiteID: &site.ID})
+func (c *ForgeCAPIMigrationController) Reconcile(ctx context.Context) error {
+	clusters, err := c.db.ListClusters(ctx, db.ClusterFilters{})
 	if err != nil {
 		return fmt.Errorf("failed to list clusters: %w", err)
 	}
 	defer func() {
-		if err := c.recordCoverage(ctx, site, clusters); err != nil {
-			c.logger.Error("Failed to record CAPI adoption coverage", "error", err, "siteID", site.ID)
+		if err := c.recordCoverage(ctx, clusters); err != nil {
+			c.logger.Error("Failed to record CAPI adoption coverage", "error", err)
 		}
 	}()
 
@@ -441,19 +441,21 @@ func unpause(ctx context.Context, k8sClient ctrlclient.Client, obj ctrlclient.Ob
 	return nil
 }
 
-func (c *ForgeCAPIMigrationController) recordCoverage(ctx context.Context, site db.Site, clusters []db.Cluster) error {
+func (c *ForgeCAPIMigrationController) recordCoverage(ctx context.Context, clusters []db.Cluster) error {
 	namespaces := &corev1.NamespaceList{}
 	if err := c.k8sClient.List(ctx, namespaces); err != nil {
 		return fmt.Errorf("list namespaces for orphaned legacy CAPI namespaces: %w", err)
 	}
 
-	var clustersRemainingToMigrate float64
+	siteIDs := make(map[uuid.UUID]struct{})
+	clustersRemainingBySite := make(map[uuid.UUID]float64)
 	for _, cluster := range clusters {
+		siteIDs[cluster.SiteID] = struct{}{}
 		if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
 			continue
 		}
 		if clusterHasLeftoverLegacyNamespace(namespaces.Items, cluster.Name) {
-			clustersRemainingToMigrate++
+			clustersRemainingBySite[cluster.SiteID]++
 			continue
 		}
 		if cluster.ProviderType != db.ProviderTypeNico {
@@ -461,22 +463,20 @@ func (c *ForgeCAPIMigrationController) recordCoverage(ctx context.Context, site 
 		}
 		nodes, err := c.db.ListNodes(ctx, db.NodeFilters{ClusterID: &cluster.ID})
 		if err != nil {
-			clustersRemainingToMigrate++
+			clustersRemainingBySite[cluster.SiteID]++
 			continue
 		}
 		if c.nicoAdoptionIncomplete(ctx, nodes) {
-			clustersRemainingToMigrate++
+			clustersRemainingBySite[cluster.SiteID]++
 		}
 	}
 
-	allClusters, err := c.db.ListClusters(ctx, db.ClusterFilters{})
-	if err != nil {
-		return fmt.Errorf("list all clusters for orphaned legacy CAPI namespaces: %w", err)
-	}
-	orphanedLegacyNamespaces := countOrphanedLegacyNamespaces(namespaces.Items, allClusters)
+	orphanedLegacyNamespaces := countOrphanedLegacyNamespaces(namespaces.Items, clusters)
 
-	metrics.RecordCAPIAdoptionRemaining(site.ID.String(), clustersRemainingToMigrate)
-	metrics.RecordCAPIAdoptionOrphanedLegacyNamespaces(site.ID.String(), float64(orphanedLegacyNamespaces))
+	for siteID := range siteIDs {
+		metrics.RecordCAPIAdoptionRemaining(siteID.String(), clustersRemainingBySite[siteID])
+		metrics.RecordCAPIAdoptionOrphanedLegacyNamespaces(siteID.String(), float64(orphanedLegacyNamespaces))
+	}
 
 	return nil
 }
