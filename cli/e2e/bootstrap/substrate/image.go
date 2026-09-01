@@ -48,15 +48,31 @@ func EnsureNodeImage(ctx context.Context, cfg Config, log Logf) (string, error) 
 	if err != nil {
 		return "", fmt.Errorf("reading the bootstrap CA %s: %w", caCert, err)
 	}
+	dockerfile, err := nodeAssets.ReadFile("node/Dockerfile")
+	if err != nil {
+		return "", fmt.Errorf("reading embedded Dockerfile: %w", err)
+	}
+	agentConfigTemplate, err := nodeAssets.ReadFile("node/agent.conf.tmpl")
+	if err != nil {
+		return "", fmt.Errorf("reading embedded agent config: %w", err)
+	}
 
 	tag := cfg.Image
 	if tag == "" {
-		// The CA is part of the cache key, not just the base image. It is baked
-		// into the image as the agents' trust anchor, and the same CA is handed
-		// to the command — so an image built against a CA that has since been
-		// regenerated would have the agents refusing a server they cannot
-		// verify, with nothing to say why.
-		digest := sha256.Sum256(caPEM)
+		// Every input baked into the image is part of the cache key. This keeps
+		// source or SPIRE configuration changes from silently reusing a stale
+		// node image.
+		cacheInput := bytes.Join([][]byte{
+			caPEM,
+			dockerfile,
+			agentConfigTemplate,
+			[]byte(tpmPluginVersion),
+			[]byte(cfg.AgentPort),
+			[]byte(cfg.SpireServerAddress),
+			[]byte(cfg.SpireServerPort),
+			[]byte(cfg.SpireTrustDomain),
+		}, []byte{0})
+		digest := sha256.Sum256(cacheInput)
 		tag = fmt.Sprintf("nkectl-e2e/bootstrap-node:%s-ca%x",
 			sanitizeTag(cfg.BaseImage), digest[:6])
 	}
@@ -82,10 +98,6 @@ func EnsureNodeImage(ctx context.Context, cfg Config, log Logf) (string, error) 
 	}
 	defer func() { _ = os.RemoveAll(buildDir) }()
 
-	dockerfile, err := nodeAssets.ReadFile("node/Dockerfile")
-	if err != nil {
-		return "", fmt.Errorf("reading embedded Dockerfile: %w", err)
-	}
 	if err := os.WriteFile(filepath.Join(buildDir, "Dockerfile"), dockerfile, 0o600); err != nil {
 		return "", fmt.Errorf("staging Dockerfile: %w", err)
 	}

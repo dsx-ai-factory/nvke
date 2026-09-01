@@ -13,6 +13,7 @@ package controllers
 import (
 	"fmt"
 	"net/netip"
+	"regexp"
 	"sort"
 
 	"k8s.io/apimachinery/pkg/util/validation"
@@ -20,6 +21,8 @@ import (
 
 	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
+
+var tpmEKPubHashPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // hostAllocations maps a canonical host IP address to the name of the machine
 // that holds it.
@@ -122,6 +125,10 @@ func validateInventory(hosts []infrav1.ProvisionedHost) error {
 			)
 		}
 		seenIPAddresses[canonicalIP] = host.Hostname
+
+		if host.TPMEKPubHash != "" && !tpmEKPubHashPattern.MatchString(host.TPMEKPubHash) {
+			return fmt.Errorf("host %q has invalid TPM EK public key hash %q", host.Hostname, host.TPMEKPubHash)
+		}
 	}
 
 	return nil

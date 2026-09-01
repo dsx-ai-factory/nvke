@@ -73,14 +73,10 @@ func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody,
 			NodeNamePrefix:   controlPlaneNodeNamePrefix,
 			DesiredNodeCount: len(hosts),
 			ControlPlane:     true,
-			// joinToken, not tpm: CWE only derives a node's TPM EK pubhash from
-			// a NicoMachine (see controller/internal/controllers/nodetpmekpub),
-			// so tpm attestation on a provisioned machine would write no SPIRE
-			// entry and the node would never get an identity. The inventory
-			// already carries the thumbprints, so teaching CWE to read them off
-			// the ProvisionedCluster is the fix; until then this is the method
-			// that works.
-			CapiSpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
+			// The provisioned provider copies the allocated host's TPM identity
+			// to the CAPI Machine. CWE uses it as the parent of the node-agent
+			// workload entry; no bootstrap join token is needed.
+			CapiSpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 			SystemReservedMemory:       inv.Cluster.KubeletConfig.SystemReservedMemory,
 			CapiInfraMachineTemplate:   provisionedMachineTemplate(),
 		}},
@@ -119,10 +115,14 @@ func provisionedHosts(inv *inventory.Inventory) ([]map[string]interface{}, error
 			return nil, fmt.Errorf("sitecluster: node IP %q appears more than once in the inventory", node.IP)
 		}
 		seenName[node.Name], seenIP[node.IP] = true, true
-		hosts = append(hosts, map[string]interface{}{
+		host := map[string]interface{}{
 			"hostname":  node.Name,
 			"ipAddress": node.IP,
-		})
+		}
+		if node.TPMEKThumbprint != "" {
+			host["tpmEkPubHash"] = node.TPMEKThumbprint
+		}
+		hosts = append(hosts, host)
 	}
 	return hosts, nil
 }

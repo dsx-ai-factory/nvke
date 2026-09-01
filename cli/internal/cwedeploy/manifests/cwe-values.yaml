@@ -52,8 +52,6 @@ appDb:
   sslMode: disable
 
 secrets:
-  forgeSecret:
-    enabled: false
   dgxcTenantCredSecretName: ""
 
 temporal:
@@ -66,5 +64,12 @@ spiffe:
 nkeOIDCAuth:
   enabled: false
 
+# Cluster API. A site cluster is a CAPI cluster whose infrastructure provider
+# is cluster-api-provider-provisioned, so CWE runs its CAPI controllers and gets
+# the RBAC to write the objects. Engine.Deploy installs CAPI itself, before this
+# release, so the controllers exist by the time CWE writes anything.
+#
 capi:
-  enabled: false
+  enabled: true
+  rbac:
+    create: true

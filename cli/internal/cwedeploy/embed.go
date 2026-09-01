@@ -20,4 +20,5 @@ const (
 	spireValuesFile    = "manifests/spire-values.yaml"
 	spireNodePortFile  = "manifests/spire-server-nodeport.yaml"
 	cweValuesFile      = "manifests/cwe-values.yaml"
+	cweNodePortFile    = "manifests/cwe-nodeport.yaml"
 )

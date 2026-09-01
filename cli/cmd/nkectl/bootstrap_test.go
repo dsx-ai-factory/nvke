@@ -6,16 +6,25 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/NVIDIA/nke/cli/internal/bootstrapengine"
 	"github.com/NVIDIA/nke/cli/internal/inventory"
+	api "github.com/NVIDIA/nke/controller/api"
 )
 
 // fakeCWERunner is a scripted cwedeploy.CommandRunner: every helm call
@@ -24,11 +33,94 @@ import (
 // without a real helm binary, kubectl binary or cluster.
 type fakeCWERunner struct{}
 
-func (fakeCWERunner) Run(_ context.Context, name string, _ ...string) (string, error) {
-	if name == "kubectl" {
+func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string, error) {
+	joined := strings.Join(args, " ")
+	if name == "kubectl" && strings.Contains(joined, "jsonpath={.data.value}") {
+		// The Secret CWE publishes the finished cluster's kubeconfig in.
+		return base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nkind: Config\n")), nil
+	}
+	if name == "kubectl" && strings.Contains(joined, "kustomize") {
+		// The provisioned provider's rendered manifest, carrying the
+		// placeholder image cwedeploy rewrites.
+		return "        image: docker.io/library/cluster-api-provider-provisioned:latest\n", nil
+	}
+	if name == "kubectl" && strings.Contains(joined, "readyz") {
 		return `{"status":"ok","checks":{"database":"ok","temporal":"ok"}}`, nil
 	}
+	if name == "kubectl" && strings.Contains(joined, "capi-controller-manager") {
+		// CAPI is not installed yet, so cwedeploy runs clusterctl.
+		return "Error from server (NotFound)", errors.New("exit status 1")
+	}
 	return "", nil
+}
+
+// startFakeCWEAPI stands up an HTTP server that answers the two calls
+// `bootstrap site` makes after the deploy — create the cluster, then poll it —
+// and points nkectl at it through the port it dials.
+//
+// A real server rather than an injected client: the address is the thing under
+// test on this path. nkectl builds it from the host port the CWE NodePort was
+// mapped to, and a client handed in by a test would prove nothing about that.
+func startFakeCWEAPI(t *testing.T, provisioned bool) {
+	t.Helper()
+
+	id := uuid.New()
+	status := api.ConditionStatusTrue
+	if !provisioned {
+		status = api.ConditionStatusFalse
+	}
+	cluster := api.Cluster{
+		ID:   id,
+		Name: "nke-site",
+		Conditions: api.ClusterConditions{
+			Provisioned:  api.Condition{Status: status},
+			Provisioning: api.Condition{Status: api.ConditionStatusTrue},
+			Deleting:     api.Condition{Status: api.ConditionStatusFalse},
+		},
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("POST /api/sites", func(w http.ResponseWriter, r *http.Request) {
+		var request api.RegisterSiteJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode register-site request: %v", err)
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if request.ID != uuid.Nil {
+			t.Errorf("registered site ID = %s, want nil UUID", request.ID)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(api.Site{ID: request.ID, VIPRanges: request.VIPRanges, VIPAllocations: []api.VIPAllocation{}})
+	})
+	mux.HandleFunc("POST /api/clusters", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(cluster)
+	})
+	mux.HandleFunc("GET /api/clusters/{id}", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(cluster)
+	})
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen for fake CWE API: %v", err)
+	}
+	srv := httptest.NewUnstartedServer(mux)
+	srv.Listener = listener
+	srv.Start()
+	t.Cleanup(srv.Close)
+
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatalf("parsing the test server address %q: %v", srv.URL, err)
+	}
+	t.Setenv("NKECTL_CWE_PORT", port)
 }
 
 // fakeBootstrapRunner is a scripted bootstrapengine.CommandRunner so
@@ -113,34 +205,35 @@ registry:
 	if err == nil {
 		t.Fatal("invalid inventory did not error")
 	}
-	if strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("reached dispatch stub before validation failed: %v", err)
+	if strings.Contains(err.Error(), "creating cluster") {
+		t.Errorf("reached the create call before validation failed: %v", err)
 	}
 	if !strings.Contains(err.Error(), "cluster.nodes[0].ip") {
 		t.Errorf("error does not name the bad field: %v", err)
 	}
 }
 
-// TestRunBootstrapSiteValidReachesStub confirms a valid inventory (no
-// dry-run) passes validation, stands up and tears down the ephemeral
-// bootstrap kind cluster, and reaches the not-yet-implemented dispatch stub.
-// The kind/kubectl calls go through fakeBootstrapRunner, so this needs no
-// real kind binary or container runtime.
-func TestRunBootstrapSiteValidReachesStub(t *testing.T) {
-	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
-	t.Setenv("NKECTL_CWE_PROFILES_IMAGE", "nvcr.io/org/cwe-profiles:v1")
+// TestRunBootstrapSiteCreatesTheCluster is the whole command on its happy
+// path: a valid inventory passes validation, the ephemeral bootstrap kind
+// cluster is stood up and torn down again, CWE is asked to create the cluster,
+// and the finished cluster's kubeconfig is written out.
+//
+// Every binary is faked, so this needs no kind, no container runtime and no
+// cluster; the CWE API is a real HTTP server on the port nkectl dials.
+func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
 
+	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		inventory:       writeInventory(t, validInventory),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
+		kubeconfigOut:   kubeconfigOut,
 	})
-	if err == nil {
-		t.Fatal("expected the dispatch stub error")
-	}
-	if !strings.Contains(err.Error(), "not yet implemented") {
-		t.Errorf("expected dispatch stub error, got: %v", err)
+	if err != nil {
+		t.Fatalf("runBootstrapSite returned error: %v", err)
 	}
 
 	if !runner.sawArgs("create", "cluster") {
@@ -149,13 +242,87 @@ func TestRunBootstrapSiteValidReachesStub(t *testing.T) {
 	if !runner.sawArgs("delete", "cluster") {
 		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster; calls: %v", runner.calls)
 	}
+	body, readErr := os.ReadFile(kubeconfigOut)
+	if readErr != nil {
+		t.Fatalf("no kubeconfig written for the finished cluster: %v", readErr)
+	}
+	if !strings.Contains(string(body), "kind: Config") {
+		t.Errorf("the written kubeconfig is not one: %q", body)
+	}
+}
+
+// TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp: the command's promise is
+// a working cluster, so a cluster that never reports provisioned has to be a
+// failure rather than a command that returns 0 and leaves the operator to find
+// out later.
+func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, false)
+	t.Setenv("NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT", "5ms")
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		inventory:       writeInventory(t, validInventory),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		clusterTimeout:  5 * time.Millisecond,
+		kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
+	})
+	if err == nil {
+		t.Fatal("expected an error when the cluster never reports provisioned")
+	}
+	if !strings.Contains(err.Error(), "did not report provisioned") {
+		t.Errorf("error %q does not say the cluster never came up", err)
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted after site cluster creation started")
+	}
+	if !strings.Contains(err.Error(), "retained for recovery") || !strings.Contains(err.Error(), "kubeconfig:") {
+		t.Errorf("error does not explain how to recover from the retained cluster: %v", err)
+	}
+}
+
+func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		inventory:         writeInventory(t, validInventory),
+		bootstrapRunner:   runner,
+		cweRunner:         missingKubeconfigRunner{},
+		kubeconfigTimeout: 5 * time.Millisecond,
+		kubeconfigOut:     filepath.Join(t.TempDir(), "unused.kubeconfig"),
+	})
+	if err == nil {
+		t.Fatal("expected an error when the kubeconfig Secret is not published")
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted after the site cluster became provisioned")
+	}
+	for _, want := range []string{"not published", "retained for recovery", "kind delete cluster"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+// setBootstrapEnv fills in the images `bootstrap site` requires, so a test
+// about something else does not fail on one of them.
+func setBootstrapEnv(t *testing.T) {
+	t.Helper()
+	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
+	t.Setenv("NKECTL_CWE_PROFILES_IMAGE", "nvcr.io/org/cwe-profiles:v1")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:local")
+	t.Setenv("NKECTL_CAPI_PROVISIONED_PATH", t.TempDir())
+	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
 }
 
 // The image lookup must run against the runtime kind loads from. nerdctl is
 // the default provider, and such a host need not have Docker at all.
 func TestRunBootstrapSiteUsesTheProviderCLI(t *testing.T) {
-	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
-	t.Setenv("NKECTL_CWE_PROFILES_IMAGE", "nvcr.io/org/cwe-profiles:v1")
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
 
 	// --bootstrap-provider value -> the CLI the lookup must use.
 	for provider, wantCLI := range map[string]string{"": "nerdctl", "docker": "docker"} {
@@ -165,6 +332,7 @@ func TestRunBootstrapSiteUsesTheProviderCLI(t *testing.T) {
 			provider:        provider,
 			bootstrapRunner: runner,
 			cweRunner:       fakeCWERunner{},
+			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 		})
 		if !slices.Contains(runner.names, wantCLI) {
 			t.Errorf("provider %q: no %s call; ran %v", provider, wantCLI, runner.names)
@@ -180,6 +348,7 @@ func TestRunBootstrapSiteUsesTheProviderCLI(t *testing.T) {
 // settled up front, so a setting the operator never provided costs them a
 // message rather than a cluster that is stood up only to be torn down.
 func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
+	setBootstrapEnv(t)
 	t.Setenv("NKECTL_CWE_IMAGE", "")
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
@@ -280,24 +449,23 @@ func TestDumpInventoryRedactsRegistryAPIKey(t *testing.T) {
 }
 
 // TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures guards the distinction the
-// dump depends on. Every run ends in an error today — the dispatch stub — so
-// dumping on "returned an error" would collect a cluster bundle on every
-// successful bootstrap, and bury the real ones.
+// dump depends on. A pre-create failure still tears the bootstrap cluster down,
+// so its bundle has to be collected first. A successful run writes no bundle.
 func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
-	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
-	t.Setenv("NKECTL_CWE_PROFILES_IMAGE", "nvcr.io/org/cwe-profiles:v1")
-	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
+	setBootstrapEnv(t)
 
-	t.Run("the dispatch stub writes nothing", func(t *testing.T) {
+	t.Run("a successful bootstrap writes nothing", func(t *testing.T) {
+		startFakeCWEAPI(t, true)
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 			inventory:       writeInventory(t, validInventory),
 			diagnosticsDir:  dir,
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       fakeCWERunner{},
+			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 		})
-		if !errors.Is(err, errDispatchNotImplemented) {
-			t.Fatalf("expected the dispatch stub, got %v", err)
+		if err != nil {
+			t.Fatalf("runBootstrapSite returned error: %v", err)
 		}
 		if _, statErr := os.Stat(dir); statErr == nil {
 			t.Error("a successful bootstrap should leave no diagnostics behind")
@@ -316,8 +484,8 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       unhealthyCWERunner{},
 		})
-		if err == nil || errors.Is(err, errDispatchNotImplemented) {
-			t.Fatalf("expected a real failure, got %v", err)
+		if err == nil {
+			t.Fatal("expected a real failure")
 		}
 		if _, statErr := os.Stat(dir); statErr != nil {
 			t.Errorf("no diagnostics written for a real failure: %v", statErr)
@@ -334,4 +502,13 @@ func (u unhealthyCWERunner) Run(ctx context.Context, name string, args ...string
 		return `{"status":"starting"}`, nil
 	}
 	return u.fakeCWERunner.Run(ctx, name, args...)
+}
+
+type missingKubeconfigRunner struct{ fakeCWERunner }
+
+func (r missingKubeconfigRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if name == "kubectl" && strings.Contains(strings.Join(args, " "), "jsonpath={.data.value}") {
+		return "Error from server (NotFound): secret not found", errors.New("exit status 1")
+	}
+	return r.fakeCWERunner.Run(ctx, name, args...)
 }

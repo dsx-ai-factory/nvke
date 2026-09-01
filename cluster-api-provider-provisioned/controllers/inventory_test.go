@@ -79,9 +79,14 @@ func TestValidateInventory(t *testing.T) {
 		{
 			name: "valid",
 			hosts: []infrav1.ProvisionedHost{
-				host("host-01", "10.0.0.1", nil),
+				{Hostname: "host-01", IPAddress: "10.0.0.1", TPMEKPubHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
 				host("host-02.example.test", "2001:db8::2", nil),
 			},
+		},
+		{
+			name:    "invalid TPM EK public key hash",
+			hosts:   []infrav1.ProvisionedHost{{Hostname: "host-01", IPAddress: "10.0.0.1", TPMEKPubHash: "not-a-sha256"}},
+			wantErr: `host "host-01" has invalid TPM EK public key hash "not-a-sha256"`,
 		},
 		{
 			name: "repeated hostname",

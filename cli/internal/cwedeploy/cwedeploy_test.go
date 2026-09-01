@@ -5,7 +5,9 @@ package cwedeploy
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,6 +148,131 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 	if err := e.Deploy(context.Background(), "/tmp/kubeconfig",
 		Config{CWEImage: "nvcr.io/org/controller:edge"}); err == nil {
 		t.Fatal("expected an error for a missing Config.ProfilesImage")
+	}
+	if err := e.Deploy(context.Background(), "/tmp/kubeconfig", Config{
+		CWEImage:      "nvcr.io/org/controller:edge",
+		ProfilesImage: "nvcr.io/org/cwe-profiles:v1",
+	}); err == nil {
+		t.Fatal("expected an error for a missing Config.ProvisionedProviderImage")
+	}
+}
+
+func TestNodeAgentPortArgs(t *testing.T) {
+	if got := nodeAgentPortArgs(Config{}); len(got) != 0 {
+		t.Errorf("nodeAgentPortArgs with no port = %v, want none", got)
+	}
+	got := joinArgs(nodeAgentPortArgs(Config{NodeAgentPort: "15005"}))
+	for _, want := range []string{"env[0].name=NODE_AGENT_PORT", "env[0].value=15005"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("nodeAgentPortArgs = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+func TestDefaultConfig_CWEPort(t *testing.T) {
+	t.Setenv("NKECTL_CWE_PORT", "30181")
+
+	cfg := DefaultConfig()
+	if cfg.CWEPort != 30181 {
+		t.Errorf("DefaultConfig port = %d, want 30181", cfg.CWEPort)
+	}
+}
+
+func TestTenantKubeconfigRetriesUntilPublished(t *testing.T) {
+	oldInterval := tenantKubeconfigPollInterval
+	tenantKubeconfigPollInterval = time.Millisecond
+	t.Cleanup(func() { tenantKubeconfigPollInterval = oldInterval })
+
+	runner := &fakeRunner{outputs: []fakeOutput{
+		{output: "Error from server (NotFound)", err: errors.New("exit status 1")},
+		{output: "temporary API failure", err: errors.New("exit status 1")},
+		{output: base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nkind: Config\n"))},
+	}}
+	got, err := New(runner, nil).TenantKubeconfig(
+		context.Background(), "/tmp/kubeconfig", "nke-site", time.Second)
+	if err != nil {
+		t.Fatalf("TenantKubeconfig returned error: %v", err)
+	}
+	if !strings.Contains(string(got), "kind: Config") {
+		t.Errorf("TenantKubeconfig = %q, want a kubeconfig", got)
+	}
+	if len(runner.calls) != 3 {
+		t.Errorf("TenantKubeconfig made %d attempts, want 3", len(runner.calls))
+	}
+}
+
+func TestTenantKubeconfigTimesOutWithLastError(t *testing.T) {
+	oldInterval := tenantKubeconfigPollInterval
+	tenantKubeconfigPollInterval = time.Millisecond
+	t.Cleanup(func() { tenantKubeconfigPollInterval = oldInterval })
+
+	runner := &fakeRunner{outputs: []fakeOutput{{
+		output: "Error from server (NotFound): secrets \"nke-site-kubeconfig\" not found",
+		err:    errors.New("exit status 1"),
+	}}}
+	_, err := New(runner, nil).TenantKubeconfig(
+		context.Background(), "/tmp/kubeconfig", "nke-site", 5*time.Millisecond)
+	if err == nil {
+		t.Fatal("TenantKubeconfig did not time out")
+	}
+	for _, want := range []string{"not published within", "NotFound"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+func TestDeploy_PublishesCWEAfterTheRelease(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	cwe := callIndex(runner, "upgrade --install "+cweReleaseName)
+	nodePort := -1
+	for i, call := range runner.calls {
+		args := joinArgs(call.args)
+		if call.name == "kubectl" && strings.Contains(args, "apply") && !strings.Contains(args, "--server-side") {
+			nodePort = i
+		}
+	}
+	if nodePort < cwe {
+		t.Errorf("the CWE NodePort (%d) was applied before CWE itself (%d)", nodePort, cwe)
+	}
+	if want := fmt.Sprintf("nodePort: %d", DefaultCWEPort); !strings.Contains(runner.applied[len(runner.applied)-1], want) {
+		t.Errorf("the published Service does not carry %q:\n%s", want, runner.applied[len(runner.applied)-1])
+	}
+}
+
+func TestDeploy_ConfiguresCWEPort(t *testing.T) {
+	runner := &fakeRunner{}
+	cfg := testConfig(t)
+	cfg.CWEPort = 30181
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	cwe := helmCalls(runner)[4]
+	if !strings.Contains(cwe, "service.port=30181") {
+		t.Errorf("CWE helm call = %q, want configured service port", cwe)
+	}
+	manifest := runner.applied[len(runner.applied)-1]
+	for _, want := range []string{"port: 30181", "nodePort: 30181"} {
+		if !strings.Contains(manifest, want) {
+			t.Errorf("the published Service does not carry %q:\n%s", want, manifest)
+		}
+	}
+}
+
+func TestDeploy_EnablesPostInitCNI(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	cwe := helmCalls(runner)[4]
+	if !strings.Contains(cwe, "cni.installAfterInit=true") {
+		t.Errorf("CWE helm call = %q, want post-init CNI enabled", cwe)
 	}
 }
 

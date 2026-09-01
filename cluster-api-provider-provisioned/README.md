@@ -39,7 +39,12 @@ spec:
   hosts:
     - hostname: host-01.example.internal
       ipAddress: 10.0.0.11
+      tpmEkPubHash: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
+
+`tpmEkPubHash` is optional. When present, the provider annotates the owning
+CAPI Machine with that host's TPM SPIRE-agent identity. CWE uses the annotation
+to create the mTLS workload identity for `nke-agent`.
 
 The binding lives in `ProvisionedMachine.spec.providerID`, in the form
 `provisioned://<cluster-name>/<canonical-ip-address>`. The cluster component
