@@ -45,7 +45,12 @@ FROM ${BASE_REGISTRY}/alpine:3.24.1
 # so the apk index is not shipped. Documentation (*-doc) packages and packages
 # with no function inside this pod (binutils, pciutils, usbutils) are
 # intentionally excluded to minimize the image's CVE surface (NKX-13061).
-RUN apk add --update --no-cache \
+#
+# apk add leaves packages the base tag already carries at their old version,
+# and Alpine patches a branch without always cutting a new tag. So upgrade
+# first, or dependencies nobody names here (libcrypto3, libssl3) go stale.
+RUN apk upgrade --no-cache && \
+    apk add --update --no-cache \
     ca-certificates \
     bash \
     bash-completion \
