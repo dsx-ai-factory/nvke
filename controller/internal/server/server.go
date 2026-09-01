@@ -193,7 +193,6 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, forge
 	nodePoolService := NewNodePoolService(logger, database, forgeProvider, cfg.Teleport, cfg.UseControlPlaneControllerForControlPlane())
 
 	return &serverImpl{
-		siteService:          *NewSiteService(logger, database, forgeProvider),
 		clusterService:       *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.EnableForgeCapi, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
@@ -205,7 +204,6 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, forge
 }
 
 type serverImpl struct {
-	siteService
 	clusterService
 	nodePoolService
 	nodeSetService

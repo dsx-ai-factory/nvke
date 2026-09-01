@@ -24,14 +24,13 @@ import (
 
 type collectorTestEnv struct {
 	database db.DB
-	site     db.Site
+	siteID   uuid.UUID
 }
 
 func setupCollectorTestEnv(ctx context.Context, t *testing.T) *collectorTestEnv {
 	t.Helper()
 
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.NodePool)(nil),
 		(*db.NodeSet)(nil),
@@ -39,11 +38,7 @@ func setupCollectorTestEnv(ctx context.Context, t *testing.T) *collectorTestEnv 
 	)
 	database := db.NewDB(bunDB)
 
-	site := db.Site{ID: uuid.New(), VIPRanges: []string{}}
-	_, err := database.RegisterSite(ctx, &site)
-	require.NoError(t, err)
-
-	return &collectorTestEnv{database: database, site: site}
+	return &collectorTestEnv{database: database, siteID: uuid.New()}
 }
 
 func (te *collectorTestEnv) createCluster(ctx context.Context, t *testing.T, name string) db.Cluster {
@@ -53,7 +48,7 @@ func (te *collectorTestEnv) createCluster(ctx context.Context, t *testing.T, nam
 		Name:              name,
 		KubernetesVersion: "1.31.0",
 	}
-	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: te.site.ID, VpcID: uuid.New()})
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: te.siteID, VpcID: uuid.New()})
 	created, err := te.database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 	return created

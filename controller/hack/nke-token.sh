@@ -6,7 +6,7 @@
 # authenticating.
 #
 #   TOKEN="$(hack/nke-token.sh)"
-#   curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/sites"
+#   curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/clusters"
 #
 # Empty output means authentication is off and a bare request is correct. Real
 # failures exit non-zero and say why on stderr.

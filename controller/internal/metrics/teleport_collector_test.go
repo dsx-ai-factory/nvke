@@ -23,14 +23,13 @@ import (
 
 type collectorTestEnv struct {
 	database db.DB
-	site     db.Site
+	siteID   uuid.UUID
 }
 
 func setupCollectorTestEnv(ctx context.Context, t *testing.T) *collectorTestEnv {
 	t.Helper()
 
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.NodePool)(nil),
 		(*db.NodeSet)(nil),
@@ -38,18 +37,14 @@ func setupCollectorTestEnv(ctx context.Context, t *testing.T) *collectorTestEnv 
 	)
 	database := db.NewDB(bunDB)
 
-	site := db.Site{ID: uuid.New(), VIPRanges: []string{}}
-	_, err := database.RegisterSite(ctx, &site)
-	require.NoError(t, err)
-
-	return &collectorTestEnv{database: database, site: site}
+	return &collectorTestEnv{database: database, siteID: uuid.New()}
 }
 
 func (te *collectorTestEnv) createCluster(ctx context.Context, t *testing.T, name string, teleportEnabled bool) db.Cluster {
 	t.Helper()
 	cluster := db.Cluster{
 		ID:                uuid.New(),
-		SiteID:            te.site.ID,
+		SiteID:            te.siteID,
 		Name:              name,
 		OrgID:             "test-org",
 		VpcID:             uuid.New(),
@@ -158,7 +153,7 @@ func TestListTeleportRolloutStats(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, rows, 1)
 
-		assert.Equal(t, te.site.ID, rows[0].SiteID)
+		assert.Equal(t, te.siteID, rows[0].SiteID)
 		assert.Equal(t, cluster.ID, rows[0].ClusterID)
 		assert.Equal(t, "cluster-a", rows[0].ClusterName)
 		assert.True(t, rows[0].ClusterEnabled)
@@ -423,7 +418,7 @@ func TestTeleportCollector(t *testing.T) {
 					labelMap[lp.GetName()] = lp.GetValue()
 				}
 
-				assert.Equal(t, te.site.ID.String(), labelMap["site_id"], "metric %s should have site_id", f.GetName())
+				assert.Equal(t, te.siteID.String(), labelMap["site_id"], "metric %s should have site_id", f.GetName())
 
 				switch f.GetName() {
 				case "cwe_teleport_cluster_enabled":

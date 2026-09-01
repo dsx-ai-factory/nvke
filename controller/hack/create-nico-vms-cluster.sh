@@ -52,6 +52,7 @@ INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000003}"  # 
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
+CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-172.31.0.10}"
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CNI_VERSION="${CNI_VERSION:-}"
 
@@ -74,6 +75,7 @@ BODY=$(cat <<EOF
   "siteID": "${SITE_ID}",
   "vpcID": "${VPC_ID}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
+  "controlPlaneVIP": "${CONTROL_PLANE_VIP}",
   "cniPlugin": "${CNI_PLUGIN}"${CNI_VERSION_JSON},
   "etcdEncrypted": ${ETCD_ENCRYPTED},
   "teleportEnabled": false,
@@ -113,7 +115,7 @@ BODY=$(cat <<EOF
 EOF
 )
 
-echo "Creating nico-vms cluster '${CLUSTER_NAME}' (cp=${CONTROL_PLANE_DESIRED_COUNT}, worker=${WORKER_DESIRED_COUNT}, cni=${CNI_PLUGIN}${CNI_VERSION:+/${CNI_VERSION}})" >&2
+echo "Creating nico-vms cluster '${CLUSTER_NAME}' (cp=${CONTROL_PLANE_DESIRED_COUNT}, worker=${WORKER_DESIRED_COUNT}, cni=${CNI_PLUGIN}${CNI_VERSION:+/${CNI_VERSION}}, controlPlaneVIP=${CONTROL_PLANE_VIP})" >&2
 
 curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}" \
   -H "Content-Type: application/json" \

@@ -264,7 +264,7 @@ form works in both worlds:
 
 ```bash
 TOKEN="$(hack/nke-token.sh)"
-curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/sites"
+curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/clusters"
 ```
 
 The `${TOKEN:+...}` expansion drops the header entirely when `TOKEN` is empty,

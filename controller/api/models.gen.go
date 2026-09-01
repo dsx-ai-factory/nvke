@@ -23,12 +23,6 @@ const (
 	ConditionStatusUnknown ConditionStatus = "Unknown"
 )
 
-// Defines values for CreateVIPAllocationRequestAllocationType.
-const (
-	CreateVIPAllocationRequestAllocationTypeCluster        CreateVIPAllocationRequestAllocationType = "cluster"
-	CreateVIPAllocationRequestAllocationTypeSiteController CreateVIPAllocationRequestAllocationType = "siteController"
-)
-
 // Defines values for DiskSelectionStrategy.
 const (
 	DiskSelectionStrategyLargest  DiskSelectionStrategy = "largest"
@@ -59,12 +53,6 @@ const (
 	UpdateInProgressTypeEtcdEncryption   UpdateInProgressType = "etcd_encryption"
 	UpdateInProgressTypeK8SUpgrade       UpdateInProgressType = "k8s_upgrade"
 	UpdateInProgressTypeOidcEnable       UpdateInProgressType = "oidc_enable"
-)
-
-// Defines values for VIPAllocationAllocationType.
-const (
-	VIPAllocationAllocationTypeCluster        VIPAllocationAllocationType = "cluster"
-	VIPAllocationAllocationTypeSiteController VIPAllocationAllocationType = "siteController"
 )
 
 // CloudInitFile defines model for CloudInitFile.
@@ -468,24 +456,6 @@ type CreateNodePoolRequest struct {
 	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
 }
 
-// CreateVIPAllocationRequest defines model for CreateVIPAllocationRequest.
-type CreateVIPAllocationRequest struct {
-	// SiteID The site ID where the VIP should be allocated
-	SiteID openapi_types.UUID `json:"siteID"`
-
-	// Vip The VIP to allocate
-	Vip string `json:"vip"`
-
-	// AllocationType The type of resource to allocate this VIP to
-	AllocationType CreateVIPAllocationRequestAllocationType `json:"allocationType"`
-
-	// ClusterID The cluster ID (required if allocationType is cluster)
-	ClusterID *openapi_types.UUID `json:"clusterID,omitempty"`
-}
-
-// CreateVIPAllocationRequestAllocationType The type of resource to allocate this VIP to
-type CreateVIPAllocationRequestAllocationType string
-
 // DeleteNodeRequest defines model for DeleteNodeRequest.
 type DeleteNodeRequest struct {
 	// AllowQuorumLoss Override the etcd member-removal safety check that blocks a removal which
@@ -563,18 +533,6 @@ type ListNodesResponse struct {
 type ListOSProfilesResponse struct {
 	// OsProfiles The list of OS profiles
 	OsProfiles []OSProfile `json:"osProfiles"`
-}
-
-// ListSitesResponse defines model for ListSitesResponse.
-type ListSitesResponse struct {
-	// Sites The list of sites
-	Sites []Site `json:"sites"`
-}
-
-// ListVIPAllocationsResponse defines model for ListVIPAllocationsResponse.
-type ListVIPAllocationsResponse struct {
-	// VipAllocations The list of VIP allocations
-	VipAllocations []VIPAllocation `json:"vipAllocations"`
 }
 
 // MachineHealthIssue defines model for MachineHealthIssue.
@@ -957,27 +915,6 @@ type OSProfile struct {
 	Name string `json:"name"`
 }
 
-// RegisterSiteRequest defines model for RegisterSiteRequest.
-type RegisterSiteRequest struct {
-	// ID The ID of the site, matching the ID of the Forge site
-	ID openapi_types.UUID `json:"id"`
-
-	// VIPRanges The VIP ranges provided by the GNI team, in CIDR block format. Multiple disjoint ranges can be specified to maximize IP space utilization.
-	VIPRanges []string `json:"vipRanges"`
-}
-
-// Site defines model for Site.
-type Site struct {
-	// ID The ID of the site, matching the ID of the Forge site
-	ID openapi_types.UUID `json:"id"`
-
-	// VIPRanges The VIP ranges provided by the GNI team, in CIDR block format. Multiple disjoint ranges can be specified to maximize IP space utilization.
-	VIPRanges []string `json:"vipRanges"`
-
-	// VIPAllocations List of VIPs that have been allocated from the vipRanges
-	VIPAllocations []VIPAllocation `json:"vipAllocations"`
-}
-
 // SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
 type SpireAttestationMethod string
 
@@ -1154,30 +1091,6 @@ type UpdateNodePoolRequest struct {
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// VIPAllocation defines model for VIPAllocation.
-type VIPAllocation struct {
-	// ID The unique ID of the VIP allocation
-	ID openapi_types.UUID `json:"id"`
-
-	// SiteID The ID of the site where this VIP is allocated
-	SiteID openapi_types.UUID `json:"siteID"`
-
-	// VIP The allocated VIP
-	VIP string `json:"vip"`
-
-	// AllocationType Type of resource that has been allocated this VIP
-	AllocationType VIPAllocationAllocationType `json:"allocationType"`
-
-	// ClusterID ID of the cluster that has been allocated this VIP (if allocationType is cluster)
-	ClusterID *openapi_types.UUID `json:"clusterID,omitempty"`
-
-	// CreatedAt When this VIP was allocated
-	CreatedAt *time.Time `json:"createdAt,omitempty"`
-}
-
-// VIPAllocationAllocationType Type of resource that has been allocated this VIP
-type VIPAllocationAllocationType string
-
 // Forbidden defines model for Forbidden.
 type Forbidden = GenericError
 
@@ -1226,12 +1139,6 @@ type ListNodesParams struct {
 	ControlPlane *bool `form:"controlPlane,omitempty" json:"controlPlane,omitempty"`
 }
 
-// ListVIPAllocationsParams defines parameters for ListVIPAllocations.
-type ListVIPAllocationsParams struct {
-	// SiteID Filter VIP allocations by site ID
-	SiteID *openapi_types.UUID `form:"siteID,omitempty" json:"siteID,omitempty"`
-}
-
 // CreateClusterJSONRequestBody defines body for CreateCluster for application/json ContentType.
 type CreateClusterJSONRequestBody = CreateClusterRequest
 
@@ -1246,9 +1153,3 @@ type UpdateNodePoolJSONRequestBody = UpdateNodePoolRequest
 
 // DeleteNodeJSONRequestBody defines body for DeleteNode for application/json ContentType.
 type DeleteNodeJSONRequestBody = DeleteNodeRequest
-
-// RegisterSiteJSONRequestBody defines body for RegisterSite for application/json ContentType.
-type RegisterSiteJSONRequestBody = RegisterSiteRequest
-
-// CreateVIPAllocationJSONRequestBody defines body for CreateVIPAllocation for application/json ContentType.
-type CreateVIPAllocationJSONRequestBody = CreateVIPAllocationRequest

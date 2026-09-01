@@ -197,18 +197,6 @@ def register(ctx):
     )
 
     cmd_button(
-        "3-register-mock-site",
-        argv=["bash", "-c", """
-          set -euo pipefail
-          CWE_HTTP_PORT="%s" \
-          bash ./hack/register-mock-site.sh
-        """ % (cwe_http_port,)],
-        resource="cwe",
-        icon_name="add_box",
-        text="Register mock site",
-    )
-
-    cmd_button(
         "4-create-sample-forge-cluster",
         argv=["bash", "-c", """
           set -euo pipefail

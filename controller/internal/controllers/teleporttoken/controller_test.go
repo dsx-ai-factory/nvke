@@ -28,11 +28,11 @@ import (
 // --- Test environment (replaces mockDB with in-memory SQLite) ---
 
 // testEnv holds an in-memory database with a pre-created entity chain:
-// Site -> Cluster (teleport_enabled) -> NodePool -> NodeSet (teleport_enabled)
+// Cluster (teleport_enabled) -> NodePool -> NodeSet (teleport_enabled)
 type testEnv struct {
 	database *dbwrapper.DB
 	bunDB    *bun.DB
-	site     db.Site
+	siteID   uuid.UUID
 	cluster  db.Cluster
 	nodePool db.NodePool
 	nodeSet  db.NodeSet
@@ -60,7 +60,6 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 	t.Helper()
 
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.NodePool)(nil),
 		(*db.NodeSet)(nil),
@@ -68,23 +67,17 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 	)
 	database := sqliteCompatDB{DB: db.NewDB(bunDB)}
 
-	site := db.Site{
-		ID:        uuid.New(),
-		VIPRanges: []string{},
-	}
-	_, err := database.RegisterSite(ctx, &site)
-	require.NoError(t, err)
-
+	siteID := uuid.New()
 	cluster := db.Cluster{
 		ID:                uuid.New(),
-		SiteID:            site.ID,
+		SiteID:            siteID,
 		Name:              "test-cluster",
 		OrgID:             "test-org",
 		VpcID:             uuid.New(),
 		KubernetesVersion: "1.31.0",
 		TeleportEnabled:   true,
 	}
-	_, err = database.CreateCluster(ctx, &cluster)
+	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
 	nodePool := db.NodePool{
@@ -122,7 +115,7 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 	return &testEnv{
 		database: dbwrapper.New(database, testLogger()),
 		bunDB:    bunDB,
-		site:     site,
+		siteID:   siteID,
 		cluster:  cluster,
 		nodePool: nodePool,
 		nodeSet:  nodeSet,
@@ -263,7 +256,7 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 		node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
 
-		result, err := te.database.ListTeleportEligibleNodes(ctx, te.site.ID)
+		result, err := te.database.ListTeleportEligibleNodes(ctx, te.siteID)
 		require.NoError(t, err)
 		assert.Len(t, result, 2)
 
@@ -277,7 +270,7 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 	t.Run("returns empty when no eligible nodes", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
-		result, err := te.database.ListTeleportEligibleNodes(ctx, te.site.ID)
+		result, err := te.database.ListTeleportEligibleNodes(ctx, te.siteID)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -302,7 +295,7 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
 
-		result, err := te.database.ListTeleportEligibleNodes(ctx, te.site.ID)
+		result, err := te.database.ListTeleportEligibleNodes(ctx, te.siteID)
 		require.NoError(t, err)
 		assert.Len(t, result, 1)
 		assert.Equal(t, node.ID, result[0].ID)
@@ -325,7 +318,7 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
 
-		result, err := te.database.ListTeleportEligibleNodes(ctx, te.site.ID)
+		result, err := te.database.ListTeleportEligibleNodes(ctx, te.siteID)
 		require.NoError(t, err)
 		require.Len(t, result, 1)
 		assert.Equal(t, node.ID, result[0].ID)
@@ -347,7 +340,7 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
 
-		result, err := te.database.ListTeleportEligibleNodes(ctx, te.site.ID)
+		result, err := te.database.ListTeleportEligibleNodes(ctx, te.siteID)
 		require.NoError(t, err)
 		require.Len(t, result, 1)
 		assert.Equal(t, node.ID, result[0].ID)
@@ -370,7 +363,7 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
 
-		result, err := te.database.ListTeleportEligibleNodes(ctx, te.site.ID)
+		result, err := te.database.ListTeleportEligibleNodes(ctx, te.siteID)
 		require.NoError(t, err)
 		assert.Empty(t, result)
 	})
@@ -594,7 +587,7 @@ func TestCreateTokenForNode(t *testing.T) {
 			assert.Equal(t, teleport.JoinMethodTPM, token.JoinMethod)
 
 			// Verify identity labels
-			assert.Equal(t, te.site.ID.String(), token.Labels[teleport.LabelSite])
+			assert.Equal(t, te.siteID.String(), token.Labels[teleport.LabelSite])
 			assert.Equal(t, testConfig().NKESiteControllerName, token.Labels[teleport.LabelNKESiteControllerName])
 			assert.Equal(t, te.cluster.ID.String(), token.Labels[teleport.LabelCluster])
 			assert.Equal(t, te.cluster.Name, token.Labels[teleport.LabelClusterName])

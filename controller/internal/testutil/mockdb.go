@@ -273,33 +273,6 @@ type MockTx struct {
 	db.Tx
 }
 
-func (m *MockTx) GetSite(ctx context.Context, id uuid.UUID, lockForUpdate bool) (db.Site, error) {
-	args := m.Called(ctx, id, lockForUpdate)
-	v, ok := args.Get(0).(db.Site)
-	if !ok {
-		return db.Site{}, args.Error(1)
-	}
-	return v, args.Error(1)
-}
-
-func (m *MockTx) CreateVIPAllocation(ctx context.Context, vipAllocation *db.VIPAllocation) (db.VIPAllocation, error) {
-	args := m.Called(ctx, vipAllocation)
-	v, ok := args.Get(0).(db.VIPAllocation)
-	if !ok {
-		return db.VIPAllocation{}, args.Error(1)
-	}
-	return v, args.Error(1)
-}
-
-func (m *MockTx) ListVIPAllocations(ctx context.Context, siteID *uuid.UUID) ([]db.VIPAllocation, error) {
-	args := m.Called(ctx, siteID)
-	v, ok := args.Get(0).([]db.VIPAllocation)
-	if !ok {
-		return nil, args.Error(1)
-	}
-	return v, args.Error(1)
-}
-
 func (m *MockTx) CreateCluster(ctx context.Context, cluster *db.Cluster) (db.Cluster, error) {
 	args := m.Called(ctx, cluster)
 	v, ok := args.Get(0).(db.Cluster)

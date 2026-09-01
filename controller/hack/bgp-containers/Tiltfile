@@ -2,20 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Shared kube-vip infrastructure for local container-based tenant nodes. The
-# FRR process acts as their BGP peer, while the default CWE site supplies the
-# off-subnet VIP pool. CAPD and NICo containers can both use these resources
-# without either infrastructure provider owning or depending on the other.
+# FRR process acts as their BGP peer. CAPD and NICo containers can both use
+# these resources without either infrastructure provider owning or depending on
+# the other.
 
-DEFAULT_SITE_ID = "00000000-0000-0000-0000-000000000000"
-# Distinct from nico-vms NICO_VMS_VIP_CIDR (172.31.0.0/24) — sharing a VIP
-# range lets a stale kernel route from one harness hijack the other's VIPs
-# when both run on the same host.
-DEFAULT_VIP_RANGE = "172.31.1.0/24"
 BGP_RESOURCE = "bgp-containers"
 
 def register(ctx):
-    cwe_port = os.getenv("CWE_HTTP_PORT", "8080")
-    vip_range = ctx.cfg.get("bgp_containers_vip_range", DEFAULT_VIP_RANGE)
     container_name = ctx.cfg.get("bgp_containers_container_name", BGP_RESOURCE)
     cwe_resource_deps = []
     bgp_dir = os.path.join(ctx.main_dir, "hack", "bgp-containers")
@@ -41,20 +34,6 @@ def register(ctx):
             labels=["1-infra"],
         )
         cwe_resource_deps.append(BGP_RESOURCE)
-
-    # Both CAPD and NICo-container clusters use CWE's nil-UUID local CAPI site
-    # for VIP allocation. The infrastructure-specific site remains in each
-    # provider's CAPI manifests.
-    local_resource(
-        "bgp-containers-register-site",
-        cmd=["bash", "-c", """
-          set -euo pipefail
-          API_URL="http://localhost:%s/api" DEFAULT_SITE_ID="%s" DEFAULT_VIP_RANGE="%s" \
-            "%s/hack/register-default-site.sh"
-        """ % (cwe_port, DEFAULT_SITE_ID, vip_range, ctx.main_dir)],
-        resource_deps=["cwe"],
-        labels=["1-infra"],
-    )
 
     return struct(
         cwe_resource_deps=cwe_resource_deps,

@@ -291,9 +291,7 @@ tilt up
 
 ### Common Actions
 
-- Register the default site from the `cwe` Tilt resource.
 - Create a sample CAPD cluster from the `cwe` Tilt resource.
-- Register the mock site from the `cwe` Tilt resource when NICo is enabled.
 - Create a sample local Forge cluster from the `cwe` Tilt resource when NICo is enabled.
 - Create a sample local NICo cluster from the `cwe` Tilt resource when NICo is enabled.
 - Restart CWE from the `cwe` Tilt resource.
@@ -302,9 +300,6 @@ tilt up
 CLI equivalents if you prefer:
 
 ```bash
-# Register the default site
-./hack/register-default-site.sh
-
 # Create a sample CAPD cluster
 ./hack/create-capd-cluster.sh
 
@@ -312,12 +307,6 @@ CLI equivalents if you prefer:
 # kindest/node tag, then PATCHes controlPlaneKubernetesVersion + maxSurge)
 TARGET_VERSION=1.35.0 ./hack/capd-upgrade.sh
 # or: TARGET_VERSION=1.35.0 make capd-upgrade
-
-# Register the mock site used by the local Forge flow
-./hack/register-mock-site.sh
-
-# Wait a few seconds for the Forge site cache to sync before creating the cluster
-# so `create-forge-cluster` can see the newly registered site.
 
 # Create a sample local Forge cluster when NICo is enabled
 ./hack/create-forge-cluster.sh
@@ -706,7 +695,7 @@ so the same call works either way:
 
 ```bash
 TOKEN="$(hack/nke-token.sh)"
-curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/sites"
+curl ${TOKEN:+-H "Authorization: Bearer ${TOKEN}"} "${API_URL}/clusters"
 ```
 
 It reads the audience from the running Deployment and mints an audience-scoped

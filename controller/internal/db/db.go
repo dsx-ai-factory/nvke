@@ -23,7 +23,6 @@ type Tx interface {
 }
 
 type Queries interface {
-	SiteQueries
 	ClusterQueries
 	ControlPlaneConfigurationQueries
 	NodePoolQueries

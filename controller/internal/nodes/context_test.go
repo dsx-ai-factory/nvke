@@ -19,20 +19,16 @@ import (
 func TestGetNodeContext_NoNodePoolControlPlane(t *testing.T) {
 	ctx := context.Background()
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.ControlPlaneConfiguration)(nil),
 		(*db.Node)(nil),
 	)
 	database := db.NewDB(bunDB)
 
-	site := db.Site{ID: uuid.New(), VIPRanges: []string{}}
-	_, err := database.RegisterSite(ctx, &site)
-	require.NoError(t, err)
-
+	siteID := uuid.New()
 	cluster := db.Cluster{
 		ID:                uuid.New(),
-		SiteID:            site.ID,
+		SiteID:            siteID,
 		Name:              "cp-cluster",
 		OrgID:             "test-org",
 		VpcID:             uuid.New(),
@@ -40,7 +36,7 @@ func TestGetNodeContext_NoNodePoolControlPlane(t *testing.T) {
 		TeleportEnabled:   true,
 		ProviderType:      db.ProviderTypeNico,
 	}
-	_, err = database.CreateCluster(ctx, &cluster)
+	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
 	var snapshotCfg db.ControlPlaneConfigSpec

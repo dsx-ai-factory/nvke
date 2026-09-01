@@ -224,7 +224,6 @@ func TestUnit_ReconcileNicoMachineEKPub_PersistsHashWhenReady(t *testing.T) {
 func TestUnit_ReconcileNicoMachineEKPub_RequeuesWhenNotReady(t *testing.T) {
 	ctx := context.Background()
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.Node)(nil),
 	)
@@ -235,19 +234,15 @@ func TestUnit_ReconcileNicoMachineEKPub_RequeuesWhenNotReady(t *testing.T) {
 	vpcID := uuid.MustParse("42000000-0000-0000-0000-000000000003")
 	nodeID := uuid.MustParse("42000000-0000-0000-0000-000000000004")
 
-	site := db.Site{ID: siteID, VIPRanges: []string{}}
-	_, err := database.RegisterSite(ctx, &site)
-	require.NoError(t, err)
-
 	cluster := db.Cluster{
 		ID:                clusterID,
-		SiteID:            site.ID,
+		SiteID:            siteID,
 		Name:              "capi-cluster",
 		OrgID:             "test-org",
 		VpcID:             vpcID,
 		KubernetesVersion: "1.31.0",
 	}
-	_, err = database.CreateCluster(ctx, &cluster)
+	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
 	node := db.Node{

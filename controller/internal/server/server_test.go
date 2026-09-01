@@ -52,9 +52,6 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 		mockDB.MockTx = &testutil.MockTx{}
 		mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
-		mockDB.MockTx.On("GetSite", mock.Anything, mock.Anything, mock.Anything).Return(
-			db.Site{}, db.ErrNotFound,
-		).Maybe()
 		stubOpenAPICreateClusterTx(mockDB)
 
 		handler := newTestServerWithValidator(t, mockDB)
@@ -141,9 +138,6 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 		mockDB.MockTx = &testutil.MockTx{}
 		mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
-		mockDB.MockTx.On("GetSite", mock.Anything, mock.Anything, mock.Anything).Return(
-			db.Site{}, db.ErrNotFound,
-		).Maybe()
 		stubOpenAPICreateClusterTx(mockDB)
 
 		handler := newTestServerWithValidator(t, mockDB)
@@ -225,9 +219,6 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 		mockDB.MockTx = &testutil.MockTx{}
 		mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
-		mockDB.MockTx.On("GetSite", mock.Anything, mock.Anything, mock.Anything).Return(
-			db.Site{}, db.ErrNotFound,
-		).Maybe()
 		stubOpenAPICreateClusterTx(mockDB)
 
 		handler := newTestServerWithValidator(t, mockDB)

@@ -197,7 +197,7 @@ func TestCapacityAccount(t *testing.T) {
 func TestControlPlaneReservedInstanceTypes_ReservesWithoutRecycling(t *testing.T) {
 	t.Parallel()
 
-	site := db.Site{ID: uuid.New()}
+	siteID := uuid.New()
 	typeA := uuid.New()
 	clusterID := uuid.New()
 
@@ -205,12 +205,12 @@ func TestControlPlaneReservedInstanceTypes_ReservesWithoutRecycling(t *testing.T
 
 	mockDB := &testutil.MockDB{}
 	mockDB.On("ListNodePools", mock.Anything, mock.MatchedBy(func(f db.NodePoolFilters) bool {
-		return f.SiteID != nil && *f.SiteID == site.ID
+		return f.SiteID != nil && *f.SiteID == siteID
 	})).Return([]db.NodePool{}, nil).Once()
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{node}, nil).Once()
 
 	service := &Service{logger: slog.Default(), db: mockDB}
-	got, err := service.controlPlaneReservedInstanceTypes(context.Background(), site.ID)
+	got, err := service.controlPlaneReservedInstanceTypes(context.Background(), siteID)
 	require.NoError(t, err)
 
 	require.Len(t, got, 1)
@@ -225,7 +225,7 @@ func TestControlPlaneReservedInstanceTypes_ReservesWithoutRecycling(t *testing.T
 func TestControlPlaneReservedInstanceTypes_TalliesPerInstanceType(t *testing.T) {
 	t.Parallel()
 
-	site := db.Site{ID: uuid.New()}
+	siteID := uuid.New()
 	typeA, typeB := uuid.New(), uuid.New()
 	recyclingID, quietID := uuid.New(), uuid.New()
 
@@ -247,14 +247,14 @@ func TestControlPlaneReservedInstanceTypes_TalliesPerInstanceType(t *testing.T) 
 	// a node that is Pending and Deleting at once would otherwise reserve an
 	// instance it is never going to claim.
 	mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(func(f db.NodeFilters) bool {
-		return f.SiteID != nil && *f.SiteID == site.ID &&
+		return f.SiteID != nil && *f.SiteID == siteID &&
 			f.ControlPlane != nil && *f.ControlPlane &&
 			f.Pending != nil && *f.Pending &&
 			f.Deleting != nil && !*f.Deleting
 	})).Return(nodes, nil).Once()
 
 	service := &Service{logger: slog.Default(), db: mockDB}
-	got, err := service.controlPlaneReservedInstanceTypes(context.Background(), site.ID)
+	got, err := service.controlPlaneReservedInstanceTypes(context.Background(), siteID)
 	require.NoError(t, err)
 
 	require.Len(t, got, 2)
@@ -274,7 +274,7 @@ func TestControlPlaneReservedInstanceTypes_TalliesPerInstanceType(t *testing.T) 
 func TestControlPlaneReservedInstanceTypes_SkipsAutoProvisionDisabledPools(t *testing.T) {
 	t.Parallel()
 
-	site := db.Site{ID: uuid.New()}
+	siteID := uuid.New()
 	typeA := uuid.New()
 	recyclingID := uuid.New()
 
@@ -297,7 +297,7 @@ func TestControlPlaneReservedInstanceTypes_SkipsAutoProvisionDisabledPools(t *te
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 
 	service := &Service{logger: slog.Default(), db: mockDB}
-	got, err := service.controlPlaneReservedInstanceTypes(context.Background(), site.ID)
+	got, err := service.controlPlaneReservedInstanceTypes(context.Background(), siteID)
 	require.NoError(t, err)
 
 	require.Len(t, got, 1)
@@ -312,16 +312,16 @@ func TestControlPlaneReservedInstanceTypes_SkipsAutoProvisionDisabledPools(t *te
 func TestControlPlaneReservedInstanceTypes_ListError(t *testing.T) {
 	t.Parallel()
 
-	site := db.Site{ID: uuid.New()}
+	siteID := uuid.New()
 	mockDB := &testutil.MockDB{}
 	mockDB.On("ListNodePools", mock.Anything, mock.MatchedBy(func(f db.NodePoolFilters) bool {
-		return f.SiteID != nil && *f.SiteID == site.ID
+		return f.SiteID != nil && *f.SiteID == siteID
 	})).Return([]db.NodePool{}, nil).Once()
 	mockDB.On("ListNodes", mock.Anything, mock.Anything).
 		Return([]db.Node(nil), errors.New("db unavailable")).Once()
 
 	service := &Service{logger: slog.Default(), db: mockDB}
-	_, err := service.controlPlaneReservedInstanceTypes(context.Background(), site.ID)
+	_, err := service.controlPlaneReservedInstanceTypes(context.Background(), siteID)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "db unavailable")
 }

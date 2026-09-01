@@ -815,7 +815,6 @@ This starts:
 - **dnsmasq** — DHCP/DNS for VMs on the bridge (if installed on host)
 - **Loki + Promtail + Grafana** — observability stack deployed into the Kind cluster
 - **nico-vms-log-shipper** — host Promtail container that ships nico-vms and VM console logs to Loki
-- **nico-vms-register-site** — registers the nico-vms site in CWE with the correct VIP CIDR
 
 At startup, Tilt prints the network layout (DHCP pool, VIP pool) derived from `NICO_VMS_BRIDGE_CIDR`.
 

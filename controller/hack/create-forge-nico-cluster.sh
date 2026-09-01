@@ -40,10 +40,6 @@ if [[ -n "${TOKEN}" ]]; then
   AUTH_HEADER=(-H "Authorization: Bearer ${TOKEN}")
 fi
 
-echo "Ensuring default CAPI site ${DEFAULT_SITE_ID} exists in CWE..."
-API_URL="${API_URL}" DEFAULT_SITE_ID="${DEFAULT_SITE_ID}" \
-  "${SCRIPT_DIR}/register-default-site.sh" >/dev/null
-
 BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",

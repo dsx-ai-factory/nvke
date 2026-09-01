@@ -203,13 +203,6 @@ func SeedCWEGofailDB(t testing.TB, dsn string) {
 }
 
 func seedCWEGofailDB(ctx context.Context, database db.DB) error {
-	if _, err := database.RegisterSite(ctx, &db.Site{
-		ID:        cweGofailSiteID,
-		VIPRanges: []string{},
-	}); err != nil {
-		return fmt.Errorf("create site: %w", err)
-	}
-
 	if _, err := database.CreateCluster(ctx, &db.Cluster{
 		ID:                CWEGofailClusterID,
 		Name:              "cwe-gofail-cluster",

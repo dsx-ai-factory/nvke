@@ -85,13 +85,6 @@ func seedTeardownScenario(ctx context.Context, database db.DB, scenario Teardown
 
 func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScenario) error {
 	siteID := uuid.New()
-	if _, err := tx.RegisterSite(ctx, &db.Site{
-		ID:        siteID,
-		VIPRanges: []string{},
-	}); err != nil {
-		return fmt.Errorf("create site: %w", err)
-	}
-
 	if _, err := tx.CreateCluster(ctx, &db.Cluster{
 		ID:                scenario.ClusterID,
 		Name:              "cwe-gofail-" + scenario.Name,

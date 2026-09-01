@@ -162,10 +162,10 @@ func TestController_Reconcile_WithOneCluster_ReplaceAllMachines(t *testing.T) {
 	}, controllerEventuallyTimeout, 10*time.Millisecond)
 }
 
-// controllerTest holds all resources needed for site controller tests.
+// controllerTest holds all resources needed for control-plane controller tests.
 type controllerTest struct {
 	database     db.DB
-	site         db.Site
+	siteID       uuid.UUID
 	cluster      db.Cluster
 	controlPlane controlPlaneFixture
 	cfg          config.Config
@@ -205,13 +205,12 @@ func (tx sqliteCompatTx) GetClusterForUpdate(ctx context.Context, id uuid.UUID) 
 	return tx.Tx.GetCluster(ctx, id)
 }
 
-// newControllerTest creates a new test environment with a site, cluster, and control plane.
+// newControllerTest creates a new test environment with a cluster and control plane.
 func newControllerTest(ctx context.Context, t *testing.T) *controllerTest {
 	t.Helper()
 
 	// Setup in-memory SQLite database with all required tables
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.ControlPlaneConfiguration)(nil),
 		(*db.NodePool)(nil),
@@ -222,16 +221,8 @@ func newControllerTest(ctx context.Context, t *testing.T) *controllerTest {
 
 	database := sqliteCompatDB{DB: db.NewDB(bunDB)}
 
-	// Create a site
 	siteID := uuid.New()
-	site := db.Site{
-		ID:        siteID,
-		VIPRanges: []string{"10.0.0.1-10.0.0.255"},
-	}
-	_, err := database.RegisterSite(ctx, &site)
-	require.NoError(t, err)
 
-	// Create a cluster in the site
 	clusterID := uuid.New()
 	cluster := db.Cluster{
 		ID:                clusterID,
@@ -241,7 +232,7 @@ func newControllerTest(ctx context.Context, t *testing.T) *controllerTest {
 		VpcID:             uuid.New(),
 		KubernetesVersion: testKubernetesVersion,
 	}
-	_, err = database.CreateCluster(ctx, &cluster)
+	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
 	// Create a control plane node pool with 3 nodes
@@ -249,7 +240,7 @@ func newControllerTest(ctx context.Context, t *testing.T) *controllerTest {
 
 	return &controllerTest{
 		database:     database,
-		site:         site,
+		siteID:       siteID,
 		cluster:      cluster,
 		controlPlane: cp,
 		cfg:          config.Config{},

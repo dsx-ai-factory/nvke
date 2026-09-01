@@ -143,21 +143,12 @@ func setupNodePreflightRequestTest(
 	t.Helper()
 
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.NodePool)(nil),
 		(*db.NodeSet)(nil),
 		(*db.Node)(nil),
 	)
 	database := db.NewDB(bunDB)
-
-	if siteID != uuid.Nil {
-		_, err := database.RegisterSite(ctx, &db.Site{
-			ID:        siteID,
-			VIPRanges: []string{},
-		})
-		require.NoError(t, err)
-	}
 
 	cluster := db.Cluster{
 		ID:                uuid.New(),

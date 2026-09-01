@@ -23,8 +23,6 @@ if [[ -n "${TOKEN}" ]]; then
 fi
 CLUSTER_NAME="${CLUSTER_NAME:-capd}"
 DEFAULT_SITE_ID="${DEFAULT_SITE_ID:-00000000-0000-0000-0000-000000000000}"
-# Distinct from nico-vms NICO_VMS_VIP_CIDR (172.31.0.0/24).
-DEFAULT_VIP_RANGE="${DEFAULT_VIP_RANGE:-172.31.1.0/24}"
 CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-172.31.1.1}"
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-3}"
@@ -57,15 +55,8 @@ else
   CONTROL_PLANE_VIP_FIELD=""
 fi
 
-if [[ "${REGISTER_DEFAULT_SITE:-true}" == "true" ]]; then
-  API_URL="${API_BASE_URL}" \
-    DEFAULT_SITE_ID="${DEFAULT_SITE_ID}" \
-    DEFAULT_VIP_RANGE="${DEFAULT_VIP_RANGE}" \
-    "${SCRIPT_DIR}/register-default-site.sh" >/dev/null
-fi
-
 if [[ "${CAPD_ENABLE_KUBE_VIP}" == "true" ]]; then
-  echo "Creating CAPD cluster with kube-vip enabled: vipRange=${DEFAULT_VIP_RANGE}, controlPlaneVIP=${CONTROL_PLANE_VIP}" >&2
+  echo "Creating CAPD cluster with kube-vip enabled: controlPlaneVIP=${CONTROL_PLANE_VIP}" >&2
 else
   echo "Creating CAPD cluster with kube-vip disabled; start bgp-containers first or set CAPD_ENABLE_KUBE_VIP=true to enable it." >&2
 fi

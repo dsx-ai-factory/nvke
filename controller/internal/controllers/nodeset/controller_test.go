@@ -38,7 +38,7 @@ func TestUnit_Reconcile(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	site := db.Site{ID: uuid.New()}
+	siteID := uuid.New()
 	clusterID := uuid.New()
 	nodePoolID := uuid.New()
 	nodeSetID := uuid.New()
@@ -66,7 +66,7 @@ func TestUnit_Reconcile(t *testing.T) {
 	baseCluster := db.Cluster{
 		ID:           clusterID,
 		Name:         "test-cluster",
-		SiteID:       site.ID,
+		SiteID:       siteID,
 		OrgID:        "test-org",
 		VpcID:        uuid.New(),
 		ProviderType: db.ProviderTypeNico,

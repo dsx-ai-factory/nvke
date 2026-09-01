@@ -834,7 +834,6 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 	ctx := context.Background()
 
 	bunDB := testutil.SetupDB(ctx, t,
-		(*db.Site)(nil),
 		(*db.Cluster)(nil),
 		(*db.ControlPlaneConfiguration)(nil),
 		(*db.NodePool)(nil),
@@ -857,12 +856,6 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 		writeConfigProfile(t, profilesDir, configProfileName, testHooksConfig)
 	}
 
-	_, err := database.RegisterSite(ctx, &db.Site{
-		ID:        siteID,
-		VIPRanges: []string{},
-	})
-	require.NoError(t, err)
-
 	clusterConditions := db.ClusterConditions{}
 	if opts.clusterProvisioned {
 		clusterConditions.Provisioned = db.NewCondition(true, "Provisioned cluster")
@@ -870,7 +863,7 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 	if opts.clusterDeleting {
 		clusterConditions.Deleting = db.NewCondition(true, "Cluster deletion in progress")
 	}
-	_, err = database.CreateCluster(ctx, &db.Cluster{
+	_, err := database.CreateCluster(ctx, &db.Cluster{
 		ID:                clusterID,
 		Name:              "test-cluster",
 		OrgID:             "test-org",

@@ -264,35 +264,6 @@ def register(ctx):
 
 
     # -----------------------------------------------------------------------
-    # Site registration — register the nico-vms site in CWE with VIP range.
-    # Runs once after CWE is healthy. Idempotent (skips if site exists).
-    # -----------------------------------------------------------------------
-    _seed_site_id = "a1b2c3d4-0001-4000-8000-000000000001"
-    _cwe_port = os.getenv("CWE_HTTP_PORT", "8080")
-    local_resource(
-        "nico-vms-register-site",
-        cmd=["bash", "-c", """
-          set -euo pipefail
-          CWE="http://localhost:%s"
-          SITE_ID="%s"
-          VIP_CIDR="%s"
-
-          if curl -fsS "${CWE}/api/sites/${SITE_ID}" >/dev/null 2>&1; then
-            echo "Site ${SITE_ID} already registered"
-            exit 0
-          fi
-
-          curl -fsS -X POST "${CWE}/api/sites" \
-            -H "Content-Type: application/json" \
-            -d '{"id":"'"${SITE_ID}"'","vipRanges":["'"${VIP_CIDR}"'"]}'
-
-          echo "Registered nico-vms site with VIP range ${VIP_CIDR}"
-        """ % (_cwe_port, _seed_site_id, _vip_cidr)],
-        resource_deps=["cwe"],
-        labels=["5-nico-vms"],
-    )
-
-    # -----------------------------------------------------------------------
     # Convenience button: create a sample nico-vms-backed NKE cluster.
     # Defaults to 1 control-plane + 1 worker node using the seed resources.
     # -----------------------------------------------------------------------
