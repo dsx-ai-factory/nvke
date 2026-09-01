@@ -364,7 +364,7 @@ func main() {
 			logger.With("logger", "teleport-token-controller"),
 			teleportClient,
 		)
-		if err := teleportTokenController.SetupWithManager(k8sControllerManager, dbInstance); err != nil {
+		if err := teleportTokenController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up Teleport token controller", "error", err)
 			os.Exit(1)
 		}

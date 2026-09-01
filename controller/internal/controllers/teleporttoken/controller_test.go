@@ -19,6 +19,7 @@ import (
 
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
+	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/teleport"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
@@ -29,7 +30,7 @@ import (
 // testEnv holds an in-memory database with a pre-created entity chain:
 // Site -> Cluster (teleport_enabled) -> NodePool -> NodeSet (teleport_enabled)
 type testEnv struct {
-	database db.DB
+	database *dbwrapper.DB
 	bunDB    *bun.DB
 	site     db.Site
 	cluster  db.Cluster
@@ -119,7 +120,7 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 	require.NoError(t, err)
 
 	return &testEnv{
-		database: database,
+		database: dbwrapper.New(database, testLogger()),
 		bunDB:    bunDB,
 		site:     site,
 		cluster:  cluster,

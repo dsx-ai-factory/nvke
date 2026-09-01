@@ -183,6 +183,25 @@ func (tx *reconcileTx) UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.U
 	return nil
 }
 
+func (tx *reconcileTx) UpdateNodeTeleportRegistered(ctx context.Context, nodeID uuid.UUID, condition db.Condition) error {
+	previous, err := tx.Tx.GetNode(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+
+	if err := tx.Tx.UpdateNodeTeleportRegistered(ctx, nodeID, condition); err != nil {
+		return err
+	}
+
+	updated, err := tx.Tx.GetNode(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+
+	tx.nodes = append(tx.nodes, previous, updated)
+	return nil
+}
+
 func (tx *reconcileTx) DeleteNode(ctx context.Context, nodeID uuid.UUID) error {
 	node, err := tx.Tx.GetNodeForUpdate(ctx, nodeID)
 	if err != nil {

@@ -49,7 +49,7 @@ type teleportReconcileCounters struct {
 // Controller reconciles Teleport TPM join tokens for eligible nodes.
 type Controller struct {
 	cfg            config.Config
-	db             db.DB
+	db             *dbwrapper.DB
 	logger         *slog.Logger
 	teleportClient teleport.Client
 	// tokenCreatedAt tracks when each node's token was last upserted.
@@ -60,7 +60,7 @@ type Controller struct {
 // NewController creates a new Controller.
 func NewController(
 	cfg config.Config,
-	dbInstance db.DB,
+	dbInstance *dbwrapper.DB,
 	logger *slog.Logger,
 	teleportClient teleport.Client,
 ) *Controller {
@@ -82,14 +82,14 @@ func NewController(
 // NodePool Teleport enablement materializes through NodeSet changes in the
 // existing NodePool reconciler, so this controller intentionally watches NodeSets
 // instead of adding a direct NodePool source.
-func (c *Controller) SetupWithManager(mgr manager.Manager, sourceDB *dbwrapper.DB) error {
+func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 	return dbreconcile.SetupController(
 		mgr,
 		"teleport-token",
 		c,
-		dbwrapper.NewNodeSource(sourceDB, dbfilters.Node{Deleting: ptr.To(false)}),
-		dbwrapper.NewClusterSource(sourceDB, dbfilters.Cluster{}, c.nodeKeysForCluster),
-		dbwrapper.NewNodeSetSource(sourceDB, dbfilters.NodeSet{}, c.nodeKeysForNodeSet),
+		dbwrapper.NewNodeSource(c.db, dbfilters.Node{Deleting: ptr.To(false)}),
+		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}, c.nodeKeysForCluster),
+		dbwrapper.NewNodeSetSource(c.db, dbfilters.NodeSet{}, c.nodeKeysForNodeSet),
 	)
 }
 

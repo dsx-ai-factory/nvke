@@ -42,6 +42,9 @@ type nodeSourceRegistration struct {
 	enqueue func(context.Context, ...db.Node) error
 }
 
+// DB wraps the controller database and emits DB reconcile events for watched
+// rows. DB-backed reconcilers and writer paths that must wake DB reconcile
+// sources must use this handle rather than raw db.DB.
 type DB struct {
 	db.DB
 
@@ -339,6 +342,24 @@ func (w *DB) UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.UUID, forge
 	updated, err := w.DB.GetNode(ctx, nodeID)
 	if err != nil {
 		return fmt.Errorf("failed to get node after Forge details update: %w", err)
+	}
+
+	return w.enqueueNodes(ctx, previous, updated)
+}
+
+func (w *DB) UpdateNodeTeleportRegistered(ctx context.Context, nodeID uuid.UUID, condition db.Condition) error {
+	previous, err := w.DB.GetNode(ctx, nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to get node before Teleport registration update: %w", err)
+	}
+
+	if err := w.DB.UpdateNodeTeleportRegistered(ctx, nodeID, condition); err != nil {
+		return err
+	}
+
+	updated, err := w.DB.GetNode(ctx, nodeID)
+	if err != nil {
+		return fmt.Errorf("failed to get node after Teleport registration update: %w", err)
 	}
 
 	return w.enqueueNodes(ctx, previous, updated)

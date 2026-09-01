@@ -136,6 +136,11 @@ linters:
           deny:
             - pkg: github.com/pkg/errors
               desc: "use stdlib instead"
+    forbidigo:
+      forbid:
+        - pattern: '^(fmt\.Print(|f|ln)|print|println)$'
+        - pattern: db\.NewDB
+          msg: use dbwrapper.New(db.NewDB(...)) in the composition root and pass *dbwrapper.DB to DB-backed reconcilers
     funlen:
       # cmd/worker's main() is a wiring function: it grows by a block every time
       # a subsystem is added, and no single addition is the one at fault. It
@@ -255,6 +260,20 @@ linters:
       - text: 'unused-parameter.*ctx'
         linters:
           - revive
+      # db.NewDB is allowed where the process creates the database handle before
+      # immediately wrapping it, and in test/e2e setup code that seeds local DBs.
+      - path: 'cmd/worker/main\.go'
+        text: 'use dbwrapper\.New'
+        linters:
+          - forbidigo
+      - path: '(.+)_test\.go'
+        text: 'use dbwrapper\.New'
+        linters:
+          - forbidigo
+      - path: 'e2e/framework/.*'
+        text: 'use dbwrapper\.New'
+        linters:
+          - forbidigo
       # Allow unused req parameters - common in API handlers
       - text: 'unused-parameter.*req'
         linters:

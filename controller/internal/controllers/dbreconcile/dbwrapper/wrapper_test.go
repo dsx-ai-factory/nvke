@@ -57,6 +57,26 @@ func TestUnit_DBEnqueuesNodeAfterCreate(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestUnit_DBEnqueuesNodeAfterTeleportRegisteredUpdate(t *testing.T) {
+	node := db.Node{ID: uuid.New()}
+	condition := db.NewCondition(true, "Registered with Teleport")
+	updatedNode := node
+	updatedNode.Conditions.TeleportRegistered = condition
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
+	database.On("UpdateNodeTeleportRegistered", mock.Anything, node.ID, condition).Return(nil).Once()
+	database.On("GetNode", mock.Anything, node.ID).Return(updatedNode, nil).Once()
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, dbfilters.Node{})
+
+	err := wrapper.UpdateNodeTeleportRegistered(context.Background(), node.ID, condition)
+
+	require.NoError(t, err)
+	assert.Equal(t, dbreconcile.NodeKey(node.ID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+}
+
 func TestUnit_DBNodeEnqueueFansOutToEachSource(t *testing.T) {
 	node := db.Node{ID: uuid.New()}
 	database := &testutil.MockDB{}
@@ -740,6 +760,30 @@ func TestUnit_DBEnqueuesNodeAfterSuccessfulTxCreate(t *testing.T) {
 	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
 		_, err := tx.CreateNode(ctx, &node)
 		return err
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, dbreconcile.NodeKey(node.ID), getQueueItem(t, queue))
+	database.AssertExpectations(t)
+	database.MockTx.AssertExpectations(t)
+}
+
+func TestUnit_DBEnqueuesNodeAfterSuccessfulTxTeleportRegisteredUpdate(t *testing.T) {
+	node := db.Node{ID: uuid.New()}
+	condition := db.NewCondition(true, "Registered with Teleport")
+	updatedNode := node
+	updatedNode.Conditions.TeleportRegistered = condition
+	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	database.MockTx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
+	database.MockTx.On("UpdateNodeTeleportRegistered", mock.Anything, node.ID, condition).Return(nil).Once()
+	database.MockTx.On("GetNode", mock.Anything, node.ID).Return(updatedNode, nil).Once()
+	wrapper := New(database, slog.Default())
+	queue := startNodeSource(t, wrapper, dbfilters.Node{})
+
+	err := wrapper.RunInTx(context.Background(), func(ctx context.Context, tx db.Tx) error {
+		return tx.UpdateNodeTeleportRegistered(ctx, node.ID, condition)
 	})
 
 	require.NoError(t, err)
