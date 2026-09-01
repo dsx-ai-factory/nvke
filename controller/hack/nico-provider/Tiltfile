@@ -62,7 +62,10 @@ def register(ctx):
           if [ "${CAPD_KINDEST_NODE_IMAGE_PREBUILT:-false}" = "true" ]; then
             echo "reusing prebuilt %s"
           else
-            bash "%s"
+            bundle_mirror_ip="$(docker inspect capd-bundle-mirror --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')"
+            BUNDLE_SERVER_URL="${BUNDLE_SERVER_URL:-http://${bundle_mirror_ip}/}" \
+            INDEX_FILE_URL="${INDEX_FILE_URL:-http://${bundle_mirror_ip}/index.json}" \
+              bash "%s"
           fi
           kind load docker-image --name "%s" "%s"
     """ % (
