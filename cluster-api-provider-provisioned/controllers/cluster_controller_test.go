@@ -92,35 +92,6 @@ func TestClusterReconcilerRejectsARepeatedHostName(t *testing.T) {
 	requireReadyCondition(t, infraCluster.Status.Conditions, metav1.ConditionFalse, infrav1.InventoryInvalidReason)
 }
 
-func TestClusterReconcilerRejectsAMissingInitNodeReference(t *testing.T) {
-	infraCluster := newInfraCluster(hostWithAddress("host-01", "10.0.0.11"))
-	infraCluster.Spec.InitNode = "missing"
-	reconciler, k8sClient := newClusterReconcilerForTest(t, infraCluster)
-
-	_, err := reconciler.Reconcile(context.Background(), clusterRequest())
-	require.NoError(t, err)
-
-	updated := getInfraCluster(t, k8sClient)
-	require.Nil(t, updated.Status.Initialization.Provisioned)
-	requireReadyCondition(t, updated.Status.Conditions,
-		metav1.ConditionFalse, infrav1.InventoryInvalidReason)
-	require.Contains(t, updated.Status.Conditions[0].Message, `initNode "missing" does not identify a configured host`)
-}
-
-func TestClusterReconcilerRejectsAnEmptyInitNode(t *testing.T) {
-	infraCluster := newInfraCluster(hostWithAddress("host-01", "10.0.0.11"))
-	infraCluster.Spec.InitNode = ""
-	reconciler, k8sClient := newClusterReconcilerForTest(t, infraCluster)
-
-	_, err := reconciler.Reconcile(context.Background(), clusterRequest())
-	require.NoError(t, err)
-
-	updated := getInfraCluster(t, k8sClient)
-	requireReadyCondition(t, updated.Status.Conditions,
-		metav1.ConditionFalse, infrav1.InventoryInvalidReason)
-	require.Contains(t, updated.Status.Conditions[0].Message, "initNode must identify one configured host")
-}
-
 // A cluster whose machines are already running must keep the provisioned flag,
 // or Cluster API stops acting on them.
 func TestClusterReconcilerKeepsProvisionedWhenTheInventoryTurnsInvalid(t *testing.T) {

@@ -40,9 +40,7 @@ type ProvisionedHost struct {
 // through the controlPlaneVIP field of its own cluster API, and CWE configures
 // kube-vip on each control plane node.
 type ProvisionedClusterSpec struct {
-	// InitNode is the hostname of the host that must be allocated first. The
-	// provider gives this host to one control plane machine before it allocates
-	// any other host.
+	// InitNode is the hostname of the host that must be allocated first.
 	// +kubebuilder:validation:MinLength=1
 	// +kubebuilder:validation:MaxLength=253
 	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
@@ -151,16 +149,6 @@ func (c *ProvisionedCluster) SetConditions(conditions []metav1.Condition) {
 func (c *ProvisionedCluster) HostByIPAddress(ipAddress string) (ProvisionedHost, bool) {
 	for _, host := range c.Spec.Hosts {
 		if host.CanonicalIPAddress() == ipAddress {
-			return host, true
-		}
-	}
-	return ProvisionedHost{}, false
-}
-
-// HostByName returns the inventory entry with the given hostname.
-func (c *ProvisionedCluster) HostByName(hostname string) (ProvisionedHost, bool) {
-	for _, host := range c.Spec.Hosts {
-		if host.Hostname == hostname {
 			return host, true
 		}
 	}

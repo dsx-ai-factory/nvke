@@ -5,7 +5,6 @@ package controllers
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -20,142 +19,46 @@ import (
 	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
 
-func TestMachineReconcilerAllocatesInitNodeBeforeConcurrentJoinMachines(t *testing.T) {
-	initHost := hostWithAddress("init-host", "10.0.0.11")
+func TestMachineReconcilerAllocatesInitNodeFirst(t *testing.T) {
 	joinHost := hostWithAddress("join-host", "10.0.0.12")
+	initHost := hostWithAddress("init-host", "10.0.0.11")
 	infraCluster := newInfraCluster(joinHost, initHost)
 	infraCluster.Spec.InitNode = initHost.Hostname
 	reconciler, k8sClient := newMachineReconcilerForTest(t,
 		infraCluster,
 		newCAPICluster(),
-		newOwnerMachineNamed("cp-a"),
-		newOwnerMachineNamed("cp-b"),
-		newInfraMachine("cp-a", ""),
-		newInfraMachine("cp-b", ""),
-	)
-
-	var wg sync.WaitGroup
-	errs := make(chan error, 2)
-	for _, name := range []string{"cp-a", "cp-b"} {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, err := reconciler.Reconcile(context.Background(), machineRequest(name))
-			errs <- err
-		}()
-	}
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		require.NoError(t, err)
-	}
-
-	for _, name := range []string{"cp-a", "cp-b"} {
-		_, err := reconciler.Reconcile(context.Background(), machineRequest(name))
-		require.NoError(t, err)
-	}
-
-	providerIDs := []string{
-		getInfraMachine(t, k8sClient, "cp-a").Spec.ProviderID,
-		getInfraMachine(t, k8sClient, "cp-b").Spec.ProviderID,
-	}
-	require.ElementsMatch(t, []string{
-		"provisioned://test/10.0.0.11",
-		"provisioned://test/10.0.0.12",
-	}, providerIDs)
-
-	claim := &infrav1.ProvisionedHostClaim{}
-	require.NoError(t, k8sClient.Get(context.Background(),
-		client.ObjectKey{Name: infrav1.HostClaimName(initHost.IPAddress)}, claim))
-	require.Contains(t, []string{"cp-a", "cp-b"}, claim.Spec.MachineName)
-}
-
-func TestMachineReconcilerJoinMachineWaitsForInitNode(t *testing.T) {
-	initHost := hostWithAddress("init-host", "10.0.0.11")
-	joinHost := hostWithAddress("join-host", "10.0.0.12")
-	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		newInfraCluster(initHost, joinHost),
-		newCAPICluster(),
-		newWorkerOwnerMachineNamed("worker"),
-		newOwnerMachineNamed("cp"),
-		newInfraMachine("worker", ""),
-		newInfraMachine("cp", ""),
-	)
-
-	result, err := reconciler.Reconcile(context.Background(), machineRequest("worker"))
-	require.NoError(t, err)
-	require.Equal(t, retryAfter, result.RequeueAfter)
-	worker := getInfraMachine(t, k8sClient, "worker")
-	require.Empty(t, worker.Spec.ProviderID)
-	requireReadyCondition(t, worker.Status.Conditions,
-		metav1.ConditionFalse, infrav1.NoEligibleInitMachineReason)
-
-	_, err = reconciler.Reconcile(context.Background(), machineRequest("cp"))
-	require.NoError(t, err)
-	_, err = reconciler.Reconcile(context.Background(), machineRequest("worker"))
-	require.NoError(t, err)
-	require.Equal(t, "provisioned://test/10.0.0.11", getInfraMachine(t, k8sClient, "cp").Spec.ProviderID)
-	require.Equal(t, "provisioned://test/10.0.0.12", getInfraMachine(t, k8sClient, "worker").Spec.ProviderID)
-}
-
-func TestMachineReconcilerRecoversInitClaimAfterRestart(t *testing.T) {
-	initHost := hostWithAddress("init-host", "10.0.0.11")
-	initMachine := newInfraMachine(testMachineName, "")
-	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		newInfraCluster(initHost),
-		newCAPICluster(),
 		newOwnerMachine(),
-		initMachine,
-		newHostClaim(initMachine, initHost),
+		newOwnerMachineNamed("second"),
+		newInfraMachine(testMachineName, ""),
+		newInfraMachine("second", ""),
 	)
 
-	// A new reconciler represents a controller restart after claim creation and
-	// before providerID persistence.
-	restarted := NewMachineReconciler(k8sClient, k8sClient, reconciler.logger)
-	_, err := restarted.Reconcile(context.Background(), machineRequest(testMachineName))
+	_, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
+	require.NoError(t, err)
+	_, err = reconciler.Reconcile(context.Background(), machineRequest("second"))
+	require.NoError(t, err)
+
+	require.Equal(t, "provisioned://test/10.0.0.11",
+		getInfraMachine(t, k8sClient, testMachineName).Spec.ProviderID)
+	require.Equal(t, "provisioned://test/10.0.0.12",
+		getInfraMachine(t, k8sClient, "second").Spec.ProviderID)
+}
+
+func TestMachineReconcilerRecoversInitNodeClaim(t *testing.T) {
+	joinHost := hostWithAddress("join-host", "10.0.0.12")
+	initHost := hostWithAddress("init-host", "10.0.0.11")
+	infraCluster := newInfraCluster(joinHost, initHost)
+	infraCluster.Spec.InitNode = initHost.Hostname
+	machine := newInfraMachine(testMachineName, "")
+	reconciler, k8sClient := newMachineReconcilerForTest(t,
+		infraCluster, newCAPICluster(), newOwnerMachine(), machine,
+	)
+	requireClaimAcquired(t, reconciler, machine, testClusterName, initHost)
+
+	_, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
 	require.NoError(t, err)
 	require.Equal(t, "provisioned://test/10.0.0.11",
 		getInfraMachine(t, k8sClient, testMachineName).Spec.ProviderID)
-}
-
-func TestMachineReconcilerRejectsInitNodeBoundToWorker(t *testing.T) {
-	initHost := hostWithAddress("init-host", "10.0.0.11")
-	joinHost := hostWithAddress("join-host", "10.0.0.12")
-	worker := newInfraMachine("worker", "provisioned://test/10.0.0.11")
-	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		newInfraCluster(initHost, joinHost),
-		newCAPICluster(),
-		newWorkerOwnerMachineNamed("worker"),
-		newOwnerMachineNamed("cp"),
-		worker,
-		newInfraMachine("cp", ""),
-		newHostClaim(worker, initHost),
-	)
-
-	result, err := reconciler.Reconcile(context.Background(), machineRequest("cp"))
-	require.NoError(t, err)
-	require.Equal(t, retryAfter, result.RequeueAfter)
-	cp := getInfraMachine(t, k8sClient, "cp")
-	require.Empty(t, cp.Spec.ProviderID)
-	requireReadyCondition(t, cp.Status.Conditions,
-		metav1.ConditionFalse, infrav1.InitNodeAllocationConflictReason)
-}
-
-func TestMachineReconcilerReportsItsOwnInvalidInitNodeBinding(t *testing.T) {
-	initHost := hostWithAddress("init-host", "10.0.0.11")
-	worker := newInfraMachine("worker", "provisioned://test/10.0.0.11")
-	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		newInfraCluster(initHost),
-		newCAPICluster(),
-		newWorkerOwnerMachineNamed("worker"),
-		worker,
-	)
-
-	result, err := reconciler.Reconcile(context.Background(), machineRequest("worker"))
-	require.NoError(t, err)
-	require.Equal(t, retryAfter, result.RequeueAfter)
-	requireReadyCondition(t, getInfraMachine(t, k8sClient, "worker").Status.Conditions,
-		metav1.ConditionFalse, infrav1.InitNodeAllocationConflictReason)
 }
 
 func TestMachineReconcilerBindsFirstFreeHost(t *testing.T) {
@@ -218,9 +121,8 @@ func TestMachineReconcilerDoesNotReuseAHeldHost(t *testing.T) {
 	require.Equal(t, "provisioned://test/10.0.0.12", second.Spec.ProviderID)
 }
 
-// The configured init node cannot be skipped. Otherwise another host could
-// become ready first and run kubeadm init.
-func TestMachineReconcilerRejectsAnInitHostLockedByAnotherCluster(t *testing.T) {
+// Overlap should cost a host, not the node: the machine moves to the next one.
+func TestMachineReconcilerSkipsAHostLockedByAnotherCluster(t *testing.T) {
 	first := hostWithAddress("host-01", "10.0.0.11")
 	second := hostWithAddress("host-02", "10.0.0.12")
 	reconciler, k8sClient := newMachineReconcilerForTest(t,
@@ -235,10 +137,8 @@ func TestMachineReconcilerRejectsAnInitHostLockedByAnotherCluster(t *testing.T) 
 
 	_, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
 	require.NoError(t, err)
-	machine := getInfraMachine(t, k8sClient, testMachineName)
-	require.Empty(t, machine.Spec.ProviderID)
-	requireReadyCondition(t, machine.Status.Conditions,
-		metav1.ConditionFalse, infrav1.InitNodeAllocationConflictReason)
+	require.Equal(t, "provisioned://test/10.0.0.12",
+		getInfraMachine(t, k8sClient, testMachineName).Spec.ProviderID)
 }
 
 func TestMachineReconcilerReportsWhenEveryHostIsLockedElsewhere(t *testing.T) {
@@ -257,7 +157,7 @@ func TestMachineReconcilerReportsWhenEveryHostIsLockedElsewhere(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, retryAfter, result.RequeueAfter)
 	requireReadyCondition(t, getInfraMachine(t, k8sClient, testMachineName).Status.Conditions,
-		metav1.ConditionFalse, infrav1.InitNodeAllocationConflictReason)
+		metav1.ConditionFalse, infrav1.HostsClaimedElsewhereReason)
 }
 
 func TestMachineReconcilerBlocksDeletionAndRetainsClaim(t *testing.T) {
@@ -454,16 +354,18 @@ func TestMachineReconcilerKeepsAnExistingBinding(t *testing.T) {
 }
 
 func TestMachineReconcilerReportsAnExhaustedInventory(t *testing.T) {
-	initHost := hostWithAddress("host-01", "10.0.0.11")
-	initMachine := newInfraMachine(testMachineName, "provisioned://test/10.0.0.11")
 	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		newInfraCluster(initHost),
+		newInfraCluster(
+			infrav1.ProvisionedHost{
+				Hostname:  "host-01",
+				IPAddress: "10.0.0.11",
+			},
+		),
 		newCAPICluster(),
 		newOwnerMachine(),
 		newOwnerMachineNamed("second"),
-		initMachine,
+		newInfraMachine(testMachineName, "provisioned://test/10.0.0.11"),
 		newInfraMachine("second", ""),
-		newHostClaim(initMachine, initHost),
 	)
 
 	result, err := reconciler.Reconcile(context.Background(), machineRequest("second"))

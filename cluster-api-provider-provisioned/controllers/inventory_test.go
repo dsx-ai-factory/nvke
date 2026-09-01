@@ -47,7 +47,7 @@ func TestSelectHostsKeepsInventoryOrder(t *testing.T) {
 		host("host-03", "10.0.0.3", nil),
 	}
 
-	usable := selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil)
+	usable := selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil, "host-01", true)
 
 	require.Len(t, usable, 2)
 	require.Equal(t, "host-02", usable[0].Hostname)
@@ -60,14 +60,24 @@ func TestSelectHostsRespectsSelector(t *testing.T) {
 		host("gpu", "10.0.0.2", map[string]string{"rack": "b", "gpu": "h100"}),
 	}
 
-	usable := selectHosts(hosts, hostAllocations{}, map[string]string{"gpu": "h100"})
+	usable := selectHosts(hosts, hostAllocations{}, map[string]string{"gpu": "h100"}, "gpu-less", true)
 	require.Len(t, usable, 1)
 	require.Equal(t, "gpu", usable[0].Hostname)
 }
 
 func TestSelectHostsReportsExhaustedInventory(t *testing.T) {
 	hosts := []infrav1.ProvisionedHost{host("host-01", "10.0.0.1", nil)}
-	require.Empty(t, selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil))
+	require.Empty(t, selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil, "host-01", true))
+}
+
+func TestSelectHostsReturnsOnlyUnclaimedInitNode(t *testing.T) {
+	hosts := []infrav1.ProvisionedHost{
+		host("host-01", "10.0.0.1", nil),
+		host("init-host", "10.0.0.2", nil),
+	}
+
+	require.Equal(t, []infrav1.ProvisionedHost{hosts[1]},
+		selectHosts(hosts, hostAllocations{}, nil, "init-host", false))
 }
 
 func TestValidateInventory(t *testing.T) {
@@ -89,7 +99,7 @@ func TestValidateInventory(t *testing.T) {
 				host("host-01", "10.0.0.1", nil),
 				host("host-01", "10.0.0.2", nil),
 			},
-			wantErr: `initNode "host-01" identifies more than one configured host`,
+			wantErr: `hostname "host-01" is used more than once`,
 		},
 		{
 			name: "repeated canonical IP address",
@@ -118,11 +128,7 @@ func TestValidateInventory(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			initNode := "host-01"
-			if len(test.hosts) != 0 && test.hosts[0].Hostname != "" {
-				initNode = test.hosts[0].Hostname
-			}
-			err := validateInventory(test.hosts, initNode)
+			err := validateInventory(test.hosts)
 			if test.wantErr == "" {
 				require.NoError(t, err)
 				return

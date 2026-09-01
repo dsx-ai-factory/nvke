@@ -64,19 +64,10 @@ func newOwnerMachineNamed(name string) *clusterv1.Machine {
 		TypeMeta: metav1.TypeMeta{APIVersion: clusterv1.GroupVersion.String(), Kind: "Machine"},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: name, Namespace: testNamespace,
-			Labels: map[string]string{
-				clusterv1.ClusterNameLabel:         testClusterName,
-				clusterv1.MachineControlPlaneLabel: "",
-			},
+			Labels: map[string]string{clusterv1.ClusterNameLabel: testClusterName},
 		},
 		Spec: clusterv1.MachineSpec{ClusterName: testClusterName},
 	}
-}
-
-func newWorkerOwnerMachineNamed(name string) *clusterv1.Machine {
-	machine := newOwnerMachineNamed(name)
-	delete(machine.Labels, clusterv1.MachineControlPlaneLabel)
-	return machine
 }
 
 func newInfraMachine(name, providerID string) *infrav1.ProvisionedMachine {
@@ -93,21 +84,6 @@ func newInfraMachine(name, providerID string) *infrav1.ProvisionedMachine {
 			}},
 		},
 		Spec: infrav1.ProvisionedMachineSpec{ProviderID: providerID},
-	}
-}
-
-func newHostClaim(machine *infrav1.ProvisionedMachine, host infrav1.ProvisionedHost) *infrav1.ProvisionedHostClaim {
-	ipAddress := host.CanonicalIPAddress()
-	return &infrav1.ProvisionedHostClaim{
-		ObjectMeta: metav1.ObjectMeta{Name: infrav1.HostClaimName(ipAddress)},
-		Spec: infrav1.ProvisionedHostClaimSpec{
-			IPAddress:        ipAddress,
-			ClusterName:      testClusterName,
-			MachineNamespace: machine.Namespace,
-			MachineName:      machine.Name,
-			MachineUID:       string(machine.UID),
-			HostName:         host.Hostname,
-		},
 	}
 }
 

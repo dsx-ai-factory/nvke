@@ -109,10 +109,8 @@ spec:
                 minItems: 1
                 type: array
               initNode:
-                description: |-
-                  InitNode is the hostname of the host that must be allocated first. The
-                  provider gives this host to one control plane machine before it allocates
-                  any other host.
+                description: InitNode is the hostname of the host that must be allocated
+                  first.
                 maxLength: 253
                 minLength: 1
                 pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$

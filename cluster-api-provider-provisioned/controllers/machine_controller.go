@@ -144,25 +144,9 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			r.setNotReady(ctx, machine, infrav1.WaitingForClusterReason, "Waiting for the ProvisionedCluster")
 	}
 
-	if err := validateInventory(infraCluster.Spec.Hosts, infraCluster.Spec.InitNode); err != nil {
-		logger.Error("Cannot allocate a host from an invalid inventory", "error", err)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.InventoryInvalidReason, err.Error())
-	}
-
 	// An allocation that already exists is never revisited. The binding is
 	// permanent for the life of the machine: a node runs on that host.
 	if machine.Spec.ProviderID != "" {
-		_, ipAddress, parseErr := infrav1.ParseProviderID(machine.Spec.ProviderID)
-		initHost, _ := infraCluster.HostByName(infraCluster.Spec.InitNode)
-		if parseErr == nil && ipAddress == initHost.CanonicalIPAddress() {
-			if _, controlPlane := ownerMachine.Labels[clusterv1.MachineControlPlaneLabel]; !controlPlane {
-				message := fmt.Sprintf("initNode %q is bound to non-control-plane machine %q",
-					initHost.Hostname, machine.Name)
-				return ctrl.Result{RequeueAfter: retryAfter},
-					r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-			}
-		}
 		result, err := r.reconcileBoundMachine(ctx, machine, infraCluster, logger)
 		if err != nil || !result.IsZero() {
 			return result, err
@@ -170,7 +154,13 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 		return r.reconcileNodeProviderID(ctx, machine, ownerMachine, logger)
 	}
 
-	result, err := r.allocateHost(ctx, machine, ownerMachine, infraCluster, logger)
+	if err := validateInventory(infraCluster.Spec.Hosts); err != nil {
+		logger.Error("Cannot allocate a host from an invalid inventory", "error", err)
+		return ctrl.Result{RequeueAfter: retryAfter},
+			r.setNotReady(ctx, machine, infrav1.InventoryInvalidReason, err.Error())
+	}
+
+	result, err := r.allocateHost(ctx, machine, infraCluster, logger)
 	if err != nil || result != (ctrl.Result{}) {
 		return result, err
 	}
@@ -240,7 +230,6 @@ func (r *MachineReconciler) infraClusterFor(
 func (r *MachineReconciler) allocateHost(
 	ctx context.Context,
 	machine *infrav1.ProvisionedMachine,
-	ownerMachine *clusterv1.Machine,
 	infraCluster *infrav1.ProvisionedCluster,
 	logger *slog.Logger,
 ) (ctrl.Result, error) {
@@ -249,22 +238,36 @@ func (r *MachineReconciler) allocateHost(
 		return ctrl.Result{}, err
 	}
 	allocated := allocationsFromMachines(infraCluster.Name, machines)
-	initHost, found := infraCluster.HostByName(infraCluster.Spec.InitNode)
-	if !found {
-		return ctrl.Result{RequeueAfter: retryAfter}, r.setNotReady(ctx, machine,
-			infrav1.InventoryInvalidReason,
-			fmt.Sprintf("initNode %q does not identify a configured host", infraCluster.Spec.InitNode))
+
+	initNodeClaimed := false
+	for _, host := range infraCluster.Spec.Hosts {
+		if host.Hostname != infraCluster.Spec.InitNode {
+			continue
+		}
+		initClaim := &infrav1.ProvisionedHostClaim{}
+		err = r.apiReader.Get(ctx, client.ObjectKey{Name: infrav1.HostClaimName(host.CanonicalIPAddress())}, initClaim)
+		initNodeClaimed = err == nil
+		if initNodeClaimed &&
+			initClaim.Spec.MachineNamespace == machine.Namespace &&
+			initClaim.Spec.MachineName == machine.Name &&
+			initClaim.Spec.MachineUID == string(machine.UID) {
+			// A restart can occur after the claim is created and before the
+			// provider ID is written. Keep the holder on the init node.
+			initNodeClaimed = false
+		}
+		if err != nil && !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("failed to read the init-node claim: %w", err)
+		}
+		break
 	}
 
-	initMachineName, initAllocated := allocated[initHost.CanonicalIPAddress()]
-	if !initAllocated {
-		return r.allocateInitHost(ctx, machine, ownerMachine, infraCluster, initHost, logger)
-	}
-	if result, err := r.validateInitAllocation(ctx, machine, infraCluster, initHost, initMachineName); err != nil || !result.IsZero() {
-		return result, err
-	}
-
-	candidates := selectHosts(infraCluster.Spec.Hosts, allocated, machine.Spec.HostSelector)
+	candidates := selectHosts(
+		infraCluster.Spec.Hosts,
+		allocated,
+		machine.Spec.HostSelector,
+		infraCluster.Spec.InitNode,
+		initNodeClaimed,
+	)
 	if len(candidates) == 0 {
 		logger.Info("No free host in the inventory",
 			"hosts", len(infraCluster.Spec.Hosts),
@@ -325,143 +328,7 @@ func (r *MachineReconciler) allocateHost(
 			r.setNotReady(ctx, machine, reason, message)
 	}
 
-	return r.bindHost(ctx, machine, infraCluster.Name, host, logger)
-}
-
-// allocateInitHost gives the configured init node to one eligible control
-// plane machine. Every other machine waits until that binding is persisted.
-func (r *MachineReconciler) allocateInitHost(
-	ctx context.Context,
-	machine *infrav1.ProvisionedMachine,
-	ownerMachine *clusterv1.Machine,
-	infraCluster *infrav1.ProvisionedCluster,
-	initHost infrav1.ProvisionedHost,
-	logger *slog.Logger,
-) (ctrl.Result, error) {
-	if _, controlPlane := ownerMachine.Labels[clusterv1.MachineControlPlaneLabel]; !controlPlane ||
-		!labelsMatch(initHost.Labels, machine.Spec.HostSelector) {
-		message := fmt.Sprintf(
-			"Waiting for an eligible control plane machine to claim initNode %q", initHost.Hostname)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.NoEligibleInitMachineReason, message)
-	}
-
-	claimResult, err := r.claimHost(ctx, machine, infraCluster.Name, initHost)
-	if errors.Is(err, errHostClaimedByStaleMachine) {
-		current, checkErr := r.initClaimHasCurrentHolder(ctx, infraCluster.Name, initHost)
-		if checkErr != nil {
-			return ctrl.Result{}, checkErr
-		}
-		if current {
-			message := fmt.Sprintf("Waiting for the machine that claimed initNode %q to persist its binding", initHost.Hostname)
-			return ctrl.Result{RequeueAfter: retryAfter},
-				r.setNotReady(ctx, machine, infrav1.WaitingForInitNodeReason, message)
-		}
-		message := fmt.Sprintf("initNode %q has an inconsistent claim: %v", initHost.Hostname, err)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-	}
-	if errors.Is(err, errHostClaimedElsewhere) {
-		message := fmt.Sprintf("initNode %q is claimed by another cluster: %v", initHost.Hostname, err)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-	}
-	if err != nil || !claimResult.IsZero() {
-		return claimResult, err
-	}
-
-	return r.bindHost(ctx, machine, infraCluster.Name, initHost, logger)
-}
-
-// initClaimHasCurrentHolder reports whether the init-host claim belongs to a
-// live incarnation of a ProvisionedMachine in this cluster.
-func (r *MachineReconciler) initClaimHasCurrentHolder(
-	ctx context.Context,
-	clusterName string,
-	host infrav1.ProvisionedHost,
-) (bool, error) {
-	claim := &infrav1.ProvisionedHostClaim{}
-	if err := r.apiReader.Get(ctx, client.ObjectKey{Name: infrav1.HostClaimName(host.CanonicalIPAddress())}, claim); err != nil {
-		return false, fmt.Errorf("failed to read the init-node claim: %w", err)
-	}
-	if claim.Spec.ClusterName != clusterName || claim.Spec.IPAddress != host.CanonicalIPAddress() {
-		return false, nil
-	}
-	holder := &infrav1.ProvisionedMachine{}
-	if err := r.apiReader.Get(ctx, client.ObjectKey{
-		Namespace: claim.Spec.MachineNamespace,
-		Name:      claim.Spec.MachineName,
-	}, holder); err != nil {
-		if apierrors.IsNotFound(err) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to read the init-node claim holder: %w", err)
-	}
-	return string(holder.UID) == claim.Spec.MachineUID, nil
-}
-
-// validateInitAllocation checks the persisted binding and its atomic claim
-// before normal hosts become available.
-func (r *MachineReconciler) validateInitAllocation(
-	ctx context.Context,
-	machine *infrav1.ProvisionedMachine,
-	infraCluster *infrav1.ProvisionedCluster,
-	initHost infrav1.ProvisionedHost,
-	initMachineName string,
-) (ctrl.Result, error) {
-	initMachine := &infrav1.ProvisionedMachine{}
-	if err := r.apiReader.Get(ctx, client.ObjectKey{Namespace: machine.Namespace, Name: initMachineName}, initMachine); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to read the init-node machine %s: %w", initMachineName, err)
-	}
-	owner, err := capiutil.GetOwnerMachine(ctx, r.client, initMachine.ObjectMeta)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to get the owner of init-node machine %s: %w", initMachineName, err)
-	}
-	if owner == nil {
-		message := fmt.Sprintf("initNode %q is bound to machine %q without an owner Machine", initHost.Hostname, initMachineName)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-	}
-	if _, controlPlane := owner.Labels[clusterv1.MachineControlPlaneLabel]; !controlPlane {
-		message := fmt.Sprintf("initNode %q is bound to non-control-plane machine %q", initHost.Hostname, initMachineName)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-	}
-	if !labelsMatch(initHost.Labels, initMachine.Spec.HostSelector) {
-		message := fmt.Sprintf("initNode %q does not match the selector of machine %q", initHost.Hostname, initMachineName)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-	}
-
-	claim := &infrav1.ProvisionedHostClaim{}
-	if err := r.apiReader.Get(ctx, client.ObjectKey{Name: infrav1.HostClaimName(initHost.CanonicalIPAddress())}, claim); err != nil {
-		if apierrors.IsNotFound(err) {
-			message := fmt.Sprintf("initNode %q is bound to machine %q but has no host claim", initHost.Hostname, initMachineName)
-			return ctrl.Result{RequeueAfter: retryAfter},
-				r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-		}
-		return ctrl.Result{}, fmt.Errorf("failed to read the init-node claim: %w", err)
-	}
-	if claim.Spec.ClusterName != infraCluster.Name ||
-		claim.Spec.MachineNamespace != initMachine.Namespace ||
-		claim.Spec.MachineName != initMachine.Name ||
-		claim.Spec.MachineUID != string(initMachine.UID) {
-		message := fmt.Sprintf("initNode %q has a claim that is inconsistent with machine %q", initHost.Hostname, initMachineName)
-		return ctrl.Result{RequeueAfter: retryAfter},
-			r.setNotReady(ctx, machine, infrav1.InitNodeAllocationConflictReason, message)
-	}
-	return ctrl.Result{}, nil
-}
-
-// bindHost persists the permanent binding and publishes its status.
-func (r *MachineReconciler) bindHost(
-	ctx context.Context,
-	machine *infrav1.ProvisionedMachine,
-	clusterName string,
-	host infrav1.ProvisionedHost,
-	logger *slog.Logger,
-) (ctrl.Result, error) {
-	machine.Spec.ProviderID = infrav1.FormatProviderID(clusterName, host.IPAddress)
+	machine.Spec.ProviderID = infrav1.FormatProviderID(infraCluster.Name, host.IPAddress)
 	if err := r.client.Update(ctx, machine); err != nil {
 		if apierrors.IsConflict(err) {
 			// Another write reached the object first. Look again with a fresh

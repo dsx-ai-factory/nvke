@@ -93,7 +93,7 @@ func (r *ClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	patch := client.MergeFrom(infraCluster.DeepCopy())
 
-	if err := validateInventory(infraCluster.Spec.Hosts, infraCluster.Spec.InitNode); err != nil {
+	if err := validateInventory(infraCluster.Spec.Hosts); err != nil {
 		// Do not clear a provisioned flag that was already reported. The
 		// machines of the cluster are running, and withdrawing the flag would
 		// stop Cluster API from acting on them.
