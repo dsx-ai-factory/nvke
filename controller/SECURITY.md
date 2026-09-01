@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a potential security vulnerability, please **do not open a public issue, merge request, or discussion**.
+If you discover a potential security vulnerability, please **do not open a public issue, pull request, or discussion**.
 
 Report it privately through the channels in the repository root
 [SECURITY.md](../SECURITY.md):

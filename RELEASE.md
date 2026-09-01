@@ -90,6 +90,21 @@ themselves, after they have built and verified the real artifacts:
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
 OCI artifact and never promotes the GitHub Release out of draft.
 
+A `controller/vX.Y.Z` tag goes through `release.yml` like any other component and
+additionally publishes the controller image and Helm chart:
+
+| Workflow | What it publishes |
+|---|---|
+| `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/controller`, then promotes that released image to `ghcr.io/nvidia/nke/controller` with `crane copy`, preserving the digest and the full index |
+| `chart-publish.yml` | chart to `ghcr.io/nvidia/nke/charts/cloud-workflow-engine` |
+| `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/cloud-workflow-engine` |
+
+Every `main` commit already publishes the image and chart to NVCR. GHCR receives
+released versions only, which is why a chart built from a tag can safely point at
+`ghcr.io/nvidia/nke/controller:<version>` while a chart built from `main` could not.
+Releases from `controller/v0.1.1-rc.1` onward are present on GHCR; `controller/v0.1.0`
+predates the promotion job and was never copied there.
+
 Push tags to `upstream`. The release workflow has no repository guard, so a tag
 pushed to a fork cuts a real release there.
 
@@ -104,7 +119,9 @@ body from `CHANGELOG.md`. Nothing is created by hand.
 After the tag push, confirm that any CI release pipelines complete
 successfully (node OS-image bake, chart publish, etc.). For `os-image/v*`, that is
 the **OS Image Artifact** check: Packer, boot-smoke, then `oras` to
-`ghcr.io/nvidia/nke/os-image`.
+`ghcr.io/nvidia/nke/os-image`. For `controller/v*`, confirm the **Image
+NVCR** and **Chart Publish** checks, then that the promoted image is present at
+`ghcr.io/nvidia/nke/controller:<version>`.
 
 ## Hotfix releases
 
