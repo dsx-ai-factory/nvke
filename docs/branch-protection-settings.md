@@ -25,7 +25,7 @@ one is not a pass, so confirm the checks you expected actually ran.
 
 `gate` is the aggregate job in
 [`merge-gate.yml`](../.github/workflows/merge-gate.yml). It reports one result
-for fourteen member workflows, which is why it is the only build check the
+for fifteen member workflows, which is why it is the only build check the
 branch settings name. Naming the members individually would mean that renaming
 or removing any one of them blocks every pull request until an admin
 intervenes. For the same reason a member is never path-filtered: a check that
@@ -45,6 +45,16 @@ subject on `main` and has to match:
 `feat(devx): add a thing` passes, while `Feat: add a thing` and
 `feat(DevX): add a thing` do not. `git-cliff` turns the subject into the
 changelog entry.
+
+The rule is a `commit_message_pattern` restriction in the ruleset, so it fires in
+the merge box. The `pr-title` gate member runs the same pattern when the pull
+request opens, so the author sees it first. Keep that pattern, the one above and
+the rule's identical:
+
+```bash
+gh api repos/NVIDIA/nke/rules/branches/main \
+  --jq '.[] | select(.type=="commit_message_pattern").parameters.pattern'
+```
 
 ## Checking
 

@@ -76,8 +76,11 @@ on:
   # handles merge_group.checks_requested itself and reports on the merge group
   # head sha.
   #
-  # The 14 called workflows need no change. Each declares workflow_call and runs
-  # under this caller's event, and none reads github.event.pull_request.
+  # Of the 15 called workflows, 14 need no change: each declares workflow_call,
+  # runs under this caller's event, and reads nothing out of the event payload.
+  # pr-title-check.yml is the exception. It reads
+  # github.event.pull_request.title, which a merge_group event does not carry,
+  # so it skips itself there and `gate` tolerates the skip.
   merge_group:
   workflow_dispatch:
 
@@ -162,6 +165,12 @@ jobs:
     permissions:
       contents: read
 
+  # Reads the pull request title straight out of the event payload, so it needs
+  # no checkout, no token and no permission.
+  pr-title:
+    uses: ./.github/workflows/pr-title-check.yml
+    permissions: {}
+
   # The fault-injection suite. It starts PostgreSQL, an envtest API server and a
   # Temporal dev server and runs the worker as a built binary, so it is the
   # slowest member here at about six minutes. That still sits under the gate's
@@ -200,6 +209,7 @@ jobs:
       - shellcheck
       - docs-check
       - lint
+      - pr-title
       - gofail
       - govulncheck
     runs-on: ubuntu-latest

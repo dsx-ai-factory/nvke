@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Fails a pull request whose title is not a Conventional Commit.
+#
+# A `commit_message_pattern` rule on `main` already rejects such a title, but it
+# fires in the merge box, where only the person merging sees it. This runs the
+# same pattern when the pull request opens, for the author.
+#
+# The pattern is a verbatim copy of the rule's, which
+# docs/branch-protection-settings.md also quotes. Keep the three identical: a
+# looser copy passes a title the merge box then rejects.
+
+name: PR Title Check
+
+# No `push: [main]` trigger and no concurrency group, unlike other gate members.
+# A title exists only on a pull request, so every run comes from merge-gate.yml
+# and its group already cancels stale work.
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  pr-title:
+    name: pr-title
+    # merge-gate.yml also runs on merge_group and workflow_dispatch, which carry
+    # no pull request. Skip: `gate` tolerates it, and a queue entry has passed
+    # this already.
+    if: github.repository == 'NVIDIA/nke' && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check the pull request title
+        env:
+          # Through the environment, never as ${{ }} in the script. A title is
+          # untrusted input, and interpolation would run it as shell.
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9/_.-]+\))?!?: .+'
+
+          if [[ "${PR_TITLE}" =~ ${pattern} ]]; then
+            echo "  title matches: ${PR_TITLE}"
+            exit 0
+          fi
+
+          {
+            echo "### Pull request title is not a Conventional Commit"
+            echo
+            echo '```'
+            echo "${PR_TITLE}"
+            echo '```'
+            echo
+            echo "This repository squash-merges, so the title becomes the commit"
+            echo "subject on \`main\`, and a rule there rejects a subject that"
+            echo "does not match. Write \`<type>(<scope>): <description>\`, for"
+            echo "example \`fix(controller): handle an empty bundle list\`. The"
+            echo "scope is optional; \`!\` before the colon marks a breaking change."
+            echo
+            echo "Types: \`feat\`, \`fix\`, \`docs\`, \`style\`, \`refactor\`, \`perf\`,"
+            echo "\`test\`, \`build\`, \`ci\`, \`chore\`, \`revert\`, all lower case."
+            echo
+            echo "Edit the title. No push is needed; this re-runs on the edit."
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          echo "::error title=Pull request title::Not a Conventional Commit: ${PR_TITLE}"
+          exit 1

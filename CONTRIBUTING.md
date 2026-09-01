@@ -191,7 +191,8 @@ nke uses [Conventional Commits](https://www.conventionalcommits.org/):
 [optional footer: Closes #<issue>]
 ```
 
-Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, `ci`, `perf`
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`,
+`ci`, `chore`, `revert`. The type and the scope are lower case.
 
 Examples:
 ```
@@ -206,6 +207,12 @@ feat!: remove deprecated v1 API endpoints
 
 BREAKING CHANGE: The /v1/foo endpoint has been removed. Use /v2/foo instead.
 ```
+
+**The pull request title is what gets checked.** This repository squash-merges,
+so the title becomes the one commit subject on `main`. The `pr-title` check
+reports on it, and a rule on `main` rejects a subject that does not match. Fix a
+rejected title by editing it; no push is needed. Nothing checks the commits on
+your branch, because the squash discards them.
 
 ### Sign your commits (DCO)
 
