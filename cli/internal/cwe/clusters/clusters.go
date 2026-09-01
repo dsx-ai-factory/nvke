@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/clients"
+	"github.com/NVIDIA/nke/cli/internal/clusterstate"
 	"github.com/NVIDIA/nke/cli/internal/util"
 	api "github.com/NVIDIA/nke/controller/api"
 )
@@ -200,34 +201,9 @@ func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
 	return cmd
 }
 
-// clusterStatus returns a human-readable status string derived from conditions.
-// Conditions are checked in priority order: terminal/destructive states first,
-// then in-progress mutations, then base lifecycle.
-func clusterStatus(cl *api.Cluster) string {
-	c := cl.Conditions
-	switch {
-	case conditionIsTrue(&c.Deleting):
-		return "Deleting"
-	case conditionIsTrue(c.UpdateFailed):
-		return "UpdateFailed"
-	case c.UpdateInProgress != nil:
-		return "Updating"
-	case conditionIsTrue(c.ControlPlaneUpgrading):
-		return "Upgrading"
-	case conditionIsTrue(c.CpNodesRecycling):
-		return "Recycling"
-	case conditionIsTrue(&c.Provisioning):
-		return "Provisioning"
-	case conditionIsTrue(&c.Provisioned):
-		return "Provisioned"
-	default:
-		return "Unknown"
-	}
-}
-
-func conditionIsTrue(condition *api.Condition) bool {
-	return condition != nil && condition.Status == api.ConditionStatusTrue
-}
+// clusterStatus keeps the package-local helper used by the cluster command
+// tests while sharing the status rules with site bootstrap.
+func clusterStatus(cl *api.Cluster) string { return clusterstate.Status(cl) }
 
 // printClusters writes a tabular summary of clusters to out.
 func printClusters(out io.Writer, clusters []api.Cluster) {
