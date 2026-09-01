@@ -174,6 +174,7 @@ jobs:
             echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
             echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
             echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
+            echo "capi_version=$(make --no-print-directory print-CAPI_VERSION)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Helm
@@ -190,6 +191,28 @@ jobs:
           version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
           install_only: true
+
+      # clusterctl, which `nkectl bootstrap site` runs to install Cluster API
+      # onto the ephemeral bootstrap cluster (see cli/internal/cwedeploy). Same
+      # hand-downloaded-binary shape as this repo's other such steps, and the
+      # same version the binary asks for -- both read CAPI_VERSION from
+      # make/tool-versions.mk, and a unit test holds the copy in cwedeploy to it.
+      - name: Set up clusterctl
+        shell: bash
+        env:
+          CAPI_VERSION: ${{ steps.versions.outputs.capi_version }}
+        run: |
+          set -Eeuo pipefail
+          curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused \
+            -o /tmp/clusterctl \
+            "https://github.com/kubernetes-sigs/cluster-api/releases/download/${CAPI_VERSION}/clusterctl-linux-amd64"
+          chmod +x /tmp/clusterctl
+          sudo mv /tmp/clusterctl /usr/local/bin/clusterctl
+          got="$(clusterctl version -o short)"
+          if [ "${got}" != "${CAPI_VERSION}" ]; then
+            echo "::error::clusterctl reports ${got}, expected ${CAPI_VERSION}"
+            exit 1
+          fi
 
       # The fake nodes emulate a TPM with swtpm, which asks the *host* kernel to
       # allocate a device through /dev/vtpmx. That comes from tpm_vtpm_proxy,

@@ -199,6 +199,18 @@ type Config struct {
 	// chart ref instead.
 	ChartPath string
 
+	// ProvisionedProviderImage is the cluster-api-provider-provisioned image to
+	// run as the CAPI infrastructure provider for hosts that already exist. If
+	// it is empty, Deploy installs only CAPI core and the kubeadm providers.
+	// Nothing publishes this image yet, so the caller builds it and loads it into
+	// the cluster rather than pulling it.
+	ProvisionedProviderImage string
+
+	// ProvisionedProviderPath is the local path to
+	// cluster-api-provider-provisioned/config/default. Empty triggers
+	// repo-root discovery, with the same standalone-binary caveat as ChartPath.
+	ProvisionedProviderPath string
+
 	// PostgresPassword is the Postgres superuser password shared by the
 	// Postgres, Temporal, and CWE releases. Generated if empty.
 	PostgresPassword string
@@ -222,8 +234,12 @@ func DefaultConfig() Config {
 		// it below.
 		SPIFFETrustDomain: os.Getenv("NKECTL_SPIFFE_TRUST_DOMAIN"),
 		ChartPath:         os.Getenv("NKECTL_CWE_CHART_PATH"),
-		HelmTimeout:       envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
-		ReadyTimeout:      envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
+
+		ProvisionedProviderImage: os.Getenv("NKECTL_CAPI_PROVISIONED_IMAGE"),
+		ProvisionedProviderPath:  os.Getenv("NKECTL_CAPI_PROVISIONED_PATH"),
+
+		HelmTimeout:  envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
+		ReadyTimeout: envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
 	}
 }
 
@@ -266,11 +282,11 @@ func New(runner CommandRunner, log *slog.Logger) *Engine {
 	return &Engine{Runner: runner, log: log.With("component", "cwedeploy")}
 }
 
-// Deploy installs Postgres, Temporal, SPIRE, and CWE (in that order -- each
-// depends on the one before it) onto the cluster kubeconfigPath points at, waiting
-// for each Helm release to report ready before moving to the next. It does
-// not wait for CWE's own /readyz; call WaitReady for that once Deploy
-// returns, so callers can log "helm release installed" and
+// Deploy installs Postgres, Temporal, SPIRE, Cluster API, and CWE (in that
+// order -- each depends on the one before it) onto the cluster kubeconfigPath
+// points at, waiting for each Helm release to report ready before moving to
+// the next. It does not wait for CWE's own /readyz; call WaitReady for that
+// once Deploy returns, so callers can log "helm release installed" and
 // "CWE reports healthy" as distinct, separately-timed steps.
 func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) error {
 	if kubeconfigPath == "" {
@@ -390,6 +406,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		}
 	}
 
+	// Before CWE, not after: CWE starts writing CAPI objects as soon as a
+	// cluster is created, and an object written before its controller exists
+	// simply sits there.
+	if err := e.installCAPI(ctx, kubeconfigPath, cfg, helmTimeout); err != nil {
+		return err
+	}
+
 	cweValues, cleanup, err := writeEmbeddedFile(cweValuesFile)
 	if err != nil {
 		return err
@@ -494,20 +517,28 @@ func writeEmbeddedFile(name string) (path string, cleanup func(), err error) {
 	if err != nil {
 		return "", func() {}, fmt.Errorf("cwedeploy: reading embedded %s: %w", name, err)
 	}
-	f, err := os.CreateTemp("", "nkectl-cwedeploy-*.yaml")
+	return writeTempFile("nkectl-cwedeploy-*.yaml", body)
+}
+
+// writeTempFile writes body to a temporary file matching pattern and returns
+// the path plus a cleanup func the caller should defer immediately. Both the
+// embedded values files and the rendered provider manifest need a real path on
+// disk, because helm's --values and kubectl's -f both take one.
+func writeTempFile(pattern string, body []byte) (path string, cleanup func(), err error) {
+	f, err := os.CreateTemp("", pattern)
 	if err != nil {
-		return "", func() {}, fmt.Errorf("cwedeploy: creating values file for %s: %w", name, err)
+		return "", func() {}, fmt.Errorf("cwedeploy: creating %s: %w", pattern, err)
 	}
 	tmpName := f.Name()
 	cleanup = func() { _ = os.Remove(tmpName) }
 	if _, err := f.Write(body); err != nil {
 		_ = f.Close()
 		cleanup()
-		return "", func() {}, fmt.Errorf("cwedeploy: writing values file for %s: %w", name, err)
+		return "", func() {}, fmt.Errorf("cwedeploy: writing %s: %w", tmpName, err)
 	}
 	if err := f.Close(); err != nil {
 		cleanup()
-		return "", func() {}, fmt.Errorf("cwedeploy: closing values file for %s: %w", name, err)
+		return "", func() {}, fmt.Errorf("cwedeploy: closing %s: %w", tmpName, err)
 	}
 	return tmpName, cleanup, nil
 }
@@ -518,22 +549,34 @@ func writeEmbeddedFile(name string) (path string, cleanup func(), err error) {
 // monorepo -- see the ChartPath doc comment for why that is a known gap, not
 // an oversight.
 func resolveChartPath() (string, error) {
+	root, err := repoRoot()
+	if err != nil {
+		return "", fmt.Errorf("cwedeploy: Config.ChartPath is empty and %w; "+
+			"set NKECTL_CWE_CHART_PATH explicitly", err)
+	}
+	chart := filepath.Join(root, "controller", "deploy", "charts", "cloud-workflow-engine")
+	if _, err := os.Stat(chart); err != nil {
+		return "", fmt.Errorf("cwedeploy: found repository root at %s but no chart at %s", root, chart)
+	}
+	return chart, nil
+}
+
+// repoRoot walks up from the working directory looking for go.work, this
+// repository's root marker. Shared by everything that has to find a path inside
+// the checkout; see resolveChartPath for why that is a known gap for a
+// standalone binary rather than an oversight.
+func repoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
-		return "", fmt.Errorf("cwedeploy: resolving chart path: %w", err)
+		return "", fmt.Errorf("resolving the working directory: %w", err)
 	}
 	for {
 		if _, statErr := os.Stat(filepath.Join(dir, "go.work")); statErr == nil {
-			chart := filepath.Join(dir, "controller", "deploy", "charts", "cloud-workflow-engine")
-			if _, statErr := os.Stat(chart); statErr == nil {
-				return chart, nil
-			}
-			return "", fmt.Errorf("cwedeploy: found repository root at %s but no chart at %s", dir, chart)
+			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", errors.New("cwedeploy: Config.ChartPath is empty and no repository root " +
-				"(go.work) was found above the working directory; set NKECTL_CWE_CHART_PATH explicitly")
+			return "", errors.New("no repository root (go.work) was found above the working directory")
 		}
 		dir = parent
 	}

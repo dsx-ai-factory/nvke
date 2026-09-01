@@ -42,6 +42,7 @@ show-versions: ## Print every pinned tool version.
 		"HELM_VERSION"           "$(HELM_VERSION)" \
 		"KIND_VERSION"           "$(KIND_VERSION)" \
 		"KUBECTL_VERSION"        "$(KUBECTL_VERSION)" \
+		"CAPI_VERSION"           "$(CAPI_VERSION)" \
 		"ORAS_VERSION"           "$(ORAS_VERSION)" \
 		"PACKER_VERSION"         "$(PACKER_VERSION)" \
 		"GO_LICENSES_VERSION"    "$(GO_LICENSES_VERSION)"

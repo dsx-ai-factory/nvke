@@ -17,6 +17,9 @@ HELM_VERSION         ?= v4.2.4
 
 KIND_VERSION    ?= v0.32.0
 KUBECTL_VERSION ?= v1.36.0
+# clusterctl and the CAPI core/kubeadm providers ship as one release, so one
+# pin covers the binary and everything `clusterctl init` installs.
+CAPI_VERSION    ?= v1.12.3
 
 ORAS_VERSION        ?= 1.3.3
 PACKER_VERSION      ?= 1.14.2

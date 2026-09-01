@@ -77,8 +77,8 @@ NKECTL_LDFLAGS := \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \
-	ensure-capd-image ensure-profiles-image nodes-up nodes-down nodes-status \
-	nodes-inventory nodes-attested
+	ensure-capd-image ensure-profiles-image ensure-provisioned-provider-image \
+	nodes-up nodes-down nodes-status nodes-inventory nodes-attested
 
 # The platforms shipped on a release. nkectl is the one binary here a human
 # downloads, so it is cross-built; the others are deployed, not fetched.
@@ -177,6 +177,23 @@ ensure-profiles-image:
 	@docker image inspect $(CWE_PROFILES_IMAGE) >/dev/null 2>&1 || \
 	  docker build -t $(CWE_PROFILES_IMAGE) \
 	    -f ../controller/test/fixtures/Dockerfile ../controller/test/fixtures
+
+# The Cluster API infrastructure provider for hosts that already exist, which is
+# what makes a site cluster reconcile: `nkectl bootstrap site` installs it onto
+# the ephemeral bootstrap cluster (cli/internal/cwedeploy) and loads this image
+# into it. Nothing publishes the image yet, so it is built here.
+#
+# A plain `docker build`, not `make -C ../cluster-api-provider-provisioned
+# docker-build`: that target is a multi-arch buildx build into an OCI archive,
+# which is what a release wants and not what a local `kind load` can use. The
+# build context is the repository root, because the Dockerfile builds from the
+# workspace vendor tree.
+CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:local
+
+ensure-provisioned-provider-image:
+	@docker image inspect $(CAPI_PROVISIONED_IMAGE) >/dev/null 2>&1 || \
+	  docker build -t $(CAPI_PROVISIONED_IMAGE) \
+	    -f ../cluster-api-provider-provisioned/Dockerfile ..
 
 nodes-up: ensure-capd-image
 	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes up

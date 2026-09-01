@@ -29,8 +29,12 @@ export COLIMA_PROFILE ?= default
 export COLIMA_DOCKER_HOST ?= unix://$(HOME)/.colima/$(COLIMA_PROFILE)/docker.sock
 export KIND_CLUSTER_NAME ?= cwe-capi
 export KIND_CLUSTER_CONFIG ?= hack/cwe-capi-kind.yaml
-export CAPI_CORE_VERSION ?= v1.12.3
-export CAPD_PROVIDER_VERSION ?= v1.12.3
+# The pin lives in make/tool-versions.mk, so `nkectl bootstrap site` (which
+# runs clusterctl too, see cli/internal/cwedeploy) and this dev loop cannot
+# install different CAPI versions.
+include $(CURDIR)/../make/tool-versions.mk
+export CAPI_CORE_VERSION ?= $(CAPI_VERSION)
+export CAPD_PROVIDER_VERSION ?= $(CAPI_VERSION)
 export DEFAULT_VIP_RANGE ?= 172.31.0.0/24
 
 # CAPD KinD custom node image (see hack/capd-kindest-node/Dockerfile)

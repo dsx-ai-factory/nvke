@@ -27,6 +27,10 @@ type fakeRunner struct {
 	// outputs is consulted in call order; if shorter than the number of
 	// calls, the last entry is reused.
 	outputs []fakeOutput
+
+	// applied holds the contents of every manifest a kubectl apply was
+	// pointed at. See captureApply.
+	applied []string
 }
 
 type fakeOutput struct {
@@ -34,8 +38,29 @@ type fakeOutput struct {
 	err    error
 }
 
+// appliedManifests holds the contents of every file a `kubectl apply -f` was
+// pointed at, captured while the file still exists: the callers remove theirs
+// as soon as the apply returns, so a test that looked afterwards would find
+// nothing. This is the only way to assert on what was actually sent to the
+// cluster rather than on the command line that sent it.
+func (f *fakeRunner) captureApply(name string, args []string) {
+	if name != "kubectl" {
+		return
+	}
+	for i, arg := range args {
+		if arg == "-f" && i+1 < len(args) {
+			body, err := os.ReadFile(args[i+1])
+			if err == nil {
+				f.applied = append(f.applied, string(body))
+			}
+			return
+		}
+	}
+}
+
 func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, fakeCall{name: name, args: args})
+	f.captureApply(name, args)
 	idx := len(f.calls) - 1
 	if idx < len(f.outputs) {
 		return f.outputs[idx].output, f.outputs[idx].err
@@ -44,10 +69,68 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string
 		last := f.outputs[len(f.outputs)-1]
 		return last.output, last.err
 	}
+	// `kubectl kustomize` is the one call whose stdout Deploy reads rather than
+	// discards: it renders the provisioned provider and rewrites its image. An
+	// empty answer is not a manifest, so stand in for one here rather than
+	// making every test script it.
+	if name == "kubectl" && len(args) > 0 && args[0] == "kustomize" {
+		return "        image: " + provisionedDefaultImage + "\n", nil
+	}
+	// The CAPI probe must report "not installed", or Deploy skips clusterctl.
+	if name == "kubectl" && containsArg(args, "deployment") && containsArg(args, capiCoreDeployment) {
+		return "Error from server (NotFound)", errors.New("exit status 1")
+	}
 	return "", nil
 }
 
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}
+
 func joinArgs(args []string) string { return strings.Join(args, " ") }
+
+// helmCalls returns just the helm invocations, in order. Deploy also shells out
+// to kubectl and clusterctl, so a test about which releases are installed, and
+// in which order, has to say so rather than index into every call.
+func helmCalls(runner *fakeRunner) []string {
+	var out []string
+	for _, call := range runner.calls {
+		if call.name == "helm" {
+			out = append(out, joinArgs(call.args))
+		}
+	}
+	return out
+}
+
+// callIndex returns the position of the first call whose arguments contain
+// want, or -1. Used to assert ordering between calls to different binaries.
+func callIndex(runner *fakeRunner, want string) int {
+	for i, call := range runner.calls {
+		if strings.Contains(joinArgs(call.args), want) {
+			return i
+		}
+	}
+	return -1
+}
+
+// testConfig is a Config with every required field filled in, so a test that
+// cares about one of them can set just that one.
+func testConfig(t *testing.T) Config {
+	t.Helper()
+	return Config{
+		CWEImage:                 "nvcr.io/org/controller:edge",
+		ProfilesImage:            "nvcr.io/org/cwe-profiles:v1",
+		ProvisionedProviderImage: "cluster-api-provider-provisioned:local",
+		ProvisionedProviderPath:  t.TempDir(),
+		ChartPath:                t.TempDir(), // any existing dir stands in for the chart
+		PostgresPassword:         "test-password",
+	}
+}
 
 func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 	e := New(&fakeRunner{}, nil)
@@ -70,37 +153,29 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	runner := &fakeRunner{}
 	e := New(runner, nil)
 
-	cfg := Config{
-		CWEImage:          "nvcr.io/org/controller:edge",
-		ProfilesImage:     "nvcr.io/org/cwe-profiles:v1",
-		ChartPath:         t.TempDir(), // any existing dir stands in for the chart
-		PostgresPassword:  "test-password",
-		SPIFFEClusterName: "test-kind",
-		SPIFFETrustDomain: "test-kind.nke.local",
-	}
+	cfg := testConfig(t)
+	cfg.SPIFFEClusterName = "test-kind"
+	cfg.SPIFFETrustDomain = "test-kind.nke.local"
 	if err := e.Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
 
-	if len(runner.calls) != 5 {
+	releases := helmCalls(runner)
+	if len(releases) != 5 {
 		t.Fatalf("expected 5 helm calls (postgres, temporal, SPIRE CRDs, SPIRE, cwe), got %d: %+v",
-			len(runner.calls), runner.calls)
+			len(releases), releases)
 	}
 
 	for i, call := range runner.calls {
 		if call.name != "helm" {
-			t.Errorf("call[%d].name = %q, want %q", i, call.name, "helm")
+			continue
 		}
 		if joinArgs(call.args) == "" || call.args[0] != "--kubeconfig" || call.args[1] != "/tmp/kubeconfig" {
 			t.Errorf("call[%d] missing --kubeconfig /tmp/kubeconfig: %s", i, joinArgs(call.args))
 		}
 	}
 
-	postgres := joinArgs(runner.calls[0].args)
-	temporal := joinArgs(runner.calls[1].args)
-	spireCRDs := joinArgs(runner.calls[2].args)
-	spire := joinArgs(runner.calls[3].args)
-	cwe := joinArgs(runner.calls[4].args)
+	postgres, temporal, spireCRDs, spire, cwe := releases[0], releases[1], releases[2], releases[3], releases[4]
 
 	if !strings.Contains(postgres, "upgrade --install postgres "+postgresChartRef) {
 		t.Errorf("postgres call = %q, want the postgres release/chart", postgres)
@@ -152,11 +227,7 @@ func TestDeploy_PropagatesHelmError(t *testing.T) {
 	}}
 	e := New(runner, nil)
 
-	err := e.Deploy(context.Background(), "/tmp/kubeconfig", Config{
-		CWEImage:      "nvcr.io/org/controller:edge",
-		ProfilesImage: "nvcr.io/org/cwe-profiles:v1",
-		ChartPath:     t.TempDir(),
-	})
+	err := e.Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t))
 	if err == nil {
 		t.Fatal("expected Deploy to propagate the helm error")
 	}
@@ -304,17 +375,14 @@ func TestDeploy_PinsImageByDigest(t *testing.T) {
 	const digest = "sha256:8090c7c4538af8e717d52f5edcf26eaf4a4afae2d3e9a25c8208b0704934954e"
 
 	runner := &fakeRunner{}
-	cfg := Config{
-		CWEImage:         "ghcr.io/nvidia/nke/controller@" + digest,
-		ProfilesImage:    "nvcr.io/org/cwe-profiles:v1",
-		ChartPath:        t.TempDir(),
-		PostgresPassword: "test-password",
-	}
+	cfg := testConfig(t)
+	cfg.CWEImage = "ghcr.io/nvidia/nke/controller@" + digest
 	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
 
-	cwe := joinArgs(runner.calls[len(runner.calls)-1].args)
+	releases := helmCalls(runner)
+	cwe := releases[len(releases)-1]
 	if !strings.Contains(cwe, "image.repository=ghcr.io/nvidia/nke/controller") ||
 		!strings.Contains(cwe, "image.digest="+digest) {
 		t.Errorf("cwe call = %q, want the digest split into repository/digest", cwe)
@@ -468,14 +536,9 @@ func TestSpireAndCWEAgreeOnTheClassName(t *testing.T) {
 	}
 
 	runner := &fakeRunner{}
-	cfg := Config{
-		CWEImage:          "nvcr.io/org/controller:edge",
-		ProfilesImage:     "nvcr.io/org/cwe-profiles:v1",
-		ChartPath:         t.TempDir(),
-		PostgresPassword:  "test-password",
-		SPIFFEClusterName: "test-kind",
-		SPIFFETrustDomain: "test-kind.nke.local",
-	}
+	cfg := testConfig(t)
+	cfg.SPIFFEClusterName = "test-kind"
+	cfg.SPIFFETrustDomain = "test-kind.nke.local"
 	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
 		t.Fatalf("Deploy returned error: %v", err)
 	}
