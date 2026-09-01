@@ -27,6 +27,7 @@ on:
       # body does not run it.
       - .github/workflows/capd-e2e.yml
       - .github/workflows/backend-e2e.yml
+      - .github/workflows/e2e-pr-path-filter.yml
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -41,6 +42,11 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      pull-requests: read
+
   # Both control-plane provisioning modes on one runner/cluster, in sequence: the
   # flag (PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER) is deployment-wide
   # and each mode rejects the other's config, so a single CWE can't serve both at
@@ -52,6 +58,8 @@ jobs:
   # cluster. The node-pool leg runs only after cp-controller passes and the cluster
   # is confirmed empty. `health` rides along with each leg (flag-on and flag-off).
   capd-e2e:
+    needs: changes
+    if: needs.changes.outputs.run_e2e == 'true'
     strategy:
       fail-fast: false
       matrix:

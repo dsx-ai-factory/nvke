@@ -36,6 +36,7 @@ on:
       - controller/hack/cwe-capi-kind.yaml
       - controller/hack/ci/prepare-capd-bundles.sh
       - .github/workflows/local-entrypoint-e2e.yml
+      - .github/workflows/e2e-pr-path-filter.yml
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -50,9 +51,15 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      pull-requests: read
+
   local-entrypoint:
+    needs: changes
     name: local-backend-e2e.sh on Linux (post-init CNI ${{ matrix.install_cni_after_init }})
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'NVIDIA/nke' && needs.changes.outputs.run_e2e == 'true'
     # The L4 pool is one machine, and this lane runs on pull requests, on main,
     # and twice a day. A run on main waited 87 minutes for a runner, longer than
     # the 84 minutes it then took. cpu16 has capacity, and the L4 was never

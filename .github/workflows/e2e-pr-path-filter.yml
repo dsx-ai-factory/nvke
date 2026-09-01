@@ -1,0 +1,52 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Mirror-branch pushes can contain base-branch updates as well as the pull
+# request changes. GitHub's push path filter then starts backend E2E workflows
+# for a pull request that changes only cli/. Use the pull request file list as
+# the authoritative source before allocating a self-hosted E2E runner.
+
+name: E2E pull request path filter
+
+on:
+  workflow_call:
+    outputs:
+      run_e2e:
+        description: Whether the caller must run its E2E job.
+        value: ${{ jobs.filter.outputs.run_e2e }}
+
+permissions: {}
+
+jobs:
+  filter:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      run_e2e: ${{ steps.changed-files.outputs.run_e2e }}
+    steps:
+      - name: Check pull request paths
+        id: changed-files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF_NAME: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          run_e2e=true
+
+          if [[ "$REF_NAME" =~ ^pull-request/([0-9]+)$ ]]; then
+            pr_number="${BASH_REMATCH[1]}"
+            changed_files="$(
+              gh api --paginate \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "repos/${GITHUB_REPOSITORY}/pulls/${pr_number}/files?per_page=100" \
+                --jq '.[].filename'
+            )"
+
+            if [[ -n "$changed_files" ]] && ! grep -qv '^cli/' <<< "$changed_files"; then
+              run_e2e=false
+              echo "Skipping backend E2E for pull request ${pr_number}: all changed files are under cli/."
+            fi
+          fi
+
+          echo "run_e2e=${run_e2e}" >> "$GITHUB_OUTPUT"
