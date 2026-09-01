@@ -36,6 +36,7 @@ endif
 
 # golangci-lint pin and bootstrap, shared with every other module.
 include ../make/golangci.mk
+include ../make/tool-versions.mk
 
 # Version stamping, mirroring controller/Makefile.
 #
@@ -74,6 +75,7 @@ NKECTL_LDFLAGS := \
 	-X '$(NKECTL_PKG).gitCommit=$(NKECTL_COMMIT)' \
 	-X '$(NKECTL_PKG).gitTreeState=$(NKECTL_TREE)' \
 	-X '$(NKECTL_PKG).buildDate=$(NKECTL_DATE)' \
+	-X 'github.com/NVIDIA/nke/cli/internal/cwedeploy.capiVersion=$(CAPI_VERSION)' \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \

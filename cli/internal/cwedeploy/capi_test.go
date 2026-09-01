@@ -5,42 +5,21 @@ package cwedeploy
 
 import (
 	"context"
-	"os"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
 
-// TestCAPIVersionMatchesToolVersionsPin holds down the one number this package
-// has to duplicate. make/tool-versions.mk is where CAPI_VERSION is maintained
-// and where CI reads it from to install clusterctl; nkectl cannot read a
-// Makefile at run time, so it carries its own copy. Two copies that are allowed
-// to drift would mean the binary asking for one CAPI and CI installing another,
-// which surfaces as a clusterctl version-skew error a long way from either
-// file.
-func TestCAPIVersionMatchesToolVersionsPin(t *testing.T) {
-	const pinFile = "../../../make/tool-versions.mk"
-
-	body, err := os.ReadFile(pinFile)
-	if err != nil {
-		t.Fatalf("reading %s: %v", pinFile, err)
-	}
-	match := regexp.MustCompile(`(?m)^CAPI_VERSION\s*\?=\s*(\S+)`).FindSubmatch(body)
-	if match == nil {
-		t.Fatalf("%s no longer defines CAPI_VERSION; this package's pin has nothing to agree with", pinFile)
-	}
-	if got := string(match[1]); got != capiVersion {
-		t.Errorf("capiVersion is %q but %s pins CAPI_VERSION=%q; "+
-			"nkectl would install a different CAPI than CI does", capiVersion, pinFile, got)
-	}
-}
-
 // TestInstallCAPI_InstallsCoreThenTheProvider pins the two things that are easy
 // to get wrong and impossible to see afterwards: clusterctl is asked for all
-// three upstream providers at the pinned version, and the provisioned
+// three upstream providers at the build-supplied version, and the provisioned
 // provider's placeholder image is replaced with the one the caller built.
 func TestInstallCAPI_InstallsCoreThenTheProvider(t *testing.T) {
+	const buildCAPIVersion = "v-test-build-version"
+	previousCAPIVersion := capiVersion
+	capiVersion = buildCAPIVersion
+	t.Cleanup(func() { capiVersion = previousCAPIVersion })
+
 	runner := &fakeRunner{}
 	cfg := testConfig(t)
 
@@ -61,9 +40,9 @@ func TestInstallCAPI_InstallsCoreThenTheProvider(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"--core cluster-api:" + capiVersion,
-		"--bootstrap kubeadm:" + capiVersion,
-		"--control-plane kubeadm:" + capiVersion,
+		"--core cluster-api:" + buildCAPIVersion,
+		"--bootstrap kubeadm:" + buildCAPIVersion,
+		"--control-plane kubeadm:" + buildCAPIVersion,
 		"--kubeconfig /tmp/kubeconfig",
 		"--wait-providers",
 	} {

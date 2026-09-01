@@ -13,18 +13,12 @@ import (
 	"time"
 )
 
-const (
-	// capiVersion pins Cluster API core and the kubeadm bootstrap and
-	// control-plane providers. One number covers all three: they are cut from
-	// one release, and clusterctl itself is an asset of that same release.
-	//
-	// It has to equal CAPI_VERSION in make/tool-versions.mk, which is where the
-	// number is maintained and where CI reads it from to install the binary.
-	// nkectl ships as a standalone binary and cannot read a Makefile at run
-	// time, so the value is duplicated here and the duplication is held down by
-	// TestCAPIVersionMatchesToolVersionsPin.
-	capiVersion = "v1.12.3"
+// capiVersion is injected by cli/Makefile from CAPI_VERSION in
+// make/tool-versions.mk. One number covers CAPI core, both kubeadm providers,
+// clusterctl, and the version CI installs.
+var capiVersion = "dev" //nolint:gochecknoglobals // set by ldflags at build time
 
+const (
 	// capiCoreNamespace/capiCoreDeployment identify the core controller, used
 	// only to decide whether CAPI is already installed. Same probe as
 	// controller/Makefile.dev's capi-core-up target.

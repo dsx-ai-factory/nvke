@@ -195,8 +195,8 @@ jobs:
       # clusterctl, which `nkectl bootstrap site` runs to install Cluster API
       # onto the ephemeral bootstrap cluster (see cli/internal/cwedeploy). Same
       # hand-downloaded-binary shape as this repo's other such steps, and the
-      # same version the binary asks for -- both read CAPI_VERSION from
-      # make/tool-versions.mk, and a unit test holds the copy in cwedeploy to it.
+      # same version the binary asks for: cli/Makefile injects CAPI_VERSION from
+      # make/tool-versions.mk into nkectl at build time.
       - name: Set up clusterctl
         shell: bash
         env:
