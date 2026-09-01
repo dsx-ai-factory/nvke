@@ -24,6 +24,9 @@ rules:
     resources:
       - nicoclusters
       - nicomachines
+      - provisionedclusters
+      - provisionedmachines
+      - provisionedmachinetemplates
     verbs:
       - create
       - delete
@@ -39,6 +42,9 @@ rules:
     resourceNames:
       - nicoclusters.infrastructure.cluster.x-k8s.io
       - nicomachines.infrastructure.cluster.x-k8s.io
+      - provisionedclusters.infrastructure.cluster.x-k8s.io
+      - provisionedmachines.infrastructure.cluster.x-k8s.io
+      - provisionedmachinetemplates.infrastructure.cluster.x-k8s.io
     verbs:
       - get
   # Needed for cluster specific namespaces and bootstrap secrets
