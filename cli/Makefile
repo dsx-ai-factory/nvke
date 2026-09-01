@@ -159,14 +159,16 @@ test-e2e-bootstrap: build
 # e2e/bootstrap/substrate/substrate.go. `nodes-up`/`nodes-down` are also
 # invoked by e2e/bootstrap/run.sh (via `make -C`).
 CAPD_KINDEST_NODE_IMAGE ?= cwe-capd-kindest-node:local
+CAPD_CNI_MANIFESTS_DEB_PATH ?=
 
 # Builds nke-agent from this checkout's own agent/ module rather than
-# downloading a published bundle, so the e2e job needs no external host. The
-# image gets no bundle server, which is fine here: this job stops at the
-# dispatch stub and installs no CNI. A no-op once the image exists locally.
+# downloading a published bundle. The image gets no bundle server. The E2E
+# supplies a local Calico manifests package for CWE's post-init CNI path. A
+# no-op once the image exists locally.
 ensure-capd-image:
 	@docker image inspect $(CAPD_KINDEST_NODE_IMAGE) >/dev/null 2>&1 || \
 	  CAPD_NODE_AGENT_LOCAL_BUILD=true NODE_AGENT_REPO_PATH=$(CURDIR)/../agent \
+	  CAPD_CNI_MANIFESTS_DEB_PATH="$(CAPD_CNI_MANIFESTS_DEB_PATH)" \
 	  CAPD_KINDEST_NODE_IMAGE=$(CAPD_KINDEST_NODE_IMAGE) \
 	  bash ../controller/hack/capd-kindest-node/build-image.sh
 

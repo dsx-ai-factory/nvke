@@ -19,9 +19,9 @@ func testInventory() *inventory.Inventory {
 		ClusterName: "nke-site",
 		Cluster: inventory.Cluster{
 			Nodes: []inventory.Node{
-				{Name: "node1", IP: "172.26.0.10"},
-				{Name: "node2", IP: "172.26.0.11"},
-				{Name: "node3", IP: "172.26.0.12"},
+				{Name: "node1", IP: "172.26.0.10", TPMEKThumbprint: strings.Repeat("1", 64)},
+				{Name: "node2", IP: "172.26.0.11", TPMEKThumbprint: strings.Repeat("2", 64)},
+				{Name: "node3", IP: "172.26.0.12", TPMEKThumbprint: strings.Repeat("3", 64)},
 			},
 			K8sVersion:    "1.32.0",
 			CniName:       "calico",
@@ -81,17 +81,19 @@ func TestClusterRequest_CarriesTheInventoryAsProvisionedHosts(t *testing.T) {
 	if !ok {
 		t.Fatalf("capiInfraCluster spec has no hosts: %#v", spec)
 	}
-	want := []struct{ hostname, ip string }{
-		{"node1", "172.26.0.10"},
-		{"node2", "172.26.0.11"},
-		{"node3", "172.26.0.12"},
+	want := []struct{ hostname, ip, tpmEKPubHash string }{
+		{"node1", "172.26.0.10", strings.Repeat("1", 64)},
+		{"node2", "172.26.0.11", strings.Repeat("2", 64)},
+		{"node3", "172.26.0.12", strings.Repeat("3", 64)},
 	}
 	if len(hosts) != len(want) {
 		t.Fatalf("got %d hosts, want %d: %#v", len(hosts), len(want), hosts)
 	}
 	for i, w := range want {
-		if hosts[i]["hostname"] != w.hostname || hosts[i]["ipAddress"] != w.ip {
-			t.Errorf("host[%d] = %#v, want hostname=%q ipAddress=%q", i, hosts[i], w.hostname, w.ip)
+		if hosts[i]["hostname"] != w.hostname || hosts[i]["ipAddress"] != w.ip ||
+			hosts[i]["tpmEkPubHash"] != w.tpmEKPubHash {
+			t.Errorf("host[%d] = %#v, want hostname=%q ipAddress=%q tpmEkPubHash=%q",
+				i, hosts[i], w.hostname, w.ip, w.tpmEKPubHash)
 		}
 	}
 }
@@ -121,11 +123,9 @@ func TestClusterRequest_OneControlPlanePoolSizedToTheInventory(t *testing.T) {
 	if got := pool.CapiInfraMachineTemplate["kind"]; got != provisionedMachineTemplateKind {
 		t.Errorf("capiInfraMachineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
 	}
-	// See the comment on the field: CWE can only derive a TPM EK pubhash from a
-	// NicoMachine, so tpm attestation here would write no SPIRE entry at all.
-	if pool.CapiSpireAttestationMethod != api.SpireAttestationMethodCreateJoinToken {
+	if pool.CapiSpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
 		t.Errorf("capiSpireAttestationMethod = %q, want %q",
-			pool.CapiSpireAttestationMethod, api.SpireAttestationMethodCreateJoinToken)
+			pool.CapiSpireAttestationMethod, api.SpireAttestationMethodCreateTpm)
 	}
 }
 

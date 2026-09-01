@@ -16,43 +16,25 @@
 #     registry mirrors for docker.io and registry.k8s.io
 #
 # Rebuilding that from scratch would duplicate a lot of hard-won detail and
-# immediately start drifting, so we change exactly one thing.
+# immediately start drifting, so this image only adds the site SPIRE config.
 
 ARG BASE_IMAGE=cwe-capd-kindest-node:local
 FROM ${BASE_IMAGE}
 
 ARG NODE_AGENT_PORT=15005
 
-
-# The one difference between "a CAPD machine" and "a pre-provisioned host".
-#
-# A CAPD machine receives SPIRE config through the CAPI bootstrap secret at
-# first boot, so its agent can demand mTLS. nkectl's bootstrap-site path talks
-# to a pre-provisioned host that has already booted by the time it learns the
-# host exists — there is no cloud-init hook left to deliver a trust bundle
-# through — so bootstrap runs plaintext and the agent must not require mTLS.
-#
-# The flag is *injected into* the base image's AGENT_ARGS rather than replacing
-# the line. Those other flags are load-bearing and easy to get wrong from
-# memory: --index-file-url in particular short-circuits nke-agent's GetOSVersion
-# check, which is Ubuntu-only and panics at startup on the Debian-based kindest
-# base ("won't start agent without valid index"). Injecting means the base image
-# stays the single source of truth for how to run the agent here, and a future
-# flag added there is inherited rather than silently dropped.
-#
-# The port is unchanged: --disable-mtls swaps the listener's credentials, not
-# its address (node-agent cmd/agent/main.go).
-RUN set -eux; \
-    test -f /etc/default/nke-agent; \
-    grep -q '^AGENT_ARGS="' /etc/default/nke-agent; \
-    sed -i 's/^AGENT_ARGS="/AGENT_ARGS="--disable-mtls /' /etc/default/nke-agent; \
-    grep -q -- '--disable-mtls' /etc/default/nke-agent; \
-    cat /etc/default/nke-agent
-
 # Fail the build loudly if the base image ever stops serving on the port the
 # substrate (and CWE's NODE_AGENT_PORT default) expects, rather than letting it
 # surface as an unexplained readiness timeout.
 RUN grep -q -- "--secure-server-port ${NODE_AGENT_PORT}" /etc/default/nke-agent
+RUN ! grep -q -- '--disable-mtls' /etc/default/nke-agent
+
+# These hosts are already provisioned. The CAPD base image has a cloud-init
+# status shim for mock NICO, but this test has no mock NICO process to update
+# it. Mark the completed host setup explicitly so CWE's node preflight can
+# proceed.
+RUN install -d /var/lib/nico-mock-cloud-init && \
+    printf 'done\n' >/var/lib/nico-mock-cloud-init/status
 
 # SPIRE.
 #

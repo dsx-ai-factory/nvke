@@ -102,6 +102,13 @@ spec:
                         Labels select this host. A machine that sets spec.hostSelector only uses
                         a host whose labels contain every entry of that selector.
                       type: object
+                    tpmEkPubHash:
+                      description: |-
+                        TPMEKPubHash is the SHA-256 hash that identifies this host's TPM
+                        endorsement public key. When set, the provider connects the owning CAPI
+                        Machine to the TPM-attested SPIRE agent on this host.
+                      pattern: ^[0-9a-f]{64}$
+                      type: string
                   required:
                   - hostname
                   - ipAddress

@@ -143,7 +143,8 @@ type Substrate struct {
 }
 
 // Start derives the node image, creates the network if needed, starts the
-// containers and waits for every agent to answer. The caller must Stop it.
+// containers and waits for their prerequisite services. The caller must Stop
+// it. nke-agent becomes ready only after SPIRE issues its mTLS identity.
 func Start(ctx context.Context, cfg Config, log Logf) (*Substrate, error) {
 	if log == nil {
 		log = func(string, ...any) {}
@@ -347,11 +348,12 @@ func hostDNSAddress() string {
 	return ""
 }
 
-// waitReady polls each node until nke-agent is up.
+// waitReady polls each node until the services needed for bootstrap are up.
 //
 // "Container running" is not readiness: systemd still has to start, containerd
-// has to settle and nke-agent has to bind its port. Proceeding early makes
-// bootstrap fail for reasons unrelated to what is under test.
+// has to settle, and the software TPM and SPIRE agent must be active. nke-agent
+// is deliberately not checked here. Its mTLS listener cannot start before the
+// bootstrap SPIRE server exists and issues its identity.
 //
 // Readiness is the systemd unit reporting active *and* the port accepting a
 // connection. Each node gets its own full ReadyTimeout window rather than a
@@ -363,7 +365,7 @@ func (s *Substrate) waitReady(ctx context.Context) error {
 		var lastErr error
 		ready := false
 		for time.Now().Before(deadline) {
-			err := probeAgent(ctx, node)
+			err := probeHost(ctx, node)
 			if err == nil {
 				ready = true
 				break
@@ -376,34 +378,20 @@ func (s *Substrate) waitReady(ctx context.Context) error {
 			}
 		}
 		if !ready {
-			return fmt.Errorf("node %s (%s:%s) agent not ready within %s: %w",
-				node.Name, node.IP, node.AgentPort, s.Config.ReadyTimeout, lastErr)
+			return fmt.Errorf("node %s bootstrap services not ready within %s: %w",
+				node.Name, s.Config.ReadyTimeout, lastErr)
 		}
-		s.log("substrate: %s agent ready on %s:%s", node.Name, node.IP, node.AgentPort)
+		s.log("substrate: %s bootstrap services ready", node.Name)
 	}
 	return nil
 }
 
-// probeAgent checks readiness from inside the container rather than dialing
-// from the host: on Linux the host can usually reach container addresses on a
-// bridge network directly, but that is not true from every Docker setup (e.g.
-// Docker Desktop, or a VM-backed daemon like Colima), and this check needs to
-// be meaningful everywhere the suite runs.
-func probeAgent(ctx context.Context, node Node) error {
+// probeHost checks readiness from inside the container.
+func probeHost(ctx context.Context, node Node) error {
 	out, err := exec.CommandContext(ctx, "docker", "exec", node.Container,
-		"systemctl", "is-active", "nke-agent").Output()
-	state := strings.TrimSpace(string(out))
-	if err != nil && state == "" {
-		return fmt.Errorf("querying nke-agent unit state: %w", err)
-	}
-	if state != "active" {
-		return fmt.Errorf("nke-agent unit is %q, want active", state)
-	}
-
-	probe := exec.CommandContext(ctx, "docker", "exec", node.Container,
-		"bash", "-c", fmt.Sprintf("timeout 2 bash -c '</dev/tcp/127.0.0.1/%s'", node.AgentPort))
-	if out, err := probe.CombinedOutput(); err != nil {
-		return fmt.Errorf("nke-agent not accepting connections on %s: %w\n%s", node.AgentPort, err, out)
+		"systemctl", "is-active", "containerd", "swtpm-local", "spire-agent").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("required systemd units are not active: %w\n%s", err, out)
 	}
 	return nil
 }

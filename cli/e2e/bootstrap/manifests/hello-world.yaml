@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The workload the bootstrap e2e serves through Traefik on the cluster
+# `nkectl bootstrap site` just built.
+#
+# whoami answers with the request it received, so a response proves the whole
+# path end to end: the Ingress was admitted, Traefik routed it, the Service
+# resolved, kube-proxy reached the pod, and the CNI carried the packet. A static
+# page served by Traefik itself would prove only that Traefik started.
+#
+# Everything here is deliberately ordinary Kubernetes. The point of the stage is
+# that a cluster built out of pre-provisioned hosts is a cluster like any other.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hello-world
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whoami
+  namespace: hello-world
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: whoami
+  template:
+    metadata:
+      labels:
+        app: whoami
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: whoami
+          image: traefik/whoami:v1.12.0
+          # whoami listens on 80 unless told otherwise, and this pod drops
+          # every capability including CAP_NET_BIND_SERVICE, so a privileged
+          # port would leave it unable to bind at all.
+          env:
+            - name: WHOAMI_PORT_NUMBER
+              value: "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whoami
+  namespace: hello-world
+spec:
+  selector:
+    app: whoami
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: whoami
+  namespace: hello-world
+spec:
+  ingressClassName: traefik
+  rules:
+    # A name rather than a bare path, so the request has to match a rule
+    # Traefik took from this Ingress. A default backend would answer even if
+    # the Ingress were never read.
+    - host: hello.nke.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: whoami
+                port:
+                  name: http

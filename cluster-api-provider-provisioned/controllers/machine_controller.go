@@ -23,7 +23,7 @@ import (
 	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
 
-// +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines,verbs=get;list;watch
+// +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machines,verbs=get;list;patch;update;watch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=provisionedclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=provisionedmachines,verbs=get;list;patch;update;watch
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=provisionedmachines/status,verbs=get;patch;update
@@ -38,6 +38,11 @@ const (
 
 	provisionedClusterKind = "ProvisionedCluster"
 	machineFinalizer       = "provisionedmachine.infrastructure.cluster.x-k8s.io"
+
+	// machineSpireAgentIDPathAnnotation is the Machine contract CWE reads to
+	// create the node-agent workload entry under its TPM-attested SPIRE agent.
+	machineSpireAgentIDPathAnnotation = "nke.nvidia.com/spire-agent-spiffe-id-path"
+	tpmSpireAgentPathPrefix           = "/spire/agent/tpm/"
 )
 
 // MachineReconciler binds a ProvisionedMachine to one host of the inventory.
@@ -147,7 +152,7 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 	// An allocation that already exists is never revisited. The binding is
 	// permanent for the life of the machine: a node runs on that host.
 	if machine.Spec.ProviderID != "" {
-		result, err := r.reconcileBoundMachine(ctx, machine, infraCluster, logger)
+		result, err := r.reconcileBoundMachine(ctx, machine, ownerMachine, infraCluster, logger)
 		if err != nil || !result.IsZero() {
 			return result, err
 		}
@@ -160,7 +165,7 @@ func (r *MachineReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ct
 			r.setNotReady(ctx, machine, infrav1.InventoryInvalidReason, err.Error())
 	}
 
-	result, err := r.allocateHost(ctx, machine, infraCluster, logger)
+	result, err := r.allocateHost(ctx, machine, ownerMachine, infraCluster, logger)
 	if err != nil || result != (ctrl.Result{}) {
 		return result, err
 	}
@@ -230,6 +235,7 @@ func (r *MachineReconciler) infraClusterFor(
 func (r *MachineReconciler) allocateHost(
 	ctx context.Context,
 	machine *infrav1.ProvisionedMachine,
+	ownerMachine *clusterv1.Machine,
 	infraCluster *infrav1.ProvisionedCluster,
 	logger *slog.Logger,
 ) (ctrl.Result, error) {
@@ -313,6 +319,9 @@ func (r *MachineReconciler) allocateHost(
 	}
 
 	logger.Info("Bound machine to host", "host", host.Hostname, "providerID", machine.Spec.ProviderID)
+	if err := r.reconcileMachineSpireAgentIDPath(ctx, ownerMachine, host); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// The status write follows the spec write. If the provider stops between
 	// the two, the next reconcile sees the provider ID and repairs the status.
@@ -324,6 +333,7 @@ func (r *MachineReconciler) allocateHost(
 func (r *MachineReconciler) reconcileBoundMachine(
 	ctx context.Context,
 	machine *infrav1.ProvisionedMachine,
+	ownerMachine *clusterv1.Machine,
 	infraCluster *infrav1.ProvisionedCluster,
 	logger *slog.Logger,
 ) (ctrl.Result, error) {
@@ -365,8 +375,39 @@ func (r *MachineReconciler) reconcileBoundMachine(
 	if err != nil || !claimResult.IsZero() {
 		return claimResult, err
 	}
+	if err := r.reconcileMachineSpireAgentIDPath(ctx, ownerMachine, host); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	return ctrl.Result{}, r.applyHostStatus(ctx, machine, host)
+}
+
+// reconcileMachineSpireAgentIDPath connects CWE's generated node identity to
+// the TPM-attested SPIRE agent on the allocated host. CWE watches this Machine
+// annotation and creates the /host/<node-ID> workload entry beneath the parent
+// path recorded here.
+func (r *MachineReconciler) reconcileMachineSpireAgentIDPath(
+	ctx context.Context,
+	ownerMachine *clusterv1.Machine,
+	host infrav1.ProvisionedHost,
+) error {
+	if host.TPMEKPubHash == "" {
+		return nil
+	}
+	want := tpmSpireAgentPathPrefix + host.TPMEKPubHash
+	if ownerMachine.Annotations[machineSpireAgentIDPathAnnotation] == want {
+		return nil
+	}
+
+	patch := client.MergeFromWithOptions(ownerMachine.DeepCopy(), client.MergeFromWithOptimisticLock{})
+	if ownerMachine.Annotations == nil {
+		ownerMachine.Annotations = map[string]string{}
+	}
+	ownerMachine.Annotations[machineSpireAgentIDPathAnnotation] = want
+	if err := r.client.Patch(ctx, ownerMachine, patch); err != nil {
+		return fmt.Errorf("failed to set the SPIRE agent ID path on Machine %s: %w", ownerMachine.Name, err)
+	}
+	return nil
 }
 
 // reconcileNodeProviderID copies the infrastructure identity to the tenant

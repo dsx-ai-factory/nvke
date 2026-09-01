@@ -28,6 +28,13 @@ type ProvisionedHost struct {
 	// +kubebuilder:validation:MaxLength=45
 	IPAddress string `json:"ipAddress"`
 
+	// TPMEKPubHash is the SHA-256 hash that identifies this host's TPM
+	// endorsement public key. When set, the provider connects the owning CAPI
+	// Machine to the TPM-attested SPIRE agent on this host.
+	// +optional
+	// +kubebuilder:validation:Pattern=`^[0-9a-f]{64}$`
+	TPMEKPubHash string `json:"tpmEkPubHash,omitempty"`
+
 	// Labels select this host. A machine that sets spec.hostSelector only uses
 	// a host whose labels contain every entry of that selector.
 	// +optional

@@ -20,11 +20,13 @@ import (
 )
 
 func TestMachineReconcilerBindsFirstFreeHost(t *testing.T) {
+	tpmHash := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	reconciler, k8sClient := newMachineReconcilerForTest(t,
 		newInfraCluster(
 			infrav1.ProvisionedHost{
-				Hostname:  "host-01",
-				IPAddress: "10.0.0.11",
+				Hostname:     "host-01",
+				IPAddress:    "10.0.0.11",
+				TPMEKPubHash: tpmHash,
 			},
 		),
 		newCAPICluster(),
@@ -45,6 +47,12 @@ func TestMachineReconcilerBindsFirstFreeHost(t *testing.T) {
 	require.NotNil(t, machine.Status.Initialization.Provisioned)
 	require.True(t, *machine.Status.Initialization.Provisioned)
 	requireReadyCondition(t, machine.Status.Conditions, metav1.ConditionTrue, infrav1.HostAllocatedReason)
+
+	owner := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(context.Background(),
+		client.ObjectKey{Namespace: testNamespace, Name: testMachineName}, owner))
+	require.Equal(t, tpmSpireAgentPathPrefix+tpmHash,
+		owner.Annotations[machineSpireAgentIDPathAnnotation])
 }
 
 // Two machines must never share a host. The second machine sees the claim of
