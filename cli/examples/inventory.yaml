@@ -36,17 +36,19 @@ cluster:
       tpmEkThumbprint: "2222222222222222222222222222222222222222222222222222222222222222"
 
   # Kubernetes version to install — plain semantic version, no leading "v".
-  k8sVersion: "1.32.0"
+  k8sVersion: "1.34.2"
 
   # CNI plugin: "calico" or "ovn-kubernetes".
-  cniName: "calico"
+  cniName: "ovn-kubernetes"
   # Optional CNI plugin version. Empty uses the node-agent's built-in default.
-  cniVersion: "3.31.4"
+  # The value is plugin-specific — a Calico version such as "3.31.4" is not
+  # meaningful for ovn-kubernetes.
+  # cniVersion: ""
 
   # Pod network CIDR. Multiple CIDRs may be given as a comma-separated string.
-  podCidr: "10.100.0.0/16"
+  podCidr: "192.168.0.0/16"
   # Service network CIDR.
-  serviceCidr: "10.200.0.0/16"
+  serviceCidr: "10.96.0.0/12"
 
   # Optional: gRPC port nke-agent listens on. Defaults to "50051".
   # nodeAgentPort: "15005"

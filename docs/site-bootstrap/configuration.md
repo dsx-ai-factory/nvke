@@ -20,10 +20,10 @@ cluster:
     - name: "ctrl-3"
       ip: "10.0.0.3"
 
-  k8sVersion: "1.32.0"     # plain semver, no leading "v"
-  cniName: "calico"         # "calico" or "ovn-kubernetes"
-  podCidr: "10.100.0.0/16"
-  serviceCidr: "10.200.0.0/16"
+  k8sVersion: "1.34.2"     # plain semver, no leading "v"
+  cniName: "ovn-kubernetes" # "calico" or "ovn-kubernetes"
+  podCidr: "192.168.0.0/16"
+  serviceCidr: "10.96.0.0/12"
 
   kubeletConfig:
     systemReservedMemory: "16Gi"
@@ -44,7 +44,7 @@ registry:
 | `cluster.initNode.ip` | string | yes | Valid IPv4 or IPv6 address. |
 | `cluster.joinNodes[].name` | string | yes, per entry | Must be unique across all nodes. |
 | `cluster.joinNodes[].ip` | string | yes, per entry | Must be unique across all nodes. |
-| `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.32.0` — no leading `v`. |
+| `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
 | `cluster.cniName` | string | yes | `calico` or `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
 | `cluster.podCidr` | string | yes | Valid CIDR. Comma-separated list allowed for dual-stack. |
