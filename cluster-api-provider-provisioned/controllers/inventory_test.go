@@ -47,7 +47,7 @@ func TestSelectHostsKeepsInventoryOrder(t *testing.T) {
 		host("host-03", "10.0.0.3", nil),
 	}
 
-	usable := selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil, "host-01", true)
+	usable := selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil)
 
 	require.Len(t, usable, 2)
 	require.Equal(t, "host-02", usable[0].Hostname)
@@ -60,24 +60,14 @@ func TestSelectHostsRespectsSelector(t *testing.T) {
 		host("gpu", "10.0.0.2", map[string]string{"rack": "b", "gpu": "h100"}),
 	}
 
-	usable := selectHosts(hosts, hostAllocations{}, map[string]string{"gpu": "h100"}, "gpu-less", true)
+	usable := selectHosts(hosts, hostAllocations{}, map[string]string{"gpu": "h100"})
 	require.Len(t, usable, 1)
 	require.Equal(t, "gpu", usable[0].Hostname)
 }
 
 func TestSelectHostsReportsExhaustedInventory(t *testing.T) {
 	hosts := []infrav1.ProvisionedHost{host("host-01", "10.0.0.1", nil)}
-	require.Empty(t, selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil, "host-01", true))
-}
-
-func TestSelectHostsReturnsOnlyUnclaimedInitNode(t *testing.T) {
-	hosts := []infrav1.ProvisionedHost{
-		host("host-01", "10.0.0.1", nil),
-		host("init-host", "10.0.0.2", nil),
-	}
-
-	require.Equal(t, []infrav1.ProvisionedHost{hosts[1]},
-		selectHosts(hosts, hostAllocations{}, nil, "init-host", false))
+	require.Empty(t, selectHosts(hosts, hostAllocations{"10.0.0.1": "m1"}, nil))
 }
 
 func TestValidateInventory(t *testing.T) {

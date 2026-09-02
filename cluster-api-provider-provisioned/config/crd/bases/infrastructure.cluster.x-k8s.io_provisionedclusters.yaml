@@ -108,16 +108,8 @@ spec:
                   type: object
                 minItems: 1
                 type: array
-              initNode:
-                description: InitNode is the hostname of the host that must be allocated
-                  first.
-                maxLength: 253
-                minLength: 1
-                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                type: string
             required:
             - hosts
-            - initNode
             type: object
           status:
             description: |-

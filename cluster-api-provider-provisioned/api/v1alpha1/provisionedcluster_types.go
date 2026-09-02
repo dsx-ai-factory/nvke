@@ -40,12 +40,6 @@ type ProvisionedHost struct {
 // through the controlPlaneVIP field of its own cluster API, and CWE configures
 // kube-vip on each control plane node.
 type ProvisionedClusterSpec struct {
-	// InitNode is the hostname of the host that must be allocated first.
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=253
-	// +kubebuilder:validation:Pattern=`^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$`
-	InitNode string `json:"initNode"`
-
 	// Hosts is the inventory. The provider gives one host to each machine.
 	//
 	// Treat the inventory as fixed after the cluster is created. Size it for

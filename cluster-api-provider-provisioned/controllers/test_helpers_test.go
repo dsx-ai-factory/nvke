@@ -36,14 +36,10 @@ func newTestScheme(t *testing.T) *runtime.Scheme {
 }
 
 func newInfraCluster(hosts ...infrav1.ProvisionedHost) *infrav1.ProvisionedCluster {
-	initNode := ""
-	if len(hosts) != 0 {
-		initNode = hosts[0].Hostname
-	}
 	return &infrav1.ProvisionedCluster{
 		TypeMeta:   metav1.TypeMeta{APIVersion: infrav1.GroupVersion.String(), Kind: "ProvisionedCluster"},
 		ObjectMeta: metav1.ObjectMeta{Name: testClusterName, Namespace: testNamespace},
-		Spec:       infrav1.ProvisionedClusterSpec{InitNode: initNode, Hosts: hosts},
+		Spec:       infrav1.ProvisionedClusterSpec{Hosts: hosts},
 	}
 }
 

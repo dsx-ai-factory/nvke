@@ -63,14 +63,9 @@ func selectHosts(
 	hosts []infrav1.ProvisionedHost,
 	allocated hostAllocations,
 	selector map[string]string,
-	initNode string,
-	initNodeClaimed bool,
 ) []infrav1.ProvisionedHost {
 	usable := make([]infrav1.ProvisionedHost, 0, len(hosts))
 	for _, host := range hosts {
-		if !initNodeClaimed && host.Hostname != initNode {
-			continue
-		}
 		if _, used := allocated[host.CanonicalIPAddress()]; used {
 			continue
 		}

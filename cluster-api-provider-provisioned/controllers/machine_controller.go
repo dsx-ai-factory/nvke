@@ -239,35 +239,7 @@ func (r *MachineReconciler) allocateHost(
 	}
 	allocated := allocationsFromMachines(infraCluster.Name, machines)
 
-	initNodeClaimed := false
-	for _, host := range infraCluster.Spec.Hosts {
-		if host.Hostname != infraCluster.Spec.InitNode {
-			continue
-		}
-		initClaim := &infrav1.ProvisionedHostClaim{}
-		err = r.apiReader.Get(ctx, client.ObjectKey{Name: infrav1.HostClaimName(host.CanonicalIPAddress())}, initClaim)
-		initNodeClaimed = err == nil
-		if initNodeClaimed &&
-			initClaim.Spec.MachineNamespace == machine.Namespace &&
-			initClaim.Spec.MachineName == machine.Name &&
-			initClaim.Spec.MachineUID == string(machine.UID) {
-			// A restart can occur after the claim is created and before the
-			// provider ID is written. Keep the holder on the init node.
-			initNodeClaimed = false
-		}
-		if err != nil && !apierrors.IsNotFound(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to read the init-node claim: %w", err)
-		}
-		break
-	}
-
-	candidates := selectHosts(
-		infraCluster.Spec.Hosts,
-		allocated,
-		machine.Spec.HostSelector,
-		infraCluster.Spec.InitNode,
-		initNodeClaimed,
-	)
+	candidates := selectHosts(infraCluster.Spec.Hosts, allocated, machine.Spec.HostSelector)
 	if len(candidates) == 0 {
 		logger.Info("No free host in the inventory",
 			"hosts", len(infraCluster.Spec.Hosts),

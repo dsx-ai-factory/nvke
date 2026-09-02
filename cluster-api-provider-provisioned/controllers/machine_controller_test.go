@@ -19,48 +19,6 @@ import (
 	infrav1 "github.com/NVIDIA/nke/cluster-api-provider-provisioned/api/v1alpha1"
 )
 
-func TestMachineReconcilerAllocatesInitNodeFirst(t *testing.T) {
-	joinHost := hostWithAddress("join-host", "10.0.0.12")
-	initHost := hostWithAddress("init-host", "10.0.0.11")
-	infraCluster := newInfraCluster(joinHost, initHost)
-	infraCluster.Spec.InitNode = initHost.Hostname
-	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		infraCluster,
-		newCAPICluster(),
-		newOwnerMachine(),
-		newOwnerMachineNamed("second"),
-		newInfraMachine(testMachineName, ""),
-		newInfraMachine("second", ""),
-	)
-
-	_, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
-	require.NoError(t, err)
-	_, err = reconciler.Reconcile(context.Background(), machineRequest("second"))
-	require.NoError(t, err)
-
-	require.Equal(t, "provisioned://test/10.0.0.11",
-		getInfraMachine(t, k8sClient, testMachineName).Spec.ProviderID)
-	require.Equal(t, "provisioned://test/10.0.0.12",
-		getInfraMachine(t, k8sClient, "second").Spec.ProviderID)
-}
-
-func TestMachineReconcilerRecoversInitNodeClaim(t *testing.T) {
-	joinHost := hostWithAddress("join-host", "10.0.0.12")
-	initHost := hostWithAddress("init-host", "10.0.0.11")
-	infraCluster := newInfraCluster(joinHost, initHost)
-	infraCluster.Spec.InitNode = initHost.Hostname
-	machine := newInfraMachine(testMachineName, "")
-	reconciler, k8sClient := newMachineReconcilerForTest(t,
-		infraCluster, newCAPICluster(), newOwnerMachine(), machine,
-	)
-	requireClaimAcquired(t, reconciler, machine, testClusterName, initHost)
-
-	_, err := reconciler.Reconcile(context.Background(), machineRequest(testMachineName))
-	require.NoError(t, err)
-	require.Equal(t, "provisioned://test/10.0.0.11",
-		getInfraMachine(t, k8sClient, testMachineName).Spec.ProviderID)
-}
-
 func TestMachineReconcilerBindsFirstFreeHost(t *testing.T) {
 	reconciler, k8sClient := newMachineReconcilerForTest(t,
 		newInfraCluster(
