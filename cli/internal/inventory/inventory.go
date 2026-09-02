@@ -253,10 +253,13 @@ func Load(path string) (*Inventory, error) {
 	}
 
 	inv.SetDefaults()
-	if err := inv.Validate(); err != nil {
-		return nil, fmt.Errorf("inventory file %s: %w", path, err)
-	}
-	if err := inv.ValidateReferences(); err != nil {
+
+	// Both check sets share one validator so the caller still sees every
+	// problem in one pass, as it did before the two were separated.
+	checks := &validator{}
+	inv.appendDataChecks(checks)
+	inv.appendReferenceChecks(checks)
+	if err := checks.err(); err != nil {
 		return nil, fmt.Errorf("inventory file %s: %w", path, err)
 	}
 	return &inv, nil
@@ -309,7 +312,14 @@ func (inv *Inventory) SetDefaults() {
 // on it. Checks that need the filesystem live in ValidateReferences.
 func (inv *Inventory) Validate() error {
 	v := &validator{}
+	inv.appendDataChecks(v)
+	return v.err()
+}
 
+// appendDataChecks runs every check that reads only the Inventory, adding each
+// problem to v. It takes the validator rather than returning an error so a
+// caller that runs more than one check set still reports one aggregated error.
+func (inv *Inventory) appendDataChecks(v *validator) {
 	v.checkClusterName(inv.ClusterName)
 	v.checkNodes(inv.Cluster)
 	v.checkK8sVersion(inv.Cluster.K8sVersion)
@@ -319,8 +329,6 @@ func (inv *Inventory) Validate() error {
 	v.checkNodeAgentPort(inv.Cluster.NodeAgentPort)
 	v.checkRegistry(inv.Registry)
 	v.checkSpire(inv.Spire)
-
-	return v.err()
 }
 
 // ValidateReferences checks that the files the inventory names can be read,
@@ -331,10 +339,14 @@ func (inv *Inventory) Validate() error {
 // the bootstrap runs, which is not necessarily where the file was produced.
 func (inv *Inventory) ValidateReferences() error {
 	v := &validator{}
-
-	v.checkSpireFiles(inv.Spire)
-
+	inv.appendReferenceChecks(v)
 	return v.err()
+}
+
+// appendReferenceChecks runs every check that reads the filesystem, adding each
+// problem to v. See appendDataChecks for why it takes the validator.
+func (inv *Inventory) appendReferenceChecks(v *validator) {
+	v.checkSpireFiles(inv.Spire)
 }
 
 // validator accumulates field-level errors so the caller sees every problem

@@ -499,3 +499,23 @@ func TestLoad_StillChecksCAExistence(t *testing.T) {
 		t.Errorf("Load() error = %q, want it to name %q", err, pathSpireCACertFile)
 	}
 }
+
+// TestLoad_AggregatesDataAndReferenceErrors guards the other half of the split:
+// separating the checks must not cost the operator a round trip. A file with a
+// data problem and an unreadable CA has to report both at once, as it did when
+// one validator ran everything.
+func TestLoad_AggregatesDataAndReferenceErrors(t *testing.T) {
+	_, _, missing := spireCAFiles(t)
+	body := strings.Replace(validYAML, `podCidr: "10.100.0.0/16"`, `podCidr: "NOT-A-CIDR"`, 1) +
+		"\nspire:\n  caCertFile: \"" + missing + "\"\n  caKeyFile: \"" + missing + "\"\n"
+
+	_, err := Load(writeTemp(t, body))
+	if err == nil {
+		t.Fatal("Load() with a bad CIDR and an unreadable CA = nil, want an error")
+	}
+	for _, want := range []string{pathPodCidr, pathSpireCACertFile} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Load() error = %q, want it to name %q — both problems must surface in one pass", err, want)
+		}
+	}
+}
