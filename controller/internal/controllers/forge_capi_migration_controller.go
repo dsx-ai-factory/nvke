@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,7 +32,8 @@ import (
 )
 
 const (
-	capiAdoptionTimeout = 2 * time.Minute
+	capiAdoptionTimeout   = 2 * time.Minute
+	capiAdoptionBatchSize = 20
 )
 
 type capiMachineAdopter interface {
@@ -335,8 +337,16 @@ func (c *ForgeCAPIMigrationController) adoptMissingNodes(
 }
 
 func (c *ForgeCAPIMigrationController) missingAdoptedMachineObjects(ctx context.Context, eligibleNodes []db.Node) ([]db.Node, error) {
+	sort.Slice(eligibleNodes, func(i, j int) bool {
+		return eligibleNodes[i].Name < eligibleNodes[j].Name
+	})
+
 	missing := make([]db.Node, 0, len(eligibleNodes))
 	for _, eligibleNode := range eligibleNodes {
+		if len(missing) >= capiAdoptionBatchSize {
+			break
+		}
+
 		machine := &clusterv1.Machine{}
 		if err := c.k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: eligibleNode.Name}, machine); err != nil {
 			if apierrors.IsNotFound(err) {
@@ -358,6 +368,7 @@ func (c *ForgeCAPIMigrationController) missingAdoptedMachineObjects(ctx context.
 			missing = append(missing, eligibleNode)
 		}
 	}
+
 	return missing, nil
 }
 
