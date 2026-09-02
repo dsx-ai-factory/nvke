@@ -341,30 +341,40 @@ func (c *ForgeCAPIMigrationController) missingAdoptedMachineObjects(ctx context.
 		return eligibleNodes[i].Name < eligibleNodes[j].Name
 	})
 
+	machines := &clusterv1.MachineList{}
+	if err := c.k8sClient.List(ctx, machines, ctrlclient.InNamespace(constants.NamespaceNKESystem)); err != nil {
+		return nil, fmt.Errorf("list adopted Machines: %w", err)
+	}
+	machineNames := make(map[string]struct{}, len(machines.Items))
+	for i := range machines.Items {
+		machineNames[machines.Items[i].Name] = struct{}{}
+	}
+
+	nicoMachines := &nicov1.NicoMachineList{}
+	if err := c.k8sClient.List(ctx, nicoMachines, ctrlclient.InNamespace(constants.NamespaceNKESystem)); err != nil {
+		return nil, fmt.Errorf("list adopted NicoMachines: %w", err)
+	}
+	nicoMachinesByName := make(map[string]nicov1.NicoMachine, len(nicoMachines.Items))
+	for i := range nicoMachines.Items {
+		nicoMachinesByName[nicoMachines.Items[i].Name] = nicoMachines.Items[i]
+	}
+
 	missing := make([]db.Node, 0, len(eligibleNodes))
 	for _, eligibleNode := range eligibleNodes {
 		if len(missing) >= capiAdoptionBatchSize {
 			break
 		}
-
-		machine := &clusterv1.Machine{}
-		if err := c.k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: eligibleNode.Name}, machine); err != nil {
-			if apierrors.IsNotFound(err) {
-				missing = append(missing, eligibleNode)
-				continue
-			}
-			return nil, fmt.Errorf("get adopted Machine %s: %w", eligibleNode.Name, err)
+		if _, ok := machineNames[eligibleNode.Name]; !ok {
+			missing = append(missing, eligibleNode)
+			continue
 		}
 
-		nicoMachine := &nicov1.NicoMachine{}
-		if err := c.k8sClient.Get(ctx, ctrlclient.ObjectKey{Namespace: constants.NamespaceNKESystem, Name: eligibleNode.Name}, nicoMachine); err != nil {
-			if apierrors.IsNotFound(err) {
-				missing = append(missing, eligibleNode)
-				continue
-			}
-			return nil, fmt.Errorf("get adopted NicoMachine %s: %w", eligibleNode.Name, err)
+		nicoMachine, ok := nicoMachinesByName[eligibleNode.Name]
+		if !ok {
+			missing = append(missing, eligibleNode)
+			continue
 		}
-		if failedNicoMachineAdoption(nicoMachine) {
+		if failedNicoMachineAdoption(&nicoMachine) {
 			missing = append(missing, eligibleNode)
 		}
 	}

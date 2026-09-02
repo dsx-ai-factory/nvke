@@ -115,12 +115,14 @@ func installCNIError(nodeName string, err error) error {
 	case codes.Unimplemented:
 		return temporal.NewNonRetryableApplicationError(
 			fmt.Sprintf("node %s runs an agent that does not serve InstallCNI: the post-init CNI path needs nke-agent 0.2.0 or later", nodeName),
-			"AgentTooOld", err)
+			"AgentTooOld", err,
+		)
 	// Missing charts package, a worker node, no Open vSwitch on the host.
 	case codes.FailedPrecondition, codes.InvalidArgument:
 		return temporal.NewNonRetryableApplicationError(
 			fmt.Sprintf("failed to install CNI on node %s: %v", nodeName, err),
-			"InstallCNIPreconditionFailed", err)
+			"InstallCNIPreconditionFailed", err,
+		)
 	default:
 		return fmt.Errorf("failed to install CNI on node %s: %w", nodeName, err)
 	}

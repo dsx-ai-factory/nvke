@@ -192,13 +192,15 @@ func (a *Activities) waitForKubeadmInitReady(ctx context.Context, node db.Node, 
 		if kubeadmStatus == kubeadmStatusError {
 			return temporal.NewNonRetryableApplicationError(
 				fmt.Sprintf("kubeadm init failed: %s", status.GetKubeadmCurrentMessage()),
-				"KubeadmInitFailed", nil)
+				"KubeadmInitFailed", nil,
+			)
 		}
 
 		if cniStatus == cniStatusError {
 			return temporal.NewNonRetryableApplicationError(
 				fmt.Sprintf("CNI install failed: %s", status.GetKubeadmCurrentMessage()),
-				"CNIInstallFailed", nil)
+				"CNIInstallFailed", nil,
+			)
 		}
 
 		if kubeadmStatus == kubeadmStatusReady && kubeadmPhase == kubeadmPhaseInit && cniStatus == cniStatusReady {
