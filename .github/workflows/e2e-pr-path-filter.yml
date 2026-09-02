@@ -3,8 +3,9 @@
 
 # Mirror-branch pushes can contain base-branch updates as well as the pull
 # request changes. GitHub's push path filter then starts backend E2E workflows
-# for a pull request that changes only cli/. Use the pull request file list as
-# the authoritative source before allocating a self-hosted E2E runner.
+# for a pull request that changes only paths that do not affect backend E2E.
+# Use the pull request file list as the authoritative source before allocating
+# a self-hosted E2E runner.
 
 name: E2E pull request path filter
 
@@ -49,13 +50,14 @@ jobs:
             # runs. The rest of cli/ -- docs, examples, the bootstrap e2e suite,
             # the packages that never call CWE -- cannot, and still skips.
             cwe_facing='^cli/(cmd/|internal/(clients|clusterstate|cwe|sitecluster)/)'
+            e2e_unrelated='(^|/)docs/|^cli/|^cluster-api-provider-provisioned/'
 
-            if [[ -n "$changed_files" ]] && ! grep -qv '^cli/' <<< "$changed_files"; then
+            if [[ -n "$changed_files" ]] && ! grep -qEv "$e2e_unrelated" <<< "$changed_files"; then
               if grep -qE "$cwe_facing" <<< "$changed_files"; then
-                echo "Pull request ${pr_number} is cli/-only but touches the CWE-facing CLI: running backend E2E."
+                echo "Pull request ${pr_number} touches the CWE-facing CLI: running backend E2E."
               else
                 run_e2e=false
-                echo "Skipping backend E2E for pull request ${pr_number}: all changed files are under cli/ and none are CWE-facing."
+                echo "Skipping backend E2E for pull request ${pr_number}: all changed files are under excluded paths."
               fi
             fi
           fi
