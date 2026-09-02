@@ -377,6 +377,9 @@ func (v *validator) checkNodes(c Cluster) {
 		v.addf("%s must contain at least one node", pathNodes)
 		return
 	}
+	if len(c.Nodes)%2 == 0 {
+		v.addf("%s must contain an odd number of nodes", pathNodes)
+	}
 
 	names := map[string]int{}
 	ips := map[string]int{}

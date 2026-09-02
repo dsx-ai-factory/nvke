@@ -174,6 +174,9 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"missing clusterName", func(i *Inventory) { i.ClusterName = "" }, pathClusterName},
 		{"bad clusterName", func(i *Inventory) { i.ClusterName = "Nke_Site" }, pathClusterName},
 		{"missing nodes", func(i *Inventory) { i.Cluster.Nodes = nil }, pathNodes},
+		{"even node count", func(i *Inventory) {
+			i.Cluster.Nodes = append(i.Cluster.Nodes, Node{Name: "node2", IP: "10.0.0.2"})
+		}, "cluster.nodes must contain an odd number"},
 		{"missing node ip", func(i *Inventory) { i.Cluster.Nodes[0].IP = "" }, "cluster.nodes[0].ip"},
 		{"bad node ip", func(i *Inventory) { i.Cluster.Nodes[0].IP = "999.0.0.1" }, "cluster.nodes[0].ip"},
 		{"missing node name", func(i *Inventory) { i.Cluster.Nodes[0].Name = "" }, "cluster.nodes[0].name"},
@@ -231,7 +234,11 @@ func TestValidValidatesClean(t *testing.T) {
 	inv := &Inventory{
 		ClusterName: "nke-site",
 		Cluster: Cluster{
-			Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}, {Name: "node2", IP: "10.0.0.2"}},
+			Nodes: []Node{
+				{Name: "node1", IP: "10.0.0.1"},
+				{Name: "node2", IP: "10.0.0.2"},
+				{Name: "node3", IP: "10.0.0.3"},
+			},
 			K8sVersion:    "1.32.0",
 			CniName:       "ovn-kubernetes",
 			PodCidr:       "10.100.0.0/16,10.101.0.0/16",
@@ -296,14 +303,14 @@ func TestLoadEnvFillsField(t *testing.T) {
 }
 
 func TestLoadNodesFromEnv(t *testing.T) {
-	t.Setenv("NKECTL_CLUSTER_NODES", "node1:10.0.0.1,node2:10.0.0.2")
+	t.Setenv("NKECTL_CLUSTER_NODES", "node1:10.0.0.1,node2:10.0.0.2,node3:10.0.0.3")
 
 	inv, err := Load(writeTemp(t, noNodesYAML))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(inv.Cluster.Nodes) != 2 {
-		t.Fatalf("Nodes count = %d, want 2", len(inv.Cluster.Nodes))
+	if len(inv.Cluster.Nodes) != 3 {
+		t.Fatalf("Nodes count = %d, want 3", len(inv.Cluster.Nodes))
 	}
 	if inv.Cluster.Nodes[0].Name != "node1" || inv.Cluster.Nodes[0].IP != "10.0.0.1" {
 		t.Errorf("Nodes[0] = %+v, want {node1 10.0.0.1}", inv.Cluster.Nodes[0])
@@ -395,7 +402,11 @@ func minimalValid() *Inventory {
 	return &Inventory{
 		ClusterName: "nke-site",
 		Cluster: Cluster{
-			Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}, {Name: "node2", IP: "10.0.0.2"}},
+			Nodes: []Node{
+				{Name: "node1", IP: "10.0.0.1"},
+				{Name: "node2", IP: "10.0.0.2"},
+				{Name: "node3", IP: "10.0.0.3"},
+			},
 			K8sVersion:    "1.32.0",
 			CniName:       "ovn-kubernetes",
 			PodCidr:       "10.100.0.0/16",

@@ -37,7 +37,7 @@ registry:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.nodes` | list | yes | Must contain at least one control-plane node. |
+| `cluster.nodes` | list | yes | Must contain an odd number of control-plane nodes and at least one node. |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Must be unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Must be unique across all nodes. |
 | `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |

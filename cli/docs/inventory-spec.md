@@ -15,7 +15,7 @@ A ready-to-copy example is in [`examples/inventory.yaml`](../examples/inventory.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.nodes` | list | yes | Must contain at least one control-plane node. |
+| `cluster.nodes` | list | yes | Must contain an odd number of control-plane nodes and at least one node. |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
@@ -42,7 +42,7 @@ being silently ignored.
 
 - All problems are reported together in one error, each naming the offending
   field, so a bad file can be fixed in one pass.
-- The inventory must contain at least one node.
+- The inventory must contain an odd number of nodes and at least one node.
 - Node names and IPs must be unique across all nodes.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry.
