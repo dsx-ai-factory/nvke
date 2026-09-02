@@ -14,10 +14,9 @@ import (
 const validYAML = `
 clusterName: nke-site
 cluster:
-  initNode:
-    name: node1
-    ip: 10.0.0.1
-  joinNodes:
+  nodes:
+    - name: node1
+      ip: 10.0.0.1
     - name: node2
       ip: 10.0.0.2
     - name: node3
@@ -45,11 +44,11 @@ func TestLoadValidInventory(t *testing.T) {
 	if inv.ClusterName != "nke-site" {
 		t.Errorf("ClusterName = %q, want %q", inv.ClusterName, "nke-site")
 	}
-	if inv.Cluster.InitNode.IP != "10.0.0.1" {
-		t.Errorf("InitNode.IP = %q, want %q", inv.Cluster.InitNode.IP, "10.0.0.1")
+	if len(inv.Cluster.Nodes) != 3 {
+		t.Fatalf("Nodes count = %d, want 3", len(inv.Cluster.Nodes))
 	}
-	if len(inv.Cluster.JoinNodes) != 2 {
-		t.Fatalf("JoinNodes count = %d, want 2", len(inv.Cluster.JoinNodes))
+	if inv.Cluster.Nodes[0].IP != "10.0.0.1" {
+		t.Errorf("Nodes[0].IP = %q, want %q", inv.Cluster.Nodes[0].IP, "10.0.0.1")
 	}
 	if inv.Registry.BootstrapRepo != "nvcr.io/org/cloud-workflow-engine" {
 		t.Errorf("Registry.BootstrapRepo = %q, want %q", inv.Registry.BootstrapRepo, "nvcr.io/org/cloud-workflow-engine")
@@ -63,13 +62,13 @@ func TestLoadValidInventory(t *testing.T) {
 	}
 }
 
-func TestLoadNoJoinNodes(t *testing.T) {
+func TestLoadSingleNode(t *testing.T) {
 	const singleNode = `
 clusterName: solo
 cluster:
-  initNode:
-    name: node1
-    ip: 10.0.0.1
+  nodes:
+    - name: node1
+      ip: 10.0.0.1
   k8sVersion: "1.32.0"
   cniName: ovn-kubernetes
   podCidr: "10.100.0.0/16"
@@ -82,8 +81,8 @@ registry:
 	if err != nil {
 		t.Fatalf("Load returned error for single-node inventory: %v", err)
 	}
-	if len(inv.Cluster.JoinNodes) != 0 {
-		t.Errorf("JoinNodes count = %d, want 0", len(inv.Cluster.JoinNodes))
+	if len(inv.Cluster.Nodes) != 1 {
+		t.Errorf("Nodes count = %d, want 1", len(inv.Cluster.Nodes))
 	}
 }
 
@@ -116,9 +115,9 @@ func TestLoadRejectsUnknownField(t *testing.T) {
 	const typo = `
 clusterName: nke-site
 cluster:
-  initNode:
-    name: node1
-    ip: 10.0.0.1
+  nodes:
+    - name: node1
+      ip: 10.0.0.1
   k8sVersion: "1.32.0"
   cniName: calico
   podCidr: "10.100.0.0/16"
@@ -153,7 +152,7 @@ func TestValidateInvalidInputs(t *testing.T) {
 		return &Inventory{
 			ClusterName: "nke-site",
 			Cluster: Cluster{
-				InitNode:      Node{Name: "node1", IP: "10.0.0.1"},
+				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
 				K8sVersion:    "1.32.0",
 				CniName:       "calico",
 				PodCidr:       "10.100.0.0/16",
@@ -174,20 +173,15 @@ func TestValidateInvalidInputs(t *testing.T) {
 	}{
 		{"missing clusterName", func(i *Inventory) { i.ClusterName = "" }, pathClusterName},
 		{"bad clusterName", func(i *Inventory) { i.ClusterName = "Nke_Site" }, pathClusterName},
-		{"missing init ip", func(i *Inventory) { i.Cluster.InitNode.IP = "" }, pathInitNodeIP},
-		{"bad init ip", func(i *Inventory) { i.Cluster.InitNode.IP = "999.0.0.1" }, pathInitNodeIP},
-		{"missing init name", func(i *Inventory) { i.Cluster.InitNode.Name = "" }, pathInitNodeName},
-		{"bad join ip", func(i *Inventory) {
-			i.Cluster.JoinNodes = []Node{{Name: "node2", IP: "not-an-ip"}}
-		}, "cluster.joinNodes[0].ip"},
-		{"missing join name", func(i *Inventory) {
-			i.Cluster.JoinNodes = []Node{{Name: "", IP: "10.0.0.2"}}
-		}, "cluster.joinNodes[0].name"},
+		{"missing nodes", func(i *Inventory) { i.Cluster.Nodes = nil }, pathNodes},
+		{"missing node ip", func(i *Inventory) { i.Cluster.Nodes[0].IP = "" }, "cluster.nodes[0].ip"},
+		{"bad node ip", func(i *Inventory) { i.Cluster.Nodes[0].IP = "999.0.0.1" }, "cluster.nodes[0].ip"},
+		{"missing node name", func(i *Inventory) { i.Cluster.Nodes[0].Name = "" }, "cluster.nodes[0].name"},
 		{"duplicate node name", func(i *Inventory) {
-			i.Cluster.JoinNodes = []Node{{Name: "node1", IP: "10.0.0.2"}}
+			i.Cluster.Nodes = append(i.Cluster.Nodes, Node{Name: "node1", IP: "10.0.0.2"})
 		}, "name \"node1\" is used"},
 		{"duplicate node ip", func(i *Inventory) {
-			i.Cluster.JoinNodes = []Node{{Name: "node2", IP: "10.0.0.1"}}
+			i.Cluster.Nodes = append(i.Cluster.Nodes, Node{Name: "node2", IP: "10.0.0.1"})
 		}, "ip \"10.0.0.1\" is used"},
 		{"missing k8sVersion", func(i *Inventory) { i.Cluster.K8sVersion = "" }, pathK8sVersion},
 		{"bad k8sVersion", func(i *Inventory) { i.Cluster.K8sVersion = "v1.32" }, pathK8sVersion},
@@ -226,7 +220,7 @@ func TestValidateAggregatesErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("Validate accepted an empty inventory; want error")
 	}
-	for _, want := range []string{pathClusterName, pathInitNodeIP, pathK8sVersion, pathBootstrapRepo} {
+	for _, want := range []string{pathClusterName, pathNodes, pathK8sVersion, pathBootstrapRepo} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("aggregated error missing %q; got:\n%s", want, err.Error())
 		}
@@ -237,8 +231,7 @@ func TestValidValidatesClean(t *testing.T) {
 	inv := &Inventory{
 		ClusterName: "nke-site",
 		Cluster: Cluster{
-			InitNode:      Node{Name: "node1", IP: "10.0.0.1"},
-			JoinNodes:     []Node{{Name: "node2", IP: "10.0.0.2"}},
+			Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}, {Name: "node2", IP: "10.0.0.2"}},
 			K8sVersion:    "1.32.0",
 			CniName:       "ovn-kubernetes",
 			PodCidr:       "10.100.0.0/16,10.101.0.0/16",
@@ -255,14 +248,11 @@ func TestValidValidatesClean(t *testing.T) {
 	}
 }
 
-// noJoinYAML is a valid inventory with no join nodes, used to exercise the
-// JOIN_NODES environment overlay.
-const noJoinYAML = `
+// noNodesYAML is an inventory with no nodes, used to exercise the environment
+// fallback for the flat node list.
+const noNodesYAML = `
 clusterName: nke-site
 cluster:
-  initNode:
-    name: node1
-    ip: 10.0.0.1
   k8sVersion: "1.32.0"
   cniName: calico
   podCidr: "10.100.0.0/16"
@@ -273,11 +263,9 @@ registry:
 `
 
 func TestLoadEnvOverridesFile(t *testing.T) {
-	// validYAML sets clusterName=nke-site, k8sVersion=1.32.0, initNode.ip=10.0.0.1.
-	// Each env var must win over the file value, including the deeply-nested one.
+	// Each bound environment variable must win over the file value.
 	t.Setenv("CLUSTER_NAME", "from-env")
 	t.Setenv("CLUSTER_K8S_VERSION", "1.33.1")
-	t.Setenv("INIT_NODE_IP", "10.9.9.9")
 
 	inv, err := Load(writeTemp(t, validYAML))
 	if err != nil {
@@ -289,8 +277,8 @@ func TestLoadEnvOverridesFile(t *testing.T) {
 	if inv.Cluster.K8sVersion != "1.33.1" {
 		t.Errorf("K8sVersion = %q, want env override %q", inv.Cluster.K8sVersion, "1.33.1")
 	}
-	if inv.Cluster.InitNode.IP != "10.9.9.9" {
-		t.Errorf("InitNode.IP = %q, want nested env override %q", inv.Cluster.InitNode.IP, "10.9.9.9")
+	if inv.Cluster.Nodes[0].IP != "10.0.0.1" {
+		t.Errorf("Nodes[0].IP = %q, want file value %q", inv.Cluster.Nodes[0].IP, "10.0.0.1")
 	}
 }
 
@@ -307,27 +295,27 @@ func TestLoadEnvFillsField(t *testing.T) {
 	}
 }
 
-func TestLoadJoinNodesFromEnv(t *testing.T) {
-	t.Setenv("JOIN_NODES", "node2:10.0.0.2,node3:10.0.0.3")
+func TestLoadNodesFromEnv(t *testing.T) {
+	t.Setenv("NKECTL_CLUSTER_NODES", "node1:10.0.0.1,node2:10.0.0.2")
 
-	inv, err := Load(writeTemp(t, noJoinYAML))
+	inv, err := Load(writeTemp(t, noNodesYAML))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(inv.Cluster.JoinNodes) != 2 {
-		t.Fatalf("JoinNodes count = %d, want 2", len(inv.Cluster.JoinNodes))
+	if len(inv.Cluster.Nodes) != 2 {
+		t.Fatalf("Nodes count = %d, want 2", len(inv.Cluster.Nodes))
 	}
-	if inv.Cluster.JoinNodes[0].Name != "node2" || inv.Cluster.JoinNodes[0].IP != "10.0.0.2" {
-		t.Errorf("JoinNodes[0] = %+v, want {node2 10.0.0.2}", inv.Cluster.JoinNodes[0])
+	if inv.Cluster.Nodes[0].Name != "node1" || inv.Cluster.Nodes[0].IP != "10.0.0.1" {
+		t.Errorf("Nodes[0] = %+v, want {node1 10.0.0.1}", inv.Cluster.Nodes[0])
 	}
 }
 
-func TestLoadJoinNodesEnvMalformedFails(t *testing.T) {
-	// A malformed JOIN_NODES entry must fail loudly, not be silently discarded.
-	t.Setenv("JOIN_NODES", "node2:10.0.0.2,bogus")
+func TestLoadNodesEnvMalformedFails(t *testing.T) {
+	// A malformed node entry must fail loudly, not be silently discarded.
+	t.Setenv("NKECTL_CLUSTER_NODES", "node2:10.0.0.2,bogus")
 
-	if _, err := Load(writeTemp(t, noJoinYAML)); err == nil {
-		t.Fatal("Load accepted a malformed JOIN_NODES entry; want error")
+	if _, err := Load(writeTemp(t, noNodesYAML)); err == nil {
+		t.Fatal("Load accepted a malformed NKECTL_CLUSTER_NODES entry; want error")
 	}
 }
 
@@ -348,8 +336,8 @@ func TestTPMEKThumbprints(t *testing.T) {
 		joinThumb = "2222222222222222222222222222222222222222222222222222222222222222"
 	)
 	cluster := Cluster{
-		InitNode: Node{Name: "node1", IP: "10.0.0.1", TPMEKThumbprint: initThumb},
-		JoinNodes: []Node{
+		Nodes: []Node{
+			{Name: "node1", IP: "10.0.0.1", TPMEKThumbprint: initThumb},
 			{Name: "node2", IP: "10.0.0.2"},
 			{Name: "node3", IP: "10.0.0.3", TPMEKThumbprint: joinThumb},
 		},
@@ -357,7 +345,7 @@ func TestTPMEKThumbprints(t *testing.T) {
 
 	got := cluster.TPMEKThumbprints()
 	if len(got) != 2 || got[0] != initThumb || got[1] != joinThumb {
-		t.Errorf("TPMEKThumbprints() = %v, want the init node's then node3's", got)
+		t.Errorf("TPMEKThumbprints() = %v, want node1's then node3's", got)
 	}
 	if len((Cluster{}).TPMEKThumbprints()) != 0 {
 		t.Error("a cluster with no thumbprints should yield none, so no TPM attestor is configured")
@@ -376,7 +364,7 @@ func TestValidate_TPMEKThumbprint(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			v := &validator{}
-			v.checkNode("cluster.initNode", Node{
+			v.checkNode("cluster.nodes[0]", Node{
 				Name: "node1", IP: "10.0.0.1", TPMEKThumbprint: thumbprint,
 			}, map[string]int{}, map[string]int{})
 			if v.err() == nil {
@@ -407,8 +395,7 @@ func minimalValid() *Inventory {
 	return &Inventory{
 		ClusterName: "nke-site",
 		Cluster: Cluster{
-			InitNode:      Node{Name: "node1", IP: "10.0.0.1"},
-			JoinNodes:     []Node{{Name: "node2", IP: "10.0.0.2"}},
+			Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}, {Name: "node2", IP: "10.0.0.2"}},
 			K8sVersion:    "1.32.0",
 			CniName:       "ovn-kubernetes",
 			PodCidr:       "10.100.0.0/16",

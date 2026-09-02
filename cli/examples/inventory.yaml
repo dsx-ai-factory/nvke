@@ -12,22 +12,18 @@
 clusterName: "nke-site"
 
 cluster:
-  # First control-plane node — kubeadm init runs here.
-  #
+  # Pre-provisioned control-plane nodes. The inventory does not select which
+  # node runs kubeadm init.
   # tpmEkThumbprint is optional: the SHA-256 of the node's TPM endorsement key,
   # read from the host before the bootstrap (spire-tpm-plugin's
   # get_tpm_pubhash). Every thumbprint listed here is allowlisted on the SPIRE
   # server nkectl deploys, and nothing else is — a node without one cannot
   # attest, and a file with none deploys no TPM attestor at all. It is a public
   # key hash, not a secret.
-  initNode:
-    name: "node1"
-    ip: "10.0.0.1"
-    tpmEkThumbprint: "0000000000000000000000000000000000000000000000000000000000000000"
-
-  # Remaining nodes. In M0 every node joins as a control-plane node.
-  # Omit or leave empty for a single-node cluster.
-  joinNodes:
+  nodes:
+    - name: "node1"
+      ip: "10.0.0.1"
+      tpmEkThumbprint: "0000000000000000000000000000000000000000000000000000000000000000"
     - name: "node2"
       ip: "10.0.0.2"
       tpmEkThumbprint: "1111111111111111111111111111111111111111111111111111111111111111"

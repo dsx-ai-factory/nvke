@@ -8,13 +8,10 @@
 clusterName: "nke-site"
 
 cluster:
-  # First control-plane node — kubeadm init runs here.
-  initNode:
-    name: "ctrl-1"
-    ip: "10.0.0.1"
-
-  # Remaining nodes. Omit or leave empty for a single-node cluster.
-  joinNodes:
+  # Pre-provisioned control-plane nodes.
+  nodes:
+    - name: "ctrl-1"
+      ip: "10.0.0.1"
     - name: "ctrl-2"
       ip: "10.0.0.2"
     - name: "ctrl-3"
@@ -40,10 +37,9 @@ registry:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.initNode.name` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.initNode.ip` | string | yes | Valid IPv4 or IPv6 address. |
-| `cluster.joinNodes[].name` | string | yes, per entry | Must be unique across all nodes. |
-| `cluster.joinNodes[].ip` | string | yes, per entry | Must be unique across all nodes. |
+| `cluster.nodes` | list | yes | Must contain at least one control-plane node. |
+| `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Must be unique across all nodes. |
+| `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Must be unique across all nodes. |
 | `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
 | `cluster.cniName` | string | yes | `calico` or `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
@@ -64,8 +60,6 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | Variable | Field |
 |---|---|
 | `CLUSTER_NAME` | `clusterName` |
-| `INIT_NODE_IP` | `cluster.initNode.ip` |
-| `INIT_NODE_NAME` | `cluster.initNode.name` |
 | `CLUSTER_K8S_VERSION` | `cluster.k8sVersion` |
 | `CLUSTER_CNI_NAME` | `cluster.cniName` |
 | `CLUSTER_CNI_VERSION` | `cluster.cniVersion` |
@@ -76,7 +70,10 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
-| `JOIN_NODES` | `cluster.joinNodes` — format `name:ip,name:ip`, applied only when the file lists no join nodes |
+| `NKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
+
+`INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The inventory does not
+select a node for `kubeadm init`; the bootstrap process selects it downstream.
 
 ## Credential Handling
 

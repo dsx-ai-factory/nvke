@@ -29,9 +29,8 @@ const (
 	provisionedMachineTemplateKind = "ProvisionedMachineTemplate"
 
 	// controlPlanePoolName/controlPlaneNodeNamePrefix name the single node pool
-	// a site cluster has. Every inventory node joins as a control-plane node,
-	// which is what the inventory itself describes (see inventory.Cluster's
-	// JoinNodes) — so there is one pool and it is the control plane.
+	// a site cluster has. Every inventory node is a control-plane node, so there
+	// is one pool and it is the control plane.
 	//
 	// The prefix is short because CWE builds node names as
 	// <cluster>-<prefix>-<4 digits> and holds the result to 63 characters.
@@ -52,10 +51,6 @@ const (
 //   - the node pool's capiInfraMachineTemplate is a ProvisionedMachineTemplate
 //     with an empty spec. Everything a machine needs is already in the
 //     ProvisionedCluster's inventory, so there is nothing to say per machine.
-//
-// The init node is first in the host list because kubeadm init runs on the
-// first control-plane node CWE provisions, and the inventory names which host
-// that is.
 func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody, error) {
 	if inv == nil {
 		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: inventory is nil")
@@ -89,7 +84,10 @@ func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody,
 			SystemReservedMemory:       inv.Cluster.KubeletConfig.SystemReservedMemory,
 			CapiInfraMachineTemplate:   provisionedMachineTemplate(),
 		}},
-		CapiInfraCluster: provisionedCluster(inv.ClusterName, inv.Cluster.InitNode.Name, hosts),
+		// The current provider API requires an initNode. Derive it from the flat
+		// node list until that provider field is removed; it is not a separate
+		// inventory role.
+		CapiInfraCluster: provisionedCluster(inv.ClusterName, inv.Cluster.Nodes[0].Name, hosts),
 	}
 
 	if inv.Cluster.CniVersion != "" {
@@ -101,15 +99,17 @@ func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody,
 	return req, nil
 }
 
-// provisionedHosts renders the inventory's nodes as ProvisionedCluster hosts,
-// init node first.
+// provisionedHosts renders the inventory's nodes as ProvisionedCluster hosts.
 //
 // A duplicate hostname or IP is rejected here rather than left to the provider.
 // The provider keys an allocation on the host's IP address, so two entries
 // sharing one would be two machines pointed at one running node — which it
 // cannot detect and this can.
 func provisionedHosts(inv *inventory.Inventory) ([]map[string]interface{}, error) {
-	nodes := append([]inventory.Node{inv.Cluster.InitNode}, inv.Cluster.JoinNodes...)
+	nodes := inv.Cluster.Nodes
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("sitecluster: inventory must contain at least one node")
+	}
 	hosts := make([]map[string]interface{}, 0, len(nodes))
 	seenName := make(map[string]bool, len(nodes))
 	seenIP := make(map[string]bool, len(nodes))

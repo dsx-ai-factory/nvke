@@ -112,7 +112,7 @@ func renderInventory(ctx context.Context) error {
 	}
 	inv.Spire.CACertFile = caCert
 	inv.Spire.CAKeyFile = caKey
-	nodes := append([]*inventory.Node{&inv.Cluster.InitNode}, ptrs(inv.Cluster.JoinNodes)...)
+	nodes := ptrs(inv.Cluster.Nodes)
 	for _, node := range nodes {
 		thumbprint, running := thumbprints[node.Name]
 		if !running {
@@ -139,8 +139,7 @@ func renderInventory(ctx context.Context) error {
 	return nil
 }
 
-// ptrs lets the init node and the join nodes be walked as one list of things
-// that can be written to.
+// ptrs returns writable pointers to the nodes in the inventory.
 func ptrs(nodes []inventory.Node) []*inventory.Node {
 	out := make([]*inventory.Node, len(nodes))
 	for i := range nodes {

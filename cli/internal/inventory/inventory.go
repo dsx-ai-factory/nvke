@@ -40,8 +40,7 @@ const (
 	// Inventory field paths — the single source of truth for the dotted paths
 	// shared by the environment bindings and the validator messages.
 	pathClusterName          = "clusterName"
-	pathInitNodeIP           = "cluster.initNode.ip"
-	pathInitNodeName         = "cluster.initNode.name"
+	pathNodes                = "cluster.nodes"
 	pathK8sVersion           = "cluster.k8sVersion"
 	pathCniName              = "cluster.cniName"
 	pathCniVersion           = "cluster.cniVersion"
@@ -49,7 +48,6 @@ const (
 	pathServiceCidr          = "cluster.serviceCidr"
 	pathSystemReservedMemory = "cluster.kubeletConfig.systemReservedMemory"
 	pathNodeAgentPort        = "cluster.nodeAgentPort"
-	pathJoinNodes            = "cluster.joinNodes"
 	pathBootstrapRepo        = "registry.bootstrapRepo"
 	pathBootstrapChart       = "registry.bootstrapChart"
 	pathAPIKey               = "registry.apiKey"
@@ -111,11 +109,9 @@ type Spire struct {
 
 // Cluster describes the target Kubernetes cluster and its nodes.
 type Cluster struct {
-	// InitNode is the first control-plane node (kubeadm init runs here).
-	InitNode Node `yaml:"initNode"`
-	// JoinNodes are the remaining nodes. In M0 every node joins as a
-	// control-plane node, matching tier-0's behavior.
-	JoinNodes []Node `yaml:"joinNodes"`
+	// Nodes are the pre-provisioned control-plane nodes. The inventory does not
+	// select which node runs kubeadm init.
+	Nodes []Node `yaml:"nodes"`
 	// K8sVersion is the Kubernetes version to install, e.g. "1.32.0".
 	K8sVersion string `yaml:"k8sVersion"`
 	// CniName selects the CNI plugin; see SupportedCNIs.
@@ -160,8 +156,8 @@ type Node struct {
 // skipping nodes that have none. This is the allowlist the SPIRE server is
 // installed with.
 func (c Cluster) TPMEKThumbprints() []string {
-	thumbprints := make([]string, 0, 1+len(c.JoinNodes))
-	for _, node := range append([]Node{c.InitNode}, c.JoinNodes...) {
+	thumbprints := make([]string, 0, len(c.Nodes))
+	for _, node := range c.Nodes {
 		if node.TPMEKThumbprint != "" {
 			thumbprints = append(thumbprints, node.TPMEKThumbprint)
 		}
@@ -196,8 +192,6 @@ type Registry struct {
 func envBindings() map[string]string {
 	return map[string]string{
 		"CLUSTER_NAME":                   pathClusterName,
-		"INIT_NODE_IP":                   pathInitNodeIP,
-		"INIT_NODE_NAME":                 pathInitNodeName,
 		"CLUSTER_K8S_VERSION":            pathK8sVersion,
 		"CLUSTER_CNI_NAME":               pathCniName,
 		"CLUSTER_CNI_VERSION":            pathCniVersion,
@@ -237,14 +231,15 @@ func Load(path string) (*Inventory, error) {
 		return nil, fmt.Errorf("read inventory file %s: %w", path, err)
 	}
 
-	// JOIN_NODES="name:ip,name:ip" overlays join nodes when the file lists
-	// none. A malformed entry fails loudly rather than being silently dropped.
-	if joinEnv := os.Getenv("JOIN_NODES"); joinEnv != "" && !v.IsSet(pathJoinNodes) {
-		nodes, err := parseJoinNodesEnv(joinEnv)
+	// NKECTL_CLUSTER_NODES="name:ip,name:ip" supplies the flat node list when
+	// the file lists none. A malformed entry fails loudly rather than being
+	// silently dropped.
+	if nodesEnv := os.Getenv("NKECTL_CLUSTER_NODES"); nodesEnv != "" && !v.IsSet(pathNodes) {
+		nodes, err := parseNodesEnv(nodesEnv)
 		if err != nil {
 			return nil, err
 		}
-		v.Set(pathJoinNodes, nodes)
+		v.Set(pathNodes, nodes)
 	}
 
 	var inv Inventory
@@ -272,9 +267,9 @@ func useYAMLTags(dc *mapstructure.DecoderConfig) { dc.TagName = "yaml" }
 // field name surfaces immediately instead of being silently ignored.
 func rejectUnknownFields(dc *mapstructure.DecoderConfig) { dc.ErrorUnused = true }
 
-// parseJoinNodesEnv parses JOIN_NODES="name:ip,name:ip" into node maps,
+// parseNodesEnv parses NKECTL_CLUSTER_NODES="name:ip,name:ip" into node maps,
 // returning an error on any malformed entry.
-func parseJoinNodesEnv(s string) ([]map[string]string, error) {
+func parseNodesEnv(s string) ([]map[string]string, error) {
 	var nodes []map[string]string
 	for _, entry := range strings.Split(s, ",") {
 		entry = strings.TrimSpace(entry)
@@ -284,7 +279,7 @@ func parseJoinNodesEnv(s string) ([]map[string]string, error) {
 		name, ip, ok := strings.Cut(entry, ":")
 		name, ip = strings.TrimSpace(name), strings.TrimSpace(ip)
 		if !ok || name == "" || ip == "" {
-			return nil, fmt.Errorf("JOIN_NODES entry %q: expected \"name:ip\"", entry)
+			return nil, fmt.Errorf("NKECTL_CLUSTER_NODES entry %q: expected \"name:ip\"", entry)
 		}
 		nodes = append(nodes, map[string]string{"name": name, "ip": ip})
 	}
@@ -375,16 +370,19 @@ func (v *validator) checkClusterName(name string) {
 	}
 }
 
-// checkNodes validates the init node and every join node, and rejects
-// duplicate names or IPs across the whole set. Every entry is checked, so a
-// malformed join node fails loudly instead of being silently discarded.
+// checkNodes validates every node and rejects duplicate names or IPs across
+// the whole set.
 func (v *validator) checkNodes(c Cluster) {
+	if len(c.Nodes) == 0 {
+		v.addf("%s must contain at least one node", pathNodes)
+		return
+	}
+
 	names := map[string]int{}
 	ips := map[string]int{}
 
-	v.checkNode("cluster.initNode", c.InitNode, names, ips)
-	for i, n := range c.JoinNodes {
-		v.checkNode(fmt.Sprintf("cluster.joinNodes[%d]", i), n, names, ips)
+	for i, n := range c.Nodes {
+		v.checkNode(fmt.Sprintf("%s[%d]", pathNodes, i), n, names, ips)
 	}
 
 	for name, count := range names {

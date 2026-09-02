@@ -18,8 +18,8 @@ func testInventory() *inventory.Inventory {
 	return &inventory.Inventory{
 		ClusterName: "nke-site",
 		Cluster: inventory.Cluster{
-			InitNode: inventory.Node{Name: "node1", IP: "172.26.0.10"},
-			JoinNodes: []inventory.Node{
+			Nodes: []inventory.Node{
+				{Name: "node1", IP: "172.26.0.10"},
 				{Name: "node2", IP: "172.26.0.11"},
 				{Name: "node3", IP: "172.26.0.12"},
 			},
@@ -58,9 +58,8 @@ func TestClusterRequest_IsACAPICluster(t *testing.T) {
 }
 
 // TestClusterRequest_CarriesTheInventoryAsProvisionedHosts is the heart of the
-// mapping: the hosts an operator listed become the provider's inventory, in
-// order, with the init node first because kubeadm init runs on the first
-// control-plane node CWE provisions.
+// mapping: the hosts an operator listed become the provider's inventory in the
+// same order.
 func TestClusterRequest_CarriesTheInventoryAsProvisionedHosts(t *testing.T) {
 	req, err := ClusterRequest(testInventory())
 	if err != nil {
@@ -97,11 +96,10 @@ func TestClusterRequest_CarriesTheInventoryAsProvisionedHosts(t *testing.T) {
 	}
 }
 
-// TestClusterRequest_NamesTheInitNode: spec.initNode is required by the
-// ProvisionedCluster CRD, so a request without it is rejected by the API server
-// rather than by anything in this package. The failure lands well into a
-// bootstrap run and names a field the operator never wrote, so pin it here.
-func TestClusterRequest_NamesTheInitNode(t *testing.T) {
+// TestClusterRequest_DerivesTheProviderInitNode: the current ProvisionedCluster
+// CRD requires spec.initNode. Derive it from the flat list until the provider
+// field is removed, without adding a distinct role to the inventory schema.
+func TestClusterRequest_DerivesTheProviderInitNode(t *testing.T) {
 	inv := testInventory()
 
 	req, err := ClusterRequest(inv)
@@ -117,7 +115,7 @@ func TestClusterRequest_NamesTheInitNode(t *testing.T) {
 	if !ok {
 		t.Fatalf("capiInfraCluster spec has no initNode: %#v", spec)
 	}
-	if want := inv.Cluster.InitNode.Name; got != want {
+	if want := inv.Cluster.Nodes[0].Name; got != want {
 		t.Errorf("spec.initNode = %q, want %q", got, want)
 	}
 
@@ -157,7 +155,7 @@ func TestClusterRequest_OneControlPlanePoolSizedToTheInventory(t *testing.T) {
 		t.Error("the pool is not a control-plane pool")
 	}
 	if pool.DesiredNodeCount != 3 {
-		t.Errorf("desiredNodeCount = %d, want 3 (init node plus two join nodes)", pool.DesiredNodeCount)
+		t.Errorf("desiredNodeCount = %d, want 3 inventory nodes", pool.DesiredNodeCount)
 	}
 	if pool.SystemReservedMemory != "512Mi" {
 		t.Errorf("systemReservedMemory = %q, want the inventory's kubelet reservation", pool.SystemReservedMemory)
@@ -201,13 +199,13 @@ func TestClusterRequest_PassesTheNetworkThrough(t *testing.T) {
 // to a single running node. It cannot see that; this can.
 func TestClusterRequest_RejectsDuplicateHosts(t *testing.T) {
 	inv := testInventory()
-	inv.Cluster.JoinNodes[1].IP = inv.Cluster.InitNode.IP
+	inv.Cluster.Nodes[2].IP = inv.Cluster.Nodes[0].IP
 	if _, err := ClusterRequest(inv); err == nil {
 		t.Error("expected an error for a repeated IP address")
 	}
 
 	inv = testInventory()
-	inv.Cluster.JoinNodes[0].Name = inv.Cluster.InitNode.Name
+	inv.Cluster.Nodes[1].Name = inv.Cluster.Nodes[0].Name
 	if _, err := ClusterRequest(inv); err == nil {
 		t.Error("expected an error for a repeated hostname")
 	}
@@ -243,5 +241,13 @@ func TestClusterRequest_SerialisesToTheAPIShape(t *testing.T) {
 func TestClusterRequest_RejectsANilInventory(t *testing.T) {
 	if _, err := ClusterRequest(nil); err == nil {
 		t.Error("expected an error for a nil inventory")
+	}
+}
+
+func TestClusterRequest_RejectsNoNodes(t *testing.T) {
+	inv := testInventory()
+	inv.Cluster.Nodes = nil
+	if _, err := ClusterRequest(inv); err == nil {
+		t.Error("expected an error for an inventory with no nodes")
 	}
 }

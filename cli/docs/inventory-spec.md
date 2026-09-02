@@ -15,12 +15,10 @@ A ready-to-copy example is in [`examples/inventory.yaml`](../examples/inventory.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.initNode.name` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.initNode.ip` | string | yes | Valid IPv4 or IPv6 address. |
-| `cluster.joinNodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
-| `cluster.joinNodes[].ip` | string | yes, per entry | Valid IP. Unique across all nodes. |
-| `cluster.initNode.tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
-| `cluster.joinNodes[].tpmEkThumbprint` | string | no | As above, per entry. |
+| `cluster.nodes` | list | yes | Must contain at least one control-plane node. |
+| `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
+| `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
+| `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
 | `cluster.k8sVersion` | string | yes | Plain semantic version, e.g. `1.32.0` (no leading `v`). |
 | `cluster.cniName` | string | yes | One of `calico`, `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the node-agent default. |
@@ -44,7 +42,8 @@ being silently ignored.
 
 - All problems are reported together in one error, each naming the offending
   field, so a bad file can be fixed in one pass.
-- Node names and IPs must be unique across the init node and all join nodes.
+- The inventory must contain at least one node.
+- Node names and IPs must be unique across all nodes.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry.
 
@@ -57,8 +56,6 @@ A set variable takes precedence over the file value.
 | Environment variable | Field |
 |---|---|
 | `CLUSTER_NAME` | `clusterName` |
-| `INIT_NODE_IP` | `cluster.initNode.ip` |
-| `INIT_NODE_NAME` | `cluster.initNode.name` |
 | `CLUSTER_K8S_VERSION` | `cluster.k8sVersion` |
 | `CLUSTER_CNI_NAME` | `cluster.cniName` |
 | `CLUSTER_CNI_VERSION` | `cluster.cniVersion` |
@@ -71,10 +68,13 @@ A set variable takes precedence over the file value.
 | `REGISTRY_API_KEY` | `registry.apiKey` |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
-| `JOIN_NODES` | `cluster.joinNodes` — format `name:ip,name:ip`, applied only when the file lists no join nodes |
+| `NKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
-A malformed `JOIN_NODES` entry fails the load rather than being silently
-discarded.
+A malformed `NKECTL_CLUSTER_NODES` entry fails the load rather than being
+silently discarded.
+
+`INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The inventory does not
+select a node for `kubeadm init`; the bootstrap process selects it downstream.
 
 ## TPM endorsement-key thumbprints
 

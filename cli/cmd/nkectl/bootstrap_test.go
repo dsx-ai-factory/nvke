@@ -58,9 +58,9 @@ func (fakeBootstrapRunner) Run(_ context.Context, _ map[string]string, name stri
 const validInventory = `
 clusterName: nke-site
 cluster:
-  initNode:
-    name: node1
-    ip: 10.0.0.1
+  nodes:
+    - name: node1
+      ip: 10.0.0.1
   k8sVersion: "1.32.0"
   cniName: calico
   podCidr: "10.100.0.0/16"
@@ -98,9 +98,9 @@ func TestRunBootstrapSiteInvalidFailsFast(t *testing.T) {
 	const bad = `
 clusterName: nke-site
 cluster:
-  initNode:
-    name: node1
-    ip: not-an-ip
+  nodes:
+    - name: node1
+      ip: not-an-ip
   k8sVersion: "1.32.0"
   cniName: calico
   podCidr: "10.100.0.0/16"
@@ -116,7 +116,7 @@ registry:
 	if strings.Contains(err.Error(), "not yet implemented") {
 		t.Errorf("reached dispatch stub before validation failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "cluster.initNode.ip") {
+	if !strings.Contains(err.Error(), "cluster.nodes[0].ip") {
 		t.Errorf("error does not name the bad field: %v", err)
 	}
 }

@@ -18,13 +18,10 @@
 clusterName: "nke-e2e"
 
 cluster:
-  # First control-plane node — kubeadm init runs here.
-  initNode:
-    name: "node1"
-    ip: "172.26.0.10"
-
-  # Remaining nodes. In M0 every node joins as a control-plane node.
-  joinNodes:
+  # Pre-provisioned control-plane nodes. No node has a distinct inventory role.
+  nodes:
+    - name: "node1"
+      ip: "172.26.0.10"
     - name: "node2"
       ip: "172.26.0.11"
     - name: "node3"

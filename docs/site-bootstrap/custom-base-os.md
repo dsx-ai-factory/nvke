@@ -43,17 +43,16 @@ autoinstall:
     - curtin in-target --target=/target -- update-grub
   user-data:
     write_files:
-      # nkectl inventory file (init node only — omit on join nodes)
+      # nkectl inventory file (bootstrap host only — omit on other nodes)
       - path: /etc/nkectl/inventory.yaml
         owner: root:root
         permissions: '0640'
         content: |
           clusterName: "nke-site"
           cluster:
-            initNode:
-              name: "ctrl-1"
-              ip: "10.0.0.10"
-            joinNodes:
+            nodes:
+              - name: "ctrl-1"
+                ip: "10.0.0.10"
               - name: "ctrl-2"
                 ip: "10.0.0.11"
               - name: "ctrl-3"
@@ -91,10 +90,10 @@ autoinstall:
       - [sh, -c, "systemctl restart nke-agent"]
 
       # TODO: Replace with real release URL once the repo is public.
-      # Download and install nkectl (init node only)
+      # Download and install nkectl (bootstrap host only)
       - [sh, -c, "curl -fsSL -o /usr/local/bin/nkectl https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-amd64 && chmod +x /usr/local/bin/nkectl"]
 
-      # Run bootstrap (init node only)
+      # Run bootstrap (bootstrap host only)
       - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nkectl bootstrap site -i /etc/nkectl/inventory.yaml >> /var/log/nkectl-bootstrap.log 2>&1"]
 ```
 
@@ -102,22 +101,23 @@ autoinstall:
 
 - **Kubernetes Installation**: Adds the Kubernetes apt repository and installs kubelet, kubeadm, and kubectl. Marks packages held to prevent automatic upgrades.
 - **nke-agent**: Installed from the NKE apt repository; configured with `--disable-mtls` and `--secure-server-port 15005` for pre-provisioned node bootstrap.
-- **nkectl**: Only installed on the **init node**. Omit the nkectl download and bootstrap runcmd lines for **join nodes**.
+- **nkectl**: Install it only on the **bootstrap host**. Omit the nkectl download and bootstrap commands on other nodes.
 
-## Init Node vs Join Nodes
+## Bootstrap Host and Other Nodes
 
-| | Init Node | Join Nodes |
+| | Bootstrap Host | Other Nodes |
 |---|---|---|
 | Kubernetes packages | ✓ | ✓ |
 | nke-agent | ✓ | ✓ |
 | `/etc/nkectl/inventory.yaml` | ✓ | ✗ |
 | `nkectl` download + bootstrap run | ✓ | ✗ |
 
-For join nodes, omit the `write_files` section and the last two `runcmd` lines (nkectl download and bootstrap run).
+On other nodes, omit the `write_files` section and the last two `runcmd` lines
+(the nkectl download and bootstrap run).
 
 ## Customizing
 
-- Update `cluster.joinNodes` with your actual node names and IPs
+- Update `cluster.nodes` with your actual node names and IPs
 - Set `registry.bootstrapRepo` and `registry.bootstrapChart` to your CWE registry path
 - Supply `REGISTRY_API_KEY` via your secrets management (not hardcoded in cloud-init)
 - Update the Kubernetes repository minor version to match `cluster.k8sVersion` in the inventory
@@ -125,4 +125,4 @@ For join nodes, omit the `write_files` section and the last two `runcmd` lines (
 
 > **Ensure `/etc/apt/keyrings` exists** before installing Kubernetes packages — the `mkdir` step above creates it.
 
-Bootstrap logs land at `/var/log/nkectl-bootstrap.log` on the init node.
+Bootstrap logs are in `/var/log/nkectl-bootstrap.log` on the bootstrap host.

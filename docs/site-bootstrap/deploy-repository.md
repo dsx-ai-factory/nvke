@@ -213,14 +213,12 @@ Template files use Go [`text/template`](https://pkg.go.dev/text/template) syntax
 
 | Expression | Type | Description |
 |------------|------|-------------|
-| `.Cluster.InitNode.Name` | string | Init node hostname |
-| `.Cluster.InitNode.IP` | string | Init node IP address |
-| `.Cluster.JoinNodes` | list | Additional nodes (iterate with `range`) |
+| `.Cluster.Nodes` | list | Control-plane nodes (iterate with `range`) |
 | `.Cluster.K8sVersion` | string | Kubernetes version |
 | `.Cluster.CNIName` | string | CNI name (`calico`, `ovn-kubernetes`) |
 | `.Cluster.PodCIDR` | string | Pod CIDR |
 
-Each node in `.Cluster.JoinNodes`:
+Each node in `.Cluster.Nodes`:
 
 | Expression | Type | Description |
 |------------|------|-------------|
