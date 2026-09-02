@@ -1,6 +1,6 @@
 module github.com/NVIDIA/nke/controller/nico-vms
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0
@@ -12,7 +12,7 @@ require (
 	github.com/uptrace/bun/dialect/sqlitedialect v1.2.18
 	github.com/vishvananda/netlink v1.3.1
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 )
 
 require (
