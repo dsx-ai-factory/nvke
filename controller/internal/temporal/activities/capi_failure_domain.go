@@ -4,6 +4,7 @@
 package activities
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 
@@ -80,8 +81,14 @@ func (a *Activities) selectControlPlaneFailureDomain(ctx context.Context, create
 		if _, isControlPlane := machine.Labels[clusterv1.MachineControlPlaneLabel]; !isControlPlane {
 			continue
 		}
-		if machine.Spec.FailureDomain != "" {
-			assignments = append(assignments, machine.Spec.FailureDomain)
+		// A deleting machine releases its infrastructure; its domain is free for the
+		// replacement.
+		if !machine.DeletionTimestamp.IsZero() {
+			continue
+		}
+		// Status is where the provider placed the machine; spec is only the request.
+		if domain := cmp.Or(machine.Status.FailureDomain, machine.Spec.FailureDomain); domain != "" {
+			assignments = append(assignments, domain)
 		}
 	}
 

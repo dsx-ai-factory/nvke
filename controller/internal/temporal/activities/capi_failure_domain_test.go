@@ -21,6 +21,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/testutil"
 )
@@ -29,22 +30,22 @@ func TestActivitiesApplyCAPIMachineAssignsLeastUsedFailureDomain(t *testing.T) {
 	t.Parallel()
 
 	cluster := failureDomainTestDBCluster()
-	namespace := capi.ClusterNamespace(cluster.Name)
+	namespace := constants.NamespaceNKESystem
 	controlPlane := true
-	existingA := failureDomainTestMachine("cp-existing-a", cluster.Name, namespace, true, "fd-a")
+	existingA := failureDomainTestMachine("cp-existing-a", cluster.Name, true, "fd-a")
 	existingA.Labels[clusterv1.MachineControlPlaneLabel] = "true"
 	k8sClient := failureDomainTestClient(t,
-		failureDomainTestCAPICluster(cluster.Name, namespace,
+		failureDomainTestCAPICluster(cluster.Name,
 			clusterv1.FailureDomain{Name: "fd-c", ControlPlane: &controlPlane},
 			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &controlPlane},
 			clusterv1.FailureDomain{Name: "fd-b", ControlPlane: &controlPlane},
 		),
 		existingA,
-		failureDomainTestMachine("cp-existing-b", cluster.Name, namespace, true, "fd-b"),
-		failureDomainTestMachine("worker-existing", cluster.Name, namespace, false, "fd-c"),
+		failureDomainTestMachine("cp-existing-b", cluster.Name, true, "fd-b"),
+		failureDomainTestMachine("worker-existing", cluster.Name, false, "fd-c"),
 	)
 	activity, tx, database := failureDomainTestActivity(cluster, k8sClient)
-	machine := failureDomainTestMachine("cp-new", cluster.Name, namespace, true, "")
+	machine := failureDomainTestMachine("cp-new", cluster.Name, true, "")
 
 	require.NoError(t, activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
 		node:      db.Node{ID: uuid.New(), ControlPlane: true},
@@ -63,18 +64,18 @@ func TestActivitiesApplyCAPIMachineFiltersIneligibleFailureDomains(t *testing.T)
 	t.Parallel()
 
 	cluster := failureDomainTestDBCluster()
-	namespace := capi.ClusterNamespace(cluster.Name)
+	namespace := constants.NamespaceNKESystem
 	eligible := true
 	ineligible := false
 	k8sClient := failureDomainTestClient(t,
-		failureDomainTestCAPICluster(cluster.Name, namespace,
+		failureDomainTestCAPICluster(cluster.Name,
 			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &ineligible},
 			clusterv1.FailureDomain{Name: "fd-b"},
 			clusterv1.FailureDomain{Name: "fd-c", ControlPlane: &eligible},
 		),
 	)
 	activity, tx, database := failureDomainTestActivity(cluster, k8sClient)
-	machine := failureDomainTestMachine("cp-new", cluster.Name, namespace, true, "")
+	machine := failureDomainTestMachine("cp-new", cluster.Name, true, "")
 
 	require.NoError(t, activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
 		node:      db.Node{ID: uuid.New(), ControlPlane: true},
@@ -93,15 +94,15 @@ func TestActivitiesApplyCAPIMachineLeavesPlacementEmptyWithoutEligibleDomains(t 
 	t.Parallel()
 
 	cluster := failureDomainTestDBCluster()
-	namespace := capi.ClusterNamespace(cluster.Name)
+	namespace := constants.NamespaceNKESystem
 	ineligible := false
 	k8sClient := failureDomainTestClient(t,
-		failureDomainTestCAPICluster(cluster.Name, namespace,
+		failureDomainTestCAPICluster(cluster.Name,
 			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &ineligible},
 		),
 	)
 	activity, tx, database := failureDomainTestActivity(cluster, k8sClient)
-	machine := failureDomainTestMachine("cp-new", cluster.Name, namespace, true, "")
+	machine := failureDomainTestMachine("cp-new", cluster.Name, true, "")
 
 	require.NoError(t, activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
 		node:      db.Node{ID: uuid.New(), ControlPlane: true},
@@ -120,11 +121,11 @@ func TestActivitiesApplyCAPIMachinePreservesExistingPlacement(t *testing.T) {
 	t.Parallel()
 
 	cluster := failureDomainTestDBCluster()
-	namespace := capi.ClusterNamespace(cluster.Name)
+	namespace := constants.NamespaceNKESystem
 	controlPlane := true
-	existing := failureDomainTestMachine("cp-existing", cluster.Name, namespace, true, "fd-b")
+	existing := failureDomainTestMachine("cp-existing", cluster.Name, true, "fd-b")
 	k8sClient := failureDomainTestClient(t,
-		failureDomainTestCAPICluster(cluster.Name, namespace,
+		failureDomainTestCAPICluster(cluster.Name,
 			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &controlPlane},
 			clusterv1.FailureDomain{Name: "fd-b", ControlPlane: &controlPlane},
 		),
@@ -147,19 +148,87 @@ func TestActivitiesApplyCAPIMachinePreservesExistingPlacement(t *testing.T) {
 	database.AssertExpectations(t)
 }
 
+func TestActivitiesApplyCAPIMachineCountsObservedPlacement(t *testing.T) {
+	t.Parallel()
+
+	cluster := failureDomainTestDBCluster()
+	namespace := constants.NamespaceNKESystem
+	controlPlane := true
+	unrequested := failureDomainTestMachine("cp-unrequested", cluster.Name, true, "")
+	unrequested.Status.FailureDomain = "fd-a"
+	drifted := failureDomainTestMachine("cp-drifted", cluster.Name, true, "fd-b")
+	drifted.Status.FailureDomain = "fd-c"
+	k8sClient := failureDomainTestClient(t,
+		failureDomainTestCAPICluster(cluster.Name,
+			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &controlPlane},
+			clusterv1.FailureDomain{Name: "fd-b", ControlPlane: &controlPlane},
+			clusterv1.FailureDomain{Name: "fd-c", ControlPlane: &controlPlane},
+		),
+		unrequested,
+		drifted,
+	)
+	activity, tx, database := failureDomainTestActivity(cluster, k8sClient)
+	machine := failureDomainTestMachine("cp-new", cluster.Name, true, "")
+
+	require.NoError(t, activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
+		node:      db.Node{ID: uuid.New(), ControlPlane: true},
+		cluster:   cluster,
+		namespace: namespace,
+	}, machine))
+
+	applied := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(machine), applied))
+	assert.Equal(t, "fd-b", applied.Spec.FailureDomain)
+	tx.AssertExpectations(t)
+	database.AssertExpectations(t)
+}
+
+func TestActivitiesApplyCAPIMachineIgnoresDeletingMachines(t *testing.T) {
+	t.Parallel()
+
+	cluster := failureDomainTestDBCluster()
+	namespace := constants.NamespaceNKESystem
+	controlPlane := true
+	deleting := failureDomainTestMachine("cp-deleting", cluster.Name, true, "fd-b")
+	deleting.Finalizers = []string{"nke.nvidia.com/failure-domain-test"}
+	k8sClient := failureDomainTestClient(t,
+		failureDomainTestCAPICluster(cluster.Name,
+			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &controlPlane},
+			clusterv1.FailureDomain{Name: "fd-b", ControlPlane: &controlPlane},
+		),
+		failureDomainTestMachine("cp-live", cluster.Name, true, "fd-a"),
+		deleting,
+	)
+	require.NoError(t, k8sClient.Delete(context.Background(), deleting))
+	activity, tx, database := failureDomainTestActivity(cluster, k8sClient)
+	machine := failureDomainTestMachine("cp-new", cluster.Name, true, "")
+
+	require.NoError(t, activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
+		node:      db.Node{ID: uuid.New(), ControlPlane: true},
+		cluster:   cluster,
+		namespace: namespace,
+	}, machine))
+
+	applied := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(machine), applied))
+	assert.Equal(t, "fd-b", applied.Spec.FailureDomain)
+	tx.AssertExpectations(t)
+	database.AssertExpectations(t)
+}
+
 func TestActivitiesApplyCAPIMachineDoesNotSpreadWorkers(t *testing.T) {
 	t.Parallel()
 
 	cluster := failureDomainTestDBCluster()
-	namespace := capi.ClusterNamespace(cluster.Name)
+	namespace := constants.NamespaceNKESystem
 	controlPlane := true
 	k8sClient := failureDomainTestClient(t,
-		failureDomainTestCAPICluster(cluster.Name, namespace,
+		failureDomainTestCAPICluster(cluster.Name,
 			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &controlPlane},
 		),
 	)
 	activity := &Activities{k8sClient: k8sClient}
-	machine := failureDomainTestMachine("worker-new", cluster.Name, namespace, false, "")
+	machine := failureDomainTestMachine("worker-new", cluster.Name, false, "")
 
 	require.NoError(t, activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
 		node:      db.Node{ID: uuid.New()},
@@ -176,10 +245,10 @@ func TestActivitiesApplyCAPIMachineSerializesConcurrentAssignments(t *testing.T)
 	t.Parallel()
 
 	cluster := failureDomainTestDBCluster()
-	namespace := capi.ClusterNamespace(cluster.Name)
+	namespace := constants.NamespaceNKESystem
 	controlPlane := true
 	k8sClient := failureDomainTestClient(t,
-		failureDomainTestCAPICluster(cluster.Name, namespace,
+		failureDomainTestCAPICluster(cluster.Name,
 			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &controlPlane},
 			clusterv1.FailureDomain{Name: "fd-b", ControlPlane: &controlPlane},
 			clusterv1.FailureDomain{Name: "fd-c", ControlPlane: &controlPlane},
@@ -208,7 +277,6 @@ func TestActivitiesApplyCAPIMachineSerializesConcurrentAssignments(t *testing.T)
 		machine := failureDomainTestMachine(
 			fmt.Sprintf("cp-concurrent-%d", i),
 			cluster.Name,
-			namespace,
 			true,
 			"",
 		)
@@ -311,11 +379,11 @@ func failureDomainTestDBCluster() db.Cluster {
 	}
 }
 
-func failureDomainTestCAPICluster(name, namespace string, domains ...clusterv1.FailureDomain) *clusterv1.Cluster {
+func failureDomainTestCAPICluster(name string, domains ...clusterv1.FailureDomain) *clusterv1.Cluster {
 	return &clusterv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: constants.NamespaceNKESystem,
 		},
 		Status: clusterv1.ClusterStatus{
 			FailureDomains: domains,
@@ -323,7 +391,7 @@ func failureDomainTestCAPICluster(name, namespace string, domains ...clusterv1.F
 	}
 }
 
-func failureDomainTestMachine(name, clusterName, namespace string, controlPlane bool, failureDomain string) *clusterv1.Machine {
+func failureDomainTestMachine(name, clusterName string, controlPlane bool, failureDomain string) *clusterv1.Machine {
 	labels := map[string]string{clusterv1.ClusterNameLabel: clusterName}
 	if controlPlane {
 		labels[clusterv1.MachineControlPlaneLabel] = ""
@@ -331,11 +399,11 @@ func failureDomainTestMachine(name, clusterName, namespace string, controlPlane 
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
-			Namespace: namespace,
+			Namespace: constants.NamespaceNKESystem,
 			Labels:    labels,
 		},
 		Spec: clusterv1.MachineSpec{
