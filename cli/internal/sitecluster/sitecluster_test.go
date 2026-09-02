@@ -97,6 +97,49 @@ func TestClusterRequest_CarriesTheInventoryAsProvisionedHosts(t *testing.T) {
 	}
 }
 
+// TestClusterRequest_NamesTheInitNode: spec.initNode is required by the
+// ProvisionedCluster CRD, so a request without it is rejected by the API server
+// rather than by anything in this package. The failure lands well into a
+// bootstrap run and names a field the operator never wrote, so pin it here.
+func TestClusterRequest_NamesTheInitNode(t *testing.T) {
+	inv := testInventory()
+
+	req, err := ClusterRequest(inv)
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+
+	spec, ok := req.CapiInfraCluster["spec"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("capiInfraCluster has no spec: %#v", req.CapiInfraCluster)
+	}
+	got, ok := spec["initNode"].(string)
+	if !ok {
+		t.Fatalf("capiInfraCluster spec has no initNode: %#v", spec)
+	}
+	if want := inv.Cluster.InitNode.Name; got != want {
+		t.Errorf("spec.initNode = %q, want %q", got, want)
+	}
+
+	// The named host must also be in the inventory it is allocated from,
+	// otherwise the provider reserves a host that does not exist and every
+	// allocation blocks behind it.
+	hosts, ok := spec["hosts"].([]map[string]interface{})
+	if !ok {
+		t.Fatalf("capiInfraCluster spec has no hosts: %#v", spec)
+	}
+	found := false
+	for _, h := range hosts {
+		if h["hostname"] == got {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("spec.initNode %q names no host in spec.hosts: %#v", got, hosts)
+	}
+}
+
 // TestClusterRequest_OneControlPlanePoolSizedToTheInventory: every inventory
 // node joins as a control-plane node, so a pool that does not count them all
 // leaves hosts unused and the cluster smaller than the file asked for.

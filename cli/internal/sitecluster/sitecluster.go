@@ -89,7 +89,7 @@ func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody,
 			SystemReservedMemory:       inv.Cluster.KubeletConfig.SystemReservedMemory,
 			CapiInfraMachineTemplate:   provisionedMachineTemplate(),
 		}},
-		CapiInfraCluster: provisionedCluster(inv.ClusterName, hosts),
+		CapiInfraCluster: provisionedCluster(inv.ClusterName, inv.Cluster.InitNode.Name, hosts),
 	}
 
 	if inv.Cluster.CniVersion != "" {
@@ -131,9 +131,13 @@ func provisionedHosts(inv *inventory.Inventory) ([]map[string]interface{}, error
 }
 
 // provisionedCluster is the infrastructure side of the CAPI Cluster: the
-// inventory, and nothing else. The provider owns no endpoint — CWE owns the
-// control-plane VIP through its own API.
-func provisionedCluster(name string, hosts []map[string]interface{}) map[string]interface{} {
+// inventory and the host to allocate first, and nothing else. The provider owns
+// no endpoint — CWE owns the control-plane VIP through its own API.
+//
+// initNode names the host kubeadm init runs on. The provider reserves it for
+// the first eligible control-plane machine and blocks every other allocation
+// until that binding holds, so a spec without it is rejected by the API server.
+func provisionedCluster(name, initNode string, hosts []map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"apiVersion": provisionedAPIVersion,
 		"kind":       provisionedClusterKind,
@@ -141,7 +145,8 @@ func provisionedCluster(name string, hosts []map[string]interface{}) map[string]
 			"name": name,
 		},
 		"spec": map[string]interface{}{
-			"hosts": hosts,
+			"initNode": initNode,
+			"hosts":    hosts,
 		},
 	}
 }
