@@ -471,6 +471,11 @@ spiffe:
   # spiffe://nke.<site>.cloud-workflow-engine.nvid.id/bm/cwe. A mismatch authenticates
   # and then fails every authorization check.
   cweSubject: ""
+  # -- Subject the nke:capi-cluster-admin RBAC binding names for capi-manager.
+  # Defaults to spiffe://<trustDomain>/nke-service/capi-manager, which is what a
+  # tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is
+  # set because the exchange may rewrite the token's sub claim.
+  capiManagerSubject: ""
   # -- SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac.
   # Required when nkeOIDCAuth.enabled is true: builds the
   # nke:cwe SPIFFE subject ID in that ConfigMap. Must equal the

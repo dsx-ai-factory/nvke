@@ -31,7 +31,7 @@ def main():
     parser.add_argument("--chart", required=True)
     args = parser.parse_args()
 
-    command = [
+    base_command = [
         "helm",
         "template",
         "cwe",
@@ -42,6 +42,11 @@ def main():
         "nkeOIDCAuth.enabled=true",
         "--set",
         "tenantAccess.enabled=true",
+    ]
+    command = [
+        *base_command,
+        "--set",
+        "spiffe.capiManagerSubject=spiffe://exchange.example/capi-manager",
     ]
     rendered = subprocess.run(command, check=False, capture_output=True, text=True)
     if rendered.returncode != 0:
@@ -69,6 +74,59 @@ def main():
     cluster_role = roles.get(("ClusterRole", "nke:cwe"))
     if cluster_role is None:
         print("ERROR: no nke:cwe ClusterRole in the nke-rbac manifest", file=sys.stderr)
+        return 1
+
+    bindings = {
+        document["metadata"]["name"]: document
+        for document in inner
+        if document and document.get("kind") == "ClusterRoleBinding"
+    }
+    capi_binding = bindings.get("nke:capi-cluster-admin")
+    if capi_binding is None:
+        print(
+            "ERROR: no nke:capi-cluster-admin ClusterRoleBinding in the nke-rbac manifest",
+            file=sys.stderr,
+        )
+        return 1
+
+    capi_subjects = {
+        subject.get("name") for subject in capi_binding.get("subjects") or []
+    }
+    expected_capi_subjects = {
+        "spiffe://exchange.example/capi-manager",
+        "spiffe://example.test/nke-service/capi-kubeadm-control-plane-manager",
+        "spiffe://example.test/nke-service/capd-manager",
+    }
+    if capi_subjects != expected_capi_subjects:
+        print(
+            "ERROR: nke:capi-cluster-admin subjects do not match configured identities\n"
+            f"  got:  {sorted(capi_subjects)}\n"
+            f"  want: {sorted(expected_capi_subjects)}",
+            file=sys.stderr,
+        )
+        return 1
+
+    missing_capi_subject = subprocess.run(
+        [
+            *base_command,
+            "--set",
+            "spiffe.jwtExchangeEndpoint=https://exchange.example/v1/exchange",
+            "--set",
+            "spiffe.cweSubject=spiffe://exchange.example/cwe",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    expected_error = "spiffe.capiManagerSubject must be set"
+    if (
+        missing_capi_subject.returncode == 0
+        or expected_error not in missing_capi_subject.stderr
+    ):
+        print(
+            f"ERROR: token exchange without capi-manager subject must fail with: {expected_error}",
+            file=sys.stderr,
+        )
         return 1
 
     # API group, resource, verb, optional resource name, and the caller that
@@ -132,6 +190,8 @@ def main():
         return 1
 
     print(f"nke:cwe ClusterRole grants all {len(required)} required permissions")
+    print("nke:capi-cluster-admin uses the configured capi-manager subject")
+    print("token exchange requires an explicit capi-manager subject")
     return 0
 
 

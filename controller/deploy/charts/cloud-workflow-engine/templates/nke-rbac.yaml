@@ -55,7 +55,11 @@ metadata:
 {{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.cweSubject) }}
 {{- fail "spiffe.cweSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites sub, so the default subject (this controller's SPIFFE ID) would match nothing and every call into a tenant cluster would authenticate and then be denied" }}
 {{- end }}
+{{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capiManagerSubject) }}
+{{- fail "spiffe.capiManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite capi-manager's sub claim, so the default subject would not authorize CAPI against tenant clusters" }}
+{{- end }}
 {{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/cloud-workflow-engine" $td) }}
+{{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -181,7 +185,7 @@ data:
       name: nke:capi-cluster-admin
     subjects:
       - kind: User
-        name: spiffe://{{ $td }}/nke-service/capi-manager
+        name: {{ $capiManagerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
       - kind: User
         name: spiffe://{{ $td }}/nke-service/capi-kubeadm-control-plane-manager
