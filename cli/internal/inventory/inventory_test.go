@@ -375,17 +375,47 @@ func TestValidate_TPMEKThumbprint(t *testing.T) {
 	}
 }
 
-// TestValidate_SpireCA covers the CA the operator brings to the bootstrap.
-// Both files or neither, and both must be readable before anything is touched.
-func TestValidate_SpireCA(t *testing.T) {
+// spireCAFiles writes a readable certificate and key and returns their paths,
+// alongside a path that does not exist.
+func spireCAFiles(t *testing.T) (cert, key, missing string) {
+	t.Helper()
 	dir := t.TempDir()
-	cert := filepath.Join(dir, "ca.crt")
-	key := filepath.Join(dir, "ca.key")
+	cert = filepath.Join(dir, "ca.crt")
+	key = filepath.Join(dir, "ca.key")
 	for _, f := range []string{cert, key} {
 		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
+	return cert, key, filepath.Join(dir, "nope")
+}
+
+// minimalValid returns an inventory that passes Validate, so a test can vary
+// one field without restating the whole structure.
+func minimalValid() *Inventory {
+	return &Inventory{
+		ClusterName: "nke-site",
+		Cluster: Cluster{
+			InitNode:      Node{Name: "node1", IP: "10.0.0.1"},
+			JoinNodes:     []Node{{Name: "node2", IP: "10.0.0.2"}},
+			K8sVersion:    "1.32.0",
+			CniName:       "ovn-kubernetes",
+			PodCidr:       "10.100.0.0/16",
+			ServiceCidr:   "10.200.0.0/16",
+			NodeAgentPort: "15005",
+		},
+		Registry: Registry{
+			BootstrapRepo:  "nvcr.io/org/cloud-workflow-engine",
+			BootstrapChart: "cloud-workflow-engine",
+		},
+	}
+}
+
+// TestValidate_SpireCA covers the both-or-neither rule on the CA the operator
+// brings to the bootstrap. It is a pure-data rule, so it holds whether or not
+// the files exist yet.
+func TestValidate_SpireCA(t *testing.T) {
+	cert, key, missing := spireCAFiles(t)
 
 	for name, tc := range map[string]struct {
 		spire   Spire
@@ -395,8 +425,7 @@ func TestValidate_SpireCA(t *testing.T) {
 		"both, and readable":                       {Spire{CACertFile: cert, CAKeyFile: key}, false},
 		"cert without key":                         {Spire{CACertFile: cert}, true},
 		"key without cert":                         {Spire{CAKeyFile: key}, true},
-		"cert that does not exist":                 {Spire{CACertFile: filepath.Join(dir, "nope"), CAKeyFile: key}, true},
-		"key that does not exist":                  {Spire{CACertFile: cert, CAKeyFile: filepath.Join(dir, "nope")}, true},
+		"both named, neither on disk yet":          {Spire{CACertFile: missing, CAKeyFile: missing}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			v := &validator{}
@@ -405,5 +434,68 @@ func TestValidate_SpireCA(t *testing.T) {
 				t.Errorf("checkSpire(%+v) error = %v, want error: %v", tc.spire, v.err(), tc.wantErr)
 			}
 		})
+	}
+}
+
+// TestValidate_IgnoresMissingCAFiles is the point of separating Validate from
+// ValidateReferences: an inventory can be judged complete and well-formed on a
+// machine where the CA it names has not been placed yet.
+func TestValidate_IgnoresMissingCAFiles(t *testing.T) {
+	_, _, missing := spireCAFiles(t)
+
+	inv := minimalValid()
+	inv.Spire = Spire{CACertFile: missing, CAKeyFile: missing}
+	inv.SetDefaults()
+
+	if err := inv.Validate(); err != nil {
+		t.Errorf("Validate() with a CA that is not on disk yet = %v, want nil", err)
+	}
+}
+
+// TestValidateReferences covers the check Validate deliberately leaves out:
+// that the CA the inventory names can actually be read.
+func TestValidateReferences(t *testing.T) {
+	cert, key, missing := spireCAFiles(t)
+
+	for name, tc := range map[string]struct {
+		spire     Spire
+		wantErr   bool
+		wantField string
+	}{
+		"no CA named":     {Spire{}, false, ""},
+		"both readable":   {Spire{CACertFile: cert, CAKeyFile: key}, false, ""},
+		"cert unreadable": {Spire{CACertFile: missing, CAKeyFile: key}, true, pathSpireCACertFile},
+		"key unreadable":  {Spire{CACertFile: cert, CAKeyFile: missing}, true, pathSpireCAKeyFile},
+		"neither on disk": {Spire{CACertFile: missing, CAKeyFile: missing}, true, pathSpireCACertFile},
+		"only one named":  {Spire{CACertFile: cert}, false, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			inv := minimalValid()
+			inv.Spire = tc.spire
+
+			err := inv.ValidateReferences()
+			if gotErr := err != nil; gotErr != tc.wantErr {
+				t.Fatalf("ValidateReferences(%+v) error = %v, want error: %v", tc.spire, err, tc.wantErr)
+			}
+			if tc.wantField != "" && !strings.Contains(err.Error(), tc.wantField) {
+				t.Errorf("ValidateReferences() error = %q, want it to name %q", err, tc.wantField)
+			}
+		})
+	}
+}
+
+// TestLoad_StillChecksCAExistence guards the failure mode this split invites:
+// separating the checks and then forgetting to run the second one from Load,
+// silently dropping the fail-early guarantee bootstrap site relies on.
+func TestLoad_StillChecksCAExistence(t *testing.T) {
+	_, _, missing := spireCAFiles(t)
+	path := writeTemp(t, validYAML+"\nspire:\n  caCertFile: \""+missing+"\"\n  caKeyFile: \""+missing+"\"\n")
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load() with a CA that cannot be read = nil, want an error")
+	}
+	if !strings.Contains(err.Error(), pathSpireCACertFile) {
+		t.Errorf("Load() error = %q, want it to name %q", err, pathSpireCACertFile)
 	}
 }
