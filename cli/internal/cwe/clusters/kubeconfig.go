@@ -18,11 +18,10 @@ type MgmtKubeconfigResolver func() (string, error)
 
 // NewGetKubeconfigCmd returns "nkectl get kubeconfig <cluster-name>".
 //
-// It reads the admin kubeconfig for the named cluster directly from the
-// management cluster (see NKX-13899 for the decision record). The
-// management cluster kubeconfig is resolved via resolveMgmtKubeconfig (the
-// active site's configured kubeconfig) unless --mgmt-kubeconfig overrides it
-// for this invocation.
+// It reads the admin kubeconfig for the named tenant cluster directly from
+// the management cluster. The management cluster kubeconfig is resolved via
+// resolveMgmtKubeconfig (the active site's configured kubeconfig) unless
+// --mgmt-kubeconfig overrides it for this invocation.
 func NewGetKubeconfigCmd(resolveMgmtKubeconfig MgmtKubeconfigResolver) *cobra.Command {
 	var (
 		mgmtKubeconfig string

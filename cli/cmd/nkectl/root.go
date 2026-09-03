@@ -55,7 +55,7 @@ func loadClient() (*clients.CWEClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
-	siteCfg, err := resolveSiteConfig(cfg)
+	_, siteCfg, err := resolveSiteConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -70,18 +70,27 @@ func loadSite() (config.SiteConfig, error) {
 	if err != nil {
 		return config.SiteConfig{}, fmt.Errorf("loading config: %w", err)
 	}
-	return resolveSiteConfig(cfg)
+	_, siteCfg, err := resolveSiteConfig(cfg)
+	return siteCfg, err
 }
 
-func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
+// resolveSiteConfig returns the active site's name and SiteConfig.
+func resolveSiteConfig(cfg *config.Config) (string, config.SiteConfig, error) {
 	if site == "" {
-		return cfg.CurrentSiteConfig()
+		if cfg.CurrentSite == "" {
+			return "", config.SiteConfig{}, fmt.Errorf("no site configured: run 'nkectl config set-site' first")
+		}
+		currentSite, ok := cfg.Sites[cfg.CurrentSite]
+		if !ok {
+			return "", config.SiteConfig{}, fmt.Errorf("current site %q not found in config", cfg.CurrentSite)
+		}
+		return cfg.CurrentSite, currentSite, nil
 	}
 	siteCfg, ok := cfg.Sites[site]
 	if !ok {
-		return config.SiteConfig{}, fmt.Errorf("site %q not found in config", site)
+		return "", config.SiteConfig{}, fmt.Errorf("site %q not found in config", site)
 	}
-	return siteCfg, nil
+	return site, siteCfg, nil
 }
 
 // resolveMgmtKubeconfig returns the management cluster kubeconfig path
@@ -93,16 +102,12 @@ func resolveMgmtKubeconfig() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("loading config: %w", err)
 	}
-	siteCfg, err := resolveSiteConfig(cfg)
+	name, siteCfg, err := resolveSiteConfig(cfg)
 	if err != nil {
 		return "", err
 	}
 	if siteCfg.Kubeconfig == "" {
-		siteName := site
-		if siteName == "" {
-			siteName = cfg.CurrentSite
-		}
-		return "", fmt.Errorf("no management cluster kubeconfig configured for site %q: run 'nkectl config set-site --kubeconfig'", siteName)
+		return "", fmt.Errorf("no management cluster kubeconfig configured for site %q: run 'nkectl config set-site --kubeconfig'", name)
 	}
 	return siteCfg.Kubeconfig, nil
 }

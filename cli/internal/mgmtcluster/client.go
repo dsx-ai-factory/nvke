@@ -4,8 +4,6 @@
 // Package mgmtcluster provides a client for reading resources from the NKE
 // management cluster — specifically the per-cluster admin kubeconfig Secret
 // that the tenantaccess controller publishes into the nke-system namespace.
-// See NKX-13899 for the decision record on reading this Secret directly
-// instead of going through a CWE REST endpoint.
 package mgmtcluster
 
 import (
