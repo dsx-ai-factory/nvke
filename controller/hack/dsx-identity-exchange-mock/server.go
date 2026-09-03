@@ -78,15 +78,38 @@ func (v jwtSVIDValidator) Validate(raw string) (validatedToken, error) {
 	}, nil
 }
 
+// exchangeServer models the identity boundary between the management-cluster
+// SPIRE deployment and a tenant apiserver. It accepts a locally issued
+// JWT-SVID, verifies that credential before trusting its claims, rewrites the
+// source SPIFFE ID into the DSX identity shape, and signs a replacement JWT
+// that the tenant apiserver can validate through this server's OIDC endpoints.
 type exchangeServer struct {
+	// validator verifies the source JWT-SVID against the local SPIRE JWT bundle.
+	// Subject rewriting and re-signing happen only after this succeeds.
 	validator tokenValidator
+
+	// signer contains the ephemeral ES256 private key used for replacement
+	// tokens. publicKey is the matching verification key returned by the JWKS
+	// endpoint. A restart deliberately rotates this test-only key pair.
 	signer    jose.Signer
 	publicKey jose.JSONWebKey
-	issuer    string
-	jwksURL   string
+
+	// issuer becomes the replacement token's iss claim. jwksURL is advertised
+	// by OIDC discovery and must be reachable from the tenant apiserver; the two
+	// URLs are separate because the issuer is an identity while JWKS describes
+	// where that identity's current verification keys can be fetched.
+	issuer  string
+	jwksURL string
+
+	// region and partition form the rewritten DSX trust domain. For example,
+	// spiffe://capd.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe
+	// becomes spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe when region
+	// is "capd" and partition is "nvid.id".
 	region    string
 	partition string
-	now       func() time.Time
+
+	// now is injected so expires_in calculations are deterministic in tests.
+	now func() time.Time
 }
 
 func newExchangeServer(issuer, jwksURL, region, partition string, validator tokenValidator) (*exchangeServer, error) {
