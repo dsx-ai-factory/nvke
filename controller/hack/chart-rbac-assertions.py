@@ -47,6 +47,10 @@ def main():
         *base_command,
         "--set",
         "spiffe.capiManagerSubject=spiffe://exchange.example/capi-manager",
+        "--set",
+        "spiffe.capiKubeadmControlPlaneManagerSubject=spiffe://exchange.example/kcp-manager",
+        "--set",
+        "spiffe.capdManagerSubject=spiffe://exchange.example/capd-manager",
     ]
     rendered = subprocess.run(command, check=False, capture_output=True, text=True)
     if rendered.returncode != 0:
@@ -94,8 +98,8 @@ def main():
     }
     expected_capi_subjects = {
         "spiffe://exchange.example/capi-manager",
-        "spiffe://example.test/nke-service/capi-kubeadm-control-plane-manager",
-        "spiffe://example.test/nke-service/capd-manager",
+        "spiffe://exchange.example/kcp-manager",
+        "spiffe://exchange.example/capd-manager",
     }
     if capi_subjects != expected_capi_subjects:
         print(
@@ -106,28 +110,35 @@ def main():
         )
         return 1
 
-    missing_capi_subject = subprocess.run(
-        [
+    exchange_subjects = {
+        "spiffe.capiManagerSubject": "spiffe://exchange.example/capi-manager",
+        "spiffe.capiKubeadmControlPlaneManagerSubject": "spiffe://exchange.example/kcp-manager",
+        "spiffe.capdManagerSubject": "spiffe://exchange.example/capd-manager",
+    }
+    for missing_name in exchange_subjects:
+        missing_subject_command = [
             *base_command,
             "--set",
             "spiffe.jwtExchangeEndpoint=https://exchange.example/v1/exchange",
             "--set",
             "spiffe.cweSubject=spiffe://exchange.example/cwe",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    expected_error = "spiffe.capiManagerSubject must be set"
-    if (
-        missing_capi_subject.returncode == 0
-        or expected_error not in missing_capi_subject.stderr
-    ):
-        print(
-            f"ERROR: token exchange without capi-manager subject must fail with: {expected_error}",
-            file=sys.stderr,
+        ]
+        for name, value in exchange_subjects.items():
+            if name != missing_name:
+                missing_subject_command.extend(["--set", f"{name}={value}"])
+        missing_subject = subprocess.run(
+            missing_subject_command,
+            check=False,
+            capture_output=True,
+            text=True,
         )
-        return 1
+        expected_error = f"{missing_name} must be set"
+        if missing_subject.returncode == 0 or expected_error not in missing_subject.stderr:
+            print(
+                f"ERROR: token exchange without {missing_name} must fail with: {expected_error}",
+                file=sys.stderr,
+            )
+            return 1
 
     # API group, resource, verb, optional resource name, and the caller that
     # breaks without it. Keep the signer permission restricted to
@@ -190,8 +201,8 @@ def main():
         return 1
 
     print(f"nke:cwe ClusterRole grants all {len(required)} required permissions")
-    print("nke:capi-cluster-admin uses the configured capi-manager subject")
-    print("token exchange requires an explicit capi-manager subject")
+    print("nke:capi-cluster-admin uses all configured CAPI controller subjects")
+    print("token exchange requires explicit subjects for every CAPI controller")
     return 0
 
 

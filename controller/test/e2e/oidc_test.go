@@ -5,6 +5,8 @@ package e2e
 
 import (
 	"context"
+	"net/url"
+	"os"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -20,10 +22,16 @@ var (
 	deleteNodes = tenantauth.Check{Verb: "delete", Resource: "nodes"}
 )
 
+const (
+	dsxIdentityExchangeEnv = "NKE_E2E_DSX_IDENTITY_EXCHANGE"
+	dsxExchangeCAConfigMap = "dsx-identity-exchange-ca"
+	dsxExchangeCWEUser     = "spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe"
+)
+
 func validateOIDCPostCreate(test *tenantTest) {
 	It("maps NKE's identities and authorizes them through OIDC on the tenant apiserver", func(ctx context.Context) {
 		skipIfNKEOIDCDisabled(ctx, test.k8sClient)
-		if test.trustDomain == "" {
+		if test.trustDomain == "" && os.Getenv(dsxIdentityExchangeEnv) != "true" {
 			Skip("SPIRE trust domain could not be derived from kubeconfig context")
 		}
 
@@ -34,10 +42,41 @@ func validateOIDCPostCreate(test *tenantTest) {
 			return tenantauth.AssertKubeconfigAndTrustBundle(ctx, test.k8sClient, test.cluster.Name)
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 
+		cweIdentity := tenantauth.Identity{Namespace: "cloud-workflow-engine", ServiceAccount: "cloud-workflow-engine"}
+		cweUser := "spiffe://" + test.trustDomain + "/nke-service/cloud-workflow-engine"
+		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
+			By("Asserting the published kubeconfig selects the HTTPS token exchange")
+			exchangeEndpoint := expectSucceed(tenantauth.KubeconfigExecEnv(
+				ctx, test.k8sClient, test.cluster.Name, "SPIFFE_JWT_EXCHANGE_ENDPOINT",
+			))
+			parsedEndpoint := expectSucceed(url.Parse(exchangeEndpoint))
+			Expect(parsedEndpoint.Scheme).To(Equal("https"))
+			Expect(parsedEndpoint.Path).To(Equal("/v1/exchange"))
+
+			cweIdentity.CABundleConfigMap = dsxExchangeCAConfigMap
+			cweUser = dsxExchangeCWEUser
+		}
+
 		By("Verifying the cwe identity authenticates and has the required node permissions")
-		verifyIdentity(ctx, test,
-			tenantauth.Identity{Namespace: "cloud-workflow-engine", ServiceAccount: "cloud-workflow-engine"},
-			"spiffe://"+test.trustDomain+"/nke-service/cloud-workflow-engine")
+		verifyIdentity(ctx, test, cweIdentity, cweUser)
+
+		if os.Getenv(dsxIdentityExchangeEnv) == "true" {
+			controllers := []struct {
+				namespace, serviceAccount, username string
+			}{
+				{"capi-system", "capi-manager", "spiffe://nke.capd.capi-manager.nvid.id/bm/cwe"},
+				{"capi-kubeadm-control-plane-system", "capi-kubeadm-control-plane-manager", "spiffe://nke.capd.capi-kubeadm-control-plane-manager.nvid.id/bm/cwe"},
+				{"capd-system", "capd-manager", "spiffe://nke.capd.capd-manager.nvid.id/bm/cwe"},
+			}
+			for _, controller := range controllers {
+				By("Verifying the " + controller.serviceAccount + " identity is exchanged and keeps cluster-admin access")
+				verifyIdentity(ctx, test, tenantauth.Identity{
+					Namespace:         controller.namespace,
+					ServiceAccount:    controller.serviceAccount,
+					CABundleConfigMap: dsxExchangeCAConfigMap,
+				}, controller.username)
+			}
+		}
 	}, Label("spire-oidc"), SpecTimeout(15*time.Minute))
 }
 

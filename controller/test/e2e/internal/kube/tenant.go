@@ -6,15 +6,19 @@ package kube
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -56,6 +60,11 @@ const (
 	adminSPIFFEPath     = "/nke-service/capi-manager"
 	spireExecPluginName = "k8s-spiffe-workload-jwt-exec-auth"
 	spireAudienceEnv    = "SPIFFE_JWT_AUDIENCE"
+	spireExchangeEnv    = "SPIFFE_JWT_EXCHANGE_ENDPOINT"
+
+	tokenExchangeGrantType  = "urn:ietf:params:oauth:grant-type:token-exchange" // #nosec G101 -- public RFC 8693 identifier, not a credential.
+	tokenTypeJWT            = "urn:ietf:params:oauth:token-type:jwt"            // #nosec G101 -- public RFC 8693 identifier, not a credential.
+	maxExchangeResponseSize = 1 << 20
 
 	jwtRefreshBefore    = time.Minute
 	tenantAdminAuthInfo = "admin"
@@ -63,6 +72,31 @@ const (
 )
 
 type executorFactory func(string, *url.URL) (remotecommand.Executor, error)
+
+// TenantClientFactoryOption configures a TenantClientFactory.
+type TenantClientFactoryOption func(*TenantClientFactory) error
+
+// WithJWTExchangeCABundle adds PEM-encoded roots used to verify an HTTPS JWT
+// exchange endpoint declared by a published tenant kubeconfig.
+func WithJWTExchangeCABundle(bundle []byte) TenantClientFactoryOption {
+	return func(factory *TenantClientFactory) error {
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(bundle) {
+			return errors.New("JWT exchange CA bundle contains no certificates")
+		}
+
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{ //nolint:gosec // TLS 1.2 remains supported by DSX identity endpoints.
+			MinVersion: tls.VersionTLS12,
+			RootCAs:    roots,
+		}
+		factory.exchangeClient = &http.Client{Transport: transport}
+		return nil
+	}
+}
 
 // TenantClientFactory builds controller-runtime clients for tenant clusters.
 // It obtains the tenant endpoint, CA, and authentication mode from the
@@ -73,8 +107,9 @@ type TenantClientFactory struct {
 	coreClient coreclient.CoreV1Interface
 	coreREST   rest.Interface
 
-	newExecutor executorFactory
-	now         func() time.Time
+	newExecutor    executorFactory
+	exchangeClient *http.Client
+	now            func() time.Time
 }
 
 // BuildTenantClientFactory returns a factory backed by the management cluster.
@@ -83,6 +118,7 @@ type TenantClientFactory struct {
 // client used for management-cluster reads and is captured for SPDY pod exec.
 func BuildTenantClientFactory(
 	managementConfig *rest.Config,
+	options ...TenantClientFactoryOption,
 ) (*TenantClientFactory, error) {
 	if managementConfig == nil {
 		return nil, errors.New("management REST config is required")
@@ -93,14 +129,21 @@ func BuildTenantClientFactory(
 		return nil, fmt.Errorf("building management Core client: %w", err)
 	}
 
-	return &TenantClientFactory{
+	factory := &TenantClientFactory{
 		coreClient: managementCoreClient,
 		coreREST:   managementCoreClient.RESTClient(),
 		newExecutor: func(method string, requestURL *url.URL) (remotecommand.Executor, error) {
 			return remotecommand.NewSPDYExecutor(managementConfig, method, requestURL)
 		},
-		now: time.Now,
-	}, nil
+		exchangeClient: http.DefaultClient,
+		now:            time.Now,
+	}
+	for _, option := range options {
+		if err := option(factory); err != nil {
+			return nil, fmt.Errorf("configuring tenant client factory: %w", err)
+		}
+	}
+	return factory, nil
 }
 
 // GetClient returns a tenant client for a given cluster.
@@ -196,6 +239,10 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 	if err != nil {
 		return nil, err
 	}
+	exchangeEndpoint, err := spireExchangeEndpoint(publishedConfig.ExecProvider)
+	if err != nil {
+		return nil, fmt.Errorf("reading SPIRE JWT exchange endpoint from tenant kubeconfig for %q: %w", clusterName, err)
+	}
 
 	// The exec plugin needs an in-cluster Workload API socket that the host-side
 	// test does not have. Keep only the endpoint and TLS settings, then replace
@@ -203,7 +250,7 @@ func (f *TenantClientFactory) tenantRESTConfigAs(ctx context.Context, clusterNam
 	tenantConfig := rest.AnonymousClientConfig(publishedConfig)
 	tokenSource := newExpiringJWTSource(
 		func(tokenCtx context.Context) (string, error) {
-			return f.mintJWTAs(tokenCtx, trustDomain, audience, spiffePath)
+			return f.mintTenantJWTAs(tokenCtx, trustDomain, audience, spiffePath, exchangeEndpoint)
 		},
 		f.now,
 	)
@@ -265,7 +312,11 @@ func (f *TenantClientFactory) AdminKubeconfig(ctx context.Context, clusterName s
 	if err != nil {
 		return nil, err
 	}
-	token, err := f.mintJWTAs(ctx, trustDomain, audience, adminSPIFFEPath)
+	exchangeEndpoint, err := spireExchangeEndpoint(exec)
+	if err != nil {
+		return nil, fmt.Errorf("reading SPIRE JWT exchange endpoint from tenant kubeconfig for %q: %w", clusterName, err)
+	}
+	token, err := f.mintTenantJWTAs(ctx, trustDomain, audience, adminSPIFFEPath, exchangeEndpoint)
 	if err != nil {
 		return nil, err
 	}
@@ -325,6 +376,106 @@ func spireAudience(execConfig *clientcmdapi.ExecConfig) (string, error) {
 		return "", fmt.Errorf("%s is not set", spireAudienceEnv)
 	}
 	return audience, nil
+}
+
+func spireExchangeEndpoint(execConfig *clientcmdapi.ExecConfig) (string, error) {
+	if execConfig == nil {
+		return "", nil
+	}
+
+	var endpoint string
+	for _, env := range execConfig.Env {
+		if env.Name != spireExchangeEnv {
+			continue
+		}
+		value := strings.TrimSpace(env.Value)
+		if value == "" {
+			return "", fmt.Errorf("%s is empty", spireExchangeEnv)
+		}
+		if endpoint != "" && endpoint != value {
+			return "", fmt.Errorf("%s has conflicting values %q and %q", spireExchangeEnv, endpoint, value)
+		}
+		endpoint = value
+	}
+	if endpoint == "" {
+		return "", nil
+	}
+
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return "", fmt.Errorf("%s must be an absolute HTTPS URL, got %q", spireExchangeEnv, endpoint)
+	}
+	return endpoint, nil
+}
+
+func (f *TenantClientFactory) mintTenantJWTAs(
+	ctx context.Context,
+	trustDomain, audience, spiffePath, exchangeEndpoint string,
+) (string, error) {
+	sourcePath := spiffePath
+	if exchangeEndpoint != "" {
+		var err error
+		sourcePath, err = exchangeSourceSPIFFEPath(spiffePath)
+		if err != nil {
+			return "", err
+		}
+	}
+
+	sourceToken, err := f.mintJWTAs(ctx, trustDomain, audience, sourcePath)
+	if err != nil {
+		return "", err
+	}
+	if exchangeEndpoint == "" {
+		return sourceToken, nil
+	}
+	return f.exchangeJWT(ctx, exchangeEndpoint, sourceToken)
+}
+
+func exchangeSourceSPIFFEPath(spiffePath string) (string, error) {
+	service, ok := strings.CutPrefix(spiffePath, "/nke-service/")
+	if !ok || service == "" || strings.Contains(service, "/") {
+		return "", fmt.Errorf("cannot map SPIFFE path %q to a DSX exchange source identity", spiffePath)
+	}
+	return "/tenant/nke/service/" + service + "/bm/cwe", nil
+}
+
+func (f *TenantClientFactory) exchangeJWT(ctx context.Context, endpoint, sourceToken string) (string, error) {
+	form := url.Values{
+		"grant_type":           {tokenExchangeGrantType},
+		"subject_token":        {sourceToken},
+		"subject_token_type":   {tokenTypeJWT},
+		"requested_token_type": {tokenTypeJWT},
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", fmt.Errorf("building tenant JWT exchange request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	response, err := f.exchangeClient.Do(request)
+	if err != nil {
+		return "", fmt.Errorf("exchanging tenant JWT: %w", err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxExchangeResponseSize))
+	if err != nil {
+		return "", fmt.Errorf("reading tenant JWT exchange response: %w", err)
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return "", fmt.Errorf("tenant JWT exchange returned %s: %s", response.Status, strings.TrimSpace(string(body)))
+	}
+
+	var exchanged struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(body, &exchanged); err != nil {
+		return "", fmt.Errorf("decoding tenant JWT exchange response: %w", err)
+	}
+	if strings.TrimSpace(exchanged.AccessToken) == "" {
+		return "", errors.New("tenant JWT exchange response has no access_token")
+	}
+	return exchanged.AccessToken, nil
 }
 
 func (f *TenantClientFactory) mintJWT(ctx context.Context, trustDomain, audience string) (string, error) {
@@ -572,15 +723,22 @@ func jwtExpiration(token string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("decoding JWT claims: %w", err)
 	}
 	var claims struct {
-		ExpiresAt int64 `json:"exp"`
+		ExpiresAt json.Number `json:"exp"`
 	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.UseNumber()
+	if err := decoder.Decode(&claims); err != nil {
 		return time.Time{}, fmt.Errorf("parsing JWT claims: %w", err)
 	}
-	if claims.ExpiresAt <= 0 {
+	if claims.ExpiresAt == "" {
 		return time.Time{}, errors.New("JWT has no valid exp claim")
 	}
-	return time.Unix(claims.ExpiresAt, 0), nil
+	expiresAt, err := strconv.ParseFloat(claims.ExpiresAt.String(), 64)
+	if err != nil || expiresAt <= 0 || math.IsNaN(expiresAt) || math.IsInf(expiresAt, 0) || expiresAt >= float64(math.MaxInt64) {
+		return time.Time{}, errors.New("JWT has no valid exp claim")
+	}
+	seconds, fraction := math.Modf(expiresAt)
+	return time.Unix(int64(seconds), int64(fraction*float64(time.Second))), nil
 }
 
 type jwtBearerRoundTripper struct {

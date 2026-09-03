@@ -58,8 +58,16 @@ metadata:
 {{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capiManagerSubject) }}
 {{- fail "spiffe.capiManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite capi-manager's sub claim, so the default subject would not authorize CAPI against tenant clusters" }}
 {{- end }}
+{{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capiKubeadmControlPlaneManagerSubject) }}
+{{- fail "spiffe.capiKubeadmControlPlaneManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite the kubeadm control-plane manager's sub claim, so the default subject would not authorize it against tenant clusters" }}
+{{- end }}
+{{- if and .Values.spiffe.jwtExchangeEndpoint (not .Values.spiffe.capdManagerSubject) }}
+{{- fail "spiffe.capdManagerSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange may rewrite capd-manager's sub claim, so the default subject would not authorize CAPD against tenant clusters" }}
+{{- end }}
 {{- $cweSubject := .Values.spiffe.cweSubject | default (printf "spiffe://%s/nke-service/cloud-workflow-engine" $td) }}
 {{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
+{{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
+{{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -188,10 +196,10 @@ data:
         name: {{ $capiManagerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
       - kind: User
-        name: spiffe://{{ $td }}/nke-service/capi-kubeadm-control-plane-manager
+        name: {{ $capiKubeadmControlPlaneManagerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
       - kind: User
-        name: spiffe://{{ $td }}/nke-service/capd-manager
+        name: {{ $capdManagerSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: ClusterRole

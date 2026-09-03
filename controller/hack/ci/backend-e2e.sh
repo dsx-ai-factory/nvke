@@ -98,6 +98,19 @@ log() {
   printf '[%s-e2e] %s\n' "${BACKEND}" "$*"
 }
 
+# The provider list controls provisioning backends and optional management-plane
+# integrations. Parse it before image builds so integrations can stage images.
+: "${NKE_E2E_PROVIDERS:=${E2E_CAPD_PROVIDERS}}"
+if ! jq -e 'type == "array" and length > 0' <<<"${NKE_E2E_PROVIDERS}" >/dev/null 2>&1; then
+  log "NKE_E2E_PROVIDERS must be a non-empty JSON array, got: ${NKE_E2E_PROVIDERS}"
+  exit 1
+fi
+if jq -e 'index("dsx-identity-exchange") != null' <<<"${NKE_E2E_PROVIDERS}" >/dev/null; then
+  DSX_IDENTITY_EXCHANGE_ENABLED=true
+else
+  DSX_IDENTITY_EXCHANGE_ENABLED=false
+fi
+
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
     log "$1 is required" >&2
@@ -259,6 +272,7 @@ ci_e2e_exec() {
   runner_exec env \
     "CWE_EXPECTED_VERSION=${CWE_BUILD_VERSION}" \
     "CWE_PROFILES_DIR=${NKE_E2E_PROFILES_DIR}" \
+    "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
     "$@"
 }
@@ -379,6 +393,10 @@ collect_diagnostics() {
           >"${STATE_DIR}/capd-reboot-controller.log" 2>&1
         runner_exec kubectl -n cloud-workflow-engine logs deployment/cloud-workflow-engine --all-containers --tail=-1 \
           >"${STATE_DIR}/cwe.log" 2>&1
+        if [[ "${DSX_IDENTITY_EXCHANGE_ENABLED}" == "true" ]]; then
+          runner_exec kubectl -n spire-server logs deployment/dsx-identity-exchange-mock --all-containers --tail=-1 \
+            >"${STATE_DIR}/dsx-identity-exchange.log" 2>&1
+        fi
         runner_exec kubectl get \
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A -o yaml \
@@ -540,6 +558,7 @@ git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
 CWE_IMAGE="${CWE_IMAGE:-cwe-e2e:${git_short_sha}}"
 CWE_BUILD_VERSION="${CWE_BUILD_VERSION:-e2e-${git_short_sha}}"
 CWE_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
+DSX_IDENTITY_EXCHANGE_IMAGE=""
 
 log "building the sanitized profiles fixture image"
 docker build \
@@ -560,6 +579,18 @@ DOCKER_BUILDKIT=1 docker build \
   "${WORKSPACE_ROOT}"
 printf '%s\n' "${CWE_IMAGE}" >"${STATE_DIR}/cwe-image-ref.txt"
 docker image inspect "${CWE_IMAGE}" >"${STATE_DIR}/cwe-image.json"
+
+if [[ "${DSX_IDENTITY_EXCHANGE_ENABLED}" == "true" ]]; then
+  DSX_IDENTITY_EXCHANGE_IMAGE="dsx-identity-exchange-e2e:${git_short_sha}"
+  log "building DSX identity exchange mock ${DSX_IDENTITY_EXCHANGE_IMAGE}"
+  DOCKER_BUILDKIT=1 docker build \
+    --platform "linux/${host_arch}" \
+    --file "${CONTROLLER_ROOT}/hack/dsx-identity-exchange-mock/Dockerfile" \
+    --tag "${DSX_IDENTITY_EXCHANGE_IMAGE}" \
+    "${WORKSPACE_ROOT}"
+  printf '%s\n' "${DSX_IDENTITY_EXCHANGE_IMAGE}" >"${STATE_DIR}/dsx-identity-exchange-image-ref.txt"
+  docker image inspect "${DSX_IDENTITY_EXCHANGE_IMAGE}" >"${STATE_DIR}/dsx-identity-exchange-image.json"
+fi
 
 NODE_AGENT_VERSION="${NODE_AGENT_VERSION:-$(
   git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always --dirty 2>/dev/null \
@@ -668,6 +699,9 @@ kind create cluster \
 configure_kind_dockerhub_mirror
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
+if [[ -n "${DSX_IDENTITY_EXCHANGE_IMAGE}" ]]; then
+  kind load docker-image --name "${KIND_CLUSTER_NAME}" "${DSX_IDENTITY_EXCHANGE_IMAGE}"
+fi
 kind get kubeconfig --internal --name "${KIND_CLUSTER_NAME}" >"${MANAGEMENT_KUBECONFIG}"
 
 log "starting the CAPD bundle mirror on the Kind Docker network"
@@ -792,11 +826,6 @@ if ! management_vip="$(e2e_management_vip "${KIND_CLUSTER_NAME}")"; then
 fi
 # The provider list is the main thing that varies by backend. The default is
 # the CAPD set this script has always used; nico-e2e.yml passes the NICo one.
-# capi_core is not optional: the Tiltfile refuses a list without it.
-# Default from the shared library so the two entrypoints cannot disagree about
-# which providers a CAPD run needs. The workflow may still override it.
-: "${NKE_E2E_PROVIDERS:=${E2E_CAPD_PROVIDERS}}"
-
 # Where the suite reads the OS profile index it builds the nico-vms matrix
 # from. This has to be a path on the inner runner. The suite is compiled on the
 # outer runner, so the fallback resolveOSProfileMetadataPath derives from
@@ -809,13 +838,9 @@ fi
 #
 # A lane with a real nke-site-deploy checkout can point this at that instead.
 : "${NKE_E2E_PROFILES_DIR:=/workspace/cloud-workflow-engine/test/fixtures/fleet-profiles}"
-if ! jq -e 'type == "array" and length > 0' <<<"${NKE_E2E_PROVIDERS}" >/dev/null 2>&1; then
-  log "NKE_E2E_PROVIDERS must be a non-empty JSON array, got: ${NKE_E2E_PROVIDERS}"
-  exit 1
-fi
-
 e2e_write_tilt_config "${TMP_DIR}/tilt_config.json" \
-  "${NKE_E2E_PROVIDERS}" "${CWE_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}"
+  "${NKE_E2E_PROVIDERS}" "${CWE_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
+  "${DSX_IDENTITY_EXCHANGE_IMAGE}"
 docker cp "${TMP_DIR}/tilt_config.json" \
   "${RUNNER_NAME}:/workspace/cloud-workflow-engine/tilt_config.json"
 jq -n \
@@ -852,6 +877,7 @@ runner_exec env \
   NICO_PROVIDER_REPO_DIR="${NICO_PROVIDER_CONTAINER_DIR}" \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \
+  INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
   TILT_DISABLE_ANALYTICS=1 \
   bash -lc '

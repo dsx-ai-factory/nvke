@@ -28,6 +28,8 @@ const (
 	verifyContainerName   = "verify"
 	expectedUsernameEnv   = "EXPECTED_USERNAME"
 	binaryVolumeName      = "binary"
+	exchangeCAVolumeName  = "exchange-ca"
+	exchangeCAPath        = "/etc/nke/dsx-identity/ca.crt"
 
 	// downloadScript fetches and sha256-verifies the exec plugin into the
 	// shared binary volume. ASSET and CHECKSUMS come in as env vars, set per
@@ -80,7 +82,7 @@ if kubectl $KC get nodes >/dev/null 2>&1; then echo "LISTNODES ok"; else echo "L
 // passing the expected username and encoded checks to the verify container.
 func buildPod(id Identity, clusterName, expectedUsername string, checks []Check) *corev1.Pod {
 	automount := true
-	return &corev1.Pod{
+	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: podGenerateName,
 			Namespace:    id.Namespace,
@@ -136,6 +138,20 @@ func buildPod(id Identity, clusterName, expectedUsername string, checks []Check)
 			},
 		},
 	}
+	if id.CABundleConfigMap != "" {
+		verify := &pod.Spec.Containers[0]
+		verify.Env = append(verify.Env, corev1.EnvVar{Name: "SSL_CERT_FILE", Value: exchangeCAPath})
+		verify.VolumeMounts = append(verify.VolumeMounts, corev1.VolumeMount{
+			Name: exchangeCAVolumeName, MountPath: exchangeCAPath, SubPath: "ca.crt", ReadOnly: true,
+		})
+		pod.Spec.Volumes = append(pod.Spec.Volumes, corev1.Volume{
+			Name: exchangeCAVolumeName,
+			VolumeSource: corev1.VolumeSource{ConfigMap: &corev1.ConfigMapVolumeSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: id.CABundleConfigMap},
+			}},
+		})
+	}
+	return pod
 }
 
 // pluginAssetName maps the runner's own GOARCH to the plugin's release asset.

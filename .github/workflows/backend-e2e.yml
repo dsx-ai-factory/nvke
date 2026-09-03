@@ -63,6 +63,14 @@ on:
         required: false
         type: boolean
         default: false
+      install-cni-after-init:
+        description: >-
+          Have CWE initialize the first control-plane before invoking the node
+          agent's stand-alone InstallCNI RPC. This avoids coupling CNI apply to
+          the kube-vip startup race in focused CAPD lanes.
+        required: false
+        type: boolean
+        default: false
       nkectl-smoke:
         description: >-
           Run hack/ci/nkectl-smoke.sh once the suite passes: drive nkectl against
@@ -121,6 +129,7 @@ jobs:
       NKE_E2E_PROVIDERS: ${{ inputs.providers }}
       NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
       NKE_E2E_NKECTL_SMOKE: ${{ inputs.nkectl-smoke }}
+      INSTALL_CNI_AFTER_INIT: ${{ inputs.install-cni-after-init }}
       # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
       # to the Tilt deploy and the e2e binary. Empty/false keeps the node-pool
       # control plane (CWE's own default).
@@ -255,6 +264,7 @@ jobs:
             capi-kubeadm-bootstrap-controller.log
             capi-kubeadm-control-plane-controller.log
             capd-controller.log
+            dsx-identity-exchange.log
             cwe.log
           )
           for file in "${files[@]}"; do

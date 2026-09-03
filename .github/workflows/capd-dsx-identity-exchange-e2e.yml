@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Focused CAPD coverage for the DSX identity exchange boundary. Unlike the
+# general CAPD workflow, this lane is not affected by nkectl or other CLI-only
+# changes. Workflow-plumbing paths remain included so changes to the lane itself
+# cannot bypass its E2E check.
+
+name: CAPD DSX identity exchange E2E
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - "controller/**"
+      - "agent/**"
+      - .github/workflows/capd-dsx-identity-exchange-e2e.yml
+      - .github/workflows/backend-e2e.yml
+      - .github/workflows/e2e-pr-path-filter.yml
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: CAPD DSX identity exchange E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      pull-requests: read
+    with:
+      # Keep in step with the push paths above. The Helm chart is below
+      # controller/, so no separate pattern is needed for it.
+      relevant_paths: '^controller/|^agent/|^\.github/workflows/(capd-dsx-identity-exchange-e2e|backend-e2e|e2e-pr-path-filter)\.yml$'
+
+  # Keep the ordinary direct-SPIRE CAPD lane as a control. This small lifecycle
+  # uses the real exec plugin, a real local JWT-SVID and a real tenant apiserver.
+  capd-dsx-identity-exchange:
+    needs: changes
+    if: needs.changes.outputs.run_e2e == 'true'
+    uses: ./.github/workflows/backend-e2e.yml
+    permissions:
+      contents: read
+    secrets:
+      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
+    with:
+      backend: capd-dsx-identity
+      arch: amd64
+      runner: linux-amd64-cpu16
+      label-filter: identity-exchange
+      providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller", "dsx-identity-exchange"]'
+      install-cni-after-init: true
+      needs-nico-provider: true
+      timeout-minutes: 75

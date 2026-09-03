@@ -156,15 +156,18 @@ else
   docker info >/dev/null 2>&1 || fail "cannot reach the Docker daemon; is it running and is your user in the docker group?"
 fi
 
-# A failed run leaves its CAPD tenant nodes behind, and kube-vip keeps
-# advertising each dead control plane. The next run's VIP then load balances
-# across control planes from several clusters, and kubectl reports the API
-# server certificate as signed by an unknown authority. Diagnostics are already
-# in the state directory by then, so the containers themselves are safe to drop.
-stale_nodes="$(docker ps -aq --filter 'name=e2e-capd-' | wc -l | tr -d ' ')"
-if [[ "${stale_nodes}" != 0 ]]; then
-  log "removing ${stale_nodes} tenant node containers left by an earlier run"
-  docker ps -aq --filter 'name=e2e-capd-' | xargs -r docker rm -f >/dev/null 2>&1 || true
+# A failed run can leave CAPD tenant nodes behind, and kube-vip can keep
+# advertising their control-plane VIP. Those containers may belong to another
+# worktree or investigation, so preserve them unless cleanup is explicitly
+# requested.
+if [[ "${LOCAL_NKE_E2E_CLEAN_STALE_NODES:-false}" == true ]]; then
+  stale_nodes="$(docker ps -aq --filter 'name=e2e-capd-' | wc -l | tr -d ' ')"
+  if [[ "${stale_nodes}" != 0 ]]; then
+    log "removing ${stale_nodes} tenant node containers left by an earlier run"
+    docker ps -aq --filter 'name=e2e-capd-' | xargs -r docker rm -f >/dev/null 2>&1 || true
+  fi
+else
+  log "preserving tenant node containers from other local E2E runs"
 fi
 
 log "ensuring the Kind management cluster exists"
@@ -207,7 +210,15 @@ else
 fi
 
 log "building the local agent CAPD image and installing CAPI/CAPD"
-make -C "${repo_root}" capd-up
+if [[ "${LOCAL_NKE_E2E_REUSE_CAPD_SETUP:-false}" == true ]]; then
+  node_image="${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}"
+  docker image inspect "${node_image}" >/dev/null || fail "CAPD node image ${node_image} does not exist"
+  kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=120s
+  kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=120s
+  log "reusing the existing CAPD providers and node image ${node_image}"
+else
+  make -C "${repo_root}" capd-up
+fi
 
 capnico_crd_dir="${NICO_PROVIDER_REPO_DIR:-${repo_root}/../../cluster-api-provider-nico}/config/crd/bases"
 [[ -d "${capnico_crd_dir}" ]] ||
@@ -243,8 +254,9 @@ if [[ -f "${tilt_config}" ]]; then
   cp "${tilt_config}" "${tilt_config_backup}"
   had_tilt_config=true
 fi
+local_e2e_providers="${LOCAL_NKE_E2E_PROVIDERS:-${E2E_CAPD_PROVIDERS}}"
 e2e_write_tilt_config "${tilt_config}" \
-  "${E2E_CAPD_PROVIDERS}" \
+  "${local_e2e_providers}" \
   "${LOCAL_CWE_IMAGE:-}" "${management_vip}" "${BGP_CONTAINER_NAME:-bgp-containers}"
 tilt_config_staged=true
 
@@ -280,14 +292,17 @@ kind get kubeconfig --internal --name "${kind_cluster_name}" >"${internal_kubeco
 jq -n \
   --arg kubeconfig /state/management.kubeconfig \
   --arg context "kind-${kind_cluster_name}" \
+  --arg capd_node_image "${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}" \
   '{
     kube: {kubeconfig: $kubeconfig, context: $context},
-    cluster: {capdNodeImage: "cwe-capd-kindest-node:local"},
+    cluster: {capdNodeImage: $capd_node_image},
     lifecycle: {preserveOnFailure: true}
   }' >"${e2e_config}"
 
 log "starting the E2E client on the Kind Docker network"
-docker pull "${runner_image}" >/dev/null
+if ! docker image inspect "${runner_image}" >/dev/null 2>&1; then
+  docker pull "${runner_image}" >/dev/null
+fi
 docker create --name "${runner_name}" --network kind "${runner_image}" sleep infinity >/dev/null
 docker start "${runner_name}" >/dev/null
 docker exec "${runner_name}" mkdir -p /state
@@ -306,8 +321,13 @@ cwe_expected_version="$(make -C "${repo_root}" -s --no-print-directory print-BUI
 # on the Kind network, reached with `docker exec`.
 local_e2e_exec() {
   local cp_flag="$1"; shift
+  local exchange_enabled=false
+  if jq -e 'index("dsx-identity-exchange") != null' <<<"${local_e2e_providers}" >/dev/null; then
+    exchange_enabled=true
+  fi
   docker exec \
     -e "CWE_EXPECTED_VERSION=${cwe_expected_version}" \
+    -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
     -e "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
     "${runner_name}" "$@"
 }

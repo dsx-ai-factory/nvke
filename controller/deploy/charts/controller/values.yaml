@@ -479,6 +479,14 @@ spiffe:
   # tenant sees without token exchange. Set it whenever jwtExchangeEndpoint is
   # set because the exchange may rewrite the token's sub claim.
   capiManagerSubject: ""
+  # -- Subject the nke:capi-cluster-admin RBAC binding names for the kubeadm
+  # control-plane manager. Defaults to its local SPIFFE ID; set it to the
+  # rewritten subject when that controller uses an exchanged tenant kubeconfig.
+  capiKubeadmControlPlaneManagerSubject: ""
+  # -- Subject the nke:capi-cluster-admin RBAC binding names for the CAPD
+  # manager. Defaults to its local SPIFFE ID; set it to the rewritten subject
+  # when CAPD uses an exchanged tenant kubeconfig.
+  capdManagerSubject: ""
   # -- SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac.
   # Required when nkeOIDCAuth.enabled is true: builds the
   # nke:cwe SPIFFE subject ID in that ConfigMap. Must equal the

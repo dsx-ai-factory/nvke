@@ -37,3 +37,28 @@ func TestBuildPodWaitsForExpectedUsername(t *testing.T) {
 		t.Fatalf("verify expected-username env = %s=%q, want %s=%q", got.Name, got.Value, expectedUsernameEnv, expectedUsername)
 	}
 }
+
+func TestBuildPodMountsOptionalExchangeCA(t *testing.T) {
+	pod := buildPod(
+		Identity{
+			Namespace:         "cloud-workflow-engine",
+			ServiceAccount:    "cloud-workflow-engine",
+			CABundleConfigMap: "dsx-identity-exchange-ca",
+		},
+		"tenant-cluster",
+		"spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe",
+		nil,
+	)
+
+	verify := pod.Spec.Containers[0]
+	if got := verify.Env[len(verify.Env)-1]; got.Name != "SSL_CERT_FILE" || got.Value != exchangeCAPath {
+		t.Fatalf("exchange CA env = %s=%q, want SSL_CERT_FILE=%q", got.Name, got.Value, exchangeCAPath)
+	}
+	if got := verify.VolumeMounts[len(verify.VolumeMounts)-1]; got.MountPath != exchangeCAPath || got.SubPath != "ca.crt" {
+		t.Fatalf("exchange CA mount = %#v", got)
+	}
+	volume := pod.Spec.Volumes[len(pod.Spec.Volumes)-1]
+	if volume.ConfigMap == nil || volume.ConfigMap.Name != "dsx-identity-exchange-ca" {
+		t.Fatalf("exchange CA volume = %#v", volume)
+	}
+}

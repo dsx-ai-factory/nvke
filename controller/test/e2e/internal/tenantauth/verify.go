@@ -22,10 +22,12 @@ const (
 	podTimeout = 5 * time.Minute
 )
 
-// Identity is the (namespace, service account) a credential pod runs as; SPIRE
-// attests it to spiffe://<td>/nke-service/<ServiceAccount>.
+// Identity describes the management-cluster workload used to exercise a tenant
+// kubeconfig. CABundleConfigMap is optional and supplies trust for an external
+// JWT exchange endpoint.
 type Identity struct {
 	Namespace, ServiceAccount string
+	CABundleConfigMap         string
 }
 
 // Check is a single `kubectl auth can-i` query. Namespace: "" means

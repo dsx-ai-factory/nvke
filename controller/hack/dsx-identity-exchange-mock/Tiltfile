@@ -1,0 +1,136 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+DSX_IDENTITY_EXCHANGE_IMAGE = "docker.local/dsx-identity-exchange-mock:tilt"
+DSX_IDENTITY_EXCHANGE_CA_CONFIG_MAP = "dsx-identity-exchange-ca"
+
+def register(ctx):
+    labels = ["1-infra"]
+    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "cwe-capi")
+    trust_domain = "%s.nke.local" % kind_cluster_name
+    site_address = ctx.cfg.get("site_controller_vip", "")
+    if site_address == "":
+        fail("dsx-identity-exchange requires tilt_config.json site_controller_vip")
+
+    prebuilt_image = ctx.cfg.get("dsx_identity_exchange_image", "")
+    image = prebuilt_image or DSX_IDENTITY_EXCHANGE_IMAGE
+    repo_root = os.path.abspath(os.path.join(ctx.main_dir, ".."))
+    mock_dir = os.path.join(ctx.main_dir, "hack/dsx-identity-exchange-mock")
+
+    if not prebuilt_image:
+        custom_build(
+            ref=DSX_IDENTITY_EXCHANGE_IMAGE,
+            command=["bash", "-c", """
+              set -euo pipefail
+              if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
+                export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+              fi
+              docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
+              kind load docker-image --name "%s" "$EXPECTED_REF"
+            """ % (
+                str(local("docker version --format '{{.Server.Arch}}'", quiet=True)).strip(),
+                os.path.join(mock_dir, "Dockerfile"),
+                repo_root,
+                kind_cluster_name,
+            )],
+            deps=[
+                os.path.join(mock_dir, "main.go"),
+                os.path.join(mock_dir, "server.go"),
+                os.path.join(mock_dir, "Dockerfile"),
+                os.path.join(ctx.main_dir, "go.mod"),
+                os.path.join(repo_root, "go.work"),
+                os.path.join(repo_root, "vendor"),
+            ],
+        )
+
+    san_kind = "ipAddresses" if _looks_like_ipv4(site_address) else "dnsNames"
+    mock_yaml = str(read_file(os.path.join(mock_dir, "deploy.yaml")))
+    mock_yaml = mock_yaml.replace("__IMAGE__", image)
+    mock_yaml = mock_yaml.replace("__SITE_ADDRESS__", site_address)
+    mock_yaml = mock_yaml.replace("__TRUST_DOMAIN__", trust_domain)
+    mock_yaml = mock_yaml.replace("__SAN_KIND__", san_kind)
+    k8s_yaml(blob(mock_yaml))
+
+    k8s_resource(
+        workload="dsx-identity-exchange-mock",
+        new_name="dsx-identity-exchange-mock",
+        objects=[
+            "dsx-identity-exchange-mock:serviceaccount:spire-server",
+            "dsx-identity-exchange-mock:certificate:spire-server",
+            "dsx-identity-exchange-mock:clusterspiffeid",
+        ],
+        labels=labels,
+        resource_deps=["spire-server", "oidc-upstream-ca-issuer"],
+        port_forwards=["30444:8443"],
+        links=[link("https://localhost:30444/.well-known/openid-configuration", "OIDC discovery")],
+    )
+
+    local_resource(
+        "dsx-identity-exchange-ca",
+        labels=labels,
+        cmd=["bash", "-c", """
+          set -euo pipefail
+          ca_file="$(mktemp)"
+          trap 'rm -f "${ca_file}"' EXIT
+          kubectl -n spire-server get secret oidc-provider-upstream-ca \
+            -o go-template='{{ index .data "ca.crt" | base64decode }}' >"${ca_file}"
+          for namespace in cloud-workflow-engine capi-system capi-kubeadm-control-plane-system capd-system; do
+            kubectl -n "${namespace}" create configmap %s \
+              --from-file=ca.crt="${ca_file}" --dry-run=client -o yaml | kubectl apply -f -
+          done
+        """ % DSX_IDENTITY_EXCHANGE_CA_CONFIG_MAP],
+        resource_deps=["oidc-upstream-ca-ready", "nke-auth-dev"],
+    )
+
+    local_resource(
+        "capi-dsx-identity-exchange-ca",
+        labels=labels,
+        cmd=["bash", "-c", """
+          set -euo pipefail
+          patch=%s
+          for target in \
+            capi-system/capi-controller-manager \
+            capi-kubeadm-control-plane-system/capi-kubeadm-control-plane-controller-manager \
+            capd-system/capd-controller-manager; do
+            namespace="${target%%/*}"
+            deployment="${target#*/}"
+            kubectl patch deployment "${deployment}" -n "${namespace}" \
+              --type strategic --patch-file "${patch}"
+            kubectl rollout status deployment "${deployment}" -n "${namespace}" --timeout=180s
+          done
+        """ % os.path.join(mock_dir, "capi-ca-patch.yaml")],
+        deps=[os.path.join(mock_dir, "capi-ca-patch.yaml")],
+        resource_deps=["dsx-identity-exchange-ca", "spire-server"],
+    )
+
+    exchange_endpoint = "https://%s:30444/v1/exchange" % site_address
+    return struct(
+        cwe_resource_deps=[
+            "dsx-identity-exchange-mock",
+            "dsx-identity-exchange-ca",
+            "capi-dsx-identity-exchange-ca",
+        ],
+        cwe_env_overrides={
+            "SSL_CERT_FILE": "/etc/nke/dsx-identity/ca.crt",
+        },
+        cwe_chart_flags=[
+            "--set-string", "spiffe.jwtExchangeEndpoint=%s" % exchange_endpoint,
+            "--set-string", "spiffe.cweSubject=spiffe://nke.capd.cloud-workflow-engine.nvid.id/bm/cwe",
+            "--set-string", "spiffe.capiManagerSubject=spiffe://nke.capd.capi-manager.nvid.id/bm/cwe",
+            "--set-string", "spiffe.capiKubeadmControlPlaneManagerSubject=spiffe://nke.capd.capi-kubeadm-control-plane-manager.nvid.id/bm/cwe",
+            "--set-string", "spiffe.capdManagerSubject=spiffe://nke.capd.capd-manager.nvid.id/bm/cwe",
+            "--set-string", "nkeOIDCAuth.issuerURL=https://capd.dsx.nvid.id",
+            "--set-string", "nkeOIDCAuth.discoveryURL=https://%s:30444/.well-known/openid-configuration" % site_address,
+            "--set-json", 'volumes=[{"name":"dsx-identity-exchange-ca","configMap":{"name":"%s"}}]' % DSX_IDENTITY_EXCHANGE_CA_CONFIG_MAP,
+            "--set-json", 'volumeMounts=[{"name":"dsx-identity-exchange-ca","mountPath":"/etc/nke/dsx-identity/ca.crt","subPath":"ca.crt","readOnly":true}]',
+        ],
+    )
+
+def _looks_like_ipv4(value):
+    parts = value.split(".")
+    if len(parts) != 4:
+        return False
+    for part in parts:
+        if not part.isdigit() or int(part) > 255:
+            return False
+    return True

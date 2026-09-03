@@ -15,6 +15,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "nico"                    -- NCX Infra Controller support (nico-mock, container-backed)
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
+#   "dsx-identity-exchange"   -- DSX-compatible JWT exchange test double
 #   "nico-vms"                -- Forge-compatible local VM backend (real KVM/libvirt VMs)
 #   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
@@ -41,6 +42,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #                                      Appended to the CWE k8s_resource resource_deps.
 #   cwe_env_overrides  (dict[string, string])  Env vars injected into CWE's chart
 #                                              values (e.g. FORGE_URL, FWE_API_KEY).
+#   cwe_chart_flags    (list[string], optional) Additional Helm flags for CWE.
 #   preflight_script   (string, optional)      Bash fragment appended to the
 #                                              check-management-cluster preflight script.
 #                                              Use to assert provider-required tooling or
@@ -57,6 +59,7 @@ _builtin_provider_dirs = {
     "nico": os.path.join(config.main_dir, "hack/nico-provider"),
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
+    "dsx-identity-exchange": os.path.join(config.main_dir, "hack/dsx-identity-exchange-mock"),
     "nico-vms": os.path.join(config.main_dir, "nico-vms"),
     "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
 }
@@ -74,6 +77,7 @@ _provider_entries = cfg.get("providers", [
     "capd",
     "capd-reboot-controller",
 ])
+DSX_IDENTITY_EXCHANGE_ENABLED = "dsx-identity-exchange" in _provider_entries
 
 if "nico" in _provider_entries and "capi_core" not in _provider_entries:
     fail("Provider 'nico' requires 'capi_core' in the provider list.")
@@ -153,6 +157,9 @@ KIND_CLUSTER_NAME_VALUE = get_kind_cluster_name()
 EXPECTED_K8S_CONTEXT = "kind-%s" % KIND_CLUSTER_NAME_VALUE
 SPIRE_TRUST_DOMAIN = "%s.nke.local" % KIND_CLUSTER_NAME_VALUE
 NKE_OIDC_ISSUER_URL = "https://nke.site-controller.internal"
+SPIRE_CWE_ADMIN_PATH = "/nke-service/cloud-workflow-engine"
+if DSX_IDENTITY_EXCHANGE_ENABLED:
+    SPIRE_CWE_ADMIN_PATH = "/tenant/nke/service/cloud-workflow-engine/bm/cwe"
 
 # sha256 of /app/tpm_attestor_server inside ghcr.io/spiffe/spire-tpm-plugin-tpm-attestor-server:v1.9.0,
 # selected by host arch (kind pulls the Linux variant matching the host CPU). Override via env var
@@ -329,6 +336,7 @@ _all_cwe_env_overrides = {
     "SPIRE_SERVER_ADDRESS": _kind_site_controller_vip,
 }
 _all_preflight_fragments = []
+_all_cwe_chart_flags = []
 
 for _entry in _provider_entries:
     if type(_entry) == "string":
@@ -360,6 +368,7 @@ for _entry in _provider_entries:
     ))
     _all_cwe_resource_deps += _result.cwe_resource_deps
     _all_cwe_env_overrides.update(_result.cwe_env_overrides)
+    _all_cwe_chart_flags += getattr(_result, "cwe_chart_flags", [])
     if getattr(_result, "preflight_script", ""):
         _all_preflight_fragments.append(_result.preflight_script)
 
@@ -713,7 +722,7 @@ helm_resource(
       "--set-string", "global.spire.clusterName=%s" % KIND_CLUSTER_NAME_VALUE,
       "--set-string", "global.spire.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
       "--set-string", "global.spire.jwtIssuer=%s" % NKE_OIDC_ISSUER_URL,
-      "--set-string", "spire-server.adminIDs[0]=spiffe://%s/nke-service/cloud-workflow-engine" % SPIRE_TRUST_DOMAIN,
+      "--set-string", "spire-server.adminIDs[0]=spiffe://%s%s" % (SPIRE_TRUST_DOMAIN, SPIRE_CWE_ADMIN_PATH),
       "--set-string", "spire-server.nodeAttestor.tpmDirect.checksum=%s" % SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM,
       "--set-string", "spiffe-oidc-discovery-provider.config.jwksUri=https://%s:30443/keys" % _kind_site_controller_vip,
     ] + _spire_set_string_flags + [
@@ -728,11 +737,18 @@ k8s_yaml([
     "deploy/k8s/oidc-upstream-ca.yaml",
     "deploy/k8s/spire-server-nodeport.yaml",
     "deploy/k8s/spire-oidc-provider-nodeport.yaml",
-    "deploy/k8s/spire-nke-services-spiffe-id.yaml",
     "deploy/k8s/spire-tpm-pubhashes-configmap.yaml",
     "deploy/k8s/nke-auth-dev.yaml",
     "deploy/k8s/nke-spire-client.yaml",
 ])
+
+_nke_service_spiffe_id_yaml = str(read_file("deploy/k8s/spire-nke-services-spiffe-id.yaml"))
+if DSX_IDENTITY_EXCHANGE_ENABLED:
+    _nke_service_spiffe_id_yaml = _nke_service_spiffe_id_yaml.replace(
+        "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}",
+        "spiffe://{{.TrustDomain}}/tenant/nke/service/{{.PodSpec.ServiceAccountName}}/bm/cwe",
+    )
+k8s_yaml(blob(_nke_service_spiffe_id_yaml))
 
 k8s_resource(
     new_name="oidc-ca-bootstrap",
@@ -949,6 +965,7 @@ _cwe_chart_extra_env_names = [
     "FORGE_ENVIRONMENT",
     "LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP",
     "SPIRE_SERVER_API_ADDRESS",
+    "SSL_CERT_FILE",
 ]
 _cwe_chart_extra_env = []
 for _name in _cwe_chart_extra_env_names:
@@ -1001,7 +1018,7 @@ _cwe_chart_flags = [
     "--set-json", "env=%s" % encode_json(_cwe_chart_extra_env),
     "--wait",
     "--timeout", "10m",
-]
+] + _all_cwe_chart_flags
 
 if CWE_IMAGE:
     _image_parts = CWE_IMAGE.split(":")

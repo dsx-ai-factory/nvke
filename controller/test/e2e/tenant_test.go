@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/NVIDIA/nke/controller/api"
@@ -212,6 +213,17 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			nodePoolCascade: true, nodeReplacement: true,
 			manualScaleDown: true, clusterConfig: true,
 		},
+	}),
+	// This row is selected only by the dedicated identity-exchange lane. Keeping
+	// it off the broad "capd" label prevents the direct-SPIRE control lane from
+	// exercising a topology it did not deploy.
+	Entry("CAPD with DSX identity exchange", Ordered, ContinueOnFailure, Label("identity-exchange"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			controlPlaneVIP:   capdControlPlaneVIP,
+		},
+		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
 	// Opt-in via the "cp-controller" label: it exercises cluster-level
 	// control-plane-controller provisioning (no control-plane node pool), so it
@@ -531,7 +543,19 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 		GinkgoLogr.Info("SPIRE trust domain could not be derived from kubeconfig context; OIDC validations will skip", "error", err)
 	}
 
-	tenantClients, err := kube.BuildTenantClientFactory(restConfig)
+	var tenantClientOptions []kube.TenantClientFactoryOption
+	if os.Getenv(dsxIdentityExchangeEnv) == "true" {
+		var exchangeCA corev1.ConfigMap
+		if err := k8sClient.Get(ctx, client.ObjectKey{
+			Namespace: "cloud-workflow-engine",
+			Name:      dsxExchangeCAConfigMap,
+		}, &exchangeCA); err != nil {
+			return tenantTest{}, fmt.Errorf("getting CAPD DSX identity exchange CA: %w", err)
+		}
+		tenantClientOptions = append(tenantClientOptions, kube.WithJWTExchangeCABundle([]byte(exchangeCA.Data["ca.crt"])))
+	}
+
+	tenantClients, err := kube.BuildTenantClientFactory(restConfig, tenantClientOptions...)
 	if err != nil {
 		return tenantTest{}, fmt.Errorf("building tenant Kubernetes client factory: %w", err)
 	}

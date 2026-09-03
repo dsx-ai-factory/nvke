@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"reflect"
 	"slices"
@@ -112,6 +114,39 @@ func TestExpiringJWTSourceRejectsInvalidTokens(t *testing.T) {
 			)
 			if _, err := source.Token(context.Background()); err == nil || !strings.Contains(err.Error(), test.wantErr) {
 				t.Fatalf("Token() error = %v, want error containing %q", err, test.wantErr)
+			}
+		})
+	}
+}
+
+func TestJWTExpirationAcceptsRFCNumericDate(t *testing.T) {
+	tests := map[string]struct {
+		claim string
+		want  time.Time
+	}{
+		"integer": {
+			claim: `1788471177`,
+			want:  time.Unix(1_788_471_177, 0),
+		},
+		"scientific notation": {
+			claim: `1.788471177e+09`,
+			want:  time.Unix(1_788_471_177, 0),
+		},
+		"fractional seconds": {
+			claim: `1788471177.5`,
+			want:  time.Unix(1_788_471_177, 500_000_000),
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			token := testJWTClaims(`{"exp":` + test.claim + `}`)
+			got, err := jwtExpiration(token)
+			if err != nil {
+				t.Fatalf("jwtExpiration() error = %v", err)
+			}
+			if !got.Equal(test.want) {
+				t.Fatalf("jwtExpiration() = %s, want %s", got, test.want)
 			}
 		})
 	}
@@ -237,6 +272,90 @@ func TestTenantRESTConfigReplacesSPIREExecCredentials(t *testing.T) {
 	}
 	if config.WrapTransport == nil {
 		t.Fatal("tenant config has no JWT transport wrapper")
+	}
+}
+
+func TestTenantRESTConfigExchangesSPIREJWTCredentials(t *testing.T) {
+	now := time.Unix(1_800_000_000, 0)
+	sourceToken := testJWT(now.Add(time.Hour), "source")
+	exchangedToken := testJWT(now.Add(time.Hour), "exchanged")
+
+	var exchangeForm url.Values
+	exchangeServer := httptest.NewTLSServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		if err := request.ParseForm(); err != nil {
+			t.Errorf("ParseForm() error = %v", err)
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		exchangeForm = request.PostForm
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(writer, `{"access_token":%q,"issued_token_type":%q,"token_type":"Bearer"}`,
+			exchangedToken, tokenTypeJWT)
+	}))
+	defer exchangeServer.Close()
+
+	factory := newTestTenantClientFactory(t,
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Namespace: tenantKubeconfigNamespace, Name: "tenant-a-kubeconfig"},
+			Data: map[string][]byte{tenantKubeconfigKey: testSPIREExchangeKubeconfig(
+				t, "tenant-a", exchangeServer.URL+"/v1/exchange",
+			)},
+		},
+		spireServerConfigMapObject(`{"server":{"trust_domain":"test.nke.local"}}`),
+		spireServerPod("spire-server-1", true, spireServerSelector()),
+	)
+	factory.now = func() time.Time { return now }
+	caBundle := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: exchangeServer.Certificate().Raw})
+	if err := WithJWTExchangeCABundle(caBundle)(factory); err != nil {
+		t.Fatalf("WithJWTExchangeCABundle() error = %v", err)
+	}
+
+	var mintURL *url.URL
+	factory.newExecutor = func(_ string, requestURL *url.URL) (remotecommand.Executor, error) {
+		copyURL := *requestURL
+		mintURL = &copyURL
+		return &fakeExecutor{stdout: sourceToken + "\n"}, nil
+	}
+
+	config, err := factory.tenantRESTConfig(context.Background(), "tenant-a")
+	if err != nil {
+		t.Fatalf("tenantRESTConfig() error = %v", err)
+	}
+	var authorization string
+	transport := config.WrapTransport(roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		authorization = request.Header.Get("Authorization")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("")),
+			Header:     make(http.Header),
+			Request:    request,
+		}, nil
+	}))
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://tenant.example:6443/api", http.NoBody)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	response, err := transport.RoundTrip(request)
+	if err != nil {
+		t.Fatalf("RoundTrip() error = %v", err)
+	}
+	defer response.Body.Close()
+
+	if authorization != "Bearer "+exchangedToken {
+		t.Fatalf("Authorization = %q, want exchanged token", authorization)
+	}
+	if exchangeForm.Get("grant_type") != tokenExchangeGrantType ||
+		exchangeForm.Get("subject_token") != sourceToken ||
+		exchangeForm.Get("subject_token_type") != tokenTypeJWT ||
+		exchangeForm.Get("requested_token_type") != tokenTypeJWT {
+		t.Fatalf("exchange form = %#v, want RFC 8693 JWT exchange", exchangeForm)
+	}
+	if mintURL == nil {
+		t.Fatal("source JWT was not minted")
+	}
+	wantSourceID := "spiffe://test.nke.local/tenant/nke/service/cloud-workflow-engine/bm/cwe"
+	if !slices.Contains(mintURL.Query()["command"], wantSourceID) {
+		t.Fatalf("source JWT mint command = %#v, want %q", mintURL.Query()["command"], wantSourceID)
 	}
 }
 
@@ -569,6 +688,23 @@ func testSPIREKubeconfig(t *testing.T, audience string) []byte {
 	config.Contexts["tenant"] = &clientcmdapi.Context{Cluster: "tenant", AuthInfo: "published-user"}
 	config.CurrentContext = "tenant"
 
+	kubeconfig, err := clientcmd.Write(*config)
+	if err != nil {
+		t.Fatalf("clientcmd.Write() error = %v", err)
+	}
+	return kubeconfig
+}
+
+func testSPIREExchangeKubeconfig(t *testing.T, audience, endpoint string) []byte {
+	t.Helper()
+	config, err := clientcmd.Load(testSPIREKubeconfig(t, audience))
+	if err != nil {
+		t.Fatalf("clientcmd.Load() error = %v", err)
+	}
+	config.AuthInfos["published-user"].Exec.Env = append(
+		config.AuthInfos["published-user"].Exec.Env,
+		clientcmdapi.ExecEnvVar{Name: spireExchangeEnv, Value: endpoint},
+	)
 	kubeconfig, err := clientcmd.Write(*config)
 	if err != nil {
 		t.Fatalf("clientcmd.Write() error = %v", err)
