@@ -20,7 +20,6 @@ func newConfigCmd() *cobra.Command {
 	cmd.AddCommand(newConfigSetSiteCmd())
 	cmd.AddCommand(newConfigUseSiteCmd())
 	cmd.AddCommand(newConfigViewCmd())
-	cmd.AddCommand(newConfigValidateCmd())
 	return cmd
 }
 
@@ -96,20 +95,6 @@ func newConfigViewCmd() *cobra.Command {
 				return fmt.Errorf("loading config: %w", err)
 			}
 			return yaml.NewEncoder(cmd.OutOrStdout()).Encode(cfg)
-		},
-	}
-}
-
-func newConfigValidateCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "validate [spec-file]",
-		Short: "Validate a bootstrap spec file",
-		Long: `Load and validate a bootstrap spec file (YAML).
-
-Not yet implemented — the config package is ported in C2.`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return fmt.Errorf("config validate: not yet implemented (config package lands in C2)")
 		},
 	}
 }
