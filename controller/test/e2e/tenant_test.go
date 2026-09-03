@@ -546,11 +546,11 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 	var tenantClientOptions []kube.TenantClientFactoryOption
 	if os.Getenv(dsxIdentityExchangeEnv) == "true" {
 		var exchangeCA corev1.ConfigMap
-		if err := k8sClient.Get(ctx, client.ObjectKey{
+		if getErr := k8sClient.Get(ctx, client.ObjectKey{
 			Namespace: "cloud-workflow-engine",
 			Name:      dsxExchangeCAConfigMap,
-		}, &exchangeCA); err != nil {
-			return tenantTest{}, fmt.Errorf("getting CAPD DSX identity exchange CA: %w", err)
+		}, &exchangeCA); getErr != nil {
+			return tenantTest{}, fmt.Errorf("getting CAPD DSX identity exchange CA: %w", getErr)
 		}
 		tenantClientOptions = append(tenantClientOptions, kube.WithJWTExchangeCABundle([]byte(exchangeCA.Data["ca.crt"])))
 	}

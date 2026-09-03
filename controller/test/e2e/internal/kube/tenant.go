@@ -88,8 +88,12 @@ func WithJWTExchangeCABundle(bundle []byte) TenantClientFactoryOption {
 			return errors.New("JWT exchange CA bundle contains no certificates")
 		}
 
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.TLSClientConfig = &tls.Config{ //nolint:gosec // TLS 1.2 remains supported by DSX identity endpoints.
+		defaultTransport, ok := http.DefaultTransport.(*http.Transport)
+		if !ok {
+			return errors.New("default HTTP transport is not an *http.Transport")
+		}
+		transport := defaultTransport.Clone()
+		transport.TLSClientConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			RootCAs:    roots,
 		}
@@ -727,8 +731,8 @@ func jwtExpiration(token string) (time.Time, error) {
 	}
 	decoder := json.NewDecoder(bytes.NewReader(payload))
 	decoder.UseNumber()
-	if err := decoder.Decode(&claims); err != nil {
-		return time.Time{}, fmt.Errorf("parsing JWT claims: %w", err)
+	if decodeErr := decoder.Decode(&claims); decodeErr != nil {
+		return time.Time{}, fmt.Errorf("parsing JWT claims: %w", decodeErr)
 	}
 	if claims.ExpiresAt == "" {
 		return time.Time{}, errors.New("JWT has no valid exp claim")
