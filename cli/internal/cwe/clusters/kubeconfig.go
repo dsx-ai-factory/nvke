@@ -12,13 +12,18 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/mgmtcluster"
 )
 
+// MgmtKubeconfigResolver returns the path to the management cluster
+// kubeconfig configured for the active site.
+type MgmtKubeconfigResolver func() (string, error)
+
 // NewGetKubeconfigCmd returns "nkectl get kubeconfig <cluster-name>".
 //
 // It reads the admin kubeconfig for the named cluster directly from the
-// management cluster (Option B — see NKX-13899). The management cluster
-// kubeconfig is resolved in order: --mgmt-kubeconfig flag → KUBECONFIG
-// env → ~/.kube/config.
-func NewGetKubeconfigCmd() *cobra.Command {
+// management cluster (see NKX-13899 for the decision record). The
+// management cluster kubeconfig is resolved via resolveMgmtKubeconfig (the
+// active site's configured kubeconfig) unless --mgmt-kubeconfig overrides it
+// for this invocation.
+func NewGetKubeconfigCmd(resolveMgmtKubeconfig MgmtKubeconfigResolver) *cobra.Command {
 	var (
 		mgmtKubeconfig string
 		outputFile     string
@@ -32,10 +37,11 @@ func NewGetKubeconfigCmd() *cobra.Command {
 The kubeconfig is read from the Secret that the NKE tenantaccess controller
 publishes into the management cluster at:
 
-  nke-system/<cluster-name>-kubeconfig  (key: value)
+  nke-system/<cluster-name>-admin-kubeconfig  (key: value)
 
-The management cluster is accessed via --mgmt-kubeconfig, the KUBECONFIG
-environment variable, or ~/.kube/config (in that order).
+The management cluster kubeconfig is resolved from the active site's
+configured kubeconfig (see 'nkectl config set-site --kubeconfig'), unless
+--mgmt-kubeconfig overrides it for this invocation.
 
 By default the kubeconfig is printed to stdout. Use --output to write it to a
 file instead.
@@ -48,7 +54,16 @@ Example:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
 
-			mc, err := mgmtcluster.New(mgmtKubeconfig)
+			kubeconfigPath := mgmtKubeconfig
+			if kubeconfigPath == "" {
+				var err error
+				kubeconfigPath, err = resolveMgmtKubeconfig()
+				if err != nil {
+					return err
+				}
+			}
+
+			mc, err := mgmtcluster.New(kubeconfigPath)
 			if err != nil {
 				return err
 			}
@@ -59,7 +74,7 @@ Example:
 			}
 
 			if outputFile != "" {
-				if err := os.WriteFile(outputFile, data, 0600); err != nil {
+				if err := os.WriteFile(outputFile, data, 0o600); err != nil {
 					return fmt.Errorf("writing kubeconfig to %q: %w", outputFile, err)
 				}
 				fmt.Fprintf(os.Stdout, "kubeconfig written to %s\n", outputFile)
@@ -71,7 +86,7 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVar(&mgmtKubeconfig, "mgmt-kubeconfig", "", "Path to management cluster kubeconfig (default: KUBECONFIG env or ~/.kube/config)")
+	cmd.Flags().StringVar(&mgmtKubeconfig, "mgmt-kubeconfig", "", "Path to management cluster kubeconfig (overrides the active site's configured kubeconfig)")
 	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Write kubeconfig to file instead of stdout")
 
 	return cmd

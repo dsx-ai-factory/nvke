@@ -84,6 +84,29 @@ func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 	return siteCfg, nil
 }
 
+// resolveMgmtKubeconfig returns the management cluster kubeconfig path
+// configured on the active site (or the site named by --site). It is the
+// shared resolver injected into commands that need direct access to the
+// management cluster, such as "get kubeconfig".
+func resolveMgmtKubeconfig() (string, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return "", fmt.Errorf("loading config: %w", err)
+	}
+	siteCfg, err := resolveSiteConfig(cfg)
+	if err != nil {
+		return "", err
+	}
+	if siteCfg.Kubeconfig == "" {
+		siteName := site
+		if siteName == "" {
+			siteName = cfg.CurrentSite
+		}
+		return "", fmt.Errorf("no management cluster kubeconfig configured for site %q: run 'nkectl config set-site --kubeconfig'", siteName)
+	}
+	return siteCfg.Kubeconfig, nil
+}
+
 // Execute is the entry point called from main.
 func Execute(ver, commit, treeState, date string) error {
 	return newRootCmd(ver, commit, treeState, date).Execute()
