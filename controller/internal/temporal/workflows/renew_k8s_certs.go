@@ -53,12 +53,14 @@ func RenewK8sCerts(ctx workflow.Context, input RenewK8sCertsInput) (RenewK8sCert
 
 	results := make([]RenewK8sCertsNodeResult, 0, len(controlPlaneNodes))
 
-	// Renew one control-plane node at a time. The runbook restarts static
+	// Renew one control-plane node at a time. The renewal transaction restarts static
 	// control-plane pods, including etcd, so parallel renewal could risk quorum
 	// loss or API disruption.
 	for _, node := range controlPlaneNodes {
 		var result activities.KubernetesCertificateRenewalResult
 		workflowInfo := workflow.GetInfo(ctx)
+		// Activity retries reuse this ID and therefore reattach to the accepted
+		// agent operation; RunID keeps a later workflow run from aliasing it.
 		operationID := fmt.Sprintf(
 			"k8s-cert-renewal/%s/%s/%s",
 			workflowInfo.WorkflowExecution.ID,

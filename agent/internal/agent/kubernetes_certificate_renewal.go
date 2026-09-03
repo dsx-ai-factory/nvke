@@ -179,6 +179,9 @@ func (s *NodeAgentServer) runKubernetesCertificateRenewal(
 			progress.SetResult(certificateRenewalResultFailedBeforeRestart)
 			return fmt.Errorf("kubeadm certs renew all: %w: %s", err, strings.TrimSpace(string(output)))
 		}
+		// Persist the restart boundary before moving manifests. If the agent exits
+		// after staging begins, recovery must finish restarting the static pods so
+		// they load the certificates kubeadm already replaced on disk.
 		if err := s.setKubernetesCertificateRenewalState(certificateRenewalStateRestartPending); err != nil {
 			progress.SetResult(certificateRenewalResultFailedBeforeRestart)
 			return fmt.Errorf("persist certificate restart requirement: %w", err)
