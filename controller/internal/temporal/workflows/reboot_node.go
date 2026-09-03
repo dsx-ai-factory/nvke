@@ -6,7 +6,6 @@ package workflows
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -35,11 +34,11 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 	// This workflow is depended upon by NVSentinel and dgxc-janitor.
 	// Please discuss any label or workflow changes with the #dgxc-gpu-node-resilience channel.
 	//
-	// Forge label-driven reboots try SoftRebootNode in-guest first. That activity uses
-	// the typed node-agent RPC when available and the legacy runbook for older agents.
-	// Forge TriggerInstanceReboot remains the fallback if the in-guest path cannot execute.
-	// Hard Forge reboot is out-of-band (no guest sync/unmount).
-	// CAPI path is unchanged.
+	// Label-driven reboots try SoftRebootNode in-guest first. That activity uses the typed
+	// node-agent RPC when available and the legacy runbook for older agents. If the in-guest
+	// path cannot execute, reboot falls back to the CAPI Machine reboot annotation, which
+	// CAPNICo actuates as an out-of-band NICo instance power cycle that does not sync or
+	// unmount the guest filesystem.
 
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Starting reboot node workflow", "nodeID", input.NodeID)
@@ -121,17 +120,10 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 			return fmt.Errorf("failed to apply reboot-attempt label to node: %w", err)
 		}
 
-		// Use capi or forge to reboot the node/instance
+		// Reboot the node/instance via CAPI
 		logger.Info("Rebooting node", "nodeID", input.NodeID, "nodeName", node.Name, "rebootAttempt", rebootAttempt, "reason", input.Reason)
 		rebootStartedTime, err := rebootCAPINode(ctx, input.NodeID, rebootAttempt, input.Reason)
 		if err != nil {
-			var appErr *temporal.ApplicationError
-			if errors.As(err, &appErr) && strings.EqualFold(appErr.Type(), "InstanceNotFound") {
-				logger.Warn("Forge instance not found, completing reboot with failed status", "nodeID", input.NodeID, "nodeName", node.Name, "rebootAttempt", rebootAttempt)
-				if cleanupErr := completeReboot(ctx, input, constants.RebootStatusFailedInstanceNotFound, nil); cleanupErr != nil {
-					return errors.Join(fmt.Errorf("failed to reboot node: %w", err), cleanupErr)
-				}
-			}
 			return fmt.Errorf("failed to reboot node: %w", err)
 		}
 
@@ -276,7 +268,10 @@ func getNode(ctx workflow.Context, nodeID uuid.UUID) (corev1.Node, error) {
 	return result.Node, nil
 }
 
+// rebootCAPINode tries the in-guest soft-reboot path first; if that fails, it falls back to
+// the CAPI Machine reboot annotation, which CAPNICo actuates as an out-of-band NICo power cycle.
 func rebootCAPINode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, reason string) (time.Time, error) {
+	logger := workflow.GetLogger(ctx)
 	message := fmt.Sprintf("Rebooting node (attempt: %d): %s", rebootAttempt, reason)
 
 	// Set the rebooting node condition in CWE db
@@ -284,6 +279,20 @@ func rebootCAPINode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, r
 		return time.Time{}, fmt.Errorf("failed to update node conditions: %w", err)
 	}
 
+	rebootStartedTime := workflow.Now(ctx).UTC()
+
+	err := softRebootNode(ctx, nodeID, rebootAttempt, rebootStartedTime, 1)
+	if err == nil {
+		logger.Info("Soft reboot initiated", "nodeID", nodeID, "rebootAttempt", rebootAttempt)
+		return rebootStartedTime, nil
+	}
+
+	if errors.Is(ctx.Err(), workflow.ErrCanceled) || temporal.IsCanceledError(err) {
+		logger.Info("Reboot workflow canceled", "nodeID", nodeID, "rebootAttempt", rebootAttempt)
+		return time.Time{}, err
+	}
+
+	logger.Warn("Soft reboot failed, falling back to CAPI hard reboot", "nodeID", nodeID, "rebootAttempt", rebootAttempt, "error", err)
 	return applyCAPIMachineRebootAnnotation(ctx, nodeID)
 }
 
