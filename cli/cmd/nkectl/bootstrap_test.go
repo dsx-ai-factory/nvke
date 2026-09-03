@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/NVIDIA/nke/cli/internal/bootstrapengine"
-	"github.com/NVIDIA/nke/cli/internal/inventory"
+	"github.com/NVIDIA/nke/cli/internal/sitespec"
 )
 
 // fakeCWERunner is a scripted cwedeploy.CommandRunner: every helm call
@@ -55,7 +55,7 @@ func (fakeBootstrapRunner) Run(_ context.Context, _ map[string]string, name stri
 	return "", nil
 }
 
-const validInventory = `
+const validSiteSpec = `
 clusterName: nke-site
 cluster:
   nodes:
@@ -83,16 +83,16 @@ func TestBootstrapSiteCommandWired(t *testing.T) {
 	}
 }
 
-// TestRunBootstrapSiteDryRunValid confirms a valid inventory passes validation
+// TestRunBootstrapSiteDryRunValid confirms a valid site spec passes validation
 // and dry-run returns no error without dispatching anything.
 func TestRunBootstrapSiteDryRunValid(t *testing.T) {
-	path := writeInventory(t, validInventory)
-	if err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{inventory: path, dryRun: true}); err != nil {
-		t.Fatalf("dry-run of valid inventory returned error: %v", err)
+	path := writeSiteSpec(t, validSiteSpec)
+	if err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{siteSpec: path, dryRun: true}); err != nil {
+		t.Fatalf("dry-run of valid site spec returned error: %v", err)
 	}
 }
 
-// TestRunBootstrapSiteInvalidFailsFast confirms an invalid inventory errors
+// TestRunBootstrapSiteInvalidFailsFast confirms an invalid site spec errors
 // before reaching the (stubbed) dispatch step.
 func TestRunBootstrapSiteInvalidFailsFast(t *testing.T) {
 	const bad = `
@@ -109,9 +109,9 @@ registry:
   bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
   bootstrapChart: "cloud-workflow-engine"
 `
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{inventory: writeInventory(t, bad)})
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{siteSpec: writeSiteSpec(t, bad)})
 	if err == nil {
-		t.Fatal("invalid inventory did not error")
+		t.Fatal("invalid site spec did not error")
 	}
 	if strings.Contains(err.Error(), "not yet implemented") {
 		t.Errorf("reached dispatch stub before validation failed: %v", err)
@@ -121,7 +121,7 @@ registry:
 	}
 }
 
-// TestRunBootstrapSiteValidReachesStub confirms a valid inventory (no
+// TestRunBootstrapSiteValidReachesStub confirms a valid site spec (no
 // dry-run) passes validation, stands up and tears down the ephemeral
 // bootstrap kind cluster, and reaches the not-yet-implemented dispatch stub.
 // The kind/kubectl calls go through fakeBootstrapRunner, so this needs no
@@ -132,7 +132,7 @@ func TestRunBootstrapSiteValidReachesStub(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		inventory:       writeInventory(t, validInventory),
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
 	})
@@ -161,7 +161,7 @@ func TestRunBootstrapSiteUsesTheProviderCLI(t *testing.T) {
 	for provider, wantCLI := range map[string]string{"": "nerdctl", "docker": "docker"} {
 		runner := &recordingRunner{next: fakeBootstrapRunner{}}
 		_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			inventory:       writeInventory(t, validInventory),
+			siteSpec:        writeSiteSpec(t, validSiteSpec),
 			provider:        provider,
 			bootstrapRunner: runner,
 			cweRunner:       fakeCWERunner{},
@@ -184,7 +184,7 @@ func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		inventory:       writeInventory(t, validInventory),
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
 	})
@@ -235,47 +235,47 @@ func (r *recordingRunner) sawArgs(prefix ...string) bool {
 	return false
 }
 
-func writeInventory(t *testing.T, content string) string {
+func writeSiteSpec(t *testing.T, content string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "inventory.yaml")
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write inventory: %v", err)
+		t.Fatalf("write siteSpec:       %v", err)
 	}
 	return path
 }
 
-// TestDumpInventoryRedactsRegistryAPIKey covers the one branch in this package
+// TestDumpSiteSpecRedactsRegistryAPIKey covers the one branch in this package
 // that exists purely to keep a credential out of the terminal. Nothing else
-// asserted it: every other inventory in these tests omits apiKey, so the
+// asserted it: every other site spec in these tests omits apiKey, so the
 // redaction line had an execution count of zero and a regression that printed
 // the key verbatim would have passed.
-func TestDumpInventoryRedactsRegistryAPIKey(t *testing.T) {
+func TestDumpSiteSpecRedactsRegistryAPIKey(t *testing.T) {
 	const secret = "nvapi-do-not-print-me"
 
-	inv, err := inventory.Load(writeInventory(t, validInventory+"  apiKey: "+secret+"\n"))
+	inv, err := sitespec.Load(writeSiteSpec(t, validSiteSpec+"  apiKey: "+secret+"\n"))
 	if err != nil {
-		t.Fatalf("load inventory: %v", err)
+		t.Fatalf("load siteSpec:       %v", err)
 	}
 	if inv.Registry.APIKey != secret {
 		t.Fatalf("fixture did not set the api key: got %q, want %q", inv.Registry.APIKey, secret)
 	}
 
 	var buf bytes.Buffer
-	if err := dumpInventory(&buf, inv); err != nil {
-		t.Fatalf("dumpInventory: %v", err)
+	if err := dumpSiteSpec(&buf, inv); err != nil {
+		t.Fatalf("dumpSiteSpec: %v", err)
 	}
 	out := buf.String()
 
 	if strings.Contains(out, secret) {
-		t.Errorf("dumpInventory printed the registry credential:\n%s", out)
+		t.Errorf("dumpSiteSpec printed the registry credential:\n%s", out)
 	}
 	if !strings.Contains(out, "***redacted***") {
-		t.Errorf("dumpInventory did not mark the credential as redacted:\n%s", out)
+		t.Errorf("dumpSiteSpec did not mark the credential as redacted:\n%s", out)
 	}
-	// Redaction works on a copy, so the caller's inventory must be left intact:
+	// Redaction works on a copy, so the caller's site spec must be left intact:
 	// whatever runs next still needs the real credential.
 	if inv.Registry.APIKey != secret {
-		t.Errorf("dumpInventory mutated the caller's inventory: api key is now %q", inv.Registry.APIKey)
+		t.Errorf("dumpSiteSpec mutated the caller's siteSpec:       api key is now %q", inv.Registry.APIKey)
 	}
 }
 
@@ -291,7 +291,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 	t.Run("the dispatch stub writes nothing", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			inventory:       writeInventory(t, validInventory),
+			siteSpec:        writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:  dir,
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       fakeCWERunner{},
@@ -311,7 +311,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		// CWE never reports healthy: the failure this exists for.
 		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			inventory:       writeInventory(t, validInventory),
+			siteSpec:        writeSiteSpec(t, validSiteSpec),
 			diagnosticsDir:  dir,
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       unhealthyCWERunner{},

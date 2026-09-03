@@ -67,7 +67,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 NKECTL="${CLI_DIR}/bin/nkectl"
-INVENTORY="${SCRIPT_DIR}/inventory.ci.yaml"
+SITESPEC="${SCRIPT_DIR}/sitespec.ci.yaml"
 BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
 # Inventory generation records the exact journal boundary and expected result
 # for every node here. The later check reads the same file after bootstrap.
@@ -171,7 +171,7 @@ log "PASS: all fake nodes are up and node-agent is reachable"
 # The fake nodes booted with a software TPM and a spire-agent already pointed at
 # SPIRE_VIP:30081 — the address `bootstrap site` puts its SPIRE server on. They
 # have been retrying since. So this stage does not configure or start anything
-# on them: it records their EK thumbprints in the inventory, runs the command,
+# on them: it records their EK thumbprints in the site spec, runs the command,
 # and checks the agents got in.
 #
 # That ordering is the point. The thumbprints are an *input* to `bootstrap
@@ -229,31 +229,31 @@ if [ "${NKECTL_BOOTSTRAP_PROVIDER}" = "nerdctl" ]; then
 fi
 
 # The thumbprints and the bootstrap CA reach the command the way an operator's
-# would: named in the inventory. Neither can be committed to the fixture — a
+# would: named in the site spec. Neither can be committed to the fixture — a
 # TPM's endorsement key is created along with the container, and a private key
 # does not belong in a repository — so both are filled in here against whatever
 # this run generated.
-log "recording each node's TPM EK thumbprint and the bootstrap CA in the inventory"
-RENDERED_INVENTORY="${SCRIPT_DIR}/.inventory.rendered.yaml"
-NKECTL_E2E_INVENTORY_IN="${INVENTORY}" NKECTL_E2E_INVENTORY_OUT="${RENDERED_INVENTORY}" \
-  make -C "${CLI_DIR}" --no-print-directory nodes-inventory >/dev/null
-grep -q tpmEkThumbprint "${RENDERED_INVENTORY}" ||
-  { log "FAIL: no TPM EK thumbprints were recorded in ${RENDERED_INVENTORY}"; exit 1; }
-grep -q caCertFile "${RENDERED_INVENTORY}" ||
-  { log "FAIL: no bootstrap CA was recorded in ${RENDERED_INVENTORY}"; exit 1; }
-log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_INVENTORY}") EK thumbprint(s)"
+log "recording each node's TPM EK thumbprint and the bootstrap CA in the site spec"
+RENDERED_SITECONFIG="${SCRIPT_DIR}/.sitespec.rendered.yaml"
+NKECTL_E2E_SITESPEC_IN="${SITESPEC}" NKECTL_E2E_SITESPEC_OUT="${RENDERED_SITECONFIG}" \
+  make -C "${CLI_DIR}" --no-print-directory nodes-sitespec >/dev/null
+grep -q tpmEkThumbprint "${RENDERED_SITECONFIG}" ||
+  { log "FAIL: no TPM EK thumbprints were recorded in ${RENDERED_SITECONFIG}"; exit 1; }
+grep -q caCertFile "${RENDERED_SITECONFIG}" ||
+  { log "FAIL: no bootstrap CA was recorded in ${RENDERED_SITECONFIG}"; exit 1; }
+log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_SITECONFIG}") EK thumbprint(s)"
 
 # No chart is named here. What gets installed is pinned in
 # cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
-log "running: nkectl bootstrap site -i ${RENDERED_INVENTORY} --keep-bootstrap-cluster" \
+log "running: nkectl bootstrap site -f ${RENDERED_SITECONFIG} --keep-bootstrap-cluster" \
   "(NKECTL_BOOTSTRAP_PROVIDER=${NKECTL_BOOTSTRAP_PROVIDER}, NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
   "NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE})"
 # Set before the call, not after: the command can fail after creating the
 # cluster it was told to keep, and cleanup has to already know to remove it.
 bootstrap_cluster_cleanup_pending=true
 set +e
-output="$("${NKECTL}" bootstrap site -i "${RENDERED_INVENTORY}" --keep-bootstrap-cluster 2>&1)"
+output="$("${NKECTL}" bootstrap site -f "${RENDERED_SITECONFIG}" --keep-bootstrap-cluster 2>&1)"
 status=$?
 set -e
 printf '%s\n' "${output}"

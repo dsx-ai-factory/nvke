@@ -29,11 +29,11 @@ indexes both.
 |---|---|
 | [site-bootstrap/overview.md](site-bootstrap/overview.md) | How a site controller is bootstrapped |
 | [site-bootstrap/installation.md](site-bootstrap/installation.md) | Downloading and installing `nkectl` |
-| [site-bootstrap/configuration.md](site-bootstrap/configuration.md) | The inventory file that describes a site |
+| [site-bootstrap/configuration.md](site-bootstrap/configuration.md) | The site spec file that describes a site |
 | [site-bootstrap/pre-provisioned-nodes.md](site-bootstrap/pre-provisioned-nodes.md) | Using hosts that are already provisioned |
 | [site-bootstrap/custom-base-os.md](site-bootstrap/custom-base-os.md) | Running on a base OS other than the reference image |
 | [site-bootstrap/deploy-repository.md](site-bootstrap/deploy-repository.md) | The deploy repository and what it holds |
-| [../cli/docs/inventory-spec.md](../cli/docs/inventory-spec.md) | Every field of the inventory file, with its type |
+| [../cli/docs/sitespec.md](../cli/docs/sitespec.md) | Every field of the site spec file, with its type |
 
 ## Running tenant clusters
 

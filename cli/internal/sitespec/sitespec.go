@@ -1,24 +1,24 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package inventory loads and validates the declarative inventory file that
+// Package siteconfig loads and validates the declarative site spec file that
 // drives "nkectl bootstrap site".
 //
-// The inventory file describes a set of pre-provisioned nodes and the vanilla
+// The site spec file describes a set of pre-provisioned nodes and the vanilla
 // Kubernetes cluster to build on them. It is the single source of truth for a
 // bootstrap run: the command loads it, validates it, and fails fast with a
 // clear error before dispatching any workflow or touching any node.
 //
 // Environment variables (see envBindings) override the matching field from the
-// file, so existing tier-0 / DS9 scripts can drive the inventory via the
+// file, so existing tier-0 / DS9 scripts can drive the site spec via the
 // environment. A set variable takes precedence over the file value.
 //
 // The schema deliberately mirrors the field names of the tier-0 bootstrap
 // template so operators do not need to relearn them, but drops the
 // NVIDIA-specific and deploy-time fields (SWE image tag, ArgoCD repos,
 // embedded database credentials) so the file can be open-sourced. See
-// docs/inventory-spec.md for the full field reference.
-package inventory
+// docs/sitespec.md for the full field reference.
+package sitespec
 
 import (
 	"fmt"
@@ -34,10 +34,10 @@ import (
 
 const (
 	// DefaultNodeAgentPort is the gRPC port nke-agent listens on when the
-	// inventory does not set cluster.nodeAgentPort.
+	// site spec does not set cluster.nodeAgentPort.
 	DefaultNodeAgentPort = "15005"
 
-	// Inventory field paths — the single source of truth for the dotted paths
+	// SiteSpec field paths — the single source of truth for the dotted paths
 	// shared by the environment bindings and the validator messages.
 	pathClusterName          = "clusterName"
 	pathNodes                = "cluster.nodes"
@@ -74,8 +74,8 @@ func SupportedCNIs() []string {
 	return []string{"calico", "ovn-kubernetes"}
 }
 
-// Inventory is the declarative bootstrap input file.
-type Inventory struct {
+// SiteSpec is the declarative bootstrap input file.
+type SiteSpec struct {
 	// ClusterName is the name of the Kubernetes cluster to create.
 	ClusterName string `yaml:"clusterName"`
 	// Cluster holds the node inventory and Kubernetes settings.
@@ -109,7 +109,7 @@ type Spire struct {
 
 // Cluster describes the target Kubernetes cluster and its nodes.
 type Cluster struct {
-	// Nodes are the pre-provisioned control-plane nodes. The inventory does not
+	// Nodes are the pre-provisioned control-plane nodes. The site spec does not
 	// select which node runs kubeadm init.
 	Nodes []Node `yaml:"nodes"`
 	// K8sVersion is the Kubernetes version to install, e.g. "1.32.0".
@@ -148,7 +148,7 @@ type Node struct {
 	// Optional. A node without one is not admitted by TPM attestation, and a
 	// bootstrap where no node has one deploys SPIRE with no TPM attestor at
 	// all. It is not a secret: it is a public key hash, so it belongs in the
-	// inventory rather than beside the credentials.
+	// site spec rather than beside the credentials.
 	TPMEKThumbprint string `yaml:"tpmEkThumbprint,omitempty"`
 }
 
@@ -173,7 +173,7 @@ type KubeletConfig struct {
 
 // Registry holds the settings for pulling the bootstrap engine image and chart.
 // The version (image/chart tag) is baked into the nkectl build, so it is not
-// part of the inventory.
+// part of the sitespec.
 type Registry struct {
 	// BootstrapRepo is the OCI repository that holds the bootstrap engine image
 	// and chart (e.g. "nvcr.io/org/cloud-workflow-engine").
@@ -186,9 +186,9 @@ type Registry struct {
 	APIKey string `yaml:"apiKey,omitempty"`
 }
 
-// envBindings maps environment variable names to their inventory field paths.
+// envBindings maps environment variable names to their site spec field paths.
 // A set variable overrides the matching field from the file, so existing
-// tier-0 / DS9 scripts can drive the inventory through the environment.
+// tier-0 / DS9 scripts can drive the site spec through the environment.
 func envBindings() map[string]string {
 	return map[string]string{
 		"CLUSTER_NAME":                   pathClusterName,
@@ -207,7 +207,7 @@ func envBindings() map[string]string {
 	}
 }
 
-// newInventoryViper returns a Viper that reads a YAML inventory file with the
+// newInventoryViper returns a Viper that reads a YAML site spec file with the
 // environment-variable overrides in envBindings bound on top. Each binding is
 // explicit (BindEnv); AutomaticEnv is intentionally not used, as it cannot map
 // the dotted, camelCase field paths to valid environment variable names.
@@ -220,15 +220,15 @@ func newInventoryViper() *viper.Viper {
 	return v
 }
 
-// Load reads the inventory file, overlays bound environment variables, applies
-// defaults, and validates the result. It returns a fully validated Inventory
+// Load reads the site spec file, overlays bound environment variables, applies
+// defaults, and validates the result. It returns a fully validated SiteSpec
 // or an aggregated error describing every problem found. A nil error means the
-// inventory is safe to act on.
-func Load(path string) (*Inventory, error) {
+// site spec is safe to act on.
+func Load(path string) (*SiteSpec, error) {
 	v := newInventoryViper()
 	v.SetConfigFile(path)
 	if err := v.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("read inventory file %s: %w", path, err)
+		return nil, fmt.Errorf("read site spec file %s: %w", path, err)
 	}
 
 	// NKECTL_CLUSTER_NODES="name:ip,name:ip" supplies the flat node list when
@@ -242,9 +242,9 @@ func Load(path string) (*Inventory, error) {
 		v.Set(pathNodes, nodes)
 	}
 
-	var inv Inventory
+	var inv SiteSpec
 	if err := v.Unmarshal(&inv, useYAMLTags, rejectUnknownFields); err != nil {
-		return nil, fmt.Errorf("inventory file %s: %w", path, err)
+		return nil, fmt.Errorf("site spec file %s: %w", path, err)
 	}
 
 	inv.SetDefaults()
@@ -255,7 +255,7 @@ func Load(path string) (*Inventory, error) {
 	inv.appendDataChecks(checks)
 	inv.appendReferenceChecks(checks)
 	if err := checks.err(); err != nil {
-		return nil, fmt.Errorf("inventory file %s: %w", path, err)
+		return nil, fmt.Errorf("site spec file %s: %w", path, err)
 	}
 	return &inv, nil
 }
@@ -293,7 +293,7 @@ func parseNodesEnv(s string) ([]map[string]string, error) {
 // behavior is deliberately not carried over — a missing secret stays empty so
 // it can be supplied explicitly (flag or environment variable) rather than
 // silently falling back to a shared default.
-func (inv *Inventory) SetDefaults() {
+func (inv *SiteSpec) SetDefaults() {
 	if inv.Cluster.NodeAgentPort == "" {
 		inv.Cluster.NodeAgentPort = DefaultNodeAgentPort
 	}
@@ -302,19 +302,19 @@ func (inv *Inventory) SetDefaults() {
 // Validate checks that every mandatory field is present and well-formed and
 // returns a single error aggregating all problems.
 //
-// It reads nothing outside the Inventory, so it holds wherever the inventory is
+// It reads nothing outside the SiteSpec, so it holds wherever the site spec is
 // handled: on the machine that writes the file as much as on the one that acts
 // on it. Checks that need the filesystem live in ValidateReferences.
-func (inv *Inventory) Validate() error {
+func (inv *SiteSpec) Validate() error {
 	v := &validator{}
 	inv.appendDataChecks(v)
 	return v.err()
 }
 
-// appendDataChecks runs every check that reads only the Inventory, adding each
+// appendDataChecks runs every check that reads only the SiteSpec, adding each
 // problem to v. It takes the validator rather than returning an error so a
 // caller that runs more than one check set still reports one aggregated error.
-func (inv *Inventory) appendDataChecks(v *validator) {
+func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkClusterName(inv.ClusterName)
 	v.checkNodes(inv.Cluster)
 	v.checkK8sVersion(inv.Cluster.K8sVersion)
@@ -326,13 +326,13 @@ func (inv *Inventory) appendDataChecks(v *validator) {
 	v.checkSpire(inv.Spire)
 }
 
-// ValidateReferences checks that the files the inventory names can be read,
+// ValidateReferences checks that the files the site spec names can be read,
 // and returns a single error aggregating all problems.
 //
-// Call it from the command that is about to act on the inventory. A caller that
-// only writes the inventory out should not: the files it names are needed where
+// Call it from the command that is about to act on the sitespec. A caller that
+// only writes the site spec out should not: the files it names are needed where
 // the bootstrap runs, which is not necessarily where the file was produced.
-func (inv *Inventory) ValidateReferences() error {
+func (inv *SiteSpec) ValidateReferences() error {
 	v := &validator{}
 	inv.appendReferenceChecks(v)
 	return v.err()
@@ -340,7 +340,7 @@ func (inv *Inventory) ValidateReferences() error {
 
 // appendReferenceChecks runs every check that reads the filesystem, adding each
 // problem to v. See appendDataChecks for why it takes the validator.
-func (inv *Inventory) appendReferenceChecks(v *validator) {
+func (inv *SiteSpec) appendReferenceChecks(v *validator) {
 	v.checkSpireFiles(inv.Spire)
 }
 
@@ -507,7 +507,7 @@ func (v *validator) checkSpire(s Spire) {
 // Existence is checked before the bootstrap rather than left to the deploy
 // because this is the last point at which nothing has been touched. A missing
 // or unreadable CA otherwise surfaces several minutes in, as a helm failure
-// that names a temporary file rather than the inventory field that was wrong.
+// that names a temporary file rather than the site spec field that was wrong.
 //
 // A half-specified CA is checkSpire's error to report, so nothing is checked
 // here unless both fields are set.

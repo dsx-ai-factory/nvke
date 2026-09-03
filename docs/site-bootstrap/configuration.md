@@ -1,6 +1,6 @@
-# Inventory File
+# Site Spec File
 
-`nkectl bootstrap site` reads a single YAML inventory file that describes your pre-provisioned nodes and the Kubernetes cluster to build on them. The file is loaded and fully validated before any node is touched — a typo or missing field fails fast with a clear error.
+`nkectl bootstrap site` reads a single YAML site spec file that describes your pre-provisioned nodes and the Kubernetes cluster to build on them. The file is loaded and fully validated before any node is touched — a typo or missing field fails fast with a clear error.
 
 ## Example
 
@@ -83,18 +83,18 @@ select a node for `kubeadm init`; the bootstrap process selects it downstream.
 2. `REGISTRY_API_KEY` environment variable
 3. `registry.apiKey` field in the file
 
-Keep the secret out of the file so the inventory can be committed and shared safely:
+Keep the secret out of the file so the site spec can be committed and shared safely:
 
 ```bash
-REGISTRY_API_KEY="nvapi-xxxx" nkectl bootstrap site -i inventory.yaml
+REGISTRY_API_KEY="nvapi-xxxx" nkectl bootstrap site -f sitespec.yaml
 ```
 
-## Validating the Inventory
+## Validating the Site Spec
 
 Use `--dry-run` to load, validate, and print the resolved inventory without dispatching any workflow or touching any node:
 
 ```bash
-nkectl bootstrap site -i inventory.yaml --dry-run
+nkectl bootstrap site -f sitespec.yaml --dry-run
 ```
 
 All validation errors are reported together in one pass so you can fix them without iterating.

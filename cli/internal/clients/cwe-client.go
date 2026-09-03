@@ -38,11 +38,11 @@ type CWEClient struct {
 	raw *api.ClientWithResponses
 }
 
-// New builds a CWEClient from a SiteConfig.
+// New builds a CWEClient from a SiteSpec.
 // The URL should be the site controller base URL (e.g. http://localhost:8080).
 // The /api prefix is added automatically so callers never need to include it.
 // FIXME: auth is not yet implemented. A future change will add --kubeconfig
-// support to set-site, storing the management cluster kubeconfig in SiteConfig;
+// support to set-site, storing the management cluster kubeconfig in SiteSpec;
 // that kubeconfig will be used to mint a short-lived JWT attached as a bearer
 // token on every request.
 func New(cfg config.SiteConfig) (*CWEClient, error) {

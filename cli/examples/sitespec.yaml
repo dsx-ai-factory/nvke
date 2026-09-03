@@ -1,18 +1,18 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Example inventory file for: nkectl bootstrap site -i <inventory-file>
+# Example site spec file for: nkectl bootstrap site -f <sitespec-file>
 #
-# The inventory describes the pre-provisioned nodes and the vanilla Kubernetes
+# The site spec describes the pre-provisioned nodes and the vanilla Kubernetes
 # cluster to build on them. nkectl loads and validates this file before it
 # dispatches any work, so a typo or a missing field fails fast with a clear
-# error. See docs/inventory-spec.md for the full field reference.
+# error. See docs/sitespec.md for the full field reference.
 
 # Name of the Kubernetes cluster to create (lowercase RFC 1123 label).
 clusterName: "nke-site"
 
 cluster:
-  # Pre-provisioned control-plane nodes. The inventory does not select which
+  # Pre-provisioned control-plane nodes. The site spec does not select which
   # node runs kubeadm init.
   # tpmEkThumbprint is optional: the SHA-256 of the node's TPM endorsement key,
   # read from the host before the bootstrap (spire-tpm-plugin's

@@ -168,19 +168,19 @@ type Config struct {
 	SPIFFETrustDomain string
 
 	// SPIFFEUpstreamCACertPath and SPIFFEUpstreamCAKeyPath are a CA the
-	// operator brings to the bootstrap, from the inventory's spire section.
+	// operator brings to the bootstrap, from the site spec's spire section.
 	// SPIRE chains its own CA to it, so a host that was given the certificate
 	// ahead of time can verify the server the first time it speaks to it,
 	// instead of trusting it blindly.
 	//
-	// Not read from the environment: this describes the site, so the inventory
+	// Not read from the environment: this describes the site, so the site spec
 	// is the one place it comes from.
 	SPIFFEUpstreamCACertPath string
 	SPIFFEUpstreamCAKeyPath  string
 
 	// TPMEKFingerprints are the SHA-256 endorsement-key thumbprints of the
 	// hosts allowed to attest to this SPIRE server, seeded into the TPM node
-	// attestor's allowlist. They come from the inventory, one per node, which
+	// attestor's allowlist. They come from the site spec, one per node, which
 	// is where the operator declares which machines it is entitled to admit.
 	// Empty leaves the attestor off, which is what a bootstrap that was told
 	// about no hardware identities wants.
@@ -387,7 +387,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	defer cleanup()
 
-	// CWE uses SPIFFE workload identity even when the inventory contains no
+	// CWE uses SPIFFE workload identity even when the site spec contains no
 	// external TPM nodes, so the SPIRE deployment is always required.
 	e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
 		"clusterName", spireClusterName, "trustDomain", spireTrustDomain,

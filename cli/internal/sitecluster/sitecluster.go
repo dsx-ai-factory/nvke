@@ -1,11 +1,11 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package sitecluster turns a bootstrap inventory into the CWE request that creates
+// Package sitecluster turns a bootstrap site spec into the CWE request that creates
 // the cluster from it.
 //
 // It is the whole of the translation between the two vocabularies. The
-// inventory describes hosts an operator already owns; CWE's API describes a
+// site spec describes hosts an operator already owns; CWE's API describes a
 // Cluster API cluster. Keeping the mapping in one function, away from the
 // command that runs it, means it can be read and tested as what it is: a
 // statement of how a site cluster is expressed to CWE.
@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/NVIDIA/nke/cli/internal/inventory"
+	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
@@ -29,7 +29,7 @@ const (
 	provisionedMachineTemplateKind = "ProvisionedMachineTemplate"
 
 	// controlPlanePoolName/controlPlaneNodeNamePrefix name the single node pool
-	// a site cluster has. Every inventory node is a control-plane node, so there
+	// a site cluster has. Every site spec node is a control-plane node, so there
 	// is one pool and it is the control plane.
 	//
 	// The prefix is short because CWE builds node names as
@@ -51,9 +51,9 @@ const (
 //   - the node pool's capiInfraMachineTemplate is a ProvisionedMachineTemplate
 //     with an empty spec. Everything a machine needs is already in the
 //     ProvisionedCluster's inventory, so there is nothing to say per machine.
-func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody, error) {
+func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, error) {
 	if inv == nil {
-		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: inventory is nil")
+		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: site spec is nil")
 	}
 
 	hosts, err := provisionedHosts(inv)
@@ -76,7 +76,7 @@ func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody,
 			// joinToken, not tpm: CWE only derives a node's TPM EK pubhash from
 			// a NicoMachine (see controller/internal/controllers/nodetpmekpub),
 			// so tpm attestation on a provisioned machine would write no SPIRE
-			// entry and the node would never get an identity. The inventory
+			// entry and the node would never get an identity. The site spec
 			// already carries the thumbprints, so teaching CWE to read them off
 			// the ProvisionedCluster is the fix; until then this is the method
 			// that works.
@@ -96,16 +96,16 @@ func ClusterRequest(inv *inventory.Inventory) (api.CreateClusterJSONRequestBody,
 	return req, nil
 }
 
-// provisionedHosts renders the inventory's nodes as ProvisionedCluster hosts.
+// provisionedHosts renders the site spec's nodes as ProvisionedCluster hosts.
 //
 // A duplicate hostname or IP is rejected here rather than left to the provider.
 // The provider keys an allocation on the host's IP address, so two entries
 // sharing one would be two machines pointed at one running node — which it
 // cannot detect and this can.
-func provisionedHosts(inv *inventory.Inventory) ([]map[string]interface{}, error) {
+func provisionedHosts(inv *sitespec.SiteSpec) ([]map[string]interface{}, error) {
 	nodes := inv.Cluster.Nodes
 	if len(nodes) == 0 {
-		return nil, fmt.Errorf("sitecluster: inventory must contain at least one node")
+		return nil, fmt.Errorf("sitecluster: site spec must contain at least one node")
 	}
 	hosts := make([]map[string]interface{}, 0, len(nodes))
 	seenName := make(map[string]bool, len(nodes))
@@ -113,10 +113,10 @@ func provisionedHosts(inv *inventory.Inventory) ([]map[string]interface{}, error
 
 	for _, node := range nodes {
 		if seenName[node.Name] {
-			return nil, fmt.Errorf("sitecluster: node name %q appears more than once in the inventory", node.Name)
+			return nil, fmt.Errorf("sitecluster: node name %q appears more than once in the site spec", node.Name)
 		}
 		if seenIP[node.IP] {
-			return nil, fmt.Errorf("sitecluster: node IP %q appears more than once in the inventory", node.IP)
+			return nil, fmt.Errorf("sitecluster: node IP %q appears more than once in the site spec", node.IP)
 		}
 		seenName[node.Name], seenIP[node.IP] = true, true
 		hosts = append(hosts, map[string]interface{}{
@@ -158,14 +158,14 @@ func provisionedMachineTemplate() map[string]interface{} {
 	}
 }
 
-// clusterNetwork passes the inventory's CIDRs through, or nil when it named
+// clusterNetwork passes the site spec's CIDRs through, or nil when it named
 // neither and CWE's own defaults apply.
 //
 // CWE rejects non-default CIDRs for any CNI plugin other than ovn-kubernetes,
-// so an inventory that sets them with calico fails at create time with that
+// so a site spec that sets them with calico fails at create time with that
 // message. That check belongs to CWE, which owns the rule; restating it here
 // would be a second copy to keep in step.
-func clusterNetwork(inv *inventory.Inventory) *api.ClusterNetworkCreateConfig {
+func clusterNetwork(inv *sitespec.SiteSpec) *api.ClusterNetworkCreateConfig {
 	if inv.Cluster.PodCidr == "" && inv.Cluster.ServiceCidr == "" {
 		return nil
 	}

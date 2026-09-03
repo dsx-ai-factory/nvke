@@ -80,10 +80,10 @@ func shortPollInterval(t *testing.T) {
 	t.Cleanup(func() { pollInterval = old })
 }
 
-func TestCreate_SendsTheInventoryAsACluster(t *testing.T) {
+func TestCreate_SendsTheSiteSpecAsACluster(t *testing.T) {
 	client := &fakeClusterAPI{}
 
-	cluster, err := Create(context.Background(), client, testInventory(), quietLogger())
+	cluster, err := Create(context.Background(), client, testSiteSpec(), quietLogger())
 	if err != nil {
 		t.Fatalf("Create returned error: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestCreate_SendsTheInventoryAsACluster(t *testing.T) {
 func TestCreate_PropagatesTheAPIError(t *testing.T) {
 	client := &fakeClusterAPI{createErr: errors.New("400 Bad Request: orgID must be omitted")}
 
-	_, err := Create(context.Background(), client, testInventory(), quietLogger())
+	_, err := Create(context.Background(), client, testSiteSpec(), quietLogger())
 	if err == nil {
 		t.Fatal("expected Create to propagate the API error")
 	}

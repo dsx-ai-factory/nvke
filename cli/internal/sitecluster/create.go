@@ -13,7 +13,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/NVIDIA/nke/cli/internal/clusterstate"
-	"github.com/NVIDIA/nke/cli/internal/inventory"
+	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
@@ -41,7 +41,7 @@ var ErrClusterFailed = errors.New("cluster provisioning failed")
 
 // Create submits the cluster described by inv and returns what CWE recorded.
 // Provisioning is asynchronous; see WaitProvisioned.
-func Create(ctx context.Context, client ClusterAPI, inv *inventory.Inventory, log *slog.Logger) (*api.Cluster, error) {
+func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log *slog.Logger) (*api.Cluster, error) {
 	req, err := ClusterRequest(inv)
 	if err != nil {
 		return nil, err
