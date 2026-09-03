@@ -11,9 +11,9 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -34,24 +34,18 @@ const (
 	kubeconfigSecretKey = "value"
 )
 
-// secretGetter is the subset of the typed Secrets client Client depends on.
-// It's narrow on purpose: the real implementation is corev1.SecretInterface
-// (via kubernetes.Interface.CoreV1().Secrets(ns)), but tests can supply a
-// minimal fake without pulling in k8s.io/client-go/kubernetes/fake's own
-// dependency footprint.
-type secretGetter interface {
-	Get(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.Secret, error)
-}
-
 // Client is a thin wrapper around a management-cluster k8s client.
 type Client struct {
-	secrets secretGetter
+	kube client.Client
 }
 
 // New builds a Client from a management cluster kubeconfig path. The caller
 // must resolve the path (e.g. from the active site's configured kubeconfig,
 // or an explicit override) — New does not fall back to KUBECONFIG or
 // ~/.kube/config.
+//
+// Follows the pattern in controller/internal/kube: a controller-runtime
+// client.Client built from clientcmd, rather than a raw client-go Clientset.
 func New(kubeconfigPath string) (*Client, error) {
 	if kubeconfigPath == "" {
 		return nil, fmt.Errorf("management cluster kubeconfig path is empty")
@@ -60,17 +54,21 @@ func New(kubeconfigPath string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading management cluster kubeconfig %q: %w", kubeconfigPath, err)
 	}
-	kube, err := kubernetes.NewForConfig(cfg)
+	scheme := runtime.NewScheme()
+	if err := corev1.AddToScheme(scheme); err != nil {
+		return nil, fmt.Errorf("building scheme: %w", err)
+	}
+	kube, err := client.New(cfg, client.Options{Scheme: scheme})
 	if err != nil {
 		return nil, fmt.Errorf("building management cluster client: %w", err)
 	}
-	return &Client{secrets: kube.CoreV1().Secrets(secretsNamespace)}, nil
+	return &Client{kube: kube}, nil
 }
 
-// newWithSecretGetter builds a Client from a secretGetter directly, bypassing
-// kubeconfig resolution. Used by tests to inject a fake.
-func newWithSecretGetter(g secretGetter) *Client {
-	return &Client{secrets: g}
+// newWithClient builds a Client from an existing controller-runtime client,
+// bypassing kubeconfig resolution. Used by tests to inject a fake.
+func newWithClient(kube client.Client) *Client {
+	return &Client{kube: kube}
 }
 
 // GetClusterKubeconfig returns the admin kubeconfig for the named tenant
@@ -78,8 +76,8 @@ func newWithSecretGetter(g secretGetter) *Client {
 // into nke-system/<cluster-name>-admin-kubeconfig.
 func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
 	secretName := clusterName + adminKubeconfigSecretSuffix
-	secret, err := c.secrets.Get(ctx, secretName, metav1.GetOptions{})
-	if err != nil {
+	secret := &corev1.Secret{}
+	if err := c.kube.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: secretName}, secret); err != nil {
 		return nil, fmt.Errorf("reading admin kubeconfig secret nke-system/%s: %w", secretName, err)
 	}
 	data, ok := secret.Data[kubeconfigSecretKey]
