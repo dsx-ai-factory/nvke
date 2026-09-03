@@ -21,10 +21,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/constants"
 )
 
-const (
-	machineConst = "Machine"
-)
-
 type NicoTpmSpiffeController struct {
 	k8sClient client.Client
 	logger    *slog.Logger
@@ -89,7 +85,7 @@ func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Reques
 	applyMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      machine.Name,

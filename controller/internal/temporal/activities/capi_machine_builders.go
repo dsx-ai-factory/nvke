@@ -30,7 +30,7 @@ func buildCAPIBootstrapSecret(createCtx *capiMachineCreateContext, userData stri
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: map[string][]byte{
-			valueLabel: []byte(userData),
+			"value": []byte(userData),
 		},
 	}
 }
@@ -50,7 +50,7 @@ func buildCAPIMachineForNode(node db.Node, nodeSet db.NodeSet, nodePool db.NodeP
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        node.Name,

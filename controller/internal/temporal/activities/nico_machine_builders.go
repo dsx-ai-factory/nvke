@@ -212,7 +212,7 @@ func buildNicoMachine(
 	return &nicov1.NicoMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: nicov1.GroupVersion.String(),
-			Kind:       nicoMachineConst,
+			Kind:       "NicoMachine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      node.Name,

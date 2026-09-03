@@ -15,6 +15,6 @@ func apiServerAuditPolicyFile() File {
 		Path:    defaultAuditPolicyFile,
 		Content: []byte(apiServerAuditPolicyContent),
 		Mode:    0o644,
-		Owner:   rootRoot,
+		Owner:   "root:root",
 	}
 }

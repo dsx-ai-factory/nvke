@@ -78,8 +78,8 @@ func (a *Activities) KubeadmUpgradeApply(
 				RunbookName: "upgrade-kubelet-kubeadm",
 				RunbookEnv: map[string]string{
 					"VERSION":              input.KubernetesVersion,
-					"IS_MASTER":            trueValue,
-					"KUBEADM_UPGRADE_ONLY": trueValue,
+					"IS_MASTER":            "true",
+					"KUBEADM_UPGRADE_ONLY": "true",
 				},
 			})
 			if runbookErr != nil {

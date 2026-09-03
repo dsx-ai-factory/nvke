@@ -35,7 +35,7 @@ func apiServerTerminationGracePatchFixture() fileFromFixture {
 		path:           "/etc/kubernetes/patches/kube-apiserver-base-graceful-shutdown+merge.yaml",
 		goldenFilePath: "kube_apiserver_termination_grace_patch.yaml",
 		mode:           0o644,
-		owner:          rootRoot,
+		owner:          "root:root",
 	}
 }
 

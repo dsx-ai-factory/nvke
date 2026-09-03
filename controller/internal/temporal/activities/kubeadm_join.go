@@ -260,7 +260,7 @@ func (a *Activities) validateEtcdQuota(ctx context.Context, cluster db.Cluster) 
 
 func extractEtcdQuotaFromNode(ctx context.Context, tenantClient client.Client, nodeName string) (string, error) {
 	var pod corev1.Pod
-	if err := tenantClient.Get(ctx, client.ObjectKey{Namespace: kubeSystem, Name: "etcd-" + nodeName}, &pod); err != nil {
+	if err := tenantClient.Get(ctx, client.ObjectKey{Namespace: "kube-system", Name: "etcd-" + nodeName}, &pod); err != nil {
 		return "", fmt.Errorf("failed to get etcd mirror Pod for node %s: %w", nodeName, err)
 	}
 
@@ -273,7 +273,7 @@ func extractEtcdQuotaFromNode(ctx context.Context, tenantClient client.Client, n
 
 func etcdQuotaFromPod(pod corev1.Pod) (string, error) {
 	for _, container := range pod.Spec.Containers {
-		if container.Name != etcdConst {
+		if container.Name != "etcd" {
 			continue
 		}
 		args := make([]string, 0, len(container.Command)+len(container.Args))

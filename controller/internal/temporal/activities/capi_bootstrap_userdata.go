@@ -19,17 +19,6 @@ import (
 //go:embed capi_spire_agent.conf.tmpl
 var capiSpireAgentConfigTemplateText string
 
-const (
-	daemonSet        = "DaemonSet"
-	etcdConst        = "etcd"
-	kubeSystem       = "kube-system"
-	machineConst     = "Machine"
-	nicoMachineConst = "NicoMachine"
-	rootRoot         = "root:root"
-	trueValue        = "true"
-	valueLabel       = "value"
-)
-
 type capiCloudInitConfig struct {
 	WriteFiles []capiCloudInitFile `yaml:"write_files,omitempty"`
 	RunCmd     []string            `yaml:"runcmd,omitempty"`
@@ -97,13 +86,13 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	files = append(files,
 		capiCloudInitFile{
 			Path:        constants.CAPISpireTrustBundlePath,
-			Owner:       rootRoot,
+			Owner:       "root:root",
 			Permissions: "0644",
 			Content:     trustBundle,
 		},
 		capiCloudInitFile{
 			Path:        constants.CAPISpireAgentConfigPath,
-			Owner:       rootRoot,
+			Owner:       "root:root",
 			Permissions: "0644",
 			Content: buildCAPISpireAgentConfig(
 				capiNodeSetProvider.SpireAttestationMethod,

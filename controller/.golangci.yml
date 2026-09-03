@@ -152,7 +152,21 @@ linters:
       # Let us devs write comments.
       ignore-comments: true
     goconst:
-      min-len: 2
+      min-len: 4
+      # Well-known Kubernetes / YAML literals. Repeating these is the API, not a
+      # missed constant.
+      ignore-string-values:
+        - '^Cluster$'
+        - '^DaemonSet$'
+        - '^Machine$'
+        - '^NicoMachine$'
+        - '^Secret$'
+        - '^etcd$'
+        - '^kube-system$'
+        - '^root:root$'
+        - '^true$'
+        - '^v1$'
+        - '^value$'
     gocritic:
       enable-all: true
       disabled-checks:

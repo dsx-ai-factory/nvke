@@ -59,7 +59,6 @@ const (
 	// Kept modest: parallel pulls share the node's disk and network, and past
 	// four the contention costs more than the queueing it removes.
 	defaultMaxParallelImagePulls = 4
-	rootRoot                     = "root:root"
 )
 
 func renderYAMLDocuments(documents ...any) ([]byte, error) {
@@ -192,7 +191,7 @@ func apiServerTerminationGracePatch() File {
 	return File{
 		Path:  defaultAPIServerPatchFile,
 		Mode:  0o644,
-		Owner: rootRoot,
+		Owner: "root:root",
 		Content: []byte(fmt.Sprintf(`apiVersion: v1
 kind: Pod
 metadata:
@@ -214,7 +213,7 @@ func kubeletConfigurationPatch(systemReservedMemory, kubeReservedMemory string) 
 	return File{
 		Path:  defaultKubeletPatchFile,
 		Mode:  0o644,
-		Owner: rootRoot,
+		Owner: "root:root",
 		Content: []byte(fmt.Sprintf(`apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 kubeReserved:

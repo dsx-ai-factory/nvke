@@ -1,7 +1,6 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-//nolint:goconst // Migrations are immutable historical snapshots; extracting shared constants would couple applied migrations to values that change later.
 package migrations
 
 import (

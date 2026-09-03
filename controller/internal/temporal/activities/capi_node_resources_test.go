@@ -49,7 +49,7 @@ func TestFirstInfrastructureRefIPAddress_NicoMachine(t *testing.T) {
 		WithObjects(&nicov1.NicoMachine{
 			TypeMeta: metav1.TypeMeta{
 				APIVersion: nicov1.GroupVersion.String(),
-				Kind:       nicoMachineConst,
+				Kind:       "NicoMachine",
 			},
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "worker-0",
@@ -72,7 +72,7 @@ func TestFirstInfrastructureRefIPAddress_NicoMachine(t *testing.T) {
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: nicov1.GroupVersion.Group,
-				Kind:     nicoMachineConst,
+				Kind:     "NicoMachine",
 				Name:     "worker-0",
 			},
 		},
@@ -91,7 +91,7 @@ func TestApplyNicoMachineInstanceLabels_MergesOntoTemplateSpec(t *testing.T) {
 
 	infraMachine := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": nicov1.GroupVersion.String(),
-		"kind":       nicoMachineConst,
+		"kind":       "NicoMachine",
 		"spec": map[string]any{
 			"labels": map[string]any{
 				"example.com/from-template": "keep",
@@ -191,7 +191,7 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 	require.NoError(t, k8sClient.List(ctx, machineList, client.InNamespace(namespace)))
 	require.Len(t, machineList.Items, 1)
 	assert.Equal(t, node.Name, machineList.Items[0].Name)
-	assert.Equal(t, nicoMachineConst, machineList.Items[0].Spec.InfrastructureRef.Kind)
+	assert.Equal(t, "NicoMachine", machineList.Items[0].Spec.InfrastructureRef.Kind)
 
 	nicoMachineList := &nicov1.NicoMachineList{}
 	require.NoError(t, k8sClient.List(ctx, nicoMachineList, client.InNamespace(namespace)))
@@ -203,7 +203,7 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 	require.NoError(t, k8sClient.List(ctx, secretList, client.InNamespace(namespace)))
 	require.Len(t, secretList.Items, 1)
 	assert.Equal(t, "worker-0-bootstrap-data", secretList.Items[0].Name)
-	assert.Contains(t, string(secretList.Items[0].Data[valueLabel]), "worker-0")
+	assert.Contains(t, string(secretList.Items[0].Data["value"]), "worker-0")
 }
 
 func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
@@ -433,7 +433,7 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 func testInfrastructureRef() clusterv1.ContractVersionedObjectReference {
 	return clusterv1.ContractVersionedObjectReference{
 		APIGroup: "infrastructure.cluster.x-k8s.io",
-		Kind:     nicoMachineConst,
+		Kind:     "NicoMachine",
 		Name:     "worker-0",
 	}
 }
@@ -442,7 +442,7 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 	return &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -451,7 +451,7 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: nicov1.GroupVersion.Group,
-				Kind:     nicoMachineConst,
+				Kind:     "NicoMachine",
 				Name:     "worker-0",
 			},
 		},
@@ -478,7 +478,7 @@ func testNicoMachineForRotation(params nicoMachineRotationParameters) *nicov1.Ni
 	return &nicov1.NicoMachine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: nicov1.GroupVersion.String(),
-			Kind:       nicoMachineConst,
+			Kind:       "NicoMachine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "worker-0",
@@ -619,7 +619,7 @@ func testCAPINicoMachine() *clusterv1.Machine {
 		Spec: clusterv1.MachineSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 				APIGroup: nicov1.GroupVersion.Group,
-				Kind:     nicoMachineConst,
+				Kind:     "NicoMachine",
 				Name:     "worker-0",
 			},
 		},

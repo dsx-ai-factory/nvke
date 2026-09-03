@@ -27,7 +27,7 @@ func TestCAPIMachineBuilders_BuildCAPIBootstrapSecret(t *testing.T) {
 	assert.Equal(t, "worker-0-bootstrap-data", secret.Name)
 	assert.Equal(t, "capi-cluster-a", secret.Namespace)
 	assert.Equal(t, "cluster-a", secret.Labels["cluster.x-k8s.io/cluster-name"])
-	assert.Equal(t, []byte("user-data"), secret.Data[valueLabel])
+	assert.Equal(t, []byte("user-data"), secret.Data["value"])
 }
 
 func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
@@ -125,7 +125,7 @@ func TestCAPIMachineBuilders_BuildCAPIMachineForNode(t *testing.T) {
 			assert.Equal(t, "cwe-controlled", machine.Annotations[clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation])
 			assert.Equal(t, params.wantVersion, machine.Spec.Version)
 			assert.Equal(t, params.bootstrapSecret, *machine.Spec.Bootstrap.DataSecretName)
-			assert.Equal(t, nicoMachineConst, machine.Spec.InfrastructureRef.Kind)
+			assert.Equal(t, "NicoMachine", machine.Spec.InfrastructureRef.Kind)
 			if params.wantControlPlane {
 				assert.Contains(t, machine.Labels, "cluster.x-k8s.io/control-plane")
 			}

@@ -43,10 +43,10 @@ func TestDrainKubeNodeCordonsEvictsAndLabelsUsingTenantClient(t *testing.T) {
 		},
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: kubeSystem,
+				Namespace: "kube-system",
 				Name:      "daemon",
 				OwnerReferences: []metav1.OwnerReference{{
-					Kind:       daemonSet,
+					Kind:       "DaemonSet",
 					Controller: &controller,
 				}},
 			},
@@ -54,7 +54,7 @@ func TestDrainKubeNodeCordonsEvictsAndLabelsUsingTenantClient(t *testing.T) {
 		},
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace:   kubeSystem,
+				Namespace:   "kube-system",
 				Name:        "mirror",
 				Annotations: map[string]string{mirrorPodAnnotation: "hash"},
 			},
@@ -71,11 +71,11 @@ func TestDrainKubeNodeCordonsEvictsAndLabelsUsingTenantClient(t *testing.T) {
 	var node corev1.Node
 	require.NoError(t, fixture.tenantClient.Get(context.Background(), client.ObjectKey{Name: fixture.node.Name}, &node))
 	require.True(t, node.Spec.Unschedulable)
-	require.Equal(t, trueValue, node.Labels[drainedNodeLabel])
+	require.Equal(t, "true", node.Labels[drainedNodeLabel])
 
 	assertPodNotFound(t, fixture.tenantClient, "default", "workload")
-	assertPodExists(t, fixture.tenantClient, kubeSystem, "daemon")
-	assertPodExists(t, fixture.tenantClient, kubeSystem, "mirror")
+	assertPodExists(t, fixture.tenantClient, "kube-system", "daemon")
+	assertPodExists(t, fixture.tenantClient, "kube-system", "mirror")
 	assertPodExists(t, fixture.tenantClient, "default", "other-node")
 	require.Equal(t, 1, fixture.provider.calls)
 	require.Equal(t, fixture.cluster, fixture.provider.cluster)
@@ -92,10 +92,10 @@ func TestDrainKubeNodeForceDeletesAllRemainingPodsAfterGracefulFailure(t *testin
 		},
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
-				Namespace: kubeSystem,
+				Namespace: "kube-system",
 				Name:      "daemon",
 				OwnerReferences: []metav1.OwnerReference{{
-					Kind:       daemonSet,
+					Kind:       "DaemonSet",
 					Controller: &controller,
 				}},
 			},
@@ -107,11 +107,11 @@ func TestDrainKubeNodeForceDeletesAllRemainingPodsAfterGracefulFailure(t *testin
 	require.NoError(t, executeDrainKubeNodeActivity(t, fixture.activities, fixture.input))
 
 	assertPodNotFound(t, fixture.tenantClient, "default", "unmanaged")
-	assertPodNotFound(t, fixture.tenantClient, kubeSystem, "daemon")
+	assertPodNotFound(t, fixture.tenantClient, "kube-system", "daemon")
 	var node corev1.Node
 	require.NoError(t, fixture.tenantClient.Get(context.Background(), client.ObjectKey{Name: fixture.node.Name}, &node))
 	require.True(t, node.Spec.Unschedulable)
-	require.Equal(t, trueValue, node.Labels[drainedNodeLabel])
+	require.Equal(t, "true", node.Labels[drainedNodeLabel])
 }
 
 func TestDrainKubeNodeDoesNotForceDeleteControlPlanePods(t *testing.T) {

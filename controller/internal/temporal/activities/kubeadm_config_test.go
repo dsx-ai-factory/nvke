@@ -113,7 +113,7 @@ func newKubeadmConfigTenantClient(t *testing.T, clusterConfiguration string) cli
 	scheme := runtime.NewScheme()
 	require.NoError(t, corev1.AddToScheme(scheme))
 	return fake.NewClientBuilder().WithScheme(scheme).WithObjects(&corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: "kubeadm-config", Namespace: kubeSystem},
+		ObjectMeta: metav1.ObjectMeta{Name: "kubeadm-config", Namespace: "kube-system"},
 		Data:       map[string]string{"ClusterConfiguration": clusterConfiguration},
 	}).Build()
 }
@@ -122,7 +122,7 @@ func readTenantKubeadmConfig(t *testing.T, tenantClient client.Client) string {
 	t.Helper()
 	var cm corev1.ConfigMap
 	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{
-		Namespace: kubeSystem,
+		Namespace: "kube-system",
 		Name:      "kubeadm-config",
 	}, &cm))
 	return cm.Data["ClusterConfiguration"]
@@ -130,10 +130,10 @@ func readTenantKubeadmConfig(t *testing.T, tenantClient client.Client) string {
 
 func etcdMirrorPod(nodeName string, args ...string) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "etcd-" + nodeName, Namespace: kubeSystem},
+		ObjectMeta: metav1.ObjectMeta{Name: "etcd-" + nodeName, Namespace: "kube-system"},
 		Spec: corev1.PodSpec{Containers: []corev1.Container{{
-			Name:    etcdConst,
-			Command: []string{etcdConst},
+			Name:    "etcd",
+			Command: []string{"etcd"},
 			Args:    args,
 		}}},
 	}

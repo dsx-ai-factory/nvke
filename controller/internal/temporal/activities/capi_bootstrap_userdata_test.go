@@ -35,7 +35,7 @@ func TestRenderCAPIBootstrapUserData_TPMAttestor(t *testing.T) {
 	nodeSet.SetCapi(db.CAPINodePoolProvider{
 		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 		BootstrapFiles: []db.CloudInitFile{
-			{Path: "/etc/custom.conf", Owner: rootRoot, Permissions: "0600", Content: "hello"},
+			{Path: "/etc/custom.conf", Owner: "root:root", Permissions: "0600", Content: "hello"},
 		},
 		PreKubeadmCommands: []string{"echo before kubeadm"},
 	})

@@ -53,7 +53,7 @@ func TestTaintNodePatchesTenantNodeDirectly(t *testing.T) {
 	result, err := executeTaintNodeActivity(t, a, TaintNodeInput{
 		NodeID:      nodeID,
 		TaintKey:    "nke.nvidia.com/provisioning",
-		TaintValue:  trueValue,
+		TaintValue:  "true",
 		TaintEffect: string(corev1.TaintEffectNoSchedule),
 	})
 	require.NoError(t, err)
@@ -63,7 +63,7 @@ func TestTaintNodePatchesTenantNodeDirectly(t *testing.T) {
 	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
 	require.Equal(t, []corev1.Taint{
 		{Key: "keep", Value: "unchanged", Effect: corev1.TaintEffectNoExecute},
-		{Key: "nke.nvidia.com/provisioning", Value: trueValue, Effect: corev1.TaintEffectNoSchedule},
+		{Key: "nke.nvidia.com/provisioning", Value: "true", Effect: corev1.TaintEffectNoSchedule},
 	}, updated.Spec.Taints)
 	require.Equal(t, 1, provider.calls)
 	require.Equal(t, cluster, provider.cluster)
@@ -160,7 +160,7 @@ func TestTaintNodeRetriesConflictAndPreservesConcurrentTaint(t *testing.T) {
 	_, err := executeTaintNodeActivity(t, a, TaintNodeInput{
 		NodeID:      nodeID,
 		TaintKey:    "nke.nvidia.com/provisioning",
-		TaintValue:  trueValue,
+		TaintValue:  "true",
 		TaintEffect: string(corev1.TaintEffectNoSchedule),
 	})
 	require.NoError(t, err)
@@ -170,7 +170,7 @@ func TestTaintNodeRetriesConflictAndPreservesConcurrentTaint(t *testing.T) {
 	require.NoError(t, tenantClient.Get(context.Background(), client.ObjectKey{Name: node.Name}, &updated))
 	require.ElementsMatch(t, []corev1.Taint{
 		{Key: "concurrent", Value: "preserved", Effect: corev1.TaintEffectNoExecute},
-		{Key: "nke.nvidia.com/provisioning", Value: trueValue, Effect: corev1.TaintEffectNoSchedule},
+		{Key: "nke.nvidia.com/provisioning", Value: "true", Effect: corev1.TaintEffectNoSchedule},
 	}, updated.Spec.Taints)
 	require.Equal(t, 1, provider.calls)
 	database.AssertExpectations(t)
@@ -183,7 +183,7 @@ func TestTaintNodeRejectsInvalidTaintBeforeTenantAccess(t *testing.T) {
 	_, err := executeTaintNodeActivity(t, a, TaintNodeInput{
 		NodeID:      uuid.New(),
 		TaintKey:    "invalid key",
-		TaintValue:  trueValue,
+		TaintValue:  "true",
 		TaintEffect: string(corev1.TaintEffectNoSchedule),
 	})
 	require.ErrorContains(t, err, `invalid taint key "invalid key"`)

@@ -21,7 +21,7 @@ import (
 )
 
 func (a *Activities) shouldRotateNicoMachineNetworkCandidate(ctx context.Context, machine *clusterv1.Machine) (bool, error) {
-	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != nicoMachineConst {
+	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != "NicoMachine" {
 		return false, nil
 	}
 
@@ -158,7 +158,7 @@ func (a *Activities) rotateNicoMachineSubnet(ctx context.Context, nicoMachine *n
 // creating any backing instance, so rotation is an in-place Spec.InstanceTypeID
 // patch with nothing to tear down.
 func (a *Activities) shouldRotateNicoMachineInstanceType(ctx context.Context, machine *clusterv1.Machine) (bool, error) {
-	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != nicoMachineConst {
+	if machine.Spec.InfrastructureRef.APIGroup != nicov1.GroupVersion.Group || machine.Spec.InfrastructureRef.Kind != "NicoMachine" {
 		return false, nil
 	}
 

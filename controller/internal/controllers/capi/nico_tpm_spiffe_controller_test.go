@@ -28,7 +28,7 @@ func TestNicoTpmSpiffeControllerReconcileAnnotatesMachine(t *testing.T) {
 	currentMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -77,7 +77,7 @@ func TestNicoTpmSpiffeControllerReconcilePreservesExistingNonTPMSpiffePath(t *te
 	currentMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -108,7 +108,7 @@ func TestNicoTpmSpiffeControllerReconcileSkipsMachineAnnotationWhenRequestedMach
 	currentMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "worker-0",
@@ -151,7 +151,7 @@ func newNicoMachineForTest(name, tpmEkPubHash, ownerMachineName string) *nicov1.
 		isController := true
 		nicoMachine.OwnerReferences = []metav1.OwnerReference{{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 			Name:       ownerMachineName,
 			Controller: &isController,
 		}}
