@@ -74,7 +74,10 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 NKECTL="${NKECTL:-${CLI_DIR}/bin/nkectl}"
-SITESPEC="${SCRIPT_DIR}/sitespec.ci.yaml"
+# The site spec is generated per run by `nkectl generate sitespec`, so this lane
+# tests the command an operator uses rather than a fixture kept in step with it
+# by hand. Only the cluster name is fixed here.
+E2E_CLUSTER_NAME="nke-e2e"
 BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
 # SiteSpec generation records the exact journal boundary and expected result
 # for every node here. The later check reads the same file after bootstrap.
@@ -83,7 +86,8 @@ export NKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.j
 SPIRE_VIP="${NKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
 # The init node, which is also where the finished cluster's API server ends up:
 # no controlPlaneVIP is set, so kubeadm uses the first control-plane node's IP.
-# It matches sitespec.ci.yaml, and it is the address stages 6 and 7 use.
+# It matches the first row of the generated node CSV, and it is the address
+# stages 6 and 7 use.
 INIT_NODE_IP="${NKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 # Where Traefik is published on the new cluster, and where stage 7 asks for the
 # page. In the NodePort range, and clear of the SPIRE server's 30081.
@@ -333,20 +337,36 @@ if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
   docker builder prune --all --force
 fi
 
-# The thumbprints and the bootstrap CA reach the command the way an operator's
-# would: named in the sitespec. Neither can be committed to the fixture — a
-# TPM's endorsement key is created along with the container, and a private key
-# does not belong in a repository — so both are filled in here against whatever
-# this run generated.
-log "recording each node's TPM EK thumbprint and the bootstrap CA in the site spec"
+# The site spec is generated, not committed, so this lane exercises the command
+# an operator runs rather than a fixture kept in step with it by hand. The
+# thumbprints and the bootstrap CA could not be committed anyway: a TPM's
+# endorsement key is created along with the container, and a private key does
+# not belong in a repository.
+log "collecting each node's TPM EK thumbprint and the bootstrap CA"
+HOSTS_CSV="${SCRIPT_DIR}/.hosts.csv"
+# shellcheck disable=SC2046 # the assignments are the documented output contract
+export $(NKECTL_E2E_HOSTS_CSV="${HOSTS_CSV}" \
+  make -C "${CLI_DIR}" --no-print-directory nodes-hosts | xargs)
+
+log "generating the site spec: nkectl generate sitespec ${E2E_CLUSTER_NAME} --nodes ${NKECTL_E2E_HOSTS_CSV}"
 RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
-NKECTL_E2E_SITESPEC_IN="${SITESPEC}" NKECTL_E2E_SITESPEC_OUT="${RENDERED_SITESPEC}" \
-  make -C "${CLI_DIR}" --no-print-directory nodes-sitespec >/dev/null
-grep -q tpmEkThumbprint "${RENDERED_SITESPEC}" ||
-  { log "FAIL: no TPM EK thumbprints were recorded in ${RENDERED_SITESPEC}"; exit 1; }
-grep -q caCertFile "${RENDERED_SITESPEC}" ||
-  { log "FAIL: no bootstrap CA was recorded in ${RENDERED_SITESPEC}"; exit 1; }
-log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_SITESPEC}") EK thumbprint(s)"
+"${NKECTL}" generate sitespec "${E2E_CLUSTER_NAME}" \
+  --nodes "${NKECTL_E2E_HOSTS_CSV}" \
+  --set cluster.k8sVersion=1.34.8 \
+  --set cluster.cniName=calico \
+  --set cluster.cniVersion=3.30.1 \
+  --set cluster.podCidr=192.168.0.0/16 \
+  --set cluster.serviceCidr=10.96.0.0/12 \
+  --set cluster.kubeletConfig.systemReservedMemory=512Mi \
+  --set spire.caCertFile="${NKECTL_E2E_SPIRE_CA_CERT}" \
+  --set spire.caKeyFile="${NKECTL_E2E_SPIRE_CA_KEY}" \
+  > "${RENDERED_SITESPEC}"
+
+grep -qE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPEC}" ||
+  { log "FAIL: no TPM EK thumbprints reached ${RENDERED_SITESPEC}"; exit 1; }
+grep -qE '^[[:space:]]*caCertFile:' "${RENDERED_SITESPEC}" ||
+  { log "FAIL: no bootstrap CA reached ${RENDERED_SITESPEC}"; exit 1; }
+log "allowlisting $(grep -cE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPEC}") EK thumbprint(s)"
 
 # No chart is named here. What gets installed is pinned in
 # cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
@@ -477,7 +497,7 @@ log "PASS: bootstrap site deployed SPIRE and every node attested to it over TPM"
 
 # One thumbprint per node, init node included -- the same count this suite
 # already asserted is non-zero before running the command.
-expected_nodes=$(grep -c tpmEkThumbprint "${RENDERED_SITESPEC}")
+expected_nodes=$(grep -cE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPEC}")
 
 log "waiting for ${expected_nodes} nodes to report Ready"
 # `kubectl wait --all` only waits for the objects that exist when it starts.

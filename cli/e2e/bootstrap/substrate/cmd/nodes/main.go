@@ -13,12 +13,10 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 
-	"gopkg.in/yaml.v3"
-
 	"github.com/NVIDIA/nke/cli/e2e/bootstrap/substrate"
-	"github.com/NVIDIA/nke/cli/internal/sitespec"
 )
 
 // attestTimeout bounds the wait for every host to attest. Credential activation
@@ -44,13 +42,13 @@ func main() {
 		err = down(ctx, cfg, logf)
 	case "status":
 		err = status(ctx)
-	case "sitespec":
-		err = renderInventory(ctx)
+	case "hosts":
+		err = writeHostsCSV(ctx)
 	case "attested":
 		err = attested(ctx, logf)
 	default:
 		fmt.Fprintf(os.Stderr,
-			"unknown subcommand %q; want up, down, status, inventory, or attested\n", os.Args[1])
+			"unknown subcommand %q; want up, down, status, hosts, or attested\n", os.Args[1])
 		os.Exit(2)
 	}
 	if err != nil {
@@ -69,83 +67,58 @@ func down(ctx context.Context, cfg substrate.Config, logf substrate.Logf) error 
 	return nil
 }
 
-// renderInventory writes the base inventory back out with each node's TPM EK
-// thumbprint filled in, and prints the path.
+// writeHostsCSV writes the node CSV that "nkectl generate sitespec" takes, with
+// each running fixture host's TPM EK thumbprint filled in, and prints the shell
+// assignments run.sh needs to build the site spec from it.
 //
-// The thumbprints have to reach `nkectl bootstrap site` the way an operator's
-// would — as part of the node's inventory entry, which is where the ticket puts
-// them and what the command reads. They cannot be committed to the fixture
-// because a TPM's endorsement key is created with the container, so this fills
-// them in against whichever hosts are running now.
+// The thumbprints and the bootstrap CA cannot be committed: a TPM's endorsement
+// key is created along with the container, and a private key does not belong in
+// a repository. Both are produced here against whatever this run started, and
+// then reach the command the way an operator's would — the thumbprints as a
+// column of the CSV, the CA named with --set.
 //
-// NKECTL_E2E_SITESPEC_IN and _OUT name the files; the path is printed on
-// stdout and nothing else is, so run.sh can capture it.
-func renderInventory(ctx context.Context) error {
-	in := os.Getenv("NKECTL_E2E_SITESPEC_IN")
-	out := os.Getenv("NKECTL_E2E_SITESPEC_OUT")
+// Output is three KEY=value lines on stdout and nothing else, so run.sh can
+// source them.
+func writeHostsCSV(ctx context.Context) error {
+	out := os.Getenv("NKECTL_E2E_HOSTS_CSV")
 	baselinePath := os.Getenv("NKECTL_E2E_ATTESTATION_BASELINE")
-	if in == "" || out == "" || baselinePath == "" {
-		return fmt.Errorf("NKECTL_E2E_SITESPEC_IN, NKECTL_E2E_SITESPEC_OUT, and NKECTL_E2E_ATTESTATION_BASELINE are required")
+	if out == "" || baselinePath == "" {
+		return fmt.Errorf("NKECTL_E2E_HOSTS_CSV and NKECTL_E2E_ATTESTATION_BASELINE are required")
 	}
 
 	s, err := tpmSubstrate(ctx, func(string, ...any) {})
 	if err != nil {
 		return err
 	}
-	thumbprints := map[string]string{}
+
+	var csv strings.Builder
+	csv.WriteString("name,ip,tpm_ek_thumbprint\n")
 	for _, node := range s.Nodes() {
-		thumbprints[node.Name] = node.EKPubhash
+		fmt.Fprintf(&csv, "%s,%s,%s\n", node.Name, node.IP, node.EKPubhash)
+	}
+	if err := os.WriteFile(out, []byte(csv.String()), 0o600); err != nil {
+		return fmt.Errorf("writing %s: %w", out, err)
 	}
 
-	inv, err := sitespec.Load(in)
-	if err != nil {
-		return err
-	}
-
-	// The CA the node images were built against. It reaches the command the
-	// same way an operator's would — named in the site spec — rather than
-	// through a side channel the product does not have.
+	// The CA the node images were built against.
 	cfg := substrate.DefaultConfig()
 	caCert, caKey, err := substrate.EnsureBootstrapCA(cfg.CADir)
 	if err != nil {
 		return err
 	}
-	inv.Spire.CACertFile = caCert
-	inv.Spire.CAKeyFile = caKey
-	nodes := ptrs(inv.Cluster.Nodes)
-	for _, node := range nodes {
-		thumbprint, running := thumbprints[node.Name]
-		if !running {
-			return fmt.Errorf("inventory names node %q, which is not one of the running fixture hosts", node.Name)
-		}
-		node.TPMEKThumbprint = thumbprint
-	}
+
 	baseline, err := s.CaptureAttestationBaseline(ctx)
 	if err != nil {
 		return err
 	}
-
-	body, err := yaml.Marshal(inv)
-	if err != nil {
-		return fmt.Errorf("encoding the site spec: %w", err)
-	}
-	if err := os.WriteFile(out, body, 0o600); err != nil {
-		return fmt.Errorf("writing %s: %w", out, err)
-	}
 	if err := substrate.WriteAttestationBaseline(baselinePath, baseline); err != nil {
 		return err
 	}
-	fmt.Println(out)
-	return nil
-}
 
-// ptrs returns writable pointers to the nodes in the sitespec.
-func ptrs(nodes []sitespec.Node) []*sitespec.Node {
-	out := make([]*sitespec.Node, len(nodes))
-	for i := range nodes {
-		out[i] = &nodes[i]
-	}
-	return out
+	fmt.Printf("NKECTL_E2E_HOSTS_CSV=%s\n", out)
+	fmt.Printf("NKECTL_E2E_SPIRE_CA_CERT=%s\n", caCert)
+	fmt.Printf("NKECTL_E2E_SPIRE_CA_KEY=%s\n", caKey)
+	return nil
 }
 
 // attested waits for every host's spire-agent to be admitted by the SPIRE

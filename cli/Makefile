@@ -80,7 +80,7 @@ NKECTL_LDFLAGS := \
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \
 	ensure-capd-image ensure-profiles-image ensure-provisioned-provider-image \
-	nodes-up nodes-down nodes-status nodes-sitespec nodes-attested
+	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
 # The platforms shipped on a release. nkectl is the one binary here a human
 # downloads, so it is cross-built; the others are deployed, not fetched.
@@ -213,11 +213,12 @@ nodes-status:
 # into the site spec that command reads, and the check runs against the SPIRE
 # server it left behind.
 #
-# `nodes-sitespec` reads NKECTL_E2E_SITESPEC_IN, fills in each node's TPM EK
-# thumbprint from the running fixture, writes NKECTL_E2E_SITESPEC_OUT, and
-# prints that path and nothing else.
-nodes-sitespec:
-	@$(GO) run ./e2e/bootstrap/substrate/cmd/nodes sitespec
+# `nodes-hosts` writes the node CSV that `nkectl generate sitespec` takes to
+# NKECTL_E2E_HOSTS_CSV, with each running fixture host's TPM EK thumbprint, and
+# prints the shell assignments run.sh sources: the CSV path and the bootstrap
+# CA paths. Nothing else goes to stdout.
+nodes-hosts:
+	@$(GO) run ./e2e/bootstrap/substrate/cmd/nodes hosts
 
 nodes-attested:
 	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes attested
