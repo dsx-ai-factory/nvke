@@ -67,9 +67,12 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 NKECTL="${CLI_DIR}/bin/nkectl"
-SITESPEC="${SCRIPT_DIR}/sitespec.ci.yaml"
+# The site spec is generated per run by `nkectl generate sitespec`, so this
+# lane tests the command an operator uses rather than a fixture kept in step
+# with it by hand. Only the cluster name is fixed here.
+E2E_CLUSTER_NAME="nke-e2e"
 BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
-# Inventory generation records the exact journal boundary and expected result
+# Host collection records the exact journal boundary and expected result
 # for every node here. The later check reads the same file after bootstrap.
 export NKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.json"
 # Where the node images' spire-agents were built to look for the SPIRE server.
@@ -228,32 +231,48 @@ if [ "${NKECTL_BOOTSTRAP_PROVIDER}" = "nerdctl" ]; then
   docker save "${NKECTL_CWE_PROFILES_IMAGE}" | nerdctl load
 fi
 
-# The thumbprints and the bootstrap CA reach the command the way an operator's
-# would: named in the site spec. Neither can be committed to the fixture — a
-# TPM's endorsement key is created along with the container, and a private key
-# does not belong in a repository — so both are filled in here against whatever
-# this run generated.
-log "recording each node's TPM EK thumbprint and the bootstrap CA in the site spec"
-RENDERED_SITECONFIG="${SCRIPT_DIR}/.sitespec.rendered.yaml"
-NKECTL_E2E_SITESPEC_IN="${SITESPEC}" NKECTL_E2E_SITESPEC_OUT="${RENDERED_SITECONFIG}" \
-  make -C "${CLI_DIR}" --no-print-directory nodes-sitespec >/dev/null
-grep -q tpmEkThumbprint "${RENDERED_SITECONFIG}" ||
-  { log "FAIL: no TPM EK thumbprints were recorded in ${RENDERED_SITECONFIG}"; exit 1; }
-grep -q caCertFile "${RENDERED_SITECONFIG}" ||
-  { log "FAIL: no bootstrap CA was recorded in ${RENDERED_SITECONFIG}"; exit 1; }
-log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_SITECONFIG}") EK thumbprint(s)"
+# The site spec is generated, not committed, so this lane exercises the command
+# an operator runs rather than a fixture kept in step with it by hand. The
+# thumbprints and the bootstrap CA could not be committed anyway: a TPM's
+# endorsement key is created along with the container, and a private key does
+# not belong in a repository.
+log "collecting each node's TPM EK thumbprint and the bootstrap CA"
+HOSTS_CSV="${SCRIPT_DIR}/.hosts.csv"
+# shellcheck disable=SC2046 # the assignments are the documented output contract
+export $(NKECTL_E2E_HOSTS_CSV="${HOSTS_CSV}" \
+  make -C "${CLI_DIR}" --no-print-directory nodes-hosts | xargs)
+
+log "generating the site spec: nkectl generate sitespec ${E2E_CLUSTER_NAME} --nodes ${NKECTL_E2E_HOSTS_CSV}"
+RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
+"${NKECTL}" generate sitespec "${E2E_CLUSTER_NAME}" \
+  --nodes "${NKECTL_E2E_HOSTS_CSV}" \
+  --set cluster.k8sVersion=1.32.0 \
+  --set cluster.cniName=calico \
+  --set cluster.cniVersion=3.31.4-1 \
+  --set cluster.podCidr=10.100.0.0/16 \
+  --set cluster.serviceCidr=10.200.0.0/16 \
+  --set cluster.kubeletConfig.systemReservedMemory=512Mi \
+  --set spire.caCertFile="${NKECTL_E2E_SPIRE_CA_CERT}" \
+  --set spire.caKeyFile="${NKECTL_E2E_SPIRE_CA_KEY}" \
+  > "${RENDERED_SITESPEC}"
+
+grep -q tpmEkThumbprint "${RENDERED_SITESPEC}" ||
+  { log "FAIL: no TPM EK thumbprints reached ${RENDERED_SITESPEC}"; exit 1; }
+grep -q caCertFile "${RENDERED_SITESPEC}" ||
+  { log "FAIL: no bootstrap CA reached ${RENDERED_SITESPEC}"; exit 1; }
+log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_SITESPEC}") EK thumbprint(s)"
 
 # No chart is named here. What gets installed is pinned in
 # cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
-log "running: nkectl bootstrap site -f ${RENDERED_SITECONFIG} --keep-bootstrap-cluster" \
+log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster" \
   "(NKECTL_BOOTSTRAP_PROVIDER=${NKECTL_BOOTSTRAP_PROVIDER}, NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
   "NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE})"
 # Set before the call, not after: the command can fail after creating the
 # cluster it was told to keep, and cleanup has to already know to remove it.
 bootstrap_cluster_cleanup_pending=true
 set +e
-output="$("${NKECTL}" bootstrap site -f "${RENDERED_SITECONFIG}" --keep-bootstrap-cluster 2>&1)"
+output="$("${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster 2>&1)"
 status=$?
 set -e
 printf '%s\n' "${output}"

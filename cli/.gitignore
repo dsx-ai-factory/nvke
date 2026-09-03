@@ -6,7 +6,9 @@ bin/
 # e2e/bootstrap/substrate/ca.go). A private key, and reproducible on demand.
 .local/
 
-# E2E scratch: the site spec run.sh renders with live TPM thumbprints.
+# E2E scratch: the node CSV and the site spec run.sh generates from it, both
+# carrying live TPM thumbprints.
+e2e/bootstrap/.hosts.csv
 e2e/bootstrap/.sitespec.rendered.yaml
 
 # E2E scratch: the cluster dump `nkectl bootstrap site` collects when a
