@@ -25,7 +25,7 @@ RUN apk add --update --no-cache \
     readline
 
 WORKDIR /
-COPY ./bin/cloud-workflow-engine /usr/local/bin/cloud-workflow-engine
+COPY ./bin/controller /usr/local/bin/controller
 COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
 # OS/config profiles are supplied at runtime via PROFILES_DIR (chart mount /
 # nke-site-deploy ConfigMap unpack). Keep the mount point; do not bake content.
@@ -34,4 +34,4 @@ RUN mkdir -p /profiles
 
 EXPOSE 8080
 
-CMD ["cloud-workflow-engine"]
+CMD ["controller"]

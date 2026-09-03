@@ -65,7 +65,7 @@ RUN apk upgrade --no-cache && \
     readline
 
 WORKDIR /
-COPY --from=builder /workspace/controller/bin/cloud-workflow-engine /usr/local/bin/cloud-workflow-engine
+COPY --from=builder /workspace/controller/bin/controller /usr/local/bin/controller
 COPY --from=spiffe-jwt-exec-auth /ko-app/cmd /opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth
 
 # OS/config profiles are operator-supplied at runtime (PROFILES_DIR), not baked
@@ -78,10 +78,10 @@ COPY ./controller/THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
 
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.title="cloud-workflow-engine" \
+      org.opencontainers.image.title="controller" \
       org.opencontainers.image.source="https://github.com/NVIDIA/nke" \
       org.opencontainers.image.description="NKE Cloud Workflow Engine"
 
 EXPOSE 8080
 
-CMD ["cloud-workflow-engine"]
+CMD ["controller"]

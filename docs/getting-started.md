@@ -45,7 +45,7 @@ a target that needs a missing tool says which one and how to install it.
 ### Build
 
 ```bash
-make -C controller build          # → controller/bin/cloud-workflow-engine
+make -C controller build          # → controller/bin/controller
 ```
 
 ### Lint

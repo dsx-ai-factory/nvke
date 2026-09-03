@@ -71,7 +71,7 @@ WORK_MODULES := agent \
 # samples/ and sample-clients/ are package main but are examples, not artefacts.
 #
 # controller does not belong here: its command is ./cmd/worker, but the binary
-# it ships is named cloud-workflow-engine, so this loop would produce the wrong
+# it ships is named controller, so this loop would produce the wrong
 # name. `build` delegates to controller/Makefile for it. controller/nico-vms
 # ships through its own Makefile and the container image.
 #
@@ -113,7 +113,7 @@ cmd_ldflags = -X 'main.version=$(call cmd_version,$(1))' \
 RELEASE_LDFLAGS ?= -s -w -buildid= -extldflags -static
 
 # Must match WORKER_BIN_NAME in controller/Makefile. `build` fails if it does not.
-CWE_BIN_NAME ?= cloud-workflow-engine
+CWE_BIN_NAME ?= controller
 
 # No module is excluded from the workspace any more; kept (empty) because
 # work-check accounts for every go.mod in the tree against these two lists.
@@ -589,7 +589,7 @@ build: ## Build every workspace package, and the released commands into bin/.
 # loop cannot: make expands $(VERSION_CMD_$$b) before the shell sets b.
 VERSION_CMDS := agent:--version \
                 capd-reboot-controller:--version \
-                cloud-workflow-engine:--version \
+                controller:--version \
                 nico-mock:--version \
                 nke-os-image-check:--version \
                 nkectl:version

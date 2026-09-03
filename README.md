@@ -122,7 +122,7 @@ against your own machine, but on macOS the binaries it produces will not.
 
 ```bash
 cd controller
-make build          # → ./bin/cloud-workflow-engine
+make build          # → ./bin/controller
 make test           # unit tests
 make lint
 ```

@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-WORKER_BIN_NAME			?= cloud-workflow-engine
+WORKER_BIN_NAME			?= controller
 TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
 CWE_GOFAIL_E2E_WORKER_BINARY	?= $(CURDIR)/.go/bin/cwe-worker-gofail
 GOFAIL				?= $(shell go env GOPATH)/bin/gofail
@@ -34,7 +34,6 @@ include ../make/golangci.mk
 IMG_NAME ?= nvcr.io/j7sbcjl3qgta/cloud-workflow-engine
 IMG_TAG ?= latest
 IMG ?= ${IMG_NAME}:${IMG_TAG}
-export NAME := cloud-workflow-engine
 # Falls back to the commit before v0.0.0. A CI checkout is shallow and carries
 # no tags, so both describes find nothing there and every binary CI built
 # reported v0.0.0. Same steps as cmd_version in the root Makefile.
@@ -116,7 +115,7 @@ print-%:
 .PHONY: build
 # -buildvcs=false because the version comes from the -X ldflag below. See the note
 # on work-check-offline in the root Makefile.
-build: ## Build cloud-workflow-engine into bin/.
+build: ## Build controller into bin/.
 	CGO_ENABLED=0 go build -buildvcs=false -trimpath -ldflags "-X github.com/NVIDIA/nke/controller/internal/version.Version=${BUILD_VERSION} $(RELEASE_LDFLAGS)" -o ./bin/$(WORKER_BIN_NAME) ./cmd/worker/
 
 .PHONY: fmt

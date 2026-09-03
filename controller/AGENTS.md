@@ -60,7 +60,7 @@ For code generation, do not invoke `oapi-codegen` directly; run `make generate`.
 
 ### Build
 ```bash
-make build        # Build the worker binary to ./bin/cloud-workflow-engine
+make build        # Build the worker binary to ./bin/controller
 ```
 
 ### Lint

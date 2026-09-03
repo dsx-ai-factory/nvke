@@ -72,7 +72,7 @@ func main() {
 	flag.Parse()
 
 	if *versionFlag {
-		fmt.Fprintf(os.Stdout, "cloud-workflow-engine %s\n", version.Version)
+		fmt.Fprintf(os.Stdout, "controller %s\n", version.Version)
 		os.Exit(0)
 	}
 
@@ -104,7 +104,7 @@ func main() {
 		logger.Error("Could not set GOMAXPROCS", "error", err)
 	}
 
-	logger.Info("Starting cloud-workflow-engine", "version", version.Version)
+	logger.Info("Starting controller", "version", version.Version)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
