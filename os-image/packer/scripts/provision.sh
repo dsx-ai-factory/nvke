@@ -52,4 +52,15 @@ sudo rm -f /home/ubuntu/.ssh/authorized_keys
 echo "Cleaning up package cache and trimming filesystem..."
 sudo apt-get -y autoremove
 sudo apt-get clean
+
+# apt's downloaded package indexes and installed man/doc/translation files
+# are dead weight on a golden image that never runs `apt-get update`/install
+# again after this: nothing on the node reads them. `en` is kept under
+# /usr/share/locale so English program strings still resolve; compiled
+# system locales (/usr/lib/locale, used by glibc for LC_* generation) are
+# untouched -- this only drops the separate per-package translation catalogs.
+sudo rm -rf /var/lib/apt/lists/*
+sudo rm -rf /usr/share/doc/* /usr/share/man/*
+find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name en -exec sudo rm -rf {} +
+
 sudo fstrim -av || true

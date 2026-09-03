@@ -143,6 +143,11 @@ source "qemu" "nke-fde" {
   # this, QEMU silently drops the guest's TRIM/discard commands, so freed
   # blocks still look "used" to Packer's post-build compaction step.
   disk_discard = "unmap"
+  # Compresses during that same post-build qemu-img convert step (-c).
+  # LUKS still benefits: fstrim's TRIM passes through discard-enabled LUKS
+  # (configure-fde.sh) to the qcow2 layer, so the ciphertext blocks freed by
+  # deleted files are still detectable as sparse/zero and compress away.
+  disk_compression = true
 
   efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
   efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"

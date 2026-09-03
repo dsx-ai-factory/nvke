@@ -99,6 +99,11 @@ source "qemu" "nke-non-fde" {
   # See the same setting in nke-node-fde.pkr.hcl: required for provision.sh's
   # fstrim to actually shrink the output qcow2.
   disk_discard = "unmap"
+  # Compresses during Packer's own post-build "Converting hard drive..."
+  # qemu-img convert step (-c), on top of the space fstrim + disk_discard
+  # already freed. No extra tooling: this is a builtin qemu-img flag, not
+  # virt-sparsify.
+  disk_compression = true
 
   efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
   efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
