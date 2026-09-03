@@ -62,6 +62,17 @@ func loadClient() (*clients.CWEClient, error) {
 	return clients.New(siteCfg)
 }
 
+// loadSite is the shared site-config factory injected into commands that talk
+// to the site controller's Kubernetes API rather than to CWE. Like loadClient
+// it is called lazily, so --help works without a configured site.
+func loadSite() (config.SiteConfig, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return config.SiteConfig{}, fmt.Errorf("loading config: %w", err)
+	}
+	return resolveSiteConfig(cfg)
+}
+
 func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 	if site == "" {
 		return cfg.CurrentSiteConfig()

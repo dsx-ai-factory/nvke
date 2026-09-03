@@ -47,7 +47,12 @@ nkectl bootstrap site -f sitespec.yaml --bootstrap-provider docker  # use Docker
 nkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster     # leave Kind cluster for debugging
 
 # Point the CLI at a site controller
-nkectl config set-site --url https://cwe.example.com --name default
+nkectl config set-site --url https://cwe.example.com --name default \
+  --kubeconfig ~/.kube/site.kubeconfig
+
+# Infrastructure providers (alpha)
+nkectl get providers                   # NOT-INSTALLED / NOT-CONFIGURED / DEGRADED / CONFIGURED
+nkectl get providers -o json
 
 # Tenant cluster lifecycle
 nkectl get clusters                    # table with AGE and status
@@ -56,6 +61,24 @@ nkectl describe cluster <name>
 nkectl create cluster [spec-file]      # or: cat spec.yaml | nkectl create cluster -
 nkectl delete cluster <name>           # prompts [y/N]; use --yes to skip
 ```
+
+## Infrastructure providers
+
+`nkectl get providers` reports which Cluster API infrastructure providers a site
+controller can actually use. It reads the site's Kubernetes cluster directly
+rather than the CWE API, so it needs the kubeconfig registered with
+`nkectl config set-site --kubeconfig` and `kubectl` on `PATH`.
+
+| State | Meaning |
+|---|---|
+| `NOT-INSTALLED` | The provider's CRDs are absent, or present but not established. Not an error — a site may legitimately run one provider, both, or neither. |
+| `NOT-CONFIGURED` | CRDs are established but no credentials Secret was found. For LaunchLayer this is a supported configuration: without one its client is unauthenticated. |
+| `DEGRADED` | Configured, but the provider's manager is not available or was not found. |
+| `CONFIGURED` | CRDs established, manager available, credentials in place. This does **not** mean the credentials work — nothing here authenticates against the provider's backend. |
+| `UNKNOWN` | A probe failed for a reason other than absence, most often a kubeconfig that may not read Secrets in the manager's namespace. |
+
+The providers listed are the ones nkectl knows how to describe. That is not a
+restriction: CWE accepts any infrastructure manifest written by hand.
 
 ## Configuration
 
