@@ -14,7 +14,7 @@ TODO:  Need to refine the requirements around spire-agent below
 
 | Item | Requirement |
 |---|---|
-| OS | Ubuntu 26.04 LTS, `linux/amd64` for the first reference image. |
+| OS | Ubuntu 26.04 LTS, `linux/amd64` for the first reference image. `linux/arm64` also builds (`make os-image-non-fde ARCH=arm64`), but is a first pass, not full parity — see [README.md](README.md#build-the-os-image) and the `os-image-artifact.yml` header comment for what's not (yet) covered: no FDE variant, CI runs it cross-emulated under `tcg` rather than on real hardware, and it isn't attached to the GitHub Release yet, only GHCR. |
 | Kernel | Ubuntu's NVIDIA-tuned kernel flavor (`linux-nvidia` on amd64, `linux-nvidia-64k` on arm64), not the generic default — set via autoinstall's `kernel.package` (`cidata/autoinstall-lvm.pkrtpl`), so curtin installs it directly at image-build time instead of the generic kernel ever landing on disk. Matches `node-images`' `nvidia-kernel` role. |
 | `nke-agent` | Built from this repository's `agent/` source at bake time and installed at `/usr/local/bin/nke-agent`. systemd unit `nke-agent.service` **enabled**. Listens on TCP **15005**. mTLS is on (no `--disable-mtls` in `/etc/default/nke-agent`). The unit waits for the SPIRE workload API before exec. |
 | SPIRE agent | `spire-agent` at `/usr/local/bin/spire-agent`, unit `spire-agent.service` **enabled**. Workload API socket at `unix:///tmp/spire-agent/public/api.sock` (the `nke-agent` default). |

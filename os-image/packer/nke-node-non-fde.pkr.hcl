@@ -82,6 +82,17 @@ locals {
   # Ubuntu's NVIDIA-tuned kernel flavor: linux-nvidia-64k on arm64 (64k page
   # size, matching node-images), linux-nvidia everywhere else.
   nvidia_kernel_package = local.arch == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
+
+  # QEMU on this host only ever runs the guest arch matching its own binary
+  # (qemu-system-x86_64 vs qemu-system-aarch64) -- there's no single binary
+  # that does both. "virt" is QEMU's generic ARM platform (q35/i440fx are
+  # x86 chipsets, meaningless on arm64). AAVMF is UEFI firmware built for
+  # aarch64, the same role OVMF plays for x86 -- they are not interchangeable
+  # binaries despite both being "the UEFI firmware files".
+  qemu_binary       = local.arch == "arm64" ? "qemu-system-aarch64" : "qemu-system-x86_64"
+  machine_type      = local.arch == "arm64" ? "virt" : "q35"
+  efi_firmware_code = local.arch == "arm64" ? "/usr/share/AAVMF/AAVMF_CODE.fd" : "/usr/share/OVMF/OVMF_CODE_4M.fd"
+  efi_firmware_vars = local.arch == "arm64" ? "/usr/share/AAVMF/AAVMF_VARS.fd" : "/usr/share/OVMF/OVMF_VARS_4M.fd"
 }
 
 source "qemu" "nke-non-fde" {
@@ -92,8 +103,10 @@ source "qemu" "nke-non-fde" {
   # See the comment on this block in nke-node-fde.pkr.hcl: machine_type is
   # the QEMU chipset, not a CPU setting. q35 avoids the legacy "pc" (i440fx)
   # + OVMF/UEFI pairing that produced intermittent guest-kernel crashes
-  # while developing these variants.
-  machine_type   = "q35"
+  # while developing these variants. "virt" is its arm64 equivalent -- see
+  # local.machine_type's comment.
+  qemu_binary    = local.qemu_binary
+  machine_type   = local.machine_type
   cpu_model      = var.cpu_model
   disk_size      = var.disk_size
   disk_interface = "virtio"
@@ -103,8 +116,8 @@ source "qemu" "nke-non-fde" {
   # fstrim to actually shrink the output qcow2.
   disk_discard = "unmap"
 
-  efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-  efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+  efi_firmware_code = local.efi_firmware_code
+  efi_firmware_vars = local.efi_firmware_vars
   efi_boot          = true
 
   http_content = {
@@ -154,6 +167,7 @@ build {
   provisioner "shell-local" {
     environment_vars = [
       "ARTIFACTS_DIR=${local.artifacts}",
+      "ARCH=${local.arch}",
     ]
     script = "${path.root}/scripts/fetch-artifacts.sh"
   }

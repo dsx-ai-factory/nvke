@@ -22,13 +22,25 @@ name: OS Image Artifact
 # window (verify with luks-tpm-verify; see
 # os-image/docs/full-disk-encryption.md).
 #
-# The payload is an OCI artifact, not a container image:
+# The payload is an OCI artifact, not a container image. Tags are
+# arch-suffixed, one per (variant, arch) -- NOT a single multi-platform
+# manifest across both arches. That would need a separate index/merge step
+# sequenced after every matrix leg finishes; arch-suffixed tags avoid that
+# entirely, at the cost of `--platform` being informational (for the layer's
+# declared platform metadata) rather than required to disambiguate a pull:
 #
-#   ghcr.io/nvidia/nke/os-image-fde:v0.1.0
-#   ghcr.io/nvidia/nke/os-image-non-fde:v0.1.0
-#     `-- platform linux/amd64   layer: nke-node-{fde,non-fde}.qcow2
+#   ghcr.io/nvidia/nke/os-image-fde:v0.1.0-amd64
+#   ghcr.io/nvidia/nke/os-image-non-fde:v0.1.0-amd64
+#   ghcr.io/nvidia/nke/os-image-non-fde:v0.1.0-arm64
+#     `-- platform linux/{amd64,arm64}   layer: nke-node-{fde,non-fde}.qcow2
 #
-#   oras pull ghcr.io/nvidia/nke/os-image-fde:v0.1.0 --platform linux/amd64
+#   oras pull ghcr.io/nvidia/nke/os-image-fde:v0.1.0-amd64 --platform linux/amd64
+#
+# arm64 only builds the non-FDE variant for now (see the matrix below) --
+# there is no os-image-fde-arm64 tag yet. It also only publishes to GHCR, not
+# the GitHub Release: the release step runs on the amd64 leg only, unchanged
+# from before this matrix existed, since restructuring release-asset
+# attachment to fan in across matrix legs is its own separate piece of work.
 #
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
 # nothing. Distinct from image-nvcr.yml, which publishes the controller
@@ -65,22 +77,42 @@ env:
 jobs:
   publish:
     if: github.repository == 'NVIDIA/nke'
-    name: Build, verify, and release
-    # Packer QEMU needs /dev/kvm. linux-amd64-cpu16 (a container-based pool)
-    # never exposed it, forcing every bake onto QEMU's tcg software emulation
-    # — confirmed directly: a full FDE bake took 1h39m under tcg vs a few
-    # minutes locally under real KVM, and tcg's much slower, less predictable
-    # timing was implicated in several failures (a GRUB boot-menu race, an
-    # intermittent overlayfs kernel oops under curtin's install). This label
-    # is expected to expose /dev/kvm; "Enable KVM access" below fails the job
-    # immediately if that assumption turns out wrong, rather than silently
-    # falling back to the ~10x-slower emulated path the way this job used to.
+    name: Build, verify, and release (${{ matrix.arch }})
+    # No arm64-labeled runner exists in this org's pool, so the arm64 leg
+    # cross-builds on this same amd64 runner under QEMU's tcg software
+    # emulation -- there is no way to KVM-accelerate an arm64 guest on x86
+    # hardware regardless of runner choice. build_fde is false for arm64:
+    # this is a first pass at arm64 support, not full parity -- see the
+    # header comment above.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            timeout_minutes: 120
+            build_fde: true
+          - arch: arm64
+            timeout_minutes: 240
+            build_fde: false
+    # Packer QEMU needs /dev/kvm for the amd64 leg. linux-amd64-cpu16 (a
+    # container-based pool) never exposed it, forcing every bake onto QEMU's
+    # tcg software emulation — confirmed directly: a full FDE bake took
+    # 1h39m under tcg vs a few minutes locally under real KVM, and tcg's much
+    # slower, less predictable timing was implicated in several failures (a
+    # GRUB boot-menu race, an intermittent overlayfs kernel oops under
+    # curtin's install). This label is expected to expose /dev/kvm; "Enable
+    # KVM access" below fails the amd64 leg immediately if that assumption
+    # turns out wrong, rather than silently falling back to the
+    # ~10x-slower emulated path the way this job used to. The arm64 leg
+    # always runs under tcg by design (see above) and skips that gate.
     runs-on: linux-amd64-gpu-l4-latest-1
-    # Sized for real KVM: FDE bake + demo-fde.sh + non-FDE bake + boot-smoke,
-    # each a few minutes, with real headroom. If this ever regresses to tcg
-    # somehow, the KVM gate below fails fast instead of burning the timeout
-    # finding out.
-    timeout-minutes: 120
+    # amd64: sized for real KVM (FDE bake + demo-fde.sh + non-FDE bake +
+    # boot-smoke, each a few minutes, with real headroom); the KVM gate below
+    # fails fast instead of burning the timeout if that ever regresses to
+    # tcg. arm64: non-FDE bake + boot-smoke only, but under tcg cross-arch
+    # emulation, which has no local measurement yet to size against -- 240m
+    # is a starting guess, expect to revisit once real runs land.
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
       contents: write
       packages: write
@@ -153,23 +185,35 @@ jobs:
           make test
           make build
 
-      - name: Install QEMU, cloud-localds, swtpm, OVMF, 7z, and xorriso
+      # qemu-system-arm provides qemu-system-aarch64; qemu-efi-aarch64
+      # provides the AAVMF firmware the arm64 leg needs (arm64's equivalent
+      # of ovmf's OVMF firmware for amd64). Installed on both legs
+      # unconditionally rather than branched on matrix.arch: the extra apt
+      # cost is negligible and it keeps this step identical across the
+      # matrix.
+      - name: Install QEMU, cloud-localds, swtpm, OVMF/AAVMF, 7z, and xorriso
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq qemu-system-x86 qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf p7zip-full xorriso
+          sudo apt-get install -y -qq qemu-system-x86 qemu-system-arm qemu-utils cloud-image-utils genisoimage unzip swtpm ovmf qemu-efi-aarch64 p7zip-full xorriso
           qemu-system-x86_64 --version | head -1
+          qemu-system-aarch64 --version | head -1
           qemu-img --version | head -1
           swtpm --version
 
-      # A gate, deliberately: this runner label is chosen specifically for
-      # /dev/kvm (see the comment on runs-on above). A missing device means
-      # something about the runner pool changed and every subsequent step
-      # would silently fall back to tcg (packer/Makefile and boot-smoke.sh
-      # both probe and fall back on their own) -- better to fail here in
-      # seconds than rediscover it 1-2 hours into a tcg bake. Same pattern
-      # NVIDIA/OpenShell uses for its own KVM-backed e2e VM tests.
+      # A gate, deliberately, on the amd64 leg only: this runner label is
+      # chosen specifically for /dev/kvm (see the comment on runs-on above).
+      # A missing device on the amd64 leg means something about the runner
+      # pool changed and every subsequent step would silently fall back to
+      # tcg (packer/Makefile and boot-smoke.sh both probe and fall back on
+      # their own) -- better to fail here in seconds than rediscover it 1-2
+      # hours into a tcg bake. Same pattern NVIDIA/OpenShell uses for its own
+      # KVM-backed e2e VM tests. The arm64 leg always runs under tcg by
+      # design (no arm64-capable runner exists, and /dev/kvm on this x86
+      # runner can't accelerate an arm64 guest regardless) so there is
+      # nothing to gate there.
       - name: Enable KVM access
+        if: matrix.arch == 'amd64'
         run: |
           set -euo pipefail
           if [[ ! -c /dev/kvm ]]; then
@@ -187,6 +231,10 @@ jobs:
           exec 3<>/dev/kvm
           exec 3>&-
           echo "::notice::/dev/kvm present and writable; building with hardware acceleration"
+
+      - name: Note tcg emulation for arm64
+        if: matrix.arch == 'arm64'
+        run: echo "::notice::arm64 leg cross-builds under QEMU tcg software emulation by design; see the header comment in this workflow"
 
       - name: Install Packer
         env:
@@ -218,26 +266,35 @@ jobs:
             --username "${{ github.actor }}" --password-stdin
 
       - name: Build the FDE node image
+        if: matrix.build_fde
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make -C os-image/packer os-image-fde
+        run: make -C os-image/packer os-image-fde ARCH=${{ matrix.arch }}
 
       # Full acceptance run: LUKS2+TPM-sealed, wrong-TPM-fails,
       # reboot-auto-unlocks. No manual/scripted console interaction needed —
       # the image auto-unlocks its own first boot via a build-time luks.key=
-      # GRUB parameter (see os-image/docs/full-disk-encryption.md).
+      # GRUB parameter (see os-image/docs/full-disk-encryption.md). Only run
+      # where the FDE image was actually built (see matrix.build_fde above).
       - name: Validate FDE TPM unlock (demo-fde.sh)
+        if: matrix.build_fde
         working-directory: os-image
         run: ./demo-fde.sh
 
       - name: Build the non-FDE node image
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make -C os-image/packer os-image-non-fde
+        run: make -C os-image/packer os-image-non-fde ARCH=${{ matrix.arch }}
 
       - name: Boot-smoke the non-FDE qcow2
         run: |
-          make -C os-image boot-smoke OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+          if [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            make -C os-image boot-smoke ARCH=arm64 \
+              OVMF_CODE=/usr/share/AAVMF/AAVMF_CODE.fd \
+              OVMF_VARS_TEMPLATE=/usr/share/AAVMF/AAVMF_VARS.fd
+          else
+            make -C os-image boot-smoke ARCH=amd64 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+          fi
 
       # Runs regardless of outcome: this runner has no VNC/monitor access to
       # inspect a stuck or failed FDE/non-FDE build interactively, so the
@@ -245,11 +302,13 @@ jobs:
       # console=ttyS0 in nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl) is
       # the only way to see what happened. No-op if the dir is empty/missing
       # (e.g. a failure before either build reached prepare-installer-iso).
+      # Arch-suffixed: upload-artifact rejects two jobs in the same run
+      # uploading under the same name, and each matrix leg has its own logs.
       - name: Upload FDE/non-FDE install console logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: fde-install-console-logs
+          name: fde-install-console-logs-${{ matrix.arch }}
           path: os-image/packer/build-logs/
           if-no-files-found: ignore
           retention-days: 7
@@ -258,37 +317,47 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          fde_src="$(ls os-image/packer/output-fde/*.qcow2)"
+          if [[ "${{ matrix.build_fde }}" == "true" ]]; then
+            fde_src="$(ls os-image/packer/output-fde/*.qcow2)"
+            qemu-img convert -p -c -O qcow2 "${fde_src}" dist/nke-node-fde.qcow2
+            qemu-img info dist/nke-node-fde.qcow2
+          fi
           non_fde_src="$(ls os-image/packer/output-non-fde/*.qcow2)"
-          qemu-img convert -p -c -O qcow2 "${fde_src}" dist/nke-node-fde.qcow2
           qemu-img convert -p -c -O qcow2 "${non_fde_src}" dist/nke-node-non-fde.qcow2
-          qemu-img info dist/nke-node-fde.qcow2
           qemu-img info dist/nke-node-non-fde.qcow2
 
       # --artifact-platform is still marked experimental in the ORAS CLI. It is
       # load-bearing: without it the manifest has no platform in its config and
-      # `oras pull --platform linux/amd64` cannot select this disk.
+      # `oras pull --platform linux/${{ matrix.arch }}` cannot select this disk.
+      # Tags are arch-suffixed (see this workflow's header comment) rather
+      # than one multi-platform manifest shared across matrix legs.
       - name: Push the qcow2s to GHCR
         if: github.event.inputs.dry_run != 'true'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           ALIASES: ${{ steps.meta.outputs.aliases }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
           read -ra aliases <<< "${ALIASES}"
           tags=""
           for alias in "${aliases[@]}"; do
-            tags="${tags:+${tags},}${alias}"
+            tags="${tags:+${tags},}${alias}-${ARCH}"
           done
 
-          for variant in fde non-fde; do
+          variants=(non-fde)
+          if [[ "${{ matrix.build_fde }}" == "true" ]]; then
+            variants+=(fde)
+          fi
+
+          for variant in "${variants[@]}"; do
             case "${variant}" in
               fde) repo="${REPO_FDE}" ;;
               non-fde) repo="${REPO_NON_FDE}" ;;
             esac
             ( cd dist && oras push "${repo}:${tags}" \
                 --artifact-type application/vnd.nvidia.nke.node.qcow2.v1 \
-                --artifact-platform linux/amd64 \
+                --artifact-platform "linux/${ARCH}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
                 --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
                 --annotation "org.opencontainers.image.version=${VERSION}" \
@@ -301,10 +370,16 @@ jobs:
         if: github.event.inputs.dry_run != 'true'
         run: |
           set -euo pipefail
-          oras manifest fetch --pretty "${REPO_FDE}:sha-${GITHUB_SHA}"
-          oras manifest fetch --pretty "${REPO_NON_FDE}:sha-${GITHUB_SHA}"
+          oras manifest fetch --pretty "${REPO_NON_FDE}:sha-${GITHUB_SHA}-${{ matrix.arch }}"
+          if [[ "${{ matrix.build_fde }}" == "true" ]]; then
+            oras manifest fetch --pretty "${REPO_FDE}:sha-${GITHUB_SHA}-${{ matrix.arch }}"
+          fi
 
+      # amd64 only: see this workflow's header comment on why the GitHub
+      # Release doesn't (yet) carry an arm64 qcow2 -- fanning release-asset
+      # attachment in across matrix legs is separate follow-up work.
       - name: Prepare release assets
+        if: matrix.arch == 'amd64'
         run: |
           set -euo pipefail
           cp os-image/bin/nke-os-image-check dist/nke-os-image-check
@@ -314,7 +389,7 @@ jobs:
           echo "::endgroup::"
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/os-image/')
+        if: matrix.arch == 'amd64' && startsWith(github.ref, 'refs/tags/os-image/')
         id: release
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
@@ -325,13 +400,15 @@ jobs:
             os-image ${{ steps.meta.outputs.version }}: the FDE and non-FDE Packer
             node images, built and validated against nke-agent
             `${{ steps.meta.outputs.agent_version }}` (built from source at this
-            commit; Ubuntu 26.04, linux/amd64).
+            commit; Ubuntu 26.04, linux/amd64). An arm64 non-FDE image also
+            publishes to GHCR (see below) but isn't attached to this release yet.
 
             Pull the qcow2s with oras (not docker):
 
             ```
-            oras pull ghcr.io/nvidia/nke/os-image-fde:${{ steps.meta.outputs.version }} --platform linux/amd64
-            oras pull ghcr.io/nvidia/nke/os-image-non-fde:${{ steps.meta.outputs.version }} --platform linux/amd64
+            oras pull ghcr.io/nvidia/nke/os-image-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
+            oras pull ghcr.io/nvidia/nke/os-image-non-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
+            oras pull ghcr.io/nvidia/nke/os-image-non-fde:${{ steps.meta.outputs.version }}-arm64 --platform linux/arm64
             ```
 
             **FDE security note**: this image's `LUKS_PASSPHRASE` is the shared,
@@ -355,7 +432,7 @@ jobs:
           generate_release_notes: false
 
       - name: Publish the release
-        if: startsWith(github.ref, 'refs/tags/os-image/')
+        if: matrix.arch == 'amd64' && startsWith(github.ref, 'refs/tags/os-image/')
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           RELEASE_ID: ${{ steps.release.outputs.id }}

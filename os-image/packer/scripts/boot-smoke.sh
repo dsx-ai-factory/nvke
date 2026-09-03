@@ -34,16 +34,40 @@ SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
 OVMF_CODE="${OVMF_CODE:-}"
 OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+# amd64 or arm64. Must match the qcow2 being smoke-tested -- see the same
+# ARCH-vs-host-arch reasoning in packer/Makefile's ACCELERATOR probe.
+ARCH="${ARCH:-amd64}"
 
-# Same probe as packer/Makefile, and for the same reason: the CI runners have no
-# /dev/kvm, so -enable-kvm makes QEMU exit instead of booting. Emulated boot is
+case "${ARCH}" in
+  amd64)
+    QEMU_BIN=qemu-system-x86_64
+    ARCH_UNAME=x86_64
+    MACHINE_ARGS=()
+    ;;
+  arm64)
+    QEMU_BIN=qemu-system-aarch64
+    ARCH_UNAME=aarch64
+    # Unlike x86 (which defaults to a sane "pc" machine), QEMU has no
+    # default machine type for aarch64 -- it must be named explicitly.
+    MACHINE_ARGS=(-machine virt)
+    ;;
+  *)
+    echo "boot-smoke: unsupported ARCH=${ARCH} (expected amd64 or arm64)" >&2
+    exit 1
+    ;;
+esac
+
+# Same probe as packer/Makefile, and for the same reason: KVM only
+# accelerates a guest matching the host's own architecture, and the CI
+# runners have no /dev/kvm at all, so -enable-kvm would make QEMU exit
+# instead of booting rather than silently emulating. Emulated boot is
 # minutes rather than seconds, so the timeout moves with the accelerator.
-if [[ -c /dev/kvm && -w /dev/kvm ]]; then
+if [[ "$(uname -m)" == "${ARCH_UNAME}" && -c /dev/kvm && -w /dev/kvm ]]; then
   ACCEL_ARGS=(-enable-kvm -cpu host)
   BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}"
 else
-  echo "boot-smoke: no usable /dev/kvm, booting under software emulation (slower)" >&2
-  ACCEL_ARGS=(-accel tcg)
+  echo "boot-smoke: no usable same-arch /dev/kvm, booting under software emulation (slower)" >&2
+  ACCEL_ARGS=(-accel tcg -cpu max)
   BOOT_TIMEOUT="${BOOT_TIMEOUT:-1200}"
 fi
 
@@ -94,8 +118,9 @@ if [[ -n "${OVMF_CODE}" ]]; then
 fi
 
 echo "boot-smoke: starting VM (ssh on 127.0.0.1:${SSH_PORT})"
-qemu-system-x86_64 \
+"${QEMU_BIN}" \
   -m 2048 -smp 2 \
+  "${MACHINE_ARGS[@]}" \
   "${ACCEL_ARGS[@]}" \
   -nographic \
   "${EFI_ARGS[@]}" \
