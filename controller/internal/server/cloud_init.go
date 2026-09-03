@@ -55,11 +55,3 @@ func apiCloudInitFilesFromDB(files []db.CloudInitFile) *[]api.CloudInitFile {
 	}
 	return &apiFiles
 }
-
-func stringSlicePointer(s []string) *[]string {
-	if len(s) == 0 {
-		return nil
-	}
-	out := append([]string(nil), s...)
-	return &out
-}

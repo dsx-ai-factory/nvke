@@ -99,9 +99,11 @@ register_instance_type "${AVAILABLE_INSTANCE_TYPE_ID}" "${AVAILABLE_UNUSED_USABL
 BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",
-  "orgID": "${ORG_ID}",
-  "siteID": "${MOCK_SITE_ID}",
-  "vpcID": "${MOCK_VPC_ID}",
+  "nico": {
+    "orgID": "${ORG_ID}",
+    "siteID": "${MOCK_SITE_ID}",
+    "vpcID": "${MOCK_VPC_ID}"
+  },
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
   "etcdEncrypted": false,
@@ -110,11 +112,13 @@ BODY=$(cat <<EOF
     {
       "name": "cp-constrained",
       "nodeNamePrefix": "cpc",
-      "subnetIDs": ["${MOCK_SUBNET_ID}"],
-      "instanceTypeID": "${UNAVAILABLE_INSTANCE_TYPE_ID}",
-      "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-      "osProfile": "${OS_PROFILE}",
-      "configProfile": "${CONFIG_PROFILE}",
+      "nico": {
+        "subnetIDs": ["${MOCK_SUBNET_ID}"],
+        "instanceTypeID": "${UNAVAILABLE_INSTANCE_TYPE_ID}",
+        "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
+        "osProfile": "${OS_PROFILE}",
+        "configProfile": "${CONFIG_PROFILE}"
+      },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
       "controlPlane": true,
       "desiredNodeCount": 0,
@@ -126,11 +130,13 @@ BODY=$(cat <<EOF
     {
       "name": "control-plane",
       "nodeNamePrefix": "cp",
-      "subnetIDs": ["${MOCK_SUBNET_ID}"],
-      "instanceTypeID": "${AVAILABLE_INSTANCE_TYPE_ID}",
-      "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-      "osProfile": "${OS_PROFILE}",
-      "configProfile": "${CONFIG_PROFILE}",
+      "nico": {
+        "subnetIDs": ["${MOCK_SUBNET_ID}"],
+        "instanceTypeID": "${AVAILABLE_INSTANCE_TYPE_ID}",
+        "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
+        "osProfile": "${OS_PROFILE}",
+        "configProfile": "${CONFIG_PROFILE}"
+      },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
       "controlPlane": true,
       "desiredNodeCount": 1,
@@ -142,11 +148,13 @@ BODY=$(cat <<EOF
     {
       "name": "worker",
       "nodeNamePrefix": "w",
-      "subnetIDs": ["${MOCK_SUBNET_ID}"],
-      "instanceTypeID": "${AVAILABLE_INSTANCE_TYPE_ID}",
-      "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-      "osProfile": "${OS_PROFILE}",
-      "configProfile": "${CONFIG_PROFILE}",
+      "nico": {
+        "subnetIDs": ["${MOCK_SUBNET_ID}"],
+        "instanceTypeID": "${AVAILABLE_INSTANCE_TYPE_ID}",
+        "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
+        "osProfile": "${OS_PROFILE}",
+        "configProfile": "${CONFIG_PROFILE}"
+      },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
       "controlPlane": false,
       "desiredNodeCount": 0,

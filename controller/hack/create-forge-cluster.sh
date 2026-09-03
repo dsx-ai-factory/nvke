@@ -36,9 +36,11 @@ SYSTEM_RESERVED_MEMORY="${SYSTEM_RESERVED_MEMORY:-1Gi}"
 BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",
-  "orgID": "${ORG_ID}",
-  "siteID": "${MOCK_SITE_ID}",
-  "vpcID": "${MOCK_VPC_ID}",
+  "nico": {
+    "orgID": "${ORG_ID}",
+    "siteID": "${MOCK_SITE_ID}",
+    "vpcID": "${MOCK_VPC_ID}"
+  },
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
   "etcdEncrypted": false,
@@ -47,11 +49,13 @@ BODY=$(cat <<EOF
     {
       "name": "control-plane",
       "nodeNamePrefix": "cp",
-      "subnetIDs": ["${MOCK_SUBNET_ID}"],
-      "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
-      "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-      "osProfile": "${OS_PROFILE}",
-      "configProfile": "${CONFIG_PROFILE}",
+      "nico": {
+        "subnetIDs": ["${MOCK_SUBNET_ID}"],
+        "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
+        "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
+        "osProfile": "${OS_PROFILE}",
+        "configProfile": "${CONFIG_PROFILE}"
+      },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
       "controlPlane": true,
       "desiredNodeCount": ${CONTROL_PLANE_DESIRED_COUNT},
@@ -63,11 +67,13 @@ BODY=$(cat <<EOF
     {
       "name": "worker",
       "nodeNamePrefix": "w",
-      "subnetIDs": ["${MOCK_SUBNET_ID}"],
-      "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
-      "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
-      "osProfile": "${OS_PROFILE}",
-      "configProfile": "${CONFIG_PROFILE}",
+      "nico": {
+        "subnetIDs": ["${MOCK_SUBNET_ID}"],
+        "instanceTypeID": "${MOCK_INSTANCE_TYPE_ID}",
+        "sshKeyGroupIDs": ["${MOCK_SSH_KEY_GROUP_ID}"],
+        "osProfile": "${OS_PROFILE}",
+        "configProfile": "${CONFIG_PROFILE}"
+      },
       "systemReservedMemory": "${SYSTEM_RESERVED_MEMORY}",
       "controlPlane": false,
       "desiredNodeCount": ${WORKER_DESIRED_COUNT},

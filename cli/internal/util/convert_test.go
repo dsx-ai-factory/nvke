@@ -13,7 +13,8 @@ import (
 func TestYAMLToRequest_ValidRoundTrip(t *testing.T) {
 	data := []byte(`
 name: test-cluster
-orgID: my-org
+nico:
+  orgID: my-org
 controlPlaneKubernetesVersion: "1.30.0"
 cniPlugin: calico
 etcdEncrypted: false
@@ -25,8 +26,11 @@ etcdEncrypted: false
 	if req.Name != "test-cluster" {
 		t.Errorf("Name = %q, want %q", req.Name, "test-cluster")
 	}
-	if req.OrgID != "my-org" {
-		t.Errorf("OrgID = %q, want %q", req.OrgID, "my-org")
+	if req.Nico == nil {
+		t.Fatal("Nico = nil, want the nested nico payload")
+	}
+	if req.Nico.OrgID != "my-org" {
+		t.Errorf("Nico.OrgID = %q, want %q", req.Nico.OrgID, "my-org")
 	}
 	if req.ControlPlaneKubernetesVersion != "1.30.0" {
 		t.Errorf("ControlPlaneKubernetesVersion = %q, want %q", req.ControlPlaneKubernetesVersion, "1.30.0")

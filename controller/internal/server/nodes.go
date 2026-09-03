@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/client"
 
 	"github.com/NVIDIA/nke/controller/api"
@@ -149,16 +150,29 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 	}
 
 	return api.Node{
-		ID:              dbNode.ID,
-		NodePoolID:      dbNode.NodePoolID,
-		NodeSetID:       dbNode.NodeSetID,
-		Name:            dbNode.Name,
-		ForgeInstanceID: dbNode.ForgeInstanceID,
-		ForgeMachineID:  dbNode.ForgeMachineID,
-		IP:              dbNode.IP,
-		InstanceTypeID:  dbNode.InstanceTypeID,
-		ControlPlane:    dbNode.ControlPlane,
-		Conditions:      nodeConditions,
+		ID:           dbNode.ID,
+		NodePoolID:   dbNode.NodePoolID,
+		NodeSetID:    dbNode.NodeSetID,
+		Name:         dbNode.Name,
+		IP:           dbNode.IP,
+		Nico:         apiNicoNodeProviderFromDB(dbNode.Nico),
+		ControlPlane: dbNode.ControlPlane,
+		Conditions:   nodeConditions,
+	}
+}
+
+func apiNicoNodeProviderFromDB(nicoNodeProvider *db.NicoNodeProvider) *api.NicoNodeProvider {
+	if nicoNodeProvider == nil {
+		return nil
+	}
+	// An all-zero payload means the node is not Nico-backed (or not yet stamped).
+	if nicoNodeProvider.ForgeInstanceID == "" && nicoNodeProvider.ForgeMachineID == "" && nicoNodeProvider.InstanceTypeID == uuid.Nil {
+		return nil
+	}
+	return &api.NicoNodeProvider{
+		InstanceID:     nicoNodeProvider.ForgeInstanceID,
+		MachineID:      nicoNodeProvider.ForgeMachineID,
+		InstanceTypeID: nicoNodeProvider.InstanceTypeID,
 	}
 }
 

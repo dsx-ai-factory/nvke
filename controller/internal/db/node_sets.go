@@ -84,9 +84,15 @@ func (n *NodeSet) SetNico(provider NicoNodePoolProvider) {
 func (n *NodeSet) SetCapi(provider CAPINodePoolProvider) {
 	n.Capi = cloneCAPINodePoolProvider(provider)
 	n.CapiInfraMachineTemplate = cloneRawMessage(provider.InfraMachineTemplate)
-	n.CapiBootstrapFiles = append([]CloudInitFile(nil), provider.BootstrapFiles...)
-	n.CapiPreKubeadmCommands = append([]string(nil), provider.PreKubeadmCommands...)
+	n.CapiBootstrapFiles = append([]CloudInitFile{}, provider.BootstrapFiles...)
+	n.CapiPreKubeadmCommands = append([]string{}, provider.PreKubeadmCommands...)
 	n.CapiSpireAttestationMethod = provider.SpireAttestationMethod
+	if n.SubnetIDs == nil {
+		n.SubnetIDs = []uuid.UUID{}
+	}
+	if n.VpcPrefixIDs == nil {
+		n.VpcPrefixIDs = []uuid.UUID{}
+	}
 }
 
 func (n *NodeSet) SyncProviderFields(providerType ProviderType) {

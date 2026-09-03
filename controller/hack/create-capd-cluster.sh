@@ -64,10 +64,19 @@ fi
 BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",
-  "siteID": "${DEFAULT_SITE_ID}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
   "etcdEncrypted": ${ETCD_ENCRYPTED}${CONTROL_PLANE_VIP_FIELD},
+  "capi": {
+    "infraCluster": {
+      "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+      "kind": "DockerCluster",
+      "metadata": {
+        "name": "${CLUSTER_NAME}"
+      },
+      "spec": {}
+    }
+  },
   "nodePools": [
     {
       "name": "control-plane",
@@ -78,28 +87,30 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capiInfraMachineTemplate": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
-        "kind": "DockerMachineTemplate",
-        "spec": {
-          "template": {
-            "spec": {
-              "customImage": "${CAPD_KINDEST_NODE_IMAGE}",
-              "extraMounts": [
-                {
-                  "containerPath": "/var/run/docker.sock",
-                  "hostPath": "/var/run/docker.sock"
-                }
-              ]
+      "capi": {
+        "infraMachineTemplate": {
+          "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+          "kind": "DockerMachineTemplate",
+          "spec": {
+            "template": {
+              "spec": {
+                "customImage": "${CAPD_KINDEST_NODE_IMAGE}",
+                "extraMounts": [
+                  {
+                    "containerPath": "/var/run/docker.sock",
+                    "hostPath": "/var/run/docker.sock"
+                  }
+                ]
+              }
             }
           }
-        }
-      },
-      "capiSpireAttestationMethod": "joinToken",
-      "capiPreKubeadmCommands": [
-        "mkdir -p /run/cluster-api",
-        "echo success > /run/cluster-api/bootstrap-success.complete"
-      ]
+        },
+        "spireAttestationMethod": "joinToken",
+        "preKubeadmCommands": [
+          "mkdir -p /run/cluster-api",
+          "echo success > /run/cluster-api/bootstrap-success.complete"
+        ]
+      }
     },
     {
       "name": "worker",
@@ -110,38 +121,32 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capiInfraMachineTemplate": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
-        "kind": "DockerMachineTemplate",
-        "spec": {
-          "template": {
-            "spec": {
-              "customImage": "${CAPD_KINDEST_NODE_IMAGE}",
-              "extraMounts": [
-                {
-                  "containerPath": "/var/run/docker.sock",
-                  "hostPath": "/var/run/docker.sock"
-                }
-              ]
+      "capi": {
+        "infraMachineTemplate": {
+          "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
+          "kind": "DockerMachineTemplate",
+          "spec": {
+            "template": {
+              "spec": {
+                "customImage": "${CAPD_KINDEST_NODE_IMAGE}",
+                "extraMounts": [
+                  {
+                    "containerPath": "/var/run/docker.sock",
+                    "hostPath": "/var/run/docker.sock"
+                  }
+                ]
+              }
             }
           }
-        }
-      },
-      "capiSpireAttestationMethod": "joinToken",
-      "capiPreKubeadmCommands": [
-        "mkdir -p /run/cluster-api",
-        "echo success > /run/cluster-api/bootstrap-success.complete"
-      ]
+        },
+        "spireAttestationMethod": "joinToken",
+        "preKubeadmCommands": [
+          "mkdir -p /run/cluster-api",
+          "echo success > /run/cluster-api/bootstrap-success.complete"
+        ]
+      }
     }
-  ],
-  "capiInfraCluster": {
-    "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
-    "kind": "DockerCluster",
-    "metadata": {
-      "name": "${CLUSTER_NAME}"
-    },
-    "spec": {}
-  }
+  ]
 }
 EOF
 )

@@ -203,12 +203,12 @@ func (n *NodePool) CAPIProvider() (CAPINodePoolProvider, error) {
 
 func (n *NodePool) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
-	n.SubnetIDs = append([]uuid.UUID(nil), provider.SubnetIDs...)
-	n.VpcPrefixIDs = append([]uuid.UUID(nil), provider.VpcPrefixIDs...)
+	n.SubnetIDs = append([]uuid.UUID{}, provider.SubnetIDs...)
+	n.VpcPrefixIDs = append([]uuid.UUID{}, provider.VpcPrefixIDs...)
 	n.InstanceTypeID = provider.InstanceTypeID
 	n.InfinibandPartitionID = cloneUUIDPtr(provider.InfinibandPartitionID)
 	n.NvLinkLogicalPartitionID = cloneUUIDPtr(provider.NvLinkLogicalPartitionID)
-	n.SSHKeyGroupIDs = append([]uuid.UUID(nil), provider.SSHKeyGroupIDs...)
+	n.SSHKeyGroupIDs = append([]uuid.UUID{}, provider.SSHKeyGroupIDs...)
 	n.OSProfile = provider.OSProfile
 	n.ConfigProfile = provider.ConfigProfile
 	n.DiskSelectionStrategy = provider.DiskSelectionStrategy
@@ -217,9 +217,19 @@ func (n *NodePool) SetNico(provider NicoNodePoolProvider) {
 func (n *NodePool) SetCapi(provider CAPINodePoolProvider) {
 	n.Capi = cloneCAPINodePoolProvider(provider)
 	n.CapiInfraMachineTemplate = cloneRawMessage(provider.InfraMachineTemplate)
-	n.CapiBootstrapFiles = append([]CloudInitFile(nil), provider.BootstrapFiles...)
-	n.CapiPreKubeadmCommands = append([]string(nil), provider.PreKubeadmCommands...)
+	n.CapiBootstrapFiles = append([]CloudInitFile{}, provider.BootstrapFiles...)
+	n.CapiPreKubeadmCommands = append([]string{}, provider.PreKubeadmCommands...)
 	n.CapiSpireAttestationMethod = provider.SpireAttestationMethod
+	// CAPI pools do not use Nico columns, but those uuid[] columns are NOT NULL.
+	if n.SubnetIDs == nil {
+		n.SubnetIDs = []uuid.UUID{}
+	}
+	if n.VpcPrefixIDs == nil {
+		n.VpcPrefixIDs = []uuid.UUID{}
+	}
+	if n.SSHKeyGroupIDs == nil {
+		n.SSHKeyGroupIDs = []uuid.UUID{}
+	}
 }
 
 func cloneNicoNodePoolProvider(provider NicoNodePoolProvider) *NicoNodePoolProvider {
