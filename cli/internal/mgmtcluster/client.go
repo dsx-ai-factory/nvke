@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
@@ -33,9 +34,18 @@ const (
 	kubeconfigSecretKey = "value"
 )
 
+// secretGetter is the subset of the typed Secrets client Client depends on.
+// It's narrow on purpose: the real implementation is corev1.SecretInterface
+// (via kubernetes.Interface.CoreV1().Secrets(ns)), but tests can supply a
+// minimal fake without pulling in k8s.io/client-go/kubernetes/fake's own
+// dependency footprint.
+type secretGetter interface {
+	Get(ctx context.Context, name string, opts metav1.GetOptions) (*corev1.Secret, error)
+}
+
 // Client is a thin wrapper around a management-cluster k8s client.
 type Client struct {
-	kube kubernetes.Interface
+	secrets secretGetter
 }
 
 // New builds a Client from a management cluster kubeconfig path. The caller
@@ -54,13 +64,13 @@ func New(kubeconfigPath string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building management cluster client: %w", err)
 	}
-	return &Client{kube: kube}, nil
+	return &Client{secrets: kube.CoreV1().Secrets(secretsNamespace)}, nil
 }
 
-// NewWithClient builds a Client from an existing kubernetes.Interface,
-// bypassing kubeconfig resolution. Used by tests to inject a fake clientset.
-func NewWithClient(kube kubernetes.Interface) *Client {
-	return &Client{kube: kube}
+// newWithSecretGetter builds a Client from a secretGetter directly, bypassing
+// kubeconfig resolution. Used by tests to inject a fake.
+func newWithSecretGetter(g secretGetter) *Client {
+	return &Client{secrets: g}
 }
 
 // GetClusterKubeconfig returns the admin kubeconfig for the named tenant
@@ -68,7 +78,7 @@ func NewWithClient(kube kubernetes.Interface) *Client {
 // into nke-system/<cluster-name>-admin-kubeconfig.
 func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
 	secretName := clusterName + adminKubeconfigSecretSuffix
-	secret, err := c.kube.CoreV1().Secrets(secretsNamespace).Get(ctx, secretName, metav1.GetOptions{})
+	secret, err := c.secrets.Get(ctx, secretName, metav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("reading admin kubeconfig secret nke-system/%s: %w", secretName, err)
 	}

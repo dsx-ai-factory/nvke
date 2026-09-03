@@ -77,14 +77,11 @@ func loadSite() (config.SiteConfig, error) {
 // resolveSiteConfig returns the active site's name and SiteConfig.
 func resolveSiteConfig(cfg *config.Config) (string, config.SiteConfig, error) {
 	if site == "" {
-		if cfg.CurrentSite == "" {
-			return "", config.SiteConfig{}, fmt.Errorf("no site configured: run 'nkectl config set-site' first")
+		siteCfg, err := cfg.CurrentSiteConfig()
+		if err != nil {
+			return "", config.SiteConfig{}, err
 		}
-		currentSite, ok := cfg.Sites[cfg.CurrentSite]
-		if !ok {
-			return "", config.SiteConfig{}, fmt.Errorf("current site %q not found in config", cfg.CurrentSite)
-		}
-		return cfg.CurrentSite, currentSite, nil
+		return cfg.CurrentSite, siteCfg, nil
 	}
 	siteCfg, ok := cfg.Sites[site]
 	if !ok {
@@ -102,12 +99,12 @@ func resolveMgmtKubeconfig() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("loading config: %w", err)
 	}
-	name, siteCfg, err := resolveSiteConfig(cfg)
+	siteName, siteCfg, err := resolveSiteConfig(cfg)
 	if err != nil {
 		return "", err
 	}
 	if siteCfg.Kubeconfig == "" {
-		return "", fmt.Errorf("no management cluster kubeconfig configured for site %q: run 'nkectl config set-site --kubeconfig'", name)
+		return "", fmt.Errorf("no management cluster kubeconfig configured for site %q: run 'nkectl config set-site --kubeconfig'", siteName)
 	}
 	return siteCfg.Kubeconfig, nil
 }
