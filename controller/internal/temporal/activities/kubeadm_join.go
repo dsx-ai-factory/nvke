@@ -144,6 +144,9 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 			return KubeadmJoinResult{}, err
 		}
 	}
+	if err := a.ensureKubeadmPatches(ctx, node, nodePool); err != nil {
+		return KubeadmJoinResult{}, fmt.Errorf("failed to prepare kubeadm patches on node %s: %w", node.Name, err)
+	}
 
 	// ExecuteKubeadmJoin only starts the join; the agent runs kubeadm join in a
 	// goroutine and reports progress via GetKubeadmStatus, which we poll below.

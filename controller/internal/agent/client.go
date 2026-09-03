@@ -27,6 +27,7 @@ import (
 type Client interface {
 	GetKubeconfig(ctx context.Context, node db.Node) (string, error)
 	GetAgentVersion(ctx context.Context, node db.Node) (string, error)
+	SupportsKubeadmFiles(ctx context.Context, node db.Node) (bool, error)
 	GetKubeadmStatus(ctx context.Context, node db.Node) (*nkeproto.KubeadmStatusResponse, error)
 	ScheduleNodeReboot(ctx context.Context, node db.Node) (*nkeproto.ScheduleNodeRebootResponse, error)
 	GetNodeBootInfo(ctx context.Context, node db.Node) (*nkeproto.GetNodeBootInfoResponse, error)

@@ -5,6 +5,7 @@ package runbook
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"testing"
@@ -54,6 +55,36 @@ func TestNames(t *testing.T) {
 	require.NotEmpty(t, names)
 	require.Contains(t, names, "reboot")
 	require.Contains(t, names, "uptime")
+	require.Contains(t, names, "kubeadm-patches")
 	require.Contains(t, names, "etcd-member-remove")
 	require.True(t, sort.StringsAreSorted(names))
+}
+
+func TestKubeadmPatchesScriptWritesConfiguredMemoryReservations(t *testing.T) {
+	tempDir := t.TempDir()
+	script, err := Script("", "kubeadm-patches")
+	require.NoError(t, err)
+	scriptPath := filepath.Join(tempDir, "kubeadm-patches.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o700))
+
+	cmd := exec.CommandContext(t.Context(), "bash", scriptPath)
+	cmd.Env = append(os.Environ(),
+		"KUBEADM_PATCHES_DIR="+tempDir,
+		"KUBE_RESERVED_MEM=4Gi",
+		"SYSTEM_RESERVED_MEM=24Gi",
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+
+	patch, err := os.ReadFile(filepath.Join(tempDir, "kubeletconfiguration0+merge.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, `apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+kubeReserved:
+  cpu: "1000m"
+  memory: "4Gi"
+  ephemeral-storage: "1Gi"
+systemReserved:
+  memory: "24Gi"
+`, string(patch))
 }

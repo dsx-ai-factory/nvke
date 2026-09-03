@@ -27,6 +27,9 @@ type FakeClient struct {
 
 	AgentVersion               string
 	AgentVersionErr            error
+	KubeadmFilesUnsupported    bool
+	KubeadmFilesSupportErr     error
+	KubeadmFilesSupportCalls   []uuid.UUID
 	ScheduleNodeRebootResponse *nkeproto.ScheduleNodeRebootResponse
 	ScheduleNodeRebootErr      error
 	ScheduleNodeRebootCalls    []uuid.UUID
@@ -79,6 +82,11 @@ func (f *FakeClient) GetKubeconfig(ctx context.Context, node db.Node) (string, e
 
 func (f *FakeClient) GetAgentVersion(context.Context, db.Node) (string, error) {
 	return f.AgentVersion, f.AgentVersionErr
+}
+
+func (f *FakeClient) SupportsKubeadmFiles(_ context.Context, node db.Node) (bool, error) {
+	f.KubeadmFilesSupportCalls = append(f.KubeadmFilesSupportCalls, node.ID)
+	return !f.KubeadmFilesUnsupported, f.KubeadmFilesSupportErr
 }
 
 func (f *FakeClient) GetKubeadmStatus(context.Context, db.Node) (*nkeproto.KubeadmStatusResponse, error) {
