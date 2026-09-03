@@ -87,11 +87,11 @@ Not values: the chart owns both ends. AUTH_CONFIG_PATH is these two joined, and
 nothing outside the pod observes either, so making them configurable would only
 create a way for the mount and the path to disagree.
 */}}
-{{- define "cloud-workflow-engine.apiAuth.mountPath" -}}
+{{- define "controller.apiAuth.mountPath" -}}
 /etc/nke/auth
 {{- end }}
 
-{{- define "cloud-workflow-engine.apiAuth.configFile" -}}
+{{- define "controller.apiAuth.configFile" -}}
 auth.yaml
 {{- end }}
 
@@ -106,7 +106,7 @@ Emits nothing. The shallow presence checks on audiences and issuers stop here:
 every other rule belongs to internal/auth/config.go, whose errors name the field
 at fault.
 */}}
-{{- define "cloud-workflow-engine.apiAuth.validate" -}}
+{{- define "controller.apiAuth.validate" -}}
 {{- $auth := .Values.apiAuth -}}
 {{- $create := and $auth.enabled $auth.configMap.create -}}
 {{- if and $auth.config (not $create) -}}
@@ -128,8 +128,8 @@ at fault.
 {{- if not $auth.config.issuers -}}
 {{- fail "apiAuth.config.issuers is required and must contain at least one issuer. NKE refuses to start with none, so this would be a crash loop rather than a permissive deployment." -}}
 {{- end -}}
-{{- $dir := printf "%s/" (include "cloud-workflow-engine.apiAuth.mountPath" .) -}}
-{{- $configFile := include "cloud-workflow-engine.apiAuth.configFile" . -}}
+{{- $dir := printf "%s/" (include "controller.apiAuth.mountPath" .) -}}
+{{- $configFile := include "controller.apiAuth.configFile" . -}}
 {{- $extra := default dict $auth.configMap.extraFiles -}}
 {{- if hasKey $extra $configFile -}}
 {{- fail (printf "apiAuth.configMap.extraFiles must not contain %q: that key is the configuration file itself, and a second copy of it silently replaces the one rendered from apiAuth.config -- NKE would load whatever is here instead. Put the configuration under apiAuth.config, and use extraFiles only for files it refers to by path." $configFile) -}}

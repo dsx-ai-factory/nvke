@@ -1,4 +1,4 @@
-{{- include "cloud-workflow-engine.apiAuth.validate" . }}
+{{- include "controller.apiAuth.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -151,7 +151,7 @@ spec:
           volumeMounts:
             {{- if .Values.apiAuth.enabled }}
             - name: nke-auth-config
-              mountPath: {{ include "cloud-workflow-engine.apiAuth.mountPath" . | quote }}
+              mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
               readOnly: true
             {{- end }}
             {{- if .Values.profiles.image.enabled }}
@@ -372,7 +372,7 @@ spec:
             # Omitted when disabled, never set empty: NKE reads an empty value as
             # unset, so the deployment would look configured and authenticate nobody.
             - name: AUTH_CONFIG_PATH
-              value: {{ printf "%s/%s" (include "cloud-workflow-engine.apiAuth.mountPath" .) (include "cloud-workflow-engine.apiAuth.configFile" .) | quote }}
+              value: {{ printf "%s/%s" (include "controller.apiAuth.mountPath" .) (include "controller.apiAuth.configFile" .) | quote }}
             - name: PERMISSIVE_MODE
               value: {{ .Values.apiAuth.permissive | quote }}
             {{- end }}
