@@ -265,6 +265,9 @@ func (a *Activities) applyNicoMachineInstanceLabels(
 type DeleteCAPIMachineForNodeInput struct {
 	NodeID             uuid.UUID
 	MachineHealthIssue *string
+
+	// Optionally wait for the machine and bootstrap secret to be deleted.
+	Wait bool
 }
 
 func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteCAPIMachineForNodeInput) error {
@@ -307,14 +310,16 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	if err := a.k8sClient.Delete(ctx, machine); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete machine %s: %w", machine.Name, err)
 	}
-	if err := waitForObjectDeleted(ctx, a.k8sClient, machine); err != nil {
-		return fmt.Errorf("failed waiting for machine %s deletion: %w", machine.Name, err)
+	if input.Wait {
+		if err := waitForObjectDeleted(ctx, a.k8sClient, machine); err != nil {
+			return fmt.Errorf("failed waiting for machine %s deletion: %w", machine.Name, err)
+		}
 	}
 
 	bootstrapSecret := &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
-			Kind:       "Secret",
+			Kind:       "Secret",  //nolint: goconst: well-known value
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-bootstrap-data", node.Name),
@@ -324,8 +329,10 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	if err := a.k8sClient.Delete(ctx, bootstrapSecret); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete bootstrap secret %s: %w", bootstrapSecret.Name, err)
 	}
-	if err := waitForObjectDeleted(ctx, a.k8sClient, bootstrapSecret); err != nil {
-		return fmt.Errorf("failed waiting for bootstrap secret %s deletion: %w", bootstrapSecret.Name, err)
+	if input.Wait {
+		if err := waitForObjectDeleted(ctx, a.k8sClient, bootstrapSecret); err != nil {
+			return fmt.Errorf("failed waiting for bootstrap secret %s deletion: %w", bootstrapSecret.Name, err)
+		}
 	}
 
 	return nil

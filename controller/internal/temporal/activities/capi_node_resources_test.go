@@ -599,6 +599,82 @@ func executeWaitForCAPIMachineReadyActivity(t *testing.T, a *Activities, input W
 	return ipAddress, nil
 }
 
+func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testing.T) {
+	ctx := context.Background()
+	nodeID := uuid.MustParse("74000000-0000-0000-0000-000000000001")
+	clusterID := uuid.MustParse("74000000-0000-0000-0000-000000000002")
+	node := db.Node{
+		ID:        nodeID,
+		ClusterID: clusterID,
+		Name:      "worker-0",
+	}
+	cluster := db.Cluster{
+		ID:   clusterID,
+		Name: "cluster-a",
+	}
+
+	machine := &clusterv1.Machine{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: clusterv1.GroupVersion.String(),
+			Kind:       machineConst,
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "worker-0",
+			Namespace:  constants.NamespaceNKESystem,
+			Finalizers: []string{"test.finalizer"},
+		},
+	}
+	bootstrapSecret := &corev1.Secret{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: corev1.SchemeGroupVersion.String(),
+			Kind:       "Secret",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "worker-0-bootstrap-data",
+			Namespace:  constants.NamespaceNKESystem,
+			Finalizers: []string{"test.finalizer"},
+		},
+	}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+
+	k8sClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithObjects(machine, bootstrapSecret).
+		Build()
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil).Twice()
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
+
+	a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterActivity(a.DeleteCAPIMachineForNode)
+
+	_, err := env.ExecuteActivity(a.DeleteCAPIMachineForNode, DeleteCAPIMachineForNodeInput{NodeID: nodeID})
+	require.NoError(t, err)
+
+	storedMachine := &clusterv1.Machine{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: constants.NamespaceNKESystem,
+		Name:      "worker-0",
+	}, storedMachine))
+	require.NotNil(t, storedMachine.DeletionTimestamp)
+
+	storedSecret := &corev1.Secret{}
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: constants.NamespaceNKESystem,
+		Name:      "worker-0-bootstrap-data",
+	}, storedSecret))
+	require.NotNil(t, storedSecret.DeletionTimestamp)
+
+	mockDB.AssertExpectations(t)
+}
+
 func getTestNicoMachine(t *testing.T, k8sClient client.Client) *nicov1.NicoMachine {
 	t.Helper()
 
