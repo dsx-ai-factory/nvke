@@ -311,3 +311,59 @@ func TestParseNodesCSV(t *testing.T) {
 		})
 	}
 }
+
+// TestRenderPlacesOptionalFieldsInPosition covers the fields the template
+// carries only as commented-out examples. Each has to land where the example
+// stood, keeping the prose that explains it — appending instead would strand
+// the explanation above whatever followed and put the field at the end of the
+// file, away from the section it belongs to.
+func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
+	built, err := Build("my-tier0-site", threeNodes(), []string{
+		"cluster.cniVersion=3.30.1",
+		"cluster.nodeAgentPort=50051",
+		"spire.caCertFile=/etc/nke/ca.crt",
+		"spire.caKeyFile=/etc/nke/ca.key",
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	rendered, err := built.Render()
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	out := string(rendered)
+
+	// Ordering: each optional field sits inside the section it belongs to.
+	for _, order := range [][2]string{
+		{"cniName:", "cniVersion:"},
+		{"cniVersion:", "podCidr:"},
+		{"serviceCidr:", "nodeAgentPort:"},
+		{"nodeAgentPort:", "kubeletConfig:"},
+		{"cluster:", "spire:"},
+		{"spire:", "registry:"},
+	} {
+		before, after := strings.Index(out, order[0]), strings.Index(out, order[1])
+		if before < 0 || after < 0 || before > after {
+			t.Errorf("%q should appear before %q:\n%s", order[0], order[1], out)
+		}
+	}
+
+	// The prose introducing each example moves with it rather than being left
+	// above the next section.
+	spire := strings.Index(out, "\nspire:")
+	identity := strings.Index(out, "Identity plane")
+	if identity < 0 || identity > spire {
+		t.Errorf("the SPIRE explanation should introduce spire:, not follow it:\n%s", out)
+	}
+	registry := strings.Index(out, "\nregistry:")
+	if c := strings.Index(out, "Container registry for the bootstrap"); c < 0 || c > registry || c < spire {
+		t.Errorf("registry should keep its own comment, between spire: and registry::\n%s", out)
+	}
+
+	// The example is replaced, not duplicated.
+	for _, key := range []string{"cniVersion", "nodeAgentPort", "caCertFile"} {
+		if strings.Contains(out, "# "+key+":") {
+			t.Errorf("the commented-out example of %s survived alongside the real value:\n%s", key, out)
+		}
+	}
+}

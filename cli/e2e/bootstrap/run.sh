@@ -348,6 +348,14 @@ HOSTS_CSV="${SCRIPT_DIR}/.hosts.csv"
 export $(NKECTL_E2E_HOSTS_CSV="${HOSTS_CSV}" \
   make -C "${CLI_DIR}" --no-print-directory nodes-hosts | xargs)
 
+# Both or neither. Without a CA, SPIRE self-signs — a supported configuration,
+# so the lane does not require one.
+spire_set=()
+if [[ -n "${NKECTL_E2E_SPIRE_CA_CERT:-}" && -n "${NKECTL_E2E_SPIRE_CA_KEY:-}" ]]; then
+  spire_set=(--set "spire.caCertFile=${NKECTL_E2E_SPIRE_CA_CERT}"
+             --set "spire.caKeyFile=${NKECTL_E2E_SPIRE_CA_KEY}")
+fi
+
 log "generating the site spec: nkectl generate sitespec ${E2E_CLUSTER_NAME} --nodes ${NKECTL_E2E_HOSTS_CSV}"
 RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
 "${NKECTL}" generate sitespec "${E2E_CLUSTER_NAME}" \
@@ -358,14 +366,15 @@ RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
   --set cluster.podCidr=192.168.0.0/16 \
   --set cluster.serviceCidr=10.96.0.0/12 \
   --set cluster.kubeletConfig.systemReservedMemory=512Mi \
-  --set spire.caCertFile="${NKECTL_E2E_SPIRE_CA_CERT}" \
-  --set spire.caKeyFile="${NKECTL_E2E_SPIRE_CA_KEY}" \
+  "${spire_set[@]}" \
   > "${RENDERED_SITESPEC}"
 
 grep -qE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPEC}" ||
   { log "FAIL: no TPM EK thumbprints reached ${RENDERED_SITESPEC}"; exit 1; }
-grep -qE '^[[:space:]]*caCertFile:' "${RENDERED_SITESPEC}" ||
-  { log "FAIL: no bootstrap CA reached ${RENDERED_SITESPEC}"; exit 1; }
+if [[ ${#spire_set[@]} -gt 0 ]]; then
+  grep -qE '^[[:space:]]*caCertFile:' "${RENDERED_SITESPEC}" ||
+    { log "FAIL: a bootstrap CA was supplied but did not reach ${RENDERED_SITESPEC}"; exit 1; }
+fi
 log "allowlisting $(grep -cE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPEC}") EK thumbprint(s)"
 
 # No chart is named here. What gets installed is pinned in

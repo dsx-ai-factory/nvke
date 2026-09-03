@@ -114,12 +114,5 @@ func readNodesCSV(cmd *cobra.Command, path string) ([]sitespec.Node, error) {
 	}
 	defer func() { _ = file.Close() }()
 
-	nodes, err := sitespec.ParseNodesCSV(path, file)
-	if err != nil {
-		return nil, err
-	}
-	if len(nodes) == 0 {
-		return nil, fmt.Errorf("%s: no nodes", path)
-	}
-	return nodes, nil
+	return sitespec.ParseNodesCSV(path, file)
 }

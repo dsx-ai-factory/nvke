@@ -48,7 +48,7 @@ func checkSettable(path string) error {
 }
 
 // setScalar writes value at a dotted path, creating the key and any missing
-// parent when the template only carries it as a commented-out example.
+// parent when the template carries it only as a commented-out example.
 func setScalar(root *yaml.Node, path, value string) error {
 	keys := strings.Split(path, ".")
 	node := root
@@ -61,12 +61,11 @@ func setScalar(root *yaml.Node, path, value string) error {
 	}
 
 	leaf := keys[len(keys)-1]
-	dropCommentedKey(node, leaf)
 	if valueNode := mappingValue(node, leaf); valueNode != nil {
 		valueNode.SetString(value)
 		return nil
 	}
-	appendMapping(node, leaf, &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value, Style: yaml.DoubleQuotedStyle})
+	putMapping(node, leaf, scalar(value))
 	return nil
 }
 
@@ -80,10 +79,10 @@ func setNodes(root *yaml.Node, nodes []Node) error {
 	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
 	for _, node := range nodes {
 		entry := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-		appendMapping(entry, "name", scalar(node.Name))
-		appendMapping(entry, "ip", scalar(node.IP))
+		putMapping(entry, "name", scalar(node.Name))
+		putMapping(entry, "ip", scalar(node.IP))
 		if node.TPMEKThumbprint != "" {
-			appendMapping(entry, "tpmEkThumbprint", scalar(node.TPMEKThumbprint))
+			putMapping(entry, "tpmEkThumbprint", scalar(node.TPMEKThumbprint))
 		}
 		seq.Content = append(seq.Content, entry)
 	}
@@ -93,7 +92,7 @@ func setNodes(root *yaml.Node, nodes []Node) error {
 		existing.Content, existing.Value = seq.Content, ""
 		return nil
 	}
-	appendMapping(cluster, "nodes", seq)
+	putMapping(cluster, "nodes", seq)
 	return nil
 }
 
@@ -200,49 +199,104 @@ func childMapping(mapping *yaml.Node, key string) (*yaml.Node, error) {
 		}
 		return value, nil
 	}
-	dropCommentedKey(mapping, key)
 	child := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
-	appendMapping(mapping, key, child)
+	putMapping(mapping, key, child)
 	return child, nil
 }
 
-func appendMapping(mapping *yaml.Node, key string, value *yaml.Node) {
-	mapping.Content = append(mapping.Content,
-		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key},
-		value)
+// putMapping adds key to mapping.
+//
+// Where the template carries key as a commented-out example, the real entry
+// takes that example's place and inherits the prose introducing it. Appending
+// instead would leave the explanation stranded above whatever followed it and
+// put the field at the end of the file, far from the section it belongs to.
+func putMapping(mapping *yaml.Node, key string, value *yaml.Node) {
+	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
+
+	at, prose, found := takeCommentedExample(mapping, key)
+	if !found {
+		mapping.Content = append(mapping.Content, keyNode, value)
+		return
+	}
+
+	keyNode.HeadComment = prose
+	rest := append([]*yaml.Node{}, mapping.Content[at:]...)
+	mapping.Content = append(append(mapping.Content[:at:at], keyNode, value), rest...)
 }
 
-// dropCommentedKey removes a commented-out example of key from the comments
-// around a mapping, so setting the field does not leave the file carrying both
-// the real value and a stale "# key:" line above it.
-func dropCommentedKey(mapping *yaml.Node, key string) {
-	pattern := regexp.MustCompile(`^\s*#\s*` + regexp.QuoteMeta(key) + `\s*:`)
-	strip := func(comment string) string {
-		if comment == "" {
-			return ""
+// commentedKeyLine matches a commented-out example of key, e.g. "# spire:".
+func commentedKeyLine(key string) *regexp.Regexp {
+	return regexp.MustCompile(`^\s*#\s*` + regexp.QuoteMeta(key) + `\s*:`)
+}
+
+// commentedChildLine matches a line belonging to the example above it: a
+// comment indented further than the key that introduced it.
+var commentedChildLine = regexp.MustCompile(`^\s*#\s{2,}\S`)
+
+// takeCommentedExample removes the commented-out example of key from the
+// comments of mapping's entries, and reports where the real key belongs along
+// with the prose that introduced the example.
+//
+// An example may sit above an entry (its head comment) or below one (its foot
+// comment); the real key goes in the same place, so it lands where the template
+// showed it rather than at the end of the section. The prose moves to the new
+// key; anything after the example stays where it was, which is how the
+// following section keeps its own explanation.
+func takeCommentedExample(mapping *yaml.Node, key string) (at int, prose string, found bool) {
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		node := mapping.Content[i]
+
+		if kept, taken, ok := splitCommentedExample(node.HeadComment, key); ok {
+			node.HeadComment = kept
+			return i, taken, true
 		}
-		lines := strings.Split(comment, "\n")
-		kept := lines[:0]
-		dropping := false
-		for _, line := range lines {
-			switch {
-			case pattern.MatchString(line):
-				// Drop this line and any deeper-indented continuation, which is
-				// how a commented-out block writes its own children.
-				dropping = true
-			case dropping && regexp.MustCompile(`^\s*#\s+\S`).MatchString(line):
-				continue
-			default:
-				dropping = false
-				kept = append(kept, line)
-			}
+		if kept, taken, ok := splitCommentedExample(node.FootComment, key); ok {
+			node.FootComment = kept
+			return i + 2, taken, true
 		}
-		return strings.Join(kept, "\n")
+	}
+	return 0, "", false
+}
+
+// splitCommentedExample removes key's commented-out example from comment,
+// returning what is left and the prose that introduced it.
+func splitCommentedExample(comment, key string) (kept, prose string, found bool) {
+	if comment == "" {
+		return comment, "", false
+	}
+	lines := strings.Split(comment, "\n")
+	keyLine := commentedKeyLine(key)
+
+	example := -1
+	for j, line := range lines {
+		if keyLine.MatchString(line) {
+			example = j
+			break
+		}
+	}
+	if example < 0 {
+		return comment, "", false
 	}
 
-	for _, node := range append([]*yaml.Node{mapping}, mapping.Content...) {
-		node.HeadComment = strip(node.HeadComment)
-		node.FootComment = strip(node.FootComment)
-		node.LineComment = strip(node.LineComment)
+	// The example's own block starts after the last blank line before it, so a
+	// preceding section's comment is not taken with it.
+	start := 0
+	for j := example - 1; j >= 0; j-- {
+		if strings.TrimSpace(lines[j]) == "" {
+			start = j + 1
+			break
+		}
 	}
+
+	end := example
+	for j := example + 1; j < len(lines) && commentedChildLine.MatchString(lines[j]); j++ {
+		end = j
+	}
+	drop := end + 1
+	if drop < len(lines) && strings.TrimSpace(lines[drop]) == "" {
+		drop++
+	}
+
+	remaining := append(append([]string{}, lines[:start]...), lines[drop:]...)
+	return strings.Join(remaining, "\n"), strings.Join(lines[start:example], "\n"), true
 }
