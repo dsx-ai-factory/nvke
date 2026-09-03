@@ -533,14 +533,20 @@ kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n hello-world rollout status deploy
 
 log "asking for the page at http://${INIT_NODE_IP}:${TRAEFIK_NODE_PORT}/ (Host: hello.nke.local)"
 served=false
+response_body="${KUBECONFIG_DIR}/hello-world-response"
 for _ in $(seq 1 60); do
+  http_status="$(curl -sS --max-time 5 \
+    -o "${response_body}" -w '%{http_code}' \
+    -H "Host: hello.nke.local" \
+    "http://${INIT_NODE_IP}:${TRAEFIK_NODE_PORT}/" || true)"
   # whoami answers with the request it received, so "Hostname:" in the body is
-  # the pod talking, not Traefik's own error page.
-  if curl -fsS --max-time 5 -H "Host: hello.nke.local" \
-    "http://${INIT_NODE_IP}:${TRAEFIK_NODE_PORT}/" | grep -q "Hostname:"; then
+  # the pod talking, not Traefik's own error page. Require an explicit 2xx too;
+  # receiving a Traefik 4xx or 5xx only proves that the proxy answered.
+  if [[ "${http_status}" =~ ^2[0-9][0-9]$ ]] && grep -q "Hostname:" "${response_body}"; then
     served=true
     break
   fi
+  log "waiting for Traefik route: HTTP ${http_status:-no-response}"
   sleep 5
 done
 if [ "${served}" != true ]; then
