@@ -83,20 +83,6 @@ func startFakeCWEAPI(t *testing.T, provisioned bool) {
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	mux.HandleFunc("POST /api/sites", func(w http.ResponseWriter, r *http.Request) {
-		var request api.RegisterSiteJSONRequestBody
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-			t.Errorf("decode register-site request: %v", err)
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if request.ID != uuid.Nil {
-			t.Errorf("registered site ID = %s, want nil UUID", request.ID)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		_ = json.NewEncoder(w).Encode(api.Site{ID: request.ID, VIPRanges: request.VIPRanges, VIPAllocations: []api.VIPAllocation{}})
-	})
 	mux.HandleFunc("POST /api/clusters", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)

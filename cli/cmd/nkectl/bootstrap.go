@@ -277,10 +277,6 @@ func createSiteCluster(
 	if err != nil {
 		return false, fmt.Errorf("building the CWE client for %s: %w", cweURL, err)
 	}
-	if err := registerTemporaryNilSite(ctx, client, logger); err != nil {
-		return false, err
-	}
-
 	created, err := sitecluster.Create(ctx, client, inv, logger)
 	if err != nil {
 		return false, err
