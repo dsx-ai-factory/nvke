@@ -37,6 +37,7 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root.AddCommand(newVersionCmd(ver, commit, treeState, date))
 	root.AddCommand(newConfigCmd())
 	root.AddCommand(newBootstrapCmd())
+	root.AddCommand(newGenerateCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newCreateCmd())
 	root.AddCommand(newDescribeCmd())

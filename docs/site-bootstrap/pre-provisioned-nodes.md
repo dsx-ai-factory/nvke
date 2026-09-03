@@ -107,7 +107,24 @@ sudo apt-get install -y openvswitch-switch
 On the **init node only**:
 
 1. [Install `nkectl`](installation.md).
-2. Write your [site spec file](configuration.md).
+2. Generate your [site spec file](configuration.md). List your hosts in a CSV and let `nkectl` write the spec:
+
+```bash
+cat > hosts.csv <<'EOF'
+name,ip,tpm_ek_thumbprint
+cp-01,10.10.50.2,
+cp-02,10.10.50.3,
+cp-03,10.10.50.4,
+EOF
+
+nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
+```
+
+The result needs no editing. Fill in `tpm_ek_thumbprint` per host to enable TPM
+attestation, and use `--set` for anything the CSV does not carry — for example
+`--set cluster.cniName=calico`. See [configuration.md](configuration.md) for
+every field.
+
 3. Run bootstrap:
 
 ```bash
