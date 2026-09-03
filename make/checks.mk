@@ -83,7 +83,20 @@ chart-package-check: ## Assert that chart packaging replaces placeholder version
 	@$(call require_tool,helm,$(HELM_VERSION))
 	@CHART="$(CHART)" ./controller/hack/chart-package-assertions.sh
 
-chart-check: lint-chart chart-rbac-check chart-package-check ## Run every chart check enforced by CI.
+# The chart package is named controller while everything it renders stays
+# cloud-workflow-engine, held there by nameOverride. helm lint and kubeconform
+# both pass if that pin is dropped, so this is the only check that would catch it.
+chart-identity-check: ## Assert the chart still renders the deployed identities it must preserve.
+	@$(call require_tool,helm,$(HELM_VERSION))
+	@$(call require_command,python3)
+	@python3 -c 'import yaml' >/dev/null 2>&1 || { \
+		echo "ERROR: Python module PyYAML is required for chart identity assertions."; \
+		echo "  install: python3 -m pip install PyYAML"; \
+		exit 1; \
+	 }
+	@python3 ./controller/hack/chart-identity-assertions.py --chart "$(CHART)"
+
+chart-check: lint-chart chart-rbac-check chart-package-check chart-identity-check ## Run every chart check enforced by CI.
 
 # Use the same tool, Go version, offline scan, waiver, and stale-waiver guard as
 # CI. The helper returns 3 for an unwaived finding and preserves tool failures.
