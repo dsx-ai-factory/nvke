@@ -166,6 +166,9 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		"nodeName", node.Name,
 	)
 
+	// Keep elevated kubeconfig generation below the Unimplemented gate. The
+	// typed path is deliberately credential-less; super-admin exists only to
+	// support agents that still require the legacy runbook.
 	var configureSuperAdminOutput *string
 	if input.ConfigureSuperAdmin {
 		configureSuperAdminResult, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{

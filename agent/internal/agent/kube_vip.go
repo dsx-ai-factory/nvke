@@ -112,6 +112,9 @@ func (s *NodeAgentServer) ReconcileKubeVip(
 		return nil, status.Errorf(codes.Internal, "render kube-vip manifest: %v", err)
 	}
 
+	// The static-pod manifest is the activation boundary: kubelet may start it as
+	// soon as the rename completes. Converge its kubeconfig and remove stale VIP
+	// assignments first so the pod never starts with missing or duplicate state.
 	kubeconfigChanged, err := s.writeKubeVipFile(kubeVipKubeconfigPath, kubeconfig)
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "reconcile credential-less kubeconfig: %v", err)
