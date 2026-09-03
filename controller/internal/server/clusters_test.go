@@ -68,7 +68,7 @@ func newTestClusterServiceWithControlPlaneController(logger *slog.Logger, mockDB
 		getSiteByIDFunc: getSiteByIDFunc,
 	}
 	nodePoolService := server.NewNodePoolService(logger, mockDB, mockForge, config.TeleportConfig{}, useControlPlaneController)
-	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, false, useControlPlaneController)
+	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, useControlPlaneController)
 }
 
 func discardLogger() *slog.Logger {

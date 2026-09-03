@@ -200,9 +200,6 @@ func (c *Controller) reconcileNicoProviderNodeEKPub(ctx context.Context, node db
 	if nicoNodeProvider.ForgeInstanceID != "" {
 		return c.reconcileForgeNodeEKPub(ctx, node, cluster)
 	}
-	if !c.cfg.EnableForgeCapi {
-		return nil, fmt.Errorf("%w: Forge instance ID is not set for node %s (%s)", errTPMDataNotReady, node.ID, node.Name)
-	}
 
 	return c.reconcileNicoMachineEKPub(ctx, node, cluster)
 }

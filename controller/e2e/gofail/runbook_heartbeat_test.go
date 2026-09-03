@@ -31,7 +31,7 @@ func TestGofailRunbookWorkerCrashRetriesAfterHeartbeatTimeout(t *testing.T) {
 	nodeAgent := framework.StartNodeAgentServer(t)
 	tenantAPI := framework.StartTenantAPIServer(t)
 	nodeAgent.SetKubeconfig(tenantAPI.Kubeconfig())
-	kubeconfigPath := tenantAPI.WriteKubeconfig(t)
+	kubeconfigPath := framework.WriteKubeconfig(t)
 	taskQueue := framework.TaskQueueName("cwe-gofail-runbook", t.Name())
 	workerBinary := framework.CWEWorkerBinary(t)
 	gofailAddr := framework.FreeLocalhostAddress(t)

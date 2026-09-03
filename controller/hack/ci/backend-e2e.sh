@@ -773,6 +773,16 @@ runner_exec env CLUSTER_TOPOLOGY=true clusterctl init \
   --infrastructure "docker:${CAPD_PROVIDER_VERSION}"
 runner_exec kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 runner_exec kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=5m
+if [[ -n "${NICO_PROVIDER_SRC:-}" ]]; then
+  log "installing CAPNICo CRDs"
+  runner_exec kubectl apply -f "${NICO_PROVIDER_CONTAINER_DIR}/config/crd/bases"
+  runner_exec kubectl wait --for=condition=Established crd \
+    nicoclusters.infrastructure.cluster.x-k8s.io \
+    nicoclustertemplates.infrastructure.cluster.x-k8s.io \
+    nicomachines.infrastructure.cluster.x-k8s.io \
+    nicomachinetemplates.infrastructure.cluster.x-k8s.io \
+    --timeout=2m
+fi
 log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
 runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
 

@@ -15,7 +15,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
@@ -26,22 +25,10 @@ import (
 
 // NodePoolNodeScheduler schedules pending nodes owned by a node pool.
 type NodePoolNodeScheduler struct {
-	// capacityAccount spans reconciles rather than living inside one, so pools
-	// sharing an instance type draw from a single budget. Reconciles of this
-	// controller are serialized, but capacity is consumed asynchronously by the
-	// ProvisionNode workflow, so without it each pool sees capacity the previous
-	// pool has already spent.
-	capacityAccount *nodescheduling.CapacityAccount
-
-	// controlPlanePoolAccount is deliberately separate from capacityAccount.
-	// Control-plane pools are ordered ahead of workers for the same instance
-	// type and are already counted by the reservation ledger, so charging them
-	// to the worker budget would subtract them twice.
-	controlPlanePoolAccount *nodescheduling.CapacityAccount
-	cfg                     config.Config
-	db                      *dbwrapper.DB
-	logger                  *slog.Logger
-	service                 *nodescheduling.Service
+	cfg     config.Config
+	db      *dbwrapper.DB
+	logger  *slog.Logger
+	service *nodescheduling.Service
 }
 
 // NewNodePoolNodeScheduler creates a NodePoolNodeScheduler.
@@ -53,12 +40,10 @@ func NewNodePoolNodeScheduler(
 	forgeProvider nodescheduling.ForgeResourceReader,
 ) *NodePoolNodeScheduler {
 	return &NodePoolNodeScheduler{
-		cfg:                     cfg,
-		db:                      dbInstance,
-		logger:                  logger,
-		service:                 nodescheduling.NewService(cfg, logger, dbInstance, cweTemporalClient, forgeProvider),
-		capacityAccount:         nodescheduling.NewCapacityAccount(nodescheduling.DefaultCapacityAccountTTL),
-		controlPlanePoolAccount: nodescheduling.NewCapacityAccount(nodescheduling.DefaultCapacityAccountTTL),
+		cfg:     cfg,
+		db:      dbInstance,
+		logger:  logger,
+		service: nodescheduling.NewService(cfg, logger, dbInstance, cweTemporalClient, forgeProvider),
 	}
 }
 
@@ -109,11 +94,6 @@ func (s *NodePoolNodeScheduler) reconcileNodePool(ctx context.Context, nodePool 
 		return reconcile.Result{}, nil
 	}
 
-	cluster, err := s.db.GetCluster(ctx, nodePool.ClusterID)
-	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("failed to get cluster for node pool: %w", err)
-	}
-
 	pendingNodes, err := s.db.ListNodes(ctx, db.NodeFilters{
 		NodePoolID: &nodePool.ID,
 		Pending:    ptr.To(true),
@@ -123,33 +103,5 @@ func (s *NodePoolNodeScheduler) reconcileNodePool(ctx context.Context, nodePool 
 		return reconcile.Result{}, fmt.Errorf("failed to list pending nodes: %w", err)
 	}
 
-	if capi.ShouldUseCAPIForNodeProvisioning(s.cfg.EnableForgeCapi, cluster) {
-		return s.service.ScheduleCAPIInfraNodes(ctx, logger, pendingNodes)
-	}
-
-	nicoNodePoolProvider, err := nodePool.NicoProvider()
-	if err != nil {
-		return reconcile.Result{}, err
-	}
-
-	return s.service.ScheduleForgeNodes(ctx, logger, cluster, pendingNodes, nicoNodePoolProvider.InstanceTypeID, nodescheduling.ForgePlacementSpec{
-		SubnetIDs:    nicoNodePoolProvider.SubnetIDs,
-		VpcPrefixIDs: nicoNodePoolProvider.VpcPrefixIDs,
-	}, s.forgeScheduleOptions(nodePool))
-}
-
-// forgeScheduleOptions picks the budget and reservation behavior for one pool.
-//
-// A control-plane pool schedules control-plane nodes itself, so it must not
-// apply the control-plane reservation -- the ledger counts the very nodes it is
-// scheduling, and the pool would block itself. It also keeps its own budget so
-// its nodes are not charged to the worker account on top of being reserved.
-func (s *NodePoolNodeScheduler) forgeScheduleOptions(nodePool db.NodePool) nodescheduling.ForgeScheduleOptions {
-	if nodePool.ControlPlane {
-		return nodescheduling.ForgeScheduleOptions{
-			Account:                s.controlPlanePoolAccount,
-			SchedulingControlPlane: true,
-		}
-	}
-	return nodescheduling.ForgeScheduleOptions{Account: s.capacityAccount}
+	return s.service.ScheduleCAPIInfraNodes(ctx, logger, pendingNodes)
 }

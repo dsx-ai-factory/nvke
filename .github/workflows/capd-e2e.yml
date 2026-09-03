@@ -80,6 +80,8 @@ jobs:
     uses: ./.github/workflows/backend-e2e.yml
     permissions:
       contents: read
+    secrets:
+      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
     with:
       backend: capd
       arch: ${{ matrix.arch }}
@@ -100,4 +102,5 @@ jobs:
       # deployment would leave them silently skipped and the job green.
       require-authn: true
       nkectl-smoke: true
+      needs-nico-provider: true
       single-runner-control-plane-modes: true

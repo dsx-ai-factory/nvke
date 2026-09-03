@@ -208,7 +208,7 @@ func TestUnit_ReconcileNicoMachineEKPub_PersistsHashWhenReady(t *testing.T) {
 
 	k8sClient := newControllerTestClient(t, nicoMachine)
 	controller := NewController(
-		config.Config{EnableForgeCapi: true},
+		config.Config{},
 		slog.New(slog.NewTextHandler(os.Stdout, nil)),
 		nil,
 		nil,
@@ -277,7 +277,7 @@ func TestUnit_ReconcileNicoMachineEKPub_RequeuesWhenNotReady(t *testing.T) {
 
 	k8sClient := newControllerTestClient(t, nicoMachine)
 	controller := NewController(
-		config.Config{EnableForgeCapi: true},
+		config.Config{},
 		slog.New(slog.NewTextHandler(os.Stdout, nil)),
 		dbwrapper.New(database, slog.Default()),
 		nil,
@@ -377,7 +377,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,
@@ -401,7 +401,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("GetNodePool", mock.Anything, nodePool.ID).Return(nodePool, nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,
@@ -425,7 +425,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("GetNodePool", mock.Anything, nodePool.ID).Return(nodePool, nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,
@@ -517,7 +517,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,
@@ -555,7 +555,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,
@@ -643,7 +643,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,
@@ -693,7 +693,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,
@@ -738,7 +738,7 @@ func TestUnit_ControllerReconcile(t *testing.T) {
 		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
 		controller := NewController(
-			config.Config{EnableForgeCapi: true},
+			config.Config{},
 			slog.Default(),
 			dbwrapper.New(mockDB, slog.Default()),
 			nil,

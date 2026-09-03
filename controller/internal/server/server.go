@@ -193,7 +193,7 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, forge
 	nodePoolService := NewNodePoolService(logger, database, forgeProvider, cfg.Teleport, cfg.UseControlPlaneControllerForControlPlane())
 
 	return &serverImpl{
-		clusterService:       *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.EnableForgeCapi, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
+		clusterService:       *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
 		nodePoolService:      *nodePoolService,
 		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
 		nodeService:          *NewNodeService(logger, database, temporalClient, cfg.AllowEtcdSafetyOverrides),

@@ -209,6 +209,18 @@ fi
 log "building the local agent CAPD image and installing CAPI/CAPD"
 make -C "${repo_root}" capd-up
 
+capnico_crd_dir="${NICO_PROVIDER_REPO_DIR:-${repo_root}/../../cluster-api-provider-nico}/config/crd/bases"
+[[ -d "${capnico_crd_dir}" ]] ||
+  fail "CAPNICo CRD directory not found: ${capnico_crd_dir}"
+log "installing CAPNICo CRDs"
+kubectl apply -f "${capnico_crd_dir}"
+kubectl wait --for=condition=Established crd \
+  nicoclusters.infrastructure.cluster.x-k8s.io \
+  nicoclustertemplates.infrastructure.cluster.x-k8s.io \
+  nicomachines.infrastructure.cluster.x-k8s.io \
+  nicomachinetemplates.infrastructure.cluster.x-k8s.io \
+  --timeout=2m
+
 if [[ "${INSTALL_CNI_AFTER_INIT:-false}" == "true" ]]; then
   node_image="${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}"
   agent_args="$(docker run --rm --entrypoint cat "${node_image}" /etc/default/nke-agent)" \

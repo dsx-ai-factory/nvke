@@ -4,12 +4,6 @@
 # capd provider: declares that the cluster has Cluster API Provider Docker
 # (CAPD) installed for local development. Owns a preflight check fragment
 # asserting that capd-controller-manager is deployed.
-#
-# ENABLE_CAPI gates the CAPI controller-runtime manager and the CAPI core
-# controllers (e.g. machine-spire-entry) in CWE. Listing the capd provider
-# implies it should be enabled. ENABLE_CAPI is set redundantly with the
-# capi_core provider for self-containment; the main Tiltfile already enforces
-# that capi_core is also listed.
 
 CAPD_CWE_RBAC_RESOURCE = "capd-cwe-rbac"
 
@@ -32,9 +26,7 @@ def register(ctx):
 
     return struct(
         cwe_resource_deps = _cwe_resource_deps,
-        cwe_env_overrides = {
-            "ENABLE_CAPI": "true",
-        },
+        cwe_env_overrides = {},
         preflight_script = """
       kubectl get deployment -n capd-system capd-controller-manager >/dev/null 2>&1 || {
         echo "CAPD controllers are not installed in the current cluster. Run 'make capd-up' first." >&2

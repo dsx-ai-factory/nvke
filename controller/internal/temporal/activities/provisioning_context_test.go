@@ -38,38 +38,32 @@ func capiCluster(id uuid.UUID, manifest json.RawMessage) db.Cluster {
 }
 
 func TestResolveClusterInfraMode(t *testing.T) {
-	t.Run("forge cluster when siteID is non-nil and capi cluster manifest is empty", func(t *testing.T) {
-		mode, err := ResolveClusterInfraMode(nicoCluster(uuid.New()), false)
+	t.Run("nico cluster uses CAPI when siteID is non-nil and capi cluster manifest is empty", func(t *testing.T) {
+		mode, err := ResolveClusterInfraMode(nicoCluster(uuid.New()))
 		require.NoError(t, err)
-		assert.Equal(t, InfraModeForge, mode)
+		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
-	t.Run("forge cluster when siteID is non-nil and capi cluster manifest is null", func(t *testing.T) {
-		mode, err := ResolveClusterInfraMode(nicoCluster(uuid.New()), false)
+	t.Run("nico cluster uses CAPI when siteID is non-nil and capi cluster manifest is null", func(t *testing.T) {
+		mode, err := ResolveClusterInfraMode(nicoCluster(uuid.New()))
 		require.NoError(t, err)
-		assert.Equal(t, InfraModeForge, mode)
+		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
 	t.Run("capi cluster when siteID is nil and capi cluster manifest is present", func(t *testing.T) {
-		mode, err := ResolveClusterInfraMode(capiCluster(uuid.New(), json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeCluster"}`)), false)
+		mode, err := ResolveClusterInfraMode(capiCluster(uuid.New(), json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeCluster"}`)))
 		require.NoError(t, err)
 		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
 	t.Run("errors when siteID is nil without capi cluster manifest", func(t *testing.T) {
-		_, err := ResolveClusterInfraMode(capiCluster(uuid.New(), json.RawMessage(`{}`)), false)
+		_, err := ResolveClusterInfraMode(capiCluster(uuid.New(), json.RawMessage(`{}`)))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must define capiInfraCluster")
 	})
 
-	t.Run("forge cluster when siteID is non-nil and capi cluster manifest is present", func(t *testing.T) {
-		mode, err := ResolveClusterInfraMode(nicoCluster(uuid.New()), false)
-		require.NoError(t, err)
-		assert.Equal(t, InfraModeForge, mode)
-	})
-
-	t.Run("forge cluster uses CAPI when forge CAPI is enabled", func(t *testing.T) {
-		mode, err := ResolveClusterInfraMode(nicoCluster(uuid.New()), true)
+	t.Run("nico cluster uses CAPI when siteID is non-nil and capi cluster manifest is present", func(t *testing.T) {
+		mode, err := ResolveClusterInfraMode(nicoCluster(uuid.New()))
 		require.NoError(t, err)
 		assert.Equal(t, InfraModeCAPI, mode)
 	})
@@ -87,46 +81,42 @@ func TestResolveNodeInfraMode(t *testing.T) {
 		mode, err := ResolveNodeInfraMode(
 			capiCluster(clusterID, json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeCluster"}`)),
 			&nodeSet,
-			false,
 		)
 		require.NoError(t, err)
 		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
-	t.Run("forge node set when cluster siteID is non-nil and machine template is empty", func(t *testing.T) {
+	t.Run("nico node set uses CAPI when cluster siteID is non-nil and machine template is empty", func(t *testing.T) {
 		mode, err := ResolveNodeInfraMode(
 			nicoCluster(clusterID),
 			&db.NodeSet{
 				ID:                       nodeSetID,
 				CapiInfraMachineTemplate: json.RawMessage(`{}`),
 			},
-			false,
 		)
 		require.NoError(t, err)
-		assert.Equal(t, InfraModeForge, mode)
+		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
-	t.Run("forge node set when manifests are null", func(t *testing.T) {
+	t.Run("nico node set uses CAPI when manifests are null", func(t *testing.T) {
 		mode, err := ResolveNodeInfraMode(
 			nicoCluster(clusterID),
 			&db.NodeSet{
 				ID:                       nodeSetID,
 				CapiInfraMachineTemplate: json.RawMessage(`null`),
 			},
-			false,
 		)
 		require.NoError(t, err)
-		assert.Equal(t, InfraModeForge, mode)
+		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
-	t.Run("forge node set uses capi when machine template is present", func(t *testing.T) {
+	t.Run("nico node set uses CAPI when machine template is present", func(t *testing.T) {
 		mode, err := ResolveNodeInfraMode(
 			nicoCluster(clusterID),
 			&db.NodeSet{
 				ID:                       nodeSetID,
 				CapiInfraMachineTemplate: json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeMachineTemplate"}`),
 			},
-			true,
 		)
 		require.NoError(t, err)
 		assert.Equal(t, InfraModeCAPI, mode)
@@ -138,27 +128,24 @@ func TestResolveNodeInfraMode(t *testing.T) {
 		_, err := ResolveNodeInfraMode(
 			capiCluster(clusterID, json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeCluster"}`)),
 			&nodeSet,
-			false,
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must define capiInfraMachineTemplate")
 	})
 
-	t.Run("forge no-nodepool path for nico cluster when forge capi is disabled", func(t *testing.T) {
+	t.Run("nico no-nodepool path uses CAPI", func(t *testing.T) {
 		mode, err := ResolveNodeInfraMode(
 			nicoCluster(clusterID),
 			nil,
-			false,
 		)
 		require.NoError(t, err)
-		assert.Equal(t, InfraModeForge, mode)
+		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
 	t.Run("errors when node context is missing machine template for capi-backed cluster", func(t *testing.T) {
 		_, err := ResolveNodeInfraMode(
 			capiCluster(clusterID, json.RawMessage(`{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1","kind":"ForgeCluster"}`)),
 			nil,
-			false,
 		)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "must define capiInfraMachineTemplate")
@@ -180,30 +167,18 @@ func TestResolveNodeInfraMode(t *testing.T) {
 		mode, err := ResolveNodeInfraMode(
 			cluster,
 			&nodeSet,
-			false,
 		)
 		require.NoError(t, err)
 		assert.Equal(t, InfraModeCAPI, mode)
 	})
 
-	t.Run("forge node set uses capi when forge capi is enabled and machine template is empty", func(t *testing.T) {
+	t.Run("nico node set uses CAPI when machine template is empty", func(t *testing.T) {
 		mode, err := ResolveNodeInfraMode(
 			nicoCluster(clusterID),
 			&db.NodeSet{
 				ID:                       nodeSetID,
 				CapiInfraMachineTemplate: json.RawMessage(`{}`),
 			},
-			true,
-		)
-		require.NoError(t, err)
-		assert.Equal(t, InfraModeCAPI, mode)
-	})
-
-	t.Run("forge no-nodepool path uses capi when forge capi is enabled and machine template is empty", func(t *testing.T) {
-		mode, err := ResolveNodeInfraMode(
-			nicoCluster(clusterID),
-			nil,
-			true,
 		)
 		require.NoError(t, err)
 		assert.Equal(t, InfraModeCAPI, mode)

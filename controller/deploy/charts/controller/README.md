@@ -18,8 +18,6 @@ A Helm chart to deploy the cloud-workflow-engine service
 | autoscaling.maxReplicas | int | `100` |  |
 | autoscaling.minReplicas | int | `1` |  |
 | autoscaling.targetCPUUtilizationPercentage | int | `80` |  |
-| capi.enabled | bool | `false` | Enable Cluster API controllers in CWE. |
-| capi.forgeCapiEnabled | bool | `false` | Enable the Forge-CAPI bridge controllers. |
 | capi.rbac.create | bool | `false` | Create RBAC for CWE to watch and patch CAPI/NICo resources. |
 | cni.imageRegistry | string | `""` | Optional OCI registry prefix for CNI component images. Empty uses chart defaults. |
 | cni.installAfterInit | bool | `false` | Install CNI after kubeadm init through the agent's InstallCNI RPC, which reads manifests from a Debian package rather than a bundle server. Needs the CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream> for OVN, or nke-cni-calico-manifests-<stream> for Calico. |

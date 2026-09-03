@@ -14,6 +14,9 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/rest"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -43,6 +46,11 @@ func setControllerRuntimeLogger() {
 // binaries envtest runs. `make e2e-gofail` sets it from setup-envtest.
 const kubebuilderAssetsEnv = "KUBEBUILDER_ASSETS"
 
+const (
+	clusterCRDsEnv = "CWE_GOFAIL_E2E_CLUSTER_CRDS"
+	nicoCRDsEnv    = "CWE_GOFAIL_E2E_CAPNICO_CRDS"
+)
+
 // StartAPIServer runs a local kube-apiserver and etcd, and returns a kubeconfig
 // path for them. Both stop when the test ends.
 //
@@ -62,9 +70,12 @@ func StartAPIServer(t testing.TB) string {
 	}
 	setControllerRuntimeLogger()
 
-	env := &envtest.Environment{}
+	env := &envtest.Environment{
+		CRDDirectoryPaths: gofailCRDDirectoryPaths(t),
+	}
 	cfg, err := env.Start()
 	require.NoError(t, err, "starting the envtest API server")
+	requireGofailAPIResources(t, cfg)
 	t.Cleanup(func() {
 		require.NoError(t, env.Stop(), "stopping the envtest API server")
 	})
@@ -92,3 +103,43 @@ func StartAPIServer(t testing.TB) string {
 }
 
 const gofailContextName = "gofail-e2e"
+
+func gofailCRDDirectoryPaths(t testing.TB) []string {
+	t.Helper()
+
+	paths := []string{
+		os.Getenv(clusterCRDsEnv),
+		os.Getenv(nicoCRDsEnv),
+	}
+	for _, path := range paths {
+		require.NotEmpty(t, path, "CRD directory environment variable must be set")
+		info, err := os.Stat(path)
+		require.NoError(t, err, "expected CRD directory %s to exist", path)
+		require.True(t, info.IsDir(), "expected CRD path %s to be a directory", path)
+	}
+
+	return paths
+}
+
+func requireGofailAPIResources(t testing.TB, cfg *rest.Config) {
+	t.Helper()
+
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
+	require.NoError(t, err, "creating discovery client")
+
+	for _, resource := range []schema.GroupVersionResource{
+		{Group: "cluster.x-k8s.io", Version: "v1beta2", Resource: "machines"},
+		{Group: "infrastructure.cluster.x-k8s.io", Version: "v1alpha1", Resource: "nicomachines"},
+	} {
+		resourceList, err := discoveryClient.ServerResourcesForGroupVersion(resource.GroupVersion().String())
+		require.NoError(t, err, "expected envtest API server to discover %s", resource)
+		found := false
+		for _, apiResource := range resourceList.APIResources {
+			if apiResource.Name == resource.Resource {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "expected envtest API server to discover %s", resource)
+	}
+}

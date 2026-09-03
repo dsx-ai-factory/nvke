@@ -127,8 +127,6 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 		"PROFILES_DIR=" + profilesDir,
 		"NODE_HEALTH_CHECK_DISABLED=true",
 		"SPIFFE_ENABLED=false",
-		"ENABLE_CAPI=false",
-		"ENABLE_FORGE_CAPI=false",
 		"TELEPORT_ENABLED=false",
 		"FWE_API_KEY=",
 		"GOFAIL_FAILPOINTS=",

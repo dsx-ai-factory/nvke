@@ -33,6 +33,10 @@ on:
       - 'vendor/**'
       - '.github/workflows/gofail-e2e.yml'
   workflow_call:
+    secrets:
+      NKE_INTERNAL_RO_TOKEN:
+        description: Read-only token for internal NVIDIA repositories.
+        required: true
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -62,6 +66,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+
+      - name: Read pinned CAPI version
+        id: versions
+        run: echo "capi_version=$(make --no-print-directory -f make/versions.mk print-CAPI_VERSION)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Cluster API
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: kubernetes-sigs/cluster-api
+          ref: ${{ steps.versions.outputs.capi_version }}
+          path: .capi/cluster-api
+          persist-credentials: false
+
+      - name: Checkout the CAPNICo provider
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: NVIDIA/cluster-api-provider-nico
+          token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
+          path: .capnico/cluster-api-provider-nico
           persist-credentials: false
 
       # cache: false, deliberately. setup-go's cache only SAVES on a key miss, so
@@ -123,4 +147,6 @@ jobs:
         working-directory: controller
         env:
           CWE_GOFAIL_E2E_DB_CONNECTION_STRING: postgres://postgres:gofail@127.0.0.1:5432/gofail_e2e?sslmode=disable
+          CWE_GOFAIL_E2E_CLUSTER_CRDS: ${{ github.workspace }}/.capi/cluster-api/config/crd/bases
+          CWE_GOFAIL_E2E_CAPNICO_CRDS: ${{ github.workspace }}/.capnico/cluster-api-provider-nico/config/crd/bases
         run: make e2e-gofail

@@ -39,7 +39,7 @@ type NodeProvisioningContext struct {
 	ManagedByNodePool bool // True when the node is managed by a node pool (has a non-nil node pool ID).
 }
 
-func ResolveClusterInfraMode(cluster db.Cluster, enableForgeCapi bool) (InfraMode, error) {
+func ResolveClusterInfraMode(cluster db.Cluster) (InfraMode, error) {
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
 		provider, err := cluster.CAPIProvider()
@@ -54,16 +54,13 @@ func ResolveClusterInfraMode(cluster db.Cluster, enableForgeCapi bool) (InfraMod
 		if _, err := cluster.NicoProvider(); err != nil {
 			return "", err
 		}
-		if enableForgeCapi {
-			return InfraModeCAPI, nil
-		}
-		return InfraModeForge, nil
+		return InfraModeCAPI, nil
 	default:
 		return "", fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
 }
 
-func ResolveNodeInfraMode(cluster db.Cluster, nodeSet *db.NodeSet, enableForgeCapi bool) (InfraMode, error) {
+func ResolveNodeInfraMode(cluster db.Cluster, nodeSet *db.NodeSet) (InfraMode, error) {
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
 		provider, err := cluster.CAPIProvider()
@@ -92,10 +89,7 @@ func ResolveNodeInfraMode(cluster db.Cluster, nodeSet *db.NodeSet, enableForgeCa
 		if _, err := cluster.NicoProvider(); err != nil {
 			return "", err
 		}
-		if enableForgeCapi {
-			return InfraModeCAPI, nil
-		}
-		return InfraModeForge, nil
+		return InfraModeCAPI, nil
 	default:
 		return "", fmt.Errorf("unsupported provider type %q for cluster %s", cluster.ProviderType, cluster.ID)
 	}
@@ -107,7 +101,7 @@ func (a *Activities) GetClusterProvisioningContext(ctx context.Context, clusterI
 		return ClusterProvisioningContext{}, wrapProvisioningContextLookupError("cluster", err)
 	}
 
-	infraMode, err := ResolveClusterInfraMode(cluster, a.cfg.EnableForgeCapi)
+	infraMode, err := ResolveClusterInfraMode(cluster)
 	if err != nil {
 		return ClusterProvisioningContext{}, fmt.Errorf("failed to resolve cluster infra mode: %w", err)
 	}
@@ -143,7 +137,7 @@ func (a *Activities) GetNodeProvisioningContext(ctx context.Context, nodeID uuid
 		configProfile = nicoNodeSetProvider.ConfigProfile
 	}
 
-	infraMode, err := ResolveNodeInfraMode(cluster, &nodeSet, a.cfg.EnableForgeCapi)
+	infraMode, err := ResolveNodeInfraMode(cluster, &nodeSet)
 	if err != nil {
 		return NodeProvisioningContext{}, fmt.Errorf("failed to resolve node infra mode: %w", err)
 	}

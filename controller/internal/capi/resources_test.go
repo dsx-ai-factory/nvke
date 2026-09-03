@@ -203,58 +203,6 @@ func TestResources_ParseManifest(t *testing.T) {
 	}
 }
 
-func TestProvisioning_ShouldUseCAPIForNodeProvisioning(t *testing.T) {
-	siteID := uuid.New()
-	vpcID := uuid.New()
-	nicoCluster := db.Cluster{
-		OrgID:        "org-1",
-		SiteID:       siteID,
-		VpcID:        vpcID,
-		ProviderType: db.ProviderTypeNico,
-		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
-	}
-	capiCluster := db.Cluster{
-		SiteID:       uuid.Nil,
-		ProviderType: db.ProviderTypeCAPI,
-		Capi:         &db.CAPIClusterProvider{},
-	}
-
-	type parameters struct {
-		enableForgeCapi bool
-		cluster         db.Cluster
-		want            bool
-	}
-
-	tests := map[string]parameters{
-		"uses CAPI path when flag is enabled for nico cluster": {
-			enableForgeCapi: true,
-			cluster:         nicoCluster,
-			want:            true,
-		},
-		"keeps forge direct path when flag is disabled for forge site cluster": {
-			cluster: nicoCluster,
-			want:    false,
-		},
-		"uses CAPI for CAPI-backed cluster without site": {
-			cluster: capiCluster,
-			want:    true,
-		},
-		"does not infer CAPI path from nil site ID": {
-			cluster: db.Cluster{ProviderType: db.ProviderTypeNico, SiteID: uuid.Nil},
-			want:    false,
-		},
-	}
-
-	for name, params := range tests {
-		t.Run(name, func(t *testing.T) {
-			assert.Equal(t, params.want, capi.ShouldUseCAPIForNodeProvisioning(
-				params.enableForgeCapi,
-				params.cluster,
-			))
-		})
-	}
-}
-
 func hasNicoCluster(ctx context.Context, t *testing.T, k8sClient client.Client, namespace, name, wantSiteID string) bool {
 	t.Helper()
 

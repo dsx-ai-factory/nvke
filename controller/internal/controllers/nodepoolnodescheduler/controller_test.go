@@ -40,7 +40,6 @@ func TestUnit_NodePoolKeysForPendingNode(t *testing.T) {
 
 func TestUnit_NodePoolNodeSchedulerReconcileCAPIStartsPendingNodeWorkflows(t *testing.T) {
 	ctx := context.Background()
-	clusterID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
 	nodePoolID := uuid.MustParse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
 	firstNodeID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
 	secondNodeID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
@@ -49,12 +48,7 @@ func TestUnit_NodePoolNodeSchedulerReconcileCAPIStartsPendingNodeWorkflows(t *te
 
 	database := &testutil.MockDB{}
 	database.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
-		ID:        nodePoolID,
-		ClusterID: clusterID,
-	}, nil).Once()
-	database.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-		ID:           clusterID,
-		ProviderType: db.ProviderTypeCAPI,
+		ID: nodePoolID,
 	}, nil).Once()
 	database.On("ListNodes", mock.Anything, db.NodeFilters{
 		NodePoolID: &nodePoolID,

@@ -288,43 +288,37 @@ func main() {
 	}
 
 	logger.Info("Kubernetes controller-runtime manager configuration",
-		"enableCapi", cfg.EnableCapi,
-		"enableForgeCapi", cfg.EnableForgeCapi,
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
-	if cfg.EnableCapi {
-		machineSpireEntryController := capi.NewMachineSpireEntryController(
-			cfg,
-			k8sControllerManager.GetClient(),
-			logger.With("logger", "machine-spire-entry-controller"),
-			trustDomain,
-		)
-		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
-			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
-			os.Exit(1)
-		}
+	machineSpireEntryController := capi.NewMachineSpireEntryController(
+		cfg,
+		k8sControllerManager.GetClient(),
+		logger.With("logger", "machine-spire-entry-controller"),
+		trustDomain,
+	)
+	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+		os.Exit(1)
+	}
 
-		if cfg.EnableForgeCapi {
-			nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
-				k8sControllerManager.GetClient(),
-				logger.With("logger", "nico-tpm-spiffe-controller"),
-			)
-			if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
-				os.Exit(1)
-			}
+	nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
+		k8sControllerManager.GetClient(),
+		logger.With("logger", "nico-tpm-spiffe-controller"),
+	)
+	if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
+		os.Exit(1)
+	}
 
-			nicoProviderIDController := capi.NewNicoProviderIDController(
-				k8sControllerManager.GetClient(),
-				tenantClientProvider,
-				logger.With("logger", "nico-provider-id-controller"),
-			)
-			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
-				logger.Error("Failed to set up nico provider ID controller", "error", err)
-				os.Exit(1)
-			}
-		}
+	nicoProviderIDController := capi.NewNicoProviderIDController(
+		k8sControllerManager.GetClient(),
+		tenantClientProvider,
+		logger.With("logger", "nico-provider-id-controller"),
+	)
+	if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
+		logger.Error("Failed to set up nico provider ID controller", "error", err)
+		os.Exit(1)
 	}
 
 	if cfg.SpiffeEnabled {
@@ -442,8 +436,6 @@ func main() {
 
 	logger.Info(
 		"controller-runtime manager configuration",
-		"enableCapi", cfg.EnableCapi,
-		"enableForgeCapi", cfg.EnableForgeCapi,
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
 	)
 
@@ -667,17 +659,6 @@ func registerTemporalNamespaceWithRetry(ctx context.Context, cfg config.Config, 
 
 func getSpiffeTrustDomain(ctx context.Context, cfg config.Config, logger *slog.Logger) (string, error) {
 	if !cfg.SpiffeEnabled {
-		// With CAPI on, CreateCAPIInfraMachine builds spiffe://<trustDomain>/...
-		// An empty domain makes that ID unparseable, and it fails after the
-		// infra machine is applied but before the CAPI Machine is. The symptom
-		// is infra machines with no Machines, retrying forever. Fail here
-		// instead. SPIFFE off is still fine when CAPI is off.
-		if cfg.EnableCapi {
-			return "", fmt.Errorf("SPIFFE is disabled but ENABLE_CAPI is true, " +
-				"and CAPI node provisioning needs a trust domain to build SPIFFE IDs; " +
-				"set SPIFFE_ENABLED=true with SPIFFE_TRUST_DOMAIN, or disable CAPI")
-		}
-		logger.Info("SPIFFE is disabled, using empty trust domain")
 		return "", nil
 	}
 

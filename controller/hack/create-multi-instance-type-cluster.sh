@@ -4,7 +4,7 @@
 #
 # Local-only helper to create a control-plane cluster spanning two real instance
 # types to exercise instance-type selection + in-place rotation.
-# Creates a Forge (ENABLE_FORGE_CAPI) cluster whose control-plane preference is
+# Creates a Forge CAPI cluster whose control-plane preference is
 # [constrained, available]: a scale-0 control-plane node pool contributes the
 # highest-preference type and a second control-plane pool (count 1) contributes
 # the fallback type. Both types are registered with the local nico-mock up front

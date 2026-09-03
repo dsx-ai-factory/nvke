@@ -11,6 +11,8 @@ SETUP_ENVTEST_VERSION		?= release-0.24
 ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
 # Kubernetes version for the envtest kube-apiserver and etcd binaries.
 ENVTEST_K8S_VERSION		?= 1.34.1
+CWE_GOFAIL_E2E_CLUSTER_CRDS	?= $(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases
+CWE_GOFAIL_E2E_CAPNICO_CRDS	?= $(shell go env GOMODCACHE)/github.com/!n!v!i!d!i!a/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/NVIDIA/cluster-api-provider-nico)/config/crd/bases
 
 # The licence header template lives once, at the repository root.
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
@@ -236,6 +238,8 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 		phase "build-worker"; \
 		TEMPORAL_CLI_DOWNLOAD_DIR="$(TEMPORAL_CLI_DOWNLOAD_DIR)" \
 			CWE_GOFAIL_E2E_WORKER_BINARY="$(CWE_GOFAIL_E2E_WORKER_BINARY)" \
+			CWE_GOFAIL_E2E_CLUSTER_CRDS="$(CWE_GOFAIL_E2E_CLUSTER_CRDS)" \
+			CWE_GOFAIL_E2E_CAPNICO_CRDS="$(CWE_GOFAIL_E2E_CAPNICO_CRDS)" \
 			go test -v -tags gofail ./e2e/gofail -timeout 30m -count=1; \
 		phase "run-tests"; \
 		cleanup; \

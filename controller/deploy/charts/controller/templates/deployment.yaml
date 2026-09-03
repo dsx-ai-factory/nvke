@@ -310,14 +310,6 @@ spec:
               value: {{ .Values.spiffe.spire.serverPort | quote }}
             - name: SPIRE_JOIN_TOKEN_TTL
               value: {{ .Values.spiffe.spire.joinTokenTTL | quote }}
-            {{- if .Values.capi.enabled }}
-            - name: ENABLE_CAPI
-              value: "true"
-            {{- end }}
-            {{- if .Values.capi.forgeCapiEnabled }}
-            - name: ENABLE_FORGE_CAPI
-              value: "true"
-            {{- end }}
             # Teleport config
             {{- if .Values.teleport.enabled }}
             - name: TELEPORT_ENABLED

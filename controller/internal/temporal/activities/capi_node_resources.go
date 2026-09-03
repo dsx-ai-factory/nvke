@@ -86,10 +86,6 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 
 	capiNodeSetProvider, err := nodeSet.CAPIProvider()
 	if err != nil || capi.IsEmptyManifest(capiNodeSetProvider.InfraMachineTemplate) {
-		if !a.cfg.EnableForgeCapi {
-			return fmt.Errorf("capiInfraMachineTemplate is empty for node set %s", nodeSet.ID)
-		}
-
 		return a.createTemplateLessForgeCAPIMachineForNode(ctx, createCtx)
 	}
 

@@ -89,6 +89,7 @@ jobs:
       CNPG_SUPERUSER_PASSWORD: example-password
       CNPG_CLOUD_PASSWORD: example-password
       CNPG_TEMPORAL_PASSWORD: example-password
+      NICO_PROVIDER_REPO_DIR: ${{ github.workspace }}/.capnico/cluster-api-provider-nico
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -99,6 +100,14 @@ jobs:
           # encryption workflow rejects that as older than its required version.
           fetch-depth: 0
           fetch-tags: true
+
+      - name: Checkout the CAPNICo provider
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: NVIDIA/cluster-api-provider-nico
+          token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
+          path: .capnico/cluster-api-provider-nico
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

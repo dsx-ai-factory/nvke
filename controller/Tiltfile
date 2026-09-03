@@ -915,8 +915,6 @@ k8s_resource(
 # CWE
 # ---------------------------------------------------------------------------
 
-_cwe_capi_enabled = _tilt_env.get("ENABLE_CAPI", "") == "true"
-_cwe_forge_capi_enabled = _tilt_env.get("ENABLE_FORGE_CAPI", "") == "true"
 _cwe_tenant_access_enabled = os.getenv(
     "TENANT_ACCESS_ENABLED", _tilt_env.get("TENANT_ACCESS_ENABLED", "true")) == "true"
 _cwe_oidc_enabled = os.getenv(
@@ -990,9 +988,7 @@ _cwe_chart_flags = [
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _cwe_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _cwe_permissive_mode else "false"),
-    "--set", "capi.enabled=%s" % ("true" if _cwe_capi_enabled else "false"),
-    "--set", "capi.forgeCapiEnabled=%s" % ("true" if _cwe_forge_capi_enabled else "false"),
-    "--set", "capi.rbac.create=%s" % ("true" if _cwe_capi_enabled else "false"),
+    "--set", "capi.rbac.create=true",
     "--set", "tenantAccess.enabled=%s" % ("true" if _cwe_tenant_access_enabled else "false"),
     "--set", "nkeOIDCAuth.enabled=%s" % ("true" if _cwe_oidc_enabled else "false"),
     "--set-string", "nkeOIDCAuth.issuerURL=%s" % NKE_OIDC_ISSUER_URL,

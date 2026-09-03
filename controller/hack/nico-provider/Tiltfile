@@ -29,16 +29,9 @@ def register(ctx):
     # the mock keeps the cache hydrating against a known-empty responder
     # instead of failing DNS/auth against real Forge.
     #
-    # ENABLE_CAPI/ENABLE_FORGE_CAPI gate the CAPI controller-runtime manager
-    # and the Forge-CAPI bridge (NicoTpmSpiffeController) in CWE. Listing the
-    # nico provider implies both should be enabled. ENABLE_CAPI is set
-    # redundantly with the capi_core provider for self-containment; the main
-    # Tiltfile already enforces that capi_core is also listed.
     cwe_env_overrides = {
         "FORGE_ENVIRONMENT": "test",
         "FORGE_URL": "http://mock.nico-mock.svc.cluster.local:8080",
-        "ENABLE_CAPI": "true",
-        "ENABLE_FORGE_CAPI": "true",
     }
 
     kind_cluster_name = _get_kind_cluster_name()

@@ -240,19 +240,6 @@ type Config struct {
 	// When true, all mutating requests (POST, PUT, PATCH, DELETE) must include the X-Managed-By header.
 	ManagedByK8sPlatform bool `env:"MANAGED_BY_K8S_PLATFORM" default:"false"`
 
-	// EnableCapi is a feature flag for using Cluster API as the orchestration layer.
-	// When false, no kubernetes controller manager is started and CAPI-dependent
-	// controllers (e.g. machine-spire-entry) are not registered, allowing the worker
-	// to run on clusters where the CAPI core CRDs are not yet installed.
-	EnableCapi bool `env:"ENABLE_CAPI" default:"false"`
-
-	// EnableForgeCapi is a feature flag controlling whether Forge CAPI bridge
-	// controllers and scaffold reconciliation are enabled. Node provisioning remains
-	// routed by the node infra mode; Forge-site clusters with scaffold resources still
-	// use the Forge-direct path until node provisioning is explicitly migrated.
-	// Requires EnableCapi=true.
-	EnableForgeCapi bool `env:"ENABLE_FORGE_CAPI" default:"false"`
-
 	// LocalDevForceDockerMachineBootstrap forces every node through the
 	// DockerMachine bootstrap/preflight + container-mode kubeadm contract
 	// (the /run/cluster-api/bootstrap-success.complete sentinel) regardless of
@@ -423,9 +410,6 @@ func (c *Config) Validate() error {
 		return err
 	}
 
-	if c.EnableForgeCapi && !c.EnableCapi {
-		return fmt.Errorf("ENABLE_FORGE_CAPI=true requires ENABLE_CAPI=true")
-	}
 	return nil
 }
 

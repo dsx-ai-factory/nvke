@@ -170,6 +170,8 @@ jobs:
     uses: ./.github/workflows/gofail-e2e.yml
     permissions:
       contents: read
+    secrets:
+      NKE_INTERNAL_RO_TOKEN: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
 
   # govulncheck needs more than contents:read -- it uploads SARIF. A called
   # workflow cannot be granted less than its jobs request, or the whole file

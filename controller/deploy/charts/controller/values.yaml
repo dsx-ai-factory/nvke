@@ -258,10 +258,6 @@ tolerations: []
 affinity: {}
 
 capi:
-  # -- Enable Cluster API controllers in CWE.
-  enabled: false
-  # -- Enable the Forge-CAPI bridge controllers.
-  forgeCapiEnabled: false
   rbac:
     # -- Create RBAC for CWE to watch and patch CAPI/NICo resources.
     create: false

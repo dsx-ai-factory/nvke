@@ -81,7 +81,6 @@ type clusterService struct {
 	db              db.DB
 	nodePoolService *nodePoolService
 	teleportCfg     config.TeleportConfig
-	enableForgeCapi bool
 	oidcAuthEnabled bool
 	// useControlPlaneController mirrors the CWE feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
@@ -98,7 +97,6 @@ func NewClusterService(
 	database db.DB,
 	nodePoolService *nodePoolService,
 	teleportCfg config.TeleportConfig,
-	enableForgeCapi bool,
 	oidcAuthEnabled bool,
 	useControlPlaneController bool,
 ) *clusterService {
@@ -107,7 +105,6 @@ func NewClusterService(
 		db:                        database,
 		nodePoolService:           nodePoolService,
 		teleportCfg:               teleportCfg,
-		enableForgeCapi:           enableForgeCapi,
 		oidcAuthEnabled:           oidcAuthEnabled,
 		useControlPlaneController: useControlPlaneController,
 	}
@@ -121,7 +118,7 @@ func (s *clusterService) applyClusterDefaults(req *api.CreateClusterRequest, clu
 		cluster.TeleportEnabled = s.teleportCfg.DefaultClusterEnabled
 	}
 
-	if !s.enableForgeCapi || cluster.SiteID == uuid.Nil || !capi.IsEmptyManifest(cluster.CapiInfraCluster) {
+	if cluster.SiteID == uuid.Nil || !capi.IsEmptyManifest(cluster.CapiInfraCluster) {
 		return nil
 	}
 
