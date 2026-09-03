@@ -6,11 +6,14 @@ package activities
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
+	"go.temporal.io/sdk/activity"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/constants"
@@ -62,6 +65,10 @@ func (a *Activities) DeleteCAPIClusterResources(ctx context.Context, input Delet
 	if err != nil {
 		return fmt.Errorf("failed to parse infra cluster manifest for cluster %s: %w", cluster.Name, err)
 	}
+	if err := waitForClusterMachinesDeleted(ctx, a.k8sClient, namespace, cluster.Name); err != nil {
+		return err
+	}
+
 	infraCluster.SetNamespace(namespace)
 	infraCluster.SetName(cluster.Name)
 	if err := a.k8sClient.Delete(ctx, infraCluster); err != nil && !apierrors.IsNotFound(err) {
@@ -89,4 +96,38 @@ func (a *Activities) DeleteCAPIClusterResources(ctx context.Context, input Delet
 	}
 
 	return nil
+}
+
+// waitForClusterMachinesDeleted blocks until no CAPI Machines remain for the
+// cluster. Node teardown only requests Machine deletion, so Machines can still
+// be finalizing once the node rows are gone and cluster teardown reaches here.
+// Deleting the infra cluster while an infra machine still references it strands
+// that machine: CAPD stops reconciling a DockerMachine whose DockerCluster it
+// cannot find, so the finalizer is never removed, the owning Machine keeps
+// waiting on its infrastructure, and the Cluster can never finish deleting.
+func waitForClusterMachinesDeleted(ctx context.Context, k8sClient client.Client, namespace, clusterName string) error {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		machines := &clusterv1.MachineList{}
+		if err := k8sClient.List(ctx, machines,
+			client.InNamespace(namespace),
+			client.MatchingLabels{clusterv1.ClusterNameLabel: clusterName},
+		); err != nil {
+			return fmt.Errorf("failed to list machines for cluster %s: %w", clusterName, err)
+		}
+		if len(machines.Items) == 0 {
+			return nil
+		}
+
+		description := fmt.Sprintf("%d machines remaining for cluster %s", len(machines.Items), clusterName)
+		activity.RecordHeartbeat(ctx, description)
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timed out waiting for machines of cluster %s to be deleted, %s: %w", clusterName, description, ctx.Err())
+		case <-ticker.C:
+		}
+	}
 }
