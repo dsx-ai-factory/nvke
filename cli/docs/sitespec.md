@@ -10,6 +10,53 @@ error and no node is touched.
 
 A ready-to-copy example is in [`examples/sitespec.yaml`](../examples/sitespec.yaml).
 
+## Generating one
+
+`nkectl generate sitespec` writes a complete site spec, so the file does not
+have to be assembled by hand:
+
+```bash
+nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
+```
+
+The hosts come from a CSV, because a real site has more of them than a flag per
+machine can carry. The header names the columns in any order; `name` and `ip`
+are required, `tpm_ek_thumbprint` is optional per row:
+
+```csv
+name,ip,tpm_ek_thumbprint
+cp-01,10.10.50.2,0000000000000000000000000000000000000000000000000000000000000000
+cp-02,10.10.50.3,
+cp-03,10.10.50.4,
+```
+
+An unknown column is an error rather than being ignored, so a misspelled header
+does not silently drop a field. Pass `--nodes -` to read the CSV from standard
+input.
+
+This is a different format from the `NKECTL_CLUSTER_NODES` environment variable
+below, which spells the same list as `name:ip,name:ip`. The two are not
+interchangeable: `name:ip` has nowhere to put a TPM thumbprint.
+
+Anything the CSV does not carry is set with `--set`, using the same field paths
+this document uses. Run it with an unknown path to list what it accepts:
+
+```bash
+nkectl generate sitespec my-tier0-site --nodes hosts.csv \
+  --set cluster.cniName=calico \
+  --set cluster.podCidr=10.100.0.0/16 > sitespec.yaml
+```
+
+Two fields are deliberately not settable. `cluster.nodes` comes from `--nodes`.
+`registry.apiKey` is a credential and this file is meant to be committed — pass
+it to `nkectl bootstrap site` with `--registry-api-key` or `REGISTRY_API_KEY`
+instead.
+
+Unlike `bootstrap site`, `generate sitespec` ignores the environment variables
+listed below, so a generated file never carries a value nobody typed. Every
+field is validated before anything is written, so a file this command produces
+is a file `bootstrap site` accepts.
+
 ## Schema
 
 | Field | Type | Required | Notes |
