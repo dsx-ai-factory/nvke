@@ -244,7 +244,7 @@ func TestDeploy_ResolvesChartPathFromRepoRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "go.work"), []byte("go 1.26\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	chartDir := filepath.Join(root, "controller", "deploy", "charts", "cloud-workflow-engine")
+	chartDir := filepath.Join(root, "controller", "deploy", "charts", "controller")
 	if err := os.MkdirAll(chartDir, 0o755); err != nil {
 		t.Fatal(err)
 	}

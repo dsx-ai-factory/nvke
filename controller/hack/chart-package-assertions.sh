@@ -8,7 +8,7 @@
 set -euo pipefail
 
 repo_root="$(git rev-parse --show-toplevel)"
-chart="${CHART:-${repo_root}/controller/deploy/charts/cloud-workflow-engine}"
+chart="${CHART:-${repo_root}/controller/deploy/charts/controller}"
 version="${CHART_PACKAGE_VERSION:-0.0.0-$(git -C "${repo_root}" rev-parse --short=12 HEAD)}"
 dist="$(mktemp -d)"
 trap 'rm -rf "${dist}"' EXIT HUP INT TERM

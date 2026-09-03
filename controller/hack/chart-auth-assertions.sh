@@ -7,11 +7,11 @@
 #
 # Needs only helm. Resolves the chart relative to this script, so it runs from
 # anywhere; CHART overrides that, which is how the workflow points it at
-# controller/deploy/charts/cloud-workflow-engine from the repository root.
+# controller/deploy/charts/controller from the repository root.
 
 set -euo pipefail
 
-CHART="${CHART:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deploy/charts/cloud-workflow-engine"}"
+CHART="${CHART:-"$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/deploy/charts/controller"}"
 [[ -d "${CHART}" ]] || { echo "chart not found at ${CHART}" >&2; exit 2; }
 
 failures=0

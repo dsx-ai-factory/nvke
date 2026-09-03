@@ -4,7 +4,7 @@
 # Local entry points for merge-gate checks. Every tool comes from PATH, and a
 # missing one reports which tool and two ways to get it.
 
-CHART ?= controller/deploy/charts/cloud-workflow-engine
+CHART ?= controller/deploy/charts/controller
 
 define require_command
 command -v $(1) >/dev/null 2>&1 || { \

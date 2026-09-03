@@ -68,7 +68,7 @@ Deeper module documentation:
 | [../agent/docs/SECURITY.md](../agent/docs/SECURITY.md) | The node agent's security context |
 | [../os-image/SPEC.md](../os-image/SPEC.md) | The contract a node image has to meet |
 | [../controller/profiles/README.md](../controller/profiles/README.md) | External profiles |
-| [../controller/deploy/charts/cloud-workflow-engine/README.md](../controller/deploy/charts/cloud-workflow-engine/README.md) | The engine's Helm chart and its values |
+| [../controller/deploy/charts/controller/README.md](../controller/deploy/charts/controller/README.md) | The engine's Helm chart and its values |
 | [../build/README.md](../build/README.md) | The per-component build and publish scripts |
 | [../os-image/README.md](../os-image/README.md) | Node image build, FDE/non-FDE variants, release |
 

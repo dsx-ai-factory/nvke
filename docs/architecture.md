@@ -120,7 +120,7 @@ that is where the agent runs.
 ## Deployment
 
 The Cloud Workflow Engine is deployed as a Helm chart
-(`controller/deploy/charts/cloud-workflow-engine`) onto a *site controller*
+(`controller/deploy/charts/controller`) onto a *site controller*
 cluster, a dedicated Kubernetes cluster that manages the NKE tenant fleet for a
 site.
 

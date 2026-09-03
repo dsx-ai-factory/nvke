@@ -6,7 +6,7 @@
 // cli/internal/bootstrapengine creates), then waits for CWE to report
 // healthy on /readyz.
 //
-// It reuses controller/deploy/charts/cloud-workflow-engine (the real,
+// It reuses controller/deploy/charts/controller (the real,
 // actively maintained Helm chart) for CWE itself, and the same Postgres/
 // Temporal shape controller/Tiltfile already drives for local development
 // (the Bitnami postgresql chart + the official go.temporal.io/helm-charts
@@ -190,7 +190,7 @@ type Config struct {
 	TPMEKFingerprints []string
 
 	// ChartPath is the local filesystem path to
-	// controller/deploy/charts/cloud-workflow-engine. Empty triggers
+	// controller/deploy/charts/controller. Empty triggers
 	// repo-root discovery from the working directory (see resolveChartPath).
 	// This is a real gap for nkectl shipped as a standalone binary outside a
 	// repository checkout: the chart is not yet published anywhere
@@ -543,7 +543,7 @@ func writeTempFile(pattern string, body []byte) (path string, cleanup func(), er
 	return tmpName, cleanup, nil
 }
 
-// resolveChartPath locates controller/deploy/charts/cloud-workflow-engine by
+// resolveChartPath locates controller/deploy/charts/controller by
 // walking up from the current working directory looking for go.work (the
 // repository root marker). This only works inside a checkout of this
 // monorepo -- see the ChartPath doc comment for why that is a known gap, not
@@ -554,7 +554,7 @@ func resolveChartPath() (string, error) {
 		return "", fmt.Errorf("cwedeploy: Config.ChartPath is empty and %w; "+
 			"set NKECTL_CWE_CHART_PATH explicitly", err)
 	}
-	chart := filepath.Join(root, "controller", "deploy", "charts", "cloud-workflow-engine")
+	chart := filepath.Join(root, "controller", "deploy", "charts", "controller")
 	if _, err := os.Stat(chart); err != nil {
 		return "", fmt.Errorf("cwedeploy: found repository root at %s but no chart at %s", root, chart)
 	}
