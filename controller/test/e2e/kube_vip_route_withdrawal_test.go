@@ -50,7 +50,7 @@ func validatePostReadyKubeVipRouteWithdrawal(test *tenantTest) {
 			expectedHops = append(expectedHops, target.ip)
 		}
 		target := targets[0]
-		Expect(runCommand(ctx, "docker", "inspect", target.name)).To(Succeed(),
+		Expect(runDockerCommand(ctx, "inspect", target.name)).To(Succeed(),
 			"CAPD node %s must map to a Docker container with the same name", target.name)
 
 		By("Waiting for all control-plane nodes to advertise the API VIP")
@@ -67,14 +67,14 @@ func validatePostReadyKubeVipRouteWithdrawal(test *tenantTest) {
 		}, NodeTimeout(2*time.Minute))
 
 		By(fmt.Sprintf("Stopping kube-apiserver on %s", target.name))
-		Expect(runCommand(
+		Expect(runDockerCommand(
 			ctx,
-			"docker", "exec", target.name,
+			"exec", target.name,
 			"test", "!", "-e", kubeAPIServerManifestBackup,
 		)).To(Succeed(), "a previous E2E run must not have left a staged apiserver manifest")
-		Expect(runCommand(
+		Expect(runDockerCommand(
 			ctx,
-			"docker", "exec", target.name,
+			"exec", target.name,
 			"mv", kubeAPIServerManifest, kubeAPIServerManifestBackup,
 		)).To(Succeed())
 		manifestRemoved = true
@@ -179,8 +179,8 @@ func parseBGPNextHops(output []byte, prefix string) ([]string, error) {
 	return hops, nil
 }
 
-func runCommand(ctx context.Context, name string, args ...string) error {
-	command := exec.CommandContext(ctx, name, args...)
+func runDockerCommand(ctx context.Context, args ...string) error {
+	command := exec.CommandContext(ctx, "docker", args...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return commandError(command, err, output)
@@ -197,9 +197,9 @@ func commandError(command *exec.Cmd, err error, output []byte) error {
 }
 
 func restoreKubeAPIServerManifest(ctx context.Context, container string) error {
-	return runCommand(
+	return runDockerCommand(
 		ctx,
-		"docker", "exec", container,
+		"exec", container,
 		"mv", kubeAPIServerManifestBackup, kubeAPIServerManifest,
 	)
 }
