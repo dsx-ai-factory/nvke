@@ -11,7 +11,7 @@
 // that does.
 //
 // The values here are read from each provider's own source. They are a
-// snapshot: all three providers are under active development, so a bump should
+// snapshot: both providers are under active development, so a bump should
 // re-check the CRD names, the manager identity, and the credentials keys.
 package providers
 
@@ -30,11 +30,13 @@ const (
 	// TypeLaunchLayer is cluster-api-provider-launchlayer, the quota and
 	// placement layer that sits above NICo.
 	TypeLaunchLayer Type = "launchlayer"
-
-	// TypeProvisioned is cluster-api-provider-provisioned, which adopts hosts
-	// NKE provisioned before CAPI bootstraps them. It takes no credentials.
-	TypeProvisioned Type = "provisioned"
 )
+
+// cluster-api-provider-provisioned is deliberately absent. It adopts hosts NKE
+// provisioned for a site controller during `nkectl bootstrap site`, takes no
+// credentials, and is never a backend an operator chooses for a tenant cluster.
+// Listing it here would answer a question nobody asks and imply it is a
+// selectable alternative to NICo or LaunchLayer.
 
 // Descriptor is everything nkectl knows about one infrastructure provider.
 type Descriptor struct {
@@ -46,11 +48,6 @@ type Descriptor struct {
 	// vocabulary and CWE's cannot silently diverge: CWE distinguishes only
 	// "nico" from "capi", while this registry names each provider.
 	CWEProviderType string `json:"cweProviderType"`
-
-	// RequestAPIVersion is the apiVersion nkectl writes into the
-	// capiInfraCluster payload it sends to CWE. It is a wire contract with
-	// CWE and must not be bumped to track a provider's newest served version.
-	RequestAPIVersion string `json:"requestApiVersion"`
 
 	// ClusterKind and MachineTemplateKind are the infrastructure kinds a
 	// cluster request references.
@@ -88,15 +85,22 @@ type Descriptor struct {
 	// default of its own.
 	DefaultSecretName string `json:"defaultSecretName,omitempty"`
 
+	// EndpointFlag is the manager flag carrying the address of the backend the
+	// provider calls, for providers configured that way.
+	//
+	// The two providers differ here. NICo takes its endpoint as a key in the
+	// credentials Secret, so it arrives with the credentials and this is empty.
+	// LaunchLayer takes one address per deployment as a flag, and an absent
+	// address is not a startup failure — the manager runs and reports it once
+	// per reconcile. That combination is reportable: established CRDs, a
+	// running manager and a valid Secret, yet nothing the provider can call.
+	EndpointFlag string `json:"endpointFlag,omitempty"`
+
 	// UnconfiguredIsValid records that the provider runs correctly with no
 	// credentials Secret at all. LaunchLayer does: with no Secret its client is
 	// unauthenticated, which is how it addresses a fake. For such a provider a
 	// missing Secret is a configuration choice, not a fault.
 	UnconfiguredIsValid bool `json:"unconfiguredIsValid"`
-
-	// SupportsEnable records whether the provider takes credentials that nkectl
-	// can write. The provisioned provider does not.
-	SupportsEnable bool `json:"supportsEnable"`
 }
 
 // infrastructureGroup is the API group every CAPI infrastructure provider
@@ -109,7 +113,6 @@ func All() []Descriptor {
 		{
 			Type:                 TypeNico,
 			CWEProviderType:      "capi",
-			RequestAPIVersion:    infrastructureGroup + "/v1alpha1",
 			ClusterKind:          "NicoCluster",
 			MachineTemplateKind:  "NicoMachineTemplate",
 			CRDNames:             []string{"nicoclusters." + infrastructureGroup, "nicomachinetemplates." + infrastructureGroup},
@@ -119,12 +122,10 @@ func All() []Descriptor {
 			SecretNameFlag:       "--provider-credentials-secret-name",
 			SecretNamespaceFlag:  "--provider-credentials-namespace",
 			DefaultSecretName:    "nico-credentials",
-			SupportsEnable:       true,
 		},
 		{
 			Type:                 TypeLaunchLayer,
 			CWEProviderType:      "capi",
-			RequestAPIVersion:    infrastructureGroup + "/v1alpha1",
 			ClusterKind:          "LaunchLayerCluster",
 			MachineTemplateKind:  "LaunchLayerMachineTemplate",
 			CRDNames:             []string{"launchlayerclusters." + infrastructureGroup, "launchlayermachinetemplates." + infrastructureGroup},
@@ -133,25 +134,11 @@ func All() []Descriptor {
 			ControllerDeployment: "cluster-api-provider-launchlayer-controller-manager",
 			SecretNameFlag:       "--identity-secret",
 			SecretNamespaceFlag:  "--identity-secret-namespace",
+			EndpointFlag:         "--base-url",
 			// CAPLL has no default: --identity-secret names the Secret, and
 			// omitting it leaves the client unauthenticated on purpose.
 			DefaultSecretName:   "",
 			UnconfiguredIsValid: true,
-			SupportsEnable:      true,
-		},
-		{
-			Type:                 TypeProvisioned,
-			CWEProviderType:      "capi",
-			RequestAPIVersion:    infrastructureGroup + "/v1alpha1",
-			ClusterKind:          "ProvisionedCluster",
-			MachineTemplateKind:  "ProvisionedMachineTemplate",
-			CRDNames:             []string{"provisionedclusters." + infrastructureGroup, "provisionedmachinetemplates." + infrastructureGroup},
-			AppName:              "cluster-api-provider-provisioned",
-			ControllerNamespace:  "provisioned-system",
-			ControllerDeployment: "provisioned-controller-manager",
-			// The provisioned provider talks to no external API, so there are
-			// no credentials to write.
-			SupportsEnable: false,
 		},
 	}
 }

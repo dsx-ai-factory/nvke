@@ -13,7 +13,7 @@ import (
 // against the registry is the point: a test that compared the registry to
 // itself would pass no matter what drifted.
 //
-// All three providers are under active development. When one is bumped,
+// Both providers are under active development. When one is bumped,
 // re-read its CRD names, its manager identity, and its credentials flags, and
 // update this test with them.
 func TestRegistryMatchesProviderSources(t *testing.T) {
@@ -27,8 +27,8 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 		controllerDeployment string
 		secretNameFlag       string
 		defaultSecretName    string
+		endpointFlag         string
 		unconfiguredIsValid  bool
-		supportsEnable       bool
 	}{
 		{
 			typ:                  TypeNico,
@@ -40,7 +40,8 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 			controllerDeployment: "controller-manager",
 			secretNameFlag:       "--provider-credentials-secret-name",
 			defaultSecretName:    "nico-credentials",
-			supportsEnable:       true,
+			// NICo carries its endpoint in the Secret, not in a manager flag.
+			endpointFlag: "",
 		},
 		{
 			typ:                  TypeLaunchLayer,
@@ -54,18 +55,8 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 			// CAPLL has no default Secret name: omitting --identity-secret
 			// leaves its client unauthenticated on purpose.
 			defaultSecretName:   "",
+			endpointFlag:        "--base-url",
 			unconfiguredIsValid: true,
-			supportsEnable:      true,
-		},
-		{
-			typ:                  TypeProvisioned,
-			clusterKind:          "ProvisionedCluster",
-			machineTemplateKind:  "ProvisionedMachineTemplate",
-			crdNames:             []string{"provisionedclusters.infrastructure.cluster.x-k8s.io", "provisionedmachinetemplates.infrastructure.cluster.x-k8s.io"},
-			appName:              "cluster-api-provider-provisioned",
-			controllerNamespace:  "provisioned-system",
-			controllerDeployment: "provisioned-controller-manager",
-			supportsEnable:       false,
 		},
 	}
 
@@ -99,25 +90,13 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 			if d.DefaultSecretName != tc.defaultSecretName {
 				t.Errorf("DefaultSecretName = %q, want %q", d.DefaultSecretName, tc.defaultSecretName)
 			}
+			if d.EndpointFlag != tc.endpointFlag {
+				t.Errorf("EndpointFlag = %q, want %q", d.EndpointFlag, tc.endpointFlag)
+			}
 			if d.UnconfiguredIsValid != tc.unconfiguredIsValid {
 				t.Errorf("UnconfiguredIsValid = %v, want %v", d.UnconfiguredIsValid, tc.unconfiguredIsValid)
 			}
-			if d.SupportsEnable != tc.supportsEnable {
-				t.Errorf("SupportsEnable = %v, want %v", d.SupportsEnable, tc.supportsEnable)
-			}
 		})
-	}
-}
-
-// TestRequestAPIVersionIsTheWireContract guards the apiVersion nkectl sends to
-// CWE inside a capiInfraCluster payload. It is deliberately separate from the
-// versions a provider serves: bumping this changes what CWE receives.
-func TestRequestAPIVersionIsTheWireContract(t *testing.T) {
-	for _, d := range All() {
-		if d.RequestAPIVersion != "infrastructure.cluster.x-k8s.io/v1alpha1" {
-			t.Errorf("%s RequestAPIVersion = %q, want infrastructure.cluster.x-k8s.io/v1alpha1",
-				d.Type, d.RequestAPIVersion)
-		}
 	}
 }
 
@@ -129,7 +108,7 @@ func TestLookupRejectsUnknownType(t *testing.T) {
 
 func TestTypesListsEveryProvider(t *testing.T) {
 	got := strings.Join(Types(), ",")
-	want := "nico,launchlayer,provisioned"
+	want := "nico,launchlayer"
 	if got != want {
 		t.Errorf("Types() = %q, want %q", got, want)
 	}

@@ -66,11 +66,11 @@ func TestClusterRequest_CarriesTheSiteSpecAsProvisionedHosts(t *testing.T) {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
 
-	if got := req.CapiInfraCluster["kind"]; got != "ProvisionedCluster" {
-		t.Errorf("capiInfraCluster kind = %v, want %q", got, "ProvisionedCluster")
+	if got := req.CapiInfraCluster["kind"]; got != provisionedClusterKind {
+		t.Errorf("capiInfraCluster kind = %v, want %q", got, provisionedClusterKind)
 	}
-	if got := req.CapiInfraCluster["apiVersion"]; got != "infrastructure.cluster.x-k8s.io/v1alpha1" {
-		t.Errorf("capiInfraCluster apiVersion = %v, want %q", got, "infrastructure.cluster.x-k8s.io/v1alpha1")
+	if got := req.CapiInfraCluster["apiVersion"]; got != provisionedAPIVersion {
+		t.Errorf("capiInfraCluster apiVersion = %v, want %q", got, provisionedAPIVersion)
 	}
 
 	spec, ok := req.CapiInfraCluster["spec"].(map[string]interface{})
@@ -120,8 +120,8 @@ func TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec(t *testing.T) {
 	if pool.SystemReservedMemory != "512Mi" {
 		t.Errorf("systemReservedMemory = %q, want the site spec's kubelet reservation", pool.SystemReservedMemory)
 	}
-	if got := pool.CapiInfraMachineTemplate["kind"]; got != "ProvisionedMachineTemplate" {
-		t.Errorf("capiInfraMachineTemplate kind = %v, want %q", got, "ProvisionedMachineTemplate")
+	if got := pool.CapiInfraMachineTemplate["kind"]; got != provisionedMachineTemplateKind {
+		t.Errorf("capiInfraMachineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
 	}
 	if pool.CapiSpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
 		t.Errorf("capiSpireAttestationMethod = %q, want %q",

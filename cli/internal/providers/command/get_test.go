@@ -74,13 +74,13 @@ func TestGetProviders_EmptyClusterListsEverythingAsNotInstalled(t *testing.T) {
 	if !strings.Contains(out, "PROVIDER") || !strings.Contains(out, "STATE") {
 		t.Errorf("output has no header row:\n%s", out)
 	}
-	for _, want := range []string{"nico", "launchlayer", "provisioned"} {
+	for _, want := range []string{"nico", "launchlayer"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output does not mention %q:\n%s", want, out)
 		}
 	}
-	if strings.Count(out, "NOT-INSTALLED") != 3 {
-		t.Errorf("want all three providers NOT-INSTALLED:\n%s", out)
+	if strings.Count(out, "NOT-INSTALLED") != 2 {
+		t.Errorf("want both providers NOT-INSTALLED:\n%s", out)
 	}
 }
 
@@ -96,8 +96,8 @@ func TestGetProviders_JSONOutputParses(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("output is not valid JSON: %v\n%s", err, out)
 	}
-	if len(got) != 3 {
-		t.Fatalf("got %d providers, want 3", len(got))
+	if len(got) != 2 {
+		t.Fatalf("got %d providers, want 2", len(got))
 	}
 	for _, g := range got {
 		if g.State != "NOT-INSTALLED" {

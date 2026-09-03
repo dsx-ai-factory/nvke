@@ -11,8 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/NVIDIA/nke/cli/internal/providers"
 )
 
 // capiVersion is injected by cli/Makefile from CAPI_VERSION in
@@ -27,6 +25,11 @@ const (
 	capiCoreNamespace  = "capi-system"
 	capiCoreDeployment = "capi-controller-manager"
 
+	// The provisioned infrastructure provider's own kustomize output names
+	// these; see cluster-api-provider-provisioned/config.
+	provisionedNamespace  = "provisioned-system"
+	provisionedDeployment = "provisioned-controller-manager"
+
 	// provisionedDefaultImage is the image reference config/manager/manager.yaml
 	// carries. It is a placeholder: no image is published under it. The install
 	// below rewrites it to Config.ProvisionedProviderImage, exactly as
@@ -34,19 +37,6 @@ const (
 	// clusterctl provider release.
 	provisionedDefaultImage = "docker.io/library/cluster-api-provider-provisioned:latest"
 )
-
-// provisionedProvider returns the registry entry for the infrastructure
-// provider this file installs. The namespace and Deployment name live in the
-// registry so that the installer and "nkectl get providers" agree on where the
-// provider's manager is expected to be.
-func provisionedProvider() providers.Descriptor {
-	d, ok := providers.Lookup(providers.TypeProvisioned)
-	if !ok {
-		// Unreachable: the type is a constant in the same registry.
-		panic("providers registry is missing " + providers.TypeProvisioned)
-	}
-	return d
-}
 
 // installCAPI puts Cluster API and the provisioned infrastructure provider on
 // the bootstrap cluster, so that the CAPI objects CWE writes for a tier-0
@@ -145,15 +135,14 @@ func (e *Engine) installProvisionedProvider(
 	defer cleanup()
 
 	e.log.Info("installing the provisioned infrastructure provider",
-		"namespace", provisionedProvider().ControllerNamespace, "image", cfg.ProvisionedProviderImage, "source", path)
+		"namespace", provisionedNamespace, "image", cfg.ProvisionedProviderImage, "source", path)
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "--server-side", "--force-conflicts", "-f", manifest); err != nil {
 		return fmt.Errorf("cwedeploy: applying the provisioned provider: %w\n%s", err, out)
 	}
 
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
-		"-n", provisionedProvider().ControllerNamespace,
-		"rollout", "status", "deployment/"+provisionedProvider().ControllerDeployment,
+		"-n", provisionedNamespace, "rollout", "status", "deployment/"+provisionedDeployment,
 		"--timeout", timeout.String()); err != nil {
 		return fmt.Errorf("cwedeploy: waiting for the provisioned provider: %w\n%s", err, out)
 	}

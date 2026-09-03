@@ -168,6 +168,13 @@ func inspectOne(
 	case !present:
 		s.State = StateNotConfigured
 		s.Detail = unconfiguredDetail(d, fmt.Sprintf("no secret %s/%s", ns, name))
+	case found && !endpointConfigured(d, mgr):
+		// Credentials without an address to send them to. The provider runs
+		// and reports this once per reconcile rather than failing at startup,
+		// so it is invisible without looking at the manager's flags.
+		s.State = StateDegraded
+		s.Detail = fmt.Sprintf("manager %s/%s has no %s, so the provider has no address to call",
+			mgr.namespace, mgr.name, d.EndpointFlag)
 	case !found:
 		s.State = StateDegraded
 		s.Detail = fmt.Sprintf("no manager Deployment found (looked for app.kubernetes.io/name=%s, then %s/%s)",
@@ -179,6 +186,18 @@ func inspectOne(
 		s.State = StateConfigured
 	}
 	return s
+}
+
+// endpointConfigured reports whether the manager was given the address of the
+// backend it calls. Providers that carry their endpoint in the credentials
+// Secret instead declare no flag, and are reported as configured on the
+// strength of the Secret alone.
+func endpointConfigured(d providers.Descriptor, mgr deployment) bool {
+	if d.EndpointFlag == "" {
+		return true
+	}
+	v, ok := flagValue(mgr.args, d.EndpointFlag)
+	return ok && v != ""
 }
 
 // unconfiguredDetail explains a missing Secret, noting when running without one

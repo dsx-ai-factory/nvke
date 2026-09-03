@@ -16,29 +16,18 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/NVIDIA/nke/cli/internal/providers"
 	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-// provisioned returns the registry entry for the infrastructure provider a
-// site cluster is built on: cluster-api-provider-provisioned, which adopts
-// hosts the operator already owns.
-//
-// The kinds and apiVersion come from the registry so that nkectl states them
-// once. Note that RequestAPIVersion is the version written into the request
-// sent to CWE, which is a wire contract and not the newest version the
-// provider happens to serve.
-func provisioned() providers.Descriptor {
-	d, ok := providers.Lookup(providers.TypeProvisioned)
-	if !ok {
-		// Unreachable: the type is a constant in the same registry.
-		panic("providers registry is missing " + providers.TypeProvisioned)
-	}
-	return d
-}
-
 const (
+	// provisionedAPIVersion is the API version of the infrastructure provider
+	// for hosts that already exist (cluster-api-provider-provisioned).
+	provisionedAPIVersion = "infrastructure.cluster.x-k8s.io/v1alpha1"
+
+	provisionedClusterKind         = "ProvisionedCluster"
+	provisionedMachineTemplateKind = "ProvisionedMachineTemplate"
+
 	// controlPlanePoolName/controlPlaneNodeNamePrefix name the single node pool
 	// a site cluster has. Every site spec node is a control-plane node, so there
 	// is one pool and it is the control plane.
@@ -143,8 +132,8 @@ func provisionedHosts(inv *sitespec.SiteSpec) ([]map[string]interface{}, error) 
 // control-plane VIP through its own API.
 func provisionedCluster(name string, hosts []map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
-		"apiVersion": provisioned().RequestAPIVersion,
-		"kind":       provisioned().ClusterKind,
+		"apiVersion": provisionedAPIVersion,
+		"kind":       provisionedClusterKind,
 		"metadata": map[string]interface{}{
 			"name": name,
 		},
@@ -159,8 +148,8 @@ func provisionedCluster(name string, hosts []map[string]interface{}) map[string]
 // nothing to configure per machine.
 func provisionedMachineTemplate() map[string]interface{} {
 	return map[string]interface{}{
-		"apiVersion": provisioned().RequestAPIVersion,
-		"kind":       provisioned().MachineTemplateKind,
+		"apiVersion": provisionedAPIVersion,
+		"kind":       provisionedMachineTemplateKind,
 		"spec": map[string]interface{}{
 			"template": map[string]interface{}{
 				"spec": map[string]interface{}{},

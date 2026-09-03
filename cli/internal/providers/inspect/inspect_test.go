@@ -360,6 +360,68 @@ func TestInspect_LaunchLayerUnconfiguredIsNoted(t *testing.T) {
 	}
 }
 
+// TestInspect_LaunchLayerWithoutBaseURL covers credentials with nowhere to send
+// them. CAPLL takes its address from --base-url rather than the Secret, and an
+// absent address is not a startup failure, so this is otherwise invisible.
+func TestInspect_LaunchLayerWithoutBaseURL(t *testing.T) {
+	ll, _ := providers.Lookup(providers.TypeLaunchLayer)
+	args := `"--identity-secret=ll-credentials"`
+	r := &fakeRunner{responses: map[string]string{
+		"get crd":         crdJSON(ll.CRDNames...),
+		"get deployments": deployJSON("capll-system", "mgr", ll.AppName, true, 1, 1, args),
+		"get secret":      "secret/ll-credentials\n",
+	}}
+
+	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	s := statusFor(t, got, providers.TypeLaunchLayer)
+	if s.State != StateDegraded {
+		t.Errorf("state = %s (%s), want %s when the manager has no --base-url", s.State, s.Detail, StateDegraded)
+	}
+	if !strings.Contains(s.Detail, "--base-url") {
+		t.Errorf("detail = %q, want it to name the missing flag", s.Detail)
+	}
+}
+
+func TestInspect_LaunchLayerWithBaseURLIsConfigured(t *testing.T) {
+	ll, _ := providers.Lookup(providers.TypeLaunchLayer)
+	args := `"--identity-secret=ll-credentials","--base-url","https://ll.example.com"`
+	r := &fakeRunner{responses: map[string]string{
+		"get crd":         crdJSON(ll.CRDNames...),
+		"get deployments": deployJSON("capll-system", "mgr", ll.AppName, true, 1, 1, args),
+		"get secret":      "secret/ll-credentials\n",
+	}}
+
+	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if s := statusFor(t, got, providers.TypeLaunchLayer); s.State != StateConfigured {
+		t.Errorf("state = %s (%s), want %s", s.State, s.Detail, StateConfigured)
+	}
+}
+
+// TestInspect_NicoNeedsNoEndpointFlag guards the asymmetry: NICo carries its
+// endpoint in the credentials Secret, so it must not be judged on manager flags.
+func TestInspect_NicoNeedsNoEndpointFlag(t *testing.T) {
+	nico, _ := providers.Lookup(providers.TypeNico)
+	r := &fakeRunner{responses: map[string]string{
+		"get crd":         crdJSON(nico.CRDNames...),
+		"get deployments": deployJSON("capnico-system", "controller-manager", nico.AppName, true, 1, 1, ""),
+		"get secret":      "secret/nico-credentials\n",
+	}}
+
+	got, err := Inspect(context.Background(), r, kubeconfig(t))
+	if err != nil {
+		t.Fatalf("Inspect: %v", err)
+	}
+	if s := statusFor(t, got, providers.TypeNico); s.State != StateConfigured {
+		t.Errorf("state = %s (%s), want %s with no endpoint flag on the manager", s.State, s.Detail, StateConfigured)
+	}
+}
+
 func TestInspect_KubeconfigNotConfigured(t *testing.T) {
 	r := &fakeRunner{}
 	_, err := Inspect(context.Background(), r, "")
