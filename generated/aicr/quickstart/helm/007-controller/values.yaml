@@ -3,10 +3,10 @@
 databasePassword: postgres
 databaseURL: postgres://postgres:postgres@postgresql.postgresql.svc.cluster.local:5432/controller?sslmode=disable
 image:
-  digest: ""
+  digest: sha256:8090c7c4538af8e717d52f5edcf26eaf4a4afae2d3e9a25c8208b0704934954e
   pullPolicy: IfNotPresent
-  repository: ghcr.io/nvidia/nke-controller
-  tag: 0.0.0-dev
+  repository: ghcr.io/nvidia/nke/controller
+  tag: v0.1.1-rc.2
 profilesDirectory: /profiles
 spiffe:
   enabled: true
