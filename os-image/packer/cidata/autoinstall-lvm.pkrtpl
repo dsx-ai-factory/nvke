@@ -16,6 +16,13 @@ autoinstall:
           name: "e*"
         dhcp4: true
 
+  # Ubuntu's NVIDIA-tuned kernel flavor, not the generic default -- matches
+  # node-images' nvidia-kernel role. curtin installs this as the system
+  # kernel directly, so there's no generic kernel to reboot into or purge
+  # afterward the way node-images' post-install ansible role has to.
+  kernel:
+    package: ${nvidia_kernel_package}
+
   # LVM layout (LUKS optional, gated by luks_enabled). VG: ubuntu-vg, LV:
   # ubuntu-lv (Ubuntu defaults). The image ships at build-time disk_size and
   # is grown to the target disk's full size on first boot — by

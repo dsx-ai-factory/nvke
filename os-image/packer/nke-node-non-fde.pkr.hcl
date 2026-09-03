@@ -79,6 +79,9 @@ locals {
   iso_name_parts = regex("ubuntu-([0-9.]+)-live-server-([a-z0-9_]+)\\.iso$", var.iso_url)
   ubuntu_version = local.iso_name_parts[0]
   arch           = local.iso_name_parts[1]
+  # Ubuntu's NVIDIA-tuned kernel flavor: linux-nvidia-64k on arm64 (64k page
+  # size, matching node-images), linux-nvidia everywhere else.
+  nvidia_kernel_package = local.arch == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
 }
 
 source "qemu" "nke-non-fde" {
@@ -106,9 +109,10 @@ source "qemu" "nke-non-fde" {
 
   http_content = {
     "/user-data" = templatefile("${path.root}/cidata/autoinstall-lvm.pkrtpl", {
-      ssh_public_key  = file("${local.ssh_dir}/id_ed25519.pub")
-      luks_enabled    = false
-      luks_passphrase = ""
+      ssh_public_key        = file("${local.ssh_dir}/id_ed25519.pub")
+      luks_enabled          = false
+      luks_passphrase       = ""
+      nvidia_kernel_package = local.nvidia_kernel_package
     })
     "/meta-data" = "instance-id: nke-packer-non-fde\nlocal-hostname: nke-packer-non-fde\n"
   }

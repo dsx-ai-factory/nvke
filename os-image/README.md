@@ -1,7 +1,9 @@
 # Reference node OS image
 
 Ubuntu 26.04 image that ships `nke-agent` and `spire-agent` so a site
-controller can reach the node over SPIFFE mTLS. The contract is [SPEC.md](SPEC.md).
+controller can reach the node over SPIFFE mTLS, built on Ubuntu's
+NVIDIA-tuned kernel flavor (`linux-nvidia`/`linux-nvidia-64k`), not the
+generic default. The contract is [SPEC.md](SPEC.md).
 
 | Path | What |
 |---|---|
@@ -46,6 +48,10 @@ missing.
 checkout says — no prebuilt artifact is pulled. To bake a released agent,
 check out its `agent/vX.Y.Z` tag first. SPIRE agent is pinned (version +
 sha256) from GitHub Releases.
+
+Both variants install Ubuntu's NVIDIA-tuned kernel (`kernel.package` in
+`cidata/autoinstall-lvm.pkrtpl`), so the generic kernel never lands on disk in
+the first place — no post-install kernel swap or reboot.
 
 The build-time cloud-init seed is only for Packer's SSH. The provisioner runs
 `cloud-init clean` and drops the build key, so each qcow2 is a golden image.
