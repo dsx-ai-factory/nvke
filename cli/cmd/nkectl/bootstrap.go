@@ -21,8 +21,8 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/clients"
 	"github.com/NVIDIA/nke/cli/internal/config"
 	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
-	"github.com/NVIDIA/nke/cli/internal/inventory"
 	"github.com/NVIDIA/nke/cli/internal/sitecluster"
+	"github.com/NVIDIA/nke/cli/internal/sitespec"
 )
 
 const (
@@ -31,7 +31,7 @@ const (
 
 	// registryAPIKeyEnv is the environment variable consulted for the registry
 	// credential when it is not passed on the command line. Keeping the secret
-	// out of the inventory file lets the file be committed and shared safely.
+	// out of the site spec file lets the file be committed and shared safely.
 	registryAPIKeyEnv = "REGISTRY_API_KEY" //nolint:gosec // G101: this is an env var name, not a credential
 )
 
@@ -40,7 +40,7 @@ const (
 func newBootstrapCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "bootstrap",
-		Short: "Bootstrap NKE clusters from a declarative inventory",
+		Short: "Bootstrap NKE clusters from a declarative site spec",
 	}
 	cmd.AddCommand(newBootstrapSiteCmd())
 	return cmd
@@ -48,7 +48,7 @@ func newBootstrapCmd() *cobra.Command {
 
 // bootstrapSiteOptions holds the flag values for "bootstrap site".
 type bootstrapSiteOptions struct {
-	inventory      string
+	siteSpec       string
 	dryRun         bool
 	registryAPIKey string
 	// diagnosticsDir is where a failed bootstrap writes what the cluster had
@@ -87,24 +87,24 @@ func newBootstrapSiteCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   siteSubcommand,
-		Short: "Bootstrap a new NKE site controller from an inventory file",
+		Short: "Bootstrap a new NKE site controller from a site spec file",
 		Long: `Bootstrap a vanilla Kubernetes cluster from a set of pre-provisioned nodes
-described by the inventory file passed with -i/--inventory.
+described by the site spec file passed with -f/--sitespec.
 
-The inventory file is loaded and validated first. On any invalid or missing
+The site spec file is loaded and validated first. On any invalid or missing
 field the command fails immediately with a clear error, before any workflow is
 dispatched or any node is touched.
 
-See the bundled examples/inventory.yaml and docs/inventory-spec.md for the
-inventory file format.`,
-		Example: `  # Validate and bootstrap from an inventory file
-  nkectl bootstrap site -i inventory.yaml
+See the bundled examples/sitespec.yaml and docs/sitespec.md for the
+site spec file format.`,
+		Example: `  # Validate and bootstrap from a site spec file
+  nkectl bootstrap site -f sitespec.yaml
 
-  # Validate only — load, check, and print the inventory without dispatching
-  nkectl bootstrap site -i inventory.yaml --dry-run
+  # Validate only — load, check, and print the site spec without dispatching
+  nkectl bootstrap site -f sitespec.yaml --dry-run
 
   # Supply the registry credential without putting it in the file
-  REGISTRY_API_KEY=... nkectl bootstrap site -i inventory.yaml`,
+  REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml`,
 		Args:         cobra.NoArgs,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -112,11 +112,11 @@ inventory file format.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&opts.inventory, "inventory", "i", "",
-		"Path to the inventory YAML file (required)")
-	_ = cmd.MarkFlagRequired("inventory")
+	cmd.Flags().StringVarP(&opts.siteSpec, "sitespec", "f", "",
+		"Path to the site spec YAML file (required)")
+	_ = cmd.MarkFlagRequired("sitespec")
 	cmd.Flags().BoolVar(&opts.dryRun, "dry-run", false,
-		"Load and validate the inventory and print it, but do not dispatch any workflow")
+		"Load and validate the site spec and print it, but do not dispatch any workflow")
 	cmd.Flags().StringVar(&opts.registryAPIKey, "registry-api-key", "",
 		"Container registry credential (overrides registry.apiKey and the "+registryAPIKeyEnv+" env var)")
 	cmd.Flags().StringVar(&opts.diagnosticsDir, "diagnostics-dir",
@@ -143,26 +143,26 @@ inventory file format.`,
 func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	logger := slog.Default().With("component", "bootstrap-site")
 
-	// Step 1: load and validate the inventory. Fail fast on any problem.
-	inv, err := inventory.Load(opts.inventory)
+	// Step 1: load and validate the sitespec. Fail fast on any problem.
+	inv, err := sitespec.Load(opts.siteSpec)
 	if err != nil {
 		return err
 	}
-	logger.Info("loaded inventory", "path", opts.inventory, "cluster", inv.ClusterName)
+	logger.Info("loaded site spec", "path", opts.siteSpec, "cluster", inv.ClusterName)
 
 	// An explicit --registry-api-key flag wins over the value the loader
-	// resolved (the inventory file or the REGISTRY_API_KEY env var). The
+	// resolved (the site spec file or the REGISTRY_API_KEY env var). The
 	// credential is never logged or printed.
 	if opts.registryAPIKey != "" {
 		inv.Registry.APIKey = opts.registryAPIKey
 	}
 
-	if err := dumpInventory(out, inv); err != nil {
+	if err := dumpSiteSpec(out, inv); err != nil {
 		return err
 	}
 
 	if opts.dryRun {
-		fmt.Fprintln(out, "\nDry run: inventory is valid. No workflow dispatched.")
+		fmt.Fprintln(out, "\nDry run: site spec is valid. No workflow dispatched.")
 		return nil
 	}
 
@@ -242,7 +242,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	// Step 4: create the cluster. CWE owns everything from here — it drives
 	// kubeadm on each host through nke-agent and reconciles the Cluster API
 	// objects that the provisioned infrastructure provider binds to the
-	// inventory's hosts.
+	// site spec's hosts.
 	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)
 	if err != nil && siteClusterCreated {
 		deleteCommand := fmt.Sprintf("kind delete cluster --name %s", cluster.Name)
@@ -267,7 +267,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 func createSiteCluster(
 	ctx context.Context,
 	bootstrapCluster *bootstrapengine.Cluster,
-	inv *inventory.Inventory,
+	inv *sitespec.SiteSpec,
 	opts *bootstrapSiteOptions,
 	cwePort int32,
 	logger *slog.Logger,
@@ -347,7 +347,7 @@ func envOrDefault(key, fallback string) string {
 }
 
 // cweDeployConfig assembles everything the CWE deploy needs into one value,
-// from the inventory and the environment, before any of it is used.
+// from the site spec and the environment, before any of it is used.
 //
 // It is separate from deployAndWaitForCWE so that the two questions stay apart:
 // this one is "what did the operator ask for", and everything it can get wrong
@@ -356,7 +356,7 @@ func envOrDefault(key, fallback string) string {
 //
 // clusterName is the ephemeral cluster's name, which is settled before the
 // cluster is created; SPIRE is told it, and it seeds the default trust domain.
-func cweDeployConfig(inv *inventory.Inventory, clusterName string) (cwedeploy.Config, error) {
+func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string) (cwedeploy.Config, error) {
 	cfg := cwedeploy.DefaultConfig()
 
 	if cfg.CWEImage == "" {
@@ -383,18 +383,18 @@ func cweDeployConfig(inv *inventory.Inventory, clusterName string) (cwedeploy.Co
 		cfg.SPIFFETrustDomain = clusterName + ".nke.local"
 	}
 
-	// The CA SPIRE chains to, straight from the inventory, which is where an
+	// The CA SPIRE chains to, straight from the site spec, which is where an
 	// operator declares what this bootstrap is entitled to trust.
 	cfg.SPIFFEUpstreamCACertPath = inv.Spire.CACertFile
 	cfg.SPIFFEUpstreamCAKeyPath = inv.Spire.CAKeyFile
 
-	// The allowlist of hardware allowed to attest, also from the inventory. A
+	// The allowlist of hardware allowed to attest, also from the sitespec. A
 	// bootstrap is only entitled to admit machines it was told about, so this
 	// is the whole of it: no node listed, no node admitted.
 	cfg.TPMEKFingerprints = inv.Cluster.TPMEKThumbprints()
 
 	// How the hosts were configured when they were provisioned, which is why it
-	// is in the inventory and not in the environment.
+	// is in the site spec and not in the environment.
 	cfg.NodeAgentPort = inv.Cluster.NodeAgentPort
 
 	return cfg, nil
@@ -507,18 +507,18 @@ func ensureImageAvailable(
 	return engine.LoadImage(ctx, cluster.Name, cluster.Provider, image)
 }
 
-// dumpInventory prints the loaded, defaulted inventory as YAML so the operator
+// dumpSiteSpec prints the loaded, defaulted site spec as YAML so the operator
 // can see exactly what was parsed. The registry credential is redacted.
-func dumpInventory(out io.Writer, inv *inventory.Inventory) error {
+func dumpSiteSpec(out io.Writer, inv *sitespec.SiteSpec) error {
 	redacted := *inv
 	if redacted.Registry.APIKey != "" {
 		redacted.Registry.APIKey = "***redacted***"
 	}
 	y, err := yaml.Marshal(&redacted)
 	if err != nil {
-		return fmt.Errorf("marshal inventory: %w", err)
+		return fmt.Errorf("marshal site spec: %w", err)
 	}
-	fmt.Fprintln(out, "Loaded inventory:")
+	fmt.Fprintln(out, "Loaded site spec:")
 	fmt.Fprint(out, string(y))
 	return nil
 }

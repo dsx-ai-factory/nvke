@@ -107,18 +107,18 @@ sudo apt-get install -y openvswitch-switch
 On the **init node only**:
 
 1. [Install `nkectl`](installation.md).
-2. Write your [inventory file](configuration.md).
+2. Write your [site spec file](configuration.md).
 3. Run bootstrap:
 
 ```bash
-# Validate the inventory first (no nodes or clusters touched)
-nkectl bootstrap site -i inventory.yaml --dry-run
+# Validate the site spec first (no nodes or clusters touched)
+nkectl bootstrap site -f sitespec.yaml --dry-run
 
 # Run bootstrap
 REGISTRY_API_KEY="<your-registry-api-key>" \
 NKECTL_CWE_IMAGE="nvcr.io/<org>/controller:edge" \
 NKECTL_CWE_PROFILES_IMAGE="nvcr.io/<org>/profiles:edge" \
-  nkectl bootstrap site -i inventory.yaml
+  nkectl bootstrap site -f sitespec.yaml
 ```
 
 `nkectl` creates a temporary Kind cluster on the init node, deploys Postgres, Temporal, and CWE onto it, waits for CWE to be healthy, and then dispatches kubeadm init and join workflows to your nodes over `nke-agent` gRPC. The ephemeral Kind cluster is torn down automatically when bootstrap completes. No SSH required.

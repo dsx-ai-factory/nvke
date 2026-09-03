@@ -7,7 +7,7 @@ This guide walks you through deploying a self-managing site controller cluster �
 The process has three steps:
 
 1. [Prepare nodes](pre-provisioned-nodes.md#step-1-prepare-all-nodes) — install `nke-agent` and Kubernetes components
-2. [Write an inventory file](configuration.md) — declare your nodes, versions, and registry
+2. [Write a site spec file](configuration.md) — declare your nodes, versions, and registry
 3. [Run `nkectl bootstrap site`](pre-provisioned-nodes.md#step-2-run-bootstrap-on-init-node) — bootstrap the cluster
 
 **Total time**: Approximately 30–45 minutes for cluster bring-up, plus time to deploy the NKE services stack afterward.
@@ -28,7 +28,7 @@ sequenceDiagram
     participant Join as nke-agent (join nodes)
     participant K8s as Site Controller Cluster
 
-    Op->>Ctl: nkectl bootstrap site -i inventory.yaml
+    Op->>Ctl: nkectl bootstrap site -f sitespec.yaml
     Ctl->>Ctl: Load and validate inventory
     Ctl->>Kind: Create ephemeral bootstrap Kind cluster
     Ctl->>Kind: Deploy Postgres + Temporal + CWE
@@ -51,7 +51,7 @@ If you are running a self-managed site (with NICo as the infrastructure provider
 ## Next Steps
 
 - [Installation](installation.md) — download and install `nkectl`
-- [Configuration](configuration.md) — write your site inventory file
+- [Configuration](configuration.md) — write your site site spec file
 - [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap
 - [Custom Base OS](custom-base-os.md) — cloud-init based node preparation
 - [Deploy Repository](deploy-repository.md) — post-bootstrap NKE services deployment

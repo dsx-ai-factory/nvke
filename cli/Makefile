@@ -80,7 +80,7 @@ NKECTL_LDFLAGS := \
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \
 	ensure-capd-image ensure-profiles-image ensure-provisioned-provider-image \
-	nodes-up nodes-down nodes-status nodes-inventory nodes-attested
+	nodes-up nodes-down nodes-status nodes-sitespec nodes-attested
 
 # The platforms shipped on a release. nkectl is the one binary here a human
 # downloads, so it is cross-built; the others are deployed, not fetched.
@@ -210,14 +210,14 @@ nodes-status:
 
 # TPM attestation stage of the bootstrap e2e. Split in two because
 # the stage straddles a `nkectl bootstrap site` invocation: the thumbprints go
-# into the inventory that command reads, and the check runs against the SPIRE
+# into the site spec that command reads, and the check runs against the SPIRE
 # server it left behind.
 #
-# `nodes-inventory` reads NKECTL_E2E_INVENTORY_IN, fills in each node's TPM EK
-# thumbprint from the running fixture, writes NKECTL_E2E_INVENTORY_OUT, and
+# `nodes-sitespec` reads NKECTL_E2E_SITESPEC_IN, fills in each node's TPM EK
+# thumbprint from the running fixture, writes NKECTL_E2E_SITESPEC_OUT, and
 # prints that path and nothing else.
-nodes-inventory:
-	@$(GO) run ./e2e/bootstrap/substrate/cmd/nodes inventory
+nodes-sitespec:
+	@$(GO) run ./e2e/bootstrap/substrate/cmd/nodes sitespec
 
 nodes-attested:
 	$(GO) run ./e2e/bootstrap/substrate/cmd/nodes attested

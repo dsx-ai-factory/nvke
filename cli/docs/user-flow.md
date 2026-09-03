@@ -18,16 +18,16 @@ Support for managing the site cluster itself is still in planning. @jonathanmeie
 
 ## Example
 
-### 1. Generate inventory file
+### 1. Generate site spec file
 
 ```bash
-nkectl generate inventory --name my-tier0-site > inventory.yaml
+nkectl generate inventory --name my-tier0-site > sitespec.yaml
 ```
 
 ### 2. Bootstrap cluster
 
 ```bash
-nkectl bootstrap site -i inventory.yaml
+nkectl bootstrap site -f sitespec.yaml
 ```
 
 ### 3. Deploy CWE management plane to cluster

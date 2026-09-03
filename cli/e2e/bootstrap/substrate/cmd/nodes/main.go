@@ -18,7 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/NVIDIA/nke/cli/e2e/bootstrap/substrate"
-	"github.com/NVIDIA/nke/cli/internal/inventory"
+	"github.com/NVIDIA/nke/cli/internal/sitespec"
 )
 
 // attestTimeout bounds the wait for every host to attest. Credential activation
@@ -44,7 +44,7 @@ func main() {
 		err = down(ctx, cfg, logf)
 	case "status":
 		err = status(ctx)
-	case "inventory":
+	case "sitespec":
 		err = renderInventory(ctx)
 	case "attested":
 		err = attested(ctx, logf)
@@ -78,14 +78,14 @@ func down(ctx context.Context, cfg substrate.Config, logf substrate.Logf) error 
 // because a TPM's endorsement key is created with the container, so this fills
 // them in against whichever hosts are running now.
 //
-// NKECTL_E2E_INVENTORY_IN and _OUT name the files; the path is printed on
+// NKECTL_E2E_SITESPEC_IN and _OUT name the files; the path is printed on
 // stdout and nothing else is, so run.sh can capture it.
 func renderInventory(ctx context.Context) error {
-	in := os.Getenv("NKECTL_E2E_INVENTORY_IN")
-	out := os.Getenv("NKECTL_E2E_INVENTORY_OUT")
+	in := os.Getenv("NKECTL_E2E_SITESPEC_IN")
+	out := os.Getenv("NKECTL_E2E_SITESPEC_OUT")
 	baselinePath := os.Getenv("NKECTL_E2E_ATTESTATION_BASELINE")
 	if in == "" || out == "" || baselinePath == "" {
-		return fmt.Errorf("NKECTL_E2E_INVENTORY_IN, NKECTL_E2E_INVENTORY_OUT, and NKECTL_E2E_ATTESTATION_BASELINE are required")
+		return fmt.Errorf("NKECTL_E2E_SITESPEC_IN, NKECTL_E2E_SITESPEC_OUT, and NKECTL_E2E_ATTESTATION_BASELINE are required")
 	}
 
 	s, err := tpmSubstrate(ctx, func(string, ...any) {})
@@ -97,13 +97,13 @@ func renderInventory(ctx context.Context) error {
 		thumbprints[node.Name] = node.EKPubhash
 	}
 
-	inv, err := inventory.Load(in)
+	inv, err := sitespec.Load(in)
 	if err != nil {
 		return err
 	}
 
 	// The CA the node images were built against. It reaches the command the
-	// same way an operator's would — named in the inventory — rather than
+	// same way an operator's would — named in the site spec — rather than
 	// through a side channel the product does not have.
 	cfg := substrate.DefaultConfig()
 	caCert, caKey, err := substrate.EnsureBootstrapCA(cfg.CADir)
@@ -127,7 +127,7 @@ func renderInventory(ctx context.Context) error {
 
 	body, err := yaml.Marshal(inv)
 	if err != nil {
-		return fmt.Errorf("encoding the inventory: %w", err)
+		return fmt.Errorf("encoding the site spec: %w", err)
 	}
 	if err := os.WriteFile(out, body, 0o600); err != nil {
 		return fmt.Errorf("writing %s: %w", out, err)
@@ -139,9 +139,9 @@ func renderInventory(ctx context.Context) error {
 	return nil
 }
 
-// ptrs returns writable pointers to the nodes in the inventory.
-func ptrs(nodes []inventory.Node) []*inventory.Node {
-	out := make([]*inventory.Node, len(nodes))
+// ptrs returns writable pointers to the nodes in the sitespec.
+func ptrs(nodes []sitespec.Node) []*sitespec.Node {
+	out := make([]*sitespec.Node, len(nodes))
 	for i := range nodes {
 		out[i] = &nodes[i]
 	}

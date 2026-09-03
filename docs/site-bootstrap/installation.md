@@ -1,6 +1,6 @@
 # Download and Install nkectl
 
-`nkectl` is the NKE control-plane CLI. You use it to validate and bootstrap a site controller cluster from a declarative inventory file, and to manage tenant cluster lifecycle.
+`nkectl` is the NKE control-plane CLI. You use it to validate and bootstrap a site controller cluster from a declarative site spec file, and to manage tenant cluster lifecycle.
 
 Releases are published under `cli/v*` tags at https://github.com/NVIDIA/nke/releases.
 
@@ -59,5 +59,5 @@ Join nodes do not need `kind` or a container runtime — only the init node runs
 
 ## Next Steps
 
-- [Configuration](configuration.md) — write your site inventory file
+- [Configuration](configuration.md) — write your site site spec file
 - [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap

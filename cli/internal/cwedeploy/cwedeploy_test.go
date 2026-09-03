@@ -581,7 +581,7 @@ func TestSpireInstallArgs(t *testing.T) {
 	}
 }
 
-// TestUpstreamCAArgs covers both states: a CA from the inventory is chained to,
+// TestUpstreamCAArgs covers both states: a CA from the site spec is chained to,
 // and no CA leaves SPIRE self-signed rather than half-configured.
 func TestUpstreamCAArgs(t *testing.T) {
 	if got := upstreamCAArgs(Config{}, "spire-server"); len(got) != 0 {

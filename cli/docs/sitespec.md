@@ -1,6 +1,6 @@
-# nkectl bootstrap site — inventory file spec
+# nkectl bootstrap site — site spec file spec
 
-`nkectl bootstrap site -i <inventory-file>` reads one YAML inventory file. The
+`nkectl bootstrap site -f <sitespec-file>` reads one YAML site spec file. The
 file is the single source of truth for a bootstrap run: it lists the
 pre-provisioned nodes and the vanilla Kubernetes cluster to build on them.
 
@@ -8,7 +8,7 @@ The command loads the file, applies defaults, and validates every field before
 it dispatches any work. Any invalid or missing field fails fast with a clear
 error and no node is touched.
 
-A ready-to-copy example is in [`examples/inventory.yaml`](../examples/inventory.yaml).
+A ready-to-copy example is in [`examples/sitespec.yaml`](../examples/sitespec.yaml).
 
 ## Schema
 
@@ -33,7 +33,7 @@ A ready-to-copy example is in [`examples/inventory.yaml`](../examples/inventory.
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 
 The version (image/chart tag) is baked into the `nkectl` build, so it is not
-part of the inventory.
+part of the site spec.
 
 Unknown fields are rejected. A typo in a field name fails the load rather than
 being silently ignored.
@@ -42,7 +42,7 @@ being silently ignored.
 
 - All problems are reported together in one error, each naming the offending
   field, so a bad file can be fixed in one pass.
-- The inventory must contain an odd number of nodes and at least one node.
+- The site spec must contain an odd number of nodes and at least one node.
 - Node names and IPs must be unique across all nodes.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry.
@@ -50,7 +50,7 @@ being silently ignored.
 ## Environment variable overrides
 
 Any field can be supplied — or overridden — through an environment variable, so
-existing tier-0 / DS9 scripts can drive the inventory without editing the file.
+existing tier-0 / DS9 scripts can drive the site spec without editing the file.
 A set variable takes precedence over the file value.
 
 | Environment variable | Field |
@@ -73,7 +73,7 @@ A set variable takes precedence over the file value.
 A malformed `NKECTL_CLUSTER_NODES` entry fails the load rather than being
 silently discarded.
 
-`INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The inventory does not
+`INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The site spec does not
 select a node for `kubeadm init`; the bootstrap process selects it downstream.
 
 ## TPM endorsement-key thumbprints
@@ -84,16 +84,16 @@ select a node for `kubeadm init`; the bootstrap process selects it downstream.
 software: an EK is burned into the TPM and cannot be moved or changed.
 
 Reading it is an out-of-band step before the bootstrap. For DSX, the ansible
-runbook collects it from each host over SSH and writes it into the inventory.
+runbook collects it from each host over SSH and writes it into the site spec.
 
 Every thumbprint in the file is seeded into the allowlist of the SPIRE server
 `bootstrap site` deploys, and it is the whole of that allowlist:
 
 - a node with a thumbprint can attest and be issued an identity
 - a node without one cannot
-- an inventory where no node has one deploys SPIRE with no TPM attestor at all
+- a site spec where no node has one deploys SPIRE with no TPM attestor at all
 
-It is a public key hash, not a secret, so it belongs in the inventory rather
+It is a public key hash, not a secret, so it belongs in the site spec rather
 than beside the credentials, and a file carrying them stays safe to commit.
 
 A malformed thumbprint fails the load. Left to reach the allowlist it would
@@ -138,5 +138,5 @@ The differences from tier-0 are deliberate and make the file open-sourceable:
 
 `registry.apiKey` is resolved from, in order of precedence: the
 `--registry-api-key` flag, the `REGISTRY_API_KEY` environment variable, then the
-file. Keeping the secret out of the file lets the inventory be committed and
+file. Keeping the secret out of the file lets the site spec be committed and
 shared safely. The credential is never logged or printed.

@@ -30,9 +30,9 @@
 #   4. TPM node attestation. The fake nodes boot
 #      with a software TPM and a spire-agent already looking for the SPIRE
 #      server. `bootstrap site` is given their EK thumbprints, in the
-#      inventory, and deploys SPIRE with them allowlisted; the check is that
+#      site spec, and deploys SPIRE with them allowlisted; the check is that
 #      the agents got in.
-#   5. The cluster itself. `bootstrap site` posts the inventory to CWE as a
+#   5. The cluster itself. `bootstrap site` posts the site spec to CWE as a
 #      Cluster API cluster whose infrastructure is the pre-provisioned hosts
 #      (a ProvisionedCluster and a ProvisionedMachineTemplate), waits for it to
 #      finish, and writes out its kubeconfig. The command now exits 0.
@@ -74,16 +74,16 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
 NKECTL="${NKECTL:-${CLI_DIR}/bin/nkectl}"
-INVENTORY="${SCRIPT_DIR}/inventory.ci.yaml"
+SITESPEC="${SCRIPT_DIR}/sitespec.ci.yaml"
 BOOTSTRAP_KIND_CLUSTER="${NKECTL_BOOTSTRAP_CLUSTER_NAME:-nkectl-bootstrap}"
-# Inventory generation records the exact journal boundary and expected result
+# SiteSpec generation records the exact journal boundary and expected result
 # for every node here. The later check reads the same file after bootstrap.
 export NKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.json"
 # Where the node images' spire-agents were built to look for the SPIRE server.
 SPIRE_VIP="${NKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
 # The init node, which is also where the finished cluster's API server ends up:
 # no controlPlaneVIP is set, so kubeadm uses the first control-plane node's IP.
-# It matches inventory.ci.yaml, and it is the address stages 6 and 7 use.
+# It matches sitespec.ci.yaml, and it is the address stages 6 and 7 use.
 INIT_NODE_IP="${NKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 # Where Traefik is published on the new cluster, and where stage 7 asks for the
 # page. In the NodePort range, and clear of the SPIRE server's 30081.
@@ -264,7 +264,7 @@ log "PASS: all fake nodes are up with TPM and SPIRE services ready"
 # The fake nodes booted with a software TPM and a spire-agent already pointed at
 # SPIRE_VIP:30081 — the address `bootstrap site` puts its SPIRE server on. They
 # have been retrying since. So this stage does not configure or start anything
-# on them: it records their EK thumbprints in the inventory, runs the command,
+# on them: it records their EK thumbprints in the site spec, runs the command,
 # and checks the agents got in.
 #
 # That ordering is the point. The thumbprints are an *input* to `bootstrap
@@ -334,24 +334,24 @@ if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
 fi
 
 # The thumbprints and the bootstrap CA reach the command the way an operator's
-# would: named in the inventory. Neither can be committed to the fixture — a
+# would: named in the sitespec. Neither can be committed to the fixture — a
 # TPM's endorsement key is created along with the container, and a private key
 # does not belong in a repository — so both are filled in here against whatever
 # this run generated.
-log "recording each node's TPM EK thumbprint and the bootstrap CA in the inventory"
-RENDERED_INVENTORY="${SCRIPT_DIR}/.inventory.rendered.yaml"
-NKECTL_E2E_INVENTORY_IN="${INVENTORY}" NKECTL_E2E_INVENTORY_OUT="${RENDERED_INVENTORY}" \
-  make -C "${CLI_DIR}" --no-print-directory nodes-inventory >/dev/null
-grep -q tpmEkThumbprint "${RENDERED_INVENTORY}" ||
-  { log "FAIL: no TPM EK thumbprints were recorded in ${RENDERED_INVENTORY}"; exit 1; }
-grep -q caCertFile "${RENDERED_INVENTORY}" ||
-  { log "FAIL: no bootstrap CA was recorded in ${RENDERED_INVENTORY}"; exit 1; }
-log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_INVENTORY}") EK thumbprint(s)"
+log "recording each node's TPM EK thumbprint and the bootstrap CA in the site spec"
+RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
+NKECTL_E2E_SITESPEC_IN="${SITESPEC}" NKECTL_E2E_SITESPEC_OUT="${RENDERED_SITESPEC}" \
+  make -C "${CLI_DIR}" --no-print-directory nodes-sitespec >/dev/null
+grep -q tpmEkThumbprint "${RENDERED_SITESPEC}" ||
+  { log "FAIL: no TPM EK thumbprints were recorded in ${RENDERED_SITESPEC}"; exit 1; }
+grep -q caCertFile "${RENDERED_SITESPEC}" ||
+  { log "FAIL: no bootstrap CA was recorded in ${RENDERED_SITESPEC}"; exit 1; }
+log "allowlisting $(grep -c tpmEkThumbprint "${RENDERED_SITESPEC}") EK thumbprint(s)"
 
 # No chart is named here. What gets installed is pinned in
 # cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
-log "running: nkectl bootstrap site -i ${RENDERED_INVENTORY} --keep-bootstrap-cluster --timeout 15m" \
+log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
   "(NKECTL_BOOTSTRAP_PROVIDER=${NKECTL_BOOTSTRAP_PROVIDER}, NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
   "NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE}," \
   "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
@@ -369,7 +369,7 @@ log "running: nkectl bootstrap site -i ${RENDERED_INVENTORY} --keep-bootstrap-cl
 # cluster it was told to keep, and cleanup has to already know to remove it.
 bootstrap_cluster_cleanup_pending=true
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
-"${NKECTL}" bootstrap site -i "${RENDERED_INVENTORY}" --keep-bootstrap-cluster \
+"${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
   --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
@@ -472,12 +472,12 @@ log "PASS: bootstrap site deployed SPIRE and every node attested to it over TPM"
 #
 # Through the kubeconfig the command wrote, not through the bootstrap cluster:
 # what is being checked is that an operator can now use the thing they asked
-# for. Every inventory node joins as a control-plane node, and CWE untaints
+# for. Every site spec node joins as a control-plane node, and CWE untaints
 # them, so all three must be Ready and schedulable.
 
 # One thumbprint per node, init node included -- the same count this suite
 # already asserted is non-zero before running the command.
-expected_nodes=$(grep -c tpmEkThumbprint "${RENDERED_INVENTORY}")
+expected_nodes=$(grep -c tpmEkThumbprint "${RENDERED_SITESPEC}")
 
 log "waiting for ${expected_nodes} nodes to report Ready"
 # `kubectl wait --all` only waits for the objects that exist when it starts.
@@ -498,7 +498,7 @@ while [ "${SECONDS}" -lt "${node_ready_deadline}" ]; do
 done
 
 if [ "${ready_nodes}" -ne "${expected_nodes}" ]; then
-  log "FAIL: ${ready_nodes} of ${expected_nodes} inventory nodes became Ready"
+  log "FAIL: ${ready_nodes} of ${expected_nodes} site spec nodes became Ready"
   kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes -o wide || true
   exit 1
 fi

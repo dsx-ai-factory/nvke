@@ -10,15 +10,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/NVIDIA/nke/cli/internal/inventory"
+	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-func testInventory() *inventory.Inventory {
-	return &inventory.Inventory{
+func testSiteSpec() *sitespec.SiteSpec {
+	return &sitespec.SiteSpec{
 		ClusterName: "nke-site",
-		Cluster: inventory.Cluster{
-			Nodes: []inventory.Node{
+		Cluster: sitespec.Cluster{
+			Nodes: []sitespec.Node{
 				{Name: "node1", IP: "172.26.0.10", TPMEKThumbprint: strings.Repeat("1", 64)},
 				{Name: "node2", IP: "172.26.0.11", TPMEKThumbprint: strings.Repeat("2", 64)},
 				{Name: "node3", IP: "172.26.0.12", TPMEKThumbprint: strings.Repeat("3", 64)},
@@ -28,7 +28,7 @@ func testInventory() *inventory.Inventory {
 			CniVersion:    "3.31.4",
 			PodCidr:       "192.168.0.0/16",
 			ServiceCidr:   "10.96.0.0/12",
-			KubeletConfig: inventory.KubeletConfig{SystemReservedMemory: "512Mi"},
+			KubeletConfig: sitespec.KubeletConfig{SystemReservedMemory: "512Mi"},
 		},
 	}
 }
@@ -38,7 +38,7 @@ func testInventory() *inventory.Inventory {
 // outright if any of them is wrong, but it rejects it at the far end of a
 // bootstrap that has already built a Kind cluster and deployed five releases.
 func TestClusterRequest_IsACAPICluster(t *testing.T) {
-	req, err := ClusterRequest(testInventory())
+	req, err := ClusterRequest(testSiteSpec())
 	if err != nil {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
@@ -57,11 +57,11 @@ func TestClusterRequest_IsACAPICluster(t *testing.T) {
 	}
 }
 
-// TestClusterRequest_CarriesTheInventoryAsProvisionedHosts is the heart of the
-// mapping: the hosts an operator listed become the provider's inventory in the
+// TestClusterRequest_CarriesTheSiteSpecAsProvisionedHosts is the heart of the
+// mapping: the hosts an operator listed become the provider's site spec in the
 // same order.
-func TestClusterRequest_CarriesTheInventoryAsProvisionedHosts(t *testing.T) {
-	req, err := ClusterRequest(testInventory())
+func TestClusterRequest_CarriesTheSiteSpecAsProvisionedHosts(t *testing.T) {
+	req, err := ClusterRequest(testSiteSpec())
 	if err != nil {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
@@ -98,11 +98,11 @@ func TestClusterRequest_CarriesTheInventoryAsProvisionedHosts(t *testing.T) {
 	}
 }
 
-// TestClusterRequest_OneControlPlanePoolSizedToTheInventory: every inventory
+// TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec: every site spec
 // node joins as a control-plane node, so a pool that does not count them all
 // leaves hosts unused and the cluster smaller than the file asked for.
-func TestClusterRequest_OneControlPlanePoolSizedToTheInventory(t *testing.T) {
-	req, err := ClusterRequest(testInventory())
+func TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec(t *testing.T) {
+	req, err := ClusterRequest(testSiteSpec())
 	if err != nil {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
@@ -115,10 +115,10 @@ func TestClusterRequest_OneControlPlanePoolSizedToTheInventory(t *testing.T) {
 		t.Error("the pool is not a control-plane pool")
 	}
 	if pool.DesiredNodeCount != 3 {
-		t.Errorf("desiredNodeCount = %d, want 3 inventory nodes", pool.DesiredNodeCount)
+		t.Errorf("desiredNodeCount = %d, want 3 site spec nodes", pool.DesiredNodeCount)
 	}
 	if pool.SystemReservedMemory != "512Mi" {
-		t.Errorf("systemReservedMemory = %q, want the inventory's kubelet reservation", pool.SystemReservedMemory)
+		t.Errorf("systemReservedMemory = %q, want the site spec's kubelet reservation", pool.SystemReservedMemory)
 	}
 	if got := pool.CapiInfraMachineTemplate["kind"]; got != provisionedMachineTemplateKind {
 		t.Errorf("capiInfraMachineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
@@ -130,18 +130,18 @@ func TestClusterRequest_OneControlPlanePoolSizedToTheInventory(t *testing.T) {
 }
 
 // TestClusterRequest_PassesTheNetworkThrough covers both states: CIDRs named in
-// the inventory reach CWE, and an inventory that names none leaves CWE's own
+// the site spec reach CWE, and a site spec that names none leaves CWE's own
 // defaults in place rather than sending empty strings.
 func TestClusterRequest_PassesTheNetworkThrough(t *testing.T) {
-	req, err := ClusterRequest(testInventory())
+	req, err := ClusterRequest(testSiteSpec())
 	if err != nil {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
 	if req.Network == nil || req.Network.PodCIDR != "192.168.0.0/16" || req.Network.ServiceCIDR != "10.96.0.0/12" {
-		t.Errorf("network = %#v, want the inventory's CIDRs", req.Network)
+		t.Errorf("network = %#v, want the site spec's CIDRs", req.Network)
 	}
 
-	inv := testInventory()
+	inv := testSiteSpec()
 	inv.Cluster.PodCidr, inv.Cluster.ServiceCidr = "", ""
 	req, err = ClusterRequest(inv)
 	if err != nil {
@@ -156,13 +156,13 @@ func TestClusterRequest_PassesTheNetworkThrough(t *testing.T) {
 // a host's IP address, so two entries sharing one would be two machines bound
 // to a single running node. It cannot see that; this can.
 func TestClusterRequest_RejectsDuplicateHosts(t *testing.T) {
-	inv := testInventory()
+	inv := testSiteSpec()
 	inv.Cluster.Nodes[2].IP = inv.Cluster.Nodes[0].IP
 	if _, err := ClusterRequest(inv); err == nil {
 		t.Error("expected an error for a repeated IP address")
 	}
 
-	inv = testInventory()
+	inv = testSiteSpec()
 	inv.Cluster.Nodes[1].Name = inv.Cluster.Nodes[0].Name
 	if _, err := ClusterRequest(inv); err == nil {
 		t.Error("expected an error for a repeated hostname")
@@ -174,7 +174,7 @@ func TestClusterRequest_RejectsDuplicateHosts(t *testing.T) {
 // nothing type-checks them. Round-tripping through JSON is what the CWE client
 // actually does, and it is the only check that the nesting is right.
 func TestClusterRequest_SerialisesToTheAPIShape(t *testing.T) {
-	req, err := ClusterRequest(testInventory())
+	req, err := ClusterRequest(testSiteSpec())
 	if err != nil {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
@@ -196,16 +196,16 @@ func TestClusterRequest_SerialisesToTheAPIShape(t *testing.T) {
 	}
 }
 
-func TestClusterRequest_RejectsANilInventory(t *testing.T) {
+func TestClusterRequest_RejectsANilSiteSpec(t *testing.T) {
 	if _, err := ClusterRequest(nil); err == nil {
-		t.Error("expected an error for a nil inventory")
+		t.Error("expected an error for a nil site spec")
 	}
 }
 
 func TestClusterRequest_RejectsNoNodes(t *testing.T) {
-	inv := testInventory()
+	inv := testSiteSpec()
 	inv.Cluster.Nodes = nil
 	if _, err := ClusterRequest(inv); err == nil {
-		t.Error("expected an error for an inventory with no nodes")
+		t.Error("expected an error for a site spec with no nodes")
 	}
 }

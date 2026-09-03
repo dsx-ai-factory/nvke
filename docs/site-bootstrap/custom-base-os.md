@@ -2,7 +2,7 @@
 
 If you need to bootstrap a tier-0 cluster on a **vanilla Ubuntu image** (rather than a pre-built NKE node image), you can add the necessary installation steps to your cloud-init configuration.
 
-Before proceeding, write your [inventory file](configuration.md) so it can be placed on the init node by cloud-init.
+Before proceeding, write your [site spec file](configuration.md) so it can be placed on the init node by cloud-init.
 
 ## Cloud-Init Example
 
@@ -43,8 +43,8 @@ autoinstall:
     - curtin in-target --target=/target -- update-grub
   user-data:
     write_files:
-      # nkectl inventory file (bootstrap host only — omit on other nodes)
-      - path: /etc/nkectl/inventory.yaml
+      # nkectl site spec file (bootstrap host only — omit on other nodes)
+      - path: /etc/nkectl/sitespec.yaml
         owner: root:root
         permissions: '0640'
         content: |
@@ -94,7 +94,7 @@ autoinstall:
       - [sh, -c, "curl -fsSL -o /usr/local/bin/nkectl https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-amd64 && chmod +x /usr/local/bin/nkectl"]
 
       # Run bootstrap (bootstrap host only)
-      - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nkectl bootstrap site -i /etc/nkectl/inventory.yaml >> /var/log/nkectl-bootstrap.log 2>&1"]
+      - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nkectl bootstrap site -f /etc/nkectl/sitespec.yaml >> /var/log/nkectl-bootstrap.log 2>&1"]
 ```
 
 ## Key Components
@@ -109,7 +109,7 @@ autoinstall:
 |---|---|---|
 | Kubernetes packages | ✓ | ✓ |
 | nke-agent | ✓ | ✓ |
-| `/etc/nkectl/inventory.yaml` | ✓ | ✗ |
+| `/etc/nkectl/sitespec.yaml` | ✓ | ✗ |
 | `nkectl` download + bootstrap run | ✓ | ✗ |
 
 On other nodes, omit the `write_files` section and the last two `runcmd` lines
@@ -120,7 +120,7 @@ On other nodes, omit the `write_files` section and the last two `runcmd` lines
 - Update `cluster.nodes` with your actual node names and IPs
 - Set `registry.bootstrapRepo` and `registry.bootstrapChart` to your CWE registry path
 - Supply `REGISTRY_API_KEY` via your secrets management (not hardcoded in cloud-init)
-- Update the Kubernetes repository minor version to match `cluster.k8sVersion` in the inventory
+- Update the Kubernetes repository minor version to match `cluster.k8sVersion` in the site spec
 - Update hostnames, passwords, and SSH authorized keys for your environment
 
 > **Ensure `/etc/apt/keyrings` exists** before installing Kubernetes packages — the `mkdir` step above creates it.

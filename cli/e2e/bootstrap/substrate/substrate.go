@@ -21,7 +21,7 @@
 //   - Addresses are assigned, not discovered. CWE's substrate reads addresses
 //     back from docker specifically to avoid assuming IPAM behavior on a
 //     shared network it does not own. This package owns its network outright,
-//     so pinning addresses is safe, and the fixture's inventory file needs a
+//     so pinning addresses is safe, and the fixture's site spec file needs a
 //     stable IP to reference before any container exists.
 package substrate
 
@@ -46,7 +46,7 @@ type Config struct {
 	// does not already exist.
 	Network string
 	// Subnet is the IPv4 CIDR for Network. Node addresses are assigned from
-	// it deterministically (NodeIP), so the inventory fixture can reference
+	// it deterministically (NodeIP), so the site spec fixture can reference
 	// them before any container exists.
 	Subnet string
 
@@ -117,7 +117,7 @@ func DefaultConfig() Config {
 // Node is one host container standing in for a pre-provisioned machine.
 type Node struct {
 	// Name is what the node will be called in Kubernetes — passed through the
-	// inventory file's node name and ends up as kubeadm's --node-name.
+	// site spec file's node name and ends up as kubeadm's --node-name.
 	Name string
 	// IP is the address assigned on the substrate network. It is what CWE
 	// dials for node-agent and what kubeadm advertises.
@@ -232,7 +232,7 @@ func (s *Substrate) Stop(ctx context.Context) {
 }
 
 // planNodes assigns each node a name, container name and a deterministic IP
-// within Config.Subnet, starting at .10 — matching the range the inventory
+// within Config.Subnet, starting at .10 — matching the range the site spec
 // fixture already references.
 func (s *Substrate) planNodes() ([]Node, error) {
 	_, subnet, err := net.ParseCIDR(s.Config.Subnet)

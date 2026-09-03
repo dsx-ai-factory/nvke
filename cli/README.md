@@ -10,7 +10,7 @@ NKE control-plane CLI. Bootstraps site controllers and manages tenant cluster li
 
 - **Site bootstrap** — `nkectl bootstrap site` creates an ephemeral Kind cluster, deploys CWE onto it, then drives kubeadm init/join across pre-provisioned nodes via `nke-agent` gRPC; no SSH required
 - **Cluster lifecycle** — `nkectl get/create/delete/describe clusters` manages tenant clusters through the CWE API
-- **Config** — `nkectl config set-site` points the CLI at a site controller; `nkectl config validate` validates a bootstrap inventory file
+- **Config** — `nkectl config set-site` points the CLI at a site controller; `nkectl config validate` validates a bootstrap site spec file
 
 ## Installation
 
@@ -41,10 +41,10 @@ nkectl version
 # Bootstrap a new site controller
 NKECTL_CWE_IMAGE=nvcr.io/<org>/controller:edge \
 NKECTL_CWE_PROFILES_IMAGE=nvcr.io/<org>/profiles:edge \
-  nkectl bootstrap site -i inventory.yaml
-nkectl bootstrap site -i inventory.yaml --dry-run              # validate only
-nkectl bootstrap site -i inventory.yaml --bootstrap-provider docker  # use Docker instead of nerdctl
-nkectl bootstrap site -i inventory.yaml --keep-bootstrap-cluster     # leave Kind cluster for debugging
+  nkectl bootstrap site -f sitespec.yaml
+nkectl bootstrap site -f sitespec.yaml --dry-run              # validate only
+nkectl bootstrap site -f sitespec.yaml --bootstrap-provider docker  # use Docker instead of nerdctl
+nkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster     # leave Kind cluster for debugging
 
 # Point the CLI at a site controller
 nkectl config set-site --url https://cwe.example.com --name default
@@ -60,12 +60,12 @@ nkectl delete cluster <name>           # prompts [y/N]; use --yes to skip
 ## Configuration
 
 What a bootstrap is allowed to trust describes the *site*, so it comes from the
-inventory file rather than from flags or the environment. See
-[`docs/inventory-spec.md`](docs/inventory-spec.md).
+site spec file rather than from flags or the environment. See
+[`docs/sitespec.md`](docs/sitespec.md).
 
 | Field | |
 |---|---|
-| `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; an inventory with none deploys no TPM attestor at all. |
+| `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; a site spec with none deploys no TPM attestor at all. |
 | `spire.caCertFile` / `caKeyFile` | A CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
 
 ### What gets installed

@@ -85,7 +85,7 @@ type PortMapping struct {
 // Config describes the ephemeral bootstrap Kind cluster.
 type Config struct {
 	// ClusterName is the kind cluster name (not the Kubernetes cluster name
-	// in the inventory file — this is purely the kind/kubectl-context handle
+	// in the site spec file — this is purely the kind/kubectl-context handle
 	// for the ephemeral host cluster CWE itself runs on).
 	ClusterName string
 

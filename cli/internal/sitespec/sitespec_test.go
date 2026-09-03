@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package inventory
+package sitespec
 
 import (
 	"os"
@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// validYAML is a minimal well-formed inventory used as the happy-path baseline.
+// validYAML is a minimal well-formed site spec used as the happy-path baseline.
 const validYAML = `
 clusterName: nke-site
 cluster:
@@ -33,12 +33,12 @@ registry:
   bootstrapChart: "cloud-workflow-engine"
 `
 
-func TestLoadValidInventory(t *testing.T) {
+func TestLoadValidSiteConfig(t *testing.T) {
 	path := writeTemp(t, validYAML)
 
 	inv, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load returned error for valid inventory: %v", err)
+		t.Fatalf("Load returned error for valid site spec: %v", err)
 	}
 
 	if inv.ClusterName != "nke-site" {
@@ -79,7 +79,7 @@ registry:
 `
 	inv, err := Load(writeTemp(t, singleNode))
 	if err != nil {
-		t.Fatalf("Load returned error for single-node inventory: %v", err)
+		t.Fatalf("Load returned error for single-node siteSpec:       %v", err)
 	}
 	if len(inv.Cluster.Nodes) != 1 {
 		t.Errorf("Nodes count = %d, want 1", len(inv.Cluster.Nodes))
@@ -89,7 +89,7 @@ registry:
 func TestSetDefaultsNeverInjectsAPIKey(t *testing.T) {
 	// Regression guard for the tier-0 known issue: SetDefaults must not fill
 	// in credentials. A missing registry.apiKey stays empty.
-	inv := &Inventory{}
+	inv := &SiteSpec{}
 	inv.SetDefaults()
 	if inv.Registry.APIKey != "" {
 		t.Errorf("SetDefaults set Registry.APIKey = %q, want empty", inv.Registry.APIKey)
@@ -128,7 +128,7 @@ registry:
   bootstrapChart: "cloud-workflow-engine"
 `
 	if _, err := Load(writeTemp(t, typo)); err == nil {
-		t.Fatal("Load accepted an inventory with an unknown field; want error")
+		t.Fatal("Load accepted a site spec with an unknown field; want error")
 	}
 }
 
@@ -148,8 +148,8 @@ func TestLoadEmptyFile(t *testing.T) {
 // Each case asserts that the specific offending field is named in the error so
 // the operator gets an actionable message.
 func TestValidateInvalidInputs(t *testing.T) {
-	base := func() *Inventory {
-		return &Inventory{
+	base := func() *SiteSpec {
+		return &SiteSpec{
 			ClusterName: "nke-site",
 			Cluster: Cluster{
 				Nodes:         []Node{{Name: "node1", IP: "10.0.0.1"}},
@@ -168,36 +168,36 @@ func TestValidateInvalidInputs(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mutate  func(*Inventory)
+		mutate  func(*SiteSpec)
 		wantSub string
 	}{
-		{"missing clusterName", func(i *Inventory) { i.ClusterName = "" }, pathClusterName},
-		{"bad clusterName", func(i *Inventory) { i.ClusterName = "Nke_Site" }, pathClusterName},
-		{"missing nodes", func(i *Inventory) { i.Cluster.Nodes = nil }, pathNodes},
-		{"even node count", func(i *Inventory) {
+		{"missing clusterName", func(i *SiteSpec) { i.ClusterName = "" }, pathClusterName},
+		{"bad clusterName", func(i *SiteSpec) { i.ClusterName = "Nke_Site" }, pathClusterName},
+		{"missing nodes", func(i *SiteSpec) { i.Cluster.Nodes = nil }, pathNodes},
+		{"even node count", func(i *SiteSpec) {
 			i.Cluster.Nodes = append(i.Cluster.Nodes, Node{Name: "node2", IP: "10.0.0.2"})
 		}, "cluster.nodes must contain an odd number"},
-		{"missing node ip", func(i *Inventory) { i.Cluster.Nodes[0].IP = "" }, "cluster.nodes[0].ip"},
-		{"bad node ip", func(i *Inventory) { i.Cluster.Nodes[0].IP = "999.0.0.1" }, "cluster.nodes[0].ip"},
-		{"missing node name", func(i *Inventory) { i.Cluster.Nodes[0].Name = "" }, "cluster.nodes[0].name"},
-		{"duplicate node name", func(i *Inventory) {
+		{"missing node ip", func(i *SiteSpec) { i.Cluster.Nodes[0].IP = "" }, "cluster.nodes[0].ip"},
+		{"bad node ip", func(i *SiteSpec) { i.Cluster.Nodes[0].IP = "999.0.0.1" }, "cluster.nodes[0].ip"},
+		{"missing node name", func(i *SiteSpec) { i.Cluster.Nodes[0].Name = "" }, "cluster.nodes[0].name"},
+		{"duplicate node name", func(i *SiteSpec) {
 			i.Cluster.Nodes = append(i.Cluster.Nodes, Node{Name: "node1", IP: "10.0.0.2"})
 		}, "name \"node1\" is used"},
-		{"duplicate node ip", func(i *Inventory) {
+		{"duplicate node ip", func(i *SiteSpec) {
 			i.Cluster.Nodes = append(i.Cluster.Nodes, Node{Name: "node2", IP: "10.0.0.1"})
 		}, "ip \"10.0.0.1\" is used"},
-		{"missing k8sVersion", func(i *Inventory) { i.Cluster.K8sVersion = "" }, pathK8sVersion},
-		{"bad k8sVersion", func(i *Inventory) { i.Cluster.K8sVersion = "v1.32" }, pathK8sVersion},
-		{"missing cni", func(i *Inventory) { i.Cluster.CniName = "" }, pathCniName},
-		{"unsupported cni", func(i *Inventory) { i.Cluster.CniName = "flannel" }, pathCniName},
-		{"missing podCidr", func(i *Inventory) { i.Cluster.PodCidr = "" }, pathPodCidr},
-		{"bad podCidr", func(i *Inventory) { i.Cluster.PodCidr = "10.100.0.0" }, pathPodCidr},
-		{"bad podCidr in list", func(i *Inventory) { i.Cluster.PodCidr = "10.100.0.0/16,nope" }, pathPodCidr},
-		{"missing serviceCidr", func(i *Inventory) { i.Cluster.ServiceCidr = "" }, pathServiceCidr},
-		{"bad nodeAgentPort", func(i *Inventory) { i.Cluster.NodeAgentPort = "70000" }, pathNodeAgentPort},
-		{"missing bootstrapRepo", func(i *Inventory) { i.Registry.BootstrapRepo = "" }, pathBootstrapRepo},
-		{"missing bootstrapChart", func(i *Inventory) { i.Registry.BootstrapChart = "" }, pathBootstrapChart},
-		{"whitespace in bootstrapRepo", func(i *Inventory) { i.Registry.BootstrapRepo = "bad repo" }, pathBootstrapRepo},
+		{"missing k8sVersion", func(i *SiteSpec) { i.Cluster.K8sVersion = "" }, pathK8sVersion},
+		{"bad k8sVersion", func(i *SiteSpec) { i.Cluster.K8sVersion = "v1.32" }, pathK8sVersion},
+		{"missing cni", func(i *SiteSpec) { i.Cluster.CniName = "" }, pathCniName},
+		{"unsupported cni", func(i *SiteSpec) { i.Cluster.CniName = "flannel" }, pathCniName},
+		{"missing podCidr", func(i *SiteSpec) { i.Cluster.PodCidr = "" }, pathPodCidr},
+		{"bad podCidr", func(i *SiteSpec) { i.Cluster.PodCidr = "10.100.0.0" }, pathPodCidr},
+		{"bad podCidr in list", func(i *SiteSpec) { i.Cluster.PodCidr = "10.100.0.0/16,nope" }, pathPodCidr},
+		{"missing serviceCidr", func(i *SiteSpec) { i.Cluster.ServiceCidr = "" }, pathServiceCidr},
+		{"bad nodeAgentPort", func(i *SiteSpec) { i.Cluster.NodeAgentPort = "70000" }, pathNodeAgentPort},
+		{"missing bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "" }, pathBootstrapRepo},
+		{"missing bootstrapChart", func(i *SiteSpec) { i.Registry.BootstrapChart = "" }, pathBootstrapChart},
+		{"whitespace in bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "bad repo" }, pathBootstrapRepo},
 	}
 
 	for _, tc := range tests {
@@ -218,10 +218,10 @@ func TestValidateInvalidInputs(t *testing.T) {
 // TestValidateAggregatesErrors confirms that multiple problems are reported
 // together rather than one at a time.
 func TestValidateAggregatesErrors(t *testing.T) {
-	inv := &Inventory{} // everything missing
+	inv := &SiteSpec{} // everything missing
 	err := inv.Validate()
 	if err == nil {
-		t.Fatal("Validate accepted an empty inventory; want error")
+		t.Fatal("Validate accepted an empty site spec; want error")
 	}
 	for _, want := range []string{pathClusterName, pathNodes, pathK8sVersion, pathBootstrapRepo} {
 		if !strings.Contains(err.Error(), want) {
@@ -231,7 +231,7 @@ func TestValidateAggregatesErrors(t *testing.T) {
 }
 
 func TestValidValidatesClean(t *testing.T) {
-	inv := &Inventory{
+	inv := &SiteSpec{
 		ClusterName: "nke-site",
 		Cluster: Cluster{
 			Nodes: []Node{
@@ -251,11 +251,11 @@ func TestValidValidatesClean(t *testing.T) {
 		},
 	}
 	if err := inv.Validate(); err != nil {
-		t.Errorf("Validate rejected a valid inventory: %v", err)
+		t.Errorf("Validate rejected a valid site spec: %v", err)
 	}
 }
 
-// noNodesYAML is an inventory with no nodes, used to exercise the environment
+// noNodesYAML is a site spec with no nodes, used to exercise the environment
 // fallback for the flat node list.
 const noNodesYAML = `
 clusterName: nke-site
@@ -328,15 +328,15 @@ func TestLoadNodesEnvMalformedFails(t *testing.T) {
 
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "inventory.yaml")
+	path := filepath.Join(t.TempDir(), "sitespec.yaml")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write temp inventory: %v", err)
+		t.Fatalf("write temp siteSpec:       %v", err)
 	}
 	return path
 }
 
 // TestTPMEKThumbprints covers how the SPIRE allowlist is read off the
-// inventory: in node order, and skipping nodes that declare none.
+// siteSpec:       in node order, and skipping nodes that declare none.
 func TestTPMEKThumbprints(t *testing.T) {
 	const (
 		initThumb = "1111111111111111111111111111111111111111111111111111111111111111"
@@ -396,10 +396,10 @@ func spireCAFiles(t *testing.T) (cert, key, missing string) {
 	return cert, key, filepath.Join(dir, "nope")
 }
 
-// minimalValid returns an inventory that passes Validate, so a test can vary
+// minimalValid returns a site spec that passes Validate, so a test can vary
 // one field without restating the whole structure.
-func minimalValid() *Inventory {
-	return &Inventory{
+func minimalValid() *SiteSpec {
+	return &SiteSpec{
 		ClusterName: "nke-site",
 		Cluster: Cluster{
 			Nodes: []Node{
@@ -447,7 +447,7 @@ func TestValidate_SpireCA(t *testing.T) {
 }
 
 // TestValidate_IgnoresMissingCAFiles is the point of separating Validate from
-// ValidateReferences: an inventory can be judged complete and well-formed on a
+// ValidateReferences: a site spec can be judged complete and well-formed on a
 // machine where the CA it names has not been placed yet.
 func TestValidate_IgnoresMissingCAFiles(t *testing.T) {
 	_, _, missing := spireCAFiles(t)
@@ -462,7 +462,7 @@ func TestValidate_IgnoresMissingCAFiles(t *testing.T) {
 }
 
 // TestValidateReferences covers the check Validate deliberately leaves out:
-// that the CA the inventory names can actually be read.
+// that the CA the site spec names can actually be read.
 func TestValidateReferences(t *testing.T) {
 	cert, key, missing := spireCAFiles(t)
 
