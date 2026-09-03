@@ -64,3 +64,24 @@ sudo rm -rf /usr/share/doc/* /usr/share/man/*
 find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name en -exec sudo rm -rf {} +
 
 sudo fstrim -av || true
+
+# Belt-and-suspenders for fstrim/disk_discard=unmap: TRIM passthrough
+# through virtio isn't guaranteed, especially under the tcg (software
+# emulation) accelerator this module's Makefile falls back to when the
+# builder has no usable /dev/kvm. Any block fstrim failed to discard still
+# looks "used" to qemu-img's sparse detection. Zero-filling the rest of the
+# free space guarantees those blocks compress away regardless. Skipped on
+# LUKS: zeros written through dm-crypt come out as ciphertext, not zeros, so
+# this does nothing there -- the FDE variant relies on the discard chain
+# (disk_discard=unmap + crypttab's discard option) alone.
+if ! sudo lsblk -ln -o FSTYPE | grep -q crypto_LUKS; then
+  echo "Zeroing free space for better compression..."
+  AVAILABLE_MB=$(df -m / | tail -1 | awk '{print $4}')
+  RESERVE_MB=100
+  FILL_MB=$((AVAILABLE_MB - RESERVE_MB))
+  if [[ ${FILL_MB} -gt 0 ]]; then
+    sudo dd if=/dev/zero of=/EMPTY bs=1M count="${FILL_MB}" || true
+    sudo rm -f /EMPTY
+    sync
+  fi
+fi

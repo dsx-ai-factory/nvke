@@ -143,11 +143,6 @@ source "qemu" "nke-fde" {
   # this, QEMU silently drops the guest's TRIM/discard commands, so freed
   # blocks still look "used" to Packer's post-build compaction step.
   disk_discard = "unmap"
-  # Compresses during that same post-build qemu-img convert step (-c).
-  # LUKS still benefits: fstrim's TRIM passes through discard-enabled LUKS
-  # (configure-fde.sh) to the qcow2 layer, so the ciphertext blocks freed by
-  # deleted files are still detectable as sparse/zero and compress away.
-  disk_compression = true
 
   efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
   efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
@@ -232,5 +227,13 @@ build {
 
   provisioner "shell" {
     script = "${path.root}/scripts/provision.sh"
+  }
+
+  # See scripts/compress-qcow2.sh's header: the qemu builder's own
+  # disk_compression option is broken on the pinned plugin version, so
+  # compression happens here instead, after the builder has already written
+  # the uncompressed qcow2 to output_directory.
+  post-processor "shell-local" {
+    inline = ["${path.root}/scripts/compress-qcow2.sh ${path.root}/output-fde/nke-node-fde-ubuntu-${local.ubuntu_version}-${local.arch}.qcow2"]
   }
 }

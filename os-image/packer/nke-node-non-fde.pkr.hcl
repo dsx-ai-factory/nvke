@@ -99,11 +99,6 @@ source "qemu" "nke-non-fde" {
   # See the same setting in nke-node-fde.pkr.hcl: required for provision.sh's
   # fstrim to actually shrink the output qcow2.
   disk_discard = "unmap"
-  # Compresses during Packer's own post-build "Converting hard drive..."
-  # qemu-img convert step (-c), on top of the space fstrim + disk_discard
-  # already freed. No extra tooling: this is a builtin qemu-img flag, not
-  # virt-sparsify.
-  disk_compression = true
 
   efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
   efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
@@ -182,5 +177,13 @@ build {
 
   provisioner "shell" {
     script = "${path.root}/scripts/provision.sh"
+  }
+
+  # See scripts/compress-qcow2.sh's header: the qemu builder's own
+  # disk_compression option is broken on the pinned plugin version, so
+  # compression happens here instead, after the builder has already written
+  # the uncompressed qcow2 to output_directory.
+  post-processor "shell-local" {
+    inline = ["${path.root}/scripts/compress-qcow2.sh ${path.root}/output-non-fde/nke-node-non-fde-ubuntu-${local.ubuntu_version}-${local.arch}.qcow2"]
   }
 }
