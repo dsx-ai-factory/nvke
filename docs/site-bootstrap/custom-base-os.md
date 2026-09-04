@@ -63,7 +63,7 @@ autoinstall:
             serviceCidr: "10.96.0.0/12"
             nodeAgentPort: "15005"
           registry:
-            bootstrapRepo: "nvcr.io/org/controller"
+            bootstrapRepo: "nvcr.io/org/charts"
             bootstrapChart: "controller"
     runcmd:
       # Expand root LVM volume

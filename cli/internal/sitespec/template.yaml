@@ -68,7 +68,7 @@ cluster:
 # (image/chart tag) is baked into the nkectl build, so it is not set here.
 registry:
   # OCI repository holding the bootstrap engine image and chart.
-  bootstrapRepo: "nvcr.io/org/controller"
+  bootstrapRepo: "nvcr.io/org/charts"
   # Bootstrap engine chart name within bootstrapRepo.
   bootstrapChart: "controller"
   # Optional registry credential. Prefer leaving this empty and supplying the

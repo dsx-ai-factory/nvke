@@ -26,7 +26,7 @@ cluster:
     systemReservedMemory: "16Gi"
 
 registry:
-  bootstrapRepo: "nvcr.io/org/controller"
+  bootstrapRepo: "nvcr.io/org/charts"
   bootstrapChart: "controller"
   # Leave apiKey empty and supply it at runtime via --registry-api-key
   # or the REGISTRY_API_KEY env var so the file can be committed safely.

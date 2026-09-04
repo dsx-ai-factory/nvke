@@ -176,7 +176,7 @@ type KubeletConfig struct {
 // part of the sitespec.
 type Registry struct {
 	// BootstrapRepo is the OCI repository that holds the bootstrap engine image
-	// and chart (e.g. "nvcr.io/org/controller").
+	// and chart (e.g. "nvcr.io/org/charts").
 	BootstrapRepo string `yaml:"bootstrapRepo"`
 	// BootstrapChart is the bootstrap engine chart name within BootstrapRepo.
 	BootstrapChart string `yaml:"bootstrapChart"`

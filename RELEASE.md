@@ -97,7 +97,7 @@ additionally publishes the controller image and Helm chart:
 |---|---|
 | `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/controller`, then promotes that released image to `ghcr.io/nvidia/nke/controller` with `crane copy`, preserving the digest and the full index |
 | `chart-publish.yml` | chart to `ghcr.io/nvidia/nke/charts/controller` |
-| `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/cloud-workflow-engine` |
+| `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/charts/controller` |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
