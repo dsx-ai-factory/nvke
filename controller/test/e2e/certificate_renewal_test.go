@@ -34,7 +34,14 @@ func validatePostReadyCertificateRenewal(test *tenantTest) {
 			expectedControlPlanes += pool.DesiredNodeCount
 		}
 		Expect(expectedControlPlanes).To(BeNumerically(">", 0), "certificate renewal requires control-plane nodes")
-		originalContainerIDs := expectSucceed(staticControlPlaneContainerIDs(ctx, tenantClient, expectedControlPlanes))
+
+		By("Waiting for every static control-plane component to be Ready before renewal")
+		var originalContainerIDs map[string]string
+		Eventually(func(ctx context.Context) error {
+			var err error
+			originalContainerIDs, err = staticControlPlaneContainerIDs(ctx, tenantClient, expectedControlPlanes)
+			return err
+		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
 
 		input := struct {
 			ClusterID     string `json:"clusterID"`
