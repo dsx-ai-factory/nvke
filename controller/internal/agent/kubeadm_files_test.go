@@ -5,14 +5,17 @@ package agent
 
 import (
 	"context"
+	"io"
 	"net"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection"
 	reflectionpb "google.golang.org/grpc/reflection/grpc_reflection_v1"
+	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/reflect/protodesc"
 	"google.golang.org/protobuf/reflect/protoregistry"
@@ -58,6 +61,68 @@ func TestSupportsKubeadmFilesRejectsNilConnection(t *testing.T) {
 	_, err := supportsKubeadmFiles(context.Background(), nil)
 
 	require.EqualError(t, err, "grpc connection is nil")
+}
+
+func TestSupportsKubeadmFilesReadsStatusAfterSendEOF(t *testing.T) {
+	tests := map[string]struct {
+		recvErr       error
+		wantSupported bool
+		wantError     string
+	}{
+		"unimplemented reflection uses fallback": {
+			recvErr: status.Error(codes.Unimplemented, "reflection is not enabled"),
+		},
+		"operational failure is propagated": {
+			recvErr:   status.Error(codes.Unavailable, "connection lost"),
+			wantError: "connection lost",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			supported, err := supportsKubeadmFiles(context.Background(), &sendEOFReflectionConn{
+				recvErr: test.recvErr,
+			})
+
+			if test.wantError != "" {
+				require.ErrorContains(t, err, test.wantError)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, test.wantSupported, supported)
+		})
+	}
+}
+
+type sendEOFReflectionConn struct {
+	grpc.ClientConnInterface
+	recvErr error
+}
+
+func (c *sendEOFReflectionConn) NewStream(
+	context.Context,
+	*grpc.StreamDesc,
+	string,
+	...grpc.CallOption,
+) (grpc.ClientStream, error) {
+	return &sendEOFReflectionStream{recvErr: c.recvErr}, nil
+}
+
+type sendEOFReflectionStream struct {
+	grpc.ClientStream
+	recvErr error
+}
+
+func (*sendEOFReflectionStream) SendMsg(any) error {
+	return io.EOF
+}
+
+func (s *sendEOFReflectionStream) RecvMsg(any) error {
+	return s.recvErr
+}
+
+func (*sendEOFReflectionStream) CloseSend() error {
+	return nil
 }
 
 func currentNodeAgentDescriptor() *descriptorpb.FileDescriptorProto {

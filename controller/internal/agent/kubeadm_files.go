@@ -5,7 +5,9 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -54,10 +56,13 @@ func supportsKubeadmFiles(ctx context.Context, conn grpc.ClientConnInterface) (b
 			MessageRequest: &reflectionpb.ServerReflectionRequest_FileContainingSymbol{
 				FileContainingSymbol: symbol,
 			},
-		}); err != nil {
+		}); err != nil && !errors.Is(err, io.EOF) {
 			return false, fmt.Errorf("query grpc reflection for %s: %w", symbol, err)
 		}
 
+		// A server-side stream failure is reported by Send as io.EOF; Recv
+		// carries the actual gRPC status, including Unimplemented from agents
+		// that do not expose reflection.
 		resp, err := stream.Recv()
 		if status.Code(err) == codes.Unimplemented {
 			return false, nil
