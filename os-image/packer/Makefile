@@ -33,8 +33,20 @@ ARCH ?= amd64
 # GRUB-timeout-patched sibling before packer build ever runs, so packer's
 # own iso_url/iso_checksum vars just point at the local copy (see the
 # locals block in nke-node-fde.pkr.hcl).
-ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-$(ARCH).iso
-ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
+#
+# releases.ubuntu.com only mirrors the amd64 Server ISO -- confirmed
+# directly: its SHA256SUMS has no arm64 entry at all, which is why
+# prepare-installer-iso.sh fails with an empty EXPECTED_SHA256 for an
+# ARCH=arm64 build pointed at it. arm64 (and every other non-amd64 arch)
+# is published under cdimage.ubuntu.com/releases/<version>/release/
+# instead, with its own separate SHA256SUMS there.
+ifeq ($(ARCH),arm64)
+  ISO_URL      ?= https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04-live-server-arm64.iso
+  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS
+else
+  ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-$(ARCH).iso
+  ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
+endif
 
 # uname -m spelling of ARCH, to compare against the host below. KVM only
 # virtualizes the host's own architecture -- an x86_64 host cannot
