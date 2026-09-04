@@ -66,13 +66,14 @@ cluster:
 
 # Container registry for the bootstrap engine chart. The version (chart tag) is
 # baked into the nkectl build, so it is not set here. The controller image the
-# chart deploys is published separately, to <registry>/<org>/controller — the
-# "charts/" segment keeps the two from colliding in one OCI repository.
+# chart deploys is published separately, to <registry>/<org>/controller. NVCR
+# has no path segment to separate the two, so the chart is published under a
+# distinct name, "controller-chart", instead.
 registry:
   # OCI repository holding the bootstrap engine chart.
-  bootstrapRepo: "nvcr.io/org/charts"
+  bootstrapRepo: "nvcr.io/org"
   # Bootstrap engine chart name within bootstrapRepo.
-  bootstrapChart: "controller"
+  bootstrapChart: "controller-chart"
   # Optional registry credential. Prefer leaving this empty and supplying the
   # secret at runtime via --registry-api-key or the REGISTRY_API_KEY env var so
   # the file can be committed safely. It is never defaulted.

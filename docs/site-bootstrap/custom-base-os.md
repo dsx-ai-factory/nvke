@@ -63,8 +63,8 @@ autoinstall:
             serviceCidr: "10.96.0.0/12"
             nodeAgentPort: "15005"
           registry:
-            bootstrapRepo: "nvcr.io/org/charts"
-            bootstrapChart: "controller"
+            bootstrapRepo: "nvcr.io/org"
+            bootstrapChart: "controller-chart"
     runcmd:
       # Expand root LVM volume
       - [sh, -c, "lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"]
