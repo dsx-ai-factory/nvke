@@ -23,15 +23,26 @@
 #     OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./packer/scripts/run-vm.sh
 #   QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 \
 #     OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1 ./packer/scripts/run-vm.sh
+#   QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-arm64.qcow2 \
+#     ARCH=arm64 OVMF_CODE=/usr/share/AAVMF/AAVMF_CODE.fd ./packer/scripts/run-vm.sh
 #
 # Env:
 #   QCOW          path to the qcow2 to boot (required)
+#   ARCH          amd64 or arm64 (default: amd64) -- must match QCOW's own
+#                 arch. Picks qemu-system-x86_64 vs qemu-system-aarch64, the
+#                 machine type (arm64 has no sane default the way x86's "pc"
+#                 is one, so arm64 always gets -machine virt even without
+#                 OVMF_CODE), and the accelerator -- same ARCH-vs-host-arch
+#                 reasoning as packer/Makefile and boot-smoke.sh: KVM only
+#                 virtualizes the host's own architecture.
 #   SSH_KEY       ssh key to inject (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
 #   OVMF_CODE     needed for the FDE/non-FDE variants (both UEFI-installed);
 #                 unset boots BIOS-style, for whatever other qcow2 you point
-#                 this at
-#   OVMF_VARS_TEMPLATE  default: /usr/share/OVMF/OVMF_VARS_4M.fd
+#                 this at. Point this at AAVMF (not OVMF) for ARCH=arm64 --
+#                 see boot-smoke.sh's own OVMF_CODE usage for the same split.
+#   OVMF_VARS_TEMPLATE  default: /usr/share/OVMF/OVMF_VARS_4M.fd (amd64) or
+#                 /usr/share/AAVMF/AAVMF_VARS.fd (arm64)
 #   TPM           set to 1 to attach a fresh swtpm (the FDE image's first
 #                 real boot needs one to complete its TPM bind; the shipped
 #                 image's build-time luks.key= GRUB parameter unlocks it
@@ -64,12 +75,35 @@ fi
 SSH_PORT="${SSH_PORT:-2222}"
 MEMORY="${MEMORY:-4096}"
 CPUS="${CPUS:-2}"
+ARCH="${ARCH:-amd64}"
 
-if [[ -c /dev/kvm && -w /dev/kvm ]]; then
-  ACCEL_ARGS=(-enable-kvm)
+case "${ARCH}" in
+  amd64)
+    QEMU_BIN=qemu-system-x86_64
+    ARCH_UNAME=x86_64
+    MACHINE_ARGS=()
+    ;;
+  arm64)
+    QEMU_BIN=qemu-system-aarch64
+    ARCH_UNAME=aarch64
+    # Unlike x86 (which defaults to a sane "pc" machine), QEMU has no
+    # default machine type for aarch64 -- it must be named explicitly,
+    # regardless of whether OVMF_CODE/EFI is in play.
+    MACHINE_ARGS=(-machine virt)
+    ;;
+  *)
+    echo "run-vm: unsupported ARCH=${ARCH} (expected amd64 or arm64)" >&2
+    exit 1
+    ;;
+esac
+
+# Same probe as packer/Makefile and boot-smoke.sh, and for the same reason:
+# KVM only accelerates a guest matching the host's own architecture.
+if [[ "$(uname -m)" == "${ARCH_UNAME}" && -c /dev/kvm && -w /dev/kvm ]]; then
+  ACCEL_ARGS=(-enable-kvm -cpu host)
 else
-  echo "run-vm: no usable /dev/kvm, booting under software emulation (slower)" >&2
-  ACCEL_ARGS=(-accel tcg)
+  echo "run-vm: no usable same-arch /dev/kvm, booting under software emulation (slower)" >&2
+  ACCEL_ARGS=(-accel tcg -cpu max)
 fi
 
 WORKDIR="$(mktemp -d)"
@@ -94,6 +128,7 @@ cloud-localds "${WORKDIR}/seed.iso" "${WORKDIR}/user-data" "${WORKDIR}/meta-data
 
 QEMU_ARGS=(
   -m "${MEMORY}" -smp "${CPUS}"
+  "${MACHINE_ARGS[@]}"
   "${ACCEL_ARGS[@]}"
   -nographic
   -drive if=virtio,file="${DISK}",format=qcow2
@@ -102,16 +137,22 @@ QEMU_ARGS=(
   -device virtio-net,netdev=net0
 )
 
-# UEFI/OVMF: needed for the FDE/non-FDE variants, and q35 + an explicit cpu
-# model to avoid the legacy "pc" (i440fx) + OVMF pairing that produced
+# UEFI/OVMF or AAVMF: needed for the FDE/non-FDE variants. amd64 additionally
+# needs q35 here (arm64's -machine virt, set above, applies regardless of
+# EFI) to avoid the legacy "pc" (i440fx) + OVMF pairing that produced
 # intermittent guest-kernel instability while developing those variants —
 # see the same comment in demo-fde.sh.
 if [[ -n "${OVMF_CODE:-}" ]]; then
-  OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+  if [[ "${ARCH}" == "amd64" ]]; then
+    OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+  else
+    OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/AAVMF/AAVMF_VARS.fd}"
+  fi
   cp "${OVMF_VARS_TEMPLATE}" "${WORKDIR}/OVMF_VARS.fd"
+  EFI_MACHINE_ARGS=()
+  [[ "${ARCH}" == "amd64" ]] && EFI_MACHINE_ARGS=(-machine type=q35)
   QEMU_ARGS=(
-    -machine type=q35
-    -cpu host
+    "${EFI_MACHINE_ARGS[@]}"
     -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}"
     -drive if=pflash,format=raw,file="${WORKDIR}/OVMF_VARS.fd"
     "${QEMU_ARGS[@]}"
@@ -142,4 +183,4 @@ echo
 # Not `exec`: the EXIT trap (swtpm teardown, workdir cleanup) needs this
 # shell to still be around when qemu exits, whether from Ctrl-C or a guest
 # shutdown.
-qemu-system-x86_64 "${QEMU_ARGS[@]}"
+"${QEMU_BIN}" "${QEMU_ARGS[@]}"
