@@ -36,15 +36,16 @@ const (
 	kubeVipKubeconfigPath      = "/etc/kubernetes/kube-vip.conf"
 	kubeVipContainerKubeconfig = "/etc/kubernetes/admin.conf"
 	kubeVipCACertPath          = "/etc/kubernetes/pki/ca.crt"
-	kubeVipFMDSASNURL          = "http://169.254.169.254:7777/latest/meta-data/asn"
+	forgeFMDSASNURL            = "http://169.254.169.254:7777/latest/meta-data/asn"
 	kubeVipImage               = "ghcr.io/kube-vip/kube-vip:v1.2.0@sha256:fe8c7b6641ba7633a12b337821e9e83a6456e8edc3434f97577058edd4eecaf6"
 	kubeVipLocalAPIServer      = "https://kubernetes:6443"
 	kubeVipFMDSConnectTimeout  = 10 * time.Second
 	kubeVipFMDSRequestTimeout  = 30 * time.Second
-	kubeVipJSONFlag            = "-j"
-	kubeVipAddressAction       = "addr"
-	kubeVipDeleteAction        = "del"
-	kubeVipDeviceFlag          = "dev"
+	ipJSONFlag                 = "-j"
+	ipAddressAction            = "addr"
+	ipRouteAction              = "route"
+	ipDeleteAction             = "del"
+	ipDeviceFlag               = "dev"
 	kubeVipFalse               = "false"
 	kubeVipTrue                = "true"
 )
@@ -206,7 +207,7 @@ func validateKubeVipIPv4(field, value string) error {
 }
 
 func (s *NodeAgentServer) readKubeVipAddresses() ([]kubeVipAddress, error) {
-	output, err := s.Runner.Run("ip", []string{kubeVipJSONFlag, kubeVipAddressAction}, nil)
+	output, err := s.Runner.Run("ip", []string{ipJSONFlag, ipAddressAction}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("ip -j addr: %w: %s", err, strings.TrimSpace(string(output)))
 	}
@@ -229,7 +230,7 @@ func interfaceForAddress(addresses []kubeVipAddress, address string) (string, er
 }
 
 func (s *NodeAgentServer) defaultKubeVipGateway() (string, error) {
-	output, err := s.Runner.Run("ip", []string{kubeVipJSONFlag, "route"}, nil)
+	output, err := s.Runner.Run("ip", []string{ipJSONFlag, ipRouteAction}, nil)
 	if err != nil {
 		return "", fmt.Errorf("ip -j route: %w: %s", err, strings.TrimSpace(string(output)))
 	}
@@ -269,7 +270,7 @@ func fetchKubeVipASNFromFMDS(ctx context.Context) (uint32, error) {
 		Timeout:   kubeVipFMDSRequestTimeout,
 		Transport: transport,
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, kubeVipFMDSASNURL, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, forgeFMDSASNURL, nil)
 	if err != nil {
 		return 0, fmt.Errorf("create FMDS request: %w", err)
 	}
@@ -302,7 +303,7 @@ func (s *NodeAgentServer) cleanupKubeVipInterfaces(addresses []kubeVipAddress, v
 			if assigned.Local != vip {
 				continue
 			}
-			output, err := s.Runner.Run("ip", []string{kubeVipAddressAction, kubeVipDeleteAction, vip + "/32", kubeVipDeviceFlag, current.Interface}, nil)
+			output, err := s.Runner.Run("ip", []string{ipAddressAction, ipDeleteAction, vip + "/32", ipDeviceFlag, current.Interface}, nil)
 			if err != nil {
 				slog.Warn("failed to remove stale kube-vip address",
 					"vip", vip,
