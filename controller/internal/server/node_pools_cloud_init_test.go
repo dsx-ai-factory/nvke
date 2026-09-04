@@ -24,8 +24,8 @@ func TestValidateCreateNodePoolRequest_CAPICloudInitInputs(t *testing.T) {
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
-		Capi: &api.CapiNodePoolProvider{
-			InfraMachineTemplate:   map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 			SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 			BootstrapFiles: []api.CloudInitFile{
 				{Path: "/etc/custom.conf", Content: "hello"},
@@ -44,8 +44,8 @@ func TestValidateCreateNodePoolRequest_CAPIAllowsMissingConfigProfile(t *testing
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
-		Capi: &api.CapiNodePoolProvider{
-			InfraMachineTemplate:   map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 			SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 		},
 	}
@@ -62,7 +62,7 @@ func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayload(t *testing.T) {
 		DesiredNodeCount: 1,
 		Nico:             &api.NicoNodePoolProvider{OSProfile: "ubuntu"},
 	})
-	require.EqualError(t, err, "nico is not supported, please provide capi")
+	require.EqualError(t, err, "nico is not supported, please provide infra")
 }
 
 func TestValidateCreateNodePoolRequest_ForgeRejectsCAPICloudInitInputs(t *testing.T) {
@@ -77,12 +77,12 @@ func TestValidateCreateNodePoolRequest_ForgeRejectsCAPICloudInitInputs(t *testin
 			OSProfile:      "ubuntu",
 			ConfigProfile:  "default",
 		},
-		Capi: &api.CapiNodePoolProvider{
+		Infra: &api.InfraNodePoolProvider{
 			BootstrapFiles:     []api.CloudInitFile{{Path: "/etc/custom.conf", Content: "hello"}},
 			PreKubeadmCommands: []string{"echo before kubeadm"},
 		},
 	})
-	require.EqualError(t, err, "capi is not supported, please provide nico")
+	require.EqualError(t, err, "infra is not supported, please provide nico")
 }
 
 func TestValidateCreateNodePoolRequest_ForgeRequiresConfigProfile(t *testing.T) {
@@ -108,8 +108,8 @@ func TestValidateUpdatedNodePool_RejectsManagedSpirePathsWhenSpireEnabled(t *tes
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
-		Capi: &api.CapiNodePoolProvider{
-			InfraMachineTemplate:   map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 			SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 			BootstrapFiles: []api.CloudInitFile{
 				{Path: "/etc/spire-agent/agent.conf", Content: "override"},
@@ -129,10 +129,10 @@ func TestDBNodePoolFromAPI_CopiesCAPICloudInitInputs(t *testing.T) {
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
-		Capi: &api.CapiNodePoolProvider{
-			InfraMachineTemplate: map[string]interface{}{"apiVersion": "infra.example.com/v1", "kind": "ExampleMachineTemplate"},
-			BootstrapFiles:       []api.CloudInitFile{{Path: "/etc/custom.conf", Content: "hello"}},
-			PreKubeadmCommands:   []string{"echo before kubeadm"},
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate:    map[string]interface{}{"apiVersion": "infra.example.com/v1", "kind": "ExampleMachineTemplate"},
+			BootstrapFiles:     []api.CloudInitFile{{Path: "/etc/custom.conf", Content: "hello"}},
+			PreKubeadmCommands: []string{"echo before kubeadm"},
 		},
 	}
 	dbNodePool, err := dbNodePoolFromAPI(req, "1.32.0")
@@ -207,7 +207,7 @@ func TestDbNodePoolFromAPI_EveryNestedNicoFieldReachesTheStoredPool(t *testing.T
 	got := apiNodePoolFromDB(&pool)
 	require.NotNil(t, got.Nico)
 	assert.Equal(t, "os", got.Nico.OSProfile)
-	assert.Nil(t, got.Capi)
+	assert.Nil(t, got.Infra)
 }
 
 func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T) {
@@ -218,8 +218,8 @@ func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T
 		ClusterID:      uuid.New(),
 		Name:           "worker",
 		NodeNamePrefix: "w",
-		Capi: &api.CapiNodePoolProvider{
-			InfraMachineTemplate:   tmpl,
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate:        tmpl,
 			SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
 			BootstrapFiles:         files,
 			PreKubeadmCommands:     []string{"echo hi"},
@@ -235,9 +235,9 @@ func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T
 	assert.Equal(t, []db.CloudInitFile{{Path: "/tmp/a", Content: "x"}}, pool.Capi.BootstrapFiles)
 
 	got := apiNodePoolFromDB(&pool)
-	require.NotNil(t, got.Capi)
-	assert.Equal(t, "DockerMachineTemplate", got.Capi.InfraMachineTemplate["kind"])
-	assert.Equal(t, files, got.Capi.BootstrapFiles)
+	require.NotNil(t, got.Infra)
+	assert.Equal(t, "DockerMachineTemplate", got.Infra.MachineTemplate["kind"])
+	assert.Equal(t, files, got.Infra.BootstrapFiles)
 	assert.Nil(t, got.Nico)
 }
 
@@ -342,7 +342,7 @@ func TestApiNodePoolFromDB_EmitsNestedWhenPayloadPresent(t *testing.T) {
 	got := apiNodePoolFromDB(pool)
 	require.NotNil(t, got.Nico)
 	assert.Equal(t, "os", got.Nico.OSProfile)
-	assert.Nil(t, got.Capi)
+	assert.Nil(t, got.Infra)
 }
 
 func TestNodePoolGetThenPatchNestedMutableOnly(t *testing.T) {

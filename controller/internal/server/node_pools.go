@@ -235,11 +235,11 @@ func validateForgeNativeNetworking(nativeNetworkingEnabled bool, subnetIDs, vpcP
 func validateCAPISpireAttestationMethod(method string) error {
 	switch method {
 	case "":
-		return fmt.Errorf("capi.spireAttestationMethod is required")
+		return fmt.Errorf("infra.spireAttestationMethod is required")
 	case string(db.SpireAttestationMethodTPM), string(db.SpireAttestationMethodJoinToken):
 		return nil
 	default:
-		return fmt.Errorf("invalid capi.spireAttestationMethod: %q", method)
+		return fmt.Errorf("invalid infra.spireAttestationMethod: %q", method)
 	}
 }
 
@@ -285,21 +285,21 @@ func (s *nodePoolService) validateCreateNodePoolRequest(ctx context.Context, clu
 
 func validateCreateCAPINodePoolRequest(req *api.CreateNodePoolRequest) error {
 	if req.Nico != nil {
-		return fmt.Errorf("nico is not supported, please provide capi")
+		return fmt.Errorf("nico is not supported, please provide infra")
 	}
-	if req.Capi == nil || req.Capi.InfraMachineTemplate == nil {
-		return fmt.Errorf("capi.infraMachineTemplate is required")
+	if req.Infra == nil || req.Infra.MachineTemplate == nil {
+		return fmt.Errorf("infra.machineTemplate is required")
 	}
-	if isEmptyManifestObject(req.Capi.InfraMachineTemplate) {
-		return fmt.Errorf("capi.infraMachineTemplate cannot be empty")
+	if isEmptyManifestObject(req.Infra.MachineTemplate) {
+		return fmt.Errorf("infra.machineTemplate cannot be empty")
 	}
-	if err := validateCAPISpireAttestationMethod(string(req.Capi.SpireAttestationMethod)); err != nil {
+	if err := validateCAPISpireAttestationMethod(string(req.Infra.SpireAttestationMethod)); err != nil {
 		return err
 	}
-	if err := validateCAPIInfrastructureManifest(req.Capi.InfraMachineTemplate); err != nil {
-		return fmt.Errorf("invalid capi.infraMachineTemplate: %w", err)
+	if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+		return fmt.Errorf("invalid infra.machineTemplate: %w", err)
 	}
-	if err := validateCloudInitFiles(req.Capi.BootstrapFiles); err != nil {
+	if err := validateCloudInitFiles(req.Infra.BootstrapFiles); err != nil {
 		return err
 	}
 	return nil
@@ -310,8 +310,8 @@ func (s *nodePoolService) validateCreateForgeNodePoolRequest(
 	cluster db.Cluster,
 	req *api.CreateNodePoolRequest,
 ) error {
-	if req.Capi != nil {
-		return fmt.Errorf("capi is not supported, please provide nico")
+	if req.Infra != nil {
+		return fmt.Errorf("infra is not supported, please provide nico")
 	}
 	if req.Nico == nil {
 		return fmt.Errorf("nico is required when creating a node pool on a nico cluster")
@@ -581,28 +581,28 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 		dbNodePool.SetNico(nico)
 
 	case db.ProviderTypeCAPI:
-		if req.Capi == nil {
+		if req.Infra == nil {
 			return nil
 		}
 		capiProvider, err := dbNodePool.CAPIProvider()
 		if err != nil {
 			return err
 		}
-		if req.Capi.InfraMachineTemplate != nil {
-			capiInfraMachineTemplate, err := rawManifestFromObject(req.Capi.InfraMachineTemplate)
+		if req.Infra.MachineTemplate != nil {
+			capiInfraMachineTemplate, err := rawManifestFromObject(req.Infra.MachineTemplate)
 			if err != nil {
-				return newBadRequestErrorf("failed to convert capi.infraMachineTemplate: %v", err)
+				return newBadRequestErrorf("failed to convert infra.machineTemplate: %v", err)
 			}
 			capiProvider.InfraMachineTemplate = capiInfraMachineTemplate
 		}
-		if req.Capi.BootstrapFiles != nil {
-			capiProvider.BootstrapFiles = dbCloudInitFilesFromAPI(req.Capi.BootstrapFiles)
+		if req.Infra.BootstrapFiles != nil {
+			capiProvider.BootstrapFiles = dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles)
 		}
-		if req.Capi.PreKubeadmCommands != nil {
-			capiProvider.PreKubeadmCommands = append([]string(nil), req.Capi.PreKubeadmCommands...)
+		if req.Infra.PreKubeadmCommands != nil {
+			capiProvider.PreKubeadmCommands = append([]string(nil), req.Infra.PreKubeadmCommands...)
 		}
-		if req.Capi.SpireAttestationMethod != nil {
-			capiProvider.SpireAttestationMethod = db.SpireAttestationMethod(*req.Capi.SpireAttestationMethod)
+		if req.Infra.SpireAttestationMethod != nil {
+			capiProvider.SpireAttestationMethod = db.SpireAttestationMethod(*req.Infra.SpireAttestationMethod)
 		}
 		dbNodePool.SetCapi(capiProvider)
 	}
@@ -624,17 +624,17 @@ func validateUpdatedNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error 
 
 func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
 	if dbNodePool.DiskSelectionStrategy != "" {
-		return newBadRequestErrorf("nico.diskSelectionStrategy is not supported on a capi node pool")
+		return newBadRequestErrorf("nico.diskSelectionStrategy is not supported")
 	}
 	if capi.IsEmptyManifest(dbNodePool.CapiInfraMachineTemplate) {
-		return newBadRequestErrorf("capi.infraMachineTemplate is required")
+		return newBadRequestErrorf("infra.machineTemplate is required")
 	}
 	capiInfraMachineTemplate, err := objectFromRawManifest(dbNodePool.CapiInfraMachineTemplate)
 	if err != nil {
-		return newBadRequestErrorf("failed to parse capi.infraMachineTemplate: %v", err)
+		return newBadRequestErrorf("failed to parse infra.machineTemplate: %v", err)
 	}
 	if err := validateCAPIInfrastructureManifest(capiInfraMachineTemplate); err != nil {
-		return newBadRequestErrorf("invalid capi.infraMachineTemplate: %s", err)
+		return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 	}
 	if err := validateCAPISpireAttestationMethod(string(dbNodePool.CapiSpireAttestationMethod)); err != nil {
 		return newBadRequestErrorf("%s", err.Error())
@@ -654,7 +654,7 @@ func validateUpdatedForgeNodePool(dbNodePool *db.NodePool) error {
 		return newBadRequestErrorf("%s", err.Error())
 	}
 	if dbNodePool.CapiSpireAttestationMethod != "" {
-		return newBadRequestErrorf("capi.spireAttestationMethod is not supported on a nico node pool")
+		return newBadRequestErrorf("infra.spireAttestationMethod is not supported on a nico node pool")
 	}
 	return nil
 }
@@ -677,18 +677,18 @@ func (s *nodePoolService) validateUpdateNodePoolRequest(
 
 func validateUpdateCAPINodePoolRequest(req *api.UpdateNodePoolRequest) error {
 	if req.Nico != nil {
-		return fmt.Errorf("nico is not supported, please use capi")
+		return fmt.Errorf("nico is not supported, please use infra")
 	}
-	if req.Capi != nil && req.Capi.InfraMachineTemplate != nil {
-		if isEmptyManifestObject(req.Capi.InfraMachineTemplate) {
-			return fmt.Errorf("capi.infraMachineTemplate cannot be empty")
+	if req.Infra != nil && req.Infra.MachineTemplate != nil {
+		if isEmptyManifestObject(req.Infra.MachineTemplate) {
+			return fmt.Errorf("infra.machineTemplate cannot be empty")
 		}
-		if err := validateCAPIInfrastructureManifest(req.Capi.InfraMachineTemplate); err != nil {
-			return fmt.Errorf("invalid capi.infraMachineTemplate: %w", err)
+		if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+			return fmt.Errorf("invalid infra.machineTemplate: %w", err)
 		}
 	}
-	if req.Capi != nil && req.Capi.BootstrapFiles != nil {
-		if err := validateCloudInitFiles(req.Capi.BootstrapFiles); err != nil {
+	if req.Infra != nil && req.Infra.BootstrapFiles != nil {
+		if err := validateCloudInitFiles(req.Infra.BootstrapFiles); err != nil {
 			return err
 		}
 	}
@@ -700,8 +700,8 @@ func (s *nodePoolService) validateUpdateForgeNodePoolRequest(
 	cluster db.Cluster,
 	req *api.UpdateNodePoolRequest,
 ) error {
-	if req.Capi != nil {
-		return fmt.Errorf("capi is not supported, please use nico")
+	if req.Infra != nil {
+		return fmt.Errorf("infra is not supported, please use nico")
 	}
 	if req.Nico != nil && req.Nico.DiskSelectionStrategy != nil {
 		if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(*req.Nico.DiskSelectionStrategy)); err != nil {
@@ -795,8 +795,8 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		CurrentNodeSetID:            dbNodePool.CurrentNodeSetID,
 		TeleportEnabled:             &dbNodePool.TeleportEnabled,
 
-		Nico: apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
-		Capi: apiCapiNodePoolProviderFromDB(dbNodePool.Capi),
+		Nico:  apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
+		Infra: apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
 
 		Conditions: api.NodePoolConditions{
 			Provisioning: apiConditionFromDB(dbNodePool.Conditions.Provisioning),
@@ -823,7 +823,7 @@ func apiNicoNodePoolProviderFromDB(nicoNodePoolProvider *db.NicoNodePoolProvider
 	}
 }
 
-func apiCapiNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvider) *api.CapiNodePoolProvider {
+func apiInfraNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvider) *api.InfraNodePoolProvider {
 	if capiNodePoolProvider == nil {
 		return nil
 	}
@@ -831,8 +831,8 @@ func apiCapiNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvider
 	if err != nil {
 		obj = nil
 	}
-	out := &api.CapiNodePoolProvider{
-		InfraMachineTemplate:   obj,
+	out := &api.InfraNodePoolProvider{
+		MachineTemplate:        obj,
 		PreKubeadmCommands:     append([]string(nil), capiNodePoolProvider.PreKubeadmCommands...),
 		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiNodePoolProvider.SpireAttestationMethod),
 	}
@@ -934,16 +934,16 @@ func dbNodePoolFromAPI(req *api.CreateNodePoolRequest, kubernetesVersion string)
 			ConfigProfile:            req.Nico.ConfigProfile,
 			DiskSelectionStrategy:    db.DiskSelectionStrategy(req.Nico.DiskSelectionStrategy),
 		})
-	case req.Capi != nil:
-		capiInfraMachineTemplate, err := rawManifestFromObject(req.Capi.InfraMachineTemplate)
+	case req.Infra != nil:
+		infraMachineTemplate, err := rawManifestFromObject(req.Infra.MachineTemplate)
 		if err != nil {
 			return db.NodePool{}, err
 		}
 		nodePool.SetCapi(db.CAPINodePoolProvider{
-			InfraMachineTemplate:   capiInfraMachineTemplate,
-			SpireAttestationMethod: db.SpireAttestationMethod(req.Capi.SpireAttestationMethod),
-			BootstrapFiles:         dbCloudInitFilesFromAPI(req.Capi.BootstrapFiles),
-			PreKubeadmCommands:     append([]string(nil), req.Capi.PreKubeadmCommands...),
+			InfraMachineTemplate:   infraMachineTemplate,
+			SpireAttestationMethod: db.SpireAttestationMethod(req.Infra.SpireAttestationMethod),
+			BootstrapFiles:         dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles),
+			PreKubeadmCommands:     append([]string(nil), req.Infra.PreKubeadmCommands...),
 		})
 	}
 

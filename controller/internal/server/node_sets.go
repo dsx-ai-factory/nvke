@@ -97,11 +97,11 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 		KubernetesVersion:    dbNodeSet.KubernetesVersion,
 		TeleportEnabled:      &dbNodeSet.TeleportEnabled,
 		Nico:                 apiNicoNodeSetProviderFromDB(dbNodeSet.Nico),
-		Capi:                 apiCapiNodeSetProviderFromDB(dbNodeSet.Capi),
+		Infra:                apiInfraNodeSetProviderFromDB(dbNodeSet.Capi),
 	}, nil
 }
 
-func apiCapiNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider) *api.CapiNodeSetProvider {
+func apiInfraNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider) *api.InfraNodeSetProvider {
 	if capiNodeSetProvider == nil {
 		return nil
 	}
@@ -109,8 +109,8 @@ func apiCapiNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider) 
 	if err != nil {
 		obj = nil
 	}
-	out := &api.CapiNodeSetProvider{
-		InfraMachineTemplate:   obj,
+	out := &api.InfraNodeSetProvider{
+		MachineTemplate:        obj,
 		PreKubeadmCommands:     append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
 		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiNodeSetProvider.SpireAttestationMethod),
 	}

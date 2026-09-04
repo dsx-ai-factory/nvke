@@ -1969,12 +1969,12 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsMismatchedProvid
 		mockDB.MockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
 	}
 
-	t.Run("capi on a nico cluster is rejected", func(t *testing.T) {
+	t.Run("infra on a nico cluster is rejected", func(t *testing.T) {
 		clusterID := uuid.New()
 		mockDB := newMockDB(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeNico})
 		assertRejected(t, mockDB, &api.UpdateClusterControlPlaneConfig{
-			Capi: &api.CapiControlPlaneProviderUpdate{},
-		}, clusterID, "controlPlaneConfig.capi is not supported, please provide controlPlaneConfig.nico")
+			Infra: &api.InfraControlPlaneProviderUpdate{},
+		}, clusterID, "controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
 	})
 
 	t.Run("nico on a CAPI cluster is rejected", func(t *testing.T) {
@@ -1982,25 +1982,25 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsMismatchedProvid
 		mockDB := newMockDB(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeCAPI})
 		assertRejected(t, mockDB, &api.UpdateClusterControlPlaneConfig{
 			Nico: &api.NicoControlPlaneProviderUpdate{},
-		}, clusterID, "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.capi")
+		}, clusterID, "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	})
 
-	t.Run("both nico and capi on a nico cluster is rejected", func(t *testing.T) {
+	t.Run("both nico and infra on a nico cluster is rejected", func(t *testing.T) {
 		clusterID := uuid.New()
 		mockDB := newMockDB(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeNico})
 		assertRejected(t, mockDB, &api.UpdateClusterControlPlaneConfig{
-			Nico: &api.NicoControlPlaneProviderUpdate{},
-			Capi: &api.CapiControlPlaneProviderUpdate{},
-		}, clusterID, "controlPlaneConfig.capi is not supported, please provide controlPlaneConfig.nico")
+			Nico:  &api.NicoControlPlaneProviderUpdate{},
+			Infra: &api.InfraControlPlaneProviderUpdate{},
+		}, clusterID, "controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
 	})
 
-	t.Run("both nico and capi on a CAPI cluster is rejected", func(t *testing.T) {
+	t.Run("both nico and infra on a CAPI cluster is rejected", func(t *testing.T) {
 		clusterID := uuid.New()
 		mockDB := newMockDB(db.Cluster{ID: clusterID, ProviderType: db.ProviderTypeCAPI})
 		assertRejected(t, mockDB, &api.UpdateClusterControlPlaneConfig{
-			Nico: &api.NicoControlPlaneProviderUpdate{},
-			Capi: &api.CapiControlPlaneProviderUpdate{},
-		}, clusterID, "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.capi")
+			Nico:  &api.NicoControlPlaneProviderUpdate{},
+			Infra: &api.InfraControlPlaneProviderUpdate{},
+		}, clusterID, "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	})
 
 	// Regression guard: instanceTypePreference is handled by a code path
@@ -2015,7 +2015,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsMismatchedProvid
 			Nico: &api.NicoControlPlaneProviderUpdate{
 				InstanceTypePreference: []openapi_types.UUID{uuid.New()},
 			},
-		}, clusterID, "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.capi")
+		}, clusterID, "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	})
 }
 
@@ -2078,8 +2078,8 @@ func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testin
 
 	t.Run("both providers", func(t *testing.T) {
 		req := baseNicoClusterCreateRequest()
-		req.Capi = &api.CapiClusterProvider{
-			InfraCluster: map[string]interface{}{
+		req.Infra = &api.InfraClusterProvider{
+			Cluster: map[string]interface{}{
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1",
 				"kind":       "DockerCluster",
 			},
@@ -2147,10 +2147,10 @@ func TestDbClusterFromAPI_NestedProvidersReachTheStoredCluster(t *testing.T) {
 		require.NotNil(t, apiCluster.Nico)
 		assert.Equal(t, "org", apiCluster.Nico.OrgID)
 		assert.Equal(t, siteID, apiCluster.Nico.SiteID)
-		assert.Nil(t, apiCluster.Capi)
+		assert.Nil(t, apiCluster.Infra)
 	})
 
-	t.Run("capi", func(t *testing.T) {
+	t.Run("infra", func(t *testing.T) {
 		infra := map[string]interface{}{
 			"kind":       "DockerCluster",
 			"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1",
@@ -2159,7 +2159,7 @@ func TestDbClusterFromAPI_NestedProvidersReachTheStoredCluster(t *testing.T) {
 			Name:                          "lab",
 			ControlPlaneKubernetesVersion: "1.31.0",
 			CniPlugin:                     "cilium",
-			Capi:                          &api.CapiClusterProvider{InfraCluster: infra},
+			Infra:                         &api.InfraClusterProvider{Cluster: infra},
 		}
 
 		cluster, err := server.DBClusterFromAPI(req)
@@ -2169,8 +2169,8 @@ func TestDbClusterFromAPI_NestedProvidersReachTheStoredCluster(t *testing.T) {
 		assert.Nil(t, cluster.Nico)
 
 		apiCluster := server.APIClusterFromDB(&cluster)
-		require.NotNil(t, apiCluster.Capi)
-		assert.Equal(t, "DockerCluster", apiCluster.Capi.InfraCluster["kind"])
+		require.NotNil(t, apiCluster.Infra)
+		assert.Equal(t, "DockerCluster", apiCluster.Infra.Cluster["kind"])
 		assert.Nil(t, apiCluster.Nico)
 	})
 }

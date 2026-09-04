@@ -67,8 +67,8 @@ BODY=$(cat <<EOF
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
   "etcdEncrypted": ${ETCD_ENCRYPTED}${CONTROL_PLANE_VIP_FIELD},
-  "capi": {
-    "infraCluster": {
+  "infra": {
+    "cluster": {
       "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
       "kind": "DockerCluster",
       "metadata": {
@@ -87,8 +87,8 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capi": {
-        "infraMachineTemplate": {
+      "infra": {
+        "machineTemplate": {
           "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
           "kind": "DockerMachineTemplate",
           "spec": {
@@ -121,8 +121,8 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capi": {
-        "infraMachineTemplate": {
+      "infra": {
+        "machineTemplate": {
           "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
           "kind": "DockerMachineTemplate",
           "spec": {

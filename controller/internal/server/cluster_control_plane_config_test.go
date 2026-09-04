@@ -135,8 +135,8 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 			Name:                          "capi-cluster",
 			CniPlugin:                     "calico",
 			ControlPlaneKubernetesVersion: "1.29.0",
-			Capi: &api.CapiClusterProvider{
-				InfraCluster: map[string]interface{}{
+			Infra: &api.InfraClusterProvider{
+				Cluster: map[string]interface{}{
 					"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1",
 					"kind":       "DockerCluster",
 				},
@@ -149,7 +149,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 
 		err := svc.ValidateCreateClusterRequestFields(req)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.capi")
+		require.Contains(t, err.Error(), "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	})
 }
 
@@ -454,11 +454,11 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		assert.Equal(t, db.DiskSelectionStrategy(api.DiskSelectionStrategyCreateSmallest), spec.Nico.DiskSelectionStrategy)
 	})
 
-	t.Run("nested capi lands on the stored capi payload", func(t *testing.T) {
+	t.Run("nested infra lands on the stored provider payload", func(t *testing.T) {
 		cfg := &api.CreateClusterControlPlaneConfig{
 			DesiredCount: 3,
-			Capi: &api.CapiControlPlaneProvider{
-				InfraMachineTemplate:   tmpl,
+			Infra: &api.InfraControlPlaneProvider{
+				MachineTemplate:        tmpl,
 				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 				PreKubeadmCommands:     []string{"prep"},
 			},
@@ -484,10 +484,10 @@ func TestApiCapiControlPlaneProviderFromDB_ExposesOnlyFirstPreference(t *testing
 		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 	})
 
-	got := apiCapiControlPlaneProviderFromDB(cfg.Capi)
+	got := apiInfraControlPlaneProviderFromDB(cfg.Capi)
 	require.NotNil(t, got)
 	require.Equal(t, map[string]interface{}{
 		"kind":     "DockerMachineTemplate",
 		"metadata": map[string]interface{}{"name": "current"},
-	}, got.InfraMachineTemplate)
+	}, got.MachineTemplate)
 }

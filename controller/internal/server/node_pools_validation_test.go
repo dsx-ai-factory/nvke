@@ -43,27 +43,27 @@ func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayloadWhateverItCarries(t
 				Nico:             tc.nico,
 			})
 
-			require.EqualError(t, err, "nico is not supported, please provide capi")
+			require.EqualError(t, err, "nico is not supported, please provide infra")
 		})
 	}
 }
 
-// The mirror of the above: a nico cluster rejects a CAPI payload whatever it
+// The mirror of the above: a nico cluster rejects an infra payload whatever it
 // carries, even alongside an otherwise valid nico payload.
-func TestValidateCreateNodePoolRequest_NicoRejectsCapiPayloadWhateverItCarries(t *testing.T) {
+func TestValidateCreateNodePoolRequest_NicoRejectsInfraPayloadWhateverItCarries(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
 	cases := []struct {
-		name string
-		capi *api.CapiNodePoolProvider
+		name  string
+		infra *api.InfraNodePoolProvider
 	}{
 		{
-			name: "empty infraMachineTemplate",
-			capi: &api.CapiNodePoolProvider{InfraMachineTemplate: map[string]interface{}{}},
+			name:  "empty machineTemplate",
+			infra: &api.InfraNodePoolProvider{MachineTemplate: map[string]interface{}{}},
 		},
 		{
-			name: "spireAttestationMethod",
-			capi: &api.CapiNodePoolProvider{SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken},
+			name:  "spireAttestationMethod",
+			infra: &api.InfraNodePoolProvider{SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken},
 		},
 	}
 	for _, tc := range cases {
@@ -77,10 +77,10 @@ func TestValidateCreateNodePoolRequest_NicoRejectsCapiPayloadWhateverItCarries(t
 					OSProfile:      "ubuntu",
 					ConfigProfile:  "default",
 				},
-				Capi: tc.capi,
+				Infra: tc.infra,
 			})
 
-			require.EqualError(t, err, "capi is not supported, please provide nico")
+			require.EqualError(t, err, "infra is not supported, please provide nico")
 		})
 	}
 }
@@ -93,15 +93,15 @@ func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividuall
 			Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []uuid.UUID{}},
 		})
 
-		require.EqualError(t, err, "nico is not supported, please use capi")
+		require.EqualError(t, err, "nico is not supported, please use infra")
 	})
 
-	t.Run("empty capiInfraMachineTemplate", func(t *testing.T) {
+	t.Run("empty infra.machineTemplate", func(t *testing.T) {
 		err := service.validateUpdateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.Nil, ProviderType: db.ProviderTypeCAPI}, &api.UpdateNodePoolRequest{
-			Capi: &api.CapiNodePoolProviderUpdate{InfraMachineTemplate: map[string]interface{}{}},
+			Infra: &api.InfraNodePoolProviderUpdate{MachineTemplate: map[string]interface{}{}},
 		})
 
-		require.EqualError(t, err, "capi.infraMachineTemplate cannot be empty")
+		require.EqualError(t, err, "infra.machineTemplate cannot be empty")
 	})
 
 	t.Run("nico diskSelectionStrategy", func(t *testing.T) {
@@ -110,32 +110,32 @@ func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividuall
 			Nico: &api.NicoNodePoolProviderUpdate{DiskSelectionStrategy: &largest},
 		})
 
-		require.EqualError(t, err, "nico is not supported, please use capi")
+		require.EqualError(t, err, "nico is not supported, please use infra")
 	})
 }
 
 func TestValidateUpdateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividually(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
-	t.Run("capiBootstrapFiles", func(t *testing.T) {
+	t.Run("infra.bootstrapFiles", func(t *testing.T) {
 		err := service.validateUpdateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.New(), ProviderType: db.ProviderTypeNico}, &api.UpdateNodePoolRequest{
-			Capi: &api.CapiNodePoolProviderUpdate{
+			Infra: &api.InfraNodePoolProviderUpdate{
 				BootstrapFiles: []api.CloudInitFile{{Path: "/etc/custom.conf", Content: "hello"}},
 			},
 		})
 
-		require.EqualError(t, err, "capi is not supported, please use nico")
+		require.EqualError(t, err, "infra is not supported, please use nico")
 	})
 
-	t.Run("capiSpireAttestationMethod", func(t *testing.T) {
+	t.Run("infra.spireAttestationMethod", func(t *testing.T) {
 		joinToken := api.SpireAttestationMethodJoinToken
 		err := service.validateUpdateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.New(), ProviderType: db.ProviderTypeNico}, &api.UpdateNodePoolRequest{
-			Capi: &api.CapiNodePoolProviderUpdate{
+			Infra: &api.InfraNodePoolProviderUpdate{
 				SpireAttestationMethod: &joinToken,
 			},
 		})
 
-		require.EqualError(t, err, "capi is not supported, please use nico")
+		require.EqualError(t, err, "infra is not supported, please use nico")
 	})
 }
 
@@ -145,7 +145,7 @@ func TestValidateUpdatedNodePool_CAPIRequiresEmptyDiskSelectionStrategy(t *testi
 		DiskSelectionStrategy:    db.DiskSelectionStrategy(api.DiskSelectionStrategyCreateLargest),
 	})
 
-	require.EqualError(t, err, "nico.diskSelectionStrategy is not supported on a capi node pool")
+	require.EqualError(t, err, "nico.diskSelectionStrategy is not supported")
 }
 
 func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {
@@ -157,8 +157,8 @@ func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {
 			Name:             "worker",
 			NodeNamePrefix:   nodeNamePrefix,
 			DesiredNodeCount: 1,
-			Capi: &api.CapiNodePoolProvider{
-				InfraMachineTemplate:   map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+			Infra: &api.InfraNodePoolProvider{
+				MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 			},
 		}
@@ -235,7 +235,7 @@ func TestValidateUpdateNodePoolRequest_WrongProvider(t *testing.T) {
 		Nico: &api.NicoNodePoolProviderUpdate{OSProfile: ptrString("os")},
 	}
 	err := svc.validateUpdateNodePoolRequest(context.Background(), capiCluster(), req)
-	require.EqualError(t, err, "nico is not supported, please use capi")
+	require.EqualError(t, err, "nico is not supported, please use infra")
 }
 
 // Clearing a profile is expressible in the request, and rejected: a Forge node

@@ -159,8 +159,8 @@ func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 		CniPlugin:                     spec.CNIPlugin,
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
 		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
-		Capi: &api.CapiClusterProvider{
-			InfraCluster: map[string]any{
+		Infra: &api.InfraClusterProvider{
+			Cluster: map[string]any{
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoCluster",
 				"metadata": map[string]any{
@@ -220,10 +220,10 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 		DesiredCount:         cp.DesiredCount,
 		MaxSurge:             cp.MaxSurge,
 		SystemReservedMemory: pool.SystemReservedMemory,
-		Capi: &api.CapiControlPlaneProvider{
-			SpireAttestationMethod: pool.Capi.SpireAttestationMethod,
-			PreKubeadmCommands:     pool.Capi.PreKubeadmCommands,
-			InfraMachineTemplate:   pool.Capi.InfraMachineTemplate,
+		Infra: &api.InfraControlPlaneProvider{
+			SpireAttestationMethod: pool.Infra.SpireAttestationMethod,
+			PreKubeadmCommands:     pool.Infra.PreKubeadmCommands,
+			MachineTemplate:        pool.Infra.MachineTemplate,
 		},
 	}, nil
 }
@@ -264,10 +264,10 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 		ControlPlane:         spec.ControlPlane,
 		DesiredNodeCount:     spec.DesiredNodeCount,
 		SystemReservedMemory: spec.SystemReservedMemory,
-		Capi: &api.CapiNodePoolProvider{
+		Infra: &api.InfraNodePoolProvider{
 			SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
 			PreKubeadmCommands:     containerCAPIReadyCommands(),
-			InfraMachineTemplate: map[string]any{
+			MachineTemplate: map[string]any{
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoMachineTemplate",
 				"metadata": map[string]any{
@@ -306,10 +306,10 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	req.EtcdEncrypted = spec.ControlPlane.EtcdEncrypted
 	req.ControlPlaneVIP = spec.ControlPlane.ControlPlaneVIP
 	applyNetworkConfig(&req, spec.Network)
-	if req.Capi == nil {
-		return api.CreateClusterRequest{}, fmt.Errorf("CAPD cluster skeleton is missing capi.infraCluster")
+	if req.Infra == nil {
+		return api.CreateClusterRequest{}, fmt.Errorf("CAPD cluster skeleton is missing infra.cluster")
 	}
-	if err := setMapPath(req.Capi.InfraCluster, req.Name, "metadata", "name"); err != nil {
+	if err := setMapPath(req.Infra.Cluster, req.Name, "metadata", "name"); err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("setting infra cluster name: %w", err)
 	}
 
@@ -346,10 +346,10 @@ func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPla
 	}
 	cfg.DesiredCount = spec.ControlPlane.Config.DesiredCount
 	cfg.MaxSurge = spec.ControlPlane.Config.MaxSurge
-	if cfg.Capi == nil {
-		return nil, fmt.Errorf("CAPD control plane config skeleton is missing capi.infraMachineTemplate")
+	if cfg.Infra == nil {
+		return nil, fmt.Errorf("CAPD control plane config skeleton is missing infra.machineTemplate")
 	}
-	if err := setMapPath(cfg.Capi.InfraMachineTemplate, spec.CAPDNodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
+	if err := setMapPath(cfg.Infra.MachineTemplate, spec.CAPDNodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
 		return nil, fmt.Errorf("setting control plane custom image: %w", err)
 	}
 	return &cfg, nil
@@ -371,10 +371,10 @@ func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateC
 	if spec.KubeReservedMemory != "" {
 		pool.KubeReservedMemory = spec.KubeReservedMemory
 	}
-	if pool.Capi == nil {
-		return api.NodePoolCreateConfig{}, fmt.Errorf("CAPD node pool skeleton is missing capi.infraMachineTemplate")
+	if pool.Infra == nil {
+		return api.NodePoolCreateConfig{}, fmt.Errorf("CAPD node pool skeleton is missing infra.machineTemplate")
 	}
-	if err := setMapPath(pool.Capi.InfraMachineTemplate, nodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
+	if err := setMapPath(pool.Infra.MachineTemplate, nodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("setting custom image: %w", err)
 	}
 
@@ -573,7 +573,7 @@ func nodePoolRequest(clusterID uuid.UUID, pool api.NodePoolCreateConfig) api.Cre
 		ControlPlane:                pool.ControlPlane,
 		NodeLabels:                  pool.NodeLabels,
 		DesiredNodeCount:            pool.DesiredNodeCount,
-		Capi:                        pool.Capi,
+		Infra:                       pool.Infra,
 		Description:                 pool.Description,
 		Nico:                        pool.Nico,
 		NodeNamePrefix:              pool.NodeNamePrefix,

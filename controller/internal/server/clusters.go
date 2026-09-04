@@ -342,7 +342,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 
 	var providerType db.ProviderType
 	switch {
-	case req.Capi != nil:
+	case req.Infra != nil:
 		if err := validateCreateCAPIClusterProvider(req); err != nil {
 			return err
 		}
@@ -403,11 +403,11 @@ func validateCreateCAPIClusterProvider(req *api.CreateClusterRequest) error {
 	if req.Nico != nil {
 		return fmt.Errorf("exactly one provider must be set")
 	}
-	if isEmptyManifestObject(req.Capi.InfraCluster) {
-		return fmt.Errorf("capi.infraCluster is required")
+	if isEmptyManifestObject(req.Infra.Cluster) {
+		return fmt.Errorf("infra.cluster is required")
 	}
-	if err := validateCAPIInfrastructureManifest(req.Capi.InfraCluster); err != nil {
-		return fmt.Errorf("invalid capi.infraCluster: %w", err)
+	if err := validateCAPIInfrastructureManifest(req.Infra.Cluster); err != nil {
+		return fmt.Errorf("invalid infra.cluster: %w", err)
 	}
 	return nil
 }
@@ -444,7 +444,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			RecycleBudget:               nodePoolConfig.RecycleBudget,
 			TeleportEnabled:             nodePoolConfig.TeleportEnabled,
 			Nico:                        nodePoolConfig.Nico,
-			Capi:                        nodePoolConfig.Capi,
+			Infra:                       nodePoolConfig.Infra,
 		}
 
 		if err := s.nodePoolService.validateCreateNodePoolRequest(ctx, cluster, &nodePoolReq); err != nil {
@@ -530,11 +530,11 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 		// Reject a controlPlaneConfig provider block that doesn't match the cluster before
 		// any field is touched.
 		if cpConfig := req.Body.ControlPlaneConfig; cpConfig != nil {
-			if dbCluster.ProviderType == db.ProviderTypeNico && cpConfig.Capi != nil {
-				return newBadRequestErrorf("controlPlaneConfig.capi is not supported, please provide controlPlaneConfig.nico")
+			if dbCluster.ProviderType == db.ProviderTypeNico && cpConfig.Infra != nil {
+				return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
 			}
 			if dbCluster.ProviderType == db.ProviderTypeCAPI && cpConfig.Nico != nil {
-				return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.capi")
+				return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 			}
 		}
 		// Update fields from request
@@ -818,7 +818,7 @@ func hasClusterLevelControlPlaneUpdate(req *api.UpdateClusterControlPlaneConfig)
 		req.SystemReservedMemory != nil ||
 		req.NodeLabels != nil ||
 		req.TeleportEnabled != nil ||
-		req.Capi != nil {
+		req.Infra != nil {
 		return true
 	}
 	return hasNestedNicoControlPlanePatch(req.Nico)
@@ -902,30 +902,30 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 				return err
 			}
 		}
-	case req.Capi != nil:
+	case req.Infra != nil:
 		capi, err := spec.CAPIProvider()
 		if err != nil {
 			return err
 		}
-		if req.Capi.SpireAttestationMethod != nil {
-			capi.SpireAttestationMethod = db.SpireAttestationMethod(*req.Capi.SpireAttestationMethod)
+		if req.Infra.SpireAttestationMethod != nil {
+			capi.SpireAttestationMethod = db.SpireAttestationMethod(*req.Infra.SpireAttestationMethod)
 		}
-		if req.Capi.BootstrapFiles != nil {
-			capi.BootstrapFiles = dbCloudInitFilesFromAPI(req.Capi.BootstrapFiles)
+		if req.Infra.BootstrapFiles != nil {
+			capi.BootstrapFiles = dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles)
 		}
-		if req.Capi.PreKubeadmCommands != nil {
-			capi.PreKubeadmCommands = append([]string(nil), req.Capi.PreKubeadmCommands...)
+		if req.Infra.PreKubeadmCommands != nil {
+			capi.PreKubeadmCommands = append([]string(nil), req.Infra.PreKubeadmCommands...)
 		}
-		if req.Capi.InfraMachineTemplate != nil {
-			if isEmptyManifestObject(req.Capi.InfraMachineTemplate) {
+		if req.Infra.MachineTemplate != nil {
+			if isEmptyManifestObject(req.Infra.MachineTemplate) {
 				capi.InfraMachineTemplatePreferences = nil
 			} else {
-				if err := validateCAPIInfrastructureManifest(req.Capi.InfraMachineTemplate); err != nil {
-					return newBadRequestErrorf("invalid capi.infraMachineTemplate: %s", err)
+				if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+					return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 				}
-				prefs, err := infraMachineTemplatePrefsFromAPI(req.Capi.InfraMachineTemplate)
+				prefs, err := infraMachineTemplatePrefsFromAPI(req.Infra.MachineTemplate)
 				if err != nil {
-					return newBadRequestErrorf("failed to convert capi.infraMachineTemplate: %v", err)
+					return newBadRequestErrorf("failed to convert infra.machineTemplate: %v", err)
 				}
 				capi.InfraMachineTemplatePreferences = prefs
 			}
@@ -983,7 +983,7 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		NodeLabels:                  append([]string(nil), cfg.NodeLabels...),
 		TeleportEnabled:             &teleportEnabled,
 		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),
-		Capi:                        apiCapiControlPlaneProviderFromDB(cfg.Capi),
+		Infra:                       apiInfraControlPlaneProviderFromDB(cfg.Capi),
 	}
 }
 
@@ -1151,8 +1151,8 @@ func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		},
 		CreatedAt: dbCluster.CreatedAt,
 
-		Nico: apiNicoClusterProviderFromDB(dbCluster.Nico),
-		Capi: apiCapiClusterProviderFromDB(dbCluster.Capi),
+		Nico:  apiNicoClusterProviderFromDB(dbCluster.Nico),
+		Infra: apiInfraClusterProviderFromDB(dbCluster.Capi),
 
 		Conditions: conditions,
 	}
@@ -1169,15 +1169,15 @@ func apiNicoClusterProviderFromDB(nicoClusterProvider *db.NicoClusterProvider) *
 	}
 }
 
-func apiCapiClusterProviderFromDB(capiClusterProvider *db.CAPIClusterProvider) *api.CapiClusterProvider {
+func apiInfraClusterProviderFromDB(capiClusterProvider *db.CAPIClusterProvider) *api.InfraClusterProvider {
 	if capiClusterProvider == nil {
 		return nil
 	}
-	capiInfraCluster, err := objectFromRawManifest(capiClusterProvider.InfraCluster)
+	capiCluster, err := objectFromRawManifest(capiClusterProvider.InfraCluster)
 	if err != nil {
-		capiInfraCluster = nil
+		capiCluster = nil
 	}
-	return &api.CapiClusterProvider{InfraCluster: capiInfraCluster}
+	return &api.InfraClusterProvider{Cluster: capiCluster}
 }
 
 func DBClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
@@ -1216,12 +1216,12 @@ func DBClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 			SiteID: req.Nico.SiteID,
 			VpcID:  req.Nico.VpcID,
 		})
-	case req.Capi != nil:
-		capiInfraCluster, err := rawManifestFromObject(req.Capi.InfraCluster)
+	case req.Infra != nil:
+		capiCluster, err := rawManifestFromObject(req.Infra.Cluster)
 		if err != nil {
 			return db.Cluster{}, err
 		}
-		cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: capiInfraCluster})
+		cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: capiCluster})
 	}
 
 	return cluster, nil

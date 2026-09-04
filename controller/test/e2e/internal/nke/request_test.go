@@ -80,17 +80,17 @@ func TestCAPDNodePoolRequest(t *testing.T) {
 	if req.Nico != nil {
 		t.Errorf("CAPD request contains nico fields: nico=%#v", req.Nico)
 	}
-	if req.Capi == nil {
-		t.Fatalf("CAPD request has no capi fields")
+	if req.Infra == nil {
+		t.Fatalf("CAPD request has no infra fields")
 	}
-	if req.Capi.SpireAttestationMethod != api.SpireAttestationMethodCreateJoinToken {
-		t.Errorf("SPIRE attestation method = %q, want %q", req.Capi.SpireAttestationMethod, api.SpireAttestationMethodCreateJoinToken)
+	if req.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateJoinToken {
+		t.Errorf("SPIRE attestation method = %q, want %q", req.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateJoinToken)
 	}
-	assertBootstrapSuccessCommands(t, req.Capi.PreKubeadmCommands)
+	assertBootstrapSuccessCommands(t, req.Infra.PreKubeadmCommands)
 
-	spec, ok := req.Capi.InfraMachineTemplate["spec"].(map[string]any)
+	spec, ok := req.Infra.MachineTemplate["spec"].(map[string]any)
 	if !ok {
-		t.Fatalf("CAPI machine template spec = %#v, want an object", req.Capi.InfraMachineTemplate["spec"])
+		t.Fatalf("CAPI machine template spec = %#v, want an object", req.Infra.MachineTemplate["spec"])
 	}
 	template, ok := spec["template"].(map[string]any)
 	if !ok {
@@ -254,17 +254,17 @@ func TestBuildNicoRequestNodePools(t *testing.T) {
 	if pools[0].Name != "control-plane" || !pools[0].ControlPlane {
 		t.Errorf("first Nico node pool = %q controlPlane=%t, want control-plane controlPlane=true", pools[0].Name, pools[0].ControlPlane)
 	}
-	if pools[0].Capi == nil {
-		t.Fatal("first Nico node pool capi is nil")
+	if pools[0].Infra == nil {
+		t.Fatal("first Nico node pool infra is nil")
 	}
-	assertBootstrapSuccessCommands(t, pools[0].Capi.PreKubeadmCommands)
+	assertBootstrapSuccessCommands(t, pools[0].Infra.PreKubeadmCommands)
 	if pools[1].Name != "worker" || pools[1].ControlPlane {
 		t.Errorf("second Nico node pool = %q controlPlane=%t, want worker controlPlane=false", pools[1].Name, pools[1].ControlPlane)
 	}
-	if pools[1].Capi == nil {
-		t.Fatal("second Nico node pool capi is nil")
+	if pools[1].Infra == nil {
+		t.Fatal("second Nico node pool infra is nil")
 	}
-	assertBootstrapSuccessCommands(t, pools[1].Capi.PreKubeadmCommands)
+	assertBootstrapSuccessCommands(t, pools[1].Infra.PreKubeadmCommands)
 }
 
 func assertBootstrapSuccessCommands(t *testing.T, got []string) {

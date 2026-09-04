@@ -41,12 +41,12 @@ const (
 //
 // The shape of the request is what makes it a site cluster:
 //
-//   - the request carries a capi payload and no nico payload. That is how CWE
+//   - the request carries an infra payload and no nico payload. That is how CWE
 //     selects CAPI mode over Forge mode.
-//   - capi.infraCluster is a ProvisionedCluster whose site spec is the hosts
+//   - infra.cluster is a ProvisionedCluster whose site spec is the hosts
 //     from the file. The provider hands one host to each machine; it creates
 //     nothing.
-//   - the node pool's capi.infraMachineTemplate is a ProvisionedMachineTemplate
+//   - the node pool's infra.machineTemplate is a ProvisionedMachineTemplate
 //     with an empty spec. Everything a machine needs is already in the
 //     ProvisionedCluster's site spec, so there is nothing to say per machine.
 func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, error) {
@@ -70,16 +70,16 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 			DesiredNodeCount:     len(hosts),
 			ControlPlane:         true,
 			SystemReservedMemory: inv.Cluster.KubeletConfig.SystemReservedMemory,
-			Capi: &api.CapiNodePoolProvider{
+			Infra: &api.InfraNodePoolProvider{
 				// The provisioned provider copies the allocated host's TPM identity
 				// to the CAPI Machine. CWE uses it as the parent of the node-agent
 				// workload entry; no bootstrap join token is needed.
 				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
-				InfraMachineTemplate:   provisionedMachineTemplate(),
+				MachineTemplate:        provisionedMachineTemplate(),
 			},
 		}},
-		Capi: &api.CapiClusterProvider{
-			InfraCluster: provisionedCluster(inv.ClusterName, hosts),
+		Infra: &api.InfraClusterProvider{
+			Cluster: provisionedCluster(inv.ClusterName, hosts),
 		},
 	}
 

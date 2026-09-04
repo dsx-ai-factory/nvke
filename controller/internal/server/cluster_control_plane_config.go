@@ -98,29 +98,29 @@ func validateCreateClusterLevelControlPlane(
 }
 
 // validateCreateCAPIControlPlaneConfig enforces CAPI control-plane config rules:
-// capi.infraMachineTemplate is required and Forge-only fields are rejected.
+// infra.machineTemplate is required and Forge-only fields are rejected.
 func validateCreateCAPIControlPlaneConfig(c *api.CreateClusterControlPlaneConfig) error {
 	if c.Nico != nil {
-		return fmt.Errorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.capi")
+		return fmt.Errorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	}
-	if c.Capi == nil || isEmptyManifestObject(c.Capi.InfraMachineTemplate) {
-		return fmt.Errorf("controlPlaneConfig.capi.infraMachineTemplate is required")
+	if c.Infra == nil || isEmptyManifestObject(c.Infra.MachineTemplate) {
+		return fmt.Errorf("controlPlaneConfig.infra.machineTemplate is required")
 	}
-	if err := validateCAPIInfrastructureManifest(c.Capi.InfraMachineTemplate); err != nil {
-		return fmt.Errorf("invalid controlPlaneConfig.capi.infraMachineTemplate: %w", err)
+	if err := validateCAPIInfrastructureManifest(c.Infra.MachineTemplate); err != nil {
+		return fmt.Errorf("invalid controlPlaneConfig.infra.machineTemplate: %w", err)
 	}
-	if err := validateCAPISpireAttestationMethod(string(c.Capi.SpireAttestationMethod)); err != nil {
+	if err := validateCAPISpireAttestationMethod(string(c.Infra.SpireAttestationMethod)); err != nil {
 		return err
 	}
-	return validateCloudInitFiles(c.Capi.BootstrapFiles)
+	return validateCloudInitFiles(c.Infra.BootstrapFiles)
 }
 
 // validateCreateForgeControlPlaneConfigFields enforces the non-networking Forge
 // control-plane config rules: CAPI-only fields are rejected and the required
 // Forge fields are present.
 func validateCreateForgeControlPlaneConfigFields(c *api.CreateClusterControlPlaneConfig) error {
-	if c.Capi != nil {
-		return fmt.Errorf("controlPlaneConfig.capi is not supported, please provide controlPlaneConfig.nico")
+	if c.Infra != nil {
+		return fmt.Errorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
 	}
 	if c.Nico == nil {
 		return fmt.Errorf("controlPlaneConfig.nico is required for a nico cluster control plane")
@@ -159,7 +159,7 @@ func validateMergedForgeControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 		return newBadRequestErrorf("controlPlaneConfig.nico is required for a nico cluster control plane")
 	}
 	if spec.Capi != nil {
-		return newBadRequestErrorf("controlPlaneConfig.capi is not supported, please provide controlPlaneConfig.nico")
+		return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
 	}
 	if len(spec.Nico.InstanceTypePreference) == 0 {
 		return newBadRequestErrorf("controlPlaneConfig.nico.instanceTypePreference must contain at least one instance type ID for a nico cluster control plane")
@@ -175,13 +175,13 @@ func validateMergedForgeControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 
 func validateMergedCAPIControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 	if spec.Capi == nil {
-		return newBadRequestErrorf("controlPlaneConfig.capi is required")
+		return newBadRequestErrorf("controlPlaneConfig.infra is required")
 	}
 	if spec.Nico != nil {
-		return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.capi")
+		return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	}
 	if firstInfraMachineTemplateObject(spec.Capi.InfraMachineTemplatePreferences) == nil {
-		return newBadRequestErrorf("controlPlaneConfig.capi.infraMachineTemplate is required")
+		return newBadRequestErrorf("controlPlaneConfig.infra.machineTemplate is required")
 	}
 	var bootstrapFiles []api.CloudInitFile
 	if files := apiCloudInitFilesFromDB(spec.CapiBootstrapFiles); files != nil {
@@ -256,11 +256,11 @@ func controlPlaneConfigSpecFromCreateAPI(
 		return spec
 	case db.ProviderTypeCAPI:
 		capiControlPlaneProvider := db.CAPIControlPlaneProvider{}
-		if c.Capi != nil {
-			capiControlPlaneProvider.SpireAttestationMethod = db.SpireAttestationMethod(c.Capi.SpireAttestationMethod)
-			capiControlPlaneProvider.BootstrapFiles = dbCloudInitFilesFromAPI(c.Capi.BootstrapFiles)
-			capiControlPlaneProvider.PreKubeadmCommands = append([]string(nil), c.Capi.PreKubeadmCommands...)
-			if prefs, err := infraMachineTemplatePrefsFromAPI(c.Capi.InfraMachineTemplate); err == nil {
+		if c.Infra != nil {
+			capiControlPlaneProvider.SpireAttestationMethod = db.SpireAttestationMethod(c.Infra.SpireAttestationMethod)
+			capiControlPlaneProvider.BootstrapFiles = dbCloudInitFilesFromAPI(c.Infra.BootstrapFiles)
+			capiControlPlaneProvider.PreKubeadmCommands = append([]string(nil), c.Infra.PreKubeadmCommands...)
+			if prefs, err := infraMachineTemplatePrefsFromAPI(c.Infra.MachineTemplate); err == nil {
 				capiControlPlaneProvider.InfraMachineTemplatePreferences = prefs
 			}
 		}
@@ -290,13 +290,13 @@ func apiNicoControlPlaneProviderFromDB(nicoControlPlaneProvider *db.NicoControlP
 	return out
 }
 
-func apiCapiControlPlaneProviderFromDB(capiControlPlaneProvider *db.CAPIControlPlaneProvider) *api.CapiControlPlaneProvider {
+func apiInfraControlPlaneProviderFromDB(capiControlPlaneProvider *db.CAPIControlPlaneProvider) *api.InfraControlPlaneProvider {
 	if capiControlPlaneProvider == nil {
 		return nil
 	}
 
-	out := &api.CapiControlPlaneProvider{
-		InfraMachineTemplate:   firstInfraMachineTemplateObject(capiControlPlaneProvider.InfraMachineTemplatePreferences),
+	out := &api.InfraControlPlaneProvider{
+		MachineTemplate:        firstInfraMachineTemplateObject(capiControlPlaneProvider.InfraMachineTemplatePreferences),
 		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiControlPlaneProvider.SpireAttestationMethod),
 		PreKubeadmCommands:     append([]string(nil), capiControlPlaneProvider.PreKubeadmCommands...),
 	}

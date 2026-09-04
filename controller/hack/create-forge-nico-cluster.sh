@@ -46,8 +46,8 @@ BODY=$(cat <<EOF
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "ovn-kubernetes",
   "etcdEncrypted": false,
-  "capi": {
-    "infraCluster": {
+  "infra": {
+    "cluster": {
       "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
       "kind": "NicoCluster",
       "metadata": {
@@ -68,8 +68,8 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capi": {
-        "infraMachineTemplate": {
+      "infra": {
+        "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",
         "metadata": {
@@ -121,8 +121,8 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capi": {
-        "infraMachineTemplate": {
+      "infra": {
+        "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",
         "metadata": {

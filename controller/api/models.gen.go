@@ -55,91 +55,6 @@ const (
 	UpdateInProgressTypeOidcEnable       UpdateInProgressType = "oidc_enable"
 )
 
-// CapiClusterProvider CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
-// directly. Not to be used merely because a cluster is provisioned through CAPI —
-// `nico` clusters may be too. Mutually exclusive with `nico`.
-type CapiClusterProvider struct {
-	// InfraCluster Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource
-	InfraCluster map[string]interface{} `json:"infraCluster,omitempty"`
-}
-
-// CapiControlPlaneProvider CAPI fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
-type CapiControlPlaneProvider struct {
-	// BootstrapFiles Cloud-init write_files entries for CAPI-backed control plane nodes
-	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
-
-	// InfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
-	InfraMachineTemplate map[string]interface{} `json:"infraMachineTemplate,omitempty"`
-
-	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
-	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
-}
-
-// CapiControlPlaneProviderUpdate The mutable CAPI control plane fields. Every field carries three states: omitted
-// leaves the stored value alone, a value replaces it, and an empty value clears it.
-type CapiControlPlaneProviderUpdate struct {
-	// BootstrapFiles Cloud-init write_files entries for CAPI-backed control plane nodes
-	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
-
-	// InfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
-	InfraMachineTemplate map[string]interface{} `json:"infraMachineTemplate,omitempty"`
-
-	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
-	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
-}
-
-// CapiNodePoolProvider CAPI fields for a node pool. Mutually exclusive with `nico`.
-type CapiNodePoolProvider struct {
-	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
-	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
-
-	// InfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
-	InfraMachineTemplate map[string]interface{} `json:"infraMachineTemplate,omitempty"`
-
-	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
-	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
-}
-
-// CapiNodePoolProviderUpdate The mutable CAPI node pool fields. Every field carries three states: omitted
-// leaves the stored value alone, a value replaces it, and an empty value clears it.
-type CapiNodePoolProviderUpdate struct {
-	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
-	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
-
-	// InfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
-	InfraMachineTemplate map[string]interface{} `json:"infraMachineTemplate,omitempty"`
-
-	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
-	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
-}
-
-// CapiNodeSetProvider CAPI fields for a node set (read-only snapshot).
-type CapiNodeSetProvider struct {
-	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
-	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
-
-	// InfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
-	InfraMachineTemplate map[string]interface{} `json:"infraMachineTemplate,omitempty"`
-
-	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
-	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
-
-	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
-}
-
 // CloudInitFile defines model for CloudInitFile.
 type CloudInitFile struct {
 	// Content File contents written by cloud-init.
@@ -184,11 +99,6 @@ type Cluster struct {
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this cluster.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
-	// Capi CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
-	// directly. Not to be used merely because a cluster is provisioned through CAPI —
-	// `nico` clusters may be too. Mutually exclusive with `nico`.
-	Capi *CapiClusterProvider `json:"capi,omitempty"`
-
 	// Conditions Conditions representing various aspects of the Cluster's state
 	Conditions ClusterConditions `json:"conditions"`
 
@@ -196,10 +106,15 @@ type Cluster struct {
 	ControlPlaneConfig *ControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
 	// CreatedAt When the cluster was created
-	CreatedAt time.Time      `json:"createdAt"`
-	Network   ClusterNetwork `json:"network"`
+	CreatedAt time.Time `json:"createdAt"`
 
-	// Nico Nico identity fields for a cluster. Mutually exclusive with `capi`.
+	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
+	// directly. Not to be used merely because a cluster is provisioned through CAPI —
+	// `nico` clusters may be too. Mutually exclusive with `nico`.
+	Infra   *InfraClusterProvider `json:"infra,omitempty"`
+	Network ClusterNetwork        `json:"network"`
+
+	// Nico Nico identity fields for a cluster. Mutually exclusive with `infra`.
 	Nico *NicoClusterProvider `json:"nico,omitempty"`
 }
 
@@ -272,21 +187,21 @@ type ConfigProfile struct {
 
 // ControlPlaneConfig Cluster-level control plane configuration.
 type ControlPlaneConfig struct {
-	// Capi CAPI fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
-	Capi *CapiControlPlaneProvider `json:"capi,omitempty"`
-
 	// ConfigurationID The ID of the current control plane configuration snapshot revision.
 	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
 
 	// DesiredCount The desired number of cluster-level control plane nodes.
 	DesiredCount int `json:"desiredCount,omitempty"`
 
+	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
+
 	// MaxSurge Cluster-level surge capacity for control plane nodes during upgrades.
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
 	// Nico The stored Nico cluster-level control plane fields, as reported on read.
 	// Requests use `NicoControlPlaneProviderCreate` and `NicoControlPlaneProviderUpdate`,
-	// which omit the fields that direction cannot set. Mutually exclusive with `capi`.
+	// which omit the fields that direction cannot set. Mutually exclusive with `infra`.
 	Nico *NicoControlPlaneProvider `json:"nico,omitempty"`
 
 	// NodeLabels A list of labels applied to control plane nodes.
@@ -318,14 +233,14 @@ type ControlPlaneStatus struct {
 }
 
 // CreateClusterControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
-// Exactly one provider payload is required: supply either `nico` or `capi`.
+// Exactly one provider payload is required: supply either `nico` or `infra`.
 // A request carrying both, or neither, is rejected with 400.
 type CreateClusterControlPlaneConfig struct {
-	// Capi CAPI fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
-	Capi *CapiControlPlaneProvider `json:"capi,omitempty"`
-
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
 	DesiredCount int `json:"desiredCount"`
+
+	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
 
 	// MaxSurge Cluster-level surge capacity for control plane nodes during upgrades (max 1).
 	MaxSurge *int `json:"maxSurge,omitempty"`
@@ -346,7 +261,7 @@ type CreateClusterControlPlaneConfig struct {
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 }
 
-// CreateClusterRequest Exactly one provider payload is required: supply either `nico` or `capi`.
+// CreateClusterRequest Exactly one provider payload is required: supply either `nico` or `infra`.
 // A request carrying both, or neither, is rejected with 400.
 type CreateClusterRequest struct {
 	// Name The name of the cluster. Must be a lowercase DNS label, because CWE derives the names of the cluster's CAPI resources and its node names from it.
@@ -381,20 +296,20 @@ type CreateClusterRequest struct {
 	// TeleportEnabled Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
-	// Capi CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
-	// directly. Not to be used merely because a cluster is provisioned through CAPI —
-	// `nico` clusters may be too. Mutually exclusive with `nico`.
-	Capi *CapiClusterProvider `json:"capi,omitempty"`
-
 	// ControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
-	// Exactly one provider payload is required: supply either `nico` or `capi`.
+	// Exactly one provider payload is required: supply either `nico` or `infra`.
 	// A request carrying both, or neither, is rejected with 400.
 	ControlPlaneConfig *CreateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
+
+	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
+	// directly. Not to be used merely because a cluster is provisioned through CAPI —
+	// `nico` clusters may be too. Mutually exclusive with `nico`.
+	Infra *InfraClusterProvider `json:"infra,omitempty"`
 
 	// Network Non-default pod or service CIDRs are supported only with the ovn-kubernetes CNI plugin.
 	Network *ClusterNetworkCreateConfig `json:"network,omitempty"`
 
-	// Nico Nico identity fields for a cluster. Mutually exclusive with `capi`.
+	// Nico Nico identity fields for a cluster. Mutually exclusive with `infra`.
 	Nico *NicoClusterProvider `json:"nico,omitempty"`
 
 	// NodePools The initial set of node pools to create for the cluster
@@ -430,10 +345,10 @@ type CreateNodePoolRequest struct {
 	// AutoProvisionDisabled Whether the node pool is disabled for auto-provisioning.
 	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
 
-	// Capi CAPI fields for a node pool. Mutually exclusive with `nico`.
-	Capi *CapiNodePoolProvider `json:"capi,omitempty"`
+	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
+	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
-	// Nico Nico fields for a node pool. Mutually exclusive with `capi`.
+	// Nico Nico fields for a node pool. Mutually exclusive with `infra`.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
@@ -493,6 +408,91 @@ type GenericError struct {
 	Message string `json:"message"`
 }
 
+// InfraClusterProvider CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
+// directly. Not to be used merely because a cluster is provisioned through CAPI —
+// `nico` clusters may be too. Mutually exclusive with `nico`.
+type InfraClusterProvider struct {
+	// Cluster Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource
+	Cluster map[string]interface{} `json:"cluster,omitempty"`
+}
+
+// InfraControlPlaneProvider Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+type InfraControlPlaneProvider struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed control plane nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraControlPlaneProviderUpdate The mutable infra provider control plane fields. Every field carries three states: omitted
+// leaves the stored value alone, a value replaces it, and an empty value clears it.
+type InfraControlPlaneProviderUpdate struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed control plane nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraNodePoolProvider Infra provider fields for a node pool. Mutually exclusive with `nico`.
+type InfraNodePoolProvider struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraNodePoolProviderUpdate The mutable infra provider node pool fields. Every field carries three states: omitted
+// leaves the stored value alone, a value replaces it, and an empty value clears it.
+type InfraNodePoolProviderUpdate struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infra provider MachineTemplate resource
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraNodeSetProvider Infra provider fields for a node set (read-only snapshot).
+type InfraNodeSetProvider struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
+}
+
 // ListCNIPluginsResponse defines model for ListCNIPluginsResponse.
 type ListCNIPluginsResponse struct {
 	// CniPlugins A list of CNI plugins
@@ -546,7 +546,7 @@ type MachineHealthIssue struct {
 	Details string `json:"details,omitempty"`
 }
 
-// NicoClusterProvider Nico identity fields for a cluster. Mutually exclusive with `capi`.
+// NicoClusterProvider Nico identity fields for a cluster. Mutually exclusive with `infra`.
 type NicoClusterProvider struct {
 	// OrgID The ID of the NGC organization that owns the cluster
 	OrgID string `json:"orgID,omitempty"`
@@ -560,7 +560,7 @@ type NicoClusterProvider struct {
 
 // NicoControlPlaneProvider The stored Nico cluster-level control plane fields, as reported on read.
 // Requests use `NicoControlPlaneProviderCreate` and `NicoControlPlaneProviderUpdate`,
-// which omit the fields that direction cannot set. Mutually exclusive with `capi`.
+// which omit the fields that direction cannot set. Mutually exclusive with `infra`.
 type NicoControlPlaneProvider struct {
 	// ConfigProfile Config profile name for control plane nodes
 	ConfigProfile string `json:"configProfile,omitempty"`
@@ -630,7 +630,7 @@ type NicoControlPlaneProviderUpdate struct {
 	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// NicoNodePoolProvider Nico fields for a node pool. Mutually exclusive with `capi`.
+// NicoNodePoolProvider Nico fields for a node pool. Mutually exclusive with `infra`.
 type NicoNodePoolProvider struct {
 	// ConfigProfile Config profile name for nodes
 	ConfigProfile string `json:"configProfile,omitempty"`
@@ -839,16 +839,16 @@ type NodePool struct {
 	// AutoProvisionDisabled Whether the node pool is disabled for auto-provisioning.
 	AutoProvisionDisabled bool `json:"autoProvisionDisabled"`
 
-	// Capi CAPI fields for a node pool. Mutually exclusive with `nico`.
-	Capi *CapiNodePoolProvider `json:"capi,omitempty"`
-
 	// Conditions Conditions representing various aspects of the node pool's state
 	Conditions NodePoolConditions `json:"conditions"`
 
 	// CurrentNodeSetID The ID of the current node set for the node pool
 	CurrentNodeSetID *openapi_types.UUID `json:"currentNodeSetID"`
 
-	// Nico Nico fields for a node pool. Mutually exclusive with `capi`.
+	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
+	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// Nico Nico fields for a node pool. Mutually exclusive with `infra`.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
@@ -915,7 +915,7 @@ type NodePoolConfigHistory struct {
 }
 
 // NodePoolCreateConfig A node pool follows its cluster's provider, so exactly one provider payload is
-// required: supply either `nico` or `capi`. A request carrying both, or neither,
+// required: supply either `nico` or `infra`. A request carrying both, or neither,
 // is rejected with 400.
 type NodePoolCreateConfig struct {
 	// Name The name of the node pool (must conform to Kubernetes resource naming standards)
@@ -936,13 +936,13 @@ type NodePoolCreateConfig struct {
 	// DesiredNodeCount The desired number of nodes in the pool
 	DesiredNodeCount int `json:"desiredNodeCount"`
 
-	// Capi CAPI fields for a node pool. Mutually exclusive with `nico`.
-	Capi *CapiNodePoolProvider `json:"capi,omitempty"`
-
 	// Description An optional description for the node pool.
 	Description *string `json:"description,omitempty"`
 
-	// Nico Nico fields for a node pool. Mutually exclusive with `capi`.
+	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
+	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// Nico Nico fields for a node pool. Mutually exclusive with `infra`.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
 	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
@@ -972,11 +972,11 @@ type NodeSet struct {
 	// DesiredCount The desired number of nodes in the node set
 	DesiredCount int `json:"desiredCount"`
 
-	// Capi CAPI fields for a node set (read-only snapshot).
-	Capi *CapiNodeSetProvider `json:"capi,omitempty"`
-
 	// ID The ID of the node set
 	ID openapi_types.UUID `json:"id"`
+
+	// Infra Infra provider fields for a node set (read-only snapshot).
+	Infra *InfraNodeSetProvider `json:"infra,omitempty"`
 
 	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Empty when the kubelet configuration patch uses its default (2Gi).
 	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`
@@ -1009,16 +1009,16 @@ type SpireAttestationMethod string
 // SpireAttestationMethodCreate How CWE configures SPIRE agent attestation for CAPI-backed nodes.
 type SpireAttestationMethodCreate string
 
-// UpdateClusterControlPlaneConfig `nico` and `capi` are mutually exclusive: supply at most one of them (both
+// UpdateClusterControlPlaneConfig `nico` and `infra` are mutually exclusive: supply at most one of them (both
 // may be omitted). A request carrying both is rejected with 400, as is a
 // provider payload that does not match the cluster.
 type UpdateClusterControlPlaneConfig struct {
-	// Capi The mutable CAPI control plane fields. Every field carries three states: omitted
-	// leaves the stored value alone, a value replaces it, and an empty value clears it.
-	Capi *CapiControlPlaneProviderUpdate `json:"capi,omitempty"`
-
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
 	DesiredCount *int `json:"desiredCount,omitempty"`
+
+	// Infra The mutable infra provider control plane fields. Every field carries three states: omitted
+	// leaves the stored value alone, a value replaces it, and an empty value clears it.
+	Infra *InfraControlPlaneProviderUpdate `json:"infra,omitempty"`
 
 	// MaxSurge Set cluster-level max surge.
 	MaxSurge *int `json:"maxSurge,omitempty"`
@@ -1044,7 +1044,7 @@ type UpdateClusterControlPlaneConfig struct {
 
 // UpdateClusterRequest defines model for UpdateClusterRequest.
 type UpdateClusterRequest struct {
-	// ControlPlaneConfig `nico` and `capi` are mutually exclusive: supply at most one of them (both
+	// ControlPlaneConfig `nico` and `infra` are mutually exclusive: supply at most one of them (both
 	// may be omitted). A request carrying both is rejected with 400, as is a
 	// provider payload that does not match the cluster.
 	ControlPlaneConfig *UpdateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
@@ -1094,7 +1094,7 @@ type UpdateInProgress struct {
 // UpdateInProgressType The kind of long-running cluster mutation in flight.
 type UpdateInProgressType string
 
-// UpdateNodePoolRequest `nico` and `capi` are mutually exclusive: supply at most one of them (both
+// UpdateNodePoolRequest `nico` and `infra` are mutually exclusive: supply at most one of them (both
 // may be omitted). A request carrying both is rejected with 400, as is a
 // provider payload that does not match the node pool's cluster.
 type UpdateNodePoolRequest struct {
@@ -1104,15 +1104,15 @@ type UpdateNodePoolRequest struct {
 	// AutoProvisionDisabled Whether the node pool is disabled for auto-provisioning.
 	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
 
-	// Capi The mutable CAPI node pool fields. Every field carries three states: omitted
-	// leaves the stored value alone, a value replaces it, and an empty value clears it.
-	Capi *CapiNodePoolProviderUpdate `json:"capi,omitempty"`
-
 	// Description An optional description for the node pool.
 	Description *string `json:"description,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool
 	DesiredNodeCount *int `json:"desiredNodeCount,omitempty"`
+
+	// Infra The mutable infra provider node pool fields. Every field carries three states: omitted
+	// leaves the stored value alone, a value replaces it, and an empty value clears it.
+	Infra *InfraNodePoolProviderUpdate `json:"infra,omitempty"`
 
 	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Set an empty value to restore the kubelet configuration patch default (2Gi).
 	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`

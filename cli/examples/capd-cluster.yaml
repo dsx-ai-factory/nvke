@@ -24,12 +24,12 @@ nodePools:
     autoProvisionDisabled: false
     autoModeDisabled: false
     recycleBudget: 0
-    capi:
+    infra:
       spireAttestationMethod: joinToken
       preKubeadmCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"
-      infraMachineTemplate:
+      machineTemplate:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
         kind: DockerMachineTemplate
         spec:
@@ -48,12 +48,12 @@ nodePools:
     autoProvisionDisabled: false
     autoModeDisabled: false
     recycleBudget: 0
-    capi:
+    infra:
       spireAttestationMethod: joinToken
       preKubeadmCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"
-      infraMachineTemplate:
+      machineTemplate:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
         kind: DockerMachineTemplate
         spec:
@@ -64,8 +64,8 @@ nodePools:
                 - containerPath: /var/run/docker.sock
                   hostPath: /var/run/docker.sock
 
-capi:
-  infraCluster:
+infra:
+  cluster:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
     kind: DockerCluster
     metadata:

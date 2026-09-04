@@ -22,23 +22,23 @@ func TestAPINodePoolFromDB_SpireAttestationMethod(t *testing.T) {
 		return pool
 	}
 
-	t.Run("omits the capi payload for a pool that has none", func(t *testing.T) {
+	t.Run("omits the infra payload for a pool that has none", func(t *testing.T) {
 		apiNodePool := apiNodePoolFromDB(&db.NodePool{})
-		require.Nil(t, apiNodePool.Capi)
+		require.Nil(t, apiNodePool.Infra)
 	})
 
 	t.Run("returns tpm attestation method when set", func(t *testing.T) {
 		apiNodePool := apiNodePoolFromDB(nodePoolWithCAPIMethod(db.SpireAttestationMethodTPM))
 
-		require.NotNil(t, apiNodePool.Capi)
-		require.Equal(t, api.SpireAttestationMethodCreateTpm, apiNodePool.Capi.SpireAttestationMethod)
+		require.NotNil(t, apiNodePool.Infra)
+		require.Equal(t, api.SpireAttestationMethodCreateTpm, apiNodePool.Infra.SpireAttestationMethod)
 	})
 
 	t.Run("returns join token attestation method when set", func(t *testing.T) {
 		apiNodePool := apiNodePoolFromDB(nodePoolWithCAPIMethod(db.SpireAttestationMethodJoinToken))
 
-		require.NotNil(t, apiNodePool.Capi)
-		require.Equal(t, api.SpireAttestationMethodCreateJoinToken, apiNodePool.Capi.SpireAttestationMethod)
+		require.NotNil(t, apiNodePool.Infra)
+		require.Equal(t, api.SpireAttestationMethodCreateJoinToken, apiNodePool.Infra.SpireAttestationMethod)
 	})
 }
 
@@ -49,11 +49,11 @@ func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiresCAPITemplat
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
-		Capi: &api.CapiNodePoolProvider{
+		Infra: &api.InfraNodePoolProvider{
 			SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
 		},
 	})
-	require.EqualError(t, err, "capi.infraMachineTemplate is required")
+	require.EqualError(t, err, "infra.machineTemplate is required")
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiredForCAPIClusters(t *testing.T) {
@@ -63,10 +63,10 @@ func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiredForCAPIClus
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
-		Capi: &api.CapiNodePoolProvider{
-			InfraMachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 		},
 	}
 	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), req)
-	require.EqualError(t, err, "capi.spireAttestationMethod is required")
+	require.EqualError(t, err, "infra.spireAttestationMethod is required")
 }

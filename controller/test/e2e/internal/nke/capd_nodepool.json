@@ -7,9 +7,9 @@
   "autoProvisionDisabled": false,
   "autoModeDisabled": false,
   "recycleBudget": 0,
-  "capi": {
+  "infra": {
     "spireAttestationMethod": "joinToken",
-    "infraMachineTemplate": {
+    "machineTemplate": {
       "apiVersion": "infrastructure.cluster.x-k8s.io/v1beta2",
       "kind": "DockerMachineTemplate",
       "spec": { "template": { "spec": {

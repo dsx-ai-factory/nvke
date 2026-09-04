@@ -499,16 +499,16 @@ func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
 		clusterNico = `"nico":{"orgID":"` + testOrgID + `",` +
 			`"siteID":"550e8400-e29b-41d4-a716-446655440001",` +
 			`"vpcID":"550e8400-e29b-41d4-a716-446655440002"}`
-		clusterCapi = `"capi":{"infraCluster":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
+		clusterInfra = `"infra":{"cluster":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
 			`"kind":"DockerCluster","metadata":{"name":"test-cluster"}}}`
 		cpNico = `"nico":{"instanceTypePreference":["550e8400-e29b-41d4-a716-446655440003"],` +
 			`"osProfile":"ubuntu","configProfile":"default"}`
-		cpCapi = `"capi":{"infraMachineTemplate":{` +
+		cpInfra = `"infra":{"machineTemplate":{` +
 			`"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
 			`"kind":"DockerMachineTemplate","metadata":{"name":"cp"}}}`
 		poolNico = `"nico":{"instanceTypeID":"550e8400-e29b-41d4-a716-446655440004",` +
 			`"osProfile":"ubuntu","configProfile":"default"}`
-		poolCapi = `"capi":{"infraMachineTemplate":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
+		poolInfra = `"infra":{"machineTemplate":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
 			`"kind":"DockerMachineTemplate","metadata":{"name":"worker"}}}`
 	)
 
@@ -542,7 +542,7 @@ func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
 	}{
 		{
 			name:         "cluster carrying both providers",
-			cluster:      clusterNico + "," + clusterCapi,
+			cluster:      clusterNico + "," + clusterInfra,
 			controlPlane: cpNico,
 			nodePool:     poolNico,
 			expectReject: true,
@@ -556,7 +556,7 @@ func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
 		{
 			name:         "control plane config carrying both providers",
 			cluster:      clusterNico,
-			controlPlane: cpNico + "," + cpCapi,
+			controlPlane: cpNico + "," + cpInfra,
 			nodePool:     poolNico,
 			expectReject: true,
 		},
@@ -570,7 +570,7 @@ func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
 			name:         "node pool carrying both providers",
 			cluster:      clusterNico,
 			controlPlane: cpNico,
-			nodePool:     poolNico + "," + poolCapi,
+			nodePool:     poolNico + "," + poolInfra,
 			expectReject: true,
 		},
 		{

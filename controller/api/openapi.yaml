@@ -601,14 +601,14 @@ components:
       # required. Rejecting "both or neither" leaves exactly one.
       not:
         anyOf:
-          - required: [nico, capi]
+          - required: [nico, infra]
           - allOf:
               - not:
                   required: [nico]
               - not:
-                  required: [capi]
+                  required: [infra]
       description: |
-        Exactly one provider payload is required: supply either `nico` or `capi`.
+        Exactly one provider payload is required: supply either `nico` or `infra`.
         A request carrying both, or neither, is rejected with 400.
       properties:
         name:
@@ -695,9 +695,9 @@ components:
           $ref: "#/components/schemas/NicoClusterProvider"
           description: Provider Nico identity fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiClusterProvider"
-          description: Provider CAPI fields.
+        infra:
+          $ref: "#/components/schemas/InfraClusterProvider"
+          description: Ifra provider fields.
           x-go-type-skip-optional-pointer: true
     ControlPlaneConfig:
       type: object
@@ -744,9 +744,9 @@ components:
           $ref: "#/components/schemas/NicoControlPlaneProvider"
           description: Provider Nico control plane fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiControlPlaneProvider"
-          description: Provider CAPI control plane fields.
+        infra:
+          $ref: "#/components/schemas/InfraControlPlaneProvider"
+          description: Infra provider control plane fields.
           x-go-type-skip-optional-pointer: true
 
     ClusterControlPlane:
@@ -812,15 +812,15 @@ components:
       # payload is required whenever this object is supplied.
       not:
         anyOf:
-          - required: [nico, capi]
+          - required: [nico, infra]
           - allOf:
               - not:
                   required: [nico]
               - not:
-                  required: [capi]
+                  required: [infra]
       description: |
         Writable cluster-level control plane configuration supplied at cluster creation.
-        Exactly one provider payload is required: supply either `nico` or `capi`.
+        Exactly one provider payload is required: supply either `nico` or `infra`.
         A request carrying both, or neither, is rejected with 400.
       properties:
         desiredCount:
@@ -854,17 +854,17 @@ components:
           $ref: "#/components/schemas/NicoControlPlaneProviderCreate"
           description: Provider Nico control plane fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiControlPlaneProvider"
-          description: Provider CAPI control plane fields.
+        infra:
+          $ref: "#/components/schemas/InfraControlPlaneProvider"
+          description: Infra provider control plane fields.
           x-go-type-skip-optional-pointer: true
     UpdateClusterControlPlaneConfig:
       type: object
       additionalProperties: false
       not:
-        required: [nico, capi]
+        required: [nico, infra]
       description: |
-        `nico` and `capi` are mutually exclusive: supply at most one of them (both
+        `nico` and `infra` are mutually exclusive: supply at most one of them (both
         may be omitted). A request carrying both is rejected with 400, as is a
         provider payload that does not match the cluster.
       properties:
@@ -895,9 +895,9 @@ components:
           $ref: "#/components/schemas/NicoControlPlaneProviderUpdate"
           description: The mutable subset of the Nico control plane fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiControlPlaneProviderUpdate"
-          description: The mutable CAPI control plane fields.
+        infra:
+          $ref: "#/components/schemas/InfraControlPlaneProviderUpdate"
+          description: The mutable infra provider control plane fields.
           x-go-type-skip-optional-pointer: true
     Cluster:
       type: object
@@ -973,9 +973,9 @@ components:
           $ref: "#/components/schemas/NicoClusterProvider"
           description: Provider Nico identity fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiClusterProvider"
-          description: Provider CAPI fields.
+        infra:
+          $ref: "#/components/schemas/InfraClusterProvider"
+          description: Infra provider fields.
           x-go-type-skip-optional-pointer: true
     UpdateClusterRequest:
       type: object
@@ -1134,7 +1134,7 @@ components:
       type: object
       description: |
         A node pool follows its cluster's provider, so exactly one provider payload is
-        required: supply either `nico` or `capi`. A request carrying both, or neither,
+        required: supply either `nico` or `infra`. A request carrying both, or neither,
         is rejected with 400.
       required:
         - name
@@ -1143,12 +1143,12 @@ components:
       # See CreateClusterRequest for why this is spelled with `not` instead of `oneOf`.
       not:
         anyOf:
-          - required: [nico, capi]
+          - required: [nico, infra]
           - allOf:
               - not:
                   required: [nico]
               - not:
-                  required: [capi]
+                  required: [infra]
       properties:
         name:
           type: string
@@ -1222,17 +1222,17 @@ components:
           $ref: "#/components/schemas/NicoNodePoolProvider"
           description: Provider Nico node pool fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiNodePoolProvider"
-          description: Provider CAPI node pool fields.
+        infra:
+          $ref: "#/components/schemas/InfraNodePoolProvider"
+          description: Infra provider node pool fields.
           x-go-type-skip-optional-pointer: true
     UpdateNodePoolRequest:
       type: object
       additionalProperties: false
       not:
-        required: [nico, capi]
+        required: [nico, infra]
       description: |
-        `nico` and `capi` are mutually exclusive: supply at most one of them (both
+        `nico` and `infra` are mutually exclusive: supply at most one of them (both
         may be omitted). A request carrying both is rejected with 400, as is a
         provider payload that does not match the node pool's cluster.
       # No required fields since all fields are optional
@@ -1286,9 +1286,9 @@ components:
           $ref: "#/components/schemas/NicoNodePoolProviderUpdate"
           description: The mutable subset of the Nico node pool fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiNodePoolProviderUpdate"
-          description: The mutable CAPI node pool fields.
+        infra:
+          $ref: "#/components/schemas/InfraNodePoolProviderUpdate"
+          description: The mutable Infra provider node pool fields.
           x-go-type-skip-optional-pointer: true
     NodePool:
       type: object
@@ -1402,9 +1402,9 @@ components:
           $ref: "#/components/schemas/NicoNodePoolProvider"
           description: Provider Nico node pool fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiNodePoolProvider"
-          description: Provider CAPI node pool fields.
+        infra:
+          $ref: "#/components/schemas/InfraNodePoolProvider"
+          description: Infra provider node pool fields.
           x-go-type-skip-optional-pointer: true
     ListNodePoolsResponse:
       type: object
@@ -1529,9 +1529,9 @@ components:
           $ref: "#/components/schemas/NicoNodeSetProvider"
           description: Provider Nico node set fields.
           x-go-type-skip-optional-pointer: true
-        capi:
-          $ref: "#/components/schemas/CapiNodeSetProvider"
-          description: Provider CAPI node set fields.
+        infra:
+          $ref: "#/components/schemas/InfraNodeSetProvider"
+          description: Infra provider node set fields.
           x-go-type-skip-optional-pointer: true
     #--------------------------------
     # Node
@@ -1946,7 +1946,7 @@ components:
     NicoClusterProvider:
       type: object
       additionalProperties: false
-      description: Nico identity fields for a cluster. Mutually exclusive with `capi`.
+      description: Nico identity fields for a cluster. Mutually exclusive with `infra`.
       properties:
         orgID:
           type: string
@@ -1964,7 +1964,7 @@ components:
           description: The VPC ID where the Nico cluster is created
           x-go-type-skip-optional-pointer: true
 
-    CapiClusterProvider:
+    InfraClusterProvider:
       type: object
       additionalProperties: false
       description: |
@@ -1972,7 +1972,7 @@ components:
         directly. Not to be used merely because a cluster is provisioned through CAPI —
         `nico` clusters may be too. Mutually exclusive with `nico`.
       properties:
-        infraCluster:
+        cluster:
           type: object
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource
@@ -1981,7 +1981,7 @@ components:
     NicoNodePoolProvider:
       type: object
       additionalProperties: false
-      description: Nico fields for a node pool. Mutually exclusive with `capi`.
+      description: Nico fields for a node pool. Mutually exclusive with `infra`.
       properties:
         subnetIDs:
           type: array
@@ -2102,12 +2102,12 @@ components:
         diskSelectionStrategy:
           $ref: "#/components/schemas/DiskSelectionStrategyCreate"
 
-    CapiNodePoolProvider:
+    InfraNodePoolProvider:
       type: object
       additionalProperties: false
-      description: CAPI fields for a node pool. Mutually exclusive with `nico`.
+      description: Infra provider fields for a node pool. Mutually exclusive with `nico`.
       properties:
-        infraMachineTemplate:
+        machineTemplate:
           type: object
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
@@ -2128,17 +2128,17 @@ components:
           description: Cloud-init runcmd entries for CAPI-backed nodes
           x-go-type-skip-optional-pointer: true
 
-    CapiNodePoolProviderUpdate:
+    InfraNodePoolProviderUpdate:
       type: object
       additionalProperties: false
       description: |
-        The mutable CAPI node pool fields. Every field carries three states: omitted
+        The mutable infra provider node pool fields. Every field carries three states: omitted
         leaves the stored value alone, a value replaces it, and an empty value clears it.
       properties:
-        infraMachineTemplate:
+        machineTemplate:
           type: object
           additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
+          description: Arbitrary JSON manifest for the CAPI infra provider MachineTemplate resource
           x-go-type-skip-optional-pointer: true
         spireAttestationMethod:
           $ref: "#/components/schemas/SpireAttestationMethod"
@@ -2156,12 +2156,12 @@ components:
           description: Cloud-init runcmd entries for CAPI-backed nodes
           x-go-type-skip-optional-pointer: true
 
-    CapiNodeSetProvider:
+    InfraNodeSetProvider:
       type: object
       additionalProperties: false
-      description: CAPI fields for a node set (read-only snapshot).
+      description: Infra provider fields for a node set (read-only snapshot).
       properties:
-        infraMachineTemplate:
+        machineTemplate:
           type: object
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
@@ -2188,7 +2188,7 @@ components:
       description: |
         The stored Nico cluster-level control plane fields, as reported on read.
         Requests use `NicoControlPlaneProviderCreate` and `NicoControlPlaneProviderUpdate`,
-        which omit the fields that direction cannot set. Mutually exclusive with `capi`.
+        which omit the fields that direction cannot set. Mutually exclusive with `infra`.
       properties:
         instanceTypePreference:
           type: array
@@ -2324,12 +2324,12 @@ components:
           description: SSH key group IDs for control plane nodes
           x-go-type-skip-optional-pointer: true
 
-    CapiControlPlaneProvider:
+    InfraControlPlaneProvider:
       type: object
       additionalProperties: false
-      description: CAPI fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+      description: Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
       properties:
-        infraMachineTemplate:
+        machineTemplate:
           type: object
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
@@ -2350,14 +2350,14 @@ components:
           description: Cloud-init runcmd entries for CAPI-backed control plane nodes
           x-go-type-skip-optional-pointer: true
 
-    CapiControlPlaneProviderUpdate:
+    InfraControlPlaneProviderUpdate:
       type: object
       additionalProperties: false
       description: |
-        The mutable CAPI control plane fields. Every field carries three states: omitted
+        The mutable infra provider control plane fields. Every field carries three states: omitted
         leaves the stored value alone, a value replaces it, and an empty value clears it.
       properties:
-        infraMachineTemplate:
+        machineTemplate:
           type: object
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
