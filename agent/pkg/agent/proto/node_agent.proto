@@ -37,6 +37,13 @@ service NodeAgent {
   // idempotent and is run again to finish any incomplete add-on convergence.
   rpc KubeadmUpgradeApply(KubeadmUpgradeApplyRequest) returns (KubeadmUpgradeApplyResponse) {}
 
+  // ReconcileKubeVip atomically converges the kube-vip static-pod manifest for
+  // NKE's active/active BGP control-plane mode. The fixed mode disables every
+  // Kubernetes API-backed kube-vip feature. For kube-vip v1.2.0 compatibility,
+  // the pod receives a kubeconfig with no client credential; this RPC never
+  // reads, creates, or mounts the host's admin.conf or super-admin.conf.
+  rpc ReconcileKubeVip(ReconcileKubeVipRequest) returns (ReconcileKubeVipResponse) {}
+
   // StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
   // control-plane node graceful shutdown operation. The operation_id is an
   // idempotency key; retrying with the same operation_id returns the existing
@@ -1024,4 +1031,49 @@ message KubeadmUpgradeApplyResponse {
   string target_version = 2;
   string plan_output = 3;
   string apply_output = 4;
+}
+
+message ReconcileKubeVipRequest {
+  enum BGPPeerASNSource {
+    BGP_PEER_ASN_SOURCE_UNSPECIFIED = 0;
+    // Use bgp_peer_asn from this request.
+    BGP_PEER_ASN_SOURCE_STATIC = 1;
+    // Resolve the peer ASN from the Forge Metadata Service on the node.
+    BGP_PEER_ASN_SOURCE_FMDS = 2;
+  }
+
+  // IPv4 control-plane virtual IP advertised as a /32.
+  string vip_address = 1;
+  // Local kube-vip BGP ASN.
+  uint32 bgp_asn = 2;
+  // IPv4 address used as the BGP router ID and source-interface lookup.
+  string node_ip = 3;
+  BGPPeerASNSource bgp_peer_asn_source = 4;
+  // Required when bgp_peer_asn_source is STATIC; ignored for FMDS.
+  uint32 bgp_peer_asn = 5;
+  // Optional explicit IPv4 peer address. When empty, the default gateway is
+  // used, matching the legacy runbook.
+  string bgp_peer_address = 6;
+}
+
+message ReconcileKubeVipResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_CREATED = 1;
+    OUTCOME_UPDATED = 2;
+    OUTCOME_UNCHANGED = 3;
+  }
+
+  Outcome outcome = 1;
+  string manifest_path = 2;
+  string bgp_interface = 3;
+  string bgp_peer_address = 4;
+  uint32 bgp_peer_asn = 5;
+  // Credential-less kubeconfig mounted read-only at kube-vip v1.2.0's
+  // compatibility path. It contains no token or client private key.
+  string kubeconfig_path = 6;
+  // Interfaces from which a stale copy of vip_address was removed.
+  repeated string cleaned_interfaces = 7;
+  // True when the credential-less kubeconfig was created or repaired.
+  bool kubeconfig_changed = 8;
 }

@@ -77,17 +77,20 @@ func TestCAPDNodePoolRequest(t *testing.T) {
 	if req.SystemReservedMemory != "2Gi" || req.KubeReservedMemory != "512Mi" {
 		t.Errorf("reserved memory = (%q, %q), want (2Gi, 512Mi)", req.SystemReservedMemory, req.KubeReservedMemory)
 	}
-	if req.InstanceTypeID != uuid.Nil || req.OSProfile != "" || req.ConfigProfile != "" {
-		t.Errorf("CAPD request contains Forge fields: instanceTypeID=%s osProfile=%q configProfile=%q", req.InstanceTypeID, req.OSProfile, req.ConfigProfile)
+	if req.Nico != nil {
+		t.Errorf("CAPD request contains nico fields: nico=%#v", req.Nico)
 	}
-	if req.CapiSpireAttestationMethod != api.SpireAttestationMethodCreateJoinToken {
-		t.Errorf("SPIRE attestation method = %q, want %q", req.CapiSpireAttestationMethod, api.SpireAttestationMethodCreateJoinToken)
+	if req.Infra == nil {
+		t.Fatalf("CAPD request has no infra fields")
 	}
-	assertBootstrapSuccessCommands(t, req.CapiPreKubeadmCommands)
+	if req.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateJoinToken {
+		t.Errorf("SPIRE attestation method = %q, want %q", req.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateJoinToken)
+	}
+	assertBootstrapSuccessCommands(t, req.Infra.PreKubeadmCommands)
 
-	spec, ok := req.CapiInfraMachineTemplate["spec"].(map[string]any)
+	spec, ok := req.Infra.MachineTemplate["spec"].(map[string]any)
 	if !ok {
-		t.Fatalf("CAPI machine template spec = %#v, want an object", req.CapiInfraMachineTemplate["spec"])
+		t.Fatalf("CAPI machine template spec = %#v, want an object", req.Infra.MachineTemplate["spec"])
 	}
 	template, ok := spec["template"].(map[string]any)
 	if !ok {
@@ -202,11 +205,14 @@ func TestUnit_BuildNicoVMSRequestControlPlaneConfig(t *testing.T) {
 	if req.ControlPlaneConfig.DesiredCount != 1 {
 		t.Fatalf("DesiredCount = %d, want 1", req.ControlPlaneConfig.DesiredCount)
 	}
-	if req.ControlPlaneConfig.OSProfile != "nke-nico-vms-24.04-amd64-fde" {
-		t.Fatalf("OSProfile = %q", req.ControlPlaneConfig.OSProfile)
+	if req.ControlPlaneConfig.Nico == nil {
+		t.Fatal("ControlPlaneConfig.Nico is nil")
 	}
-	if len(req.ControlPlaneConfig.InstanceTypePreference) != 1 {
-		t.Fatalf("InstanceTypePreference len = %d, want 1", len(req.ControlPlaneConfig.InstanceTypePreference))
+	if req.ControlPlaneConfig.Nico.OSProfile != "nke-nico-vms-24.04-amd64-fde" {
+		t.Fatalf("Nico.OSProfile = %q", req.ControlPlaneConfig.Nico.OSProfile)
+	}
+	if len(req.ControlPlaneConfig.Nico.InstanceTypePreference) != 1 {
+		t.Fatalf("Nico.InstanceTypePreference len = %d, want 1", len(req.ControlPlaneConfig.Nico.InstanceTypePreference))
 	}
 	if req.NodePools == nil || len(*req.NodePools) != 1 || (*req.NodePools)[0].ControlPlane {
 		t.Fatalf("expected a single worker node pool, got %#v", req.NodePools)
@@ -248,11 +254,17 @@ func TestBuildNicoRequestNodePools(t *testing.T) {
 	if pools[0].Name != "control-plane" || !pools[0].ControlPlane {
 		t.Errorf("first Nico node pool = %q controlPlane=%t, want control-plane controlPlane=true", pools[0].Name, pools[0].ControlPlane)
 	}
-	assertBootstrapSuccessCommands(t, pools[0].CapiPreKubeadmCommands)
+	if pools[0].Infra == nil {
+		t.Fatal("first Nico node pool infra is nil")
+	}
+	assertBootstrapSuccessCommands(t, pools[0].Infra.PreKubeadmCommands)
 	if pools[1].Name != "worker" || pools[1].ControlPlane {
 		t.Errorf("second Nico node pool = %q controlPlane=%t, want worker controlPlane=false", pools[1].Name, pools[1].ControlPlane)
 	}
-	assertBootstrapSuccessCommands(t, pools[1].CapiPreKubeadmCommands)
+	if pools[1].Infra == nil {
+		t.Fatal("second Nico node pool infra is nil")
+	}
+	assertBootstrapSuccessCommands(t, pools[1].Infra.PreKubeadmCommands)
 }
 
 func assertBootstrapSuccessCommands(t *testing.T, got []string) {

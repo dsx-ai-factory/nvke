@@ -99,7 +99,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	}
 	templateObj, err := capi.ParseManifest(capiNodeSetProvider.InfraMachineTemplate)
 	if err != nil {
-		return fmt.Errorf("failed to parse capiInfraMachineTemplate: %w", err)
+		return fmt.Errorf("failed to parse infra.machineTemplate: %w", err)
 	}
 
 	templateRef := &corev1.ObjectReference{

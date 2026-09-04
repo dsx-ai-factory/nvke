@@ -34,10 +34,21 @@ fi
 BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",
-  "siteID": "${DEFAULT_SITE_ID}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "calico",
   "etcdEncrypted": false,
+  "infra": {
+    "cluster": {
+      "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+      "kind": "NicoCluster",
+      "metadata": {
+        "name": "${CLUSTER_NAME}"
+      },
+      "spec": {
+        "siteID": "${NICO_SITE_ID}"
+      }
+    }
+  },
   "nodePools": [
     {
       "name": "control-plane",
@@ -48,36 +59,38 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capiInfraMachineTemplate": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-        "kind": "NicoMachineTemplate",
-        "metadata": {
-          "name": "${CLUSTER_NAME}-control-plane-template"
-        },
-        "spec": {
-          "template": {
-            "spec": {
-              "vpcID": "${NICO_VPC_ID}",
-              "instanceTypeID": "${NICO_INSTANCE_TYPE_ID}",
-              "cloudInitInjectHostname": true,
-              "ipxeScript": "#!ipxe\necho local-nico-control-plane\n",
-              "sshKeyGroupIDs": [
-                "${NICO_SSH_KEY_GROUP_ID}"
-              ],
-              "interfaces": [
-                {
-                  "subnetID": "${NICO_SUBNET_ID}"
-                }
-              ]
+      "infra": {
+        "machineTemplate": {
+          "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+          "kind": "NicoMachineTemplate",
+          "metadata": {
+            "name": "${CLUSTER_NAME}-control-plane-template"
+          },
+          "spec": {
+            "template": {
+              "spec": {
+                "vpcID": "${NICO_VPC_ID}",
+                "instanceTypeID": "${NICO_INSTANCE_TYPE_ID}",
+                "cloudInitInjectHostname": true,
+                "ipxeScript": "#!ipxe\\necho local-nico-control-plane\\n",
+                "sshKeyGroupIDs": [
+                  "${NICO_SSH_KEY_GROUP_ID}"
+                ],
+                "interfaces": [
+                  {
+                    "subnetID": "${NICO_SUBNET_ID}"
+                  }
+                ]
+              }
             }
           }
-        }
-      },
-      "capiSpireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
-      "capiPreKubeadmCommands": [
-        "mkdir -p /run/cluster-api",
-        "echo success > /run/cluster-api/bootstrap-success.complete"
-      ]
+        },
+        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
+        "preKubeadmCommands": [
+          "mkdir -p /run/cluster-api",
+          "echo success > /run/cluster-api/bootstrap-success.complete"
+        ]
+      }
     },
     {
       "name": "worker",
@@ -88,48 +101,40 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capiInfraMachineTemplate": {
-        "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-        "kind": "NicoMachineTemplate",
-        "metadata": {
-          "name": "${CLUSTER_NAME}-worker-template"
-        },
-        "spec": {
-          "template": {
-            "spec": {
-              "vpcID": "${NICO_VPC_ID}",
-              "instanceTypeID": "${NICO_INSTANCE_TYPE_ID}",
-              "cloudInitInjectHostname": true,
-              "ipxeScript": "#!ipxe\necho local-nico-worker\n",
-              "sshKeyGroupIDs": [
-                "${NICO_SSH_KEY_GROUP_ID}"
-              ],
-              "interfaces": [
-                {
-                  "subnetID": "${NICO_SUBNET_ID}"
-                }
-              ]
+      "infra": {
+        "machineTemplate": {
+          "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+          "kind": "NicoMachineTemplate",
+          "metadata": {
+            "name": "${CLUSTER_NAME}-worker-template"
+          },
+          "spec": {
+            "template": {
+              "spec": {
+                "vpcID": "${NICO_VPC_ID}",
+                "instanceTypeID": "${NICO_INSTANCE_TYPE_ID}",
+                "cloudInitInjectHostname": true,
+                "ipxeScript": "#!ipxe\\necho local-nico-worker\\n",
+                "sshKeyGroupIDs": [
+                  "${NICO_SSH_KEY_GROUP_ID}"
+                ],
+                "interfaces": [
+                  {
+                    "subnetID": "${NICO_SUBNET_ID}"
+                  }
+                ]
+              }
             }
           }
-        }
-      },
-      "capiSpireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
-      "capiPreKubeadmCommands": [
-        "mkdir -p /run/cluster-api",
-        "echo success > /run/cluster-api/bootstrap-success.complete"
-      ]
+        },
+        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
+        "preKubeadmCommands": [
+          "mkdir -p /run/cluster-api",
+          "echo success > /run/cluster-api/bootstrap-success.complete"
+        ]
+      }
     }
-  ],
-  "capiInfraCluster": {
-    "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-    "kind": "NicoCluster",
-    "metadata": {
-      "name": "${CLUSTER_NAME}"
-    },
-    "spec": {
-      "siteID": "${NICO_SITE_ID}"
-    }
-  }
+  ]
 }
 EOF
 )

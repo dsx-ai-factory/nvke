@@ -88,7 +88,9 @@ func (c *Client) UpdateControlPlaneConfigProfile(ctx context.Context, id openapi
 	resp, err := c.api.UpdateClusterWithResponse(ctx, id, api.UpdateClusterRequest{
 		EnableCPNodeRecycling: &enableRecycling,
 		ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
-			ConfigProfile: &configProfile,
+			Nico: &api.NicoControlPlaneProviderUpdate{
+				ConfigProfile: &configProfile,
+			},
 		},
 	})
 	if err != nil {

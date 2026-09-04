@@ -86,19 +86,22 @@ func validateControllerManagedControlPlaneUpdate(test *tenantTest) {
 	}, Label("cp-controller", "update"), NodeTimeout(90*time.Minute))
 }
 
-// controlPlaneControllerRollConfigProfile is the config profile the rolling
-// update spec switches the control plane to. Its value only needs to differ from
-// the created config to bump the control-plane configuration revision; a missing
-// config profile file is tolerated as empty at provisioning time, and CAPI nodes
-// carry no config profile, so any distinct name is a safe roll trigger for CAPD.
-const controlPlaneControllerRollConfigProfile = "e2e-cp-controller-roll"
+// controlPlaneControllerRollKubernetesVersion is the version the rolling update
+// spec upgrades a CAPI control plane to. The control-plane controller treats only
+// kubernetesVersion, osProfile and configProfile as replacing fields, and the
+// latter two are Nico-only, so the version is the sole roll trigger a CAPI caller
+// can reach. It must stay within the minor of the CAPD node image's base
+// (KINDEST_NODE_TAG in hack/capd-kindest-node/Dockerfile), because that base
+// supplies the kubeadm that has to serve the target.
+const controlPlaneControllerRollKubernetesVersion = "1.34.8"
 
-// validateControllerManagedControlPlaneRollingUpdate PATCHes a new config profile
-// to bump the control-plane config revision and asserts the controller rolls the
-// old nodes onto new ones at the same desired count, Ready in both CWE and the
-// tenant API (mirrors the node-pool baseline in upgrade_test.go, but via the
-// cluster-level config revision). Runs after the desiredCount update so quorum
-// survives a one-at-a-time roll. Requires flag-on CWE; self-skips otherwise.
+// validateControllerManagedControlPlaneRollingUpdate bumps the control-plane
+// config revision and asserts the controller rolls the old nodes onto new ones at
+// the same desired count, Ready in both CWE and the tenant API (mirrors the
+// node-pool baseline in upgrade_test.go, but via the cluster-level config
+// revision). The field it bumps depends on the provider, since the replacing
+// fields differ. Runs after the desiredCount update so quorum survives a
+// one-at-a-time roll. Requires flag-on CWE; self-skips otherwise.
 func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 	It("rolls the controller-managed control plane on a control-plane config revision", func(ctx context.Context) {
 		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
@@ -114,13 +117,14 @@ func validateControllerManagedControlPlaneRollingUpdate(test *tenantTest) {
 		Expect(desired).To(BeNumerically(">=", 3),
 			"a config-revision roll needs a multi-node control plane to keep etcd quorum while rolling")
 
-		By("Changing the control-plane config profile to bump the configuration revision")
-		rollProfile := controlPlaneControllerRollConfigProfile
 		if test.spec.Backend == nke.BackendNicoVMS {
+			By("Changing the control-plane config profile to bump the configuration revision")
 			// Forge requires a real config profile; nico-vms-cp is what create uses.
-			rollProfile = nicoVMSWConfigProfile
+			expectSucceed(test.nke.UpdateControlPlaneConfigProfile(ctx, test.cluster.ID, nicoVMSWConfigProfile))
+		} else {
+			By("Upgrading the control-plane Kubernetes version to bump the configuration revision")
+			expectSucceed(test.nke.UpgradeClusterControlPlane(ctx, test.cluster.ID, controlPlaneControllerRollKubernetesVersion))
 		}
-		expectSucceed(test.nke.UpdateControlPlaneConfigProfile(ctx, test.cluster.ID, rollProfile))
 
 		By("Waiting for every old control-plane node to be replaced and KubernetesReady in CWE")
 		Expect(test.nke.WaitForControlPlaneNodesRolled(ctx, test.cluster.ID, desired, oldNodeIDs)).To(Succeed(),

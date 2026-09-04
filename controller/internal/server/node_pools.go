@@ -79,8 +79,10 @@ func (s *nodePoolService) applyNodePoolDefaults(req *api.CreateNodePoolRequest, 
 		v := s.teleportCfg.NodePoolTeleportDefault(req.ControlPlane)
 		req.TeleportEnabled = &v
 	}
-	if !clusterIsCAPIBacked(cluster) && req.DiskSelectionStrategy == "" {
-		req.DiskSelectionStrategy = api.DiskSelectionStrategyCreateSmallest
+	// The stored pool is built from the nested payload, so the default has to land
+	// there; validation has already required nico for a Forge pool.
+	if !clusterIsCAPIBacked(cluster) && req.Nico != nil && req.Nico.DiskSelectionStrategy == "" {
+		req.Nico.DiskSelectionStrategy = api.DiskSelectionStrategyCreateSmallest
 	}
 }
 
@@ -199,7 +201,7 @@ func isValidDiskSelectionStrategy(s api.DiskSelectionStrategyCreate) bool {
 
 func validateForgeDiskSelectionStrategy(s api.DiskSelectionStrategyCreate) error {
 	if s != "" && !isValidDiskSelectionStrategy(s) {
-		return fmt.Errorf("invalid diskSelectionStrategy: %q", s)
+		return fmt.Errorf("invalid nico.diskSelectionStrategy: %q", s)
 	}
 
 	return nil
@@ -233,88 +235,16 @@ func validateForgeNativeNetworking(nativeNetworkingEnabled bool, subnetIDs, vpcP
 func validateCAPISpireAttestationMethod(method string) error {
 	switch method {
 	case "":
-		return fmt.Errorf("capiSpireAttestationMethod is required for CAPI clusters")
+		return fmt.Errorf("infra.spireAttestationMethod is required")
 	case string(db.SpireAttestationMethodTPM), string(db.SpireAttestationMethodJoinToken):
 		return nil
 	default:
-		return fmt.Errorf("invalid capiSpireAttestationMethod: %q", method)
+		return fmt.Errorf("invalid infra.spireAttestationMethod: %q", method)
 	}
 }
 
 func clusterIsCAPIBacked(cluster db.Cluster) bool {
-	return cluster.SiteID == uuid.Nil
-}
-
-func unsupportedNodePoolFieldError(fieldName, clusterType string) error {
-	return fmt.Errorf("%s is not supported for %s", fieldName, clusterType)
-}
-
-func validateCreateCAPIRestrictedFields(req *api.CreateNodePoolRequest) error {
-	switch {
-	case req.InstanceTypeID != uuid.Nil:
-		return unsupportedNodePoolFieldError("instanceTypeID", "CAPI clusters")
-	case req.InfinibandPartitionID != nil:
-		return unsupportedNodePoolFieldError("infinibandPartitionID", "CAPI clusters")
-	case req.NvLinkLogicalPartitionID != nil:
-		return unsupportedNodePoolFieldError("nvLinkLogicalPartitionID", "CAPI clusters")
-	case req.SSHKeyGroupIDs != nil:
-		return unsupportedNodePoolFieldError("sshKeyGroupIDs", "CAPI clusters")
-	case req.SubnetIDs != nil:
-		return unsupportedNodePoolFieldError("subnetIDs", "CAPI clusters")
-	case req.VpcPrefixIDs != nil:
-		return unsupportedNodePoolFieldError("vpcPrefixIDs", "CAPI clusters")
-	case req.OSProfile != "":
-		return unsupportedNodePoolFieldError("osProfile", "CAPI clusters")
-	case req.DiskSelectionStrategy != "":
-		return unsupportedNodePoolFieldError("diskSelectionStrategy", "CAPI clusters")
-	default:
-		return nil
-	}
-}
-
-func validateCreateForgeRestrictedFields(req *api.CreateNodePoolRequest) error {
-	switch {
-	case req.CapiInfraMachineTemplate != nil:
-		return unsupportedNodePoolFieldError("capiInfraMachineTemplate", "Forge clusters")
-	case req.CapiSpireAttestationMethod != "":
-		return unsupportedNodePoolFieldError("capiSpireAttestationMethod", "Forge clusters")
-	case req.CapiBootstrapFiles != nil:
-		return unsupportedNodePoolFieldError("capiBootstrapFiles", "Forge clusters")
-	case req.CapiPreKubeadmCommands != nil:
-		return unsupportedNodePoolFieldError("capiPreKubeadmCommands", "Forge clusters")
-	default:
-		return nil
-	}
-}
-
-func validateUpdateCAPIRestrictedFields(req *api.UpdateNodePoolRequest) error {
-	switch {
-	case req.OSProfile != nil:
-		return unsupportedNodePoolFieldError("osProfile", "CAPI clusters")
-	case req.SubnetIDs != nil:
-		return unsupportedNodePoolFieldError("subnetIDs", "CAPI clusters")
-	case req.VpcPrefixIDs != nil:
-		return unsupportedNodePoolFieldError("vpcPrefixIDs", "CAPI clusters")
-	case req.DiskSelectionStrategy != nil && *req.DiskSelectionStrategy != "":
-		return unsupportedNodePoolFieldError("diskSelectionStrategy", "CAPI clusters")
-	default:
-		return nil
-	}
-}
-
-func validateUpdateForgeRestrictedFields(req *api.UpdateNodePoolRequest) error {
-	switch {
-	case req.CapiInfraMachineTemplate != nil:
-		return unsupportedNodePoolFieldError("capiInfraMachineTemplate", "Forge clusters")
-	case req.CapiBootstrapFiles != nil:
-		return unsupportedNodePoolFieldError("capiBootstrapFiles", "Forge clusters")
-	case req.CapiPreKubeadmCommands != nil:
-		return unsupportedNodePoolFieldError("capiPreKubeadmCommands", "Forge clusters")
-	case req.CapiSpireAttestationMethod != nil:
-		return unsupportedNodePoolFieldError("capiSpireAttestationMethod", "Forge clusters")
-	default:
-		return nil
-	}
+	return cluster.ProviderType == db.ProviderTypeCAPI
 }
 
 func validateCloudInitFiles(files []api.CloudInitFile) error {
@@ -343,30 +273,33 @@ func (s *nodePoolService) validateCreateNodePoolRequest(ctx context.Context, clu
 		return err
 	}
 
-	if clusterIsCAPIBacked(cluster) {
+	switch cluster.ProviderType {
+	case db.ProviderTypeCAPI:
 		return validateCreateCAPINodePoolRequest(req)
+	case db.ProviderTypeNico:
+		return s.validateCreateForgeNodePoolRequest(ctx, cluster, req)
+	default:
+		return fmt.Errorf("unsupported cluster provider")
 	}
-
-	return s.validateCreateForgeNodePoolRequest(ctx, cluster, req)
 }
 
 func validateCreateCAPINodePoolRequest(req *api.CreateNodePoolRequest) error {
-	if err := validateCreateCAPIRestrictedFields(req); err != nil {
+	if req.Nico != nil {
+		return fmt.Errorf("nico is not supported, please provide infra")
+	}
+	if req.Infra == nil || req.Infra.MachineTemplate == nil {
+		return fmt.Errorf("infra.machineTemplate is required")
+	}
+	if isEmptyManifestObject(req.Infra.MachineTemplate) {
+		return fmt.Errorf("infra.machineTemplate cannot be empty")
+	}
+	if err := validateCAPISpireAttestationMethod(string(req.Infra.SpireAttestationMethod)); err != nil {
 		return err
 	}
-	if req.CapiInfraMachineTemplate == nil {
-		return fmt.Errorf("capiInfraMachineTemplate is required for CAPI clusters")
+	if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+		return fmt.Errorf("invalid infra.machineTemplate: %w", err)
 	}
-	if isEmptyManifestObject(req.CapiInfraMachineTemplate) {
-		return fmt.Errorf("capiInfraMachineTemplate cannot be empty for CAPI clusters")
-	}
-	if err := validateCAPISpireAttestationMethod(string(req.CapiSpireAttestationMethod)); err != nil {
-		return err
-	}
-	if err := validateCAPIInfrastructureManifest(req.CapiInfraMachineTemplate); err != nil {
-		return fmt.Errorf("invalid capiInfraMachineTemplate: %w", err)
-	}
-	if err := validateCloudInitFiles(req.CapiBootstrapFiles); err != nil {
+	if err := validateCloudInitFiles(req.Infra.BootstrapFiles); err != nil {
 		return err
 	}
 	return nil
@@ -377,22 +310,25 @@ func (s *nodePoolService) validateCreateForgeNodePoolRequest(
 	cluster db.Cluster,
 	req *api.CreateNodePoolRequest,
 ) error {
-	if err := validateForgeDiskSelectionStrategy(req.DiskSelectionStrategy); err != nil {
-		return err
+	if req.Infra != nil {
+		return fmt.Errorf("infra is not supported, please provide nico")
 	}
-	if err := validateCreateForgeRestrictedFields(req); err != nil {
+	if req.Nico == nil {
+		return fmt.Errorf("nico is required when creating a node pool on a nico cluster")
+	}
+	if err := validateForgeDiskSelectionStrategy(req.Nico.DiskSelectionStrategy); err != nil {
 		return err
 	}
 
-	if req.InstanceTypeID == uuid.Nil {
-		return fmt.Errorf("instanceTypeID is required when creating a Forge node pool")
+	if req.Nico.InstanceTypeID == uuid.Nil {
+		return fmt.Errorf("nico.instanceTypeID is required when creating a nico node pool")
 	}
 
-	if req.OSProfile == "" {
-		return fmt.Errorf("osProfile is required when creating a Forge node pool")
+	if req.Nico.OSProfile == "" {
+		return fmt.Errorf("nico.osProfile is required when creating a nico node pool")
 	}
-	if req.ConfigProfile == "" {
-		return fmt.Errorf("configProfile is required when creating a Forge node pool")
+	if req.Nico.ConfigProfile == "" {
+		return fmt.Errorf("nico.configProfile is required when creating a nico node pool")
 	}
 
 	forgeSite, err := s.forgeProvider.GetSiteByID(ctx, cluster.OrgID, cluster.SiteID.String())
@@ -403,7 +339,7 @@ func (s *nodePoolService) validateCreateForgeNodePoolRequest(
 	capabilities := forgeSite.GetCapabilities()
 	isNativeNetworkingEnabled := capabilities.GetNativeNetworking()
 
-	if err := validateForgeNativeNetworking(isNativeNetworkingEnabled, req.SubnetIDs, req.VpcPrefixIDs, ""); err != nil {
+	if err := validateForgeNativeNetworking(isNativeNetworkingEnabled, req.Nico.SubnetIDs, req.Nico.VpcPrefixIDs, ""); err != nil {
 		return err
 	}
 
@@ -452,7 +388,7 @@ func (s *nodePoolService) UpdateNodePool(
 ) (api.UpdateNodePoolResponseObject, error) {
 	var updatedNodePool db.NodePool
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		// Read the pool without a lock first, solely to learn its cluster, then
+		// Re-read the pool without a lock first, solely to learn its cluster, then
 		// lock the cluster before the node-pool row. This matches the global
 		// cluster-first lock order (see internal/nodes/control_plane_delete.go)
 		// so this update cannot deadlock with the live-delete guards or the
@@ -509,7 +445,7 @@ func (s *nodePoolService) UpdateNodePool(
 		// copy: applyUpdateNodePoolRequest reassigns slice fields rather than mutating in place.
 		oldNodePool := dbNodePool
 
-		if err := applyUpdateNodePoolRequest(&dbNodePool, req.Body); err != nil {
+		if err := applyUpdateNodePoolRequest(cluster, &dbNodePool, req.Body); err != nil {
 			return err
 		}
 		if err := validateUpdatedNodePool(cluster, &dbNodePool); err != nil {
@@ -573,16 +509,9 @@ func (s *nodePoolService) UpdateNodePool(
 	return api.UpdateNodePool200JSONResponse(apiNodePoolFromDB(&updatedNodePool)), nil
 }
 
-func applyUpdateNodePoolRequest(dbNodePool *db.NodePool, req *api.UpdateNodePoolRequest) error {
+func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req *api.UpdateNodePoolRequest) error {
 	if req == nil {
 		return nil
-	}
-
-	if req.SubnetIDs != nil {
-		dbNodePool.SubnetIDs = uuidSliceDedupe(req.SubnetIDs)
-	}
-	if req.VpcPrefixIDs != nil {
-		dbNodePool.VpcPrefixIDs = uuidSliceDedupe(req.VpcPrefixIDs)
 	}
 
 	if req.AutoProvisionDisabled != nil {
@@ -595,33 +524,12 @@ func applyUpdateNodePoolRequest(dbNodePool *db.NodePool, req *api.UpdateNodePool
 		dbNodePool.ProvisioningMonitorDisabled = *req.ProvisioningMonitorDisabled
 	}
 
-	if req.ConfigProfile != nil {
-		dbNodePool.ConfigProfile = *req.ConfigProfile
-	}
-	if req.CapiInfraMachineTemplate != nil {
-		capiInfraMachineTemplate, err := rawManifestFromObject(*req.CapiInfraMachineTemplate)
-		if err != nil {
-			return newBadRequestErrorf("failed to convert capiInfraMachineTemplate: %v", err)
-		}
-		dbNodePool.CapiInfraMachineTemplate = capiInfraMachineTemplate
-	}
-
 	if req.Description != nil {
 		dbNodePool.Description = req.Description
 	}
 
 	if req.DesiredNodeCount != nil {
 		dbNodePool.DesiredCount = *req.DesiredNodeCount
-	}
-
-	if req.OSProfile != nil {
-		dbNodePool.OSProfile = *req.OSProfile
-	}
-	if req.CapiBootstrapFiles != nil {
-		dbNodePool.CapiBootstrapFiles = dbCloudInitFilesFromAPI(req.CapiBootstrapFiles)
-	}
-	if req.CapiPreKubeadmCommands != nil {
-		dbNodePool.CapiPreKubeadmCommands = append([]string(nil), req.CapiPreKubeadmCommands...)
 	}
 
 	if req.SystemReservedMemory != nil {
@@ -633,20 +541,70 @@ func applyUpdateNodePoolRequest(dbNodePool *db.NodePool, req *api.UpdateNodePool
 	if req.RecycleBudget != nil {
 		dbNodePool.RecycleBudget = *req.RecycleBudget
 	}
-	if req.DiskSelectionStrategy != nil {
-		dbNodePool.DiskSelectionStrategy = db.DiskSelectionStrategy(*req.DiskSelectionStrategy)
-	}
 	if req.MaxSurge != nil {
 		dbNodePool.MaxSurge = *req.MaxSurge
 	}
 	if req.TeleportEnabled != nil {
 		dbNodePool.TeleportEnabled = *req.TeleportEnabled
 	}
-	if req.CapiSpireAttestationMethod != nil {
-		dbNodePool.CapiSpireAttestationMethod = db.SpireAttestationMethod(*req.CapiSpireAttestationMethod)
-	}
 	if req.KubernetesVersion != nil {
 		dbNodePool.KubernetesVersion = *req.KubernetesVersion
+	}
+
+	// The cluster's provider decides which payload this pool carries; the request
+	// only supplies the patch. validateUpdateNodePoolRequest has already rejected
+	// a provider shape that does not match the cluster.
+	switch cluster.ProviderType {
+	case db.ProviderTypeNico:
+		if req.Nico == nil {
+			return nil
+		}
+		nico, err := dbNodePool.NicoProvider()
+		if err != nil {
+			return err
+		}
+		if req.Nico.SubnetIDs != nil {
+			nico.SubnetIDs = uuidSliceDedupe(req.Nico.SubnetIDs)
+		}
+		if req.Nico.VpcPrefixIDs != nil {
+			nico.VpcPrefixIDs = uuidSliceDedupe(req.Nico.VpcPrefixIDs)
+		}
+		if req.Nico.OSProfile != nil {
+			nico.OSProfile = *req.Nico.OSProfile
+		}
+		if req.Nico.ConfigProfile != nil {
+			nico.ConfigProfile = *req.Nico.ConfigProfile
+		}
+		if req.Nico.DiskSelectionStrategy != nil {
+			nico.DiskSelectionStrategy = db.DiskSelectionStrategy(*req.Nico.DiskSelectionStrategy)
+		}
+		dbNodePool.SetNico(nico)
+
+	case db.ProviderTypeCAPI:
+		if req.Infra == nil {
+			return nil
+		}
+		capiProvider, err := dbNodePool.CAPIProvider()
+		if err != nil {
+			return err
+		}
+		if req.Infra.MachineTemplate != nil {
+			capiInfraMachineTemplate, err := rawManifestFromObject(req.Infra.MachineTemplate)
+			if err != nil {
+				return newBadRequestErrorf("failed to convert infra.machineTemplate: %v", err)
+			}
+			capiProvider.InfraMachineTemplate = capiInfraMachineTemplate
+		}
+		if req.Infra.BootstrapFiles != nil {
+			capiProvider.BootstrapFiles = dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles)
+		}
+		if req.Infra.PreKubeadmCommands != nil {
+			capiProvider.PreKubeadmCommands = append([]string(nil), req.Infra.PreKubeadmCommands...)
+		}
+		if req.Infra.SpireAttestationMethod != nil {
+			capiProvider.SpireAttestationMethod = db.SpireAttestationMethod(*req.Infra.SpireAttestationMethod)
+		}
+		dbNodePool.SetCapi(capiProvider)
 	}
 
 	return nil
@@ -666,17 +624,17 @@ func validateUpdatedNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error 
 
 func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
 	if dbNodePool.DiskSelectionStrategy != "" {
-		return newBadRequestErrorf("%s", unsupportedNodePoolFieldError("diskSelectionStrategy", "CAPI clusters"))
+		return newBadRequestErrorf("nico.diskSelectionStrategy is not supported")
 	}
 	if capi.IsEmptyManifest(dbNodePool.CapiInfraMachineTemplate) {
-		return newBadRequestErrorf("capiInfraMachineTemplate is required for CAPI clusters")
+		return newBadRequestErrorf("infra.machineTemplate is required")
 	}
 	capiInfraMachineTemplate, err := objectFromRawManifest(dbNodePool.CapiInfraMachineTemplate)
 	if err != nil {
-		return newBadRequestErrorf("failed to parse capiInfraMachineTemplate: %v", err)
+		return newBadRequestErrorf("failed to parse infra.machineTemplate: %v", err)
 	}
 	if err := validateCAPIInfrastructureManifest(capiInfraMachineTemplate); err != nil {
-		return newBadRequestErrorf("invalid capiInfraMachineTemplate: %s", err)
+		return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 	}
 	if err := validateCAPISpireAttestationMethod(string(dbNodePool.CapiSpireAttestationMethod)); err != nil {
 		return newBadRequestErrorf("%s", err.Error())
@@ -696,34 +654,41 @@ func validateUpdatedForgeNodePool(dbNodePool *db.NodePool) error {
 		return newBadRequestErrorf("%s", err.Error())
 	}
 	if dbNodePool.CapiSpireAttestationMethod != "" {
-		return newBadRequestErrorf("capiSpireAttestationMethod is not supported for Forge clusters")
+		return newBadRequestErrorf("infra.spireAttestationMethod is not supported on a nico node pool")
 	}
 	return nil
 }
 
 // validateUpdateNodePoolRequest validates cluster-type-specific update fields before the request is applied.
-func (s *nodePoolService) validateUpdateNodePoolRequest(ctx context.Context, cluster db.Cluster, req *api.UpdateNodePoolRequest) error {
-	if clusterIsCAPIBacked(cluster) {
+func (s *nodePoolService) validateUpdateNodePoolRequest(
+	ctx context.Context,
+	cluster db.Cluster,
+	req *api.UpdateNodePoolRequest,
+) error {
+	switch cluster.ProviderType {
+	case db.ProviderTypeCAPI:
 		return validateUpdateCAPINodePoolRequest(req)
+	case db.ProviderTypeNico:
+		return s.validateUpdateForgeNodePoolRequest(ctx, cluster, req)
+	default:
+		return fmt.Errorf("unsupported cluster provider")
 	}
-
-	return s.validateUpdateForgeNodePoolRequest(ctx, cluster, req)
 }
 
 func validateUpdateCAPINodePoolRequest(req *api.UpdateNodePoolRequest) error {
-	if err := validateUpdateCAPIRestrictedFields(req); err != nil {
-		return err
+	if req.Nico != nil {
+		return fmt.Errorf("nico is not supported, please use infra")
 	}
-	if req.CapiInfraMachineTemplate != nil {
-		if isEmptyManifestObject(*req.CapiInfraMachineTemplate) {
-			return fmt.Errorf("capiInfraMachineTemplate cannot be empty for CAPI clusters")
+	if req.Infra != nil && req.Infra.MachineTemplate != nil {
+		if isEmptyManifestObject(req.Infra.MachineTemplate) {
+			return fmt.Errorf("infra.machineTemplate cannot be empty")
 		}
-		if err := validateCAPIInfrastructureManifest(*req.CapiInfraMachineTemplate); err != nil {
-			return fmt.Errorf("invalid capiInfraMachineTemplate: %w", err)
+		if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+			return fmt.Errorf("invalid infra.machineTemplate: %w", err)
 		}
 	}
-	if req.CapiBootstrapFiles != nil {
-		if err := validateCloudInitFiles(req.CapiBootstrapFiles); err != nil {
+	if req.Infra != nil && req.Infra.BootstrapFiles != nil {
+		if err := validateCloudInitFiles(req.Infra.BootstrapFiles); err != nil {
 			return err
 		}
 	}
@@ -735,20 +700,31 @@ func (s *nodePoolService) validateUpdateForgeNodePoolRequest(
 	cluster db.Cluster,
 	req *api.UpdateNodePoolRequest,
 ) error {
-	if req.DiskSelectionStrategy != nil {
-		if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(*req.DiskSelectionStrategy)); err != nil {
+	if req.Infra != nil {
+		return fmt.Errorf("infra is not supported, please use nico")
+	}
+	if req.Nico != nil && req.Nico.DiskSelectionStrategy != nil {
+		if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(*req.Nico.DiskSelectionStrategy)); err != nil {
 			return err
 		}
 	}
-	if err := validateUpdateForgeRestrictedFields(req); err != nil {
-		return err
+	// A profile can be replaced but not cleared. Rejecting the empty value here
+	// rather than after the merge leaves a pool whose stored profile is already
+	// empty patchable in every other respect.
+	if req.Nico != nil {
+		if req.Nico.OSProfile != nil && *req.Nico.OSProfile == "" {
+			return fmt.Errorf("nico.osProfile cannot be cleared for a nico node pool")
+		}
+		if req.Nico.ConfigProfile != nil && *req.Nico.ConfigProfile == "" {
+			return fmt.Errorf("nico.configProfile cannot be cleared for a nico node pool")
+		}
 	}
 
 	if !nonEmptySubnetIDs(req) && !nonEmptyVpcPrefixIDs(req) {
 		return nil
 	}
 	if nonEmptySubnetIDs(req) && nonEmptyVpcPrefixIDs(req) {
-		return fmt.Errorf("cannot provide both subnetIDs and vpcPrefixIDs")
+		return fmt.Errorf("cannot provide both nico.subnetIDs and nico.vpcPrefixIDs")
 	}
 
 	forgeSite, err := s.forgeProvider.GetSiteByID(ctx, cluster.OrgID, cluster.SiteID.String())
@@ -760,21 +736,21 @@ func (s *nodePoolService) validateUpdateForgeNodePoolRequest(
 	isNativeNetworkingEnabled := capabilities.GetNativeNetworking()
 
 	if nonEmptySubnetIDs(req) && isNativeNetworkingEnabled {
-		return fmt.Errorf("subnetIDs should not be provided when the site has native networking enabled")
+		return fmt.Errorf("nico.subnetIDs should not be provided when the site has native networking enabled")
 	}
 	if nonEmptyVpcPrefixIDs(req) && !isNativeNetworkingEnabled {
-		return fmt.Errorf("vpcPrefixIDs should not be provided when the site does not have native networking enabled")
+		return fmt.Errorf("nico.vpcPrefixIDs should not be provided when the site does not have native networking enabled")
 	}
 
 	return nil
 }
 
 func nonEmptySubnetIDs(req *api.UpdateNodePoolRequest) bool {
-	return req != nil && req.SubnetIDs != nil && len(req.SubnetIDs) > 0
+	return req != nil && req.Nico != nil && req.Nico.SubnetIDs != nil && len(req.Nico.SubnetIDs) > 0
 }
 
 func nonEmptyVpcPrefixIDs(req *api.UpdateNodePoolRequest) bool {
-	return req != nil && req.VpcPrefixIDs != nil && len(req.VpcPrefixIDs) > 0
+	return req != nil && req.Nico != nil && req.Nico.VpcPrefixIDs != nil && len(req.Nico.VpcPrefixIDs) > 0
 }
 
 // uuidSliceDedupe returns a copy of s with duplicate UUIDs removed (order preserved by first occurrence).
@@ -799,34 +775,17 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 	if dbNodePool.KubeReservedMemory != "" {
 		kubeReservedMemory = &dbNodePool.KubeReservedMemory
 	}
-	capiInfraMachineTemplate, err := objectFromRawManifest(dbNodePool.CapiInfraMachineTemplate)
-	if err != nil {
-		capiInfraMachineTemplate = nil
-	}
-	var capiInfraMachineTemplatePtr *map[string]interface{}
-	if len(capiInfraMachineTemplate) > 0 {
-		capiInfraMachineTemplatePtr = &capiInfraMachineTemplate
-	}
-
 	return api.NodePool{
 		ID:                          dbNodePool.ID,
 		ClusterID:                   dbNodePool.ClusterID,
 		Name:                        dbNodePool.Name,
 		NodeNamePrefix:              dbNodePool.NodeNamePrefix,
 		Description:                 dbNodePool.Description,
-		SubnetIDs:                   dbNodePool.SubnetIDs,
-		VpcPrefixIDs:                dbNodePool.VpcPrefixIDs,
-		InstanceTypeID:              dbNodePool.InstanceTypeID,
-		InfinibandPartitionID:       dbNodePool.InfinibandPartitionID,
-		NvLinkLogicalPartitionID:    dbNodePool.NvLinkLogicalPartitionID,
-		OSProfile:                   dbNodePool.OSProfile,
-		ConfigProfile:               dbNodePool.ConfigProfile,
 		KubernetesVersion:           dbNodePool.KubernetesVersion,
 		SystemReservedMemory:        &dbNodePool.SystemReservedMemory,
 		KubeReservedMemory:          kubeReservedMemory,
 		ControlPlane:                dbNodePool.ControlPlane,
 		NodeLabels:                  dbNodePool.NodeLabels,
-		SSHKeyGroupIDs:              dbNodePool.SSHKeyGroupIDs,
 		DesiredNodeCount:            dbNodePool.DesiredCount,
 		AutoProvisionDisabled:       dbNodePool.AutoProvisionDisabled,
 		AutoModeDisabled:            dbNodePool.AutoModeDisabled,
@@ -835,12 +794,9 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		MaxSurge:                    maxSurge,
 		CurrentNodeSetID:            dbNodePool.CurrentNodeSetID,
 		TeleportEnabled:             &dbNodePool.TeleportEnabled,
-		DiskSelectionStrategy:       api.DiskSelectionStrategy(dbNodePool.DiskSelectionStrategy),
 
-		CapiInfraMachineTemplate:   capiInfraMachineTemplatePtr,
-		CapiSpireAttestationMethod: apiSpireAttestationMethodFromDB(dbNodePool.CapiSpireAttestationMethod),
-		CapiBootstrapFiles:         apiCloudInitFilesFromDB(dbNodePool.CapiBootstrapFiles),
-		CapiPreKubeadmCommands:     stringSlicePointer(dbNodePool.CapiPreKubeadmCommands),
+		Nico:  apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
+		Infra: apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
 
 		Conditions: api.NodePoolConditions{
 			Provisioning: apiConditionFromDB(dbNodePool.Conditions.Provisioning),
@@ -850,22 +806,68 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 	}
 }
 
+func apiNicoNodePoolProviderFromDB(nicoNodePoolProvider *db.NicoNodePoolProvider) *api.NicoNodePoolProvider {
+	if nicoNodePoolProvider == nil {
+		return nil
+	}
+	return &api.NicoNodePoolProvider{
+		SubnetIDs:                append([]uuid.UUID(nil), nicoNodePoolProvider.SubnetIDs...),
+		VpcPrefixIDs:             append([]uuid.UUID(nil), nicoNodePoolProvider.VpcPrefixIDs...),
+		InstanceTypeID:           nicoNodePoolProvider.InstanceTypeID,
+		InfinibandPartitionID:    clonePtr(nicoNodePoolProvider.InfinibandPartitionID),
+		NvLinkLogicalPartitionID: clonePtr(nicoNodePoolProvider.NvLinkLogicalPartitionID),
+		SSHKeyGroupIDs:           cloneUUIDSlicePtr(nicoNodePoolProvider.SSHKeyGroupIDs),
+		OSProfile:                nicoNodePoolProvider.OSProfile,
+		ConfigProfile:            nicoNodePoolProvider.ConfigProfile,
+		DiskSelectionStrategy:    api.DiskSelectionStrategyCreate(nicoNodePoolProvider.DiskSelectionStrategy),
+	}
+}
+
+func apiInfraNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvider) *api.InfraNodePoolProvider {
+	if capiNodePoolProvider == nil {
+		return nil
+	}
+	obj, err := objectFromRawManifest(capiNodePoolProvider.InfraMachineTemplate)
+	if err != nil {
+		obj = nil
+	}
+	out := &api.InfraNodePoolProvider{
+		MachineTemplate:        obj,
+		PreKubeadmCommands:     append([]string(nil), capiNodePoolProvider.PreKubeadmCommands...),
+		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiNodePoolProvider.SpireAttestationMethod),
+	}
+	if apiFiles := apiCloudInitFilesFromDB(capiNodePoolProvider.BootstrapFiles); apiFiles != nil {
+		out.BootstrapFiles = *apiFiles
+	}
+	return out
+}
+
+// clonePtr copies the pointee so a normalized request never shares a scalar with
+// the caller's payload. A nil pointer stays nil: for an optional update field that
+// is the difference between "omitted" and "explicitly set", including set to empty.
+func clonePtr[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func cloneUUIDSlicePtr(s []uuid.UUID) *[]uuid.UUID {
+	if s == nil {
+		return nil
+	}
+	out := append([]uuid.UUID(nil), s...)
+	if out == nil {
+		out = []uuid.UUID{}
+	}
+	return &out
+}
+
 func dbNodePoolFromAPI(req *api.CreateNodePoolRequest, kubernetesVersion string) (db.NodePool, error) {
 	nodeLabels := make([]string, 0)
 	if req.NodeLabels != nil {
 		nodeLabels = *req.NodeLabels
-	}
-	sshKeyGroupIDs := make([]uuid.UUID, 0)
-	if req.SSHKeyGroupIDs != nil {
-		sshKeyGroupIDs = *req.SSHKeyGroupIDs
-	}
-	subnetIDs := make([]uuid.UUID, 0)
-	if req.SubnetIDs != nil {
-		subnetIDs = req.SubnetIDs
-	}
-	vpcPrefixIDs := make([]uuid.UUID, 0)
-	if req.VpcPrefixIDs != nil {
-		vpcPrefixIDs = req.VpcPrefixIDs
 	}
 
 	nodePoolID := uuid.New()
@@ -878,40 +880,22 @@ func dbNodePoolFromAPI(req *api.CreateNodePoolRequest, kubernetesVersion string)
 		recycleBudget = *req.RecycleBudget
 	}
 
-	capiInfraMachineTemplate, err := rawManifestFromObject(req.CapiInfraMachineTemplate)
-	if err != nil {
-		return db.NodePool{}, err
-	}
-
 	var teleportEnabled bool
 	if req.TeleportEnabled != nil {
 		teleportEnabled = *req.TeleportEnabled
 	}
 
-	capiSpireAttestationMethod := db.SpireAttestationMethod("")
-	if req.CapiSpireAttestationMethod != "" {
-		capiSpireAttestationMethod = db.SpireAttestationMethod(req.CapiSpireAttestationMethod)
-	}
-
-	return db.NodePool{
-		ID:                       nodePoolID,
-		ClusterID:                req.ClusterID,
-		Name:                     req.Name,
-		NodeNamePrefix:           req.NodeNamePrefix,
-		SubnetIDs:                subnetIDs,
-		VpcPrefixIDs:             vpcPrefixIDs,
-		InstanceTypeID:           req.InstanceTypeID,
-		Description:              req.Description,
-		InfinibandPartitionID:    req.InfinibandPartitionID,
-		NvLinkLogicalPartitionID: req.NvLinkLogicalPartitionID,
-		SSHKeyGroupIDs:           sshKeyGroupIDs,
-		OSProfile:                req.OSProfile,
-		ConfigProfile:            req.ConfigProfile,
-		KubernetesVersion:        kubernetesVersion,
-		SystemReservedMemory:     req.SystemReservedMemory,
-		KubeReservedMemory:       req.KubeReservedMemory,
-		ControlPlane:             req.ControlPlane,
-		NodeLabels:               nodeLabels,
+	nodePool := db.NodePool{
+		ID:                   nodePoolID,
+		ClusterID:            req.ClusterID,
+		Name:                 req.Name,
+		NodeNamePrefix:       req.NodeNamePrefix,
+		Description:          req.Description,
+		KubernetesVersion:    kubernetesVersion,
+		SystemReservedMemory: req.SystemReservedMemory,
+		KubeReservedMemory:   req.KubeReservedMemory,
+		ControlPlane:         req.ControlPlane,
+		NodeLabels:           nodeLabels,
 		Conditions: db.NodePoolConditions{
 			Provisioning: db.NewCondition(true, "Starting provisioning"),
 			Provisioned:  db.NewCondition(false, "Not yet provisioned"),
@@ -923,19 +907,45 @@ func dbNodePoolFromAPI(req *api.CreateNodePoolRequest, kubernetesVersion string)
 		ProvisioningMonitorDisabled: provisioningMonitorDisabled,
 		RecycleBudget:               recycleBudget,
 		TeleportEnabled:             teleportEnabled,
-		DiskSelectionStrategy:       db.DiskSelectionStrategy(req.DiskSelectionStrategy),
-
-		CapiInfraMachineTemplate:   capiInfraMachineTemplate,
-		CapiSpireAttestationMethod: capiSpireAttestationMethod,
-		CapiBootstrapFiles:         dbCloudInitFilesFromAPI(req.CapiBootstrapFiles),
-		CapiPreKubeadmCommands:     append([]string(nil), req.CapiPreKubeadmCommands...),
-	}, nil
-}
-
-func apiSpireAttestationMethodFromDB(method db.SpireAttestationMethod) *api.SpireAttestationMethod {
-	if method == "" {
-		return nil
 	}
-	apiMethod := api.SpireAttestationMethod(method)
-	return &apiMethod
+
+	switch {
+	case req.Nico != nil:
+		sshKeyGroupIDs := make([]uuid.UUID, 0)
+		if req.Nico.SSHKeyGroupIDs != nil {
+			sshKeyGroupIDs = append(sshKeyGroupIDs, *req.Nico.SSHKeyGroupIDs...)
+		}
+		subnetIDs := make([]uuid.UUID, 0)
+		if req.Nico.SubnetIDs != nil {
+			subnetIDs = append(subnetIDs, req.Nico.SubnetIDs...)
+		}
+		vpcPrefixIDs := make([]uuid.UUID, 0)
+		if req.Nico.VpcPrefixIDs != nil {
+			vpcPrefixIDs = append(vpcPrefixIDs, req.Nico.VpcPrefixIDs...)
+		}
+		nodePool.SetNico(db.NicoNodePoolProvider{
+			SubnetIDs:                subnetIDs,
+			VpcPrefixIDs:             vpcPrefixIDs,
+			InstanceTypeID:           req.Nico.InstanceTypeID,
+			InfinibandPartitionID:    req.Nico.InfinibandPartitionID,
+			NvLinkLogicalPartitionID: req.Nico.NvLinkLogicalPartitionID,
+			SSHKeyGroupIDs:           sshKeyGroupIDs,
+			OSProfile:                req.Nico.OSProfile,
+			ConfigProfile:            req.Nico.ConfigProfile,
+			DiskSelectionStrategy:    db.DiskSelectionStrategy(req.Nico.DiskSelectionStrategy),
+		})
+	case req.Infra != nil:
+		infraMachineTemplate, err := rawManifestFromObject(req.Infra.MachineTemplate)
+		if err != nil {
+			return db.NodePool{}, err
+		}
+		nodePool.SetCapi(db.CAPINodePoolProvider{
+			InfraMachineTemplate:   infraMachineTemplate,
+			SpireAttestationMethod: db.SpireAttestationMethod(req.Infra.SpireAttestationMethod),
+			BootstrapFiles:         dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles),
+			PreKubeadmCommands:     append([]string(nil), req.Infra.PreKubeadmCommands...),
+		})
+	}
+
+	return nodePool, nil
 }

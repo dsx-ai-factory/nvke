@@ -45,6 +45,33 @@ func objectFromRawManifest(raw json.RawMessage) (map[string]interface{}, error) 
 	return obj, nil
 }
 
+// firstInfraMachineTemplateObject returns the provisioned control-plane MachineTemplate
+// from the stored preference list (index 0). Extra entries are merge history and are
+// not part of the API.
+func firstInfraMachineTemplateObject(prefs []json.RawMessage) map[string]interface{} {
+	if len(prefs) == 0 {
+		return nil
+	}
+	obj, err := objectFromRawManifest(prefs[0])
+	if err != nil || isEmptyManifestObject(obj) {
+		return nil
+	}
+	return obj
+}
+
+// infraMachineTemplatePrefsFromAPI stores a single API MachineTemplate as the
+// control-plane preference list CWE persists internally.
+func infraMachineTemplatePrefsFromAPI(obj map[string]interface{}) ([]json.RawMessage, error) {
+	raw, err := rawManifestFromObject(obj)
+	if err != nil {
+		return nil, err
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	return []json.RawMessage{raw}, nil
+}
+
 func validateCAPIInfrastructureManifest(obj map[string]interface{}) error {
 	if isEmptyManifestObject(obj) {
 		return nil

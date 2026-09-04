@@ -91,6 +91,17 @@ func (a *Activities) GetNodePoolForNode(ctx context.Context, nodeID uuid.UUID) (
 	return nodePool, nil
 }
 
+func (a *Activities) GetCluster(ctx context.Context, clusterID uuid.UUID) (db.Cluster, error) {
+	cluster, err := a.db.GetCluster(ctx, clusterID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			return db.Cluster{}, temporal.NewNonRetryableApplicationError("cluster not found in database", "db.ErrNotFound", err)
+		}
+		return db.Cluster{}, fmt.Errorf("failed to get cluster: %w", err)
+	}
+	return cluster, nil
+}
+
 func (a *Activities) GetClusterForNode(ctx context.Context, nodeID uuid.UUID) (db.Cluster, error) {
 	node, err := a.db.GetNode(ctx, nodeID)
 	if err != nil {
@@ -100,15 +111,7 @@ func (a *Activities) GetClusterForNode(ctx context.Context, nodeID uuid.UUID) (d
 		return db.Cluster{}, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	cluster, err := a.db.GetCluster(ctx, node.ClusterID)
-	if err != nil {
-		if errors.Is(err, db.ErrNotFound) {
-			return db.Cluster{}, temporal.NewNonRetryableApplicationError("cluster not found in database", "db.ErrNotFound", err)
-		}
-		return db.Cluster{}, fmt.Errorf("failed to get cluster: %w", err)
-	}
-
-	return cluster, nil
+	return a.GetCluster(ctx, node.ClusterID)
 }
 
 // UpdateNodeConditions updates the conditions of a node in the database.

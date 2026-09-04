@@ -106,6 +106,20 @@ func (c *ControlPlaneConfigSpec) SyncProviderFields(providerType ProviderType) {
 	}
 }
 
+func (c ControlPlaneConfigSpec) NicoProvider() (NicoControlPlaneProvider, error) {
+	if c.Nico == nil {
+		return NicoControlPlaneProvider{}, fmt.Errorf("%w: control plane config nico", ErrMissingProviderPayload)
+	}
+	return *cloneNicoControlPlaneProvider(c.Nico), nil
+}
+
+func (c ControlPlaneConfigSpec) CAPIProvider() (CAPIControlPlaneProvider, error) {
+	if c.Capi == nil {
+		return CAPIControlPlaneProvider{}, fmt.Errorf("%w: control plane config capi", ErrMissingProviderPayload)
+	}
+	return *cloneCAPIControlPlaneProvider(c.Capi), nil
+}
+
 func (c ControlPlaneConfigSpec) NicoControlPlaneProvider() *NicoControlPlaneProvider {
 	return cloneNicoControlPlaneProvider(c.Nico)
 }
@@ -225,10 +239,6 @@ func ReplaceTemplate(cfg ControlPlaneConfigSpec) controlPlaneReplaceTemplate {
 		ConfigProfile:     cfg.ConfigProfile,
 		KubernetesVersion: cfg.KubernetesVersion,
 	}
-}
-
-func ReplaceTemplateChanged(a, b ControlPlaneConfigSpec) bool {
-	return !reflect.DeepEqual(ReplaceTemplate(a), ReplaceTemplate(b))
 }
 
 func (q *queriesImpl) CreateControlPlaneConfiguration(ctx context.Context, row *ControlPlaneConfiguration) (ControlPlaneConfiguration, error) {

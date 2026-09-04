@@ -13,8 +13,6 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
-
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/metrics"
@@ -68,35 +66,20 @@ func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
 	}
 
 	infraProvisionStart := workflow.Now(ctx)
-	if err := provisionNodeInfrastructure(ctx, nodeCtx); err != nil {
-		switch nodeCtx.InfraMode {
-		case activities.InfraModeCAPI:
-			if err := updateNodeProvisioningMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
-				logger.Error("failed to update node conditions", "error", err)
-			}
-			recordPhase("capi_create", infraProvisionStart, workflow.Now(ctx))
-		case activities.InfraModeForge:
-			// Best effort to update the node conditions to indicate the pending workflow failed
-			if err := updateNodePendingMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
-				logger.Error("failed to update node conditions", "error", err)
-			}
-			recordPhase("forge_create", infraProvisionStart, workflow.Now(ctx))
+	if err := provisionCAPINode(ctx, nodeCtx.NodeID); err != nil {
+		if err := updateNodeProvisioningMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
+			logger.Error("failed to update node conditions", "error", err)
 		}
+		recordPhase("capi_create", infraProvisionStart, workflow.Now(ctx))
 
 		if !workflow.IsReplaying(ctx) {
 			metrics.RecordProvisionFailed(labels.ClusterName, labels.NodeType, workflow.Now(ctx).Sub(workflowStart))
 		}
-		return fmt.Errorf("failed to provision node infrastructure: %w", err)
+		return fmt.Errorf("failed to provision CAPI node: %w", err)
 	}
+	recordPhase("capi_create", infraProvisionStart, workflow.Now(ctx))
 
-	switch nodeCtx.InfraMode {
-	case activities.InfraModeCAPI:
-		recordPhase("capi_create", infraProvisionStart, workflow.Now(ctx))
-	case activities.InfraModeForge:
-		recordPhase("forge_create", infraProvisionStart, workflow.Now(ctx))
-	}
-
-	if err := provisionNode(ctx, input, nodeCtx, labels); err != nil {
+	if err := provisionNode(ctx, input, labels); err != nil {
 		// Best effort to update the node conditions to indicate the provisioning workflow failed
 		if err := updateNodeProvisioningMessage(ctx, input.NodeID, fmt.Sprintf("Workflow failed: %s", err)); err != nil {
 			logger.Error("failed to update node conditions", "error", err)
@@ -142,24 +125,6 @@ func ProvisionNode(ctx workflow.Context, input ProvisionNodeInput) error {
 		"clusterName", labels.ClusterName,
 		"nodeType", labels.NodeType,
 	)
-
-	return nil
-}
-
-func provisionNodeInfrastructure(ctx workflow.Context, nodeCtx activities.NodeProvisioningContext) error {
-	switch nodeCtx.InfraMode {
-	case activities.InfraModeCAPI:
-		if err := provisionCAPINode(ctx, nodeCtx.NodeID); err != nil {
-			return fmt.Errorf("failed to provision CAPI node: %w", err)
-		}
-	case activities.InfraModeForge:
-		// We only want to move from Pending to Provisioning if the forge instance creation succeeds.
-		if err := provisionForgeInstance(ctx, nodeCtx.NodeID); err != nil {
-			return fmt.Errorf("failed to provision Forge instance: %w", err)
-		}
-	default:
-		return fmt.Errorf("unsupported node infra mode %q", nodeCtx.InfraMode)
-	}
 
 	return nil
 }
@@ -217,30 +182,19 @@ func getNodeProvisioningContext(ctx workflow.Context, nodeID uuid.UUID) (activit
 	return nodeCtx, nil
 }
 
-func provisionNode(ctx workflow.Context, input ProvisionNodeInput, nodeCtx activities.NodeProvisioningContext, labels nodeMetricLabels) error {
+func provisionNode(ctx workflow.Context, input ProvisionNodeInput, labels nodeMetricLabels) error {
 	recordPhase := func(phase string, start, end time.Time) {
 		if !workflow.IsReplaying(ctx) {
 			metrics.RecordProvisionPhase(labels.ClusterName, labels.NodeType, phase, end.Sub(start))
 		}
 	}
 
-	if nodeCtx.InfraMode == activities.InfraModeForge {
-		forgeReadyStart := workflow.Now(ctx)
-		if err := waitForForgeInstance(ctx, input.NodeID); err != nil {
-			recordPhase("forge_ready", forgeReadyStart, workflow.Now(ctx))
-			return fmt.Errorf("failed to wait for Forge instance to be ready: %w", err)
-		}
-		recordPhase("forge_ready", forgeReadyStart, workflow.Now(ctx))
-	}
-
-	if nodeCtx.InfraMode == activities.InfraModeCAPI {
-		capiReadyStart := workflow.Now(ctx)
-		if err := waitForCAPIMachine(ctx, input.NodeID); err != nil {
-			recordPhase("capi_ready", capiReadyStart, workflow.Now(ctx))
-			return fmt.Errorf("failed to wait for CAPI machine to be ready: %w", err)
-		}
+	capiReadyStart := workflow.Now(ctx)
+	if err := waitForCAPIMachine(ctx, input.NodeID); err != nil {
 		recordPhase("capi_ready", capiReadyStart, workflow.Now(ctx))
+		return fmt.Errorf("failed to wait for CAPI machine to be ready: %w", err)
 	}
+	recordPhase("capi_ready", capiReadyStart, workflow.Now(ctx))
 
 	hostPrepStart := workflow.Now(ctx)
 	endHostPrep := func() { recordPhase("host_preparation", hostPrepStart, workflow.Now(ctx)) }
@@ -340,7 +294,7 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 	postJoinStart := workflow.Now(ctx)
 	endPostJoin := func() { recordPhase("post_join", postJoinStart, workflow.Now(ctx)) }
 
-	if err := labelNode(ctx, nodeID, hasConfigProfile, nodeCtx.InfraMode != activities.InfraModeCAPI); err != nil {
+	if err := labelNode(ctx, nodeID, hasConfigProfile); err != nil {
 		endPostJoin()
 		return fmt.Errorf("failed to label node: %w", err)
 	}
@@ -373,97 +327,6 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 		return fmt.Errorf("failed to mark node as provisioned: %w", err)
 	}
 	endPostJoin()
-
-	return nil
-}
-
-func provisionForgeInstance(ctx workflow.Context, nodeID uuid.UUID) error {
-	var a *activities.Activities
-
-	// Optimistically try to provision the forge instance with limited retries.
-	//
-	// We only retry 3 times instead of indefinitely to handle race conditions:
-	// When multiple node workflows compete for the last available forge machine,
-	// only one will succeed. The losing workflows should fail quickly rather than
-	// retry endlessly.
-	//
-	// Failed workflows won't be rescheduled until new forge capacity becomes
-	// available, since node schedulers check forge capacity before scheduling.
-	// This prevents a buildup of perpetually failing workflows.
-	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 1 * time.Minute, // Calling a synchronous API via FWE/temporal
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    1 * time.Minute,
-			MaximumInterval:    10 * time.Minute,
-			BackoffCoefficient: 2,
-			MaximumAttempts:    3,
-		},
-	}
-
-	var createInstanceResponse *forgesdk.Instance
-	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, activityOptions),
-		a.CreateForgeInstance,
-		activities.CreateForgeInstanceInput{
-			NodeID: nodeID,
-		},
-	).Get(ctx, &createInstanceResponse); err != nil {
-		return fmt.Errorf("failed to create Forge instance: %w", err)
-	}
-
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.UpdateNodeForgeDetails, activities.NodeForgeDetailsUpdate{
-		NodeID:          nodeID,
-		ForgeInstanceID: createInstanceResponse.GetId(),
-		ForgeMachineID:  createInstanceResponse.GetMachineId(),
-		// IP is not immediately available
-	}).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to update node Forge details: %w", err)
-	}
-
-	return nil
-}
-
-func waitForForgeInstance(ctx workflow.Context, nodeID uuid.UUID) error {
-	var a *activities.Activities
-
-	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 10 * time.Minute, // Usually takes about 5 minutes
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    1 * time.Minute,
-			MaximumInterval:    10 * time.Minute,
-			BackoffCoefficient: 2,
-			MaximumAttempts:    0, // Retry indefinitely
-		},
-	}
-
-	var waitForForgeInstanceReadyResponse *forgesdk.Instance
-	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, activityOptions),
-		a.WaitForForgeInstanceReady,
-		activities.WaitForForgeInstanceReadyInput{
-			NodeID:                           nodeID,
-			NodeProvisioningConditionMessage: "Waiting for Forge instance to be ready",
-		},
-	).Get(ctx, &waitForForgeInstanceReadyResponse); err != nil {
-		return fmt.Errorf("failed to wait for Forge instance to be ready: %w", err)
-	}
-
-	interfaces := waitForForgeInstanceReadyResponse.GetInterfaces()
-	if len(interfaces) == 0 {
-		return fmt.Errorf("forge instance %s has no interfaces", waitForForgeInstanceReadyResponse.GetId())
-	}
-
-	ipAddresses := interfaces[0].GetIpAddresses()
-	if len(ipAddresses) == 0 {
-		return fmt.Errorf("forge instance %s has no IP addresses", waitForForgeInstanceReadyResponse.GetId())
-	}
-
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.UpdateNodeForgeDetails, activities.NodeForgeDetailsUpdate{
-		NodeID: nodeID,
-		IP:     ipAddresses[0],
-	}).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to update node IP address: %w", err)
-	}
 
 	return nil
 }
@@ -848,7 +711,7 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 	}
 }
 
-func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels, addTopologyLabels bool) error {
+func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels bool) error {
 	var a *activities.Activities
 
 	activityOptions := workflow.ActivityOptions{
@@ -904,7 +767,6 @@ func labelNode(ctx workflow.Context, nodeID uuid.UUID, addConfigProfileLabels, a
 		a.LabelNode,
 		activities.LabelNodeInput{
 			AddConfigProfileLabels:           addConfigProfileLabels,
-			AddTopologyLabels:                addTopologyLabels,
 			Labels:                           labels,
 			NodeID:                           nodeID,
 			NodeProvisioningConditionMessage: "Labeling node",
@@ -941,20 +803,6 @@ func configureKubeVip(ctx workflow.Context, nodeID uuid.UUID) error {
 	}
 
 	return nil
-}
-
-func updateNodePendingMessage(ctx workflow.Context, nodeID uuid.UUID, message string) error {
-	var a *activities.Activities
-
-	return workflow.ExecuteActivity(withDBOptions(ctx), a.UpdateNodeConditions, activities.NodeConditionsUpdate{
-		NodeID: nodeID,
-		Conditions: activities.NodeConditions{
-			Pending: &activities.ConditionUpdate{
-				Status:  db.ConditionStatusTrue,
-				Message: message,
-			},
-		},
-	}).Get(ctx, nil)
 }
 
 func updateNodeProvisioningMessage(ctx workflow.Context, nodeID uuid.UUID, message string) error {

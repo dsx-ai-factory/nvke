@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/google/uuid"
 	"go.temporal.io/sdk/client"
 
 	"github.com/NVIDIA/nke/controller/api"
@@ -72,7 +73,7 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 	if dbNodeSet == nil {
 		return api.NodeSet{}, nil
 	}
-	capiInfraMachineTemplate, err := objectFromRawManifest(dbNodeSet.CapiInfraMachineTemplate)
+	_, err := objectFromRawManifest(dbNodeSet.CapiInfraMachineTemplate)
 	if err != nil {
 		return api.NodeSet{}, fmt.Errorf(
 			"objectFromRawManifest failed for capiInfraMachineTemplate on node set %s (nodePoolID=%s, preview=%q): %w",
@@ -82,31 +83,54 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 			err,
 		)
 	}
-	var capiInfraMachineTemplatePtr *map[string]interface{}
-	if len(capiInfraMachineTemplate) > 0 {
-		capiInfraMachineTemplatePtr = &capiInfraMachineTemplate
-	}
 	var kubeReservedMemory *string
 	if dbNodeSet.KubeReservedMemory != "" {
 		kubeReservedMemory = &dbNodeSet.KubeReservedMemory
 	}
 
 	return api.NodeSet{
-		ID:                    dbNodeSet.ID,
-		NodePoolID:            dbNodeSet.NodePoolID,
-		DesiredCount:          dbNodeSet.DesiredCount,
-		OSProfile:             dbNodeSet.OSProfile,
-		ConfigProfile:         dbNodeSet.ConfigProfile,
-		SystemReservedMemory:  dbNodeSet.SystemReservedMemory,
-		KubeReservedMemory:    kubeReservedMemory,
-		KubernetesVersion:     dbNodeSet.KubernetesVersion,
-		TeleportEnabled:       &dbNodeSet.TeleportEnabled,
-		DiskSelectionStrategy: api.DiskSelectionStrategy(dbNodeSet.DiskSelectionStrategy),
-
-		CapiInfraMachineTemplate: capiInfraMachineTemplatePtr,
-		CapiBootstrapFiles:       apiCloudInitFilesFromDB(dbNodeSet.CapiBootstrapFiles),
-		CapiPreKubeadmCommands:   stringSlicePointer(dbNodeSet.CapiPreKubeadmCommands),
+		ID:                   dbNodeSet.ID,
+		NodePoolID:           dbNodeSet.NodePoolID,
+		DesiredCount:         dbNodeSet.DesiredCount,
+		SystemReservedMemory: dbNodeSet.SystemReservedMemory,
+		KubeReservedMemory:   kubeReservedMemory,
+		KubernetesVersion:    dbNodeSet.KubernetesVersion,
+		TeleportEnabled:      &dbNodeSet.TeleportEnabled,
+		Nico:                 apiNicoNodeSetProviderFromDB(dbNodeSet.Nico),
+		Infra:                apiInfraNodeSetProviderFromDB(dbNodeSet.Capi),
 	}, nil
+}
+
+func apiInfraNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider) *api.InfraNodeSetProvider {
+	if capiNodeSetProvider == nil {
+		return nil
+	}
+	obj, err := objectFromRawManifest(capiNodeSetProvider.InfraMachineTemplate)
+	if err != nil {
+		obj = nil
+	}
+	out := &api.InfraNodeSetProvider{
+		MachineTemplate:        obj,
+		PreKubeadmCommands:     append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
+		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiNodeSetProvider.SpireAttestationMethod),
+	}
+	if apiFiles := apiCloudInitFilesFromDB(capiNodeSetProvider.BootstrapFiles); apiFiles != nil {
+		out.BootstrapFiles = *apiFiles
+	}
+	return out
+}
+
+func apiNicoNodeSetProviderFromDB(nicoNodeSetProvider *db.NicoNodePoolProvider) *api.NicoNodeSetProvider {
+	if nicoNodeSetProvider == nil {
+		return nil
+	}
+	return &api.NicoNodeSetProvider{
+		SubnetIDs:             append([]uuid.UUID(nil), nicoNodeSetProvider.SubnetIDs...),
+		VpcPrefixIDs:          append([]uuid.UUID(nil), nicoNodeSetProvider.VpcPrefixIDs...),
+		OSProfile:             nicoNodeSetProvider.OSProfile,
+		ConfigProfile:         nicoNodeSetProvider.ConfigProfile,
+		DiskSelectionStrategy: api.DiskSelectionStrategyCreate(nicoNodeSetProvider.DiskSelectionStrategy),
+	}
 }
 
 func truncateManifestForLog(raw []byte, limit int) string {

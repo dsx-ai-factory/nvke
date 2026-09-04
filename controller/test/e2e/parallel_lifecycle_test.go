@@ -84,9 +84,11 @@ var _ = Describe("Parallel tenant cluster lifecycle", Ordered, ContinueOnFailure
 				}
 
 				parallelShape := shape
-				parallelShape.controlPlaneVIP = nicoVMSControlPlaneVIPAtOffset(i)
 				spec := nicoVMSSpec(test.cfg, fmt.Sprintf("%s-par%d", clusterNamePrefix, i), parallelShape)
 				spec.Name = fmt.Sprintf("%s-%s", spec.Name, spec.Backend) // CreateCluster appends a timestamp
+				spec.ControlPlane.ControlPlaneVIP = expectSucceed(
+					test.availableControlPlaneVIP(ctx, preferredControlPlaneVIP(spec.Backend)),
+				)
 
 				By(fmt.Sprintf("Creating parallel cluster %d (%s)", i, shape.cniPlugin))
 				cluster, err := test.nke.CreateCluster(ctx, spec)

@@ -12,13 +12,17 @@ name: Chart Publish NVCR
 #   NKE_NGC_ORG              variable  NGC org id
 #   NGC_REGISTRY_TOKEN_NKE   secret    NGC API key with write access on the org
 #
-# The chart is pushed to nvcr.io/<NKE_NGC_ORG>/charts/controller.
+# The chart is pushed to nvcr.io/<NKE_NGC_ORG>/controller-chart, so the chart
+# is REPACKAGED under the name controller-chart below. On GHCR the same chart
+# publishes as charts/controller; the two deliberately differ.
 #
-# `charts/` is a reserved path segment here for the same reason it is on
-# GHCR: the chart is named `controller` and the image it deploys is
-# nvcr.io/<NKE_NGC_ORG>/controller, so without the split the two would land
-# in one OCI repository, told apart only by whether the tag carries a "v".
-#
+# NVCR cannot take the `charts/` path segment GHCR uses. An NGC reference is
+# nvcr.io/<org>/<repo> or nvcr.io/<org>/<team>/<repo> -- at most one middle
+# segment, and it names a TEAM, an access-control object an org owner has to
+# create, not a free path component. Pushing to nvcr.io/<org>/charts/controller
+# asks NGC for a team named `charts` that does not exist, and the push dies
+# before it reaches the registry:
+
 # Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine
 # and published at nvcr.io/<NKE_NGC_ORG>/cloud-workflow-engine; those
 # versions stay there.
@@ -100,9 +104,9 @@ jobs:
           {
             echo "version=${version}"
             echo "app_version=${describe}"
-            echo "repo=nvcr.io/${NKE_NGC_ORG}/charts"
+            echo "repo=nvcr.io/${NKE_NGC_ORG}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Chart version: ${version}  appVersion: ${describe}  repo: nvcr.io/${NKE_NGC_ORG}/charts"
+          echo "Chart version: ${version}  appVersion: ${describe}  repo: nvcr.io/${NKE_NGC_ORG}"
 
       # values.yaml defaults to the GHCR image, which is the right default for
       # someone reading the repository. This chart goes to NVCR, so it has to
@@ -143,6 +147,25 @@ jobs:
           grep -q "^  - name: svc-nke-ngc-imagepull\$" "${CHART}/values.yaml" \
             || { echo "::error::pull-secret rewrite did not apply"; exit 1; }
 
+      # helm push takes the destination's last path segment from `name:` in
+      # Chart.yaml, not from the argument, so this rename IS the publish path:
+      # it is what puts the chart at nvcr.io/<org>/controller-chart instead of
+      # colliding with the controller image at nvcr.io/<org>/controller.
+      - name: Rename the chart for NVCR
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Anchored to the top-level key so it cannot touch `name:` inside
+          # maintainers, dependencies, or annotations.
+          sed -i -e "s#^name: controller\$#name: controller-chart#" \
+            "${CHART}/Chart.yaml"
+
+          # A silent miss here republishes over the controller image's
+          # repository, so fail instead.
+          grep -q "^name: controller-chart\$" "${CHART}/Chart.yaml" \
+            || { echo "::error::chart rename did not apply"; exit 1; }
+
       - name: Package
         shell: bash
         env:
@@ -175,6 +198,6 @@ jobs:
         run: |
           set -euo pipefail
           helm push \
-            "${RUNNER_TEMP}/chart-dist/controller-${VERSION}.tgz" \
+            "${RUNNER_TEMP}/chart-dist/controller-chart-${VERSION}.tgz" \
             "oci://${REPO}"
-          echo "Pushed ${REPO}/controller:${VERSION}"
+          echo "Pushed ${REPO}/controller-chart:${VERSION}"

@@ -5,11 +5,11 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -59,10 +59,6 @@ func (s *clusterService) GetClusterControlPlane(
 	}), nil
 }
 
-func unsupportedControlPlaneConfigFieldError(fieldName, clusterType string) error {
-	return fmt.Errorf("controlPlaneConfig.%s is not supported for %s", fieldName, clusterType)
-}
-
 // validateCreateClusterLevelControlPlane validates the cluster-level control
 // plane configuration supplied on cluster create when control-plane controller
 // provisioning is enabled. It rejects control-plane node pools and applies the
@@ -72,7 +68,7 @@ func unsupportedControlPlaneConfigFieldError(fieldName, clusterType string) erro
 func validateCreateClusterLevelControlPlane(
 	req *api.CreateClusterRequest,
 	nodePools []api.NodePoolCreateConfig,
-	isCAPICluster bool,
+	providerType db.ProviderType,
 ) error {
 	for _, np := range nodePools {
 		if np.ControlPlane {
@@ -91,98 +87,55 @@ func validateCreateClusterLevelControlPlane(
 		return errClusterMaxSurgeTooHigh
 	}
 
-	if isCAPICluster {
+	switch providerType {
+	case db.ProviderTypeCAPI:
 		return validateCreateCAPIControlPlaneConfig(ccpc)
+	case db.ProviderTypeNico:
+		return validateCreateForgeControlPlaneConfigFields(ccpc)
+	default:
+		return fmt.Errorf("unsupported cluster provider")
 	}
-	return validateCreateForgeControlPlaneConfigFields(ccpc)
 }
 
 // validateCreateCAPIControlPlaneConfig enforces CAPI control-plane config rules:
-// capiInfraMachineTemplate is required and Forge-only fields are rejected.
+// infra.machineTemplate is required and Forge-only fields are rejected.
 func validateCreateCAPIControlPlaneConfig(c *api.CreateClusterControlPlaneConfig) error {
-	switch {
-	case len(c.InstanceTypePreference) > 0:
-		return unsupportedControlPlaneConfigFieldError("instanceTypePreference", "CAPI clusters")
-	case c.OSProfile != "":
-		return unsupportedControlPlaneConfigFieldError("osProfile", "CAPI clusters")
-	case len(c.SubnetIDs) > 0:
-		return unsupportedControlPlaneConfigFieldError("subnetIDs", "CAPI clusters")
-	case len(c.VpcPrefixIDs) > 0:
-		return unsupportedControlPlaneConfigFieldError("vpcPrefixIDs", "CAPI clusters")
-	case len(c.SSHKeyGroupIDs) > 0:
-		return unsupportedControlPlaneConfigFieldError("sshKeyGroupIDs", "CAPI clusters")
+	if c.Nico != nil {
+		return fmt.Errorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	}
-	if len(c.CapiInfraMachineTemplate) == 0 || isEmptyManifestObject(c.CapiInfraMachineTemplate) {
-		return fmt.Errorf("controlPlaneConfig.capiInfraMachineTemplate is required for CAPI clusters")
+	if c.Infra == nil || isEmptyManifestObject(c.Infra.MachineTemplate) {
+		return fmt.Errorf("controlPlaneConfig.infra.machineTemplate is required")
 	}
-	if err := validateCAPIInfrastructureManifest(c.CapiInfraMachineTemplate); err != nil {
-		return fmt.Errorf("invalid controlPlaneConfig.capiInfraMachineTemplate: %w", err)
+	if err := validateCAPIInfrastructureManifest(c.Infra.MachineTemplate); err != nil {
+		return fmt.Errorf("invalid controlPlaneConfig.infra.machineTemplate: %w", err)
 	}
-	if err := validateCAPISpireAttestationMethod(string(c.CapiSpireAttestationMethod)); err != nil {
+	if err := validateCAPISpireAttestationMethod(string(c.Infra.SpireAttestationMethod)); err != nil {
 		return err
 	}
-	return validateCloudInitFiles(c.CapiBootstrapFiles)
+	return validateCloudInitFiles(c.Infra.BootstrapFiles)
 }
 
 // validateCreateForgeControlPlaneConfigFields enforces the non-networking Forge
 // control-plane config rules: CAPI-only fields are rejected and the required
 // Forge fields are present.
 func validateCreateForgeControlPlaneConfigFields(c *api.CreateClusterControlPlaneConfig) error {
-	switch {
-	case len(c.CapiInfraMachineTemplate) > 0:
-		return unsupportedControlPlaneConfigFieldError("capiInfraMachineTemplate", "Forge clusters")
-	case c.CapiSpireAttestationMethod != "":
-		return unsupportedControlPlaneConfigFieldError("capiSpireAttestationMethod", "Forge clusters")
-	case len(c.CapiBootstrapFiles) > 0:
-		return unsupportedControlPlaneConfigFieldError("capiBootstrapFiles", "Forge clusters")
-	case len(c.CapiPreKubeadmCommands) > 0:
-		return unsupportedControlPlaneConfigFieldError("capiPreKubeadmCommands", "Forge clusters")
+	if c.Infra != nil {
+		return fmt.Errorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
 	}
-	if len(c.InstanceTypePreference) == 0 {
-		return fmt.Errorf("controlPlaneConfig.instanceTypePreference must contain at least one instance type ID for a Forge cluster control plane")
+	if c.Nico == nil {
+		return fmt.Errorf("controlPlaneConfig.nico is required for a nico cluster control plane")
 	}
-	if err := validateInstanceTypePreferenceIDs(c.InstanceTypePreference); err != nil {
+	if len(c.Nico.InstanceTypePreference) == 0 {
+		return fmt.Errorf("controlPlaneConfig.nico.instanceTypePreference must contain at least one instance type ID for a nico cluster control plane")
+	}
+	if err := validateInstanceTypePreferenceIDs(c.Nico.InstanceTypePreference); err != nil {
 		return err
 	}
-	if c.OSProfile == "" {
-		return fmt.Errorf("controlPlaneConfig.osProfile is required for a Forge cluster control plane")
+	if c.Nico.OSProfile == "" {
+		return fmt.Errorf("controlPlaneConfig.nico.osProfile is required for a nico cluster control plane")
 	}
-	if c.ConfigProfile == "" {
-		return fmt.Errorf("controlPlaneConfig.configProfile is required for a Forge cluster control plane")
-	}
-	return nil
-}
-
-// validateForgeControlPlaneSpecFields rejects CAPI-only fields on the merged
-// control-plane spec of a Forge cluster during an update.
-func validateForgeControlPlaneSpecFields(spec db.ControlPlaneConfigSpec) error {
-	switch {
-	case len(spec.InfraMachineTemplatePreferences) > 0:
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("capiInfraMachineTemplate", "Forge clusters"))
-	case spec.CapiSpireAttestationMethod != "":
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("capiSpireAttestationMethod", "Forge clusters"))
-	case len(spec.CapiBootstrapFiles) > 0:
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("capiBootstrapFiles", "Forge clusters"))
-	case len(spec.CapiPreKubeadmCommands) > 0:
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("capiPreKubeadmCommands", "Forge clusters"))
-	}
-	return nil
-}
-
-// validateCAPIControlPlaneSpecFields rejects Forge-only fields on the merged
-// control-plane spec of a CAPI cluster during an update.
-func validateCAPIControlPlaneSpecFields(spec db.ControlPlaneConfigSpec) error {
-	switch {
-	case len(spec.InstanceTypePreference) > 0:
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("instanceTypePreference", "CAPI clusters"))
-	case spec.OSProfile != "":
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("osProfile", "CAPI clusters"))
-	case len(spec.SubnetIDs) > 0:
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("subnetIDs", "CAPI clusters"))
-	case len(spec.VpcPrefixIDs) > 0:
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("vpcPrefixIDs", "CAPI clusters"))
-	case len(spec.SSHKeyGroupIDs) > 0:
-		return newBadRequestErrorf("%s", unsupportedControlPlaneConfigFieldError("sshKeyGroupIDs", "CAPI clusters"))
+	if c.Nico.ConfigProfile == "" {
+		return fmt.Errorf("controlPlaneConfig.nico.configProfile is required for a nico cluster control plane")
 	}
 	return nil
 }
@@ -191,28 +144,44 @@ func validateCAPIControlPlaneSpecFields(spec db.ControlPlaneConfigSpec) error {
 // invariants over the merged spec of a PATCH, so an update cannot clear a required
 // field or persist a ControlPlaneConfigSpec that would be rejected on create.
 func validateMergedClusterControlPlaneSpec(cluster db.Cluster, spec db.ControlPlaneConfigSpec) error {
-	isForge := cluster.SiteID != uuid.Nil
-	if isForge {
-		if err := validateForgeControlPlaneSpecFields(spec); err != nil {
-			return err
-		}
-		if len(spec.InstanceTypePreference) == 0 {
-			return newBadRequestErrorf("controlPlaneConfig.instanceTypePreference must contain at least one instance type ID for a Forge cluster control plane")
-		}
-		if spec.OSProfile == "" {
-			return newBadRequestErrorf("controlPlaneConfig.osProfile is required for a Forge cluster control plane")
-		}
-		if spec.ConfigProfile == "" {
-			return newBadRequestErrorf("controlPlaneConfig.configProfile is required for a Forge cluster control plane")
-		}
-		return nil
+	switch cluster.ProviderType {
+	case db.ProviderTypeNico:
+		return validateMergedForgeControlPlaneSpec(spec)
+	case db.ProviderTypeCAPI:
+		return validateMergedCAPIControlPlaneSpec(spec)
+	default:
+		return fmt.Errorf("unsupported cluster provider")
 	}
+}
 
-	if err := validateCAPIControlPlaneSpecFields(spec); err != nil {
-		return err
+func validateMergedForgeControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
+	if spec.Nico == nil {
+		return newBadRequestErrorf("controlPlaneConfig.nico is required for a nico cluster control plane")
 	}
-	if len(spec.InfraMachineTemplatePreferences) == 0 {
-		return newBadRequestErrorf("controlPlaneConfig.capiInfraMachineTemplate is required for CAPI clusters")
+	if spec.Capi != nil {
+		return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
+	}
+	if len(spec.Nico.InstanceTypePreference) == 0 {
+		return newBadRequestErrorf("controlPlaneConfig.nico.instanceTypePreference must contain at least one instance type ID for a nico cluster control plane")
+	}
+	if spec.Nico.OSProfile == "" {
+		return newBadRequestErrorf("controlPlaneConfig.nico.osProfile is required for a nico cluster control plane")
+	}
+	if spec.Nico.ConfigProfile == "" {
+		return newBadRequestErrorf("controlPlaneConfig.nico.configProfile is required for a nico cluster control plane")
+	}
+	return nil
+}
+
+func validateMergedCAPIControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
+	if spec.Capi == nil {
+		return newBadRequestErrorf("controlPlaneConfig.infra is required")
+	}
+	if spec.Nico != nil {
+		return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
+	}
+	if firstInfraMachineTemplateObject(spec.Capi.InfraMachineTemplatePreferences) == nil {
+		return newBadRequestErrorf("controlPlaneConfig.infra.machineTemplate is required")
 	}
 	var bootstrapFiles []api.CloudInitFile
 	if files := apiCloudInitFilesFromDB(spec.CapiBootstrapFiles); files != nil {
@@ -253,15 +222,8 @@ func controlPlaneConfigSpecFromCreateAPI(
 	c *api.CreateClusterControlPlaneConfig,
 	kubernetesVersion string,
 	teleportDefault bool,
-	isForge bool,
+	providerType db.ProviderType,
 ) db.ControlPlaneConfigSpec {
-	// Control plane nodes always use the smallest disk; the strategy is not
-	// configurable through the API. CAPI control planes ignore disk selection.
-	var diskStrategy db.DiskSelectionStrategy
-	if isForge {
-		diskStrategy = db.DiskSelectionStrategy(api.DiskSelectionStrategyCreateSmallest)
-	}
-
 	teleportEnabled := teleportDefault
 	if c.TeleportEnabled != nil {
 		teleportEnabled = *c.TeleportEnabled
@@ -270,26 +232,76 @@ func controlPlaneConfigSpecFromCreateAPI(
 	provisioningMonitorDisabled := c.ProvisioningMonitorDisabled != nil && *c.ProvisioningMonitorDisabled
 
 	spec := db.ControlPlaneConfigSpec{
-		InstanceTypePreference:      dedupeUUIDsPreserveOrder(uuidSliceFromAPI(c.InstanceTypePreference)),
-		SubnetIDs:                   uuidSliceDedupe(uuidSliceFromAPI(c.SubnetIDs)),
-		VpcPrefixIDs:                uuidSliceDedupe(uuidSliceFromAPI(c.VpcPrefixIDs)),
-		OSProfile:                   c.OSProfile,
-		DiskSelectionStrategy:       diskStrategy,
-		ConfigProfile:               c.ConfigProfile,
 		SystemReservedMemory:        c.SystemReservedMemory,
-		SSHKeyGroupIDs:              uuidSliceDedupe(uuidSliceFromAPI(c.SSHKeyGroupIDs)),
 		NodeLabels:                  append([]string(nil), c.NodeLabels...),
 		TeleportEnabled:             teleportEnabled,
 		ProvisioningMonitorDisabled: provisioningMonitorDisabled,
 		KubernetesVersion:           kubernetesVersion,
-		CapiSpireAttestationMethod:  db.SpireAttestationMethod(c.CapiSpireAttestationMethod),
-		CapiBootstrapFiles:          dbCloudInitFilesFromAPI(c.CapiBootstrapFiles),
-		CapiPreKubeadmCommands:      append([]string(nil), c.CapiPreKubeadmCommands...),
 	}
-	if len(c.CapiInfraMachineTemplate) > 0 {
-		if raw, err := rawManifestFromObject(c.CapiInfraMachineTemplate); err == nil && len(raw) > 0 {
-			spec.InfraMachineTemplatePreferences = []json.RawMessage{raw}
+
+	switch providerType {
+	case db.ProviderTypeNico:
+		nicoControlPlaneProvider := db.NicoControlPlaneProvider{
+			DiskSelectionStrategy: db.DiskSelectionStrategy(api.DiskSelectionStrategyCreateSmallest),
 		}
+		if c.Nico != nil {
+			nicoControlPlaneProvider.InstanceTypePreference = dedupeUUIDsPreserveOrder(uuidSliceFromAPI(c.Nico.InstanceTypePreference))
+			nicoControlPlaneProvider.SubnetIDs = uuidSliceDedupe(uuidSliceFromAPI(c.Nico.SubnetIDs))
+			nicoControlPlaneProvider.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(c.Nico.VpcPrefixIDs))
+			nicoControlPlaneProvider.OSProfile = c.Nico.OSProfile
+			nicoControlPlaneProvider.ConfigProfile = c.Nico.ConfigProfile
+			nicoControlPlaneProvider.SSHKeyGroupIDs = uuidSliceDedupe(uuidSliceFromAPI(c.Nico.SSHKeyGroupIDs))
+		}
+		spec.SetNico(nicoControlPlaneProvider)
+		return spec
+	case db.ProviderTypeCAPI:
+		capiControlPlaneProvider := db.CAPIControlPlaneProvider{}
+		if c.Infra != nil {
+			capiControlPlaneProvider.SpireAttestationMethod = db.SpireAttestationMethod(c.Infra.SpireAttestationMethod)
+			capiControlPlaneProvider.BootstrapFiles = dbCloudInitFilesFromAPI(c.Infra.BootstrapFiles)
+			capiControlPlaneProvider.PreKubeadmCommands = append([]string(nil), c.Infra.PreKubeadmCommands...)
+			if prefs, err := infraMachineTemplatePrefsFromAPI(c.Infra.MachineTemplate); err == nil {
+				capiControlPlaneProvider.InfraMachineTemplatePreferences = prefs
+			}
+		}
+		spec.SetCapi(capiControlPlaneProvider)
+		return spec
+	default:
+		return db.ControlPlaneConfigSpec{}
 	}
-	return spec
+}
+
+func apiNicoControlPlaneProviderFromDB(nicoControlPlaneProvider *db.NicoControlPlaneProvider) *api.NicoControlPlaneProvider {
+	if nicoControlPlaneProvider == nil {
+		return nil
+	}
+	out := &api.NicoControlPlaneProvider{
+		InstanceTypePreference: append([]openapi_types.UUID(nil), nicoControlPlaneProvider.InstanceTypePreference...),
+		SubnetIDs:              append([]openapi_types.UUID(nil), nicoControlPlaneProvider.SubnetIDs...),
+		VpcPrefixIDs:           append([]openapi_types.UUID(nil), nicoControlPlaneProvider.VpcPrefixIDs...),
+		OSProfile:              nicoControlPlaneProvider.OSProfile,
+		ConfigProfile:          nicoControlPlaneProvider.ConfigProfile,
+		SSHKeyGroupIDs:         append([]openapi_types.UUID(nil), nicoControlPlaneProvider.SSHKeyGroupIDs...),
+	}
+	if nicoControlPlaneProvider.DiskSelectionStrategy != "" {
+		disk := api.DiskSelectionStrategyCreate(nicoControlPlaneProvider.DiskSelectionStrategy)
+		out.DiskSelectionStrategy = &disk
+	}
+	return out
+}
+
+func apiInfraControlPlaneProviderFromDB(capiControlPlaneProvider *db.CAPIControlPlaneProvider) *api.InfraControlPlaneProvider {
+	if capiControlPlaneProvider == nil {
+		return nil
+	}
+
+	out := &api.InfraControlPlaneProvider{
+		MachineTemplate:        firstInfraMachineTemplateObject(capiControlPlaneProvider.InfraMachineTemplatePreferences),
+		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiControlPlaneProvider.SpireAttestationMethod),
+		PreKubeadmCommands:     append([]string(nil), capiControlPlaneProvider.PreKubeadmCommands...),
+	}
+	if files := apiCloudInitFilesFromDB(capiControlPlaneProvider.BootstrapFiles); files != nil {
+		out.BootstrapFiles = *files
+	}
+	return out
 }

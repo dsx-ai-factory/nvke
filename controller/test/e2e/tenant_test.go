@@ -92,6 +92,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 				validatePostReadyClusterState(&test)
 				validatePostReadyNodeOperations(&test)
 			}
+			if spec.validate.kubeVipRouteWithdrawal {
+				validatePostReadyKubeVipRouteWithdrawal(&test)
+			}
 			if spec.validate.csrApproval {
 				validateKubeletServingCSRApproval(&test)
 			}
@@ -196,12 +199,11 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 		}, NodeTimeout(1*time.Hour))
 	},
-	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path"), testSpec{
+	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			controlPlaneVIP:   capdControlPlaneVIP,
 		},
 		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		// The last four were nico-vms-only until nico-containers took them, which
@@ -212,6 +214,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			csrApproval: true, nodePoolLifecycle: true,
 			nodePoolCascade: true, nodeReplacement: true,
 			manualScaleDown: true, clusterConfig: true,
+			kubeVipRouteWithdrawal: true,
 		},
 	}),
 	// This row is selected only by the dedicated identity-exchange lane. Keeping
@@ -221,7 +224,6 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: capdSpec,
 		shape: clusterShape{
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			controlPlaneVIP:   capdControlPlaneVIP,
 		},
 		options: nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
@@ -236,7 +238,6 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		shape: clusterShape{
 			controlPlaneConfig: &nke.ControlPlaneConfigSpec{DesiredCount: 1},
 			workerPools:        []nke.NodePoolSpec{{DesiredNodeCount: 1}},
-			controlPlaneVIP:    capdControlPlaneVIP,
 		},
 		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
@@ -457,6 +458,9 @@ type validations struct {
 	// postReadyChecks verifies intended cluster state after the initial CAPD
 	// cluster and all desired nodes are Ready.
 	postReadyChecks bool
+	// kubeVipRouteWithdrawal stops one CAPD kube-apiserver and verifies kube-vip
+	// withdraws only that node's BGP path before restoring it.
+	kubeVipRouteWithdrawal bool
 	// csrApproval rotates a Ready worker's kubelet serving certificate and
 	// verifies that the tenant CSR controller approves and obtains a new one.
 	csrApproval bool
@@ -594,6 +598,13 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 		return
 	}
 
+	if t.spec.ControlPlane.ControlPlaneVIP == "" {
+		vip, err := t.availableControlPlaneVIP(ctx, preferredControlPlaneVIP(t.spec.Backend))
+		Expect(err).NotTo(HaveOccurred(), "should select an unused control-plane VIP")
+		t.spec.ControlPlane.ControlPlaneVIP = vip
+	}
+	t.log.Info("Using control-plane VIP (empty means none configured)", "controlPlaneVIP", t.spec.ControlPlane.ControlPlaneVIP)
+
 	By(fmt.Sprintf("Creating the %s tenant cluster", t.spec.Backend))
 	cluster, err := t.nke.CreateCluster(ctx, t.spec)
 	Expect(err).NotTo(HaveOccurred(), "should create the cluster")
@@ -636,6 +647,52 @@ const (
 	nicoVMSMultiPodCIDR        = "10.250.0.0/23,10.252.0.0/22"
 	nicoVMSMultiPodServiceCIDR = "10.130.0.0/16"
 )
+
+func preferredControlPlaneVIP(backend nke.Backend) string {
+	switch backend {
+	case nke.BackendCAPD:
+		return capdControlPlaneVIP
+	case nke.BackendNicoContainers:
+		return nicoControlPlaneVIP
+	case nke.BackendNicoVMS:
+		return nicoVMSControlPlaneVIP
+	default:
+		panic(fmt.Sprintf("no preferred control-plane VIP for backend %q", backend))
+	}
+}
+
+func (t *tenantTest) availableControlPlaneVIP(ctx context.Context, preferred string) (string, error) {
+	clusters, err := t.nke.ListClusters(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	used := make(map[string]struct{}, len(clusters))
+	for _, cluster := range clusters {
+		if cluster.ControlPlaneVIP != nil {
+			used[*cluster.ControlPlaneVIP] = struct{}{}
+		}
+	}
+
+	preferredAddr, err := netip.ParseAddr(preferred)
+	if err != nil {
+		return "", fmt.Errorf("parsing preferred control-plane VIP %q: %w", preferred, err)
+	}
+	if !preferredAddr.Is4() {
+		return "", fmt.Errorf("preferred control-plane VIP %s is not IPv4", preferredAddr)
+	}
+	if _, found := used[preferredAddr.String()]; !found {
+		return preferredAddr.String(), nil
+	}
+
+	prefix := netip.PrefixFrom(preferredAddr, 24).Masked()
+	for candidate := preferredAddr.Next(); prefix.Contains(candidate.Next()); candidate = candidate.Next() {
+		if _, found := used[candidate.String()]; !found {
+			return candidate.String(), nil
+		}
+	}
+	return "", fmt.Errorf("no unused control-plane VIP at or after %s in %s", preferredAddr, prefix)
+}
 
 // capdSpec builds a CAPD topology with the requested cluster shape.
 func capdSpec(cfg config.Config, name string, shape clusterShape) nke.ClusterSpec {
@@ -762,7 +819,7 @@ func nicoSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSpec 
 		ControlPlane: nke.ControlPlane{
 			Pools:           nicoNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp"),
 			EtcdEncrypted:   shape.etcdEncrypted,
-			ControlPlaneVIP: defaultString(shape.controlPlaneVIP, nicoControlPlaneVIP),
+			ControlPlaneVIP: shape.controlPlaneVIP,
 		},
 		Workers: nicoNodePoolSpecs(shape.workerPools, "worker", "w"),
 	}
@@ -815,40 +872,11 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSp
 		VpcID:             nicoVMSVpcID,
 		ControlPlane: nke.ControlPlane{
 			Pools:           nicoVMSNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile),
-			ControlPlaneVIP: defaultString(shape.controlPlaneVIP, nicoVMSControlPlaneVIP),
+			ControlPlaneVIP: shape.controlPlaneVIP,
 			EtcdEncrypted:   shape.etcdEncrypted,
 			Config:          shape.controlPlaneConfig,
 		},
 		Workers: nicoVMSNodePoolSpecs(shape.workerPools, "worker", "w", nicoVMSOSProfile, nicoVMSWConfigProfile),
-	}
-}
-
-func nicoVMSControlPlaneVIPAtOffset(offset int) string {
-	vip := netip.MustParseAddr(nicoVMSControlPlaneVIP)
-	for range offset {
-		vip = vip.Next()
-	}
-	return vip.String()
-}
-
-func TestUnit_NicoVMSControlPlaneVIPAtOffset(t *testing.T) {
-	type parameters struct {
-		offset int
-		want   string
-	}
-
-	tests := map[string]parameters{
-		"base VIP":  {offset: 0, want: "172.31.0.10"},
-		"next VIP":  {offset: 1, want: "172.31.0.11"},
-		"third VIP": {offset: 2, want: "172.31.0.12"},
-	}
-
-	for name, params := range tests {
-		t.Run(name, func(t *testing.T) {
-			if got := nicoVMSControlPlaneVIPAtOffset(params.offset); got != params.want {
-				t.Fatalf("nicoVMSControlPlaneVIPAtOffset(%d) = %q, want %q", params.offset, got, params.want)
-			}
-		})
 	}
 }
 

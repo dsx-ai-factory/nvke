@@ -15,7 +15,7 @@ state_dir="${LOCAL_NKE_E2E_STATE_DIR:-${repo_root}/.local/backend-e2e}"
 tmp_dir="$(mktemp -d)"
 kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
 runner_name="cwe-capd-local-e2e-${$}"
-runner_image="${LOCAL_NKE_E2E_RUNNER_IMAGE:-alpine:3.22}"
+runner_image="${LOCAL_NKE_E2E_RUNNER_IMAGE:-docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04}"
 tilt_config="${repo_root}/tilt_config.json"
 tilt_config_backup="${tmp_dir}/tilt_config.json"
 host_kubeconfig="${tmp_dir}/management-host.kubeconfig"
@@ -303,7 +303,12 @@ log "starting the E2E client on the Kind Docker network"
 if ! docker image inspect "${runner_image}" >/dev/null 2>&1; then
   docker pull "${runner_image}" >/dev/null
 fi
-docker create --name "${runner_name}" --network kind "${runner_image}" sleep infinity >/dev/null
+docker create \
+  --name "${runner_name}" \
+  --network kind \
+  -e DOCKER_HOST=unix:///var/run/docker.sock \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  "${runner_image}" sleep infinity >/dev/null
 docker start "${runner_name}" >/dev/null
 docker exec "${runner_name}" mkdir -p /state
 docker cp "${e2e_binary}" "${runner_name}:/state/cwe-e2e.test"
@@ -329,6 +334,7 @@ local_e2e_exec() {
     -e "CWE_EXPECTED_VERSION=${cwe_expected_version}" \
     -e "NKE_E2E_DSX_IDENTITY_EXCHANGE=${exchange_enabled}" \
     -e "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
+    -e E2E_BGP_CONTAINER_NAME=bgp-containers \
     "${runner_name}" "$@"
 }
 

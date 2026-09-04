@@ -62,6 +62,10 @@ type FakeClient struct {
 	KubeadmUpgradeApplyRequests             []*nkeproto.KubeadmUpgradeApplyRequest
 	KubeadmUpgradeApplyResponse             *nkeproto.KubeadmUpgradeApplyResponse
 	KubeadmUpgradeApplyError                error
+	ReconcileKubeVipCalls                   []uuid.UUID
+	ReconcileKubeVipRequests                []*nkeproto.ReconcileKubeVipRequest
+	ReconcileKubeVipResponse                *nkeproto.ReconcileKubeVipResponse
+	ReconcileKubeVipError                   error
 
 	// ExecuteScriptHook, when set, produces the response for ExecuteScript calls,
 	// letting tests drive per-node script output (e.g. /readyz probes).
@@ -180,6 +184,12 @@ func (f *FakeClient) KubeadmUpgradeApply(_ context.Context, node db.Node, req *n
 	f.KubeadmUpgradeApplyCalls = append(f.KubeadmUpgradeApplyCalls, node.ID)
 	f.KubeadmUpgradeApplyRequests = append(f.KubeadmUpgradeApplyRequests, req)
 	return f.KubeadmUpgradeApplyResponse, f.KubeadmUpgradeApplyError
+}
+
+func (f *FakeClient) ReconcileKubeVip(_ context.Context, node db.Node, req *nkeproto.ReconcileKubeVipRequest) (*nkeproto.ReconcileKubeVipResponse, error) {
+	f.ReconcileKubeVipCalls = append(f.ReconcileKubeVipCalls, node.ID)
+	f.ReconcileKubeVipRequests = append(f.ReconcileKubeVipRequests, req)
+	return f.ReconcileKubeVipResponse, f.ReconcileKubeVipError
 }
 
 func (f *FakeClient) ExecuteNodePreflight(_ context.Context, _ db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error) {

@@ -39,13 +39,17 @@ func validateClusterConfig(test *tenantTest) {
 
 		cpSpec := test.spec.ControlPlane.Pools[0]
 		Expect(cpPool.ControlPlane).To(BeTrue())
-		Expect(cpPool.ConfigProfile).To(Equal(cpSpec.ConfigProfile))
+		if cpPool.Nico != nil {
+			Expect(cpPool.Nico.ConfigProfile).To(Equal(cpSpec.ConfigProfile))
+		}
 		Expect(cpPool.KubernetesVersion).To(Equal(test.spec.KubernetesVersion))
 		Expect(cpPool.DesiredNodeCount).To(Equal(cpSpec.DesiredNodeCount))
 
 		workerSpec := test.spec.Workers[0]
 		Expect(workerPool.ControlPlane).To(BeFalse())
-		Expect(workerPool.ConfigProfile).To(Equal(workerSpec.ConfigProfile))
+		if workerPool.Nico != nil {
+			Expect(workerPool.Nico.ConfigProfile).To(Equal(workerSpec.ConfigProfile))
+		}
 		Expect(workerPool.KubernetesVersion).To(Equal(test.spec.KubernetesVersion))
 		Expect(workerPool.DesiredNodeCount).To(Equal(workerSpec.DesiredNodeCount))
 	}, Label("lifecycle", "nodepool", "config"), NodeTimeout(5*time.Minute))

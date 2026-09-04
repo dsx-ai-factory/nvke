@@ -41,7 +41,6 @@ const (
 )
 
 var (
-	errSiteNotRegistered                        = errors.New("site is not registered")
 	errVersionSkewViolation                     = errors.New("version skew policy violation")
 	errUpgradeInProgress                        = errors.New("cannot update Kubernetes version while an upgrade is already in progress")
 	errEtcdEncryptionDisableUnsupported         = errors.New("disabling etcd encryption is not supported")
@@ -137,8 +136,10 @@ func (s *clusterService) applyNodePoolDefaults(req *api.CreateNodePoolRequest, c
 		v := s.teleportCfg.NodePoolTeleportDefault(req.ControlPlane)
 		req.TeleportEnabled = &v
 	}
-	if !clusterIsCAPIBacked(cluster) && req.DiskSelectionStrategy == "" {
-		req.DiskSelectionStrategy = api.DiskSelectionStrategyCreateSmallest
+	// The stored pool is built from the nested payload, so the default has to land
+	// there; validation has already required nico for a Forge pool.
+	if !clusterIsCAPIBacked(cluster) && req.Nico != nil && req.Nico.DiskSelectionStrategy == "" {
+		req.Nico.DiskSelectionStrategy = api.DiskSelectionStrategyCreateSmallest
 	}
 }
 
@@ -153,7 +154,7 @@ func (s *clusterService) ListClusters(ctx context.Context, req api.ListClustersR
 	}
 	apiClusters := make([]api.Cluster, len(dbClusters))
 	for i := range dbClusters {
-		apiClusters[i] = apiClusterFromDB(&dbClusters[i])
+		apiClusters[i] = APIClusterFromDB(&dbClusters[i])
 	}
 	return api.ListClusters200JSONResponse{Clusters: apiClusters}, nil
 }
@@ -173,7 +174,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 
 	var createdCluster db.Cluster
 	err = s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		dbCluster, err := dbClusterFromAPI(req.Body)
+		dbCluster, err := DBClusterFromAPI(req.Body)
 		if err != nil {
 			return fmt.Errorf("failed to convert cluster request: %w", err)
 		}
@@ -204,7 +205,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 				req.Body.ControlPlaneConfig,
 				createdCluster.KubernetesVersion,
 				s.teleportCfg.NodePoolTeleportDefault(true),
-				req.Body.SiteID != uuid.Nil,
+				createdCluster.ProviderType,
 			)
 			if err := db.CreateControlPlaneConfigRowIfChanged(ctx, tx, &createdCluster, spec, db.CreateControlPlaneConfigRowOpts{
 				ChangeReason: "cluster create controlPlaneConfig",
@@ -235,11 +236,6 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 		return nil
 	})
 	if err != nil {
-		if errors.Is(err, errSiteNotRegistered) {
-			return api.CreateCluster400JSONResponse{
-				Message: fmt.Sprintf("Site ID %s is not registered", req.Body.SiteID),
-			}, nil
-		}
 		if errors.Is(err, db.ErrClusterNameNotUnique) {
 			return api.CreateCluster400JSONResponse{
 				Message: fmt.Sprintf("A cluster already exists with the name %q", req.Body.Name),
@@ -252,14 +248,14 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 		return nil, err
 	}
 
-	return api.CreateCluster201JSONResponse(apiClusterFromDB(&createdCluster)), nil
+	return api.CreateCluster201JSONResponse(APIClusterFromDB(&createdCluster)), nil
 }
 
 func (s *clusterService) preflightCheckCreateClusterRequest(
 	ctx context.Context,
 	req *api.CreateClusterRequest,
 ) (resolvedClusterNetwork, error) {
-	if err := s.validateCreateClusterRequestFields(req); err != nil {
+	if err := s.ValidateCreateClusterRequestFields(req); err != nil {
 		return resolvedClusterNetwork{}, newBadRequestErrorf("%s", err)
 	}
 	network, err := resolveClusterNetwork(req.Network)
@@ -294,14 +290,18 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 
 	// When the control plane is configured at the cluster level for a Forge
 	// cluster, enforce the same subnet/VPC-prefix native-networking rules used
-	// for node pools.
-	if s.useControlPlaneController && req.ControlPlaneConfig != nil && req.SiteID != uuid.Nil {
+	if s.useControlPlaneController && req.ControlPlaneConfig != nil && req.Nico != nil {
+		if req.ControlPlaneConfig.Nico == nil {
+			return resolvedClusterNetwork{}, newBadRequestErrorf(
+				"controlPlaneConfig.nico is required for a nico cluster control plane",
+			)
+		}
 		if err := s.validateControlPlaneForgeNetworking(
 			ctx,
-			req.OrgID,
-			req.SiteID,
-			req.ControlPlaneConfig.SubnetIDs,
-			req.ControlPlaneConfig.VpcPrefixIDs,
+			req.Nico.OrgID,
+			req.Nico.SiteID,
+			req.ControlPlaneConfig.Nico.SubnetIDs,
+			req.ControlPlaneConfig.Nico.VpcPrefixIDs,
 		); err != nil {
 			return resolvedClusterNetwork{}, err
 		}
@@ -324,7 +324,7 @@ func forgeCAPINicoClusterManifest(siteID uuid.UUID) ([]byte, error) {
 	return json.Marshal(nicoCluster)
 }
 
-func (s *clusterService) validateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
+func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
 	if err := naming.ValidateClusterNameForNodeNaming(req.Name); err != nil {
 		return err
 	}
@@ -339,12 +339,27 @@ func (s *clusterService) validateCreateClusterRequestFields(req *api.CreateClust
 	if req.NodePools != nil {
 		nodePools = *req.NodePools
 	}
-	isCAPICluster := req.SiteID == uuid.Nil
+
+	var providerType db.ProviderType
+	switch {
+	case req.Infra != nil:
+		if err := validateCreateCAPIClusterProvider(req); err != nil {
+			return err
+		}
+		providerType = db.ProviderTypeCAPI
+	case req.Nico != nil:
+		if err := validateCreateNicoClusterProvider(req); err != nil {
+			return err
+		}
+		providerType = db.ProviderTypeNico
+	default:
+		return fmt.Errorf("exactly one provider must be set")
+	}
 
 	if s.useControlPlaneController {
 		// Cluster-level control plane config is authoritative: control-plane node
 		// pools are rejected and the control plane is described by controlPlaneConfig.
-		if err := validateCreateClusterLevelControlPlane(req, nodePools, isCAPICluster); err != nil {
+		if err := validateCreateClusterLevelControlPlane(req, nodePools, providerType); err != nil {
 			return err
 		}
 	} else {
@@ -361,33 +376,6 @@ func (s *clusterService) validateCreateClusterRequestFields(req *api.CreateClust
 		}
 		if controlPlaneNodeCount == 0 {
 			return fmt.Errorf("cluster must have at least one control plane node")
-		}
-	}
-
-	hasCAPIInfraCluster := !isEmptyManifestObject(req.CapiInfraCluster)
-
-	if isCAPICluster {
-		if !hasCAPIInfraCluster {
-			return fmt.Errorf("capiInfraCluster is required when siteID is the nil UUID")
-		}
-		if err := validateCAPIInfrastructureManifest(req.CapiInfraCluster); err != nil {
-			return fmt.Errorf("invalid capiInfraCluster: %w", err)
-		}
-		if req.OrgID != "" {
-			return fmt.Errorf("orgID must be omitted for CAPI-backed clusters")
-		}
-		if req.VpcID != uuid.Nil {
-			return fmt.Errorf("vpcID must be omitted for CAPI-backed clusters")
-		}
-	} else {
-		if hasCAPIInfraCluster {
-			return fmt.Errorf("capiInfraCluster must be omitted for Forge-backed clusters")
-		}
-		if req.OrgID == "" {
-			return fmt.Errorf("orgID is required for Forge-backed clusters")
-		}
-		if req.VpcID == uuid.Nil {
-			return fmt.Errorf("vpcID is required for Forge-backed clusters")
 		}
 	}
 
@@ -411,6 +399,32 @@ func (s *clusterService) validateCreateClusterRequestFields(req *api.CreateClust
 	return nil
 }
 
+func validateCreateCAPIClusterProvider(req *api.CreateClusterRequest) error {
+	if req.Nico != nil {
+		return fmt.Errorf("exactly one provider must be set")
+	}
+	if isEmptyManifestObject(req.Infra.Cluster) {
+		return fmt.Errorf("infra.cluster is required")
+	}
+	if err := validateCAPIInfrastructureManifest(req.Infra.Cluster); err != nil {
+		return fmt.Errorf("invalid infra.cluster: %w", err)
+	}
+	return nil
+}
+
+func validateCreateNicoClusterProvider(req *api.CreateClusterRequest) error {
+	if req.Nico.SiteID == uuid.Nil {
+		return fmt.Errorf("nico.siteID is required to create a nico cluster")
+	}
+	if req.Nico.OrgID == "" {
+		return fmt.Errorf("nico.orgID is required to create a nico cluster")
+	}
+	if req.Nico.VpcID == uuid.Nil {
+		return fmt.Errorf("nico.vpcID is required to create a nico cluster")
+	}
+	return nil
+}
+
 func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, cluster db.Cluster, nodePools []api.NodePoolCreateConfig) error {
 	for _, nodePoolConfig := range nodePools {
 		//exhaustruct:enforce
@@ -418,14 +432,6 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			ClusterID:                   cluster.ID,
 			Name:                        nodePoolConfig.Name,
 			NodeNamePrefix:              nodePoolConfig.NodeNamePrefix,
-			SubnetIDs:                   nodePoolConfig.SubnetIDs,
-			VpcPrefixIDs:                nodePoolConfig.VpcPrefixIDs,
-			InstanceTypeID:              nodePoolConfig.InstanceTypeID,
-			InfinibandPartitionID:       nodePoolConfig.InfinibandPartitionID,
-			NvLinkLogicalPartitionID:    nodePoolConfig.NvLinkLogicalPartitionID,
-			SSHKeyGroupIDs:              nodePoolConfig.SSHKeyGroupIDs,
-			OSProfile:                   nodePoolConfig.OSProfile,
-			ConfigProfile:               nodePoolConfig.ConfigProfile,
 			SystemReservedMemory:        nodePoolConfig.SystemReservedMemory,
 			KubeReservedMemory:          nodePoolConfig.KubeReservedMemory,
 			NodeLabels:                  nodePoolConfig.NodeLabels,
@@ -437,12 +443,8 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			ProvisioningMonitorDisabled: nodePoolConfig.ProvisioningMonitorDisabled,
 			RecycleBudget:               nodePoolConfig.RecycleBudget,
 			TeleportEnabled:             nodePoolConfig.TeleportEnabled,
-			DiskSelectionStrategy:       nodePoolConfig.DiskSelectionStrategy,
-
-			CapiInfraMachineTemplate:   nodePoolConfig.CapiInfraMachineTemplate,
-			CapiSpireAttestationMethod: nodePoolConfig.CapiSpireAttestationMethod,
-			CapiBootstrapFiles:         nodePoolConfig.CapiBootstrapFiles,
-			CapiPreKubeadmCommands:     nodePoolConfig.CapiPreKubeadmCommands,
+			Nico:                        nodePoolConfig.Nico,
+			Infra:                       nodePoolConfig.Infra,
 		}
 
 		if err := s.nodePoolService.validateCreateNodePoolRequest(ctx, cluster, &nodePoolReq); err != nil {
@@ -481,13 +483,14 @@ func (s *clusterService) GetCluster(ctx context.Context, req api.GetClusterReque
 		return nil, fmt.Errorf("failed to get cluster: %w", err)
 	}
 
-	return api.GetCluster200JSONResponse(apiClusterFromDB(&dbCluster)), nil
+	return api.GetCluster200JSONResponse(APIClusterFromDB(&dbCluster)), nil
 }
 
 func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateClusterRequestObject) (api.UpdateClusterResponseObject, error) {
 	if req.Body == nil {
 		return api.UpdateCluster400JSONResponse{Message: "request body is required"}, nil
 	}
+
 	if req.Body.Network != nil {
 		return api.UpdateCluster400JSONResponse{Message: "network is immutable after cluster creation"}, nil
 	}
@@ -511,7 +514,6 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			}
 			return fmt.Errorf("failed to get cluster: %w", err)
 		}
-
 		// Reject PATCH mutations while another cluster update is running.
 		// UpdateInProgress is the shared lock for these updates. Any API or controller
 		// that can add, remove, replace, or reconfigure a control-plane node must check
@@ -525,7 +527,16 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 				message:   uip.Message,
 			}
 		}
-
+		// Reject a controlPlaneConfig provider block that doesn't match the cluster before
+		// any field is touched.
+		if cpConfig := req.Body.ControlPlaneConfig; cpConfig != nil {
+			if dbCluster.ProviderType == db.ProviderTypeNico && cpConfig.Infra != nil {
+				return newBadRequestErrorf("controlPlaneConfig.infra is not supported, please provide controlPlaneConfig.nico")
+			}
+			if dbCluster.ProviderType == db.ProviderTypeCAPI && cpConfig.Nico != nil {
+				return newBadRequestErrorf("controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
+			}
+		}
 		// Update fields from request
 		if req.Body.EnableCPNodeRecycling != nil {
 			dbCluster.EnableCPNodeRecycling = *req.Body.EnableCPNodeRecycling
@@ -619,7 +630,7 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 		}
 		return nil, fmt.Errorf("failed to update cluster: %w", err)
 	}
-	response := api.UpdateCluster200JSONResponse(apiClusterFromDB(&updatedCluster))
+	response := api.UpdateCluster200JSONResponse(APIClusterFromDB(&updatedCluster))
 	s.logger.Info("UpdateCluster response",
 		clusterIDConst, req.ClusterID,
 		"response", response,
@@ -744,16 +755,22 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	// KubernetesVersion lives in the spec row and should track the current
 	// cluster control-plane version selected in this PATCH.
 	controlPlaneConfigSpec.KubernetesVersion = cluster.KubernetesVersion
-	if req.InstanceTypePreference != nil {
-		if err := validateInstanceTypePreferenceIDs(*req.InstanceTypePreference); err != nil {
-			return newBadRequestErrorf("%s", err)
-		}
-		controlPlaneConfigSpec.InstanceTypePreference = dedupeUUIDsPreserveOrder(
-			uuidSliceFromAPI(*req.InstanceTypePreference),
-		)
-	}
 	if req.ProvisioningMonitorDisabled != nil {
 		controlPlaneConfigSpec.ProvisioningMonitorDisabled = *req.ProvisioningMonitorDisabled
+	}
+	hasInstanceTypePreferences := cluster.ProviderType == db.ProviderTypeNico && req.Nico != nil && req.Nico.InstanceTypePreference != nil
+	if hasInstanceTypePreferences {
+		if err := validateInstanceTypePreferenceIDs(req.Nico.InstanceTypePreference); err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
+		nico, err := controlPlaneConfigSpec.NicoProvider()
+		if err != nil {
+			return err
+		}
+		nico.InstanceTypePreference = dedupeUUIDsPreserveOrder(
+			uuidSliceFromAPI(req.Nico.InstanceTypePreference),
+		)
+		controlPlaneConfigSpec.SetNico(nico)
 	}
 
 	// desiredCount and the full control-plane spec are only honored in
@@ -773,7 +790,8 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	// capiInfraMachineTemplate). instanceTypePreference is merged above and is not
 	// covered by hasClusterLevelControlPlaneUpdate, so gate on it explicitly;
 	// maxSurge- and k8s-version-only updates leave these fields untouched.
-	if s.useControlPlaneController && (hasClusterLevelControlPlaneUpdate(req) || req.InstanceTypePreference != nil) {
+	if s.useControlPlaneController &&
+		(hasClusterLevelControlPlaneUpdate(req) || hasInstanceTypePreferences) {
 		if err := validateMergedClusterControlPlaneSpec(*cluster, controlPlaneConfigSpec); err != nil {
 			return err
 		}
@@ -791,35 +809,47 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 
 // hasClusterLevelControlPlaneUpdate reports whether the update touches any of the
 // cluster-level control plane fields that require control-plane controller
-// provisioning (i.e. everything beyond the legacy maxSurge / instanceTypePreference
-// / provisioningMonitorDisabled knobs).
+// provisioning (i.e. everything beyond the legacy maxSurge /
+// provisioningMonitorDisabled knobs).
+//
+// Provider fields are read directly from the nested payloads.
 func hasClusterLevelControlPlaneUpdate(req *api.UpdateClusterControlPlaneConfig) bool {
-	return req.DesiredCount != nil ||
-		req.SubnetIDs != nil ||
-		req.VpcPrefixIDs != nil ||
-		req.OSProfile != nil ||
-		req.ConfigProfile != nil ||
+	if req.DesiredCount != nil ||
 		req.SystemReservedMemory != nil ||
-		req.SSHKeyGroupIDs != nil ||
 		req.NodeLabels != nil ||
 		req.TeleportEnabled != nil ||
-		req.CapiInfraMachineTemplate != nil ||
-		req.CapiSpireAttestationMethod != "" ||
-		req.CapiBootstrapFiles != nil ||
-		req.CapiPreKubeadmCommands != nil
+		req.Infra != nil {
+		return true
+	}
+	return hasNestedNicoControlPlanePatch(req.Nico)
+}
+
+func hasNestedNicoControlPlanePatch(n *api.NicoControlPlaneProviderUpdate) bool {
+	if n == nil {
+		return false
+	}
+	// instanceTypePreference is applied in the parent and does not require
+	// control-plane-controller mode by itself.
+	return n.SubnetIDs != nil ||
+		n.VpcPrefixIDs != nil ||
+		n.SSHKeyGroupIDs != nil ||
+		n.OSProfile != nil ||
+		n.ConfigProfile != nil
 }
 
 // applyClusterLevelControlPlaneSpecUpdate merges the supplied cluster-level control
 // plane fields onto spec and desiredCount onto the cluster. desiredCount may go up
 // or down; node teardown on scale-down is the control-plane controller's job.
+//
+// The caller (UpdateCluster) has already rejected a req.Nico/req.Capi that doesn't
+// match cluster.ProviderType, so this can assume req carries only the provider the
+// cluster actually has.
 func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 	ctx context.Context,
 	cluster *db.Cluster,
 	req *api.UpdateClusterControlPlaneConfig,
 	spec *db.ControlPlaneConfigSpec,
 ) error {
-	isForge := cluster.SiteID != uuid.Nil
-
 	if req.DesiredCount != nil {
 		if *req.DesiredCount < 1 {
 			return newBadRequestErrorf("controlPlaneConfig.desiredCount must be at least 1")
@@ -827,23 +857,8 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
 	}
 
-	if req.SubnetIDs != nil {
-		spec.SubnetIDs = uuidSliceDedupe(uuidSliceFromAPI(*req.SubnetIDs))
-	}
-	if req.VpcPrefixIDs != nil {
-		spec.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(*req.VpcPrefixIDs))
-	}
-	if req.OSProfile != nil {
-		spec.OSProfile = *req.OSProfile
-	}
-	if req.ConfigProfile != nil {
-		spec.ConfigProfile = *req.ConfigProfile
-	}
 	if req.SystemReservedMemory != nil {
 		spec.SystemReservedMemory = *req.SystemReservedMemory
-	}
-	if req.SSHKeyGroupIDs != nil {
-		spec.SSHKeyGroupIDs = uuidSliceDedupe(uuidSliceFromAPI(*req.SSHKeyGroupIDs))
 	}
 	if req.NodeLabels != nil {
 		spec.NodeLabels = append([]string(nil), *req.NodeLabels...)
@@ -851,38 +866,72 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 	if req.TeleportEnabled != nil {
 		spec.TeleportEnabled = *req.TeleportEnabled
 	}
-	if req.CapiSpireAttestationMethod != "" {
-		spec.CapiSpireAttestationMethod = db.SpireAttestationMethod(req.CapiSpireAttestationMethod)
-	}
-	if req.CapiBootstrapFiles != nil {
-		spec.CapiBootstrapFiles = dbCloudInitFilesFromAPI(*req.CapiBootstrapFiles)
-	}
-	if req.CapiPreKubeadmCommands != nil {
-		spec.CapiPreKubeadmCommands = append([]string(nil), *req.CapiPreKubeadmCommands...)
-	}
-	if req.CapiInfraMachineTemplate != nil {
-		if isEmptyManifestObject(*req.CapiInfraMachineTemplate) {
-			spec.InfraMachineTemplatePreferences = nil
-		} else {
-			raw, err := rawManifestFromObject(*req.CapiInfraMachineTemplate)
-			if err != nil {
-				return newBadRequestErrorf("failed to convert capiInfraMachineTemplate: %v", err)
-			}
-			if err := validateCAPIInfrastructureManifest(*req.CapiInfraMachineTemplate); err != nil {
-				return newBadRequestErrorf("invalid capiInfraMachineTemplate: %s", err)
-			}
-			spec.InfraMachineTemplatePreferences = []json.RawMessage{raw}
-		}
-	}
 
-	// Forge native-networking rules need a live site lookup, so re-check them only
-	// when the caller changed the subnet/VPC-prefix selection.
-	if isForge && (req.SubnetIDs != nil || req.VpcPrefixIDs != nil) {
-		if err := s.validateControlPlaneForgeNetworking(ctx, cluster.OrgID, cluster.SiteID, spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
+	switch {
+	case req.Nico != nil:
+		nico, err := spec.NicoProvider()
+		if err != nil {
 			return err
 		}
-	}
+		// Preference is also applied in the parent before this helper runs; re-apply
+		// here so cloning an existing Nico JSONB does not restore a cleared list.
+		if req.Nico.InstanceTypePreference != nil {
+			nico.InstanceTypePreference = dedupeUUIDsPreserveOrder(
+				uuidSliceFromAPI(req.Nico.InstanceTypePreference),
+			)
+		}
+		if req.Nico.SubnetIDs != nil {
+			nico.SubnetIDs = uuidSliceDedupe(uuidSliceFromAPI(req.Nico.SubnetIDs))
+		}
+		if req.Nico.VpcPrefixIDs != nil {
+			nico.VpcPrefixIDs = uuidSliceDedupe(uuidSliceFromAPI(req.Nico.VpcPrefixIDs))
+		}
+		if req.Nico.OSProfile != nil {
+			nico.OSProfile = *req.Nico.OSProfile
+		}
+		if req.Nico.ConfigProfile != nil {
+			nico.ConfigProfile = *req.Nico.ConfigProfile
+		}
+		if req.Nico.SSHKeyGroupIDs != nil {
+			nico.SSHKeyGroupIDs = uuidSliceDedupe(uuidSliceFromAPI(req.Nico.SSHKeyGroupIDs))
+		}
+		spec.SetNico(nico)
 
+		if req.Nico.SubnetIDs != nil || req.Nico.VpcPrefixIDs != nil {
+			if err := s.validateControlPlaneForgeNetworking(ctx, cluster.OrgID, cluster.SiteID, spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
+				return err
+			}
+		}
+	case req.Infra != nil:
+		capi, err := spec.CAPIProvider()
+		if err != nil {
+			return err
+		}
+		if req.Infra.SpireAttestationMethod != nil {
+			capi.SpireAttestationMethod = db.SpireAttestationMethod(*req.Infra.SpireAttestationMethod)
+		}
+		if req.Infra.BootstrapFiles != nil {
+			capi.BootstrapFiles = dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles)
+		}
+		if req.Infra.PreKubeadmCommands != nil {
+			capi.PreKubeadmCommands = append([]string(nil), req.Infra.PreKubeadmCommands...)
+		}
+		if req.Infra.MachineTemplate != nil {
+			if isEmptyManifestObject(req.Infra.MachineTemplate) {
+				capi.InfraMachineTemplatePreferences = nil
+			} else {
+				if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
+					return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
+				}
+				prefs, err := infraMachineTemplatePrefsFromAPI(req.Infra.MachineTemplate)
+				if err != nil {
+					return newBadRequestErrorf("failed to convert infra.machineTemplate: %v", err)
+				}
+				capi.InfraMachineTemplatePreferences = prefs
+			}
+		}
+		spec.SetCapi(capi)
+	}
 	return nil
 }
 
@@ -923,39 +972,19 @@ func dedupeUUIDsPreserveOrder(ids []uuid.UUID) []uuid.UUID {
 
 func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneConfig {
 	maxSurge := cfg.MaxSurge
-	prefs := make([]openapi_types.UUID, len(cfg.InstanceTypePreference))
-	copy(prefs, cfg.InstanceTypePreference)
 	provisioningMonitorDisabled := cfg.ProvisioningMonitorDisabled
 	teleportEnabled := cfg.TeleportEnabled
-	out := &api.ControlPlaneConfig{
+	return &api.ControlPlaneConfig{
 		ConfigurationID:             cfg.ConfigurationID,
 		DesiredCount:                cfg.DesiredCount,
 		MaxSurge:                    &maxSurge,
-		InstanceTypePreference:      &prefs,
 		ProvisioningMonitorDisabled: &provisioningMonitorDisabled,
-		SubnetIDs:                   append([]openapi_types.UUID(nil), cfg.SubnetIDs...),
-		VpcPrefixIDs:                append([]openapi_types.UUID(nil), cfg.VpcPrefixIDs...),
-		OSProfile:                   cfg.OSProfile,
-		ConfigProfile:               cfg.ConfigProfile,
 		SystemReservedMemory:        cfg.SystemReservedMemory,
-		SSHKeyGroupIDs:              append([]openapi_types.UUID(nil), cfg.SSHKeyGroupIDs...),
 		NodeLabels:                  append([]string(nil), cfg.NodeLabels...),
 		TeleportEnabled:             &teleportEnabled,
-		CapiSpireAttestationMethod:  apiSpireAttestationMethodFromDB(cfg.CapiSpireAttestationMethod),
-		CapiPreKubeadmCommands:      append([]string(nil), cfg.CapiPreKubeadmCommands...),
+		Nico:                        apiNicoControlPlaneProviderFromDB(cfg.Nico),
+		Infra:                       apiInfraControlPlaneProviderFromDB(cfg.Capi),
 	}
-	if files := apiCloudInitFilesFromDB(cfg.CapiBootstrapFiles); files != nil {
-		out.CapiBootstrapFiles = *files
-	}
-	// The cluster-level control plane snapshot stores CAPI machine templates in
-	// InfraMachineTemplatePreferences; surface the first one as the response's
-	// single capiInfraMachineTemplate object.
-	if len(cfg.InfraMachineTemplatePreferences) > 0 {
-		if obj, err := objectFromRawManifest(cfg.InfraMachineTemplatePreferences[0]); err == nil && len(obj) > 0 {
-			out.CapiInfraMachineTemplate = obj
-		}
-	}
-	return out
 }
 
 func validateEtcdEncryptionCanStart(cluster db.Cluster) error {
@@ -1074,17 +1103,11 @@ func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteCluste
 	return api.DeleteCluster202Response{}, nil
 }
 
-func apiClusterFromDB(dbCluster *db.Cluster) api.Cluster {
+func APIClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 	var controlPlaneVIP *string
 	if dbCluster.ControlPlaneVIP != "" {
 		controlPlaneVIP = &dbCluster.ControlPlaneVIP
 	}
-	var capiInfraCluster map[string]interface{}
-	capiInfraClusterObj, err := objectFromRawManifest(dbCluster.CapiInfraCluster)
-	if err == nil && len(capiInfraClusterObj) > 0 {
-		capiInfraCluster = capiInfraClusterObj
-	}
-
 	cpNodesRecycling := apiConditionFromDB(dbCluster.Conditions.CPNodesRecycling)
 	controlPlaneUpgrading := apiConditionFromDB(dbCluster.Conditions.ControlPlaneUpgrading)
 
@@ -1114,9 +1137,6 @@ func apiClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 	return api.Cluster{
 		ID:                            dbCluster.ID,
 		Name:                          dbCluster.Name,
-		OrgID:                         dbCluster.OrgID,
-		SiteID:                        dbCluster.SiteID,
-		VpcID:                         dbCluster.VpcID,
 		CniPlugin:                     string(dbCluster.CniPlugin),
 		CniVersion:                    db.EffectiveCNIVersion(dbCluster.CniPlugin, strings.TrimSpace(dbCluster.CniVersion)),
 		EtcdEncrypted:                 dbCluster.EtcdEncrypted,
@@ -1131,18 +1151,36 @@ func apiClusterFromDB(dbCluster *db.Cluster) api.Cluster {
 		},
 		CreatedAt: dbCluster.CreatedAt,
 
-		CapiInfraCluster: capiInfraCluster,
+		Nico:  apiNicoClusterProviderFromDB(dbCluster.Nico),
+		Infra: apiInfraClusterProviderFromDB(dbCluster.Capi),
 
 		Conditions: conditions,
 	}
 }
 
-func dbClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
-	capiInfraCluster, err := rawManifestFromObject(req.CapiInfraCluster)
-	if err != nil {
-		return db.Cluster{}, err
+func apiNicoClusterProviderFromDB(nicoClusterProvider *db.NicoClusterProvider) *api.NicoClusterProvider {
+	if nicoClusterProvider == nil {
+		return nil
 	}
+	return &api.NicoClusterProvider{
+		OrgID:  nicoClusterProvider.OrgID,
+		SiteID: nicoClusterProvider.SiteID,
+		VpcID:  nicoClusterProvider.VpcID,
+	}
+}
 
+func apiInfraClusterProviderFromDB(capiClusterProvider *db.CAPIClusterProvider) *api.InfraClusterProvider {
+	if capiClusterProvider == nil {
+		return nil
+	}
+	capiCluster, err := objectFromRawManifest(capiClusterProvider.InfraCluster)
+	if err != nil {
+		capiCluster = nil
+	}
+	return &api.InfraClusterProvider{Cluster: capiCluster}
+}
+
+func DBClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 	var teleportEnabled bool
 	if req.TeleportEnabled != nil {
 		teleportEnabled = *req.TeleportEnabled
@@ -1154,11 +1192,8 @@ func dbClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 	cniPlugin := db.CniPlugin(req.CniPlugin)
 	controlPlaneVIP := strings.TrimSpace(req.ControlPlaneVIP)
 
-	return db.Cluster{
+	cluster := db.Cluster{
 		Name:              req.Name,
-		OrgID:             req.OrgID,
-		SiteID:            req.SiteID,
-		VpcID:             req.VpcID,
 		CniPlugin:         cniPlugin,
 		CniVersion:        db.EffectiveCNIVersion(cniPlugin, cniVersion),
 		EtcdEncrypted:     req.EtcdEncrypted,
@@ -1166,15 +1201,30 @@ func dbClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 		ControlPlaneVIP:   controlPlaneVIP,
 		TeleportEnabled:   teleportEnabled,
 
-		CapiInfraCluster: capiInfraCluster,
-
 		Conditions: db.ClusterConditions{
 			Provisioning:          db.NewCondition(true, "Starting provisioning"),
 			Provisioned:           db.NewCondition(false, "Not yet provisioned"),
 			Deleting:              db.NewCondition(false, "Cluster is not being deleted"),
 			ControlPlaneUpgrading: db.NewCondition(false, "No upgrade in progress"),
 		},
-	}, nil
+	}
+
+	switch {
+	case req.Nico != nil:
+		cluster.SetNicoProvider(db.NicoClusterProvider{
+			OrgID:  req.Nico.OrgID,
+			SiteID: req.Nico.SiteID,
+			VpcID:  req.Nico.VpcID,
+		})
+	case req.Infra != nil:
+		capiCluster, err := rawManifestFromObject(req.Infra.Cluster)
+		if err != nil {
+			return db.Cluster{}, err
+		}
+		cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: capiCluster})
+	}
+
+	return cluster, nil
 }
 
 func ValidateKubernetesVersionSkewWithControlPlane(currentVersion, newVersion string) error {

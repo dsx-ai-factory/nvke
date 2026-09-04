@@ -155,19 +155,20 @@ func buildNicoRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 
 	req := api.CreateClusterRequest{
 		Name:                          name,
-		SiteID:                        uuid.Nil,
 		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
 		CniPlugin:                     spec.CNIPlugin,
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
 		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
-		CapiInfraCluster: map[string]any{
-			"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-			"kind":       "NicoCluster",
-			"metadata": map[string]any{
-				"name": name,
-			},
-			capiSpecKey: map[string]any{
-				"siteID": siteID.String(),
+		Infra: &api.InfraClusterProvider{
+			Cluster: map[string]any{
+				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+				"kind":       "NicoCluster",
+				"metadata": map[string]any{
+					"name": name,
+				},
+				capiSpecKey: map[string]any{
+					"siteID": siteID.String(),
+				},
 			},
 		},
 	}
@@ -216,12 +217,14 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 	}
 	//exhaustruct:ignore
 	return &api.CreateClusterControlPlaneConfig{
-		DesiredCount:               cp.DesiredCount,
-		MaxSurge:                   cp.MaxSurge,
-		SystemReservedMemory:       pool.SystemReservedMemory,
-		CapiSpireAttestationMethod: pool.CapiSpireAttestationMethod,
-		CapiPreKubeadmCommands:     pool.CapiPreKubeadmCommands,
-		CapiInfraMachineTemplate:   pool.CapiInfraMachineTemplate,
+		DesiredCount:         cp.DesiredCount,
+		MaxSurge:             cp.MaxSurge,
+		SystemReservedMemory: pool.SystemReservedMemory,
+		Infra: &api.InfraControlPlaneProvider{
+			SpireAttestationMethod: pool.Infra.SpireAttestationMethod,
+			PreKubeadmCommands:     pool.Infra.PreKubeadmCommands,
+			MachineTemplate:        pool.Infra.MachineTemplate,
+		},
 	}, nil
 }
 
@@ -256,28 +259,30 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 	}
 
 	pool := api.NodePoolCreateConfig{
-		Name:                       spec.Name,
-		NodeNamePrefix:             spec.NodeNamePrefix,
-		ControlPlane:               spec.ControlPlane,
-		DesiredNodeCount:           spec.DesiredNodeCount,
-		SystemReservedMemory:       spec.SystemReservedMemory,
-		CapiSpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
-		CapiPreKubeadmCommands:     containerCAPIReadyCommands(),
-		CapiInfraMachineTemplate: map[string]any{
-			"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-			"kind":       "NicoMachineTemplate",
-			"metadata": map[string]any{
-				"name": fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
-			},
-			capiSpecKey: map[string]any{
-				"template": map[string]any{
-					capiSpecKey: map[string]any{
-						"vpcID":                   vpcID.String(),
-						"instanceTypeID":          instanceTypeID.String(),
-						"cloudInitInjectHostname": true,
-						"ipxeScript":              fmt.Sprintf("#!ipxe\necho local-nico-%s\n", role),
-						"sshKeyGroupIDs":          sshKeyGroups,
-						"interfaces":              interfaces,
+		Name:                 spec.Name,
+		NodeNamePrefix:       spec.NodeNamePrefix,
+		ControlPlane:         spec.ControlPlane,
+		DesiredNodeCount:     spec.DesiredNodeCount,
+		SystemReservedMemory: spec.SystemReservedMemory,
+		Infra: &api.InfraNodePoolProvider{
+			SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
+			PreKubeadmCommands:     containerCAPIReadyCommands(),
+			MachineTemplate: map[string]any{
+				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+				"kind":       "NicoMachineTemplate",
+				"metadata": map[string]any{
+					"name": fmt.Sprintf("%s-%s-template", clusterName, spec.Name),
+				},
+				capiSpecKey: map[string]any{
+					"template": map[string]any{
+						capiSpecKey: map[string]any{
+							"vpcID":                   vpcID.String(),
+							"instanceTypeID":          instanceTypeID.String(),
+							"cloudInitInjectHostname": true,
+							"ipxeScript":              fmt.Sprintf("#!ipxe\necho local-nico-%s\n", role),
+							"sshKeyGroupIDs":          sshKeyGroups,
+							"interfaces":              interfaces,
+						},
 					},
 				},
 			},
@@ -301,7 +306,10 @@ func buildCAPDRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	req.EtcdEncrypted = spec.ControlPlane.EtcdEncrypted
 	req.ControlPlaneVIP = spec.ControlPlane.ControlPlaneVIP
 	applyNetworkConfig(&req, spec.Network)
-	if err := setMapPath(req.CapiInfraCluster, req.Name, "metadata", "name"); err != nil {
+	if req.Infra == nil {
+		return api.CreateClusterRequest{}, fmt.Errorf("CAPD cluster skeleton is missing infra.cluster")
+	}
+	if err := setMapPath(req.Infra.Cluster, req.Name, "metadata", "name"); err != nil {
 		return api.CreateClusterRequest{}, fmt.Errorf("setting infra cluster name: %w", err)
 	}
 
@@ -338,7 +346,10 @@ func buildCAPDControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControlPla
 	}
 	cfg.DesiredCount = spec.ControlPlane.Config.DesiredCount
 	cfg.MaxSurge = spec.ControlPlane.Config.MaxSurge
-	if err := setMapPath(cfg.CapiInfraMachineTemplate, spec.CAPDNodeImage, "spec", "template", "spec", "customImage"); err != nil {
+	if cfg.Infra == nil {
+		return nil, fmt.Errorf("CAPD control plane config skeleton is missing infra.machineTemplate")
+	}
+	if err := setMapPath(cfg.Infra.MachineTemplate, spec.CAPDNodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
 		return nil, fmt.Errorf("setting control plane custom image: %w", err)
 	}
 	return &cfg, nil
@@ -360,7 +371,10 @@ func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateC
 	if spec.KubeReservedMemory != "" {
 		pool.KubeReservedMemory = spec.KubeReservedMemory
 	}
-	if err := setMapPath(pool.CapiInfraMachineTemplate, nodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
+	if pool.Infra == nil {
+		return api.NodePoolCreateConfig{}, fmt.Errorf("CAPD node pool skeleton is missing infra.machineTemplate")
+	}
+	if err := setMapPath(pool.Infra.MachineTemplate, nodeImage, capiSpecKey, "template", capiSpecKey, "customImage"); err != nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("setting custom image: %w", err)
 	}
 
@@ -393,14 +407,16 @@ func buildNicoVMSRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	teleportDisabled := false
 	req := api.CreateClusterRequest{
 		Name:                          timestampedName(spec.Name),
-		OrgID:                         spec.OrgID,
-		SiteID:                        siteID,
-		VpcID:                         vpcID,
 		ControlPlaneKubernetesVersion: spec.KubernetesVersion,
 		CniPlugin:                     spec.CNIPlugin,
 		EtcdEncrypted:                 spec.ControlPlane.EtcdEncrypted,
 		ControlPlaneVIP:               spec.ControlPlane.ControlPlaneVIP,
 		TeleportEnabled:               &teleportDisabled,
+		Nico: &api.NicoClusterProvider{
+			OrgID:  spec.OrgID,
+			SiteID: siteID,
+			VpcID:  vpcID,
+		},
 	}
 	applyNetworkConfig(&req, spec.Network)
 
@@ -456,15 +472,17 @@ func buildNicoVMSControlPlaneConfig(spec ClusterSpec) (*api.CreateClusterControl
 		systemReserved = "1Gi"
 	}
 	return &api.CreateClusterControlPlaneConfig{
-		DesiredCount:           cp.DesiredCount,
-		MaxSurge:               cp.MaxSurge,
-		InstanceTypePreference: []uuid.UUID{instanceTypeID},
-		VpcPrefixIDs:           vpcPrefixIDs,
-		SSHKeyGroupIDs:         sshKeyGroupIDs,
-		OSProfile:              cp.OSProfile,
-		ConfigProfile:          cp.ConfigProfile,
-		SystemReservedMemory:   systemReserved,
-		TeleportEnabled:        &teleportDisabled,
+		DesiredCount: cp.DesiredCount,
+		MaxSurge:     cp.MaxSurge,
+		Nico: &api.NicoControlPlaneProviderCreate{
+			InstanceTypePreference: []uuid.UUID{instanceTypeID},
+			VpcPrefixIDs:           vpcPrefixIDs,
+			SSHKeyGroupIDs:         sshKeyGroupIDs,
+			OSProfile:              cp.OSProfile,
+			ConfigProfile:          cp.ConfigProfile,
+		},
+		SystemReservedMemory: systemReserved,
+		TeleportEnabled:      &teleportDisabled,
 	}, nil
 }
 
@@ -493,16 +511,18 @@ func buildNicoVMSNodePool(spec NodePoolSpec) (api.NodePoolCreateConfig, error) {
 	}
 
 	pool := api.NodePoolCreateConfig{
-		Name:                  spec.Name,
-		NodeNamePrefix:        spec.NodeNamePrefix,
-		ControlPlane:          spec.ControlPlane,
-		DesiredNodeCount:      spec.DesiredNodeCount,
-		InstanceTypeID:        instanceTypeID,
-		VpcPrefixIDs:          vpcPrefixIDs,
-		SSHKeyGroupIDs:        &sshKeyGroupIDs,
-		OSProfile:             spec.OSProfile,
-		ConfigProfile:         spec.ConfigProfile,
-		DiskSelectionStrategy: api.DiskSelectionStrategyCreate(spec.DiskSelectionStrategy),
+		Name:             spec.Name,
+		NodeNamePrefix:   spec.NodeNamePrefix,
+		ControlPlane:     spec.ControlPlane,
+		DesiredNodeCount: spec.DesiredNodeCount,
+		Nico: &api.NicoNodePoolProvider{
+			InstanceTypeID:        instanceTypeID,
+			VpcPrefixIDs:          vpcPrefixIDs,
+			SSHKeyGroupIDs:        &sshKeyGroupIDs,
+			OSProfile:             spec.OSProfile,
+			ConfigProfile:         spec.ConfigProfile,
+			DiskSelectionStrategy: api.DiskSelectionStrategyCreate(spec.DiskSelectionStrategy),
+		},
 	}
 	if spec.SystemReservedMemory != "" {
 		pool.SystemReservedMemory = spec.SystemReservedMemory
@@ -548,31 +568,20 @@ func nodePoolRequest(clusterID uuid.UUID, pool api.NodePoolCreateConfig) api.Cre
 	return api.CreateNodePoolRequest{
 		ClusterID:                   clusterID,
 		Name:                        pool.Name,
-		SubnetIDs:                   pool.SubnetIDs,
-		VpcPrefixIDs:                pool.VpcPrefixIDs,
-		InstanceTypeID:              pool.InstanceTypeID,
-		InfinibandPartitionID:       pool.InfinibandPartitionID,
-		SSHKeyGroupIDs:              pool.SSHKeyGroupIDs,
-		OSProfile:                   pool.OSProfile,
-		ConfigProfile:               pool.ConfigProfile,
 		SystemReservedMemory:        pool.SystemReservedMemory,
 		KubeReservedMemory:          pool.KubeReservedMemory,
 		ControlPlane:                pool.ControlPlane,
 		NodeLabels:                  pool.NodeLabels,
 		DesiredNodeCount:            pool.DesiredNodeCount,
+		Infra:                       pool.Infra,
 		Description:                 pool.Description,
+		Nico:                        pool.Nico,
+		NodeNamePrefix:              pool.NodeNamePrefix,
 		AutoProvisionDisabled:       pool.AutoProvisionDisabled,
 		AutoModeDisabled:            pool.AutoModeDisabled,
 		ProvisioningMonitorDisabled: pool.ProvisioningMonitorDisabled,
 		RecycleBudget:               pool.RecycleBudget,
 		TeleportEnabled:             pool.TeleportEnabled,
-		NvLinkLogicalPartitionID:    pool.NvLinkLogicalPartitionID,
-		CapiSpireAttestationMethod:  pool.CapiSpireAttestationMethod,
-		DiskSelectionStrategy:       pool.DiskSelectionStrategy,
-		NodeNamePrefix:              pool.NodeNamePrefix,
-		CapiInfraMachineTemplate:    pool.CapiInfraMachineTemplate,
-		CapiBootstrapFiles:          pool.CapiBootstrapFiles,
-		CapiPreKubeadmCommands:      pool.CapiPreKubeadmCommands,
 	}
 }
 

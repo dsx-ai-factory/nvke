@@ -8,11 +8,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
-
 	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	api "github.com/NVIDIA/nke/controller/api"
 )
+
+func capiInfraCluster(t *testing.T, req api.CreateClusterJSONRequestBody) map[string]interface{} {
+	t.Helper()
+	if req.Infra == nil {
+		t.Fatal("the request carries no infra payload")
+	}
+	return req.Infra.Cluster
+}
 
 func testSiteSpec() *sitespec.SiteSpec {
 	return &sitespec.SiteSpec{
@@ -33,9 +39,9 @@ func testSiteSpec() *sitespec.SiteSpec {
 	}
 }
 
-// TestClusterRequest_IsACAPICluster pins the three things that make CWE treat
+// TestClusterRequest_IsACAPICluster pins the two things that make CWE treat
 // this as a CAPI cluster rather than a Forge one. CWE rejects the request
-// outright if any of them is wrong, but it rejects it at the far end of a
+// outright if either is wrong, but it rejects it at the far end of a
 // bootstrap that has already built a Kind cluster and deployed five releases.
 func TestClusterRequest_IsACAPICluster(t *testing.T) {
 	req, err := ClusterRequest(testSiteSpec())
@@ -43,17 +49,14 @@ func TestClusterRequest_IsACAPICluster(t *testing.T) {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
 
-	if req.SiteID != uuid.Nil {
-		t.Errorf("siteID = %v, want the nil UUID: that is how CWE selects CAPI mode", req.SiteID)
+	if req.Nico != nil {
+		t.Errorf("nico = %#v, want nil: CWE rejects it for CAPI clusters", req.Nico)
 	}
-	if req.OrgID != "" {
-		t.Errorf("orgID = %q, want empty: CWE rejects it for CAPI clusters", req.OrgID)
+	if req.Infra == nil {
+		t.Fatal("infra is nil; supplying it is how CWE selects CAPI mode")
 	}
-	if req.VpcID != uuid.Nil {
-		t.Errorf("vpcID = %v, want the nil UUID: CWE rejects it for CAPI clusters", req.VpcID)
-	}
-	if len(req.CapiInfraCluster) == 0 {
-		t.Fatal("capiInfraCluster is empty; CWE requires it when siteID is the nil UUID")
+	if len(req.Infra.Cluster) == 0 {
+		t.Fatal("infra.cluster is empty; CWE requires it for a CAPI cluster")
 	}
 }
 
@@ -66,20 +69,21 @@ func TestClusterRequest_CarriesTheSiteSpecAsProvisionedHosts(t *testing.T) {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
 
-	if got := req.CapiInfraCluster["kind"]; got != provisionedClusterKind {
-		t.Errorf("capiInfraCluster kind = %v, want %q", got, provisionedClusterKind)
+	infra := capiInfraCluster(t, req)
+	if got := infra["kind"]; got != provisionedClusterKind {
+		t.Errorf("infra.cluster kind = %v, want %q", got, provisionedClusterKind)
 	}
-	if got := req.CapiInfraCluster["apiVersion"]; got != provisionedAPIVersion {
-		t.Errorf("capiInfraCluster apiVersion = %v, want %q", got, provisionedAPIVersion)
+	if got := infra["apiVersion"]; got != provisionedAPIVersion {
+		t.Errorf("infra.cluster apiVersion = %v, want %q", got, provisionedAPIVersion)
 	}
 
-	spec, ok := req.CapiInfraCluster["spec"].(map[string]interface{})
+	spec, ok := infra["spec"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("capiInfraCluster has no spec: %#v", req.CapiInfraCluster)
+		t.Fatalf("infra.cluster has no spec: %#v", infra)
 	}
 	hosts, ok := spec["hosts"].([]map[string]interface{})
 	if !ok {
-		t.Fatalf("capiInfraCluster spec has no hosts: %#v", spec)
+		t.Fatalf("infra.cluster spec has no hosts: %#v", spec)
 	}
 	want := []struct{ hostname, ip, tpmEKPubHash string }{
 		{"node1", "172.26.0.10", strings.Repeat("1", 64)},
@@ -120,12 +124,15 @@ func TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec(t *testing.T) {
 	if pool.SystemReservedMemory != "512Mi" {
 		t.Errorf("systemReservedMemory = %q, want the site spec's kubelet reservation", pool.SystemReservedMemory)
 	}
-	if got := pool.CapiInfraMachineTemplate["kind"]; got != provisionedMachineTemplateKind {
-		t.Errorf("capiInfraMachineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
+	if pool.Infra == nil {
+		t.Fatal("the pool carries no infra payload")
 	}
-	if pool.CapiSpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
-		t.Errorf("capiSpireAttestationMethod = %q, want %q",
-			pool.CapiSpireAttestationMethod, api.SpireAttestationMethodCreateTpm)
+	if got := pool.Infra.MachineTemplate["kind"]; got != provisionedMachineTemplateKind {
+		t.Errorf("infra.machineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
+	}
+	if pool.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
+		t.Errorf("infra.spireAttestationMethod = %q, want %q",
+			pool.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateTpm)
 	}
 }
 

@@ -14,8 +14,6 @@ package sitecluster
 import (
 	"fmt"
 
-	"github.com/google/uuid"
-
 	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	api "github.com/NVIDIA/nke/controller/api"
 )
@@ -43,12 +41,12 @@ const (
 //
 // The shape of the request is what makes it a site cluster:
 //
-//   - siteID is the nil UUID. That is how CWE selects CAPI mode over
-//     Forge mode, and it is why orgID and vpcID must stay empty.
-//   - capiInfraCluster is a ProvisionedCluster whose site spec is the hosts
+//   - the request carries an infra payload and no nico payload. That is how CWE
+//     selects CAPI mode over Forge mode.
+//   - infra.cluster is a ProvisionedCluster whose site spec is the hosts
 //     from the file. The provider hands one host to each machine; it creates
 //     nothing.
-//   - the node pool's capiInfraMachineTemplate is a ProvisionedMachineTemplate
+//   - the node pool's infra.machineTemplate is a ProvisionedMachineTemplate
 //     with an empty spec. Everything a machine needs is already in the
 //     ProvisionedCluster's site spec, so there is nothing to say per machine.
 func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, error) {
@@ -62,25 +60,27 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 	}
 
 	req := api.CreateClusterJSONRequestBody{
-		Name: inv.ClusterName,
-		// The nil UUID default site: CAPI-backed, not Forge-backed.
-		SiteID:                        uuid.Nil,
+		Name:                          inv.ClusterName,
 		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
 		CniPlugin:                     inv.Cluster.CniName,
 		EtcdEncrypted:                 false,
 		NodePools: &[]api.NodePoolCreateConfig{{
-			Name:             controlPlanePoolName,
-			NodeNamePrefix:   controlPlaneNodeNamePrefix,
-			DesiredNodeCount: len(hosts),
-			ControlPlane:     true,
-			// The provisioned provider copies the allocated host's TPM identity
-			// to the CAPI Machine. CWE uses it as the parent of the node-agent
-			// workload entry; no bootstrap join token is needed.
-			CapiSpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
-			SystemReservedMemory:       inv.Cluster.KubeletConfig.SystemReservedMemory,
-			CapiInfraMachineTemplate:   provisionedMachineTemplate(),
+			Name:                 controlPlanePoolName,
+			NodeNamePrefix:       controlPlaneNodeNamePrefix,
+			DesiredNodeCount:     len(hosts),
+			ControlPlane:         true,
+			SystemReservedMemory: inv.Cluster.KubeletConfig.SystemReservedMemory,
+			Infra: &api.InfraNodePoolProvider{
+				// The provisioned provider copies the allocated host's TPM identity
+				// to the CAPI Machine. CWE uses it as the parent of the node-agent
+				// workload entry; no bootstrap join token is needed.
+				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+				MachineTemplate:        provisionedMachineTemplate(),
+			},
 		}},
-		CapiInfraCluster: provisionedCluster(inv.ClusterName, hosts),
+		Infra: &api.InfraClusterProvider{
+			Cluster: provisionedCluster(inv.ClusterName, hosts),
+		},
 	}
 
 	if inv.Cluster.CniVersion != "" {

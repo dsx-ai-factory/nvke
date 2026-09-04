@@ -33,7 +33,8 @@ make capd-up
 tilt up
 
 # 3. Create the workload cluster. The script auto-detects bgp-containers:
-#    - bgp-containers running: controlPlaneVIP is set from CONTROL_PLANE_VIP.
+#    - bgp-containers running: controlPlaneVIP is the first address in
+#      DEFAULT_VIP_RANGE not used by a cluster returned by NKE.
 #    - bgp-containers absent: controlPlaneVIP is omitted, preserving the plain CAPD path.
 make capd-create-cluster
 
@@ -52,7 +53,10 @@ make bgp-containers-down
 Useful overrides:
 
 ```bash
-DEFAULT_VIP_RANGE=172.31.1.0/24 CONTROL_PLANE_VIP=172.31.1.1 make capd-create-cluster
+DEFAULT_VIP_RANGE=172.31.1.0/24 make capd-create-cluster
+
+# Use a specific VIP instead of automatic selection.
+CONTROL_PLANE_VIP=172.31.1.10 make capd-create-cluster
 
 # Disable the Tilt-managed speaker for a plain CAPD environment.
 # Add this to tilt_config.json:

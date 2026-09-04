@@ -5,10 +5,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
@@ -22,21 +24,42 @@ import (
 // plane config for a Forge-backed cluster.
 func validForgeControlPlaneConfig() *api.CreateClusterControlPlaneConfig {
 	return &api.CreateClusterControlPlaneConfig{
-		DesiredCount:           3,
-		InstanceTypePreference: []uuid.UUID{uuid.New()},
-		OSProfile:              "ubuntu",
-		ConfigProfile:          "default",
+		DesiredCount: 3,
+		Nico: &api.NicoControlPlaneProviderCreate{
+			InstanceTypePreference: []uuid.UUID{uuid.New()},
+			OSProfile:              "ubuntu",
+			ConfigProfile:          "default",
+		},
 	}
 }
 
 func validForgeCreateClusterRequest() *api.CreateClusterRequest {
 	return &api.CreateClusterRequest{
-		Name:                          "runtime-dgxc-k8s-forge-cp",
-		OrgID:                         "test-org",
-		SiteID:                        uuid.New(),
-		VpcID:                         uuid.New(),
+		Name: "runtime-dgxc-k8s-forge-cp",
+		Nico: &api.NicoClusterProvider{
+			OrgID:  "test-org",
+			SiteID: uuid.New(),
+			VpcID:  uuid.New(),
+		},
 		CniPlugin:                     "calico",
 		ControlPlaneKubernetesVersion: "1.29.0",
+	}
+}
+
+// validForgeNodePoolCreateConfig returns a minimal valid embedded node pool for
+// a Forge-backed cluster.
+func validForgeNodePoolCreateConfig(name string) api.NodePoolCreateConfig {
+	return api.NodePoolCreateConfig{
+		Name:           name,
+		NodeNamePrefix: name,
+		Nico: &api.NicoNodePoolProvider{
+			SubnetIDs:      []uuid.UUID{uuid.New()},
+			InstanceTypeID: uuid.New(),
+			OSProfile:      "ubuntu",
+			ConfigProfile:  "default",
+		},
+		ControlPlane:     true,
+		DesiredNodeCount: 1,
 	}
 }
 
@@ -46,18 +69,9 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		req := validForgeCreateClusterRequest()
 		req.ControlPlaneConfig = validForgeControlPlaneConfig()
 		// Provide a control-plane node pool so the legacy "must have a CP node" rule passes.
-		req.NodePools = &[]api.NodePoolCreateConfig{{
-			Name:             "cp",
-			NodeNamePrefix:   "cp",
-			SubnetIDs:        []uuid.UUID{uuid.New()},
-			InstanceTypeID:   uuid.New(),
-			OSProfile:        "ubuntu",
-			ConfigProfile:    "default",
-			ControlPlane:     true,
-			DesiredNodeCount: 1,
-		}}
+		req.NodePools = &[]api.NodePoolCreateConfig{validForgeNodePoolCreateConfig("cp")}
 
-		err := svc.validateCreateClusterRequestFields(req)
+		err := svc.ValidateCreateClusterRequestFields(req)
 		require.ErrorIs(t, err, errControlPlaneConfigNotEnabled)
 	})
 
@@ -65,18 +79,9 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		svc := clusterService{useControlPlaneController: true}
 		req := validForgeCreateClusterRequest()
 		req.ControlPlaneConfig = validForgeControlPlaneConfig()
-		req.NodePools = &[]api.NodePoolCreateConfig{{
-			Name:             "cp",
-			NodeNamePrefix:   "cp",
-			SubnetIDs:        []uuid.UUID{uuid.New()},
-			InstanceTypeID:   uuid.New(),
-			OSProfile:        "ubuntu",
-			ConfigProfile:    "default",
-			ControlPlane:     true,
-			DesiredNodeCount: 1,
-		}}
+		req.NodePools = &[]api.NodePoolCreateConfig{validForgeNodePoolCreateConfig("control-plane")}
 
-		err := svc.validateCreateClusterRequestFields(req)
+		err := svc.ValidateCreateClusterRequestFields(req)
 		require.ErrorIs(t, err, errControlPlaneNodePoolNotAllowed)
 	})
 
@@ -84,7 +89,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		svc := clusterService{useControlPlaneController: true}
 		req := validForgeCreateClusterRequest()
 
-		err := svc.validateCreateClusterRequestFields(req)
+		err := svc.ValidateCreateClusterRequestFields(req)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "controlPlaneConfig is required")
 	})
@@ -96,7 +101,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		cp.DesiredCount = 0
 		req.ControlPlaneConfig = cp
 
-		err := svc.validateCreateClusterRequestFields(req)
+		err := svc.ValidateCreateClusterRequestFields(req)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "desiredCount must be at least 1")
 	})
@@ -106,7 +111,7 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		req := validForgeCreateClusterRequest()
 		req.ControlPlaneConfig = validForgeControlPlaneConfig()
 
-		err := svc.validateCreateClusterRequestFields(req)
+		err := svc.ValidateCreateClusterRequestFields(req)
 		require.NoError(t, err)
 	})
 
@@ -116,30 +121,35 @@ func TestValidateCreateClusterRequestFields_ControlPlaneControllerFlag(t *testin
 		cp := validForgeControlPlaneConfig()
 		// A nil UUID passes the length check but would be silently dropped by
 		// dedupeUUIDsPreserveOrder, so it must be rejected up front.
-		cp.InstanceTypePreference = []uuid.UUID{uuid.New(), uuid.Nil}
+		cp.Nico.InstanceTypePreference = []uuid.UUID{uuid.New(), uuid.Nil}
 		req.ControlPlaneConfig = cp
 
-		err := svc.validateCreateClusterRequestFields(req)
+		err := svc.ValidateCreateClusterRequestFields(req)
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid nil instance type ID")
 	})
 
-	t.Run("flag ON rejects Forge-only field on a CAPI cluster control plane", func(t *testing.T) {
+	t.Run("flag ON rejects a Forge control plane payload on a CAPI cluster", func(t *testing.T) {
 		svc := clusterService{useControlPlaneController: true}
 		req := &api.CreateClusterRequest{
 			Name:                          "capi-cluster",
-			SiteID:                        uuid.Nil,
 			CniPlugin:                     "calico",
 			ControlPlaneKubernetesVersion: "1.29.0",
+			Infra: &api.InfraClusterProvider{
+				Cluster: map[string]interface{}{
+					"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1",
+					"kind":       "DockerCluster",
+				},
+			},
 			ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
 				DesiredCount: 3,
-				OSProfile:    "ubuntu",
+				Nico:         &api.NicoControlPlaneProviderCreate{OSProfile: "ubuntu"},
 			},
 		}
 
-		err := svc.validateCreateClusterRequestFields(req)
+		err := svc.ValidateCreateClusterRequestFields(req)
 		require.Error(t, err)
-		require.Contains(t, err.Error(), "osProfile is not supported for CAPI clusters")
+		require.Contains(t, err.Error(), "controlPlaneConfig.nico is not supported, please provide controlPlaneConfig.infra")
 	})
 }
 
@@ -215,11 +225,13 @@ func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.
 
 	resp, err := service.CreateNodePool(context.Background(), api.CreateNodePoolRequestObject{
 		Body: &api.CreateNodePoolRequest{
-			ClusterID:        clusterID,
-			Name:             "cp",
-			NodeNamePrefix:   "cp",
-			ConfigProfile:    "default",
-			OSProfile:        "ubuntu",
+			ClusterID:      clusterID,
+			Name:           "cp",
+			NodeNamePrefix: "cp",
+			Nico: &api.NicoNodePoolProvider{
+				OSProfile:     "ubuntu",
+				ConfigProfile: "default",
+			},
 			ControlPlane:     true,
 			DesiredNodeCount: 1,
 		},
@@ -241,7 +253,7 @@ func TestGetClusterControlPlane(t *testing.T) {
 	instanceType := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
 
 	newCluster := func() db.Cluster {
-		return db.Cluster{
+		cluster := db.Cluster{
 			ID:                clusterID,
 			KubernetesVersion: "1.29.0",
 			ControlPlaneConfig: db.ControlPlaneConfig{
@@ -257,6 +269,8 @@ func TestGetClusterControlPlane(t *testing.T) {
 				CPNodesRecycling:      db.NewCondition(false, "not recycling"),
 			},
 		}
+		cluster.ControlPlaneConfig.ControlPlaneConfigSpec.SyncProviderFields(db.ProviderTypeNico)
+		return cluster
 	}
 
 	cpFilter := func(f db.NodeFilters) bool {
@@ -291,7 +305,8 @@ func TestGetClusterControlPlane(t *testing.T) {
 		out, ok := resp.(api.GetClusterControlPlane200JSONResponse)
 		require.True(t, ok, "expected 200 response, got %T", resp)
 		require.Equal(t, 3, out.Config.DesiredCount)
-		require.Equal(t, "ubuntu", out.Config.OSProfile)
+		require.NotNil(t, out.Config.Nico)
+		require.Equal(t, "ubuntu", out.Config.Nico.OSProfile)
 		require.Equal(t, 2, out.Status.NodeCount)
 		require.Equal(t, 1, out.Status.ReadyNodeCount)
 		require.Equal(t, "1.29.0", out.Status.KubernetesVersion)
@@ -346,7 +361,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 	ctx := context.Background()
 
 	newForgeCluster := func() *db.Cluster {
-		return &db.Cluster{
+		cluster := &db.Cluster{
 			ID:     uuid.New(),
 			OrgID:  "test-org",
 			SiteID: uuid.New(), // Forge cluster.
@@ -359,26 +374,31 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 				},
 			},
 		}
+		cluster.SyncProviderFields()
+		cluster.ControlPlaneConfig.ControlPlaneConfigSpec.SyncProviderFields(db.ProviderTypeNico)
+		return cluster
+	}
+
+	applyUpdate := func(t *testing.T, cluster *db.Cluster, req *api.UpdateClusterControlPlaneConfig) error {
+		t.Helper()
+		svc := clusterService{useControlPlaneController: true}
+		return svc.applyClusterControlPlaneConfigUpdate(ctx, nil, cluster, req)
 	}
 
 	// tx is never reached: validation fails before the config row is persisted.
 	t.Run("clearing osProfile is rejected", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
-		cluster := newForgeCluster()
 		empty := ""
-		err := svc.applyClusterControlPlaneConfigUpdate(ctx, nil, cluster, &api.UpdateClusterControlPlaneConfig{
-			OSProfile: &empty,
+		err := applyUpdate(t, newForgeCluster(), &api.UpdateClusterControlPlaneConfig{
+			Nico: &api.NicoControlPlaneProviderUpdate{OSProfile: &empty},
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "osProfile is required")
 	})
 
 	t.Run("clearing configProfile is rejected", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
-		cluster := newForgeCluster()
 		empty := ""
-		err := svc.applyClusterControlPlaneConfigUpdate(ctx, nil, cluster, &api.UpdateClusterControlPlaneConfig{
-			ConfigProfile: &empty,
+		err := applyUpdate(t, newForgeCluster(), &api.UpdateClusterControlPlaneConfig{
+			Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &empty},
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "configProfile is required")
@@ -387,24 +407,87 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 	// instanceTypePreference is merged in the parent (not applyClusterLevelControlPlaneSpecUpdate),
 	// so this exercises the parent-level merged-spec validation.
 	t.Run("clearing instanceTypePreference is rejected", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
-		cluster := newForgeCluster()
-		emptyPrefs := []uuid.UUID{}
-		err := svc.applyClusterControlPlaneConfigUpdate(ctx, nil, cluster, &api.UpdateClusterControlPlaneConfig{
-			InstanceTypePreference: &emptyPrefs,
+		err := applyUpdate(t, newForgeCluster(), &api.UpdateClusterControlPlaneConfig{
+			Nico: &api.NicoControlPlaneProviderUpdate{InstanceTypePreference: []uuid.UUID{}},
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "instanceTypePreference must contain at least one")
 	})
 
 	t.Run("nil instance type ID in instanceTypePreference is rejected", func(t *testing.T) {
-		svc := clusterService{useControlPlaneController: true}
-		cluster := newForgeCluster()
-		prefs := []uuid.UUID{uuid.New(), uuid.Nil}
-		err := svc.applyClusterControlPlaneConfigUpdate(ctx, nil, cluster, &api.UpdateClusterControlPlaneConfig{
-			InstanceTypePreference: &prefs,
+		err := applyUpdate(t, newForgeCluster(), &api.UpdateClusterControlPlaneConfig{
+			Nico: &api.NicoControlPlaneProviderUpdate{
+				InstanceTypePreference: []uuid.UUID{uuid.New(), uuid.Nil},
+			},
 		})
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid nil instance type ID")
 	})
+}
+
+func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
+	prefs := []uuid.UUID{uuid.New()}
+	subnet := uuid.New()
+	tmpl := map[string]interface{}{"kind": "DockerMachineTemplate"}
+
+	t.Run("nested nico lands on the stored nico payload", func(t *testing.T) {
+		cfg := &api.CreateClusterControlPlaneConfig{
+			DesiredCount: 3,
+			Nico: &api.NicoControlPlaneProviderCreate{
+				InstanceTypePreference: prefs,
+				SubnetIDs:              []uuid.UUID{subnet},
+				OSProfile:              "os",
+				ConfigProfile:          "cfg",
+				SSHKeyGroupIDs:         []uuid.UUID{uuid.New()},
+			},
+		}
+
+		spec := controlPlaneConfigSpecFromCreateAPI(cfg, "1.31.0", true, db.ProviderTypeNico)
+		require.NotNil(t, spec.Nico)
+		assert.Nil(t, spec.Capi)
+		assert.Equal(t, prefs, spec.Nico.InstanceTypePreference)
+		assert.Equal(t, []uuid.UUID{subnet}, spec.Nico.SubnetIDs)
+		assert.Equal(t, "os", spec.Nico.OSProfile)
+		assert.Equal(t, "cfg", spec.Nico.ConfigProfile)
+		// The control plane always installs to the smallest disk; it is not
+		// configurable through the API.
+		assert.Equal(t, db.DiskSelectionStrategy(api.DiskSelectionStrategyCreateSmallest), spec.Nico.DiskSelectionStrategy)
+	})
+
+	t.Run("nested infra lands on the stored provider payload", func(t *testing.T) {
+		cfg := &api.CreateClusterControlPlaneConfig{
+			DesiredCount: 3,
+			Infra: &api.InfraControlPlaneProvider{
+				MachineTemplate:        tmpl,
+				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+				PreKubeadmCommands:     []string{"prep"},
+			},
+		}
+
+		spec := controlPlaneConfigSpecFromCreateAPI(cfg, "1.31.0", true, db.ProviderTypeCAPI)
+		assert.Nil(t, spec.Nico)
+		require.NotNil(t, spec.Capi)
+		require.Len(t, spec.Capi.InfraMachineTemplatePreferences, 1)
+		assert.JSONEq(t, `{"kind":"DockerMachineTemplate"}`, string(spec.Capi.InfraMachineTemplatePreferences[0]))
+		assert.Equal(t, db.SpireAttestationMethodTPM, spec.Capi.SpireAttestationMethod)
+		assert.Equal(t, []string{"prep"}, spec.Capi.PreKubeadmCommands)
+	})
+}
+
+func TestApiCapiControlPlaneProviderFromDB_ExposesOnlyFirstPreference(t *testing.T) {
+	cfg := db.ControlPlaneConfig{}
+	cfg.SetCapi(db.CAPIControlPlaneProvider{
+		InfraMachineTemplatePreferences: []json.RawMessage{
+			json.RawMessage(`{"kind":"DockerMachineTemplate","metadata":{"name":"current"}}`),
+			json.RawMessage(`{"kind":"DockerMachineTemplate","metadata":{"name":"history"}}`),
+		},
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+	})
+
+	got := apiInfraControlPlaneProviderFromDB(cfg.Capi)
+	require.NotNil(t, got)
+	require.Equal(t, map[string]interface{}{
+		"kind":     "DockerMachineTemplate",
+		"metadata": map[string]interface{}{"name": "current"},
+	}, got.MachineTemplate)
 }

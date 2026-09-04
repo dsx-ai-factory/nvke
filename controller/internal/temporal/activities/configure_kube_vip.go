@@ -9,13 +9,23 @@ import (
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/activity"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
 	"github.com/NVIDIA/nke/controller/internal/nodes"
 )
 
+const (
+	configureKubeVipRunbookName = "configure-kube-vip"
+)
+
 type ConfigureKubeVipInput struct {
-	NodeID              uuid.UUID
-	ClusterID           uuid.UUID
+	NodeID    uuid.UUID
+	ClusterID uuid.UUID
+	// ConfigureSuperAdmin is used only by the mixed-fleet legacy fallback.
+	// Typed reconciliation never creates an elevated kubeconfig.
 	ConfigureSuperAdmin bool
 
 	NodeProvisioningConditionMessage    string
@@ -23,6 +33,7 @@ type ConfigureKubeVipInput struct {
 }
 
 type ConfigureKubeVipResult struct {
+	// ConfigureSuperAdminOutput is populated only by the legacy fallback.
 	ConfigureSuperAdminOutput *string
 	ConfigureKubeVipOutput    string
 }
@@ -84,7 +95,10 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 	// When FNN (Forge Native Networking) is enabled in the site we want to query the DPU ASN from the Forge Metadata Service (FMDS).
 	// We know FNN is enabled when the node pool has VPC prefixes instead of subnets.
 	// CAPI clusters do not use Nico provider payloads or VPC prefixes, so skip the check for them.
+	const defaultBGPPeerASN uint32 = 4294967000
 	bgpPeerAS := "4294967000"
+	bgpPeerASN := defaultBGPPeerASN
+	bgpPeerASNSource := nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC
 	if nodePool.Nico != nil {
 		nicoNodePoolProvider, err := nodePool.NicoProvider()
 		if err != nil {
@@ -92,6 +106,8 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		}
 		if len(nicoNodePoolProvider.VpcPrefixIDs) > 0 {
 			bgpPeerAS = "FROM_FMDS"
+			bgpPeerASN = 0
+			bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
 		}
 	}
 
@@ -106,7 +122,53 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 
 	// Assume host ID is the same as node ID by convention
 	hostID := node.ID
+	heartbeatCancel := startActivityHeartbeat(ctx)
+	defer heartbeatCancel()
+	reconcileResponse, err := a.nodeAgentClient.ReconcileKubeVip(ctx, node, &nkeproto.ReconcileKubeVipRequest{
+		VipAddress:       cluster.ControlPlaneVIP,
+		BgpAsn:           kubeVipASN,
+		NodeIp:           node.IP,
+		BgpPeerAsnSource: bgpPeerASNSource,
+		BgpPeerAsn:       bgpPeerASN,
+	})
+	if err == nil {
+		if reconcileResponse == nil {
+			return ConfigureKubeVipResult{}, fmt.Errorf("node agent returned an empty kube-vip reconciliation response")
+		}
+		switch reconcileResponse.GetOutcome() {
+		case nkeproto.ReconcileKubeVipResponse_OUTCOME_UNSPECIFIED:
+			return ConfigureKubeVipResult{}, fmt.Errorf("node agent returned an unspecified kube-vip reconciliation outcome")
+		case nkeproto.ReconcileKubeVipResponse_OUTCOME_CREATED,
+			nkeproto.ReconcileKubeVipResponse_OUTCOME_UPDATED,
+			nkeproto.ReconcileKubeVipResponse_OUTCOME_UNCHANGED:
+			return ConfigureKubeVipResult{
+				ConfigureKubeVipOutput: fmt.Sprintf(
+					"kube-vip %s: manifest=%s interface=%s peer=%s peerASN=%d kubeconfig=%s kubeconfigChanged=%t cleanedInterfaces=%v",
+					reconcileResponse.GetOutcome(),
+					reconcileResponse.GetManifestPath(),
+					reconcileResponse.GetBgpInterface(),
+					reconcileResponse.GetBgpPeerAddress(),
+					reconcileResponse.GetBgpPeerAsn(),
+					reconcileResponse.GetKubeconfigPath(),
+					reconcileResponse.GetKubeconfigChanged(),
+					reconcileResponse.GetCleanedInterfaces(),
+				),
+			}, nil
+		default:
+			return ConfigureKubeVipResult{}, fmt.Errorf("node agent returned invalid kube-vip reconciliation outcome %s", reconcileResponse.GetOutcome())
+		}
+	}
+	if status.Code(err) != codes.Unimplemented {
+		return ConfigureKubeVipResult{}, fmt.Errorf("failed to reconcile kube-vip on node %s: %w", node.Name, err)
+	}
+	logger.Info("ReconcileKubeVip is unavailable; falling back to legacy kube-vip runbooks",
+		"nodeID", node.ID,
+		"nodeName", node.Name,
+	)
 
+	// Keep elevated kubeconfig generation below the Unimplemented gate. The
+	// typed path is deliberately credential-less; super-admin exists only to
+	// support agents that still require the legacy runbook.
 	var configureSuperAdminOutput *string
 	if input.ConfigureSuperAdmin {
 		configureSuperAdminResult, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
@@ -122,7 +184,7 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 
 	configureKubeVipResult, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
 		HostID:      hostID,
-		RunbookName: "configure-kube-vip",
+		RunbookName: configureKubeVipRunbookName,
 		RunbookEnv: map[string]string{
 			"VIP_ADDRESS": cluster.ControlPlaneVIP,
 			"BGP_AS":      fmt.Sprintf("%d", kubeVipASN),

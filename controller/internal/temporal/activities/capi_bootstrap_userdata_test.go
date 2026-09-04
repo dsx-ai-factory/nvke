@@ -85,5 +85,5 @@ func TestRenderCAPIBootstrapUserData_JoinTokenRequiresToken(t *testing.T) {
 	var nodeSet db.NodeSet
 	nodeSet.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: db.SpireAttestationMethodJoinToken})
 	_, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
-	require.EqualError(t, err, "spire join token is required when capiSpireAttestationMethod is joinToken")
+	require.EqualError(t, err, "spire join token is required when infra.spireAttestationMethod is joinToken")
 }

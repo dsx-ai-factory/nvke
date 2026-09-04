@@ -43,10 +43,21 @@ fi
 BODY=$(cat <<EOF
 {
   "name": "${CLUSTER_NAME}",
-  "siteID": "${DEFAULT_SITE_ID}",
   "controlPlaneKubernetesVersion": "${KUBERNETES_VERSION}",
   "cniPlugin": "ovn-kubernetes",
   "etcdEncrypted": false,
+  "infra": {
+    "cluster": {
+      "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+      "kind": "NicoCluster",
+      "metadata": {
+        "name": "${CLUSTER_NAME}"
+      },
+      "spec": {
+        "siteID": "${NICO_SITE_ID}"
+      }
+    }
+  },
   "nodePools": [
     {
       "name": "control-plane",
@@ -57,7 +68,8 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capiInfraMachineTemplate": {
+      "infra": {
+        "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",
         "metadata": {
@@ -81,9 +93,9 @@ BODY=$(cat <<EOF
             }
           }
         }
-      },
-      "capiSpireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
-      "capiPreKubeadmCommands": [
+        },
+        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
+        "preKubeadmCommands": [
         "install -d -m 0755 /etc/apt/keyrings",
         "curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-public.key",
         "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-noble nke-noble main' > /etc/apt/sources.list.d/nke-apt.list",
@@ -98,6 +110,7 @@ BODY=$(cat <<EOF
         "systemctl restart procps",
         "touch /run/cloud-init.done"
       ]
+      }
     },
     {
       "name": "worker",
@@ -108,7 +121,8 @@ BODY=$(cat <<EOF
       "autoProvisionDisabled": false,
       "autoModeDisabled": false,
       "recycleBudget": 0,
-      "capiInfraMachineTemplate": {
+      "infra": {
+        "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",
         "metadata": {
@@ -132,9 +146,9 @@ BODY=$(cat <<EOF
             }
           }
         }
-      },
-      "capiSpireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
-      "capiPreKubeadmCommands": [
+        },
+        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
+        "preKubeadmCommands": [
         "install -d -m 0755 /etc/apt/keyrings",
         "curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-public.key",
         "echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-noble nke-noble main' > /etc/apt/sources.list.d/nke-apt.list",
@@ -149,18 +163,9 @@ BODY=$(cat <<EOF
         "systemctl restart procps",
         "touch /run/cloud-init.done"
       ]
+      }
     }
-  ],
-  "capiInfraCluster": {
-    "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
-    "kind": "NicoCluster",
-    "metadata": {
-      "name": "${CLUSTER_NAME}"
-    },
-    "spec": {
-      "siteID": "${NICO_SITE_ID}"
-    }
-  }
+  ]
 }
 EOF
 )

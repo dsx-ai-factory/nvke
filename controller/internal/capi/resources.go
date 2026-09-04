@@ -30,7 +30,7 @@ func ApplyClusterScaffold(ctx context.Context, k8sClient client.Client, cluster 
 	}
 	infraCluster, err := ParseManifest(manifest)
 	if err != nil {
-		return fmt.Errorf("failed to parse capiInfraCluster: %w", err)
+		return fmt.Errorf("failed to parse infra.cluster: %w", err)
 	}
 	infraCluster.SetNamespace(namespace)
 	infraCluster.SetName(cluster.Name)

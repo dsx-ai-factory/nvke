@@ -78,15 +78,6 @@ type Cluster struct {
 	// Name The name of the cluster
 	Name string `json:"name"`
 
-	// OrgID The ID of the NGC organization that owns the cluster
-	OrgID string `json:"orgID,omitempty"`
-
-	// SiteID The registered site ID for this cluster. Forge-backed clusters use a non-nil site ID. CAPI-backed clusters use the nil UUID default site.
-	SiteID openapi_types.UUID `json:"siteID,omitempty"`
-
-	// VpcID The VPC ID for Forge-backed clusters. Omitted for CAPI-backed clusters.
-	VpcID openapi_types.UUID `json:"vpcID,omitempty"`
-
 	// ControlPlaneKubernetesVersion The version of Kubernetes used by the cluster
 	ControlPlaneKubernetesVersion string `json:"controlPlaneKubernetesVersion"`
 
@@ -108,18 +99,23 @@ type Cluster struct {
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this cluster.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
-	// CreatedAt When the cluster was created
-	CreatedAt time.Time `json:"createdAt"`
-
 	// Conditions Conditions representing various aspects of the Cluster's state
 	Conditions ClusterConditions `json:"conditions"`
 
 	// ControlPlaneConfig Cluster-level control plane configuration.
 	ControlPlaneConfig *ControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
-	Network            ClusterNetwork      `json:"network"`
 
-	// CapiInfraCluster Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource. Present only for CAPI-backed clusters.
-	CapiInfraCluster map[string]interface{} `json:"capiInfraCluster,omitempty"`
+	// CreatedAt When the cluster was created
+	CreatedAt time.Time `json:"createdAt"`
+
+	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
+	// directly. Not to be used merely because a cluster is provisioned through CAPI —
+	// `nico` clusters may be too. Mutually exclusive with `nico`.
+	Infra   *InfraClusterProvider `json:"infra,omitempty"`
+	Network ClusterNetwork        `json:"network"`
+
+	// Nico Nico identity fields for a cluster. Mutually exclusive with `infra`.
+	Nico *NicoClusterProvider `json:"nico,omitempty"`
 }
 
 // ClusterConditions Conditions representing various aspects of the Cluster's state
@@ -191,58 +187,35 @@ type ConfigProfile struct {
 
 // ControlPlaneConfig Cluster-level control plane configuration.
 type ControlPlaneConfig struct {
-	// CapiBootstrapFiles Custom cloud-init `write_files` entries for CAPI-backed control plane nodes.
-	CapiBootstrapFiles []CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes. Present only for CAPI-backed clusters.
-	CapiInfraMachineTemplate map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiPreKubeadmCommands Custom cloud-init `runcmd` entries for CAPI-backed control plane nodes.
-	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
-
-	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	CapiSpireAttestationMethod *SpireAttestationMethod `json:"capiSpireAttestationMethod,omitempty"`
-
-	// ConfigProfile The name of the config profile used by control plane nodes.
-	ConfigProfile string `json:"configProfile,omitempty"`
-
 	// ConfigurationID The ID of the current control plane configuration snapshot revision.
 	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
 
 	// DesiredCount The desired number of cluster-level control plane nodes.
 	DesiredCount int `json:"desiredCount,omitempty"`
 
-	// InstanceTypePreference Ordered Forge instance type IDs for cluster-level control plane provisioning.
-	// Index 0 is the highest priority; provisioning tries each instance type in order.
-	InstanceTypePreference *[]openapi_types.UUID `json:"instanceTypePreference,omitempty"`
+	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
 
 	// MaxSurge Cluster-level surge capacity for control plane nodes during upgrades.
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
+	// Nico The stored Nico cluster-level control plane fields, as reported on read.
+	// Requests use `NicoControlPlaneProviderCreate` and `NicoControlPlaneProviderUpdate`,
+	// which omit the fields that direction cannot set. Mutually exclusive with `infra`.
+	Nico *NicoControlPlaneProvider `json:"nico,omitempty"`
+
 	// NodeLabels A list of labels applied to control plane nodes.
 	NodeLabels []string `json:"nodeLabels,omitempty"`
-
-	// OSProfile The name of the OS profile used by Forge-backed control plane nodes. Empty for CAPI-backed clusters.
-	OSProfile string `json:"osProfile,omitempty"`
 
 	// ProvisioningMonitorDisabled When true, the timeout-based provisioning monitor is paused for cluster-level
 	// control plane nodes.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
-
-	// SSHKeyGroupIDs The IDs of the SSH key groups used for control plane nodes.
-	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
-
-	// SubnetIDs The IDs of the subnets used for control plane nodes. Present when the site does not have native networking enabled.
-	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
 
 	// SystemReservedMemory The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
 
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for control plane nodes.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
-
-	// VpcPrefixIDs The IDs of the VPC prefixes used for control plane nodes. Present when the site has native networking enabled.
-	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
 // ControlPlaneStatus Aggregate runtime status of a cluster's control plane.
@@ -260,72 +233,39 @@ type ControlPlaneStatus struct {
 }
 
 // CreateClusterControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
+// Exactly one provider payload is required: supply either `nico` or `infra`.
+// A request carrying both, or neither, is rejected with 400.
 type CreateClusterControlPlaneConfig struct {
-	// CapiBootstrapFiles Additional cloud-init `write_files` entries for CAPI-backed control plane nodes. Must be omitted for Forge clusters.
-	CapiBootstrapFiles []CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource for control plane nodes. Required for CAPI clusters, must be omitted for Forge clusters.
-	CapiInfraMachineTemplate map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiPreKubeadmCommands Additional cloud-init `runcmd` entries for CAPI-backed control plane nodes. Must be omitted for Forge clusters.
-	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
-
-	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
-
-	// ConfigProfile The name of the config profile for control plane nodes. Required for Forge clusters.
-	ConfigProfile string `json:"configProfile,omitempty"`
-
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
 	DesiredCount int `json:"desiredCount"`
 
-	// InstanceTypePreference Ordered Forge instance type IDs for cluster-level control plane provisioning.
-	// Index 0 is the highest priority. Forge-backed clusters only.
-	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
+	// Infra Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+	Infra *InfraControlPlaneProvider `json:"infra,omitempty"`
 
 	// MaxSurge Cluster-level surge capacity for control plane nodes during upgrades (max 1).
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
+	// Nico The settable subset of the Nico control plane fields.
+	Nico *NicoControlPlaneProviderCreate `json:"nico,omitempty"`
+
 	// NodeLabels A list of labels to apply to control plane nodes.
 	NodeLabels []string `json:"nodeLabels,omitempty"`
 
-	// OSProfile The name of the OS profile for Forge-backed control plane nodes. Required for Forge clusters, must be omitted for CAPI clusters.
-	OSProfile string `json:"osProfile,omitempty"`
-
 	// ProvisioningMonitorDisabled When true, the timeout-based provisioning monitor is paused for control plane nodes.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
-
-	// SSHKeyGroupIDs The IDs of the SSH key groups for control plane nodes. Forge clusters only.
-	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
-
-	// SubnetIDs The IDs of the subnets to use for control plane nodes. Forge clusters without native networking. Either subnetIDs or vpcPrefixIDs must be provided for Forge clusters.
-	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
 
 	// SystemReservedMemory The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
 
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for control plane nodes. When omitted, the server-side default for the site is applied.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
-
-	// VpcPrefixIDs The IDs of the VPC prefixes to use for control plane nodes. Forge clusters with native networking. Either subnetIDs or vpcPrefixIDs must be provided for Forge clusters.
-	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
-// CreateClusterRequest defines model for CreateClusterRequest.
+// CreateClusterRequest Exactly one provider payload is required: supply either `nico` or `infra`.
+// A request carrying both, or neither, is rejected with 400.
 type CreateClusterRequest struct {
 	// Name The name of the cluster. Must be a lowercase DNS label, because CWE derives the names of the cluster's CAPI resources and its node names from it.
 	Name string `json:"name"`
-
-	// OrgID The ID of the NGC organization that owns the cluster
-	OrgID string `json:"orgID,omitempty"`
-
-	// SiteID Selects the infrastructure mode for the cluster.
-	// Use a registered non-nil site ID for Forge-backed clusters.
-	// Use the nil UUID default site for CAPI-backed clusters.
-	SiteID openapi_types.UUID `json:"siteID,omitempty"`
-
-	// VpcID The ID of the VPC where the Forge-backed cluster will be created. Required for Forge-backed clusters and omitted for CAPI-backed clusters.
-	VpcID openapi_types.UUID `json:"vpcID,omitempty"`
 
 	// ControlPlaneKubernetesVersion The version of Kubernetes to use for the cluster.
 	// Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
@@ -356,17 +296,24 @@ type CreateClusterRequest struct {
 	// TeleportEnabled Enable Teleport SSH enrollment for nodes in this cluster. When omitted, the server-side default for the site is applied.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
-	// NodePools The initial set of node pools to create for the cluster
-	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
-
 	// ControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
+	// Exactly one provider payload is required: supply either `nico` or `infra`.
+	// A request carrying both, or neither, is rejected with 400.
 	ControlPlaneConfig *CreateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
+
+	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
+	// directly. Not to be used merely because a cluster is provisioned through CAPI —
+	// `nico` clusters may be too. Mutually exclusive with `nico`.
+	Infra *InfraClusterProvider `json:"infra,omitempty"`
 
 	// Network Non-default pod or service CIDRs are supported only with the ovn-kubernetes CNI plugin.
 	Network *ClusterNetworkCreateConfig `json:"network,omitempty"`
 
-	// CapiInfraCluster Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource. Required for CAPI-backed clusters and omitted for Forge-backed clusters.
-	CapiInfraCluster map[string]interface{} `json:"capiInfraCluster,omitempty"`
+	// Nico Nico identity fields for a cluster. Mutually exclusive with `infra`.
+	Nico *NicoClusterProvider `json:"nico,omitempty"`
+
+	// NodePools The initial set of node pools to create for the cluster
+	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
 }
 
 // CreateNodePoolRequest defines model for CreateNodePoolRequest.
@@ -376,27 +323,6 @@ type CreateNodePoolRequest struct {
 
 	// Name The name of the node pool (must conform to Kubernetes resource naming standards)
 	Name string `json:"name"`
-
-	// SubnetIDs The IDs of the subnets to use for the Forge instances for the nodes in the pool. Required when the site does not have native networking enabled (isNativeNetworkingEnabled is false). Either subnetIDs or vpcPrefixIDs must be provided.
-	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
-
-	// VpcPrefixIDs The IDs of the VPC prefixes to use for the Forge instances for the nodes in the pool. Required when the site has native networking enabled (isNativeNetworkingEnabled is true). Either subnetIDs or vpcPrefixIDs must be provided.
-	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
-
-	// InstanceTypeID The ID of the instance type to use for the Forge instances for the nodes in the pool
-	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
-
-	// InfinibandPartitionID The ID of the infiniband partition to use for the Forge instances for the nodes in the pool
-	InfinibandPartitionID *openapi_types.UUID `json:"infinibandPartitionID,omitempty"`
-
-	// SSHKeyGroupIDs The IDs of the SSH key groups to use for the Forge instances for the nodes in the pool
-	SSHKeyGroupIDs *[]openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
-
-	// OSProfile The name of the OS profile to use for Forge-backed nodes in the pool. Must be omitted for CAPI-backed pools.
-	OSProfile string `json:"osProfile,omitempty"`
-
-	// ConfigProfile The name of the config profile to use for the nodes in the pool. Required for Forge-backed pools and optional for CAPI-backed pools.
-	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// SystemReservedMemory The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
@@ -419,6 +345,18 @@ type CreateNodePoolRequest struct {
 	// AutoProvisionDisabled Whether the node pool is disabled for auto-provisioning.
 	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
 
+	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
+	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// Nico Nico fields for a node pool. Mutually exclusive with `infra`.
+	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
+
+	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
+	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
+	// Generated names must fit within 63 characters (Kubernetes Node name limit).
+	// Maximum prefix length depends on cluster name length.
+	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
+
 	// AutoModeDisabled Whether the node pool is disabled for auto-mode (automatic node recycling).
 	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
 
@@ -430,30 +368,6 @@ type CreateNodePoolRequest struct {
 
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
-
-	// NvLinkLogicalPartitionID The ID of the NVLink logical partition to use for the Forge instances for the nodes in the pool
-	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
-
-	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
-
-	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
-	DiskSelectionStrategy DiskSelectionStrategyCreate `json:"diskSelectionStrategy,omitempty"`
-
-	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
-	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
-	// Generated names must fit within 63 characters (Kubernetes Node name limit).
-	// Maximum prefix length depends on cluster name length.
-	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource. Required for node pools in CAPI-backed clusters and omitted for Forge-backed clusters.
-	CapiInfraMachineTemplate map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiBootstrapFiles Additional cloud-init `write_files` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
-	CapiBootstrapFiles []CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiPreKubeadmCommands Additional cloud-init `runcmd` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
-	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
 }
 
 // DeleteNodeRequest defines model for DeleteNodeRequest.
@@ -492,6 +406,91 @@ type DiskSelectionStrategyCreate string
 type GenericError struct {
 	// Message The error message
 	Message string `json:"message"`
+}
+
+// InfraClusterProvider CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
+// directly. Not to be used merely because a cluster is provisioned through CAPI —
+// `nico` clusters may be too. Mutually exclusive with `nico`.
+type InfraClusterProvider struct {
+	// Cluster Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource
+	Cluster map[string]interface{} `json:"cluster,omitempty"`
+}
+
+// InfraControlPlaneProvider Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+type InfraControlPlaneProvider struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed control plane nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraControlPlaneProviderUpdate The mutable infra provider control plane fields. Every field carries three states: omitted
+// leaves the stored value alone, a value replaces it, and an empty value clears it.
+type InfraControlPlaneProviderUpdate struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed control plane nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraNodePoolProvider Infra provider fields for a node pool. Mutually exclusive with `nico`.
+type InfraNodePoolProvider struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraNodePoolProviderUpdate The mutable infra provider node pool fields. Every field carries three states: omitted
+// leaves the stored value alone, a value replaces it, and an empty value clears it.
+type InfraNodePoolProviderUpdate struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infra provider MachineTemplate resource
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod *SpireAttestationMethod `json:"spireAttestationMethod,omitempty"`
+}
+
+// InfraNodeSetProvider Infra provider fields for a node set (read-only snapshot).
+type InfraNodeSetProvider struct {
+	// BootstrapFiles Cloud-init write_files entries for CAPI-backed nodes
+	BootstrapFiles []CloudInitFile `json:"bootstrapFiles,omitempty"`
+
+	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
+	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
+	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+
+	// SpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
+	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
 }
 
 // ListCNIPluginsResponse defines model for ListCNIPluginsResponse.
@@ -547,6 +546,177 @@ type MachineHealthIssue struct {
 	Details string `json:"details,omitempty"`
 }
 
+// NicoClusterProvider Nico identity fields for a cluster. Mutually exclusive with `infra`.
+type NicoClusterProvider struct {
+	// OrgID The ID of the NGC organization that owns the cluster
+	OrgID string `json:"orgID,omitempty"`
+
+	// SiteID The registered Forge site ID for the cluster
+	SiteID openapi_types.UUID `json:"siteID,omitempty"`
+
+	// VpcID The VPC ID where the Nico cluster is created
+	VpcID openapi_types.UUID `json:"vpcID,omitempty"`
+}
+
+// NicoControlPlaneProvider The stored Nico cluster-level control plane fields, as reported on read.
+// Requests use `NicoControlPlaneProviderCreate` and `NicoControlPlaneProviderUpdate`,
+// which omit the fields that direction cannot set. Mutually exclusive with `infra`.
+type NicoControlPlaneProvider struct {
+	// ConfigProfile Config profile name for control plane nodes
+	ConfigProfile string `json:"configProfile,omitempty"`
+
+	// DiskSelectionStrategy Effective disk selection strategy for control plane nodes (always smallest).
+	// Not configurable through the API.
+	DiskSelectionStrategy *DiskSelectionStrategyCreate `json:"diskSelectionStrategy,omitempty"`
+
+	// InstanceTypePreference Ordered Nico instance type IDs; index 0 is highest priority
+	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
+
+	// OSProfile OS profile name for Nico control plane nodes
+	OSProfile string `json:"osProfile,omitempty"`
+
+	// SSHKeyGroupIDs SSH key group IDs for control plane nodes
+	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
+
+	// SubnetIDs Subnet IDs for control plane nodes when native networking is disabled
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// VpcPrefixIDs VPC prefix IDs for control plane nodes when native networking is enabled
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
+// NicoControlPlaneProviderCreate The settable subset of the Nico control plane fields.
+type NicoControlPlaneProviderCreate struct {
+	// ConfigProfile Config profile name for control plane nodes
+	ConfigProfile string `json:"configProfile,omitempty"`
+
+	// InstanceTypePreference Ordered Nico instance type IDs; index 0 is highest priority
+	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
+
+	// OSProfile OS profile name for Nico control plane nodes
+	OSProfile string `json:"osProfile,omitempty"`
+
+	// SSHKeyGroupIDs SSH key group IDs for control plane nodes
+	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
+
+	// SubnetIDs Subnet IDs for control plane nodes when native networking is disabled
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// VpcPrefixIDs VPC prefix IDs for control plane nodes when native networking is enabled
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
+// NicoControlPlaneProviderUpdate The mutable subset of the Nico control plane fields.
+// Every field carries three states: omitted leaves the stored value alone, a value
+// replaces it, and an empty value clears it. Clearing a field the control plane
+// requires is rejected.
+type NicoControlPlaneProviderUpdate struct {
+	// ConfigProfile Config profile name for control plane nodes
+	ConfigProfile *string `json:"configProfile,omitempty"`
+
+	// InstanceTypePreference Ordered Nico instance type IDs; index 0 is highest priority
+	InstanceTypePreference []openapi_types.UUID `json:"instanceTypePreference,omitempty"`
+
+	// OSProfile OS profile name for Nico control plane nodes
+	OSProfile *string `json:"osProfile,omitempty"`
+
+	// SSHKeyGroupIDs SSH key group IDs for control plane nodes
+	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
+
+	// SubnetIDs Subnet IDs for control plane nodes when native networking is disabled
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// VpcPrefixIDs VPC prefix IDs for control plane nodes when native networking is enabled
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
+// NicoNodePoolProvider Nico fields for a node pool. Mutually exclusive with `infra`.
+type NicoNodePoolProvider struct {
+	// ConfigProfile Config profile name for nodes
+	ConfigProfile string `json:"configProfile,omitempty"`
+
+	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
+	DiskSelectionStrategy DiskSelectionStrategyCreate `json:"diskSelectionStrategy,omitempty"`
+
+	// InfinibandPartitionID Infiniband partition ID for Nico instances
+	InfinibandPartitionID *openapi_types.UUID `json:"infinibandPartitionID,omitempty"`
+
+	// InstanceTypeID Nico instance type ID
+	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
+
+	// NvLinkLogicalPartitionID NVLink logical partition ID for Nico instances
+	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
+
+	// OSProfile OS profile name for Nico nodes
+	OSProfile string `json:"osProfile,omitempty"`
+
+	// SSHKeyGroupIDs SSH key group IDs for Nico instances
+	SSHKeyGroupIDs *[]openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
+
+	// SubnetIDs Subnet IDs for Nico instances when native networking is disabled
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// VpcPrefixIDs VPC prefix IDs for Nico instances when native networking is enabled
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
+// NicoNodePoolProviderUpdate The mutable subset of the Nico node pool fields. `instanceTypeID`,
+// `infinibandPartitionID`, `nvLinkLogicalPartitionID` and `sshKeyGroupIDs`
+// are fixed when the pool is created and are therefore absent here: sending
+// one is rejected with 400. A body echoed from GET must have them stripped.
+type NicoNodePoolProviderUpdate struct {
+	// ConfigProfile Config profile name for nodes. Omit = no change. An empty string is a
+	// request to clear it, which is rejected: a Nico node pool always has a
+	// config profile.
+	ConfigProfile *string `json:"configProfile,omitempty"`
+
+	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
+	DiskSelectionStrategy *DiskSelectionStrategy `json:"diskSelectionStrategy,omitempty"`
+
+	// OSProfile OS profile name for Nico nodes. Omit = no change. An empty
+	// string is a request to clear it, which is rejected: a Nico node pool
+	// always has an OS profile.
+	OSProfile *string `json:"osProfile,omitempty"`
+
+	// SubnetIDs Subnet IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
+	// Allowed only when the site does not have native networking.
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// VpcPrefixIDs VPC prefix IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
+	// Allowed only when the site has native networking.
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
+// NicoNodeProvider Nico runtime fields for a provisioned node.
+type NicoNodeProvider struct {
+	// InstanceID Nico instance ID created for the node
+	InstanceID string `json:"instanceID,omitempty"`
+
+	// InstanceTypeID Nico instance type ID used to provision the node
+	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
+
+	// MachineID Nico machine ID for the node
+	MachineID string `json:"machineID,omitempty"`
+}
+
+// NicoNodeSetProvider Nico fields for a node set (read-only snapshot).
+type NicoNodeSetProvider struct {
+	// ConfigProfile Config profile name for nodes
+	ConfigProfile string `json:"configProfile,omitempty"`
+
+	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
+	DiskSelectionStrategy DiskSelectionStrategyCreate `json:"diskSelectionStrategy,omitempty"`
+
+	// OSProfile OS profile name for Nico nodes
+	OSProfile string `json:"osProfile,omitempty"`
+
+	// SubnetIDs Subnet IDs for Nico instances when native networking is disabled
+	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
+
+	// VpcPrefixIDs VPC prefix IDs for Nico instances when native networking is enabled
+	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
+}
+
 // Node defines model for Node.
 type Node struct {
 	// ID The ID of the node
@@ -561,23 +731,17 @@ type Node struct {
 	// Name The name of the node
 	Name string `json:"name"`
 
-	// ForgeInstanceID The ID of the Forge instance that was created for the node
-	ForgeInstanceID string `json:"forgeInstanceID,omitempty"`
-
-	// ForgeMachineID The machine ID of the Forge instance that was created for the node
-	ForgeMachineID string `json:"forgeMachineID,omitempty"`
-
 	// IP The IP address of the node
 	IP string `json:"ip,omitempty"`
 
-	// InstanceTypeID The Forge instance type ID used to provision this node
-	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
+	// Conditions Conditions representing various aspects of the node's state
+	Conditions NodeConditions `json:"conditions"`
+
+	// Nico Nico runtime fields for a provisioned node.
+	Nico *NicoNodeProvider `json:"nico,omitempty"`
 
 	// ControlPlane True if this is a control-plane node (managed by a control-plane node pool or the control-plane controller)
 	ControlPlane bool `json:"controlPlane"`
-
-	// Conditions Conditions representing various aspects of the node's state
-	Conditions NodeConditions `json:"conditions"`
 }
 
 // NodeConditions Conditions representing various aspects of the node's state
@@ -651,27 +815,6 @@ type NodePool struct {
 	// Name The name of the node pool
 	Name string `json:"name"`
 
-	// SubnetIDs The IDs of the subnets where the nodes in the pool are located. Present when the site does not have native networking enabled (isNativeNetworkingEnabled is false).
-	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
-
-	// VpcPrefixIDs The IDs of the VPC prefixes where the nodes in the pool are located. Present when the site has native networking enabled (isNativeNetworkingEnabled is true).
-	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
-
-	// InstanceTypeID The ID of the instance type used by the nodes in the pool
-	InstanceTypeID openapi_types.UUID `json:"instanceTypeID"`
-
-	// InfinibandPartitionID The ID of the infiniband partition used by the nodes in the pool
-	InfinibandPartitionID *openapi_types.UUID `json:"infinibandPartitionID,omitempty"`
-
-	// SSHKeyGroupIDs The IDs of the SSH key groups to be used for the node pool
-	SSHKeyGroupIDs []openapi_types.UUID `json:"sshKeyGroupIDs"`
-
-	// OSProfile The name of the OS profile used by Forge-backed nodes in the pool. Empty for CAPI-backed pools.
-	OSProfile string `json:"osProfile"`
-
-	// ConfigProfile The name of the config profile used by the nodes in the pool
-	ConfigProfile string `json:"configProfile"`
-
 	// KubernetesVersion The desired version of Kubernetes for nodes in the pool
 	KubernetesVersion string `json:"kubernetesVersion"`
 
@@ -696,8 +839,23 @@ type NodePool struct {
 	// AutoProvisionDisabled Whether the node pool is disabled for auto-provisioning.
 	AutoProvisionDisabled bool `json:"autoProvisionDisabled"`
 
+	// Conditions Conditions representing various aspects of the node pool's state
+	Conditions NodePoolConditions `json:"conditions"`
+
 	// CurrentNodeSetID The ID of the current node set for the node pool
 	CurrentNodeSetID *openapi_types.UUID `json:"currentNodeSetID"`
+
+	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
+	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// Nico Nico fields for a node pool. Mutually exclusive with `infra`.
+	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
+
+	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
+	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
+	// Generated names must fit within 63 characters (Kubernetes Node name limit).
+	// Maximum prefix length depends on cluster name length.
+	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
 	// AutoModeDisabled Whether the node pool is disabled for auto-mode (automatic node recycling).
 	AutoModeDisabled bool `json:"autoModeDisabled"`
@@ -714,33 +872,6 @@ type NodePool struct {
 
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
-
-	// NvLinkLogicalPartitionID The ID of the NVLink logical partition used by the nodes in the pool
-	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
-
-	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	CapiSpireAttestationMethod *SpireAttestationMethod `json:"capiSpireAttestationMethod,omitempty"`
-
-	// Conditions Conditions representing various aspects of the node pool's state
-	Conditions NodePoolConditions `json:"conditions"`
-
-	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
-	DiskSelectionStrategy DiskSelectionStrategy `json:"diskSelectionStrategy"`
-
-	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
-	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
-	// Generated names must fit within 63 characters (Kubernetes Node name limit).
-	// Maximum prefix length depends on cluster name length.
-	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource.
-	CapiInfraMachineTemplate *map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiBootstrapFiles Custom cloud-init `write_files` entries configured for this node pool. Present only for CAPI-backed pools.
-	CapiBootstrapFiles *[]CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiPreKubeadmCommands Custom cloud-init `runcmd` entries configured for this node pool. Present only for CAPI-backed pools.
-	CapiPreKubeadmCommands *[]string `json:"capiPreKubeadmCommands,omitempty"`
 }
 
 // NodePoolConditions Conditions representing various aspects of the node pool's state
@@ -783,31 +914,12 @@ type NodePoolConfigHistory struct {
 	Changes []NodePoolConfigChange `json:"changes"`
 }
 
-// NodePoolCreateConfig defines model for NodePoolCreateConfig.
+// NodePoolCreateConfig A node pool follows its cluster's provider, so exactly one provider payload is
+// required: supply either `nico` or `infra`. A request carrying both, or neither,
+// is rejected with 400.
 type NodePoolCreateConfig struct {
 	// Name The name of the node pool (must conform to Kubernetes resource naming standards)
 	Name string `json:"name"`
-
-	// SubnetIDs The IDs of the subnets to use for the Forge instances for the nodes in the pool. Required when the site does not have native networking enabled (isNativeNetworkingEnabled is false). Either subnetIDs or vpcPrefixIDs must be provided.
-	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
-
-	// VpcPrefixIDs The IDs of the VPC prefixes to use for the Forge instances for the nodes in the pool. Required when the site has native networking enabled (isNativeNetworkingEnabled is true). Either subnetIDs or vpcPrefixIDs must be provided.
-	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
-
-	// InstanceTypeID The ID of the instance type to use for the Forge instances for the nodes in the pool
-	InstanceTypeID openapi_types.UUID `json:"instanceTypeID,omitempty"`
-
-	// InfinibandPartitionID The ID of the infiniband partition to use for the Forge instances for the nodes in the pool
-	InfinibandPartitionID *openapi_types.UUID `json:"infinibandPartitionID,omitempty"`
-
-	// SSHKeyGroupIDs The IDs of the SSH key groups to use for the Forge instances for the nodes in the pool
-	SSHKeyGroupIDs *[]openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
-
-	// OSProfile The name of the OS profile to use for Forge-backed nodes in the pool. Must be omitted for CAPI-backed pools.
-	OSProfile string `json:"osProfile,omitempty"`
-
-	// ConfigProfile The name of the config profile to use for the nodes in the pool. Required for Forge-backed pools and optional for CAPI-backed pools.
-	ConfigProfile string `json:"configProfile,omitempty"`
 
 	// SystemReservedMemory The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
@@ -827,6 +939,18 @@ type NodePoolCreateConfig struct {
 	// Description An optional description for the node pool.
 	Description *string `json:"description,omitempty"`
 
+	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
+	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
+
+	// Nico Nico fields for a node pool. Mutually exclusive with `infra`.
+	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
+
+	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
+	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
+	// Generated names must fit within 63 characters (Kubernetes Node name limit).
+	// Maximum prefix length depends on cluster name length.
+	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
+
 	// AutoProvisionDisabled Whether the node pool is disabled for auto-provisioning.
 	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
 
@@ -841,30 +965,6 @@ type NodePoolCreateConfig struct {
 
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
-
-	// NvLinkLogicalPartitionID The ID of the NVLink logical partition to use for the Forge instances for the nodes in the pool
-	NvLinkLogicalPartitionID *openapi_types.UUID `json:"nvLinkLogicalPartitionID,omitempty"`
-
-	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
-
-	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
-	DiskSelectionStrategy DiskSelectionStrategyCreate `json:"diskSelectionStrategy,omitempty"`
-
-	// NodeNamePrefix Prefix for generated node names: <cluster name>-<nodeNamePrefix>-<suffix>.
-	// CWE assigns suffix as a 4-digit decimal number (0000–9999).
-	// Generated names must fit within 63 characters (Kubernetes Node name limit).
-	// Maximum prefix length depends on cluster name length.
-	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource. Required for node pools in CAPI-backed clusters and omitted for Forge-backed clusters.
-	CapiInfraMachineTemplate map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiBootstrapFiles Additional cloud-init `write_files` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
-	CapiBootstrapFiles []CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiPreKubeadmCommands Additional cloud-init `runcmd` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
-	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
 }
 
 // NodeSet defines model for NodeSet.
@@ -872,23 +972,11 @@ type NodeSet struct {
 	// DesiredCount The desired number of nodes in the node set
 	DesiredCount int `json:"desiredCount"`
 
-	// CapiBootstrapFiles Cloud-init `write_files` entries copied from the parent node pool. Present only for CAPI-backed node sets.
-	CapiBootstrapFiles *[]CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource copied from the parent node pool.
-	CapiInfraMachineTemplate *map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiPreKubeadmCommands Cloud-init `runcmd` entries copied from the parent node pool. Present only for CAPI-backed node sets.
-	CapiPreKubeadmCommands *[]string `json:"capiPreKubeadmCommands,omitempty"`
-
-	// ConfigProfile The name of the config profile to use for the nodes in the pool
-	ConfigProfile string `json:"configProfile"`
-
-	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
-	DiskSelectionStrategy DiskSelectionStrategy `json:"diskSelectionStrategy"`
-
 	// ID The ID of the node set
 	ID openapi_types.UUID `json:"id"`
+
+	// Infra Infra provider fields for a node set (read-only snapshot).
+	Infra *InfraNodeSetProvider `json:"infra,omitempty"`
 
 	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Empty when the kubelet configuration patch uses its default (2Gi).
 	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`
@@ -896,11 +984,11 @@ type NodeSet struct {
 	// KubernetesVersion The version of Kubernetes for nodes in the node set
 	KubernetesVersion string `json:"kubernetesVersion"`
 
+	// Nico Nico fields for a node set (read-only snapshot).
+	Nico *NicoNodeSetProvider `json:"nico,omitempty"`
+
 	// NodePoolID The ID of the node pool that owns the node set
 	NodePoolID openapi_types.UUID `json:"nodePoolID"`
-
-	// OSProfile The name of the OS profile to use for Forge-backed nodes in the pool. Empty for CAPI-backed node sets.
-	OSProfile string `json:"osProfile"`
 
 	// SystemReservedMemory The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
 	SystemReservedMemory string `json:"systemReservedMemory"`
@@ -921,60 +1009,44 @@ type SpireAttestationMethod string
 // SpireAttestationMethodCreate How CWE configures SPIRE agent attestation for CAPI-backed nodes.
 type SpireAttestationMethodCreate string
 
-// UpdateClusterControlPlaneConfig defines model for UpdateClusterControlPlaneConfig.
+// UpdateClusterControlPlaneConfig `nico` and `infra` are mutually exclusive: supply at most one of them (both
+// may be omitted). A request carrying both is rejected with 400, as is a
+// provider payload that does not match the cluster.
 type UpdateClusterControlPlaneConfig struct {
-	// CapiBootstrapFiles Replace the cloud-init `write_files` entries for CAPI-backed control plane nodes.
-	CapiBootstrapFiles *[]CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiInfraMachineTemplate Replace the CAPI infrastructure MachineTemplate manifest for control plane nodes. CAPI clusters only.
-	CapiInfraMachineTemplate *map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiPreKubeadmCommands Replace the cloud-init `runcmd` entries for CAPI-backed control plane nodes.
-	CapiPreKubeadmCommands *[]string `json:"capiPreKubeadmCommands,omitempty"`
-
-	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	CapiSpireAttestationMethod SpireAttestationMethodCreate `json:"capiSpireAttestationMethod,omitempty"`
-
-	// ConfigProfile Set the config profile for control plane nodes.
-	ConfigProfile *string `json:"configProfile,omitempty"`
-
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1.
 	DesiredCount *int `json:"desiredCount,omitempty"`
 
-	// InstanceTypePreference Replace the ordered Forge instance type preference list for cluster-level control plane nodes.
-	// Index 0 is the highest priority.
-	InstanceTypePreference *[]openapi_types.UUID `json:"instanceTypePreference,omitempty"`
+	// Infra The mutable infra provider control plane fields. Every field carries three states: omitted
+	// leaves the stored value alone, a value replaces it, and an empty value clears it.
+	Infra *InfraControlPlaneProviderUpdate `json:"infra,omitempty"`
 
 	// MaxSurge Set cluster-level max surge.
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
+	// Nico The mutable subset of the Nico control plane fields.
+	// Every field carries three states: omitted leaves the stored value alone, a value
+	// replaces it, and an empty value clears it. Clearing a field the control plane
+	// requires is rejected.
+	Nico *NicoControlPlaneProviderUpdate `json:"nico,omitempty"`
+
 	// NodeLabels Replace the labels applied to control plane nodes.
 	NodeLabels *[]string `json:"nodeLabels,omitempty"`
 
-	// OSProfile Set the OS profile for Forge-backed control plane nodes.
-	OSProfile *string `json:"osProfile,omitempty"`
-
 	// ProvisioningMonitorDisabled Pause or resume the provisioning monitor for cluster-level control plane nodes.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
-
-	// SSHKeyGroupIDs Replace the SSH key groups used for control plane nodes. Forge clusters only.
-	SSHKeyGroupIDs *[]openapi_types.UUID `json:"sshKeyGroupIDs,omitempty"`
-
-	// SubnetIDs Replace the subnet IDs used for control plane nodes. Forge clusters without native networking.
-	SubnetIDs *[]openapi_types.UUID `json:"subnetIDs,omitempty"`
 
 	// SystemReservedMemory Set the reserved system memory for control plane nodes (e.g., "16Gi").
 	SystemReservedMemory *string `json:"systemReservedMemory,omitempty"`
 
 	// TeleportEnabled Enable or disable Teleport SSH enrollment for control plane nodes.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
-
-	// VpcPrefixIDs Replace the VPC prefix IDs used for control plane nodes. Forge clusters with native networking.
-	VpcPrefixIDs *[]openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
 // UpdateClusterRequest defines model for UpdateClusterRequest.
 type UpdateClusterRequest struct {
+	// ControlPlaneConfig `nico` and `infra` are mutually exclusive: supply at most one of them (both
+	// may be omitted). A request carrying both is rejected with 400, as is a
+	// provider payload that does not match the cluster.
 	ControlPlaneConfig *UpdateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
 	// ControlPlaneKubernetesVersion Target Kubernetes version for control plane upgrade (must be greater than current version).
@@ -1022,7 +1094,9 @@ type UpdateInProgress struct {
 // UpdateInProgressType The kind of long-running cluster mutation in flight.
 type UpdateInProgressType string
 
-// UpdateNodePoolRequest defines model for UpdateNodePoolRequest.
+// UpdateNodePoolRequest `nico` and `infra` are mutually exclusive: supply at most one of them (both
+// may be omitted). A request carrying both is rejected with 400, as is a
+// provider payload that does not match the node pool's cluster.
 type UpdateNodePoolRequest struct {
 	// AutoModeDisabled Whether the node pool is disabled for auto-mode (automatic node recycling).
 	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
@@ -1030,29 +1104,15 @@ type UpdateNodePoolRequest struct {
 	// AutoProvisionDisabled Whether the node pool is disabled for auto-provisioning.
 	AutoProvisionDisabled *bool `json:"autoProvisionDisabled,omitempty"`
 
-	// CapiBootstrapFiles Cloud-init `write_files` entries to set on a CAPI-backed node pool (replaces existing). Omit = no change. Empty array = clear all custom files.
-	CapiBootstrapFiles []CloudInitFile `json:"capiBootstrapFiles,omitempty"`
-
-	// CapiInfraMachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource. Present only for CAPI-backed node pools.
-	CapiInfraMachineTemplate *map[string]interface{} `json:"capiInfraMachineTemplate,omitempty"`
-
-	// CapiPreKubeadmCommands Cloud-init `runcmd` entries to set on a CAPI-backed node pool (replaces existing). Omit = no change. Empty array = clear all custom commands.
-	CapiPreKubeadmCommands []string `json:"capiPreKubeadmCommands,omitempty"`
-
-	// CapiSpireAttestationMethod How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-	CapiSpireAttestationMethod *SpireAttestationMethod `json:"capiSpireAttestationMethod,omitempty"`
-
-	// ConfigProfile The name of the config profile to use for the nodes in the set
-	ConfigProfile *string `json:"configProfile,omitempty"`
-
 	// Description An optional description for the node pool.
 	Description *string `json:"description,omitempty"`
 
 	// DesiredNodeCount The desired number of nodes in the pool
 	DesiredNodeCount *int `json:"desiredNodeCount,omitempty"`
 
-	// DiskSelectionStrategy The strategy to use for selecting the OS install disk on nodes.
-	DiskSelectionStrategy *DiskSelectionStrategy `json:"diskSelectionStrategy,omitempty"`
+	// Infra The mutable infra provider node pool fields. Every field carries three states: omitted
+	// leaves the stored value alone, a value replaces it, and an empty value clears it.
+	Infra *InfraNodePoolProviderUpdate `json:"infra,omitempty"`
 
 	// KubeReservedMemory The amount of memory to reserve for Kubernetes processes (e.g., "2Gi", "250Mi"). Set an empty value to restore the kubelet configuration patch default (2Gi).
 	KubeReservedMemory *string `json:"kubeReservedMemory,omitempty"`
@@ -1067,8 +1127,11 @@ type UpdateNodePoolRequest struct {
 	// - 0: Sequential upgrade (teardown then provision)
 	MaxSurge *int `json:"maxSurge,omitempty"`
 
-	// OSProfile The name of the OS profile to use for Forge-backed nodes in the set. Omit to leave unchanged. Not supported for CAPI-backed node pools.
-	OSProfile *string `json:"osProfile,omitempty"`
+	// Nico The mutable subset of the Nico node pool fields. `instanceTypeID`,
+	// `infinibandPartitionID`, `nvLinkLogicalPartitionID` and `sshKeyGroupIDs`
+	// are fixed when the pool is created and are therefore absent here: sending
+	// one is rejected with 400. A body echoed from GET must have them stripped.
+	Nico *NicoNodePoolProviderUpdate `json:"nico,omitempty"`
 
 	// ProvisioningMonitorDisabled Whether the timeout-based provisioning monitor is paused for this node pool.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
@@ -1076,19 +1139,11 @@ type UpdateNodePoolRequest struct {
 	// RecycleBudget The maximum number of nodes that can be recycled at once.
 	RecycleBudget *int `json:"recycleBudget,omitempty"`
 
-	// SubnetIDs Subnet IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
-	// Allowed only when the site does not have native networking.
-	SubnetIDs []openapi_types.UUID `json:"subnetIDs,omitempty"`
-
 	// SystemReservedMemory The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
 	SystemReservedMemory *string `json:"systemReservedMemory,omitempty"`
 
 	// TeleportEnabled Enable or disable Teleport SSH enrollment for nodes in this pool.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
-
-	// VpcPrefixIDs VPC prefix IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
-	// Allowed only when the site has native networking.
-	VpcPrefixIDs []openapi_types.UUID `json:"vpcPrefixIDs,omitempty"`
 }
 
 // Forbidden defines model for Forbidden.

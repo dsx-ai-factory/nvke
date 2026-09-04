@@ -36,7 +36,7 @@ type ProvisionedMachineTemplateSpec struct {
 // ProvisionedMachineTemplate is the Schema for the
 // provisionedmachinetemplates API.
 //
-// A caller sends this kind as the capiInfraMachineTemplate of a node pool or of
+// A caller sends this kind as the infra.machineTemplate of a node pool or of
 // the cluster control plane configuration. The template usually carries an
 // empty spec, because the provider creates nothing: every input it needs is in
 // the inventory of the ProvisionedCluster.

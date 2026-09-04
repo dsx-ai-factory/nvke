@@ -90,7 +90,7 @@ func TestCreate_SendsTheSiteSpecAsACluster(t *testing.T) {
 	if cluster.Name != "nke-site" {
 		t.Errorf("created cluster name = %q, want %q", cluster.Name, "nke-site")
 	}
-	if client.created == nil || client.created.CapiInfraCluster == nil {
+	if client.created == nil || client.created.Infra == nil || client.created.Infra.Cluster == nil {
 		t.Fatal("Create did not send a CAPI infrastructure cluster")
 	}
 }

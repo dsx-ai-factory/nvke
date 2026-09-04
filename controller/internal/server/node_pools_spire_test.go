@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/NVIDIA/nke/controller/api"
@@ -17,52 +16,57 @@ import (
 )
 
 func TestAPINodePoolFromDB_SpireAttestationMethod(t *testing.T) {
-	t.Run("omits spire attestation method when unset", func(t *testing.T) {
+	nodePoolWithCAPIMethod := func(method db.SpireAttestationMethod) *db.NodePool {
+		pool := &db.NodePool{}
+		pool.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: method})
+		return pool
+	}
+
+	t.Run("omits the infra payload for a pool that has none", func(t *testing.T) {
 		apiNodePool := apiNodePoolFromDB(&db.NodePool{})
-		require.Nil(t, apiNodePool.CapiSpireAttestationMethod)
+		require.Nil(t, apiNodePool.Infra)
 	})
 
 	t.Run("returns tpm attestation method when set", func(t *testing.T) {
-		apiNodePool := apiNodePoolFromDB(&db.NodePool{
-			CapiSpireAttestationMethod: db.SpireAttestationMethodTPM,
-		})
+		apiNodePool := apiNodePoolFromDB(nodePoolWithCAPIMethod(db.SpireAttestationMethodTPM))
 
-		require.NotNil(t, apiNodePool.CapiSpireAttestationMethod)
-		require.Equal(t, api.SpireAttestationMethodTpm, *apiNodePool.CapiSpireAttestationMethod)
+		require.NotNil(t, apiNodePool.Infra)
+		require.Equal(t, api.SpireAttestationMethodCreateTpm, apiNodePool.Infra.SpireAttestationMethod)
 	})
 
 	t.Run("returns join token attestation method when set", func(t *testing.T) {
-		apiNodePool := apiNodePoolFromDB(&db.NodePool{
-			CapiSpireAttestationMethod: db.SpireAttestationMethodJoinToken,
-		})
+		apiNodePool := apiNodePoolFromDB(nodePoolWithCAPIMethod(db.SpireAttestationMethodJoinToken))
 
-		require.NotNil(t, apiNodePool.CapiSpireAttestationMethod)
-		require.Equal(t, api.SpireAttestationMethodJoinToken, *apiNodePool.CapiSpireAttestationMethod)
+		require.NotNil(t, apiNodePool.Infra)
+		require.Equal(t, api.SpireAttestationMethodCreateJoinToken, apiNodePool.Infra.SpireAttestationMethod)
 	})
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiresCAPITemplate(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
-	err := service.validateCreateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.New()}, &api.CreateNodePoolRequest{
-		Name:                       "worker",
-		NodeNamePrefix:             "worker",
-		ConfigProfile:              "default",
-		DesiredNodeCount:           1,
-		CapiSpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
+	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), &api.CreateNodePoolRequest{
+		Name:             "worker",
+		NodeNamePrefix:   "worker",
+		DesiredNodeCount: 1,
+		Infra: &api.InfraNodePoolProvider{
+			SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
+		},
 	})
-	require.EqualError(t, err, "capiSpireAttestationMethod is not supported for Forge clusters")
+	require.EqualError(t, err, "infra.machineTemplate is required")
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiredForCAPIClusters(t *testing.T) {
 	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
 
-	err := service.validateCreateNodePoolRequest(context.Background(), db.Cluster{SiteID: uuid.Nil}, &api.CreateNodePoolRequest{
-		Name:                     "worker",
-		NodeNamePrefix:           "worker",
-		ConfigProfile:            "default",
-		DesiredNodeCount:         1,
-		CapiInfraMachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
-	})
-	require.EqualError(t, err, "capiSpireAttestationMethod is required for CAPI clusters")
+	req := &api.CreateNodePoolRequest{
+		Name:             "worker",
+		NodeNamePrefix:   "worker",
+		DesiredNodeCount: 1,
+		Infra: &api.InfraNodePoolProvider{
+			MachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+		},
+	}
+	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), req)
+	require.EqualError(t, err, "infra.spireAttestationMethod is required")
 }

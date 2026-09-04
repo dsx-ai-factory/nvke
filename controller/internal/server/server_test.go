@@ -30,6 +30,37 @@ import (
 
 func ptrString(v string) *string { return &v }
 
+// openAPIForgeCreateClusterRequest returns a Forge create-cluster body that
+// passes OpenAPI validation, so each validator case can vary one field and
+// attribute any rejection to that field.
+func openAPIForgeCreateClusterRequest() api.CreateClusterRequest {
+	return api.CreateClusterRequest{
+		Name: "test-cluster",
+		Nico: &api.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+		},
+		CniPlugin:                     "calico",
+		EtcdEncrypted:                 false,
+		ControlPlaneKubernetesVersion: "1.29.7",
+		NodePools: &[]api.NodePoolCreateConfig{
+			{
+				Name:           "cp",
+				NodeNamePrefix: "cp-prefix",
+				Nico: &api.NicoNodePoolProvider{
+					InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440004"),
+					OSProfile:      "ubuntu",
+					ConfigProfile:  "default",
+					SubnetIDs:      []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")},
+				},
+				ControlPlane:     true,
+				DesiredNodeCount: 1,
+			},
+		},
+	}
+}
+
 // stubOpenAPICreateClusterTx stubs the tx methods a forge create reaches after
 // OpenAPI validation. Forge network CIDR overlap is checked in forge-console
 // now, so valid requests proceed into RunInTx and need these stubs.
@@ -56,32 +87,8 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 
 		handler := newTestServerWithValidator(t, mockDB)
 
-		siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
-		vpcID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
-		instanceTypeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")
-		subnetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
-
-		baseBody := api.CreateClusterRequest{
-			Name:                          "test-cluster",
-			OrgID:                         testOrgID,
-			SiteID:                        siteID,
-			VpcID:                         vpcID,
-			CniPlugin:                     "calico",
-			EtcdEncrypted:                 false,
-			ControlPlaneKubernetesVersion: "1.29.7", // overridden per case
-			NodePools: &[]api.NodePoolCreateConfig{
-				{
-					Name:             "cp",
-					NodeNamePrefix:   "cp-prefix",
-					InstanceTypeID:   instanceTypeID,
-					OSProfile:        "ubuntu",
-					ConfigProfile:    "default",
-					ControlPlane:     true,
-					DesiredNodeCount: 1,
-					SubnetIDs:        []uuid.UUID{subnetID},
-				},
-			},
-		}
+		// ControlPlaneKubernetesVersion is overridden per case.
+		baseBody := openAPIForgeCreateClusterRequest()
 
 		tests := []struct {
 			name         string
@@ -142,32 +149,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 
 		handler := newTestServerWithValidator(t, mockDB)
 
-		siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
-		vpcID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
-		instanceTypeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")
-		subnetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
-
-		baseBody := api.CreateClusterRequest{
-			Name:                          "test-cluster",
-			OrgID:                         testOrgID,
-			SiteID:                        siteID,
-			VpcID:                         vpcID,
-			CniPlugin:                     "calico",
-			EtcdEncrypted:                 false,
-			ControlPlaneKubernetesVersion: "1.29.7",
-			NodePools: &[]api.NodePoolCreateConfig{
-				{
-					Name:             "cp",
-					NodeNamePrefix:   "cp-prefix",
-					InstanceTypeID:   instanceTypeID,
-					OSProfile:        "ubuntu",
-					ConfigProfile:    "default",
-					ControlPlane:     true,
-					DesiredNodeCount: 1,
-					SubnetIDs:        []uuid.UUID{subnetID},
-				},
-			},
-		}
+		baseBody := openAPIForgeCreateClusterRequest()
 
 		tests := []struct {
 			name         string
@@ -223,32 +205,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 
 		handler := newTestServerWithValidator(t, mockDB)
 
-		siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
-		vpcID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
-		instanceTypeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")
-		subnetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
-
-		baseBody := api.CreateClusterRequest{
-			Name:                          "test-cluster",
-			OrgID:                         testOrgID,
-			SiteID:                        siteID,
-			VpcID:                         vpcID,
-			CniPlugin:                     "calico",
-			EtcdEncrypted:                 false,
-			ControlPlaneKubernetesVersion: "1.29.7",
-			NodePools: &[]api.NodePoolCreateConfig{
-				{
-					Name:             "cp",
-					NodeNamePrefix:   "cp-prefix",
-					InstanceTypeID:   instanceTypeID,
-					OSProfile:        "ubuntu",
-					ConfigProfile:    "default",
-					ControlPlane:     true,
-					DesiredNodeCount: 1,
-					SubnetIDs:        []uuid.UUID{subnetID},
-				},
-			},
-		}
+		baseBody := openAPIForgeCreateClusterRequest()
 
 		tests := []struct {
 			name         string
@@ -301,32 +258,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 
 		handler := newTestServerWithValidator(t, mockDB)
 
-		siteID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
-		vpcID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")
-		instanceTypeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")
-		subnetID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440003")
-
-		baseBody := api.CreateClusterRequest{
-			Name:                          "test-cluster",
-			OrgID:                         testOrgID,
-			SiteID:                        siteID,
-			VpcID:                         vpcID,
-			CniPlugin:                     "calico",
-			EtcdEncrypted:                 false,
-			ControlPlaneKubernetesVersion: "1.29.7",
-			NodePools: &[]api.NodePoolCreateConfig{
-				{
-					Name:             "cp",
-					NodeNamePrefix:   "cp-prefix",
-					InstanceTypeID:   instanceTypeID,
-					OSProfile:        "ubuntu",
-					ConfigProfile:    "default",
-					ControlPlane:     true,
-					DesiredNodeCount: 1,
-					SubnetIDs:        []uuid.UUID{subnetID},
-				},
-			},
-		}
+		baseBody := openAPIForgeCreateClusterRequest()
 
 		tests := []struct {
 			name         string
@@ -475,9 +407,9 @@ func TestOpenAPIValidator_UpdateCluster(t *testing.T) {
 	})
 }
 
-// TestOpenAPIValidator_UpdateNodePool verifies that node-pool updates reject
-// fields that are not part of the OpenAPI request schema.
-func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
+// TestOpenAPIValidator_UpdateNodePoolRejectsUnknownFields verifies that node-pool
+// updates reject fields that are not part of the OpenAPI request schema.
+func TestOpenAPIValidator_UpdateNodePoolRejectsUnknownFields(t *testing.T) {
 	handler := newTestServerWithValidator(t, &testutil.MockDB{})
 	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 
@@ -496,6 +428,317 @@ func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
 	var errBody api.GenericError
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &errBody))
 	assert.Contains(t, errBody.Message, "desiredNodeCounnt")
+}
+
+// TestOpenAPIValidator_CreateClusterControlPlaneConfig verifies that the control
+// plane create schema carries only the settable Nico fields. diskSelectionStrategy
+// is reported on read but is not an input in either direction, so it is absent from
+// NicoControlPlaneProviderCreate and the validator rejects it before the handler runs.
+func TestOpenAPIValidator_CreateClusterControlPlaneConfig(t *testing.T) {
+	body := func(nico string) []byte {
+		return []byte(`{
+			"name": "test-cluster",
+			"nico": {
+				"orgID": "` + testOrgID + `",
+				"siteID": "550e8400-e29b-41d4-a716-446655440001",
+				"vpcID": "550e8400-e29b-41d4-a716-446655440002"
+			},
+			"cniPlugin": "calico",
+			"controlPlaneKubernetesVersion": "1.29.7",
+			"etcdEncrypted": false,
+			"controlPlaneConfig": {"desiredCount": 3, "nico": ` + nico + `}
+		}`)
+	}
+
+	tests := []struct {
+		name         string
+		nico         string
+		expectReject bool
+	}{
+		{
+			name: "settable nested fields are accepted",
+			nico: `{"osProfile":"ubuntu","configProfile":"default"}`,
+		},
+		{
+			name:         "nico.diskSelectionStrategy is rejected",
+			nico:         `{"diskSelectionStrategy":"largest"}`,
+			expectReject: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(),
+				http.MethodPost, "/api/clusters", bytes.NewReader(body(tt.nico)))
+			req.Header.Set("Content-Type", "application/json")
+
+			rr := httptest.NewRecorder()
+			newTestServerWithValidator(t, &testutil.MockDB{}).ServeHTTP(rr, req)
+
+			// The accepted case still fails in the handler, because this test server
+			// has no control-plane controller provisioning enabled. Distinguish the
+			// two by the message rather than the status code.
+			if tt.expectReject {
+				assert.Contains(t, rr.Body.String(), "diskSelectionStrategy")
+				return
+			}
+			assert.NotContains(t, rr.Body.String(), "diskSelectionStrategy",
+				"settable fields should pass OpenAPI validation")
+		})
+	}
+}
+
+// TestOpenAPIValidator_CreateRequiresExactlyOneProvider verifies that the create
+// schemas require exactly one provider shape, so a handler never sees an ambiguous
+// provider. CreateClusterRequest, CreateClusterControlPlaneConfig and
+// NodePoolCreateConfig each reject a body carrying both nico and capi as well as
+// one carrying neither. A cluster create exercises all three, because it embeds
+// the control plane config and the initial node pools.
+func TestOpenAPIValidator_CreateRequiresExactlyOneProvider(t *testing.T) {
+	const (
+		clusterNico = `"nico":{"orgID":"` + testOrgID + `",` +
+			`"siteID":"550e8400-e29b-41d4-a716-446655440001",` +
+			`"vpcID":"550e8400-e29b-41d4-a716-446655440002"}`
+		clusterInfra = `"infra":{"cluster":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
+			`"kind":"DockerCluster","metadata":{"name":"test-cluster"}}}`
+		cpNico = `"nico":{"instanceTypePreference":["550e8400-e29b-41d4-a716-446655440003"],` +
+			`"osProfile":"ubuntu","configProfile":"default"}`
+		cpInfra = `"infra":{"machineTemplate":{` +
+			`"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
+			`"kind":"DockerMachineTemplate","metadata":{"name":"cp"}}}`
+		poolNico = `"nico":{"instanceTypeID":"550e8400-e29b-41d4-a716-446655440004",` +
+			`"osProfile":"ubuntu","configProfile":"default"}`
+		poolInfra = `"infra":{"machineTemplate":{"apiVersion":"infrastructure.cluster.x-k8s.io/v1beta1",` +
+			`"kind":"DockerMachineTemplate","metadata":{"name":"worker"}}}`
+	)
+
+	// Provider fragments are appended, so an empty fragment leaves the enclosing
+	// object valid apart from the missing provider.
+	field := func(fragment string) string {
+		if fragment == "" {
+			return ""
+		}
+		return "," + fragment
+	}
+	body := func(cluster, controlPlane, nodePool string) []byte {
+		return []byte(`{
+			"name": "test-cluster",
+			"cniPlugin": "calico",
+			"controlPlaneKubernetesVersion": "1.29.7",
+			"etcdEncrypted": false` + field(cluster) + `,
+			"controlPlaneConfig": {"desiredCount": 3` + field(controlPlane) + `},
+			"nodePools": [
+				{"name":"worker","nodeNamePrefix":"worker","desiredNodeCount":1` + field(nodePool) + `}
+			]
+		}`)
+	}
+
+	tests := []struct {
+		name         string
+		cluster      string
+		controlPlane string
+		nodePool     string
+		expectReject bool
+	}{
+		{
+			name:         "cluster carrying both providers",
+			cluster:      clusterNico + "," + clusterInfra,
+			controlPlane: cpNico,
+			nodePool:     poolNico,
+			expectReject: true,
+		},
+		{
+			name:         "cluster carrying neither provider",
+			controlPlane: cpNico,
+			nodePool:     poolNico,
+			expectReject: true,
+		},
+		{
+			name:         "control plane config carrying both providers",
+			cluster:      clusterNico,
+			controlPlane: cpNico + "," + cpInfra,
+			nodePool:     poolNico,
+			expectReject: true,
+		},
+		{
+			name:         "control plane config carrying neither provider",
+			cluster:      clusterNico,
+			nodePool:     poolNico,
+			expectReject: true,
+		},
+		{
+			name:         "node pool carrying both providers",
+			cluster:      clusterNico,
+			controlPlane: cpNico,
+			nodePool:     poolNico + "," + poolInfra,
+			expectReject: true,
+		},
+		{
+			name:         "node pool carrying neither provider",
+			cluster:      clusterNico,
+			controlPlane: cpNico,
+			expectReject: true,
+		},
+		{
+			name:         "one provider shape per object is accepted",
+			cluster:      clusterNico,
+			controlPlane: cpNico,
+			nodePool:     poolNico,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(),
+				http.MethodPost, "/api/clusters",
+				bytes.NewReader(body(tt.cluster, tt.controlPlane, tt.nodePool)))
+			req.Header.Set("Content-Type", "application/json")
+
+			rr := httptest.NewRecorder()
+			newTestServerWithValidator(t, &testutil.MockDB{}).ServeHTTP(rr, req)
+
+			// The accepted case still fails in the handler, because this test server
+			// has no control-plane controller provisioning enabled. Distinguish a
+			// schema rejection from a handler rejection by the validator's message.
+			if tt.expectReject {
+				assert.Equal(t, http.StatusBadRequest, rr.Code, "body: %s", rr.Body.String())
+				assert.Contains(t, rr.Body.String(), "request body has an error",
+					"should be rejected by schema validation rather than by the handler")
+				return
+			}
+			assert.NotContains(t, rr.Body.String(), "request body has an error",
+				"exactly one provider shape per object should pass schema validation")
+		})
+	}
+}
+
+// TestOpenAPIValidator_UpdateClusterControlPlaneConfig verifies that the control
+// plane update schema carries only the configurable Nico fields. The control plane
+// always installs to the smallest disk, so diskSelectionStrategy is absent from
+// NicoControlPlaneProviderUpdate and the validator rejects it.
+func TestOpenAPIValidator_UpdateClusterControlPlaneConfig(t *testing.T) {
+	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+
+	tests := []struct {
+		name         string
+		body         string
+		expectReject bool
+	}{
+		{
+			name:         "configurable nested fields are accepted",
+			body:         `{"controlPlaneConfig":{"nico":{"osProfile":"ubuntu","configProfile":"default"}}}`,
+			expectReject: false,
+		},
+		{
+			name:         "nico.diskSelectionStrategy is rejected",
+			body:         `{"controlPlaneConfig":{"nico":{"diskSelectionStrategy":"largest"}}}`,
+			expectReject: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := &testutil.MockDB{}
+			mockDB.MockTx = &testutil.MockTx{}
+			mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
+			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
+			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound).Maybe()
+
+			req := httptest.NewRequestWithContext(t.Context(),
+				http.MethodPatch,
+				"/api/clusters/"+clusterID.String(),
+				bytes.NewReader([]byte(tt.body)),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			rr := httptest.NewRecorder()
+			newTestServerWithValidator(t, mockDB).ServeHTTP(rr, req)
+
+			if tt.expectReject {
+				assert.Equal(t, http.StatusBadRequest, rr.Code, "body: %s", rr.Body.String())
+				return
+			}
+			assert.Equal(t, http.StatusNotFound, rr.Code,
+				"should pass OpenAPI validation and reach the handler, body: %s", rr.Body.String())
+		})
+	}
+}
+
+// TestOpenAPIValidator_UpdateNodePool verifies that the update-node-pool schema
+// accepts only the mutable subset of the nested nico fields. The fields that are
+// fixed at creation are absent from NicoNodePoolProviderUpdate, so the validator
+// rejects them before the handler runs; nothing in the service layer re-checks them.
+func TestOpenAPIValidator_UpdateNodePool(t *testing.T) {
+	nodePoolID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440010")
+
+	newHandler := func(t *testing.T) http.Handler {
+		t.Helper()
+		mockDB := &testutil.MockDB{}
+		mockDB.MockTx = &testutil.MockTx{}
+		mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
+		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
+		mockDB.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound).Maybe()
+		mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound).Maybe()
+		return newTestServerWithValidator(t, mockDB)
+	}
+
+	tests := []struct {
+		name         string
+		body         string
+		expectReject bool
+	}{
+		{
+			name:         "mutable nested fields are accepted",
+			body:         `{"nico":{"subnetIDs":["550e8400-e29b-41d4-a716-446655440001"],"osProfile":"ubuntu","configProfile":"default"}}`,
+			expectReject: false,
+		},
+		{
+			name:         "nico.instanceTypeID is rejected",
+			body:         `{"nico":{"instanceTypeID":"550e8400-e29b-41d4-a716-446655440002"}}`,
+			expectReject: true,
+		},
+		{
+			name:         "nico.infinibandPartitionID is rejected",
+			body:         `{"nico":{"infinibandPartitionID":"550e8400-e29b-41d4-a716-446655440003"}}`,
+			expectReject: true,
+		},
+		{
+			name:         "nico.nvLinkLogicalPartitionID is rejected",
+			body:         `{"nico":{"nvLinkLogicalPartitionID":"550e8400-e29b-41d4-a716-446655440004"}}`,
+			expectReject: true,
+		},
+		{
+			name:         "nico.sshKeyGroupIDs is rejected",
+			body:         `{"nico":{"sshKeyGroupIDs":["550e8400-e29b-41d4-a716-446655440005"]}}`,
+			expectReject: true,
+		},
+		{
+			name:         "a full nico object echoed from GET is rejected",
+			body:         `{"nico":{"subnetIDs":[],"vpcPrefixIDs":[],"instanceTypeID":"550e8400-e29b-41d4-a716-446655440002","sshKeyGroupIDs":[],"osProfile":"ubuntu","configProfile":"default"}}`,
+			expectReject: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequestWithContext(t.Context(),
+				http.MethodPatch,
+				"/api/nodePools/"+nodePoolID.String(),
+				bytes.NewReader([]byte(tt.body)),
+			)
+			req.Header.Set("Content-Type", "application/json")
+
+			rr := httptest.NewRecorder()
+			newHandler(t).ServeHTTP(rr, req)
+
+			if tt.expectReject {
+				assert.Equal(t, http.StatusBadRequest, rr.Code, "body: %s", rr.Body.String())
+				return
+			}
+			assert.Equal(t, http.StatusNotFound, rr.Code,
+				"should pass OpenAPI validation and reach the handler, body: %s", rr.Body.String())
+		})
+	}
 }
 
 // TestStdServerErrorStatus_MalformedPathUUID verifies that requests with a malformed

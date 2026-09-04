@@ -100,15 +100,39 @@ func TestApplyNodePoolDefaults(t *testing.T) {
 		svc.applyNodePoolDefaults(req, forgeCluster)
 		assert.True(t, *req.TeleportEnabled)
 	})
+
+	// The stored pool is built from the nested payload, so the default has to
+	// land there to reach the database.
+	t.Run("forge disk strategy defaults on the nested payload", func(t *testing.T) {
+		req := &api.CreateNodePoolRequest{Nico: &api.NicoNodePoolProvider{}}
+		svc.applyNodePoolDefaults(req, forgeCluster)
+		assert.Equal(t, api.DiskSelectionStrategyCreateSmallest, req.Nico.DiskSelectionStrategy)
+
+		dbNodePool, err := dbNodePoolFromAPI(req, "1.29.7")
+		require.NoError(t, err)
+		nico, err := dbNodePool.NicoProvider()
+		require.NoError(t, err)
+		assert.Equal(t, db.DiskSelectionStrategySmallest, nico.DiskSelectionStrategy)
+	})
+
+	t.Run("explicit forge disk strategy preserved", func(t *testing.T) {
+		req := &api.CreateNodePoolRequest{
+			Nico: &api.NicoNodePoolProvider{DiskSelectionStrategy: api.DiskSelectionStrategyCreateLargest},
+		}
+		svc.applyNodePoolDefaults(req, forgeCluster)
+		assert.Equal(t, api.DiskSelectionStrategyCreateLargest, req.Nico.DiskSelectionStrategy)
+	})
 }
 
 func TestDbClusterFromAPI_TeleportDefault(t *testing.T) {
 	baseReq := func(teleport *bool) *api.CreateClusterRequest {
 		return &api.CreateClusterRequest{
-			Name:                          "test",
-			OrgID:                         "org-1",
-			SiteID:                        uuid.New(),
-			VpcID:                         uuid.New(),
+			Name: "test",
+			Nico: &api.NicoClusterProvider{
+				OrgID:  "org-1",
+				SiteID: uuid.New(),
+				VpcID:  uuid.New(),
+			},
 			CniPlugin:                     "calico",
 			ControlPlaneKubernetesVersion: "1.30.0",
 			TeleportEnabled:               teleport,
@@ -153,7 +177,7 @@ func TestDbClusterFromAPI_TeleportDefault(t *testing.T) {
 				teleportCfg: config.TeleportConfig{DefaultClusterEnabled: tt.defaultEnabled},
 			}
 			req := baseReq(tt.reqTeleport)
-			cluster, err := dbClusterFromAPI(req)
+			cluster, err := DBClusterFromAPI(req)
 			require.NoError(t, err)
 			require.NoError(t, svc.applyClusterDefaults(req, &cluster))
 			assert.Equal(t, tt.wantTeleport, cluster.TeleportEnabled)
@@ -164,10 +188,12 @@ func TestDbClusterFromAPI_TeleportDefault(t *testing.T) {
 func TestDbClusterFromAPI_CNIVersion(t *testing.T) {
 	baseReq := func(plugin string, cniVersion *string) *api.CreateClusterRequest {
 		return &api.CreateClusterRequest{
-			Name:                          "test",
-			OrgID:                         "org-1",
-			SiteID:                        uuid.New(),
-			VpcID:                         uuid.New(),
+			Name: "test",
+			Nico: &api.NicoClusterProvider{
+				OrgID:  "org-1",
+				SiteID: uuid.New(),
+				VpcID:  uuid.New(),
+			},
 			CniPlugin:                     plugin,
 			CniVersion:                    cniVersion,
 			ControlPlaneKubernetesVersion: "1.30.0",
@@ -200,7 +226,7 @@ func TestDbClusterFromAPI_CNIVersion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cluster, err := dbClusterFromAPI(baseReq(tt.plugin, tt.cniVersion))
+			cluster, err := DBClusterFromAPI(baseReq(tt.plugin, tt.cniVersion))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, cluster.CniVersion)
 		})
@@ -208,7 +234,7 @@ func TestDbClusterFromAPI_CNIVersion(t *testing.T) {
 }
 
 func TestAPIClusterFromDB_CNIVersionDefaultsOldRows(t *testing.T) {
-	got := apiClusterFromDB(&db.Cluster{
+	got := APIClusterFromDB(&db.Cluster{
 		ID:                uuid.New(),
 		Name:              "test",
 		OrgID:             "org-1",
@@ -224,7 +250,7 @@ func TestAPIClusterFromDB_CNIVersionDefaultsOldRows(t *testing.T) {
 func TestAPIClusterFromDB_CreatedAt(t *testing.T) {
 	createdAt := time.Date(2026, time.July, 29, 6, 20, 6, 0, time.UTC)
 
-	got := apiClusterFromDB(&db.Cluster{
+	got := APIClusterFromDB(&db.Cluster{
 		ID:                uuid.New(),
 		Name:              "test",
 		CniPlugin:         db.CNICalico,
@@ -238,13 +264,15 @@ func TestAPIClusterFromDB_CreatedAt(t *testing.T) {
 func TestDbNodePoolFromAPI_TeleportDefault(t *testing.T) {
 	baseReq := func(teleport *bool) *api.CreateNodePoolRequest {
 		return &api.CreateNodePoolRequest{
-			ClusterID:        uuid.New(),
-			Name:             "test-pool",
-			NodeNamePrefix:   "test",
-			SubnetIDs:        []uuid.UUID{uuid.New()},
-			InstanceTypeID:   uuid.New(),
-			OSProfile:        "ubuntu",
-			ConfigProfile:    "default",
+			ClusterID:      uuid.New(),
+			Name:           "test-pool",
+			NodeNamePrefix: "test",
+			Nico: &api.NicoNodePoolProvider{
+				SubnetIDs:      []uuid.UUID{uuid.New()},
+				InstanceTypeID: uuid.New(),
+				OSProfile:      "ubuntu",
+				ConfigProfile:  "default",
+			},
 			DesiredNodeCount: 1,
 			TeleportEnabled:  teleport,
 		}

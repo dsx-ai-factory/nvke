@@ -160,6 +160,7 @@ type NodeAgentServer struct {
 
 	kubeletConfigMu          sync.Mutex // serializes kubelet.conf reconfiguration transactions
 	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
+	kubeVipFetchASN          func(context.Context) (uint32, error)
 }
 
 // Real implementations

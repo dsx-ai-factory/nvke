@@ -597,6 +597,19 @@ components:
         - controlPlaneKubernetesVersion
         - cniPlugin
         - etcdEncrypted
+      # A cluster picks its provider at creation, so exactly one provider payload is
+      # required. Rejecting "both or neither" leaves exactly one.
+      not:
+        anyOf:
+          - required: [nico, infra]
+          - allOf:
+              - not:
+                  required: [nico]
+              - not:
+                  required: [infra]
+      description: |
+        Exactly one provider payload is required: supply either `nico` or `infra`.
+        A request carrying both, or neither, is rejected with 400.
       properties:
         name:
           type: string
@@ -606,27 +619,6 @@ components:
           example: "my-cluster"
           description: The name of the cluster. Must be a lowercase DNS label, because CWE derives the names of the cluster's CAPI resources and its node names from it.
           x-order: 1
-        orgID:
-          type: string
-          example: dipfedrcvjiw
-          description: The ID of the NGC organization that owns the cluster
-          x-go-type-skip-optional-pointer: true
-          x-order: 2
-        siteID:
-          type: string
-          format: uuid
-          description: |
-            Selects the infrastructure mode for the cluster.
-            Use a registered non-nil site ID for Forge-backed clusters.
-            Use the nil UUID default site for CAPI-backed clusters.
-          x-go-type-skip-optional-pointer: true
-          x-order: 3
-        vpcID:
-          type: string
-          format: uuid
-          description: The ID of the VPC where the Forge-backed cluster will be created. Required for Forge-backed clusters and omitted for CAPI-backed clusters.
-          x-go-type-skip-optional-pointer: true
-          x-order: 4
         # controlPlaneKubernetesVersion: validated by pattern (semver version core only, no leading "v").
         # Pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
         # We disallow leading "v" because provisioning templates add "v" when building URLs (e.g. kubeadm_v{{ .KubernetesVersion }}).
@@ -687,8 +679,10 @@ components:
           description: The initial set of node pools to create for the cluster
           example:
             - namePrefix: "cp"
-              subnetID: "123e4567-e89b-12d3-a456-426614174000"
-              instanceTypeID: "123e4567-e89b-12d3-a456-426614174001"
+              nico:
+                subnetIDs:
+                  - "123e4567-e89b-12d3-a456-426614174000"
+                instanceTypeID: "123e4567-e89b-12d3-a456-426614174001"
               desiredNodeCount: 1
               controlPlane: true
           x-order: 12
@@ -697,13 +691,14 @@ components:
           description: |
             Cluster-level control plane configuration.
           x-order: 13
-        capiInfraCluster:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource. Required for CAPI-backed clusters and omitted for Forge-backed clusters.
+        nico:
+          $ref: "#/components/schemas/NicoClusterProvider"
+          description: Provider Nico identity fields.
           x-go-type-skip-optional-pointer: true
-          x-order: 100
-
+        infra:
+          $ref: "#/components/schemas/InfraClusterProvider"
+          description: Ifra provider fields.
+          x-go-type-skip-optional-pointer: true
     ControlPlaneConfig:
       type: object
       additionalProperties: false
@@ -726,52 +721,14 @@ components:
           minimum: 0
           description: |
             Cluster-level surge capacity for control plane nodes during upgrades.
-        instanceTypePreference:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: |
-            Ordered Forge instance type IDs for cluster-level control plane provisioning.
-            Index 0 is the highest priority; provisioning tries each instance type in order.
         provisioningMonitorDisabled:
           type: boolean
           description: |
             When true, the timeout-based provisioning monitor is paused for cluster-level
             control plane nodes.
-        subnetIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the subnets used for control plane nodes. Present when the site does not have native networking enabled.
-          x-go-type-skip-optional-pointer: true
-        vpcPrefixIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the VPC prefixes used for control plane nodes. Present when the site has native networking enabled.
-          x-go-type-skip-optional-pointer: true
-        osProfile:
-          type: string
-          description: The name of the OS profile used by Forge-backed control plane nodes. Empty for CAPI-backed clusters.
-          x-go-name: OSProfile
-          x-go-type-skip-optional-pointer: true
-        configProfile:
-          type: string
-          description: The name of the config profile used by control plane nodes.
-          x-go-type-skip-optional-pointer: true
         systemReservedMemory:
           type: string
           description: The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
-          x-go-type-skip-optional-pointer: true
-        sshKeyGroupIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the SSH key groups used for control plane nodes.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: array
@@ -783,25 +740,13 @@ components:
           type: boolean
           default: true
           description: Whether Teleport SSH enrollment is enabled for control plane nodes.
-        capiInfraMachineTemplate:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes. Present only for CAPI-backed clusters.
+        nico:
+          $ref: "#/components/schemas/NicoControlPlaneProvider"
+          description: Provider Nico control plane fields.
           x-go-type-skip-optional-pointer: true
-        capiSpireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethod"
-          description: How CWE configures SPIRE agent attestation for CAPI-backed control plane nodes. Present only for CAPI-backed clusters.
-        capiBootstrapFiles:
-          type: array
-          items:
-            $ref: "#/components/schemas/CloudInitFile"
-          description: Custom cloud-init `write_files` entries for CAPI-backed control plane nodes.
-          x-go-type-skip-optional-pointer: true
-        capiPreKubeadmCommands:
-          type: array
-          items:
-            type: string
-          description: Custom cloud-init `runcmd` entries for CAPI-backed control plane nodes.
+        infra:
+          $ref: "#/components/schemas/InfraControlPlaneProvider"
+          description: Infra provider control plane fields.
           x-go-type-skip-optional-pointer: true
 
     ClusterControlPlane:
@@ -863,8 +808,20 @@ components:
       additionalProperties: false
       required:
         - desiredCount
+      # The control plane follows its cluster's provider, so exactly one provider
+      # payload is required whenever this object is supplied.
+      not:
+        anyOf:
+          - required: [nico, infra]
+          - allOf:
+              - not:
+                  required: [nico]
+              - not:
+                  required: [infra]
       description: |
         Writable cluster-level control plane configuration supplied at cluster creation.
+        Exactly one provider payload is required: supply either `nico` or `infra`.
+        A request carrying both, or neither, is rejected with 400.
       properties:
         desiredCount:
           type: integer
@@ -875,53 +832,14 @@ components:
           type: integer
           minimum: 0
           description: Cluster-level surge capacity for control plane nodes during upgrades (max 1).
-        instanceTypePreference:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: |
-            Ordered Forge instance type IDs for cluster-level control plane provisioning.
-            Index 0 is the highest priority. Forge-backed clusters only.
-          x-go-type-skip-optional-pointer: true
         provisioningMonitorDisabled:
           type: boolean
           default: false
           description: When true, the timeout-based provisioning monitor is paused for control plane nodes.
-        subnetIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the subnets to use for control plane nodes. Forge clusters without native networking. Either subnetIDs or vpcPrefixIDs must be provided for Forge clusters.
-          x-go-type-skip-optional-pointer: true
-        vpcPrefixIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the VPC prefixes to use for control plane nodes. Forge clusters with native networking. Either subnetIDs or vpcPrefixIDs must be provided for Forge clusters.
-          x-go-type-skip-optional-pointer: true
-        osProfile:
-          type: string
-          description: The name of the OS profile for Forge-backed control plane nodes. Required for Forge clusters, must be omitted for CAPI clusters.
-          x-go-name: OSProfile
-          x-go-type-skip-optional-pointer: true
-        configProfile:
-          type: string
-          description: The name of the config profile for control plane nodes. Required for Forge clusters.
-          x-go-type-skip-optional-pointer: true
         systemReservedMemory:
           type: string
           default: "16Gi"
           description: The amount of memory to reserve for system processes on control plane nodes (e.g., "16Gi").
-          x-go-type-skip-optional-pointer: true
-        sshKeyGroupIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the SSH key groups for control plane nodes. Forge clusters only.
           x-go-type-skip-optional-pointer: true
         nodeLabels:
           type: array
@@ -932,30 +850,23 @@ components:
         teleportEnabled:
           type: boolean
           description: Whether Teleport SSH enrollment is enabled for control plane nodes. When omitted, the server-side default for the site is applied.
-        capiInfraMachineTemplate:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource for control plane nodes. Required for CAPI clusters, must be omitted for Forge clusters.
+        nico:
+          $ref: "#/components/schemas/NicoControlPlaneProviderCreate"
+          description: Provider Nico control plane fields.
           x-go-type-skip-optional-pointer: true
-        capiSpireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethodCreate"
-          description: How CWE configures SPIRE agent attestation for CAPI-backed control plane nodes. CAPI clusters only.
-        capiBootstrapFiles:
-          type: array
-          items:
-            $ref: "#/components/schemas/CloudInitFile"
-          description: Additional cloud-init `write_files` entries for CAPI-backed control plane nodes. Must be omitted for Forge clusters.
+        infra:
+          $ref: "#/components/schemas/InfraControlPlaneProvider"
+          description: Infra provider control plane fields.
           x-go-type-skip-optional-pointer: true
-        capiPreKubeadmCommands:
-          type: array
-          items:
-            type: string
-          description: Additional cloud-init `runcmd` entries for CAPI-backed control plane nodes. Must be omitted for Forge clusters.
-          x-go-type-skip-optional-pointer: true
-
     UpdateClusterControlPlaneConfig:
       type: object
       additionalProperties: false
+      not:
+        required: [nico, infra]
+      description: |
+        `nico` and `infra` are mutually exclusive: supply at most one of them (both
+        may be omitted). A request carrying both is rejected with 400, as is a
+        provider payload that does not match the cluster.
       properties:
         desiredCount:
           type: integer
@@ -966,45 +877,12 @@ components:
           type: integer
           minimum: 0
           description: Set cluster-level max surge.
-        instanceTypePreference:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: |
-            Replace the ordered Forge instance type preference list for cluster-level control plane nodes.
-            Index 0 is the highest priority.
         provisioningMonitorDisabled:
           type: boolean
           description: Pause or resume the provisioning monitor for cluster-level control plane nodes.
-        subnetIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: Replace the subnet IDs used for control plane nodes. Forge clusters without native networking.
-        vpcPrefixIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: Replace the VPC prefix IDs used for control plane nodes. Forge clusters with native networking.
-        osProfile:
-          type: string
-          description: Set the OS profile for Forge-backed control plane nodes.
-          x-go-name: OSProfile
-        configProfile:
-          type: string
-          description: Set the config profile for control plane nodes.
         systemReservedMemory:
           type: string
           description: Set the reserved system memory for control plane nodes (e.g., "16Gi").
-        sshKeyGroupIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: Replace the SSH key groups used for control plane nodes. Forge clusters only.
         nodeLabels:
           type: array
           items:
@@ -1013,24 +891,14 @@ components:
         teleportEnabled:
           type: boolean
           description: Enable or disable Teleport SSH enrollment for control plane nodes.
-        capiInfraMachineTemplate:
-          type: object
-          additionalProperties: true
-          description: Replace the CAPI infrastructure MachineTemplate manifest for control plane nodes. CAPI clusters only.
-        capiSpireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethodCreate"
-          description: Set how CWE configures SPIRE agent attestation for CAPI-backed control plane nodes.
-        capiBootstrapFiles:
-          type: array
-          items:
-            $ref: "#/components/schemas/CloudInitFile"
-          description: Replace the cloud-init `write_files` entries for CAPI-backed control plane nodes.
-        capiPreKubeadmCommands:
-          type: array
-          items:
-            type: string
-          description: Replace the cloud-init `runcmd` entries for CAPI-backed control plane nodes.
-
+        nico:
+          $ref: "#/components/schemas/NicoControlPlaneProviderUpdate"
+          description: The mutable subset of the Nico control plane fields.
+          x-go-type-skip-optional-pointer: true
+        infra:
+          $ref: "#/components/schemas/InfraControlPlaneProviderUpdate"
+          description: The mutable infra provider control plane fields.
+          x-go-type-skip-optional-pointer: true
     Cluster:
       type: object
       required:
@@ -1053,24 +921,6 @@ components:
           type: string
           description: The name of the cluster
           x-order: 2
-        orgID:
-          type: string
-          example: dipfedrcvjiw
-          description: The ID of the NGC organization that owns the cluster
-          x-go-type-skip-optional-pointer: true
-          x-order: 3
-        siteID:
-          type: string
-          format: uuid
-          description: The registered site ID for this cluster. Forge-backed clusters use a non-nil site ID. CAPI-backed clusters use the nil UUID default site.
-          x-go-type-skip-optional-pointer: true
-          x-order: 4
-        vpcID:
-          type: string
-          format: uuid
-          description: The VPC ID for Forge-backed clusters. Omitted for CAPI-backed clusters.
-          x-go-type-skip-optional-pointer: true
-          x-order: 5
         controlPlaneKubernetesVersion:
           type: string
           description: The version of Kubernetes used by the cluster
@@ -1119,13 +969,14 @@ components:
         conditions:
           $ref: "#/components/schemas/ClusterConditions"
           description: Conditions representing various aspects of the Cluster's state
-        capiInfraCluster:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource. Present only for CAPI-backed clusters.
+        nico:
+          $ref: "#/components/schemas/NicoClusterProvider"
+          description: Provider Nico identity fields.
           x-go-type-skip-optional-pointer: true
-          x-order: 100
-
+        infra:
+          $ref: "#/components/schemas/InfraClusterProvider"
+          description: Infra provider fields.
+          x-go-type-skip-optional-pointer: true
     UpdateClusterRequest:
       type: object
       additionalProperties: false
@@ -1281,10 +1132,23 @@ components:
 
     NodePoolCreateConfig:
       type: object
+      description: |
+        A node pool follows its cluster's provider, so exactly one provider payload is
+        required: supply either `nico` or `infra`. A request carrying both, or neither,
+        is rejected with 400.
       required:
         - name
         - desiredNodeCount
         - nodeNamePrefix
+      # See CreateClusterRequest for why this is spelled with `not` instead of `oneOf`.
+      not:
+        anyOf:
+          - required: [nico, infra]
+          - allOf:
+              - not:
+                  required: [nico]
+              - not:
+                  required: [infra]
       properties:
         name:
           type: string
@@ -1297,51 +1161,6 @@ components:
         nodeNamePrefix:
           $ref: "#/components/schemas/NodeNamePrefix"
           x-order: 2
-        subnetIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the subnets to use for the Forge instances for the nodes in the pool. Required when the site does not have native networking enabled (isNativeNetworkingEnabled is false). Either subnetIDs or vpcPrefixIDs must be provided.
-          x-go-type-skip-optional-pointer: true
-          x-order: 3
-        vpcPrefixIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the VPC prefixes to use for the Forge instances for the nodes in the pool. Required when the site has native networking enabled (isNativeNetworkingEnabled is true). Either subnetIDs or vpcPrefixIDs must be provided.
-          x-go-type-skip-optional-pointer: true
-          x-order: 4
-        instanceTypeID:
-          type: string
-          format: uuid
-          description: The ID of the instance type to use for the Forge instances for the nodes in the pool
-          x-go-type-skip-optional-pointer: true
-          x-order: 5
-        infinibandPartitionID:
-          type: string
-          format: uuid
-          description: The ID of the infiniband partition to use for the Forge instances for the nodes in the pool
-          x-order: 6
-        sshKeyGroupIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the SSH key groups to use for the Forge instances for the nodes in the pool
-          x-order: 7
-        osProfile:
-          type: string
-          description: The name of the OS profile to use for Forge-backed nodes in the pool. Must be omitted for CAPI-backed pools.
-          x-go-name: OSProfile
-          x-go-type-skip-optional-pointer: true
-          x-order: 8
-        configProfile:
-          type: string
-          description: The name of the config profile to use for the nodes in the pool. Required for Forge-backed pools and optional for CAPI-backed pools.
-          x-go-type-skip-optional-pointer: true
-          x-order: 9
         systemReservedMemory:
           type: string
           description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
@@ -1399,47 +1218,23 @@ components:
           type: boolean
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
           x-order: 20
-        diskSelectionStrategy:
-          $ref: "#/components/schemas/DiskSelectionStrategyCreate"
-          x-order: 21
-        nvLinkLogicalPartitionID:
-          type: string
-          format: uuid
-          description: The ID of the NVLink logical partition to use for the Forge instances for the nodes in the pool
-          x-order: 22
-        capiInfraMachineTemplate:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource. Required for node pools in CAPI-backed clusters and omitted for Forge-backed clusters.
+        nico:
+          $ref: "#/components/schemas/NicoNodePoolProvider"
+          description: Provider Nico node pool fields.
           x-go-type-skip-optional-pointer: true
-          x-order: 100
-        capiSpireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethodCreate"
-          description: |
-            Controls how CWE configures SPIRE agent attestation for CAPI-backed nodes.
-            Relevant only when `capiInfraMachineTemplate` is used.
-            Defaults to `tpm`, which configures the SPIRE agent to use TPM attestation and expects
-            `nke.nvidia.com/spire-agent-spiffe-id-path` to be populated on the InfraMachine by some external process or template.
-            Set to `joinToken` to have CWE generate a SPIRE join token, inject it into bootstrap data, and stamp the corresponding annotation itself.
-          x-order: 101
-        capiBootstrapFiles:
-          type: array
-          items:
-            $ref: "#/components/schemas/CloudInitFile"
-          description: Additional cloud-init `write_files` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
+        infra:
+          $ref: "#/components/schemas/InfraNodePoolProvider"
+          description: Infra provider node pool fields.
           x-go-type-skip-optional-pointer: true
-          x-order: 102
-        capiPreKubeadmCommands:
-          type: array
-          items:
-            type: string
-          description: Additional cloud-init `runcmd` entries for CAPI-backed node pools. Must be omitted for Forge-backed pools.
-          x-go-type-skip-optional-pointer: true
-          x-order: 103
-
     UpdateNodePoolRequest:
       type: object
       additionalProperties: false
+      not:
+        required: [nico, infra]
+      description: |
+        `nico` and `infra` are mutually exclusive: supply at most one of them (both
+        may be omitted). A request carrying both is rejected with 400, as is a
+        provider payload that does not match the node pool's cluster.
       # No required fields since all fields are optional
       properties:
         autoProvisionDisabled:
@@ -1451,9 +1246,6 @@ components:
         provisioningMonitorDisabled:
           type: boolean
           description: Whether the timeout-based provisioning monitor is paused for this node pool.
-        configProfile:
-          type: string
-          description: The name of the config profile to use for the nodes in the set
         systemReservedMemory:
           type: string
           description: The amount of memory to reserve for system processes (e.g., "16Gi", "128Gi")
@@ -1467,10 +1259,6 @@ components:
           type: integer
           minimum: 0
           description: The desired number of nodes in the pool
-        osProfile:
-          type: string
-          description: The name of the OS profile to use for Forge-backed nodes in the set. Omit to leave unchanged. Not supported for CAPI-backed node pools.
-          x-go-name: OSProfile
         recycleBudget:
           type: integer
           minimum: 0
@@ -1485,26 +1273,6 @@ components:
         teleportEnabled:
           type: boolean
           description: Enable or disable Teleport SSH enrollment for nodes in this pool.
-        subnetIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: |
-            Subnet IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
-            Allowed only when the site does not have native networking.
-          x-go-type-skip-optional-pointer: true
-        vpcPrefixIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: |
-            VPC prefix IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
-            Allowed only when the site has native networking.
-          x-go-type-skip-optional-pointer: true
-        diskSelectionStrategy:
-          $ref: "#/components/schemas/DiskSelectionStrategy"
         # Same pattern and rationale as UpdateClusterRequest.controlPlaneKubernetesVersion (semver.org version core; no leading "v").
         kubernetesVersion:
           type: string
@@ -1514,30 +1282,14 @@ components:
             Must be a valid semver version core (X.Y.Z only, e.g. 1.29.7).
             Must not include a leading "v".
             The pattern is the version-core part of the regex from https://semver.org/#is-there-a-suggested-regular-expression-regex-to-check-a-semver-string
-        capiInfraMachineTemplate:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource. Present only for CAPI-backed node pools.
-        capiSpireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethod"
-          description: |
-            Sets how CWE configures SPIRE agent attestation for CAPI-backed nodes.
-            Relevant only when the node pool uses `capiInfraMachineTemplate`. Omit to leave unchanged.
-        capiBootstrapFiles:
-          type: array
-          items:
-            $ref: "#/components/schemas/CloudInitFile"
-          description: |
-            Cloud-init `write_files` entries to set on a CAPI-backed node pool (replaces existing). Omit = no change. Empty array = clear all custom files.
+        nico:
+          $ref: "#/components/schemas/NicoNodePoolProviderUpdate"
+          description: The mutable subset of the Nico node pool fields.
           x-go-type-skip-optional-pointer: true
-        capiPreKubeadmCommands:
-          type: array
-          items:
-            type: string
-          description: |
-            Cloud-init `runcmd` entries to set on a CAPI-backed node pool (replaces existing). Omit = no change. Empty array = clear all custom commands.
+        infra:
+          $ref: "#/components/schemas/InfraNodePoolProviderUpdate"
+          description: The mutable Infra provider node pool fields.
           x-go-type-skip-optional-pointer: true
-
     NodePool:
       type: object
       required:
@@ -1545,10 +1297,6 @@ components:
         - clusterID
         - name
         - nodeNamePrefix
-        - instanceTypeID
-        - sshKeyGroupIDs
-        - osProfile
-        - configProfile
         - kubernetesVersion
         - controlPlane
         - nodeLabels
@@ -1559,7 +1307,6 @@ components:
         - autoModeDisabled
         - provisioningMonitorDisabled
         - recycleBudget
-        - diskSelectionStrategy
       properties:
         id:
           type: string
@@ -1578,50 +1325,6 @@ components:
         nodeNamePrefix:
           $ref: "#/components/schemas/NodeNamePrefix"
           x-order: 4
-        subnetIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          minItems: 1
-          description: The IDs of the subnets where the nodes in the pool are located. Present when the site does not have native networking enabled (isNativeNetworkingEnabled is false).
-          x-go-type-skip-optional-pointer: true
-          x-order: 5
-        vpcPrefixIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          minItems: 1
-          description: The IDs of the VPC prefixes where the nodes in the pool are located. Present when the site has native networking enabled (isNativeNetworkingEnabled is true).
-          x-go-type-skip-optional-pointer: true
-          x-order: 6
-        instanceTypeID:
-          type: string
-          format: uuid
-          description: The ID of the instance type used by the nodes in the pool
-          x-order: 7
-        infinibandPartitionID:
-          type: string
-          format: uuid
-          description: The ID of the infiniband partition used by the nodes in the pool
-          x-order: 8
-        sshKeyGroupIDs:
-          type: array
-          items:
-            type: string
-            format: uuid
-          description: The IDs of the SSH key groups to be used for the node pool
-          x-order: 9
-        osProfile:
-          type: string
-          description: The name of the OS profile used by Forge-backed nodes in the pool. Empty for CAPI-backed pools.
-          x-go-name: OSProfile
-          x-order: 10
-        configProfile:
-          type: string
-          description: The name of the config profile used by the nodes in the pool
-          x-order: 11
         kubernetesVersion:
           type: string
           description: The desired version of Kubernetes for nodes in the pool
@@ -1695,38 +1398,14 @@ components:
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool.
           x-order: 26
-        diskSelectionStrategy:
-          $ref: "#/components/schemas/DiskSelectionStrategy"
-          x-order: 27
-        nvLinkLogicalPartitionID:
-          type: string
-          format: uuid
-          description: The ID of the NVLink logical partition used by the nodes in the pool
-          x-order: 28
-        capiInfraMachineTemplate:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource.
-          x-order: 100
-        capiSpireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethod"
-          description: |
-            How CWE configures SPIRE agent attestation for CAPI-backed nodes in this pool.
-            Present only for CAPI-backed pools.
-          x-order: 101
-        capiBootstrapFiles:
-          type: array
-          items:
-            $ref: "#/components/schemas/CloudInitFile"
-          description: Custom cloud-init `write_files` entries configured for this node pool. Present only for CAPI-backed pools.
-          x-order: 102
-        capiPreKubeadmCommands:
-          type: array
-          items:
-            type: string
-          description: Custom cloud-init `runcmd` entries configured for this node pool. Present only for CAPI-backed pools.
-          x-order: 103
-
+        nico:
+          $ref: "#/components/schemas/NicoNodePoolProvider"
+          description: Provider Nico node pool fields.
+          x-go-type-skip-optional-pointer: true
+        infra:
+          $ref: "#/components/schemas/InfraNodePoolProvider"
+          description: Infra provider node pool fields.
+          x-go-type-skip-optional-pointer: true
     ListNodePoolsResponse:
       type: object
       required:
@@ -1737,7 +1416,7 @@ components:
           items:
             $ref: "#/components/schemas/NodePool"
           description: The list of node pools
-    
+
     #--------------------------------
     # Node Set
     #--------------------------------
@@ -1803,18 +1482,15 @@ components:
         to:
           type: string
           description: The new value, JSON-encoded.
-    
+
     NodeSet:
       type: object
       required:
         - id
         - nodePoolID
         - desiredCount
-        - osProfile
-        - configProfile
         - kubernetesVersion
         - systemReservedMemory
-        - diskSelectionStrategy
       properties:
         id:
           type: string
@@ -1832,15 +1508,6 @@ components:
           description: The desired number of nodes in the node set
           readOnly: true
           x-order: 1
-        osProfile:
-          type: string
-          description: The name of the OS profile to use for Forge-backed nodes in the pool. Empty for CAPI-backed node sets.
-          x-go-name: OSProfile
-          readOnly: true
-        configProfile:
-          type: string
-          description: The name of the config profile to use for the nodes in the pool
-          readOnly: true
         kubernetesVersion:
           type: string
           description: The version of Kubernetes for nodes in the node set
@@ -1858,26 +1525,14 @@ components:
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this node set.
           readOnly: true
-        diskSelectionStrategy:  
-          $ref: "#/components/schemas/DiskSelectionStrategy"
-          readOnly: true
-        capiInfraMachineTemplate:
-          type: object
-          additionalProperties: true
-          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource copied from the parent node pool.
-        capiBootstrapFiles:
-          type: array
-          items:
-            $ref: "#/components/schemas/CloudInitFile"
-          description: Cloud-init `write_files` entries copied from the parent node pool. Present only for CAPI-backed node sets.
-          readOnly: true
-        capiPreKubeadmCommands:
-          type: array
-          items:
-            type: string
-          description: Cloud-init `runcmd` entries copied from the parent node pool. Present only for CAPI-backed node sets.
-          readOnly: true
-
+        nico:
+          $ref: "#/components/schemas/NicoNodeSetProvider"
+          description: Provider Nico node set fields.
+          x-go-type-skip-optional-pointer: true
+        infra:
+          $ref: "#/components/schemas/InfraNodeSetProvider"
+          description: Infra provider node set fields.
+          x-go-type-skip-optional-pointer: true
     #--------------------------------
     # Node
     #--------------------------------
@@ -1910,28 +1565,16 @@ components:
           type: string
           description: The name of the node
           x-order: 4
-        forgeInstanceID:
-          type: string
-          description: The ID of the Forge instance that was created for the node
-          x-go-type-skip-optional-pointer: true
-          x-order: 5
-        forgeMachineID:
-          type: string
-          description: The machine ID of the Forge instance that was created for the node
-          x-go-type-skip-optional-pointer: true
-          x-order: 6
         ip:
           type: string
           format: ipv4
           description: The IP address of the node
           x-go-type-skip-optional-pointer: true
           x-order: 7
-        instanceTypeID:
-          type: string
-          format: uuid
-          description: The Forge instance type ID used to provision this node
+        nico:
+          $ref: "#/components/schemas/NicoNodeProvider"
+          description: Provider Nico runtime fields for the node.
           x-go-type-skip-optional-pointer: true
-          x-order: 8
         controlPlane:
           type: boolean
           description: True if this is a control-plane node (managed by a control-plane node pool or the control-plane controller)
@@ -2299,7 +1942,461 @@ components:
           type: string
           description: The name of the config profile
           x-order: 1
-    
+
+    NicoClusterProvider:
+      type: object
+      additionalProperties: false
+      description: Nico identity fields for a cluster. Mutually exclusive with `infra`.
+      properties:
+        orgID:
+          type: string
+          example: dipfedrcvjiw
+          description: The ID of the NGC organization that owns the cluster
+          x-go-type-skip-optional-pointer: true
+        siteID:
+          type: string
+          format: uuid
+          description: The registered Forge site ID for the cluster
+          x-go-type-skip-optional-pointer: true
+        vpcID:
+          type: string
+          format: uuid
+          description: The VPC ID where the Nico cluster is created
+          x-go-type-skip-optional-pointer: true
+
+    InfraClusterProvider:
+      type: object
+      additionalProperties: false
+      description: |
+        CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
+        directly. Not to be used merely because a cluster is provisioned through CAPI —
+        `nico` clusters may be too. Mutually exclusive with `nico`.
+      properties:
+        cluster:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider Cluster resource
+          x-go-type-skip-optional-pointer: true
+
+    NicoNodePoolProvider:
+      type: object
+      additionalProperties: false
+      description: Nico fields for a node pool. Mutually exclusive with `infra`.
+      properties:
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Subnet IDs for Nico instances when native networking is disabled
+          x-go-type-skip-optional-pointer: true
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: VPC prefix IDs for Nico instances when native networking is enabled
+          x-go-type-skip-optional-pointer: true
+        instanceTypeID:
+          type: string
+          format: uuid
+          description: Nico instance type ID
+          x-go-type-skip-optional-pointer: true
+        infinibandPartitionID:
+          type: string
+          format: uuid
+          description: Infiniband partition ID for Nico instances
+        nvLinkLogicalPartitionID:
+          type: string
+          format: uuid
+          description: NVLink logical partition ID for Nico instances
+        sshKeyGroupIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: SSH key group IDs for Nico instances
+        osProfile:
+          type: string
+          description: OS profile name for Nico nodes
+          x-go-name: OSProfile
+          x-go-type-skip-optional-pointer: true
+        configProfile:
+          type: string
+          description: Config profile name for nodes
+          x-go-type-skip-optional-pointer: true
+        diskSelectionStrategy:
+          $ref: "#/components/schemas/DiskSelectionStrategyCreate"
+
+    NicoNodePoolProviderUpdate:
+      type: object
+      additionalProperties: false
+      description: |
+        The mutable subset of the Nico node pool fields. `instanceTypeID`,
+        `infinibandPartitionID`, `nvLinkLogicalPartitionID` and `sshKeyGroupIDs`
+        are fixed when the pool is created and are therefore absent here: sending
+        one is rejected with 400. A body echoed from GET must have them stripped.
+      properties:
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |
+            Subnet IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
+            Allowed only when the site does not have native networking.
+          x-go-type-skip-optional-pointer: true
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: |
+            VPC prefix IDs to set (replaces existing). Omit = no change. Empty array = replace with empty (clear all).
+            Allowed only when the site has native networking.
+          x-go-type-skip-optional-pointer: true
+        osProfile:
+          type: string
+          description: |
+            OS profile name for Nico nodes. Omit = no change. An empty
+            string is a request to clear it, which is rejected: a Nico node pool
+            always has an OS profile.
+          x-go-name: OSProfile
+        configProfile:
+          type: string
+          description: |
+            Config profile name for nodes. Omit = no change. An empty string is a
+            request to clear it, which is rejected: a Nico node pool always has a
+            config profile.
+        diskSelectionStrategy:
+          $ref: "#/components/schemas/DiskSelectionStrategy"
+
+    NicoNodeSetProvider:
+      type: object
+      additionalProperties: false
+      description: Nico fields for a node set (read-only snapshot).
+      properties:
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Subnet IDs for Nico instances when native networking is disabled
+          x-go-type-skip-optional-pointer: true
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: VPC prefix IDs for Nico instances when native networking is enabled
+          x-go-type-skip-optional-pointer: true
+        osProfile:
+          type: string
+          description: OS profile name for Nico nodes
+          x-go-name: OSProfile
+          x-go-type-skip-optional-pointer: true
+        configProfile:
+          type: string
+          description: Config profile name for nodes
+          x-go-type-skip-optional-pointer: true
+        diskSelectionStrategy:
+          $ref: "#/components/schemas/DiskSelectionStrategyCreate"
+
+    InfraNodePoolProvider:
+      type: object
+      additionalProperties: false
+      description: Infra provider fields for a node pool. Mutually exclusive with `nico`.
+      properties:
+        machineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
+          x-go-type-skip-optional-pointer: true
+        spireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethodCreate"
+          description: How CWE configures SPIRE agent attestation for CAPI-backed nodes
+        bootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Cloud-init write_files entries for CAPI-backed nodes
+          x-go-type-skip-optional-pointer: true
+        preKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Cloud-init runcmd entries for CAPI-backed nodes
+          x-go-type-skip-optional-pointer: true
+
+    InfraNodePoolProviderUpdate:
+      type: object
+      additionalProperties: false
+      description: |
+        The mutable infra provider node pool fields. Every field carries three states: omitted
+        leaves the stored value alone, a value replaces it, and an empty value clears it.
+      properties:
+        machineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infra provider MachineTemplate resource
+          x-go-type-skip-optional-pointer: true
+        spireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethod"
+          description: How CWE configures SPIRE agent attestation for CAPI-backed nodes
+        bootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Cloud-init write_files entries for CAPI-backed nodes
+          x-go-type-skip-optional-pointer: true
+        preKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Cloud-init runcmd entries for CAPI-backed nodes
+          x-go-type-skip-optional-pointer: true
+
+    InfraNodeSetProvider:
+      type: object
+      additionalProperties: false
+      description: Infra provider fields for a node set (read-only snapshot).
+      properties:
+        machineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
+          x-go-type-skip-optional-pointer: true
+        spireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethodCreate"
+          description: How CWE configures SPIRE agent attestation for CAPI-backed nodes
+        bootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Cloud-init write_files entries for CAPI-backed nodes
+          x-go-type-skip-optional-pointer: true
+        preKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Cloud-init runcmd entries for CAPI-backed nodes
+          x-go-type-skip-optional-pointer: true
+
+    NicoControlPlaneProvider:
+      type: object
+      additionalProperties: false
+      description: |
+        The stored Nico cluster-level control plane fields, as reported on read.
+        Requests use `NicoControlPlaneProviderCreate` and `NicoControlPlaneProviderUpdate`,
+        which omit the fields that direction cannot set. Mutually exclusive with `infra`.
+      properties:
+        instanceTypePreference:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Ordered Nico instance type IDs; index 0 is highest priority
+          x-go-type-skip-optional-pointer: true
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Subnet IDs for control plane nodes when native networking is disabled
+          x-go-type-skip-optional-pointer: true
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: VPC prefix IDs for control plane nodes when native networking is enabled
+          x-go-type-skip-optional-pointer: true
+        osProfile:
+          type: string
+          description: OS profile name for Nico control plane nodes
+          x-go-name: OSProfile
+          x-go-type-skip-optional-pointer: true
+        diskSelectionStrategy:
+          readOnly: true
+          description: |
+            Effective disk selection strategy for control plane nodes (always smallest).
+            Not configurable through the API.
+          allOf:
+            - $ref: "#/components/schemas/DiskSelectionStrategyCreate"
+        configProfile:
+          type: string
+          description: Config profile name for control plane nodes
+          x-go-type-skip-optional-pointer: true
+        sshKeyGroupIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: SSH key group IDs for control plane nodes
+          x-go-type-skip-optional-pointer: true
+
+    NicoControlPlaneProviderCreate:
+      type: object
+      additionalProperties: false
+      description: |
+        The settable subset of the Nico control plane fields.
+      properties:
+        instanceTypePreference:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Ordered Nico instance type IDs; index 0 is highest priority
+          x-go-type-skip-optional-pointer: true
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Subnet IDs for control plane nodes when native networking is disabled
+          x-go-type-skip-optional-pointer: true
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: VPC prefix IDs for control plane nodes when native networking is enabled
+          x-go-type-skip-optional-pointer: true
+        osProfile:
+          type: string
+          description: OS profile name for Nico control plane nodes
+          x-go-name: OSProfile
+          x-go-type-skip-optional-pointer: true
+        configProfile:
+          type: string
+          description: Config profile name for control plane nodes
+          x-go-type-skip-optional-pointer: true
+        sshKeyGroupIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: SSH key group IDs for control plane nodes
+          x-go-type-skip-optional-pointer: true
+
+    NicoControlPlaneProviderUpdate:
+      type: object
+      additionalProperties: false
+      description: |
+        The mutable subset of the Nico control plane fields.
+        Every field carries three states: omitted leaves the stored value alone, a value
+        replaces it, and an empty value clears it. Clearing a field the control plane
+        requires is rejected.
+      properties:
+        instanceTypePreference:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Ordered Nico instance type IDs; index 0 is highest priority
+          x-go-type-skip-optional-pointer: true
+        subnetIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Subnet IDs for control plane nodes when native networking is disabled
+          x-go-type-skip-optional-pointer: true
+        vpcPrefixIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: VPC prefix IDs for control plane nodes when native networking is enabled
+          x-go-type-skip-optional-pointer: true
+        osProfile:
+          type: string
+          description: OS profile name for Nico control plane nodes
+          x-go-name: OSProfile
+        configProfile:
+          type: string
+          description: Config profile name for control plane nodes
+        sshKeyGroupIDs:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: SSH key group IDs for control plane nodes
+          x-go-type-skip-optional-pointer: true
+
+    InfraControlPlaneProvider:
+      type: object
+      additionalProperties: false
+      description: Infra provider fields for cluster-level control plane configuration. Mutually exclusive with `nico`.
+      properties:
+        machineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
+          x-go-type-skip-optional-pointer: true
+        spireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethodCreate"
+          description: How CWE configures SPIRE agent attestation for CAPI-backed control plane nodes
+        bootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Cloud-init write_files entries for CAPI-backed control plane nodes
+          x-go-type-skip-optional-pointer: true
+        preKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Cloud-init runcmd entries for CAPI-backed control plane nodes
+          x-go-type-skip-optional-pointer: true
+
+    InfraControlPlaneProviderUpdate:
+      type: object
+      additionalProperties: false
+      description: |
+        The mutable infra provider control plane fields. Every field carries three states: omitted
+        leaves the stored value alone, a value replaces it, and an empty value clears it.
+      properties:
+        machineTemplate:
+          type: object
+          additionalProperties: true
+          description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
+          x-go-type-skip-optional-pointer: true
+        spireAttestationMethod:
+          $ref: "#/components/schemas/SpireAttestationMethod"
+          description: How CWE configures SPIRE agent attestation for CAPI-backed control plane nodes
+        bootstrapFiles:
+          type: array
+          items:
+            $ref: "#/components/schemas/CloudInitFile"
+          description: Cloud-init write_files entries for CAPI-backed control plane nodes
+          x-go-type-skip-optional-pointer: true
+        preKubeadmCommands:
+          type: array
+          items:
+            type: string
+          description: Cloud-init runcmd entries for CAPI-backed control plane nodes
+          x-go-type-skip-optional-pointer: true
+
+    NicoNodeProvider:
+      type: object
+      additionalProperties: false
+      description: Nico runtime fields for a provisioned node.
+      properties:
+        instanceID:
+          type: string
+          description: Nico instance ID created for the node
+          x-go-type-skip-optional-pointer: true
+        machineID:
+          type: string
+          description: Nico machine ID for the node
+          x-go-type-skip-optional-pointer: true
+        instanceTypeID:
+          type: string
+          format: uuid
+          description: Nico instance type ID used to provision the node
+          x-go-type-skip-optional-pointer: true
+
     DiskSelectionStrategy:
       type: string
       enum:

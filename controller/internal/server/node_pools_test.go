@@ -29,6 +29,27 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/server"
 )
 
+// testNicoNodePoolProvider is the nested Forge payload the read fixtures below
+// store, as it comes back on read. The flat columns of a stored row are mapped
+// into this object; there is no longer a flat API shape.
+func testNicoNodePoolProvider() *api.NicoNodePoolProvider {
+	return &api.NicoNodePoolProvider{
+		SubnetIDs:      []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
+		InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
+		SSHKeyGroupIDs: &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
+		OSProfile:      "ubuntu",
+		ConfigProfile:  "default",
+	}
+}
+
+// forgeDBNodePool stamps the nested nico payload a stored Forge row always
+// carries. The API mapper reads that payload rather than the flat columns, so a
+// fixture written as a plain struct literal would surface no provider at all.
+func forgeDBNodePool(pool db.NodePool) db.NodePool {
+	pool.SyncProviderFields(db.ProviderTypeNico)
+	return pool
+}
+
 func TestNodePoolService_ListNodePools(t *testing.T) {
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	now := time.Now()
@@ -68,11 +89,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 					ClusterID:            clusterID,
 					Name:                 "test-pool",
 					NodeNamePrefix:       "test-pool",
-					SubnetIDs:            []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-					InstanceTypeID:       uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-					SSHKeyGroupIDs:       []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-					OSProfile:            "ubuntu",
-					ConfigProfile:        "default",
+					Nico:                 testNicoNodePoolProvider(),
 					SystemReservedMemory: func() *string { s := "16Gi"; return &s }(),
 					ControlPlane:         false,
 					NodeLabels:           []string{"label1", "label2"},
@@ -107,11 +124,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 					ClusterID:            clusterID,
 					Name:                 "test-pool",
 					NodeNamePrefix:       "test-pool",
-					SubnetIDs:            []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-					InstanceTypeID:       uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-					SSHKeyGroupIDs:       []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-					OSProfile:            "ubuntu",
-					ConfigProfile:        "default",
+					Nico:                 testNicoNodePoolProvider(),
 					SystemReservedMemory: func() *string { s := "16Gi"; return &s }(),
 					ControlPlane:         false,
 					NodeLabels:           []string{"label1", "label2"},
@@ -148,11 +161,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 					ClusterID:            clusterID,
 					Name:                 "test-pool",
 					NodeNamePrefix:       "test-pool",
-					SubnetIDs:            []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-					InstanceTypeID:       uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-					SSHKeyGroupIDs:       []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-					OSProfile:            "ubuntu",
-					ConfigProfile:        "default",
+					Nico:                 testNicoNodePoolProvider(),
 					SystemReservedMemory: func() *string { s := "16Gi"; return &s }(),
 					ControlPlane:         false,
 					NodeLabels:           []string{"label1", "label2"},
@@ -190,11 +199,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 					ClusterID:            clusterID,
 					Name:                 "test-pool",
 					NodeNamePrefix:       "test-pool",
-					SubnetIDs:            []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-					InstanceTypeID:       uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-					SSHKeyGroupIDs:       []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-					OSProfile:            "ubuntu",
-					ConfigProfile:        "default",
+					Nico:                 testNicoNodePoolProvider(),
 					SystemReservedMemory: func() *string { s := "16Gi"; return &s }(),
 					ControlPlane:         false,
 					NodeLabels:           []string{"label1", "label2"},
@@ -215,6 +220,9 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
+			for i := range tt.dbNodePools {
+				tt.dbNodePools[i] = forgeDBNodePool(tt.dbNodePools[i])
+			}
 			mockDB.On("ListNodePools", mock.Anything, tt.filters).Return(tt.dbNodePools, tt.dbError)
 
 			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
@@ -260,17 +268,19 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 			request: func() api.CreateNodePoolRequest {
 				nvLinkLogicalPartitionID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440006")
 				return api.CreateNodePoolRequest{
-					ClusterID:                clusterID,
-					Name:                     "test-pool",
-					NodeNamePrefix:           "test-pool-prefix",
-					SubnetIDs:                []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-					InstanceTypeID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-					NvLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
-					SSHKeyGroupIDs:           &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-					OSProfile:                "ubuntu",
-					ConfigProfile:            "default",
-					NodeLabels:               &[]string{"label1", "label2"},
-					DesiredNodeCount:         3,
+					ClusterID:      clusterID,
+					Name:           "test-pool",
+					NodeNamePrefix: "test-pool-prefix",
+					Nico: &api.NicoNodePoolProvider{
+						SubnetIDs:                []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
+						InstanceTypeID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
+						NvLinkLogicalPartitionID: &nvLinkLogicalPartitionID,
+						SSHKeyGroupIDs:           &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
+						OSProfile:                "ubuntu",
+						ConfigProfile:            "default",
+					},
+					NodeLabels:       &[]string{"label1", "label2"},
+					DesiredNodeCount: 3,
 				}
 			}(),
 			setupMockCalls: func(tx *mockTx) {
@@ -305,11 +315,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 				ClusterID:        clusterID,
 				Name:             "test-pool",
 				NodeNamePrefix:   "test-pool-prefix",
-				SubnetIDs:        []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-				InstanceTypeID:   uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-				SSHKeyGroupIDs:   &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-				OSProfile:        "ubuntu",
-				ConfigProfile:    "default",
+				Nico:             testNicoNodePoolProvider(),
 				DesiredNodeCount: 2,
 			},
 			setupMockCalls: func(tx *mockTx) {
@@ -336,11 +342,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 				ClusterID:        clusterID,
 				Name:             "test-pool",
 				NodeNamePrefix:   "test-pool-prefix",
-				SubnetIDs:        []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-				InstanceTypeID:   uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-				SSHKeyGroupIDs:   &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-				OSProfile:        "ubuntu",
-				ConfigProfile:    "default",
+				Nico:             testNicoNodePoolProvider(),
 				NodeLabels:       &[]string{"label1", "label2"},
 				DesiredNodeCount: 3,
 			},
@@ -367,11 +369,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 				ClusterID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 				Name:             "test-pool",
 				NodeNamePrefix:   "test-pool-prefix",
-				SubnetIDs:        []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-				InstanceTypeID:   uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-				SSHKeyGroupIDs:   &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-				OSProfile:        "ubuntu",
-				ConfigProfile:    "default",
+				Nico:             testNicoNodePoolProvider(),
 				DesiredNodeCount: 3,
 			},
 			setupMockCalls: func(tx *mockTx) {
@@ -390,14 +388,16 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 		{
 			name: "success with VPC prefixes (native networking enabled)",
 			request: api.CreateNodePoolRequest{
-				ClusterID:        clusterID,
-				Name:             "test-pool-vpc",
-				NodeNamePrefix:   "test-pool-vpc-prefix",
-				VpcPrefixIDs:     []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440005")},
-				InstanceTypeID:   uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-				SSHKeyGroupIDs:   &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-				OSProfile:        "ubuntu",
-				ConfigProfile:    "default",
+				ClusterID:      clusterID,
+				Name:           "test-pool-vpc",
+				NodeNamePrefix: "test-pool-vpc-prefix",
+				Nico: &api.NicoNodePoolProvider{
+					VpcPrefixIDs:   []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440005")},
+					InstanceTypeID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
+					SSHKeyGroupIDs: &[]uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
+					OSProfile:      "ubuntu",
+					ConfigProfile:  "default",
+				},
 				NodeLabels:       &[]string{"label1", "label2"},
 				DesiredNodeCount: 3,
 			},
@@ -433,15 +433,16 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 
 			// Mock GetCluster on mockDB for validation (validation uses s.db, not the transaction)
 			mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-				ID:          clusterID,
-				OrgID:       orgID,
-				SiteID:      siteID,
-				PodCIDR:     "192.168.0.0/16",
-				ServiceCIDR: "10.96.0.0/12",
+				ID:           clusterID,
+				OrgID:        orgID,
+				SiteID:       siteID,
+				ProviderType: db.ProviderTypeNico,
+				PodCIDR:      "192.168.0.0/16",
+				ServiceCIDR:  "10.96.0.0/12",
 			}, nil)
 
 			// Determine if native networking should be enabled based on whether request uses VpcPrefixIDs
-			hasVpcPrefixIDs := len(tt.request.VpcPrefixIDs) > 0
+			hasVpcPrefixIDs := tt.request.Nico != nil && len(tt.request.Nico.VpcPrefixIDs) > 0
 
 			// Mock GetSiteByID to return a site with appropriate native networking setting
 			site := &forgesdk.Site{}
@@ -519,7 +520,7 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 		{
 			name:       "success",
 			nodePoolID: nodePoolID,
-			dbNodePool: db.NodePool{
+			dbNodePool: forgeDBNodePool(db.NodePool{
 				ID:                   nodePoolID,
 				ClusterID:            uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 				Name:                 "test-pool",
@@ -533,17 +534,13 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 				ControlPlane:         false,
 				NodeLabels:           []string{"label1", "label2"},
 				Conditions:           mockDBNodePoolConditions(now),
-			},
+			}),
 			wantNodePool: api.GetNodePool200JSONResponse{
 				ID:                   nodePoolID,
 				ClusterID:            uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 				Name:                 "test-pool",
 				NodeNamePrefix:       "test-pool",
-				SubnetIDs:            []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440002")},
-				InstanceTypeID:       uuid.MustParse("550e8400-e29b-41d4-a716-446655440003"),
-				SSHKeyGroupIDs:       []uuid.UUID{uuid.MustParse("550e8400-e29b-41d4-a716-446655440004")},
-				OSProfile:            "ubuntu",
-				ConfigProfile:        "default",
+				Nico:                 testNicoNodePoolProvider(),
 				SystemReservedMemory: func() *string { s := "16Gi"; return &s }(),
 				ControlPlane:         false,
 				NodeLabels:           []string{"label1", "label2"},
@@ -618,16 +615,16 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "success with subnetIDs replace (differs) only updates pool; controller creates NodeSet on reconcile",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs: []openapi_types.UUID{subnetID2},
+				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID2}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:               nodePoolID,
 					ClusterID:        clusterID,
 					SubnetIDs:        []uuid.UUID{subnetID1},
 					CurrentNodeSetID: &currentNodeSetID,
 					Conditions:       mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:               nodePoolID,
 					SubnetIDs:        []uuid.UUID{subnetID2},
@@ -647,15 +644,15 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "success with subnetIDs replace same set (no new NodeSet)",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs: []openapi_types.UUID{subnetID1},
+				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:         nodePoolID,
 					ClusterID:  clusterID,
 					SubnetIDs:  []uuid.UUID{subnetID1},
 					Conditions: mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:        nodePoolID,
 					SubnetIDs: []uuid.UUID{subnetID1},
@@ -673,16 +670,16 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "empty subnetIDs replaces subnets with empty",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs:        []openapi_types.UUID{},
+				Nico:             &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{}},
 				DesiredNodeCount: testutil.PtrTo(3),
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:         nodePoolID,
 					ClusterID:  clusterID,
 					SubnetIDs:  []uuid.UUID{subnetID1},
 					Conditions: mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:           nodePoolID,
 					SubnetIDs:    []uuid.UUID{},
@@ -703,12 +700,12 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 				DesiredNodeCount: testutil.PtrTo(4),
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:         nodePoolID,
 					ClusterID:  clusterID,
 					SubnetIDs:  []uuid.UUID{subnetID1, subnetID2},
 					Conditions: mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:           nodePoolID,
 					SubnetIDs:    []uuid.UUID{subnetID1, subnetID2},
@@ -729,12 +726,12 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 				DesiredNodeCount: testutil.PtrTo(5),
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:         nodePoolID,
 					ClusterID:  clusterID,
 					SubnetIDs:  []uuid.UUID{subnetID1},
 					Conditions: mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:           nodePoolID,
 					SubnetIDs:    []uuid.UUID{subnetID1},
@@ -753,13 +750,13 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "subnetIDs with native networking returns 400",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs: []openapi_types.UUID{subnetID1},
+				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:        nodePoolID,
 					ClusterID: clusterID,
-				}, nil)
+				}), nil)
 			},
 			forgeNativeNetworking: true,
 			wantResponseType:      api.UpdateNodePool400JSONResponse{},
@@ -768,7 +765,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "subnetIDs when node pool not found returns 404",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs: []openapi_types.UUID{subnetID1},
+				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
 				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound)
@@ -779,7 +776,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "subnetIDs when cluster not found returns 404",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs: []openapi_types.UUID{subnetID1},
+				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
 				// Cluster-first order: the cluster lock fails before the pool
@@ -792,16 +789,16 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "success with vpcPrefixIDs replace (differs) only updates pool; controller creates NodeSet on reconcile",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID2},
+				Nico: &api.NicoNodePoolProviderUpdate{VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID2}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:               nodePoolID,
 					ClusterID:        clusterID,
 					VpcPrefixIDs:     []uuid.UUID{vpcPrefixID1},
 					CurrentNodeSetID: &currentNodeSetID,
 					Conditions:       mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:               nodePoolID,
 					VpcPrefixIDs:     []uuid.UUID{vpcPrefixID2},
@@ -821,15 +818,15 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "success with vpcPrefixIDs replace same set (no new NodeSet)",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1},
+				Nico: &api.NicoNodePoolProviderUpdate{VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1},
 					Conditions:   mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:           nodePoolID,
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1},
@@ -846,16 +843,16 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "empty vpcPrefixIDs replaces vpc prefixes with empty",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				VpcPrefixIDs:     []openapi_types.UUID{},
+				Nico:             &api.NicoNodePoolProviderUpdate{VpcPrefixIDs: []openapi_types.UUID{}},
 				DesiredNodeCount: testutil.PtrTo(2),
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1},
 					Conditions:   mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:           nodePoolID,
 					VpcPrefixIDs: []uuid.UUID{},
@@ -876,12 +873,12 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 				DesiredNodeCount: testutil.PtrTo(6),
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1, vpcPrefixID2},
 					Conditions:   mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:           nodePoolID,
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1, vpcPrefixID2},
@@ -900,15 +897,15 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "subnetIDs replace when no current NodeSet only updates pool",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs: []openapi_types.UUID{subnetID2},
+				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID2}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:         nodePoolID,
 					ClusterID:  clusterID,
 					SubnetIDs:  []uuid.UUID{subnetID1},
 					Conditions: mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:        nodePoolID,
 					SubnetIDs: []uuid.UUID{subnetID2},
@@ -926,15 +923,15 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "subnetIDs dedupe and same set no new NodeSet",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs: []openapi_types.UUID{subnetID1, subnetID1, subnetID2},
+				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID1, subnetID1, subnetID2}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:         nodePoolID,
 					ClusterID:  clusterID,
 					SubnetIDs:  []uuid.UUID{subnetID2, subnetID1},
 					Conditions: mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:        nodePoolID,
 					SubnetIDs: []uuid.UUID{subnetID1, subnetID2},
@@ -956,12 +953,12 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 				DesiredNodeCount: testutil.PtrTo(5),
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:           nodePoolID,
 					ClusterID:    clusterID,
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1},
 					Conditions:   mockDBNodePoolConditions(now),
-				}, nil)
+				}), nil)
 				tx.On("UpdateNodePool", mock.Anything, mock.AnythingOfType("*db.NodePool")).Return(db.NodePool{
 					ID:           nodePoolID,
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1},
@@ -981,13 +978,13 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "vpcPrefixIDs with non-native networking returns 400",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1},
+				Nico: &api.NicoNodePoolProviderUpdate{VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:        nodePoolID,
 					ClusterID: clusterID,
-				}, nil)
+				}), nil)
 			},
 			forgeNativeNetworking: false,
 			wantResponseType:      api.UpdateNodePool400JSONResponse{},
@@ -996,14 +993,16 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "both subnetIDs and vpcPrefixIDs returns 400",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				SubnetIDs:    []openapi_types.UUID{subnetID1},
-				VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1},
+				Nico: &api.NicoNodePoolProviderUpdate{
+					SubnetIDs:    []openapi_types.UUID{subnetID1},
+					VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1},
+				},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 					ID:        nodePoolID,
 					ClusterID: clusterID,
-				}, nil)
+				}), nil)
 			},
 			forgeNativeNetworking: false, // site capability irrelevant; validation rejects "both" first
 			wantResponseType:      api.UpdateNodePool400JSONResponse{},
@@ -1012,7 +1011,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "vpcPrefixIDs when node pool not found returns 404",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1},
+				Nico: &api.NicoNodePoolProviderUpdate{VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
 				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{}, db.ErrNotFound)
@@ -1023,7 +1022,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			name:       "vpcPrefixIDs when cluster not found returns 404",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
-				VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1},
+				Nico: &api.NicoNodePoolProviderUpdate{VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1}},
 			},
 			setupMockDB: func(_ *mockDB, tx *mockTx) {
 				// Cluster-first order: the cluster lock fails before the pool
@@ -1087,13 +1086,14 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{
 				ID:        nodePoolID,
 				ClusterID: clusterID,
-			}, nil).Once()
+			}, nil).Maybe()
 			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Maybe().Return(db.Cluster{
-				ID:          clusterID,
-				OrgID:       testOrgID,
-				SiteID:      siteID,
-				PodCIDR:     "192.168.0.0/16",
-				ServiceCIDR: "10.96.0.0/12",
+				ID:           clusterID,
+				OrgID:        testOrgID,
+				SiteID:       siteID,
+				ProviderType: db.ProviderTypeNico,
+				PodCIDR:      "192.168.0.0/16",
+				ServiceCIDR:  "10.96.0.0/12",
 			}, nil)
 			mockDB.MockTx.On(
 				"ListNodePools",
@@ -1158,17 +1158,17 @@ func TestNodePoolService_UpdateNodePool_RejectsPodCIDRCapacityExceeded(t *testin
 		ID:        nodePoolID,
 		ClusterID: clusterID,
 	}, nil)
-	mockDB.MockTx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(db.NodePool{
+	mockDB.MockTx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
 		ID:           nodePoolID,
 		ClusterID:    clusterID,
 		DesiredCount: 1,
-	}, nil)
-	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+	}), nil)
+	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(forgeDBCluster(db.Cluster{
 		ID:          clusterID,
 		SiteID:      uuid.New(),
 		PodCIDR:     "10.240.0.0/23",
 		ServiceCIDR: "10.120.0.0/24",
-	}, nil)
+	}), nil)
 	mockDB.MockTx.On(
 		"ListNodePools",
 		mock.Anything,

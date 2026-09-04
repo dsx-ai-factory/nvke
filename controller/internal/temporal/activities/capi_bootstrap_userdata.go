@@ -66,7 +66,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	}
 
 	if capiNodeSetProvider.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
-		return "", fmt.Errorf("spire join token is required when capiSpireAttestationMethod is joinToken")
+		return "", fmt.Errorf("spire join token is required when infra.spireAttestationMethod is joinToken")
 	}
 
 	trustDomain, trustBundle, err := getTrustDomainAndBundle(ctx, a.cfg)

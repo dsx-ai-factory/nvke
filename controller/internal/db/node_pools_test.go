@@ -86,3 +86,58 @@ func TestNodePoolProviderGettersSettersAndSync(t *testing.T) {
 	require.Equal(t, "next-config", nodePool.ConfigProfile)
 	require.Equal(t, "32Gi", nodePool.SystemReservedMemory)
 }
+
+func TestNodePoolSetCapiInitializesNotNullUUIDArrays(t *testing.T) {
+	pool := db.NodePool{}
+	pool.SetCapi(db.CAPINodePoolProvider{
+		SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+	})
+	require.NotNil(t, pool.SubnetIDs)
+	require.Empty(t, pool.SubnetIDs)
+	require.NotNil(t, pool.VpcPrefixIDs)
+	require.Empty(t, pool.VpcPrefixIDs)
+	require.NotNil(t, pool.SSHKeyGroupIDs)
+	require.Empty(t, pool.SSHKeyGroupIDs)
+}
+
+func TestNodePoolSetNicoPreservesEmptyNotNullUUIDArrays(t *testing.T) {
+	pool := db.NodePool{}
+	pool.SetNico(db.NicoNodePoolProvider{
+		SubnetIDs:      []uuid.UUID{},
+		VpcPrefixIDs:   []uuid.UUID{},
+		SSHKeyGroupIDs: []uuid.UUID{},
+	})
+
+	require.NotNil(t, pool.SubnetIDs)
+	require.Empty(t, pool.SubnetIDs)
+	require.NotNil(t, pool.VpcPrefixIDs)
+	require.Empty(t, pool.VpcPrefixIDs)
+	require.NotNil(t, pool.SSHKeyGroupIDs)
+	require.Empty(t, pool.SSHKeyGroupIDs)
+
+	provider, err := pool.NicoProvider()
+	require.NoError(t, err)
+	require.Empty(t, provider.SSHKeyGroupIDs)
+}
+
+// TestNodePoolSetNicoNeverWritesNilIntoNotNullColumns covers the case a live
+// update hits: the nico JSONB column's slice fields use `omitempty`, so a
+// previously empty value comes back nil from NicoProvider(), not empty. If a
+// merge only touches one of subnetIDs/vpcPrefixIDs/sshKeyGroupIDs and leaves
+// the others as that nil clone, SetNico must still never write nil into the
+// NOT NULL flat columns.
+func TestNodePoolSetNicoNeverWritesNilIntoNotNullColumns(t *testing.T) {
+	pool := db.NodePool{}
+	pool.SetNico(db.NicoNodePoolProvider{
+		SubnetIDs:      nil,
+		VpcPrefixIDs:   nil,
+		SSHKeyGroupIDs: nil,
+	})
+
+	require.NotNil(t, pool.SubnetIDs)
+	require.Empty(t, pool.SubnetIDs)
+	require.NotNil(t, pool.VpcPrefixIDs)
+	require.Empty(t, pool.VpcPrefixIDs)
+	require.NotNil(t, pool.SSHKeyGroupIDs)
+	require.Empty(t, pool.SSHKeyGroupIDs)
+}

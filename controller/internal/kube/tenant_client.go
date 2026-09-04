@@ -118,7 +118,7 @@ func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, 
 			return nil, err
 		}
 		if capi.IsEmptyManifest(provider.InfraCluster) {
-			return nil, fmt.Errorf("cluster %s must define capiInfraCluster when provider type is %q", cluster.ID, db.ProviderTypeCAPI)
+			return nil, fmt.Errorf("cluster %s must define infra.cluster", cluster.ID)
 		}
 
 		return p.clientFromTenantAccessSecret(ctx, cluster)
