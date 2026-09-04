@@ -63,8 +63,8 @@ autoinstall:
             serviceCidr: "10.96.0.0/12"
             nodeAgentPort: "15005"
           registry:
-            bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
-            bootstrapChart: "cloud-workflow-engine"
+            bootstrapRepo: "nvcr.io/org/controller"
+            bootstrapChart: "controller"
     runcmd:
       # Expand root LVM volume
       - [sh, -c, "lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"]
