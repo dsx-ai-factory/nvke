@@ -114,6 +114,21 @@ func bearerToken(tokens TokenSource) api.RequestEditorFn {
 // API exposes the underlying generated client for preflight checks.
 func (c *Client) API() *api.ClientWithResponses { return c.api }
 
+// ListClusters returns every cluster known to NKE.
+func (c *Client) ListClusters(ctx context.Context) ([]api.Cluster, error) {
+	resp, err := c.api.ListClustersWithResponse(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing clusters: %w", err)
+	}
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("listing clusters: unexpected status %s: %s", resp.Status(), resp.Body)
+	}
+	if resp.JSON200 == nil {
+		return nil, errors.New("listing clusters: empty response body")
+	}
+	return resp.JSON200.Clusters, nil
+}
+
 // ListNodePools returns the node pools owned by cluster id.
 func (c *Client) ListNodePools(ctx context.Context, clusterID openapi_types.UUID) ([]api.NodePool, error) {
 	resp, err := c.api.ListNodePoolsWithResponse(ctx, &api.ListNodePoolsParams{ClusterID: &clusterID})
@@ -334,19 +349,13 @@ func (c *Client) GetNodePool(ctx context.Context, id openapi_types.UUID) (*api.N
 // GetByName returns the cluster with the given name, or an error if the list
 // call fails or no cluster matches.
 func (c *Client) GetByName(ctx context.Context, name string) (*api.Cluster, error) {
-	resp, err := c.api.ListClustersWithResponse(ctx, nil)
+	clusters, err := c.ListClusters(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("listing clusters: %w", err)
+		return nil, err
 	}
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("listing clusters: unexpected status %s", resp.Status())
-	}
-	if resp.JSON200 == nil {
-		return nil, errors.New("listing clusters: empty response body")
-	}
-	for i := range resp.JSON200.Clusters {
-		if resp.JSON200.Clusters[i].Name == name {
-			return &resp.JSON200.Clusters[i], nil
+	for i := range clusters {
+		if clusters[i].Name == name {
+			return &clusters[i], nil
 		}
 	}
 	return nil, fmt.Errorf("cluster %q not found", name)

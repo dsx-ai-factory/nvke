@@ -5,6 +5,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The helper path is resolved from this script, independent of the caller's working directory.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/control-plane-vip.sh"
 if [[ -n "${API_URL:-}" ]]; then
   CLUSTERS_API_URL="${API_URL%/}"
   API_BASE_URL="${API_BASE_URL:-${CLUSTERS_API_URL%/clusters}}"
@@ -23,7 +26,9 @@ if [[ -n "${TOKEN}" ]]; then
 fi
 CLUSTER_NAME="${CLUSTER_NAME:-capd}"
 DEFAULT_SITE_ID="${DEFAULT_SITE_ID:-00000000-0000-0000-0000-000000000000}"
-CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-172.31.1.1}"
+CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-}"
+DEFAULT_VIP_RANGE="${DEFAULT_VIP_RANGE:-172.31.1.0/24}"
+FIRST_CONTROL_PLANE_VIP="${FIRST_CONTROL_PLANE_VIP:-172.31.1.1}"
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-3}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
@@ -50,6 +55,12 @@ case "${CAPD_ENABLE_KUBE_VIP:-}" in
 esac
 
 if [[ "${CAPD_ENABLE_KUBE_VIP}" == "true" ]]; then
+  if [[ -z "${CONTROL_PLANE_VIP}" ]]; then
+    CLUSTERS="$(curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}")"
+    CONTROL_PLANE_VIP="$(
+      first_available_control_plane_vip "${DEFAULT_VIP_RANGE}" "${CLUSTERS}" "${FIRST_CONTROL_PLANE_VIP}"
+    )"
+  fi
   CONTROL_PLANE_VIP_FIELD=$(printf ',\n  "controlPlaneVIP": "%s"' "${CONTROL_PLANE_VIP}")
 else
   CONTROL_PLANE_VIP_FIELD=""

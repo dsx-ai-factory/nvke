@@ -27,6 +27,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The helper path is resolved from this script, independent of the caller's working directory.
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/control-plane-vip.sh"
 
 CWE_HTTP_PORT="${CWE_HTTP_PORT:-8080}"
 API_URL="${API_URL:-http://localhost:${CWE_HTTP_PORT}/api}"
@@ -52,7 +55,9 @@ INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000003}"  # 
 KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}"
 CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}"
 WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}"
-CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-172.31.0.10}"
+CONTROL_PLANE_VIP="${CONTROL_PLANE_VIP:-}"
+DEFAULT_VIP_RANGE="${DEFAULT_VIP_RANGE:-172.31.0.0/24}"
+FIRST_CONTROL_PLANE_VIP="${FIRST_CONTROL_PLANE_VIP:-172.31.0.10}"
 CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}"
 CNI_VERSION="${CNI_VERSION:-}"
 
@@ -66,6 +71,13 @@ CNI_VERSION_JSON=""
 if [[ -n "${CNI_VERSION}" ]]; then
   CNI_VERSION_JSON=",
   \"cniVersion\": \"${CNI_VERSION}\""
+fi
+
+if [[ -z "${CONTROL_PLANE_VIP}" ]]; then
+  CLUSTERS="$(curl "${AUTH_HEADER[@]+"${AUTH_HEADER[@]}"}" -fsS --max-time "${CURL_MAX_TIME:-30}" "${CLUSTERS_API_URL}")"
+  CONTROL_PLANE_VIP="$(
+    first_available_control_plane_vip "${DEFAULT_VIP_RANGE}" "${CLUSTERS}" "${FIRST_CONTROL_PLANE_VIP}"
+  )"
 fi
 
 BODY=$(cat <<EOF
