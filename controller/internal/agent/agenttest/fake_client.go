@@ -47,6 +47,10 @@ type FakeClient struct {
 	ReconfigureKubeletAPIServerRequests []*nkeproto.ReconfigureKubeletAPIServerRequest
 	ReconfigureKubeletAPIServerResponse *nkeproto.ReconfigureKubeletAPIServerResponse
 	ReconfigureKubeletAPIServerErr      error
+	ReconcileOpenVSwitchCalls           []uuid.UUID
+	ReconcileOpenVSwitchRequests        []*nkeproto.ReconcileOpenVSwitchRequest
+	ReconcileOpenVSwitchResponse        *nkeproto.ReconcileOpenVSwitchResponse
+	ReconcileOpenVSwitchErr             error
 
 	InitializeAPIEncryptionCalls            []uuid.UUID
 	InitializeAPIEncryptionKeys             []string
@@ -188,6 +192,12 @@ func (f *FakeClient) ReconfigureKubeletAPIServer(_ context.Context, node db.Node
 		return &nkeproto.ReconfigureKubeletAPIServerResponse{}, f.ReconfigureKubeletAPIServerErr
 	}
 	return f.ReconfigureKubeletAPIServerResponse, f.ReconfigureKubeletAPIServerErr
+}
+
+func (f *FakeClient) ReconcileOpenVSwitch(_ context.Context, node db.Node, req *nkeproto.ReconcileOpenVSwitchRequest) (*nkeproto.ReconcileOpenVSwitchResponse, error) {
+	f.ReconcileOpenVSwitchCalls = append(f.ReconcileOpenVSwitchCalls, node.ID)
+	f.ReconcileOpenVSwitchRequests = append(f.ReconcileOpenVSwitchRequests, req)
+	return f.ReconcileOpenVSwitchResponse, f.ReconcileOpenVSwitchErr
 }
 
 func (f *FakeClient) KubeadmUpgradeApply(_ context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error) {

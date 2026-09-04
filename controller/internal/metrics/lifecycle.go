@@ -15,6 +15,7 @@ const (
 	clusterIDLabel     = "cluster_id"
 	nodePoolIDLabel    = "node_pool_id"
 	nodeTypeLabel      = "node_type"
+	nodeNameLabel      = "node_name"
 	resultLabel        = "result"
 	siteIDLabel        = "site_id"
 )

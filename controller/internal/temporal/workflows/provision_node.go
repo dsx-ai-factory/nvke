@@ -493,13 +493,10 @@ func configureCNIPrerequisites(ctx workflow.Context, nodeID uuid.UUID) error {
 		}
 		if err := workflow.ExecuteActivity(
 			workflow.WithActivityOptions(ctx, activityOptions),
-			a.ExecuteHostRunbook,
-			activities.ExecuteHostRunbookInput{
-				HostID:      nodeID,
-				RunbookName: "configure-openvswitch",
-			},
+			a.ConfigureOpenVSwitch,
+			activities.ConfigureOpenVSwitchInput{NodeID: nodeID},
 		).Get(ctx, nil); err != nil {
-			return fmt.Errorf("failed to run configure-openvswitch runbook: %w", err)
+			return fmt.Errorf("failed to configure Open vSwitch: %w", err)
 		}
 	}
 

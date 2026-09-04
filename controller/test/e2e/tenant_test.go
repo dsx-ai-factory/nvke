@@ -89,6 +89,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 				validateOIDCPostCreate(&test)
 			}
 			validateNodeReadinessPostCreate(&test)
+			if spec.validate.openVSwitch {
+				validateOpenVSwitchPostCreate(&test)
+			}
 			if spec.validate.postReadyChecks {
 				validatePostReadyClusterState(&test)
 				validatePostReadyNodeOperations(&test)
@@ -333,7 +336,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
 		},
 		options:  nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
-		validate: validations{scale: true, reboot: true},
+		validate: validations{scale: true, reboot: true, openVSwitch: true},
 	}),
 	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
 		buildSpec: nicoVMSSpec,
@@ -467,6 +470,9 @@ type validations struct {
 	// certificateRenewal forces certificate renewal on every control-plane node
 	// and verifies the cluster returns to Ready after each sequential restart.
 	certificateRenewal bool
+	// openVSwitch proves OVN node provisioning used the typed node-agent RPC
+	// on every node and did not enter the legacy runbook fallback.
+	openVSwitch bool
 	// csrApproval rotates a Ready worker's kubelet serving certificate and
 	// verifies that the tenant CSR controller approves and obtains a new one.
 	csrApproval bool

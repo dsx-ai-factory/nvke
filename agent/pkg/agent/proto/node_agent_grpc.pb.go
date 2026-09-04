@@ -29,6 +29,7 @@ const (
 	NodeAgent_ExecuteKubeadmJoin_FullMethodName                           = "/proto.NodeAgent/ExecuteKubeadmJoin"
 	NodeAgent_ExecuteKubeadmReset_FullMethodName                          = "/proto.NodeAgent/ExecuteKubeadmReset"
 	NodeAgent_ReconfigureKubeletAPIServer_FullMethodName                  = "/proto.NodeAgent/ReconfigureKubeletAPIServer"
+	NodeAgent_ReconcileOpenVSwitch_FullMethodName                         = "/proto.NodeAgent/ReconcileOpenVSwitch"
 	NodeAgent_KubeadmUpgradeApply_FullMethodName                          = "/proto.NodeAgent/KubeadmUpgradeApply"
 	NodeAgent_ReconcileKubeVip_FullMethodName                             = "/proto.NodeAgent/ReconcileKubeVip"
 	NodeAgent_StartKubernetesCertificateRenewal_FullMethodName            = "/proto.NodeAgent/StartKubernetesCertificateRenewal"
@@ -92,6 +93,12 @@ type NodeAgentClient interface {
 	// after a config change, the agent restores the original config and tries to
 	// restore the service before returning a structured failure outcome.
 	ReconfigureKubeletAPIServer(ctx context.Context, in *ReconfigureKubeletAPIServerRequest, opts ...grpc.CallOption) (*ReconfigureKubeletAPIServerResponse, error)
+	// ReconcileOpenVSwitch moves the default-route interface's existing network
+	// configuration onto an Open vSwitch bridge named br<interface>. The
+	// operation is convergent: after a lost response or interrupted connection,
+	// retrying either applies the already-written network configuration or
+	// reports OUTCOME_UNCHANGED when the bridge is live.
+	ReconcileOpenVSwitch(ctx context.Context, in *ReconcileOpenVSwitchRequest, opts ...grpc.CallOption) (*ReconcileOpenVSwitchResponse, error)
 	// KubeadmUpgradeApply upgrades the Kubernetes control plane and its add-ons
 	// to target_version. The request is accepted only on a control-plane node.
 	// Retrying the same target is safe because kubeadm upgrade apply is
@@ -344,6 +351,16 @@ func (c *nodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, in *R
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReconfigureKubeletAPIServerResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_ReconfigureKubeletAPIServer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) ReconcileOpenVSwitch(ctx context.Context, in *ReconcileOpenVSwitchRequest, opts ...grpc.CallOption) (*ReconcileOpenVSwitchResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReconcileOpenVSwitchResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_ReconcileOpenVSwitch_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -828,6 +845,12 @@ type NodeAgentServer interface {
 	// after a config change, the agent restores the original config and tries to
 	// restore the service before returning a structured failure outcome.
 	ReconfigureKubeletAPIServer(context.Context, *ReconfigureKubeletAPIServerRequest) (*ReconfigureKubeletAPIServerResponse, error)
+	// ReconcileOpenVSwitch moves the default-route interface's existing network
+	// configuration onto an Open vSwitch bridge named br<interface>. The
+	// operation is convergent: after a lost response or interrupted connection,
+	// retrying either applies the already-written network configuration or
+	// reports OUTCOME_UNCHANGED when the bridge is live.
+	ReconcileOpenVSwitch(context.Context, *ReconcileOpenVSwitchRequest) (*ReconcileOpenVSwitchResponse, error)
 	// KubeadmUpgradeApply upgrades the Kubernetes control plane and its add-ons
 	// to target_version. The request is accepted only on a control-plane node.
 	// Retrying the same target is safe because kubeadm upgrade apply is
@@ -1033,6 +1056,9 @@ func (UnimplementedNodeAgentServer) ExecuteKubeadmReset(context.Context, *Kubead
 }
 func (UnimplementedNodeAgentServer) ReconfigureKubeletAPIServer(context.Context, *ReconfigureKubeletAPIServerRequest) (*ReconfigureKubeletAPIServerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReconfigureKubeletAPIServer not implemented")
+}
+func (UnimplementedNodeAgentServer) ReconcileOpenVSwitch(context.Context, *ReconcileOpenVSwitchRequest) (*ReconcileOpenVSwitchResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ReconcileOpenVSwitch not implemented")
 }
 func (UnimplementedNodeAgentServer) KubeadmUpgradeApply(context.Context, *KubeadmUpgradeApplyRequest) (*KubeadmUpgradeApplyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method KubeadmUpgradeApply not implemented")
@@ -1292,6 +1318,24 @@ func _NodeAgent_ReconfigureKubeletAPIServer_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).ReconfigureKubeletAPIServer(ctx, req.(*ReconfigureKubeletAPIServerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_ReconcileOpenVSwitch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReconcileOpenVSwitchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).ReconcileOpenVSwitch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_ReconcileOpenVSwitch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).ReconcileOpenVSwitch(ctx, req.(*ReconcileOpenVSwitchRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2079,6 +2123,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReconfigureKubeletAPIServer",
 			Handler:    _NodeAgent_ReconfigureKubeletAPIServer_Handler,
+		},
+		{
+			MethodName: "ReconcileOpenVSwitch",
+			Handler:    _NodeAgent_ReconcileOpenVSwitch_Handler,
 		},
 		{
 			MethodName: "KubeadmUpgradeApply",

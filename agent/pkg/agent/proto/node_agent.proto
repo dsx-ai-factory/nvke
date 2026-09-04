@@ -31,6 +31,13 @@ service NodeAgent {
   // restore the service before returning a structured failure outcome.
   rpc ReconfigureKubeletAPIServer(ReconfigureKubeletAPIServerRequest) returns (ReconfigureKubeletAPIServerResponse) {}
 
+  // ReconcileOpenVSwitch moves the default-route interface's existing network
+  // configuration onto an Open vSwitch bridge named br<interface>. The
+  // operation is convergent: after a lost response or interrupted connection,
+  // retrying either applies the already-written network configuration or
+  // reports OUTCOME_UNCHANGED when the bridge is live.
+  rpc ReconcileOpenVSwitch(ReconcileOpenVSwitchRequest) returns (ReconcileOpenVSwitchResponse) {}
+
   // KubeadmUpgradeApply upgrades the Kubernetes control plane and its add-ons
   // to target_version. The request is accepted only on a control-plane node.
   // Retrying the same target is safe because kubeadm upgrade apply is
@@ -1206,3 +1213,24 @@ message RemoveEtcdMemberRequest {
 }
 
 message RemoveEtcdMemberResponse {}
+
+message ReconcileOpenVSwitchRequest {}
+
+message ReconcileOpenVSwitchResponse {
+  enum Outcome {
+    OUTCOME_UNSPECIFIED = 0;
+    OUTCOME_CONFIGURED = 1;
+    OUTCOME_UNCHANGED = 2;
+  }
+
+  enum NetworkBackend {
+    NETWORK_BACKEND_UNSPECIFIED = 0;
+    NETWORK_BACKEND_NETPLAN = 1;
+    NETWORK_BACKEND_IFUPDOWN = 2;
+  }
+
+  Outcome outcome = 1;
+  string bridge_name = 2;
+  string uplink_interface = 3;
+  NetworkBackend network_backend = 4;
+}

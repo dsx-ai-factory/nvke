@@ -36,6 +36,7 @@ type Client interface {
 	ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinRequest) (*nkeproto.KubeadmJoinStatusResponse, error)
 	ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nkeproto.KubeadmResetRequest) (*nkeproto.KubeadmResetStatusResponse, error)
 	ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nkeproto.ReconfigureKubeletAPIServerRequest) (*nkeproto.ReconfigureKubeletAPIServerResponse, error)
+	ReconcileOpenVSwitch(ctx context.Context, node db.Node, req *nkeproto.ReconcileOpenVSwitchRequest) (*nkeproto.ReconcileOpenVSwitchResponse, error)
 	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error)
 	ReconcileKubeVip(ctx context.Context, node db.Node, req *nkeproto.ReconcileKubeVipRequest) (*nkeproto.ReconcileKubeVipResponse, error)
 	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
@@ -311,6 +312,20 @@ func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node 
 	resp, err := nkeproto.NewNodeAgentClient(conn).ReconfigureKubeletAPIServer(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconfigure kubelet API server on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+func (c *NodeAgentClient) ReconcileOpenVSwitch(ctx context.Context, node db.Node, req *nkeproto.ReconcileOpenVSwitchRequest) (*nkeproto.ReconcileOpenVSwitchResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for Open vSwitch reconciliation on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nkeproto.NewNodeAgentClient(conn).ReconcileOpenVSwitch(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to reconcile Open vSwitch on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

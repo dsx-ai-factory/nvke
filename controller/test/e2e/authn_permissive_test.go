@@ -91,13 +91,13 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		// The metrics listener is a second server on a second port, reachable
 		// only because the Service publishes `metrics` alongside `http`. The
 		// probe makes a missing port say so rather than read as a dead NKE.
-		metrics, err = kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), cweMetricsPort)
+		metrics, err = kube.SharedServiceForwarder(restConfig, cwe.Namespace(), cwe.Service(), nkeControllerMetricsPort)
 		Expect(err).NotTo(HaveOccurred(), "build a port-forward to the metrics listener")
 
 		_, _, err = metrics.Get(tctx, metricsPath)
 		Expect(err).NotTo(HaveOccurred(),
 			"could not reach %s on the %q port of Service %s/%s; the chart publishes it from .Values.metrics.port and a Service without it makes the permissive counter unassertable",
-			metricsPath, cweMetricsPort, cwe.Namespace(), cwe.Service())
+			metricsPath, nkeControllerMetricsPort, cwe.Namespace(), cwe.Service())
 	})
 
 	It("serves the three rejection cases and counts them as would_reject", func(ctx SpecContext) {
@@ -150,9 +150,9 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 	})
 })
 
-// cweMetricsPort is the port name the metrics listener is published on. A name
+// nkeControllerMetricsPort is the port name the metrics listener is published on. A name
 // and not 9090, because the chart renders the number from .Values.metrics.port.
-const cweMetricsPort = "metrics"
+const nkeControllerMetricsPort = "metrics"
 
 const metricsPath = "/metrics"
 
