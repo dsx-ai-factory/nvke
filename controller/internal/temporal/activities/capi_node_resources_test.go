@@ -616,7 +616,7 @@ func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testin
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       machineConst,
+			Kind:       "Machine",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "worker-0",
