@@ -68,9 +68,9 @@ cluster:
 # (image/chart tag) is baked into the nkectl build, so it is not set here.
 registry:
   # OCI repository holding the bootstrap engine image and chart.
-  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
+  bootstrapRepo: "nvcr.io/org/controller"
   # Bootstrap engine chart name within bootstrapRepo.
-  bootstrapChart: "cloud-workflow-engine"
+  bootstrapChart: "controller"
   # Optional registry credential. Prefer leaving this empty and supplying the
   # secret at runtime via --registry-api-key or the REGISTRY_API_KEY env var so
   # the file can be committed safely. It is never defaulted.
