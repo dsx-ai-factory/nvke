@@ -1,26 +1,21 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package providers is the registry of Cluster API infrastructure providers
-// nkectl knows how to describe.
+// Package providers declares the infrastructure providers this build of nkectl
+// supports.
 //
-// It holds data only — API kinds, CRD names, how a provider's manager is
-// identified, and where its credentials Secret lives. Nothing here talks to a
-// cluster, so a request builder can depend on the registry without depending
-// on anything that shells out to kubectl. See providers/inspect for the half
-// that does.
+// It is a setting rather than a registry: nothing registers into it, the set is
+// fixed when nkectl is compiled, and supporting another provider means editing
+// Supported() and its test. Being supported means only that nkectl knows how to
+// find and describe the provider — CWE accepts any capiInfraCluster manifest,
+// so a provider absent from this file can still be used by writing one by hand.
 //
-// The values here are read from each provider's own source. They are a
-// snapshot: both providers are under active development, so a bump should
-// re-check the CRD names, the manager identity, and the credentials keys.
+// The values are read from each provider's own source. They are a snapshot:
+// both providers are under active development, so a bump should re-check the
+// CRD names, the manager identity, and the credentials flags.
 package providers
 
-// Type identifies an infrastructure provider in the set nkectl can describe.
-//
-// The set is closed so that nkectl only claims to understand providers it has
-// been taught about. It is not enforcement: CWE accepts any capiInfraCluster
-// manifest, so a provider absent from this list can still be used by writing
-// that manifest by hand.
+// Type names a supported infrastructure provider.
 type Type string
 
 const (
@@ -32,27 +27,16 @@ const (
 	TypeLaunchLayer Type = "launchlayer"
 )
 
-// cluster-api-provider-provisioned is deliberately absent. It adopts hosts NKE
-// provisioned for a site controller during `nkectl bootstrap site`, takes no
-// credentials, and is never a backend an operator chooses for a tenant cluster.
-// Listing it here would answer a question nobody asks and imply it is a
-// selectable alternative to NICo or LaunchLayer.
+// cluster-api-provider-provisioned is deliberately not here. It adopts hosts
+// NKE provisioned for a site controller during `nkectl bootstrap site`, takes
+// no credentials, and is never a backend an operator chooses for a tenant
+// cluster. Listing it would imply it is an alternative to NICo or LaunchLayer.
 
-// Descriptor is everything nkectl knows about one infrastructure provider.
-type Descriptor struct {
+// Provider is what nkectl needs to know to find a provider in a cluster and
+// report whether it is usable.
+type Provider struct {
 	// Type names the provider.
 	Type Type `json:"type"`
-
-	// CWEProviderType is the value CWE's own provider_type discriminator takes
-	// for clusters backed by this provider. It is recorded so the CLI's
-	// vocabulary and CWE's cannot silently diverge: CWE distinguishes only
-	// "nico" from "capi", while this registry names each provider.
-	CWEProviderType string `json:"cweProviderType"`
-
-	// ClusterKind and MachineTemplateKind are the infrastructure kinds a
-	// cluster request references.
-	ClusterKind         string `json:"clusterKind"`
-	MachineTemplateKind string `json:"machineTemplateKind"`
 
 	// CRDNames are the CRDs that must be established, and serving at least one
 	// version, for the provider to count as installed. Only the CRDs nkectl
@@ -107,14 +91,12 @@ type Descriptor struct {
 // serves its cluster and machine-template kinds from.
 const infrastructureGroup = "infrastructure.cluster.x-k8s.io"
 
-// All returns every provider in the registry, in a stable order.
-func All() []Descriptor {
-	return []Descriptor{
+// Supported returns the providers this build of nkectl knows about, in a
+// stable order.
+func Supported() []Provider {
+	return []Provider{
 		{
 			Type:                 TypeNico,
-			CWEProviderType:      "capi",
-			ClusterKind:          "NicoCluster",
-			MachineTemplateKind:  "NicoMachineTemplate",
 			CRDNames:             []string{"nicoclusters." + infrastructureGroup, "nicomachinetemplates." + infrastructureGroup},
 			AppName:              "cluster-api-provider-nico",
 			ControllerNamespace:  "capnico-system",
@@ -125,9 +107,6 @@ func All() []Descriptor {
 		},
 		{
 			Type:                 TypeLaunchLayer,
-			CWEProviderType:      "capi",
-			ClusterKind:          "LaunchLayerCluster",
-			MachineTemplateKind:  "LaunchLayerMachineTemplate",
 			CRDNames:             []string{"launchlayerclusters." + infrastructureGroup, "launchlayermachinetemplates." + infrastructureGroup},
 			AppName:              "cluster-api-provider-launchlayer",
 			ControllerNamespace:  "capll-system",
@@ -141,25 +120,4 @@ func All() []Descriptor {
 			UnconfiguredIsValid: true,
 		},
 	}
-}
-
-// Lookup returns the descriptor for t, and whether t is in the registry.
-func Lookup(t Type) (Descriptor, bool) {
-	for _, d := range All() {
-		if d.Type == t {
-			return d, true
-		}
-	}
-	return Descriptor{}, false
-}
-
-// Types returns the registry's provider names, for use in flag help and in the
-// error raised for an unsupported --type.
-func Types() []string {
-	all := All()
-	names := make([]string, 0, len(all))
-	for _, d := range all {
-		names = append(names, string(d.Type))
-	}
-	return names
 }

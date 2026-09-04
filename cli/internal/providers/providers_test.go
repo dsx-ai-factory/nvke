@@ -8,19 +8,16 @@ import (
 	"testing"
 )
 
-// TestRegistryMatchesProviderSources pins the registry to literals read from
-// each provider's own repository. Asserting against literals rather than
-// against the registry is the point: a test that compared the registry to
-// itself would pass no matter what drifted.
+// TestSupportedMatchesProviderSources pins the supported set to literals read
+// from each provider's own repository. Asserting against literals is the point:
+// a test that compared the set to itself would pass no matter what drifted.
 //
 // Both providers are under active development. When one is bumped,
 // re-read its CRD names, its manager identity, and its credentials flags, and
 // update this test with them.
-func TestRegistryMatchesProviderSources(t *testing.T) {
+func TestSupportedMatchesProviderSources(t *testing.T) {
 	cases := []struct {
 		typ                  Type
-		clusterKind          string
-		machineTemplateKind  string
 		crdNames             []string
 		appName              string
 		controllerNamespace  string
@@ -32,8 +29,6 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 	}{
 		{
 			typ:                  TypeNico,
-			clusterKind:          "NicoCluster",
-			machineTemplateKind:  "NicoMachineTemplate",
 			crdNames:             []string{"nicoclusters.infrastructure.cluster.x-k8s.io", "nicomachinetemplates.infrastructure.cluster.x-k8s.io"},
 			appName:              "cluster-api-provider-nico",
 			controllerNamespace:  "capnico-system",
@@ -45,8 +40,6 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 		},
 		{
 			typ:                  TypeLaunchLayer,
-			clusterKind:          "LaunchLayerCluster",
-			machineTemplateKind:  "LaunchLayerMachineTemplate",
 			crdNames:             []string{"launchlayerclusters.infrastructure.cluster.x-k8s.io", "launchlayermachinetemplates.infrastructure.cluster.x-k8s.io"},
 			appName:              "cluster-api-provider-launchlayer",
 			controllerNamespace:  "capll-system",
@@ -62,15 +55,15 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(string(tc.typ), func(t *testing.T) {
-			d, ok := Lookup(tc.typ)
-			if !ok {
-				t.Fatalf("Lookup(%q) found nothing", tc.typ)
+			var d Provider
+			var found bool
+			for _, p := range Supported() {
+				if p.Type == tc.typ {
+					d, found = p, true
+				}
 			}
-			if d.ClusterKind != tc.clusterKind {
-				t.Errorf("ClusterKind = %q, want %q", d.ClusterKind, tc.clusterKind)
-			}
-			if d.MachineTemplateKind != tc.machineTemplateKind {
-				t.Errorf("MachineTemplateKind = %q, want %q", d.MachineTemplateKind, tc.machineTemplateKind)
+			if !found {
+				t.Fatalf("%s is not in the supported set", tc.typ)
 			}
 			if strings.Join(d.CRDNames, ",") != strings.Join(tc.crdNames, ",") {
 				t.Errorf("CRDNames = %v, want %v", d.CRDNames, tc.crdNames)
@@ -100,30 +93,15 @@ func TestRegistryMatchesProviderSources(t *testing.T) {
 	}
 }
 
-func TestLookupRejectsUnknownType(t *testing.T) {
-	if _, ok := Lookup(Type("nope")); ok {
-		t.Error("Lookup accepted a type that is not in the registry")
+// TestSupportedSetIsTheTwoProvidersNkectlKnows guards the set itself. Adding a
+// provider is a deliberate change to what this build claims to support, so it
+// should break this test and be updated with it.
+func TestSupportedSetIsTheTwoProvidersNkectlKnows(t *testing.T) {
+	var names []string
+	for _, p := range Supported() {
+		names = append(names, string(p.Type))
 	}
-}
-
-func TestTypesListsEveryProvider(t *testing.T) {
-	got := strings.Join(Types(), ",")
-	want := "nico,launchlayer"
-	if got != want {
-		t.Errorf("Types() = %q, want %q", got, want)
-	}
-}
-
-// TestCWEProviderTypeIsRecorded checks that every entry states which of CWE's
-// own provider_type values it is reached through. CWE distinguishes only "nico"
-// from "capi", so without this the CLI's richer vocabulary could drift from the
-// API it ultimately talks to.
-func TestCWEProviderTypeIsRecorded(t *testing.T) {
-	for _, d := range All() {
-		switch d.CWEProviderType {
-		case "nico", "capi":
-		default:
-			t.Errorf("%s CWEProviderType = %q, want nico or capi", d.Type, d.CWEProviderType)
-		}
+	if got, want := strings.Join(names, ","), "nico,launchlayer"; got != want {
+		t.Errorf("Supported() = %q, want %q", got, want)
 	}
 }

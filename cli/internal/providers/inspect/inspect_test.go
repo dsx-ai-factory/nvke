@@ -59,6 +59,18 @@ func (f *fakeRunner) called(fragments ...string) bool {
 	return false
 }
 
+// supported returns the entry for typ from the set nkectl supports.
+func supported(t *testing.T, typ providers.Type) providers.Provider {
+	t.Helper()
+	for _, p := range providers.Supported() {
+		if p.Type == typ {
+			return p
+		}
+	}
+	t.Fatalf("%s is not in the supported set", typ)
+	return providers.Provider{}
+}
+
 // kubeconfig writes a throwaway file so Inspect's existence check passes.
 func kubeconfig(t *testing.T) string {
 	t.Helper()
@@ -128,8 +140,8 @@ func TestInspect_NoCRDsInstalled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Inspect returned an error for a cluster with no providers: %v", err)
 	}
-	if len(got) != len(providers.All()) {
-		t.Fatalf("reported %d providers, want %d", len(got), len(providers.All()))
+	if len(got) != len(providers.Supported()) {
+		t.Fatalf("reported %d providers, want %d", len(got), len(providers.Supported()))
 	}
 	for _, s := range got {
 		if s.State != StateNotInstalled {
@@ -142,7 +154,7 @@ func TestInspect_NoCRDsInstalled(t *testing.T) {
 }
 
 func TestInspect_OneInstalledOneNot(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),
 		"get deployments": emptyList,
@@ -162,7 +174,7 @@ func TestInspect_OneInstalledOneNot(t *testing.T) {
 }
 
 func TestInspect_CRDNotEstablished(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	notEstablished := `{"items":[{"metadata":{"name":"` + nico.CRDNames[0] + `"},` +
 		`"spec":{"versions":[{"served":true}]},` +
 		`"status":{"conditions":[{"type":"Established","status":"False"}]}}]}`
@@ -181,7 +193,7 @@ func TestInspect_CRDNotEstablished(t *testing.T) {
 }
 
 func TestInspect_CRDNoServedVersion(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	unserved := `{"items":[{"metadata":{"name":"` + nico.CRDNames[0] + `"},` +
 		`"spec":{"versions":[{"served":false}]},` +
 		`"status":{"conditions":[{"type":"Established","status":"True"}]}}]}`
@@ -200,7 +212,7 @@ func TestInspect_CRDNoServedVersion(t *testing.T) {
 }
 
 func TestInspect_ConfiguredWhenManagerAvailable(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),
 		"get deployments": deployJSON("capnico-system", "controller-manager", nico.AppName, true, 1, 1, ""),
@@ -223,7 +235,7 @@ func TestInspect_ConfiguredWhenManagerAvailable(t *testing.T) {
 // TestInspect_NoManagerDeployment covers the state the end-to-end suite
 // produces: CRDs applied and a Secret written, but no controller running.
 func TestInspect_NoManagerDeployment(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),
 		"get deployments": emptyList,
@@ -244,7 +256,7 @@ func TestInspect_NoManagerDeployment(t *testing.T) {
 }
 
 func TestInspect_ManagerNotAvailable(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),
 		"get deployments": deployJSON("capnico-system", "controller-manager", nico.AppName, false, 0, 1, ""),
@@ -267,7 +279,7 @@ func TestInspect_ManagerNotAvailable(t *testing.T) {
 // TestInspect_ManagerFlagsOverrideSecretLocation covers a manager told to read
 // its credentials from somewhere other than the provider's default.
 func TestInspect_ManagerFlagsOverrideSecretLocation(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	args := `"--provider-credentials-namespace=other-ns","--provider-credentials-secret-name","other-secret"`
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),
@@ -291,7 +303,7 @@ func TestInspect_ManagerFlagsOverrideSecretLocation(t *testing.T) {
 // TestInspect_ManagerFoundByNamespaceAndName covers a provider whose manager
 // carries no recognisable app label, so only the registry's fallback finds it.
 func TestInspect_ManagerFoundByNamespaceAndName(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),
 		"get deployments": deployJSON("capnico-system", "controller-manager", "something-else", true, 1, 1, ""),
@@ -311,7 +323,7 @@ func TestInspect_ManagerFoundByNamespaceAndName(t *testing.T) {
 // but not read their credentials. That is not knowledge of a broken provider,
 // and it must not fail the whole table.
 func TestInspect_SecretProbeForbidden(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	r := &fakeRunner{
 		responses: map[string]string{
 			"get crd":         crdJSON(nico.CRDNames...),
@@ -341,7 +353,7 @@ func TestInspect_SecretProbeForbidden(t *testing.T) {
 // TestInspect_LaunchLayerUnconfiguredIsNoted covers the provider that runs
 // unauthenticated by design, where a missing Secret is a choice.
 func TestInspect_LaunchLayerUnconfiguredIsNoted(t *testing.T) {
-	ll, _ := providers.Lookup(providers.TypeLaunchLayer)
+	ll := supported(t, providers.TypeLaunchLayer)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(ll.CRDNames...),
 		"get deployments": emptyList,
@@ -364,7 +376,7 @@ func TestInspect_LaunchLayerUnconfiguredIsNoted(t *testing.T) {
 // them. CAPLL takes its address from --base-url rather than the Secret, and an
 // absent address is not a startup failure, so this is otherwise invisible.
 func TestInspect_LaunchLayerWithoutBaseURL(t *testing.T) {
-	ll, _ := providers.Lookup(providers.TypeLaunchLayer)
+	ll := supported(t, providers.TypeLaunchLayer)
 	args := `"--identity-secret=ll-credentials"`
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(ll.CRDNames...),
@@ -386,7 +398,7 @@ func TestInspect_LaunchLayerWithoutBaseURL(t *testing.T) {
 }
 
 func TestInspect_LaunchLayerWithBaseURLIsConfigured(t *testing.T) {
-	ll, _ := providers.Lookup(providers.TypeLaunchLayer)
+	ll := supported(t, providers.TypeLaunchLayer)
 	args := `"--identity-secret=ll-credentials","--base-url","https://ll.example.com"`
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(ll.CRDNames...),
@@ -406,7 +418,7 @@ func TestInspect_LaunchLayerWithBaseURLIsConfigured(t *testing.T) {
 // TestInspect_NicoNeedsNoEndpointFlag guards the asymmetry: NICo carries its
 // endpoint in the credentials Secret, so it must not be judged on manager flags.
 func TestInspect_NicoNeedsNoEndpointFlag(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),
 		"get deployments": deployJSON("capnico-system", "controller-manager", nico.AppName, true, 1, 1, ""),
@@ -466,7 +478,7 @@ func TestInspect_ForbiddenListNamesThePermission(t *testing.T) {
 // arguments are the whole behaviour of a command that shells out, so a change
 // here should be deliberate.
 func TestInspect_ArgvIsExact(t *testing.T) {
-	nico, _ := providers.Lookup(providers.TypeNico)
+	nico := supported(t, providers.TypeNico)
 	kc := kubeconfig(t)
 	r := &fakeRunner{responses: map[string]string{
 		"get crd":         crdJSON(nico.CRDNames...),

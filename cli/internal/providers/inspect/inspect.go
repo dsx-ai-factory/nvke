@@ -111,7 +111,7 @@ func Inspect(ctx context.Context, r Runner, kubeconfig string) ([]Status, error)
 		return nil, err
 	}
 
-	all := providers.All()
+	all := providers.Supported()
 	out := make([]Status, 0, len(all))
 	for _, d := range all {
 		out = append(out, inspectOne(ctx, r, kubeconfig, d, crds, deployments))
@@ -123,7 +123,7 @@ func inspectOne(
 	ctx context.Context,
 	r Runner,
 	kubeconfig string,
-	d providers.Descriptor,
+	d providers.Provider,
 	crds map[string]bool,
 	deployments []deployment,
 ) Status {
@@ -192,7 +192,7 @@ func inspectOne(
 // backend it calls. Providers that carry their endpoint in the credentials
 // Secret instead declare no flag, and are reported as configured on the
 // strength of the Secret alone.
-func endpointConfigured(d providers.Descriptor, mgr deployment) bool {
+func endpointConfigured(d providers.Provider, mgr deployment) bool {
 	if d.EndpointFlag == "" {
 		return true
 	}
@@ -202,7 +202,7 @@ func endpointConfigured(d providers.Descriptor, mgr deployment) bool {
 
 // unconfiguredDetail explains a missing Secret, noting when running without one
 // is a supported configuration rather than something to fix.
-func unconfiguredDetail(d providers.Descriptor, reason string) string {
+func unconfiguredDetail(d providers.Provider, reason string) string {
 	if d.UnconfiguredIsValid {
 		return reason + "; this provider runs unauthenticated without one"
 	}
@@ -215,7 +215,7 @@ func unconfiguredDetail(d providers.Descriptor, reason string) string {
 // default, and its own flags can name both. Only when no manager was found do
 // the registry's defaults apply, and for a provider with no default name there
 // is nothing to probe.
-func credentialsSecret(d providers.Descriptor, mgr deployment, found bool) (namespace, name string) {
+func credentialsSecret(d providers.Provider, mgr deployment, found bool) (namespace, name string) {
 	if !found {
 		return d.ControllerNamespace, d.DefaultSecretName
 	}
@@ -261,7 +261,7 @@ type deployment struct {
 // and falling back to the registry's namespace and name. The fallback matters
 // because a kustomize namePrefix or a Helm release name changes the Deployment
 // name without changing the label.
-func findManager(d providers.Descriptor, deployments []deployment) (deployment, bool) {
+func findManager(d providers.Provider, deployments []deployment) (deployment, bool) {
 	for _, dep := range deployments {
 		if dep.appName == d.AppName {
 			return dep, true
