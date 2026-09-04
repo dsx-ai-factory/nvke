@@ -91,10 +91,11 @@ concurrency:
 jobs:
   e2e:
     name: e2e (${{ matrix.provider }})
-    # This suite runs a bootstrap cluster plus three nested control planes, so
-    # use NVIDIA's 16-CPU pool. The vTPM check below remains authoritative for
-    # the proxy module and /dev/vtpmx required by the fake hosts.
-    runs-on: linux-amd64-cpu16
+    # NVIDIA self-hosted runners reject pull_request events, so keep that gate
+    # on GitHub-hosted Ubuntu. Manual, scheduled, and post-merge runs use the
+    # 16-CPU pool needed by the bootstrap cluster and three nested control
+    # planes. The vTPM check below remains authoritative for both runner types.
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-22.04' || 'linux-amd64-cpu16' }}
     if: github.repository == 'NVIDIA/nke'
     # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
     # bundle fetch, local agent compile) plus the thin derivation on top has
