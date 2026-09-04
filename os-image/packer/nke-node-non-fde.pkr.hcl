@@ -93,6 +93,27 @@ locals {
   machine_type      = local.arch == "arm64" ? "virt" : "q35"
   efi_firmware_code = local.arch == "arm64" ? "/usr/share/AAVMF/AAVMF_CODE.fd" : "/usr/share/OVMF/OVMF_CODE_4M.fd"
   efi_firmware_vars = local.arch == "arm64" ? "/usr/share/AAVMF/AAVMF_VARS.fd" : "/usr/share/OVMF/OVMF_VARS_4M.fd"
+
+  # arm64's virt machine has no BIOS-era fixed (cd0) device alias the way
+  # x86 does -- search --file finds the CD-ROM by content instead of
+  # assuming a device name, which node-images' own arm64 LVM variant already
+  # validated works. It also has no ttyS0 (x86's legacy 16550 UART); its
+  # serial console is ttyAMA0 (PL011).
+  boot_command = local.arch == "arm64" ? [
+    "<wait5>",
+    "c<wait>",
+    "search --set=root --file /casper/vmlinuz<enter><wait>",
+    "linux /casper/vmlinuz autoinstall console=ttyAMA0 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
+    "initrd /casper/initrd<enter><wait>",
+    "boot<enter>"
+    ] : [
+    "<wait3>",
+    "c<wait>",
+    "set root=(cd0)<enter><wait>",
+    "linux /casper/vmlinuz autoinstall console=ttyS0,115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
+    "initrd /casper/initrd<enter><wait>",
+    "boot<enter>"
+  ]
 }
 
 source "qemu" "nke-non-fde" {
@@ -130,20 +151,41 @@ source "qemu" "nke-non-fde" {
     "/meta-data" = "instance-id: nke-packer-non-fde\nlocal-hostname: nke-packer-non-fde\n"
   }
 
-  boot_wait = var.boot_wait
-  boot_command = [
-    "<wait3>",
-    "c<wait>",
-    "set root=(cd0)<enter><wait>",
-    "linux /casper/vmlinuz autoinstall console=ttyS0,115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
-    "initrd /casper/initrd<enter><wait>",
-    "boot<enter>"
-  ]
+  boot_wait    = var.boot_wait
+  boot_command = local.boot_command
 
   # See the same block in nke-node-fde.pkr.hcl.
-  qemuargs = [
-    ["-serial", "file:${local.build_logs}/non-fde-install-console.log"]
-  ]
+  # Additive (see the -serial comment below). On arm64:
+  #   -vga none -device virtio-gpu-pci: overrides the builder's default
+  #     -vga, a legacy PCI graphics card that doesn't exist as a concept on
+  #     -machine virt.
+  #   -device qemu-xhci -device usb-kbd: -machine virt has no default
+  #     keyboard controller the way x86's pc/q35 has a built-in PS/2 one.
+  #     Without an explicit guest-side keyboard device, VNC keystrokes have
+  #     nowhere to land -- confirmed by reproducing it twice, with and
+  #     without the GPU device alone: boot_command's typed boot line landed
+  #     in the QEMU monitor instead ("unknown command: linux"), not GRUB, so
+  #     autoinstall never started either time. node-images' own arm64 LVM
+  #     variant (ubuntu-lvm-arm64-ansible.pkr.hcl) hit and fixed the same
+  #     issue the same way.
+  #   -boot strict=off: drops the qemu builder's own default -boot once=d,
+  #     which arm64 doesn't support.
+  qemuargs = concat(
+    local.arch == "arm64" ? [
+      ["-vga", "none"],
+      ["-device", "virtio-gpu-pci"],
+      ["-device", "qemu-xhci"],
+      ["-device", "usb-kbd"],
+      ["-boot", "strict=off"],
+    ] : [],
+    [
+      # Captures the live installer's boot/autoinstall console output, which
+      # the console= kernel param in local.boot_command routes here instead
+      # of the VGA framebuffer. Read on a stuck/failed build; harmless noise
+      # otherwise.
+      ["-serial", "file:${local.build_logs}/non-fde-install-console.log"],
+    ]
+  )
 
   ssh_username           = "ubuntu"
   ssh_private_key_file   = "${local.ssh_dir}/id_ed25519"
