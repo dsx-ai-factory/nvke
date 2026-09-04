@@ -35,11 +35,11 @@ func (q *queriesImpl) ListTeleportRolloutStats(ctx context.Context) ([]TeleportR
 			np.id as node_pool_id, np.name as node_pool_name,
 			(COALESCE(MAX(CASE WHEN ns.teleport_enabled = true THEN 1 ELSE 0 END), 0) > 0) as node_pool_teleport_enabled,
 			COALESCE(SUM(CASE WHEN ns.teleport_enabled = true
-				AND n.tpm_ek_pub_hash != ''
+				AND n.id IS NOT NULL
 				AND COALESCE(n.conditions->'deleting'->>'status', 'False') != 'True'
 				THEN 1 ELSE 0 END), 0) as nodes_eligible,
 			COALESCE(SUM(CASE WHEN ns.teleport_enabled = true
-				AND n.tpm_ek_pub_hash != ''
+				AND n.id IS NOT NULL
 				AND COALESCE(n.conditions->'deleting'->>'status', 'False') != 'True'
 				AND COALESCE(n.conditions->'teleportRegistered'->>'status', 'False') = 'True'
 				THEN 1 ELSE 0 END), 0) as nodes_registered

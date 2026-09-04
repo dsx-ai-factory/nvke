@@ -74,7 +74,7 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		Complete(c)
 }
 
-// Reconcile the tpm-pubhashes configmap, for each ClusterStaticEntry managed by CWE:
+// Reconcile the tpm-pubhashes configmap, for each Machine-owned ClusterStaticEntry:
 // - If the ClusterStaticEntry has a parentID that is a tpm spire agent path (/spire/agent/tpm/), add the pubhash to the configmap.
 func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
 	logger := c.logger.With("requestNamespace", req.Namespace, "requestName", req.Name)
@@ -87,10 +87,10 @@ func (c *Controller) Reconcile(ctx context.Context, req reconcile.Request) (reco
 }
 
 func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
-	// List ClusterStaticEntries managed by CWE.
+	// List ClusterStaticEntries managed by CWE's machine-spire-entry-controller.
 	clusterStaticEntries := &spirev1alpha1.ClusterStaticEntryList{}
 	err := c.k8sClient.List(ctx, clusterStaticEntries, client.MatchingLabels{
-		constants.LabelKeyNkeManagedBy: constants.LabelValueNkeManagedBy,
+		constants.LabelKeyNkeManagedBy: constants.FieldManagerMachineSpireEntry,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to list cluster static entries: %w", err)
@@ -113,8 +113,8 @@ func (c *Controller) reconcileTpmPubhashesCm(ctx context.Context) error {
 	data := make(map[string]string, len(desiredPubHashes))
 	for pubHash := range desiredPubHashes {
 		// A data value is added for each pubhash, it is not currently used, but will allow more granular control in the future, if necessary.
-		// e.g. "<pubhash>": "nke.nvidia.com/managed-by=cloud-workflow-engine"
-		value := fmt.Sprintf("%s=%s", constants.LabelKeyNkeManagedBy, constants.LabelValueNkeManagedBy)
+		// e.g. "<pubhash>": "nke.nvidia.com/managed-by=machine-spire-entry-controller"
+		value := fmt.Sprintf("%s=%s", constants.LabelKeyNkeManagedBy, constants.FieldManagerMachineSpireEntry)
 		data[pubHash] = value
 	}
 

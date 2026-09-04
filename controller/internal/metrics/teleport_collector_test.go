@@ -101,7 +101,6 @@ func (te *collectorTestEnv) createEligibleNode(ctx context.Context, t *testing.T
 		ForgeInstanceID: "forge-" + name,
 		ForgeMachineID:  "machine-" + name,
 		IP:              "10.0.0.1",
-		TpmEKPubHash:    "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f60001",
 	}
 	created, err := te.database.CreateNode(ctx, &node)
 	require.NoError(t, err)
@@ -288,7 +287,7 @@ func TestListTeleportRolloutStats(t *testing.T) {
 		assert.False(t, r2a.NodePoolEnabled)
 	})
 
-	t.Run("nodes with TPM hashes are eligible regardless of provider", func(t *testing.T) {
+	t.Run("teleport-scoped nodes are eligible regardless of provider", func(t *testing.T) {
 		te := setupCollectorTestEnv(ctx, t)
 		cluster := te.createCluster(ctx, t, "cluster-a", true)
 		np := te.createNodePool(ctx, t, cluster, "pool-1")
@@ -297,28 +296,27 @@ func TestListTeleportRolloutStats(t *testing.T) {
 		// Eligible node
 		te.createEligibleNode(ctx, t, np, ns, "good-node")
 
-		// CAPNICo node without a Forge instance ID is eligible when its TPM hash is set.
+		// CAPNICo node without a Forge instance ID is eligible.
 		noForge := db.Node{
 			ID: uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
 			Name: "no-forge", ForgeInstanceID: "", ForgeMachineID: "m",
-			IP: "10.0.0.1", TpmEKPubHash: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f60001",
+			IP: "10.0.0.1",
 		}
 		_, err := te.database.CreateNode(ctx, &noForge)
 		require.NoError(t, err)
 
-		// Node missing TPM hash (not eligible)
-		noHash := db.Node{
+		pendingHash := db.Node{
 			ID: uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
-			Name: "no-hash", ForgeInstanceID: "forge-x", ForgeMachineID: "m",
-			IP: "10.0.0.1", TpmEKPubHash: "",
+			Name: "pending-hash", ForgeInstanceID: "forge-x", ForgeMachineID: "m",
+			IP: "10.0.0.1",
 		}
-		_, err = te.database.CreateNode(ctx, &noHash)
+		_, err = te.database.CreateNode(ctx, &pendingHash)
 		require.NoError(t, err)
 
 		rows, err := te.database.ListTeleportRolloutStats(ctx)
 		require.NoError(t, err)
 		require.Len(t, rows, 1)
-		assert.Equal(t, 2, rows[0].NodesEligible, "nodes with TPM hashes are eligible regardless of provider")
+		assert.Equal(t, 3, rows[0].NodesEligible, "teleport-scoped nodes are eligible regardless of provider")
 	})
 }
 

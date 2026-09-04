@@ -504,8 +504,8 @@ func TestUnit_DBDoesNotEnqueueNodeAfterUpdateNodeForgeDetailsNoop(t *testing.T) 
 
 func TestUnit_DBDoesNotEnqueueNodeAfterUpdateNodeForgeDetailsFilterMismatch(t *testing.T) {
 	nodeID := uuid.New()
-	previous := db.Node{ID: nodeID, TpmEKPubHash: "existing"}
-	updated := db.Node{ID: nodeID, TpmEKPubHash: "existing", ForgeInstanceID: "instance-1"}
+	previous := db.Node{ID: nodeID, ControlPlane: true}
+	updated := db.Node{ID: nodeID, ControlPlane: true, ForgeInstanceID: "instance-1"}
 	forgeInstanceID := "instance-1"
 	database := &testutil.MockDB{}
 	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{}, nil)
@@ -513,7 +513,7 @@ func TestUnit_DBDoesNotEnqueueNodeAfterUpdateNodeForgeDetailsFilterMismatch(t *t
 	database.On("UpdateNodeForgeDetails", mock.Anything, nodeID, &forgeInstanceID, (*string)(nil), (*string)(nil)).Return(nil)
 	database.On("GetNode", mock.Anything, nodeID).Return(updated, nil).Once()
 	wrapper := New(database, slog.Default())
-	queue := startNodeSource(t, wrapper, dbfilters.Node{TpmEKPubHash: ptr.To("")})
+	queue := startNodeSource(t, wrapper, dbfilters.Node{ControlPlane: ptr.To(false)})
 
 	err := wrapper.UpdateNodeForgeDetails(context.Background(), nodeID, &forgeInstanceID, nil, nil)
 
@@ -1107,16 +1107,14 @@ func TestUnit_DBEnqueuesParentNodePoolAfterNodeDelete(t *testing.T) {
 func TestUnit_DBNodeSourceSeedsNodes(t *testing.T) {
 	first := db.Node{ID: uuid.New(), Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, "")}}
 	second := db.Node{ID: uuid.New(), Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, "")}}
-	hasHash := db.Node{ID: uuid.New(), TpmEKPubHash: "existing", Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, "")}}
 	deleting := db.Node{ID: uuid.New(), Conditions: db.NodeConditions{Provisioning: db.NewCondition(true, ""), Deleting: db.NewCondition(true, "")}}
 	unmatched := db.Node{ID: uuid.New()}
 	filters := dbfilters.Node{
 		Provisioning: ptr.To(true),
 		Deleting:     ptr.To(false),
-		TpmEKPubHash: ptr.To(""),
 	}
 	database := &testutil.MockDB{}
-	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{first, unmatched, hasHash, deleting, second}, nil)
+	database.On("ListNodes", mock.Anything, db.NodeFilters{}).Return([]db.Node{first, unmatched, deleting, second}, nil)
 	wrapper := New(database, slog.Default())
 	queue := startNodeSource(t, wrapper, filters)
 

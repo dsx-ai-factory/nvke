@@ -31,37 +31,37 @@ const (
 
 func TestController_ReconcileRendersManagedClusterStaticEntries(t *testing.T) {
 	controller := newControllerForTest(t,
-		newTPMClusterStaticEntryForTest("host-a", constants.LabelValueNkeManagedBy, "hash-a"),
-		newTPMClusterStaticEntryForTest("host-b", constants.LabelValueNkeManagedBy, "hash-b"),
+		newTPMClusterStaticEntryForTest("host-a", constants.FieldManagerMachineSpireEntry, "hash-a"),
+		newTPMClusterStaticEntryForTest("host-b", constants.FieldManagerMachineSpireEntry, "hash-b"),
 	)
 
 	_, err := controller.Reconcile(context.Background(), ctrl.Request{})
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNkeManagedBy + "=" + constants.LabelValueNkeManagedBy,
-		"hash-b": constants.LabelKeyNkeManagedBy + "=" + constants.LabelValueNkeManagedBy,
+		"hash-a": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
+		"hash-b": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
 func TestController_ReconcileFiltersClusterStaticEntries(t *testing.T) {
 	controller := newControllerForTest(t,
-		newTPMClusterStaticEntryForTest("host-valid", constants.LabelValueNkeManagedBy, "hash-valid"),
-		newTPMClusterStaticEntryForTest("host-unmanaged", constants.FieldManagerMachineSpireEntry, "hash-unmanaged"),
+		newTPMClusterStaticEntryForTest("host-valid", constants.FieldManagerMachineSpireEntry, "hash-valid"),
+		newTPMClusterStaticEntryForTest("host-unmanaged", constants.LabelValueNkeManagedBy, "hash-unmanaged"),
 		newClusterStaticEntryForTest("host-wrong-class", constants.LabelValueNkeManagedBy, "other-class", spiffeIDForTPMHash("hash-wrong-class")),
-		newClusterStaticEntryForTest("host-non-tpm", constants.LabelValueNkeManagedBy, testSpireClassName, "spiffe://example.org/spire/agent/join-token/hash-non-tpm"),
+		newClusterStaticEntryForTest("host-non-tpm", constants.FieldManagerMachineSpireEntry, testSpireClassName, "spiffe://example.org/spire/agent/join-token/hash-non-tpm"),
 	)
 
 	_, err := controller.Reconcile(context.Background(), ctrl.Request{})
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-valid": constants.LabelKeyNkeManagedBy + "=" + constants.LabelValueNkeManagedBy,
+		"hash-valid": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
 func TestController_ReconcileUpdatesConfigMapOutput(t *testing.T) {
-	cse := newTPMClusterStaticEntryForTest("host-a", constants.LabelValueNkeManagedBy, "hash-old")
+	cse := newTPMClusterStaticEntryForTest("host-a", constants.FieldManagerMachineSpireEntry, "hash-old")
 	controller := newControllerForTest(t, cse)
 
 	_, err := controller.Reconcile(context.Background(), ctrl.Request{})
@@ -74,12 +74,12 @@ func TestController_ReconcileUpdatesConfigMapOutput(t *testing.T) {
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-new": constants.LabelKeyNkeManagedBy + "=" + constants.LabelValueNkeManagedBy,
+		"hash-new": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 	})
 }
 
 func TestController_ReconcileDeletesConfigMapOutput(t *testing.T) {
-	cse := newTPMClusterStaticEntryForTest("host-a", constants.LabelValueNkeManagedBy, "hash-a")
+	cse := newTPMClusterStaticEntryForTest("host-a", constants.FieldManagerMachineSpireEntry, "hash-a")
 	controller := newControllerForTest(t, cse)
 
 	_, err := controller.Reconcile(context.Background(), ctrl.Request{})
@@ -95,7 +95,7 @@ func TestController_ReconcileDeletesConfigMapOutput(t *testing.T) {
 
 func TestController_ReconcilePreservesExternallyManagedConfigMapData(t *testing.T) {
 	controller := newControllerForTest(t,
-		newTPMClusterStaticEntryForTest("host-a", constants.LabelValueNkeManagedBy, "hash-a"),
+		newTPMClusterStaticEntryForTest("host-a", constants.FieldManagerMachineSpireEntry, "hash-a"),
 		&corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      testTPMPubhashesCMName,
@@ -111,14 +111,14 @@ func TestController_ReconcilePreservesExternallyManagedConfigMapData(t *testing.
 	require.NoError(t, err)
 
 	assertTPMPubhashesConfigMapData(t, controller, map[string]string{
-		"hash-a": constants.LabelKeyNkeManagedBy + "=" + constants.LabelValueNkeManagedBy,
+		"hash-a": constants.LabelKeyNkeManagedBy + "=" + constants.FieldManagerMachineSpireEntry,
 		"bogus":  "bad",
 	})
 }
 
 func TestController_ReconcileIsIdempotent(t *testing.T) {
 	controller := newControllerForTest(t,
-		newTPMClusterStaticEntryForTest("host-a", constants.LabelValueNkeManagedBy, "hash-a"),
+		newTPMClusterStaticEntryForTest("host-a", constants.FieldManagerMachineSpireEntry, "hash-a"),
 	)
 
 	_, err := controller.Reconcile(context.Background(), ctrl.Request{})

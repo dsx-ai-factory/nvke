@@ -32,12 +32,10 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/controllers/controlplanenodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeagentreadiness"
-	"github.com/NVIDIA/nke/controller/internal/controllers/nodeclusterstaticentry"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepool"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodepoolnodescheduler"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeprovisioningmonitor"
 	"github.com/NVIDIA/nke/controller/internal/controllers/nodeset"
-	"github.com/NVIDIA/nke/controller/internal/controllers/nodetpmekpub"
 	"github.com/NVIDIA/nke/controller/internal/controllers/teleporttoken"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant"
 	"github.com/NVIDIA/nke/controller/internal/controllers/tenant/csr"
@@ -229,18 +227,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	nodeTPMEKPubController := nodetpmekpub.NewController(
-		cfg,
-		logger.With("logger", "node-tpm-ekpub-controller"),
-		dbInstance,
-		forgeProvider,
-		k8sControllerManager.GetClient(),
-	)
-	if err := nodeTPMEKPubController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up node TPM EK public key controller", "error", err)
-		os.Exit(1)
-	}
-
 	enableNodeProvisioningMonitor := cfg.NodeProvisioningTimeout > 0
 	if enableNodeProvisioningMonitor {
 		nodeProvisioningMonitorController := nodeprovisioningmonitor.NewController(
@@ -321,20 +307,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if cfg.SpiffeEnabled {
-		clusterStaticEntryController := nodeclusterstaticentry.NewController(
-			cfg,
-			dbInstance,
-			k8sControllerManager.GetClient(),
-			logger.With("logger", "node-cluster-static-entry-controller"),
-			trustDomain,
-		)
-		if err := clusterStaticEntryController.SetupWithManager(k8sControllerManager); err != nil {
-			logger.Error("Failed to set up node cluster static entry controller", "error", err)
-			os.Exit(1)
-		}
-	}
-
 	var teleportClient teleport.Client
 	if cfg.Teleport.Enabled {
 		teleportLogger := logger.With("logger", "teleport")
@@ -354,6 +326,7 @@ func main() {
 		teleportTokenController := teleporttoken.NewController(
 			cfg,
 			dbInstance,
+			k8sControllerManager.GetClient(),
 			logger.With("logger", "teleport-token-controller"),
 			teleportClient,
 		)

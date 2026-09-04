@@ -16,8 +16,16 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/uptrace/bun"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -30,12 +38,13 @@ import (
 // testEnv holds an in-memory database with a pre-created entity chain:
 // Cluster (teleport_enabled) -> NodePool -> NodeSet (teleport_enabled)
 type testEnv struct {
-	database *dbwrapper.DB
-	bunDB    *bun.DB
-	siteID   uuid.UUID
-	cluster  db.Cluster
-	nodePool db.NodePool
-	nodeSet  db.NodeSet
+	database  *dbwrapper.DB
+	bunDB     *bun.DB
+	k8sClient client.Client
+	siteID    uuid.UUID
+	cluster   db.Cluster
+	nodePool  db.NodePool
+	nodeSet   db.NodeSet
 }
 
 // sqliteCompatDB is test-only: it avoids SELECT ... FOR UPDATE paths that SQLite
@@ -115,6 +124,9 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 	return &testEnv{
 		database: dbwrapper.New(database, testLogger()),
 		bunDB:    bunDB,
+		k8sClient: fake.NewClientBuilder().
+			WithScheme(teleportControllerTestScheme(t)).
+			Build(),
 		siteID:   siteID,
 		cluster:  cluster,
 		nodePool: nodePool,
@@ -134,11 +146,68 @@ func (te *testEnv) createNode(ctx context.Context, t *testing.T, name, forgeID, 
 		ForgeInstanceID: forgeID,
 		ForgeMachineID:  "machine-" + name,
 		IP:              "10.0.0.1",
-		TpmEKPubHash:    ekHash,
 	}
 	created, err := te.database.CreateNode(ctx, &node)
 	require.NoError(t, err)
+	if ekHash != "" {
+		te.createNicoMachineForNode(ctx, t, created, ekHash)
+	}
 	return created
+}
+
+func (te *testEnv) newController(mockTeleport *mockTeleportClient) *Controller {
+	return NewController(testConfig(), te.database, te.k8sClient, testLogger(), mockTeleport)
+}
+
+func (te *testEnv) createNicoMachineForNode(ctx context.Context, t *testing.T, node db.Node, ekHash string) {
+	t.Helper()
+
+	machine := &clusterv1.Machine{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: clusterv1.GroupVersion.String(),
+			Kind:       "Machine",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      node.Name,
+			Namespace: constants.NamespaceNKESystem,
+			Annotations: map[string]string{
+				constants.MachineAnnotationKeyHostID: node.ID.String(),
+			},
+		},
+	}
+	require.NoError(t, te.k8sClient.Create(ctx, machine))
+
+	controller := true
+	nicoMachine := &nicov1.NicoMachine{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: nicov1.GroupVersion.String(),
+			Kind:       "NicoMachine",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      node.Name,
+			Namespace: constants.NamespaceNKESystem,
+			OwnerReferences: []metav1.OwnerReference{{
+				APIVersion: clusterv1.GroupVersion.String(),
+				Kind:       "Machine",
+				Name:       node.Name,
+				Controller: &controller,
+			}},
+		},
+		Status: nicov1.NicoMachineStatus{
+			TpmEkPubHash: ekHash,
+		},
+	}
+	require.NoError(t, te.k8sClient.Create(ctx, nicoMachine))
+}
+
+func teleportControllerTestScheme(t *testing.T) *runtime.Scheme {
+	t.Helper()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	require.NoError(t, nicov1.AddToScheme(scheme))
+
+	return scheme
 }
 
 // createRegisteredNode creates a Teleport-eligible node that is already marked as registered in the DB.
@@ -287,7 +356,6 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 			ForgeInstanceID: "forge-1",
 			ForgeMachineID:  "machine-1",
 			IP:              "10.0.0.1",
-			TpmEKPubHash:    validEKPubHash("0001"),
 			Conditions: db.NodeConditions{
 				TeleportRegistered: db.Condition{Status: db.ConditionStatusTrue},
 			},
@@ -313,7 +381,6 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 			ForgeInstanceID: "",
 			ForgeMachineID:  "machine-1",
 			IP:              "10.0.0.1",
-			TpmEKPubHash:    validEKPubHash("0001"),
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
@@ -335,7 +402,6 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 			ForgeInstanceID: "forge-cp",
 			ForgeMachineID:  "machine-cp",
 			IP:              "10.0.0.9",
-			TpmEKPubHash:    validEKPubHash("0001"),
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
@@ -346,7 +412,7 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		assert.Equal(t, node.ID, result[0].ID)
 	})
 
-	t.Run("excludes nodes with empty TPM EK pub hash", func(t *testing.T) {
+	t.Run("includes nodes before NicoMachine hash is available", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
@@ -358,14 +424,14 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 			ForgeInstanceID: "forge-1",
 			ForgeMachineID:  "machine-1",
 			IP:              "10.0.0.1",
-			TpmEKPubHash:    "",
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
 
 		result, err := te.database.ListTeleportEligibleNodes(ctx, te.siteID)
 		require.NoError(t, err)
-		assert.Empty(t, result)
+		require.Len(t, result, 1)
+		assert.Equal(t, node.ID, result[0].ID)
 	})
 }
 
@@ -375,7 +441,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("creates tokens for unregistered nodes", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -394,7 +460,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("marks already registered nodes and updates DB", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 		node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
@@ -431,7 +497,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("ignores nodes with different node-id even if same hostname", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -462,7 +528,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("handles bootstrap scenario - registered node without site label", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -493,7 +559,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("fails when ListNodes returns error", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -507,7 +573,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("no tokens created when no eligible nodes", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "no-tpm-node", "forge-1", "")
 
@@ -518,10 +584,27 @@ func TestReconcile(t *testing.T) {
 		mockTeleport.AssertNotCalled(t, "UpsertToken")
 	})
 
+	t.Run("waits when NicoMachine hash is empty", func(t *testing.T) {
+		te := setupTestEnv(ctx, t)
+		mockTeleport := &mockTeleportClient{}
+		controller := te.newController(mockTeleport)
+
+		node := te.createNode(ctx, t, "empty-hash-node", "forge-1", "")
+		te.createNicoMachineForNode(ctx, t, node, "")
+		controller.tokenCreatedAt[node.ID] = time.Now()
+
+		result, err := controller.Reconcile(ctx, dbreconcile.NodeKey(node.ID))
+		require.NoError(t, err)
+		assert.Zero(t, result.RequeueAfter)
+		assert.NotContains(t, controller.tokenCreatedAt, node.ID)
+		mockTeleport.AssertNotCalled(t, "ListNodes")
+		mockTeleport.AssertNotCalled(t, "UpsertToken")
+	})
+
 	t.Run("partial failure - returns aggregated error", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 		node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
@@ -538,7 +621,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("skips ineligible nodes and clears token throttle", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "deleting-node", "forge-1", validEKPubHash("0001"))
 		node.Conditions.Deleting = db.NewCondition(true, "deleting")
@@ -557,7 +640,7 @@ func TestReconcile(t *testing.T) {
 	t.Run("clears token throttle for missing node", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 		nodeID := uuid.New()
 		controller.tokenCreatedAt[nodeID] = time.Now()
 
@@ -576,7 +659,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("creates token with correct structure", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "test-node", "forge-123", validEKPubHash("abcd"))
 
@@ -599,17 +682,17 @@ func TestCreateTokenForNode(t *testing.T) {
 			assert.Equal(t, teleport.LabelResourceGroupNKEValue, token.Labels[teleport.LabelResourceGroup])
 			assert.Equal(t, "non-prod", token.Labels[teleport.LabelEnvironment])
 
-			// Verify TPM config uses stored hash
+			// Verify TPM config uses the hash resolved from NicoMachine.
 			require.NotNil(t, token.Spec)
 			tpmConfig, ok := token.Spec.(*teleport.TPMConfig)
 			require.True(t, ok, "Spec should be *teleport.TPMConfig")
 			require.Len(t, tpmConfig.Allow, 1)
-			assert.Equal(t, node.TpmEKPubHash, tpmConfig.Allow[0].EKPublicHash)
+			assert.Equal(t, validEKPubHash("abcd"), tpmConfig.Allow[0].EKPublicHash)
 
 			return true
 		})).Return(nil)
 
-		err := controller.createTokenForNode(ctx, node)
+		err := controller.createTokenForNode(ctx, node, validEKPubHash("abcd"))
 		require.NoError(t, err)
 
 		mockTeleport.AssertExpectations(t)
@@ -618,7 +701,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("creates token with nil node-pool label for no-nodepool control plane", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := db.Node{
 			ID:              uuid.New(),
@@ -628,7 +711,6 @@ func TestCreateTokenForNode(t *testing.T) {
 			ForgeInstanceID: "forge-cp",
 			ForgeMachineID:  "machine-cp",
 			IP:              "10.0.0.9",
-			TpmEKPubHash:    validEKPubHash("0001"),
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
@@ -638,7 +720,7 @@ func TestCreateTokenForNode(t *testing.T) {
 			return true
 		})).Return(nil)
 
-		err = controller.createTokenForNode(ctx, node)
+		err = controller.createTokenForNode(ctx, node, validEKPubHash("0001"))
 		require.NoError(t, err)
 
 		mockTeleport.AssertExpectations(t)
@@ -647,7 +729,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("fails when node context resolution errors", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := db.Node{
 			ID:              uuid.New(),
@@ -658,10 +740,9 @@ func TestCreateTokenForNode(t *testing.T) {
 			ForgeInstanceID: "forge-123",
 			ForgeMachineID:  "machine-1",
 			IP:              "10.0.0.1",
-			TpmEKPubHash:    validEKPubHash("abcd"),
 		}
 
-		err := controller.createTokenForNode(ctx, node)
+		err := controller.createTokenForNode(ctx, node, validEKPubHash("abcd"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to resolve node context")
 	})
@@ -669,7 +750,7 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("fails when GetCluster errors", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		// Create a NodePool pointing to a non-existent Cluster
 		orphanPool := db.NodePool{
@@ -702,10 +783,9 @@ func TestCreateTokenForNode(t *testing.T) {
 			ForgeInstanceID: "forge-123",
 			ForgeMachineID:  "machine-1",
 			IP:              "10.0.0.1",
-			TpmEKPubHash:    validEKPubHash("abcd"),
 		}
 
-		err = controller.createTokenForNode(ctx, node)
+		err = controller.createTokenForNode(ctx, node, validEKPubHash("abcd"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to get cluster")
 	})
@@ -713,39 +793,36 @@ func TestCreateTokenForNode(t *testing.T) {
 	t.Run("fails when UpsertToken errors", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "test-node", "forge-123", validEKPubHash("abcd"))
 
 		mockTeleport.On("UpsertToken", ctx, mock.Anything).Return(errors.New("teleport error"))
 
-		err := controller.createTokenForNode(ctx, node)
+		err := controller.createTokenForNode(ctx, node, validEKPubHash("abcd"))
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "failed to upsert Teleport TPM token")
 	})
 }
 
-func TestTokenUsesStoredEKPubHash(t *testing.T) {
+func TestTokenUsesResolvedEKPubHash(t *testing.T) {
 	ctx := context.Background()
 	te := setupTestEnv(ctx, t)
 	mockTeleport := &mockTeleportClient{}
-	controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+	controller := te.newController(mockTeleport)
 
-	// The stored hash - this should be used directly, not recomputed
-	storedHash := validEKPubHash("beef")
-	node := te.createNode(ctx, t, "test-node", "forge-123", storedHash)
+	resolvedHash := validEKPubHash("beef")
+	node := te.createNode(ctx, t, "test-node", "forge-123", resolvedHash)
 
-	// Verify the token uses the stored hash
 	mockTeleport.On("UpsertToken", ctx, mock.MatchedBy(func(token teleport.ProvisionToken) bool {
 		require.NotNil(t, token.Spec)
 		tpmConfig, ok := token.Spec.(*teleport.TPMConfig)
 		require.True(t, ok, "Spec should be *teleport.TPMConfig")
 		require.Len(t, tpmConfig.Allow, 1)
-		// This is the key assertion - the hash should be exactly what was stored
-		return tpmConfig.Allow[0].EKPublicHash == storedHash
+		return tpmConfig.Allow[0].EKPublicHash == resolvedHash
 	})).Return(nil)
 
-	err := controller.createTokenForNode(ctx, node)
+	err := controller.createTokenForNode(ctx, node, resolvedHash)
 	require.NoError(t, err)
 
 	mockTeleport.AssertExpectations(t)
@@ -755,9 +832,8 @@ func TestCreateTokenForNode_InvalidEKPubHash(t *testing.T) {
 	ctx := context.Background()
 	te := setupTestEnv(ctx, t)
 	mockTeleport := &mockTeleportClient{}
-	controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+	controller := te.newController(mockTeleport)
 
-	// Node with invalid EK pub hash (too short, not 64 hex characters)
 	node := db.Node{
 		ID:              uuid.New(),
 		ClusterID:       te.cluster.ID,
@@ -767,11 +843,10 @@ func TestCreateTokenForNode_InvalidEKPubHash(t *testing.T) {
 		ForgeInstanceID: "forge-123",
 		ForgeMachineID:  "machine-1",
 		IP:              "10.0.0.1",
-		TpmEKPubHash:    "invalid-hash",
 	}
 
 	// UpsertToken should NOT be called because validation fails first
-	err := controller.createTokenForNode(ctx, node)
+	err := controller.createTokenForNode(ctx, node, "invalid-hash")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid EK public key hash")
 	assert.Contains(t, err.Error(), node.ID.String())
@@ -785,7 +860,7 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("skips token upsert for recently created tokens", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -809,7 +884,7 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("refreshes token after threshold passes", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -830,7 +905,7 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("cleans up cache on registration confirmation", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 
@@ -862,7 +937,7 @@ func TestTokenCreationTracking(t *testing.T) {
 	t.Run("fresh controller creates tokens normally", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 		node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
@@ -890,7 +965,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("deconfirms node registered in DB but absent from Teleport", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		// Node is marked registered in DB
 		node := te.createRegisteredNode(ctx, t, "stale-node", "forge-1", validEKPubHash("0001"))
@@ -917,7 +992,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("steady state - registered node still in Teleport is a no-op", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		// Node is marked registered in DB
 		node := te.createRegisteredNode(ctx, t, "steady-node", "forge-1", validEKPubHash("0001"))
@@ -948,7 +1023,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("newly confirmed - node appears in Teleport with DB condition False", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		// Node starts unregistered (default condition)
 		node := te.createNode(ctx, t, "new-node", "forge-1", validEKPubHash("0001"))
@@ -979,7 +1054,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("deconfirmed node skips token if recently created", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		// Node is marked registered in DB
 		node := te.createRegisteredNode(ctx, t, "stale-cached", "forge-1", validEKPubHash("0001"))
@@ -1005,7 +1080,7 @@ func TestObservedStateReconciliation(t *testing.T) {
 	t.Run("mixed scenario - confirmed, deconfirmed, pending, and steady-state", func(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 		mockTeleport := &mockTeleportClient{}
-		controller := NewController(testConfig(), te.database, testLogger(), mockTeleport)
+		controller := te.newController(mockTeleport)
 
 		// Node 1: unregistered, appears in Teleport -> should be confirmed
 		node1 := te.createNode(ctx, t, "confirm-me", "forge-1", validEKPubHash("0001"))
@@ -1109,12 +1184,12 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 		ForgeInstanceID: "forge-3",
 		ForgeMachineID:  "machine-other-node",
 		IP:              "10.0.0.3",
-		TpmEKPubHash:    validEKPubHash("0003"),
 	}
 	otherNode, err = te.database.CreateNode(ctx, &otherNode)
 	require.NoError(t, err)
+	te.createNicoMachineForNode(ctx, t, otherNode, validEKPubHash("0003"))
 
-	controller := NewController(testConfig(), te.database, testLogger(), &mockTeleportClient{})
+	controller := te.newController(&mockTeleportClient{})
 
 	clusterKeys, err := controller.nodeKeysForCluster(ctx, te.cluster)
 	require.NoError(t, err)
@@ -1130,4 +1205,59 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 		dbreconcile.NodeKey(node1.ID),
 		dbreconcile.NodeKey(node2.ID),
 	}, nodeSetKeys)
+
+	nicoMachine := &nicov1.NicoMachine{}
+	require.NoError(t, te.k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: constants.NamespaceNKESystem,
+		Name:      node1.Name,
+	}, nicoMachine))
+	assert.Equal(t, []dbreconcile.Key{dbreconcile.NodeKey(node1.ID)}, controller.nodeKeysForNicoMachine(ctx, nicoMachine))
+
+	t.Run("skips NicoMachine without owner Machine", func(t *testing.T) {
+		orphan := &nicov1.NicoMachine{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "orphan-nicomachine",
+				Namespace: constants.NamespaceNKESystem,
+			},
+		}
+
+		assert.Nil(t, controller.nodeKeysForNicoMachine(ctx, orphan))
+	})
+
+	t.Run("skips NicoMachine with invalid host ID annotation", func(t *testing.T) {
+		controllerRef := true
+		machine := &clusterv1.Machine{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: clusterv1.GroupVersion.String(),
+				Kind:       "Machine",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "invalid-host-machine",
+				Namespace: constants.NamespaceNKESystem,
+				Annotations: map[string]string{
+					constants.MachineAnnotationKeyHostID: "not-a-uuid",
+				},
+			},
+		}
+		require.NoError(t, te.k8sClient.Create(ctx, machine))
+
+		nicoMachine := &nicov1.NicoMachine{
+			TypeMeta: metav1.TypeMeta{
+				APIVersion: nicov1.GroupVersion.String(),
+				Kind:       "NicoMachine",
+			},
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "invalid-host-machine",
+				Namespace: constants.NamespaceNKESystem,
+				OwnerReferences: []metav1.OwnerReference{{
+					APIVersion: clusterv1.GroupVersion.String(),
+					Kind:       "Machine",
+					Name:       "invalid-host-machine",
+					Controller: &controllerRef,
+				}},
+			},
+		}
+
+		assert.Nil(t, controller.nodeKeysForNicoMachine(ctx, nicoMachine))
+	})
 }

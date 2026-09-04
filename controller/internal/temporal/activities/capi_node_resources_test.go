@@ -139,13 +139,12 @@ func TestActivities_CreateTemplateLessForgeCAPIMachineForNode_Idempotent(t *test
 	vpcPrefixID := uuid.MustParse("70000000-0000-0000-0000-000000000007")
 	siteID := uuid.MustParse("70000000-0000-0000-0000-000000000008")
 	node := db.Node{
-		ID:           nodeID,
-		NodePoolID:   nodePoolID,
-		NodeSetID:    nodeSetID,
-		ClusterID:    clusterID,
-		Name:         "worker-0",
-		TpmEKPubHash: "tpm-hash",
-		Nico:         &db.NicoNodeProvider{},
+		ID:         nodeID,
+		NodePoolID: nodePoolID,
+		NodeSetID:  nodeSetID,
+		ClusterID:  clusterID,
+		Name:       "worker-0",
+		Nico:       &db.NicoNodeProvider{},
 	}
 	nodeSet := db.NodeSet{
 		ID:                nodeSetID,

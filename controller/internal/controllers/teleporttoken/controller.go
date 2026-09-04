@@ -11,11 +11,19 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/utils/ptr"
+	capiutil "sigs.k8s.io/cluster-api/util"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
+
+	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
@@ -50,6 +58,7 @@ type teleportReconcileCounters struct {
 type Controller struct {
 	cfg            config.Config
 	db             *dbwrapper.DB
+	k8sClient      client.Client
 	logger         *slog.Logger
 	teleportClient teleport.Client
 	// tokenCreatedAt tracks when each node's token was last upserted.
@@ -61,12 +70,14 @@ type Controller struct {
 func NewController(
 	cfg config.Config,
 	dbInstance *dbwrapper.DB,
+	k8sClient client.Client,
 	logger *slog.Logger,
 	teleportClient teleport.Client,
 ) *Controller {
 	return &Controller{
 		cfg:            cfg,
 		db:             dbInstance,
+		k8sClient:      k8sClient,
 		logger:         logger.With("controller", "teleport-token"),
 		teleportClient: teleportClient,
 		tokenCreatedAt: make(map[uuid.UUID]time.Time),
@@ -90,6 +101,11 @@ func (c *Controller) SetupWithManager(mgr manager.Manager) error {
 		dbwrapper.NewNodeSource(c.db, dbfilters.Node{Deleting: ptr.To(false)}),
 		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}, c.nodeKeysForCluster),
 		dbwrapper.NewNodeSetSource(c.db, dbfilters.NodeSet{}, c.nodeKeysForNodeSet),
+		source.TypedKind(
+			mgr.GetCache(),
+			&nicov1.NicoMachine{},
+			handler.TypedEnqueueRequestsFromMapFunc(c.nodeKeysForNicoMachine),
+		),
 	)
 }
 
@@ -117,6 +133,32 @@ func nodeKeys(nodes []db.Node) []dbreconcile.Key {
 		}
 	}
 	return keys
+}
+
+func (c *Controller) nodeKeysForNicoMachine(ctx context.Context, nicoMachine *nicov1.NicoMachine) []dbreconcile.Key {
+	machine, err := capiutil.GetOwnerMachine(ctx, c.k8sClient, nicoMachine.ObjectMeta)
+	if err != nil {
+		c.logger.Error("Failed to get owner Machine for NicoMachine", "namespace", nicoMachine.Namespace, "name", nicoMachine.Name, "error", err)
+		return nil
+	}
+	if machine == nil {
+		c.logger.Debug("NicoMachine has no owner Machine, skipping Teleport token reconciliation", "namespace", nicoMachine.Namespace, "name", nicoMachine.Name)
+		return nil
+	}
+
+	hostID := machine.GetAnnotations()[constants.MachineAnnotationKeyHostID]
+	nodeID, err := uuid.Parse(hostID)
+	if err != nil {
+		c.logger.Error("Machine has invalid host ID annotation, skipping Teleport token reconciliation",
+			"namespace", machine.Namespace,
+			"name", machine.Name,
+			"hostID", hostID,
+			"error", err,
+		)
+		return nil
+	}
+
+	return []dbreconcile.Key{dbreconcile.NodeKey(nodeID)}
 }
 
 // Reconcile derives Teleport registration state from the live Teleport API for
@@ -164,6 +206,17 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 
 	counters := &teleportReconcileCounters{}
 	countersBySite = map[uuid.UUID]*teleportReconcileCounters{siteID: counters}
+
+	tpmEKPubHash, err := c.getPubHashFromNicoMachine(ctx, node)
+	if err != nil {
+		return reconcile.Result{}, err
+	}
+	if tpmEKPubHash == "" {
+		delete(c.tokenCreatedAt, node.ID)
+		c.logger.Debug("Waiting for NicoMachine TPM EK public hash before creating Teleport token", "nodeID", node.ID, "nodeName", node.Name)
+		return reconcile.Result{}, nil
+	}
+
 	counters.eligible++
 
 	inTeleport, err := c.isNodeRegistered(ctx, siteID, node.ID)
@@ -193,7 +246,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		return reconcile.Result{}, nil
 	}
 
-	created, requeueAfter, err := c.ensureTokenForNode(ctx, node)
+	created, requeueAfter, err := c.ensureTokenForNode(ctx, node, tpmEKPubHash)
 	switch {
 	case err != nil:
 		counters.tokensFailed++
@@ -236,7 +289,21 @@ func (c *Controller) clusterForNode(ctx context.Context, node db.Node) (db.Clust
 }
 
 func isNodeIneligible(node db.Node) bool {
-	return node.TpmEKPubHash == "" || node.Conditions.Deleting.Status == db.ConditionStatusTrue
+	return node.Conditions.Deleting.Status == db.ConditionStatusTrue
+}
+
+func (c *Controller) getPubHashFromNicoMachine(ctx context.Context, node db.Node) (string, error) {
+	nicoMachine := &nicov1.NicoMachine{}
+	if err := c.k8sClient.Get(ctx, client.ObjectKey{
+		Namespace: constants.NamespaceNKESystem,
+		Name:      node.Name,
+	}, nicoMachine); err != nil {
+		if apierrors.IsNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to get NicoMachine for node %s (%s): %w", node.ID, node.Name, err)
+	}
+	return nicoMachine.Status.TpmEkPubHash, nil
 }
 
 func (c *Controller) isTeleportEligible(ctx context.Context, node db.Node, cluster db.Cluster) (bool, error) {
@@ -325,7 +392,7 @@ func (c *Controller) deconfirmNode(ctx context.Context, node db.Node) error {
 // skipping if a token was recently created (within TokenRefreshThreshold).
 // Returns whether a token was created, when to requeue for registration/TTL
 // checks, and an error when token creation fails.
-func (c *Controller) ensureTokenForNode(ctx context.Context, node db.Node) (bool, time.Duration, error) {
+func (c *Controller) ensureTokenForNode(ctx context.Context, node db.Node, ekPubHash string) (bool, time.Duration, error) {
 	if createdAt, ok := c.tokenCreatedAt[node.ID]; ok {
 		tokenAge := time.Since(createdAt)
 		if tokenAge < TokenRefreshThreshold {
@@ -341,7 +408,7 @@ func (c *Controller) ensureTokenForNode(ctx context.Context, node db.Node) (bool
 		}
 	}
 
-	if err := c.createTokenForNode(ctx, node); err != nil {
+	if err := c.createTokenForNode(ctx, node, ekPubHash); err != nil {
 		c.logger.Error("Failed to create Teleport token for node",
 			"nodeID", node.ID,
 			"nodeName", node.Name,
@@ -355,7 +422,7 @@ func (c *Controller) ensureTokenForNode(ctx context.Context, node db.Node) (bool
 }
 
 // createTokenForNode creates a Teleport TPM join token for a node.
-func (c *Controller) createTokenForNode(ctx context.Context, node db.Node) error {
+func (c *Controller) createTokenForNode(ctx context.Context, node db.Node, ekPubHash string) error {
 	_, nodePool, err := nodes.GetNodeContext(ctx, c.db, node)
 	if err != nil {
 		return fmt.Errorf("failed to resolve node context: %w", err)
@@ -366,7 +433,6 @@ func (c *Controller) createTokenForNode(ctx context.Context, node db.Node) error
 		return fmt.Errorf("failed to get cluster: %w", err)
 	}
 
-	ekPubHash := node.TpmEKPubHash
 	if err := teleport.ValidateEKPubHash(ekPubHash); err != nil {
 		return fmt.Errorf("invalid EK public key hash for node %s: %w", node.ID, err)
 	}

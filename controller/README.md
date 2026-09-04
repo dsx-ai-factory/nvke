@@ -240,18 +240,18 @@ restarts the controller. Everything downstream — `capnico-credentials`, the
 
 TPM is one of the node-attestation mechanisms CWE/NKE uses to establish SPIRE
 node identity for SPIFFE-enabled nodes. In the TPM mode, Forge exposes the
-node's EK certificate, CWE computes and persists the TPM EK pubhash, and SPIRE
-uses that TPM-shaped identity to reconcile the node's parent SPIFFE ID and
-related cluster entries.
+node's EK certificate through NICo, CAPNICo publishes the TPM EK pubhash on the
+`NicoMachine`, and CWE annotates the owning CAPI `Machine` with the TPM-shaped
+SPIRE parent ID. The Machine SPIRE entry controller then reconciles the related
+cluster entry.
 
 There are two attestation modes in the local cluster-create paths today:
 - `join-token`
 - `tpm`
 
-The CAPI cluster creation path supports both modes. The Forge-direct cluster
-creation path currently supports only TPM, so the Docker-based Forge flow keeps
-the same TPM-shaped contracts as a real Forge node and swaps only the physical
-TPM for a software-backed vTPM chain:
+The CAPI cluster creation path supports both modes. The Docker-based Forge flow
+keeps the same TPM-shaped contracts as a real Forge node and swaps only the
+physical TPM for a software-backed vTPM chain:
 
 1. `make colima-up` prepares the Colima VM kernel to expose `/dev/vtpmx` via
    the `tpm_vtpm_proxy` module. That is the host-side bridge `swtpm` needs in
@@ -267,13 +267,13 @@ TPM for a software-backed vTPM chain:
 4. During the same startup sequence, `swtpm_setup` writes an EK certificate
    under `/var/lib/swtpm`, and the node image normalizes it to
    `/var/lib/swtpm/ek.cert`. `nico-mock` reads that file and returns it as the
-   Forge `tpmEkCertificate`, which lets CWE keep its normal TPM EK pubhash and
-   `ClusterStaticEntry` reconciliation logic.
+   Forge `tpmEkCertificate`, which lets CAPNICo publish the normal
+   `NicoMachine.status.tpmEkPubHash` value for the CAPI controllers.
 
 This is still lower fidelity than real hardware: the TPM is software-backed,
 the nodes are Docker containers, and Forge itself is mocked. The benefit is
-that CWE, SPIRE, and the local Forge-direct flow can keep exercising the same
-TPM-oriented contracts without introducing local-only branches in the
+that CWE, SPIRE, and the local Forge flow can keep exercising the same
+TPM-oriented CAPI contracts without introducing local-only branches in the
 production workflow/controller code.
 
 ### Daily Use

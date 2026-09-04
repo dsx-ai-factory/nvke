@@ -13,8 +13,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
-
-	"github.com/NVIDIA/nke/controller/internal/constants"
 )
 
 type Node struct {
@@ -34,7 +32,6 @@ type Node struct {
 	ForgeInstanceID             string            `bun:"type:text,notnull"`
 	ForgeMachineID              string            `bun:"type:text,notnull"`
 	IP                          string            `bun:"type:text,notnull"`
-	TpmEKPubHash                string            `bun:"type:text,notnull,default:''"`
 	SpiffeEnabled               bool              `bun:"type:boolean,notnull,default:false"`
 	Conditions                  NodeConditions    `bun:"type:jsonb"`
 	AgentVersion                string            `bun:"type:text,notnull,default:''"`
@@ -63,11 +60,6 @@ func (n Node) IsManagedByControlPlaneController() bool {
 // Example: spiffe://nke-site-forge-az24-dev7.nke.nvidia.com/host/<node-id>
 func (n *Node) GetSpiffeID(trustDomain string) string {
 	return fmt.Sprintf("spiffe://%s/host/%s", trustDomain, n.ID.String())
-}
-
-// Example: spiffe://nke-site-forge-az24-dev7.nke.nvidia.com/spire/agent/tpm/<pubhash>
-func (n *Node) GetTPMSpiffeID(trustDomain string) string {
-	return fmt.Sprintf("spiffe://%s%s%s", trustDomain, constants.TPMSpireAgentPath, n.TpmEKPubHash)
 }
 
 type NodeConditions struct {
@@ -150,7 +142,6 @@ type NodeFilters struct {
 	SiteID             *uuid.UUID
 	ClusterName        *string
 	Name               *string
-	TpmEKPubHash       *string
 	TeleportRegistered *bool
 
 	// Condition filters use asymmetric matching:
@@ -235,9 +226,6 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 	}
 	if filters.Name != nil {
 		query = query.Where("node.name = ?", *filters.Name)
-	}
-	if filters.TpmEKPubHash != nil {
-		query = query.Where("node.tpm_ek_pub_hash = ?", *filters.TpmEKPubHash)
 	}
 	if filters.TeleportRegistered != nil {
 		query = whereNodeConditionStatus(query, "teleportRegistered", *filters.TeleportRegistered)
@@ -440,8 +428,7 @@ func (q *queriesImpl) ListTeleportEligibleNodes(ctx context.Context, siteID uuid
 		Where(`(
 			COALESCE(ns.teleport_enabled, false) = true
 			OR (node.control_plane = true AND node.node_set_id IS NULL)
-		)`).
-		Where("node.tpm_ek_pub_hash != ''")
+		)`)
 
 	query = whereNodeConditionStatus(query, "deleting", false)
 
