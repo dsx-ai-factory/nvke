@@ -119,17 +119,26 @@ OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
 `make run-vm QCOW=<path>` boots any qcow2 this repo produces and leaves it
 running with SSH forwarded, for poking around manually — unlike
 `boot-smoke`/`demo-fde.sh`, it runs no checks and doesn't tear itself down.
+It prints the exact `ssh` command to use once the VM is up (key path and
+port included); by default that's:
+
+```bash
+ssh -i packer/.ssh/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@127.0.0.1
+```
+
 **To quit, use `Ctrl-A` then `X`, not plain `Ctrl-C`**: QEMU runs with
 `-nographic`, so your terminal is the guest's serial console, and plain
 `Ctrl-C` is sent to the guest as literal input (garbling a login prompt)
 instead of stopping QEMU. See the comment at the top of
 [`packer/scripts/run-vm.sh`](packer/scripts/run-vm.sh) for the full env var
-list (`OVMF_CODE` for the UEFI variants, `TPM=1` to attach a TPM for the FDE
-image). Examples:
+list (`OVMF_CODE` defaults automatically per `ARCH` since every qcow2 this
+repo builds is UEFI-only; `TPM=1` attaches a TPM for the FDE image).
+Examples:
 
 ```bash
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
-make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2
+make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 TPM=1
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-arm64.qcow2 ARCH=arm64
 ```
 
 ## Release
