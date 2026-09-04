@@ -22,27 +22,7 @@ name: Chart Publish NVCR
 # create, not a free path component. Pushing to nvcr.io/<org>/charts/controller
 # asks NGC for a team named `charts` that does not exist, and the push dies
 # before it reaches the registry:
-#
-#   GET https://nvcr.io/proxy_auth?scope=repository%3A<org>%2Fcharts%2F
-#   controller%3Apull%2Cpush: response status code 403: denied: Access Denied
-#
-# That 403 is the token exchange refusing the scope, not the registry refusing
-# the write, which is why the credential is not the problem: image-nvcr.yml and
-# agent-artifact-nvcr.yml push nvcr.io/<org>/controller and
-# nvcr.io/<org>/nke-agent with this same secret and stayed green throughout.
-#
-# The rename is what buys the separation `charts/` buys on GHCR. helm push
-# takes the final path segment from `name:` in Chart.yaml, not from the
-# destination argument, so publishing the chart as `controller` would land it
-# in nvcr.io/<org>/controller -- the controller IMAGE's repository, the two
-# told apart only by whether the tag carries a "v".
-#
-# Renaming at package time is safe because values.yaml pins
-# nameOverride: cloud-workflow-engine. Every resource name, selector and label
-# resolves through that override rather than .Chart.Name, so the only rendered
-# difference is the helm.sh/chart label. Do not remove that pin without
-# revisiting this.
-#
+
 # Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine
 # and published at nvcr.io/<NKE_NGC_ORG>/cloud-workflow-engine; those
 # versions stay there.
@@ -170,8 +150,7 @@ jobs:
       # helm push takes the destination's last path segment from `name:` in
       # Chart.yaml, not from the argument, so this rename IS the publish path:
       # it is what puts the chart at nvcr.io/<org>/controller-chart instead of
-      # colliding with the controller image at nvcr.io/<org>/controller. See
-      # the header for why NVCR cannot use GHCR's charts/ segment instead.
+      # colliding with the controller image at nvcr.io/<org>/controller.
       - name: Rename the chart for NVCR
         shell: bash
         run: |
