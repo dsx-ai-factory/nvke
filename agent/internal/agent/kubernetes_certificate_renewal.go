@@ -250,6 +250,8 @@ func (s *NodeAgentServer) runKubernetesCertificateRenewal(
 // residual duration is field seven; the later CA table is intentionally out of
 // scope, missing certificates are ignored, and hours or <invalid> mean renew.
 func expiringKubernetesCertificates(output string, thresholdDays int) ([]string, error) {
+	const kubeadmCertificateHeader = "CERTIFICATE"
+
 	if thresholdDays <= 0 {
 		return nil, fmt.Errorf("threshold must be positive")
 	}
@@ -260,10 +262,10 @@ func expiringKubernetesCertificates(output string, thresholdDays int) ([]string,
 			continue
 		}
 		fields := strings.Fields(line)
-		if len(fields) >= 2 && fields[0] == "CERTIFICATE" && fields[1] == "EXPIRES" {
+		if len(fields) >= 2 && fields[0] == kubeadmCertificateHeader && fields[1] == "EXPIRES" {
 			continue
 		}
-		if len(fields) >= 2 && fields[0] == "CERTIFICATE" && fields[1] == "AUTHORITY" {
+		if len(fields) >= 2 && fields[0] == kubeadmCertificateHeader && fields[1] == "AUTHORITY" {
 			break
 		}
 		if len(fields) == 0 || fields[0] == "!MISSING!" {
