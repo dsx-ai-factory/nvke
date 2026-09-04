@@ -80,10 +80,6 @@ func validatePostReadyKubeVipRouteWithdrawal(test *tenantTest) {
 		manifestRemoved = true
 		withdrawalDeadline := time.Now().Add(time.Minute)
 
-		Eventually(func(ctx context.Context) error {
-			return assertKubeAPIServerContainerStopped(ctx, target.name)
-		}).WithContext(ctx).WithTimeout(30 * time.Second).WithPolling(time.Second).Should(Succeed())
-
 		By("Verifying kube-vip withdraws only the failed node's BGP path within one minute")
 		remainingHops := append([]string(nil), expectedHops[1:]...)
 		withdrawalTimeout := time.Until(withdrawalDeadline)
@@ -92,6 +88,15 @@ func validatePostReadyKubeVipRouteWithdrawal(test *tenantTest) {
 			return bgpNextHops(ctx, bgpContainer, vip)
 		}).WithContext(ctx).WithTimeout(withdrawalTimeout).WithPolling(time.Second).
 			Should(ConsistOf(remainingHops))
+
+		// Route withdrawal is triggered when /readyz fails, which can happen while
+		// kube-apiserver is still using its graceful termination period. Confirm the
+		// CRI container stops without making full process exit a precondition of the
+		// one-minute route-withdrawal assertion.
+		By(fmt.Sprintf("Waiting for kube-apiserver on %s to stop", target.name))
+		Eventually(func(ctx context.Context) error {
+			return assertKubeAPIServerContainerStopped(ctx, target.name)
+		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(time.Second).Should(Succeed())
 
 		By("Restoring kube-apiserver and verifying its BGP path returns")
 		Expect(restoreKubeAPIServerManifest(ctx, target.name)).To(Succeed())
