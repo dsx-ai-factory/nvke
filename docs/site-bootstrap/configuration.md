@@ -47,7 +47,7 @@ registry:
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | gRPC port nke-agent listens on. Defaults to `15005`. Set it only if you passed `--secure-server-port` to the agent. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
-| `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine image and chart. |
+| `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never logged or printed. See below. |
 

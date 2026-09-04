@@ -73,7 +73,7 @@ is a file `bootstrap site` accepts.
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
-| `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine image and chart. |
+| `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |

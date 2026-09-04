@@ -171,12 +171,13 @@ type KubeletConfig struct {
 	SystemReservedMemory string `yaml:"systemReservedMemory"`
 }
 
-// Registry holds the settings for pulling the bootstrap engine image and chart.
-// The version (image/chart tag) is baked into the nkectl build, so it is not
-// part of the sitespec.
+// Registry holds the settings for pulling the bootstrap engine chart. The
+// version (chart tag) is baked into the nkectl build, so it is not part of the
+// sitespec. The controller image the chart deploys is published separately, to
+// <registry>/<org>/controller, and is not addressed by these fields.
 type Registry struct {
-	// BootstrapRepo is the OCI repository that holds the bootstrap engine image
-	// and chart (e.g. "nvcr.io/org/charts").
+	// BootstrapRepo is the OCI repository that holds the bootstrap engine chart
+	// (e.g. "nvcr.io/org/charts").
 	BootstrapRepo string `yaml:"bootstrapRepo"`
 	// BootstrapChart is the bootstrap engine chart name within BootstrapRepo.
 	BootstrapChart string `yaml:"bootstrapChart"`

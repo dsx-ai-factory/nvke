@@ -64,10 +64,12 @@ cluster:
 #   caCertFile: "/etc/nke/spire-ca.crt"
 #   caKeyFile: "/etc/nke/spire-ca.key"
 
-# Container registry for the bootstrap engine image and chart. The version
-# (image/chart tag) is baked into the nkectl build, so it is not set here.
+# Container registry for the bootstrap engine chart. The version (chart tag) is
+# baked into the nkectl build, so it is not set here. The controller image the
+# chart deploys is published separately, to <registry>/<org>/controller — the
+# "charts/" segment keeps the two from colliding in one OCI repository.
 registry:
-  # OCI repository holding the bootstrap engine image and chart.
+  # OCI repository holding the bootstrap engine chart.
   bootstrapRepo: "nvcr.io/org/charts"
   # Bootstrap engine chart name within bootstrapRepo.
   bootstrapChart: "controller"
