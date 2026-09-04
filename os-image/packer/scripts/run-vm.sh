@@ -18,13 +18,14 @@
 #
 # Usage (QCOW filenames encode the Ubuntu version/arch -- see vm_name in
 # nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl -- check output-fde/ or
-# output-non-fde/ for the exact name):
+# output-non-fde/ for the exact name). OVMF_CODE defaults per ARCH (both
+# variants are UEFI-only), so it's not usually needed:
 #   QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2 \
-#     OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./packer/scripts/run-vm.sh
+#     ./packer/scripts/run-vm.sh
 #   QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 \
-#     OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1 ./packer/scripts/run-vm.sh
+#     TPM=1 ./packer/scripts/run-vm.sh
 #   QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-arm64.qcow2 \
-#     ARCH=arm64 OVMF_CODE=/usr/share/AAVMF/AAVMF_CODE.fd ./packer/scripts/run-vm.sh
+#     ARCH=arm64 ./packer/scripts/run-vm.sh
 #
 # Env:
 #   QCOW          path to the qcow2 to boot (required)
@@ -32,15 +33,22 @@
 #                 arch. Picks qemu-system-x86_64 vs qemu-system-aarch64, the
 #                 machine type (arm64 has no sane default the way x86's "pc"
 #                 is one, so arm64 always gets -machine virt even without
-#                 OVMF_CODE), and the accelerator -- same ARCH-vs-host-arch
+#                 OVMF_CODE), the accelerator (same ARCH-vs-host-arch
 #                 reasoning as packer/Makefile and boot-smoke.sh: KVM only
-#                 virtualizes the host's own architecture.
+#                 virtualizes the host's own architecture), and OVMF_CODE's
+#                 default below.
 #   SSH_KEY       ssh key to inject (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
-#   OVMF_CODE     needed for the FDE/non-FDE variants (both UEFI-installed);
-#                 unset boots BIOS-style, for whatever other qcow2 you point
-#                 this at. Point this at AAVMF (not OVMF) for ARCH=arm64 --
-#                 see boot-smoke.sh's own OVMF_CODE usage for the same split.
+#   OVMF_CODE     defaults to the standard OVMF (amd64) / AAVMF (arm64) path
+#                 for this ARCH if that file exists on the host -- every
+#                 qcow2 this repo builds is UEFI-only, so this "just works"
+#                 without setting anything, unlike earlier versions of this
+#                 script which silently booted BIOS-style (a black screen:
+#                 "SeaBIOS ... Booting from Hard Disk..." with no further
+#                 progress, since there's no BIOS-bootable bootloader on
+#                 these disks) unless you remembered to pass it. Set BIOS=1
+#                 to force the old BIOS-style boot instead, for some other,
+#                 non-UEFI qcow2 you point this at.
 #   OVMF_VARS_TEMPLATE  default: /usr/share/OVMF/OVMF_VARS_4M.fd (amd64) or
 #                 /usr/share/AAVMF/AAVMF_VARS.fd (arm64)
 #   TPM           set to 1 to attach a fresh swtpm (the FDE image's first
@@ -96,6 +104,23 @@ case "${ARCH}" in
     exit 1
     ;;
 esac
+
+# Default OVMF_CODE per ARCH unless BIOS=1 opts out: every qcow2 this repo
+# builds is UEFI-only, so silently falling back to BIOS boot (the "SeaBIOS
+# ... Booting from Hard Disk..." black screen, since there's no BIOS-bootable
+# loader on these disks) is never what you actually want by default here.
+if [[ -z "${OVMF_CODE:-}" && -z "${BIOS:-}" ]]; then
+  if [[ "${ARCH}" == "arm64" ]]; then
+    OVMF_CODE_DEFAULT=/usr/share/AAVMF/AAVMF_CODE.fd
+  else
+    OVMF_CODE_DEFAULT=/usr/share/OVMF/OVMF_CODE_4M.fd
+  fi
+  if [[ -f "${OVMF_CODE_DEFAULT}" ]]; then
+    OVMF_CODE="${OVMF_CODE_DEFAULT}"
+  else
+    echo "run-vm: no OVMF_CODE given and ${OVMF_CODE_DEFAULT} not found; booting BIOS-style, which will not work for this repo's own qcow2s. Install ovmf/qemu-efi-aarch64, or set OVMF_CODE explicitly." >&2
+  fi
+fi
 
 # Same probe as packer/Makefile and boot-smoke.sh, and for the same reason:
 # KVM only accelerates a guest matching the host's own architecture.
