@@ -43,9 +43,9 @@ func teardownCluster(ctx workflow.Context, input TeardownClusterInput) error {
 		return errors.New("clusterID is required")
 	}
 
-	clusterCtx, err := getClusterProvisioningContext(ctx, input.ClusterID)
-	if err != nil {
-		return fmt.Errorf("failed to get cluster provisioning context: %w", err)
+	var cluster db.Cluster
+	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetCluster, input.ClusterID).Get(ctx, &cluster); err != nil {
+		return fmt.Errorf("failed to get cluster: %w", err)
 	}
 
 	if err := cancelClusterProvisionWorkflow(ctx, input.ClusterID); err != nil {
@@ -67,14 +67,12 @@ func teardownCluster(ctx workflow.Context, input TeardownClusterInput) error {
 		return fmt.Errorf("failed to delete etcd encryption key secret: %w", err)
 	}
 
-	if clusterCtx.InfraMode == activities.InfraModeCAPI {
-		if err := workflow.ExecuteActivity(
-			withK8sDeleteWaitOptions(ctx),
-			a.DeleteCAPIClusterResources,
-			activities.DeleteCAPIClusterResourcesInput{ClusterID: input.ClusterID},
-		).Get(ctx, nil); err != nil {
-			return fmt.Errorf("failed to delete CAPI cluster resources: %w", err)
-		}
+	if err := workflow.ExecuteActivity(
+		withK8sDeleteWaitOptions(ctx),
+		a.DeleteCAPIClusterResources,
+		activities.DeleteCAPIClusterResourcesInput{ClusterID: input.ClusterID},
+	).Get(ctx, nil); err != nil {
+		return fmt.Errorf("failed to delete CAPI cluster resources: %w", err)
 	}
 
 	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.DeleteCluster, input.ClusterID).Get(ctx, nil); err != nil {
@@ -88,7 +86,7 @@ func teardownCluster(ctx workflow.Context, input TeardownClusterInput) error {
 	// the row first means no later pass can observe the cluster at all. The name
 	// comes from the context read at the top of teardown, since the row no longer
 	// exists to look it up.
-	if err := deleteTenantAccessSecrets(ctx, input.ClusterID, clusterCtx.ClusterName); err != nil {
+	if err := deleteTenantAccessSecrets(ctx, input.ClusterID, cluster.Name); err != nil {
 		return fmt.Errorf("failed to delete tenant-access secrets: %w", err)
 	}
 

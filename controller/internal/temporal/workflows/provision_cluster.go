@@ -46,14 +46,8 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 		return errors.New("clusterID is required")
 	}
 
-	clusterCtx, err := getClusterProvisioningContext(ctx, input.ClusterID)
-	if err != nil {
-		return fmt.Errorf("failed to get cluster provisioning context: %w", err)
-	}
-	if clusterCtx.InfraMode == activities.InfraModeCAPI {
-		if err := provisionCAPIClusterResources(ctx, input.ClusterID); err != nil {
-			return fmt.Errorf("failed to create CAPI resources: %w", err)
-		}
+	if err := provisionCAPIClusterResources(ctx, input.ClusterID); err != nil {
+		return fmt.Errorf("failed to create CAPI resources: %w", err)
 	}
 
 	// Wait for one of the control plane nodes to be ready to join, choose it as the initial node
@@ -89,21 +83,6 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 	}
 
 	return nil
-}
-
-func getClusterProvisioningContext(ctx workflow.Context, clusterID uuid.UUID) (activities.ClusterProvisioningContext, error) {
-	var a *activities.Activities
-
-	clusterCtx := activities.ClusterProvisioningContext{}
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetClusterProvisioningContext, clusterID).Get(ctx, &clusterCtx); err != nil {
-		return activities.ClusterProvisioningContext{}, fmt.Errorf(
-			"failed to get cluster provisioning context from database: %s: %w",
-			clusterID,
-			err,
-		)
-	}
-
-	return clusterCtx, nil
 }
 
 func provisionCAPIClusterResources(ctx workflow.Context, clusterID uuid.UUID) error {

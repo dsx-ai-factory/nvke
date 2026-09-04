@@ -15,9 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/kube"
 	"github.com/NVIDIA/nke/controller/internal/nodes"
 )
 
@@ -25,11 +22,6 @@ type LabelNodeInput struct {
 	NodeID uuid.UUID
 	// If true, the config profile labels will be added to the node
 	AddConfigProfileLabels bool
-
-	// If true, Forge topology labels (site/vpc) are resolved and added to the
-	// node. Resolution happens inside the activity because the name labels
-	// require Forge-provider reads, which are not permitted in workflow code.
-	AddTopologyLabels bool
 
 	// Optional labels to apply to the node.
 	// If AddConfigProfileLabels is true, these labels along with the config profile labels will be added to the node
@@ -99,17 +91,6 @@ func (a *Activities) labelNode(ctx context.Context, input LabelNodeInput) (Label
 				"configProfile", configProfileName)
 		}
 		labels = append(labels, configProfile.Labels...)
-	}
-
-	// Append Forge topology labels (site/vpc) resolved from CWE + the cached
-	// Forge provider. A name-resolution miss skips only that *-name label; it
-	// never fails provisioning (see topologyLabels).
-	if input.AddTopologyLabels {
-		topo, err := a.topologyLabels(ctx, node, nodePool)
-		if err != nil {
-			return LabelNodeResult{}, fmt.Errorf("failed to resolve topology labels: %w", err)
-		}
-		labels = append(labels, topo...)
 	}
 
 	if len(labels) == 0 {
@@ -191,80 +172,4 @@ func applyNodeLabelChanges(node *corev1.Node, changes []nodeLabelChange) {
 		}
 		node.Labels[change.key] = change.value
 	}
-}
-
-// topologyLabels resolves the Forge topology labels for a node:
-//
-//	nke.nvidia.com/site-id|site-name|vpc-id|vpc-name
-//
-// ID labels (site-id, vpc-id) come straight from the cluster row and are passed
-// through byte-stable. Name labels require cached Forge-provider reads; a miss
-// (transient cache expiry, value not found) skips only that *-name label and is
-// logged, never failing provisioning — the *-id labels still apply and the
-// activity retry self-heals a transient miss. Only an unexpected DB failure
-// fetching the cluster is returned as an error.
-//
-// node.kubernetes.io/instance-type is intentionally NOT set here — see the
-// LabelKeyNode* block in internal/constants for the Prometheus SLO rationale.
-func (a *Activities) topologyLabels(ctx context.Context, node db.Node, nodePool db.NodePool) ([]string, error) {
-	logger := activity.GetLogger(ctx)
-
-	cluster, err := a.db.GetCluster(ctx, nodePool.ClusterID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cluster: %w", err)
-	}
-
-	if cluster.ProviderType != db.ProviderTypeNico {
-		return nil, nil
-	}
-
-	nicoProvider, err := cluster.NicoProvider()
-	if err != nil {
-		return nil, err
-	}
-	orgID := nicoProvider.OrgID
-	siteID := nicoProvider.SiteID.String()
-	labels := []string{constants.LabelKeyNodeSiteID + "=" + siteID}
-
-	if site, err := a.forgeProvider.GetSiteByID(ctx, orgID, siteID); err != nil {
-		logger.Warn("skipping site-name label: failed to resolve site",
-			"nodeID", node.ID, "siteID", siteID, "error", err)
-	} else if name := kube.NormalizeLabelValue(site.GetName()); name != "" {
-		labels = append(labels, constants.LabelKeyNodeSiteName+"="+name)
-	}
-
-	if nicoProvider.VpcID != uuid.Nil {
-		vpcID := nicoProvider.VpcID.String()
-		labels = append(labels, constants.LabelKeyNodeVPCID+"="+vpcID)
-
-		if name := a.resolveVPCName(ctx, orgID, siteID, vpcID); name != "" {
-			labels = append(labels, constants.LabelKeyNodeVPCName+"="+name)
-		} else {
-			logger.Warn("skipping vpc-name label: vpc not resolved",
-				"nodeID", node.ID, "vpcID", vpcID)
-		}
-	}
-
-	// NOTE: node.kubernetes.io/instance-type is intentionally NOT set. Prod tenant
-	// Prometheus SLO rules exact-match instance_type="cpu" to exclude CPU nodes
-	// from GPU capacity/health math; the Forge instance-type name ("cpu.t1") would
-	// break that match. The upstream/kubelet-provided value is left untouched.
-
-	return labels, nil
-}
-
-// resolveVPCName returns the normalized VPC name for vpcID, or "" if the VPC
-// list cannot be read or the id is not present in the cached set.
-func (a *Activities) resolveVPCName(ctx context.Context, orgID, siteID, vpcID string) string {
-	vpcs, err := a.forgeProvider.GetVPCs(ctx, orgID, siteID)
-	if err != nil {
-		activity.GetLogger(ctx).Warn("failed to list VPCs for vpc-name label", "siteID", siteID, "error", err)
-		return ""
-	}
-	for _, vpc := range vpcs {
-		if vpc.GetId() == vpcID {
-			return kube.NormalizeLabelValue(vpc.GetName())
-		}
-	}
-	return ""
 }

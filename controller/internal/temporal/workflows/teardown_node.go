@@ -119,11 +119,6 @@ func teardownNode(ctx workflow.Context, input TeardownNodeInput, labels nodeMetr
 		return errors.New("nodeID is required")
 	}
 
-	nodeCtx, err := getNodeProvisioningContext(ctx, input.NodeID)
-	if err != nil {
-		return fmt.Errorf("failed to get node provisioning context: %w", err)
-	}
-
 	recordPhase := func(phase string, start, end time.Time) {
 		if !workflow.IsReplaying(ctx) {
 			metrics.RecordTeardownPhase(labels.ClusterName, labels.NodeType, phase, end.Sub(start))
@@ -151,12 +146,11 @@ func teardownNode(ctx workflow.Context, input TeardownNodeInput, labels nodeMetr
 	recordPhase("cluster_remove", clusterRemoveStart, workflow.Now(ctx))
 
 	infraDeleteStart := workflow.Now(ctx)
-	infraPhase, err := teardownNodeInfrastructure(ctx, input, nodeCtx)
-	if err != nil {
-		recordPhase(infraPhase, infraDeleteStart, workflow.Now(ctx))
+	if err := teardownCAPIMachine(ctx, input.NodeID, input.MachineHealthIssue); err != nil {
+		recordPhase("capi_delete", infraDeleteStart, workflow.Now(ctx))
 		return err
 	}
-	recordPhase(infraPhase, infraDeleteStart, workflow.Now(ctx))
+	recordPhase("capi_delete", infraDeleteStart, workflow.Now(ctx))
 
 	if needsKubeCleanup {
 		if err := deleteKubeNode(ctx, input); err != nil {
@@ -463,23 +457,6 @@ func attemptKubeadmReset(ctx workflow.Context, nodeID uuid.UUID, isControlPlane 
 	}
 }
 
-func teardownNodeInfrastructure(ctx workflow.Context, input TeardownNodeInput, nodeCtx activities.NodeProvisioningContext) (string, error) {
-	switch nodeCtx.InfraMode {
-	case activities.InfraModeForge:
-		if err := teardownForgeInstance(ctx, input.NodeID, input.MachineHealthIssue); err != nil {
-			return "forge_delete", fmt.Errorf("failed to teardown forge instance: %w", err)
-		}
-		return "forge_delete", nil
-	case activities.InfraModeCAPI:
-		if err := teardownCAPIMachine(ctx, input.NodeID, input.MachineHealthIssue); err != nil {
-			return "capi_delete", fmt.Errorf("failed to teardown capi machine: %w", err)
-		}
-		return "capi_delete", nil
-	default:
-		return "unknown_delete", fmt.Errorf("unsupported node infra mode %q", nodeCtx.InfraMode)
-	}
-}
-
 func teardownCAPIMachine(ctx workflow.Context, nodeID uuid.UUID, machineHealthIssue *MachineHealthIssue) error {
 	var a *activities.Activities
 
@@ -605,34 +582,6 @@ func withKubeadmResetOptions(ctx workflow.Context) workflow.Context {
 			MaximumAttempts: 3,
 		},
 	})
-}
-
-func teardownForgeInstance(ctx workflow.Context, nodeID uuid.UUID, machineHealthIssue *MachineHealthIssue) error {
-	var a *activities.Activities
-
-	activityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 20 * time.Minute, // usually takes about 10 minutes
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    1 * time.Minute,
-			MaximumInterval:    10 * time.Minute,
-			BackoffCoefficient: 2,
-			MaximumAttempts:    0, // Retry indefinitely, giving operator time to manually resolve any issues
-		},
-	}
-
-	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, activityOptions),
-		a.DeleteForgeInstance,
-		activities.DeleteForgeInstanceInput{
-			NodeID:                       nodeID,
-			MachineHealthIssue:           machineHealthIssue,
-			NodeDeletingConditionMessage: "Tearing down Forge instance",
-		},
-	).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to delete forge instance: %w", err)
-	}
-
-	return nil
 }
 
 func runTeardownHooks(ctx workflow.Context, input TeardownNodeInput, hookType HookType) error {

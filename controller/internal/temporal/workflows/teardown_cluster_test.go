@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/sdk/worker"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
+	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
@@ -60,12 +61,8 @@ func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) 
 
 	a := activities.NewActivities(config.Config{}, nil, nil, nil, nil, "", nil)
 
-	env.OnActivity(a.GetClusterProvisioningContext, mock.Anything, mock.Anything).
-		Return(activities.ClusterProvisioningContext{
-			ClusterID:   clusterID,
-			InfraMode:   activities.InfraModeForge,
-			ClusterName: clusterName,
-		}, nil)
+	env.OnActivity(a.GetCluster, mock.Anything, clusterID).
+		Return(db.Cluster{ID: clusterID, Name: clusterName}, nil)
 	env.OnActivity(a.UpdateClusterConditions, mock.Anything, mock.Anything).Return(nil).Maybe()
 	env.OnActivity(a.TriggerClusterTeardownNodePools, mock.Anything, mock.Anything).
 		Return(activities.TriggerClusterTeardownNodePoolsResult{}, nil)
@@ -76,6 +73,7 @@ func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) 
 	env.OnActivity(a.WaitForClusterControlPlaneNodesDeleted, mock.Anything, mock.Anything).
 		Return(activities.WaitForClusterControlPlaneNodesDeletedResult{}, nil)
 	env.OnActivity(a.DeleteEtcdEncryptionKeySecret, mock.Anything, mock.Anything).Return(nil)
+	env.OnActivity(a.DeleteCAPIClusterResources, mock.Anything, mock.Anything).Return(nil)
 
 	env.OnActivity(a.DeleteCluster, mock.Anything, mock.Anything).
 		Return(func(context.Context, uuid.UUID) error {
