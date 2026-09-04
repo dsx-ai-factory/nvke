@@ -163,6 +163,25 @@ jobs:
           echo "Disk space after cleanup:"
           df -h /
 
+      # Each nested containerd uses inotify for CRI and OOM monitoring. Match
+      # the capacity configured by the repository's other CPU16 E2E lanes.
+      - name: Configure runner inotify capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          raise_minimum() {
+            local key="$1" minimum="$2" current
+            current="$(sysctl -n "${key}")"
+            echo "${key}=${current} (required minimum ${minimum})"
+            if (( current < minimum )); then
+              sudo sysctl -w "${key}=${minimum}"
+              current="$(sysctl -n "${key}")"
+            fi
+            (( current >= minimum )) || { echo "${key} stayed below ${minimum}" >&2; exit 1; }
+          }
+          raise_minimum fs.inotify.max_user_instances 1024
+          raise_minimum fs.inotify.max_user_watches 1048576
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
