@@ -19,7 +19,7 @@ func buildCAPIBootstrapSecret(createCtx *capiMachineCreateContext, userData stri
 	return &corev1.Secret{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: corev1.SchemeGroupVersion.String(),
-			Kind:       "Secret", //nolint:goconst // well-known value
+			Kind:       "Secret",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-bootstrap-data", createCtx.node.Name),
