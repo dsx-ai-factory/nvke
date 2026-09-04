@@ -246,7 +246,8 @@ jobs:
             grep '^CONFIG_TCG_VTPM_PROXY=' "${config}"
           fi
           sudo apt-get update
-          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          sudo apt-get install -y --allow-change-held-packages \
+            "linux-modules-extra-$(uname -r)"
           sudo modprobe tpm_vtpm_proxy
           modinfo tpm_vtpm_proxy
           # -c, not -e: it has to be the character device swtpm opens.
