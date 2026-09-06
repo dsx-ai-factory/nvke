@@ -5,10 +5,10 @@
 # Drive nkectl against the CWE a backend E2E lane already deployed. Source it
 # from ci/backend-e2e.sh; do not run it.
 #
-# No lane runs any nkectl command but `version` and `bootstrap site`, so nothing
-# checks the CLI and the generated client agree against a real server.
+# The Ginkgo suite proves the server. This proves the CLI can talk to it: read
+# commands and their negatives, provider inspection, rejected creates.
 #
-# Needs from the caller: log, runner_exec, RUNNER_NAME, NKECTL_BIN.
+# Needs from the caller: log, runner_exec, RUNNER_NAME, NKECTL_BIN, TMP_DIR.
 
 # The CWE service the suite deploys, and the ServiceAccount it mints its token
 # from (controller/test/e2e/internal/authtoken).
@@ -21,6 +21,10 @@ NKECTL_SMOKE_AUTH_CONFIGMAP=nke-auth-config
 # A name no lane creates. Used by every negative assertion, so a rename here
 # cannot leave one of them silently matching a real object.
 NKECTL_SMOKE_ABSENT=nkectl-smoke-absent
+# Name the rejection bodies carry; asserted absent afterwards.
+NKECTL_SMOKE_REJECT_CLUSTER=nkectl-smoke-reject
+# The suite's default; create validation checks only the semver shape.
+NKECTL_SMOKE_KUBERNETES_VERSION="${NKECTL_SMOKE_KUBERNETES_VERSION:-1.34.2}"
 
 nkectl_smoke_build() {
   log "compiling nkectl for linux/${1}"
@@ -156,8 +160,9 @@ nkectl_smoke() {
   fi
 
   nkectl_smoke_providers "${token}" || return 1
+  nkectl_smoke_create_rejections "${token}" || return 1
 
-  log "PASS: nkectl reached CWE, authenticated, listed clusters, and read providers"
+  log "PASS: nkectl reached CWE, authenticated, listed clusters, read providers, and had malformed creates rejected"
 }
 
 # `get providers` reads the site kubeconfig through kubectl rather than the CWE
@@ -213,6 +218,80 @@ nkectl_smoke_providers() {
   # A site that is not configured must fail before any cluster contact.
   if out="$(nkectl_exec "${token}" --site "${NKECTL_SMOKE_ABSENT}" get providers 2>&1)"; then
     log "nkectl smoke: '--site ${NKECTL_SMOKE_ABSENT}' was accepted" >&2
+    return 1
+  fi
+}
+
+# Where a staged spec lands in the runner container.
+nkectl_smoke_spec_path() {
+  echo "/tmp/nkectl-smoke-$1.yaml"
+}
+
+# Stage the YAML on stdin into the runner. nkectl_exec has no -i, so
+# `create cluster -f -` cannot read stdin.
+nkectl_smoke_stage_spec() {
+  local name="$1"
+  local host_path="${TMP_DIR}/nkectl-smoke-${name}.yaml"
+  cat >"${host_path}" || return 1
+  docker cp "${host_path}" "${RUNNER_NAME}:$(nkectl_smoke_spec_path "${name}")" >/dev/null
+}
+
+# Bodies the OpenAPI validator rejects before any handler runs: no row, no
+# workflow. Each is valid except for the one fault it names.
+nkectl_smoke_create_rejections() {
+  local token="$1" out
+
+  nkectl_smoke_stage_spec reject-name <<EOF || return 1
+name: Nkectl_Smoke
+controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
+cniPlugin: calico
+infra:
+  cluster:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: DockerCluster
+    metadata:
+      name: ${NKECTL_SMOKE_REJECT_CLUSTER}
+    spec: {}
+EOF
+  nkectl_smoke_expect_create_rejected "${token}" reject-name "a name that violates the DNS-label pattern" || return 1
+
+  nkectl_smoke_stage_spec reject-version <<EOF || return 1
+name: ${NKECTL_SMOKE_REJECT_CLUSTER}
+cniPlugin: calico
+infra:
+  cluster:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: DockerCluster
+    metadata:
+      name: ${NKECTL_SMOKE_REJECT_CLUSTER}
+    spec: {}
+EOF
+  nkectl_smoke_expect_create_rejected "${token}" reject-version "no controlPlaneKubernetesVersion" || return 1
+
+  nkectl_smoke_stage_spec reject-provider <<EOF || return 1
+name: ${NKECTL_SMOKE_REJECT_CLUSTER}
+controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
+cniPlugin: calico
+EOF
+  nkectl_smoke_expect_create_rejected "${token}" reject-provider "neither nico nor infra" || return 1
+
+  # Zero state: a rejected create must leave nothing to find by name.
+  if out="$(nkectl_exec "${token}" get clusters -c "${NKECTL_SMOKE_REJECT_CLUSTER}" 2>&1)"; then
+    log "nkectl smoke: a rejected create left cluster ${NKECTL_SMOKE_REJECT_CLUSTER} behind: ${out}" >&2
+    return 1
+  fi
+}
+
+# Assert the status, not the message: the text is the middleware's, and a 400
+# is the only proof the request reached CWE rather than dying in the CLI.
+nkectl_smoke_expect_create_rejected() {
+  local token="$1" spec="$2" what="$3" out
+  if out="$(nkectl_exec "${token}" create cluster -f "$(nkectl_smoke_spec_path "${spec}")" 2>&1)"; then
+    log "nkectl smoke: 'create cluster' with ${what} was accepted: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q '400' <<<"${out}"; then
+    log "nkectl smoke: 'create cluster' with ${what} failed, but not with a 400 from CWE: ${out}" >&2
     return 1
   fi
 }
