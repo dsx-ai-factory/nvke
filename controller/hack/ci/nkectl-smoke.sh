@@ -6,9 +6,11 @@
 # from ci/backend-e2e.sh; do not run it.
 #
 # The Ginkgo suite proves the server. This proves the CLI can talk to it: read
-# commands and their negatives, provider inspection, rejected creates.
+# commands and their negatives, provider inspection, rejected creates, and one
+# create, describe, delete round trip.
 #
-# Needs from the caller: log, runner_exec, RUNNER_NAME, NKECTL_BIN, TMP_DIR.
+# Needs from the caller: log, runner_exec, RUNNER_NAME, NKECTL_BIN, TMP_DIR,
+# BACKEND, CAPD_NODE_IMAGE.
 
 # The CWE service the suite deploys, and the ServiceAccount it mints its token
 # from (controller/test/e2e/internal/authtoken).
@@ -25,6 +27,11 @@ NKECTL_SMOKE_ABSENT=nkectl-smoke-absent
 NKECTL_SMOKE_REJECT_CLUSTER=nkectl-smoke-reject
 # The suite's default; create validation checks only the semver shape.
 NKECTL_SMOKE_KUBERNETES_VERSION="${NKECTL_SMOKE_KUBERNETES_VERSION:-1.34.2}"
+# Name the round trip creates and deletes.
+NKECTL_SMOKE_WRITE_CLUSTER=nkectl-smoke-write
+# Delete wait: this many polls, this many seconds apart.
+NKECTL_SMOKE_DELETE_POLLS="${NKECTL_SMOKE_DELETE_POLLS:-60}"
+NKECTL_SMOKE_DELETE_POLL_SECONDS="${NKECTL_SMOKE_DELETE_POLL_SECONDS:-5}"
 
 nkectl_smoke_build() {
   log "compiling nkectl for linux/${1}"
@@ -161,6 +168,7 @@ nkectl_smoke() {
 
   nkectl_smoke_providers "${token}" || return 1
   nkectl_smoke_create_rejections "${token}" || return 1
+  nkectl_smoke_write_round_trip "${token}" || return 1
 
   log "PASS: nkectl reached CWE, authenticated, listed clusters, read providers, and had malformed creates rejected"
 }
@@ -294,4 +302,158 @@ nkectl_smoke_expect_create_rejected() {
     log "nkectl smoke: 'create cluster' with ${what} failed, but not with a 400 from CWE: ${out}" >&2
     return 1
   fi
+}
+
+# Create, list, describe, duplicate-reject, delete. One control-plane pool with
+# autoProvisionDisabled passes create validation and schedules no node, so CWE
+# writes only the CAPI Cluster and DockerCluster. Runs after the last leg: the
+# gate between legs counts tenant clusters.
+nkectl_smoke_write_round_trip() {
+  local token="$1" out rc=0
+
+  if [[ "${NKE_E2E_NKECTL_SMOKE_WRITE:-true}" != "true" ]]; then
+    log "nkectl smoke: SKIP the write round trip, NKE_E2E_NKECTL_SMOKE_WRITE is not true"
+    return 0
+  fi
+  # Only CAPD can take a DockerCluster spec.
+  if [[ "${BACKEND:-}" != "capd" ]]; then
+    log "nkectl smoke: SKIP the write round trip on the ${BACKEND:-unset} backend"
+    return 0
+  fi
+
+  nkectl_smoke_stage_spec write <<EOF || return 1
+name: ${NKECTL_SMOKE_WRITE_CLUSTER}
+controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
+cniPlugin: calico
+etcdEncrypted: false
+nodePools:
+  - name: control-plane
+    nodeNamePrefix: cp
+    desiredNodeCount: 1
+    controlPlane: true
+    systemReservedMemory: "1Gi"
+    autoProvisionDisabled: true
+    autoModeDisabled: false
+    recycleBudget: 0
+    infra:
+      spireAttestationMethod: joinToken
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: DockerMachineTemplate
+        spec:
+          template:
+            spec:
+              customImage: ${CAPD_NODE_IMAGE}
+infra:
+  cluster:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: DockerCluster
+    metadata:
+      name: ${NKECTL_SMOKE_WRITE_CLUSTER}
+    spec: {}
+EOF
+
+  if ! out="$(nkectl_exec "${token}" create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
+    log "nkectl smoke: 'create cluster' failed: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'created (id: ' <<<"${out}"; then
+    log "nkectl smoke: 'create cluster' succeeded without reporting the id: ${out}" >&2
+    nkectl_smoke_write_cleanup "${token}"
+    return 1
+  fi
+  log "nkectl smoke: ${out}"
+
+  # The cluster exists from here: delete it on any failure.
+  nkectl_smoke_write_assertions "${token}" || rc=$?
+  if ((rc != 0)); then
+    nkectl_smoke_write_cleanup "${token}"
+    return "${rc}"
+  fi
+  log "PASS: nkectl created, listed, described and deleted a cluster through CWE"
+}
+
+# Best-effort delete; never fails the caller.
+nkectl_smoke_write_cleanup() {
+  local token="$1"
+  nkectl_exec "${token}" delete cluster "${NKECTL_SMOKE_WRITE_CLUSTER}" >/dev/null 2>&1 || true
+}
+
+nkectl_smoke_write_assertions() {
+  local token="$1" out name="${NKECTL_SMOKE_WRITE_CLUSTER}"
+
+  # A row, not just a header.
+  if ! out="$(nkectl_exec "${token}" get clusters 2>&1)"; then
+    log "nkectl smoke: 'get clusters' failed after the create: ${out}" >&2
+    return 1
+  fi
+  if ! grep -qE "^${name}[[:space:]]" <<<"${out}"; then
+    log "nkectl smoke: 'get clusters' printed no row for ${name}: ${out}" >&2
+    return 1
+  fi
+
+  # Exactly one element, ours.
+  if ! out="$(nkectl_exec "${token}" get clusters -c "${name}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get clusters -c ${name} -o json' failed: ${out}" >&2
+    return 1
+  fi
+  if ! jq -e --arg n "${name}" 'length == 1 and .[0].name == $n' <<<"${out}" >/dev/null; then
+    log "nkectl smoke: 'get clusters -c ${name} -o json' did not return exactly our cluster: ${out}" >&2
+    return 1
+  fi
+
+  # The two-hop lookup, name to id to cluster.
+  if ! out="$(nkectl_exec "${token}" describe cluster "${name}" 2>&1)"; then
+    log "nkectl smoke: 'describe cluster ${name}' failed: ${out}" >&2
+    return 1
+  fi
+  if ! grep -qE "^name: ${name}$" <<<"${out}" || ! grep -qE '^id: ' <<<"${out}"; then
+    log "nkectl smoke: 'describe cluster ${name}' printed no id and name lines: ${out}" >&2
+    return 1
+  fi
+
+  # Only passes if the first create committed.
+  if out="$(nkectl_exec "${token}" create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
+    log "nkectl smoke: a second 'create cluster' of ${name} was accepted: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'already exists' <<<"${out}"; then
+    log "nkectl smoke: the duplicate create failed for a reason other than the name: ${out}" >&2
+    return 1
+  fi
+
+  if ! out="$(nkectl_exec "${token}" delete cluster "${name}" 2>&1)"; then
+    log "nkectl smoke: 'delete cluster ${name}' failed: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'deletion started' <<<"${out}"; then
+    log "nkectl smoke: 'delete cluster ${name}' succeeded without reporting it: ${out}" >&2
+    return 1
+  fi
+
+  if out="$(nkectl_exec "${token}" delete cluster "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
+    log "nkectl smoke: 'delete cluster ${NKECTL_SMOKE_ABSENT}' succeeded against a name that does not exist" >&2
+    return 1
+  fi
+  if ! grep -q 'not found' <<<"${out}"; then
+    log "nkectl smoke: 'delete cluster ${NKECTL_SMOKE_ABSENT}' failed without a not-found message: ${out}" >&2
+    return 1
+  fi
+
+  # Teardown is asynchronous.
+  local attempt
+  for ((attempt = 1; attempt <= NKECTL_SMOKE_DELETE_POLLS; attempt++)); do
+    if out="$(nkectl_exec "${token}" get clusters -c "${name}" 2>&1)"; then
+      sleep "${NKECTL_SMOKE_DELETE_POLL_SECONDS}"
+      continue
+    fi
+    if grep -q 'not found' <<<"${out}"; then
+      log "nkectl smoke: ${name} was gone after ${attempt} polls"
+      return 0
+    fi
+    log "nkectl smoke: polling for ${name} failed for a reason other than not-found: ${out}" >&2
+    return 1
+  done
+  log "nkectl smoke: ${name} was still listed after ${NKECTL_SMOKE_DELETE_POLLS} polls" >&2
+  return 1
 }
