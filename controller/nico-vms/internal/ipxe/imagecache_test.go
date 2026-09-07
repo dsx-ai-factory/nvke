@@ -108,3 +108,72 @@ func TestCacheKeyForURL(t *testing.T) {
 		t.Errorf("cache key length = %d, want 32", len(key1))
 	}
 }
+
+// An image built in the same CI job is already on disk, so it should not need
+// an HTTP server to reach nico-vms.
+func TestImageCacheEnsureLocalFile(t *testing.T) {
+	imageData := []byte("QFI\xfb" + "locally-built-image")
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "nke-node.qcow2")
+	if err := os.WriteFile(src, imageData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		url  string
+	}{
+		{name: "file url", url: "file://" + src},
+		{name: "file url with localhost", url: "file://localhost" + src},
+		{name: "bare absolute path", url: src},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cache := NewImageCache(filepath.Join(t.TempDir(), "image-cache"), slog.Default())
+
+			path, err := cache.Ensure(context.Background(), tc.url)
+			if err != nil {
+				t.Fatalf("Ensure(%q): %v", tc.url, err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(imageData) {
+				t.Errorf("cached content = %q, want %q", got, imageData)
+			}
+			if path == src {
+				t.Error("cache must own its copy, not hand back the source path")
+			}
+
+			// The source may be rebuilt or deleted once the image is cached.
+			if err := os.Remove(src); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.WriteFile(src, imageData, 0o644) })
+			if _, err := cache.Ensure(context.Background(), tc.url); err != nil {
+				t.Errorf("cache hit must not need the source: %v", err)
+			}
+		})
+	}
+}
+
+func TestImageCacheEnsureLocalFileMissing(t *testing.T) {
+	cache := NewImageCache(filepath.Join(t.TempDir(), "image-cache"), slog.Default())
+	if _, err := cache.Ensure(context.Background(), "/nonexistent/nke-node.qcow2"); err == nil {
+		t.Fatal("expected an error naming the missing file")
+	}
+}
+
+// A file:// URL naming another host is a file on a different machine, so it
+// must not be read from this one.
+func TestLocalImagePathRejectsRemoteHost(t *testing.T) {
+	for _, url := range []string{
+		"file://otherbox/images/nke-node.qcow2",
+		"http://172.30.0.1:8899/nke-node.qcow2",
+		"https://example.invalid/nke-node.qcow2",
+	} {
+		if got, ok := localImagePath(url); ok {
+			t.Errorf("localImagePath(%q) = %q, true; want false", url, got)
+		}
+	}
+}
