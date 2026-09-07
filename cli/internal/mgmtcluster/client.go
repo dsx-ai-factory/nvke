@@ -4,6 +4,12 @@
 // Package mgmtcluster provides a client for reading resources from the NKE
 // management cluster — specifically the per-cluster admin kubeconfig Secret
 // that the tenantaccess controller publishes into the nke-system namespace.
+//
+// Note: cwedeploy.Engine.TenantKubeconfig reads a different Secret
+// (<cluster>-kubeconfig, not -admin-kubeconfig) via a polling kubectl
+// subprocess, because it waits for a freshly-bootstrapped site's own
+// kubeconfig to appear. This package does a single, non-polling read for an
+// already-provisioned cluster, so it doesn't reuse that function.
 package mgmtcluster
 
 import (

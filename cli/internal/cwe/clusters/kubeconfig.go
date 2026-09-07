@@ -4,17 +4,28 @@
 package clusters
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
-
-	"github.com/NVIDIA/nke/cli/internal/mgmtcluster"
 )
 
 // MgmtKubeconfigResolver returns the path to the management cluster
 // kubeconfig configured for the active site.
 type MgmtKubeconfigResolver func() (string, error)
+
+// KubeconfigFetcher is the subset of *mgmtcluster.Client NewGetKubeconfigCmd
+// depends on. Narrow on purpose, so tests can inject a fake without a real
+// management cluster kubeconfig or a live server.
+type KubeconfigFetcher interface {
+	GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error)
+}
+
+// MgmtClientFactory builds a KubeconfigFetcher from a management cluster
+// kubeconfig path. The caller typically wraps mgmtcluster.New, whose
+// *mgmtcluster.Client return type satisfies KubeconfigFetcher.
+type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
 
 // NewGetKubeconfigCmd returns "nkectl get kubeconfig <cluster-name>".
 //
@@ -22,7 +33,7 @@ type MgmtKubeconfigResolver func() (string, error)
 // the management cluster. The management cluster kubeconfig is resolved via
 // resolveMgmtKubeconfig (the active site's configured kubeconfig) unless
 // --mgmt-kubeconfig overrides it for this invocation.
-func NewGetKubeconfigCmd(resolveMgmtKubeconfig MgmtKubeconfigResolver) *cobra.Command {
+func NewGetKubeconfigCmd(resolveMgmtKubeconfig MgmtKubeconfigResolver, newMgmtClient MgmtClientFactory) *cobra.Command {
 	var (
 		mgmtKubeconfig string
 		outputFile     string
@@ -42,12 +53,12 @@ The management cluster kubeconfig is resolved from the active site's
 configured kubeconfig (see 'nkectl config set-site --kubeconfig'), unless
 --mgmt-kubeconfig overrides it for this invocation.
 
-By default the kubeconfig is printed to stdout. Use --output to write it to a
-file instead.
+By default the kubeconfig is printed to stdout. Use --output-file to write it
+to a file instead.
 
 Example:
   nkectl get kubeconfig my-cluster
-  nkectl get kubeconfig my-cluster --output ~/.kube/my-cluster.yaml
+  nkectl get kubeconfig my-cluster --output-file ~/.kube/my-cluster.yaml
   nkectl get kubeconfig my-cluster --mgmt-kubeconfig /path/to/mgmt.yaml`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -62,7 +73,7 @@ Example:
 				}
 			}
 
-			mc, err := mgmtcluster.New(kubeconfigPath)
+			mc, err := newMgmtClient(kubeconfigPath)
 			if err != nil {
 				return err
 			}
@@ -73,20 +84,27 @@ Example:
 			}
 
 			if outputFile != "" {
+				// os.WriteFile only applies the mode argument when it creates the
+				// file; an existing file (e.g. a pre-existing kubeconfig at 0644)
+				// keeps its old, possibly more permissive mode. Chmod explicitly so
+				// this kubeconfig's credentials are never left world/group readable.
 				if err := os.WriteFile(outputFile, data, 0o600); err != nil {
 					return fmt.Errorf("writing kubeconfig to %q: %w", outputFile, err)
 				}
-				fmt.Fprintf(os.Stdout, "kubeconfig written to %s\n", outputFile)
+				if err := os.Chmod(outputFile, 0o600); err != nil {
+					return fmt.Errorf("setting permissions on %q: %w", outputFile, err)
+				}
+				fmt.Fprintf(cmd.OutOrStdout(), "kubeconfig written to %s\n", outputFile)
 				return nil
 			}
 
-			_, err = os.Stdout.Write(data)
+			_, err = cmd.OutOrStdout().Write(data)
 			return err
 		},
 	}
 
 	cmd.Flags().StringVar(&mgmtKubeconfig, "mgmt-kubeconfig", "", "Path to management cluster kubeconfig (overrides the active site's configured kubeconfig)")
-	cmd.Flags().StringVarP(&outputFile, "output", "o", "", "Write kubeconfig to file instead of stdout")
+	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
 
 	return cmd
 }

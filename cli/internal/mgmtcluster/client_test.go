@@ -5,6 +5,8 @@ package mgmtcluster
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -12,6 +14,27 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+// validKubeconfig is a syntactically valid, minimal kubeconfig. New() never
+// dials the server it names, so this doesn't need to be reachable.
+const validKubeconfig = `apiVersion: v1
+kind: Config
+clusters:
+- name: mgmt
+  cluster:
+    server: https://127.0.0.1:6443
+    insecure-skip-tls-verify: true
+contexts:
+- name: mgmt
+  context:
+    cluster: mgmt
+    user: mgmt
+current-context: mgmt
+users:
+- name: mgmt
+  user:
+    token: fake-token
+`
 
 func newTestClient(t *testing.T, objs ...runtime.Object) *Client {
 	t.Helper()
@@ -69,5 +92,32 @@ func TestGetClusterKubeconfigErrorsWhenDataKeyMissing(t *testing.T) {
 
 	if _, err := c.GetClusterKubeconfig(context.Background(), "my-cluster"); err == nil {
 		t.Fatal("expected error when the secret has no \"value\" key, got nil")
+	}
+}
+
+func TestNewErrorsWhenPathIsEmpty(t *testing.T) {
+	if _, err := New(""); err == nil {
+		t.Fatal("expected error for an empty kubeconfig path, got nil")
+	}
+}
+
+func TestNewErrorsWhenPathDoesNotExist(t *testing.T) {
+	if _, err := New(filepath.Join(t.TempDir(), "does-not-exist")); err == nil {
+		t.Fatal("expected error for a nonexistent kubeconfig path, got nil")
+	}
+}
+
+func TestNewBuildsClientFromValidKubeconfig(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "kubeconfig")
+	if err := os.WriteFile(path, []byte(validKubeconfig), 0o600); err != nil {
+		t.Fatalf("writing test kubeconfig: %v", err)
+	}
+
+	c, err := New(path)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if c == nil || c.kube == nil {
+		t.Fatal("New returned a Client with no underlying client")
 	}
 }

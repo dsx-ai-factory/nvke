@@ -8,6 +8,7 @@ import (
 
 	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
 	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
+	"github.com/NVIDIA/nke/cli/internal/mgmtcluster"
 	providercmd "github.com/NVIDIA/nke/cli/internal/providers/command"
 )
 
@@ -18,6 +19,14 @@ func newGetCmd() *cobra.Command {
 	}
 	cmd.AddCommand(clusters.NewGetCmd(loadClient))
 	cmd.AddCommand(providercmd.NewGetCmd(loadSite, cwedeploy.ExecCommandRunner{}))
-	cmd.AddCommand(clusters.NewGetKubeconfigCmd(resolveMgmtKubeconfig))
+	cmd.AddCommand(clusters.NewGetKubeconfigCmd(resolveMgmtKubeconfig, newMgmtClient))
 	return cmd
+}
+
+// newMgmtClient adapts mgmtcluster.New to clusters.MgmtClientFactory:
+// *mgmtcluster.Client satisfies clusters.KubeconfigFetcher, but Go does not
+// implicitly convert a function's concrete return type to an interface when
+// assigning the function itself, so this wraps the call.
+func newMgmtClient(kubeconfigPath string) (clusters.KubeconfigFetcher, error) {
+	return mgmtcluster.New(kubeconfigPath)
 }
