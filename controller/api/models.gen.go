@@ -16,12 +16,6 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
-// Defines values for ClusterProvider.
-const (
-	ClusterProviderInfra ClusterProvider = "infra"
-	ClusterProviderNico  ClusterProvider = "nico"
-)
-
 // Defines values for ConditionStatus.
 const (
 	ConditionStatusFalse   ConditionStatus = "False"
@@ -39,6 +33,12 @@ const (
 const (
 	DiskSelectionStrategyCreateLargest  DiskSelectionStrategyCreate = "largest"
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
+)
+
+// Defines values for InfraProvider.
+const (
+	InfraProviderInfra InfraProvider = "infra"
+	InfraProviderNico  InfraProvider = "nico"
 )
 
 // Defines values for SpireAttestationMethod.
@@ -169,9 +169,6 @@ type ClusterNetworkCreateConfig struct {
 	// ServiceCIDR IPv4 service network CIDR. Must be a private range with a prefix length between /12 and /24. Defaults to 10.96.0.0/12; a non-default value requires the ovn-kubernetes CNI plugin.
 	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 }
-
-// ClusterProvider A top-level provider payload key advertised for CreateClusterRequest cluster specs.
-type ClusterProvider string
 
 // Condition defines model for Condition.
 type Condition struct {
@@ -502,16 +499,13 @@ type InfraNodeSetProvider struct {
 	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
 }
 
+// InfraProvider A top-level provider payload key advertised for CreateClusterRequest cluster specs.
+type InfraProvider string
+
 // ListCNIPluginsResponse defines model for ListCNIPluginsResponse.
 type ListCNIPluginsResponse struct {
 	// CniPlugins A list of CNI plugins
 	CniPlugins []string `json:"cniPlugins"`
-}
-
-// ListClusterProvidersResponse defines model for ListClusterProvidersResponse.
-type ListClusterProvidersResponse struct {
-	// Providers The provider payload keys advertised for CreateClusterRequest cluster specs.
-	Providers []ClusterProvider `json:"providers"`
 }
 
 // ListClustersResponse defines model for ListClustersResponse.
@@ -524,6 +518,12 @@ type ListClustersResponse struct {
 type ListConfigProfilesResponse struct {
 	// ConfigProfiles The list of config profiles
 	ConfigProfiles []ConfigProfile `json:"configProfiles"`
+}
+
+// ListInfraProvidersResponse defines model for ListInfraProvidersResponse.
+type ListInfraProvidersResponse struct {
+	// Providers The provider payload keys advertised for CreateClusterRequest cluster specs.
+	Providers []InfraProvider `json:"providers"`
 }
 
 // ListNodePoolsResponse defines model for ListNodePoolsResponse.
