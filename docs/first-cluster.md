@@ -68,9 +68,9 @@ FORGE_ENVIRONMENT=test make -C controller run-local
 The same stack a real site runs: real CAPNICo, with **nico-mock** answering the
 NICo API and tenant nodes as containers.
 
-Needs a checkout of `NVIDIA/cluster-api-provider-nico` beside this repository,
-or `NICO_PROVIDER_REPO_DIR` pointing at one — Tilt builds the provider from
-source.
+Tilt installs the released CAPNICo chart by default. To build CAPNICo from a
+checkout instead, set `capnico_source_dir` in `controller/tilt_config.json` or
+export `CAPNICO_SOURCE_DIR`.
 
 If you ran path A first, stop it — its Postgres and Temporal hold 5432 and 7233,
 and Tilt's probes will pass against the wrong servers while its port-forwards
@@ -91,7 +91,7 @@ cp controller/.env.tilt.example controller/.env.tilt
 # Only if the CAPNICo checkout is not a sibling of this repository. Absolute:
 # Tilt runs the provider script from controller/, so a relative path resolves
 # inside the repository.
-export NICO_PROVIDER_REPO_DIR="$PWD/../cluster-api-provider-nico"
+export CAPNICO_SOURCE_DIR="$PWD/../cluster-api-provider-nico"
 
 # kind cluster, Cluster API, and the bundle mirror the node image build reads.
 # Tilt checks for all three and refuses to start without them.
@@ -101,8 +101,8 @@ cd controller && tilt up      # leave running
 ```
 
 That config selects `["capi_core", "bgp-containers", "nico"]`, the list the
-[NICo E2E lane](../.github/workflows/nico-e2e.yml) runs. `nico` is mutually
-exclusive with `nico-vm` and `nico-vms` — each installs its own CAPNICo into
+[NICo E2E lane](../.github/workflows/nico-e2e.yml) runs. The single `nico`
+provider starts nico-sim and installs one CAPNICo controller in
 `capnico-system`.
 
 [`controller/README.md`](../controller/README.md) covers the Tilt loop in full.

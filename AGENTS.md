@@ -19,7 +19,7 @@ instructions.
   - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, packaging, gRPC conventions
   - [cli/AGENTS.md](cli/AGENTS.md) — nkectl, verification, doc-comment conventions
   - [os-image/AGENTS.md](os-image/AGENTS.md) — reference node OS image spec, Packer, connectivity checker
-  - [controller/nico-sim/AGENTS.md](controller/nico-sim/AGENTS.md) — local VM-backed Forge emulator
+  - [controller/nico-sim/AGENTS.md](controller/nico-sim/AGENTS.md) — local NICo simulator with VM and container backends
 
 ## Read if needed
 
@@ -51,7 +51,7 @@ no credentials and no network:
 GOPROXY=off make build
 ```
 
-compiles all ten modules and links seven binaries. `GOPROXY=off` is not a
+compiles all nine modules and links six binaries. `GOPROXY=off` is not a
 suggestion to copy — it is how you can tell nothing is being fetched.
 
 This changed in #76, which replaced the internal carbide SDK

@@ -1,44 +1,29 @@
-# nico-vms
+# nico-sim
 
-A standalone Forge-compatible VM management service. It implements the Forge API (from `cloud-api-sdk-go`) backed by real VMs instead of bare-metal machines. Supports three backends: a fast in-memory mock for development, QEMU on macOS via vmnet, and KVM/libvirt on Linux.
+nico-sim is a standalone NICo-compatible instance simulator for local
+development. One server and one API support two lifecycle backends:
 
-## Migrating from `forge-vms`
+- **nico-vms** creates virtual machines through a fast in-memory runtime, QEMU
+  on macOS via vmnet, or KVM/libvirt on Linux.
+- **nico-containers** creates systemd-based node containers by invoking Docker
+  directly.
+
+Both backends can run at the same time. They share the catalog, API, and common
+instance records while keeping backend-specific runtime behavior separate.
 
 This service was called `forge-vms` until [#279](https://github.com/NVIDIA/nke/pull/279). The rename is a hard cut with
 no compatibility shims, so a host that ran the old build needs a one-time migration.
 
-First destroy any VMs the old build left behind. They are named `forge-vm-*`, and the
-new orphan reaper only matches `nico-vm-*`, so they are invisible to cleanup:
+## Selecting a backend
 
-`--nvram` is required, not optional: these domains boot UEFI, and libvirt refuses to
-undefine a domain that has an NVRAM varstore without it. `--tpm` clears the persistent
-swtpm state, and is only supported on newer libvirt — hence the fallback.
+Each seeded site is assigned one backend. An instance create request identifies
+a VPC, the VPC identifies its site, and the site selects nico-vms or
+nico-containers. The API caller does not pass a separate backend flag.
 
-```bash
-virsh list --all --name | grep '^forge-vm-' | xargs -r -n1 virsh destroy
-virsh list --all --name | grep '^forge-vm-' | while read -r d; do
-  virsh undefine "$d" --nvram --tpm --remove-all-storage ||
-    virsh undefine "$d" --nvram --remove-all-storage   # older libvirt: no --tpm
-done
-```
-
-Then run the *old* checkout's `scripts/teardown-linux.sh` before this one's
-`scripts/setup-linux.sh`, because the host state moved:
-
-| Old | New |
-|---|---|
-| `/var/lib/forge-vms/dhcp-hosts` | `/var/lib/nico-vms/dhcp-hosts` |
-| `/var/run/forge-vms-dnsmasq.{pid,leases}` | `/var/run/nico-vms-dnsmasq.{pid,leases}` |
-| `/etc/sudoers.d/forge-vms-setcap` | `/etc/sudoers.d/nico-vms-setcap` |
-
-`teardown-linux.sh` does not remove the sudoers file — delete the stale one by hand.
-
-Finally, re-export the environment (`FORGE_VMS_*` is now `NICO_VMS_*`; the old names
-are not read and silently fall back to defaults), and update the provider key in your
-gitignored `controller/tilt_config.json` from `forge-vms` to `nico-vms`.
-
-Already-provisioned VMs also lose diagnostic SSH access: the built-in account changed
-from `forge-diag` to `nico-diag`, so `scripts/get-kubeconfig.sh` will not reach them.
+CAPNICo makes the same choice through `NicoCluster.spec.siteID`. Two clusters
+can therefore use different backends concurrently while sharing one CAPNICo
+controller and one nico-sim process: point one cluster at `NICo VMs Site` and
+another at `NICo Containers Site`.
 
 ## Quick Start
 
@@ -72,13 +57,16 @@ The server starts on `:18080` by default. Hit the API with the CLI:
 ./bin/nico-simctl instance delete --instance-id <id>
 ```
 
-The CLI defaults (`--base-url http://localhost:18080 --org novxwn552ssc --token nico-vmsctl-token`) match the server defaults, so you can usually omit them during local dev.
+The CLI defaults (`--base-url http://localhost:18080 --org novxwn552ssc --token nico-simctl-token`) match the server defaults, so you can usually omit them during local dev.
 
-A web dashboard is available at `http://localhost:18080/ui/` for viewing instances and streaming console logs in the browser.
+A web dashboard is available at `http://localhost:18080/ui/`. It shows VMs and
+containers in separate tables; VM diagnostics and console logs remain available
+from the VM table.
 
 ## Architecture Overview
 
-nico-vms follows a **desired-state reconciliation** pattern:
+The API selects the backend from the requested site. VM sites follow a
+**desired-state reconciliation** pattern:
 
 ```
                                     ┌─────────────┐
@@ -99,6 +87,10 @@ nico-vms follows a **desired-state reconciliation** pattern:
 2. **Reconciliation workers** poll for instances where `desired ≠ observed` and drive transitions.
 3. **VM backends** are pluggable implementations of the `vm.Runtime` interface.
 
+Container sites use the same API handlers but create and delete Docker
+containers synchronously. SQLite stores their common instance identity and
+request data; Docker supplies their runtime state.
+
 Instance lifecycle:
 
 ```
@@ -109,6 +101,56 @@ reboot → rebooting → running → ready
 
 Readiness is determined by either an SSH port-22 probe (default) or a cloud-init `phone_home` POST (when enabled by the API caller).
 
+## nico-vms
+
+The VM backend persists desired and observed state in SQLite. Reconciliation
+workers create, reboot, and delete the corresponding VM through the configured
+runtime. The sections below describe the VM-only networking, boot, diagnostics,
+and TPM behavior.
+
+### Migrating from `forge-vms`
+
+This service was called `forge-vms` until
+[#279](https://github.com/NVIDIA/nke/pull/279). The rename is a hard cut with no
+compatibility shims, so a host that ran the old build needs a one-time migration.
+
+First destroy any VMs the old build left behind. They are named `forge-vm-*`,
+and the new orphan reaper only matches `nico-vm-*`, so they are invisible to
+cleanup.
+
+`--nvram` is required: these domains boot UEFI, and libvirt refuses to undefine
+a domain that has an NVRAM varstore without it. `--tpm` clears the persistent
+swtpm state and is only supported on newer libvirt, hence the fallback.
+
+```bash
+virsh list --all --name | grep '^forge-vm-' | xargs -r -n1 virsh destroy
+virsh list --all --name | grep '^forge-vm-' | while read -r d; do
+  virsh undefine "$d" --nvram --tpm --remove-all-storage ||
+    virsh undefine "$d" --nvram --remove-all-storage   # older libvirt: no --tpm
+done
+```
+
+Then run the old checkout's `scripts/teardown-linux.sh` before this checkout's
+`scripts/setup-linux.sh`, because the host state moved:
+
+| Old | New |
+|---|---|
+| `/var/lib/forge-vms/dhcp-hosts` | `/var/lib/nico-vms/dhcp-hosts` |
+| `/var/run/forge-vms-dnsmasq.{pid,leases}` | `/var/run/nico-vms-dnsmasq.{pid,leases}` |
+| `/etc/sudoers.d/forge-vms-setcap` | `/etc/sudoers.d/nico-sim-setcap` |
+
+`teardown-linux.sh` does not remove the sudoers file; delete the stale one by
+hand.
+
+Finally, re-export the environment: simulator-wide settings use `NICO_SIM_*`,
+VM settings use `NICO_VMS_*`, and container settings use `NICO_CONTAINERS_*`.
+The old environment names are not read. Use the `nico` provider key in the
+gitignored `controller/tilt_config.json`; it starts nico-sim by default.
+
+Already-provisioned VMs also lose diagnostic SSH access because the built-in
+account changed from `forge-diag` to `nico-diag`. Recreate them before using
+`scripts/get-kubeconfig.sh`.
+
 ### Networking Modes
 
 Instances use one of two networking modes, derived from whether an iPXE script is present:
@@ -118,31 +160,31 @@ Instances use one of two networking modes, derived from whether an iPXE script i
 
 ### BGP and VIP Networking
 
-nico-vms runs a BGP speaker that enables kube-vip high availability for Kubernetes control plane VIPs.
+nico-sim's VM backend runs a BGP speaker that enables kube-vip high availability for Kubernetes control plane VIPs.
 
 **How it works:**
 
 1. Each control plane node runs kube-vip in BGP mode (no leader election). All CP nodes bind the VIP to their loopback interface and announce it as a `/32` route to the nico-vms BGP speaker.
 2. kube-vip peers with the bridge gateway (`172.30.0.1:179`). An iptables PREROUTING rule redirects port 179 to the speaker's actual listen port (default 10179).
-3. The speaker validates incoming route announcements, then installs ECMP multipath routes on the host via netlink — one nexthop per CP node. The Linux setup configures Layer 4 multipath hashing, so separate connections from the same client can be distributed across control plane nodes while each connection remains on one nexthop. Installing routes requires `CAP_NET_ADMIN` — use `make build-privileged` (or `make run-vm`) which builds the binary and applies the capability via `sudo setcap`. The setup script (`scripts/setup-linux.sh`) installs a sudoers rule that allows your user to run `setcap` on the nico-vms binary without a password, so rebuilds don't prompt for sudo. The Tiltfile uses `make build-privileged` automatically.
+3. The speaker validates incoming route announcements, then installs ECMP multipath routes on the host via netlink — one nexthop per CP node. The Linux setup configures Layer 4 multipath hashing, so separate connections from the same client can be distributed across control plane nodes while each connection remains on one nexthop. Installing routes requires `CAP_NET_ADMIN` — use `make build-privileged` (or `make run-vm`) which builds the binary and applies the capability via `sudo setcap`. The setup script (`scripts/setup-linux.sh`) installs a sudoers rule that allows your user to run `setcap` on the nico-sim binary without a password, so rebuilds don't prompt for sudo. The Tiltfile uses `make build-privileged` automatically.
 4. When a CP node goes down, kube-vip withdraws its announcement. The speaker removes that nexthop from the ECMP route. No ARP cache expiry or leader election needed.
 
 **VIP range (off-link, routed via BGP):**
 
-The control-plane VIP range is a *separate* subnet, not carved from the bridge. Every client (VMs, worker kubelets, CWE-in-kind) reaches the VIP via the BGP route the speaker installs, exercising the same L3/ECMP path as a routed production fabric instead of on-link ARP. The whole bridge subnet is therefore free for DHCP.
+The control-plane VIP range is a *separate* subnet, not carved from the bridge. Every client (VMs, worker kubelets, and nke-controller in Kind) reaches the VIP via the BGP route the speaker installs, exercising the same L3/ECMP path as a routed production fabric instead of on-link ARP. The whole bridge subnet is therefore free for DHCP.
 
 ```
 bridge 172.30.0.0/24:  .1 gateway, .10-.254 DHCP pool (dnsmasq)
-VIP    172.31.0.0/24:  CWE allocates cluster VIPs; reached via BGP /32 routes
+VIP    172.31.0.0/24:  nke-controller allocates cluster VIPs; reached via BGP /32 routes
 ```
 
-On startup the speaker installs a covering `blackhole` route for the VIP range (so traffic for a VIP that no CP is currently announcing is dropped locally rather than leaking to the host default route), plus a more-specific `/32` ECMP route per announced VIP. The Tiltfile sets `NICO_VMS_VIP_CIDR`, registers the CWE site with it, and passes it as the speaker's allowlist; the layout is printed at `tilt up` time.
+On startup the speaker installs a covering `blackhole` route for the VIP range (so traffic for a VIP that no CP is currently announcing is dropped locally rather than leaking to the host default route), plus a more-specific `/32` ECMP route per announced VIP. The Tiltfile sets `NICO_VMS_VIP_CIDR`, registers the site with nke-controller, and passes it as the speaker's allowlist; the layout is printed at `tilt up` time.
 
 ### Libvirt-Network Mode
 
 For shared hosts where nico-vms must not create host networking of its own — most notably a hostNetwork Kubernetes pod.
 
-By default nico-vms **owns its networking**: `scripts/setup-linux.sh` creates the `cwebr0` bridge, runs a dnsmasq for DHCP, installs iptables MASQUERADE, and nico-vms runs a BGP speaker. That is ideal on a dedicated host (Colossus, a laptop). It is unsafe where nico-vms shares a host's network namespace with other workloads — most notably a **hostNetwork Kubernetes pod** (e.g. a shared GitLab libvirt runner), where a created bridge / iptables rule / dnsmasq leaks onto the node and can break neighbouring jobs or require a reboot.
+By default nico-sim's VM backend **owns its networking**: `scripts/setup-linux.sh` creates the `cwebr0` bridge, runs a dnsmasq for DHCP, installs iptables MASQUERADE, and nico-sim runs a BGP speaker. That is ideal on a dedicated host (Colossus, a laptop). It is unsafe where nico-sim shares a host's network namespace with other workloads — most notably a **hostNetwork Kubernetes pod** (e.g. a shared GitLab libvirt runner), where a created bridge / iptables rule / dnsmasq leaks onto the node and can break neighbouring jobs or require a reboot.
 
 **Libvirt-network mode** flips this: nico-vms attaches each VM to a **pre-existing libvirt network** (e.g. the stock `default` / `virbr0` NAT network) instead of building its own. nico-vms adds zero host networking, so nothing can leak. Enable it by setting `NICO_VMS_LIBVIRT_NETWORK=<network-name>` (empty — the default — keeps the legacy `cwebr0` behavior).
 
@@ -175,7 +217,7 @@ NICO_VMS_LIBVIRT_NETWORK=default \
 NICO_VMS_LIBVIRT_URI=qemu:///system \
 NICO_VMS_BGP_ENABLED=false \
 NICO_VMS_BASE_IMAGE=/var/lib/libvirt/images/noble-server-cloudimg-amd64.img \
-  nico-vms serve
+  ./bin/nico-sim
 
 # tear down (CI after_script): remove the rule
 scripts/setup-libvirt-network.sh --network default --cleanup
@@ -193,7 +235,7 @@ Ranges used by a nico-vms deployment and the tenant clusters it creates — keep
 | Control-plane VIP range | `172.31.0.0/24` | B | tenant API VIPs (off-link, via BGP) | `NICO_VMS_VIP_CIDR` (Tiltfile) |
 | Tenant pod CIDR | `192.168.0.0/16` | C | Calico pods in tenant clusters | defaulted in `internal/server/cluster_network.go` |
 | Tenant service CIDR | `10.96.0.0/12` | A | tenant cluster Services | kubeadm default |
-| kind mgmt network | `172.18.0.0/16` | B | Docker network hosting the CWE/kind mgmt cluster | kind / Docker |
+| kind mgmt network | `172.18.0.0/16` | B | Docker network hosting the nke-controller/Kind management cluster | Kind / Docker |
 
 > **Why `172.30`/`172.31`?** The bridge and VIP ranges are deliberately kept clear of every other consumer:
 > - tenant **pod CIDR** `192.168.0.0/16` (class C, Calico default) — a node or VIP inside it gets shadowed by Calico's per-node `/26` `blackhole` routes;
@@ -219,7 +261,7 @@ Ranges used by a nico-vms deployment and the tenant clusters it creates — keep
 
 - `ip route show <VIP>` — should be an ECMP `/32` with one nexthop per healthy CP (`ip route get <VIP>` picks one). If it's absent (falls through to the blackhole/default), no CP is currently announcing it.
 - The VIP is off-link, so it is *not* ARPable on `cwebr0`; reachability is via the BGP route, not ARP.
-- nico-vms logs: look for "BGP route announced" (working) or "BGP ignoring disallowed route" (misconfigured)
+- nico-sim logs: look for "BGP route announced" (working) or "BGP ignoring disallowed route" (misconfigured)
 
 ### Cloud-Init and User Data
 
@@ -234,11 +276,11 @@ For cloud images (no iPXE), user data is baked into the seed ISO instead, and th
 The DB-backed metadata server listens on two addresses:
 
 - `169.254.169.254:7777` — EC2-style (link-local)
-- `{bridge_gateway}:7777` — Forge NoCloud (`carbide-pxe.forge` resolves here)
+- `{bridge_gateway}:7777` — production NoCloud (`carbide-pxe.forge` resolves here)
 
 It serves three endpoint families:
 
-- **Forge NoCloud** (`/api/v0/cloud-init/{user-data,meta-data,vendor-data,phone_home}`) — what production images use
+- **Production NoCloud** (`/api/v0/cloud-init/{user-data,meta-data,vendor-data,phone_home}`) — what production images use
 - **EC2** (`/{version}/meta-data/...`, `/{version}/user-data`) — link-local fallback
 - **NoCloud-net per-instance** (`/nocloud/{instanceID}/{user-data,meta-data,network-config}`) — direct access by ID
 
@@ -271,13 +313,13 @@ The diagnostics endpoints execute commands on a running VM over SSH (using the d
 
 ```bash
 # List available diagnostics for an instance
-curl http://localhost:18080/v2/org/novxwn552ssc/forge/instance/<id>/diagnostics
+curl http://localhost:18080/v2/org/novxwn552ssc/carbide/instance/<id>/diagnostics
 
 # Get kubelet logs
-curl http://localhost:18080/v2/org/novxwn552ssc/forge/instance/<id>/diagnostics/kubelet-logs
+curl http://localhost:18080/v2/org/novxwn552ssc/carbide/instance/<id>/diagnostics/kubelet-logs
 
 # Stream agent logs (like journalctl -f)
-curl http://localhost:18080/v2/org/novxwn552ssc/forge/instance/<id>/diagnostics/agent-logs?follow=true
+curl http://localhost:18080/v2/org/novxwn552ssc/carbide/instance/<id>/diagnostics/agent-logs?follow=true
 ```
 
 ### TPM Support
@@ -290,9 +332,67 @@ Requirements:
 
 If `swtpm_setup` is not found in `$PATH`, VMs are created without a TPM — no error, no configuration needed.
 
-## The CLI: nico-vmsctl
+## nico-containers
 
-`nico-vmsctl` is a thin CLI client for the nico-vms API. Build it with `make build`.
+nico-containers implements the same instance create, get, update, and delete
+operations with Docker containers. The service invokes the configured Docker
+CLI directly rather than using a Docker client library. SQLite remains the
+source for common request data and instance identity, while `docker inspect`
+supplies live runtime state and IP addresses.
+
+Create starts a privileged systemd node container on the configured Docker
+network. Delete stops and removes it. The default image is the local
+`cwe-capd-kindest-node:local` image used by the container E2E flow.
+
+### Cloud-init simulation
+
+The container image does not run cloud-init. nico-containers simulates the
+parts required by node bootstrap:
+
+1. It writes `running` to
+   `/var/lib/nico-containers/cloud-init/status`.
+2. It parses `write_files` entries, creates their parent directories, writes
+   their contents, and applies optional permissions and ownership.
+3. It runs each `runcmd` string inside the container with `sh -lc`.
+4. It writes `done`, or `error` when parsing or execution fails.
+
+The node image replaces `cloud-init` with a small status shim. Calling
+`cloud-init status` reads that file and prints the normal `status: running`,
+`status: done`, or `status: error` contract, so the NKE agent follows the same
+wait path it uses on a real node.
+
+### Reboot simulation
+
+Containers share the host kernel boot ID, so a plain Docker restart would not
+look like a reboot to Kubernetes. Each managed node instead keeps a synthetic
+boot ID in `/var/lib/nico-containers/boot-id` and bind-mounts it over
+`/proc/sys/kernel/random/boot_id` before systemd starts.
+
+For a reboot request, nico-containers stages a new UUID in
+`/var/lib/nico-containers/next-boot-id` and runs `docker restart`. The entrypoint
+moves the staged UUID into place before kubelet starts, making the restarted
+container report a new boot ID like a real machine.
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `NICO_CONTAINERS_ENABLED` | `true` | Enable Docker containers; set to `false` for VM-only custom seeds |
+| `NICO_CONTAINERS_REQUIRE_HEALTHY` | `false` | Fail startup when Docker is unavailable |
+| `NICO_CONTAINERS_NODE_NETWORK` | `kind` | Docker network for container nodes |
+| `NICO_CONTAINERS_NODE_IMAGE` | `cwe-capd-kindest-node:local` | Container node image |
+| `NICO_CONTAINERS_DOCKER_BINARY` | `docker` | Docker CLI path |
+
+The default seed includes one container site. A custom seed without a container
+site must set `NICO_CONTAINERS_ENABLED=false`.
+
+The container implementation was previously named `nico-mock`. Docker labels
+and in-container state paths now use `nico-containers`, so rebuild the node
+image and recreate existing local container nodes after updating.
+
+## The CLI: nico-simctl
+
+`nico-simctl` is a thin CLI client for the nico-sim API. Build it with `make build`.
 
 ### Instance Commands
 
@@ -310,6 +410,13 @@ If `swtpm_setup` is not found in `$PATH`, VMs are created without a TPM — no e
   [--ipxe-script SCRIPT] \
   [--user-data DATA] \
   [--phone-home-enabled]
+
+# Create on nico-containers by selecting its seeded catalog resources
+./bin/nico-simctl instance create --name my-container \
+  --vpc-id 00000000-0000-0000-0000-000000000002 \
+  --subnet-id 00000000-0000-0000-0000-000000000003 \
+  --instance-type-id 00000000-0000-0000-0000-000000000005 \
+  --ssh-key-group-ids 00000000-0000-0000-0000-000000000004
 
 # Update (patch labels or trigger reboot)
 ./bin/nico-simctl instance update --instance-id ID \
@@ -334,7 +441,7 @@ View serial console output from a VM (essential for debugging boot issues):
 ./bin/nico-simctl instance console-log-local --name my-vm --dump --lines 100
 ```
 
-The local variant searches `./var/instances/`, `/tmp/nico-vms-integration/*/instances/`, and `/tmp/nico-vms-test-*/instances/` for log files.
+The local variant searches `./var/instances/`, `/tmp/nico-vms-integration/*/instances/`, and `/tmp/nico-sim-test-*/instances/` for log files.
 
 ### Other Commands
 
@@ -350,7 +457,7 @@ The local variant searches `./var/instances/`, `/tmp/nico-vms-integration/*/inst
 | ------------ | ------------------------ | --------------- |
 | `--base-url` | `http://localhost:18080` | Server URL      |
 | `--org`      | `novxwn552ssc`           | Organization ID |
-| `--token`    | `nico-vmsctl-token`     | Bearer token    |
+| `--token`    | `nico-simctl-token`     | Bearer token    |
 
 
 ## Test Server Mode
@@ -361,7 +468,7 @@ For quick one-off testing, the server has a `test-server` subcommand that auto-d
 ./bin/nico-sim test-server [--listen-addr :0] [--seed-path PATH]
 ```
 
-It prints `NICO_VMS_URL=http://localhost:<port>` to stdout (machine-readable) with all other logs on stderr. Auto-detects the best available backend.
+It prints `NICO_SIM_URL=http://localhost:<port>` to stdout (machine-readable) with all other logs on stderr. Auto-detects the best available backend.
 
 ## Configuration
 
@@ -372,9 +479,9 @@ All configuration is via environment variables. The server fails fast on invalid
 
 | Variable                | Default                             | Description                                  |
 | ----------------------- | ----------------------------------- | -------------------------------------------- |
-| `NICO_VMS_LISTEN_ADDR` | `:18080`                            | HTTP listen address                          |
-| `NICO_VMS_DB_PATH`     | `./var/nico-vms.db`                | SQLite database path (converted to absolute) |
-| `NICO_VMS_SEED_PATH`   | `./internal/seed/default-seed.yaml` | Seed data YAML                               |
+| `NICO_SIM_LISTEN_ADDR` | `:18080`                            | HTTP listen address                          |
+| `NICO_SIM_DB_PATH`     | `./var/nico-sim.db`                | SQLite database path (converted to absolute) |
+| `NICO_SIM_SEED_PATH`   | `./internal/seed/default-seed.yaml` | Seed data YAML                               |
 | `NICO_VMS_VM_BACKEND`  | `auto`                              | `auto`, `mock`, `libvirt`, or `darwin-qemu`  |
 
 
@@ -410,7 +517,7 @@ All configuration is via environment variables. The server fails fast on invalid
 | `NICO_VMS_QEMU_SYSTEM_PATH`   | *(auto-detected by arch)*   | Path to qemu-system binary                                      |
 | `NICO_VMS_QEMU_IMG_PATH`      | `qemu-img`                  | Path to qemu-img                                                |
 | `NICO_VMS_CLOUD_LOCALDS_PATH` | `cloud-localds`             | Path to cloud-localds                                           |
-| `NICO_VMS_IMAGE_CACHE_DIR`    | `~/.cache/nico-vms/images` | Cache for downloaded kernel/image files                         |
+| `NICO_VMS_IMAGE_CACHE_DIR`    | `~/.cache/nico-sim/images` | Cache for downloaded kernel/image files                         |
 
 
 ### Engine Tuning
@@ -429,8 +536,8 @@ All configuration is via environment variables. The server fails fast on invalid
 
 | Variable                        | Default   | Description                                                                                  |
 | ------------------------------- | --------- | -------------------------------------------------------------------------------------------- |
-| `NICO_VMS_LOG_FORMAT`          | `json`    | `json` or `text` (text has color, use for local dev)                                         |
-| `NICO_VMS_LOG_REQUEST_METHODS` | `write`   | HTTP methods to log: `write` (POST/PUT/PATCH/DELETE), `all`, `none`, or comma-separated list |
+| `NICO_SIM_LOG_FORMAT`          | `json`    | `json` or `text` (text has color, use for local dev)                                         |
+| `NICO_SIM_LOG_REQUEST_METHODS` | `write`   | HTTP methods to log: `write` (POST/PUT/PATCH/DELETE), `all`, `none`, or comma-separated list |
 | `NO_COLOR`                      | *(unset)* | Disable colored output in text mode                                                          |
 
 
@@ -450,13 +557,13 @@ All configuration is via environment variables. The server fails fast on invalid
 | -------------------------------- | ---------- | --------------------------------------------------------------------------- |
 | `NICO_VMS_CONSOLE_SSH_PORT`     | `2222`     | SSH port for remote console log access. `0` = auto-assign, `-1` = disabled. |
 | `NICO_VMS_CLEANUP_ORPHANED_VMS` | `false`    | Auto-delete VMs that exist in the hypervisor but not in the DB              |
-| `NICO_VMS_FILES_DIR`            | *(auto)*   | Directory served via `/files/`. Default: `files/` next to DB.               |
+| `NICO_SIM_FILES_DIR`            | *(auto)*   | Directory served via `/files/`. Default: `files/` next to DB.               |
 
 ### Local File Server
 
 nico-vms exposes an unauthenticated file server at `GET /files/{path}`. It
-serves files from `NICO_VMS_FILES_DIR`, which defaults to `./var/files` when
-`NICO_VMS_DB_PATH` is left at its default `./var/nico-vms.db`.
+serves files from `NICO_SIM_FILES_DIR`, which defaults to `./var/files` when
+`NICO_SIM_DB_PATH` is left at its default `./var/nico-sim.db`.
 
 Use typed subdirectories under the file root:
 
@@ -489,8 +596,8 @@ the agent and copy it into the file root. From the sibling `agent` repo:
 cd agent
 make build-amd64
 
-mkdir -p ../cloud-workflow-engine/nico-vms/var/files/agent
-cp bin/linux_amd64/nke-agent ../cloud-workflow-engine/nico-vms/var/files/agent/nke-agent
+mkdir -p ../cloud-workflow-engine/nico-sim/var/files/agent
+cp bin/linux_amd64/nke-agent ../cloud-workflow-engine/nico-sim/var/files/agent/nke-agent
 ```
 
 The cloud-init pickup command used by `nke-nico-vms-24.04-amd64-fde` is:
@@ -601,10 +708,10 @@ No auth required. Use for readiness probes.
 
 ### Structured Logging
 
-Run with `NICO_VMS_LOG_FORMAT=text` (the default for `make run`) for human-readable colored logs. Key log sources:
+Run with `NICO_SIM_LOG_FORMAT=text` (the default for `make run`) for human-readable colored logs. Key log sources:
 
 - `controller` — reconciliation engine state transitions
-- `http` — API requests (controlled by `NICO_VMS_LOG_REQUEST_METHODS`)
+- `http` — API requests (controlled by `NICO_SIM_LOG_REQUEST_METHODS`)
 - `cloud-init-metadata` — metadata server requests
 - `consolessh` — console SSH server events
 - `imagecache` — image download progress
@@ -653,7 +760,7 @@ This installs QEMU, libvirt, swtpm, and configures:
 - Layer 4 ECMP hashing (`net.ipv4.fib_multipath_hash_policy=1`)
 - OVMF firmware for UEFI boot
 - swtpm for TPM 2.0 emulation (+ AppArmor rules)
-- Sudoers rule for passwordless `setcap` on the nico-vms binary (for `CAP_NET_ADMIN`)
+- Sudoers rule for passwordless `setcap` on the nico-sim binary (for `CAP_NET_ADMIN`)
 
 #### Cursor Sandbox AppArmor (optional)
 
@@ -679,7 +786,7 @@ make teardown   # or: bash ./scripts/teardown-linux.sh
 
 This stops the nico-vms dnsmasq, removes the bridge's iptables rules, deletes
 `cwebr0` (dropping its addresses and the BGP blackhole route), and wipes the
-nico-vms DB (`.dev/nico-vms.db`) so it re-seeds from the current bridge CIDR
+nico-vms DB (`.dev/nico-sim.db`) so it re-seeds from the current bridge CIDR
 on next start. It leaves packages, groups, and the sudoers/qemu/AppArmor config
 in place (reused by the next setup).
 
@@ -689,7 +796,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 
 ```bash
 ./scripts/sync-to-remote.sh [--ssh|--tsh] hostname
-# syncs to ~/dev/cloud-workflow-engine/nico-vms/ on the remote
+# syncs to ~/dev/cloud-workflow-engine/nico-sim/ on the remote
 ```
 
 ## Helper Scripts
@@ -699,7 +806,7 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 | ---------------------------------- | ----------------------------------------------------------------- |
 | `scripts/run-vm-server.sh`         | Start the server with auto-detected backend and base image        |
 | `scripts/run-dnsmasq.sh`           | Start dnsmasq for VM DHCP/DNS on the bridge (used by Tilt)        |
-| `scripts/get-kubeconfig.sh`        | Extract kubeconfig from a running NKE cluster via CWE API + SSH   |
+| `scripts/get-kubeconfig.sh`        | Extract kubeconfig from a running NKE cluster via the nke-controller API + SSH   |
 | `scripts/inspect-vm-ips.sh`        | Compare DB IPs vs actual ARP IPs to detect IP drift               |
 | `scripts/create-prod-vm.sh`        | Create a production FDE VM with iPXE + LUKS + kubeadm             |
 | `scripts/nico-vms-console-log.sh` | View VM console output from disk                                  |
@@ -719,14 +826,14 @@ For one-shot nico-vms integration tests, sync just this tree and run on the remo
 | `cmd/nico-sim/`             | Server entrypoint. Wires up config, DB, runtime, engine, HTTP. Also has `test-server` subcommand.                       |
 | `cmd/nico-simctl/`          | CLI client. Instance CRUD, console log streaming (local + SSH).                                                         |
 | `internal/config/`           | Env var parsing and validation. All configuration lives here.                                                           |
-| `internal/http/`             | Forge API handlers, routes (`router.go`), SDK type conversion (`convert.go`), auth + logging middleware.                |
+| `internal/http/`             | NICo-compatible API handlers, routes (`router.go`), SDK type conversion (`convert.go`), auth + logging middleware.      |
 | `internal/lifecycle/`        | Reconciliation engine. Drives `new → provisioning → running → ready` transitions. DHCP lease reading. Orphan detection. |
 | `internal/state/`            | SQLite persistence via `bun` ORM. Models, queries, IPAM allocation. Single `Store` interface for all DB access.         |
 | `internal/vm/`               | `Runtime` interface + mock implementation.                                                                              |
 | `internal/vm/darwinqemu/`    | macOS QEMU backend. Process management, QMP control, vmnet-client networking.                                           |
 | `internal/vm/libvirt/`       | Linux libvirt backend. Domain XML generation, virsh CLI wrapper.                                                        |
 | `internal/vm/artifacts/`     | Builds disk overlays (`qemu-img`) and cloud-init seed ISOs (`cloud-localds`). Static vs DHCP network-config.            |
-| `internal/cloudinit/`        | Metadata server: EC2, NoCloud-net, and Forge NoCloud endpoints. Phone-home handler.                                     |
+| `internal/cloudinit/`        | Metadata server: EC2, NoCloud-net, and production NoCloud endpoints. Phone-home handler.                                |
 | `internal/ipxe/`             | iPXE script parser, image cache, and boot patcher (kernel swap + grub.cfg patching for production images).              |
 | `internal/bgp/`              | BGP speaker for kube-vip ECMP load balancing. Validates route announcements and installs multipath routes.              |
 | `internal/lokilog/`          | Promtail targets file writer — discovers VM console logs and writes `file_sd_configs` JSON for Loki ingestion.          |
@@ -746,20 +853,20 @@ All routes require `Authorization: Bearer <token>` except `/healthz`,
 
 | Method | Path                                                     | Description                                   |
 | ------ | -------------------------------------------------------- | --------------------------------------------- |
-| GET    | `/v2/org/{org}/forge/instance`                           | List instances                                |
-| POST   | `/v2/org/{org}/forge/instance`                           | Create instance                               |
-| PATCH  | `/v2/org/{org}/forge/instance/{id}`                      | Update (labels, trigger reboot)               |
-| DELETE | `/v2/org/{org}/forge/instance/{id}`                      | Delete instance                               |
-| GET    | `/v2/org/{org}/forge/instance/{id}/console-log`          | Console log (`?follow=true`, `?order=newest`) |
-| GET    | `/v2/org/{org}/forge/instance/{id}/diagnostics`          | List diagnostic items                         |
-| GET    | `/v2/org/{org}/forge/instance/{id}/diagnostics/{itemId}` | Run diagnostic (`?follow=true`)               |
-| GET    | `/v2/org/{org}/forge/site`                               | List sites                                    |
-| GET    | `/v2/org/{org}/forge/instance/type`                      | List instance types                           |
+| GET    | `/v2/org/{org}/carbide/instance`                           | List instances                                |
+| POST   | `/v2/org/{org}/carbide/instance`                           | Create instance                               |
+| PATCH  | `/v2/org/{org}/carbide/instance/{id}`                      | Update (labels, trigger reboot)               |
+| DELETE | `/v2/org/{org}/carbide/instance/{id}`                      | Delete instance                               |
+| GET    | `/v2/org/{org}/carbide/instance/{id}/console-log`          | Console log (`?follow=true`, `?order=newest`) |
+| GET    | `/v2/org/{org}/carbide/instance/{id}/diagnostics`          | List diagnostic items                         |
+| GET    | `/v2/org/{org}/carbide/instance/{id}/diagnostics/{itemId}` | Run diagnostic (`?follow=true`)               |
+| GET    | `/v2/org/{org}/carbide/site`                               | List sites                                    |
+| GET    | `/v2/org/{org}/carbide/instance/type`                      | List instance types                           |
 | GET    | `/healthz`                                               | Health check (no auth)                        |
 | GET    | `/files/{path}`                                          | Serve files (no auth)                         |
 | GET    | `/ui/`                                                   | Web dashboard (no auth)                       |
 
-All Forge SDK list endpoints are implemented (VPCs, subnets, VPC prefixes, SSH key groups, IP blocks, InfiniBand partitions). See `internal/http/router.go` for the full route list.
+All NICo SDK list endpoints are implemented (VPCs, subnets, VPC prefixes, SSH key groups, IP blocks, InfiniBand partitions). See `internal/http/router.go` for the full route list.
 
 V1 equivalents exist at `/v1/orgs/{orgId}/instances` etc.
 
@@ -770,37 +877,44 @@ Pagination: `?pageNumber=1&pageSize=100`. Filtering by `siteId` and `tenantId` w
 The default seed (`internal/seed/default-seed.yaml`) provides IDs used throughout tests and the CLI defaults:
 
 
-| Resource       | ID                                         | Name               |
-| -------------- | ------------------------------------------ | ------------------ |
-| Org            | `novxwn552ssc`                             |                    |
-| Tenant         | `d282929f-49d5-4dec-8d27-21ceb30ade19`     | Forge-Tenant-NKE   |
-| Site           | `a1b2c3d4-0001-4000-8000-000000000001`     | NICo VMs Site     |
-| VPC            | `a1b2c3d4-0002-4000-8000-000000000001`     | mock-vpc           |
-| Subnet         | `a1b2c3d4-0003-4000-8000-000000000001`     | mock-subnet        |
-| VPC Prefix     | `a1b2c3d4-0004-4000-8000-000000000001`     | mock-vpc-prefix    |
-| Instance Types | `...-0005-...-000000000001` / `...0002`    | cpu2-2gb, cpu2-4gb |
-| SSH Key Group  | `a1b2c3d4-0006-4000-8000-000000000001`     | mock-ssh-keys      |
-| IP Block       | `a1b2c3d4-0007-4000-8000-000000000001`     | mock-ip-block      |
-| IB Partition   | `a1b2c3d4-0008-4000-8000-000000000001`     | mock-ib-partition  |
+| Backend | Resource | ID | Name |
+|---|---|---|---|
+| shared | Org | `novxwn552ssc` | |
+| shared | Tenant | `d282929f-49d5-4dec-8d27-21ceb30ade19` | Forge-Tenant-NKE |
+| nico-vms | Site | `a1b2c3d4-0001-4000-8000-000000000001` | NICo VMs Site |
+| nico-vms | VPC | `a1b2c3d4-0002-4000-8000-000000000001` | mock-vpc |
+| nico-vms | Subnet | `a1b2c3d4-0003-4000-8000-000000000001` | mock-subnet |
+| nico-vms | VPC Prefix | `a1b2c3d4-0004-4000-8000-000000000001` | mock-vpc-prefix |
+| nico-vms | Instance Types | `...-0005-...-000000000001` / `...0002` | cpu2-2gb, cpu2-4gb |
+| nico-vms | SSH Key Group | `a1b2c3d4-0006-4000-8000-000000000001` | mock-ssh-keys |
+| nico-vms | IP Block | `a1b2c3d4-0007-4000-8000-000000000001` | mock-ip-block |
+| nico-vms | IB Partition | `a1b2c3d4-0008-4000-8000-000000000001` | mock-ib-partition |
+| nico-containers | Site | `00000000-0000-0000-0000-000000000001` | NICo Containers Site |
+| nico-containers | VPC | `00000000-0000-0000-0000-000000000002` | nico-containers-vpc |
+| nico-containers | Subnet | `00000000-0000-0000-0000-000000000003` | nico-containers-subnet |
+| nico-containers | SSH Key Group | `00000000-0000-0000-0000-000000000004` | nico-containers-ssh-keys |
+| nico-containers | Instance Type | `00000000-0000-0000-0000-000000000005` | nico-container-node |
 
 
 Subnet CIDRs and VPC prefixes are auto-hydrated from `NICO_VMS_BRIDGE_CIDR` at startup if not explicitly set in the seed file.
 
-## CWE Integration
+## nke-controller Integration
 
 ### Manual
 
-Point CWE at the nico-vms server:
+Point nke-controller at the nico-sim server:
 
 ```bash
 FORGE_ENVIRONMENT=test FORGE_URL=http://localhost:18080
 ```
 
-Ensure the nico-vms site is registered in the CWE DB so cache sync includes it.
+Register each site that nke-controller should use. Clusters pointing at the VM site use
+nico-vms; clusters pointing at the container site use nico-containers.
 
 ### With Tilt (recommended)
 
-The Tilt workflow runs CWE and nico-vms locally with hot-reload. nico-vms registers as a pluggable provider in the parent Tiltfile.
+The Tilt workflow runs nke-controller and nico-sim locally with hot-reload. The parent
+`nico` provider loads the nico-sim component when no external endpoint is set.
 
 Prerequisites: [Tilt](https://tilt.dev), a Kind cluster, Docker.
 
@@ -811,10 +925,13 @@ tilt up
 
 This starts:
 
-- **nico-vms** — built with `make build-privileged`, live-reloaded on code changes
+- **nico-sim** — one API process serving both nico-vms and nico-containers,
+  built with `make build-privileged` and live-reloaded on code changes
+- **CAPNICo** — one controller configured to use the nico-sim endpoint
+- **nico-containers node image** — the systemd image used for container-backed nodes
 - **dnsmasq** — DHCP/DNS for VMs on the bridge (if installed on host)
 - **Loki + Promtail + Grafana** — observability stack deployed into the Kind cluster
-- **nico-vms-log-shipper** — host Promtail container that ships nico-vms and VM console logs to Loki
+- **nico-sim-log-shipper** — host Promtail container that ships nico-sim and VM console logs to Loki
 
 At startup, Tilt prints the network layout (DHCP pool, VIP pool) derived from `NICO_VMS_BRIDGE_CIDR`.
 

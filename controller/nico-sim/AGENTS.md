@@ -21,7 +21,8 @@ All configuration is via environment variables — see `internal/config/config.g
 
 ## Architecture
 
-nico-vms is a standalone Forge-compatible VM management service. It implements the Forge API (from `cloud-api-sdk-go`) backed by real VMs instead of bare-metal machines.
+nico-sim is a standalone NICo-compatible instance simulator with VM and
+container backends.
 
 ### Reconciliation Engine
 

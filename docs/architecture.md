@@ -1,7 +1,7 @@
 # Architecture overview
 
 nke (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
-on NVIDIA infrastructure. The repository is a Go workspace of ten modules. Three
+on NVIDIA infrastructure. The repository is a Go workspace of nine modules. Three
 of them run in production: the Cloud Workflow Engine, deployed as a Helm chart,
 the node agent, installed on each node as a Debian package and run by systemd,
 and the Cluster API infrastructure provider, deployed into the same cluster as

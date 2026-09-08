@@ -149,92 +149,95 @@ tilt up
 
 - Tilt only runs against the expected Kind context (`kind-${KIND_CLUSTER_NAME}` or the current `kind-*` context if `KIND_CLUSTER_NAME` is unset).
 - Plain `tilt up` keeps the default CAPD-oriented provider set.
-- If you want to enable NICo for the local dev flow, set `providers` in `tilt_config.json` to include `"capi_core"` and `"nico"`. `cp tilt_config.json.example tilt_config.json` gives you exactly that. This is also the local setup that enables the mock-backed Forge cluster path. Tilt expects `cluster-api-provider-nico` at `../../cluster-api-provider-nico` (sibling of the monorepo) by default. Override with `NICO_PROVIDER_REPO_DIR` if needed.
+- If you want to enable NICo for the local dev flow, set `providers` in
+  `tilt_config.json` to include `"capi_core"`, `"bgp-containers"`, and
+  `"nico"`. That one provider starts nico-sim and installs one CAPNICo
+  controller through Helm. VM and container clusters select different sites
+  through the same endpoint and controller. `cp tilt_config.json.example
+  tilt_config.json` provides the local starting point.
 - Tilt no longer hard-requires `FWE_API_KEY` just to start. When NICo is enabled and `FWE_API_KEY` is unset, the NICo provider forces Forge `test` mode for local development.
 - `.env.tilt` configures in-cluster CWE env overrides. Keep host-local settings in `.env.local`.
 - `DGXC_TENANT_USER`, `DGXC_TENANT_PASSWORD`, `CNPG_SUPERUSER_PASSWORD`, `CNPG_CLOUD_PASSWORD`, and `CNPG_TEMPORAL_PASSWORD` have no defaults — set them in `.env.tilt` or export them, or `tilt up` fails with the list of what is missing. `CNPG_SUPERUSER_PASSWORD` is what the local postgres chart is installed with, so changing it after the first `tilt up` requires deleting the postgres PVC.
 - Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
 - CWE defaults to `SPIRE_SERVER_ADDRESS=host.docker.internal` and `SPIRE_SERVER_PORT=30440`. On Linux Docker, if `host.docker.internal` is not available, override `SPIRE_SERVER_ADDRESS` in `.env.tilt` to your host's gateway IP (for example: `ip -4 route show default | awk '{print $3}'`).
 
-### CAPNICo bare-VM flow (nico-vms)
+### CAPNICo simulation: nico-vms and nico-containers
 
-Boots a bare VM on the local `nico-vms` backend through the released CAPNICo
-provider chart (or, optionally, a controller built from a local checkout — see
-below). The flow runs alongside the normal full stack: `tilt up` still
-brings up postgres, temporal, spire, cert-manager and cwe, and the CAPNICo
-resources are added on top without wiring themselves into CWE.
-
-The usual full-stack prerequisites still apply.
-
-1. Bootstrap the management cluster. `make capd-up` works; if you only need CAPI
-   core (no CAPD infrastructure provider), use:
+Bootstrap the management cluster with CAPI core:
 
 ```bash
 make capi-core-up
 ```
 
-   `capi-core-up` downloads the pinned `clusterctl` into `.local/bin` if it is
-   not already on `PATH`, and pins the kube context to `kind-${KIND_CLUSTER_NAME}`.
-
-2. Put this in `tilt_config.json` (the file itself is gitignored):
+Then enable the single NICo provider:
 
 ```json
 {
-  "providers": ["capi_core", "nico-vms", "nico-vm"]
+  "providers": ["capi_core", "bgp-containers", "nico"]
 }
 ```
 
-   `nico-vm` requires both `capi_core` and `nico-vms`, and is mutually
-   exclusive with `nico` (both install a CAPNICo controller into
-   `capnico-system` and own the `nico-credentials` secret).
+With no additional NICo configuration, Tilt starts nico-sim, installs the
+released CAPNICo Helm chart, and points the `nico-credentials` Secret at
+nico-sim. One CAPNICo controller can then operate the seeded `nico-vms` and
+`nico-containers` sites at the same time. Export `NGC_API_KEY` in the shell that
+runs Tilt so Helm and the management cluster can pull the released chart and
+image.
 
-3. Export the environment Tilt does not inherit from `~/.bashrc`, then start:
+Use the buttons on the `nico-sim` resource in the Tilt UI to create the VM,
+inspect its status, read its console log, and delete it. The create and delete
+buttons run scripts that can also be called directly:
 
 ```bash
-export NGC_API_KEY=...     # pulls the CAPNICo chart + image from NGC
-export VM_USER=...         # bare-boot VM login user
-export VM_PASSWORD=...     # bare-boot VM login password (never committed)
-
-tilt up
+./hack/capnico-create-instance.sh
+./hack/capnico-delete-instance.sh
 ```
 
-4. Use the buttons on the `capnico-create-instance` resource in the Tilt UI to
-   create, inspect, tail the console log of, and delete a VM. They drive
-   `hack/capnico-create-instance.sh` and `hack/capnico-delete-instance.sh`,
-   which can also be run directly with the same environment variables.
+The VM login defaults to nico-sim's diagnostics credentials
+(`nico-diag`/`nico-diag`). Set `VM_USER` and `VM_PASSWORD` to override them.
 
-`helm`, `jq` and `curl` must be on `PATH`.
+#### Building CAPNICo from a local checkout
 
-#### Building CAPNICo from a local checkout instead of the chart
-
-To test controller changes, point the provider at a local checkout of
-[cluster-api-provider-nico](https://github.com/NVIDIA/cluster-api-provider-nico)
-with the optional `capnico_source_dir` key:
+To test CAPNICo changes without the released chart/image, point the same
+provider at a source checkout:
 
 ```json
 {
-  "providers": ["capi_core", "nico-vms", "nico-vm"],
+  "providers": ["capi_core", "bgp-containers", "nico"],
   "capnico_source_dir": "../../cluster-api-provider-nico"
 }
 ```
 
-Relative paths resolve against the repo root, and `CAPNICO_SOURCE_DIR` in the
-environment overrides the config key for a one-off run. Leave the key out (the
-default) and the released chart is installed exactly as described above.
+Relative paths resolve against `controller/`; `CAPNICO_SOURCE_DIR` overrides the
+config for a one-off run. Source mode builds `cluster-api-provider-nico:local`,
+loads it into Kind, stages the checkout's chart with the local reboot-annotation
+overlay, and still installs CAPNICo through Helm. It does not use `NGC_API_KEY`
+or an image-pull Secret. Docker BuildKit is required, and Tilt watches the
+checkout so source changes retrigger the provider installation.
 
-In this mode the `capnico-provider` resource builds
-`cluster-api-provider-nico:local` from the checkout, loads it into the Kind
-cluster and applies `config/default` with `kubectl`; `helm`, `NGC_API_KEY` and
-the `nvcr-creds` pull secret are not used, and `docker` and `kind` must be on
-`PATH`. The build requires BuildKit (`docker buildx`) — the provider repo's
-`.dockerignore` excludes everything and re-includes sources, which the legacy
-builder ignores, making the build fail at `COPY api/ api/`. If `docker buildx
-version` fails, drop the
-[buildx release binary](https://github.com/docker/buildx/releases) at
-`~/.docker/cli-plugins/docker-buildx` (no root needed). Tilt watches the
-checkout, so saving a change there rebuilds and
-restarts the controller. Everything downstream — `capnico-credentials`, the
-`nico-credentials` secret and the VM buttons — is identical in both modes.
+Leave `capnico_source_dir` unset to return to the released chart flow.
+
+#### External NICo endpoint
+
+To use an external NICo-compatible endpoint instead of nico-sim, configure it
+under `nico`. In that mode the provider skips nico-sim and its local node image:
+
+```json
+{
+  "providers": ["capi_core", "nico"],
+  "nico": {
+    "endpoint": "https://nico.example.com",
+    "org_id": "example-org",
+    "api_name": "forge",
+    "environment": "test"
+  }
+}
+```
+
+Set the external credential with `NICO_TOKEN`; `NICO_ENDPOINT`, `NICO_ORG_ID`,
+and `NICO_API_NAME` can override the corresponding config fields for one-off
+runs. Helm is always required; source mode additionally needs Docker, Kind, and
+BuildKit.
 
 ### TPM support in Docker
 
@@ -266,14 +269,14 @@ physical TPM for a software-backed vTPM chain:
    device-oriented attestation path.
 4. During the same startup sequence, `swtpm_setup` writes an EK certificate
    under `/var/lib/swtpm`, and the node image normalizes it to
-   `/var/lib/swtpm/ek.cert`. `nico-mock` reads that file and returns it as the
-   Forge `tpmEkCertificate`, which lets CAPNICo publish the normal
-   `NicoMachine.status.tpmEkPubHash` value for the CAPI controllers.
+   `/var/lib/swtpm/ek.cert`. The nico-containers backend in nico-sim reads that
+   file and returns it as `tpmEkCertificate`, which lets CAPNICo publish the
+   normal `NicoMachine.status.tpmEkPubHash` value for the CAPI controllers.
 
 This is still lower fidelity than real hardware: the TPM is software-backed,
-the nodes are Docker containers, and Forge itself is mocked. The benefit is
-that CWE, SPIRE, and the local Forge flow can keep exercising the same
-TPM-oriented CAPI contracts without introducing local-only branches in the
+the nodes are Docker containers, and nico-sim emulates the NICo API. The
+benefit is that CWE, SPIRE, and the local CAPNICo flow can keep exercising the
+same TPM-oriented CAPI contracts without introducing local-only branches in the
 production workflow/controller code.
 
 ### Daily Use
@@ -326,9 +329,9 @@ kubectl exec -n spire-server spire-server-0 -c spire-server -- bin/spire-server 
 
 ### Forge-backed NICo Flow
 
-This is a separate workflow from the normal daily Tilt loop. Use it when you want
-to exercise CAPNico against real Forge/NICo instead of the local mock-backed
-Forge flow that Tilt sets up by default.
+This is a separate workflow from the normal daily Tilt loop. Use it when you
+want to exercise CAPNico against real Forge/NICo instead of the local
+container-backed nico-sim flow that Tilt sets up by default.
 
 The helper script lives at `./hack/create-forge-nico-cluster.sh`. It assumes:
 
@@ -752,13 +755,13 @@ The TPM architecture for the mock-backed NICo flow is described above in
 NICo `NicoMachine` objects get past instance creation but remain
 `InstanceNotReady`, or when Docker node containers do not show `/dev/tpm0`.
 
-Check the CAP NICO and mock state first:
+Check CAPNICo and nico-sim first:
 
 ```bash
 kubectl get nicomachine -A
 kubectl logs -n capnico-system deploy/controller-manager
-kubectl logs -n nico-mock deploy/mock
-docker ps --filter label=nvidia.com/nico-mock.managed=true
+tilt logs nico-sim
+docker ps --filter label=nvidia.com/nico-containers.managed=true
 ```
 
 Check the Colima host-side vTPM proxy:
@@ -767,7 +770,7 @@ Check the Colima host-side vTPM proxy:
 colima ssh -- sh -lc 'sysctl fs.inotify.max_user_instances; ls -l /dev/vtpmx'
 ```
 
-Check a mock-backed node container:
+Check a nico-containers-backed node container:
 
 ```bash
 docker exec <container> bash -lc 'systemctl status swtpm-local.service'
@@ -786,8 +789,8 @@ Interpret the results this way:
   `swtpm-local.service` cannot create `/dev/vtpmx` or ask the kernel for
   `/dev/tpm0`.
 - If `swtpm-local.service` fails, `spire-agent` usually fails by dependency.
-- If `/var/lib/swtpm/ek.cert` is missing, `nico-mock` reports the instance as
-  pending, and CAP NICO reports `InstanceNotReady`.
+- If `/var/lib/swtpm/ek.cert` is missing, nico-sim reports the instance as
+  pending, and CAPNICo reports `InstanceNotReady`.
 - Existing `nico-local-*` Docker containers should be recreated after fixing
   Colima or node-image TPM setup.
 
