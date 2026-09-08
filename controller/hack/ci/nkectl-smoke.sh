@@ -12,14 +12,10 @@
 # Needs from the caller: log, runner_exec, RUNNER_NAME, NKECTL_BIN, TMP_DIR,
 # BACKEND, CAPD_NODE_IMAGE.
 
-# The CWE service the suite deploys, and the ServiceAccount it mints its token
-# from (controller/test/e2e/internal/authtoken).
+# The CWE service the suite deploys.
 NKECTL_SMOKE_CWE_NAMESPACE=cloud-workflow-engine
 NKECTL_SMOKE_CWE_SERVICE=cloud-workflow-engine
 NKECTL_SMOKE_CWE_PORT=8080
-NKECTL_SMOKE_TOKEN_NAMESPACE=nke-clients
-NKECTL_SMOKE_TOKEN_SERVICE_ACCOUNT=nke-client
-NKECTL_SMOKE_AUTH_CONFIGMAP=nke-auth-config
 # A name no lane creates. Used by every negative assertion, so a rename here
 # cannot leave one of them silently matching a real object.
 NKECTL_SMOKE_ABSENT=nkectl-smoke-absent
@@ -48,11 +44,14 @@ nkectl_smoke_stage() {
 NKECTL_SMOKE_TIMEOUT="${NKECTL_SMOKE_TIMEOUT:-60}"
 
 nkectl_exec() {
-  local token="$1"
-  shift
   timeout "${NKECTL_SMOKE_TIMEOUT}" docker exec \
     -e KUBECONFIG=/state/management.kubeconfig \
-    -e "NKECTL_DEV_TOKEN=${token}" \
+    "${RUNNER_NAME}" nkectl "$@"
+}
+
+nkectl_no_auth_exec() {
+  timeout "${NKECTL_SMOKE_TIMEOUT}" docker exec \
+    -e XDG_CONFIG_HOME=/tmp/nkectl-no-auth \
     "${RUNNER_NAME}" nkectl "$@"
 }
 
@@ -64,27 +63,7 @@ nkectl_exec() {
 # unguarded command here unable to fail the lane. Keep the call sites in
 # ci/backend-e2e.sh bare, and keep each assertion an explicit `return 1`.
 nkectl_smoke() {
-  local token out rc audience
-
-  # CWE checks the token's audience, so an unscoped `kubectl create token` is
-  # rejected with audience_mismatch. Read the expected value rather than
-  # hardcoding it, the way test/e2e/internal/authtoken does.
-  audience="${NKE_E2E_AUDIENCE:-}"
-  if [[ -z "${audience}" ]]; then
-    audience="$(runner_exec kubectl -n "${NKECTL_SMOKE_CWE_NAMESPACE}" get configmap \
-      "${NKECTL_SMOKE_AUTH_CONFIGMAP}" -o "jsonpath={.data.auth\\.yaml}" 2>/dev/null |
-      sed -n 's/^audiences:[^"]*"\([^"]*\)".*/\1/p' | head -1)"
-  fi
-  if [[ -z "${audience}" ]]; then
-    log "nkectl smoke: no audience in ${NKECTL_SMOKE_CWE_NAMESPACE}/${NKECTL_SMOKE_AUTH_CONFIGMAP}; set NKE_E2E_AUDIENCE" >&2
-    return 1
-  fi
-
-  if ! token="$(runner_exec kubectl create token "${NKECTL_SMOKE_TOKEN_SERVICE_ACCOUNT}" \
-    -n "${NKECTL_SMOKE_TOKEN_NAMESPACE}" --audience "${audience}" --duration=1h 2>&1)"; then
-    log "nkectl smoke: could not mint a token for ${NKECTL_SMOKE_TOKEN_NAMESPACE}/${NKECTL_SMOKE_TOKEN_SERVICE_ACCOUNT}: ${token}" >&2
-    return 1
-  fi
+  local no_auth_config out rc
 
   docker exec -d -e KUBECONFIG=/state/management.kubeconfig "${RUNNER_NAME}" \
     kubectl -n "${NKECTL_SMOKE_CWE_NAMESPACE}" port-forward \
@@ -94,10 +73,24 @@ nkectl_smoke() {
     --url "http://127.0.0.1:${NKECTL_SMOKE_CWE_PORT}" \
     --kubeconfig /state/management.kubeconfig >/dev/null
 
+  # A separate site with no kubeconfig exercises the no-credential path. The
+  # normal site above exercises token minting through the management cluster.
+  no_auth_config="${TMP_DIR}/nkectl-no-auth-config.yaml"
+  cat >"${no_auth_config}" <<EOF
+sites:
+  e2e:
+    url: http://127.0.0.1:${NKECTL_SMOKE_CWE_PORT}
+    kubeconfig: ""
+current-site: e2e
+EOF
+  runner_exec mkdir -p /tmp/nkectl-no-auth/nkectl
+  docker cp "${no_auth_config}" \
+    "${RUNNER_NAME}:/tmp/nkectl-no-auth/nkectl/config.yaml" >/dev/null
+
   # Doubles as the readiness wait for the forward.
   rc=1
   for _ in $(seq 1 15); do
-    if out="$(nkectl_exec "${token}" get clusters 2>&1)"; then
+    if out="$(nkectl_exec get clusters 2>&1)"; then
       rc=0
       break
     fi
@@ -115,7 +108,7 @@ nkectl_smoke() {
   # Control: without this, a CWE that stopped enforcing auth would leave the
   # check above green and prove nothing about the token.
   if [[ "${NKE_E2E_REQUIRE_AUTHN:-}" == "true" ]]; then
-    if out="$(nkectl_exec "" get clusters 2>&1)"; then
+    if out="$(nkectl_no_auth_exec get clusters 2>&1)"; then
       log "nkectl smoke: 'get clusters' succeeded with no token, so the run above proves nothing: ${out}" >&2
       return 1
     fi
@@ -123,7 +116,7 @@ nkectl_smoke() {
     log "nkectl smoke: SKIP the no-token control, NKE_E2E_REQUIRE_AUTHN is not true"
   fi
 
-  if ! out="$(nkectl_exec "${token}" get clusters -o json 2>&1)"; then
+  if ! out="$(nkectl_exec get clusters -o json 2>&1)"; then
     log "nkectl smoke: 'get clusters -o json' failed: ${out}" >&2
     return 1
   fi
@@ -137,7 +130,7 @@ nkectl_smoke() {
   # "the request never left the client".
 
   # Exercises FindClusterByName's ?name= filter, which the calls above never hit.
-  if out="$(nkectl_exec "${token}" get clusters -c "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
+  if out="$(nkectl_exec get clusters -c "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
     log "nkectl smoke: 'get clusters -c ${NKECTL_SMOKE_ABSENT}' succeeded against a name that does not exist" >&2
     return 1
   fi
@@ -147,7 +140,7 @@ nkectl_smoke() {
   fi
 
   # The two-hop FindClusterByName -> GetCluster path.
-  if out="$(nkectl_exec "${token}" describe cluster "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
+  if out="$(nkectl_exec describe cluster "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
     log "nkectl smoke: 'describe cluster ${NKECTL_SMOKE_ABSENT}' succeeded against a name that does not exist" >&2
     return 1
   fi
@@ -157,7 +150,7 @@ nkectl_smoke() {
   fi
 
   # Rejected by the printer before any request is issued.
-  if out="$(nkectl_exec "${token}" get clusters -o bogus 2>&1)"; then
+  if out="$(nkectl_exec get clusters -o bogus 2>&1)"; then
     log "nkectl smoke: 'get clusters -o bogus' was accepted" >&2
     return 1
   fi
@@ -166,9 +159,9 @@ nkectl_smoke() {
     return 1
   fi
 
-  nkectl_smoke_providers "${token}" || return 1
-  nkectl_smoke_create_rejections "${token}" || return 1
-  nkectl_smoke_write_round_trip "${token}" || return 1
+  nkectl_smoke_providers || return 1
+  nkectl_smoke_create_rejections || return 1
+  nkectl_smoke_write_round_trip || return 1
 
   log "PASS: nkectl reached CWE, authenticated, listed clusters, read providers, and had malformed creates rejected"
 }
@@ -179,9 +172,9 @@ nkectl_smoke() {
 # so crdsEstablished holds on CAPD too; only the NICo lane deploys the manager
 # and the credentials Secret.
 nkectl_smoke_providers() {
-  local token="$1" out types
+  local out types
 
-  if ! out="$(nkectl_exec "${token}" get providers -o json 2>&1)"; then
+  if ! out="$(nkectl_exec get providers -o json 2>&1)"; then
     log "nkectl smoke: 'get providers -o json' failed" >&2
     return 1
   fi
@@ -214,7 +207,7 @@ nkectl_smoke_providers() {
     fi
   fi
 
-  if ! out="$(nkectl_exec "${token}" get providers 2>&1)"; then
+  if ! out="$(nkectl_exec get providers 2>&1)"; then
     log "nkectl smoke: 'get providers' table mode failed" >&2
     return 1
   fi
@@ -224,7 +217,7 @@ nkectl_smoke_providers() {
   fi
 
   # A site that is not configured must fail before any cluster contact.
-  if out="$(nkectl_exec "${token}" --site "${NKECTL_SMOKE_ABSENT}" get providers 2>&1)"; then
+  if out="$(nkectl_exec --site "${NKECTL_SMOKE_ABSENT}" get providers 2>&1)"; then
     log "nkectl smoke: '--site ${NKECTL_SMOKE_ABSENT}' was accepted" >&2
     return 1
   fi
@@ -247,7 +240,7 @@ nkectl_smoke_stage_spec() {
 # Bodies the OpenAPI validator rejects before any handler runs: no row, no
 # workflow. Each is valid except for the one fault it names.
 nkectl_smoke_create_rejections() {
-  local token="$1" out
+  local out
 
   nkectl_smoke_stage_spec reject-name <<EOF || return 1
 name: Nkectl_Smoke
@@ -261,7 +254,7 @@ infra:
       name: ${NKECTL_SMOKE_REJECT_CLUSTER}
     spec: {}
 EOF
-  nkectl_smoke_expect_create_rejected "${token}" reject-name "a name that violates the DNS-label pattern" || return 1
+  nkectl_smoke_expect_create_rejected reject-name "a name that violates the DNS-label pattern" || return 1
 
   nkectl_smoke_stage_spec reject-version <<EOF || return 1
 name: ${NKECTL_SMOKE_REJECT_CLUSTER}
@@ -274,17 +267,17 @@ infra:
       name: ${NKECTL_SMOKE_REJECT_CLUSTER}
     spec: {}
 EOF
-  nkectl_smoke_expect_create_rejected "${token}" reject-version "no controlPlaneKubernetesVersion" || return 1
+  nkectl_smoke_expect_create_rejected reject-version "no controlPlaneKubernetesVersion" || return 1
 
   nkectl_smoke_stage_spec reject-provider <<EOF || return 1
 name: ${NKECTL_SMOKE_REJECT_CLUSTER}
 controlPlaneKubernetesVersion: ${NKECTL_SMOKE_KUBERNETES_VERSION}
 cniPlugin: calico
 EOF
-  nkectl_smoke_expect_create_rejected "${token}" reject-provider "neither nico nor infra" || return 1
+  nkectl_smoke_expect_create_rejected reject-provider "neither nico nor infra" || return 1
 
   # Zero state: a rejected create must leave nothing to find by name.
-  if out="$(nkectl_exec "${token}" get clusters -c "${NKECTL_SMOKE_REJECT_CLUSTER}" 2>&1)"; then
+  if out="$(nkectl_exec get clusters -c "${NKECTL_SMOKE_REJECT_CLUSTER}" 2>&1)"; then
     log "nkectl smoke: a rejected create left cluster ${NKECTL_SMOKE_REJECT_CLUSTER} behind: ${out}" >&2
     return 1
   fi
@@ -293,8 +286,8 @@ EOF
 # Assert the status, not the message: the text is the middleware's, and a 400
 # is the only proof the request reached CWE rather than dying in the CLI.
 nkectl_smoke_expect_create_rejected() {
-  local token="$1" spec="$2" what="$3" out
-  if out="$(nkectl_exec "${token}" create cluster -f "$(nkectl_smoke_spec_path "${spec}")" 2>&1)"; then
+  local spec="$1" what="$2" out
+  if out="$(nkectl_exec create cluster -f "$(nkectl_smoke_spec_path "${spec}")" 2>&1)"; then
     log "nkectl smoke: 'create cluster' with ${what} was accepted: ${out}" >&2
     return 1
   fi
@@ -309,7 +302,7 @@ nkectl_smoke_expect_create_rejected() {
 # writes only the CAPI Cluster and DockerCluster. Runs after the last leg: the
 # gate between legs counts tenant clusters.
 nkectl_smoke_write_round_trip() {
-  local token="$1" out rc=0
+  local out rc=0
 
   if [[ "${NKE_E2E_NKECTL_SMOKE_WRITE:-true}" != "true" ]]; then
     log "nkectl smoke: SKIP the write round trip, NKE_E2E_NKECTL_SMOKE_WRITE is not true"
@@ -353,21 +346,21 @@ infra:
     spec: {}
 EOF
 
-  if ! out="$(nkectl_exec "${token}" create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
+  if ! out="$(nkectl_exec create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
     log "nkectl smoke: 'create cluster' failed: ${out}" >&2
     return 1
   fi
   if ! grep -q 'created (id: ' <<<"${out}"; then
     log "nkectl smoke: 'create cluster' succeeded without reporting the id: ${out}" >&2
-    nkectl_smoke_write_cleanup "${token}"
+    nkectl_smoke_write_cleanup
     return 1
   fi
   log "nkectl smoke: ${out}"
 
   # The cluster exists from here: delete it on any failure.
-  nkectl_smoke_write_assertions "${token}" || rc=$?
+  nkectl_smoke_write_assertions || rc=$?
   if ((rc != 0)); then
-    nkectl_smoke_write_cleanup "${token}"
+    nkectl_smoke_write_cleanup
     return "${rc}"
   fi
   log "PASS: nkectl created, listed, described and deleted a cluster through CWE"
@@ -375,15 +368,14 @@ EOF
 
 # Best-effort delete; never fails the caller.
 nkectl_smoke_write_cleanup() {
-  local token="$1"
-  nkectl_exec "${token}" delete cluster "${NKECTL_SMOKE_WRITE_CLUSTER}" >/dev/null 2>&1 || true
+  nkectl_exec delete cluster "${NKECTL_SMOKE_WRITE_CLUSTER}" >/dev/null 2>&1 || true
 }
 
 nkectl_smoke_write_assertions() {
-  local token="$1" out name="${NKECTL_SMOKE_WRITE_CLUSTER}"
+  local out name="${NKECTL_SMOKE_WRITE_CLUSTER}"
 
   # A row, not just a header.
-  if ! out="$(nkectl_exec "${token}" get clusters 2>&1)"; then
+  if ! out="$(nkectl_exec get clusters 2>&1)"; then
     log "nkectl smoke: 'get clusters' failed after the create: ${out}" >&2
     return 1
   fi
@@ -393,7 +385,7 @@ nkectl_smoke_write_assertions() {
   fi
 
   # Exactly one element, ours.
-  if ! out="$(nkectl_exec "${token}" get clusters -c "${name}" -o json 2>&1)"; then
+  if ! out="$(nkectl_exec get clusters -c "${name}" -o json 2>&1)"; then
     log "nkectl smoke: 'get clusters -c ${name} -o json' failed: ${out}" >&2
     return 1
   fi
@@ -403,7 +395,7 @@ nkectl_smoke_write_assertions() {
   fi
 
   # The two-hop lookup, name to id to cluster.
-  if ! out="$(nkectl_exec "${token}" describe cluster "${name}" 2>&1)"; then
+  if ! out="$(nkectl_exec describe cluster "${name}" 2>&1)"; then
     log "nkectl smoke: 'describe cluster ${name}' failed: ${out}" >&2
     return 1
   fi
@@ -413,7 +405,7 @@ nkectl_smoke_write_assertions() {
   fi
 
   # Only passes if the first create committed.
-  if out="$(nkectl_exec "${token}" create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
+  if out="$(nkectl_exec create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
     log "nkectl smoke: a second 'create cluster' of ${name} was accepted: ${out}" >&2
     return 1
   fi
@@ -422,7 +414,7 @@ nkectl_smoke_write_assertions() {
     return 1
   fi
 
-  if ! out="$(nkectl_exec "${token}" delete cluster "${name}" 2>&1)"; then
+  if ! out="$(nkectl_exec delete cluster "${name}" 2>&1)"; then
     log "nkectl smoke: 'delete cluster ${name}' failed: ${out}" >&2
     return 1
   fi
@@ -431,7 +423,7 @@ nkectl_smoke_write_assertions() {
     return 1
   fi
 
-  if out="$(nkectl_exec "${token}" delete cluster "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
+  if out="$(nkectl_exec delete cluster "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
     log "nkectl smoke: 'delete cluster ${NKECTL_SMOKE_ABSENT}' succeeded against a name that does not exist" >&2
     return 1
   fi
@@ -443,7 +435,7 @@ nkectl_smoke_write_assertions() {
   # Teardown is asynchronous.
   local attempt
   for ((attempt = 1; attempt <= NKECTL_SMOKE_DELETE_POLLS; attempt++)); do
-    if out="$(nkectl_exec "${token}" get clusters -c "${name}" 2>&1)"; then
+    if out="$(nkectl_exec get clusters -c "${name}" 2>&1)"; then
       sleep "${NKECTL_SMOKE_DELETE_POLL_SECONDS}"
       continue
     fi
