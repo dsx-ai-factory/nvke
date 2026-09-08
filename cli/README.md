@@ -11,7 +11,7 @@ NKE control-plane CLI. Bootstraps site controllers and manages tenant cluster li
 - **Site bootstrap** — `nkectl bootstrap site` creates an ephemeral Kind cluster, deploys CWE onto it, then drives kubeadm init/join across pre-provisioned nodes via `nke-agent` gRPC; no SSH required
 - **Cluster lifecycle** — `nkectl get/create/delete/describe clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nkectl generate sitespec` writes a site spec from a node CSV; `nkectl bootstrap site --dry-run` validates one without touching a node
-- **Config** — `nkectl config set-site` points the CLI at a site controller
+- **Config** — `nkectl config set-site` points the CLI at a site controller.
 
 ## Installation
 
@@ -62,6 +62,25 @@ nkectl describe cluster <name>
 nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create cluster -f -
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
 ```
+
+## Authenticating to CWE
+
+`nkectl config set-site` command configures the management-cluster kubeconfig with the site.
+nkectl commands use it to mint an audience-scoped token for the admitted
+identity `nke-clients/nke-client`. The audience comes from ConfigMap
+`nke-auth-config` in `cloud-workflow-engine`.
+
+If that ConfigMap is missing, the CLI treats authentication as off and sends no
+`Authorization` header — the same as a CWE that was installed with
+`apiAuth.enabled` unset.
+
+The kubeconfig identity needs:
+
+- `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
+
+A cluster-admin kubeconfig already has it. Least-privilege grants, and
+creating the service account on a real site, are in
+[Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
 
 ## Infrastructure providers
 
@@ -184,3 +203,5 @@ make build
 
 - [Site Controller Bootstrap](../docs/site-bootstrap/overview.md)
 - [Architecture](../docs/architecture.md)
+- [Authenticating to the NKE API](../controller/docs/authenticating-to-the-api.md)
+- [Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md)

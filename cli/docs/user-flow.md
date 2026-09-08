@@ -89,9 +89,17 @@ nkectl config set-site --name my-tier0-site \
 nkectl config view
 ```
 
-`--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig; `get
-providers` and, once it lands, `get kubeconfig` read the cluster directly and
-need it.
+`--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig.
+
+CWE API commands (`get`/`create`/`describe`/`delete` clusters) use that
+kubeconfig to authenticate: they read the audience from ConfigMap
+`cloud-workflow-engine/nke-auth-config` and mint a TokenRequest for
+`nke-clients/nke-client`. If the ConfigMap is absent, authentication is off
+and the CLI sends no bearer token.
+
+The kubeconfig identity needs `create` on `serviceaccounts/token` for
+`nke-client`. See
+[Configuring NKE API Authentication](../../controller/docs/configuring-api-authentication.md).
 
 ### 5. Check the infrastructure providers
 

@@ -120,17 +120,16 @@ bin/nkectl config set-site --name local \
 bin/nkectl config view
 ```
 
-`--kubeconfig` is only read by `get providers`; it is not how the CLI
-authenticates.
+`--kubeconfig` is the management cluster. `get providers` reads it directly, and
+CWE API commands (`get`/`create`/`describe`/`delete` clusters) use it to mint a
+bearer token for `nke-clients/nke-client` when authentication is on. Tilt
+applies that identity in `controller/deploy/k8s/nke-auth-dev.yaml`. You do
+not export a token for `nkectl`.
 
-Under Tilt the API requires a token, unlike path A — `get clusters` returns 401
-without one. `nkectl` reads it from `NKECTL_DEV_TOKEN`. Mint it **after** the
-stack is up, not before: the script needs CWE running. The token lasts 30
-minutes, so re-run this when calls start returning 401.
-
-```bash
-export NKECTL_DEV_TOKEN="$(controller/hack/nke-token.sh)"
-```
+Under Tilt the API requires a token, unlike path A — a bare `curl` to
+`/api/clusters` returns 401. `nkectl get clusters` does not, once `set-site`
+has the kubeconfig: it discovers the audience from the `nke-auth-config`
+ConfigMap and mints through the TokenRequest API.
 
 ```bash
 bin/nkectl get providers      # wait for nico: CONFIGURED
@@ -148,13 +147,16 @@ both. Path B uses `infra`, supplying the `NicoCluster` and `NicoMachineTemplate`
 manifests directly; a real site uses `nico` and CWE builds them. Full schema at
 `/api/docs`.
 
-The same token works with `curl`, as a header:
+For `curl`, mint a token with `hack/nke-token.sh` after the stack is up:
 
 ```bash
-curl -H "Authorization: Bearer ${NKECTL_DEV_TOKEN}" http://localhost:8080/api/clusters
+TOKEN="$(controller/hack/nke-token.sh)"
+curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 ```
 
-`NKE_AUTH_ENABLED=false tilt up` turns authentication off.
+`NKE_AUTH_ENABLED=false tilt up` turns authentication off. Then neither
+`nkectl` nor `curl` needs a token — `nkectl` sees no `nke-auth-config`
+ConfigMap and sends requests unauthenticated.
 
 ### Getting a tenant kubeconfig
 
@@ -314,6 +316,13 @@ Forge credential Secret — which the bootstrap does not carry over.
 nkectl config set-site --name my-site --url https://<cwe-url> \
   --kubeconfig ./my-site.kubeconfig
 ```
+
+That kubeconfig is also how `nkectl` authenticates to CWE once the site has API
+authentication on. The CLI always mints for `nke-clients/nke-client` and reads
+the audience from `cloud-workflow-engine/nke-auth-config`. Create that service
+account, admit it, and grant the kubeconfig identity the permissions in
+[Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
+Without them, `get clusters` fails at minting or CWE returns 403.
 
 ### 6. Install CAPNICo
 
