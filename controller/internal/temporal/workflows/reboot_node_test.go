@@ -78,6 +78,7 @@ func TestWaitForNodeReboot_SoftRebootConfirmed(t *testing.T) {
 	input := RebootNodeInput{
 		NodeID:                   nodeID,
 		InitialTimeout:           30 * time.Minute,
+		MaxTimeout:               time.Hour,
 		SoftRebootConfirmTimeout: 5 * time.Minute,
 		PollingInterval:          time.Minute,
 	}
@@ -96,23 +97,31 @@ func TestWaitForNodeReboot_SoftRebootNotConfirmed_FallsBackToHardWithinSameAttem
 
 	env, a := setupRebootNodeWorkflowEnv(t)
 
-	// First (bounded) wait times out waiting for the soft reboot to take effect.
+	// waitForBootChange sets no explicit RetryPolicy, so a mocked error is retried by the SDK's
+	// default policy within its own ScheduleToCloseTimeout - matching pre-fix behavior. Distinguish
+	// the soft-phase call (any AnnotationAfterTime other than the hard reboot's) from the
+	// post-fallback call by that field, not by call order, so those internal retries don't
+	// accidentally consume the second expectation.
+	hardRebootStartedTime := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Bounded wait for the soft reboot: always times out, however many times the SDK retries it.
 	env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.MatchedBy(func(input activities.WaitForNodeRebootInput) bool {
-		return input.NodeID == nodeID
-	})).Return(activities.WaitForNodeRebootResult{}, errors.New("deadline exceeded")).Once()
+		return input.NodeID == nodeID && !input.AnnotationAfterTime.Equal(hardRebootStartedTime)
+	})).Return(activities.WaitForNodeRebootResult{}, errors.New("deadline exceeded"))
 
 	env.OnActivity(a.ApplyCAPIMachineRebootAnnotation, mock.Anything, mock.Anything).Return(
-		activities.ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: time.Now()}, nil,
+		activities.ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: hardRebootStartedTime}, nil,
 	).Once()
 
-	// Second wait, after the hard fallback, succeeds.
+	// Wait after the hard fallback: succeeds.
 	env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.MatchedBy(func(input activities.WaitForNodeRebootInput) bool {
-		return input.NodeID == nodeID
+		return input.NodeID == nodeID && input.AnnotationAfterTime.Equal(hardRebootStartedTime)
 	})).Return(activities.WaitForNodeRebootResult{BootID: "new-boot-id"}, nil).Once()
 
 	input := RebootNodeInput{
 		NodeID:                   nodeID,
 		InitialTimeout:           30 * time.Minute,
+		MaxTimeout:               time.Hour,
 		SoftRebootConfirmTimeout: 5 * time.Minute,
 		PollingInterval:          time.Minute,
 	}
