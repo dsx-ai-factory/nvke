@@ -5,11 +5,7 @@ package nodes
 
 import (
 	"github.com/google/uuid"
-
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 )
-
-type MachineHealthIssue = forge.MachineHealthIssue
 
 // TeardownNodeInput is the workflow input for TeardownNode.
 type TeardownNodeInput struct {

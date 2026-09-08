@@ -18,13 +18,12 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/metrics"
 	"github.com/NVIDIA/nke/controller/internal/nodes"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
 type TeardownNodeInput = nodes.TeardownNodeInput
 
-type MachineHealthIssue = forge.MachineHealthIssue
+type MachineHealthIssue = nodes.MachineHealthIssue
 
 const (
 	defaultTeardownRunbookTimeout = 35 * time.Minute
@@ -50,7 +49,7 @@ const (
 // Use this when reading MachineHealthIssue from external/untrusted sources (e.g., annotations).
 // Empty or whitespace-only input yields nil, nil.
 func NewMachineHealthIssueFromJSON(data []byte) (*MachineHealthIssue, error) {
-	return forge.NewMachineHealthIssueFromJSON(data)
+	return nodes.NewMachineHealthIssueFromJSON(data)
 }
 
 func TeardownNode(ctx workflow.Context, input TeardownNodeInput) error {

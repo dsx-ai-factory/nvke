@@ -20,8 +20,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
-
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
@@ -512,22 +510,6 @@ func TestClusterService_CreateCluster(t *testing.T) {
 					OrgID:  tt.request.Nico.OrgID,
 					SiteID: tt.request.Nico.SiteID,
 				}), nil).Maybe() // Use Maybe() since validation might not be called if CreateCluster fails early
-
-				// Determine if native networking should be enabled based on whether node pools use VpcPrefixIDs
-				hasVpcPrefixIDs := false
-				for _, np := range requestNodePools {
-					if np.Nico != nil && len(np.Nico.VpcPrefixIDs) > 0 {
-						hasVpcPrefixIDs = true
-						break
-					}
-				}
-
-				// Mock GetSiteByID to return a site with appropriate native networking setting
-				site := &forgesdk.Site{}
-				site.SetId(tt.request.Nico.SiteID.String())
-				capabilities := forgesdk.NewSiteCapabilities()
-				capabilities.SetNativeNetworking(hasVpcPrefixIDs)
-				site.SetCapabilities(*capabilities)
 
 				service = newTestClusterService(discardLogger(), mockDB)
 			} else {

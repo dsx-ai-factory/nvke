@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package forge
+package nodes
 
 import (
 	"bytes"
@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"slices"
 	"unicode/utf8"
-
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 )
 
 // MachineHealthIssue is our own type to avoid exposing the forgesdk dependency. It's a thin wrapper around the forgesdk.MachineHealthIssue.
@@ -75,21 +73,6 @@ func (m *MachineHealthIssue) Validate() error {
 	}
 
 	return errors.Join(errs...)
-}
-
-func toForgeSDKMachineHealthIssue(m *MachineHealthIssue) *forgesdk.MachineHealthIssue {
-	if m == nil {
-		return nil
-	}
-
-	result := &forgesdk.MachineHealthIssue{
-		Category: &m.Category,
-		Summary:  &m.Summary,
-	}
-	if m.Details != nil {
-		result.Details = *forgesdk.NewNullableString(m.Details)
-	}
-	return result
 }
 
 // NewMachineHealthIssueFromJSON creates a MachineHealthIssue from JSON data,

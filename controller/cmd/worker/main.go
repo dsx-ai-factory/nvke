@@ -49,7 +49,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/kube"
 	"github.com/NVIDIA/nke/controller/internal/metrics"
 	"github.com/NVIDIA/nke/controller/internal/otelx"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/runbook"
 	"github.com/NVIDIA/nke/controller/internal/server"
 	"github.com/NVIDIA/nke/controller/internal/spiffe"
@@ -174,9 +173,6 @@ func main() {
 		logger.Error("Failed to register Teleport metrics collector", "error", err)
 		os.Exit(1)
 	}
-
-	forgeProviderLogger := logger.With("logger", "forge-provider")
-	forgeProvider := forge.NewForgeProvider(cfg, dbInstance, forgeProviderLogger)
 
 	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme)
 	if err != nil {
@@ -569,17 +565,6 @@ func main() {
 		return err
 	})
 
-	// Start the forge provider cache engine
-	g.Go(func() error {
-		if cfg.FWEAPIKey == "" {
-			logger.Warn("Forge API key is not set, skipping forge provider cache engine")
-			return nil
-		}
-		logger.Info("Starting forge provider cache engine")
-		forgeProvider.GetCacheEngine().Start(ctx)
-		return nil
-	})
-
 	// Wait for context cancellation or an error from any service
 	go func() {
 		<-ctx.Done()
@@ -612,10 +597,6 @@ func main() {
 		// Stop the workflow outbox processor
 		outboxProcessor.Stop()
 		logger.Info("Workflow outbox processor shut down gracefully")
-
-		// Stop the forge provider cache engine
-		forgeProvider.GetCacheEngine().Stop()
-		logger.Info("Forge provider cache engine shut down gracefully")
 	}()
 
 	// Wait for all goroutines to complete
