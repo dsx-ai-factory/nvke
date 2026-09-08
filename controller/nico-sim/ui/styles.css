@@ -117,6 +117,10 @@ header {
     display: none;
 }
 
+#instances-view .panel + .panel {
+    margin-top: 18px;
+}
+
 .files-note {
     margin-bottom: 12px;
     padding: 10px 12px;
@@ -211,6 +215,39 @@ table {
     font-size: 0.85em;
 }
 
+#vm-instance-table,
+#container-instance-table {
+    table-layout: fixed;
+    min-width: 1100px;
+}
+
+.instance-col-name { width: 18%; }
+.instance-col-status { width: 10%; }
+.instance-col-ip { width: 13%; }
+.instance-col-type { width: 18%; }
+.instance-col-dhcp { width: 8%; }
+.instance-col-phone { width: 10%; }
+.instance-col-created { width: 11%; }
+.instance-col-actions { width: 12%; }
+
+#vm-instance-table > tbody > tr:not(.detail-row) > td,
+#container-instance-table > tbody > tr:not(.detail-row) > td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#vm-instance-table > tbody > tr:not(.detail-row) > td:last-child,
+#container-instance-table > tbody > tr:not(.detail-row) > td:last-child {
+    overflow: visible;
+    text-overflow: clip;
+}
+
+#vm-instance-table td:last-child .btn,
+#container-instance-table td:last-child .btn {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
 thead th {
     text-align: left;
     padding: 10px 16px;
@@ -293,6 +330,11 @@ tr.expandable { cursor: pointer; }
 }
 
 .detail-field pre code.hljs { background: transparent; padding: 0; }
+
+.detail-empty {
+    color: var(--nvidia-text-dim);
+    font-style: italic;
+}
 
 .detail-field pre {
     margin: 0;

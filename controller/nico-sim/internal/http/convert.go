@@ -33,6 +33,7 @@ func toSDKInstance(row state.Instance) nicosdk.Instance {
 	}
 	labels, _ := row.Labels()
 	instance.SetLabels(labels)
+	setInstanceBackendLabel(instance, row.Backend)
 	groupIDs, _ := row.SSHKeyGroupIDs()
 	instance.SetSshKeyGroupIds(groupIDs)
 	instance.SetStatus(nicosdk.InstanceStatus(instanceStatus(row.Status)))

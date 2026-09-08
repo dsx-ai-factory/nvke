@@ -5,7 +5,7 @@
 
 // Default org from seed data. Change if using a different seed.
 var ORG_ID = 'novxwn552ssc';
-var TOKEN = 'nico-vms-ui';
+var TOKEN = 'nico-sim-ui';
 var REFRESH_MS = 5000;
 
 var refreshTimer = null;
@@ -203,9 +203,8 @@ function buildRowCells(inst) {
     var ip = getIP(inst);
     var ipxe = inst.ipxeScript || '';
     var isDHCP = ipxe !== '';
-    var hasDetails = ipxe !== '' || (inst.userData || '') !== '';
     return {
-        name: (hasDetails ? '<span class="chevron">&#9656;</span> ' : '  ') + escapeHtml(inst.name || inst.id),
+        name: '<span class="chevron">&#9656;</span> ' + escapeHtml(inst.name || inst.id),
         status: '<span class="badge ' + statusBadgeClass(status) + '">' + escapeHtml(status) + '</span>',
         ip: escapeHtml(ip),
         itype: escapeHtml(instanceTypeNames[inst.instanceTypeId] || inst.instanceTypeId || '\u2014'),
@@ -223,10 +222,13 @@ function detectLang(text) {
 function buildDetailHtml(inst) {
     var ipxe = inst.ipxeScript || '';
     var userData = inst.userData || '';
-    if (!ipxe && !userData) return '';
     var html = '<div class="detail-content">';
     if (ipxe) html += '<div class="detail-field"><label>iPXE Script</label><pre><code class="language-shell">' + escapeHtml(ipxe) + '</code></pre></div>';
-    if (userData) html += '<div class="detail-field"><label>User Data</label><pre><code class="language-' + detectLang(userData) + '">' + escapeHtml(userData) + '</code></pre></div>';
+    if (userData) {
+        html += '<div class="detail-field"><label>User Data</label><pre><code class="language-' + detectLang(userData) + '">' + escapeHtml(userData) + '</code></pre></div>';
+    } else {
+        html += '<div class="detail-field"><label>User Data</label><div class="detail-empty">Empty</div></div>';
+    }
     return html + '</div>';
 }
 
@@ -253,10 +255,8 @@ function updateRow(tr, inst) {
 
 function createInstanceRow(inst) {
     var cells = buildRowCells(inst);
-    var ipxe = inst.ipxeScript || '';
-    var hasDetails = ipxe !== '' || (inst.userData || '') !== '';
     var tr = document.createElement('tr');
-    if (hasDetails) tr.className = 'expandable';
+    tr.className = 'expandable';
     tr.setAttribute('data-instance-id', inst.id);
     tr.innerHTML =
         '<td class="col-name" title="' + escapeHtml(inst.id) + '">' + cells.name + '</td>' +
@@ -281,19 +281,21 @@ function createInstanceRow(inst) {
     });
     bindRowToggle(tr);
 
-    var detail = null;
+    return { tr: tr, detail: createInstanceDetailRow(inst, 8) };
+}
+
+function createInstanceDetailRow(inst, columnCount) {
     var detailHtml = buildDetailHtml(inst);
-    if (detailHtml) {
-        detail = document.createElement('tr');
-        detail.className = 'detail-row';
-        detail.hidden = true;
-        var td = document.createElement('td');
-        td.colSpan = 8;
-        td.innerHTML = detailHtml;
-        detail.appendChild(td);
-        detail.querySelectorAll('pre code').forEach(function(block) { hljs.highlightElement(block); });
-    }
-    return { tr: tr, detail: detail };
+    if (!detailHtml) return null;
+    var detail = document.createElement('tr');
+    detail.className = 'detail-row';
+    detail.hidden = true;
+    var td = document.createElement('td');
+    td.colSpan = columnCount;
+    td.innerHTML = detailHtml;
+    detail.appendChild(td);
+    detail.querySelectorAll('pre code').forEach(function(block) { hljs.highlightElement(block); });
+    return detail;
 }
 
 function bindRowToggle(tr) {
@@ -306,13 +308,13 @@ function bindRowToggle(tr) {
     });
 }
 
-function renderInstances(instances) {
-    var tbody = document.getElementById('instance-tbody');
-    var countEl = document.getElementById('instance-count');
+function renderVMInstances(instances) {
+    var tbody = document.getElementById('vm-instance-tbody');
+    var countEl = document.getElementById('vm-instance-count');
     countEl.textContent = instances.length;
 
     if (instances.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No instances</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No VMs</td></tr>';
         return;
     }
 
@@ -353,6 +355,84 @@ function renderInstances(instances) {
     // Clear the "Loading..." placeholder if still present
     var empty = tbody.querySelector('.empty-state');
     if (empty) empty.closest('tr').remove();
+}
+
+function createContainerInstanceRow(inst) {
+    var cells = buildRowCells(inst);
+    var tr = document.createElement('tr');
+    tr.className = 'expandable';
+    tr.setAttribute('data-instance-id', inst.id);
+    tr.innerHTML =
+        '<td class="col-name" title="' + escapeHtml(inst.id) + '">' + cells.name + '</td>' +
+        '<td>' + cells.status + '</td>' +
+        '<td class="col-ip">' + cells.ip + '</td>' +
+        '<td class="col-id">' + cells.itype + '</td>' +
+        '<td>' + cells.dhcp + '</td>' +
+        '<td>' + cells.phone + '</td>' +
+        '<td title="' + escapeHtml(inst.created || '') + '">' + cells.created + '</td>' +
+        '<td><button class="btn btn-delete">Delete</button></td>';
+    tr.querySelector('.btn-delete').addEventListener('click', function(e) {
+        e.stopPropagation();
+        if (confirm('Delete container "' + (inst.name || inst.id) + '"?')) {
+            deleteInstance(inst.id).then(function() {
+                loadInstances();
+            });
+        }
+    });
+    bindRowToggle(tr);
+    return { tr: tr, detail: createInstanceDetailRow(inst, 8) };
+}
+
+function renderContainerInstances(instances) {
+    var tbody = document.getElementById('container-instance-tbody');
+    document.getElementById('container-instance-count').textContent = instances.length;
+    if (instances.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No containers</td></tr>';
+        return;
+    }
+
+    var existing = {};
+    tbody.querySelectorAll('tr[data-instance-id]').forEach(function(row) {
+        existing[row.getAttribute('data-instance-id')] = row;
+    });
+
+    var seen = {};
+    instances.forEach(function(inst) {
+        seen[inst.id] = true;
+        var row = existing[inst.id];
+        if (row) {
+            updateRow(row, inst);
+            return;
+        }
+        var created = createContainerInstanceRow(inst);
+        tbody.appendChild(created.tr);
+        if (created.detail) tbody.appendChild(created.detail);
+    });
+
+    for (var id in existing) {
+        if (seen[id]) continue;
+        var row = existing[id];
+        var detail = row.nextElementSibling;
+        if (detail && detail.classList.contains('detail-row')) detail.remove();
+        row.remove();
+    }
+
+    var empty = tbody.querySelector('.empty-state');
+    if (empty) empty.closest('tr').remove();
+}
+
+function renderInstances(instances) {
+    var vms = [];
+    var containers = [];
+    instances.forEach(function(inst) {
+        if ((inst.labels || {})['nico-sim.nvidia.com/backend'] === 'container') {
+            containers.push(inst);
+        } else {
+            vms.push(inst);
+        }
+    });
+    renderVMInstances(vms);
+    renderContainerInstances(containers);
 }
 
 function countFileNodes(node) {

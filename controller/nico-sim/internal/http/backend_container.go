@@ -51,7 +51,7 @@ func (b containerBackend) ConvertToAPI(r *nethttp.Request, record state.Instance
 	if err != nil {
 		return nicosdk.Instance{}, err
 	}
-	return withRowLabels(*instance, record)
+	return withInstanceRecord(*instance, record)
 }
 
 func (b containerBackend) Update(ctx context.Context, record state.Instance, req nicosdk.InstanceUpdateRequest) (state.Instance, error) {
@@ -73,14 +73,21 @@ func (b containerBackend) Delete(ctx context.Context, record state.Instance, req
 	return b.store.DeleteInstance(ctx, record.ID)
 }
 
-// withRowLabels uses the database labels because Docker labels cannot be updated.
-func withRowLabels(instance nicosdk.Instance, row state.Instance) (nicosdk.Instance, error) {
+// withInstanceRecord uses the database for fields shared by both backends.
+func withInstanceRecord(instance nicosdk.Instance, row state.Instance) (nicosdk.Instance, error) {
 	labels, err := row.Labels()
 	if err != nil {
 		return nicosdk.Instance{}, err
 	}
 	if len(labels) > 0 {
 		instance.SetLabels(labels)
+	}
+	setInstanceBackendLabel(&instance, row.Backend)
+	if row.IpxeScript != "" {
+		instance.SetIpxeScript(row.IpxeScript)
+	}
+	if row.UserData != "" {
+		instance.SetUserData(row.UserData)
 	}
 	instance.SetPhoneHomeEnabled(row.PhoneHomeEnabled)
 	return instance, nil

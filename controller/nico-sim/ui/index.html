@@ -7,7 +7,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>nico-vms</title>
+    <title>nico-sim</title>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="vendor/highlightjs/styles/nord.min.css">
     <script src="vendor/highlightjs/highlight.min.js"></script>
@@ -22,7 +22,7 @@
     <div class="wrapper">
         <header>
             <div class="header-left">
-                <span class="logo">nico-vms</span>
+                <span class="logo">nico-sim</span>
             </div>
             <div class="header-right">
                 <label class="auto-refresh-toggle">
@@ -41,11 +41,21 @@
         <section id="instances-view" class="view-panel">
             <div class="panel">
                 <div class="panel-header">
-                    <h2>Instances</h2>
-                    <span id="instance-count" class="count-badge">0</span>
+                    <h2>Virtual Machines</h2>
+                    <span id="vm-instance-count" class="count-badge">0</span>
                 </div>
                 <div class="table-wrap">
-                    <table id="instance-table">
+                    <table id="vm-instance-table">
+                        <colgroup>
+                            <col class="instance-col-name">
+                            <col class="instance-col-status">
+                            <col class="instance-col-ip">
+                            <col class="instance-col-type">
+                            <col class="instance-col-dhcp">
+                            <col class="instance-col-phone">
+                            <col class="instance-col-created">
+                            <col class="instance-col-actions">
+                        </colgroup>
                         <thead>
                             <tr>
                                 <th>Name</th>
@@ -58,7 +68,43 @@
                                 <th>Actions</th>
                             </tr>
                         </thead>
-                        <tbody id="instance-tbody">
+                        <tbody id="vm-instance-tbody">
+                            <tr><td colspan="8" class="empty-state">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <h2>Containers</h2>
+                    <span id="container-instance-count" class="count-badge">0</span>
+                </div>
+                <div class="table-wrap">
+                    <table id="container-instance-table">
+                        <colgroup>
+                            <col class="instance-col-name">
+                            <col class="instance-col-status">
+                            <col class="instance-col-ip">
+                            <col class="instance-col-type">
+                            <col class="instance-col-dhcp">
+                            <col class="instance-col-phone">
+                            <col class="instance-col-created">
+                            <col class="instance-col-actions">
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Status</th>
+                                <th>IP Address</th>
+                                <th>Instance Type</th>
+                                <th>DHCP</th>
+                                <th>Phone Home</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="container-instance-tbody">
                             <tr><td colspan="8" class="empty-state">Loading...</td></tr>
                         </tbody>
                     </table>

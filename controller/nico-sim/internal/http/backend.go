@@ -23,6 +23,18 @@ type InstanceBackend interface {
 	Delete(ctx context.Context, instance state.Instance, req *nicosdk.InstanceDeleteRequest) error
 }
 
+const instanceBackendLabel = "nico-sim.nvidia.com/backend"
+
+func setInstanceBackendLabel(instance *nicosdk.Instance, backend state.SiteBackend) {
+	current := instance.GetLabels()
+	labels := make(map[string]string, len(current)+1)
+	for key, value := range current {
+		labels[key] = value
+	}
+	labels[instanceBackendLabel] = string(backend)
+	instance.SetLabels(labels)
+}
+
 func createInstanceInput(site state.SiteRow, req nicosdk.InstanceCreateRequest) state.CreateInstanceInput {
 	return state.CreateInstanceInput{
 		Backend:                site.Backend,
