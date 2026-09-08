@@ -209,6 +209,9 @@ resources: {}
   #   cpu: 100m
   #   memory: 128Mi
 
+# -- Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults deployed CWE to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads.
+supportedInfraProviders: "nico"
+
 # -- Additional environment variables to inject into the CWE container.
 env: []
 # - name: EXAMPLE

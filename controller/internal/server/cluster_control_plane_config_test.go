@@ -221,7 +221,7 @@ func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.
 		SiteID: uuid.New(),
 	}, nil)
 
-	service := NewNodePoolService(slog.Default(), mockDB, config.TeleportConfig{}, true)
+	service := NewNodePoolService(slog.Default(), mockDB, config.TeleportConfig{}, nil, true)
 
 	resp, err := service.CreateNodePool(context.Background(), api.CreateNodePoolRequestObject{
 		Body: &api.CreateNodePoolRequest{

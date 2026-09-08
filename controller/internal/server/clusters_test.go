@@ -40,11 +40,16 @@ type clusterService interface {
 	DeleteCluster(ctx context.Context, req api.DeleteClusterRequestObject) (api.DeleteClusterResponseObject, error)
 }
 
-// newTestClusterService creates a clusterService with a nodePoolService that has a mock forge provider
-// The getSiteByIDFunc is optional - if nil, GetSiteByID will return an error if called
 func newTestClusterService(logger *slog.Logger, mockDB *mockDB) clusterService {
-	nodePoolService := server.NewNodePoolService(logger, mockDB, config.TeleportConfig{}, false)
-	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, false)
+	return newTestClusterServiceWithControlPlaneController(logger, mockDB, false)
+}
+
+// newTestClusterServiceWithControlPlaneController builds a clusterService with the
+// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER feature flag set to
+// useControlPlaneController.
+func newTestClusterServiceWithControlPlaneController(logger *slog.Logger, mockDB *mockDB, useControlPlaneController bool) clusterService {
+	nodePoolService := server.NewNodePoolService(logger, mockDB, config.TeleportConfig{}, nil, useControlPlaneController)
+	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, nil, useControlPlaneController)
 }
 
 func discardLogger() *slog.Logger {
@@ -661,6 +666,39 @@ func TestClusterService_CreateClusterRejectsCustomNetworkForCalico(t *testing.T)
 	badRequest, ok := resp.(api.CreateCluster400JSONResponse)
 	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
 	assert.Contains(t, badRequest.Message, "custom pod or service CIDRs require CNI plugin \"ovn-kubernetes\"")
+	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+}
+
+func TestClusterService_CreateClusterRejectsUnsupportedInfraProvider(t *testing.T) {
+	mockDB := &mockDB{MockTx: &mockTx{}}
+	service := server.NewClusterService(
+		discardLogger(),
+		mockDB,
+		nil,
+		config.TeleportConfig{},
+		false,
+		[]string{config.InfraProviderNico},
+		false,
+	)
+
+	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
+		Body: &api.CreateClusterRequest{
+			Name:                          "test-cluster",
+			CniPlugin:                     "calico",
+			ControlPlaneKubernetesVersion: "1.29.0",
+			Infra: &api.InfraClusterProvider{
+				Cluster: map[string]interface{}{
+					"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1",
+					"kind":       "DockerCluster",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	badRequest, ok := resp.(api.CreateCluster400JSONResponse)
+	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
+	assert.Contains(t, badRequest.Message, "infra provider is not supported by this deployment")
 	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
 }
 
@@ -1977,6 +2015,45 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsMismatchedProvid
 	})
 }
 
+func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsUnsupportedProviderPayload(t *testing.T) {
+	clusterID := uuid.New()
+	mockDB := &mockDB{MockTx: &mockTx{}}
+	mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+		ID:           clusterID,
+		ProviderType: db.ProviderTypeNico,
+	}, nil).Once()
+
+	nodePoolService := server.NewNodePoolService(discardLogger(), mockDB, config.TeleportConfig{}, []string{config.InfraProviderInfra}, false)
+	svc := server.NewClusterService(
+		discardLogger(),
+		mockDB,
+		nodePoolService,
+		config.TeleportConfig{},
+		false,
+		[]string{config.InfraProviderInfra},
+		false,
+	)
+
+	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
+		ClusterID: clusterID,
+		Body: &api.UpdateClusterRequest{
+			ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
+				Nico: &api.NicoControlPlaneProviderUpdate{
+					InstanceTypePreference: []openapi_types.UUID{uuid.New()},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	badRequest, ok := resp.(api.UpdateCluster400JSONResponse)
+	require.True(t, ok, "expected UpdateCluster400JSONResponse, got %T", resp)
+	assert.Contains(t, badRequest.Message, "nico provider is not supported by this deployment")
+	mockDB.MockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
+}
+
 // TestClusterService_UpdateCluster_NotFound confirms UpdateCluster surfaces
 // 404 when the cluster row is missing — regression guard for the
 // GetCluster → GetClusterForUpdate swap.
@@ -2026,7 +2103,7 @@ func baseNicoClusterCreateRequest() *api.CreateClusterRequest {
 }
 
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
 
 	t.Run("neither provider", func(t *testing.T) {
 		req := baseNicoClusterCreateRequest()
@@ -2049,7 +2126,7 @@ func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testin
 // The Forge identity fields are required, and they are only reachable through
 // the nested nico payload.
 func TestValidateCreateClusterRequestFields_NicoIdentityFieldsRequired(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
 
 	cases := []struct {
 		name    string

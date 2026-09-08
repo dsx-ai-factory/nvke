@@ -525,6 +525,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
 		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),
 		"--set-string", "spiffe.spire.serverPort=" + spireServerPort,
+		"--set-string", "supportedInfraProviders=infra",
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	cweArgs = append(cweArgs, nodeAgentPortArgs(cfg)...)

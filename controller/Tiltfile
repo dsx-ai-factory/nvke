@@ -73,16 +73,60 @@ _provider_entries = cfg.get("providers", [
     "capd",
     "capd-reboot-controller",
 ])
-DSX_IDENTITY_EXCHANGE_ENABLED = "dsx-identity-exchange" in _provider_entries
+def _provider_entry_name(entry):
+    if type(entry) == "string":
+        return entry
+    return entry.keys()[0]
 
-if "nico" in _provider_entries and "capi_core" not in _provider_entries:
+_provider_names = [_provider_entry_name(_entry) for _entry in _provider_entries]
+DSX_IDENTITY_EXCHANGE_ENABLED = "dsx-identity-exchange" in _provider_names
+
+if "nico" in _provider_names and "capi_core" not in _provider_names:
     fail("Provider 'nico' requires 'capi_core' in the provider list.")
 
-if "capd" in _provider_entries and "capi_core" not in _provider_entries:
+if "capd" in _provider_names and "capi_core" not in _provider_names:
     fail("Provider 'capd' requires 'capi_core' in the provider list.")
 
-if "capi-syscmp" in _provider_entries and "capi_core" not in _provider_entries:
+if "capi-syscmp" in _provider_names and "capi_core" not in _provider_names:
     fail("Provider 'capi-syscmp' requires 'capi_core' in the provider list.")
+
+if "nico-vm" in _provider_names and "capi_core" not in _provider_names:
+    fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
+
+# nico-vm points nico-credentials at the local nico-vms backend and its
+# credentials resource depends on the 'nico-vms' Tilt resource by name.
+#
+# 'nico-vm' and 'nico-vms' are one character apart, so both fail() messages
+# below name what each provider IS rather than relying on the key alone.
+if "nico-vm" in _provider_names and "nico-vms" not in _provider_names:
+    fail("Provider 'nico-vm' (the CAPNICo controller, installed from the NGC Helm chart) " +
+         "requires 'nico-vms' (the local VM backend that serves the Forge API on port 18080) " +
+         "in the provider list: it points nico-credentials at that backend and depends on " +
+         "its Tilt resource by name.")
+
+# 'nico' and 'nico-vms' are mutually exclusive Forge backends for CWE: both set
+# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-vms's
+# listener). Enable at most one. (capd is orthogonal and may accompany either.)
+if "nico" in _provider_names and "nico-vms" in _provider_names:
+    fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-vms' (real " +
+         "KVM/libvirt VMs) are mutually exclusive CWE backends: both set CWE's FORGE_URL " +
+         "and bind host port 18080. Enable only one (capd may accompany either).")
+
+# 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
+# controller: both install one into the capnico-system namespace and own the
+# 'nico-credentials' secret it reads. Enable at most one.
+if "nico" in _provider_names and "nico-vm" in _provider_names:
+    fail("Providers 'nico' (nico-mock, container-backed) and 'nico-vm' (the CAPNICo chart " +
+         "from NGC) are mutually exclusive: both install a CAPNICo controller into " +
+         "capnico-system and own the 'nico-credentials' secret. Enable only one.")
+
+_supported_infra_providers = []
+if "nico-vms" in _provider_names:
+    _supported_infra_providers.append("nico")
+if "capd" in _provider_names or "nico" in _provider_names or "nico-vm" in _provider_names:
+    _supported_infra_providers.append("infra")
+if not _supported_infra_providers:
+    _supported_infra_providers.append("nico")
 
 CWE_NAMESPACE = "cloud-workflow-engine"
 TEMPORAL_NAMESPACE = "temporal"
@@ -981,6 +1025,7 @@ _cwe_chart_flags = [
     "--set-string", "nkeOIDCAuth.caBundleSecret.key=ca.crt",
     "--set-string", "spiffe.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
     "--set-string", "spiffe.spire.serverAddress=%s" % _tilt_env.get("SPIRE_SERVER_ADDRESS", _kind_site_controller_vip),
+    "--set-string", "supportedInfraProviders=%s" % ",".join(_supported_infra_providers),
     "--set-json", "env=%s" % encode_json(_cwe_chart_extra_env),
     "--wait",
     "--timeout", "10m",

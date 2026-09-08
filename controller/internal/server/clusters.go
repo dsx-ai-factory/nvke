@@ -81,6 +81,7 @@ type clusterService struct {
 	nodePoolService *nodePoolService
 	teleportCfg     config.TeleportConfig
 	oidcAuthEnabled bool
+	providers       providerSupport
 	// useControlPlaneController mirrors the CWE feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
 	// cluster-level controlPlaneConfig is authoritative: it is required on
@@ -97,6 +98,7 @@ func NewClusterService(
 	nodePoolService *nodePoolService,
 	teleportCfg config.TeleportConfig,
 	oidcAuthEnabled bool,
+	supportedInfraProviders []string,
 	useControlPlaneController bool,
 ) *clusterService {
 	return &clusterService{
@@ -105,6 +107,7 @@ func NewClusterService(
 		nodePoolService:           nodePoolService,
 		teleportCfg:               teleportCfg,
 		oidcAuthEnabled:           oidcAuthEnabled,
+		providers:                 newProviderSupport(supportedInfraProviders),
 		useControlPlaneController: useControlPlaneController,
 	}
 }
@@ -339,12 +342,20 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 
 	var providerType db.ProviderType
 	switch {
+	case req.Infra != nil && req.Nico != nil:
+		return fmt.Errorf("exactly one provider must be set")
 	case req.Infra != nil:
+		if err := s.providers.require(config.InfraProviderInfra); err != nil {
+			return err
+		}
 		if err := validateCreateCAPIClusterProvider(req); err != nil {
 			return err
 		}
 		providerType = db.ProviderTypeCAPI
 	case req.Nico != nil:
+		if err := s.providers.require(config.InfraProviderNico); err != nil {
+			return err
+		}
 		if err := validateCreateNicoClusterProvider(req); err != nil {
 			return err
 		}
@@ -738,6 +749,16 @@ func (s *clusterService) applyControlPlaneConfigUpdateWithCIDRCheck(
 func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Context, tx db.Tx, cluster *db.Cluster, req *api.UpdateClusterControlPlaneConfig) error {
 	if req == nil {
 		req = &api.UpdateClusterControlPlaneConfig{}
+	}
+	if req.Nico != nil {
+		if err := s.providers.require(config.InfraProviderNico); err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
+	}
+	if req.Infra != nil {
+		if err := s.providers.require(config.InfraProviderInfra); err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
 	}
 
 	// MaxSurge is cluster-level only; it is not part of ControlPlaneConfigSpec revisions.

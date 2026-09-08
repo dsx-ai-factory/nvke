@@ -21,6 +21,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | capi.rbac.create | bool | `false` | Create RBAC for CWE to watch and patch CAPI/NICo resources. |
 | cni.imageRegistry | string | `""` | Optional OCI registry prefix for CNI component images. Empty uses chart defaults. |
 | cni.installAfterInit | bool | `false` | Install CNI after kubeadm init through the agent's InstallCNI RPC, which reads manifests from a Debian package rather than a bundle server. Needs the CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream> for OVN, or nke-cni-calico-manifests-<stream> for Calico. |
+| supportedInfraProviders | string | `"nico"` | Comma-separated API provider blocks accepted by mutating cluster and node-pool requests. The chart defaults deployed CWE to Nico only; set to "nico,infra" only for deployments that should accept generic CAPI-backed provider payloads. |
 | env | list | `[]` | Additional environment variables to inject into the CWE container. |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |

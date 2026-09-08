@@ -356,6 +356,9 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(cwe, "upgrade --install cloud-workflow-engine "+cfg.ChartPath) {
 		t.Errorf("cwe call = %q, want the cwe release/chart path", cwe)
 	}
+	if !strings.Contains(cwe, "--set-string supportedInfraProviders=infra") {
+		t.Errorf("cwe call = %q, want infra provider support enabled", cwe)
+	}
 	if !strings.Contains(cwe, "image.repository=nvcr.io/org/controller") || !strings.Contains(cwe, "image.tag=edge") {
 		t.Errorf("cwe call = %q, want the image split into repository/tag", cwe)
 	}
