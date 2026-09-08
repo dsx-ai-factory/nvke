@@ -5,6 +5,8 @@ package agent
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -65,6 +67,12 @@ func TestInstallPackagesRejectsNodeAgentReplacement(t *testing.T) {
 }
 
 func TestInstallPackagesAsyncRecordsRequestID(t *testing.T) {
+	// A blocking apt-get keeps the status at "installing". Without it the
+	// goroutine wins the race on macOS, where apt-get is absent and fails at once.
+	bin := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "apt-get"), []byte("#!/bin/sh\nsleep 30\n"), 0o755))
+	t.Setenv("PATH", bin)
+
 	s := &NodeAgentServer{
 		NodeStatus: &NodeStatus{},
 		Persister:  &MockPersister{},
