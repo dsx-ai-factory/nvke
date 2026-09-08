@@ -71,6 +71,10 @@ type FakeClient struct {
 	StartKubernetesCertificateRenewalHook   func(db.Node, *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
 	GetKubernetesCertificateRenewalCalls    []uuid.UUID
 	GetKubernetesCertificateRenewalHook     func(db.Node, *nkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
+	RemoveEtcdMemberCalls                   []uuid.UUID
+	RemoveEtcdMemberRequests                []*nkeproto.RemoveEtcdMemberRequest
+	RemoveEtcdMemberResponse                *nkeproto.RemoveEtcdMemberResponse
+	RemoveEtcdMemberError                   error
 
 	// ExecuteScriptHook, when set, produces the response for ExecuteScript calls,
 	// letting tests drive per-node script output (e.g. /readyz probes).
@@ -219,6 +223,12 @@ func (f *FakeClient) GetKubernetesCertificateRenewalStatus(
 		return nil, errors.New("GetKubernetesCertificateRenewalHook is nil")
 	}
 	return f.GetKubernetesCertificateRenewalHook(node, req)
+}
+
+func (f *FakeClient) RemoveEtcdMember(_ context.Context, node db.Node, req *nkeproto.RemoveEtcdMemberRequest) (*nkeproto.RemoveEtcdMemberResponse, error) {
+	f.RemoveEtcdMemberCalls = append(f.RemoveEtcdMemberCalls, node.ID)
+	f.RemoveEtcdMemberRequests = append(f.RemoveEtcdMemberRequests, req)
+	return f.RemoveEtcdMemberResponse, f.RemoveEtcdMemberError
 }
 
 func (f *FakeClient) ExecuteNodePreflight(_ context.Context, _ db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error) {

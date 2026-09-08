@@ -31,6 +31,7 @@ import (
 const (
 	beforeRemoveNodeRunbook = "evict-cnpg-node"
 	afterRemoveNodeRunbook  = "delete-longhorn-node"
+	runbookEtcdMemberRemove = "etcd-member-remove"
 )
 
 func TestTeardownNodeHooksSkippedWhenClusterNeverProvisioned(t *testing.T) {
@@ -93,15 +94,23 @@ func TestTeardownNodeHooksRunWhenClusterProvisioned(t *testing.T) {
 	env.AssertExpectations(t)
 
 	beforeHookIndex := slices.Index(teardownSteps, beforeRemoveNodeRunbook)
+	gracefulShutdownIndex := slices.Index(teardownSteps, "StartControlPlaneGracefulShutdown")
+	etcdRemoveIndex := slices.Index(teardownSteps, "RemoveEtcdMember")
 	infraDeletionIndex := slices.Index(teardownSteps, "DeleteCAPIMachineForNode")
 	kubeNodeDeletionIndex := slices.Index(teardownSteps, "DeleteKubeNode")
 	afterHookIndex := slices.Index(teardownSteps, afterRemoveNodeRunbook)
 	require.NotEqual(t, -1, beforeHookIndex)
+	require.NotEqual(t, -1, gracefulShutdownIndex)
+	require.NotEqual(t, -1, etcdRemoveIndex)
 	require.NotEqual(t, -1, infraDeletionIndex)
 	require.NotEqual(t, -1, kubeNodeDeletionIndex)
 	require.NotEqual(t, -1, afterHookIndex)
 	require.Less(t, beforeHookIndex, infraDeletionIndex,
 		"CNPG eviction must complete before infrastructure deletion")
+	require.Less(t, gracefulShutdownIndex, etcdRemoveIndex,
+		"etcd member removal must run after graceful shutdown")
+	require.Less(t, etcdRemoveIndex, infraDeletionIndex,
+		"etcd member removal must complete before infrastructure deletion")
 	require.Less(t, infraDeletionIndex, kubeNodeDeletionIndex,
 		"infrastructure deletion must complete before Kubernetes node deletion")
 	require.Less(t, kubeNodeDeletionIndex, afterHookIndex,
@@ -302,7 +311,7 @@ func TestTeardownNodeDrainAndRunbookActivitiesHaveHeartbeatTimeout(t *testing.T)
 	var observedDrainHeartbeatTimeout time.Duration
 	var drainInput activities.DrainKubeNodeInput
 	env.SetOnActivityStartedListener(func(activityInfo *activity.Info, _ context.Context, args converter.EncodedValues) {
-		if activityInfo.ActivityType.Name == "ExecuteClusterRunbook" {
+		if activityInfo.ActivityType.Name == "RemoveEtcdMember" {
 			observedRunbookHeartbeatTimeout = activityInfo.HeartbeatTimeout
 		}
 		if activityInfo.ActivityType.Name == "DrainKubeNode" {
@@ -512,82 +521,6 @@ func TestTeardownNodeSkipsLiveRemovalWhenOnlySurvivingCPIsDeleting(t *testing.T)
 
 	_, err := database.GetNode(context.Background(), res.nodeID)
 	require.ErrorIs(t, err, db.ErrNotFound, "node record should be deleted after infrastructure teardown")
-}
-
-func TestTeardownNodeEtcdDryRunMatrix(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name             string
-		exitCode         int
-		allowQuorumLoss  bool
-		allowSingleVoter bool
-		wantErr          string
-	}{
-		{
-			name:     "safe exit code",
-			exitCode: etcdDryRunExitCodeSafe,
-		},
-		{
-			name:     "quorum loss blocked",
-			exitCode: etcdDryRunExitCodeQuorum,
-			wantErr:  "etcd member removal would break quorum",
-		},
-		{
-			name:            "quorum loss allowed",
-			exitCode:        etcdDryRunExitCodeQuorum,
-			allowQuorumLoss: true,
-		},
-		{
-			name:     "single voter blocked",
-			exitCode: etcdDryRunExitCodeVoter,
-			wantErr:  "single-voter",
-		},
-		{
-			name:             "single voter allowed",
-			exitCode:         etcdDryRunExitCodeVoter,
-			allowSingleVoter: true,
-		},
-		{
-			name:     "unexpected exit code",
-			exitCode: 99,
-			wantErr:  "unexpected exit code",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			exitCode := tt.exitCode
-			database, res := setupTestDB(t, seedOpts{
-				clusterProvisioned: true,
-				cpNodeJoined:       true,
-				omitConfigProfile:  true,
-			})
-
-			env, _ := setupWorkflowEnv(t, database, res.profilesDir, workflowEnvOpts{
-				etcdDryRunExitCode: &exitCode,
-			})
-
-			env.ExecuteWorkflow(TeardownNode, TeardownNodeInput{
-				NodeID:           res.nodeID,
-				AllowCPNode:      true,
-				AllowQuorumLoss:  tt.allowQuorumLoss,
-				AllowSingleVoter: tt.allowSingleVoter,
-			})
-
-			require.True(t, env.IsWorkflowCompleted())
-			err := env.GetWorkflowError()
-			if tt.wantErr == "" {
-				require.NoError(t, err)
-				return
-			}
-
-			require.Error(t, err)
-			require.Contains(t, err.Error(), tt.wantErr)
-		})
-	}
 }
 
 func TestTeardownNodeForceUnreachableContinuesAfterDrainFailure(t *testing.T) {
@@ -938,7 +871,6 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 }
 
 type workflowEnvOpts struct {
-	etcdDryRunExitCode        *int
 	failDrainActivity         bool
 	failGracefulShutdownStart bool
 	deleteKubeNodeErr         error
@@ -976,11 +908,12 @@ func setupWorkflowEnv(t *testing.T, database db.DB, profilesDir string, opts wor
 	}
 	env.OnActivity(a.DrainKubeNode, mock.Anything, mock.Anything).Return(drainErr).Maybe()
 	env.OnActivity(a.DeleteKubeNode, mock.Anything, mock.Anything).Return(opts.deleteKubeNodeErr).Maybe()
+	env.OnActivity(a.RemoveEtcdMember, mock.Anything, mock.Anything).Return(nil).Maybe()
 	if !opts.omitClusterRunbookMock {
 		env.OnActivity(a.ExecuteClusterRunbook, mock.Anything, mock.MatchedBy(func(input activities.ExecuteClusterRunbookInput) bool {
 			return input.RunbookName != beforeRemoveNodeRunbook && input.RunbookName != afterRemoveNodeRunbook
 		})).Return(
-			clusterRunbookResultFunc(opts),
+			clusterRunbookResultFunc(),
 			nil,
 		).Maybe()
 	}
@@ -1001,19 +934,8 @@ func setupWorkflowEnv(t *testing.T, database db.DB, profilesDir string, opts wor
 	return env, a
 }
 
-func clusterRunbookResultFunc(opts workflowEnvOpts) func(context.Context, activities.ExecuteClusterRunbookInput) (activities.ExecuteClusterRunbookResult, error) {
-	return func(_ context.Context, input activities.ExecuteClusterRunbookInput) (activities.ExecuteClusterRunbookResult, error) {
-		if input.RunbookName == runbookEtcdMemberRemove && len(input.RunbookArgs) >= 2 && input.RunbookArgs[0] == "--dry-run" {
-			exitCode := etcdDryRunExitCodeSafe
-			if opts.etcdDryRunExitCode != nil {
-				exitCode = *opts.etcdDryRunExitCode
-			}
-			return activities.ExecuteClusterRunbookResult{
-				ExitCode: exitCode,
-				Output:   fmt.Sprintf("etcd dry-run exit code %d", exitCode),
-			}, nil
-		}
-
+func clusterRunbookResultFunc() func(context.Context, activities.ExecuteClusterRunbookInput) (activities.ExecuteClusterRunbookResult, error) {
+	return func(_ context.Context, _ activities.ExecuteClusterRunbookInput) (activities.ExecuteClusterRunbookResult, error) {
 		return activities.ExecuteClusterRunbookResult{
 			NodeID:   uuid.New(),
 			NodeName: "executor-node",

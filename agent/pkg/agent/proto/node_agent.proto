@@ -52,6 +52,12 @@ service NodeAgent {
   // previously started certificate renewal operation.
   rpc GetKubernetesCertificateRenewalStatus(GetKubernetesCertificateRenewalStatusRequest) returns (GetKubernetesCertificateRenewalStatusResponse) {}
 
+  // RemoveEtcdMember removes a remote member through the local kubeadm etcd
+  // endpoint. It rejects removal of the local member, attempts to transfer
+  // leadership to the local member before removing a leader, and treats an
+  // absent target as success.
+  rpc RemoveEtcdMember(RemoveEtcdMemberRequest) returns (RemoveEtcdMemberResponse) {}
+
   // StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
   // control-plane node graceful shutdown operation. The operation_id is an
   // idempotency key; retrying with the same operation_id returns the existing
@@ -1193,3 +1199,10 @@ message KubernetesCertificateRenewalOperation {
   NodeAgentOperationStatus operation = 1;
   Outcome outcome = 2;
 }
+
+message RemoveEtcdMemberRequest {
+  // target accepts an etcd member name or hexadecimal member ID.
+  string target = 1;
+}
+
+message RemoveEtcdMemberResponse {}

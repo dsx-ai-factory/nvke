@@ -133,6 +133,7 @@ type NodeAgentServer struct {
 	certificateRenewalPollInterval time.Duration       // overrides certificate-renewal polling in tests
 	rebootLockPollInterval         time.Duration       // overrides the package-lock poll interval in tests
 	rebootLockWaitTimeout          time.Duration       // overrides the package-lock wait timeout in tests
+	etcdClient                     etcdMemberClient    // overrides the local etcd client in tests
 	now                            func() time.Time    // overrides wall-clock reads in tests
 	clientRegistry                 kubernetesClientRegistry
 

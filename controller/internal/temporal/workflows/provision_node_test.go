@@ -26,6 +26,13 @@ func labelNodeTestWorkflow(ctx workflow.Context, nodeID uuid.UUID, addConfigProf
 	return labelNode(ctx, nodeID, addConfigProfileLabels)
 }
 
+// cleanBeforeControlPlaneRejoinTestWorkflow exposes the unexported cleanup
+// helper to Temporal's deterministic workflow test environment.
+func cleanBeforeControlPlaneRejoinTestWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
+	cleanBeforeControlPlaneRejoin(ctx, nodeID)
+	return nil
+}
+
 // setupLabelNodeEnv builds a focused test env that registers the real DB
 // activities labelNode needs and a capturing mock for LabelNode.
 func setupLabelNodeEnv(t *testing.T, database db.DB, profilesDir string) (
@@ -162,4 +169,41 @@ func TestLabelNode(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCleanBeforeControlPlaneRejoinUsesTypedEtcdRemoval(t *testing.T) {
+	nodeID := uuid.MustParse("50000000-0000-0000-0000-000000000011")
+	clusterID := uuid.MustParse("50000000-0000-0000-0000-000000000012")
+	node := db.Node{
+		ID:           nodeID,
+		ClusterID:    clusterID,
+		Name:         "control-plane-1",
+		ControlPlane: true,
+	}
+
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(worker.Options{DeadlockDetectionTimeout: 5 * time.Second})
+	env.RegisterWorkflow(cleanBeforeControlPlaneRejoinTestWorkflow)
+
+	var a *activities.Activities
+	env.OnActivity(a.GetNode, mock.Anything, nodeID).Return(node, nil).Once()
+	env.OnActivity(a.RemoveEtcdMember, mock.Anything, mock.MatchedBy(func(input activities.EtcdMemberRemovalInput) bool {
+		return input.ClusterID == clusterID &&
+			input.TargetNodeID == nodeID &&
+			input.TargetMemberName == node.Name &&
+			!input.AllowQuorumLoss &&
+			input.AllowSingleVoter
+	})).Return(nil).Once()
+	env.OnActivity(a.KubeadmReset, mock.Anything, mock.MatchedBy(func(input activities.KubeadmResetInput) bool {
+		return input.NodeID == nodeID &&
+			len(input.SkipPhases) == 1 &&
+			input.SkipPhases[0] == removeEtcdMember
+	})).Return(activities.KubeadmResetResult{}, nil).Once()
+
+	env.ExecuteWorkflow(cleanBeforeControlPlaneRejoinTestWorkflow, nodeID)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
 }

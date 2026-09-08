@@ -625,14 +625,14 @@ func joinNode(ctx workflow.Context, nodeID uuid.UUID, boundJoinAttempt bool) (bo
 // if it failed after `etcdctl member add` -- a stale voting member that a
 // re-join cannot re-add. This runs before each bounded control-plane join and is
 // a no-op on a freshly provisioned node: kubeadm reset on a clean node does
-// nothing, and etcd-member-remove exits 0 when the name is not a member.
+// nothing, and etcd removal reports success when the name is not a member.
 //
 // It is unconditional rather than gated on a retry count because the
-// control-plane controller starts a fresh JoinNode workflow (attempt resets to
+// NKE controllers start a fresh JoinNode workflow (attempt resets to
 // 1) once a node exhausts its retry budget, so the workflow attempt number is
 // not a reliable "is this a retry" signal -- only node/cluster state is, and
 // unconditional cleanup sidesteps having to read it. Both steps are best-effort
-// so a transient runbook/agent failure never fails an otherwise-healthy first
+// so a transient agent failure never fails an otherwise-healthy first
 // join; a genuinely dirty node is simply cleaned again on the next attempt.
 //
 // FIXME: kubeadm reset belongs in the node-agent, run before every kubeadm join,
@@ -654,15 +654,16 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 		return
 	}
 
-	// Run only the single etcd-member-remove runbook (not the teardown flow) on a
+	// Run only the typed etcd-removal activity (not the teardown flow) on a
 	// surviving control-plane node, with join-scoped activity options so this path
 	// does not inherit teardown's retry/timeout preset or any future
-	// teardown-specific behavior. --allow-single-voter because dropping a 2-voter
+	// teardown-specific behavior. The activity retains the Unimplemented fallback
+	// for old agents. AllowSingleVoter is required because dropping a 2-voter
 	// cluster back to the lone survivor before re-adding this node is expected
 	// during control-plane scale-up. Quorum loss is intentionally not forced: if
 	// removing this member would break quorum, the node is unexpectedly a healthy
 	// voter and we would rather fail loudly than proceed.
-	runbookOptions := workflow.ActivityOptions{
+	etcdCleanupOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
 		RetryPolicy: &temporal.RetryPolicy{
@@ -672,13 +673,13 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 		},
 	}
 	if err := workflow.ExecuteActivity(
-		workflow.WithActivityOptions(ctx, runbookOptions),
-		a.ExecuteClusterRunbook,
-		activities.ExecuteClusterRunbookInput{
-			ClusterID:     node.ClusterID,
-			RunbookName:   runbookEtcdMemberRemove,
-			RunbookArgs:   []string{node.Name, "--allow-single-voter"},
-			ExcludeNodeID: &nodeID,
+		workflow.WithActivityOptions(ctx, etcdCleanupOptions),
+		a.RemoveEtcdMember,
+		activities.EtcdMemberRemovalInput{
+			ClusterID:        node.ClusterID,
+			TargetNodeID:     nodeID,
+			TargetMemberName: node.Name,
+			AllowSingleVoter: true,
 		},
 	).Get(ctx, nil); err != nil {
 		logger.Warn("Best-effort etcd member cleanup before rejoin failed; continuing",

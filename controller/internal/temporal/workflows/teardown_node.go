@@ -26,13 +26,7 @@ type TeardownNodeInput = nodes.TeardownNodeInput
 type MachineHealthIssue = nodes.MachineHealthIssue
 
 const (
-	defaultTeardownRunbookTimeout = 35 * time.Minute
-	drainNodeActivityTimeout      = 3 * time.Minute
-
-	runbookEtcdMemberRemove  = "etcd-member-remove"
-	etcdDryRunExitCodeSafe   = 0
-	etcdDryRunExitCodeQuorum = 2
-	etcdDryRunExitCodeVoter  = 3
+	drainNodeActivityTimeout = 3 * time.Minute
 
 	// forceUnreachableHookMaxAttempts bounds teardown-hook retries when the node
 	// is being force-deleted as unreachable, so a hook that can never succeed
@@ -210,10 +204,10 @@ func prepareNodeForInfrastructureDeletion(
 	isControlPlane := nodePool.ControlPlane
 
 	// Live-cluster removal requires a surviving joined control-plane node: direct
-	// tenant API drain/delete calls need a reachable API server, and etcd member
-	// removal still executes as a runbook with ExcludeNodeID=self. When no such
-	// peer exists — e.g. tearing down the last joined CP, or a never-provisioned
-	// cluster — skip the live-cluster steps and fall through to local kubeadm reset.
+	// tenant API drain/delete calls need a reachable API server, and the etcd RPC
+	// must run on a member other than the target. When no such peer exists — e.g.
+	// tearing down the last joined CP, or a never-provisioned cluster — skip the
+	// live-cluster steps and fall through to local kubeadm reset.
 	hasSurvivingJoinedCP, err := hasJoinedControlPlaneNodeExcluding(ctx, cluster.ID, input.NodeID)
 	if err != nil {
 		return false, err
@@ -230,10 +224,6 @@ func prepareNodeForInfrastructureDeletion(
 	}
 
 	if isControlPlane {
-		if err := validateControlPlaneEtcdMemberRemoval(ctx, input, cluster.ID, node); err != nil {
-			return false, fmt.Errorf("failed to validate etcd member removal for control-plane node: %w", err)
-		}
-
 		logger.Info("Start and wait for control-plane graceful shutdown", "nodeID", input.NodeID, "nodeName", node.Name)
 		if err := waitForControlPlaneGracefulShutdown(ctx, input); err != nil {
 			if input.ForceUnreachable {
@@ -361,64 +351,23 @@ func deleteKubeNode(ctx workflow.Context, input TeardownNodeInput) error {
 	return nil
 }
 
-func validateControlPlaneEtcdMemberRemoval(ctx workflow.Context, input TeardownNodeInput, clusterID uuid.UUID, node db.Node) error {
-	logger := workflow.GetLogger(ctx)
-
-	logger.Info("Executing etcd member removal dry-run", "nodeID", input.NodeID, "nodeName", node.Name)
-
-	expectedExitCodes := []int{etcdDryRunExitCodeSafe, etcdDryRunExitCodeQuorum, etcdDryRunExitCodeVoter}
-	dryRunResult, err := executeTeardownClusterRunbook(ctx, defaultTeardownRunbookTimeout, activities.ExecuteClusterRunbookInput{
-		ClusterID:         clusterID,
-		RunbookName:       runbookEtcdMemberRemove,
-		RunbookArgs:       []string{"--dry-run", node.Name},
-		ExpectedExitCodes: expectedExitCodes,
-		ExcludeNodeID:     &input.NodeID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to execute etcd member removal dry-run: %w", err)
-	}
-
-	switch dryRunResult.ExitCode {
-	case etcdDryRunExitCodeSafe:
-		// Safe to remove etcd member; continue.
-	case etcdDryRunExitCodeQuorum:
-		if !input.AllowQuorumLoss {
-			return fmt.Errorf("etcd member removal would break quorum: %s", dryRunResult.Output)
-		}
-		logger.Warn("Etcd member removal would break quorum, but continuing due to allow_quorum_loss", "output", dryRunResult.Output, "errorOutput", dryRunResult.ErrorMessage)
-	case etcdDryRunExitCodeVoter:
-		if !input.AllowSingleVoter {
-			return fmt.Errorf("etcd member removal would leave single-voter cluster: %s", dryRunResult.Output)
-		}
-		logger.Warn("Etcd member removal would leave single-voter cluster, but continuing due to allow_single_voter", "output", dryRunResult.Output, "errorOutput", dryRunResult.ErrorMessage)
-	default:
-		return fmt.Errorf("etcd member removal dry-run returned unexpected exit code %d: %s; %s", dryRunResult.ExitCode, dryRunResult.Output, dryRunResult.ErrorMessage)
-	}
-	logger.Info("Etcd member removal dry-run completed successfully", "nodeID", input.NodeID, "nodeName", node.Name, "exitCode", dryRunResult.ExitCode, "output", dryRunResult.Output, "errorOutput", dryRunResult.ErrorMessage)
-	return nil
-}
-
 func removeControlPlaneEtcdMember(ctx workflow.Context, input TeardownNodeInput, clusterID uuid.UUID, node db.Node) error {
 	logger := workflow.GetLogger(ctx)
 
-	etcdRemoveArgs := []string{node.Name}
-	if input.AllowQuorumLoss {
-		etcdRemoveArgs = append(etcdRemoveArgs, "--allow-quorum-loss")
-	}
-	if input.AllowSingleVoter {
-		etcdRemoveArgs = append(etcdRemoveArgs, "--allow-single-voter")
-	}
-
-	logger.Info("Removing etcd member", "nodeID", input.NodeID, "nodeName", node.Name, "etcdRemoveArgs", etcdRemoveArgs)
-	_, err := executeTeardownClusterRunbook(ctx, defaultTeardownRunbookTimeout, activities.ExecuteClusterRunbookInput{
-		ClusterID:     clusterID,
-		RunbookName:   runbookEtcdMemberRemove,
-		RunbookArgs:   etcdRemoveArgs,
-		ExcludeNodeID: &input.NodeID,
-	})
-	if err != nil {
-		// Unlike a graceful shutdown failure, an Etcd Member Removal failure should not be tolerated, an error here fails the teardown node workflow.
-		return fmt.Errorf("failed to execute etcd member removal runbook: %w", err)
+	logger.Info("Removing etcd member", "nodeID", input.NodeID, "nodeName", node.Name)
+	var a *activities.Activities
+	if err := workflow.ExecuteActivity(
+		withEtcdMemberRemovalOptions(ctx),
+		a.RemoveEtcdMember,
+		activities.EtcdMemberRemovalInput{
+			ClusterID:        clusterID,
+			TargetNodeID:     input.NodeID,
+			TargetMemberName: node.Name,
+			AllowQuorumLoss:  input.AllowQuorumLoss,
+			AllowSingleVoter: input.AllowSingleVoter,
+		},
+	).Get(ctx, nil); err != nil {
+		return fmt.Errorf("failed to remove etcd member: %w", err)
 	}
 
 	logger.Info("Etcd member removed successfully", "nodeID", input.NodeID, "nodeName", node.Name)
@@ -542,23 +491,9 @@ func cancelNodeRebootWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
 	return nil
 }
 
-func executeTeardownClusterRunbook(ctx workflow.Context, timeout time.Duration, input activities.ExecuteClusterRunbookInput) (activities.ExecuteClusterRunbookResult, error) {
-	var a *activities.Activities
-
-	var result activities.ExecuteClusterRunbookResult
-	if err := workflow.ExecuteActivity(
-		withTeardownRunbookOptions(ctx, timeout),
-		a.ExecuteClusterRunbook,
-		input,
-	).Get(ctx, &result); err != nil {
-		return activities.ExecuteClusterRunbookResult{}, err
-	}
-	return result, nil
-}
-
-func withTeardownRunbookOptions(ctx workflow.Context, timeout time.Duration) workflow.Context {
+func withEtcdMemberRemovalOptions(ctx workflow.Context) workflow.Context {
 	return workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-		StartToCloseTimeout: timeout,
+		StartToCloseTimeout: 5 * time.Minute,
 		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
 		RetryPolicy: &temporal.RetryPolicy{
 			InitialInterval: 1 * time.Minute,
