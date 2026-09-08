@@ -435,9 +435,14 @@ func renderKubeVipManifest(
 	peerASN uint32,
 ) ([]byte, error) {
 	falseValue := false
+	trueValue := true
+	nonRootUID := int64(65532)
 	fileType := corev1.HostPathFile
 	securityContext := &corev1.SecurityContext{
-		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		AllowPrivilegeEscalation: &falseValue,
+		SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		RunAsNonRoot:             &trueValue,
+		RunAsUser:                &nonRootUID,
 		Capabilities: &corev1.Capabilities{
 			Add: []corev1.Capability{"NET_ADMIN", "NET_RAW"},
 		},

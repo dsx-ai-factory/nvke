@@ -430,9 +430,12 @@ ${health_check_env}
       limits:
         memory: 128Mi
     securityContext:
+      allowPrivilegeEscalation: false
 ${apparmor_profile}
       seccompProfile:
         type: RuntimeDefault
+      runAsNonRoot: true
+      runAsUser: 65532
       capabilities:
         add:
         - NET_ADMIN
