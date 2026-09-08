@@ -28,11 +28,8 @@ type RebootNodeInput struct {
 	MaxTimeout       time.Duration
 	PollingInterval  time.Duration
 
-	// SoftRebootConfirmTimeout bounds how long waitForNodeReboot waits for a detectable boot
-	// change (bootID change or reboot-complete-timestamp annotation) after a soft reboot before
-	// falling back to the hard CAPI Machine reboot annotation within the same attempt. This also
-	// covers real hardware, where the node-agent RPC can return success without the node actually
-	// rebooting.
+	// SoftRebootConfirmTimeout bounds the wait for a detectable boot change after a soft reboot
+	// before waitForNodeReboot falls back to a hard reboot within the same attempt.
 	SoftRebootConfirmTimeout time.Duration
 }
 
@@ -41,11 +38,9 @@ func RebootNode(ctx workflow.Context, input RebootNodeInput) (wfErr error) {
 	// This workflow is depended upon by NVSentinel and dgxc-janitor.
 	// Please discuss any label or workflow changes with the #dgxc-gpu-node-resilience channel.
 	//
-	// Label-driven reboots try SoftRebootNode in-guest first. That activity uses the typed
-	// node-agent RPC when available and the legacy runbook for older agents. If the in-guest
-	// path cannot execute, or shows no detectable boot change within SoftRebootConfirmTimeout,
-	// reboot falls back to the CAPI Machine reboot annotation, which CAPNICo actuates as an
-	// out-of-band NICo instance power cycle that does not sync or unmount the guest filesystem.
+	// Label-driven reboots try SoftRebootNode in-guest first, falling back to the CAPI Machine
+	// reboot annotation (an out-of-band CAPNICo power cycle) on failure or on no detectable
+	// boot change within SoftRebootConfirmTimeout.
 
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Starting reboot node workflow", "nodeID", input.NodeID)
@@ -303,12 +298,9 @@ func rebootCAPINode(ctx workflow.Context, nodeID uuid.UUID, rebootAttempt int, r
 	return applyCAPIMachineRebootAnnotation(ctx, nodeID)
 }
 
-// waitForNodeReboot waits for a detectable boot change (bootID change or reboot-complete-timestamp
-// annotation). It first waits up to input.SoftRebootConfirmTimeout for the soft reboot from
-// rebootCAPINode to take effect. If that produces no detectable change - including the case where
-// the soft reboot RPC acknowledged successfully but nothing actually happened, which we've also
-// seen on real hardware - it falls back to the hard CAPI Machine reboot annotation within the same
-// attempt and waits out the remainder of the attempt's total timeout.
+// waitForNodeReboot bounds the wait for the soft reboot to take effect, then falls back to a hard
+// reboot within the same attempt if nothing was detected - covering a soft reboot that acked but
+// had no effect, not just an RPC error.
 func waitForNodeReboot(ctx workflow.Context, input RebootNodeInput, rebootAttempt int, previousBootID string, softRebootStartedTime time.Time) error {
 	logger := workflow.GetLogger(ctx)
 
@@ -342,14 +334,8 @@ func waitForNodeReboot(ctx workflow.Context, input RebootNodeInput, rebootAttemp
 	return waitForBootChange(ctx, input, previousBootID, hardRebootStartedTime, remaining)
 }
 
-// waitForBootChange runs the WaitForNodeReboot activity, bounded by timeout, checking for either
-// a bootID change or (if CheckRebootCompleteAnnotation) the reboot-complete-timestamp annotation
-// applied after annotationAfterTime.
-//
-// We have observed on a few occasions that it takes multiple reboots until the instance is
-// successfully rebooted. Failing the workflow on timeout allows the workflow loop to control the
-// workflow retries, and also allows an SRE to remove the reboot label from the node if desired,
-// or to try indefinitely.
+// waitForBootChange waits, bounded by timeout, for a bootID change or the reboot-complete-timestamp
+// annotation applied after annotationAfterTime.
 func waitForBootChange(ctx workflow.Context, input RebootNodeInput, previousBootID string, annotationAfterTime time.Time, timeout time.Duration) error {
 	var a *activities.Activities
 

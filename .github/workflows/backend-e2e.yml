@@ -164,11 +164,7 @@ jobs:
       # to the Tilt deploy and the e2e binary. Empty/false keeps the node-pool
       # control plane (CWE's own default).
       PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER: ${{ inputs.provision-cp-with-controller }}
-      # The production default (15m) is sized for a real hardware boot. These
-      # backends only need to observe a container restart before falling back
-      # to the hard reboot annotation, so a short bound here keeps the reboot
-      # e2e spec from waiting out most of its timeout on a soft path that was
-      # never going to show a bootID change.
+      # These backends only observe a container restart, not a real boot.
       NODE_REBOOT_SOFT_CONFIRM_TIMEOUT: 2m
       # When set, the CI script runs both control-plane modes sequentially on this
       # one runner/cluster and drives the per-leg label filter and flag itself.

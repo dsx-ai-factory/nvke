@@ -83,9 +83,7 @@ jobs:
       # Main, scheduled, and manual runs keep both comprehensive CAPD modes.
       LOCAL_NKE_E2E_LABEL_FILTER: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '' }}
       LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'false' || 'true' }}
-      # Same override and reasoning as backend-e2e.yml (shared by capd-e2e and
-      # nico-e2e): the production default is sized for a real hardware boot,
-      # but this backend only needs to observe a container restart.
+      # Same override as backend-e2e.yml (capd-e2e, nico-e2e).
       NODE_REBOOT_SOFT_CONFIRM_TIMEOUT: 2m
       # These runners reach Docker Hub through an NVIDIA mirror. backend-e2e.yml
       # sets the same value; helm needs the shim below to honour it for OCI

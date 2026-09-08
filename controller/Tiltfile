@@ -991,11 +991,8 @@ if _cwe_provision_cp_with_controller != "":
         "name": "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER",
         "value": _cwe_provision_cp_with_controller,
     })
-# NODE_REBOOT_SOFT_CONFIRM_TIMEOUT is honored from the process environment first
-# (with the .env.tilt value as a fallback), same as PROVISION_CONTROL_PLANE_WITH_
-# CONTROL_PLANE_CONTROLLER above, so CI backends that only need to observe a
-# container restart (CAPD) can shorten it without touching the shared production
-# default in internal/config/config.go, which is sized for a real hardware boot.
+# Same process-env-first pattern as above, so CI can shorten this without
+# touching the production default.
 _cwe_node_reboot_soft_confirm_timeout = os.getenv(
     "NODE_REBOOT_SOFT_CONFIRM_TIMEOUT",
     _tilt_env.get("NODE_REBOOT_SOFT_CONFIRM_TIMEOUT", ""))

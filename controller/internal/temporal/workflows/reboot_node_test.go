@@ -68,9 +68,7 @@ func TestRebootCAPINode_SoftRebootCanceled_PropagatesWithoutFallback(t *testing.
 	env.AssertNotCalled(t, "ApplyCAPIMachineRebootAnnotation", mock.Anything, mock.Anything)
 }
 
-// TestWaitForNodeReboot_SoftRebootConfirmed verifies that when the bounded soft-reboot
-// confirmation wait succeeds (bootID change or reboot-complete-timestamp annotation observed),
-// waitForNodeReboot returns without ever falling back to a hard reboot.
+// A confirmed soft reboot should never fall back to hard.
 func TestWaitForNodeReboot_SoftRebootConfirmed(t *testing.T) {
 	nodeID := uuid.New()
 
@@ -91,13 +89,8 @@ func TestWaitForNodeReboot_SoftRebootConfirmed(t *testing.T) {
 	env.AssertNotCalled(t, "ApplyCAPIMachineRebootAnnotation", mock.Anything, mock.Anything)
 }
 
-// TestWaitForNodeReboot_SoftRebootNotConfirmed_FallsBackToHardWithinSameAttempt reproduces the
-// bug from #500: a soft reboot RPC can ack successfully without the node ever actually rebooting
-// (the same failure class as a soft reboot that has no effect on CAPD, where BootID is read from
-// the host and doesn't change across a container restart). waitForNodeReboot must not silently
-// wait out the whole attempt timeout on the soft path alone - it must fall back to the hard CAPI
-// Machine reboot annotation once the bounded confirmation window elapses, and succeed if the
-// hard reboot then produces a detectable change within the remaining budget.
+// A soft reboot that acked but produced no detectable change (the CAPD case) must fall back to
+// hard within the same attempt, not wait out the whole timeout.
 func TestWaitForNodeReboot_SoftRebootNotConfirmed_FallsBackToHardWithinSameAttempt(t *testing.T) {
 	nodeID := uuid.New()
 
