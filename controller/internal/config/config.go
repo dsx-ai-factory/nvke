@@ -110,6 +110,10 @@ type Config struct {
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
 
+	// SupportedInfraProviders is the list of provider payload keys this CWE
+	// deployment advertises for cluster specs.
+	SupportedInfraProviders []string `env:"SUPPORTED_INFRA_PROVIDERS" envSeparator:"," default:"nico"`
+
 	// RunbooksDir is the optional directory containing config-profile hook scripts.
 	// When omitted, hook execution looks under ProfilesDir/runbooks before falling
 	// back to controller-owned embedded runbooks.

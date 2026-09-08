@@ -193,13 +193,14 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, forge
 	nodePoolService := NewNodePoolService(logger, database, forgeProvider, cfg.Teleport, cfg.UseControlPlaneControllerForControlPlane())
 
 	return &serverImpl{
-		clusterService:       *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
-		nodePoolService:      *nodePoolService,
-		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
-		nodeService:          *NewNodeService(logger, database, temporalClient, cfg.AllowEtcdSafetyOverrides),
-		osProfileService:     *NewOSProfileService(cfg, logger),
-		configProfileService: *NewConfigProfileService(cfg, logger),
-		cniPluginsService:    *NewCNIPluginsService(),
+		clusterService:          *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
+		nodePoolService:         *nodePoolService,
+		nodeSetService:          *NewNodeSetService(logger, database, temporalClient),
+		nodeService:             *NewNodeService(logger, database, temporalClient, cfg.AllowEtcdSafetyOverrides),
+		osProfileService:        *NewOSProfileService(cfg, logger),
+		configProfileService:    *NewConfigProfileService(cfg, logger),
+		cniPluginsService:       *NewCNIPluginsService(),
+		clusterProvidersService: *NewClusterProvidersService(cfg.SupportedInfraProviders),
 	}
 }
 
@@ -211,6 +212,7 @@ type serverImpl struct {
 	osProfileService
 	configProfileService
 	cniPluginsService
+	clusterProvidersService
 }
 
 // temporalUIURL returns the Temporal Web UI base URL to surface in the version

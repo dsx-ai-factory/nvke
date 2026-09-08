@@ -16,6 +16,12 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
+// Defines values for ClusterProvider.
+const (
+	ClusterProviderInfra ClusterProvider = "infra"
+	ClusterProviderNico  ClusterProvider = "nico"
+)
+
 // Defines values for ConditionStatus.
 const (
 	ConditionStatusFalse   ConditionStatus = "False"
@@ -163,6 +169,9 @@ type ClusterNetworkCreateConfig struct {
 	// ServiceCIDR IPv4 service network CIDR. Must be a private range with a prefix length between /12 and /24. Defaults to 10.96.0.0/12; a non-default value requires the ovn-kubernetes CNI plugin.
 	ServiceCIDR string `json:"serviceCIDR,omitempty"`
 }
+
+// ClusterProvider A top-level provider payload key advertised for CreateClusterRequest cluster specs.
+type ClusterProvider string
 
 // Condition defines model for Condition.
 type Condition struct {
@@ -497,6 +506,12 @@ type InfraNodeSetProvider struct {
 type ListCNIPluginsResponse struct {
 	// CniPlugins A list of CNI plugins
 	CniPlugins []string `json:"cniPlugins"`
+}
+
+// ListClusterProvidersResponse defines model for ListClusterProvidersResponse.
+type ListClusterProvidersResponse struct {
+	// Providers The provider payload keys advertised for CreateClusterRequest cluster specs.
+	Providers []ClusterProvider `json:"providers"`
 }
 
 // ListClustersResponse defines model for ListClustersResponse.
