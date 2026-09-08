@@ -78,6 +78,11 @@ def register(ctx):
     _deploy = os.path.join(provider_dir, "deploy")
     _dev = os.path.join(provider_dir, ".dev")
     _log_dir = os.path.join(_dev, "logs")
+    # NFS-backed worktrees cannot store Linux file capabilities. Build the
+    # runnable server on the host-local /tmp filesystem so build-privileged can
+    # apply CAP_NET_ADMIN consistently; source and persistent state stay in the
+    # worktree.
+    _nico_sim_binary = "/tmp/cwe-nico-sim"
 
     # -----------------------------------------------------------------------
     # Network layout — partition bridge subnet into DHCP and VIP pools.
@@ -203,7 +208,7 @@ def register(ctx):
         )
 
     # -----------------------------------------------------------------------
-    # nico-vms local resources
+    # nico-sim local resources
     # -----------------------------------------------------------------------
     def serve_with_log(working_dir, binary, service_name):
         return "bash -c 'cd %s && exec %s > >(tee %s/%s.log) 2>&1'" % (
@@ -211,41 +216,49 @@ def register(ctx):
 
     # dnsmasq: DHCP/DNS for VMs on the local bridge (skip if not installed).
     _dnsmasq_available = str(local("command -v dnsmasq >/dev/null 2>&1 && echo yes || echo no", quiet=True)).strip() == "yes"
-    _nico_vms_deps = ["check-management-cluster"]
+    _nico_sim_deps = ["check-management-cluster"]
+
+    if "nico" in ctx.cfg.get("providers", []):
+        _nico_sim_deps.append("nico-kind-node-image")
 
     if _dnsmasq_available:
         local_resource(
             "nico-vms-dnsmasq",
-            serve_cmd=serve_with_log("nico-vms", "./scripts/run-dnsmasq.sh", "nico-vms-dnsmasq"),
+            serve_cmd=serve_with_log("nico-sim", "./scripts/run-dnsmasq.sh", "nico-vms-dnsmasq"),
             serve_env={"NICO_VMS_BRIDGE_CIDR": _bridge_cidr, "NICO_VMS_DHCP_RANGE_END": _ranges.dhcp_end},
             deps=[os.path.join(provider_dir, "scripts", "run-dnsmasq.sh")],
-            labels=["5-nico-vms"],
+            labels=["5-nico-sim"],
         )
-        _nico_vms_deps.append("nico-vms-dnsmasq")
+        _nico_sim_deps.append("nico-vms-dnsmasq")
     else:
         warn("dnsmasq not found -- VMs using DHCP will not get IPs. Install with: brew install dnsmasq")
 
-    nico_vms_env = {
-        "NICO_VMS_LISTEN_ADDR": ":18080",
+    nico_sim_env = {
+        "NICO_SIM_LISTEN_ADDR": ":18080",
         "NICO_VMS_BRIDGE_CIDR": _bridge_cidr,
-        "NICO_VMS_DB_PATH": os.path.join(_dev, "nico-vms.db"),
+        "NICO_SIM_DB_PATH": os.path.join(_dev, "nico-sim.db"),
         "NICO_VMS_BASE_IMAGE": os.path.join(provider_dir, "images", "ubuntu-cloud.qcow2"),
         "NICO_VMS_PROMTAIL_TARGETS_FILE": os.path.join(_dev, "nico-vms-targets.json"),
         "NICO_VMS_PROMTAIL_LOG_PATH_PREFIX": "/var/log/vm-instances",
         "NICO_VMS_BGP_VIP_CIDRS": _vip_cidr,
         "NICO_VMS_VM_DISK_GIB": "40",
     }
-    _image_cache = ctx.cfg.get("nico_vms_image_cache_dir", "")
+    if "nico" in ctx.cfg.get("providers", []):
+        nico_sim_env.update({
+            "NICO_CONTAINERS_REQUIRE_HEALTHY": "true",
+            "NICO_CONTAINERS_NODE_IMAGE": os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local"),
+        })
+    _image_cache = ctx.cfg.get("nico_sim_image_cache_dir", "")
     if _image_cache:
-        nico_vms_env["NICO_VMS_IMAGE_CACHE_DIR"] = _image_cache
+        nico_sim_env["NICO_VMS_IMAGE_CACHE_DIR"] = _image_cache
 
     local_resource(
         "nico-sim",
-        cmd="truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make build-privileged" % _log_dir,
-        serve_cmd=serve_with_log("nico-sim", "./bin/nico-sim", "nico-sim"),
-        serve_env=nico_vms_env,
+        cmd="truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make BINARY=%s build-privileged" % (_log_dir, _nico_sim_binary),
+        serve_cmd=serve_with_log("nico-sim", _nico_sim_binary, "nico-sim"),
+        serve_env=nico_sim_env,
         deps=[os.path.join(provider_dir, "cmd"), os.path.join(provider_dir, "internal")],
-        resource_deps=_nico_vms_deps,
+        resource_deps=_nico_sim_deps,
         readiness_probe=probe(tcp_socket=tcp_socket_action(port=18080)),
         links=[_ui_link(18080, "/ui/", "nico-sim UI")],
         labels=["5-nico-sim"],
@@ -256,8 +269,8 @@ def register(ctx):
         local_resource(
             "nico-sim-log-shipper",
             serve_cmd=" ".join([
-                "docker rm -f nico-vms-promtail 2>/dev/null;",
-                "docker run --rm --name nico-vms-promtail",
+                "docker rm -f nico-sim-promtail 2>/dev/null;",
+                "docker run --rm --name nico-sim-promtail",
                 "--network host",
                 "-v %s/logs:/var/log/nke:ro" % _dev,
                 "-v %s/instances:/var/log/vm-instances:ro" % _dev,
@@ -308,7 +321,7 @@ def register(ctx):
         cwe_env_overrides = {
             "FORGE_URL": "http://%s:18080" % ctx.kind_host_ip,
             "FORGE_ENVIRONMENT": "test",
-            "FWE_API_KEY": "not-needed-for-nico-vms",
+            "FWE_API_KEY": "not-needed-for-nico-sim",
             "SPIFFE_ENABLED": "true",
         },
     )

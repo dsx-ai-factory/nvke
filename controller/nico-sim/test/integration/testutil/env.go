@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package testutil provides shared test helpers for nico-vms integration tests.
+// Package testutil provides shared test helpers for nico-sim integration tests.
 package testutil
 
 import (
@@ -26,7 +26,7 @@ import (
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/seed"
 )
 
-// TestEnv wraps a running nico-vms app and httptest server for integration testing.
+// TestEnv wraps a running nico-sim app and httptest server for integration testing.
 type TestEnv struct {
 	T          *testing.T
 	App        *app.App
@@ -36,7 +36,7 @@ type TestEnv struct {
 }
 
 // RuntimeProfile captures the backend name, parsed config, and timing parameters
-// that govern how a test suite interacts with the nico-vms server.
+// that govern how a test suite interacts with the nico-sim server.
 type RuntimeProfile struct {
 	Name         string
 	Config       Config
@@ -163,12 +163,12 @@ func (e *TestEnv) InstanceErrorReason(instanceID string) string {
 	if e.T == nil {
 		panic("TestEnv.InstanceErrorReason called without test context; use env.WithT(t)")
 	}
-	row, err := e.App.Store.GetInstanceByID(context.Background(), instanceID)
+	row, err := e.App.Store.GetInstance(context.Background(), instanceID)
 	if err != nil {
 		return fmt.Sprintf("failed to lookup instance error reason: %v", err)
 	}
-	if row.Instance.ErrorReason == "" {
+	if row.VM == nil || row.VM.ErrorReason == "" {
 		return "<empty>"
 	}
-	return row.Instance.ErrorReason
+	return row.VM.ErrorReason
 }

@@ -63,7 +63,7 @@ func (s *Server) Start(ctx context.Context, addr string) (int, error) {
 	}
 
 	sshCfg := &ssh.ServerConfig{
-		NoClientAuth: true, //nolint:gosec // nico-vms is a local dev/test tool
+		NoClientAuth: true, //nolint:gosec // nico-sim is a local dev/test tool
 	}
 	sshCfg.AddHostKey(signer)
 

@@ -6,12 +6,15 @@ package http
 import (
 	nethttp "net/http"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 )
 
 func (s *Server) handleListIPBlocks(w nethttp.ResponseWriter, r *nethttp.Request) {
 	page := parsePage(r)
-	siteID := r.URL.Query().Get("siteId")
+	siteID, ok := s.siteIDForList(w, r)
+	if !ok {
+		return
+	}
 
 	rows, err := s.store.ListIPBlocks(r.Context(), siteID, page)
 	if err != nil {
@@ -19,7 +22,7 @@ func (s *Server) handleListIPBlocks(w nethttp.ResponseWriter, r *nethttp.Request
 		return
 	}
 
-	resp := make([]forgesdk.IpBlock, 0, len(rows))
+	resp := make([]nicosdk.IpBlock, 0, len(rows))
 	for _, row := range rows {
 		resp = append(resp, toSDKIPBlock(row))
 	}

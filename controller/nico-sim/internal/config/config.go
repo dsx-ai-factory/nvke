@@ -84,6 +84,11 @@ type Config struct {
 	DiagSSHEnabled         bool
 	DiagSSHUser            string
 	DiagSSHPassword        string
+	ContainerEnabled       bool
+	ContainerNodeNetwork   string
+	ContainerNodeImage     string
+	ContainerDockerBinary  string
+	ContainerRequireHealth bool
 }
 
 // UseLibvirtNetwork reports whether VMs should attach to a pre-existing
@@ -154,8 +159,8 @@ func Parse(logger *slog.Logger) (Config, error) {
 	bgpVIPCIDRs := parseCommaSeparated(os.Getenv("NICO_VMS_BGP_VIP_CIDRS"))
 
 	cfg := Config{
-		ListenAddr:             envOrDefault("NICO_VMS_LISTEN_ADDR", ":18080"),
-		DBPath:                 envOrDefault("NICO_VMS_DB_PATH", "./var/nico-vms.db"),
+		ListenAddr:             envOrDefault("NICO_SIM_LISTEN_ADDR", ":18080"),
+		DBPath:                 envOrDefault("NICO_SIM_DB_PATH", "./var/nico-sim.db"),
 		VMBackend:              envOrDefault("NICO_VMS_VM_BACKEND", "auto"),
 		LibvirtURI:             envOrDefault("NICO_VMS_LIBVIRT_URI", "qemu:///session"),
 		LibvirtNetwork:         os.Getenv("NICO_VMS_LIBVIRT_NETWORK"),
@@ -167,13 +172,13 @@ func Parse(logger *slog.Logger) (Config, error) {
 		ReadinessTimeout:       readinessTimeout,
 		QEMUImgPath:            envOrDefault("NICO_VMS_QEMU_IMG_PATH", "qemu-img"),
 		CloudLocalDSPath:       envOrDefault("NICO_VMS_CLOUD_LOCALDS_PATH", "cloud-localds"),
-		SeedPath:               envOrDefault("NICO_VMS_SEED_PATH", "./internal/seed/default-seed.yaml"),
+		SeedPath:               envOrDefault("NICO_SIM_SEED_PATH", "./internal/seed/default-seed.yaml"),
 		VMVCPUs:                vmVCPUs,
 		VMMemoryMiB:            vmMemoryMiB,
 		VMDiskGiB:              vmDiskGiB,
 		ReconcileWorkers:       reconcileWorkers,
 		ReconcileInterval:      reconcileInterval,
-		LogRequestMethods:      parseLogRequestMethods(envOrDefault("NICO_VMS_LOG_REQUEST_METHODS", LogPresetWrite)),
+		LogRequestMethods:      parseLogRequestMethods(envOrDefault("NICO_SIM_LOG_REQUEST_METHODS", LogPresetWrite)),
 		DHCPHostsDir:           envOrDefault("NICO_VMS_DHCP_HOSTS_DIR", "/var/lib/nico-vms/dhcp-hosts"),
 		DHCPLeaseFile:          envOrDefault("NICO_VMS_DHCP_LEASE_FILE", "/var/run/nico-vms-dnsmasq.leases"),
 		LogFormat:              ParseLogFormat(),
@@ -191,6 +196,11 @@ func Parse(logger *slog.Logger) (Config, error) {
 		DiagSSHEnabled:         strings.ToLower(envOrDefault("NICO_VMS_DIAG_SSH_ENABLED", "true")) == "true",
 		DiagSSHUser:            envOrDefault("NICO_VMS_DIAG_SSH_USER", "nico-diag"),
 		DiagSSHPassword:        envOrDefault("NICO_VMS_DIAG_SSH_PASSWORD", "nico-diag"),
+		ContainerEnabled:       strings.EqualFold(envOrDefault("NICO_CONTAINERS_ENABLED", "true"), "true"),
+		ContainerNodeNetwork:   envOrDefault("NICO_CONTAINERS_NODE_NETWORK", "kind"),
+		ContainerNodeImage:     envOrDefault("NICO_CONTAINERS_NODE_IMAGE", "cwe-capd-kindest-node:local"),
+		ContainerDockerBinary:  envOrDefault("NICO_CONTAINERS_DOCKER_BINARY", "docker"),
+		ContainerRequireHealth: strings.EqualFold(envOrDefault("NICO_CONTAINERS_REQUIRE_HEALTHY", "false"), "true"),
 	}
 
 	if err := cfg.normalize(logger); err != nil {
@@ -206,10 +216,10 @@ func Parse(logger *slog.Logger) (Config, error) {
 
 func (c Config) Validate() error {
 	if c.ListenAddr == "" {
-		return fmt.Errorf("NICO_VMS_LISTEN_ADDR is required")
+		return fmt.Errorf("NICO_SIM_LISTEN_ADDR is required")
 	}
 	if c.DBPath == "" {
-		return fmt.Errorf("NICO_VMS_DB_PATH is required")
+		return fmt.Errorf("NICO_SIM_DB_PATH is required")
 	}
 	if c.BridgeName == "" {
 		return fmt.Errorf("NICO_VMS_BRIDGE_NAME is required")
@@ -255,11 +265,22 @@ func (c Config) Validate() error {
 	if c.ReconcileInterval <= 0 {
 		return fmt.Errorf("NICO_VMS_RECONCILE_INTERVAL must be > 0")
 	}
+	if c.ContainerEnabled {
+		if strings.TrimSpace(c.ContainerNodeNetwork) == "" {
+			return fmt.Errorf("NICO_CONTAINERS_NODE_NETWORK is required when the container backend is enabled")
+		}
+		if strings.TrimSpace(c.ContainerNodeImage) == "" {
+			return fmt.Errorf("NICO_CONTAINERS_NODE_IMAGE is required when the container backend is enabled")
+		}
+		if strings.TrimSpace(c.ContainerDockerBinary) == "" {
+			return fmt.Errorf("NICO_CONTAINERS_DOCKER_BINARY is required when the container backend is enabled")
+		}
+	}
 	switch c.LogFormat {
 	case LogFormatJSON, LogFormatText:
 		// valid
 	default:
-		return fmt.Errorf("NICO_VMS_LOG_FORMAT must be %q or %q (got %q)", LogFormatJSON, LogFormatText, c.LogFormat)
+		return fmt.Errorf("NICO_SIM_LOG_FORMAT must be %q or %q (got %q)", LogFormatJSON, LogFormatText, c.LogFormat)
 	}
 
 	return nil
@@ -312,10 +333,10 @@ func (c Config) WorkingDirectory() string {
 }
 
 // FilesDirectory returns the directory from which the file server serves
-// files. Uses NICO_VMS_FILES_DIR if set, otherwise defaults to "files/"
+// files. Uses NICO_SIM_FILES_DIR if set, otherwise defaults to "files/"
 // alongside the database.
 func (c Config) FilesDirectory() string {
-	if dir := os.Getenv("NICO_VMS_FILES_DIR"); dir != "" {
+	if dir := os.Getenv("NICO_SIM_FILES_DIR"); dir != "" {
 		return dir
 	}
 	return filepath.Join(filepath.Dir(c.DBPath), "files")
@@ -330,7 +351,7 @@ func (c Config) ImageCacheDirectory() string {
 	}
 	home, err := os.UserHomeDir()
 	if err == nil {
-		return filepath.Join(home, ".cache", "nico-vms", "images")
+		return filepath.Join(home, ".cache", "nico-sim", "images")
 	}
 	// Fallback to DB-relative path
 	return filepath.Join(filepath.Dir(c.DBPath), "cache", "images")
@@ -341,10 +362,10 @@ const (
 	LogFormatText = "text"
 )
 
-// ParseLogFormat reads NICO_VMS_LOG_FORMAT and returns the normalised value.
+// ParseLogFormat reads NICO_SIM_LOG_FORMAT and returns the normalised value.
 // Safe to call before full config parsing — only reads one env var.
 func ParseLogFormat() string {
-	return envOrDefault("NICO_VMS_LOG_FORMAT", LogFormatJSON)
+	return envOrDefault("NICO_SIM_LOG_FORMAT", LogFormatJSON)
 }
 
 const (
@@ -398,7 +419,7 @@ func (c *Config) normalize(logger *slog.Logger) error {
 	if c.DBPath != "" {
 		absDB, err := normalizePath(c.DBPath)
 		if err != nil {
-			return fmt.Errorf("failed to normalize NICO_VMS_DB_PATH: %w", err)
+			return fmt.Errorf("failed to normalize NICO_SIM_DB_PATH: %w", err)
 		}
 		c.DBPath = absDB
 	}

@@ -89,6 +89,45 @@ func TestHydrateNetworkingCIDRsFailsWhenPrefixSpaceExhausted(t *testing.T) {
 	}
 }
 
+func TestHydrateNetworkingCIDRsLeavesContainerNetworksIndependent(t *testing.T) {
+	doc := Document{
+		Sites: []Site{
+			{ID: "vm-site", Backend: SiteBackendVM},
+			{ID: "container-site", Backend: SiteBackendContainer},
+		},
+		Subnets: []Subnet{
+			{ID: "vm-subnet", SiteID: "vm-site"},
+			{ID: "container-subnet", SiteID: "container-site", CIDR: "172.18.254.0/24", PrefixLength: 24},
+		},
+	}
+
+	hydrated, err := HydrateNetworkingCIDRs(doc, "172.30.0.0/24")
+	if err != nil {
+		t.Fatalf("HydrateNetworkingCIDRs failed: %v", err)
+	}
+	if hydrated.Subnets[0].CIDR != "172.30.0.0/24" {
+		t.Fatalf("vm subnet cidr = %q", hydrated.Subnets[0].CIDR)
+	}
+	if hydrated.Subnets[1].CIDR != "172.18.254.0/24" {
+		t.Fatalf("container subnet was rewritten to %q", hydrated.Subnets[1].CIDR)
+	}
+}
+
+func TestNormalizeAndValidateSiteBackend(t *testing.T) {
+	doc := Document{Sites: []Site{{ID: "legacy"}, {ID: "container", Backend: " CONTAINER "}}}
+	if err := doc.NormalizeAndValidate(); err != nil {
+		t.Fatalf("NormalizeAndValidate failed: %v", err)
+	}
+	if doc.Sites[0].Backend != SiteBackendVM || doc.Sites[1].Backend != SiteBackendContainer {
+		t.Fatalf("unexpected normalized backends: %q, %q", doc.Sites[0].Backend, doc.Sites[1].Backend)
+	}
+
+	doc = Document{Sites: []Site{{ID: "bad", Backend: "other"}}}
+	if err := doc.NormalizeAndValidate(); err == nil {
+		t.Fatal("expected unsupported backend error")
+	}
+}
+
 func cidrContainsCIDR(t *testing.T, parentCIDR, childCIDR string) bool {
 	t.Helper()
 	_, parent, err := net.ParseCIDR(parentCIDR)

@@ -6,8 +6,17 @@ package seed
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"go.yaml.in/yaml/v4"
+)
+
+// SiteBackend selects the runtime implementation for resources in a site.
+type SiteBackend string
+
+const (
+	SiteBackendVM        SiteBackend = "vm"
+	SiteBackendContainer SiteBackend = "container"
 )
 
 type Document struct {
@@ -29,9 +38,10 @@ type Tenant struct {
 }
 
 type Site struct {
-	ID           string `yaml:"id"`
-	Name         string `yaml:"name"`
-	TenantID     string `yaml:"tenant_id"`
+	ID           string      `yaml:"id"`
+	Name         string      `yaml:"name"`
+	TenantID     string      `yaml:"tenant_id"`
+	Backend      SiteBackend `yaml:"backend"`
 	Capabilities struct {
 		NativeNetworking bool `yaml:"native_networking"`
 	} `yaml:"capabilities"`
@@ -100,6 +110,29 @@ func Load(path string) (Document, error) {
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
 		return Document{}, fmt.Errorf("failed to parse seed file: %w", err)
 	}
+	if err := doc.NormalizeAndValidate(); err != nil {
+		return Document{}, err
+	}
 
 	return doc, nil
+}
+
+// NormalizeAndValidate applies backward-compatible defaults and rejects seed
+// values that would make backend dispatch ambiguous. It intentionally mutates
+// the document so callers that construct seed documents in code receive the
+// same defaults as YAML-loaded documents.
+func (d *Document) NormalizeAndValidate() error {
+	for i := range d.Sites {
+		backend := SiteBackend(strings.ToLower(strings.TrimSpace(string(d.Sites[i].Backend))))
+		if backend == "" {
+			backend = SiteBackendVM
+		}
+		switch backend {
+		case SiteBackendVM, SiteBackendContainer:
+			d.Sites[i].Backend = backend
+		default:
+			return fmt.Errorf("site %s has unsupported backend %q", d.Sites[i].ID, backend)
+		}
+	}
+	return nil
 }

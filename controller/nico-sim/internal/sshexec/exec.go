@@ -97,7 +97,7 @@ func dial(ctx context.Context, host string, cfg Config) (*ssh.Client, error) {
 		Auth: []ssh.AuthMethod{
 			ssh.Password(cfg.Password),
 		},
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // nico-vms dev tool
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec // nico-sim dev tool
 		Timeout:         10 * time.Second,
 	}
 

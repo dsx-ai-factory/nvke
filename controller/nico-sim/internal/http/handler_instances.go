@@ -7,159 +7,162 @@ import (
 	"encoding/json"
 	"errors"
 	nethttp "net/http"
+	"strings"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
 )
 
 func (s *Server) handleGetInstance(w nethttp.ResponseWriter, r *nethttp.Request) {
-	id := r.PathValue("instanceId")
+	instanceID := r.PathValue("instanceId")
+	record, backend, err := s.ownedInstance(r, instanceID)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	instance, err := backend.ConvertToAPI(r, record)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, instance)
+}
 
-	row, err := s.store.GetInstanceByID(r.Context(), id)
+func (s *Server) handleListInstances(w nethttp.ResponseWriter, r *nethttp.Request) {
+	orderBy := strings.TrimSpace(r.URL.Query().Get("orderBy"))
+	if orderBy != "" && !strings.EqualFold(orderBy, "CREATED_ASC") {
+		writeForgeError(w, nethttp.StatusBadRequest, "unsupported orderBy; only CREATED_ASC is supported")
+		return
+	}
+
+	tenant, err := s.store.GetTenantByOrg(r.Context(), orgIDFromRequest(r))
 	if err != nil {
 		if errors.Is(err, state.ErrNotFound) {
-			writeForgeError(w, nethttp.StatusNotFound, "Could not find Instance with specified ID")
+			writeJSON(w, nethttp.StatusOK, []nicosdk.Instance{})
 			return
 		}
 		writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
 		return
 	}
-
-	writeJSON(w, nethttp.StatusOK, s.instanceWithConsoleURL(toSDKInstance(row), r))
-}
-
-func (s *Server) handleListInstances(w nethttp.ResponseWriter, r *nethttp.Request) {
-	page := parsePage(r)
 	filter := state.ListInstancesFilter{
 		SiteID:   r.URL.Query().Get("siteId"),
 		TenantID: r.URL.Query().Get("tenantId"),
+		Name:     r.URL.Query().Get("name"),
+		VPCID:    r.URL.Query().Get("vpcId"),
 	}
-
-	rows, err := s.store.ListInstances(r.Context(), filter, page)
-	if err != nil {
-		writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
+	if filter.TenantID != "" && filter.TenantID != tenant.ID {
+		writeJSON(w, nethttp.StatusOK, []nicosdk.Instance{})
 		return
 	}
+	filter.TenantID = tenant.ID
 
-	resp := make([]forgesdk.Instance, 0, len(rows))
-	for _, row := range rows {
-		resp = append(resp, s.instanceWithConsoleURL(toSDKInstance(row), r))
+	if filter.SiteID != "" {
+		if _, err := s.store.GetSiteForOrg(r.Context(), orgIDFromRequest(r), filter.SiteID); err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				writeJSON(w, nethttp.StatusOK, []nicosdk.Instance{})
+				return
+			}
+			writeBackendError(w, err)
+			return
+		}
 	}
-	writeJSON(w, nethttp.StatusOK, resp)
+	records, err := s.store.ListInstances(r.Context(), filter, parsePage(r))
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	instances := make([]nicosdk.Instance, 0, len(records))
+	for _, record := range records {
+		backend, err := s.backendForInstance(record)
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		instance, err := backend.ConvertToAPI(r, record)
+		if err != nil {
+			writeBackendError(w, err)
+			return
+		}
+		instances = append(instances, instance)
+	}
+	writeJSON(w, nethttp.StatusOK, instances)
 }
 
 func (s *Server) handleCreateInstance(w nethttp.ResponseWriter, r *nethttp.Request) {
 	r.Body = nethttp.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
-	var req forgesdk.InstanceCreateRequest
+	var req nicosdk.InstanceCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeForgeError(w, nethttp.StatusBadRequest, "invalid request body")
 		return
 	}
 
-	interfaces := make([]state.InterfaceRequest, 0, len(req.GetInterfaces()))
-	for _, iface := range req.GetInterfaces() {
-		var subnetID *string
-		var vpcPrefixID *string
-		if iface.HasSubnetId() {
-			v := iface.GetSubnetId()
-			subnetID = &v
-		}
-		if iface.HasVpcPrefixId() {
-			v := iface.GetVpcPrefixId()
-			vpcPrefixID = &v
-		}
-		interfaces = append(interfaces, state.InterfaceRequest{
-			SubnetID:    subnetID,
-			VPCPrefixID: vpcPrefixID,
-		})
-	}
-
-	in := state.CreateInstanceInput{
-		Name:             req.GetName(),
-		TenantID:         req.GetTenantId(),
-		InstanceTypeID:   req.GetInstanceTypeId(),
-		VPCID:            req.GetVpcId(),
-		IpxeScript:       req.GetIpxeScript(),
-		UserData:         req.GetUserData(),
-		Labels:           req.GetLabels(),
-		SSHKeyGroupIDs:   req.GetSshKeyGroupIds(),
-		Interfaces:       interfaces,
-		PhoneHomeEnabled: req.GetPhoneHomeEnabled(),
-	}
-
-	row, _, err := s.store.CreateInstance(r.Context(), in)
+	site, err := s.resolveCreateSite(r.Context(), orgIDFromRequest(r), req)
 	if err != nil {
-		switch {
-		case errors.Is(err, state.ErrConflict):
-			writeForgeError(w, nethttp.StatusConflict, "An Instance with specified name already exists for Tenant")
-		case errors.Is(err, state.ErrSubnetExhausted):
-			writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
-		case errors.Is(err, state.ErrVpcPfxExhausted):
-			writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
-		case errors.Is(err, state.ErrBadRequest):
-			writeForgeError(w, nethttp.StatusBadRequest, err.Error())
-		default:
-			writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
-		}
+		writeBackendError(w, err)
 		return
 	}
-
-	writeJSON(w, nethttp.StatusOK, s.instanceWithConsoleURL(toSDKInstance(row), r))
+	backend, err := s.backendFor(site)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	record, err := backend.Create(r.Context(), site, req)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	instance, err := backend.ConvertToAPI(r, record)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, instance)
 }
 
 func (s *Server) handlePatchInstance(w nethttp.ResponseWriter, r *nethttp.Request) {
-	id := r.PathValue("instanceId")
-
+	instanceID := r.PathValue("instanceId")
+	record, backend, err := s.ownedInstance(r, instanceID)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
 	r.Body = nethttp.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
-	var req forgesdk.InstanceUpdateRequest
+	var req nicosdk.InstanceUpdateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeForgeError(w, nethttp.StatusBadRequest, "invalid request body")
 		return
 	}
-
-	var ipxeScript *string
-	if req.HasIpxeScript() {
-		v := req.GetIpxeScript()
-		ipxeScript = &v
-	}
-	var userData *string
-	if req.HasUserData() {
-		v := req.GetUserData()
-		userData = &v
-	}
-
-	row, err := s.store.UpdateInstance(r.Context(), id, state.UpdateInstanceInput{
-		Labels:        req.GetLabels(),
-		TriggerReboot: req.GetTriggerReboot(),
-		IpxeScript:    ipxeScript,
-		UserData:      userData,
-	})
+	record, err = backend.Update(r.Context(), record, req)
 	if err != nil {
-		switch {
-		case errors.Is(err, state.ErrNotFound):
-			writeForgeError(w, nethttp.StatusNotFound, "Could not find Instance with specified ID")
-		case errors.Is(err, state.ErrBadRequest):
-			writeForgeError(w, nethttp.StatusBadRequest, err.Error())
-		default:
-			writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
-		}
+		writeBackendError(w, err)
 		return
 	}
-
-	writeJSON(w, nethttp.StatusOK, s.instanceWithConsoleURL(toSDKInstance(row), r))
+	instance, err := backend.ConvertToAPI(r, record)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+	writeJSON(w, nethttp.StatusOK, instance)
 }
 
 func (s *Server) handleDeleteInstance(w nethttp.ResponseWriter, r *nethttp.Request) {
-	id := r.PathValue("instanceId")
-
-	found, err := s.store.MarkInstanceForDelete(r.Context(), id)
+	instanceID := r.PathValue("instanceId")
+	record, backend, err := s.ownedInstance(r, instanceID)
 	if err != nil {
-		writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
+		writeBackendError(w, err)
 		return
 	}
-	if !found {
-		writeForgeError(w, nethttp.StatusNotFound, "Could not find Instance with specified ID")
+	var req nicosdk.InstanceDeleteRequest
+	if r.Body != nil && r.ContentLength != 0 {
+		r.Body = nethttp.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeForgeError(w, nethttp.StatusBadRequest, "invalid request body")
+			return
+		}
+	}
+	if err := backend.Delete(r.Context(), record, &req); err != nil {
+		writeBackendError(w, err)
 		return
 	}
 	writeJSON(w, nethttp.StatusOK, map[string]string{"status": "accepted"})

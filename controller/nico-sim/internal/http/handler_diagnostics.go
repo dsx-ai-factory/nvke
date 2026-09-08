@@ -4,11 +4,11 @@
 package http
 
 import (
-	"context"
 	nethttp "net/http"
 
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/sshexec"
-	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
 )
 
 // CatalogItem defines a retrievable diagnostic item from a VM.
@@ -67,7 +67,11 @@ var catalogByID = func() map[string]CatalogItem {
 	return m
 }()
 
-func (s *Server) handleListDiagnostics(w nethttp.ResponseWriter, _ *nethttp.Request) {
+func (s *Server) handleListDiagnostics(w nethttp.ResponseWriter, r *nethttp.Request) {
+	if _, _, err := s.assertVMBackend(r, r.PathValue("instanceId")); err != nil {
+		writeBackendError(w, err)
+		return
+	}
 	writeJSON(w, nethttp.StatusOK, catalog)
 }
 
@@ -75,14 +79,24 @@ func (s *Server) handleGetDiagnostic(w nethttp.ResponseWriter, r *nethttp.Reques
 	instanceID := r.PathValue("instanceId")
 	itemID := r.PathValue("itemId")
 
+	record, backend, err := s.assertVMBackend(r, instanceID)
+	if err != nil {
+		writeBackendError(w, err)
+		return
+	}
+
 	item, ok := catalogByID[itemID]
 	if !ok {
 		nethttp.Error(w, "unknown diagnostic item", nethttp.StatusNotFound)
 		return
 	}
 
-	// Resolve the VM's IP address from the store.
-	ip, err := s.resolveInstanceIP(r.Context(), instanceID)
+	instance, err := backend.ConvertToAPI(r, record)
+	if err != nil {
+		nethttp.Error(w, "instance not found or has no IP", nethttp.StatusNotFound)
+		return
+	}
+	ip, err := instanceIP(instance)
 	if err != nil {
 		nethttp.Error(w, "instance not found or has no IP", nethttp.StatusNotFound)
 		return
@@ -125,24 +139,13 @@ func (s *Server) streamDiagnostic(w nethttp.ResponseWriter, r *nethttp.Request, 
 	}
 }
 
-// resolveInstanceIP looks up the first IP address for the given instance.
-func (s *Server) resolveInstanceIP(ctx context.Context, instanceID string) (string, error) {
-	rows, err := s.store.ListInstances(ctx, state.ListInstancesFilter{}, state.Page{Number: 1, Size: 1000})
-	if err != nil {
-		return "", err
-	}
-	for _, row := range rows {
-		if row.Instance.ID != instanceID {
-			continue
-		}
-		if row.Instance.ObservedState != "ready" && row.Instance.ObservedState != "rebooting" {
-			return "", nethttp.ErrNotSupported
-		}
-		for _, iface := range row.Interfaces {
-			ips, _ := iface.IPAddresses()
-			if len(ips) > 0 {
-				return ips[0], nil
-			}
+// instanceIP returns the first IP address the instance exposes. Addresses only
+// appear once the instance is ready or rebooting, so an empty result also
+// covers an instance that is still provisioning.
+func instanceIP(instance nicosdk.Instance) (string, error) {
+	for _, iface := range instance.GetInterfaces() {
+		if ips := iface.GetIpAddresses(); len(ips) > 0 {
+			return ips[0], nil
 		}
 	}
 	return "", nethttp.ErrNotSupported

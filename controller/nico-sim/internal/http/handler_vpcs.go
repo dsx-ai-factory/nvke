@@ -7,14 +7,17 @@ import (
 	"errors"
 	nethttp "net/http"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
 )
 
 func (s *Server) handleListVPCs(w nethttp.ResponseWriter, r *nethttp.Request) {
 	page := parsePage(r)
-	siteID := r.URL.Query().Get("siteId")
+	siteID, ok := s.siteIDForList(w, r)
+	if !ok {
+		return
+	}
 
 	rows, err := s.store.ListVPCs(r.Context(), siteID, page)
 	if err != nil {
@@ -22,7 +25,7 @@ func (s *Server) handleListVPCs(w nethttp.ResponseWriter, r *nethttp.Request) {
 		return
 	}
 
-	resp := make([]forgesdk.VPC, 0, len(rows))
+	resp := make([]nicosdk.VPC, 0, len(rows))
 	for _, row := range rows {
 		resp = append(resp, toSDKVPC(row))
 	}

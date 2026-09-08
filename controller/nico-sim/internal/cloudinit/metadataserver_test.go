@@ -30,7 +30,7 @@ func (m *mockLookup) LookupInstanceByMAC(_ context.Context, mac string) (string,
 	return id, ok
 }
 
-func (m *mockLookup) MarkPhonedHome(_ context.Context, instanceID string) error {
+func (m *mockLookup) MarkVMPhonedHome(_ context.Context, instanceID string) error {
 	m.phonedHome[instanceID] = true
 	return nil
 }

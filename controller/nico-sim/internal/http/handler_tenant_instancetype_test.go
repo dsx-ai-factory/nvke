@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/seed"
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/sshexec"
@@ -53,7 +53,7 @@ const (
 func newTestHandler(t *testing.T) nethttp.Handler {
 	t.Helper()
 
-	store, err := state.Open(filepath.Join(t.TempDir(), "nico-vms.db"))
+	store, err := state.Open(filepath.Join(t.TempDir(), "nico-sim.db"))
 	if err != nil {
 		t.Fatalf("state.Open failed: %v", err)
 	}
@@ -78,7 +78,7 @@ func newTestHandler(t *testing.T) nethttp.Handler {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewHandler(store, logger, nil, 0, "", "", sshexec.Config{})
+	return NewHandler(store, nil, logger, nil, 0, "", "", sshexec.Config{})
 }
 
 // newTwoOrgTestHandler builds a handler over a store seeded with TWO unrelated
@@ -88,7 +88,7 @@ func newTestHandler(t *testing.T) nethttp.Handler {
 func newTwoOrgTestHandler(t *testing.T) nethttp.Handler {
 	t.Helper()
 
-	store, err := state.Open(filepath.Join(t.TempDir(), "nico-vms.db"))
+	store, err := state.Open(filepath.Join(t.TempDir(), "nico-sim.db"))
 	if err != nil {
 		t.Fatalf("state.Open failed: %v", err)
 	}
@@ -117,7 +117,7 @@ func newTwoOrgTestHandler(t *testing.T) nethttp.Handler {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return NewHandler(store, logger, nil, 0, "", "", sshexec.Config{})
+	return NewHandler(store, nil, logger, nil, 0, "", "", sshexec.Config{})
 }
 
 // authedGet issues an authenticated GET against the handler.
@@ -140,7 +140,7 @@ func TestHandleGetCurrentTenant(t *testing.T) {
 
 	// Decode with the SDK type CAPNICo uses so the assertion matches its
 	// GetCurrentTenantID path exactly (it reads tenant.GetId()).
-	var tenant forgesdk.Tenant
+	var tenant nicosdk.Tenant
 	if err := json.Unmarshal(rw.Body.Bytes(), &tenant); err != nil {
 		t.Fatalf("decode tenant: %v; body=%s", err, rw.Body.String())
 	}
@@ -163,7 +163,7 @@ func TestHandleGetInstanceType(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", rw.Code, rw.Body.String())
 	}
 
-	var it forgesdk.InstanceType
+	var it nicosdk.InstanceType
 	if err := json.Unmarshal(rw.Body.Bytes(), &it); err != nil {
 		t.Fatalf("decode instance type: %v; body=%s", err, rw.Body.String())
 	}
@@ -210,7 +210,7 @@ func TestHandleGetVPC(t *testing.T) {
 
 	// Decode with the SDK type CAPNICo uses; its topology reconcile reads
 	// vpc.GetId() and vpc.GetName().
-	var vpc forgesdk.VPC
+	var vpc nicosdk.VPC
 	if err := json.Unmarshal(rw.Body.Bytes(), &vpc); err != nil {
 		t.Fatalf("decode vpc: %v; body=%s", err, rw.Body.String())
 	}
@@ -292,7 +292,7 @@ func TestHandleGetVPCOrgIsolation(t *testing.T) {
 			if rwOwn.Code != nethttp.StatusOK {
 				t.Fatalf("own vpc: status = %d, want 200; body=%s", rwOwn.Code, rwOwn.Body.String())
 			}
-			var vpc forgesdk.VPC
+			var vpc nicosdk.VPC
 			if err := json.Unmarshal(rwOwn.Body.Bytes(), &vpc); err != nil {
 				t.Fatalf("decode vpc: %v; body=%s", err, rwOwn.Body.String())
 			}
@@ -350,7 +350,7 @@ func TestHandleGetInstanceTypeOrgIsolation(t *testing.T) {
 			if rwOwn.Code != nethttp.StatusOK {
 				t.Fatalf("own instance type: status = %d, want 200; body=%s", rwOwn.Code, rwOwn.Body.String())
 			}
-			var it forgesdk.InstanceType
+			var it nicosdk.InstanceType
 			if err := json.Unmarshal(rwOwn.Body.Bytes(), &it); err != nil {
 				t.Fatalf("decode instance type: %v; body=%s", err, rwOwn.Body.String())
 			}
@@ -426,12 +426,13 @@ func TestInstanceTypeRoutePrecedence(t *testing.T) {
 	}
 
 	// A genuine instance sub-route (instanceId != "type") still reaches the
-	// diagnostics handler and returns the catalog.
+	// diagnostics handler. The unified backend dispatcher rejects the unknown
+	// instance before returning the VM-only catalog.
 	rwRealDiag := authedGet(t, h, "/v2/org/"+testOrgID+"/forge/instance/inst-abc/diagnostics")
-	if rwRealDiag.Code != nethttp.StatusOK {
-		t.Fatalf("instance/{id}/diagnostics: status = %d, want 200; body=%s", rwRealDiag.Code, rwRealDiag.Body.String())
+	if rwRealDiag.Code != nethttp.StatusNotFound {
+		t.Fatalf("instance/{id}/diagnostics: status = %d, want 404; body=%s", rwRealDiag.Code, rwRealDiag.Body.String())
 	}
-	if !strings.Contains(rwRealDiag.Body.String(), "agent-logs") {
+	if !strings.Contains(rwRealDiag.Body.String(), "Instance") {
 		t.Fatalf("instance/{id}/diagnostics did not reach the diagnostics handler; body=%s", rwRealDiag.Body.String())
 	}
 

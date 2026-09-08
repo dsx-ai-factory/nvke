@@ -6,12 +6,15 @@ package http
 import (
 	nethttp "net/http"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 )
 
 func (s *Server) handleListSSHKeyGroups(w nethttp.ResponseWriter, r *nethttp.Request) {
 	page := parsePage(r)
-	siteID := r.URL.Query().Get("siteId")
+	siteID, ok := s.siteIDForList(w, r)
+	if !ok {
+		return
+	}
 
 	rows, err := s.store.ListSSHKeyGroups(r.Context(), siteID, page)
 	if err != nil {
@@ -19,7 +22,7 @@ func (s *Server) handleListSSHKeyGroups(w nethttp.ResponseWriter, r *nethttp.Req
 		return
 	}
 
-	resp := make([]forgesdk.SshKeyGroup, 0, len(rows))
+	resp := make([]nicosdk.SshKeyGroup, 0, len(rows))
 	for _, row := range rows {
 		resp = append(resp, toSDKSSHKeyGroup(row, siteID))
 	}

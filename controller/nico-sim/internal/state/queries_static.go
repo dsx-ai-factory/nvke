@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package state provides SQLite-backed persistence for nico-vms.
+// Package state provides SQLite-backed persistence for nico-sim.
 package state
 
 import (
@@ -9,6 +9,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+
+	"github.com/uptrace/bun"
 )
 
 // GetTenantByOrg returns the tenant seeded for the given organisation ID.
@@ -26,6 +29,43 @@ func (s *Store) GetTenantByOrg(ctx context.Context, orgID string) (TenantRow, er
 		return row, fmt.Errorf("failed to get tenant for org %s: %w", orgID, err)
 	}
 	return row, nil
+}
+
+func (s *Store) GetSiteByID(ctx context.Context, siteID string) (SiteRow, error) {
+	var site SiteRow
+	if err := s.db.NewSelect().Model(&site).Where("id = ?", siteID).Scan(ctx); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return SiteRow{}, ErrNotFound
+		}
+		return SiteRow{}, fmt.Errorf("failed to get site %s: %w", siteID, err)
+	}
+	return site, nil
+}
+
+func (s *Store) GetSiteForOrg(ctx context.Context, orgID, siteID string) (SiteRow, error) {
+	tenant, err := s.GetTenantByOrg(ctx, orgID)
+	if err != nil {
+		return SiteRow{}, err
+	}
+	site, err := s.GetSiteByID(ctx, siteID)
+	if err != nil {
+		return SiteRow{}, err
+	}
+	if site.TenantID != tenant.ID {
+		return SiteRow{}, ErrNotFound
+	}
+	return site, nil
+}
+
+func (s *Store) GetVPCByID(ctx context.Context, vpcID string) (VPCRow, error) {
+	var vpc VPCRow
+	if err := s.db.NewSelect().Model(&vpc).Where("id = ?", vpcID).Scan(ctx); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return VPCRow{}, ErrNotFound
+		}
+		return VPCRow{}, fmt.Errorf("failed to get vpc %s: %w", vpcID, err)
+	}
+	return vpc, nil
 }
 
 func (s *Store) ListSites(ctx context.Context, orgID string, page Page) ([]SiteRow, error) {
@@ -110,17 +150,6 @@ func (s *Store) ListSubnets(ctx context.Context, siteID string, page Page) ([]Su
 	return rows, nil
 }
 
-func (s *Store) ListAllSubnets(ctx context.Context) ([]SubnetRow, error) {
-	var rows []SubnetRow
-	if err := s.db.NewSelect().
-		Model(&rows).
-		Order("id ASC").
-		Scan(ctx); err != nil {
-		return nil, fmt.Errorf("failed to list all subnets: %w", err)
-	}
-	return rows, nil
-}
-
 func (s *Store) ListVPCPrefixes(ctx context.Context, siteID string, page Page) ([]VPCPrefixRow, error) {
 	page = normalizePage(page)
 	var rows []VPCPrefixRow
@@ -136,25 +165,12 @@ func (s *Store) ListVPCPrefixes(ctx context.Context, siteID string, page Page) (
 	return rows, nil
 }
 
-func (s *Store) ListAllVPCPrefixes(ctx context.Context) ([]VPCPrefixRow, error) {
-	var rows []VPCPrefixRow
-	if err := s.db.NewSelect().
-		Model(&rows).
-		Order("id ASC").
-		Scan(ctx); err != nil {
-		return nil, fmt.Errorf("failed to list all vpc prefixes: %w", err)
-	}
-	return rows, nil
-}
-
 func (s *Store) ListSSHKeyGroups(ctx context.Context, siteID string, page Page) ([]SSHKeyGroupRow, error) {
 	page = normalizePage(page)
 	var rows []SSHKeyGroupRow
 	if err := s.db.NewSelect().
 		Model(&rows).
 		Order("id ASC").
-		Limit(page.Size).
-		Offset((page.Number - 1) * page.Size).
 		Scan(ctx); err != nil {
 		return nil, fmt.Errorf("failed to list ssh key groups: %w", err)
 	}
@@ -172,7 +188,12 @@ func (s *Store) ListSSHKeyGroups(ctx context.Context, siteID string, page Page) 
 			}
 		}
 	}
-	return filtered, nil
+	start := (page.Number - 1) * page.Size
+	if start >= len(filtered) {
+		return []SSHKeyGroupRow{}, nil
+	}
+	end := min(start+page.Size, len(filtered))
+	return filtered[start:end], nil
 }
 
 func (s *Store) ListIPBlocks(ctx context.Context, siteID string, page Page) ([]IPBlockRow, error) {
@@ -261,6 +282,110 @@ func (s *Store) GetInstanceTypeByID(ctx context.Context, id string) (InstanceTyp
 	return row, nil
 }
 
+func (s *Store) ListSitesByBackend(ctx context.Context, backend SiteBackend) ([]SiteRow, error) {
+	var rows []SiteRow
+	if err := s.db.NewSelect().Model(&rows).Where("backend = ?", backend).Order("id ASC").Scan(ctx); err != nil {
+		return nil, fmt.Errorf("failed to list %s sites: %w", backend, err)
+	}
+	return rows, nil
+}
+
+// ListVMSubnets returns the subnets attached to VM sites.
+func (s *Store) ListVMSubnets(ctx context.Context) ([]SubnetRow, error) {
+	var rows []SubnetRow
+	if err := s.db.NewSelect().
+		TableExpr("subnets AS subnet").
+		ColumnExpr("subnet.*").
+		Join("JOIN sites AS site ON site.id = subnet.site_id").
+		Where("site.backend = ?", SiteBackendVM).
+		OrderExpr("subnet.id ASC").
+		Scan(ctx, &rows); err != nil {
+		return nil, fmt.Errorf("failed to list VM subnets: %w", err)
+	}
+	return rows, nil
+}
+
+// ListVMVPCPrefixes returns the VPC prefixes attached to VM sites.
+func (s *Store) ListVMVPCPrefixes(ctx context.Context) ([]VPCPrefixRow, error) {
+	var rows []VPCPrefixRow
+	if err := s.db.NewSelect().
+		TableExpr("vpc_prefixes AS prefix").
+		ColumnExpr("prefix.*").
+		Join("JOIN sites AS site ON site.id = prefix.site_id").
+		Where("site.backend = ?", SiteBackendVM).
+		OrderExpr("prefix.id ASC").
+		Scan(ctx, &rows); err != nil {
+		return nil, fmt.Errorf("failed to list VM vpc prefixes: %w", err)
+	}
+	return rows, nil
+}
+
+// GetContainerSiteConfig returns the catalog IDs for the single container site.
+func (s *Store) GetContainerSiteConfig(ctx context.Context) (ContainerSiteConfig, error) {
+	sites, err := s.ListSitesByBackend(ctx, SiteBackendContainer)
+	if err != nil {
+		return ContainerSiteConfig{}, err
+	}
+	if len(sites) != 1 {
+		return ContainerSiteConfig{}, fmt.Errorf("container backend requires exactly one site, found %d", len(sites))
+	}
+	site := sites[0]
+
+	var tenant TenantRow
+	if err := s.db.NewSelect().Model(&tenant).Where("id = ?", site.TenantID).Scan(ctx); err != nil {
+		return ContainerSiteConfig{}, fmt.Errorf("resolve container tenant %s: %w", site.TenantID, err)
+	}
+	var vpcs []VPCRow
+	if err := s.db.NewSelect().Model(&vpcs).Where("site_id = ?", site.ID).Order("id ASC").Scan(ctx); err != nil {
+		return ContainerSiteConfig{}, fmt.Errorf("resolve container vpc: %w", err)
+	}
+	if len(vpcs) != 1 {
+		return ContainerSiteConfig{}, fmt.Errorf("container site %s requires exactly one vpc, found %d", site.ID, len(vpcs))
+	}
+	var subnets []SubnetRow
+	if err := s.db.NewSelect().Model(&subnets).Where("site_id = ?", site.ID).Order("id ASC").Scan(ctx); err != nil {
+		return ContainerSiteConfig{}, fmt.Errorf("resolve container subnet: %w", err)
+	}
+	if len(subnets) != 1 || subnets[0].VPCID != vpcs[0].ID {
+		return ContainerSiteConfig{}, fmt.Errorf("container site %s requires exactly one subnet in vpc %s", site.ID, vpcs[0].ID)
+	}
+	var instanceTypes []InstanceTypeRow
+	if err := s.db.NewSelect().Model(&instanceTypes).Where("site_id = ?", site.ID).Order("id ASC").Scan(ctx); err != nil {
+		return ContainerSiteConfig{}, fmt.Errorf("resolve container instance type: %w", err)
+	}
+	if len(instanceTypes) != 1 {
+		return ContainerSiteConfig{}, fmt.Errorf("container site %s requires exactly one instance type, found %d", site.ID, len(instanceTypes))
+	}
+	var groups []SSHKeyGroupRow
+	if err := s.db.NewSelect().Model(&groups).Order("id ASC").Scan(ctx); err != nil {
+		return ContainerSiteConfig{}, fmt.Errorf("resolve container ssh key group: %w", err)
+	}
+	containerGroups := make([]SSHKeyGroupRow, 0, len(groups))
+	for _, group := range groups {
+		siteIDs, decodeErr := group.SiteIDs()
+		if decodeErr != nil {
+			return ContainerSiteConfig{}, fmt.Errorf("decode ssh key group %s site IDs: %w", group.ID, decodeErr)
+		}
+		if slices.Contains(siteIDs, site.ID) {
+			containerGroups = append(containerGroups, group)
+		}
+	}
+	groups = containerGroups
+	if len(groups) != 1 {
+		return ContainerSiteConfig{}, fmt.Errorf("container site %s requires exactly one ssh key group, found %d", site.ID, len(groups))
+	}
+
+	return ContainerSiteConfig{
+		OrgID:          tenant.OrgID,
+		TenantID:       tenant.ID,
+		SiteID:         site.ID,
+		VPCID:          vpcs[0].ID,
+		SubnetID:       subnets[0].ID,
+		InstanceTypeID: instanceTypes[0].ID,
+		SSHKeyGroupID:  groups[0].ID,
+	}, nil
+}
+
 func (s *Store) ListInstanceTypes(ctx context.Context, siteID string, page Page) ([]InstanceTypeRow, error) {
 	page = normalizePage(page)
 	var rows []InstanceTypeRow
@@ -284,13 +409,18 @@ func (s *Store) CountActiveInstancesByType(ctx context.Context, siteID string) (
 
 	var rows []row
 	if err := s.db.NewSelect().
-		Table("instances").
-		Column("instance_type_id").
+		TableExpr("instances AS instance").
+		ColumnExpr("instance.instance_type_id").
 		ColumnExpr("COUNT(*) AS cnt").
-		Where("site_id = ?", siteID).
-		Where("desired_state = ?", DesiredStatePresent).
-		Where("observed_state != ?", ObservedStateDeleted).
-		Group("instance_type_id").
+		Join("LEFT JOIN vms AS vm ON vm.instance_id = instance.id").
+		Where("instance.site_id = ?", siteID).
+		WhereGroup(" AND ", func(query *bun.SelectQuery) *bun.SelectQuery {
+			return query.
+				WhereOr("instance.backend = ?", SiteBackendContainer).
+				WhereOr("(instance.backend = ? AND vm.desired_state = ? AND vm.observed_state != ?)",
+					SiteBackendVM, DesiredStatePresent, ObservedStateDeleted)
+		}).
+		Group("instance.instance_type_id").
 		Scan(ctx, &rows); err != nil {
 		return nil, fmt.Errorf("failed counting active instances: %w", err)
 	}

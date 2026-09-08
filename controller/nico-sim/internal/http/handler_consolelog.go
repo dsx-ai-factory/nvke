@@ -38,6 +38,10 @@ func (s *Server) handleConsoleLog(w nethttp.ResponseWriter, r *nethttp.Request) 
 		nethttp.Error(w, "missing instance ID", nethttp.StatusBadRequest)
 		return
 	}
+	if _, _, err := s.assertVMBackend(r, instanceID); err != nil {
+		writeBackendError(w, err)
+		return
+	}
 
 	logPath := s.findConsoleLog(instanceID)
 	if logPath == "" {

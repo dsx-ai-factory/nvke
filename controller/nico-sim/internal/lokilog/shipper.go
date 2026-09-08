@@ -228,15 +228,15 @@ type instanceMeta struct {
 
 func (w *TargetsWriter) getInstanceMeta(ctx context.Context) map[string]instanceMeta {
 	result := make(map[string]instanceMeta)
-	rows, err := w.store.ListInstances(ctx, state.ListInstancesFilter{}, state.Page{Number: 1, Size: 1000})
+	rows, err := w.store.ListInstances(ctx, state.ListInstancesFilter{Backend: state.SiteBackendVM}, state.Page{Number: 1, Size: 1000})
 	if err != nil {
 		return result
 	}
 	for _, row := range rows {
-		result[row.Instance.ID] = instanceMeta{
-			name:   row.Instance.Name,
-			siteID: row.Instance.SiteID,
-			status: row.Instance.ObservedState,
+		result[row.ID] = instanceMeta{
+			name:   row.Name,
+			siteID: row.SiteID,
+			status: row.VM.ObservedState,
 		}
 	}
 	return result

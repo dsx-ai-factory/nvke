@@ -797,7 +797,7 @@ func capdNodePoolSpec(pool nke.NodePoolSpec, defaultName, defaultNodeNamePrefix 
 	}
 }
 
-// NICo mock seed identifiers, mirroring hack/create-local-nico-cluster.sh.
+// NICo container seed identifiers, mirroring hack/create-local-nico-cluster.sh.
 const (
 	nicoSiteID         = "00000000-0000-0000-0000-000000000001"
 	nicoVpcID          = "00000000-0000-0000-0000-000000000002"
@@ -848,7 +848,7 @@ func nicoNodePoolSpecs(pools []nke.NodePoolSpec, defaultName, defaultNodeNamePre
 }
 
 // nico-vms Forge emulator seed identifiers, mirroring
-// cloud-workflow-engine/nico-vms/internal/seed/default-seed.yaml. The local
+// cloud-workflow-engine/nico-sim/internal/seed/default-seed.yaml. The local
 // nico-vms environment always seeds these deterministic IDs.
 const (
 	nicoVMSOrgID           = "novxwn552ssc"

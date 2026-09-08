@@ -6,12 +6,15 @@ package http
 import (
 	nethttp "net/http"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 )
 
 func (s *Server) handleListSubnets(w nethttp.ResponseWriter, r *nethttp.Request) {
 	page := parsePage(r)
-	siteID := r.URL.Query().Get("siteId")
+	siteID, ok := s.siteIDForList(w, r)
+	if !ok {
+		return
+	}
 
 	rows, err := s.store.ListSubnets(r.Context(), siteID, page)
 	if err != nil {
@@ -19,7 +22,7 @@ func (s *Server) handleListSubnets(w nethttp.ResponseWriter, r *nethttp.Request)
 		return
 	}
 
-	resp := make([]forgesdk.Subnet, 0, len(rows))
+	resp := make([]nicosdk.Subnet, 0, len(rows))
 	for _, row := range rows {
 		resp = append(resp, toSDKSubnet(row))
 	}

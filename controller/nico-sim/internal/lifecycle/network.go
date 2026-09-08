@@ -39,7 +39,7 @@ type NetworkManager interface {
 	// NeedsDHCP reports whether this instance should obtain its IP via DHCP.
 	// Libvirt-network mode always returns true (libvirt's dnsmasq owns the
 	// address space). Bridge mode delegates to instance.UsesDHCP().
-	NeedsDHCP(instance state.InstanceRow) bool
+	NeedsDHCP(instance state.Instance) bool
 
 	// WriteReservation persists a dnsmasq dhcp-host entry for the instance.
 	// Libvirt-network mode is a no-op (libvirt's dnsmasq manages its own leases).
@@ -99,7 +99,7 @@ func (n nicoNetwork) EnsureSetup(ctx context.Context) error {
 	return n.runtime.EnsureBridge(ctx, n.bridgeName, n.bridgeCIDR)
 }
 
-func (n nicoNetwork) NeedsDHCP(instance state.InstanceRow) bool {
+func (n nicoNetwork) NeedsDHCP(instance state.Instance) bool {
 	return instance.UsesDHCP()
 }
 
@@ -154,7 +154,7 @@ func (n *libvirtNetwork) EnsureSetup(ctx context.Context) error {
 	return nil
 }
 
-func (n *libvirtNetwork) NeedsDHCP(_ state.InstanceRow) bool {
+func (n *libvirtNetwork) NeedsDHCP(_ state.Instance) bool {
 	return true // libvirt's dnsmasq owns the address space for all VMs
 }
 

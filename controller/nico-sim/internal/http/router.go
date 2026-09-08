@@ -4,11 +4,14 @@
 package http
 
 import (
+	"context"
 	"log/slog"
 	nethttp "net/http"
 	"os"
 	"path/filepath"
 	"strings"
+
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/sshexec"
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
@@ -17,34 +20,48 @@ import (
 // HTTPMethod is an HTTP method name (e.g. "GET", "POST").
 type HTTPMethod = string
 
+// ContainerService provides the Docker operations used by containerBackend.
+// The real, disabled, and test implementations all satisfy this interface.
+type ContainerService interface {
+	Create(ctx context.Context, instanceID string, req nicosdk.InstanceCreateRequest) (*nicosdk.Instance, error)
+	Get(ctx context.Context, instanceID string) (*nicosdk.Instance, error)
+	Update(ctx context.Context, instanceID string, req nicosdk.InstanceUpdateRequest) (*nicosdk.Instance, error)
+	Delete(ctx context.Context, instanceID string, req *nicosdk.InstanceDeleteRequest) error
+}
+
 // Server holds dependencies shared by all HTTP handlers.
 type Server struct {
-	store          *state.Store
-	logger         *slog.Logger
-	logMethods     map[string]bool
-	consoleSSHPort int
-	filesDir       string
-	instancesDir   string
-	sshConfig      sshexec.Config
+	store            *state.Store
+	logger           *slog.Logger
+	logMethods       map[string]bool
+	filesDir         string
+	instancesDir     string
+	sshConfig        sshexec.Config
+	vmBackend        vmBackend
+	containerBackend containerBackend
 }
 
 // NewHandler wires every route into an http.NewServeMux and wraps it with
 // the logging and auth middleware chain.
 // logMethods controls which HTTP methods produce a log line; a nil or empty
 // slice disables request logging entirely.
-func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod, consoleSSHPort int, filesDir, instancesDir string, sshCfg sshexec.Config) nethttp.Handler {
+func NewHandler(store *state.Store, containers ContainerService, logger *slog.Logger, logMethods []HTTPMethod, consoleSSHPort int, filesDir, instancesDir string, sshCfg sshexec.Config) nethttp.Handler {
+	if containers == nil {
+		containers = DisabledContainers{}
+	}
 	methodSet := make(map[string]bool, len(logMethods))
 	for _, m := range logMethods {
 		methodSet[m] = true
 	}
 	s := &Server{
-		store:          store,
-		logger:         logger.With("component", "http"),
-		logMethods:     methodSet,
-		consoleSSHPort: consoleSSHPort,
-		filesDir:       filesDir,
-		instancesDir:   instancesDir,
-		sshConfig:      sshCfg,
+		store:            store,
+		logger:           logger.With("component", "http"),
+		logMethods:       methodSet,
+		filesDir:         filesDir,
+		instancesDir:     instancesDir,
+		sshConfig:        sshCfg,
+		vmBackend:        vmBackend{store: store, consoleSSHPort: consoleSSHPort},
+		containerBackend: containerBackend{store: store, containers: containers},
 	}
 
 	mux := nethttp.NewServeMux()
@@ -74,7 +91,6 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 	registerV2(mux, "POST", "instance", s.handleCreateInstance)
 	registerV2(mux, "PATCH", "instance/{instanceId}", s.handlePatchInstance)
 	registerV2(mux, "DELETE", "instance/{instanceId}", s.handleDeleteInstance)
-
 	// ── Static data endpoints ── v1 paths ────────────────────────────────
 	mux.HandleFunc("GET /v1/orgs/{orgId}/sites", s.handleListSites)
 	mux.HandleFunc("GET /v1/orgs/{orgId}/vpcs", s.handleListVPCs)
@@ -88,6 +104,7 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 
 	// ── Static data endpoints ── v2 paths (carbide + forge) ──────────────
 	registerV2(mux, "GET", "site", s.handleListSites)
+	registerV2(mux, "GET", "site/{siteId}", s.handleGetSite)
 	registerV2(mux, "GET", "vpc", s.handleListVPCs)
 	// Single VPC lookup — CAPNICo reads VPC name for machine topology. Safe on
 	// the main mux: "vpc/{vpcId}" has no wildcard sibling under "vpc" (unlike
@@ -104,7 +121,6 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 	// ── Tenant endpoints ── v2 paths (carbide + forge) ───────────────────
 	// CAPNICo resolves its tenant ID here before creating any instance.
 	registerV2(mux, "GET", "tenant/current", s.handleGetCurrentTenant)
-
 	// ── Diagnostics endpoints ───────────────────────────────────────────
 	mux.HandleFunc("GET /v1/orgs/{orgId}/instances/{instanceId}/diagnostics", s.handleListDiagnostics)
 	mux.HandleFunc("GET /v1/orgs/{orgId}/instances/{instanceId}/diagnostics/{itemId}", s.handleGetDiagnostic)
@@ -158,13 +174,14 @@ func NewHandler(store *state.Store, logger *slog.Logger, logMethods []HTTPMethod
 	return s.loggingMiddleware(s.authMiddleware(root))
 }
 
-// handleHealthz returns a simple health-check response.
+// handleHealthz reports whether the HTTP server is running. Startup performs
+// any required dependency checks.
 func (s *Server) handleHealthz(w nethttp.ResponseWriter, _ *nethttp.Request) {
 	writeJSON(w, nethttp.StatusOK, map[string]string{"status": "ok"})
 }
 
 // handleEmptyList returns an empty JSON array. Used as a stub for Forge API
-// endpoints that nico-vms doesn't implement (e.g. nvlink-logical-partitions).
+// endpoints that nico-sim doesn't implement (e.g. nvlink-logical-partitions).
 func (s *Server) handleEmptyList(w nethttp.ResponseWriter, _ *nethttp.Request) {
 	writeJSON(w, nethttp.StatusOK, []struct{}{})
 }

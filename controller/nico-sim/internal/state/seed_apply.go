@@ -14,6 +14,9 @@ import (
 )
 
 func (s *Store) ApplySeed(ctx context.Context, doc seed.Document) error {
+	if err := doc.NormalizeAndValidate(); err != nil {
+		return err
+	}
 	now := s.nowFn()
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		for _, tenant := range doc.Tenants {
@@ -32,6 +35,7 @@ func (s *Store) ApplySeed(ctx context.Context, doc seed.Document) error {
 				ID:                        site.ID,
 				Name:                      site.Name,
 				TenantID:                  site.TenantID,
+				Backend:                   SiteBackend(site.Backend),
 				CapabilitiesNativeNetwork: site.Capabilities.NativeNetworking,
 				CreatedAt:                 now,
 				UpdatedAt:                 now,

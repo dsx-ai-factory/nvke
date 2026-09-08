@@ -10,7 +10,8 @@
 #   1. present a Linux TPM device (`/dev/tpm0` or `/dev/tpmrm0`) so the
 #      SPIRE TPM attestor can use its normal device-oriented path
 #   2. leave a DER-encoded EK certificate on disk at `/var/lib/swtpm/ek.cert`
-#      so nico-mock can surface Forge-compatible `tpmEkCertificate` data
+#      so the nico-vms container backend can surface Forge-compatible
+#      `tpmEkCertificate` data
 #   3. start that vTPM plumbing before `spire-agent` and `nke-agent`, so CWE
 #      preflight sees a SPIFFE-enabled node whose TPM identity is already ready
 
@@ -56,7 +57,7 @@ RUN set -eux; \
     ln -s /usr/local/sbin/kubeadm-systemverification-shim /usr/bin/kubeadm
 
 # node-agent uses `cloud-init status` as its bootstrap completion contract.
-# Mock NICo simulates cloud init by creating files and executing commands
+# nico-containers mocks cloud init by creating files and executing commands
 # directly through docker after the container starts. It creates a text file
 # with the state of this process. Our cloud-init mock script just prints this
 # state so the node-agent can perform its check.

@@ -21,11 +21,11 @@ func ValidateVPCAndSubnets(ctx context.Context, store *state.Store, bridgeCIDR s
 		return fmt.Errorf("invalid bridge cidr %q: %w", bridgeCIDR, err)
 	}
 
-	subnets, err := store.ListAllSubnets(ctx)
+	subnets, err := store.ListVMSubnets(ctx)
 	if err != nil {
 		return fmt.Errorf("failed listing subnets for cidr validation: %w", err)
 	}
-	prefixes, err := store.ListAllVPCPrefixes(ctx)
+	prefixes, err := store.ListVMVPCPrefixes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed listing vpc prefixes for cidr validation: %w", err)
 	}

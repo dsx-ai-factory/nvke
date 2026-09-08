@@ -24,7 +24,14 @@ const (
 	ObservedStateDeleted      = "deleted"
 	ObservedStateStopped      = "stopped"
 	ObservedStateError        = "error"
+
+	SiteBackendVM        SiteBackend = "vm"
+	SiteBackendContainer SiteBackend = "container"
 )
+
+// SiteBackend selects which independent instance lifecycle owns a site's
+// machines. Values outside the constants above are never dispatched.
+type SiteBackend string
 
 type TenantRow struct {
 	bun.BaseModel `bun:"table:tenants"`
@@ -35,12 +42,25 @@ type TenantRow struct {
 
 type SiteRow struct {
 	bun.BaseModel             `bun:"table:sites"`
-	ID                        string    `bun:"id,pk"`
-	Name                      string    `bun:"name,notnull"`
-	TenantID                  string    `bun:"tenant_id,notnull"`
-	CapabilitiesNativeNetwork bool      `bun:"capabilities_native_networking,notnull"`
-	CreatedAt                 time.Time `bun:"created_at,notnull"`
-	UpdatedAt                 time.Time `bun:"updated_at,notnull"`
+	ID                        string      `bun:"id,pk"`
+	Name                      string      `bun:"name,notnull"`
+	TenantID                  string      `bun:"tenant_id,notnull"`
+	Backend                   SiteBackend `bun:"backend,notnull,default:'vm'"`
+	CapabilitiesNativeNetwork bool        `bun:"capabilities_native_networking,notnull"`
+	CreatedAt                 time.Time   `bun:"created_at,notnull"`
+	UpdatedAt                 time.Time   `bun:"updated_at,notnull"`
+}
+
+// ContainerSiteConfig identifies the catalog records used by the single
+// container site supported by this service.
+type ContainerSiteConfig struct {
+	OrgID          string
+	TenantID       string
+	SiteID         string
+	VPCID          string
+	SubnetID       string
+	InstanceTypeID string
+	SSHKeyGroupID  string
 }
 
 type VPCRow struct {
@@ -113,39 +133,60 @@ type InfiniBandPartitionRow struct {
 	SiteID        string `bun:"site_id,notnull"`
 }
 
-type InstanceRow struct {
-	bun.BaseModel      `bun:"table:instances"`
-	ID                 string     `bun:"id,pk"`
-	Name               string     `bun:"name,notnull"`
-	TenantID           string     `bun:"tenant_id,notnull"`
-	SiteID             string     `bun:"site_id,notnull"`
-	InstanceTypeID     string     `bun:"instance_type_id,notnull"`
-	VPCID              string     `bun:"vpc_id,notnull"`
-	MachineID          string     `bun:"machine_id"`
-	IpxeScript         string     `bun:"ipxe_script"`
-	UserData           string     `bun:"user_data"`
-	LabelsJSON         string     `bun:"labels_json,notnull"`
-	SSHKeyGroupIDsJSON string     `bun:"ssh_key_group_ids_json,notnull"`
-	DesiredState       string     `bun:"desired_state,notnull"`
-	ObservedState      string     `bun:"observed_state,notnull"`
-	Status             string     `bun:"status,notnull"`
-	ErrorReason        string     `bun:"error_reason"`
-	RebootRequested    bool       `bun:"reboot_requested,notnull"`
-	PhoneHomeEnabled   bool       `bun:"phone_home_enabled,notnull"`
-	PhonedHomeAt       *time.Time `bun:"phoned_home_at"`
-	TpmEkCertificate   string     `bun:"tpm_ek_certificate"`
-	CreatedAt          time.Time  `bun:"created_at,notnull"`
-	UpdatedAt          time.Time  `bun:"updated_at,notnull"`
+type instanceRow struct {
+	bun.BaseModel      `bun:"table:instances,alias:instance"`
+	ID                 string                 `bun:"id,pk"`
+	Name               string                 `bun:"name,notnull"`
+	Backend            SiteBackend            `bun:"backend,notnull"`
+	TenantID           string                 `bun:"tenant_id,notnull"`
+	SiteID             string                 `bun:"site_id,notnull"`
+	InstanceTypeID     string                 `bun:"instance_type_id,notnull"`
+	VPCID              string                 `bun:"vpc_id,notnull"`
+	MachineID          string                 `bun:"machine_id"`
+	IpxeScript         string                 `bun:"ipxe_script"`
+	UserData           string                 `bun:"user_data"`
+	LabelsJSON         string                 `bun:"labels_json,notnull"`
+	SSHKeyGroupIDsJSON string                 `bun:"ssh_key_group_ids_json,notnull"`
+	Status             string                 `bun:"status,notnull"`
+	TpmEkCertificate   string                 `bun:"tpm_ek_certificate"`
+	PhoneHomeEnabled   bool                   `bun:"phone_home_enabled,notnull"`
+	CreatedAt          time.Time              `bun:"created_at,notnull"`
+	UpdatedAt          time.Time              `bun:"updated_at,notnull"`
+	VM                 *VMState               `bun:"rel:has-one,join:id=instance_id"`
+	Container          *ContainerState        `bun:"rel:has-one,join:id=instance_id"`
+	Interfaces         []InstanceInterfaceRow `bun:"rel:has-many,join:id=instance_id"`
+}
+
+// Instance is the fully hydrated instance returned by Store.
+type Instance = instanceRow
+
+// VMState contains only the desired and observed state consumed by the VM
+// reconciler. A row can exist only for a backend=vm parent instance.
+type VMState struct {
+	bun.BaseModel   `bun:"table:vms"`
+	InstanceID      string     `bun:"instance_id,pk"`
+	DesiredState    string     `bun:"desired_state,notnull"`
+	ObservedState   string     `bun:"observed_state,notnull"`
+	ErrorReason     string     `bun:"error_reason"`
+	RebootRequested bool       `bun:"reboot_requested,notnull"`
+	PhonedHomeAt    *time.Time `bun:"phoned_home_at"`
+}
+
+// ContainerState records that a container backend owns an instance. Docker
+// remains authoritative for live container state.
+type ContainerState struct {
+	bun.BaseModel `bun:"table:containers"`
+	InstanceID    string `bun:"instance_id,pk"`
 }
 
 // UsesDHCP returns true when the instance gets its IP via DHCP rather than
 // static assignment from IPAM. Derived from whether an iPXE script is present —
 // iPXE instances boot production images that use DHCP from dnsmasq.
-func (r InstanceRow) UsesDHCP() bool {
+func (r instanceRow) UsesDHCP() bool {
 	return r.IpxeScript != ""
 }
 
-func (r InstanceRow) Labels() (map[string]string, error) {
+func (r instanceRow) Labels() (map[string]string, error) {
 	out := map[string]string{}
 	if r.LabelsJSON == "" {
 		return out, nil
@@ -153,10 +194,13 @@ func (r InstanceRow) Labels() (map[string]string, error) {
 	if err := json.Unmarshal([]byte(r.LabelsJSON), &out); err != nil {
 		return nil, fmt.Errorf("failed to decode labels_json for %s: %w", r.ID, err)
 	}
+	if out == nil {
+		out = map[string]string{}
+	}
 	return out, nil
 }
 
-func (r InstanceRow) SSHKeyGroupIDs() ([]string, error) {
+func (r instanceRow) SSHKeyGroupIDs() ([]string, error) {
 	var out []string
 	if r.SSHKeyGroupIDsJSON == "" {
 		return out, nil
@@ -200,11 +244,6 @@ type IPAllocationRow struct {
 	InstanceID    string    `bun:"instance_id,notnull"`
 	InterfaceID   string    `bun:"interface_id,notnull"`
 	CreatedAt     time.Time `bun:"created_at,notnull"`
-}
-
-type InstanceWithInterfaces struct {
-	Instance   InstanceRow
-	Interfaces []InstanceInterfaceRow
 }
 
 type Page struct {

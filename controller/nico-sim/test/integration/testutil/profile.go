@@ -17,7 +17,7 @@ import (
 	nvmconfig "github.com/NVIDIA/nke/controller/nico-sim/internal/config"
 )
 
-// Config is an alias for the nico-vms config type so test packages don't
+// Config is an alias for the nico-sim config type so test packages don't
 // need to import the internal config package directly.
 type Config = nvmconfig.Config
 
@@ -38,7 +38,7 @@ func NewMockRuntimeProfile(t *testing.T) RuntimeProfile {
 	t.Setenv("NICO_VMS_VM_BACKEND", nvmconfig.VMBackendMock)
 	t.Setenv("NICO_VMS_LIBVIRT_URI", "mock://local")
 
-	SetDefaultEnv(t, "NICO_VMS_LOG_FORMAT", nvmconfig.LogFormatText)
+	SetDefaultEnv(t, "NICO_SIM_LOG_FORMAT", nvmconfig.LogFormatText)
 	SetDefaultEnv(t, "NICO_VMS_READINESS_PROBE_INTERVAL", "25ms")
 	SetDefaultEnv(t, "NICO_VMS_READINESS_TIMEOUT", "2s")
 	SetDefaultEnv(t, "NICO_VMS_VM_VCPUS", "2")
@@ -51,10 +51,11 @@ func NewMockRuntimeProfile(t *testing.T) RuntimeProfile {
 
 	cfg := MustParseConfig(t)
 	cfg.ListenAddr = ":0"
-	cfg.DBPath = filepath.Join(t.TempDir(), "nico-vms.db")
+	cfg.DBPath = filepath.Join(t.TempDir(), "nico-sim.db")
 	cfg.SeedPath = ""
 	cfg.BaseImage = ""
 	cfg.ConsoleSSHPort = 0 // auto-assign for tests
+	cfg.ContainerEnabled = false
 
 	return RuntimeProfile{
 		Name:         cfg.EffectiveVMBackend(),
@@ -107,8 +108,8 @@ func BuildRealVMProfile(backend string) (RuntimeProfile, error) {
 		os.Setenv("NICO_VMS_BASE_IMAGE", imagePath)
 	}
 
-	if os.Getenv("NICO_VMS_LOG_FORMAT") == "" {
-		os.Setenv("NICO_VMS_LOG_FORMAT", nvmconfig.LogFormatText)
+	if os.Getenv("NICO_SIM_LOG_FORMAT") == "" {
+		os.Setenv("NICO_SIM_LOG_FORMAT", nvmconfig.LogFormatText)
 	}
 
 	cfg, err := nvmconfig.Parse(slog.New(slog.NewTextHandler(os.Stderr, nil)))
@@ -117,6 +118,7 @@ func BuildRealVMProfile(backend string) (RuntimeProfile, error) {
 	}
 	cfg.VMBackend = backend
 	cfg.ConsoleSSHPort = 0 // auto-assign for tests
+	cfg.ContainerEnabled = false
 
 	if os.Getenv("NICO_VMS_READINESS_PROBE_INTERVAL") == "" {
 		cfg.ReadinessProbeInterval = 3 * time.Second

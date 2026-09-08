@@ -5,6 +5,7 @@ package http
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	nethttp "net/http"
 	"strconv"
@@ -122,4 +123,24 @@ func orgIDFromRequest(r *nethttp.Request) string {
 		return v
 	}
 	return r.PathValue("org")
+}
+
+// siteIDForList returns the optional siteId after verifying that it belongs to
+// the organization in the request path. On lookup failure it writes the Forge
+// error response and returns false, so callers must stop without writing a
+// second response.
+func (s *Server) siteIDForList(w nethttp.ResponseWriter, r *nethttp.Request) (string, bool) {
+	siteID := r.URL.Query().Get("siteId")
+	if siteID == "" {
+		return "", true
+	}
+	if _, err := s.store.GetSiteForOrg(r.Context(), orgIDFromRequest(r), siteID); err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			writeForgeError(w, nethttp.StatusNotFound, "Could not find Site with specified ID")
+		} else {
+			writeForgeError(w, nethttp.StatusInternalServerError, err.Error())
+		}
+		return "", false
+	}
+	return siteID, true
 }

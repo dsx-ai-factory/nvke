@@ -16,14 +16,20 @@ import (
 	_ "github.com/mattn/go-sqlite3" // sqlite driver; requires cgo
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
+
+	"github.com/NVIDIA/nke/controller/nico-sim/internal/apierr"
 )
 
+// The shared sentinels are re-exported so existing state.Err* call sites keep
+// working while errors.Is matches across backends.
 var (
-	ErrNotFound        = errors.New("not found")
-	ErrConflict        = errors.New("conflict")
+	ErrNotFound          = apierr.ErrNotFound
+	ErrConflict          = apierr.ErrConflict
+	ErrBadRequest        = apierr.ErrBadRequest
+	ErrOwnershipConflict = apierr.ErrOwnershipConflict
+
 	ErrSubnetExhausted = errors.New("subnet exhausted")
 	ErrVpcPfxExhausted = errors.New("vpc prefix exhausted")
-	ErrBadRequest      = errors.New("bad request")
 )
 
 type Store struct {
@@ -51,13 +57,16 @@ func Open(dbPath string) (*Store, error) {
 	}
 
 	if _, err := store.db.Exec("PRAGMA journal_mode = WAL;"); err != nil {
+		_ = store.db.Close()
 		return nil, fmt.Errorf("failed to set journal_mode: %w", err)
 	}
 	if _, err := store.db.Exec("PRAGMA foreign_keys = ON;"); err != nil {
+		_ = store.db.Close()
 		return nil, fmt.Errorf("failed to set foreign_keys: %w", err)
 	}
 
 	if err := store.Bootstrap(context.Background()); err != nil {
+		_ = store.db.Close()
 		return nil, err
 	}
 
@@ -69,6 +78,10 @@ func (s *Store) Close() error {
 }
 
 func (s *Store) Bootstrap(ctx context.Context) error {
+	if err := s.migrateLegacyInstanceSchema(ctx); err != nil {
+		return fmt.Errorf("migrate instance schema: %w", err)
+	}
+
 	// Simple tables via bun CreateTable — these have straightforward schemas
 	// that bun can derive from struct tags.
 	models := []interface{}{
@@ -91,27 +104,9 @@ func (s *Store) Bootstrap(ctx context.Context) error {
 	// Complex tables with constraints — raw SQL for composite unique
 	// constraints, foreign-key cascades, and autoincrement PKs.
 	complexStmts := []string{
-		`CREATE TABLE IF NOT EXISTS instances (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			tenant_id TEXT NOT NULL,
-			site_id TEXT NOT NULL,
-			instance_type_id TEXT NOT NULL,
-			vpc_id TEXT NOT NULL,
-			machine_id TEXT,
-			ipxe_script TEXT,
-			user_data TEXT,
-			labels_json TEXT NOT NULL,
-			ssh_key_group_ids_json TEXT NOT NULL,
-			desired_state TEXT NOT NULL,
-			observed_state TEXT NOT NULL,
-			status TEXT NOT NULL,
-			error_reason TEXT,
-			reboot_requested INTEGER NOT NULL DEFAULT 0,
-			created_at DATETIME NOT NULL,
-			updated_at DATETIME NOT NULL,
-			UNIQUE(tenant_id, name)
-		);`,
+		createInstancesTableSQL,
+		createVMsTableSQL,
+		createContainersTableSQL,
 		`CREATE TABLE IF NOT EXISTS instance_interfaces (
 			id TEXT PRIMARY KEY,
 			instance_id TEXT NOT NULL,
@@ -139,15 +134,22 @@ func (s *Store) Bootstrap(ctx context.Context) error {
 			return fmt.Errorf("failed bootstrap statement: %w", err)
 		}
 	}
+	if _, err := s.db.ExecContext(ctx, `
+		INSERT OR IGNORE INTO containers (instance_id)
+		SELECT id FROM instances WHERE backend = 'container';
+	`); err != nil {
+		return fmt.Errorf("backfill container runtime records: %w", err)
+	}
+	if err := s.validateBackendStateRows(ctx); err != nil {
+		return err
+	}
 
 	// Schema migrations — add columns that may not exist in older databases.
 	// Each uses "IF NOT EXISTS" or ignores "duplicate column" errors.
 	migrations := []string{
-		`ALTER TABLE instances ADD COLUMN phone_home_enabled INTEGER NOT NULL DEFAULT 0;`,
-		`ALTER TABLE instances ADD COLUMN phoned_home_at DATETIME;`,
 		`ALTER TABLE instance_interfaces ADD COLUMN mac_address TEXT;`,
-		`ALTER TABLE instances ADD COLUMN tpm_ek_certificate TEXT;`,
 		`ALTER TABLE instance_types ADD COLUMN disk_gib INTEGER NOT NULL DEFAULT 0;`,
+		`ALTER TABLE sites ADD COLUMN backend TEXT NOT NULL DEFAULT 'vm';`,
 	}
 	for _, stmt := range migrations {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
@@ -162,15 +164,20 @@ func (s *Store) Bootstrap(ctx context.Context) error {
 	indexStmts := []string{
 		`CREATE INDEX IF NOT EXISTS idx_instances_site_id ON instances(site_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_instances_tenant_id ON instances(tenant_id);`,
-		`CREATE INDEX IF NOT EXISTS idx_instances_desired_observed ON instances(desired_state, observed_state);`,
+		`CREATE INDEX IF NOT EXISTS idx_instances_backend ON instances(backend);`,
+		`CREATE INDEX IF NOT EXISTS idx_vms_desired_observed ON vms(desired_state, observed_state);`,
 		`CREATE INDEX IF NOT EXISTS idx_interfaces_instance_id ON instance_interfaces(instance_id);`,
 		`CREATE INDEX IF NOT EXISTS idx_interfaces_mac ON instance_interfaces(mac_address);`,
 		`CREATE INDEX IF NOT EXISTS idx_alloc_scope ON ip_allocations(scope_type, scope_id);`,
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_tenants_org_id ON tenants(org_id);`,
 	}
 	for _, stmt := range indexStmts {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			return fmt.Errorf("failed bootstrap index statement: %w", err)
 		}
+	}
+	if _, err := s.db.ExecContext(ctx, `DROP TABLE IF EXISTS instance_routes;`); err != nil {
+		return fmt.Errorf("drop legacy instance routes table: %w", err)
 	}
 
 	return nil

@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package seed loads and normalizes nico-vms seed documents.
+// Package seed loads and normalizes nico-sim seed documents.
 package seed
 
 import (
@@ -18,6 +18,9 @@ import (
 // are derived from runtime config once. Existing persisted rows remain stable
 // because ApplySeed upserts without mutating non-key columns.
 func HydrateNetworkingCIDRs(doc Document, bridgeCIDR string) (Document, error) {
+	if err := doc.NormalizeAndValidate(); err != nil {
+		return Document{}, err
+	}
 	trimmedBridge := strings.TrimSpace(bridgeCIDR)
 	if trimmedBridge == "" {
 		return Document{}, fmt.Errorf("bridge cidr is required for seed hydration")
@@ -39,6 +42,9 @@ func HydrateNetworkingCIDRs(doc Document, bridgeCIDR string) (Document, error) {
 func hydrateSubnets(doc *Document, bridgeCIDR string) error {
 	for i := range doc.Subnets {
 		subnet := &doc.Subnets[i]
+		if siteBackend(doc, subnet.SiteID) == SiteBackendContainer {
+			continue
+		}
 		if strings.TrimSpace(subnet.CIDR) == "" {
 			subnet.CIDR = bridgeCIDR
 		}
@@ -65,6 +71,9 @@ func hydrateVPCPrefixes(doc *Document, bridgeNet *net.IPNet) error {
 	// Preserve explicitly configured prefixes and reserve their space.
 	for i := range doc.VPCPrefixes {
 		pfx := &doc.VPCPrefixes[i]
+		if siteBackend(doc, pfx.SiteID) == SiteBackendContainer {
+			continue
+		}
 		if strings.TrimSpace(pfx.Prefix) == "" {
 			continue
 		}
@@ -109,6 +118,9 @@ func hydrateVPCPrefixes(doc *Document, bridgeNet *net.IPNet) error {
 
 	missingIdx := make([]int, 0, len(doc.VPCPrefixes))
 	for i, pfx := range doc.VPCPrefixes {
+		if siteBackend(doc, pfx.SiteID) == SiteBackendContainer {
+			continue
+		}
 		if strings.TrimSpace(pfx.Prefix) == "" {
 			missingIdx = append(missingIdx, i)
 		}
@@ -129,6 +141,15 @@ func hydrateVPCPrefixes(doc *Document, bridgeNet *net.IPNet) error {
 		usedRanges = append(usedRanges, pfxRange)
 	}
 	return nil
+}
+
+func siteBackend(doc *Document, siteID string) SiteBackend {
+	for _, site := range doc.Sites {
+		if site.ID == siteID {
+			return site.Backend
+		}
+	}
+	return SiteBackendVM
 }
 
 type ipv4Range struct {

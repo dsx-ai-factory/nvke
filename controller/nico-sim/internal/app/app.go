@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package app provides the shared nico-vms application setup used by both the
+// Package app provides the shared nico-sim application setup used by both the
 // production server and integration tests.
 package app
 
@@ -20,6 +20,7 @@ import (
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/cloudinit"
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/config"
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/consolessh"
+	containerbackend "github.com/NVIDIA/nke/controller/nico-sim/internal/container"
 	nvmhttp "github.com/NVIDIA/nke/controller/nico-sim/internal/http"
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/lifecycle"
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/lokilog"
@@ -29,7 +30,7 @@ import (
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
 )
 
-// App holds the running nico-vms components.
+// App holds the running nico-sim components.
 type App struct {
 	Store          *state.Store
 	Engine         *lifecycle.Engine
@@ -64,6 +65,34 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 	if err := store.ApplySeed(ctx, hydratedSeedDoc); err != nil {
 		store.Close()
 		return nil, fmt.Errorf("apply seed: %w", err)
+	}
+	// When containers are disabled, use a service that returns unavailable for
+	// every container operation.
+	containers := nvmhttp.ContainerService(nvmhttp.DisabledContainers{})
+	if cfg.ContainerEnabled {
+		containerSite, siteErr := store.GetContainerSiteConfig(ctx)
+		if siteErr != nil {
+			store.Close()
+			return nil, fmt.Errorf("resolve container site configuration: %w", siteErr)
+		}
+		service, serviceErr := containerbackend.New(containerbackend.Config{
+			OrgID: containerSite.OrgID, TenantID: containerSite.TenantID, SiteID: containerSite.SiteID,
+			VPCID: containerSite.VPCID, SubnetID: containerSite.SubnetID, SSHKeyGroupID: containerSite.SSHKeyGroupID,
+			InstanceTypeID: containerSite.InstanceTypeID, NodeNetwork: cfg.ContainerNodeNetwork,
+			NodeImage: cfg.ContainerNodeImage, DockerBinary: cfg.ContainerDockerBinary,
+		}, logger)
+		if serviceErr != nil {
+			store.Close()
+			return nil, fmt.Errorf("initialize container backend: %w", serviceErr)
+		}
+		if healthErr := service.Health(ctx); healthErr != nil {
+			if cfg.ContainerRequireHealth {
+				store.Close()
+				return nil, fmt.Errorf("container backend health: %w", healthErr)
+			}
+			log.Warn("Container backend is unavailable; container operations will return 503", "error", healthErr)
+		}
+		containers = service
 	}
 
 	if cfg.EffectiveVMBackend() == config.VMBackendDarwinQEMU {
@@ -156,7 +185,7 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 		tw.Start(ctx)
 	}
 
-	handler := nvmhttp.NewHandler(store, logger, cfg.LogRequestMethods, consoleSSHPort, cfg.FilesDirectory(), cfg.WorkingDirectory(), sshexec.Config{
+	handler := nvmhttp.NewHandler(store, containers, logger, cfg.LogRequestMethods, consoleSSHPort, cfg.FilesDirectory(), cfg.WorkingDirectory(), sshexec.Config{
 		User:     cfg.DiagSSHUser,
 		Password: cfg.DiagSSHPassword,
 	})

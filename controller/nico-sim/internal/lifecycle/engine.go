@@ -109,7 +109,7 @@ func (e *Engine) detectOrphanedVMs(ctx context.Context) {
 		return
 	}
 
-	knownMachines, err := e.store.ListActiveMachineIDs(ctx)
+	knownMachines, err := e.store.ListActiveVMMachineIDs(ctx)
 	if err != nil {
 		e.logger.Error("Failed to list active machine IDs for orphan detection", "error", err)
 		return
@@ -163,7 +163,7 @@ func (e *Engine) dispatcher(ctx context.Context) {
 			close(e.taskCh)
 			return
 		case <-ticker.C:
-			candidates, err := e.store.ListReconcileCandidates(ctx)
+			candidates, err := e.store.ListVMReconcileCandidates(ctx)
 			if err != nil {
 				e.logger.Error("failed to list reconcile candidates", "error", err)
 				continue
@@ -232,7 +232,7 @@ func (e *Engine) reconcileInstance(ctx context.Context, instanceID string) error
 	}
 	defer lock.Unlock()
 
-	instanceWithInterfaces, err := e.store.GetInstanceByID(ctx, instanceID)
+	instance, err := e.store.GetInstance(ctx, instanceID)
 	if err != nil {
 		if err == state.ErrNotFound {
 			return nil
@@ -240,27 +240,29 @@ func (e *Engine) reconcileInstance(ctx context.Context, instanceID string) error
 		return err
 	}
 
-	log := e.logger.With("instanceName", instanceWithInterfaces.Instance.Name, "instanceID", instanceID)
-
-	instance := instanceWithInterfaces.Instance
-	if instance.DesiredState == state.DesiredStateAbsent {
-		return e.reconcileAbsent(ctx, instanceWithInterfaces, log)
+	if instance.VM == nil {
+		return nil
 	}
-	if instance.ObservedState == state.ObservedStateError {
+	log := e.logger.With("instanceName", instance.Name, "instanceID", instanceID)
+	vmRecord := instance.VM
+	if vmRecord.DesiredState == state.DesiredStateAbsent {
+		return e.reconcileAbsent(ctx, instance, log)
+	}
+	if vmRecord.ObservedState == state.ObservedStateError {
 		return nil
 	}
 
-	if instance.RebootRequested {
+	if vmRecord.RebootRequested {
 		return e.reconcileReboot(ctx, instance, log)
 	}
 
-	switch instance.ObservedState {
+	switch vmRecord.ObservedState {
 	case state.ObservedStateNew, state.ObservedStateProvisioning:
-		return e.reconcileProvisioning(ctx, instanceWithInterfaces, log)
+		return e.reconcileProvisioning(ctx, instance, log)
 	case state.ObservedStateRunning, state.ObservedStateRebooting:
-		return e.reconcileRunning(ctx, instanceWithInterfaces, log)
+		return e.reconcileRunning(ctx, instance, log)
 	case state.ObservedStateReady:
-		return e.reconcileReady(ctx, instanceWithInterfaces.Instance, log)
+		return e.reconcileReady(ctx, instance, log)
 	case state.ObservedStateStopped:
 		// TODO: consider auto-recovery of stopped instances
 		return nil
@@ -269,10 +271,9 @@ func (e *Engine) reconcileInstance(ctx context.Context, instanceID string) error
 	}
 }
 
-func (e *Engine) reconcileAbsent(ctx context.Context, in state.InstanceWithInterfaces, log *slog.Logger) error {
-	instance := in.Instance
+func (e *Engine) reconcileAbsent(ctx context.Context, instance state.Instance, log *slog.Logger) error {
 	log.Info("Marking instance as deleting")
-	if err := e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+	if err := e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 		Status:        ptr("deleting"),
 		ObservedState: ptr(state.ObservedStateDeleting),
 	}); err != nil {
@@ -292,7 +293,7 @@ func (e *Engine) reconcileAbsent(ctx context.Context, in state.InstanceWithInter
 	}
 
 	log.Info("Hard deleting instance from database")
-	if err := e.store.DeleteInstanceHard(ctx, instance.ID); err != nil {
+	if err := e.store.DeleteInstance(ctx, instance.ID); err != nil {
 		return fmt.Errorf("failed to hard delete instance %s: %w", instance.ID, err)
 	}
 
@@ -306,15 +307,14 @@ func (e *Engine) reconcileAbsent(ctx context.Context, in state.InstanceWithInter
 	return nil
 }
 
-func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWithInterfaces, log *slog.Logger) error {
-	instance := in.Instance
+func (e *Engine) reconcileProvisioning(ctx context.Context, instance state.Instance, log *slog.Logger) error {
 	// If machine already exists (e.g. after a process restart), check its state.
 	if instance.MachineID != "" {
 		log.Info("Machine exists, checking if it is running", "machineID", instance.MachineID)
 		running, err := e.runtime.IsRunning(ctx, instance.MachineID)
 		if err == nil && running {
 			log.Info("Machine is running, patching instance state to running", "machineID", instance.MachineID)
-			patch := state.InstanceStatePatch{
+			patch := state.VMInstanceStatePatch{
 				Status:        ptr("running"),
 				ObservedState: ptr(state.ObservedStateRunning),
 				ErrorReason:   ptr(""),
@@ -328,7 +328,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWit
 					patch.TpmEkCertificate = &ekCert
 				}
 			}
-			return e.store.PatchInstanceState(ctx, instance.ID, patch)
+			return e.store.PatchVMInstanceState(ctx, instance.ID, patch)
 		}
 		log.Info("Machine exists but is not running, deleting VM", "machineID", instance.MachineID)
 		// TODO: this should probably just mark the vm as errored, we don't know what happened here and if it's safe to recreate
@@ -347,12 +347,12 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWit
 	var firstIP string
 	if e.net.NeedsDHCP(instance) && !e.artifacts.MockMode {
 		// DHCP: no IP yet. VM will get one from dnsmasq. Register MAC + host entry.
-		e.registerDHCPInstance(ctx, instance, in.Interfaces, nicMAC, log)
+		e.registerDHCPInstance(ctx, instance, instance.Interfaces, nicMAC, log)
 	} else {
 		// Static: allocate IP via IPAM (idempotent — skips if already allocated).
-		firstIP, _ = firstInterfaceIP(in.Interfaces)
-		if firstIP == "" && len(in.Interfaces) > 0 {
-			ips, allocErr := e.store.AllocateAndStoreIPs(ctx, in.Interfaces[0], instance.ID)
+		firstIP, _ = firstInterfaceIP(instance.Interfaces)
+		if firstIP == "" && len(instance.Interfaces) > 0 {
+			ips, allocErr := e.store.AllocateAndStoreIPs(ctx, instance.Interfaces[0], instance.ID)
 			if allocErr != nil {
 				return e.markError(ctx, instance.ID, fmt.Errorf("IPAM allocation failed: %w", allocErr))
 			}
@@ -461,13 +461,13 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWit
 
 	// Persist machine ID immediately so crash recovery can find the VM
 	// even if the EK cert read below fails.
-	if err := e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+	if err := e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 		MachineID: &machineID,
 	}); err != nil {
 		return err
 	}
 
-	patch := state.InstanceStatePatch{
+	patch := state.VMInstanceStatePatch{
 		Status:        ptr("running"),
 		ObservedState: ptr(state.ObservedStateRunning),
 		ErrorReason:   ptr(""),
@@ -481,7 +481,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWit
 	}
 
 	log.Info("Patching instance state to running", "machineID", machineID)
-	if err := e.store.PatchInstanceState(ctx, instance.ID, patch); err != nil {
+	if err := e.store.PatchVMInstanceState(ctx, instance.ID, patch); err != nil {
 		return fmt.Errorf("marking instance as running: %w", err)
 	}
 
@@ -492,8 +492,7 @@ func (e *Engine) reconcileProvisioning(ctx context.Context, in state.InstanceWit
 	return nil
 }
 
-func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInterfaces, log *slog.Logger) error {
-	instance := in.Instance
+func (e *Engine) reconcileRunning(ctx context.Context, instance state.Instance, log *slog.Logger) error {
 	if instance.MachineID == "" {
 		return e.markError(ctx, instance.ID, fmt.Errorf("instance has no machine id in running state"))
 	}
@@ -513,7 +512,7 @@ func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInte
 		// Fall back to provisioning so next tick re-creates the VM.
 		log.Warn("Drift detected: machine not running, re-provisioning",
 			"instanceID", instance.ID, "machineID", instance.MachineID)
-		return e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+		return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 			Status:        ptr("provisioning"),
 			ObservedState: ptr(state.ObservedStateProvisioning),
 			MachineID:     ptr(""),
@@ -523,13 +522,13 @@ func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInte
 
 	ready := true
 	if e.runtime.SupportsTCPProbe() {
-		ip, err := firstInterfaceIP(in.Interfaces)
+		ip, err := firstInterfaceIP(instance.Interfaces)
 		if err != nil {
 			return fmt.Errorf("getting first interface IP: %w", err)
 		}
 
 		if ip == "" {
-			ip, err := e.resolveInstanceIPFromLease(ctx, instance, in.Interfaces)
+			ip, err := e.resolveInstanceIPFromLease(ctx, instance, instance.Interfaces)
 			if err != nil {
 				return e.markError(ctx, instance.ID, err)
 			}
@@ -541,7 +540,7 @@ func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInte
 
 			// Lease found — store the confirmed IP and pin it in the dnsmasq host
 			// entry so the VM always receives this address on future renewals.
-			if err := e.store.UpdateInterfaceIPs(ctx, in.Interfaces[0].ID, []string{ip}); err != nil {
+			if err := e.store.UpdateInterfaceIPs(ctx, instance.Interfaces[0].ID, []string{ip}); err != nil {
 				return fmt.Errorf("store lease IP: %w", err)
 			}
 			e.net.WriteReservation(instance.ID, nicMAC, instance.Name, ip, log)
@@ -558,7 +557,7 @@ func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInte
 			// Phone-home readiness: wait for cloud-init to POST phone_home
 			// instead of just SSH port being open. This means "ready" truly
 			// indicates cloud-init finished all runcmd steps.
-			ready = instance.PhonedHomeAt != nil
+			ready = instance.VM.PhonedHomeAt != nil
 			if ready {
 				log.Info("Cloud-init phone_home was received, machine is ready")
 			}
@@ -574,7 +573,7 @@ func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInte
 
 	if ready {
 		log.Info("Machine is ready, marking instance as ready")
-		return e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+		return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 			Status:          ptr("ready"),
 			ObservedState:   ptr(state.ObservedStateReady),
 			RebootRequested: ptrBool(false),
@@ -590,7 +589,7 @@ func (e *Engine) reconcileRunning(ctx context.Context, in state.InstanceWithInte
 	return nil
 }
 
-func (e *Engine) reconcileReady(ctx context.Context, instance state.InstanceRow, log *slog.Logger) error {
+func (e *Engine) reconcileReady(ctx context.Context, instance state.Instance, log *slog.Logger) error {
 	if instance.MachineID == "" {
 		return nil
 	}
@@ -606,28 +605,28 @@ func (e *Engine) reconcileReady(ctx context.Context, instance state.InstanceRow,
 		return nil
 	case vm.MachineStatePaused:
 		log.Warn("VM paused, marking instance as stopped", "machineID", instance.MachineID)
-		return e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+		return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 			ObservedState: ptr(state.ObservedStateStopped),
 			Status:        ptr("suspended"),
 			ErrorReason:   ptr("VM paused"),
 		})
 	case vm.MachineStateShutOff:
 		log.Warn("VM shut off, marking instance as stopped", "machineID", instance.MachineID)
-		return e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+		return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 			ObservedState: ptr(state.ObservedStateStopped),
 			Status:        ptr("stopped"),
 			ErrorReason:   ptr("VM shut off"),
 		})
 	case vm.MachineStateCrashed:
 		log.Error("VM crashed, marking instance as error", "machineID", instance.MachineID)
-		return e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+		return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 			ObservedState: ptr(state.ObservedStateError),
 			Status:        ptr("error"),
 			ErrorReason:   ptr("VM crashed"),
 		})
 	case vm.MachineStateNotFound:
 		log.Error("VM no longer exists in hypervisor, marking instance as error", "machineID", instance.MachineID)
-		return e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+		return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 			ObservedState: ptr(state.ObservedStateError),
 			Status:        ptr("error"),
 			ErrorReason:   ptr("VM no longer exists in hypervisor"),
@@ -637,14 +636,14 @@ func (e *Engine) reconcileReady(ctx context.Context, instance state.InstanceRow,
 	}
 }
 
-func (e *Engine) reconcileReboot(ctx context.Context, instance state.InstanceRow, log *slog.Logger) error {
+func (e *Engine) reconcileReboot(ctx context.Context, instance state.Instance, log *slog.Logger) error {
 	if instance.MachineID == "" {
 		log.Error("Cannot reboot instance without id, marking instance as errored")
 		return e.markError(ctx, instance.ID, fmt.Errorf("cannot reboot instance without machine id"))
 	}
 
 	log.Info("Marking instance as rebooting")
-	if err := e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+	if err := e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 		Status:          ptr("rebooting"),
 		ObservedState:   ptr(state.ObservedStateRebooting),
 		RebootRequested: ptrBool(false),
@@ -659,7 +658,7 @@ func (e *Engine) reconcileReboot(ctx context.Context, instance state.InstanceRow
 	log.Info("Machine rebooted")
 
 	log.Info("Marking instance as running, future reconciliation will wait for machine to be ready")
-	return e.store.PatchInstanceState(ctx, instance.ID, state.InstanceStatePatch{
+	return e.store.PatchVMInstanceState(ctx, instance.ID, state.VMInstanceStatePatch{
 		Status:        ptr("running"),
 		ObservedState: ptr(state.ObservedStateRunning),
 	})
@@ -667,7 +666,7 @@ func (e *Engine) reconcileReboot(ctx context.Context, instance state.InstanceRow
 
 func (e *Engine) markError(ctx context.Context, instanceID string, reconcileErr error) error {
 	errText := reconcileErr.Error()
-	if err := e.store.PatchInstanceState(ctx, instanceID, state.InstanceStatePatch{
+	if err := e.store.PatchVMInstanceState(ctx, instanceID, state.VMInstanceStatePatch{
 		Status:        ptr("error"),
 		ObservedState: ptr(state.ObservedStateError),
 		ErrorReason:   &errText,
@@ -677,7 +676,7 @@ func (e *Engine) markError(ctx context.Context, instanceID string, reconcileErr 
 	return reconcileErr
 }
 
-func (e *Engine) storeAge(instance state.InstanceRow) time.Duration {
+func (e *Engine) storeAge(instance state.Instance) time.Duration {
 	return e.storeNow().Sub(instance.CreatedAt)
 }
 
@@ -688,7 +687,7 @@ func (e *Engine) storeNow() time.Time {
 // resolveBootImage determines the base image and UEFI setting for an instance.
 // For iPXE instances, parses the script, downloads the image, and injects bootcmd.
 // For non-iPXE instances, returns the default base image.
-func (e *Engine) resolveBootImage(ctx context.Context, instance state.InstanceRow, log *slog.Logger) (baseImage string, useUEFI bool, userData string, err error) {
+func (e *Engine) resolveBootImage(ctx context.Context, instance state.Instance, log *slog.Logger) (baseImage string, useUEFI bool, userData string, err error) {
 	userData = instance.UserData
 	if instance.IpxeScript == "" {
 		return "", false, userData, nil
@@ -716,7 +715,7 @@ func (e *Engine) resolveBootImage(ctx context.Context, instance state.InstanceRo
 
 // registerDHCPInstance stores the MAC in the database and writes a host
 // reservation if the active network mode requires it.
-func (e *Engine) registerDHCPInstance(ctx context.Context, instance state.InstanceRow, interfaces []state.InstanceInterfaceRow, nicMAC string, log *slog.Logger) {
+func (e *Engine) registerDHCPInstance(ctx context.Context, instance state.Instance, interfaces []state.InstanceInterfaceRow, nicMAC string, log *slog.Logger) {
 	if len(interfaces) > 0 {
 		if err := e.store.UpdateInterfaceMAC(ctx, interfaces[0].ID, nicMAC); err != nil {
 			log.Warn("Failed to store MAC in interface", "error", err)
@@ -794,7 +793,7 @@ func writeDHCPHostEntry(hostsDir, instanceID, mac, hostname, ip string) error {
 // resolveInstanceIPFromLease returns the IP to use for readiness probing.
 // DHCP-mode instances start with no IP; the lease is checked each tick until
 // an IP appears, then stored in the database.
-func (e *Engine) resolveInstanceIPFromLease(ctx context.Context, instance state.InstanceRow, interfaces []state.InstanceInterfaceRow) (string, error) {
+func (e *Engine) resolveInstanceIPFromLease(ctx context.Context, instance state.Instance, interfaces []state.InstanceInterfaceRow) (string, error) {
 	if len(interfaces) == 0 {
 		return "", fmt.Errorf("instance has no interfaces")
 	}

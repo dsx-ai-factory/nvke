@@ -4,51 +4,49 @@
 package http
 
 import (
-	"fmt"
 	"net"
-	nethttp "net/http"
 	"strings"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
+	nicosdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 
 	"github.com/NVIDIA/nke/controller/nico-sim/internal/state"
 )
 
-func toSDKInstance(row state.InstanceWithInterfaces) forgesdk.Instance {
-	instance := forgesdk.NewInstance()
-	instance.SetId(row.Instance.ID)
-	instance.SetName(row.Instance.Name)
-	instance.SetTenantId(row.Instance.TenantID)
-	instance.SetSiteId(row.Instance.SiteID)
-	instance.SetInstanceTypeId(row.Instance.InstanceTypeID)
-	instance.SetVpcId(row.Instance.VPCID)
-	if row.Instance.MachineID != "" {
-		instance.SetMachineId(row.Instance.MachineID)
+func toSDKInstance(row state.Instance) nicosdk.Instance {
+	instance := nicosdk.NewInstance()
+	instance.SetId(row.ID)
+	instance.SetName(row.Name)
+	instance.SetTenantId(row.TenantID)
+	instance.SetSiteId(row.SiteID)
+	instance.SetInstanceTypeId(row.InstanceTypeID)
+	instance.SetVpcId(row.VPCID)
+	if row.MachineID != "" {
+		instance.SetMachineId(row.MachineID)
 	} else {
 		instance.SetMachineIdNil()
 	}
-	if row.Instance.IpxeScript != "" {
-		instance.SetIpxeScript(row.Instance.IpxeScript)
+	if row.IpxeScript != "" {
+		instance.SetIpxeScript(row.IpxeScript)
 	}
-	if row.Instance.UserData != "" {
-		instance.SetUserData(row.Instance.UserData)
+	if row.UserData != "" {
+		instance.SetUserData(row.UserData)
 	}
-	labels, _ := row.Instance.Labels()
+	labels, _ := row.Labels()
 	instance.SetLabels(labels)
-	groupIDs, _ := row.Instance.SSHKeyGroupIDs()
+	groupIDs, _ := row.SSHKeyGroupIDs()
 	instance.SetSshKeyGroupIds(groupIDs)
-	instance.SetStatus(forgesdk.InstanceStatus(instanceStatus(row.Instance.Status)))
-	instance.SetPhoneHomeEnabled(row.Instance.PhoneHomeEnabled)
-	if row.Instance.TpmEkCertificate != "" {
-		instance.SetTpmEkCertificate(row.Instance.TpmEkCertificate)
+	instance.SetStatus(nicosdk.InstanceStatus(instanceStatus(row.Status)))
+	instance.SetPhoneHomeEnabled(row.PhoneHomeEnabled)
+	if row.TpmEkCertificate != "" {
+		instance.SetTpmEkCertificate(row.TpmEkCertificate)
 	}
-	instance.SetCreated(row.Instance.CreatedAt)
-	instance.SetUpdated(row.Instance.UpdatedAt)
+	instance.SetCreated(row.CreatedAt)
+	instance.SetUpdated(row.UpdatedAt)
 
-	exposeIPs := row.Instance.ObservedState == state.ObservedStateReady || row.Instance.ObservedState == state.ObservedStateRebooting
-	ifaces := make([]forgesdk.Interface, 0, len(row.Interfaces))
+	exposeIPs := row.VM != nil && (row.VM.ObservedState == state.ObservedStateReady || row.VM.ObservedState == state.ObservedStateRebooting)
+	ifaces := make([]nicosdk.Interface, 0, len(row.Interfaces))
 	for _, ifaceRow := range row.Interfaces {
-		iface := forgesdk.NewInterface()
+		iface := nicosdk.NewInterface()
 		iface.SetId(ifaceRow.ID)
 		iface.SetInstanceId(ifaceRow.InstanceID)
 		if ifaceRow.SubnetID != "" {
@@ -57,7 +55,7 @@ func toSDKInstance(row state.InstanceWithInterfaces) forgesdk.Instance {
 		if ifaceRow.VPCPrefixID != "" {
 			iface.SetVpcPrefixId(ifaceRow.VPCPrefixID)
 		}
-		iface.SetStatus(forgesdk.InterfaceStatus(titleCase(ifaceRow.Status)))
+		iface.SetStatus(nicosdk.InterfaceStatus(titleCase(ifaceRow.Status)))
 		if exposeIPs {
 			ips, _ := ifaceRow.IPAddresses()
 			iface.SetIpAddresses(ips)
@@ -72,28 +70,31 @@ func toSDKInstance(row state.InstanceWithInterfaces) forgesdk.Instance {
 
 // toSDKTenant maps a stored tenant to the SDK Tenant shape. CAPNICo resolves
 // its tenant ID from the "id" field of this response before creating instances.
-func toSDKTenant(row state.TenantRow) forgesdk.Tenant {
-	item := forgesdk.NewTenant()
+func toSDKTenant(row state.TenantRow) nicosdk.Tenant {
+	item := nicosdk.NewTenant()
 	item.SetId(row.ID)
 	item.SetOrg(row.OrgID)
 	item.SetOrgDisplayName(row.DisplayName)
 	return *item
 }
 
-func toSDKSite(row state.SiteRow) forgesdk.Site {
-	item := forgesdk.NewSite()
+func toSDKSite(row state.SiteRow, orgID string) nicosdk.Site {
+	item := nicosdk.NewSite()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
-	caps := forgesdk.NewSiteCapabilities()
+	item.SetOrg(orgID)
+	item.SetIsOnline(true)
+	caps := nicosdk.NewSiteCapabilities()
 	caps.SetNativeNetworking(row.CapabilitiesNativeNetwork)
+	caps.SetNetworkSecurityGroup(false)
 	item.SetCapabilities(*caps)
 	item.SetCreated(row.CreatedAt)
 	item.SetUpdated(row.UpdatedAt)
 	return *item
 }
 
-func toSDKVPC(row state.VPCRow) forgesdk.VPC {
-	item := forgesdk.NewVPC()
+func toSDKVPC(row state.VPCRow) nicosdk.VPC {
+	item := nicosdk.NewVPC()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
 	item.SetSiteId(row.SiteID)
@@ -102,8 +103,8 @@ func toSDKVPC(row state.VPCRow) forgesdk.VPC {
 	return *item
 }
 
-func toSDKSubnet(row state.SubnetRow) forgesdk.Subnet {
-	item := forgesdk.NewSubnet()
+func toSDKSubnet(row state.SubnetRow) nicosdk.Subnet {
+	item := nicosdk.NewSubnet()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
 	item.SetSiteId(row.SiteID)
@@ -118,8 +119,8 @@ func toSDKSubnet(row state.SubnetRow) forgesdk.Subnet {
 	return *item
 }
 
-func toSDKVPCPrefix(row state.VPCPrefixRow) forgesdk.VpcPrefix {
-	item := forgesdk.NewVpcPrefix()
+func toSDKVPCPrefix(row state.VPCPrefixRow) nicosdk.VpcPrefix {
+	item := nicosdk.NewVpcPrefix()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
 	item.SetSiteId(row.SiteID)
@@ -130,53 +131,52 @@ func toSDKVPCPrefix(row state.VPCPrefixRow) forgesdk.VpcPrefix {
 	return *item
 }
 
-func toSDKInstanceType(row state.InstanceTypeRow, used int32) forgesdk.InstanceType {
-	item := forgesdk.NewInstanceType()
+func toSDKInstanceType(row state.InstanceTypeRow, used int32) nicosdk.InstanceType {
+	item := nicosdk.NewInstanceType()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
 	item.SetSiteId(row.SiteID)
 
-	stats := forgesdk.NewInstanceTypeAllocationStats()
-	total := fakeInstanceTypeTotal
-	unused := total - used
+	stats := nicosdk.NewInstanceTypeAllocationStats()
+	unused := fakeInstanceTypeTotal - used
 	if unused < 0 {
 		unused = 0
 	}
-	stats.SetTotal(total)
+	stats.SetTotal(fakeInstanceTypeTotal)
 	stats.SetUsed(used)
 	stats.SetUnused(unused)
 	stats.SetUnusedUsable(unused)
 	item.SetAllocationStats(*stats)
 
-	ibCap := forgesdk.NewMachineCapability()
+	ibCap := nicosdk.NewMachineCapability()
 	ibCap.SetType("InfiniBand")
 	ibCap.SetName(fakeIBCapabilityName)
 	ibCap.SetCount(fakeIBCapabilityCount)
 	ibCap.SetInactiveDevices([]int32{})
-	item.SetMachineCapabilities([]forgesdk.MachineCapability{*ibCap})
+	item.SetMachineCapabilities([]nicosdk.MachineCapability{*ibCap})
 	item.SetCreated(row.CreatedAt)
 	item.SetUpdated(row.UpdatedAt)
 	return *item
 }
 
-func toSDKSSHKeyGroup(row state.SSHKeyGroupRow, siteID string) forgesdk.SshKeyGroup {
-	item := forgesdk.NewSshKeyGroup()
+func toSDKSSHKeyGroup(row state.SSHKeyGroupRow, siteID string) nicosdk.SshKeyGroup {
+	item := nicosdk.NewSshKeyGroup()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
 	item.SetStatus("Synced")
 
-	siteSummary := forgesdk.NewSiteSummary()
+	siteSummary := nicosdk.NewSiteSummary()
 	siteSummary.SetId(siteID)
 	siteSummary.SetName(siteID)
-	assoc := forgesdk.NewSshKeyGroupSiteAssociation()
+	assoc := nicosdk.NewSshKeyGroupSiteAssociation()
 	assoc.SetSite(*siteSummary)
 	assoc.SetStatus("Synced")
-	item.SetSiteAssociations([]forgesdk.SshKeyGroupSiteAssociation{*assoc})
+	item.SetSiteAssociations([]nicosdk.SshKeyGroupSiteAssociation{*assoc})
 	return *item
 }
 
-func toSDKIPBlock(row state.IPBlockRow) forgesdk.IpBlock {
-	item := forgesdk.NewIpBlock()
+func toSDKIPBlock(row state.IPBlockRow) nicosdk.IpBlock {
+	item := nicosdk.NewIpBlock()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
 	item.SetSiteId(row.SiteID)
@@ -184,29 +184,13 @@ func toSDKIPBlock(row state.IPBlockRow) forgesdk.IpBlock {
 	return *item
 }
 
-func toSDKInfiniBandPartition(row state.InfiniBandPartitionRow) forgesdk.InfiniBandPartition {
-	item := forgesdk.NewInfiniBandPartition()
+func toSDKInfiniBandPartition(row state.InfiniBandPartitionRow) nicosdk.InfiniBandPartition {
+	item := nicosdk.NewInfiniBandPartition()
 	item.SetId(row.ID)
 	item.SetName(row.Name)
 	item.SetSiteId(row.SiteID)
 	item.SetStatus("Ready")
 	return *item
-}
-
-// instanceWithConsoleURL sets the SerialConsoleUrl on the SDK instance
-// using the SSH hostname derived from the HTTP request's Host header.
-func (s *Server) instanceWithConsoleURL(inst forgesdk.Instance, r *nethttp.Request) forgesdk.Instance {
-	if s.consoleSSHPort > 0 {
-		host := r.Host
-		if h, _, err := net.SplitHostPort(host); err == nil {
-			host = h
-		}
-		if host == "" {
-			host = "localhost"
-		}
-		inst.SetSerialConsoleUrl(fmt.Sprintf("ssh://%s@%s:%d", inst.GetId(), host, s.consoleSSHPort))
-	}
-	return inst
 }
 
 // titleCase converts "provisioning" → "Provisioning", "ready" → "Ready", etc.

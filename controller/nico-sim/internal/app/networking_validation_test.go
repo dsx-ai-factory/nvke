@@ -77,7 +77,7 @@ func TestValidateVPCAndSubnetsFailsWhenVPCPrefixOutOfRange(t *testing.T) {
 
 func openTestStore(t *testing.T) *state.Store {
 	t.Helper()
-	store, err := state.Open(filepath.Join(t.TempDir(), "nico-vms.db"))
+	store, err := state.Open(filepath.Join(t.TempDir(), "nico-sim.db"))
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
 	}

@@ -20,7 +20,7 @@ import (
 type InstanceLookup interface {
 	LookupInstanceByIP(ctx context.Context, ip string) (instanceID string, found bool)
 	LookupInstanceByMAC(ctx context.Context, mac string) (instanceID string, found bool)
-	MarkPhonedHome(ctx context.Context, instanceID string) error
+	MarkVMPhonedHome(ctx context.Context, instanceID string) error
 }
 
 // MetadataServer serves cloud-init metadata for VM instances.
@@ -230,7 +230,7 @@ func (s *MetadataServer) handlePhoneHome(w http.ResponseWriter, r *http.Request)
 	s.logger.Info("cloud-init phone_home received", "instanceID", instanceID, "ip", ip, "method", r.Method)
 
 	if ok && instanceID != "" {
-		if err := s.store.MarkPhonedHome(context.Background(), instanceID); err != nil {
+		if err := s.store.MarkVMPhonedHome(context.Background(), instanceID); err != nil {
 			s.logger.Error("failed to mark phone_home in database", "instanceID", instanceID, "error", err)
 		}
 	}
