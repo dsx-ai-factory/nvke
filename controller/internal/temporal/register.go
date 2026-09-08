@@ -32,7 +32,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kube"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/rollout"
 	rolloutcwe "github.com/NVIDIA/nke/controller/internal/rollout/adapters/cwe"
 	rolloutkubevip "github.com/NVIDIA/nke/controller/internal/rollout/guards/kubevip"
@@ -151,7 +150,6 @@ func NewWorker(
 	dbInstance db.DB,
 	k8sClient ctrlclient.Client,
 	nodeAgentClient agent.Client,
-	forgeProvider *forge.ForgeProvider,
 	trustDomain string,
 	tenantClientProvider *kube.DBClusterTenantClientProvider,
 ) (worker.Worker, error) {
@@ -171,7 +169,6 @@ func NewWorker(
 		dbInstance,
 		k8sClient,
 		nodeAgentClient,
-		forgeProvider,
 		trustDomain,
 		tenantClientProvider,
 	))
