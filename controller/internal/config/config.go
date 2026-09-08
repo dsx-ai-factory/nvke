@@ -251,7 +251,7 @@ type Config struct {
 	// (the /run/cluster-api/bootstrap-success.complete sentinel) regardless of
 	// its CAPI infra machine template.
 	//
-	// LOCAL-DEV ONLY: the local nico-mock flow provisions nodes as bare Docker
+	// LOCAL-DEV ONLY: the local NICo container flow provisions nodes as bare Docker
 	// containers with no real cloud-init, so the normal cloud-init-based
 	// bootstrap never signals completion. This flag must NEVER be set in a real
 	// environment; doing so would misroute production nodes to the DinD contract.

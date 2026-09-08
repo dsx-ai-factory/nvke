@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+set -euo pipefail
+
+: "${CAPNICO_NAMESPACE:=capnico-system}"
+: "${CAPNICO_RELEASE:=capi-provider-nico}"
+: "${CAPNICO_IMAGE:=cluster-api-provider-nico:local}"
+: "${CAPNICO_REBOOT_ANNOTATION:=nke.nvidia.com/reboot}"
+: "${CAPNICO_REPAIR_ANNOTATION:=nke.nvidia.com/machine-health-issue}"
+: "${CAPNICO_STAGED_CHART_DIR:?CAPNICO_STAGED_CHART_DIR is required}"
+: "${CAPNICO_PROVIDER_CONFIG_DIR:?CAPNICO_PROVIDER_CONFIG_DIR is required}"
+: "${KIND_CLUSTER_NAME:?KIND_CLUSTER_NAME is required}"
+: "${KIND_BIN:=kind}"
+
+adopt_namespace() {
+  kubectl create namespace "${CAPNICO_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
+  kubectl label namespace "${CAPNICO_NAMESPACE}" app.kubernetes.io/managed-by=Helm --overwrite
+  kubectl annotate namespace "${CAPNICO_NAMESPACE}" \
+    "meta.helm.sh/release-name=${CAPNICO_RELEASE}" \
+    "meta.helm.sh/release-namespace=${CAPNICO_NAMESPACE}" --overwrite
+}
+
+install_released_chart() {
+  : "${NGC_API_KEY:?NGC_API_KEY is required when CAPNICO_SOURCE_DIR is unset}"
+  : "${CAPNICO_CHART_VERSION:=0.0.28}"
+  : "${CAPNICO_HELM_REPO:=ngc-components-dev}"
+  : "${CAPNICO_HELM_REPO_URL:=https://helm.ngc.nvidia.com/0837451325059433/components-dev}"
+
+  kubectl -n "${CAPNICO_NAMESPACE}" create secret docker-registry nvcr-creds \
+    --docker-server=nvcr.io \
+    --docker-username='$oauthtoken' \
+    --docker-password="${NGC_API_KEY}" \
+    --dry-run=client -o yaml | kubectl apply -f -
+
+  helm repo add "${CAPNICO_HELM_REPO}" "${CAPNICO_HELM_REPO_URL}" \
+    --username '$oauthtoken' --password "${NGC_API_KEY}" --force-update >/dev/null
+  helm repo update "${CAPNICO_HELM_REPO}" >/dev/null
+
+  helm upgrade --install "${CAPNICO_RELEASE}" \
+    "${CAPNICO_HELM_REPO}/${CAPNICO_RELEASE}" \
+    --version "${CAPNICO_CHART_VERSION}" \
+    --namespace "${CAPNICO_NAMESPACE}" \
+    --reset-values \
+    --set 'imagePullSecrets[0].name=nvcr-creds' \
+    --wait --timeout 5m
+}
+
+install_source_chart() {
+  source_dir="${CAPNICO_SOURCE_DIR}"
+  chart_source="${source_dir}/charts/capi-provider-nico"
+
+  if [[ ! -d "${source_dir}/config/default" || ! -f "${chart_source}/Chart.yaml" ]]; then
+    echo "CAPNICo source '${source_dir}' is missing config/default or charts/capi-provider-nico." >&2
+    exit 1
+  fi
+
+  if [[ "$(uname -s)" == Darwin && -z "${DOCKER_HOST:-}" ]]; then
+    export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
+  fi
+
+  echo "Building CAPNICo from ${source_dir}..."
+  DOCKER_BUILDKIT=1 docker build -t "${CAPNICO_IMAGE}" "${source_dir}"
+  "${KIND_BIN}" load docker-image "${CAPNICO_IMAGE}" --name "${KIND_CLUSTER_NAME}"
+
+  rm -rf "${CAPNICO_STAGED_CHART_DIR}"
+  mkdir -p "$(dirname "${CAPNICO_STAGED_CHART_DIR}")"
+  cp -R "${chart_source}" "${CAPNICO_STAGED_CHART_DIR}"
+  mkdir -p "${CAPNICO_STAGED_CHART_DIR}/files"
+
+  render_dir="$(mktemp -d)"
+  trap 'rm -rf "${render_dir}"' EXIT
+  cp -R "${CAPNICO_PROVIDER_CONFIG_DIR}/." "${render_dir}/"
+  ln -s "${source_dir}/config/default" "${render_dir}/capnico-base"
+  kubectl kustomize "${render_dir}" --load-restrictor=LoadRestrictionsNone \
+    > "${CAPNICO_STAGED_CHART_DIR}/files/infrastructure-components.yaml"
+  sed -i "s#image: controller:latest#image: ${CAPNICO_IMAGE}#" \
+    "${CAPNICO_STAGED_CHART_DIR}/files/infrastructure-components.yaml"
+  grep -Fq "image: ${CAPNICO_IMAGE}" \
+    "${CAPNICO_STAGED_CHART_DIR}/files/infrastructure-components.yaml"
+
+  helm upgrade --install "${CAPNICO_RELEASE}" "${CAPNICO_STAGED_CHART_DIR}" \
+    --namespace "${CAPNICO_NAMESPACE}" \
+    --reset-values \
+    --wait --timeout 5m
+}
+
+adopt_namespace
+if [[ -n "${CAPNICO_SOURCE_DIR:-}" ]]; then
+  install_source_chart
+else
+  install_released_chart
+fi
+
+# Keep the reboot and repair contracts identical in released-chart and source modes.
+kubectl -n "${CAPNICO_NAMESPACE}" patch deployment/controller-manager \
+  --type=strategic \
+  -p "{\"spec\":{\"template\":{\"spec\":{\"containers\":[{\"name\":\"manager\",\"args\":[\"--leader-elect\",\"--reboot-annotation=${CAPNICO_REBOOT_ANNOTATION}\",\"--repair-annotation=${CAPNICO_REPAIR_ANNOTATION}\"]}]}}}}"
+kubectl -n "${CAPNICO_NAMESPACE}" rollout status deployment/controller-manager --timeout=180s

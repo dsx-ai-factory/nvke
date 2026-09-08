@@ -9,6 +9,7 @@ CHART_VERSION_LOKI = "6.29.0"
 CHART_VERSION_PROMTAIL = "6.16.6"
 CHART_VERSION_GRAFANA = "8.12.1"
 OBSERVABILITY_NAMESPACE = "observability"
+NICO_SIM_PORT = "18080"
 
 # Tilt UI link offset for remote targets accessed via forwarded ports (e.g.
 # Mutagen +1000). Set TILT_LINK_PORT_OFFSET; default 0 = local. Offsets only the
@@ -66,7 +67,7 @@ def _parse_bridge_ranges(bridge_cidr):
     )
 
 def register(ctx):
-    """Register nico-sim provider resources.
+    """Register nico-sim component resources.
 
     Args:
         ctx: struct with main_dir, cfg, kind_host_ip, provider_dir.
@@ -262,6 +263,92 @@ def register(ctx):
         readiness_probe=probe(tcp_socket=tcp_socket_action(port=18080)),
         links=[_ui_link(18080, "/ui/", "nico-sim UI")],
         labels=["5-nico-sim"],
+    )
+
+    # Manual CAPNICo VM controls. The buttons run the same scripts that can be
+    # called directly from the controller directory.
+    cmd_button(
+        "1-create-instance",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          cd %s
+          INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}" \
+          OS_PROFILE="${OS_PROFILE:-nke-260611-24.04-amd64-fde}" \
+          INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000005}" \
+          DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}" \
+          ./hack/capnico-create-instance.sh
+        """ % ctx.main_dir],
+        resource="nico-sim",
+        icon_name="add_box",
+        text="Create instance",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+            text_input("OS_PROFILE", default="nke-260611-24.04-amd64-fde"),
+            text_input("INSTANCE_TYPE_ID", default="a1b2c3d4-0005-4000-8000-000000000005"),
+            text_input("DISK_SELECTION_STRATEGY", default="smallest"),
+        ],
+    )
+
+    cmd_button(
+        "2-instance-status",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          namespace="${NAMESPACE:-nico-test}"
+          instance_name="${INSTANCE_NAME:-capnico-vm-1}"
+
+          kubectl get cluster,nicocluster,machine,nicomachine -n "${namespace}"
+          echo
+          echo "nicomachine/${instance_name} ready: $(kubectl get nicomachine "${instance_name}" -n "${namespace}" -o jsonpath='{.status.ready}')"
+          echo "nicomachine/${instance_name} reason: $(kubectl get nicomachine "${instance_name}" -n "${namespace}" -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}')"
+        """],
+        resource="nico-sim",
+        icon_name="fact_check",
+        text="Instance status",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+            text_input("NAMESPACE", default="nico-test"),
+        ],
+    )
+
+    cmd_button(
+        "3-console-log",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          namespace="${NAMESPACE:-nico-test}"
+          instance_name="${INSTANCE_NAME:-capnico-vm-1}"
+          instance_id="$(kubectl get machine "${instance_name}" -n "${namespace}" -o jsonpath='{.spec.providerID}' 2>/dev/null || true)"
+          instance_id="${instance_id#nico://}"
+          if [ -z "${instance_id}" ]; then
+            echo "providerID is not set yet -- no nico-sim instance for ${instance_name}." >&2
+            exit 1
+          fi
+
+          curl -fsS -H "Authorization: Bearer %s" \
+            "http://localhost:%s/v2/org/%s/forge/instance/${instance_id}/console-log"
+        """ % (ctx.nico_token, NICO_SIM_PORT, ctx.nico_org_id)],
+        resource="nico-sim",
+        icon_name="terminal",
+        text="Console log",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+            text_input("NAMESPACE", default="nico-test"),
+        ],
+    )
+
+    cmd_button(
+        "4-delete-instance",
+        argv=["bash", "-c", """
+          set -euo pipefail
+          cd %s
+          INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}" \
+          ./hack/capnico-delete-instance.sh
+        """ % ctx.main_dir],
+        resource="nico-sim",
+        icon_name="delete",
+        text="Delete instance",
+        inputs=[
+            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+        ],
     )
 
     # Host Promtail: ships nico-vms + VM console logs to Loki in K8s via port-forward.

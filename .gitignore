@@ -2,7 +2,6 @@
 # module directory; `make build` puts them all in bin/ instead.
 agent/agent
 controller/hack/capd-reboot-controller/capd-reboot-controller
-controller/hack/nico-mock/nico-mock
 **/*.test
 **/bin/
 # Separate from **/bin/ on purpose: a leading dot is not matched by that

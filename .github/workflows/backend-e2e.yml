@@ -47,8 +47,8 @@ on:
       providers:
         description: >-
           JSON array of Tilt providers, written into tilt_config.json. capi_core
-          is required by capd, nico and nico-vm alike; the Tiltfile rejects a
-          list that omits it.
+          is required by capd and nico alike; the Tiltfile rejects a list that
+          omits it.
         required: true
         type: string
       timeout-minutes:
@@ -78,7 +78,7 @@ on:
         required: false
         type: boolean
         default: false
-      needs-nico-provider:
+      needs-capnico-source:
         description: >-
           Check out NVIDIA/cluster-api-provider-nico next to the monorepo. It is
           an internal repository, so this needs NKE_INTERNAL_RO_TOKEN.
@@ -143,7 +143,7 @@ jobs:
       # into the runner container only when this is set, so every other backend
       # skips that work. This is the HOST path; the container path is a constant
       # in the script, and is what Tilt is told.
-      NICO_PROVIDER_SRC: ${{ inputs.needs-nico-provider && format('{0}/.capnico/cluster-api-provider-nico', github.workspace) || '' }}
+      CAPNICO_SOURCE_SRC: ${{ inputs.needs-capnico-source && format('{0}/.capnico/cluster-api-provider-nico', github.workspace) || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -158,7 +158,7 @@ jobs:
       # it under /workspace in the runner container, where everything after this
       # point executes.
       - name: Checkout the CAPNICo provider
-        if: inputs.needs-nico-provider
+        if: inputs.needs-capnico-source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NVIDIA/cluster-api-provider-nico

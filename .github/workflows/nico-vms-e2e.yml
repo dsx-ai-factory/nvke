@@ -19,7 +19,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "controller/nico-sim/**"
-      - "controller/hack/nico-vm-provider/**"
+      - "controller/hack/nico-provider/**"
       - "controller/hack/ci/nico-vms-e2e.sh"
       - "controller/test/kubeadm/scripts/**"
       # Without these, a change to the lane's own definition or its gate does
@@ -61,7 +61,7 @@ jobs:
       pull-requests: read
     with:
       # Keep in step with the push paths above.
-      relevant_paths: '^controller/(nico-vms/|hack/nico-vm-provider/|hack/ci/nico-vms-e2e\.sh$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
+      relevant_paths: '^controller/(nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
 
   nico-vms-e2e:
     name: nico-vms-e2e (amd64, KVM)

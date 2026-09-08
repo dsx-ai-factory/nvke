@@ -44,7 +44,7 @@ LIBVIRT_URI="${NICO_VMS_LIBVIRT_URI:-qemu:///session}"
 # for this one. Every tilt command below carries it.
 TILT_PORT="${NKE_E2E_TILT_PORT:-10351}"
 TILT_CONFIG="${CONTROLLER_ROOT}/tilt_config.json"
-NICO_VMS_DIR="${CONTROLLER_ROOT}/nico-vms"
+NICO_SIM_DIR="${CONTROLLER_ROOT}/nico-sim"
 E2E_BIN="${STATE_DIR}/cwe-e2e.test"
 E2E_CONFIG="${STATE_DIR}/e2e-config.json"
 E2E_KUBECONFIG="${STATE_DIR}/kubeconfig"
@@ -202,11 +202,11 @@ guest_diagnostics() {
 # image's console.
 save_console_logs() {
   local out_dir="${STATE_DIR}/console" f
-  [[ -d "${NICO_VMS_DIR}/.dev/instances" ]] || return 0
+  [[ -d "${NICO_SIM_DIR}/.dev/instances" ]] || return 0
   mkdir -p "${out_dir}"
   while IFS= read -r -d '' f; do
     cp -f "${f}" "${out_dir}/$(basename "$(dirname "${f}")")-$(basename "${f}")" 2>/dev/null
-  done < <(find "${NICO_VMS_DIR}/.dev/instances" -type f -name '*ttyS*.log' -print0 2>/dev/null)
+  done < <(find "${NICO_SIM_DIR}/.dev/instances" -type f -name '*ttyS*.log' -print0 2>/dev/null)
 }
 
 collect_diagnostics() {
@@ -238,9 +238,9 @@ collect_diagnostics() {
         http://localhost:8080/api/clusters >"${STATE_DIR}/cwe-clusters.json" 2>&1 || true
     fi
   fi
-  if [[ -d "${NICO_VMS_DIR}/.dev/logs" ]]; then
+  if [[ -d "${NICO_SIM_DIR}/.dev/logs" ]]; then
     mkdir -p "${STATE_DIR}/nico-vms"
-    cp -f "${NICO_VMS_DIR}"/.dev/logs/*.log "${STATE_DIR}/nico-vms/" 2>/dev/null
+    cp -f "${NICO_SIM_DIR}"/.dev/logs/*.log "${STATE_DIR}/nico-vms/" 2>/dev/null
   fi
   capture nico-vms-instances.json curl -fsS --max-time 5 -H "Authorization: Bearer ${NICO_VMS_TOKEN}" \
     "http://localhost:18080/v2/org/${NICO_VMS_ORG_ID}/forge/instance"
@@ -319,8 +319,8 @@ if [[ -c /dev/kvm ]]; then
 else
   log "WARNING: /dev/kvm is missing; tenant nodes run under QEMU software emulation and the budgets below will not hold"
 fi
-[[ -s "${NICO_VMS_DIR}/images/ubuntu-cloud.qcow2" ]] ||
-  fail "${NICO_VMS_DIR}/images/ubuntu-cloud.qcow2 is missing; setup-ci-host.sh fetches it (nico-vms requires it even on the iPXE path)"
+[[ -s "${NICO_SIM_DIR}/images/ubuntu-cloud.qcow2" ]] ||
+  fail "${NICO_SIM_DIR}/images/ubuntu-cloud.qcow2 is missing; setup-ci-host.sh fetches it (nico-vms requires it even on the iPXE path)"
 
 if curl --fail --silent --connect-timeout 1 --max-time 1 "http://localhost:${TILT_PORT}/api/view" >/dev/null 2>&1; then
   fail "another Tilt session is running on port ${TILT_PORT}"
@@ -356,7 +356,7 @@ export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
 # it from this checkout and stage it at the path the template names. The file
 # root is set explicitly: the default sits beside the database in .dev/, which
 # this script wipes.
-export NICO_VMS_FILES_DIR="${NICO_VMS_DIR}/var/files"
+export NICO_VMS_FILES_DIR="${NICO_SIM_DIR}/var/files"
 AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nke-agent' "${CWE_PROFILES_DIR}/osProfiles/nke-nico-vms-24.04-amd64-fde/userData.tmpl" | head -1)"
 [[ -n "${AGENT_URL_PATH}" ]] || fail "the nico-vms OS profile no longer downloads nke-agent from /files/"
 log "building nke-agent from ${WORKSPACE_ROOT}/agent"
@@ -366,7 +366,7 @@ install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_amd64/nke-agent" "${NICO_V
 log "staged nke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always 2>/dev/null || echo unknown)"
 
 # A previous run's database, instances and logs would confuse this one.
-rm -rf "${NICO_VMS_DIR}/.dev"
+rm -rf "${NICO_SIM_DIR}/.dev"
 
 # ── Images Tilt must not build ──────────────────────────────────────────────
 # Tilt's own CWE build watches bin/ and rewrites bin/cloud-workflow-engine, so
@@ -422,7 +422,7 @@ jq -n \
   --arg capnico "${CAPNICO_SOURCE_DIR}" \
   --arg cwe_image "${CWE_IMAGE}" \
   '{
-    providers: ["capi_core", "nico-vms", "nico-vm"],
+    providers: ["capi_core", "nico"],
     cwe_image: $cwe_image,
     capnico_source_dir: $capnico,
     nico_vms_observability: false

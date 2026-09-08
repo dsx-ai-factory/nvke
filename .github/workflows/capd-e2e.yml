@@ -102,5 +102,5 @@ jobs:
       # deployment would leave them silently skipped and the job green.
       require-authn: true
       nkectl-smoke: true
-      needs-nico-provider: true
+      needs-capnico-source: true
       single-runner-control-plane-modes: true

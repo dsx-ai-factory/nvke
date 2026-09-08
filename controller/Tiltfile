@@ -12,12 +12,10 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "capi_core"               -- built-in CAPI core support
 #   "bgp-containers"          -- shared BGP router and default-site VIP pool for container nodes
 #   "capd"                    -- built-in CAPD support
-#   "nico"                    -- NCX Infra Controller support (nico-mock, container-backed)
+#   "nico"                    -- CAPNICo plus NICo endpoint (nico-sim by default)
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
 #   "dsx-identity-exchange"   -- DSX-compatible JWT exchange test double
-#   "nico-sim"                -- local NICo simulator (VM backend only at this point)
-#   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
 # Default: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]
 
@@ -60,8 +58,6 @@ _builtin_provider_dirs = {
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "dsx-identity-exchange": os.path.join(config.main_dir, "hack/dsx-identity-exchange-mock"),
-    "nico-sim": os.path.join(config.main_dir, "nico-sim"),
-    "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
 }
 
 _tilt_config = read_json("tilt_config.json", default={})
@@ -87,35 +83,6 @@ if "capd" in _provider_entries and "capi_core" not in _provider_entries:
 
 if "capi-syscmp" in _provider_entries and "capi_core" not in _provider_entries:
     fail("Provider 'capi-syscmp' requires 'capi_core' in the provider list.")
-
-if "nico-vm" in _provider_entries and "capi_core" not in _provider_entries:
-    fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
-
-# nico-vm points nico-credentials at the local nico-sim VM backend and its
-# credentials resource depends on the 'nico-sim' Tilt resource by name.
-#
-# Both messages name what each provider is rather than relying on similar keys.
-if "nico-vm" in _provider_entries and "nico-sim" not in _provider_entries:
-    fail("Provider 'nico-vm' (the CAPNICo controller, installed from the NGC Helm chart) " +
-         "requires 'nico-sim' (the local VM simulator that serves the API on port 18080) " +
-         "in the provider list: it points nico-credentials at that backend and depends on " +
-         "its Tilt resource by name.")
-
-# 'nico' and 'nico-sim' are mutually exclusive NICo backends for CWE: both set
-# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-sim's
-# listener). Enable at most one. (capd is orthogonal and may accompany either.)
-if "nico" in _provider_entries and "nico-sim" in _provider_entries:
-    fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-sim' (real " +
-         "KVM/libvirt VMs) are mutually exclusive CWE backends: both set CWE's FORGE_URL " +
-         "and bind host port 18080. Enable only one (capd may accompany either).")
-
-# 'nico' and 'nico-vm' are mutually exclusive ways to get a CAPNICo
-# controller: both install one into the capnico-system namespace and own the
-# 'nico-credentials' secret it reads. Enable at most one.
-if "nico" in _provider_entries and "nico-vm" in _provider_entries:
-    fail("Providers 'nico' (nico-mock, container-backed) and 'nico-vm' (the CAPNICo chart " +
-         "from NGC) are mutually exclusive: both install a CAPNICo controller into " +
-         "capnico-system and own the 'nico-credentials' secret. Enable only one.")
 
 CWE_NAMESPACE = "cloud-workflow-engine"
 TEMPORAL_NAMESPACE = "temporal"

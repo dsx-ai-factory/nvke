@@ -224,9 +224,9 @@ fi
 # CRDs but never builds the provider, and `cluster-api-provider-nico` is private,
 # so requiring it gated the whole entrypoint on internal access. Same call the
 # gofail suite already made -- see test/fixtures/capnico-crds/README.md.
-# NICO_PROVIDER_REPO_DIR still wins when it is set.
-if [[ -n "${NICO_PROVIDER_REPO_DIR:-}" ]]; then
-  capnico_crd_dir="${NICO_PROVIDER_REPO_DIR}/config/crd/bases"
+# CAPNICO_SOURCE_DIR still wins when it is set.
+if [[ -n "${CAPNICO_SOURCE_DIR:-}" ]]; then
+  capnico_crd_dir="${CAPNICO_SOURCE_DIR}/config/crd/bases"
 else
   capnico_crd_dir="${repo_root}/test/fixtures/capnico-crds"
 fi

@@ -34,7 +34,7 @@ development tooling.
               └──────────────────────┘  └─────────────┘
 ```
 
-## The ten modules
+## The nine modules
 
 | Module | Binary | What it is |
 |---|---|---|
@@ -43,10 +43,9 @@ development tooling.
 | `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NKE provisions before CAPI bootstraps them |
 | `cli/` | `nkectl` | The command line client |
 | `controller/api/` | none | The OpenAPI spec and the generated server and client types |
-| `controller/nico-sim/` | `nico-vms`, `nico-vmsctl` | Local VM manager used by tests and development |
+| `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |
 | `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
-| `controller/hack/nico-mock/` | `nico-mock` | A stand-in for the NICo provider |
 | `os-image/` | `nke-os-image-check` | OS image checks |
 
 `go.work` is the list of record. See [go-workspace.md](go-workspace.md) for how

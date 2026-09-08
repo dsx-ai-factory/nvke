@@ -3,9 +3,8 @@
 #
 # Unit-test lane for the controller modules. Until this existed, agent-test.yml
 # was the only workflow that ran `go test` anywhere in the repository, so
-# controller/, controller/nico-sim/, controller/hack/nico-mock/, and nkectl
-# were
-# compiled, linted, vetted, CodeQL-scanned and govulncheck-scanned -- and never
+# controller/, controller/nico-sim/ and nkectl were compiled, linted,
+# vetted, CodeQL-scanned and govulncheck-scanned -- and never
 # tested. A test suite nothing runs reads as coverage in review and provides
 # none.
 #
@@ -93,12 +92,9 @@ jobs:
             run: make test
           - module: controller/nico-sim
             run: make test
-          # Every module here now has a Makefile with a `test` target, so all
-          # four go through `make test` and pick up -race from GO_TEST_FLAGS
-          # below. Previously these two ran a bare `go test -race ./...`,
-          # because neither had a Makefile.
-          - module: controller/hack/nico-mock
-            run: make test
+          # Every module here has a Makefile with a `test` target, so all of
+          # them go through `make test` and pick up -race from GO_TEST_FLAGS
+          # below.
           - module: cli
             run: make test
           # The e2e module mixes the live Ginkgo suite with ordinary root and

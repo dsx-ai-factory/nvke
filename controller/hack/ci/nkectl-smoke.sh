@@ -175,7 +175,7 @@ nkectl_smoke() {
 
 # `get providers` reads the site kubeconfig through kubectl rather than the CWE
 # REST client, so it is the only smoke assertion covering that subsystem. Both
-# lanes stage CAPNICo and wait for its CRDs (ci/backend-e2e.sh, needs-nico-provider),
+# lanes stage CAPNICo and wait for its CRDs (ci/backend-e2e.sh, needs-capnico-source),
 # so crdsEstablished holds on CAPD too; only the NICo lane deploys the manager
 # and the credentials Secret.
 nkectl_smoke_providers() {

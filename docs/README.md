@@ -55,10 +55,9 @@ exist.
 | Node agent | [../agent/README.md](../agent/README.md) |
 | `nkectl` | [../cli/README.md](../cli/README.md) |
 | Generated API | [../controller/api/README.md](../controller/api/README.md) |
-| VM manager for tests | [../controller/nico-sim/README.md](../controller/nico-sim/README.md) |
+| `nico-sim` VM and container simulator | [../controller/nico-sim/README.md](../controller/nico-sim/README.md) |
 | Reference node OS image | [../os-image/README.md](../os-image/README.md) |
 | Cluster API provider | [../cluster-api-provider-provisioned/README.md](../cluster-api-provider-provisioned/README.md) |
-| NICo and Forge stand-in | [../controller/hack/nico-mock/README.md](../controller/hack/nico-mock/README.md) |
 | CAPD reboot test helper | [../controller/hack/capd-reboot-controller/README.md](../controller/hack/capd-reboot-controller/README.md) |
 
 Deeper module documentation:
@@ -79,7 +78,7 @@ Deeper module documentation:
 |---|---|
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
 | [../controller/integration-test/README.md](../controller/integration-test/README.md) | The integration tests |
-| [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End to end testing for nico-vms |
+| [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End-to-end testing for nico-sim's VM backend |
 
 ## Project and process
 

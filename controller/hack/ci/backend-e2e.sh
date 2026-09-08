@@ -55,7 +55,7 @@ TILT_BIN="${TMP_DIR}/tilt"
 BUNDLE_DIR="${TMP_DIR}/bundles"
 SOURCE_ARCHIVE="${TMP_DIR}/cwe-source.tgz"
 # Where the CAPNICo checkout lands inside the runner, when a NICo lane stages one.
-NICO_PROVIDER_CONTAINER_DIR=/workspace/cluster-api-provider-nico
+CAPNICO_SOURCE_CONTAINER_DIR=/workspace/cluster-api-provider-nico
 E2E_BIN="${TMP_DIR}/cwe-e2e.test"
 NKECTL_BIN="${TMP_DIR}/nkectl"
 E2E_CONFIG="${TMP_DIR}/e2e-config.json"
@@ -752,18 +752,18 @@ docker cp "${E2E_BIN}" "${RUNNER_NAME}:/state/cwe-e2e.test"
 # extracted with --transform s,^controller/,, so /workspace/cloud-workflow-engine
 # holds the CONTROLLER directory, not the monorepo root. That makes the
 # Tiltfile's relative default resolve outside /workspace, so the path is passed
-# explicitly as NICO_PROVIDER_REPO_DIR at the tilt invocation below rather than
+# explicitly as CAPNICO_SOURCE_DIR at the tilt invocation below rather than
 # inferred. Every other backend skips this entirely.
-if [[ -n "${NICO_PROVIDER_SRC:-}" ]]; then
-  if [[ ! -d "${NICO_PROVIDER_SRC}" ]]; then
-    log "NICO_PROVIDER_SRC is set but not a directory: ${NICO_PROVIDER_SRC}"
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+  if [[ ! -d "${CAPNICO_SOURCE_SRC}" ]]; then
+    log "CAPNICO_SOURCE_SRC is set but not a directory: ${CAPNICO_SOURCE_SRC}"
     exit 1
   fi
-  log "staging the CAPNICo provider from ${NICO_PROVIDER_SRC}"
+  log "staging the CAPNICo provider from ${CAPNICO_SOURCE_SRC}"
   nico_archive="${TMP_DIR}/cluster-api-provider-nico.tgz"
-  tar -C "$(dirname "${NICO_PROVIDER_SRC}")" \
+  tar -C "$(dirname "${CAPNICO_SOURCE_SRC}")" \
     --exclude .git \
-    -czf "${nico_archive}" "$(basename "${NICO_PROVIDER_SRC}")"
+    -czf "${nico_archive}" "$(basename "${CAPNICO_SOURCE_SRC}")"
   docker cp "${nico_archive}" "${RUNNER_NAME}:/state/cluster-api-provider-nico.tgz"
   runner_exec sh -lc '
     set -eu
@@ -875,7 +875,7 @@ runner_exec env \
   CNPG_CLOUD_PASSWORD=example-password \
   CNPG_TEMPORAL_PASSWORD=example-password \
   CWE_PROFILES_DIR=/workspace/cloud-workflow-engine/test/fixtures/profiles \
-  NICO_PROVIDER_REPO_DIR="${NICO_PROVIDER_CONTAINER_DIR}" \
+  CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_CONTAINER_DIR}" \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \

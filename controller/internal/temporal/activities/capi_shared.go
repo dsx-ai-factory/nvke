@@ -18,7 +18,7 @@ import (
 )
 
 func (a *Activities) isDockerMachineBackedNode(ctx context.Context, cluster db.Cluster, node db.Node) (bool, error) {
-	// LOCAL-DEV ONLY: the local nico-mock flow provisions nodes as bare Docker
+	// LOCAL-DEV ONLY: the local NICo container flow provisions nodes as bare Docker
 	// containers with no real cloud-init, so force them through the
 	// DockerMachine bootstrap/preflight (bootstrap-success sentinel) +
 	// container-mode kubeadm contract. This flag must NEVER be set in a real

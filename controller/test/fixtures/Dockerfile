@@ -10,7 +10,8 @@
 # only for tests.
 #
 # Defaults to Docker Hub so this builds for anyone with no NVIDIA network
-# access, matching controller/Dockerfile and hack/nico-mock/Dockerfile.
+# access, matching controller/Dockerfile and
+# hack/capd-reboot-controller/Dockerfile.
 # Internal builds override it. Hardcoding dockerhub.nvidia.com here made the
 # image unbuildable outside the NVIDIA network -- including on the GitHub
 # runner, which cannot resolve that host at all.

@@ -3,214 +3,183 @@
 
 load("ext://uibutton", "cmd_button", "text_input")
 
-NICO_PROVIDER_RESOURCE = "nico-provider"
+CAPNICO_PROVIDER_RESOURCE = "capnico-provider"
+CAPNICO_CREDENTIALS_RESOURCE = "capnico-credentials"
+CAPNICO_NAMESPACE = "capnico-system"
+CAPNICO_RELEASE = "capi-provider-nico"
+CAPNICO_IMAGE = "cluster-api-provider-nico:local"
+
 NICO_KIND_NODE_IMAGE_RESOURCE = "nico-kind-node-image"
-NICO_PROVIDER_IMAGE = "cluster-api-provider-nico:local"
-NICO_PROVIDER_NAMESPACE = os.getenv("NICO_PROVIDER_NAMESPACE", "capnico-system")
-NICO_PROVIDER_REBOOT_ANNOTATION = "nke.nvidia.com/reboot"
-NICO_MOCK_IMAGE = "cwe-nico-mock:local"
-NICO_MOCK_HTTP_PORT = "18080"
+DEFAULT_NICO_ORG_ID = "novxwn552ssc"
+DEFAULT_NICO_TOKEN = "nico-simctl-token"
 
 def _get_kind_cluster_name():
-    kind_cluster_name = os.getenv("KIND_CLUSTER_NAME", "")
-    if kind_cluster_name != "":
-        return kind_cluster_name
-
-    current_context = k8s_context()
-    if current_context.startswith("kind-"):
-        return current_context[5:]
-
+    name = os.getenv("KIND_CLUSTER_NAME", "")
+    if name:
+        return name
+    context = k8s_context()
+    if context.startswith("kind-"):
+        return context[5:]
     return "kind-cluster-name-not-set"
 
-def register(ctx):
-    # NICo cluster creation runs entirely against the in-cluster mock, so CWE
-    # must point at it regardless of whether the user happens to have a Forge
-    # API key in their shell. Forge cache-sync is orthogonal — pointing it at
-    # the mock keeps the cache hydrating against a known-empty responder
-    # instead of failing DNS/auth against real Forge.
-    #
-    cwe_env_overrides = {
-        "FORGE_ENVIRONMENT": "test",
-        "FORGE_URL": "http://mock.nico-mock.svc.cluster.local:8080",
-    }
+def _capnico_source_dir(ctx):
+    source_dir = os.getenv("CAPNICO_SOURCE_DIR", ctx.cfg.get("capnico_source_dir", ""))
+    if source_dir and not source_dir.startswith("/"):
+        source_dir = os.path.abspath(os.path.join(ctx.main_dir, source_dir))
+    return source_dir
 
-    kind_cluster_name = _get_kind_cluster_name()
-    cwe_http_port = os.getenv("CWE_HTTP_PORT", "8080")
-    capd_kindest_node_image = os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local")
-    # External checkouts sit next to the monorepo (controller/ is one level down).
-    nico_provider_repo_dir = os.getenv("NICO_PROVIDER_REPO_DIR", os.path.join(ctx.main_dir, "..", "..", "cluster-api-provider-nico"))
-    nico_provider_config_dir = os.path.join(ctx.provider_dir, "config")
-    build_capd_kindest_node_image_script = os.path.join(ctx.main_dir, "hack", "capd-kindest-node", "build-image.sh")
-    mock_dir = os.path.join(ctx.main_dir, "hack", "nico-mock")
-    labels = ["2-nico"]
+def _nico_config(ctx):
+    cfg = ctx.cfg.get("nico", {})
+    if type(cfg) != "dict":
+        fail("tilt_config.json field 'nico' must be an object")
 
-    # CI builds this image before Tilt starts, against a local bundle mirror and
-    # the agent source in the tree. Rebuilding it here would reach the public
-    # bundle server instead, which the runner cannot fetch from (403), and would
-    # discard the locally built agent. CAPD_KINDEST_NODE_IMAGE_PREBUILT lets that
-    # caller say so; local development leaves it unset and still builds.
-    kind_node_image_script = """
-          set -euo pipefail
+    endpoint = os.getenv("NICO_ENDPOINT", cfg.get("endpoint", "")).rstrip("/")
+    if endpoint and not (endpoint.startswith("http://") or endpoint.startswith("https://")):
+        fail("nico.endpoint must start with http:// or https://")
 
-          if [ "${CAPD_KINDEST_NODE_IMAGE_PREBUILT:-false}" = "true" ]; then
-            echo "reusing prebuilt %s"
-          else
-            bundle_mirror_ip="$(docker inspect capd-bundle-mirror --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')"
-            BUNDLE_SERVER_URL="${BUNDLE_SERVER_URL:-http://${bundle_mirror_ip}/}" \
-            INDEX_FILE_URL="${INDEX_FILE_URL:-http://${bundle_mirror_ip}/index.json}" \
-              bash "%s"
-          fi
-          kind load docker-image --name "%s" "%s"
-    """ % (
-        capd_kindest_node_image,
-        build_capd_kindest_node_image_script,
-        kind_cluster_name,
-        capd_kindest_node_image,
+    return struct(
+        endpoint=endpoint,
+        org_id=os.getenv("NICO_ORG_ID", cfg.get("org_id", DEFAULT_NICO_ORG_ID)),
+        token=os.getenv("NICO_TOKEN", DEFAULT_NICO_TOKEN),
+        api_name=os.getenv("NICO_API_NAME", cfg.get("api_name", "forge")),
+        environment=cfg.get("environment", "test"),
     )
+
+def _register_node_image(ctx, labels):
+    agent_dir = os.path.join(ctx.main_dir, "..", "agent")
+    script = """
+          set -euo pipefail
+          if [ "${CAPD_KINDEST_NODE_IMAGE_PREBUILT:-false}" = "true" ]; then
+            echo "reusing prebuilt ${CAPD_KINDEST_NODE_IMAGE:-cwe-capd-kindest-node:local}"
+          else
+            make -C "%s" capd-image
+          fi
+    """ % ctx.main_dir
 
     local_resource(
         NICO_KIND_NODE_IMAGE_RESOURCE,
         labels=labels,
-        cmd=["bash", "-c", kind_node_image_script],
+        cmd=["bash", "-c", script],
         resource_deps=["check-management-cluster"],
         deps=[
-          build_capd_kindest_node_image_script,
-          "hack/capd-kindest-node/Dockerfile",
-          "hack/capd-kindest-node/scripts",
-          "hack/capd-kindest-node/systemd",
+            os.path.join(ctx.main_dir, "Makefile"),
+            os.path.join(ctx.main_dir, "Makefile.dev"),
+            os.path.join(ctx.main_dir, "hack", "capd-kindest-node"),
+            os.path.join(agent_dir, "Makefile"),
+            os.path.join(agent_dir, "go.mod"),
+            os.path.join(agent_dir, "go.sum"),
+            os.path.join(agent_dir, "cmd"),
+            os.path.join(agent_dir, "internal"),
+            os.path.join(agent_dir, "pkg"),
+            os.path.join(agent_dir, "scripts"),
         ],
         allow_parallel=True,
     )
 
-    nico_provider_script = """
-          set -euo pipefail
-          provider_repo_dir="%s"
-          provider_config_dir="%s"
-          provider_image="%s"
-          provider_namespace="%s"
+def _register_nico_sim(ctx, labels, nico):
+    _register_node_image(ctx, labels)
+    sim_dir = os.path.join(ctx.main_dir, "nico-sim")
+    return load_dynamic(os.path.join(sim_dir, "Tiltfile"))["register"](struct(
+        main_dir=ctx.main_dir,
+        cfg=ctx.cfg,
+        tilt_env=ctx.tilt_env,
+        kind_host_ip=ctx.kind_host_ip,
+        provider_dir=sim_dir,
+        nico_org_id=nico.org_id,
+        nico_token=nico.token,
+    ))
 
-          if [ ! -d "${provider_repo_dir}" ]; then
-            echo "NICO_PROVIDER_REPO_DIR '${provider_repo_dir}' does not exist." >&2
-            exit 1
-          fi
+def register(ctx):
+    labels = ["2-nico"]
+    nico = _nico_config(ctx)
+    source_dir = _capnico_source_dir(ctx)
+    use_nico_sim = not nico.endpoint
 
-          if [ "$(uname -s)" = "Darwin" ]; then
-            export DOCKER_HOST="%s"
-          fi
+    sim_result = struct(cwe_resource_deps=[], cwe_env_overrides={})
+    endpoint = nico.endpoint
+    if use_nico_sim:
+        sim_result = _register_nico_sim(ctx, labels, nico)
+        endpoint = "http://%s:18080" % ctx.kind_host_ip
 
-          echo "Building local NICo provider image..."
-          docker build -t "${provider_image}" "${provider_repo_dir}"
-          echo "Loading NICo provider image into kind..."
-          kind load docker-image "${provider_image}" --name "%s"
-          echo "Applying NICo provider manifests..."
-          # Make CAPNICo watch the same CAPI Machine reboot annotation CWE
-          # writes. Render the container-specific flag into the Deployment
-          # before applying it so Kubernetes sees one desired configuration.
-          render_dir="$(mktemp -d)"
-          trap 'rm -rf "${render_dir}"' EXIT
-          cp -R "${provider_config_dir}/." "${render_dir}/"
-          ln -s "${provider_repo_dir}/config/default" "${render_dir}/capnico-base"
-          kubectl kustomize "${render_dir}" --load-restrictor=LoadRestrictionsNone \
-            | kubectl apply -f -
-          kubectl -n "${provider_namespace}" create secret generic nico-credentials \
-            --from-literal=endpoint="http://mock.nico-mock.svc.cluster.local:8080" \
-            --from-literal=orgID="local-dev-org" \
-            --from-literal=token="local-dev-token" \
-            --dry-run=client -o yaml | kubectl apply -f -
-          kubectl -n "${provider_namespace}" set image deployment/controller-manager manager="${provider_image}"
-          kubectl -n "${provider_namespace}" rollout restart deployment/controller-manager
-          kubectl -n "${provider_namespace}" rollout status deployment/controller-manager --timeout=120s
-    """ % (
-        nico_provider_repo_dir,
-        nico_provider_config_dir,
-        NICO_PROVIDER_IMAGE,
-        NICO_PROVIDER_NAMESPACE,
-        os.getenv("COLIMA_DOCKER_HOST", "unix://%s/.colima/default/docker.sock" % os.getenv("HOME", "~")),
-        kind_cluster_name,
-    )
+    install_script = os.path.join(ctx.provider_dir, "install-capnico.sh")
+    provider_config_dir = os.path.join(ctx.provider_dir, "config")
+    install_cmd = [
+        "env",
+        "CAPNICO_NAMESPACE=" + CAPNICO_NAMESPACE,
+        "CAPNICO_RELEASE=" + CAPNICO_RELEASE,
+        "CAPNICO_IMAGE=" + CAPNICO_IMAGE,
+        "CAPNICO_PROVIDER_CONFIG_DIR=" + provider_config_dir,
+        "CAPNICO_STAGED_CHART_DIR=" + os.path.join(ctx.main_dir, ".local", "capnico-chart"),
+        "KIND_CLUSTER_NAME=" + _get_kind_cluster_name(),
+    ]
+    if source_dir:
+        install_cmd.append("CAPNICO_SOURCE_DIR=" + source_dir)
+    install_cmd += ["bash", install_script]
+
+    provider_deps = [install_script, provider_config_dir]
+    if source_dir:
+        provider_deps.append(source_dir)
 
     local_resource(
-        NICO_PROVIDER_RESOURCE,
+        CAPNICO_PROVIDER_RESOURCE,
         labels=labels,
-        cmd=["bash", "-c", nico_provider_script],
+        cmd=install_cmd,
         resource_deps=["check-management-cluster"],
-        deps=[
-          nico_provider_repo_dir,
-          nico_provider_config_dir,
-        ],
+        deps=provider_deps,
         allow_parallel=True,
     )
 
-    custom_build(
-        ref=NICO_MOCK_IMAGE,
-        command=["bash", "-c", """
+    credential_deps = [CAPNICO_PROVIDER_RESOURCE]
+    if use_nico_sim:
+        credential_deps.append("nico-sim")
+
+    credentials_script = """
           set -euo pipefail
+          endpoint="%s"
 
-          if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
-            export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
-          fi
+          echo "Probing ${endpoint}/healthz from inside the cluster..."
+          kubectl -n %s delete pod capnico-endpoint-probe --ignore-not-found >/dev/null
+          kubectl -n %s run capnico-endpoint-probe \
+            --rm --attach --restart=Never --quiet \
+            --image=curlimages/curl:8.11.1 \
+            --command -- curl -fsS --max-time 10 "${endpoint}/healthz"
 
-          docker build -t "$EXPECTED_REF" -f "%s" "%s"
-          kind load docker-image --name "%s" "$EXPECTED_REF"
-        """ % (
-            os.path.join(mock_dir, "Dockerfile"),
-            mock_dir,
-            kind_cluster_name,
-        )],
-        deps=[
-          os.path.join(mock_dir, "cmd"),
-          os.path.join(mock_dir, "go.mod"),
-          os.path.join(mock_dir, "go.sum"),
-          os.path.join(mock_dir, "Dockerfile"),
-        ],
-        ignore=[
-          "**/__debug_bin*",
-        ],
+          kubectl -n %s create secret generic nico-credentials \
+            --from-literal=endpoint="${endpoint}" \
+            --from-literal=orgID="%s" \
+            --from-literal=token="%s" \
+            --from-literal=apiName="%s" \
+            --dry-run=client -o yaml | kubectl apply -f -
+    """ % (
+        endpoint,
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+        CAPNICO_NAMESPACE,
+        nico.org_id,
+        nico.token,
+        nico.api_name,
     )
-
-    mock_yaml = str(read_file(os.path.join(mock_dir, "deploy", "k8s", "mock.yaml")))
-    mock_yaml = mock_yaml.replace(
-        "value: cwe-capd-kindest-node:local",
-        "value: %s" % capd_kindest_node_image,
-    )
-    k8s_yaml(blob(mock_yaml))
-
-    k8s_resource(
+    local_resource(
+        CAPNICO_CREDENTIALS_RESOURCE,
         labels=labels,
-        workload="mock",
-        new_name="mock",
-        resource_deps=[
-          NICO_KIND_NODE_IMAGE_RESOURCE,
-          NICO_PROVIDER_RESOURCE,
-        ],
-        port_forwards=[NICO_MOCK_HTTP_PORT + ":8080"],
-        links=[
-          link("http://localhost:%s/healthz" % NICO_MOCK_HTTP_PORT, "Health"),
-        ],
+        cmd=["bash", "-c", credentials_script],
+        resource_deps=credential_deps,
+        allow_parallel=True,
     )
 
-    cmd_button(
-        "4-create-sample-forge-cluster",
-        argv=["bash", "-c", """
-          set -euo pipefail
-          CWE_HTTP_PORT="%s" \
-          CLUSTER_NAME="${CLUSTER_NAME:-forge}" \
-          KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
-          CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
-          WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}" \
-          bash ./hack/create-forge-cluster.sh
-        """ % (cwe_http_port,)],
-        resource="cwe",
-        icon_name="add_box",
-        text="Create sample Forge cluster",
-        inputs=[
-            text_input("CLUSTER_NAME", default="forge"),
-            text_input("KUBERNETES_VERSION", default="1.34.2"),
-            text_input("CONTROL_PLANE_DESIRED_COUNT", default="1"),
-            text_input("WORKER_DESIRED_COUNT", default="0"),
-        ],
-    )
+    cwe_resource_deps = sim_result.cwe_resource_deps + [CAPNICO_CREDENTIALS_RESOURCE]
+    cwe_env_overrides = {}
+    cwe_env_overrides.update(sim_result.cwe_env_overrides)
+    cwe_env_overrides.update({"ENABLE_CAPI": "true", "ENABLE_FORGE_CAPI": "true"})
+    if not use_nico_sim:
+        cwe_env_overrides.update({
+            "FORGE_URL": endpoint,
+            "FORGE_ENVIRONMENT": nico.environment,
+            "FWE_API_KEY": nico.token,
+            "SPIFFE_ENABLED": "true",
+        })
 
+    cwe_http_port = os.getenv("CWE_HTTP_PORT", "8080")
     cmd_button(
         "5-create-sample-local-nico-cluster",
         argv=["bash", "-c", """
@@ -221,7 +190,7 @@ def register(ctx):
           CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
           WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-0}" \
           ./hack/create-local-nico-cluster.sh
-        """ % (cwe_http_port,)],
+        """ % cwe_http_port],
         resource="cwe",
         icon_name="add_box",
         text="Create sample local NICo cluster",
@@ -233,7 +202,25 @@ def register(ctx):
         ],
     )
 
+    preflight_script = """
+      command -v helm >/dev/null || { echo "helm is required for the nico provider" >&2; exit 1; }
+      command -v docker >/dev/null || { echo "docker is required for the nico provider" >&2; exit 1; }
+    """
+    if source_dir:
+        preflight_script += """      if [ ! -d "%s/config/default" ]; then
+        echo "CAPNICo source directory '%s' is incomplete." >&2
+        exit 1
+      fi
+    """ % (source_dir, source_dir)
+    else:
+        preflight_script += """      if [ -z "${NGC_API_KEY:-}" ]; then
+        echo "NGC_API_KEY is required to install the released CAPNICo chart." >&2
+        exit 1
+      fi
+    """
+
     return struct(
-        cwe_resource_deps=["mock"],
+        cwe_resource_deps=cwe_resource_deps,
         cwe_env_overrides=cwe_env_overrides,
+        preflight_script=preflight_script,
     )
