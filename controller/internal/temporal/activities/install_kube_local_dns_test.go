@@ -83,10 +83,6 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	}, daemonSet.Spec.Template.Spec.Containers[0].Args)
 	require.Empty(t, daemonSet.Spec.Template.Spec.Containers[0].LivenessProbe.HTTPGet.Host)
 
-	podSecurityContext := daemonSet.Spec.Template.Spec.SecurityContext
-	require.NotNil(t, podSecurityContext.AppArmorProfile)
-	require.Equal(t, corev1.AppArmorProfileTypeRuntimeDefault, podSecurityContext.AppArmorProfile.Type)
-
 	var metricsService corev1.Service
 	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
 		Namespace: metav1.NamespaceSystem,

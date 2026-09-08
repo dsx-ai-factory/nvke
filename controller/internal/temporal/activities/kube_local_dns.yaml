@@ -168,8 +168,6 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext:
-        appArmorProfile:
-          type: RuntimeDefault
         seccompProfile:
           type: RuntimeDefault
       serviceAccount: node-local-dns
