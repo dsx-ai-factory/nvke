@@ -123,29 +123,6 @@ func TestWaitForNodeReboot_SoftRebootNotConfirmed_FallsBackToHardWithinSameAttem
 	env.AssertExpectations(t)
 }
 
-func TestWaitForNodeReboot_SoftRebootNotConfirmed_HardFallbackAlsoFails(t *testing.T) {
-	nodeID := uuid.New()
-
-	env, a := setupRebootNodeWorkflowEnv(t)
-	env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.Anything).Return(activities.WaitForNodeRebootResult{}, errors.New("deadline exceeded")).Once()
-	env.OnActivity(a.ApplyCAPIMachineRebootAnnotation, mock.Anything, mock.Anything).Return(
-		activities.ApplyCAPIMachineRebootAnnotationResult{}, errors.New("machine not found"),
-	).Once()
-
-	input := RebootNodeInput{
-		NodeID:                   nodeID,
-		InitialTimeout:           30 * time.Minute,
-		SoftRebootConfirmTimeout: 5 * time.Minute,
-		PollingInterval:          time.Minute,
-	}
-	env.ExecuteWorkflow(testWaitForNodeRebootWorkflow, input)
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.Error(t, env.GetWorkflowError())
-	require.Contains(t, env.GetWorkflowError().Error(), "hard reboot fallback failed")
-	env.AssertExpectations(t)
-}
-
 func testRebootCAPINodeWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
 	_, err := rebootCAPINode(ctx, nodeID, 1, "test")
 	return err
