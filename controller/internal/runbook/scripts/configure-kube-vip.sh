@@ -413,6 +413,8 @@ ${health_check_env}
       limits:
         memory: 128Mi
     securityContext:
+      appArmorProfile:
+        type: RuntimeDefault
       seccompProfile:
         type: RuntimeDefault
       capabilities:

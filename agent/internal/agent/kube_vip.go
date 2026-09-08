@@ -460,7 +460,8 @@ func renderKubeVipManifest(
 					},
 				},
 				SecurityContext: &corev1.SecurityContext{
-					SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+					AppArmorProfile: &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeRuntimeDefault},
+					SeccompProfile:  &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 					Capabilities: &corev1.Capabilities{
 						Add: []corev1.Capability{"NET_ADMIN", "NET_RAW"},
 					},
