@@ -12,11 +12,11 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
-// TestMigrateControlPlaneToControllerFlagOffIsNoop verifies the sweep short-circuits
-// before touching the database when the site has not opted in. The nil *bun.DB would
-// panic if the function dereferenced it, so a clean nil return proves the guard runs
-// first. This is the only branch that can be exercised without a live Postgres
-// instance; the SQL body is validated in staging against a real database.
+// TestMigrateControlPlaneToControllerFlagOffIsNoop verifies the flag-off path
+// short-circuits before touching the DB: a nil *bun.DB would panic if it were
+// dereferenced, so a clean return proves the guard runs first. This is the only
+// branch exercisable without a live Postgres; the SQL body is validated in
+// staging against a real database.
 func TestMigrateControlPlaneToControllerFlagOffIsNoop(t *testing.T) {
 	require.NotPanics(t, func() {
 		err := db.MigrateControlPlaneToController(context.Background(), nil, false)
