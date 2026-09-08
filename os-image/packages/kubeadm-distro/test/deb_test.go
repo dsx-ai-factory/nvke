@@ -4,6 +4,7 @@
 package kubeadmdistro_test
 
 import (
+	"bytes"
 	"crypto/md5" //nolint:gosec // dpkg's own conffile-integrity mechanism, not a security boundary.
 	"crypto/sha256"
 	"fmt"
@@ -422,14 +423,20 @@ func TestPostinstSwapSedIsValid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	out, err := exec.Command("sh", "-c", sedLine+" "+fstab).CombinedOutput()
-	if err != nil {
-		t.Fatalf("postinst swap sed failed: %v: %s", err, out)
+	// BSD sed (macOS) reads the argument after -i as the backup suffix, so it
+	// eats -E and the expression fails as a BRE. Run it through stdout instead:
+	// what this guards is the regex, not the spelling of the in-place flag.
+	expr, cut := strings.CutPrefix(sedLine, "sed -i ")
+	if !cut {
+		t.Fatalf("want the postinst swap sed to start with %q, got %q", "sed -i ", sedLine)
 	}
 
-	got, err := os.ReadFile(fstab)
+	cmd := exec.Command("sh", "-c", "sed "+expr+" "+fstab)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	got, err := cmd.Output()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("postinst swap sed failed: %v: %s", err, stderr.String())
 	}
 	for _, want := range []string{
 		"/dev/sda1 / ext4 defaults 0 1", // untouched

@@ -252,7 +252,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 }
 
 func (s *clusterService) preflightCheckCreateClusterRequest(
-	ctx context.Context,
+	_ context.Context,
 	req *api.CreateClusterRequest,
 ) (resolvedClusterNetwork, error) {
 	if err := s.ValidateCreateClusterRequestFields(req); err != nil {
@@ -296,10 +296,7 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 				"controlPlaneConfig.nico is required for a nico cluster control plane",
 			)
 		}
-		if err := s.validateControlPlaneForgeNetworking(
-			ctx,
-			req.Nico.OrgID,
-			req.Nico.SiteID,
+		if err := validateControlPlaneNicoNetworking(
 			req.ControlPlaneConfig.Nico.SubnetIDs,
 			req.ControlPlaneConfig.Nico.VpcPrefixIDs,
 		); err != nil {
@@ -447,7 +444,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			Infra:                       nodePoolConfig.Infra,
 		}
 
-		if err := s.nodePoolService.validateCreateNodePoolRequest(ctx, cluster, &nodePoolReq); err != nil {
+		if err := s.nodePoolService.validateCreateNodePoolRequest(cluster, &nodePoolReq); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePoolConfig.Name, err)
 		}
 
@@ -845,7 +842,7 @@ func hasNestedNicoControlPlanePatch(n *api.NicoControlPlaneProviderUpdate) bool 
 // match cluster.ProviderType, so this can assume req carries only the provider the
 // cluster actually has.
 func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
-	ctx context.Context,
+	_ context.Context,
 	cluster *db.Cluster,
 	req *api.UpdateClusterControlPlaneConfig,
 	spec *db.ControlPlaneConfigSpec,
@@ -898,7 +895,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		spec.SetNico(nico)
 
 		if req.Nico.SubnetIDs != nil || req.Nico.VpcPrefixIDs != nil {
-			if err := s.validateControlPlaneForgeNetworking(ctx, cluster.OrgID, cluster.SiteID, spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
+			if err := validateControlPlaneNicoNetworking(spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
 				return err
 			}
 		}

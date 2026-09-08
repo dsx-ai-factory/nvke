@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
@@ -138,8 +137,7 @@ func TestServerHealthEndpoints(t *testing.T) {
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}
-	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
-	srv, err := NewServer(cfg, logger, mockDB, forgeProvider, nil, nil)
+	srv, err := NewServer(cfg, logger, mockDB, nil, nil)
 	require.NoError(t, err)
 
 	healthRR := httptest.NewRecorder()

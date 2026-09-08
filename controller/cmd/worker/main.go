@@ -455,7 +455,6 @@ func main() {
 		logger.With("logger", "node-pool-node-scheduler"),
 		dbInstance,
 		temporalClient,
-		forgeProvider,
 	)
 	if err := nodePoolNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up node pool node scheduler", "error", err)
@@ -467,7 +466,6 @@ func main() {
 		logger.With("logger", "control-plane-node-scheduler"),
 		dbInstance,
 		temporalClient,
-		forgeProvider,
 	)
 	if err := controlPlaneNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane node scheduler", "error", err)
@@ -489,7 +487,7 @@ func main() {
 		logger.Info("Cert renewal controller disabled")
 	}
 
-	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, forgeProvider, temporalClient, authenticator)
+	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator)
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
 		os.Exit(1)

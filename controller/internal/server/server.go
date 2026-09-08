@@ -23,7 +23,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/auth"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/version"
 )
 
@@ -37,7 +36,6 @@ func NewServer(
 	cfg config.Config,
 	logger *slog.Logger,
 	database db.DB,
-	forgeProvider *forge.ForgeProvider,
 	temporalClient client.Client,
 	authn *auth.Authenticator,
 ) (*http.Server, error) {
@@ -47,7 +45,7 @@ func NewServer(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load OpenAPI spec: %w", err)
 	}
-	serverImpl := NewServerImpl(cfg, logger, database, forgeProvider, temporalClient)
+	serverImpl := NewServerImpl(cfg, logger, database, temporalClient)
 	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("OpenAPI StrictServer request error", "error", err)
@@ -189,8 +187,8 @@ func handleError(w http.ResponseWriter, logger *slog.Logger, message string, sta
 	}
 }
 
-func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, forgeProvider *forge.ForgeProvider, temporalClient client.Client) *serverImpl {
-	nodePoolService := NewNodePoolService(logger, database, forgeProvider, cfg.Teleport, cfg.UseControlPlaneControllerForControlPlane())
+func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, temporalClient client.Client) *serverImpl {
+	nodePoolService := NewNodePoolService(logger, database, cfg.Teleport, cfg.UseControlPlaneControllerForControlPlane())
 
 	return &serverImpl{
 		clusterService:       *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),

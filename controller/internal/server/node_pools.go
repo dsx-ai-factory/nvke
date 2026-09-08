@@ -11,8 +11,6 @@ import (
 
 	"github.com/google/uuid"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
-
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
@@ -42,19 +40,10 @@ func newBadRequestErrorf(format string, args ...any) error {
 	return &badRequestError{message: fmt.Sprintf(format, args...)}
 }
 
-type forgeSiteGetter interface {
-	GetSiteByID(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error)
-}
-
-type nodePoolForgeProvider interface {
-	forgeSiteGetter
-}
-
 type nodePoolService struct {
-	logger        *slog.Logger
-	db            db.DB
-	forgeProvider nodePoolForgeProvider
-	teleportCfg   config.TeleportConfig
+	logger      *slog.Logger
+	db          db.DB
+	teleportCfg config.TeleportConfig
 	// useControlPlaneController mirrors the CWE feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true,
 	// control-plane node pools are rejected on create/update because the control
@@ -62,11 +51,10 @@ type nodePoolService struct {
 	useControlPlaneController bool
 }
 
-func NewNodePoolService(logger *slog.Logger, database db.DB, forgeProvider nodePoolForgeProvider, teleportCfg config.TeleportConfig, useControlPlaneController bool) *nodePoolService {
+func NewNodePoolService(logger *slog.Logger, database db.DB, teleportCfg config.TeleportConfig, useControlPlaneController bool) *nodePoolService {
 	return &nodePoolService{
 		logger:                    logger,
 		db:                        database,
-		forgeProvider:             forgeProvider,
 		teleportCfg:               teleportCfg,
 		useControlPlaneController: useControlPlaneController,
 	}
@@ -120,7 +108,7 @@ func (s *nodePoolService) CreateNodePool(
 		return api.CreateNodePool400JSONResponse{Message: errControlPlaneNodePoolNotAllowed.Error()}, nil
 	}
 
-	if err := s.validateCreateNodePoolRequest(ctx, cluster, req.Body); err != nil {
+	if err := s.validateCreateNodePoolRequest(cluster, req.Body); err != nil {
 		return api.CreateNodePool400JSONResponse{Message: err.Error()}, nil
 	}
 
@@ -207,27 +195,11 @@ func validateForgeDiskSelectionStrategy(s api.DiskSelectionStrategyCreate) error
 	return nil
 }
 
-// validateForgeNativeNetworking enforces the subnet vs VPC-prefix rules that
-// depend on whether the Forge site has native networking enabled. fieldPrefix
-// is prepended to the field names in error messages (e.g. "controlPlaneConfig.")
-// so callers can scope the message to their request shape.
-func validateForgeNativeNetworking(nativeNetworkingEnabled bool, subnetIDs, vpcPrefixIDs []uuid.UUID, fieldPrefix string) error {
+func validateNicoNetworkSelection(subnetIDs, vpcPrefixIDs []uuid.UUID, fieldPrefix string) error {
 	hasSubnetIDs := len(subnetIDs) > 0
 	hasVpcPrefixIDs := len(vpcPrefixIDs) > 0
-	if nativeNetworkingEnabled {
-		if !hasVpcPrefixIDs {
-			return fmt.Errorf("%svpcPrefixIDs is required when the site has native networking enabled", fieldPrefix)
-		}
-		if hasSubnetIDs {
-			return fmt.Errorf("%ssubnetIDs should not be provided when the site has native networking enabled", fieldPrefix)
-		}
-		return nil
-	}
-	if !hasSubnetIDs {
-		return fmt.Errorf("%ssubnetIDs is required when the site does not have native networking enabled", fieldPrefix)
-	}
-	if hasVpcPrefixIDs {
-		return fmt.Errorf("%svpcPrefixIDs should not be provided when the site does not have native networking enabled", fieldPrefix)
+	if hasSubnetIDs == hasVpcPrefixIDs {
+		return fmt.Errorf("exactly one of %ssubnetIDs or %svpcPrefixIDs must be provided", fieldPrefix, fieldPrefix)
 	}
 	return nil
 }
@@ -268,7 +240,7 @@ func validateCloudInitFiles(files []api.CloudInitFile) error {
 	return nil
 }
 
-func (s *nodePoolService) validateCreateNodePoolRequest(ctx context.Context, cluster db.Cluster, req *api.CreateNodePoolRequest) error {
+func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req *api.CreateNodePoolRequest) error {
 	if err := naming.ValidateNodeNamePrefix(cluster.Name, req.NodeNamePrefix); err != nil {
 		return err
 	}
@@ -277,7 +249,7 @@ func (s *nodePoolService) validateCreateNodePoolRequest(ctx context.Context, clu
 	case db.ProviderTypeCAPI:
 		return validateCreateCAPINodePoolRequest(req)
 	case db.ProviderTypeNico:
-		return s.validateCreateForgeNodePoolRequest(ctx, cluster, req)
+		return validateCreateNicoNodePoolRequest(req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
@@ -305,11 +277,7 @@ func validateCreateCAPINodePoolRequest(req *api.CreateNodePoolRequest) error {
 	return nil
 }
 
-func (s *nodePoolService) validateCreateForgeNodePoolRequest(
-	ctx context.Context,
-	cluster db.Cluster,
-	req *api.CreateNodePoolRequest,
-) error {
+func validateCreateNicoNodePoolRequest(req *api.CreateNodePoolRequest) error {
 	if req.Infra != nil {
 		return fmt.Errorf("infra is not supported, please provide nico")
 	}
@@ -331,15 +299,7 @@ func (s *nodePoolService) validateCreateForgeNodePoolRequest(
 		return fmt.Errorf("nico.configProfile is required when creating a nico node pool")
 	}
 
-	forgeSite, err := s.forgeProvider.GetSiteByID(ctx, cluster.OrgID, cluster.SiteID.String())
-	if err != nil {
-		return fmt.Errorf("failed to get forge site: %w", err)
-	}
-
-	capabilities := forgeSite.GetCapabilities()
-	isNativeNetworkingEnabled := capabilities.GetNativeNetworking()
-
-	if err := validateForgeNativeNetworking(isNativeNetworkingEnabled, req.Nico.SubnetIDs, req.Nico.VpcPrefixIDs, ""); err != nil {
+	if err := validateNicoNetworkSelection(req.Nico.SubnetIDs, req.Nico.VpcPrefixIDs, "nico."); err != nil {
 		return err
 	}
 
@@ -437,7 +397,7 @@ func (s *nodePoolService) UpdateNodePool(
 			previousRequiredNodeBlocks = requiredPodCIDRNodeBlocks(podCIDRNodePoolsWithClusterCP(s.useControlPlaneController, cluster, nodePools), cluster.ControlPlaneConfig.MaxSurge)
 		}
 
-		if err := s.validateUpdateNodePoolRequest(ctx, cluster, req.Body); err != nil {
+		if err := s.validateUpdateNodePoolRequest(cluster, req.Body); err != nil {
 			return &badRequestError{message: err.Error()}
 		}
 
@@ -660,16 +620,12 @@ func validateUpdatedForgeNodePool(dbNodePool *db.NodePool) error {
 }
 
 // validateUpdateNodePoolRequest validates cluster-type-specific update fields before the request is applied.
-func (s *nodePoolService) validateUpdateNodePoolRequest(
-	ctx context.Context,
-	cluster db.Cluster,
-	req *api.UpdateNodePoolRequest,
-) error {
+func (s *nodePoolService) validateUpdateNodePoolRequest(cluster db.Cluster, req *api.UpdateNodePoolRequest) error {
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
 		return validateUpdateCAPINodePoolRequest(req)
 	case db.ProviderTypeNico:
-		return s.validateUpdateForgeNodePoolRequest(ctx, cluster, req)
+		return validateUpdateNicoNodePoolRequest(req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
 	}
@@ -695,11 +651,7 @@ func validateUpdateCAPINodePoolRequest(req *api.UpdateNodePoolRequest) error {
 	return nil
 }
 
-func (s *nodePoolService) validateUpdateForgeNodePoolRequest(
-	ctx context.Context,
-	cluster db.Cluster,
-	req *api.UpdateNodePoolRequest,
-) error {
+func validateUpdateNicoNodePoolRequest(req *api.UpdateNodePoolRequest) error {
 	if req.Infra != nil {
 		return fmt.Errorf("infra is not supported, please use nico")
 	}
@@ -725,21 +677,6 @@ func (s *nodePoolService) validateUpdateForgeNodePoolRequest(
 	}
 	if nonEmptySubnetIDs(req) && nonEmptyVpcPrefixIDs(req) {
 		return fmt.Errorf("cannot provide both nico.subnetIDs and nico.vpcPrefixIDs")
-	}
-
-	forgeSite, err := s.forgeProvider.GetSiteByID(ctx, cluster.OrgID, cluster.SiteID.String())
-	if err != nil {
-		return fmt.Errorf("failed to get forge site: %w", err)
-	}
-
-	capabilities := forgeSite.GetCapabilities()
-	isNativeNetworkingEnabled := capabilities.GetNativeNetworking()
-
-	if nonEmptySubnetIDs(req) && isNativeNetworkingEnabled {
-		return fmt.Errorf("nico.subnetIDs should not be provided when the site has native networking enabled")
-	}
-	if nonEmptyVpcPrefixIDs(req) && !isNativeNetworkingEnabled {
-		return fmt.Errorf("nico.vpcPrefixIDs should not be provided when the site does not have native networking enabled")
 	}
 
 	return nil

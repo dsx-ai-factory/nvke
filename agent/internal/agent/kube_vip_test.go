@@ -11,6 +11,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"math/big"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -111,6 +113,8 @@ func TestReconcileKubeVipConvergesManifest(t *testing.T) {
 		source          pb.ReconcileKubeVipRequest_BGPPeerASNSource
 		staticASN       uint32
 		fmdsASN         uint32
+		fmdsEndpoint    string
+		wantEndpoint    string
 		wantPeerASN     uint32
 		wantConfigFetch bool
 		preexisting     bool
@@ -125,14 +129,26 @@ func TestReconcileKubeVipConvergesManifest(t *testing.T) {
 			wantOutcome: pb.ReconcileKubeVipResponse_OUTCOME_CREATED,
 		},
 		{
-			name:            "FMDS peer ASN",
+			name:            "FMDS peer ASN from requested endpoint",
 			role:            ControlPlaneRole,
 			source:          pb.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
 			fmdsASN:         64512,
+			fmdsEndpoint:    "http://169.254.169.254/latest/meta-data/asn",
+			wantEndpoint:    "http://169.254.169.254/latest/meta-data/asn",
 			wantPeerASN:     64512,
 			wantConfigFetch: true,
 			preexisting:     true,
 			wantOutcome:     pb.ReconcileKubeVipResponse_OUTCOME_UPDATED,
+		},
+		{
+			name:            "FMDS peer ASN from legacy endpoint",
+			role:            ControlPlaneRole,
+			source:          pb.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
+			fmdsASN:         64513,
+			wantEndpoint:    defaultForgeFMDSASNURL,
+			wantPeerASN:     64513,
+			wantConfigFetch: true,
+			wantOutcome:     pb.ReconcileKubeVipResponse_OUTCOME_CREATED,
 		},
 	}
 
@@ -154,8 +170,9 @@ func TestReconcileKubeVipConvergesManifest(t *testing.T) {
 				Runner:     runner,
 				NodeStatus: &NodeStatus{Role: test.role},
 				RootPath:   t.TempDir(),
-				kubeVipFetchASN: func(context.Context) (uint32, error) {
+				kubeVipFetchASN: func(_ context.Context, endpoint string) (uint32, error) {
 					fetchCalls++
+					assert.Equal(t, test.wantEndpoint, endpoint)
 					return test.fmdsASN, nil
 				},
 			}
@@ -165,6 +182,7 @@ func TestReconcileKubeVipConvergesManifest(t *testing.T) {
 				NodeIp:           nodeIP,
 				BgpPeerAsnSource: test.source,
 				BgpPeerAsn:       test.staticASN,
+				FmdsEndpoint:     test.fmdsEndpoint,
 			}
 			manifestPath := filepath.Join(server.RootPath, "etc", "kubernetes", "manifests", "kube-vip.yaml")
 			if test.preexisting {
@@ -200,6 +218,21 @@ func TestReconcileKubeVipConvergesManifest(t *testing.T) {
 			assert.False(t, response.GetKubeconfigChanged())
 		})
 	}
+}
+
+func TestFetchKubeVipASNFromFMDSEndpoint(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		assert.Equal(t, "/latest/meta-data/asn", request.URL.Path)
+		_, err := response.Write([]byte("4268052677\n"))
+		require.NoError(t, err)
+	}))
+	defer server.Close()
+
+	asn, err := fetchKubeVipASNFromFMDS(context.Background(), server.URL+"/latest/meta-data/asn")
+	require.NoError(t, err)
+	assert.Equal(t, uint32(4268052677), asn)
 }
 
 func TestCredentiallessKubeVipConfigBuildsClient(t *testing.T) {

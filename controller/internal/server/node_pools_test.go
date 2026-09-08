@@ -19,8 +19,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
-
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 
 	"github.com/NVIDIA/nke/controller/api"
@@ -225,7 +223,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 			}
 			mockDB.On("ListNodePools", mock.Anything, tt.filters).Return(tt.dbNodePools, tt.dbError)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, false)
 
 			resp, err := service.ListNodePools(context.Background(), api.ListNodePoolsRequestObject{
 				Params: api.ListNodePoolsParams{
@@ -441,22 +439,6 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 				ServiceCIDR:  "10.96.0.0/12",
 			}, nil)
 
-			// Determine if native networking should be enabled based on whether request uses VpcPrefixIDs
-			hasVpcPrefixIDs := tt.request.Nico != nil && len(tt.request.Nico.VpcPrefixIDs) > 0
-
-			// Mock GetSiteByID to return a site with appropriate native networking setting
-			site := &forgesdk.Site{}
-			site.SetId(siteID.String())
-			capabilities := forgesdk.NewSiteCapabilities()
-			capabilities.SetNativeNetworking(hasVpcPrefixIDs)
-			site.SetCapabilities(*capabilities)
-
-			mockForge := &mockForgeProvider{
-				getSiteByIDFunc: func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error) {
-					return site, nil
-				},
-			}
-
 			if tt.setupMockCalls != nil {
 				tt.setupMockCalls(mockDB.MockTx)
 			}
@@ -468,7 +450,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, mockForge, config.TeleportConfig{}, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, false)
 
 			resp, err := service.CreateNodePool(context.Background(), api.CreateNodePoolRequestObject{
 				Body: &tt.request,
@@ -567,7 +549,7 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNodePool", mock.Anything, tt.nodePoolID).Return(tt.dbNodePool, tt.dbError)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, false)
 
 			resp, err := service.GetNodePool(context.Background(), api.GetNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,
@@ -602,14 +584,13 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name                  string
-		nodePoolID            uuid.UUID
-		body                  api.UpdateNodePoolRequest
-		setupMockDB           func(*mockDB, *mockTx)
-		forgeNativeNetworking bool
-		expectError           bool        // if true, assert resp is nil and err != nil; else assert no error and validate response
-		wantResponseType      interface{} // expected response type when no error (e.g. api.UpdateNodePool200JSONResponse{})
-		verifyUpdatePool      func(t *testing.T, n *db.NodePool)
+		name             string
+		nodePoolID       uuid.UUID
+		body             api.UpdateNodePoolRequest
+		setupMockDB      func(*mockDB, *mockTx)
+		expectError      bool        // if true, assert resp is nil and err != nil; else assert no error and validate response
+		wantResponseType interface{} // expected response type when no error (e.g. api.UpdateNodePool200JSONResponse{})
+		verifyUpdatePool func(t *testing.T, n *db.NodePool)
 	}{
 		{
 			name:       "success with subnetIDs replace (differs) only updates pool; controller creates NodeSet on reconcile",
@@ -631,8 +612,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					CurrentNodeSetID: &currentNodeSetID,
 				}, nil)
 			},
-			forgeNativeNetworking: false,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				assert.Equal(t, nodePoolID, n.ID)
@@ -658,8 +638,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					SubnetIDs: []uuid.UUID{subnetID1},
 				}, nil)
 			},
-			forgeNativeNetworking: false,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				assert.Equal(t, nodePoolID, n.ID)
@@ -747,21 +726,6 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			},
 		},
 		{
-			name:       "subnetIDs with native networking returns 400",
-			nodePoolID: nodePoolID,
-			body: api.UpdateNodePoolRequest{
-				Nico: &api.NicoNodePoolProviderUpdate{SubnetIDs: []openapi_types.UUID{subnetID1}},
-			},
-			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
-					ID:        nodePoolID,
-					ClusterID: clusterID,
-				}), nil)
-			},
-			forgeNativeNetworking: true,
-			wantResponseType:      api.UpdateNodePool400JSONResponse{},
-		},
-		{
 			name:       "subnetIDs when node pool not found returns 404",
 			nodePoolID: nodePoolID,
 			body: api.UpdateNodePoolRequest{
@@ -805,8 +769,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					CurrentNodeSetID: &currentNodeSetID,
 				}, nil)
 			},
-			forgeNativeNetworking: true,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				assert.Equal(t, nodePoolID, n.ID)
@@ -832,8 +795,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					VpcPrefixIDs: []uuid.UUID{vpcPrefixID1},
 				}, nil)
 			},
-			forgeNativeNetworking: true,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				assert.Equal(t, []uuid.UUID{vpcPrefixID1}, n.VpcPrefixIDs)
@@ -885,8 +847,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					DesiredCount: 6,
 				}, nil)
 			},
-			forgeNativeNetworking: true,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				assert.Equal(t, []uuid.UUID{vpcPrefixID1, vpcPrefixID2}, n.VpcPrefixIDs)
@@ -911,8 +872,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					SubnetIDs: []uuid.UUID{subnetID2},
 				}, nil)
 			},
-			forgeNativeNetworking: false,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				assert.Equal(t, []uuid.UUID{subnetID2}, n.SubnetIDs)
@@ -937,8 +897,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					SubnetIDs: []uuid.UUID{subnetID1, subnetID2},
 				}, nil)
 			},
-			forgeNativeNetworking: false,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				require.Len(t, n.SubnetIDs, 2)
@@ -965,29 +924,13 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					DesiredCount: 5,
 				}, nil)
 			},
-			forgeNativeNetworking: true,
-			wantResponseType:      api.UpdateNodePool200JSONResponse{},
+			wantResponseType: api.UpdateNodePool200JSONResponse{},
 			verifyUpdatePool: func(t *testing.T, n *db.NodePool) {
 				t.Helper()
 				assert.Equal(t, nodePoolID, n.ID)
 				assert.Equal(t, []uuid.UUID{vpcPrefixID1}, n.VpcPrefixIDs)
 				assert.Equal(t, 5, n.DesiredCount)
 			},
-		},
-		{
-			name:       "vpcPrefixIDs with non-native networking returns 400",
-			nodePoolID: nodePoolID,
-			body: api.UpdateNodePoolRequest{
-				Nico: &api.NicoNodePoolProviderUpdate{VpcPrefixIDs: []openapi_types.UUID{vpcPrefixID1}},
-			},
-			setupMockDB: func(_ *mockDB, tx *mockTx) {
-				tx.On("GetNodePoolForUpdate", mock.Anything, nodePoolID).Return(forgeDBNodePool(db.NodePool{
-					ID:        nodePoolID,
-					ClusterID: clusterID,
-				}), nil)
-			},
-			forgeNativeNetworking: false,
-			wantResponseType:      api.UpdateNodePool400JSONResponse{},
 		},
 		{
 			name:       "both subnetIDs and vpcPrefixIDs returns 400",
@@ -1004,8 +947,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 					ClusterID: clusterID,
 				}), nil)
 			},
-			forgeNativeNetworking: false, // site capability irrelevant; validation rejects "both" first
-			wantResponseType:      api.UpdateNodePool400JSONResponse{},
+			wantResponseType: api.UpdateNodePool400JSONResponse{},
 		},
 		{
 			name:       "vpcPrefixIDs when node pool not found returns 404",
@@ -1102,18 +1044,7 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 			).Maybe().Return([]db.NodePool{{ID: nodePoolID}}, nil)
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Maybe().Return(nil)
 
-			site := &forgesdk.Site{}
-			site.SetId(siteID.String())
-			capabilities := forgesdk.NewSiteCapabilities()
-			capabilities.SetNativeNetworking(tt.forgeNativeNetworking)
-			site.SetCapabilities(*capabilities)
-			mockForge := &mockForgeProvider{
-				getSiteByIDFunc: func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error) {
-					return site, nil
-				},
-			}
-
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, mockForge, config.TeleportConfig{}, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, false)
 
 			resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,
@@ -1180,7 +1111,7 @@ func TestNodePoolService_UpdateNodePool_RejectsPodCIDRCapacityExceeded(t *testin
 	}}, nil)
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
+	service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, false)
 	resp, err := service.UpdateNodePool(context.Background(), api.UpdateNodePoolRequestObject{
 		NodePoolID: nodePoolID,
 		Body: &api.UpdateNodePoolRequest{
@@ -1364,7 +1295,7 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodePoolService(&slog.Logger{}, mockDB, nil, config.TeleportConfig{}, false)
+			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, false)
 
 			resp, err := service.DeleteNodePool(context.Background(), api.DeleteNodePoolRequestObject{
 				NodePoolID: tt.nodePoolID,

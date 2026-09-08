@@ -107,6 +107,11 @@ type Config struct {
 	// FWEAPIKey is the NGC API key to pass to FWE, for use when calling the Forge API.
 	FWEAPIKey string `env:"FWE_API_KEY"`
 
+	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
+	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
+	// subnet-based NICo pools use the static Forge peer ASN.
+	KubeVipFMDSEndpoint string `env:"KUBE_VIP_FMDS_ENDPOINT"`
+
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
 
