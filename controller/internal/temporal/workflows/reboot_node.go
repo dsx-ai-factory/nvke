@@ -318,17 +318,19 @@ func waitForNodeReboot(ctx workflow.Context, input RebootNodeInput, rebootAttemp
 		return err
 	}
 
+	// SoftRebootConfirmTimeout consumed the whole attempt budget: no time left for a hard
+	// fallback this attempt. Propagate as-is, matching behavior from before this bound existed.
+	remaining := timeout - confirmTimeout
+	if remaining <= 0 {
+		return err
+	}
+
 	logger.Warn("No detectable boot change after soft reboot within bound, falling back to CAPI hard reboot",
 		"nodeID", input.NodeID, "rebootAttempt", rebootAttempt, "softRebootConfirmTimeout", confirmTimeout, "error", err)
 
 	hardRebootStartedTime, hardErr := applyCAPIMachineRebootAnnotation(ctx, input.NodeID)
 	if hardErr != nil {
 		return fmt.Errorf("soft reboot confirmation timed out and hard reboot fallback failed: %w", hardErr)
-	}
-
-	remaining := timeout - confirmTimeout
-	if remaining <= 0 {
-		remaining = input.PollingInterval
 	}
 
 	return waitForBootChange(ctx, input, previousBootID, hardRebootStartedTime, remaining)

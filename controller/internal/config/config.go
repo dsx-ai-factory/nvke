@@ -123,9 +123,10 @@ type Config struct {
 
 	// NodeRebootSoftConfirmTimeout bounds how long a CAPI node reboot waits for a detectable
 	// boot change before falling back to a hard reboot within the same attempt. Matches
-	// NodeRebootInitialTimeout: a hard fallback that fires too early can hit a node still
-	// mid-graceful-shutdown, which is the corruption risk soft-first exists to avoid. CI
-	// backends that only need to observe a container restart override this lower.
+	// NodeRebootInitialTimeout so attempt 1 gives a real hardware boot the whole budget before
+	// any hard fallback risk; the bound only starts doing real work from attempt 2 onward, when
+	// a still-unconfirmed node is more likely genuinely stuck than just slow. CI backends that
+	// only need to observe a container restart override this lower.
 	NodeRebootSoftConfirmTimeout time.Duration `env:"NODE_REBOOT_SOFT_CONFIRM_TIMEOUT" default:"30m"`
 
 	// NodeProvisioningTimeout is the maximum time a worker node may remain provisioning
