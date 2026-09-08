@@ -128,8 +128,9 @@ func init() {
 
 		// Expand/contract safety: the legacy clusters.control_plane_config column is
 		// kept here so a server rolled back onto this schema can still read it. It is
-		// dropped in the follow-up migration 20260907120000_drop_legacy_control_plane_config
-		// (NKX-13236) once the control-plane configuration rollout is complete.
+		// dropped in the follow-up migration
+		// 20260907120000_drop_legacy_control_plane_config once the control-plane
+		// configuration rollout is complete.
 		return nil
 	}, func(ctx context.Context, db *bun.DB) error {
 		_, err := db.NewAddColumn().
