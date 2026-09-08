@@ -1,0 +1,210 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm package spec for nke-kubeadm-distro-<x.y.z>. build-deb.sh exports the
+# environment this file expands: PACKAGE_NAME, DEB_REVISION, ARCH, K8S_VER,
+# MATRIX_SUBDIR, PEER_CONFLICTS, SRC (the bundle.sh output tree) and SCRATCH
+# (where build-deb.sh writes README.Debian and the mtime-pinned copy of
+# stage/opt/cni/bin).
+#
+# nfpm expands ${VAR} in ordinary string fields on its own; content entries
+# additionally need `expand: true`. `scripts:` gets no expansion at all, so
+# the maintainer scripts below are referenced by a fixed path relative to this
+# file's directory, which build-deb.sh renders into.
+#
+# PEER_CONFLICTS is one comma-separated string because nfpm cannot expand one
+# env var into several list entries. nfpm joins the `conflicts` list with
+# ", " and dpkg's Conflicts field is itself comma-separated, so an entry that
+# is already "a, b, c" flattens into the same field either way.
+
+name: "nke-kubeadm-distro-${K8S_PATCH}"
+arch: "${ARCH}"
+platform: "linux"
+version: "${DEB_REVISION}"
+# The Debian Version field here is only the packaging revision (e.g. "1"), not
+# a Kubernetes version, so it is not semver: turn off nfpm's semver parsing.
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+# No vendor/license fields: nfpm's deb packager emits neither, so setting them
+# here would be dead config.
+# Fixed rather than the build time, so two builds of the same input produce a
+# byte-identical .deb. It applies to every content entry below except the one
+# `type: tree` entry (/opt/cni/bin), which build-deb.sh touches ahead of time.
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  NKE kubeadm node stack (Kubernetes ${K8S_VER})
+  Bundled Kubernetes stack with pkgs.k8s.io-style paths: /usr/bin/kubeadm,
+  kubectl, kubelet, crictl, helm; /usr/sbin/runc; containerd, containerd-shim-
+  runc-v2 and ctr under /usr/local/bin; CNI plugins under /opt/cni/bin;
+  kubelet and containerd systemd units under /lib/systemd/system. Every
+  binary is the upstream release artifact, pinned by sha256, and every file
+  dpkg installs is owned by this package; nothing is unpacked or generated
+  by postinst. /etc/containerd/config.toml and /etc/crictl.yaml are
+  package-managed and rewritten on every install (the sandbox image must
+  track the bundled images on every matrix-row switch); local containerd
+  overrides go in /etc/containerd/conf.d/ instead. The control-plane
+  container images for this release ship under
+  /usr/lib/nke/${MATRIX_SUBDIR}/${K8S_VER}/, and postinst imports them into
+  containerd, so a node can come up with no registry access at all. Do not
+  install alongside the upstream kubeadm, kubelet, containerd or CNI packages.
+
+provides:
+  - nke-kubeadm-distro
+
+depends:
+  - iptables
+  - iproute2
+  - conntrack
+  - socat
+  - ethtool
+
+conflicts:
+  - kubeadm
+  - kubelet
+  - kubectl
+  - kubernetes-cni
+  - cri-tools
+  - runc
+  - helm
+  - containerd
+  - containerd.io
+  - ${PEER_CONFLICTS}
+
+replaces:
+  - kubeadm
+  - kubelet
+  - kubectl
+  - kubernetes-cni
+  - cri-tools
+  - runc
+  - helm
+  - nke-kubeadm-distro
+
+scripts:
+  postinstall: "../bin/.nfpm-scripts/postinst"
+  preremove: "../bin/.nfpm-scripts/prerm"
+  postremove: "../bin/.nfpm-scripts/postrm"
+
+contents:
+  # The pre-verified control-plane image tarball, the only content this
+  # package ships under k8s-matrix. Everything else installs to its FHS path.
+  - src: "${SRC}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz"
+    dst: "/usr/lib/nke/${MATRIX_SUBDIR}/${K8S_VER}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz"
+    file_info: { mode: 0644 }
+    expand: true
+  - src: "${SRC}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz.sha256"
+    dst: "/usr/lib/nke/${MATRIX_SUBDIR}/${K8S_VER}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz.sha256"
+    file_info: { mode: 0644 }
+    expand: true
+
+  # pkgs.k8s.io-style binary paths, read straight from the bundle's arch dir.
+  - src: "${SRC}/${ARCH}/kubeadm"
+    dst: "/usr/bin/kubeadm"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/${ARCH}/kubectl"
+    dst: "/usr/bin/kubectl"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/${ARCH}/kubelet"
+    dst: "/usr/bin/kubelet"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/${ARCH}/runc.${ARCH}"
+    dst: "/usr/sbin/runc"
+    file_info: { mode: 0755 }
+    expand: true
+
+  # The runtime components bundle.sh extracted from the containerd, crictl and
+  # helm tarballs. Individual `src:` entries pick up the top-level `mtime`
+  # above, so these need no SCRATCH copy.
+  - src: "${SRC}/stage/usr/local/bin/containerd"
+    dst: "/usr/local/bin/containerd"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/stage/usr/local/bin/containerd-shim-runc-v2"
+    dst: "/usr/local/bin/containerd-shim-runc-v2"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/stage/usr/local/bin/ctr"
+    dst: "/usr/local/bin/ctr"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/stage/usr/bin/crictl"
+    dst: "/usr/bin/crictl"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/stage/usr/bin/helm"
+    dst: "/usr/bin/helm"
+    file_info: { mode: 0755 }
+    expand: true
+
+  # The CNI plugins are a directory of many binaries, so this is the one
+  # `type: tree` entry. The top-level `mtime` does not reach files pulled in
+  # that way, so build-deb.sh copies and touches this directory under SCRATCH
+  # before nfpm reads it.
+  - src: "${SCRATCH}/stage/opt/cni/bin"
+    dst: "/opt/cni/bin"
+    type: tree
+    expand: true
+
+  - src: "${SRC}/stage/etc/containerd/config.toml"
+    dst: "/etc/containerd/config.toml"
+    file_info: { mode: 0644 }
+    expand: true
+  - src: "${SRC}/stage/etc/crictl.yaml"
+    dst: "/etc/crictl.yaml"
+    file_info: { mode: 0644 }
+    expand: true
+
+  # systemd: the vendor kubelet unit plus the kubeadm drop-in, same split as
+  # the upstream kubelet and kubeadm packages, plus containerd's own unit.
+  - src: "systemd/kubelet.service"
+    dst: "/lib/systemd/system/kubelet.service"
+    file_info: { mode: 0644 }
+  - src: "systemd/10-kubeadm.conf"
+    dst: "/lib/systemd/system/kubelet.service.d/10-kubeadm.conf"
+    file_info: { mode: 0644 }
+  - src: "systemd/containerd.service"
+    dst: "/lib/systemd/system/containerd.service"
+    file_info: { mode: 0644 }
+
+  # /etc/default/kubelet carries operator KUBELET_EXTRA_ARGS. As a conffile,
+  # dpkg keeps local edits when the node moves between matrix rows.
+  - src: "kubelet.default"
+    dst: "/etc/default/kubelet"
+    type: config
+    file_info: { mode: 0644 }
+
+  # Placeholders the upstream kubelet package also ships, empty on purpose:
+  # kubeadm's DirAvailable preflight check reads one name and calls any entry,
+  # hidden or not, "not empty".
+  - dst: "/etc/kubernetes/manifests"
+    type: dir
+  - dst: "/var/lib/kubelet"
+    type: dir
+
+  # containerd logs CNI errors on every CRI call until this exists; conf_dir in
+  # the rendered config.toml names it. Nothing populates it here: CNI config is
+  # the OS image's job, like the rest of the kubeadm preflight checklist.
+  - dst: "/etc/cni/net.d"
+    type: dir
+
+  # The supported override path for config.toml, which is package-managed and
+  # rewritten on every install. Empty here; an operator drops a *.toml
+  # fragment in at runtime.
+  - dst: "/etc/containerd/conf.d"
+    type: dir
+
+  - src: "${SCRATCH}/README.Debian"
+    dst: "/usr/share/doc/${PACKAGE_NAME}/README.Debian"
+    file_info: { mode: 0644 }
+    expand: true
+
+deb:
+  # gzip over xz/zstd: every dpkg/apt on the Ubuntu image this ships into can
+  # read it without a newer libarchive, and it decompresses deterministically.
+  # The ~1 GB of binaries and container images dominates the size anyway.
+  compression: gzip

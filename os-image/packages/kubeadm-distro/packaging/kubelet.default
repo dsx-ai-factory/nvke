@@ -1,0 +1,2 @@
+# Optional kubelet flags; kubeadm uses /var/lib/kubelet/kubeadm-flags.env.
+KUBELET_EXTRA_ARGS=

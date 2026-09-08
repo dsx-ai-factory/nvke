@@ -78,6 +78,16 @@ if [[ "${ARCH}" == amd64 ]]; then
   fi
   make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
 
+  # The kubeadm/kubelet/containerd debs the agent installs at cluster create.
+  # Without them a node built here cannot obtain kubeadm at all: there is no
+  # bundle server to fall back to.
+  echo "building nke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
+  kubeadm_distro_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
+  if [[ -n "${K8S_VERSIONS:-}" ]]; then
+    kubeadm_distro_args+=(K8S_VERSIONS="${K8S_VERSIONS}")
+  fi
+  make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
+
   # OVN's chart and images need an NGC key for nv-ngn; CI has none, so opt-in.
   if [[ -n "${NGC_API_KEY:-}" ]]; then
     echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"

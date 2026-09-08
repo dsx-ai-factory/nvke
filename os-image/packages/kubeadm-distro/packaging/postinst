@@ -1,0 +1,127 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# dpkg has already put every binary, unit and config file in place by the time
+# this runs. What is left is what a file list cannot express: the node-level
+# state kubeadm's preflight checks require, starting containerd, and loading
+# the bundled control-plane images into it.
+set -euo pipefail
+
+# Templated at package build time; must match what nfpm.yaml staged.
+K8S_VER="{{K8S_VER}}"
+K8S_PATCH="{{K8S_PATCH}}"
+ARCH="{{ARCH}}"
+PACKAGE="{{PACKAGE_NAME}}"
+MATRIX_ROOT="/usr/lib/nke/{{MATRIX_SUBDIR}}/${K8S_VER}"
+LOG="/var/log/${PACKAGE}-postinst.log"
+
+case "${1:-}" in
+configure | reconfigure) ;;
+*) exit 0 ;;
+esac
+
+if [ "${NKE_KUBEADM_DISTRO_NO_INSTALL:-}" = "1" ]; then
+  echo "${PACKAGE}: skipping node configuration (NKE_KUBEADM_DISTRO_NO_INSTALL=1)"
+  exit 0
+fi
+
+echo "=== $(date) ${PACKAGE} postinst $* ===" >>"$LOG"
+
+# kubelet refuses to run with swap on unless it is explicitly configured for it.
+if ! swapoff -a; then
+  echo "${PACKAGE}: swapoff -a failed; kubelet will not start while swap is on" | tee -a "$LOG" >&2
+  exit 1
+fi
+# Not every image ships an /etc/fstab, so a missing one is not an error. The
+# leading [[:space:]]* matters: an indented swap line is still a swap line
+# fstab mounts at the next boot.
+if [ -f /etc/fstab ]; then
+  # @ delimits the s command, not |: the alternation below contains a | of its
+  # own, which ends the command early and fails with "Unmatched ( or \(".
+  sed -i -E 's@^([[:space:]]*[^#[:space:]][^[:space:]]*[[:space:]]+[^[:space:]]+[[:space:]]+swap([[:space:]]|$))@#\1@' /etc/fstab
+fi
+
+printf 'overlay\nbr_netfilter\nnf_conntrack\n' >/etc/modules-load.d/k8s.conf
+modprobe overlay
+modprobe br_netfilter
+# Tolerated: nf_conntrack is built into some kernels, where modprobe has no
+# module to load and fails even though conntrack works.
+modprobe nf_conntrack || echo "${PACKAGE}: nf_conntrack may be built into this kernel" | tee -a "$LOG"
+
+# kubeadm 1.34+ has a fatal
+# FileContent--proc-sys-net-ipv6-conf-default-forwarding preflight check, so a
+# node without the IPv6 forwarding keys fails `kubeadm init` even on an
+# IPv4-only cluster.
+cat >/etc/sysctl.d/k8s.conf <<'EOF'
+net.bridge.bridge-nf-call-iptables  = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.ipv4.ip_forward                 = 1
+net.ipv6.conf.all.forwarding        = 1
+net.ipv6.conf.default.forwarding    = 1
+EOF
+# The output goes to the log, so on failure show enough of it here to say
+# which key was rejected.
+if ! sysctl --system >>"$LOG" 2>&1; then
+  echo "${PACKAGE}: sysctl --system failed; last 20 lines of ${LOG}:" >&2
+  tail -n 20 "$LOG" >&2
+  exit 1
+fi
+
+# A kubelet unit under /etc masks the vendor unit this package ships in /lib.
+if [ -f /etc/systemd/system/kubelet.service ]; then
+  echo "${PACKAGE}: removing /etc/systemd/system/kubelet.service so the vendor unit in /lib applies." | tee -a "$LOG"
+  rm -f /etc/systemd/system/kubelet.service
+fi
+
+systemctl daemon-reload
+systemctl enable containerd
+# restart, not `enable --now`: on a version switch containerd is already
+# running with the previous config.toml, and --now would leave it there.
+systemctl restart containerd
+
+IMG_TGZ="${MATRIX_ROOT}/${ARCH}/k8s-base-container-images_${K8S_PATCH}_linux_${ARCH}.tgz"
+CTR="${NKE_CTR_BIN:-/usr/local/bin/ctr}"
+
+# The bundled images are the offline contract, so a missing tarball is a build
+# defect. Fail here rather than at kubeadm init.
+if [ ! -f "$IMG_TGZ" ] || [ ! -f "${IMG_TGZ}.sha256" ]; then
+  echo "${PACKAGE}: no bundled base images at ${IMG_TGZ} (with .sha256 sidecar)" | tee -a "$LOG" >&2
+  echo "${PACKAGE}: this package cannot bring up a node offline; rebuild it." | tee -a "$LOG" >&2
+  exit 1
+fi
+if ! (cd "$(dirname "$IMG_TGZ")" && sha256sum -c "$(basename "$IMG_TGZ").sha256" >/dev/null); then
+  echo "${PACKAGE}: base image bundle failed checksum verification (${IMG_TGZ})" | tee -a "$LOG" >&2
+  exit 1
+fi
+
+n=0
+until "$CTR" version >/dev/null 2>&1; do
+  n=$((n + 1))
+  if [ "$n" -ge 50 ]; then
+    echo "${PACKAGE}: ctr did not become ready; base image import aborted" | tee -a "$LOG" >&2
+    exit 1
+  fi
+  sleep 0.2
+done
+
+echo "${PACKAGE}: importing the bundled Kubernetes base images with ctr (${IMG_TGZ})" | tee -a "$LOG"
+# `ctr images import` does not auto-detect gzip in containerd 1.7.x
+# (containerd#9981) and regressed on go-containerregistry's docker-archive
+# layout in containerd 2.2/2.3. Decompressing and streaming raw tar over
+# stdin avoids both. PIPESTATUS[1] is ctr's exit status, not gunzip's or tee's.
+set +e
+gunzip -c "$IMG_TGZ" | "$CTR" -n k8s.io images import - 2>&1 | tee -a "$LOG"
+imp_rc=${PIPESTATUS[1]}
+set -e
+if [ "$imp_rc" -ne 0 ]; then
+  echo "${PACKAGE}: ctr images import failed (exit $imp_rc). See $LOG" >&2
+  exit "$imp_rc"
+fi
+
+# kubelet is enabled but not started: kubeadm's preflight check wants port
+# 10250 free until `kubeadm init` or `kubeadm join` runs kubelet-start.
+systemctl enable kubelet
+
+echo "${PACKAGE}: node prepared for Kubernetes ${K8S_VER}; kubeadm init or join starts kubelet."
+
