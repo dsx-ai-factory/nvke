@@ -193,24 +193,8 @@ func validateMergedCAPIControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 	return nil
 }
 
-// validateControlPlaneForgeNetworking enforces the same subnet/VPC-prefix
-// native-networking rules used for node pools, for the cluster-level control
-// plane on a Forge cluster.
-func (s *clusterService) validateControlPlaneForgeNetworking(
-	ctx context.Context,
-	orgID string,
-	siteID uuid.UUID,
-	subnetIDs []uuid.UUID,
-	vpcPrefixIDs []uuid.UUID,
-) error {
-	forgeSite, err := s.nodePoolService.forgeProvider.GetSiteByID(ctx, orgID, siteID.String())
-	if err != nil {
-		return fmt.Errorf("failed to get forge site: %w", err)
-	}
-	capabilities := forgeSite.GetCapabilities()
-	isNativeNetworkingEnabled := capabilities.GetNativeNetworking()
-
-	if err := validateForgeNativeNetworking(isNativeNetworkingEnabled, subnetIDs, vpcPrefixIDs, "controlPlaneConfig."); err != nil {
+func validateControlPlaneNicoNetworking(subnetIDs, vpcPrefixIDs []uuid.UUID) error {
+	if err := validateNicoNetworkSelection(subnetIDs, vpcPrefixIDs, "controlPlaneConfig.nico."); err != nil {
 		return newBadRequestErrorf("%s", err)
 	}
 	return nil

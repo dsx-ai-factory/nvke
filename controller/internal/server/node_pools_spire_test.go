@@ -4,7 +4,6 @@
 package server
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 
@@ -43,9 +42,9 @@ func TestAPINodePoolFromDB_SpireAttestationMethod(t *testing.T) {
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiresCAPITemplate(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
 
-	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), &api.CreateNodePoolRequest{
+	err := service.validateCreateNodePoolRequest(capiCluster(), &api.CreateNodePoolRequest{
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
@@ -57,7 +56,7 @@ func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiresCAPITemplat
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiredForCAPIClusters(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -67,6 +66,6 @@ func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiredForCAPIClus
 			MachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 		},
 	}
-	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), req)
+	err := service.validateCreateNodePoolRequest(capiCluster(), req)
 	require.EqualError(t, err, "infra.spireAttestationMethod is required")
 }

@@ -30,7 +30,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/auth"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/server"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
@@ -80,8 +79,7 @@ func newEnforcingTestServer(t *testing.T) http.Handler {
 	require.NoError(t, err)
 
 	mockDB := &testutil.MockDB{}
-	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
-	srv, err := server.NewServer(cfg, logger, mockDB, forgeProvider, nil, authn)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, authn)
 	require.NoError(t, err)
 
 	return srv.Handler
@@ -134,8 +132,7 @@ func newPermissiveTestServer(t *testing.T) (http.Handler, *decisions) {
 	mockDB := &testutil.MockDB{}
 	mockDB.On("ListClusters", mock.Anything, mock.Anything).Return([]db.Cluster{}, nil)
 
-	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
-	srv, err := server.NewServer(cfg, logger, mockDB, forgeProvider, nil, authn)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, authn)
 	require.NoError(t, err)
 
 	return srv.Handler, recorded
@@ -246,10 +243,8 @@ func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 		ProfilesDir:          "./profiles",
 	}
 	mockDB := &testutil.MockDB{}
-	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
-
 	// nil authenticator: authentication is absent from the chain entirely.
-	srv, err := server.NewServer(cfg, logger, mockDB, forgeProvider, nil, nil)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, nil)
 	require.NoError(t, err)
 
 	rr := httptest.NewRecorder()

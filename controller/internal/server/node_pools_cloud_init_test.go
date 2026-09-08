@@ -4,7 +4,6 @@
 package server
 
 import (
-	"context"
 	"log/slog"
 	"testing"
 
@@ -18,7 +17,7 @@ import (
 )
 
 func TestValidateCreateNodePoolRequest_CAPICloudInitInputs(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -33,12 +32,12 @@ func TestValidateCreateNodePoolRequest_CAPICloudInitInputs(t *testing.T) {
 			PreKubeadmCommands: []string{"echo before kubeadm"},
 		},
 	}
-	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), req)
+	err := service.validateCreateNodePoolRequest(capiCluster(), req)
 	require.NoError(t, err)
 }
 
 func TestValidateCreateNodePoolRequest_CAPIAllowsMissingConfigProfile(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -49,14 +48,14 @@ func TestValidateCreateNodePoolRequest_CAPIAllowsMissingConfigProfile(t *testing
 			SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 		},
 	}
-	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), req)
+	err := service.validateCreateNodePoolRequest(capiCluster(), req)
 	require.NoError(t, err)
 }
 
 func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayload(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
 
-	err := service.validateCreateNodePoolRequest(context.Background(), capiCluster(), &api.CreateNodePoolRequest{
+	err := service.validateCreateNodePoolRequest(capiCluster(), &api.CreateNodePoolRequest{
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
@@ -66,9 +65,9 @@ func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayload(t *testing.T) {
 }
 
 func TestValidateCreateNodePoolRequest_ForgeRejectsCAPICloudInitInputs(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
 
-	err := service.validateCreateNodePoolRequest(context.Background(), forgeCluster(), &api.CreateNodePoolRequest{
+	err := service.validateCreateNodePoolRequest(forgeCluster(), &api.CreateNodePoolRequest{
 		Name:             "worker",
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
@@ -86,7 +85,7 @@ func TestValidateCreateNodePoolRequest_ForgeRejectsCAPICloudInitInputs(t *testin
 }
 
 func TestValidateCreateNodePoolRequest_ForgeRequiresConfigProfile(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -98,7 +97,7 @@ func TestValidateCreateNodePoolRequest_ForgeRequiresConfigProfile(t *testing.T) 
 			SubnetIDs:      []uuid.UUID{uuid.New()},
 		},
 	}
-	err := service.validateCreateNodePoolRequest(context.Background(), forgeCluster(), req)
+	err := service.validateCreateNodePoolRequest(forgeCluster(), req)
 	require.EqualError(t, err, "nico.configProfile is required when creating a nico node pool")
 }
 
