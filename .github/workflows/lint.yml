@@ -102,9 +102,9 @@ jobs:
             goversion: controller/hack/nico-mock/go.mod
             gowork: "off"
             timeout: 15
-          - name: nico-vms
-            dir: controller/nico-vms
-            goversion: controller/nico-vms/go.mod
+          - name: nico-sim
+            dir: controller/nico-sim
+            goversion: controller/nico-sim/go.mod
             gowork: "off"
             timeout: 15
           - name: controller/test/e2e

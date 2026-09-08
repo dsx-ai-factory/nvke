@@ -1,7 +1,7 @@
 # kubeadm cluster bring-up on nico-vms
 
 An advisory end-to-end test that boots two Ubuntu 24.04 VMs through
-[nico-vms](../../nico-vms/README.md), then drives `nke-agent`'s gRPC kubeadm
+[nico-vms](../../nico-sim/README.md), then drives `nke-agent`'s gRPC kubeadm
 RPCs to run `kubeadm init` on the first VM and join the second to it.
 
 It is a port of the kubeadm builder repository's `cluster-bringup` driver into
@@ -73,10 +73,10 @@ run this suite — nico-vms' libvirt backend is Linux-only.
 1. **Host packages and networking.** nico-vms' own setup script installs QEMU,
    libvirt, swtpm and OVMF, creates the `cwebr0` bridge on `172.30.0.0/24`,
    starts a dnsmasq for DHCP, and installs the iptables NAT rules
-   (`../../nico-vms/README.md:641-656`):
+   (`../../nico-sim/README.md:641-656`):
 
    ```bash
-   sudo ./controller/nico-vms/scripts/setup-linux.sh
+   sudo ./controller/nico-sim/scripts/setup-linux.sh
    ```
 
    Log out and back in afterwards — `libvirt`/`kvm` group membership does not
@@ -87,25 +87,25 @@ run this suite — nico-vms' libvirt backend is Linux-only.
    requirement and no metadata server dependency:
 
    ```bash
-   mkdir -p controller/nico-vms/images
-   curl -fL -o controller/nico-vms/images/ubuntu-cloud.qcow2 \
+   mkdir -p controller/nico-sim/images
+   curl -fL -o controller/nico-sim/images/ubuntu-cloud.qcow2 \
      https://cloud-images.ubuntu.com/releases/24.04/release/ubuntu-24.04-server-cloudimg-amd64.img
    ```
 
    That is the same URL nico-vms' `test-server` mode downloads
-   (`../../nico-vms/cmd/nico-vms/testserver.go:198-203`).
+   (`../../nico-sim/cmd/nico-sim/testserver.go:198-203`).
 
 3. **The `nico-vms` binary, built with cgo and `CAP_NET_ADMIN`.**
 
    ```bash
-   CGO_ENABLED=1 make -C controller/nico-vms build-privileged
+   CGO_ENABLED=1 make -C controller/nico-sim build-privileged
    ```
 
    Both halves matter. nico-vms' state store imports `mattn/go-sqlite3`
-   (`../../nico-vms/internal/state/store.go:16`), which is a cgo binding: with
+   (`../../nico-sim/internal/state/store.go:16`), which is a cgo binding: with
    `CGO_ENABLED=0` the binary **compiles cleanly and dies at the first query**.
    And `build-privileged` is `build` plus `sudo setcap cap_net_admin+ep`
-   (`../../nico-vms/Makefile:14,33-35`), which bridge mode needs to add
+   (`../../nico-sim/Makefile:14,33-35`), which bridge mode needs to add
    addresses and install routes. `setup-linux.sh` installs a sudoers rule so
    the `setcap` does not prompt.
 
@@ -122,7 +122,7 @@ export NKE_BRINGUP_PROVISION_MODE=community
 
 # Where the base image lives. Make it absolute: nico-vms resolves a relative
 # path against its own working directory, which is not the one you are in.
-export NICO_VMS_BASE_IMAGE="$PWD/controller/nico-vms/images/ubuntu-cloud.qcow2"
+export NICO_VMS_BASE_IMAGE="$PWD/controller/nico-sim/images/ubuntu-cloud.qcow2"
 
 # Match what setup-linux.sh configured.
 export NICO_VMS_BRIDGE_NAME=cwebr0
@@ -151,7 +151,7 @@ nico-vms' own namespace and is never used for driver settings.
 | `NKE_BRINGUP_KUBEADM_DEB_VERSION` | the suite's pin | Exact apt-pinned version, e.g. `5` |
 | `NKE_BRINGUP_INIT_TIMEOUT` | `15m` | Wall clock for `ExecuteKubeadmInit` → `phase=initialize` |
 | `NKE_BRINGUP_JOIN_TIMEOUT` | `10m` | Wall clock for `ExecuteKubeadmJoin` → `phase=join` |
-| `NKE_BRINGUP_ARTIFACT_DIR` | *(unset)* | Where the suite, the teardown script and CI's upload step meet: rendered cloud-init, the nico-vms log, and the VM console logs. |
+| `NKE_BRINGUP_ARTIFACT_DIR` | *(unset)* | Where the suite, the teardown script and CI's upload step meet: rendered cloud-init, the nico-sim log, and the VM console logs. |
 
 The CI lane sets neither package variable, so it exercises whatever the suite
 pins. Set both when you are validating a specific apt publish — that is what
@@ -165,9 +165,9 @@ from the public upstream mirrors.
 the whole environment; it explains each value in place.
 
 These nico-vms variables are read by the server the driver launches. The driver
-sets `NICO_VMS_LISTEN_ADDR`, `NICO_VMS_DB_PATH` and `NICO_VMS_SEED_PATH`
+sets `NICO_SIM_LISTEN_ADDR`, `NICO_SIM_DB_PATH` and `NICO_SIM_SEED_PATH`
 itself — nico-vms parses **zero** command-line flags, so everything is
-environment (`../../nico-vms/internal/config/config.go:157-181`). The rest are
+environment (`../../nico-sim/internal/config/config.go:157-181`). The rest are
 yours to set:
 
 | Variable | Default | Notes |
@@ -184,7 +184,7 @@ yours to set:
 
 nico-vms picks its accelerator by stat-ing the device and says nothing about
 it: `os.Stat("/dev/kvm")` returns `kvm` if present and `qemu` (TCG software
-emulation) otherwise (`../../nico-vms/internal/vm/libvirt/virsh.go:248-253`).
+emulation) otherwise (`../../nico-sim/internal/vm/libvirt/virsh.go:248-253`).
 The fallback is automatic and silent.
 
 Locally that is fine — a workstation or Colossus lease has `/dev/kvm` and you
@@ -207,17 +207,17 @@ why its timeouts are set in hours rather than minutes. Slow, not prohibitive.
 **Where the logs are.** nico-vms' own log is written to the suite's work
 directory. Per-VM serial console output lands next to each VM's disk overlay,
 under `{db_dir}/instances/{instance_id}/`
-(`../../nico-vms/README.md:587-592`):
+(`../../nico-sim/README.md:587-592`):
 
 - `disk.qcow2.ttyS0.log` — cloud images, serial port 0. This is the one you
   want.
 - `disk.qcow2.ttyS1.log` — production FDE images, serial port 1. Unused here.
 
-The `nico-vmsctl` helper prints them without needing the API, but it only
+The `nico-simctl` helper prints them without needing the API, but it only
 searches conventional locations by default, so point it at the work directory:
 
 ```bash
-./controller/nico-vms/bin/nico-vmsctl instance console-log-local \
+./controller/nico-sim/bin/nico-simctl instance console-log-local \
   --dir <work-dir>/instances --name vm-1 --dump
 ```
 
@@ -252,7 +252,7 @@ source address rewritten, IP-bound peer TLS breaks and the join fails with that
 message. The usual cause is a SNAT rule that sits earlier in the nat
 `POSTROUTING` chain than nico-vms' own MASQUERADE — most notably the AWS VPC
 CNI's `AWS-SNAT-CHAIN`, which masquerades anything not bound for the VPC CIDR
-(`../../nico-vms/README.md:167`). `setup-linux.sh` appends its rule, so it
+(`../../nico-sim/README.md:167`). `setup-linux.sh` appends its rule, so it
 loses the race. Exempt intra-subnet traffic by *inserting* a `RETURN` at
 position 1, the same fix `setup-libvirt-network.sh` applies:
 

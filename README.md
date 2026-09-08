@@ -52,7 +52,7 @@ What distinguishes it from a generic CAPI distribution:
 | `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NKE provisions before CAPI bootstraps them. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
 | `cli/` | `nkectl`, the command-line interface. Validates a site spec and drives bootstrap. |
-| `controller/nico-vms/` | VM lifecycle service used by the development and test environments. |
+| `controller/nico-sim/` | VM lifecycle service used by the development and test environments. |
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |

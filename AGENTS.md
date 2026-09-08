@@ -19,7 +19,7 @@ instructions.
   - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, packaging, gRPC conventions
   - [cli/AGENTS.md](cli/AGENTS.md) — nkectl, verification, doc-comment conventions
   - [os-image/AGENTS.md](os-image/AGENTS.md) — reference node OS image spec, Packer, connectivity checker
-  - [controller/nico-vms/AGENTS.md](controller/nico-vms/AGENTS.md) — local VM-backed Forge emulator
+  - [controller/nico-sim/AGENTS.md](controller/nico-sim/AGENTS.md) — local VM-backed Forge emulator
 
 ## Read if needed
 

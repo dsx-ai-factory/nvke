@@ -42,10 +42,10 @@
 #   NICO_VMS_LIBVIRT_URI       libvirt connection        (default qemu:///session)
 #   NICO_VMS_DHCP_HOSTS_DIR    dnsmasq hostsdir          (default /var/lib/nico-vms/dhcp-hosts)
 #   NICO_VMS_DHCP_LEASE_FILE   dnsmasq lease file        (default /var/run/nico-vms-dnsmasq.leases)
-#   NICO_VMS_DB_PATH           nico-vms SQLite path; its directory is where the
+#   NICO_SIM_DB_PATH           nico-vms SQLite path; its directory is where the
 #                              console logs are searched for first, because
 #                              config.go:310-312 puts the per-VM work dirs at
-#                              <dirname(NICO_VMS_DB_PATH)>/instances/<id>/
+#                              <dirname(NICO_SIM_DB_PATH)>/instances/<id>/
 #   NKE_BRINGUP_ARTIFACT_DIR   where to write the bundle
 #                              (default <workspace>/.ci-artifacts/kubeadm-bringup)
 
@@ -106,12 +106,12 @@ qemu_processes() {
   ps -eo pid,ppid,etime,args | grep -E '[q]emu-system' || echo "(no qemu-system processes)"
 }
 
-# `nico-vms` must be followed by whitespace or end-of-line, so that paths that
-# merely contain the name -- nico-vms.db, controller/nico-vms/... -- do not
+# `nico-sim` must be followed by whitespace or end-of-line, so that paths that
+# merely contain the name -- nico-sim.db, controller/nico-sim/... -- do not
 # match. Without it this reports the shell that invoked the script, because
-# NICO_VMS_DB_PATH appears on its command line.
+# NICO_SIM_DB_PATH appears on its command line.
 nicovms_processes() {
-  ps -eo pid,ppid,etime,args | grep -E '[n]ico-vms([[:space:]]|$)|[d]nsmasq' || echo "(no nico-vms or dnsmasq processes)"
+  ps -eo pid,ppid,etime,args | grep -E '[n]ico-sim([[:space:]]|$)|[d]nsmasq' || echo "(no nico-sim or dnsmasq processes)"
 }
 
 dhcp_leases() {
@@ -136,7 +136,7 @@ dhcp_leases() {
   dump "iptables -t nat -S" run_priv iptables -t nat -S
   dump "iptables -S" run_priv iptables -S
   dump "running QEMU processes" qemu_processes
-  dump "running nico-vms / dnsmasq processes" nicovms_processes
+  dump "running nico-sim / dnsmasq processes" nicovms_processes
   dump "virsh list --all (${LIBVIRT_URI})" virsh -c "${LIBVIRT_URI}" list --all
   dump "dnsmasq leases" dhcp_leases
 } 2>&1 | tee "${DIAG_FILE}"
@@ -151,8 +151,8 @@ log "Wrote host diagnostics to ${DIAG_FILE}"
 # flattened into one directory.
 
 LOG_ROOTS=()
-if [[ -n "${NICO_VMS_DB_PATH:-}" ]]; then
-  LOG_ROOTS+=("$(dirname "${NICO_VMS_DB_PATH}")")
+if [[ -n "${NICO_SIM_DB_PATH:-}" ]]; then
+  LOG_ROOTS+=("$(dirname "${NICO_SIM_DB_PATH}")")
 fi
 LOG_ROOTS+=("${WORKSPACE}")
 if [[ -n "${RUNNER_TEMP:-}" ]]; then
@@ -172,7 +172,7 @@ for root in "${LOG_ROOTS[@]}"; do
   while IFS= read -r -d '' logfile; do
     dir="$(dirname "${logfile}")"
     dest="${CONSOLE_LOG_DIR}/$(basename "${dir}")-$(basename "${logfile}")"
-    # The roots overlap by design -- NICO_VMS_DB_PATH normally points inside the
+    # The roots overlap by design -- NICO_SIM_DB_PATH normally points inside the
     # workspace -- so the same file is found more than once. The destination
     # name carries the instance ID, so an existing dest means "already copied".
     [[ -e "${dest}" ]] && continue
@@ -192,7 +192,7 @@ fi
 log "Artifact bundle ready at ${ARTIFACT_DIR}"
 
 # ── 3. Remove the nico-vms domains ──────────────────────────────────────────
-# The suite deletes its instances through the nico-vms API, which stops each
+# The suite deletes its instances through the nico-sim API, which stops each
 # VM but leaves the libvirt domain defined. A run that fails before its cleanup
 # leaves them running as well. On a long-lived runner they accumulate, and this
 # script's header promises such a runner behaves like a fresh one.

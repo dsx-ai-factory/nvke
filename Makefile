@@ -58,7 +58,7 @@ WORK_MODULES := agent \
                 cluster-api-provider-provisioned \
                 controller \
                 controller/api \
-                controller/nico-vms \
+                controller/nico-sim \
                 controller/hack/capd-reboot-controller \
                 controller/hack/nico-mock \
                 cli \
@@ -72,7 +72,7 @@ WORK_MODULES := agent \
 #
 # controller does not belong here: its command is ./cmd/worker, but the binary
 # it ships is named controller, so this loop would produce the wrong
-# name. `build` delegates to controller/Makefile for it. controller/nico-vms
+# name. `build` delegates to controller/Makefile for it. controller/nico-sim
 # ships through its own Makefile and the container image.
 #
 # cli is absent because its Makefile stamps four symbols, not one,
@@ -379,20 +379,20 @@ test-compile: ## Type-check test variants that need external services to run.
 	@echo "- compile controller Teleport integration tests"
 	@cd controller && CGO_ENABLED=1 $(GO) vet -tags integration ./internal/teleport/...
 	@echo "- compile nico-vms integration tests"
-	@cd controller/nico-vms && CGO_ENABLED=1 $(GO) vet -tags integration ./test/integration/...
+	@cd controller/nico-sim && CGO_ENABLED=1 $(GO) vet -tags integration ./test/integration/...
 	@echo "- compile controller integration tests"
 	@cd controller && CGO_ENABLED=1 $(GO) vet -tags integration_test ./integration-test/...
 
 # The modules that own lint and test targets.
 #
-# Deepest first, so the first match wins. controller/nico-vms/x.go sits inside
-# both controller/nico-vms and controller, and only the first is right.
+# Deepest first, so the first match wins. controller/nico-sim/x.go sits inside
+# both controller/nico-sim and controller, and only the first is right.
 #
 # controller/api has no fmt target because its Go is generated.
 PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      controller/hack/nico-mock \
                      controller/test/e2e \
-                     controller/nico-vms \
+                     controller/nico-sim \
                      controller/api \
                      agent \
                      cli \
@@ -416,7 +416,7 @@ API_DEPENDENTS := controller cli controller/test/e2e
 RACE_MODULES := agent \
                 cli \
                 controller \
-                controller/nico-vms \
+                controller/nico-sim \
                 controller/hack/nico-mock \
                 controller/test/e2e
 

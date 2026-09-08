@@ -3,17 +3,17 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package nicovms launches the nico-vms HTTP server as a subprocess and
+// Package nicovms launches the nico-sim HTTP server as a subprocess and
 // exposes a thin client for the Forge API that powers the kubeadm cluster
 // bring-up test.
 //
-// Seam: this package is the ONLY place that talks to the nico-vms binary.
+// Seam: this package is the ONLY place that talks to the nico-sim binary.
 // It imports the public ncx-infra-controller-rest SDK — the same wire API
 // nico-vms serves — and never imports nico-vms internal packages. The
 // "forge" naming throughout is deliberate: nico-vms *emulates* the
 // Forge/Carbide API, so these names identify the upstream API, not the tool.
 //
-// Invocation contract: nico-vms parses NO command-line flags. cmd/nico-vms
+// Invocation contract: nico-vms parses NO command-line flags. cmd/nico-sim
 // switches on os.Args[1] for "test-server" only, with no default case, so
 // any flag passed here would be silently ignored. Every setting below is
 // therefore an NICO_VMS_* environment variable.
@@ -62,31 +62,31 @@ const (
 	// middleware.go checks that an Authorization: Bearer header exists and
 	// never validates the value. Any non-empty string works; this one just
 	// matches the CLI's default so logs line up.
-	DefaultBearerToken = "nico-vmsctl-token"
+	DefaultBearerToken = "nico-simctl-token"
 	DefaultOrgID       = "novxwn552ssc"
 )
 
-// LaunchOpts configures the nico-vms subprocess.
+// LaunchOpts configures the nico-sim subprocess.
 type LaunchOpts struct {
-	// BinaryPath is the absolute path to the nico-vms binary, produced by
-	// `make -C controller/nico-vms build-privileged`. Use build-privileged,
+	// BinaryPath is the absolute path to the nico-sim binary, produced by
+	// `make -C controller/nico-sim build-privileged`. Use build-privileged,
 	// not build: bridge mode calls `ip link add` and needs cap_net_admin.
 	BinaryPath string
 
-	// HTTPAddr is the listen address, exported as NICO_VMS_LISTEN_ADDR
+	// HTTPAddr is the listen address, exported as NICO_SIM_LISTEN_ADDR
 	// (e.g. ":18080"). The corresponding BaseURL is "http://127.0.0.1<HTTPAddr>".
 	HTTPAddr string
 
-	// DBPath is the SQLite db path, exported as NICO_VMS_DB_PATH. Should be
+	// DBPath is the SQLite db path, exported as NICO_SIM_DB_PATH. Should be
 	// under the test work dir so cleanup removes it. nico-vms uses the cgo
 	// sqlite driver, so the binary must be built with CGO_ENABLED=1 — with
 	// CGO_ENABLED=0 it links fine and then fails on the first query.
 	DBPath string
 
 	// SeedPath is the ABSOLUTE path to nico-vms's default-seed.yaml, exported
-	// as NICO_VMS_SEED_PATH. This must be set: nico-vms defaults it to the
+	// as NICO_SIM_SEED_PATH. This must be set: nico-vms defaults it to the
 	// relative "./internal/seed/default-seed.yaml", so the process exits 1
-	// when started from any directory other than the nico-vms module root.
+	// when started from any directory other than the nico-sim module root.
 	// Setting it absolutely is what lets us run the binary from anywhere
 	// instead of chdir-ing the subprocess.
 	SeedPath string
@@ -123,7 +123,7 @@ type LaunchOpts struct {
 	Stdout, Stderr *os.File
 }
 
-// Process wraps a running nico-vms subprocess.
+// Process wraps a running nico-sim subprocess.
 type Process struct {
 	cmd          *exec.Cmd
 	baseURL      string
@@ -165,9 +165,9 @@ func Launch(ctx context.Context, opts LaunchOpts) (*Process, error) {
 	// would quietly come up on its defaults instead.
 	cmd := exec.CommandContext(ctx, opts.BinaryPath)
 	env := append(os.Environ(),
-		"NICO_VMS_LISTEN_ADDR="+opts.HTTPAddr,
-		"NICO_VMS_DB_PATH="+opts.DBPath,
-		"NICO_VMS_SEED_PATH="+opts.SeedPath,
+		"NICO_SIM_LISTEN_ADDR="+opts.HTTPAddr,
+		"NICO_SIM_DB_PATH="+opts.DBPath,
+		"NICO_SIM_SEED_PATH="+opts.SeedPath,
 		"NICO_VMS_VM_VCPUS="+strconv.Itoa(opts.VMVCPUs),
 		"NICO_VMS_VM_MEMORY_MIB="+strconv.Itoa(opts.VMMemoryMiB),
 		"NICO_VMS_VM_DISK_GIB="+strconv.Itoa(opts.VMDiskGiB),
@@ -188,7 +188,7 @@ func Launch(ctx context.Context, opts LaunchOpts) (*Process, error) {
 	cmd.Stderr = opts.Stderr
 	// Deliberately no cmd.Dir. The original derived a working directory from
 	// BinaryPath purely so nico-vms could resolve its relative seed path;
-	// NICO_VMS_SEED_PATH above removes that coupling, so the binary may live
+	// NICO_SIM_SEED_PATH above removes that coupling, so the binary may live
 	// anywhere.
 	//
 	// New process group so we can kill the whole tree, not just the nico-vms
@@ -237,10 +237,10 @@ func (p *Process) waitReady(ctx context.Context) error {
 		}
 		// Surface a dead subprocess immediately instead of timing out.
 		if p.cmd.ProcessState != nil {
-			return fmt.Errorf("nico-vms exited early (state=%s) before HTTP came up", p.cmd.ProcessState)
+			return fmt.Errorf("nico-sim exited early (state=%s) before HTTP came up", p.cmd.ProcessState)
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out waiting for nico-vms HTTP at %s", p.baseURL)
+			return fmt.Errorf("timed out waiting for nico-sim HTTP at %s", p.baseURL)
 		}
 		select {
 		case <-ctx.Done():
@@ -250,13 +250,13 @@ func (p *Process) waitReady(ctx context.Context) error {
 	}
 }
 
-// BaseURL returns the http://host:port the nico-vms API listens on.
+// BaseURL returns the http://host:port the nico-sim API listens on.
 func (p *Process) BaseURL() string { return p.baseURL }
 
 // API returns the ncx-infra-controller-rest SDK client wired to talk to this nico-vms.
 func (p *Process) API() *forgesdk.APIClient { return p.api }
 
-// Stop signals the nico-vms process group to terminate and waits for it.
+// Stop signals the nico-sim process group to terminate and waits for it.
 // Safe to call multiple times.
 func (p *Process) Stop() error {
 	if p == nil || p.cmd == nil || p.cmd.Process == nil {

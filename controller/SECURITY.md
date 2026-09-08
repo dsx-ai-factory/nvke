@@ -31,7 +31,7 @@ NVIDIA's Product Security Incident Response Team (PSIRT) will acknowledge the re
 
 Cloud Workflow Engine (CWE) is a Go service that orchestrates NVIDIA Kubernetes Engine cluster, node-pool, and node lifecycle operations. It exposes an OpenAPI-based REST interface, persists desired and observed state in PostgreSQL, and coordinates long-running work through Temporal. It delegates site operations to Site Workflow Engine, performs infrastructure operations through the Forge API, manages Kubernetes and Cluster API resources, communicates with node agents, and integrates with SPIFFE/SPIRE and Teleport identity systems.
 
-The repository also contains the `api` Go module used by other components and the `nico-vms` development service, which emulates Forge using local virtual machines.
+The repository also contains the `api` Go module used by other components and the `nico-sim` development service, which emulates Forge using local virtual machines.
 
 CWE operates as a privileged infrastructure service. Its primary security responsibilities are preserving authorization and integrity for cluster lifecycle actions and protecting infrastructure credentials, tenant kubeconfigs, bootstrap data, encryption keys, and machine identity material.
 
@@ -53,7 +53,7 @@ The principal security boundaries are:
 - **Provisioning-content boundary:** Profiles, CAPI infrastructure manifests, cloud-init files, bootstrap data, embedded runbooks, OIDC configuration, and registry settings influence software and commands executed on provisioned nodes.
 - **Operational endpoint boundary:** The primary service listens on configurable HTTP port 8080. Prometheus metrics use a separate listener and the Helm chart enables a namespace-scoped metrics NetworkPolicy by default.
 - **Release boundary:** GitHub Actions builds and publishes multi-architecture images, Helm charts, and API module tags using registry, repository, and automation credentials.
-- **Development tooling boundary:** `nico-vms` can create, reboot, and delete local VMs, install host routes, expose VM metadata and diagnostic output, and stream console logs. It is intended for isolated development and test use.
+- **Development tooling boundary:** `nico-sim` can create, reboot, and delete local VMs, install host routes, expose VM metadata and diagnostic output, and stream console logs. It is intended for isolated development and test use.
 
 ### Threat Model
 
@@ -67,7 +67,7 @@ The principal security boundaries are:
 
 5. **Cross-Site, Cross-Cluster, or Cross-Tenant Resource Confusion:** CWE maps database identifiers, Forge organization and tenant context, Cluster API objects, kubeconfig Secrets, node addresses, and Temporal workflow identifiers across multiple systems. Stale, malicious, or incorrectly associated state can cause lifecycle operations, credentials, network allocations, or identity records to be applied to the wrong cluster, site, tenant, or node.
 
-6. **Development Emulator Host and VM Compromise:** `nico-vms` listens on all interfaces by default, accepts any non-empty bearer token, exposes selected files and UI paths without authentication, runs an unauthenticated console SSH server, injects a default diagnostic account, and stores cloud-init user data in host-readable files. Its VM, BGP, metadata, diagnostics, and console capabilities can expose bootstrap data or alter host networking if the tool is run outside an isolated development environment.
+6. **Development Emulator Host and VM Compromise:** `nico-sim` listens on all interfaces by default, accepts any non-empty bearer token, exposes selected files and UI paths without authentication, runs an unauthenticated console SSH server, injects a default diagnostic account, and stores cloud-init user data in host-readable files. Its VM, BGP, metadata, diagnostics, and console capabilities can expose bootstrap data or alter host networking if the tool is run outside an isolated development environment.
 
 7. **Release Pipeline or Artifact Compromise:** The GitHub Actions release workflows use privileged repository and registry tokens, publish images and Helm charts to multiple registries, and create API tags. Compromise of a runner, reusable workflow, builder image, dependency source, credential, or registry could distribute modified code or automatically propagate an untrusted version into downstream deployments.
 
@@ -83,7 +83,7 @@ The principal security boundaries are:
 - Profiles, runbooks, CAPI manifests, cloud-init files, container registries, and other provisioning inputs are maintained by trusted contributors and protected from unauthorized modification.
 - Metrics, health responses, logs, workflow history, database query logs, and diagnostics are limited to authorized operators and do not contain reusable credentials, kubeconfigs, bootstrap tokens, encryption keys, or sensitive user data.
 - CI runners, shared templates, builder images, private module sources, registries, release credentials, and downstream deployment automation are trusted and protected by the release process.
-- `nico-vms` is used only as an isolated development or test tool; its default credentials, unauthenticated console access, metadata service, diagnostic user, host-network privileges, and VM artifacts are never exposed as a production security boundary.
+- `nico-sim` is used only as an isolated development or test tool; its default credentials, unauthenticated console access, metadata service, diagnostic user, host-network privileges, and VM artifacts are never exposed as a production security boundary.
 - The container runtime and Kubernetes platform enforce the chart's non-root and read-only-root-filesystem settings, and operators apply resource limits and any additional pod hardening required by the deployment environment.
 
 ## Trust Model
@@ -117,7 +117,7 @@ Operators should:
 - Protect tenant kubeconfigs, bootstrap Secrets, encryption keys, and cloud-init content with the same controls used for other cluster-administrator credentials.
 - Restrict access to logs, metrics, readiness responses, Temporal history, and PostgreSQL diagnostics.
 - Pin release artifacts by digest where possible and review changes to shared CI templates, builder images, dependencies, and publish jobs.
-- Run `nico-vms` only on isolated development hosts and bind its HTTP, metadata, BGP, and console listeners to explicitly controlled interfaces.
+- Run `nico-sim` only on isolated development hosts and bind its HTTP, metadata, BGP, and console listeners to explicitly controlled interfaces.
 
 ## Security Scope and Common Scanner Context
 
@@ -127,7 +127,7 @@ The following patterns are expected and are not vulnerabilities by themselves:
 - Test-mode self-signed JWT generation in `internal/providers/forge/sdk/tokenhelper.go` is restricted to the explicit Forge test environment.
 - Support for custom CA bundles and optional mTLS is intentional. A report should demonstrate an unauthorized downgrade, validation bypass, or concrete exposure rather than only note that configuration is optional.
 - Kubernetes Secret access, tenant kubeconfig handling, agent script execution, and infrastructure lifecycle calls are required for CWE's documented role. Reports should demonstrate an authorization bypass, unintended disclosure, cross-scope operation, or avoidable privilege expansion.
-- `nico-vms` deliberately includes weaker local-development controls. Reports should demonstrate impact outside its documented isolated development trust boundary.
+- `nico-sim` deliberately includes weaker local-development controls. Reports should demonstrate impact outside its documented isolated development trust boundary.
 
 The following remain valid security concerns and should not be dismissed as expected behavior:
 
@@ -137,4 +137,4 @@ The following remain valid security concerns and should not be dismissed as expe
 - Cross-cluster, cross-site, cross-tenant, or cross-namespace authorization bypass
 - Production use of insecure agent or service transport contrary to deployment policy
 - Release artifact tampering or CI/CD credential leakage
-- Exposure of `nico-vms` privileged development interfaces beyond an isolated test environment
+- Exposure of `nico-sim` privileged development interfaces beyond an isolated test environment

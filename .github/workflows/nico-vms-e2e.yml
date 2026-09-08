@@ -18,7 +18,7 @@ on:
       - main
       - "pull-request/[0-9]+"
     paths:
-      - "controller/nico-vms/**"
+      - "controller/nico-sim/**"
       - "controller/hack/nico-vm-provider/**"
       - "controller/hack/ci/nico-vms-e2e.sh"
       - "controller/test/kubeadm/scripts/**"
@@ -80,7 +80,7 @@ jobs:
       NICO_VMS_BRIDGE_NAME: cwebr0
       NICO_VMS_BRIDGE_CIDR: 172.30.0.0/24
       # Required by nico-vms even on the iPXE path, which never boots it.
-      NICO_VMS_BASE_IMAGE: ${{ github.workspace }}/controller/nico-vms/images/ubuntu-cloud.qcow2
+      NICO_VMS_BASE_IMAGE: ${{ github.workspace }}/controller/nico-sim/images/ubuntu-cloud.qcow2
       NICO_VMS_LIBVIRT_URI: qemu:///session
       NICO_VMS_READINESS_TIMEOUT: 30m
       # setup-ci-host.sh: UEFI firmware, swtpm, and the guests' metadata paths.

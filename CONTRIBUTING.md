@@ -48,7 +48,7 @@ make build   # builds agent, controller, nkectl, and helper binaries
 
 The repository is a Go workspace, and `go.work` ties **every module** together.
 `make build` compiles every one of them, so you do not need to build any module
-from its own directory. `controller/` and `controller/nico-vms` used to be
+from its own directory. `controller/` and `controller/nico-sim` used to be
 outside the workspace because they had internal dependencies; #76
 removed that dependency and they joined it.
 

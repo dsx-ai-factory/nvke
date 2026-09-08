@@ -16,7 +16,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   "capd-reboot-controller"  -- CAPD reboot dev controller provider
 #   "capi-syscmp"             -- CAPI system component addon provider
 #   "dsx-identity-exchange"   -- DSX-compatible JWT exchange test double
-#   "nico-vms"                -- Forge-compatible local VM backend (real KVM/libvirt VMs)
+#   "nico-sim"                -- local NICo simulator (VM backend only at this point)
 #   "nico-vm"                 -- CAPNICo provider installed from the NGC Helm chart
 #   {"my-provider": "/path/to/folder"} -- external, Tiltfile at <folder>/Tiltfile
 # Default: ["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]
@@ -60,7 +60,7 @@ _builtin_provider_dirs = {
     "capd-reboot-controller": os.path.join(config.main_dir, "hack/capd-reboot-controller"),
     "capi-syscmp": os.path.join(config.main_dir, "hack/capi-syscmp-provider"),
     "dsx-identity-exchange": os.path.join(config.main_dir, "hack/dsx-identity-exchange-mock"),
-    "nico-vms": os.path.join(config.main_dir, "nico-vms"),
+    "nico-sim": os.path.join(config.main_dir, "nico-sim"),
     "nico-vm": os.path.join(config.main_dir, "hack/nico-vm-provider"),
 }
 
@@ -91,22 +91,21 @@ if "capi-syscmp" in _provider_entries and "capi_core" not in _provider_entries:
 if "nico-vm" in _provider_entries and "capi_core" not in _provider_entries:
     fail("Provider 'nico-vm' requires 'capi_core' in the provider list.")
 
-# nico-vm points nico-credentials at the local nico-vms backend and its
-# credentials resource depends on the 'nico-vms' Tilt resource by name.
+# nico-vm points nico-credentials at the local nico-sim VM backend and its
+# credentials resource depends on the 'nico-sim' Tilt resource by name.
 #
-# 'nico-vm' and 'nico-vms' are one character apart, so both fail() messages
-# below name what each provider IS rather than relying on the key alone.
-if "nico-vm" in _provider_entries and "nico-vms" not in _provider_entries:
+# Both messages name what each provider is rather than relying on similar keys.
+if "nico-vm" in _provider_entries and "nico-sim" not in _provider_entries:
     fail("Provider 'nico-vm' (the CAPNICo controller, installed from the NGC Helm chart) " +
-         "requires 'nico-vms' (the local VM backend that serves the Forge API on port 18080) " +
+         "requires 'nico-sim' (the local VM simulator that serves the API on port 18080) " +
          "in the provider list: it points nico-credentials at that backend and depends on " +
          "its Tilt resource by name.")
 
-# 'nico' and 'nico-vms' are mutually exclusive Forge backends for CWE: both set
-# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-vms's
+# 'nico' and 'nico-sim' are mutually exclusive NICo backends for CWE: both set
+# FORGE_URL and both bind host port 18080 (nico-mock's port-forward vs nico-sim's
 # listener). Enable at most one. (capd is orthogonal and may accompany either.)
-if "nico" in _provider_entries and "nico-vms" in _provider_entries:
-    fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-vms' (real " +
+if "nico" in _provider_entries and "nico-sim" in _provider_entries:
+    fail("Providers 'nico' (nico-mock, container-backed nodes) and 'nico-sim' (real " +
          "KVM/libvirt VMs) are mutually exclusive CWE backends: both set CWE's FORGE_URL " +
          "and bind host port 18080. Enable only one (capd may accompany either).")
 

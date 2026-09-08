@@ -291,7 +291,7 @@ def register(ctx):
         CAPNICO_CREDENTIALS_RESOURCE,
         labels=labels,
         cmd=["bash", "-c", credentials_script],
-        resource_deps=[CAPNICO_PROVIDER_RESOURCE, "nico-vms"],
+        resource_deps=[CAPNICO_PROVIDER_RESOURCE, "nico-sim"],
         allow_parallel=True,
     )
 

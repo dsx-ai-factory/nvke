@@ -43,7 +43,7 @@ development tooling.
 | `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NKE provisions before CAPI bootstraps them |
 | `cli/` | `nkectl` | The command line client |
 | `controller/api/` | none | The OpenAPI spec and the generated server and client types |
-| `controller/nico-vms/` | `nico-vms`, `nico-vmsctl` | Local VM manager used by tests and development |
+| `controller/nico-sim/` | `nico-vms`, `nico-vmsctl` | Local VM manager used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |
 | `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
 | `controller/hack/nico-mock/` | `nico-mock` | A stand-in for the NICo provider |

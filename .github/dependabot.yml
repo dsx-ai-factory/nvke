@@ -1,7 +1,7 @@
 version: 2
 updates:
   # Go modules anywhere in the tree. This is a nested multi-module monorepo
-  # (agent, controller, controller/api, controller/nico-vms,
+  # (agent, controller, controller/api, controller/nico-sim,
   # controller/test/e2e, controller/hack/*, ...), so the recursive "/**/*" glob
   # is required — "/*" only matches depth-1 dirs and would miss the nested modules.
   # New components with their own go.mod are picked up automatically.
