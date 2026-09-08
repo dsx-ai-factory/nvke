@@ -16,9 +16,14 @@ below is on `main`; the steps the CLI does not cover yet are marked.
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get clusters` | Lists tenant clusters. `-c <name>` filters, `-o json\|yaml` changes the format. | Available |
-| `nkectl describe cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
-| `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. | Not on `main`: [#269](https://github.com/NVIDIA/nke/pull/269) |
+| `nkectl get clusters --cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
+| `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. | In Review |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
+| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, Teleport, control plane config). | Planned |
+| `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
+| `nkectl get nodepools` | Lists node pools. `--cluster <name>` filters by cluster. | Planned |
+| `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |
+| `nkectl update nodepool <name> --cluster <name>` | Updates a mutable node pool property (desired count, instance type). | Planned |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
 `cluster` and `clusters` are aliases on `create`, `describe`, `get` and
@@ -128,8 +133,8 @@ is a starting point.
 
 ```bash
 nkectl get clusters
-nkectl describe cluster <cluster-name>
-nkectl describe cluster <cluster-name> -o yaml
+nkectl get clusters --cluster <cluster-name>
+nkectl get clusters --cluster <cluster-name> -o yaml
 ```
 
 ### 8. Get the tenant cluster's kubeconfig

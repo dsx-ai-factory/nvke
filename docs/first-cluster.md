@@ -136,7 +136,7 @@ export NKECTL_DEV_TOKEN="$(controller/hack/nke-token.sh)"
 bin/nkectl get providers      # wait for nico: CONFIGURED
 bin/nkectl create cluster -f cli/examples/nico-mock-cluster.yaml
 bin/nkectl get clusters
-bin/nkectl describe cluster <name>
+bin/nkectl get clusters --cluster <name>
 bin/nkectl delete cluster <name>
 ```
 
