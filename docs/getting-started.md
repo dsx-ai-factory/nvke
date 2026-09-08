@@ -14,6 +14,11 @@ says what each one is.
 | Flox (optional) | latest | https://flox.dev/ — pins the whole toolchain, repository-wide |
 | GNU Make | 4.0+ | macOS ships 3.81; `brew install make` gives you `gmake` |
 
+A newer Go than 1.26 is fine. `make` pins `GOTOOLCHAIN` to the version `go.work`
+declares and fetches it if needed, so builds do not depend on which Go is on your
+`PATH`. Building with `go` directly, outside `make`, does — and a toolchain newer
+than the declared one panics at startup with a `strcase.UnicodeVersion` mismatch.
+
 ## Clone the repository
 
 ```bash

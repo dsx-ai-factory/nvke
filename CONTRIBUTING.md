@@ -22,7 +22,10 @@ into three categories:
 
 ### Prerequisites
 
-- Go 1.26+ (`go version`) — the floor is set by `go.work`, not by any single module
+- Go 1.26+ (`go version`) — the floor is set by `go.work`, not by any single
+  module. A newer Go is fine: `make` pins `GOTOOLCHAIN` to the version `go.work`
+  declares, because the vendored `strcase` panics at startup on anything newer.
+  Set `GOTOOLCHAIN` yourself to override that.
 - GNU Make 4.0+ (`make --version`) — ⚠️ **macOS ships 3.81, which cannot run the
   root `Makefile`.** Run `brew install make`, which installs it as `gmake`, then
   read every `make` below as `gmake`. Setting `alias make=gmake` in your shell is

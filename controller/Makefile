@@ -1,5 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+
+# strcase (vendored via teleport/api) asserts its Unicode tables match the
+# stdlib's, so a toolchain newer than go.work's `go` directive panics at init.
+# Pin every go invocation to it; an explicit GOTOOLCHAIN, as CI sets, still wins.
+GOTOOLCHAIN ?= go$(shell awk '/^go /{print $$2; exit}' $(CURDIR)/../go.work)
+export GOTOOLCHAIN
+
 WORKER_BIN_NAME			?= controller
 TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
 CWE_GOFAIL_E2E_WORKER_BINARY	?= $(CURDIR)/.go/bin/cwe-worker-gofail
