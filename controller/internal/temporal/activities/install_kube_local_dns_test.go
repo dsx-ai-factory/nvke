@@ -49,6 +49,8 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		Namespace: metav1.NamespaceSystem,
 		Name:      "node-local-dns",
 	}, &serviceAccount))
+	require.NotNil(t, serviceAccount.AutomountServiceAccountToken)
+	require.False(t, *serviceAccount.AutomountServiceAccountToken)
 
 	var upstreamService corev1.Service
 	require.NoError(t, tenantClient.Get(context.Background(), types.NamespacedName{
