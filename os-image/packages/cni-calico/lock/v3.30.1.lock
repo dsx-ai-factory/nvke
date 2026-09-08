@@ -1,0 +1,16 @@
+# nke-cni-calico lock for v3.30.1 (amd64). Regenerate with `make lock`; review the diff before committing.
+calico v3.30.1
+artifact tigera-operator.yaml 65fc29459f236af44b31bd409640534db20ff940192f6b9023c972a69041977f https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/tigera-operator.yaml
+artifact custom-resources.yaml f7cd142773609fc7f830b96d8f29bd1b5f05cdc5293324992d8524b54c09c717 https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/custom-resources.yaml
+image quay.io/tigera/operator:v1.38.1 sha256:692a8bc462a0fa1849264d9c6b33c34714259d50fbc889bdb64b174b259dd1ce
+image docker.io/calico/apiserver:v3.30.1 sha256:1d17e2a9ad65d569f13a8283329fb5f96dfe2f4ec35fe4ba80a15db344c11852
+image docker.io/calico/cni:v3.30.1 sha256:9ebfbaf26240355ec4c8e9a5566ac5cd450d99f520ab0f564ab69c02fe3b166d
+image docker.io/calico/csi:v3.30.1 sha256:655c68a2c0fde798dd996fe980ff502f55d765304699605ec63b9a8fea31ff73
+image docker.io/calico/goldmane:v3.30.1 sha256:51fafced1d47b35439696495c64b9d2946e9a6a55b7aa4052bbdc5e9aebf6e41
+image docker.io/calico/kube-controllers:v3.30.1 sha256:47f54273846fbf4a79eb07dcafeb41b2c0ab0e3545672ff0ec5681e1cf6293ac
+image docker.io/calico/node:v3.30.1 sha256:c75435f74dcbaf2d14b9a1110026d15e027414c3ce262c4efbf41a4ee2e724ab
+image docker.io/calico/node-driver-registrar:v3.30.1 sha256:9b3745e5cfab8c6e495ddb789ff051842954384839cd649e8f17aace5f7b341a
+image docker.io/calico/pod2daemon-flexvol:v3.30.1 sha256:cdbdd63616f16bdc420028d3e02dcd909e39596f15ee6210396ce0bc9d6e6955
+image docker.io/calico/typha:v3.30.1 sha256:5991ac427deef3ce684789dc7b7fcafc2514f6347911263d608b2620efd28e1c
+image docker.io/calico/whisker:v3.30.1 sha256:a25e8931e492c06b14ff33b11304880ffa8a026cfa65cda1d3730c8fa788008a
+image docker.io/calico/whisker-backend:v3.30.1 sha256:74fab1f84704d17323d304127a63362d18df914d653ca43f9a041b8020f675d9

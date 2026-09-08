@@ -962,7 +962,7 @@ if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
     exit "${leg_rc}"
   fi
   if [[ "${NKECTL_SMOKE}" == "true" ]]; then
-    nkectl_smoke || exit 1
+    nkectl_smoke
   fi
   log "${BACKEND} sequential management-plane E2E passed (cp-controller then node-pool)"
   exit 0
@@ -990,7 +990,7 @@ if ((e2e_rc != 0)); then
 fi
 
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
-  nkectl_smoke || exit 1
+  nkectl_smoke
 fi
 
 log "${BACKEND} management-plane E2E passed"

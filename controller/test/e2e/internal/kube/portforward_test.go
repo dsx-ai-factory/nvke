@@ -88,14 +88,19 @@ func (s *fakeSession) forward() *forwardSession {
 	return &forwardSession{addr: s.listener.Addr().String(), done: s.done, stop: s.stop}
 }
 
-// newTestForwarder scales the budgets and backoff down, keeping the cold-start
-// one proportionally smaller than the reconnect one.
 // nameLabel is the selector the fake Service and its pods agree on.
 const nameLabel = "app.kubernetes.io/name"
 
+// newTestForwarder scales the budgets and backoff down, keeping the cold-start
+// one smaller than the reconnect one. The cold-start budget also covers every
+// test's first request: listen, serve and dial a loopback socket under -race on
+// a loaded runner. At 10ms that failed about one run in ten on macOS with six
+// test processes sharing the machine; the deadline surfaced as the dial's
+// "i/o timeout". The two tests that measure the budget check against 2s and 5s
+// ceilings, so 1s keeps them meaningful.
 func newTestForwarder(starter sessionStarter, baseURL string) *ServiceForwarder {
 	forwarder := newServiceForwarder(starter, baseURL)
-	forwarder.coldStartBudget = 10 * time.Millisecond
+	forwarder.coldStartBudget = time.Second
 	forwarder.reconnectBudget = 2 * time.Second
 	forwarder.retryBackoff = time.Millisecond
 	forwarder.maxRetryBackoff = 5 * time.Millisecond
@@ -259,8 +264,8 @@ func TestServiceForwarderBudgetBoundsOneSlowAttempt(t *testing.T) {
 		t.Fatal("expected an error when the forward never starts")
 	}
 	// Deliberately loose. The assertion is that the wait is governed by the
-	// budget at all, not by sessionStartTimeout, which is 30s and three
-	// thousand times the cold-start budget this forwarder runs with.
+	// budget at all, not by sessionStartTimeout, which is 30s and thirty times
+	// the cold-start budget this forwarder runs with.
 	if limit := 5 * time.Second; elapsed > limit {
 		t.Fatalf("a %v budget took %v to give up, past the %v ceiling: the deadline is not bounding a single attempt",
 			forwarder.coldStartBudget, elapsed, limit)

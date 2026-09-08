@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 )
@@ -40,6 +42,26 @@ func TestInstallPackagesSyncRequiresPackages(t *testing.T) {
 	_, err := s.InstallPackages(context.Background(), &pb.InstallPackagesRequest{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no packages specified")
+}
+
+func TestInstallPackagesRejectsNodeAgentReplacement(t *testing.T) {
+	tests := []struct {
+		name string
+		pkg  string
+	}{
+		{name: "named package", pkg: "nke-agent=v0.1.2"},
+		{name: "architecture-qualified package", pkg: "nke-agent:arm64=0.1.2"},
+		{name: "suite-qualified package", pkg: "nke-agent/stable"},
+		{name: "local deb", pkg: "/tmp/nke-agent_0.1.2_arm64.deb"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := &NodeAgentServer{NodeStatus: &NodeStatus{}, Persister: &MockPersister{}}
+			_, err := s.InstallPackages(context.Background(), &pb.InstallPackagesRequest{Packages: []string{test.pkg}})
+			require.Error(t, err)
+			assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+		})
+	}
 }
 
 func TestInstallPackagesAsyncRecordsRequestID(t *testing.T) {

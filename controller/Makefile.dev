@@ -61,8 +61,8 @@ dev-check: ## Check if development prerequisites are installed
 	@echo "Checking development prerequisites..."
 	@command -v docker >/dev/null 2>&1 || { echo "❌ docker is required but not installed. Install with: brew install docker"; exit 1; }
 	@bash -c "source $(DEV_ENV_SCRIPT) && check_temporal_available"
-	@command -v kubectl >/dev/null 2>&1 || { echo "❌ kubectl is required for remote access. Install with: brew install kubectl"; exit 1; }
-	@command -v tsh >/dev/null 2>&1 || { echo "❌ tsh (Teleport) is required for remote access. Install with: brew install teleport"; exit 1; }
+	@command -v kubectl >/dev/null 2>&1 || { echo "❌ kubectl is required. Install with: brew install kubectl"; exit 1; }
+	@command -v tsh >/dev/null 2>&1 || echo "⚠️  tsh (Teleport) not found. Only 'make run-remote' needs it. Install with: brew install teleport"
 	@command -v jq >/dev/null 2>&1 || { echo "❌ jq is required. Install with: brew install jq"; exit 1; }
 	@echo "✅ All prerequisites are installed"
 
@@ -234,6 +234,8 @@ run-local: dev-start-local ## Start local services and run CWE (sources .env.loc
 		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
 		source $(DEV_ENV_SCRIPT) && validate_api_key "$${FWE_API_KEY:-$(FWE_API_KEY)}" "local" || exit 1; \
 		export FWE_API_KEY="$${FWE_API_KEY:-$(FWE_API_KEY)}"; \
+		export PROFILES_DIR="$${PROFILES_DIR:-$(CURDIR)/test/fixtures/profiles}"; \
+		export RUNBOOKS_DIR="$${RUNBOOKS_DIR:-$(CURDIR)/test/fixtures/runbooks}"; \
 		echo ""; \
 		go run cmd/worker/main.go \
 	'

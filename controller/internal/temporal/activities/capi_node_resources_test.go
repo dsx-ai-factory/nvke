@@ -700,3 +700,24 @@ func testCAPINicoMachine() *clusterv1.Machine {
 		},
 	}
 }
+
+// A site stood up without SPIFFE has no SPIRE server and no trust domain, so
+// asking for a join token fails with "trust domain is missing". That error is
+// not retryable, so the node never gets a CAPI machine and the cluster sits in
+// Provisioning for good. The join token has to be skipped, not attempted.
+func TestCreateCAPISpireJoinTokenSkippedWhenSpiffeDisabled(t *testing.T) {
+	var nodeSet db.NodeSet
+	nodeSet.SetCapi(db.CAPINodePoolProvider{
+		SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+	})
+	createCtx := &capiMachineCreateContext{
+		nodeSet: nodeSet,
+		node:    db.Node{ID: uuid.New()},
+	}
+
+	a := &Activities{cfg: config.Config{SpiffeEnabled: false}}
+	token, path, err := a.createCAPISpireJoinToken(context.Background(), createCtx)
+	require.NoError(t, err, "must not reach SPIRE when SPIFFE is off")
+	assert.Empty(t, token)
+	assert.Empty(t, path)
+}

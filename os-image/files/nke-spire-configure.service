@@ -4,7 +4,10 @@
 [Unit]
 Description=Render SPIRE agent config from instance identity
 Documentation=https://github.com/NVIDIA/nke/blob/main/os-image/SPEC.md
-After=cloud-final.service
+# cloud-init.service writes the files this reads; cloud-final.service is
+# ordered after multi-user.target, which this unit is pulled in before, so
+# waiting on it made a cycle and systemd dropped all three NKE units.
+After=cloud-init.service
 Before=spire-agent.service
 ConditionPathExists=/etc/nke/spire.env
 

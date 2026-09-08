@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -30,6 +31,11 @@ func New(uri string) vm.Runtime {
 type virsh struct {
 	uri string
 }
+
+const (
+	startAttempts   = 3
+	startRetryDelay = 2 * time.Second
+)
 
 func (r *virsh) EnsureBridge(ctx context.Context, bridgeName, bridgeCIDR string) error {
 	// Check if bridge already exists and is configured. With qemu:///session the
@@ -93,10 +99,38 @@ func (r *virsh) CreateAndStart(ctx context.Context, spec vm.InstanceSpec) (strin
 	if _, err := r.runVirsh(ctx, "autostart", spec.DomainName); err != nil {
 		return "", fmt.Errorf("virsh autostart failed: %w", err)
 	}
-	if _, err := r.runVirsh(ctx, "start", spec.DomainName); err != nil {
+	// Domains that carry a TPM race each other inside libvirt: each start
+	// creates the shared swtpm run directory, and the loser gets
+	// "failed to create directory ...: File exists" and never boots. The
+	// engine marks such an instance Error and stops reconciling it, so one
+	// lost race costs the whole VM. A later attempt finds the directory there.
+	if err := retry(ctx, startAttempts, startRetryDelay, func() error {
+		_, startErr := r.runVirsh(ctx, "start", spec.DomainName)
+		return startErr
+	}); err != nil {
 		return "", fmt.Errorf("virsh start failed: %w", err)
 	}
 	return spec.DomainName, nil
+}
+
+// retry calls fn until it succeeds, up to attempts times, waiting delay
+// between tries. It reports the last error.
+func retry(ctx context.Context, attempts int, delay time.Duration, fn func() error) error {
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		if attempt == attempts {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return fmt.Errorf("gave up after %d attempts: %w", attempts, err)
 }
 
 func (r *virsh) Reboot(ctx context.Context, machineID string) error {
@@ -330,7 +364,53 @@ func (r *virsh) setupTPM(ctx context.Context, workDir string) (domainUUID string
 	}
 
 	_ = os.RemoveAll(certDir)
+
+	// stateDir is a guess: libvirt's swtpm location depends on which driver
+	// serves the domain, which the URI does not always say. Mirror the finished
+	// state to the other candidate so both hold this same EK. Running
+	// swtpm_setup twice would not do — that yields two different EKs, and the
+	// cert would name the wrong one half the time.
+	if mirrorErr := r.mirrorSwtpmState(stateDir, domainUUID); mirrorErr != nil {
+		// Not fatal: the seeded path may still be the one libvirt uses, and
+		// TPMEKCert refuses the cert if it is not.
+		fmt.Fprintf(os.Stderr, "nico-vms: could not mirror swtpm state for %s: %v\n", domainUUID, mirrorErr)
+	}
 	return domainUUID, true, nil
+}
+
+// mirrorSwtpmState copies finished swtpm state to the candidate directory
+// libvirt would use if the URI guess in swtpmStatePath is wrong.
+func (r *virsh) mirrorSwtpmState(stateDir, domainUUID string) error {
+	dst := systemSwtpmStatePath(domainUUID)
+	if dst == stateDir {
+		dst = sessionSwtpmStatePath(domainUUID)
+	}
+
+	entries, err := os.ReadDir(stateDir)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		data, readErr := os.ReadFile(filepath.Join(stateDir, entry.Name()))
+		if readErr != nil {
+			return readErr
+		}
+		if writeErr := os.WriteFile(filepath.Join(dst, entry.Name()), data, 0o644); writeErr != nil {
+			return writeErr
+		}
+	}
+	// libvirt's system driver runs swtpm as the swtpm user, which must be able
+	// to write this state back. Only root can hand it over.
+	if os.Geteuid() == 0 {
+		_ = exec.Command("chown", "-R", "swtpm:swtpm", dst).Run()
+	}
+	return nil
 }
 
 // ensureSwtpmConfig creates user-writable swtpm configuration files so that
@@ -377,15 +457,26 @@ func (r *virsh) swtpmLocalCADir() string {
 // state for the given domain UUID, derived from the connection URI.
 func (r *virsh) swtpmStatePath(domainUUID string) string {
 	if !strings.Contains(r.uri, "system") {
-		// session mode (default)
-		xdg := os.Getenv("XDG_CONFIG_HOME")
-		if xdg == "" {
-			home, _ := os.UserHomeDir()
-			xdg = filepath.Join(home, ".config")
-		}
-		return filepath.Join(xdg, "libvirt", "qemu", "swtpm", domainUUID, "tpm2")
+		return sessionSwtpmStatePath(domainUUID) // session mode (default)
 	}
-	return filepath.Join("/var/lib/libvirt/swtpm", domainUUID, "tpm2")
+	return systemSwtpmStatePath(domainUUID)
+}
+
+func sessionSwtpmStatePath(domainUUID string) string {
+	xdg := os.Getenv("XDG_CONFIG_HOME")
+	if xdg == "" {
+		home, _ := os.UserHomeDir()
+		xdg = filepath.Join(home, ".config")
+	}
+	return filepath.Join(xdg, "libvirt", "qemu", "swtpm", domainUUID, "tpm2")
+}
+
+// systemSwtpmRoot is where libvirt's system driver keeps swtpm state.
+// A variable so tests can point it somewhere writable.
+var systemSwtpmRoot = "/var/lib/libvirt/swtpm"
+
+func systemSwtpmStatePath(domainUUID string) string {
+	return filepath.Join(systemSwtpmRoot, domainUUID, "tpm2")
 }
 
 // TPMEKCert reads the base64-encoded EK certificate from the working
@@ -411,7 +502,63 @@ func (r *virsh) TPMEKCert(ctx context.Context, machineID string) (string, error)
 	if readErr != nil {
 		return "", fmt.Errorf("TPM device present but failed to read EK cert at %s: %w", certPath, readErr)
 	}
+
+	// setupTPM seeds swtpm state and reads the EK from it, guessing libvirt's
+	// location for that state from the URI. A wrong guess means libvirt made its
+	// own state with a different EK, so this cert names a key the guest lacks.
+	// Refuse it: it feeds the TPM attestor allowlist, where the miss surfaces
+	// later as an x509 error naming nothing that led to it.
+	if used, uuid, mismatch := r.swtpmStateMismatch(dumpxml); mismatch {
+		return "", fmt.Errorf(
+			"stale EK cert for %s: libvirt used swtpm state in %s, cert came from %s (libvirt URI %q)",
+			machineID, used, r.swtpmStatePath(uuid), r.uri)
+	}
 	return strings.TrimSpace(string(certData)), nil
+}
+
+// swtpmStateMismatch reports whether libvirt runs this domain against swtpm
+// state other than the directory setupTPM seeded. An absent directory is not
+// evidence either way, so an unreadable layout returns false rather than
+// failing a working VM.
+func (r *virsh) swtpmStateMismatch(dumpxml string) (usedPath, domainUUID string, mismatch bool) {
+	domainUUID = extractUUIDFromXML(dumpxml)
+	if domainUUID == "" {
+		return "", "", false
+	}
+
+	seeded := r.swtpmStatePath(domainUUID)
+	// The other candidate: what libvirt uses when the URI does not describe the
+	// driver actually serving the domain.
+	other := systemSwtpmStatePath(domainUUID)
+	if seeded == other {
+		other = sessionSwtpmStatePath(domainUUID)
+	}
+
+	if dirHasEntries(other) && !dirHasEntries(seeded) {
+		return other, domainUUID, true
+	}
+	return "", domainUUID, false
+}
+
+// dirHasEntries reports whether dir exists and holds at least one entry.
+func dirHasEntries(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	return err == nil && len(entries) > 0
+}
+
+// extractUUIDFromXML pulls <uuid>...</uuid> out of virsh dumpxml output.
+func extractUUIDFromXML(dumpxml string) string {
+	const openTag, closeTag = "<uuid>", "</uuid>"
+	start := strings.Index(dumpxml, openTag)
+	if start < 0 {
+		return ""
+	}
+	rest := dumpxml[start+len(openTag):]
+	end := strings.Index(rest, closeTag)
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
 }
 
 // extractDiskPathFromXML pulls the first <source file='...'> path from

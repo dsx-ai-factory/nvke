@@ -14,8 +14,7 @@
 # Path-filtered, because that script and its library change rarely: twice in the
 # script's life so far. This lane costs nothing between those changes.
 #
-# Advisory while it earns a track record, following the nerdctl leg in
-# nkectl-bootstrap-e2e.yml. It is not a merge-gate member.
+# Advisory, like every other E2E lane: not a merge-gate member.
 
 name: Local entrypoint E2E
 
@@ -47,7 +46,9 @@ on:
 permissions: {}
 
 concurrency:
-  group: Local entrypoint E2E-${{ github.ref }}
+  # The sha keeps main runs apart. Sharing one group, and main never cancels,
+  # means a second main run waits out the first.
+  group: Local entrypoint E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -89,7 +90,6 @@ jobs:
       CNPG_SUPERUSER_PASSWORD: example-password
       CNPG_CLOUD_PASSWORD: example-password
       CNPG_TEMPORAL_PASSWORD: example-password
-      NICO_PROVIDER_REPO_DIR: ${{ github.workspace }}/.capnico/cluster-api-provider-nico
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -100,14 +100,6 @@ jobs:
           # encryption workflow rejects that as older than its required version.
           fetch-depth: 0
           fetch-tags: true
-
-      - name: Checkout the CAPNICo provider
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: NVIDIA/cluster-api-provider-nico
-          token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
-          path: .capnico/cluster-api-provider-nico
-          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -150,7 +142,7 @@ jobs:
           version: ${{ steps.versions.outputs.helm_version }}
 
       - name: Set up Kind and kubectl
-        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
         with:
           version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}

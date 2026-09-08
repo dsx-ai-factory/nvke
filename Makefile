@@ -592,7 +592,8 @@ VERSION_CMDS := agent:--version \
                 controller:--version \
                 nico-mock:--version \
                 nke-os-image-check:--version \
-                nkectl:version
+                nkectl:version \
+                updater:--version
 
 version-check: build ## Verify every built binary reports a real version. (run by the merge gate)
 	@# Two tests. The name list catches a placeholder version. The emptiness test

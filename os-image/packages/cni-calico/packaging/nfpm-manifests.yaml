@@ -1,0 +1,39 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm spec for nke-cni-calico-manifests-<stream>. build-deb.sh exports
+# PACKAGE_NAME, STREAM, DEB_REVISION, ARCH, SRC and IMAGES_PACKAGE.
+#
+# The agent finds this package's install root by asking dpkg-query -L for a
+# path ending in manifests/tigera-operator.yaml, then applies that file and
+# custom-resources.yaml beside it
+# (agent/internal/agent/cni.go: calicoInstallRootFromFiles,
+# runCalicoKubectlApplyFromDir). Both files must therefore be owned by this
+# package and sit in the same manifests/ directory.
+
+name: "${PACKAGE_NAME}"
+arch: "${ARCH}"
+platform: "linux"
+version: "${DEB_REVISION}"
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  Calico ${STREAM} install manifests for NKE nodes
+  The upstream tigera-operator.yaml and custom-resources.yaml for Calico
+  ${STREAM}, pinned by sha256 and installed under
+  /usr/share/nke-cni/calico/${STREAM}. nke-agent applies them with kubectl
+  when it installs the CNI. The container images they need ship separately in
+  ${IMAGES_PACKAGE}; install both for a node with no registry access.
+
+contents:
+  - src: "${SRC}/manifests/tigera-operator.yaml"
+    dst: "/usr/share/nke-cni/calico/${STREAM}/manifests/tigera-operator.yaml"
+    file_info: { mode: 0644 }
+    expand: true
+  - src: "${SRC}/manifests/custom-resources.yaml"
+    dst: "/usr/share/nke-cni/calico/${STREAM}/manifests/custom-resources.yaml"
+    file_info: { mode: 0644 }
+    expand: true

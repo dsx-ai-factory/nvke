@@ -38,6 +38,8 @@ type Client interface {
 	ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nkeproto.ReconfigureKubeletAPIServerRequest) (*nkeproto.ReconfigureKubeletAPIServerResponse, error)
 	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error)
 	ReconcileKubeVip(ctx context.Context, node db.Node, req *nkeproto.ReconcileKubeVipRequest) (*nkeproto.ReconcileKubeVipResponse, error)
+	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
+	GetKubernetesCertificateRenewalStatus(ctx context.Context, node db.Node, req *nkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
 	ExecuteNodePreflight(ctx context.Context, node db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error)
 	GetKubeadmJoinString(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
 	UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
@@ -336,6 +338,40 @@ func (c *NodeAgentClient) ReconcileKubeVip(ctx context.Context, node db.Node, re
 	resp, err := nkeproto.NewNodeAgentClient(conn).ReconcileKubeVip(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconcile kube-vip on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+func (c *NodeAgentClient) StartKubernetesCertificateRenewal(
+	ctx context.Context,
+	node db.Node,
+	req *nkeproto.StartKubernetesCertificateRenewalRequest,
+) (*nkeproto.StartKubernetesCertificateRenewalResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for certificate renewal on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+	resp, err := nkeproto.NewNodeAgentClient(conn).StartKubernetesCertificateRenewal(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start certificate renewal on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+func (c *NodeAgentClient) GetKubernetesCertificateRenewalStatus(
+	ctx context.Context,
+	node db.Node,
+	req *nkeproto.GetKubernetesCertificateRenewalStatusRequest,
+) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for certificate renewal status on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+	resp, err := nkeproto.NewNodeAgentClient(conn).GetKubernetesCertificateRenewalStatus(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get certificate renewal status from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

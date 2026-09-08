@@ -25,7 +25,7 @@ one is not a pass, so confirm the checks you expected actually ran.
 
 `gate` is the aggregate job in
 [`merge-gate.yml`](../.github/workflows/merge-gate.yml). It reports one result
-for fourteen member workflows, which is why it is the only build check the
+for thirteen member workflows, which is why it is the only build check the
 branch settings name. Naming the members individually would mean that renaming
 or removing any one of them blocks every pull request until an admin
 intervenes. For the same reason a member is never path-filtered: a check that

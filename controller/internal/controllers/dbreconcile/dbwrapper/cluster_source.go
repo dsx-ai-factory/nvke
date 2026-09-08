@@ -30,6 +30,7 @@ type ClusterEventSource[T comparable] struct {
 	keyMappers     []ClusterKeyMapper[T]
 	resyncInterval time.Duration
 	logger         *slog.Logger
+	coalesce       *keyCoalescer[T]
 }
 
 func NewClusterSource(database *DB, filters dbfilters.Cluster, keyMappers ...ClusterKeyMapper[dbreconcile.Key]) *ClusterEventSource[dbreconcile.Key] {
@@ -46,7 +47,7 @@ func NewMappedClusterSource[T comparable](
 	filters dbfilters.Cluster,
 	keyMappers ...ClusterKeyMapper[T],
 ) *ClusterEventSource[T] {
-	return &ClusterEventSource[T]{
+	s := &ClusterEventSource[T]{
 		events:         make(chan event.TypedGenericEvent[T], defaultSourceBufferSize),
 		database:       database,
 		filters:        filters,
@@ -54,6 +55,8 @@ func NewMappedClusterSource[T comparable](
 		resyncInterval: defaultSourceResyncInterval,
 		logger:         database.logger,
 	}
+	s.coalesce = newKeyCoalescer(defaultSourceCoalesceWindow, s.deliver)
+	return s
 }
 
 func (s *ClusterEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
@@ -137,12 +140,13 @@ func (s *ClusterEventSource[T]) enqueueKey(ctx context.Context, key T) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, fmt.Errorf("failed to enqueue DB cluster reconcile event"))
 	}
+	s.coalesce.offer(key)
+	return nil
+}
+
+func (s *ClusterEventSource[T]) deliver(key T) {
 	select {
 	case <-s.done:
-		return fmt.Errorf("failed to enqueue DB cluster reconcile event: source stopped")
 	case s.events <- event.TypedGenericEvent[T]{Object: key}:
-		return nil
-	case <-ctx.Done():
-		return errors.Join(ctx.Err(), fmt.Errorf("failed to enqueue DB cluster reconcile event"))
 	}
 }

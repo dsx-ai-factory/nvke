@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,6 +22,11 @@ func (s *NodeAgentServer) InstallPackages(ctx context.Context, req *pb.InstallPa
 	defer logRPCSpan(ctx, "InstallPackages")()
 	if len(req.GetPackages()) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "no packages specified")
+	}
+	for _, pkg := range req.GetPackages() {
+		if isNodeAgentPackageArgument(pkg) {
+			return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+		}
 	}
 
 	requestID := generateRequestID()
@@ -49,6 +55,18 @@ func (s *NodeAgentServer) InstallPackages(ctx context.Context, req *pb.InstallPa
 		return nil, err
 	}
 	return &pb.InstallPackagesResponse{RequestId: requestID}, nil
+}
+
+func isNodeAgentPackageArgument(value string) bool {
+	value = strings.TrimSpace(value)
+	packageName, _, _ := strings.Cut(value, "=")
+	packageName, _, _ = strings.Cut(packageName, ":")
+	packageName, _, _ = strings.Cut(packageName, "/")
+	if packageName == "nke-agent" {
+		return true
+	}
+	base := filepath.Base(value)
+	return strings.HasPrefix(base, "nke-agent_") && strings.HasSuffix(base, ".deb")
 }
 
 func (s *NodeAgentServer) processInstallPackages(ctx context.Context, req *pb.InstallPackagesRequest, pkgStatus *Bundle) error {

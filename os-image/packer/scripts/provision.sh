@@ -10,6 +10,8 @@ SRC=/tmp/nke-image
 
 sudo install -d -m 0755 /usr/lib/nke /etc/nke /var/lib/nke /usr/local/bin
 sudo install -m 0755 "${SRC}/spire-agent" /usr/local/bin/spire-agent
+sudo install -d -m 0755 /usr/local/lib/spire-agent
+sudo install -m 0755 "${SRC}/tpm_attestor_agent" /usr/local/lib/spire-agent/tpm_attestor_agent
 sudo install -m 0755 "${SRC}/spire-configure.sh" /usr/lib/nke/spire-configure.sh
 sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nke/wait-spiffe-socket.sh
 sudo install -m 0644 "${SRC}/spire-agent.conf.tmpl" /usr/lib/nke/spire-agent.conf.tmpl
@@ -26,12 +28,27 @@ fi
 if ! id -u spire >/dev/null 2>&1; then
   sudo useradd -r -s /bin/false -d /var/lib/spire-agent spire
 fi
+# The TPM node attestor opens /dev/tpmrm0, which udev owns tss:tss. Without this
+# spire-agent crash-loops on "permission denied" and nke-agent never starts,
+# because it waits on a workload socket that never opens.
+if getent group tss >/dev/null 2>&1; then
+  sudo usermod -aG tss spire
+fi
 sudo install -d -m 0750 -o spire -g spire /var/lib/spire-agent
 
 sudo systemctl daemon-reload
 sudo systemctl enable nke-spire-configure.service
 sudo systemctl enable spire-agent.service
 sudo systemctl enable nke-agent.service
+
+# Stage the CNI debs as a local flat apt repo, so cluster create's `apt-get
+# install nke-cni-...` resolves offline with apt's dependency handling intact.
+# trusted=yes: the content is already on this root fs. amd64 artifacts only.
+if [[ -d "${SRC}/debs" ]]; then
+  sudo install -d -m 0755 /usr/lib/nke/debs
+  sudo install -m 0644 "${SRC}"/debs/*.deb "${SRC}/debs/Packages" /usr/lib/nke/debs/
+  echo 'deb [trusted=yes] file:/usr/lib/nke/debs ./' | sudo tee /etc/apt/sources.list.d/nke-local.list >/dev/null
+fi
 
 # Golden image: next boot must look like a new instance, without the Packer
 # SSH key or a machine-id from this build VM.
@@ -62,6 +79,18 @@ sudo apt-get clean
 sudo rm -rf /var/lib/apt/lists/*
 sudo rm -rf /usr/share/doc/* /usr/share/man/*
 find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name en -exec sudo rm -rf {} +
+
+# Index only the local repo, after the cleanup above, so cluster create needs
+# no apt-get update of its own and no Ubuntu archive lists get baked in.
+if [[ -f /etc/apt/sources.list.d/nke-local.list ]]; then
+  sudo apt-get update \
+    -o Dir::Etc::sourcelist=/etc/apt/sources.list.d/nke-local.list \
+    -o Dir::Etc::sourceparts=- \
+    -o APT::Get::List-Cleanup=0
+fi
+
+# The uploaded artifacts (gigabytes of debs) must not stay in the qcow2.
+sudo rm -rf /tmp/nke-image
 
 sudo fstrim -av || true
 

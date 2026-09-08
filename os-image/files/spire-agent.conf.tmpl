@@ -15,9 +15,7 @@ agent {
 }
 
 plugins {
-  NodeAttestor "join_token" {
-    plugin_data {}
-  }
+@SPIRE_NODE_ATTESTOR@
   KeyManager "disk" {
     plugin_data {
       directory = "/var/lib/spire-agent/keys"

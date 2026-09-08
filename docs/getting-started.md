@@ -73,31 +73,22 @@ Never hand-edit `*.gen.go` files — they will be overwritten.
 
 ### Run locally
 
-Start dependencies:
-
 ```bash
-# PostgreSQL
-docker run -d --name=nke-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17.4
-
-# Temporal (dev mode)
-temporal server start-dev
+kind create cluster                                  # CWE watches a cluster
+FORGE_ENVIRONMENT=test make -C controller run-local  # Postgres, Temporal, then CWE
 ```
 
-Then run CWE:
-
-```bash
-FWE_API_KEY=<your-NGC-api-key> make -C controller run
-# UI:      http://localhost:8080
-# Swagger: http://localhost:8080/api/docs
-```
-
-Without an NGC account, run the `test` Forge environment instead. It signs a
+Swagger is on <http://localhost:8080/api/docs/>. `FORGE_ENVIRONMENT=test` signs a
 self-signed JWT rather than authenticating against NGC, so it needs no
-`FWE_API_KEY`:
+`FWE_API_KEY`. Against a real Forge environment:
 
 ```bash
-FORGE_ENVIRONMENT=test make -C controller run
+CNPG_SUPERUSER_PASSWORD=postgres FWE_API_KEY=<your-NGC-api-key> \
+  make -C controller run-local
 ```
+
+[first-cluster.md](first-cluster.md#path-a--the-api-alone) covers this path in
+full, and goes on to tenant clusters.
 
 ## agent (nke-agent)
 
@@ -106,7 +97,8 @@ The source lives in `agent/`. The binary installed on a node is called
 
 ```bash
 cd agent
-go build ./cmd/...
+make build             # cross-compiles for linux; a host go build on macOS
+                       # produces a binary no node can run
 go test ./...          # or: make test
 ```
 

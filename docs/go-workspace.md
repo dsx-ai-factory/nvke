@@ -52,8 +52,8 @@ make clean      # remove bin/
 ```
 
 `make build` produces `bin/agent`, `bin/capd-reboot-controller`,
-`bin/controller`, `bin/nico-mock`, `bin/nke-os-image-check`, and
-`bin/nkectl`.
+`bin/controller`, `bin/nico-mock`, `bin/nke-os-image-check`,
+`bin/nkectl`, and `bin/updater`.
 
 ## Keeping the workspace up to date
 

@@ -75,6 +75,8 @@ autoinstall:
     - python3
     - python3-apt
     - openssh-server
+    # ovn-kubernetes runs against the host's Open vSwitch (values-nke.yaml: ovs-node false).
+    - openvswitch-switch
 
   # security, not all: "all" was tried and reverted -- it pulls in every
   # linux-firmware-* split package (AMD/Intel/Broadcom/Qualcomm/Mellanox/

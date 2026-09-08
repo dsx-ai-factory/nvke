@@ -38,7 +38,7 @@ development tooling.
 
 | Module | Binary | What it is |
 |---|---|---|
-| `controller/` | `worker` | The Cloud Workflow Engine: REST API, Temporal workflows, Postgres, reconcilers |
+| `controller/` | `controller` | The Cloud Workflow Engine: REST API, Temporal workflows, Postgres, reconcilers. Source is `cmd/worker/` |
 | `agent/` | `agent` | The node agent, a gRPC server that runs on every managed node |
 | `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NKE provisions before CAPI bootstraps them |
 | `cli/` | `nkectl` | The command line client |

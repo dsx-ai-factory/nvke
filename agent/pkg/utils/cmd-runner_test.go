@@ -168,6 +168,13 @@ func TestExecRunnerRunWithEmptyArgs(t *testing.T) {
 	assert.Equal(t, "\n", string(output))
 }
 
+// detachedWait bounds how long the detached tests poll for the child's side
+// effect. The child is a fork/exec of touch or /bin/sh; at 1s that missed on a
+// loaded macOS machine under -race (the OS-matrix job's shape), because the
+// budget covered process start, not just the write. Nothing here measures
+// latency, so the bound only has to be far above any plausible start time.
+const detachedWait = 10 * time.Second
+
 func TestExecRunnerRunDetached(t *testing.T) {
 	runner := &ExecRunner{}
 
@@ -184,7 +191,7 @@ func TestExecRunnerRunDetached(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		_, err := os.Stat(markerFile)
 		return err == nil
-	}, time.Second, 10*time.Millisecond, "marker file should be created")
+	}, detachedWait, 10*time.Millisecond, "marker file should be created")
 }
 
 func TestExecRunnerRunDetachedWithDir(t *testing.T) {
@@ -205,7 +212,7 @@ func TestExecRunnerRunDetachedWithDir(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		_, err := os.Stat(markerFile)
 		return err == nil
-	}, time.Second, 10*time.Millisecond, "marker file should be created in specified directory")
+	}, detachedWait, 10*time.Millisecond, "marker file should be created in specified directory")
 }
 
 func TestExecRunnerRunDetachedWithEnv(t *testing.T) {
@@ -226,7 +233,7 @@ func TestExecRunnerRunDetachedWithEnv(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		content, err := os.ReadFile(outputFile)
 		return err == nil && strings.Contains(string(content), "success")
-	}, time.Second, 10*time.Millisecond, "output file should contain env var value")
+	}, detachedWait, 10*time.Millisecond, "output file should contain env var value")
 }
 
 func TestExecRunnerRunDetachedWithNilOptions(t *testing.T) {
@@ -243,7 +250,7 @@ func TestExecRunnerRunDetachedWithNilOptions(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		_, err := os.Stat(markerFile)
 		return err == nil
-	}, time.Second, 10*time.Millisecond, "marker file should be created with nil options")
+	}, detachedWait, 10*time.Millisecond, "marker file should be created with nil options")
 }
 
 func TestExecRunnerRunDetachedCommandNotFound(t *testing.T) {
@@ -270,7 +277,7 @@ func TestExecRunnerRunDetachedWithStdout(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		content, err := os.ReadFile(outputFile)
 		return err == nil && strings.Contains(string(content), "captured")
-	}, time.Second, 10*time.Millisecond, "stdout should contain captured output")
+	}, detachedWait, 10*time.Millisecond, "stdout should contain captured output")
 }
 
 func TestExecRunnerRunDetachedWithStderr(t *testing.T) {
@@ -288,7 +295,7 @@ func TestExecRunnerRunDetachedWithStderr(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		content, err := os.ReadFile(outputFile)
 		return err == nil && strings.Contains(string(content), "error")
-	}, time.Second, 10*time.Millisecond, "stderr should contain error output")
+	}, detachedWait, 10*time.Millisecond, "stderr should contain error output")
 }
 
 func TestExecRunnerRunCombinedOutput(t *testing.T) {

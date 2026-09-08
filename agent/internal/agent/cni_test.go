@@ -335,6 +335,18 @@ func TestCalicoInstallRootFromFiles(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, "/usr/share/nke-cni/calico", root)
 	})
+	// The exact `dpkg-query -L` output of the nke-cni-calico-manifests-<stream>
+	// deb built by os-image/packages/cni-calico. That package exists so a node
+	// can install Calico with no registry, and it is only useful if this
+	// resolves: keep the two in step.
+	t.Run("os-image cni-calico package layout", func(t *testing.T) {
+		root, err := calicoInstallRootFromFiles([]string{
+			"/usr/share/nke-cni/calico/3.30.1/manifests/custom-resources.yaml",
+			"/usr/share/nke-cni/calico/3.30.1/manifests/tigera-operator.yaml",
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, "/usr/share/nke-cni/calico/3.30.1", root)
+	})
 	t.Run("prefers chart root when both match", func(t *testing.T) {
 		root, err := calicoInstallRootFromFiles([]string{
 			"/other/manifests/tigera-operator.yaml",

@@ -173,7 +173,7 @@ Key configuration (see `internal/config/config.go` for full list):
 
 ## Local Development
 
-Preferred day-to-day path is CAPI + Tilt (see root `README.md`).
+Preferred day-to-day path is CAPI + Tilt (see `README.md` in this directory).
 
 ### Full Local Setup
 1. Start local Temporal: `temporal server start-dev`

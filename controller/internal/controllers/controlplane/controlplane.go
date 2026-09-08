@@ -228,6 +228,33 @@ func (c *controlPlane) countNodesNeedingRollout() int {
 	return total
 }
 
+// nodesOffVersion returns the node-pool nodes whose NodeSet pins a Kubernetes
+// version other than target, their pools, and whether any such pool has
+// auto-provision disabled. Those pools never get a new NodeSet, so the count
+// cannot fall on its own.
+func (c *controlPlane) nodesOffVersion(target string) (int, []uuid.UUID, bool) {
+	count := 0
+	stuck := false
+	var pools []uuid.UUID
+	for _, np := range c.nodePools {
+		poolCount := 0
+		for _, ns := range np.nodeSets {
+			if ns.KubernetesVersion != "" && ns.KubernetesVersion != target {
+				poolCount += len(ns.nodes)
+			}
+		}
+		if poolCount == 0 {
+			continue
+		}
+		count += poolCount
+		pools = append(pools, np.ID)
+		if np.AutoProvisionDisabled {
+			stuck = true
+		}
+	}
+	return count, pools, stuck
+}
+
 // expectedCount returns the expected number of nodes for this node pool.
 // This accounts for surge nodes during upgrades:
 // - Normal operation (no deprecated nodes): expectedCount = DesiredCount

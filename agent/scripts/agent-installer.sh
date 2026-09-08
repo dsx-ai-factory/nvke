@@ -35,6 +35,20 @@ install_agent_binary() {
   chmod +x $binary_path
 }
 
+install_updater() {
+  if [ ! -x ./nke-agent-updater ]; then
+    echo "nke-agent-updater is missing from the agent bundle" >&2
+    exit 1
+  fi
+  if [ ! -f ./nke-agent-updater@.service ]; then
+    echo "nke-agent-updater@.service is missing from the agent bundle" >&2
+    exit 1
+  fi
+
+  install -m 0755 ./nke-agent-updater /usr/local/bin/nke-agent-updater
+  install -m 0644 ./nke-agent-updater@.service /etc/systemd/system/nke-agent-updater@.service
+}
+
 create_agent_service_file() {
   # Use an env file for arguments rather than editing the systemd service file
   echo "AGENT_ARGS=\"$AGENT_ARGS\"" >/etc/default/nke-agent
@@ -163,6 +177,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+install_updater
 install_agent_binary
 create_agent_service_file
 install_script_logrotate

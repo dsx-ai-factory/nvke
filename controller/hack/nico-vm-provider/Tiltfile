@@ -39,6 +39,15 @@ CAPNICO_CHART_VERSION = "0.0.28"
 CAPNICO_HELM_REPO = "ngc-components-dev"
 CAPNICO_HELM_REPO_URL = "https://helm.ngc.nvidia.com/0837451325059433/components-dev"
 
+# CWE requests a reboot or a repair by annotating the CAPI Machine with
+# nke.nvidia.com/reboot and nke.nvidia.com/machine-health-issue. CAPNICo
+# defaults to nico.nvidia.com/* and never sees them. The fleet passes these
+# flags (nke-site-deploy, values-capi-provider-nico.yaml); so must this.
+CAPNICO_MANAGER_ARGS = [
+    "--reboot-annotation=nke.nvidia.com/reboot",
+    "--repair-annotation=nke.nvidia.com/machine-health-issue",
+]
+
 # Source-mode only: tag for the locally built controller image. Same tag the
 # 'nico' provider uses -- the two providers are mutually exclusive, so they can
 # never race over it.
@@ -122,6 +131,7 @@ def register(ctx):
             --version %s \
             -n %s \
             --set 'imagePullSecrets[0].name=nvcr-creds' \
+            --set-json 'manager.args=%s' \
             --wait --timeout 5m
           kubectl -n %s rollout status deployment/controller-manager --timeout=180s
     """ % (
@@ -141,6 +151,8 @@ def register(ctx):
         CAPNICO_RELEASE,
         CAPNICO_CHART_VERSION,
         CAPNICO_NAMESPACE,
+        # The chart's manager.args is replaced, not appended; keep --leader-elect.
+        encode_json(["--leader-elect"] + CAPNICO_MANAGER_ARGS),
         CAPNICO_NAMESPACE,
     )
 
@@ -200,6 +212,21 @@ def register(ctx):
           # config/default pins the released image; repoint the deployment at
           # the local tag and restart so a rebuilt image is actually picked up.
           kubectl -n %s set image deployment/controller-manager manager="${provider_image}"
+
+          # config/default carries CAPNICo's own annotation defaults; append the
+          # keys CWE sets (see CAPNICO_MANAGER_ARGS). Idempotent: a re-run after
+          # an unchanged apply already has them.
+          manager_args="$(kubectl -n %s get deployment/controller-manager -o json |
+            jq -r '.spec.template.spec.containers[] | select(.name == "manager") | .args[]?')"
+          if ! grep -q -- '--reboot-annotation=' <<<"${manager_args}"; then
+            idx="$(kubectl -n %s get deployment/controller-manager -o json |
+              jq '[.spec.template.spec.containers[].name] | index("manager")')"
+            kubectl -n %s patch deployment/controller-manager --type=json -p "$(
+              jq -cn --argjson idx "${idx}" --argjson args '%s' \
+                '[$args[] | {op: "add", path: "/spec/template/spec/containers/\\($idx)/args/-", value: .}]'
+            )"
+          fi
+
           kubectl -n %s rollout restart deployment/controller-manager
           kubectl -n %s rollout status deployment/controller-manager --timeout=180s
     """ % (
@@ -210,6 +237,10 @@ def register(ctx):
             kind_cluster_name,
             CAPNICO_NAMESPACE,
             CAPNICO_NAMESPACE,
+            CAPNICO_NAMESPACE,
+            CAPNICO_NAMESPACE,
+            CAPNICO_NAMESPACE,
+            encode_json(CAPNICO_MANAGER_ARGS),
             CAPNICO_NAMESPACE,
             CAPNICO_NAMESPACE,
         )

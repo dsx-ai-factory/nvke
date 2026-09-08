@@ -57,6 +57,9 @@ type bootstrapSiteOptions struct {
 	provider          string
 	keepBootstrapKind bool
 
+	// disableMTLS stands the site up without SPIFFE, for bring-up debugging.
+	disableMTLS bool
+
 	// clusterTimeout bounds the wait for CWE to finish provisioning the
 	// cluster, from the create call to every node having joined.
 	clusterTimeout time.Duration
@@ -127,6 +130,9 @@ site spec file format.`,
 		"Container runtime front end for the ephemeral bootstrap Kind cluster: "+
 			string(bootstrapengine.ProviderNerdctl)+" (default) or "+string(bootstrapengine.ProviderDocker)+
 			" (rollback path). Overrides NKECTL_BOOTSTRAP_PROVIDER.")
+	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
+		"Stand the site up without SPIFFE: no SPIRE, and CWE dials node agents in plaintext. "+
+			"The agents must be running with --disable-mtls too. Development only.")
 	cmd.Flags().BoolVar(&opts.keepBootstrapKind, "keep-bootstrap-cluster", false,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
@@ -175,7 +181,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	if opts.provider != "" {
 		cfg.Provider = bootstrapengine.Provider(opts.provider)
 	}
-	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName)
+	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName, opts.disableMTLS)
 	if err != nil {
 		return err
 	}
@@ -356,7 +362,7 @@ func envOrDefault(key, fallback string) string {
 //
 // clusterName is the ephemeral cluster's name, which is settled before the
 // cluster is created; SPIRE is told it, and it seeds the default trust domain.
-func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string) (cwedeploy.Config, error) {
+func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS bool) (cwedeploy.Config, error) {
 	cfg := cwedeploy.DefaultConfig()
 
 	if cfg.CWEImage == "" {
@@ -392,6 +398,13 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string) (cwedeploy.Conf
 	// bootstrap is only entitled to admit machines it was told about, so this
 	// is the whole of it: no node listed, no node admitted.
 	cfg.TPMEKFingerprints = inv.Cluster.TPMEKThumbprints()
+
+	// No SPIFFE means no SPIRE and no attestation, so the thumbprints go
+	// unused; keep them off the config so nothing downstream acts on them.
+	cfg.DisableMTLS = disableMTLS
+	if disableMTLS {
+		cfg.TPMEKFingerprints = nil
+	}
 
 	// How the hosts were configured when they were provisioned, which is why it
 	// is in the site spec and not in the environment.

@@ -20,6 +20,10 @@ const (
 	defaultSourceResyncInterval     = 15 * time.Minute
 	defaultSourceResyncJitterFactor = 0.1
 	defaultSourceBufferSize         = 1024
+	// A key is delivered at most once per window. Every DB write fans out to
+	// these sources, and a write storm on one row otherwise reconciles it at
+	// transaction speed (10-30 times a second seen during upgrades and reboots).
+	defaultSourceCoalesceWindow = time.Second
 )
 
 type clusterSourceRegistration struct {

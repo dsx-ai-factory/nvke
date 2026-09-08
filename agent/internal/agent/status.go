@@ -45,6 +45,7 @@ type NodeStatus struct {
 	K8sAPIEncryption      K8sAPIEncryption              `json:"k8sAPIEncryption"`
 	K8sAPIRewrite         K8sAPIRewriteOperation        `json:"k8sAPIRewriteOperation"`
 	NodeAgentOperations   map[string]NodeAgentOperation `json:"nodeAgentOperations,omitempty"`
+	K8sCertRenewalState   string                        `json:"k8sCertRenewalState,omitempty"`
 	KubetrustIsConfigured bool                          `json:"kubetrustIsConfigured"`
 	CalicoInstallLog      string                        `json:"calicoInstallLog"`
 	KubeadmStatus         string                        `json:"kubeadmStatus"`
@@ -158,6 +159,7 @@ type NodeAgentOperation struct {
 	Type         string                  `json:"type"`
 	Phase        NodeAgentOperationPhase `json:"phase"`
 	Step         string                  `json:"step"`
+	Result       string                  `json:"result,omitempty"`
 	ErrorMessage string                  `json:"errorMessage"`
 }
 
@@ -340,8 +342,11 @@ func (s *NodeAgentServer) UpdateBundleStatus(bundle *Bundle) {
 	s.mu.Unlock()
 }
 
-// GetBundleStatusByRequestID returns all bundles with the given request ID.
-// If no bundles are found, an empty slice is returned.
+// GetBundleStatusByRequestID returns copies of all bundles with the given
+// request ID. If no bundles are found, an empty slice is returned.
+//
+// Copies, because a pointer into s.NodeStatus.Bundles outlives the lock and
+// UpdateBundleStatus writes those fields from the async install goroutine.
 func (s *NodeAgentServer) GetBundleStatusByRequestID(requestID string) []*Bundle {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -349,7 +354,8 @@ func (s *NodeAgentServer) GetBundleStatusByRequestID(requestID string) []*Bundle
 	var out []*Bundle
 	for i := range s.NodeStatus.Bundles {
 		if s.NodeStatus.Bundles[i].RequestID == requestID {
-			out = append(out, &s.NodeStatus.Bundles[i])
+			bundle := s.NodeStatus.Bundles[i]
+			out = append(out, &bundle)
 		}
 	}
 

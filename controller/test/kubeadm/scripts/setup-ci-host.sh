@@ -200,7 +200,16 @@ if [[ "${FDE}" == true ]]; then
     swtpm \
     swtpm-tools \
     e2fsprogs \
-    sshpass
+    sshpass \
+    ethtool
+
+  # GRO merges inbound segments into super-frames the tap cannot take, so guest
+  # downloads crawl on retransmits: 1.6-5 MB/s, against 62 with it off.
+  uplink="$(ip -4 route show default | awk '/default/ {print $5; exit}')"
+  if [[ -n "${uplink}" ]]; then
+    sudo ethtool -K "${uplink}" gro off lro off 2>/dev/null || warn "could not change receive offloads on ${uplink}"
+    log "offloads on ${uplink}: $(ethtool -k "${uplink}" 2>/dev/null | grep -E '^(generic-receive-offload|large-receive-offload):' | tr -s ' ' | tr '\n' ' ')"
+  fi
 fi
 
 # libvirtd is only needed for the system daemon's helpers; nico-vms itself talks
@@ -618,7 +627,31 @@ else
   log "Base image ready at ${BASE_IMAGE} ($(du -h "${BASE_IMAGE}" | cut -f1))"
 fi
 
-# ── 8. Summary ──────────────────────────────────────────────────────────────
+# ── 8. inotify capacity ─────────────────────────────────────────────────────
+# kubelet starts cAdvisor, which takes an inotify instance per container. The
+# stock 128 runs out once nico-vms, the seed cluster and the tenant nodes are
+# all up on one host: kubelet stays "activating" with "inotify_init: too many
+# open files", no static pod starts, and kubeadm init fails in
+# wait-control-plane with a message that names none of this.
+#
+# nico-vms-e2e.yml raises the same two values for its runner. A host prepared
+# by this script needs them just as much, and gets them here so it does not
+# depend on the caller having done it.
+
+raise_sysctl_minimum() { # raise_sysctl_minimum <key> <minimum>
+  local key="$1" want="$2" have
+  have="$(sysctl -n "${key}" 2>/dev/null || echo 0)"
+  if [[ "${have}" -lt "${want}" ]]; then
+    sysctl -qw "${key}=${want}" && log "${key}: ${have} -> ${want}"
+  else
+    log "${key}: ${have}, already at or above ${want}"
+  fi
+}
+
+raise_sysctl_minimum fs.inotify.max_user_instances 1024
+raise_sysctl_minimum fs.inotify.max_user_watches 1048576
+
+# ── 9. Summary ──────────────────────────────────────────────────────────────
 
 log "Host ready. nico-vms should be run with:"
 log "  NICO_VMS_BRIDGE_NAME=${BRIDGE_NAME}"

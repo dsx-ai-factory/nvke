@@ -164,6 +164,9 @@ func (s *NodeAgentServer) runK8sControlPlaneNodeGracefulShutdown(
 	progress nodeAgentOperationProgress,
 	shouldStopKubeAPIServer bool,
 ) error {
+	s.staticPodMutationMu.Lock()
+	defer s.staticPodMutationMu.Unlock()
+
 	runner := s.Runner
 	if runner == nil {
 		runner = &nkeutils.ExecRunner{}
@@ -256,6 +259,9 @@ func (s *NodeAgentServer) runKubeVipRestore(
 	ctx context.Context,
 	progress nodeAgentOperationProgress,
 ) error {
+	s.staticPodMutationMu.Lock()
+	defer s.staticPodMutationMu.Unlock()
+
 	runner := s.Runner
 	if runner == nil {
 		runner = &nkeutils.ExecRunner{}

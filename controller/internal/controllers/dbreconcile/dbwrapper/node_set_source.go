@@ -30,6 +30,7 @@ type NodeSetEventSource[T comparable] struct {
 	keyMappers     []NodeSetKeyMapper[T]
 	resyncInterval time.Duration
 	logger         *slog.Logger
+	coalesce       *keyCoalescer[T]
 }
 
 func NewNodeSetSource(database *DB, filters dbfilters.NodeSet, keyMappers ...NodeSetKeyMapper[dbreconcile.Key]) *NodeSetEventSource[dbreconcile.Key] {
@@ -46,7 +47,7 @@ func NewMappedNodeSetSource[T comparable](
 	filters dbfilters.NodeSet,
 	keyMappers ...NodeSetKeyMapper[T],
 ) *NodeSetEventSource[T] {
-	return &NodeSetEventSource[T]{
+	s := &NodeSetEventSource[T]{
 		events:         make(chan event.TypedGenericEvent[T], defaultSourceBufferSize),
 		database:       database,
 		filters:        filters,
@@ -54,6 +55,8 @@ func NewMappedNodeSetSource[T comparable](
 		resyncInterval: defaultSourceResyncInterval,
 		logger:         database.logger,
 	}
+	s.coalesce = newKeyCoalescer(defaultSourceCoalesceWindow, s.deliver)
+	return s
 }
 
 func (s *NodeSetEventSource[T]) Start(ctx context.Context, queue workqueue.TypedRateLimitingInterface[T]) error {
@@ -138,12 +141,13 @@ func (s *NodeSetEventSource[T]) enqueueKey(ctx context.Context, key T) error {
 	if err := ctx.Err(); err != nil {
 		return errors.Join(err, fmt.Errorf("failed to enqueue DB node set reconcile event"))
 	}
+	s.coalesce.offer(key)
+	return nil
+}
+
+func (s *NodeSetEventSource[T]) deliver(key T) {
 	select {
 	case <-s.done:
-		return fmt.Errorf("failed to enqueue DB node set reconcile event: source stopped")
 	case s.events <- event.TypedGenericEvent[T]{Object: key}:
-		return nil
-	case <-ctx.Done():
-		return errors.Join(ctx.Err(), fmt.Errorf("failed to enqueue DB node set reconcile event"))
 	}
 }

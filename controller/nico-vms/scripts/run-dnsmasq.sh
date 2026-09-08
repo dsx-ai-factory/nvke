@@ -75,23 +75,88 @@ fi
 
 echo "Starting dnsmasq on ${BRIDGE} (${CIDR}), upstream DNS: ${UPSTREAM_DNS_ARGS[*]}"
 
-# --keep-in-foreground keeps normal TCP worker forking while Tilt owns the foreground process.
-# --log-facility=- sends runtime logs to stderr so Tilt can capture them.
-exec sudo dnsmasq \
-    --keep-in-foreground \
-    --log-facility=- \
-    --listen-address="$GATEWAY" \
-    --bind-interfaces \
-    --dhcp-range="interface:${BRIDGE},${RANGE_START},${RANGE_END},255.255.255.0,30m" \
-    --dhcp-hostsdir="$HOSTS_DIR" \
-    --dhcp-option=option:router,"$GATEWAY" \
-    --dhcp-option=option:dns-server,"$GATEWAY" \
-    --except-interface=lo \
-    --no-resolv \
-    --no-hosts \
-    "${UPSTREAM_DNS_ARGS[@]}" \
-    --address=/carbide-pxe.forge/"$GATEWAY" \
-    --dhcp-leasefile="$LEASE_FILE" \
-    --pid-file="$PID_FILE" \
-    --log-dhcp \
-    --dhcp-ignore-clid
+# A resolver that listens on every interface -- systemd-resolved, or the BIND a
+# managed cluster runs -- takes the gateway's port 53 as soon as it notices the
+# bridge, and dnsmasq then dies with "Address already in use". The guests cannot
+# be pointed elsewhere: in static addressing mode nico-vms writes the gateway as
+# their only nameserver, so a DHCP resolver option never reaches them. Serve
+# guest DNS on an alternative port instead and redirect port 53 arriving on the
+# bridge to it, leaving the other resolver the port for the host.
+#
+# setup-ci-host.sh does the same for its own dnsmasq; this is that fallback for
+# the Tilt-managed one.
+#
+# Try the port and react to the result rather than checking whether it is free
+# first: the competing resolver can bind between any such check and the start.
+ALT_DNS_PORT="${NICO_VMS_ALT_DNS_PORT:-5353}"
+DNSMASQ_ERR="$(mktemp)"
+DNSMASQ_PID=""
+cleanup() {
+    [[ -n "$DNSMASQ_PID" ]] && sudo kill "$DNSMASQ_PID" 2>/dev/null
+    rm -f "$DNSMASQ_ERR"
+}
+trap cleanup EXIT INT TERM
+
+# start_dnsmasq runs dnsmasq in the background and reports whether it was still
+# alive a moment later. Backgrounded rather than exec'd so a failed bind can be
+# recovered from; the script stays in the foreground for Tilt by waiting on it.
+start_dnsmasq() {
+    sudo dnsmasq \
+        --keep-in-foreground \
+        --log-facility=- \
+        --listen-address="$GATEWAY" \
+        --bind-interfaces \
+        --dhcp-range="interface:${BRIDGE},${RANGE_START},${RANGE_END},255.255.255.0,30m" \
+        --dhcp-hostsdir="$HOSTS_DIR" \
+        --dhcp-option=option:router,"$GATEWAY" \
+        --dhcp-option=option:dns-server,"$GATEWAY" \
+        --except-interface=lo \
+        --no-resolv \
+        --no-hosts \
+        "${UPSTREAM_DNS_ARGS[@]}" \
+        --address=/carbide-pxe.forge/"$GATEWAY" \
+        --dhcp-leasefile="$LEASE_FILE" \
+        --pid-file="$PID_FILE" \
+        --log-dhcp \
+        --dhcp-ignore-clid \
+        "$@" 2>"$DNSMASQ_ERR" &
+    DNSMASQ_PID=$!
+    sleep 2
+    kill -0 "$DNSMASQ_PID" 2>/dev/null
+}
+
+if ! start_dnsmasq; then
+    cat "$DNSMASQ_ERR" >&2
+    if ! grep -q "Address already in use" "$DNSMASQ_ERR"; then
+        echo "dnsmasq did not start, and not because the port was taken" >&2
+        exit 1
+    fi
+
+    # Diagnostic only. The holder is usually a wildcard listener, which ss
+    # prints as 0.0.0.0:53 rather than as the gateway, so do not filter on the
+    # address; and read the process name with sed, since `tr -d` takes a
+    # character set and would eat letters out of the name.
+    holder="$(sudo ss -lnupH "sport = :53" 2>/dev/null |
+        sed -n 's/.*users:((\"\([^\"]*\)\".*/\1/p' | head -1 || true)"
+    echo "${GATEWAY}:53 is unavailable; port 53 is held by ${holder:-another process}" >&2
+    echo "serving guest DNS on port ${ALT_DNS_PORT} and redirecting ${BRIDGE} port 53 to it" >&2
+
+    for proto in udp tcp; do
+        if ! sudo iptables -t nat -C PREROUTING -i "$BRIDGE" -p "$proto" --dport 53 \
+            -j REDIRECT --to-ports "$ALT_DNS_PORT" 2>/dev/null; then
+            sudo iptables -t nat -A PREROUTING -i "$BRIDGE" -p "$proto" --dport 53 \
+                -j REDIRECT --to-ports "$ALT_DNS_PORT"
+        fi
+    done
+    ensure_bridge_input_rule -p udp --dport "$ALT_DNS_PORT"
+    ensure_bridge_input_rule -p tcp --dport "$ALT_DNS_PORT"
+
+    if ! start_dnsmasq --port="$ALT_DNS_PORT"; then
+        cat "$DNSMASQ_ERR" >&2
+        echo "dnsmasq did not start on port ${ALT_DNS_PORT} either" >&2
+        exit 1
+    fi
+fi
+
+echo "dnsmasq started (pid ${DNSMASQ_PID})"
+wait "$DNSMASQ_PID"

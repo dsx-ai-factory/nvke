@@ -181,17 +181,16 @@ if [[ -n "${NKE_E2E_DOCKERHUB_MIRROR}" ]]; then
     echo "NKE_E2E_DOCKERHUB_MIRROR must be a registry host with an optional port" >&2
     exit 1
   fi
-  # -i.bak, not bare -i: see the note in controller/hack/ci/backend-e2e.sh.
-  sed -i.bak \
-    -e "s#server = \"https://registry-1.docker.io\"#server = \"https://${NKE_E2E_DOCKERHUB_MIRROR}\"#" \
-    -e "s#http://registry-mirror:5000#https://${NKE_E2E_DOCKERHUB_MIRROR}#" \
-    "${build_context}/Dockerfile"
-  rm -f "${build_context}/Dockerfile.bak"
-  mirror_occurrences="$(grep -Fc "https://${NKE_E2E_DOCKERHUB_MIRROR}" "${build_context}/Dockerfile" || true)"
-  if [[ "${mirror_occurrences}" -lt 2 ]]; then
-    echo "Failed to route the CAPD node image through ${NKE_E2E_DOCKERHUB_MIRROR}" >&2
-    exit 1
+  # Reachability is logged, not enforced: the image still builds and pulls fall
+  # through to the next host.
+  if curl -fsS -m 5 -o /dev/null "https://${NKE_E2E_DOCKERHUB_MIRROR}/v2/"; then
+    echo "[build-image] mirror ${NKE_E2E_DOCKERHUB_MIRROR} answered /v2/"
+  else
+    echo "[build-image] mirror ${NKE_E2E_DOCKERHUB_MIRROR} did not answer /v2/; pulls will fall through"
   fi
+  echo "[build-image] pull order: ${NKE_E2E_DOCKERHUB_MIRROR} -> local dev cache -> upstream"
+else
+  echo "[build-image] NKE_E2E_DOCKERHUB_MIRROR unset; pull order: local dev cache -> upstream"
 fi
 
 # A local CAPD run may inject a manifests deb built from public CNI sources.
@@ -318,6 +317,7 @@ build_args=(
   --build-arg "CAPD_SPIRE_ATTESTATION_METHOD=${CAPD_SPIRE_ATTESTATION_METHOD}"
   --build-arg "BUNDLE_SERVER_URL=${BUNDLE_SERVER_URL}"
   --build-arg "INDEX_FILE_URL=${INDEX_FILE_URL}"
+  --build-arg "NKE_E2E_DOCKERHUB_MIRROR=${NKE_E2E_DOCKERHUB_MIRROR}"
 )
 
 if [[ -n "${CAPD_KINDEST_NODE_TAG:-}" ]]; then

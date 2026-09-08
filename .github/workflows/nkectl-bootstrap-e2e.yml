@@ -62,17 +62,22 @@
 # bootstrapengine's flattenToHostPlatform instead.
 name: nkectl bootstrap e2e
 
-# See go-build.yml for why the push path list is duplicated by hand instead of
-# shared with workflow_call, and why workflow_call carries no filter.
+# No workflow_call: this lane left the merge gate when it moved to the mirror
+# branch, so it reports as its own advisory check like capd-e2e and nico-e2e.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      # The mirror branch copy-pr-bot pushes, which is how capd-e2e, nico-e2e
+      # and local-entrypoint-e2e get a pull request onto NVIDIA runners.
+      - "pull-request/[0-9]+"
     paths:
       - 'cli/**'
       - 'agent/**'
-      - 'controller/hack/capd-kindest-node/**'
+      # The suite builds CWE from controller/Dockerfile. Off the gate the paths
+      # decide, so without this a controller-only change never runs it.
+      - 'controller/**'
       - '.github/workflows/nkectl-bootstrap-e2e.yml'
-  workflow_call:
   # Also twice a day, so a break the paths above filtered out, or one a flake
   # hid, still surfaces within twelve hours. A schedule ignores those paths, so
   # these runs always exercise the whole suite.
@@ -91,10 +96,11 @@ concurrency:
 jobs:
   e2e:
     name: e2e (${{ matrix.provider }})
-    # ubuntu-22.04, not ubuntu-latest, because its kernel can supply the vTPM
-    # proxy module that the fake hosts need. The cleanup below makes enough of
-    # its disk available for the two container stacks and three fake hosts.
-    runs-on: ubuntu-22.04
+    # The bootstrap cluster and three nested control planes need the 16-CPU pool.
+    # Pull requests reach it through the mirror branch, so no GitHub-hosted
+    # fallback: there, image pulls go to docker.io at rates that have taken
+    # traefik's 55 MB past the smoke install's helm wait.
+    runs-on: linux-amd64-cpu16
     if: github.repository == 'NVIDIA/nke'
     # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
     # bundle fetch, local agent compile) plus the thin derivation on top has
@@ -114,6 +120,21 @@ jobs:
     # matrix, which reads as coverage it does not give.
     env:
       CWE_IMAGE: cwe-controller:nkectl-bootstrap-e2e
+      # Same mirror backend-e2e and local-entrypoint-e2e use. The node image
+      # tries it first and falls through, so an unreachable mirror costs a dial
+      # rather than the run. Without it every pull went to docker.io, and on a
+      # GitHub-hosted runner traefik's 55 MB took 5m48s against a 5m helm wait.
+      NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      # The same mirror for the ephemeral bootstrap Kind cluster, which pulls
+      # the temporal, postgres, SPIRE and Cluster API images itself. Unmirrored,
+      # six merges in eight minutes put twelve of these clusters on Docker Hub's
+      # anonymous limit at once and the last four to start got 429 Too Many
+      # Requests (2026-09-06).
+      NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      # The postgres chart is an OCI artifact on Docker Hub too, and helm's
+      # pull of it counts against the same limit: with the images mirrored, the
+      # next run's nerdctl leg failed on the chart manifest alone with 429.
+      NKECTL_CWE_POSTGRES_CHART: oci://dc.local.gha-runners.nvidia.com/bitnamicharts/postgresql
       # nerdctl >= 1.7.0 is kind's own stated minimum for its nerdctl
       # provider (KIND_EXPERIMENTAL_PROVIDER=nerdctl, added in kind v0.23.0,
       # comfortably below the v0.32.0 this job pins). nerdctl-full bundles a
@@ -162,6 +183,25 @@ jobs:
           echo "Disk space after cleanup:"
           df -h /
 
+      # Each nested containerd uses inotify for CRI and OOM monitoring. Match
+      # the capacity configured by the repository's other CPU16 E2E lanes.
+      - name: Configure runner inotify capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          raise_minimum() {
+            local key="$1" minimum="$2" current
+            current="$(sysctl -n "${key}")"
+            echo "${key}=${current} (required minimum ${minimum})"
+            if (( current < minimum )); then
+              sudo sysctl -w "${key}=${minimum}"
+              current="$(sysctl -n "${key}")"
+            fi
+            (( current >= minimum )) || { echo "${key} stayed below ${minimum}" >&2; exit 1; }
+          }
+          raise_minimum fs.inotify.max_user_instances 1024
+          raise_minimum fs.inotify.max_user_watches 1048576
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -196,7 +236,7 @@ jobs:
       # reason: install_only, since this suite drives kind itself rather than
       # delegating cluster creation to the action.
       - name: Set up Kind and kubectl
-        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
         with:
           version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
@@ -246,7 +286,8 @@ jobs:
             grep '^CONFIG_TCG_VTPM_PROXY=' "${config}"
           fi
           sudo apt-get update
-          sudo apt-get install -y "linux-modules-extra-$(uname -r)"
+          sudo apt-get install -y --allow-change-held-packages \
+            "linux-modules-extra-$(uname -r)"
           sudo modprobe tpm_vtpm_proxy
           modinfo tpm_vtpm_proxy
           # -c, not -e: it has to be the character device swtpm opens.

@@ -25,20 +25,48 @@ on:
   schedule:
     # Quarter past and quarter to. Off the hour, where the daily E2E crons sit.
     - cron: '15,45 * * * *'
+  # A new head has no results yet, so the label from the old one is wrong until
+  # the next sweep. No checkout here, so the write token never meets fork code.
+  pull_request_target:
+    types: [synchronize]
   workflow_dispatch: {}
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || 'sweep' }}
   cancel-in-progress: true
 
 permissions: {}
 
 jobs:
-  ci-failures:
-    name: Check open PRs for failed checks
-    if: github.repository == 'NVIDIA/nke'
+  clear-on-push:
+    name: Clear the label on a new head
+    if: github.repository == 'NVIDIA/nke' && github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
+      pull-requests: write
+    timeout-minutes: 5
+    steps:
+      - name: Remove needs-ci-fix
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                ...context.repo,
+                issue_number: context.payload.pull_request.number,
+                name: 'needs-ci-fix',
+              });
+            } catch (error) {
+              // 404 means the label was not on the pull request.
+              if (error.status !== 404) throw error;
+            }
+
+  ci-failures:
+    name: Check open PRs for failed checks
+    if: github.repository == 'NVIDIA/nke' && github.event_name != 'pull_request_target'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
       checks: read
       pull-requests: write
     timeout-minutes: 10
@@ -59,6 +87,26 @@ jobs:
 
             let labelled = 0;
             let cleared = 0;
+
+            // A workflow_dispatch or scheduled run attaches its check runs to
+            // the same head SHA, so a hand-started experiment reds a pull
+            // request whose own CI is green. Checked for failures only: the
+            // lookup costs a request per workflow run.
+            const CI_EVENTS = new Set(['pull_request', 'push']);
+            const eventOf = new Map();
+
+            async function isPullRequestCI(run) {
+              const runID = /\/actions\/runs\/(\d+)/.exec(run.html_url ?? '')?.[1];
+              if (!runID) return true;
+              if (!eventOf.has(runID)) {
+                const { data } = await github.rest.actions.getWorkflowRun({
+                  ...context.repo,
+                  run_id: Number(runID),
+                });
+                eventOf.set(runID, data.event);
+              }
+              return CI_EVENTS.has(eventOf.get(runID));
+            }
 
             for (const pr of open) {
               // State is recomputed from the head rather than tracked, so a
@@ -88,9 +136,11 @@ jobs:
               // `cancelled` is not a failure here: cancel-in-progress
               // concurrency cancels runs constantly, and labelling on that is
               // noise. A run still in progress is not a failure either.
-              const failed = [...newest.values()]
-                .filter((r) => r.status === 'completed' && ['failure', 'timed_out'].includes(r.conclusion))
-                .map((r) => r.name);
+              const failed = [];
+              for (const r of newest.values()) {
+                if (r.status !== 'completed' || !['failure', 'timed_out'].includes(r.conclusion)) continue;
+                if (await isPullRequestCI(r)) failed.push(r.name);
+              }
 
               const hasLabel = pr.labels.some((l) => l.name === LABEL);
 

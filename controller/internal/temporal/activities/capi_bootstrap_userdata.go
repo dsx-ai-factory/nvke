@@ -69,9 +69,16 @@ func (a *Activities) renderCAPIBootstrapUserData(
 		return "", fmt.Errorf("spire join token is required when infra.spireAttestationMethod is joinToken")
 	}
 
-	trustDomain, trustBundle, err := getTrustDomainAndBundle(ctx, a.cfg)
-	if err != nil {
-		return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
+	// A site stood up without SPIFFE has no SPIRE and no workload socket to
+	// read a bundle from, so a node gets neither the bundle nor an agent
+	// config. Asking anyway blocks provisioning: the dial fails, the activity
+	// retries forever, and the cluster never leaves Provisioning.
+	var trustDomain, trustBundle string
+	if a.cfg.SpiffeEnabled {
+		trustDomain, trustBundle, err = getTrustDomainAndBundle(ctx, a.cfg)
+		if err != nil {
+			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
+		}
 	}
 
 	files := make([]capiCloudInitFile, 0, len(capiNodeSetProvider.BootstrapFiles)+2)
@@ -83,26 +90,28 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			Content:     file.Content,
 		})
 	}
-	files = append(files,
-		capiCloudInitFile{
-			Path:        constants.CAPISpireTrustBundlePath,
-			Owner:       "root:root",
-			Permissions: "0644",
-			Content:     trustBundle,
-		},
-		capiCloudInitFile{
-			Path:        constants.CAPISpireAgentConfigPath,
-			Owner:       "root:root",
-			Permissions: "0644",
-			Content: buildCAPISpireAgentConfig(
-				capiNodeSetProvider.SpireAttestationMethod,
-				a.cfg.SpireServerAddress,
-				a.cfg.SpireServerPort,
-				trustDomain,
-				spireJoinToken,
-			),
-		},
-	)
+	if a.cfg.SpiffeEnabled {
+		files = append(files,
+			capiCloudInitFile{
+				Path:        constants.CAPISpireTrustBundlePath,
+				Owner:       "root:root",
+				Permissions: "0644",
+				Content:     trustBundle,
+			},
+			capiCloudInitFile{
+				Path:        constants.CAPISpireAgentConfigPath,
+				Owner:       "root:root",
+				Permissions: "0644",
+				Content: buildCAPISpireAgentConfig(
+					capiNodeSetProvider.SpireAttestationMethod,
+					a.cfg.SpireServerAddress,
+					a.cfg.SpireServerPort,
+					trustDomain,
+					spireJoinToken,
+				),
+			},
+		)
+	}
 
 	userData := capiCloudInitConfig{
 		WriteFiles: files,

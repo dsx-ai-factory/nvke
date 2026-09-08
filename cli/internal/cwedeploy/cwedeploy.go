@@ -222,6 +222,15 @@ type Config struct {
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
 
+	// DisableMTLS stands the site up without SPIFFE: no SPIRE is installed, and
+	// CWE dials each node agent in plaintext. The agent has to be running with
+	// --disable-mtls for that to connect.
+	//
+	// For bring-up debugging. Everything else about a site is all-or-nothing on
+	// attestation, so a break anywhere -- image, attestor, thumbprint, CA,
+	// routing -- looks the same, and this is the only way to bisect it.
+	DisableMTLS bool
+
 	// ChartPath is the local filesystem path to
 	// controller/deploy/charts/controller. Empty triggers
 	// repo-root discovery from the working directory (see resolveChartPath).
@@ -261,6 +270,10 @@ type Config struct {
 
 	// ReadyTimeout bounds how long WaitReady polls /readyz before giving up.
 	ReadyTimeout time.Duration
+
+	// PostgresChartRef is where helm pulls the Bitnami postgresql chart from,
+	// as an OCI reference or a local path. Empty uses Docker Hub's OCI registry.
+	PostgresChartRef string
 }
 
 // DefaultConfig reads the package's knobs from the environment, mirroring
@@ -282,6 +295,8 @@ func DefaultConfig() Config {
 
 		HelmTimeout:  envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
+
+		PostgresChartRef: os.Getenv("NKECTL_CWE_POSTGRES_CHART"),
 	}
 }
 
@@ -386,9 +401,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	defer cleanup()
 
-	e.log.Info("installing postgres", "namespace", postgresNamespace, "version", postgresChartVersion)
+	postgresChart := cfg.PostgresChartRef
+	if postgresChart == "" {
+		postgresChart = postgresChartRef
+	}
+	e.log.Info("installing postgres", "namespace", postgresNamespace, "version", postgresChartVersion, "chart", postgresChart)
 	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", postgresReleaseName, postgresChartRef,
+		"upgrade", "--install", postgresReleaseName, postgresChart,
 		"--namespace", postgresNamespace, "--create-namespace",
 		"--values", postgresValues,
 		"--set-string", "auth.password="+password,
@@ -418,39 +437,45 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return fmt.Errorf("cwedeploy: installing temporal: %w", err)
 	}
 
-	e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion)
-	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", spireCRDsReleaseName, spireCRDsChartName,
-		"--repo", spireChartRepo,
-		"--namespace", spireNamespace, "--create-namespace",
-		"--version", spireCRDsChartVersion,
-		"--wait", "--timeout", helmTimeout.String(),
-	); err != nil {
-		return fmt.Errorf("cwedeploy: installing SPIRE CRDs: %w", err)
-	}
+	// --disable-mtls stands the site up without SPIFFE, so nothing needs SPIRE
+	// and CWE dials each agent in plaintext. Bring-up debugging only.
+	if cfg.DisableMTLS {
+		e.log.Warn("SPIFFE is disabled: skipping SPIRE, and CWE will dial node agents in plaintext")
+	} else {
+		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion)
+		if _, err := e.helm(ctx, kubeconfigPath,
+			"upgrade", "--install", spireCRDsReleaseName, spireCRDsChartName,
+			"--repo", spireChartRepo,
+			"--namespace", spireNamespace, "--create-namespace",
+			"--version", spireCRDsChartVersion,
+			"--wait", "--timeout", helmTimeout.String(),
+		); err != nil {
+			return fmt.Errorf("cwedeploy: installing SPIRE CRDs: %w", err)
+		}
 
-	spireValues, cleanup, err := writeEmbeddedFile(spireValuesFile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	// CWE uses SPIFFE workload identity even when the site spec contains no
-	// external TPM nodes, so the SPIRE deployment is always required.
-	e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
-		"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
-		"tpmThumbprints", len(cfg.TPMEKFingerprints))
-	if _, err := e.helm(ctx, kubeconfigPath,
-		spireInstallArgs(cfg, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
-	); err != nil {
-		return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
-	}
-
-	// Only external TPM nodes need the NodePort. CWE and the in-cluster agents
-	// use SPIRE's ClusterIP service.
-	if len(cfg.TPMEKFingerprints) > 0 {
-		if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
+		spireValues, cleanup, err := writeEmbeddedFile(spireValuesFile)
+		if err != nil {
 			return err
+		}
+		defer cleanup()
+
+		// CWE uses SPIFFE workload identity even when the site spec contains no
+		// external TPM nodes, so the SPIRE deployment is always required.
+		e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
+			"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
+			"tpmThumbprints", len(cfg.TPMEKFingerprints))
+		if _, err := e.helm(ctx, kubeconfigPath,
+			spireInstallArgs(cfg, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
+		); err != nil {
+			return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
+		}
+
+		// Only external TPM nodes need the NodePort. CWE and the in-cluster agents
+		// use SPIRE's ClusterIP service.
+		if len(cfg.TPMEKFingerprints) > 0 {
+			if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -489,7 +514,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "profiles.image.digest=" + profDigest,
 		"--set", "secrets.forgeSecret.enabled=false",
 		"--set", "cni.installAfterInit=true",
-		"--set", "spiffe.enabled=true",
+		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
 		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),

@@ -13,6 +13,7 @@ CONF_TMPL=/usr/lib/nke/spire-agent.conf.tmpl
 CONF_DST=/etc/spire-agent/agent.conf
 DROP_IN_DIR=/etc/systemd/system/spire-agent.service.d
 ATTESTED_MARKER=/var/lib/spire-agent/.nke-attested
+TPM_PLUGIN=/usr/local/lib/spire-agent/tpm_attestor_agent
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   echo "nke-spire-configure: missing ${ENV_FILE}" >&2
@@ -40,12 +41,37 @@ install -d -m 0755 -o spire -g spire /tmp/spire-agent /tmp/spire-agent/public
 
 install -m 0644 -o spire -g spire "${BUNDLE_SRC}" "${BUNDLE_DST}"
 
+# Pick the node attestor the same way CWE picks it for CAPI-backed nodes
+# (controller/internal/temporal/activities/capi_spire_agent.conf.tmpl): a join
+# token when cloud-init supplied one, TPM otherwise. A site cluster always
+# attests by TPM and mints no token, so an image that only knew join_token could
+# never join one.
+if [[ -n "${SPIRE_JOIN_TOKEN:-}" ]]; then
+  attestor='  NodeAttestor "join_token" {
+    plugin_data {}
+  }'
+elif [[ -x "${TPM_PLUGIN}" ]]; then
+  # SPIRE verifies the plugin binary against this checksum before running it.
+  tpm_checksum="$(sha256sum "${TPM_PLUGIN}" | cut -d' ' -f1)"
+  attestor="  NodeAttestor \"tpm\" {
+    plugin_cmd = \"${TPM_PLUGIN}\"
+    plugin_checksum = \"${tpm_checksum}\"
+    plugin_data {}
+  }"
+else
+  echo "nke-spire-configure: no SPIRE_JOIN_TOKEN and ${TPM_PLUGIN} is missing" >&2
+  exit 1
+fi
+
 umask 022
+awk -v attestor="${attestor}" '
+  { gsub(/@SPIRE_NODE_ATTESTOR@/, attestor); print }
+' "${CONF_TMPL}" |
 sed \
   -e "s|@SPIRE_SERVER_ADDRESS@|${SPIRE_SERVER_ADDRESS}|g" \
   -e "s|@SPIRE_SERVER_PORT@|${SPIRE_SERVER_PORT}|g" \
   -e "s|@SPIRE_TRUST_DOMAIN@|${SPIRE_TRUST_DOMAIN}|g" \
-  "${CONF_TMPL}" >"${CONF_DST}"
+  >"${CONF_DST}"
 chown spire:spire "${CONF_DST}"
 chmod 0644 "${CONF_DST}"
 

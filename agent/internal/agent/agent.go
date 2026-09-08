@@ -37,6 +37,7 @@ import (
 
 	"github.com/NVIDIA/nke/agent/internal/k8s"
 	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
+	"github.com/NVIDIA/nke/agent/pkg/agentupgrade"
 	"github.com/NVIDIA/nke/agent/pkg/deb"
 	nkeutils "github.com/NVIDIA/nke/agent/pkg/utils"
 )
@@ -117,19 +118,23 @@ type NodeAgentServer struct {
 	NodeStatus *NodeStatus
 	mu         sync.Mutex // protects NodeStatus
 
-	encryptionMu                  sync.Mutex          // encryptionMu serializes all encryption-config mutations on this node.
-	rewriteActive                 bool                // protected by mu; true when a rewrite goroutine is active in this process.
-	activeOperations              map[string]struct{} // protected by mu; in-process liveness for generic async operations.
-	operationStartMu              sync.Mutex          // serializes generic operation start persistence and publish.
-	nodeAgentCfgMu                sync.Mutex          // serializes NodeSpec/config.yaml writes
-	reloadPollInterval            time.Duration       // overrides the 2s poll interval in tests
-	drainKubeVipPollInterval      time.Duration       // overrides kube-vip drain polling in tests
-	drainKubeVipSocketQuietWindow time.Duration       // overrides kube-vip socket quiet window in tests
-	staticPodStartTimeout         time.Duration       // overrides static-pod restore timeout in tests
-	rebootLockPollInterval        time.Duration       // overrides the package-lock poll interval in tests
-	rebootLockWaitTimeout         time.Duration       // overrides the package-lock wait timeout in tests
-	now                           func() time.Time    // overrides wall-clock reads in tests
-	clientRegistry                kubernetesClientRegistry
+	encryptionMu                   sync.Mutex          // encryptionMu serializes all encryption-config mutations on this node.
+	rewriteActive                  bool                // protected by mu; true when a rewrite goroutine is active in this process.
+	activeOperations               map[string]struct{} // protected by mu; in-process liveness for generic async operations.
+	operationStartMu               sync.Mutex          // serializes generic operation start persistence and publish.
+	agentUpgradeMu                 sync.Mutex          // serializes durable self-upgrade admission on this node.
+	nodeAgentCfgMu                 sync.Mutex          // serializes NodeSpec/config.yaml writes
+	reloadPollInterval             time.Duration       // overrides the 2s poll interval in tests
+	drainKubeVipPollInterval       time.Duration       // overrides kube-vip drain polling in tests
+	drainKubeVipSocketQuietWindow  time.Duration       // overrides kube-vip socket quiet window in tests
+	staticPodStartTimeout          time.Duration       // overrides static-pod restore timeout in tests
+	certificateRenewalStopTimeout  time.Duration       // overrides certificate-renewal stop timeout in tests
+	certificateRenewalStartTimeout time.Duration       // overrides certificate-renewal start timeout in tests
+	certificateRenewalPollInterval time.Duration       // overrides certificate-renewal polling in tests
+	rebootLockPollInterval         time.Duration       // overrides the package-lock poll interval in tests
+	rebootLockWaitTimeout          time.Duration       // overrides the package-lock wait timeout in tests
+	now                            func() time.Time    // overrides wall-clock reads in tests
+	clientRegistry                 kubernetesClientRegistry
 
 	BundleServerURL string
 	BundleSource    *nkeutils.BundleSource // Parsed bundle source configuration
@@ -157,10 +162,15 @@ type NodeAgentServer struct {
 	// ScriptExecutionLogger logs ExecuteScript/StreamExecuteScript call info and results to e.g. /var/log/nke-execute-scripts.log.
 	// If nil, script execution is not logged to a dedicated file.
 	ScriptExecutionLogger *slog.Logger
+	// AgentUpgradeStore is separate from NodeStatus because package replacement
+	// restarts this process while the independent updater continues.
+	AgentUpgradeStore    *agentupgrade.Store
+	AgentUpgradeLauncher agentUpgradeLauncher
 
 	kubeletConfigMu          sync.Mutex // serializes kubelet.conf reconfiguration transactions
 	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
 	kubeVipFetchASN          func(context.Context) (uint32, error)
+	staticPodMutationMu      sync.Mutex // serializes agent-owned static-pod manifest transactions
 }
 
 // Real implementations
@@ -349,10 +359,15 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 	}
 
 	clientRegistry := k8s.NewClientRegistry(KubeConfig)
+	runner := &nkeutils.ExecRunner{}
 	server := &NodeAgentServer{
-		Runner:           &nkeutils.ExecRunner{},
-		FileWriter:       &nkeutils.OSFileWriter{},
-		Persister:        &JSONFilePersister{Path: StateFile},
+		Runner:            runner,
+		FileWriter:        &nkeutils.OSFileWriter{},
+		Persister:         &JSONFilePersister{Path: StateFile},
+		AgentUpgradeStore: agentupgrade.NewStore(filepath.Join(NKEDir, "agent-upgrades")),
+		AgentUpgradeLauncher: systemdAgentUpgradeLauncher{
+			runner: runner,
+		},
 		BundleSource:     bundleSource,
 		BundleServerURL:  parsedBundleURL,
 		CniImageRegistry: cniImageRegistry,
@@ -705,6 +720,28 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 	return resp, nil
 }
 
+// kubeadmFailureMessage summarises why kubeadm exited, for the one status field
+// the orchestrator can see. kubeadm ends with the phase it failed in
+// ("error execution phase wait-control-plane: ..."), which is the single most
+// useful line, so prefer it and fall back to the process error.
+func kubeadmFailureMessage(err error, output []byte) string {
+	const limit = 300
+	best := ""
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "error") || strings.Contains(line, "error execution phase") {
+			best = line
+		}
+	}
+	if best == "" {
+		best = strings.TrimSpace(err.Error())
+	}
+	if len(best) > limit {
+		best = best[:limit] + "..."
+	}
+	return "kubeadm init failed: " + best
+}
+
 func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitRequest) {
 	s.mu.Lock()
 	ns := *s.NodeStatus
@@ -756,9 +793,14 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 		}
 		slog.Error("init failed", "err", err, "stdout", string(output))
 		ns.Status = ErrorStatus
-		ns.ErrorMessage = "kubedam init failed: " + err.Error()
+		ns.ErrorMessage = "kubeadm init failed: " + err.Error()
 		ns.KubeadmErrorMessage = string(output)
 		ns.KubeadmStatus = "init failed"
+		// CurrentMessage is the only one of these the status RPC returns, so
+		// leaving it at "Node is initializing" reports the failure as progress:
+		// the orchestrator prints "kubeadm init failed: Node is initializing",
+		// which names neither the phase nor the reason.
+		ns.CurrentMessage = kubeadmFailureMessage(err, output)
 		return
 	}
 
@@ -1860,6 +1902,9 @@ func (s *NodeAgentServer) InstallBundle(
 	req *pb.InstallBundleRequest,
 ) (*pb.InstallBundleResponse, error) {
 	defer logRPCSpan(ctx, "InstallBundle")()
+	if strings.EqualFold(strings.TrimSpace(req.GetName()), "agent") {
+		return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+	}
 	if s.BundleIndexFile == "" {
 		return nil, status.Error(codes.FailedPrecondition, bundleIndexUnconfiguredMessage(s.BundleServerURL))
 	}
@@ -2002,6 +2047,11 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 			slog.Error("failed to fetch collection", "url", req.CollectionURL, "err", err)
 			return nil, status.Errorf(codes.Internal, "failed to fetch collection from %s: %v", req.CollectionURL, err)
 		}
+		for _, bundleReq := range profile.Bundles {
+			if strings.EqualFold(strings.TrimSpace(bundleReq.Name), "agent") {
+				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+			}
+		}
 
 		index, err := nkeutils.FetchIndex(ctx, s.BundleIndexFile)
 		if err != nil {
@@ -2057,6 +2107,11 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 		if len(packages) == 0 {
 			slog.ErrorContext(ctx, "collection file contains no packages", "url", req.CollectionURL)
 			return nil, status.Errorf(codes.InvalidArgument, "collection file contains no packages")
+		}
+		for _, pkg := range packages {
+			if isNodeAgentPackageArgument(pkg) {
+				return nil, status.Error(codes.FailedPrecondition, "use StartNodeAgentUpgrade to replace nke-agent")
+			}
 		}
 
 		// Add status entry for tracking; caller uses GetBundleStatus(request_id) for both .json and .txt

@@ -253,6 +253,23 @@ func (r *reconciler) isControlPlaneUpgradeComplete(
 		return false
 	}
 
+	// Right after the pool version changes nothing is deprecated yet, so the
+	// rollout count alone reads as done while every node still runs the old
+	// kubeadm. Pool-managed only: the controller path never writes the pool
+	// version, so a legacy pool would hold this above zero forever.
+	if !cp.useController {
+		if offVersion, pools, stuck := cp.nodesOffVersion(cluster.KubernetesVersion); offVersion > 0 {
+			if stuck {
+				logger.Warn("Nodes on the previous Kubernetes version in an auto-provision-disabled pool; the upgrade cannot finish",
+					"nodesOffVersion", offVersion, "nodePoolIDs", pools)
+			} else {
+				logger.Info("Control plane nodes still on the previous Kubernetes version, upgrade not complete",
+					"nodesOffVersion", offVersion, "nodePoolIDs", pools)
+			}
+			return false
+		}
+	}
+
 	healthyCount := cp.countHealthyNodes()
 	totalDesired := cp.countDesiredNodes()
 

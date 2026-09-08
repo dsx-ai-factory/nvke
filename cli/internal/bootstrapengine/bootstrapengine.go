@@ -104,6 +104,11 @@ type Config struct {
 	// WaitReady bounds how long `kind create cluster --wait` blocks for the
 	// control-plane node to report Ready.
 	WaitReady time.Duration
+
+	// DockerHubMirror routes the node's docker.io pulls through a registry
+	// mirror, given as a host with an optional port. Empty leaves the pulls
+	// going to Docker Hub directly.
+	DockerHubMirror string
 }
 
 // DefaultConfig reads the engine's knobs from the environment, mirroring
@@ -115,6 +120,8 @@ func DefaultConfig() Config {
 		Provider:    Provider(envOr("NKECTL_BOOTSTRAP_PROVIDER", string(ProviderNerdctl))),
 		NodeImage:   os.Getenv("NKECTL_BOOTSTRAP_NODE_IMAGE"),
 		WaitReady:   envDuration("NKECTL_BOOTSTRAP_WAIT_READY", 3*time.Minute),
+
+		DockerHubMirror: os.Getenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR"),
 	}
 }
 
@@ -182,6 +189,9 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 	if cfg.Provider == "" {
 		cfg.Provider = ProviderNerdctl
 	}
+	if err := validateRegistryMirror(cfg.DockerHubMirror); err != nil {
+		return nil, err
+	}
 
 	exists, err := e.Exists(ctx, cfg.ClusterName, cfg.Provider)
 	if err != nil {
@@ -211,6 +221,14 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		"cluster", cfg.ClusterName, "provider", cfg.Provider)
 	if out, err := e.Runner.Run(ctx, env, "kind", args...); err != nil {
 		return nil, fmt.Errorf("kind create cluster %s (provider=%s): %w\n%s", cfg.ClusterName, cfg.Provider, err, out)
+	}
+
+	// Before anything pulls: the cluster exists from here on, so a failure
+	// leaves it for the caller's Delete, like a failed kubeconfig fetch does.
+	if cfg.DockerHubMirror != "" {
+		if err := e.configureDockerHubMirror(ctx, cfg); err != nil {
+			return nil, fmt.Errorf("bootstrap kind cluster %s created but the docker.io mirror was not configured: %w", cfg.ClusterName, err)
+		}
 	}
 
 	kubeconfigPath, err := e.Kubeconfig(ctx, cfg.ClusterName, cfg.Provider)

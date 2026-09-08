@@ -14,12 +14,12 @@ TODO:  Need to refine the requirements around spire-agent below
 
 | Item | Requirement |
 |---|---|
-| OS | Ubuntu 26.04 LTS, `linux/amd64` for the first reference image. |
+| OS | Ubuntu 26.04 LTS, `linux/amd64` for the first reference image. `linux/arm64` also builds (`make os-image-non-fde ARCH=arm64`), but is a first pass, not full parity — see [README.md](README.md#build-the-os-image) and the `os-image-artifact.yml` header comment for what's not (yet) covered: no FDE variant, CI runs it cross-emulated under `tcg` rather than on real hardware, and it isn't attached to the GitHub Release yet, only GHCR. |
 | Kernel | Ubuntu's NVIDIA-tuned kernel flavor (`linux-nvidia` on amd64, `linux-nvidia-64k` on arm64), not the generic default — set via autoinstall's `kernel.package` (`cidata/autoinstall-lvm.pkrtpl`), so curtin installs it directly at image-build time instead of the generic kernel ever landing on disk. Matches `node-images`' `nvidia-kernel` role. |
 | `nke-agent` | Built from this repository's `agent/` source at bake time and installed at `/usr/local/bin/nke-agent`. systemd unit `nke-agent.service` **enabled**. Listens on TCP **15005**. mTLS is on (no `--disable-mtls` in `/etc/default/nke-agent`). The unit waits for the SPIRE workload API before exec. |
 | SPIRE agent | `spire-agent` at `/usr/local/bin/spire-agent`, unit `spire-agent.service` **enabled**. Workload API socket at `unix:///tmp/spire-agent/public/api.sock` (the `nke-agent` default). |
 | Unix workload attestor | SPIRE `WorkloadAttestor "unix"` so root `nke-agent` can fetch an X.509 SVID. |
-| Node attestor | Join-token (`NodeAttestor "join_token"`). TPM *node attestation* (proving node identity to SPIRE) is out of scope for this reference image — see "Must have (FDE variant)" below for the unrelated use of TPM to seal the disk-encryption key. |
+| Node attestor | Whichever the instance can use, chosen on first boot: join-token (`NodeAttestor "join_token"`) when cloud-init supplied `SPIRE_JOIN_TOKEN`, TPM (`NodeAttestor "tpm"`, via `/usr/local/lib/spire-agent/tpm_attestor_agent`) otherwise. A site cluster attests its nodes by TPM and mints no join token, so an image that could only do join-token could not join one. This is separate from the FDE variant's use of TPM to seal the disk-encryption key. |
 | Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 
@@ -50,6 +50,12 @@ SPIRE_SERVER_PORT=8081
 SPIRE_TRUST_DOMAIN=example.org
 SPIRE_JOIN_TOKEN=REDACTED
 ```
+
+`SPIRE_JOIN_TOKEN` is optional and selects the attestor. Omit it and the agent
+attests by TPM, which is what a site cluster expects: it enrols nodes by TPM EK
+thumbprint and mints no tokens. Supply it and the agent uses the token, which is
+single-use — after a successful start the image records that and later boots
+drop it.
 
 `/etc/nke/trust-bundle.pem`: the SPIRE server's trust bundle, PEM-encoded.
 

@@ -95,6 +95,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			if spec.validate.kubeVipRouteWithdrawal {
 				validatePostReadyKubeVipRouteWithdrawal(&test)
 			}
+			if spec.validate.certificateRenewal {
+				validatePostReadyCertificateRenewal(&test)
+			}
 			if spec.validate.csrApproval {
 				validateKubeletServingCSRApproval(&test)
 			}
@@ -199,7 +202,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 		}, NodeTimeout(1*time.Hour))
 	},
-	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal"), testSpec{
+	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3}},
@@ -211,7 +214,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		// node-pool API and read cluster fields; nothing here is backend-specific.
 		validate: validations{
 			scale: true, reboot: true, postReadyChecks: true,
-			csrApproval: true, nodePoolLifecycle: true,
+			certificateRenewal: true, csrApproval: true, nodePoolLifecycle: true,
 			nodePoolCascade: true, nodeReplacement: true,
 			manualScaleDown: true, clusterConfig: true,
 			kubeVipRouteWithdrawal: true,
@@ -461,6 +464,9 @@ type validations struct {
 	// kubeVipRouteWithdrawal stops one CAPD kube-apiserver and verifies kube-vip
 	// withdraws only that node's BGP path before restoring it.
 	kubeVipRouteWithdrawal bool
+	// certificateRenewal forces certificate renewal on every control-plane node
+	// and verifies the cluster returns to Ready after each sequential restart.
+	certificateRenewal bool
 	// csrApproval rotates a Ready worker's kubelet serving certificate and
 	// verifies that the tenant CSR controller approves and obtains a new one.
 	csrApproval bool
@@ -866,10 +872,12 @@ func nicoVMSSpec(_ config.Config, name string, shape clusterShape) nke.ClusterSp
 		Name:              name,
 		Backend:           nke.BackendNicoVMS,
 		KubernetesVersion: defaultString(shape.kubernetesVersion, defaultKubernetesVersion),
-		CNIPlugin:         defaultString(shape.cniPlugin, CNIPluginOVN),
-		OrgID:             nicoVMSOrgID,
-		SiteID:            nicoVMSSiteID,
-		VpcID:             nicoVMSVpcID,
+		// NKE_E2E_NICO_VMS_CNI moves the default for entries that do not pin one; Calico's
+		// images are a third of OVN's and import in a third of the time on every node.
+		CNIPlugin: defaultString(shape.cniPlugin, defaultString(os.Getenv("NKE_E2E_NICO_VMS_CNI"), CNIPluginOVN)),
+		OrgID:     nicoVMSOrgID,
+		SiteID:    nicoVMSSiteID,
+		VpcID:     nicoVMSVpcID,
 		ControlPlane: nke.ControlPlane{
 			Pools:           nicoVMSNodePoolSpecs(shape.controlPlanePools, "control-plane", "cp", nicoVMSOSProfile, nicoVMSCPConfigProfile),
 			ControlPlaneVIP: shape.controlPlaneVIP,

@@ -276,6 +276,30 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	}
 }
 
+func TestDeploy_PullsThePostgresChartFromTheConfiguredRef(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		ref  string
+		want string
+	}{
+		{name: "default is Docker Hub", ref: "", want: postgresChartRef},
+		{name: "override is used verbatim", ref: "oci://mirror.example.com/bitnamicharts/postgresql", want: "oci://mirror.example.com/bitnamicharts/postgresql"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := &fakeRunner{}
+			cfg := testConfig(t)
+			cfg.PostgresChartRef = tt.ref
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatalf("Deploy returned error: %v", err)
+			}
+			postgres := helmCalls(runner)[0]
+			if !strings.Contains(postgres, "upgrade --install postgres "+tt.want+" ") {
+				t.Errorf("postgres helm call = %q, want chart %q", postgres, tt.want)
+			}
+		})
+	}
+}
+
 func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	runner := &fakeRunner{}
 	e := New(runner, nil)
@@ -719,5 +743,30 @@ func TestSpireServesThePortCWEExpects(t *testing.T) {
 	if !strings.Contains(args, "--set "+spireAgentValuesPrefix+".server.port="+spireServerPort) {
 		t.Errorf("SPIRE install moves the Service but not the agent, so the agent would "+
 			"dial a port nothing publishes: %s", args)
+	}
+}
+
+// DisableMTLS stands the site up without SPIFFE: no SPIRE release at all, and
+// CWE installed with spiffe.enabled=false, which is what makes it dial each
+// node agent in plaintext.
+func TestDeploy_DisableMTLSSkipsSpire(t *testing.T) {
+	runner := &fakeRunner{}
+	cfg := testConfig(t)
+	cfg.DisableMTLS = true
+	cfg.TPMEKFingerprints = []string{"aaa"}
+
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+
+	all := strings.Join(helmCalls(runner), "\n")
+	if strings.Contains(all, spireCRDsChartName) || strings.Contains(all, "upgrade --install spire ") {
+		t.Errorf("calls = %q, want no SPIRE release when mTLS is disabled", all)
+	}
+	if strings.Contains(all, "nodeAttestor.tpmDirect.enabled=true") {
+		t.Errorf("calls = %q, want no TPM attestor when mTLS is disabled", all)
+	}
+	if !strings.Contains(all, "spiffe.enabled=false") {
+		t.Errorf("calls = %q, want CWE installed with spiffe.enabled=false", all)
 	}
 }

@@ -5,6 +5,7 @@ package activities
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -26,6 +27,7 @@ func TestRenderCAPIBootstrapUserData_TPMAttestor(t *testing.T) {
 
 	activities := &Activities{
 		cfg: config.Config{
+			SpiffeEnabled:      true,
 			SpireServerAddress: "spire.example.org",
 			SpireServerPort:    "9091",
 		},
@@ -64,6 +66,7 @@ func TestRenderCAPIBootstrapUserData_JoinTokenAttestor(t *testing.T) {
 
 	activities := &Activities{
 		cfg: config.Config{
+			SpiffeEnabled:      true,
 			SpireServerAddress: "spire.example.org",
 			SpireServerPort:    "9091",
 		},
@@ -86,4 +89,40 @@ func TestRenderCAPIBootstrapUserData_JoinTokenRequiresToken(t *testing.T) {
 	nodeSet.SetCapi(db.CAPINodePoolProvider{SpireAttestationMethod: db.SpireAttestationMethodJoinToken})
 	_, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
 	require.EqualError(t, err, "spire join token is required when infra.spireAttestationMethod is joinToken")
+}
+
+// A site stood up with --disable-mtls has no SPIRE, so there is no workload
+// socket to read a bundle from. The node gets no bundle and no agent config,
+// and rendering must not try to fetch one: the dial would fail, the activity
+// would retry forever, and the cluster would never leave Provisioning.
+func TestRenderCAPIBootstrapUserData_SpiffeDisabled(t *testing.T) {
+	originalGetTrustDomainAndBundle := getTrustDomainAndBundle
+	t.Cleanup(func() {
+		getTrustDomainAndBundle = originalGetTrustDomainAndBundle
+	})
+	called := false
+	getTrustDomainAndBundle = func(context.Context, config.Config) (string, string, error) {
+		called = true
+		return "", "", errors.New("workload API is not reachable without SPIRE")
+	}
+
+	activities := &Activities{cfg: config.Config{SpiffeEnabled: false}}
+
+	var nodeSet db.NodeSet
+	nodeSet.SetCapi(db.CAPINodePoolProvider{
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		BootstrapFiles: []db.CloudInitFile{
+			{Path: "/etc/custom.conf", Owner: "root:root", Permissions: "0600", Content: "hello"},
+		},
+		PreKubeadmCommands: []string{"echo before kubeadm"},
+	})
+
+	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
+	require.NoError(t, err)
+
+	assert.False(t, called, "the workload API must not be dialed when SPIFFE is off")
+	assert.NotContains(t, userData, "/etc/spire-agent/agent.conf")
+	assert.NotContains(t, userData, "/etc/spire-agent/initial-trust-bundle.pem")
+	assert.Contains(t, userData, "/etc/custom.conf")
+	assert.Contains(t, userData, "echo before kubeadm")
 }

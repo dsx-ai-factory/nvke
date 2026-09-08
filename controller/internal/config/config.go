@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -392,13 +393,49 @@ func (c Config) EffectiveDBConnectionString() (string, error) {
 	return u.String(), nil
 }
 
+// validateDBCredentials rejects the compiled-in dev-default database
+// credentials on any database that is not loopback.
+//
+// The guard exists so a deployment cannot reach a real database with the
+// password that ships in the source. Whether that risk applies is a property of
+// the database, not of anything else: `postgres:postgres@` on localhost is a
+// container on the developer's own machine, and demanding an override there only
+// stopped `make run` from working out of the box.
+func (c *Config) validateDBCredentials() error {
+	if c.CnpgSuperuserPassword != "" || !strings.Contains(c.DBConnectionString, "postgres:postgres@") {
+		return nil
+	}
+
+	u, err := url.Parse(c.DBConnectionString)
+	if err != nil {
+		return fmt.Errorf("parse DB_CONNECTION_STRING: %w", err)
+	}
+	if isLoopbackHost(u.Hostname()) {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"DB_CONNECTION_STRING uses weak dev-default credentials against non-local host %q: set CNPG_SUPERUSER_PASSWORD",
+		u.Hostname(),
+	)
+}
+
+// isLoopbackHost reports whether host names the local machine.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // Validate checks required field constraints.
 func (c *Config) Validate() error {
 	if strings.TrimSpace(c.MetricsListenAddress) == "" {
 		return fmt.Errorf("METRICS_LISTEN_ADDRESS must not be empty")
 	}
-	if c.CnpgSuperuserPassword == "" && strings.Contains(c.DBConnectionString, "postgres:postgres@") {
-		return fmt.Errorf("DB_CONNECTION_STRING uses weak dev-default credentials: set CNPG_SUPERUSER_PASSWORD")
+	if err := c.validateDBCredentials(); err != nil {
+		return err
 	}
 	if c.SpireServerAPIAddress == "" {
 		return fmt.Errorf("SPIRE_SERVER_API_ADDRESS is required")

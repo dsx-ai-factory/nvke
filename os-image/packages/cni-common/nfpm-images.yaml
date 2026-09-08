@@ -1,0 +1,46 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm spec for nke-<cni>-images-<stream>; build-deb.sh exports the variables.
+# postinst imports the archive into containerd, so the node needs no registry.
+
+name: "${PACKAGE_NAME}"
+arch: "${ARCH}"
+platform: "linux"
+version: "${DEB_REVISION}"
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  ${PRODUCT} ${STREAM} container images for NKE nodes
+  The images ${PRODUCT} ${STREAM} runs, pulled by digest into one
+  docker-archive under ${IMAGE_DIR} and imported into containerd by postinst.
+  Pairs with ${CONTENT_PACKAGE}; together they let a node install ${PRODUCT}
+  with no registry access at all.
+
+# nke-kubeadm-distro ships its own containerd and conflicts with the Ubuntu
+# package, so either one satisfies this.
+depends:
+  - containerd | nke-kubeadm-distro
+
+# One image set per node: a second stream replaces the first.
+provides:
+  - nke-${CNI}-images
+conflicts:
+  - nke-${CNI}-images
+
+contents:
+  - src: "${SRC}/images.tgz"
+    dst: "${IMG_TGZ}"
+    file_info: { mode: 0644 }
+    expand: true
+  - src: "${SRC}/images.tgz.sha256"
+    dst: "${IMG_TGZ}.sha256"
+    file_info: { mode: 0644 }
+    expand: true
+
+# Rendered by build-deb.sh beside its copy of this spec; nfpm expands nothing here.
+scripts:
+  postinstall: ./postinst.rendered

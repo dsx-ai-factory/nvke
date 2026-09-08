@@ -175,6 +175,13 @@ func (a *Activities) createCAPISpireJoinToken(ctx context.Context, createCtx *ca
 	if capiNodeSetProvider.SpireAttestationMethod != db.SpireAttestationMethodJoinToken {
 		return "", "", nil
 	}
+	// A site stood up without SPIFFE has no SPIRE server to mint against, and no
+	// trust domain to build the alternate ID from. Asking anyway fails with
+	// "trust domain is missing", which is not retryable, so the node never gets
+	// a CAPI machine and the cluster sits in Provisioning for good.
+	if !a.cfg.SpiffeEnabled {
+		return "", "", nil
+	}
 
 	// The join token is directly included in the agent's generated primary SPIFFE ID, so copying that
 	// value into the InfraMachine annotation and the derived ClusterStaticEntry would expose a

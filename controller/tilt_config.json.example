@@ -1,0 +1,3 @@
+{
+  "providers": ["capi_core", "bgp-containers", "nico"]
+}

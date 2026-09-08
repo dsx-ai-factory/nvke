@@ -512,7 +512,9 @@ log "waiting for ${expected_nodes} nodes to report Ready"
 # `kubectl wait --all` only waits for the objects that exist when it starts.
 # Wait for the expected count and readiness together so that the first Ready
 # control-plane node cannot make this stage pass before CAPI creates the rest.
-node_ready_deadline=$((SECONDS + ${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-600}))
+# CWE joins control-plane nodes one at a time, ~6 min apart, so the third
+# kubelet starts ~13 min after the cluster is created; 600 s left no margin.
+node_ready_deadline=$((SECONDS + ${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-1200}))
 ready_nodes=0
 while [ "${SECONDS}" -lt "${node_ready_deadline}" ]; do
   node_states=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
@@ -544,6 +546,17 @@ log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
 # uses it: this suite does not mutate the caller's global Helm repository list.
 # service.spec.type, not service.type: the chart puts the Service spec's own
 # fields under `spec`, and a value set at the wrong depth is silently ignored.
+# Which registries the nodes will reach. A pull that falls through to upstream
+# is the difference between a 30 second install and a helm timeout.
+log "node registry routing (${NKECTL_E2E_NAME_PREFIX:-node}1):"
+docker exec "nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1" \
+  cat /etc/containerd/certs.d/docker.io/hosts.toml 2>&1 | sed 's/^/  /' || true
+# The bootstrap Kind cluster is still up (--keep-bootstrap-cluster above); its
+# node pulls the CWE stack's images, so show where those went too.
+log "bootstrap cluster registry routing (${BOOTSTRAP_KIND_CLUSTER}-control-plane):"
+"${NKECTL_BOOTSTRAP_PROVIDER}" exec "${BOOTSTRAP_KIND_CLUSTER}-control-plane" \
+  cat /etc/containerd/certs.d/docker.io/hosts.toml 2>&1 | sed 's/^/  /' || true
+
 log "installing traefik on the new cluster"
 helm --kubeconfig "${TENANT_KUBECONFIG}" upgrade --install traefik traefik \
   --repo https://traefik.github.io/charts \

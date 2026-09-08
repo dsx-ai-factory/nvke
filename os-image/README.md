@@ -53,6 +53,20 @@ Both variants install Ubuntu's NVIDIA-tuned kernel (`kernel.package` in
 `cidata/autoinstall-lvm.pkrtpl`), so the generic kernel never lands on disk in
 the first place — no post-install kernel swap or reboot.
 
+`ARCH=arm64` builds the arm64 image instead (`ARCH=amd64` is the default):
+
+```bash
+make os-image-non-fde ARCH=arm64
+```
+
+This is a first pass, not full arm64 parity with amd64: only the non-FDE
+variant builds for arm64 today (no `os-image-fde ARCH=arm64` yet), and on an
+x86_64 host it always cross-builds under QEMU's `tcg` software emulation —
+there is no way to KVM-accelerate an arm64 guest on x86 hardware regardless
+of `/dev/kvm`. `ARCH` picks the right ISO URL, QEMU binary
+(`qemu-system-aarch64`), machine type (`virt`), and UEFI firmware (AAVMF
+instead of OVMF) automatically; nothing else needs to change per-arch.
+
 The build-time cloud-init seed is only for Packer's SSH. The provisioner runs
 `cloud-init clean` and drops the build key, so each qcow2 is a golden image.
 
@@ -105,31 +119,45 @@ OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
 `make run-vm QCOW=<path>` boots any qcow2 this repo produces and leaves it
 running with SSH forwarded, for poking around manually — unlike
 `boot-smoke`/`demo-fde.sh`, it runs no checks and doesn't tear itself down.
+It prints the exact `ssh` command to use once the VM is up (key path and
+port included); by default that's:
+
+```bash
+ssh -i packer/.ssh/id_ed25519 -p 2222 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ubuntu@127.0.0.1
+```
+
 **To quit, use `Ctrl-A` then `X`, not plain `Ctrl-C`**: QEMU runs with
 `-nographic`, so your terminal is the guest's serial console, and plain
 `Ctrl-C` is sent to the guest as literal input (garbling a login prompt)
 instead of stopping QEMU. See the comment at the top of
 [`packer/scripts/run-vm.sh`](packer/scripts/run-vm.sh) for the full env var
-list (`OVMF_CODE` for the UEFI variants, `TPM=1` to attach a TPM for the FDE
-image). Examples:
+list (`OVMF_CODE` defaults automatically per `ARCH` since every qcow2 this
+repo builds is UEFI-only; `TPM=1` attaches a TPM for the FDE image).
+Examples:
 
 ```bash
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
-make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2
+make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 TPM=1
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-arm64.qcow2 ARCH=arm64
 ```
 
 ## Release
 
 An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
-`.github/workflows/os-image-artifact.yml`, which builds and validates both
-the FDE and non-FDE images and, only if that succeeds, pushes both qcow2s to
-GHCR as OCI artifacts and cuts a GitHub Release for the tag attaching
-`nke-os-image-check` and `checksums.txt` (covering both qcow2s and the
-checker binary).
+`.github/workflows/os-image-artifact.yml`, which builds and validates the
+FDE and non-FDE amd64 images plus the non-FDE arm64 image (see "Build the OS
+image" above for arm64's current limitations) and, only if that succeeds,
+pushes the qcow2s to GHCR as OCI artifacts under arch-suffixed tags — not
+one multi-platform manifest shared across arches, see the workflow's header
+comment for why — and cuts a GitHub Release for the amd64 build attaching
+`nke-os-image-check` and `checksums.txt` (covering the amd64 qcow2s and the
+checker binary; the arm64 qcow2 isn't attached to the release yet, only
+GHCR).
 
 ```bash
-oras pull ghcr.io/nvidia/nke/os-image-fde:vX.Y.Z --platform linux/amd64
-oras pull ghcr.io/nvidia/nke/os-image-non-fde:vX.Y.Z --platform linux/amd64
+oras pull ghcr.io/nvidia/nke/os-image-fde:vX.Y.Z-amd64 --platform linux/amd64
+oras pull ghcr.io/nvidia/nke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
+oras pull ghcr.io/nvidia/nke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
 ```
 
 **FDE security note**: the published image's `LUKS_PASSPHRASE` is the
@@ -143,13 +171,16 @@ build-and-go FDE image without a per-node secret-provisioning story.
 Verify a node closed that window with `luks-tpm-verify` before trusting
 TPM-only unlock in production.
 
-The workflow runs on `linux-amd64-gpu-l4-latest-1`, chosen specifically for
-real `/dev/kvm` — a container-based pool tried earlier had none, forcing
-every bake onto `tcg` software emulation (confirmed directly: a full FDE
-bake took 1h39m under `tcg` vs a few minutes locally under real KVM). The
-job's "Enable KVM access" step fails immediately if that assumption turns
-out wrong, rather than silently falling back to the ~10x-slower emulated
-path.
+The workflow's amd64 leg runs on `linux-amd64-gpu-l4-latest-1`, chosen
+specifically for real `/dev/kvm` — a container-based pool tried earlier had
+none, forcing every bake onto `tcg` software emulation (confirmed directly: a
+full FDE bake took 1h39m under `tcg` vs a few minutes locally under real
+KVM). The job's "Enable KVM access" step fails immediately if that
+assumption turns out wrong, rather than silently falling back to the
+~10x-slower emulated path. The arm64 leg runs on that same amd64 runner —
+there is no arm64-labeled runner in this org's pool yet — always
+cross-building under `tcg`, since KVM can't accelerate a guest arch that
+doesn't match the host.
 
 If the FDE/non-FDE build or boot-smoke steps fail in CI, download the
 `fde-install-console-logs` artifact from the run — it's the guest's own

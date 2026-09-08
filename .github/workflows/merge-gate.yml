@@ -76,7 +76,7 @@ on:
   # handles merge_group.checks_requested itself and reports on the merge group
   # head sha.
   #
-  # The 14 called workflows need no change. Each declares workflow_call and runs
+  # The called workflows need no change. Each declares workflow_call and runs
   # under this caller's event, and none reads github.event.pull_request.
   merge_group:
   workflow_dispatch:
@@ -107,14 +107,6 @@ jobs:
     uses: ./.github/workflows/controller-test.yml
     permissions:
       contents: read
-
-  nkectl-bootstrap-e2e:
-    uses: ./.github/workflows/nkectl-bootstrap-e2e.yml
-    permissions:
-      contents: read
-      # The suite pulls the CWE image from GHCR. A called workflow cannot ask
-      # for more than its caller grants, so this has to be here too.
-      packages: read
 
   agent-test:
     uses: ./.github/workflows/agent-test.yml
@@ -193,7 +185,6 @@ jobs:
     needs:
       - build
       - controller-test
-      - nkectl-bootstrap-e2e
       - agent-test
       - workspace
       - chart

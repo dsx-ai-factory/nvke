@@ -277,34 +277,61 @@ func main() {
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
-	machineSpireEntryController := capi.NewMachineSpireEntryController(
-		cfg,
-		k8sControllerManager.GetClient(),
-		logger.With("logger", "machine-spire-entry-controller"),
-		trustDomain,
-	)
-	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+	// Watches Cluster API's Machine, and takes the manager down where Cluster
+	// API is not installed -- the same failure the NicoMachine watch below had.
+	machineCRDInstalled, err := capi.MachineCRDInstalled(k8sControllerManager.GetRESTMapper())
+	if err != nil {
+		logger.Error("Failed to look up the Machine CRD", "error", err)
 		os.Exit(1)
 	}
-
-	nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
-		k8sControllerManager.GetClient(),
-		logger.With("logger", "nico-tpm-spiffe-controller"),
-	)
-	if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
-		os.Exit(1)
+	if !machineCRDInstalled {
+		logger.Warn("Cluster API Machine CRD not installed; skipping the machine SPIRE entry controller")
 	}
 
-	nicoProviderIDController := capi.NewNicoProviderIDController(
-		k8sControllerManager.GetClient(),
-		tenantClientProvider,
-		logger.With("logger", "nico-provider-id-controller"),
-	)
-	if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up nico provider ID controller", "error", err)
+	if machineCRDInstalled {
+		machineSpireEntryController := capi.NewMachineSpireEntryController(
+			cfg,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "machine-spire-entry-controller"),
+			trustDomain,
+		)
+		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+			os.Exit(1)
+		}
+	}
+
+	// Both controllers below watch NicoMachine, and either takes the manager
+	// down where CAPNICo is not installed. Read once: every deployment path
+	// installs the infrastructure providers before CWE.
+	nicoCRDInstalled, err := capi.NicoMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
+	if err != nil {
+		logger.Error("Failed to look up the NicoMachine CRD", "error", err)
 		os.Exit(1)
+	}
+	if !nicoCRDInstalled {
+		logger.Warn("NicoMachine CRD not installed; skipping the NICo controllers")
+	}
+
+	if nicoCRDInstalled {
+		nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "nico-tpm-spiffe-controller"),
+		)
+		if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
+			os.Exit(1)
+		}
+
+		nicoProviderIDController := capi.NewNicoProviderIDController(
+			k8sControllerManager.GetClient(),
+			tenantClientProvider,
+			logger.With("logger", "nico-provider-id-controller"),
+		)
+		if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico provider ID controller", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	var teleportClient teleport.Client

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1518,5 +1519,56 @@ func TestExecuteKubeadmInitRefusesWithoutBundleSource(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, ErrorStatus, resp.Status)
 		assert.Contains(t, resp.ErrorMessage, "PodNetworkCidr")
+	})
+}
+
+// The status RPC returns CurrentMessage and nothing else about a failure, so a
+// failed init that leaves it at "Node is initializing" reports the failure as
+// progress. The orchestrator then prints "kubeadm init failed: Node is
+// initializing", which names neither the phase nor the reason.
+func TestKubeadmFailureMessage(t *testing.T) {
+	realOutput := `[init] Using Kubernetes version: v1.34.2
+[preflight] Running pre-flight checks
+[kubelet-start] Starting the kubelet
+error: error execution phase wait-control-plane: cannot obtain client without bootstrap: could not bootstrap the admin user in file admin.conf
+To see the stack trace of this error execute with --v=5 or higher
+`
+	tests := []struct {
+		name   string
+		err    error
+		output string
+		want   string
+	}{
+		{
+			name:   "names the phase kubeadm failed in",
+			err:    errors.New("exit status 1"),
+			output: realOutput,
+			want:   "kubeadm init failed: error: error execution phase wait-control-plane: cannot obtain client without bootstrap: could not bootstrap the admin user in file admin.conf",
+		},
+		{
+			name:   "falls back to the process error when kubeadm said nothing",
+			err:    errors.New("exit status 1"),
+			output: "[init] Using Kubernetes version: v1.34.2\n",
+			want:   "kubeadm init failed: exit status 1",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := kubeadmFailureMessage(tc.err, []byte(tc.output))
+			if got != tc.want {
+				t.Errorf("kubeadmFailureMessage() = %q, want %q", got, tc.want)
+			}
+			if strings.Contains(got, "Node is initializing") {
+				t.Error("a failure must not read as progress")
+			}
+		})
+	}
+
+	t.Run("bounded", func(t *testing.T) {
+		long := "error: " + strings.Repeat("x", 1000)
+		if got := kubeadmFailureMessage(errors.New("boom"), []byte(long)); len(got) > 350 {
+			t.Errorf("message is %d bytes; status fields should stay bounded", len(got))
+		}
 	})
 }

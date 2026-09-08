@@ -15,6 +15,10 @@ GITLEAKS_VERSION   ?= 8.30.1
 KUBECONFORM_VERSION ?= v0.7.0
 HELM_VERSION         ?= v4.2.4
 
+# crane and nfpm build the CNI debs under os-image/packages/.
+CRANE_VERSION ?= 0.21.9
+NFPM_VERSION  ?= 2.47.0
+
 KIND_VERSION    ?= v0.32.0
 KUBECTL_VERSION ?= v1.36.0
 # clusterctl and the CAPI core/kubeadm providers ship as one release, so one

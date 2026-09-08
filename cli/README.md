@@ -59,8 +59,8 @@ nkectl get providers -o json
 nkectl get clusters                    # table with AGE and status
 nkectl get clusters -o json            # JSON output
 nkectl describe cluster <name>
-nkectl create cluster [spec-file]      # or: cat spec.yaml | nkectl create cluster -
-nkectl delete cluster <name>           # prompts [y/N]; use --yes to skip
+nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create cluster -f -
+nkectl delete cluster <name>           # deletes immediately; there is no prompt
 ```
 
 ## Infrastructure providers

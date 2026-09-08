@@ -28,12 +28,17 @@ check_temporal_available() {
     if command -v temporal >/dev/null 2>&1; then
         success "✅ temporal CLI available"
         return 0
+    elif [ -x "${HOME}/.temporalio/bin/temporal" ]; then
+        success "✅ temporal CLI available at ${HOME}/.temporalio/bin/temporal"
+        return 0
     elif command -v flox >/dev/null 2>&1; then
         success "✅ temporal CLI available via flox"
         return 0
     else
-        error "❌ temporal CLI is required. Install flox with: brew install flox"
-        echo "   Then activate: flox activate"
+        error "❌ temporal CLI is required. Install it with one of:"
+        echo "   brew install temporal"
+        echo "   curl -sSf https://temporal.download/cli.sh | sh"
+        echo "   brew install flox && flox activate"
         return 1
     fi
 }
@@ -42,6 +47,10 @@ check_temporal_available() {
 get_temporal_cmd() {
     if command -v temporal >/dev/null 2>&1; then
         echo "temporal"
+    # Where temporal.download/cli.sh installs it. It does not touch PATH, so a
+    # non-interactive shell does not see it.
+    elif [ -x "${HOME}/.temporalio/bin/temporal" ]; then
+        echo "${HOME}/.temporalio/bin/temporal"
     elif command -v flox >/dev/null 2>&1; then
         echo "flox activate -- temporal"
     else
@@ -251,7 +260,13 @@ validate_cluster_arg() {
 validate_api_key() {
     local api_key="${1:-}"
     local mode="${2:-remote}"
-    
+
+    # The test Forge environment signs its own JWT instead of authenticating
+    # against NGC, so it needs no key.
+    if [ "${FORGE_ENVIRONMENT:-}" = "test" ]; then
+        return 0
+    fi
+
     if [ -z "$api_key" ]; then
         error "❌ FWE_API_KEY is not set"
         echo ""

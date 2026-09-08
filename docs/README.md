@@ -10,6 +10,7 @@ indexes both.
 |---|---|
 | [overview.md](overview.md) | What NKE is and the problem it solves |
 | [concepts.md](concepts.md) | The terms the rest of the documentation uses |
+| [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nkectl` |
 | [architecture.md](architecture.md) | The modules, how a cluster request flows through them, and what is deployed where |
 
 ## Working on the code

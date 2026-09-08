@@ -189,27 +189,28 @@ RUN set -eux; \
       'NKE_LOCAL_DEV=true' \
       > /etc/default/nke-agent
 
-# Route docker.io pulls through a local pull-through cache (started by `make registry-mirror`)
-# to avoid Docker Hub rate limits and transient connectivity failures. Falls back to upstream
-# if the mirror is unreachable.
-RUN mkdir -p /etc/containerd/certs.d/docker.io && \
-    cat > /etc/containerd/certs.d/docker.io/hosts.toml <<'EOF'
-server = "https://registry-1.docker.io"
-
-[host."http://registry-mirror:5000"]
-  capabilities = ["pull", "resolve"]
-EOF
-
-# Route Kubernetes image pulls through a local registry.k8s.io pull-through
-# cache. Mixed-version upgrades need source-version addons on target-version
-# nodes before kubeadm upgrades the cluster-scoped addons.
-RUN mkdir -p /etc/containerd/certs.d/registry.k8s.io && \
-    cat > /etc/containerd/certs.d/registry.k8s.io/hosts.toml <<'EOF'
-server = "https://registry.k8s.io"
-
-[host."http://registry-k8s-mirror:5000"]
-  capabilities = ["pull", "resolve"]
-EOF
+# Pull order for docker.io and registry.k8s.io: CI mirror if one was given, then
+# the local pull-through cache (`make registry-mirror`), then upstream. containerd
+# tries each host in turn and falls back to `server`, so a host that does not
+# resolve costs one failed dial. The hosts.toml contents are echoed into the build
+# log; a pull that goes to upstream at dial-up speed is otherwise invisible.
+ARG NKE_E2E_DOCKERHUB_MIRROR=
+RUN set -eu; \
+    mirror_block() { \
+      [ -n "${NKE_E2E_DOCKERHUB_MIRROR}" ] || return 0; \
+      printf '[host."https://%s"]\n  capabilities = ["pull", "resolve"]\n\n' "${NKE_E2E_DOCKERHUB_MIRROR}"; \
+    }; \
+    mkdir -p /etc/containerd/certs.d/docker.io /etc/containerd/certs.d/registry.k8s.io; \
+    { printf 'server = "https://registry-1.docker.io"\n\n'; mirror_block; \
+      printf '[host."http://registry-mirror:5000"]\n  capabilities = ["pull", "resolve"]\n'; } \
+      > /etc/containerd/certs.d/docker.io/hosts.toml; \
+    { printf 'server = "https://registry.k8s.io"\n\n'; mirror_block; \
+      printf '[host."http://registry-k8s-mirror:5000"]\n  capabilities = ["pull", "resolve"]\n'; } \
+      > /etc/containerd/certs.d/registry.k8s.io/hosts.toml; \
+    echo "--- /etc/containerd/certs.d/docker.io/hosts.toml"; \
+    cat /etc/containerd/certs.d/docker.io/hosts.toml; \
+    echo "--- /etc/containerd/certs.d/registry.k8s.io/hosts.toml"; \
+    cat /etc/containerd/certs.d/registry.k8s.io/hosts.toml
 
 # Install scripts cannot enable units without a running systemd; offline mode
 # creates /etc/systemd/system/multi-user.target.wants/ symlinks so first boot

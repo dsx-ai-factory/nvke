@@ -112,12 +112,40 @@ locals {
   # Ubuntu's NVIDIA-tuned kernel flavor: linux-nvidia-64k on arm64 (64k page
   # size, matching node-images), linux-nvidia everywhere else.
   nvidia_kernel_package = local.arch == "arm64" ? "linux-nvidia-64k" : "linux-nvidia"
+
+  # See the same locals in nke-node-non-fde.pkr.hcl: QEMU on this host only
+  # ever runs the guest arch matching its own binary, "virt" is ARM's
+  # equivalent of q35/i440fx, and AAVMF is arm64's UEFI firmware, not an
+  # interchangeable drop-in for OVMF.
+  qemu_binary       = local.arch == "arm64" ? "qemu-system-aarch64" : "qemu-system-x86_64"
+  machine_type      = local.arch == "arm64" ? "virt" : "q35"
+  efi_firmware_code = local.arch == "arm64" ? "/usr/share/AAVMF/AAVMF_CODE.fd" : "/usr/share/OVMF/OVMF_CODE_4M.fd"
+  efi_firmware_vars = local.arch == "arm64" ? "/usr/share/AAVMF/AAVMF_VARS.fd" : "/usr/share/OVMF/OVMF_VARS_4M.fd"
   # Also not under local.artifacts, for the same reason. CI has no way to
   # inspect a stuck build interactively (no VNC/monitor access), so this
   # captures the guest's own boot/install console output to a file the
-  # workflow can upload as an artifact on failure -- see console=ttyS0 on
-  # the boot_command line below, which is what routes it here.
+  # workflow can upload as an artifact on failure -- see the console=
+  # kernel param in local.boot_command below, which is what routes it here.
   build_logs = "${path.root}/build-logs"
+
+  # See the same local in nke-node-non-fde.pkr.hcl: arm64's virt machine has
+  # no BIOS-era fixed (cd0) device alias (search --file finds the CD-ROM by
+  # content instead) and no ttyS0 (its serial console is ttyAMA0, the PL011).
+  boot_command = local.arch == "arm64" ? [
+    "<wait5>",
+    "c<wait>",
+    "search --set=root --file /casper/vmlinuz<enter><wait>",
+    "linux /casper/vmlinuz autoinstall console=ttyAMA0 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
+    "initrd /casper/initrd<enter><wait>",
+    "boot<enter>"
+    ] : [
+    "<wait3>",
+    "c<wait>",
+    "set root=(cd0)<enter><wait>",
+    "linux /casper/vmlinuz autoinstall console=ttyS0,115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
+    "initrd /casper/initrd<enter><wait>",
+    "boot<enter>"
+  ]
 }
 
 source "qemu" "nke-fde" {
@@ -135,8 +163,10 @@ source "qemu" "nke-fde" {
   # first-class targets — a known-fragile pairing with OVMF. q35 (a modern
   # PCIe-based chipset) resolved intermittent guest-kernel crashes (overlayfs
   # page faults during curtin's install-time rsync) seen while developing
-  # this variant on "pc".
-  machine_type   = "q35"
+  # this variant on "pc". "virt" is arm64's equivalent -- see
+  # local.machine_type's comment.
+  qemu_binary    = local.qemu_binary
+  machine_type   = local.machine_type
   cpu_model      = var.cpu_model
   disk_size      = var.disk_size
   disk_interface = "virtio"
@@ -147,8 +177,8 @@ source "qemu" "nke-fde" {
   # blocks still look "used" to Packer's post-build compaction step.
   disk_discard = "unmap"
 
-  efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-  efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+  efi_firmware_code = local.efi_firmware_code
+  efi_firmware_vars = local.efi_firmware_vars
   efi_boot          = true
 
   http_content = {
@@ -161,24 +191,34 @@ source "qemu" "nke-fde" {
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }
 
-  boot_wait = var.boot_wait
-  boot_command = [
-    "<wait3>",
-    "c<wait>",
-    "set root=(cd0)<enter><wait>",
-    "linux /casper/vmlinuz autoinstall console=ttyS0,115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
-    "initrd /casper/initrd<enter><wait>",
-    "boot<enter>"
-  ]
+  boot_wait    = var.boot_wait
+  boot_command = local.boot_command
 
   # Additive, not a full override (qemuargs only replaces genuinely
-  # conflicting switches) -- captures the live installer's boot/autoinstall
-  # console output, which the console=ttyS0 kernel param above routes here
-  # instead of the VGA framebuffer. Read on a stuck/failed build; harmless
-  # noise otherwise.
-  qemuargs = [
-    ["-serial", "file:${local.build_logs}/fde-install-console.log"]
-  ]
+  # conflicting switches). See the same block in nke-node-non-fde.pkr.hcl
+  # for why arm64 needs -vga/-device overrides: the builder's default -vga
+  # doesn't exist as a concept on -machine virt, and without an explicit
+  # guest-side keyboard device (no default the way x86's pc/q35 has a
+  # built-in PS/2 one), boot_command's VNC keystrokes land in the QEMU
+  # monitor instead of GRUB -- confirmed by reproducing it twice, with and
+  # without the GPU device alone. -boot strict=off drops the builder's own
+  # default -boot once=d, which arm64 doesn't support.
+  qemuargs = concat(
+    local.arch == "arm64" ? [
+      ["-vga", "none"],
+      ["-device", "virtio-gpu-pci"],
+      ["-device", "qemu-xhci"],
+      ["-device", "usb-kbd"],
+      ["-boot", "strict=off"],
+    ] : [],
+    [
+      # Captures the live installer's boot/autoinstall console output, which
+      # the console= kernel param in local.boot_command routes here instead
+      # of the VGA framebuffer. Read on a stuck/failed build; harmless noise
+      # otherwise.
+      ["-serial", "file:${local.build_logs}/fde-install-console.log"],
+    ]
+  )
 
   ssh_username           = "ubuntu"
   ssh_private_key_file   = "${local.ssh_dir}/id_ed25519"
@@ -202,6 +242,7 @@ build {
   provisioner "shell-local" {
     environment_vars = [
       "ARTIFACTS_DIR=${local.artifacts}",
+      "ARCH=${local.arch}",
     ]
     script = "${path.root}/scripts/fetch-artifacts.sh"
   }

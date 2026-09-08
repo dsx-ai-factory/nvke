@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,8 +25,19 @@ const upgradeStartingKubernetesVersion = "1.34.2"
 
 var upgradeKubernetesVersionChain = []string{"1.35.3", "1.36.0"}
 
+// upgradeHops returns the leading part of the chain a run walks. NKE_E2E_UPGRADE_HOPS
+// caps it; unset, zero or invalid means the whole chain. Each hop recycles every
+// control-plane node, about 45 minutes on the nico-vms lane.
+func upgradeHops() []string {
+	n, err := strconv.Atoi(os.Getenv("NKE_E2E_UPGRADE_HOPS"))
+	if err != nil || n <= 0 || n >= len(upgradeKubernetesVersionChain) {
+		return upgradeKubernetesVersionChain
+	}
+	return upgradeKubernetesVersionChain[:n]
+}
+
 func validateK8sUpgrade(test *tenantTest) {
-	for _, targetVersion := range upgradeKubernetesVersionChain {
+	for _, targetVersion := range upgradeHops() {
 		It(fmt.Sprintf("upgrades the control plane Kubernetes version to %s", targetVersion),
 			upgradeControlPlaneTo(test, targetVersion),
 			Label("lifecycle", "upgrade"), NodeTimeout(2*time.Hour+15*time.Minute))

@@ -1,0 +1,51 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Imports the bundled @PRODUCT@ images into containerd, so the pods find them
+# locally and the node needs no registry. Rendered by build-deb.sh.
+
+set -e
+
+[ "$1" = "configure" ] || exit 0
+
+PACKAGE="@PACKAGE_NAME@"
+IMG_TGZ="@IMG_TGZ@"
+LOG=/var/log/nke-@CNI@-postinst.log
+CTR="${NKE_CTR_BIN:-/usr/local/bin/ctr}"
+
+# The bundled images are the offline contract, so a missing tarball is a build
+# defect. Fail here rather than when the kubelet cannot pull.
+if [ ! -f "$IMG_TGZ" ] || [ ! -f "${IMG_TGZ}.sha256" ]; then
+  echo "${PACKAGE}: no bundled images at ${IMG_TGZ} (with .sha256 sidecar)" | tee -a "$LOG" >&2
+  echo "${PACKAGE}: this package cannot install @PRODUCT@ offline; rebuild it." | tee -a "$LOG" >&2
+  exit 1
+fi
+if ! (cd "$(dirname "$IMG_TGZ")" && sha256sum -c "$(basename "$IMG_TGZ").sha256" >/dev/null); then
+  echo "${PACKAGE}: image bundle failed checksum verification (${IMG_TGZ})" | tee -a "$LOG" >&2
+  exit 1
+fi
+
+# containerd is a dependency, but apt may configure this package while it is
+# still starting.
+n=0
+until "$CTR" version >/dev/null 2>&1; do
+  n=$((n + 1))
+  if [ "$n" -ge 50 ]; then
+    echo "${PACKAGE}: ctr did not become ready; image import aborted" | tee -a "$LOG" >&2
+    exit 1
+  fi
+  sleep 0.2
+done
+
+echo "${PACKAGE}: importing the bundled @PRODUCT@ images with ctr (${IMG_TGZ})" | tee -a "$LOG"
+# containerd 1.7 does not detect gzip here (containerd#9981) and 2.2/2.3
+# regressed on this archive layout, so stream raw tar. The status wanted is ctr's.
+imp_rc=0
+gunzip -c "$IMG_TGZ" | "$CTR" -n k8s.io images import - >>"$LOG" 2>&1 || imp_rc=$?
+if [ "$imp_rc" -ne 0 ]; then
+  echo "${PACKAGE}: ctr images import failed (exit $imp_rc). See $LOG" >&2
+  exit "$imp_rc"
+fi
+
+echo "${PACKAGE}: import complete" | tee -a "$LOG"

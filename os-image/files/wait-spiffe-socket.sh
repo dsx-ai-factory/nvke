@@ -4,6 +4,14 @@
 
 set -euo pipefail
 
+# nke-agent.service runs this before every start. An agent told to skip mTLS
+# never opens a workload socket, so waiting for one keeps it from starting at
+# all -- the flag alone would leave the unit failing after this times out.
+if [[ "${AGENT_ARGS:-}" == *--disable-mtls* ]]; then
+  echo "nke-agent: --disable-mtls set, not waiting for a SPIFFE socket"
+  exit 0
+fi
+
 SOCKET="${SPIFFE_SOCKET_PATH:-/tmp/spire-agent/public/api.sock}"
 SOCKET="${SOCKET#unix://}"
 

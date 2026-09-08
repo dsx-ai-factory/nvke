@@ -1,0 +1,96 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Example CreateClusterRequest for the local nico-mock backend, where CAPNICo is
+# real and the NICo API behind it is hack/nico-mock. Tenant nodes are containers.
+#
+# Usage: nkectl create cluster -f examples/nico-mock-cluster.yaml
+#
+# Prerequisites:
+#   - controller/tilt_config.json lists the "nico" provider, and tilt up is running
+#   - nkectl config set-site --url http://localhost:8080
+#
+# The UUIDs below are nico-mock's seeded identifiers. They are fixed, so this
+# file works as-is. Override them with NICO_MOCK_SITE_ID and friends.
+#
+# Note the payload: this path supplies CAPI manifests through `infra`, because
+# the mock's site and VPC live inside the NicoCluster and NicoMachineTemplate.
+# A real site uses the higher-level `nico` payload instead — see
+# nico-cluster.yaml.
+
+name: my-cluster
+controlPlaneKubernetesVersion: 1.34.2
+cniPlugin: calico
+etcdEncrypted: false
+
+# Advertised by the bgp-containers provider. A kubelet is pointed at this, so it
+# has to route, not merely be reported.
+controlPlaneVIP: 172.31.2.1
+
+infra:
+  cluster:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+    kind: NicoCluster
+    metadata:
+      name: my-cluster
+    spec:
+      siteID: 00000000-0000-0000-0000-000000000001
+
+nodePools:
+  - name: control-plane
+    nodeNamePrefix: cp
+    desiredNodeCount: 1
+    controlPlane: true
+    systemReservedMemory: "1Gi"
+    infra:
+      spireAttestationMethod: joinToken
+      preKubeadmCommands:
+        - "mkdir -p /run/cluster-api"
+        - "echo success > /run/cluster-api/bootstrap-success.complete"
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoMachineTemplate
+        metadata:
+          name: my-cluster-control-plane-template
+        spec:
+          template:
+            spec:
+              vpcID: 00000000-0000-0000-0000-000000000002
+              instanceTypeID: 00000000-0000-0000-0000-000000000005
+              cloudInitInjectHostname: true
+              ipxeScript: |
+                #!ipxe
+                echo local-nico-control-plane
+              sshKeyGroupIDs:
+                - 00000000-0000-0000-0000-000000000004
+              interfaces:
+                - subnetID: 00000000-0000-0000-0000-000000000003
+
+  - name: worker
+    nodeNamePrefix: w
+    desiredNodeCount: 1
+    controlPlane: false
+    systemReservedMemory: "1Gi"
+    infra:
+      spireAttestationMethod: joinToken
+      preKubeadmCommands:
+        - "mkdir -p /run/cluster-api"
+        - "echo success > /run/cluster-api/bootstrap-success.complete"
+      machineTemplate:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+        kind: NicoMachineTemplate
+        metadata:
+          name: my-cluster-worker-template
+        spec:
+          template:
+            spec:
+              vpcID: 00000000-0000-0000-0000-000000000002
+              instanceTypeID: 00000000-0000-0000-0000-000000000005
+              cloudInitInjectHostname: true
+              ipxeScript: |
+                #!ipxe
+                echo local-nico-worker
+              sshKeyGroupIDs:
+                - 00000000-0000-0000-0000-000000000004
+              interfaces:
+                - subnetID: 00000000-0000-0000-0000-000000000003

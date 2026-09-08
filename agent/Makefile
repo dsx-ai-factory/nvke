@@ -252,9 +252,11 @@ agent_cgo = $(if $(and $(filter linux,$(GOHOSTOS)),$(filter $(1),$(GOHOSTARCH)))
 
 build-amd64:
 	$(call agent_cgo,amd64) GOOS=linux GOARCH=amd64 go build ${LDFLAGS} -o bin/linux_amd64/nke-agent ./cmd/agent/main.go
+	$(call agent_cgo,amd64) GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-X main.version=$(VERSION) $(RELEASE_LDFLAGS)" -o bin/linux_amd64/nke-agent-updater ./cmd/updater/main.go
 
 build-arm64:
 	$(call agent_cgo,arm64) GOOS=linux GOARCH=arm64 go build ${LDFLAGS} -o bin/linux_arm64/nke-agent ./cmd/agent/main.go
+	$(call agent_cgo,arm64) GOOS=linux GOARCH=arm64 go build -trimpath -ldflags="-X main.version=$(VERSION) $(RELEASE_LDFLAGS)" -o bin/linux_arm64/nke-agent-updater ./cmd/updater/main.go
 
 build-all: build-amd64 build-arm64
 build: build-all ## Default build = all arches

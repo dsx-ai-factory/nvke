@@ -199,7 +199,17 @@ func SeedCWEGofailDB(t testing.TB, dsn string) {
 	require.NoError(t, seedCWEGofailDB(context.Background(), db.NewDB(bunDB)))
 }
 
+// seedCWEGofailDB inserts the seed rows in one transaction. The worker is
+// already running, and its node-pool controller deletes any non-current node
+// set that has no nodes, so a set committed on its own can be gone before the
+// node insert lands. Same reason as seedTeardownScenario.
 func seedCWEGofailDB(ctx context.Context, database db.DB) error {
+	return database.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		return seedCWEGofailDBTx(ctx, tx)
+	})
+}
+
+func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
 	if _, err := database.CreateCluster(ctx, &db.Cluster{
 		ID:                CWEGofailClusterID,
 		Name:              "cwe-gofail-cluster",

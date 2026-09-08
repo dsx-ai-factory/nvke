@@ -1,0 +1,6 @@
+# nke-cni-ovn lock for 1.4.0 (amd64). Regenerate with `make lock`; review the diff before committing.
+# Seeded from the ovn_1.4.0-2 bundle's chart set. The chart sha256 and the image
+# digests are still missing: run `make lock` with an NGC key that can read nv-ngn.
+ovn 1.4.0
+image nvcr.io/nv-ngn/sdn/ovn-c:8be75b84-43126247-d411398
+image nvcr.io/nv-ngn/sdn/ovnkube-c:8be75b84-43126247-d411398

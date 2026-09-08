@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm spec for nke-cni-ovn-charts-<stream>. build-deb.sh exports
+# PACKAGE_NAME, STREAM, DEB_REVISION, ARCH, SRC and IMAGES_PACKAGE.
+#
+# The chart is unpacked, not shipped as a tgz: nke-agent runs helm on
+# /etc/dgx/ovn-kubernetes when values-nke.yaml is there (ovnHelmChartStaged in
+# agent/internal/agent/cni.go), else on the directory of the first Chart.yaml
+# that dpkg-query -L lists for this package.
+
+name: "${PACKAGE_NAME}"
+arch: "${ARCH}"
+platform: "linux"
+version: "${DEB_REVISION}"
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  ovn-kubernetes ${STREAM} Helm chart for NKE nodes
+  The nv-ngn ovn-kubernetes chart, unpacked to /etc/dgx/ovn-kubernetes, where
+  nke-agent runs helm on it with values-nke.yaml when it installs the CNI. The
+  container images ship separately in ${IMAGES_PACKAGE}; install both for a
+  node with no registry access.
+
+# Every stream unpacks to the same directory, so only one can be installed.
+provides:
+  - nke-cni-ovn-charts
+conflicts:
+  - nke-cni-ovn-charts
+
+contents:
+  - src: "${SRC}/charts/ovn-kubernetes"
+    dst: "/etc/dgx/ovn-kubernetes"
+    type: tree
+    expand: true

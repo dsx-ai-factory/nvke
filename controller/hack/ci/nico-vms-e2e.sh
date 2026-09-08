@@ -345,6 +345,9 @@ export CWE_PROFILES_DIR="${CWE_PROFILES_DIR:-${CONTROLLER_ROOT}/test/fixtures/pr
 export NICO_VMS_CONSOLE_SSH_PORT="${NICO_VMS_CONSOLE_SSH_PORT:--1}"
 export NICO_VMS_LIBVIRT_URI="${LIBVIRT_URI}"
 export TILT_DISABLE_ANALYTICS=1
+# Read by the Tiltfile. The agent then installs the CNI from the charts deb
+# rather than fetching a bundle, as local-entrypoint-e2e already does.
+export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
 
 # ── The agent the tenant nodes run ──────────────────────────────────────────
 # The OS profile's userData apt-installs nke-agent from the bundle server, then

@@ -20,22 +20,59 @@ PKR_FILE_NON_FDE := $(CURDIR)/nke-node-non-fde.pkr.hcl
 
 LUKS_PASSPHRASE ?= changeit
 
+# amd64 or arm64. Drives ISO_URL's default below and, through it,
+# local.arch in nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl (parsed back
+# out of the ISO filename) -- which is what actually picks qemu_binary,
+# machine_type, the AAVMF/OVMF firmware pair, and the NVIDIA kernel flavor.
+# There is deliberately no separate `-var arch=...`: iso_url is the single
+# source of truth, so it can't drift out of sync with what's actually built.
+ARCH ?= amd64
+
 # FDE/non-FDE only. Overridable together; prepare-installer-iso.sh
 # downloads ISO_URL, verifies it against ISO_CHECKSUM, and produces a
 # GRUB-timeout-patched sibling before packer build ever runs, so packer's
 # own iso_url/iso_checksum vars just point at the local copy (see the
 # locals block in nke-node-fde.pkr.hcl).
-ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso
-ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
+#
+# releases.ubuntu.com only mirrors the amd64 Server ISO -- confirmed
+# directly: its SHA256SUMS has no arm64 entry at all, which is why
+# prepare-installer-iso.sh fails with an empty EXPECTED_SHA256 for an
+# ARCH=arm64 build pointed at it. arm64 (and every other non-amd64 arch)
+# is published under cdimage.ubuntu.com/releases/<version>/release/
+# instead, with its own separate SHA256SUMS there.
+ifeq ($(ARCH),arm64)
+  ISO_URL      ?= https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04-live-server-arm64.iso
+  ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS
+else
+  ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-$(ARCH).iso
+  ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
+endif
 
-# Hardware acceleration where the host has it, software emulation where it does
-# not. Probed rather than declared: the CI runners are containers with no
-# /dev/kvm, so a fixed accelerator = kvm cannot build there at all, and a fixed
-# tcg would emulate on developer machines that have the device.
+# uname -m spelling of ARCH, to compare against the host below. KVM only
+# virtualizes the host's own architecture -- an x86_64 host cannot
+# KVM-accelerate an arm64 guest (or the reverse), regardless of whether
+# /dev/kvm exists and is writable. Building arm64 on an x86_64 host (or
+# vice versa) always falls back to tcg software emulation, which the CI
+# workflow's own comments clock at roughly 10x slower than KVM for a
+# same-arch build; cross-arch tcg is not expected to be faster.
+ifeq ($(ARCH),amd64)
+  ARCH_UNAME := x86_64
+else ifeq ($(ARCH),arm64)
+  ARCH_UNAME := aarch64
+else
+  $(error unsupported ARCH=$(ARCH); expected amd64 or arm64)
+endif
+HOST_ARCH := $(shell uname -m)
+
+# Hardware acceleration where the host has it for this arch, software
+# emulation otherwise. Probed rather than declared: the CI runners are
+# containers with no /dev/kvm, so a fixed accelerator = kvm cannot build
+# there at all, and a fixed tcg would emulate on developer machines that
+# have the device.
 #
 # -w as well as -c: a present but unwritable /dev/kvm fails inside QEMU, later
 # and less legibly than falling back here.
-ACCELERATOR ?= $(shell if [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; else echo tcg; fi)
+ACCELERATOR ?= $(shell if [ "$(HOST_ARCH)" = "$(ARCH_UNAME)" ] && [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; else echo tcg; fi)
 
 # "host" needs KVM to be meaningful; "max" is the safe choice under TCG.
 CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)

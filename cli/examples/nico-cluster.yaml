@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Example CreateClusterRequest for a real NICo site, provisioned by CAPNICo.
+#
+# Usage: nkectl create cluster -f examples/nico-cluster.yaml
+#
+# Prerequisites:
+#   - CAPNICo installed on the site controller: nkectl get providers reports
+#     nico as CONFIGURED
+#   - A NICo site, VPC, VPC prefix, instance type, SSH key group, and an
+#     allocation against the instance type. An instance type with no allocation
+#     looks healthy and provisions nothing.
+#
+# Every UUID below is site-specific. Replace all of them. The profile names are
+# placeholders too: fleet profile content is maintained outside this repository
+# and supplied at deploy time. List what your site serves with the API's
+# /api/osProfiles and /api/configProfiles endpoints; nkectl has no command for
+# them yet.
+#
+# A node pool carries either `nico` or `infra`, never both, and a pool with
+# neither is rejected. This path uses `nico`; the local mock uses `infra` — see
+# nico-mock-cluster.yaml.
+
+name: my-cluster
+controlPlaneKubernetesVersion: 1.34.2
+cniPlugin: calico
+etcdEncrypted: false
+
+nico:
+  orgID: dipfedrcvjiw
+  siteID: 00000000-0000-0000-0000-000000000000
+  vpcID: 00000000-0000-0000-0000-000000000000
+
+nodePools:
+  - name: control-plane
+    nodeNamePrefix: cp
+    desiredNodeCount: 3
+    controlPlane: true
+    systemReservedMemory: "1Gi"
+    nico:
+      instanceTypeID: 00000000-0000-0000-0000-000000000000
+      vpcPrefixIDs:
+        - 00000000-0000-0000-0000-000000000000
+      sshKeyGroupIDs:
+        - 00000000-0000-0000-0000-000000000000
+      osProfile: nke-260625-24.04-x86-fde
+      configProfile: default-cp
+
+  - name: worker
+    nodeNamePrefix: w
+    desiredNodeCount: 2
+    controlPlane: false
+    systemReservedMemory: "1Gi"
+    nico:
+      instanceTypeID: 00000000-0000-0000-0000-000000000000
+      vpcPrefixIDs:
+        - 00000000-0000-0000-0000-000000000000
+      sshKeyGroupIDs:
+        - 00000000-0000-0000-0000-000000000000
+      osProfile: nke-260625-24.04-x86-fde
+      configProfile: default-worker

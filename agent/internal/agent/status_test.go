@@ -368,6 +368,24 @@ func TestGetBundleStatusByRequestID(t *testing.T) {
 	assert.Equal(t, "bundle3", results[1].Name)
 }
 
+func TestGetBundleStatusByRequestIDReturnsCopies(t *testing.T) {
+	server := &NodeAgentServer{
+		Persister: &MockPersister{},
+		NodeStatus: &NodeStatus{
+			Bundles: []Bundle{
+				{RequestID: "req-123", Name: "bundle1", Status: "installing"},
+			},
+		},
+	}
+
+	results := server.GetBundleStatusByRequestID("req-123")
+	assert.Len(t, results, 1)
+	results[0].Status = "written through the returned pointer"
+
+	// An alias would reach stored state without the lock.
+	assert.Equal(t, "installing", server.NodeStatus.Bundles[0].Status)
+}
+
 func TestGetBundleStatusByRequestIDNotFound(t *testing.T) {
 	server := &NodeAgentServer{
 		Persister: &MockPersister{},
