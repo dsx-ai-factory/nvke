@@ -25,6 +25,16 @@ func SetupController(
 	reconciler reconcile.TypedReconciler[Key],
 	sources ...crsource.TypedSource[Key],
 ) error {
+	return setupController(mgr, name, reconciler, crcontroller.TypedOptions[Key]{}, sources...)
+}
+
+func setupController(
+	mgr manager.Manager,
+	name string,
+	reconciler reconcile.TypedReconciler[Key],
+	opts crcontroller.TypedOptions[Key],
+	sources ...crsource.TypedSource[Key],
+) error {
 	if len(sources) == 0 {
 		return fmt.Errorf("must specify Source for DB reconciler")
 	}
@@ -34,9 +44,8 @@ func SetupController(
 		}
 	}
 
-	ctrl, err := crcontroller.NewTyped[Key](name, mgr, crcontroller.TypedOptions[Key]{
-		Reconciler: reconciler,
-	})
+	opts.Reconciler = reconciler
+	ctrl, err := crcontroller.NewTyped[Key](name, mgr, opts)
 	if err != nil {
 		return err
 	}
@@ -52,6 +61,13 @@ func SetupController(
 // AddController registers a Controller with a controller-runtime manager.
 // It's just syntactic sugar around SetupController.
 func AddController(mgr manager.Manager, controller Controller) error {
+	if controller.Workers < 0 {
+		return fmt.Errorf("controller %q: Workers must not be negative", controller.Name)
+	}
+	if controller.ReconcileTimeout < 0 {
+		return fmt.Errorf("controller %q: ReconcileTimeout must not be negative", controller.Name)
+	}
+
 	sources := append([]crsource.TypedSource[Key](nil), controller.Sources...)
 	for index, watch := range controller.Watches {
 		if watch.Object == nil {
@@ -86,5 +102,14 @@ func AddController(mgr manager.Manager, controller Controller) error {
 		))
 	}
 
-	return SetupController(mgr, controller.Name, controller.Reconciler, sources...)
+	return setupController(
+		mgr,
+		controller.Name,
+		controller.Reconciler,
+		crcontroller.TypedOptions[Key]{
+			MaxConcurrentReconciles: controller.Workers,
+			ReconciliationTimeout:   controller.ReconcileTimeout,
+		},
+		sources...,
+	)
 }

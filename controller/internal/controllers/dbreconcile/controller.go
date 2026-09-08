@@ -5,6 +5,7 @@ package dbreconcile
 
 import (
 	"context"
+	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -20,10 +21,18 @@ type Source = crsource.TypedSource[Key]
 
 // Controller defines a DB reconciler and the sources that feed its work queue.
 type Controller struct {
-	Name       string
+	// Name identifies the controller in logs and metrics.
+	Name string
+	// Reconciler processes keys produced by Sources and Watches.
 	Reconciler Reconciler
-	Watches    []KubeWatch
-	Sources    []Source
+	// Watches triggers reconciliation from Kubernetes object changes.
+	Watches []KubeWatch
+	// Sources triggers reconciliation from external events such as DB changes.
+	Sources []Source
+	// Workers is the maximum number of concurrent reconciles. Zero uses the default of one worker.
+	Workers int
+	// ReconcileTimeout limits each reconcile duration. Zero disables the timeout.
+	ReconcileTimeout time.Duration
 }
 
 // KubeWatch maps selected Kubernetes object events to DB reconcile keys. When

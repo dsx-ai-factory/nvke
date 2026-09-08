@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -67,6 +68,10 @@ func ExampleAddController() {
 			// reconciler adds the matching label below with SetOwner.
 			dbreconcile.KindCluster.Owns(&corev1.Secret{}, clusterMetadataNamespace),
 		},
+		// Workers allows two different Cluster keys to reconcile concurrently.
+		Workers: 2,
+		// ReconcileTimeout cancels a reconcile that exceeds this duration.
+		ReconcileTimeout: 30 * time.Second,
 	}); err != nil {
 		panic(err)
 	}

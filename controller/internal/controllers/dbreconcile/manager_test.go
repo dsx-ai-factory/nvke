@@ -17,8 +17,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/util/workqueue"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 
 	"github.com/NVIDIA/nke/controller/internal/controllers/controllertest"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
@@ -86,6 +90,142 @@ func TestAddControllerReconcilesDatabaseAndKubernetesChanges(t *testing.T) {
 
 		requireClusterSecretValue(t, mgr.GetClient(), cluster.ID, cluster.Name)
 	})
+}
+
+func TestAddControllerOptions(t *testing.T) {
+	t.Run("Workers controls reconcile concurrency", func(t *testing.T) {
+		mgr, err := controllertest.NewManager(nil)
+		require.NoError(t, err)
+		events := newManualSource(2)
+		started := make(chan struct{}, 2)
+		release := make(chan struct{})
+
+		reconciler := reconcile.TypedFunc[dbreconcile.Key](
+			func(ctx context.Context, _ dbreconcile.Key) (reconcile.Result, error) {
+				started <- struct{}{}
+				select {
+				case <-release:
+					return reconcile.Result{}, nil
+				case <-ctx.Done():
+					return reconcile.Result{}, ctx.Err()
+				}
+			},
+		)
+		require.NoError(t, dbreconcile.AddController(mgr, dbreconcile.Controller{
+			Name:       "concurrent-controller",
+			Reconciler: reconciler,
+			Sources:    []dbreconcile.Source{events},
+			Workers:    2,
+		}))
+		require.NoError(t, events.Enqueue(t.Context(), dbreconcile.ClusterKey(uuid.New())))
+		require.NoError(t, events.Enqueue(t.Context(), dbreconcile.ClusterKey(uuid.New())))
+		controllertest.Start(t.Context(), t, mgr)
+
+		require.Eventually(t, func() bool {
+			return len(started) == 2
+		}, 10*time.Second, 10*time.Millisecond)
+		close(release)
+	})
+
+	t.Run("ReconcileTimeout cancels a slow reconcile", func(t *testing.T) {
+		mgr, err := controllertest.NewManager(nil)
+		require.NoError(t, err)
+		events := newManualSource(1)
+		reconcileError := make(chan error, 1)
+
+		reconciler := reconcile.TypedFunc[dbreconcile.Key](
+			func(ctx context.Context, _ dbreconcile.Key) (reconcile.Result, error) {
+				<-ctx.Done()
+				reconcileError <- ctx.Err()
+				return reconcile.Result{}, reconcile.TerminalError(ctx.Err())
+			},
+		)
+		require.NoError(t, dbreconcile.AddController(mgr, dbreconcile.Controller{
+			Name:             "timeout-controller",
+			Reconciler:       reconciler,
+			Sources:          []dbreconcile.Source{events},
+			ReconcileTimeout: 50 * time.Millisecond,
+		}))
+		require.NoError(t, events.Enqueue(t.Context(), dbreconcile.ClusterKey(uuid.New())))
+		controllertest.Start(t.Context(), t, mgr)
+
+		var got error
+		require.Eventually(t, func() bool {
+			select {
+			case got = <-reconcileError:
+				return true
+			default:
+				return false
+			}
+		}, 10*time.Second, 10*time.Millisecond)
+		require.ErrorIs(t, got, context.DeadlineExceeded)
+	})
+}
+
+func TestAddControllerRejectsInvalidOptions(t *testing.T) {
+	tests := map[string]struct {
+		workers          int
+		reconcileTimeout time.Duration
+		wantError        string
+	}{
+		"negative Workers": {
+			workers:   -1,
+			wantError: "Workers must not be negative",
+		},
+		"negative ReconcileTimeout": {
+			reconcileTimeout: -time.Second,
+			wantError:        "ReconcileTimeout must not be negative",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			mgr, err := controllertest.NewManager(nil)
+			require.NoError(t, err)
+			err = dbreconcile.AddController(mgr, dbreconcile.Controller{
+				Name:             "invalid-options-controller",
+				Reconciler:       reconcile.TypedFunc[dbreconcile.Key](func(context.Context, dbreconcile.Key) (reconcile.Result, error) { return reconcile.Result{}, nil }),
+				Sources:          []dbreconcile.Source{newManualSource(1)},
+				Workers:          tt.workers,
+				ReconcileTimeout: tt.reconcileTimeout,
+			})
+			require.Error(t, err)
+			assert.ErrorContains(t, err, tt.wantError)
+		})
+	}
+}
+
+type manualSource struct {
+	events chan event.TypedGenericEvent[dbreconcile.Key]
+}
+
+func newManualSource(bufferSize int) *manualSource {
+	return &manualSource{
+		events: make(chan event.TypedGenericEvent[dbreconcile.Key], bufferSize),
+	}
+}
+
+func (s *manualSource) Start(
+	ctx context.Context,
+	queue workqueue.TypedRateLimitingInterface[dbreconcile.Key],
+) error {
+	return crsource.TypedChannel[dbreconcile.Key, dbreconcile.Key](
+		s.events,
+		handler.TypedEnqueueRequestsFromMapFunc(
+			func(_ context.Context, key dbreconcile.Key) []dbreconcile.Key {
+				return []dbreconcile.Key{key}
+			},
+		),
+	).Start(ctx, queue)
+}
+
+func (s *manualSource) Enqueue(ctx context.Context, key dbreconcile.Key) error {
+	select {
+	case s.events <- event.TypedGenericEvent[dbreconcile.Key]{Object: key}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 type clusterSecretReconciler struct {
