@@ -19,7 +19,7 @@ notices-check` verifies it is up to date.
 |---------|---------|--------|--------|
 | `github.com/apapsch/go-jsonmerge/v2` | MIT | `github.com/apapsch/go-jsonmerge/v2@v2.0.0` | Unknown |
 | `github.com/fsnotify/fsnotify` | BSD-3-Clause | `github.com/fsnotify/fsnotify@v1.9.0` | Unknown |
-| `github.com/getkin/kin-openapi/openapi3` | MIT | `github.com/getkin/kin-openapi@v0.146.0` | Unknown |
+| `github.com/getkin/kin-openapi/openapi3` | MIT | `github.com/getkin/kin-openapi@v0.149.0` | Unknown |
 | `github.com/go-openapi/jsonpointer` | Apache-2.0 | `github.com/go-openapi/jsonpointer@v0.22.5` | Unknown |
 | `github.com/go-openapi/swag/jsonname` | Apache-2.0 | `github.com/go-openapi/swag/jsonname@v0.25.5` | Unknown |
 | `github.com/go-viper/mapstructure/v2` | MIT | `github.com/go-viper/mapstructure/v2@v2.4.0` | Unknown |
@@ -29,7 +29,7 @@ notices-check` verifies it is up to date.
 | `github.com/oasdiff/yaml3` | MIT | `github.com/oasdiff/yaml3@v0.0.14` | Unknown |
 | `github.com/pelletier/go-toml/v2` | MIT | `github.com/pelletier/go-toml/v2@v2.2.4` | Unknown |
 | `github.com/sagikazarmark/locafero` | MIT | `github.com/sagikazarmark/locafero@v0.11.0` | Unknown |
-| `github.com/santhosh-tekuri/jsonschema/v6` | Apache-2.0 | `github.com/santhosh-tekuri/jsonschema/v6@v6.0.2` | Unknown |
+| `github.com/santhosh-tekuri/jsonschema/v6` | Apache-2.0 | `github.com/santhosh-tekuri/jsonschema/v6@v6.0.3` | Unknown |
 | `github.com/sourcegraph/conc` | MIT | `github.com/sourcegraph/conc@v0.3.1-0.20240121214520-5f936abd7ae8` | Unknown |
 | `github.com/spf13/afero` | Apache-2.0 | `github.com/spf13/afero@v1.15.0` | Unknown |
 | `github.com/spf13/cast` | MIT | `github.com/spf13/cast@v1.10.0` | Unknown |
@@ -112,7 +112,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/getkin/kin-openapi/openapi3
 
-_MIT — github.com/getkin/kin-openapi@v0.146.0_
+_MIT — github.com/getkin/kin-openapi@v0.149.0_
 
 #### LICENSE
 
@@ -1090,7 +1090,7 @@ THE SOFTWARE.
 
 ### github.com/santhosh-tekuri/jsonschema/v6
 
-_Apache-2.0 — github.com/santhosh-tekuri/jsonschema/v6@v6.0.2_
+_Apache-2.0 — github.com/santhosh-tekuri/jsonschema/v6@v6.0.3_
 
 #### LICENSE
 

@@ -56,11 +56,11 @@ commands are not listed, because they are not distributed.
 | [github.com/spiffe/go-spiffe/v2](https://github.com/spiffe/go-spiffe/blob/v2.8.1/LICENSE) | Apache-2.0 | — |
 | [github.com/sqids/sqids-go](https://github.com/sqids/sqids-go/blob/v0.4.1/LICENSE) | MIT | github.com/sqids/sqids-go@v0.4.1 |
 | [github.com/x448/float16](https://github.com/x448/float16/blob/v0.8.4/LICENSE) | MIT | github.com/x448/float16@v0.8.4 |
-| [go.yaml.in/yaml/v2](https://github.com/yaml/go-yaml/blob/v2.4.3/LICENSE) | Apache-2.0 | go.yaml.in/yaml/v2@v2.4.3 |
+| [go.yaml.in/yaml/v2](https://github.com/yaml/go-yaml/blob/v2.4.4/LICENSE) | Apache-2.0 | go.yaml.in/yaml/v2@v2.4.4 |
 | [go.yaml.in/yaml/v3](https://github.com/yaml/go-yaml/blob/v3.0.4/LICENSE) | MIT | go.yaml.in/yaml/v3@v3.0.4 |
 | [golang.org/x/net](https://cs.opensource.google/go/x/net/+/v0.57.0:LICENSE) | BSD-3-Clause | — |
 | [golang.org/x/oauth2](https://cs.opensource.google/go/x/oauth2/+/v0.36.0:LICENSE) | BSD-3-Clause | golang.org/x/oauth2@v0.36.0 |
-| [golang.org/x/sync](https://cs.opensource.google/go/x/sync/+/v0.22.0:LICENSE) | BSD-3-Clause | — |
+| [golang.org/x/sync](https://cs.opensource.google/go/x/sync/+/v0.23.0:LICENSE) | BSD-3-Clause | — |
 | [golang.org/x/sys/unix](https://cs.opensource.google/go/x/sys/+/v0.47.0:LICENSE) | BSD-3-Clause | golang.org/x/sys@v0.47.0 |
 | [golang.org/x/term](https://cs.opensource.google/go/x/term/+/v0.45.0:LICENSE) | BSD-3-Clause | golang.org/x/term@v0.45.0 |
 | [golang.org/x/text](https://cs.opensource.google/go/x/text/+/v0.41.0:LICENSE) | BSD-3-Clause | — |

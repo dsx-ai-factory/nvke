@@ -35,7 +35,7 @@ notices-check` verifies it is up to date.
 | `github.com/felixge/httpsnoop` | MIT | `github.com/felixge/httpsnoop@v1.0.4` | Unknown |
 | `github.com/fsnotify/fsnotify` | BSD-3-Clause | `github.com/fsnotify/fsnotify@v1.9.0` | Unknown |
 | `github.com/fxamacker/cbor/v2` | MIT | `github.com/fxamacker/cbor/v2@v2.9.0` | Unknown |
-| `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.146.0` | Unknown |
+| `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.149.0` | Unknown |
 | `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.4` | Unknown |
 | `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.4` | Unknown |
 | `github.com/go-logr/logr` | Apache-2.0 | `github.com/go-logr/logr@v1.4.4` | Unknown |
@@ -59,7 +59,7 @@ notices-check` verifies it is up to date.
 | `github.com/gobwas/pool` | MIT | `github.com/gobwas/pool@v0.2.1` | Unknown |
 | `github.com/gobwas/ws` | MIT | `github.com/gobwas/ws@v1.4.0` | Unknown |
 | `github.com/gogo/protobuf` | BSD-3-Clause | `github.com/gogo/protobuf@v1.3.2` | Unknown |
-| `github.com/golang-jwt/jwt/v5` | MIT | `github.com/golang-jwt/jwt/v5@v5.3.0` | Unknown |
+| `github.com/golang-jwt/jwt/v5` | MIT | `github.com/golang-jwt/jwt/v5@v5.3.1` | Unknown |
 | `github.com/golang/mock/gomock` | Apache-2.0 | `github.com/golang/mock@v1.7.0-rc.1` | Unknown |
 | `github.com/google/gnostic-models` | Apache-2.0 | `github.com/google/gnostic-models@v0.7.0` | Unknown |
 | `github.com/google/go-cmp/cmp` | BSD-3-Clause | `github.com/google/go-cmp@v0.7.0` | Unknown |
@@ -85,16 +85,16 @@ notices-check` verifies it is up to date.
 | `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.42.1` | Unknown |
 | `github.com/pkg/errors` | BSD-2-Clause | `github.com/pkg/errors@v0.9.1` | Unknown |
 | `github.com/pmezard/go-difflib/difflib` | BSD-3-Clause | `github.com/pmezard/go-difflib@v1.0.1-0.20181226105442-5d4384ee4fb2` | Unknown |
-| `github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil` | BSD-3-Clause | `github.com/prometheus/client_golang@v1.23.2` | Unknown |
-| `github.com/prometheus/client_golang/prometheus` | Apache-2.0 | `github.com/prometheus/client_golang@v1.23.2` | Unknown |
-| `github.com/prometheus/client_model/go` | Apache-2.0 | `github.com/prometheus/client_model@v0.6.2` | Unknown |
-| `github.com/prometheus/common` | Apache-2.0 | `github.com/prometheus/common@v0.67.5` | Unknown |
-| `github.com/prometheus/procfs` | Apache-2.0 | `github.com/prometheus/procfs@v0.19.2` | Unknown |
+| `github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil` | BSD-3-Clause | `github.com/prometheus/client_golang@v1.24.1` | Unknown |
+| `github.com/prometheus/client_golang/prometheus` | Apache-2.0 | `github.com/prometheus/client_golang@v1.24.1` | Unknown |
+| `github.com/prometheus/client_model/go` | Apache-2.0 | `github.com/prometheus/client_model@v0.6.3` | Unknown |
+| `github.com/prometheus/common` | Apache-2.0 | `github.com/prometheus/common@v0.70.1` | Unknown |
+| `github.com/prometheus/procfs` | Apache-2.0 | `github.com/prometheus/procfs@v0.21.1` | Unknown |
 | `github.com/puzpuzpuz/xsync/v3` | Apache-2.0 | `github.com/puzpuzpuz/xsync/v3@v3.5.1` | Unknown |
 | `github.com/robfig/cron` | MIT | `github.com/robfig/cron@v1.2.0` | Unknown |
 | `github.com/russellhaering/gosaml2` | Apache-2.0 | `github.com/russellhaering/gosaml2@v0.11.0` | Unknown |
 | `github.com/russellhaering/goxmldsig` | Apache-2.0 | `github.com/russellhaering/goxmldsig@v1.6.0` | Unknown |
-| `github.com/santhosh-tekuri/jsonschema/v6` | Apache-2.0 | `github.com/santhosh-tekuri/jsonschema/v6@v6.0.2` | Unknown |
+| `github.com/santhosh-tekuri/jsonschema/v6` | Apache-2.0 | `github.com/santhosh-tekuri/jsonschema/v6@v6.0.3` | Unknown |
 | `github.com/spf13/cobra` | Apache-2.0 | `github.com/spf13/cobra@v1.10.2` | Unknown |
 | `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.0.10` | Unknown |
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | Unknown |
@@ -133,13 +133,13 @@ notices-check` verifies it is up to date.
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | Unknown |
 | `go.uber.org/atomic` | MIT | `go.uber.org/atomic@v1.11.0` | Unknown |
 | `go.uber.org/automaxprocs` | MIT | `go.uber.org/automaxprocs@v1.6.0` | Unknown |
-| `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.3` | Unknown |
+| `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | Unknown |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.4` | Unknown |
 | `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.6` | Unknown |
 | `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.56.0` | Unknown |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.57.0` | Unknown |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.36.0` | Unknown |
-| `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.22.0` | Unknown |
+| `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.23.0` | Unknown |
 | `golang.org/x/sys` | BSD-3-Clause | `golang.org/x/sys@v0.47.0` | Unknown |
 | `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.45.0` | Unknown |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.41.0` | Unknown |
@@ -1118,7 +1118,7 @@ SOFTWARE.
 
 ### github.com/getkin/kin-openapi
 
-_MIT — github.com/getkin/kin-openapi@v0.146.0_
+_MIT — github.com/getkin/kin-openapi@v0.149.0_
 
 #### LICENSE
 
@@ -5001,7 +5001,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/golang-jwt/jwt/v5
 
-_MIT — github.com/golang-jwt/jwt/v5@v5.3.0_
+_MIT — github.com/golang-jwt/jwt/v5@v5.3.1_
 
 #### LICENSE
 
@@ -7894,7 +7894,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil
 
-_BSD-3-Clause — github.com/prometheus/client_golang@v1.23.2_
+_BSD-3-Clause — github.com/prometheus/client_golang@v1.24.1_
 
 #### LICENSE
 
@@ -7931,7 +7931,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/prometheus/client_golang/prometheus
 
-_Apache-2.0 — github.com/prometheus/client_golang@v1.23.2_
+_Apache-2.0 — github.com/prometheus/client_golang@v1.24.1_
 
 #### LICENSE
 
@@ -8166,7 +8166,7 @@ See source code for license details.
 
 ### github.com/prometheus/client_model/go
 
-_Apache-2.0 — github.com/prometheus/client_model@v0.6.2_
+_Apache-2.0 — github.com/prometheus/client_model@v0.6.3_
 
 #### LICENSE
 
@@ -8388,7 +8388,7 @@ SoundCloud Ltd. (http://soundcloud.com/).
 
 ### github.com/prometheus/common
 
-_Apache-2.0 — github.com/prometheus/common@v0.67.5_
+_Apache-2.0 — github.com/prometheus/common@v0.70.1_
 
 #### LICENSE
 
@@ -8610,7 +8610,7 @@ SoundCloud Ltd. (http://soundcloud.com/).
 
 ### github.com/prometheus/procfs
 
-_Apache-2.0 — github.com/prometheus/procfs@v0.19.2_
+_Apache-2.0 — github.com/prometheus/procfs@v0.21.1_
 
 #### LICENSE
 
@@ -9446,7 +9446,7 @@ _Apache-2.0 — github.com/russellhaering/goxmldsig@v1.6.0_
 
 ### github.com/santhosh-tekuri/jsonschema/v6
 
-_Apache-2.0 — github.com/santhosh-tekuri/jsonschema/v6@v6.0.2_
+_Apache-2.0 — github.com/santhosh-tekuri/jsonschema/v6@v6.0.3_
 
 #### LICENSE
 
@@ -13840,7 +13840,7 @@ THE SOFTWARE.
 
 ### go.yaml.in/yaml/v2
 
-_Apache-2.0 — go.yaml.in/yaml/v2@v2.4.3_
+_Apache-2.0 — go.yaml.in/yaml/v2@v2.4.4_
 
 #### LICENSE
 
@@ -14499,7 +14499,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sync
 
-_BSD-3-Clause — golang.org/x/sync@v0.22.0_
+_BSD-3-Clause — golang.org/x/sync@v0.23.0_
 
 #### LICENSE
 
