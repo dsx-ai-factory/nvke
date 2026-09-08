@@ -1,7 +1,7 @@
 # Site and Tenant Cluster Flow
 
 What `nkectl` does today, in the order an operator uses it. Every command
-below is on `main`; the two steps the CLI does not cover yet are marked.
+below is on `main`; the steps the CLI does not cover yet are marked.
 `nkectl <command> --help` is the authoritative reference for flags.
 
 ## Commands
@@ -12,6 +12,7 @@ below is on `main`; the two steps the CLI does not cover yet are marked.
 | `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
 | Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nkectl` command yet. | Not in the CLI |
 | `nkectl config set-site --url <cwe-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
+| `nkectl configure provider --type <nico\|launchlayer> ...` | Gives an installed infrastructure provider the endpoint and credentials it needs to create machines. Alpha. | Planned |
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get clusters` | Lists tenant clusters. `-c <name>` filters, `-o json\|yaml` changes the format. | Available |
@@ -88,14 +89,27 @@ nkectl config view
 providers` and, once it lands, `get kubeconfig` read the cluster directly and
 need it.
 
-### 5. Check the infrastructure providers
+### 5. Configure and check the infrastructure providers
+
+A tenant cluster is created on an infrastructure provider that is installed on
+the site cluster and holds credentials for its backend. Configure one, then
+confirm the site can use it:
 
 ```bash
+# Planned: gives the provider its backend endpoint and credentials
+nkectl configure provider --type nico ...
+
 nkectl get providers
 ```
 
-`CONFIGURED` means the provider's CRDs are established, its manager is
-available and its credentials Secret exists. Needs `kubectl` on `PATH`.
+`get providers` lists each provider the CLI knows about and its state;
+`CONFIGURED` means the provider is installed and has credentials. Needs
+`kubectl` on `PATH`.
+
+On a site where Argo CD manages the providers, do not run `configure provider`.
+Keep the provider and its credentials in git and let Argo apply them, as for the
+rest of the site. `get providers` is the same either way: it reports what is on
+the cluster, whichever tool put it there.
 
 ### 6. Create a tenant cluster
 
