@@ -265,16 +265,17 @@ def register(ctx):
         labels=["5-nico-sim"],
     )
 
-    # Manual CAPNICo VM controls. The buttons run the same scripts that can be
+    # Manual CAPNICo instance controls. The buttons run the same scripts that can be
     # called directly from the controller directory.
     cmd_button(
         "1-create-instance",
         argv=["bash", "-c", """
           set -euo pipefail
           cd %s
-          INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}" \
+          INSTANCE_BACKEND="${INSTANCE_BACKEND:-VM}" \
+          INSTANCE_NAME="${INSTANCE_NAME:-}" \
           OS_PROFILE="${OS_PROFILE:-nke-260611-24.04-amd64-fde}" \
-          INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000005}" \
+          INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-}" \
           DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}" \
           ./hack/capnico-create-instance.sh
         """ % ctx.main_dir],
@@ -282,10 +283,11 @@ def register(ctx):
         icon_name="add_box",
         text="Create instance",
         inputs=[
-            text_input("INSTANCE_NAME", default="capnico-vm-1"),
-            text_input("OS_PROFILE", default="nke-260611-24.04-amd64-fde"),
-            text_input("INSTANCE_TYPE_ID", default="a1b2c3d4-0005-4000-8000-000000000005"),
-            text_input("DISK_SELECTION_STRATEGY", default="smallest"),
+            choice_input("INSTANCE_BACKEND", label="Type", choices=["VM", "Container"]),
+            text_input("INSTANCE_NAME", label="Instance name (optional)", default="", placeholder="Uses the selected type's default name"),
+            text_input("OS_PROFILE", label="OS profile (VM)", default="nke-260611-24.04-amd64-fde"),
+            text_input("INSTANCE_TYPE_ID", label="Instance type ID (optional)", default="", placeholder="Uses the selected type's default"),
+            text_input("DISK_SELECTION_STRATEGY", label="Disk strategy (VM)", default="smallest"),
         ],
     )
 
@@ -340,14 +342,16 @@ def register(ctx):
         argv=["bash", "-c", """
           set -euo pipefail
           cd %s
-          INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}" \
+          INSTANCE_BACKEND="${INSTANCE_BACKEND:-VM}" \
+          INSTANCE_NAME="${INSTANCE_NAME:-}" \
           ./hack/capnico-delete-instance.sh
         """ % ctx.main_dir],
         resource="nico-sim",
         icon_name="delete",
         text="Delete instance",
         inputs=[
-            text_input("INSTANCE_NAME", default="capnico-vm-1"),
+            choice_input("INSTANCE_BACKEND", label="Type", choices=["VM", "Container"]),
+            text_input("INSTANCE_NAME", label="Instance name (optional)", default="", placeholder="Uses the selected type's default name"),
         ],
     )
 

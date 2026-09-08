@@ -112,7 +112,7 @@ func unsupportedVMCreateField(req nicosdk.InstanceCreateRequest) string {
 		return "allowUnhealthyMachine"
 	}
 	for _, iface := range req.GetInterfaces() {
-		if iface.HasIpAddress() || iface.HasIsPhysical() || iface.HasDevice() || iface.HasDeviceInstance() || iface.HasVirtualFunctionId() {
+		if iface.HasIpAddress() || iface.HasDevice() || iface.HasDeviceInstance() || iface.HasVirtualFunctionId() {
 			return "detailed interface placement"
 		}
 	}
