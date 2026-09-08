@@ -511,7 +511,8 @@ func (r *virsh) TPMEKCert(ctx context.Context, machineID string) (string, error)
 	if used, uuid, mismatch := r.swtpmStateMismatch(dumpxml); mismatch {
 		return "", fmt.Errorf(
 			"stale EK cert for %s: libvirt used swtpm state in %s, cert came from %s (libvirt URI %q)",
-			machineID, used, r.swtpmStatePath(uuid), r.uri)
+			machineID, used, r.swtpmStatePath(uuid), r.uri,
+		)
 	}
 	return strings.TrimSpace(string(certData)), nil
 }

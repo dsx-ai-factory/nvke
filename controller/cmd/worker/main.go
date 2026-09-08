@@ -455,7 +455,6 @@ func main() {
 		logger.With("logger", "node-pool-node-scheduler"),
 		dbInstance,
 		temporalClient,
-		forgeProvider,
 	)
 	if err := nodePoolNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up node pool node scheduler", "error", err)
@@ -467,7 +466,6 @@ func main() {
 		logger.With("logger", "control-plane-node-scheduler"),
 		dbInstance,
 		temporalClient,
-		forgeProvider,
 	)
 	if err := controlPlaneNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane node scheduler", "error", err)
