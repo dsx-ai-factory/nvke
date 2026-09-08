@@ -208,11 +208,10 @@ jobs:
           version: ${{ steps.versions.outputs.helm_version }}
 
       - name: Set up Kind and kubectl
-        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        uses: ./.github/actions/setup-kind
         with:
-          version: ${{ steps.versions.outputs.kind_version }}
+          kind_version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
-          install_only: true
 
       - name: Show runner tools
         shell: bash
