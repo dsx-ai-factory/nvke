@@ -373,8 +373,6 @@ github.com/jonboulle/clockwork
 github.com/json-iterator/go
 # github.com/kr/pretty v0.3.1
 ## explicit; go 1.12
-# github.com/kr/text v0.2.0
-## explicit
 # github.com/lmittmann/tint v1.1.3
 ## explicit; go 1.21
 github.com/lmittmann/tint
