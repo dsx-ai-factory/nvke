@@ -29,6 +29,9 @@ DEFAULT_KUBE_VIP_DIGEST="sha256:fe8c7b6641ba7633a12b337821e9e83a6456e8edc3434f97
 BGP_PEER_ADDRESS=${BGP_PEER_ADDRESS:-""}
 # Constant BGP peer AS as specified by Forge
 BGP_PEER_AS="${BGP_PEER_AS:-"4294967000"}"
+# Full Forge Metadata Service URL used when BGP_PEER_AS is FROM_FMDS. The
+# historical port remains the default for controllers that do not send it.
+FMDS_ENDPOINT="${FMDS_ENDPOINT:-"http://169.254.169.254:7777/latest/meta-data/asn"}"
 # Comma-separated multi-peer BGP list. Each entry is address:AS:password:multihop.
 # When set, the single-peer path (BGP_PEER_ADDRESS / BGP_PEER_AS / FROM_FMDS /
 # default-gateway fallback) is skipped and kube-vip's bgp_peers env is rendered
@@ -230,7 +233,7 @@ get_default_gateway() {
 
 # Fetch ASN from Forge Metadata Service (FMDS)
 fetch_asn_from_fmds() {
-  local fmds_url="http://169.254.169.254:7777/latest/meta-data/asn"
+  local fmds_url="$FMDS_ENDPOINT"
   local asn
   
   if ! asn=$(curl -s --connect-timeout 10 --max-time 30 "$fmds_url" 2>/dev/null); then

@@ -1129,6 +1129,9 @@ message ReconcileKubeVipRequest {
   // Optional explicit IPv4 peer address. When empty, the default gateway is
   // used, matching the legacy runbook.
   string bgp_peer_address = 6;
+  // Optional absolute FMDS ASN endpoint. When empty, the legacy Forge endpoint
+  // is used. Ignored unless bgp_peer_asn_source is FMDS.
+  string fmds_endpoint = 7;
 }
 
 message ReconcileKubeVipResponse {
