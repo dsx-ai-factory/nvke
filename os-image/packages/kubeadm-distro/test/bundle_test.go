@@ -219,9 +219,17 @@ type gpgKey struct {
 }
 
 // newGPGKey generates a throwaway key in its own GNUPGHOME.
+//
+// The home is deliberately not t.TempDir(). gpg-agent puts its socket inside
+// GNUPGHOME, and a unix socket path is capped near 104 bytes; on macOS
+// t.TempDir() is already ~70 characters of /var/folders/... plus the test name,
+// which pushes the socket over the limit and gpg fails with
+// "can't connect to the gpg-agent: IPC connect call failed".
 func newGPGKey(t *testing.T, uid string) *gpgKey {
 	t.Helper()
-	home := t.TempDir()
+	home, err := os.MkdirTemp("", "nkegpg")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	require.NoError(t, os.Chmod(home, 0o700))
 	k := &gpgKey{home: home, uid: uid}
 	out, err := k.run(t, "--quick-generate-key", uid, "default", "default", "never")
