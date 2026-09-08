@@ -395,6 +395,9 @@ func TestPostinstSwapSedIsValid(t *testing.T) {
 	if _, err := exec.LookPath("sed"); err != nil {
 		t.Skip("sed is not on PATH")
 	}
+	if err := exec.Command("sed", "--version").Run(); err != nil {
+		t.Skip("postinst runs on Linux with GNU sed; host sed does not support GNU sed flags")
+	}
 
 	postinst, err := os.ReadFile(filepath.Join(repoPackagingDir(t), "postinst"))
 	if err != nil {
