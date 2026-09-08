@@ -106,12 +106,13 @@ func (r *nodeRemediator) startNodeRebootWorkflow(ctx context.Context, node db.No
 	}
 
 	input := workflows.RebootNodeInput{
-		NodeID:           node.ID,
-		Reason:           reason,
-		InitialTimeout:   r.cfg.NodeRebootInitialTimeout,
-		TimeoutIncrement: r.cfg.NodeRebootTimeoutIncrement,
-		MaxTimeout:       r.cfg.NodeRebootMaxTimeout,
-		PollingInterval:  r.cfg.NodeRebootPollingInterval,
+		NodeID:                   node.ID,
+		Reason:                   reason,
+		InitialTimeout:           r.cfg.NodeRebootInitialTimeout,
+		TimeoutIncrement:         r.cfg.NodeRebootTimeoutIncrement,
+		MaxTimeout:               r.cfg.NodeRebootMaxTimeout,
+		PollingInterval:          r.cfg.NodeRebootPollingInterval,
+		SoftRebootConfirmTimeout: r.cfg.NodeRebootSoftConfirmTimeout,
 	}
 
 	run, err := r.cweTemporalClient.ExecuteWorkflow(ctx, options, workflows.RebootNode, input)

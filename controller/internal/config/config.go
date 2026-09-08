@@ -121,6 +121,20 @@ type Config struct {
 	// NodeRebootPollingInterval is the polling interval for the node reboot workflow.
 	NodeRebootPollingInterval time.Duration `env:"NODE_REBOOT_POLLING_INTERVAL" default:"1m"`
 
+	// NodeRebootSoftConfirmTimeout bounds how long a CAPI node reboot waits for the soft
+	// in-guest reboot to show a detectable boot change (bootID change or reboot-complete-timestamp
+	// annotation) before falling back to the hard CAPI Machine reboot annotation within the same
+	// attempt. This also covers real hardware, where the node-agent RPC can return success
+	// without the node actually rebooting.
+	//
+	// Kept well under NodeRebootInitialTimeout (30m default): a real GPU/DGX node's soft reboot
+	// (BIOS POST, NIC/GPU firmware init, kubeadm re-join) can legitimately take several minutes,
+	// and cutting the bound too short defeats the purpose of soft-first by forcing an out-of-band
+	// hard reboot on nodes that were going to come back on their own. CI backends (CAPD, in
+	// particular) that only need to observe a container restart should override this lower via
+	// NODE_REBOOT_SOFT_CONFIRM_TIMEOUT rather than shrinking the shared default.
+	NodeRebootSoftConfirmTimeout time.Duration `env:"NODE_REBOOT_SOFT_CONFIRM_TIMEOUT" default:"15m"`
+
 	// NodeProvisioningTimeout is the maximum time a worker node may remain provisioning
 	// before the provisioning monitor gives up and recycles it. A value of 0 disables
 	// automatic timeout-based provisioning remediation.
