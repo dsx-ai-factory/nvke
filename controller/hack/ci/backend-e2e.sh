@@ -679,8 +679,12 @@ if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
   fi
   log "compiling nico-sim for linux/${host_arch}"
   mkdir -p nico-sim/bin
-  CGO_ENABLED=1 GOOS=linux GOARCH="${host_arch}" \
-    make -C nico-sim BINARY="${NICO_SIM_BIN}" build
+  GOOS=linux GOARCH="${host_arch}" \
+    make -C nico-sim BINARY="${NICO_SIM_BIN}" build-static
+  if readelf -l "${NICO_SIM_BIN}" | grep -q 'INTERP'; then
+    echo "nico-sim binary is dynamically linked; the inner runner requires a static binary" >&2
+    exit 1
+  fi
   NICO_SIM_BINARY_PREBUILT=true
 fi
 

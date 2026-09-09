@@ -26,7 +26,7 @@ include ../../make/golangci.mk
 SETCAP := sudo setcap cap_net_admin+ep
 
 .PHONY: \
-	build build-privileged run run-vm test \
+	build build-static build-privileged run run-vm test \
 	test-integration-all test-integration-mock test-integration-libvirt test-integration-qemu \
 	install-deps-homebrew darwin-qemu-list darwin-qemu-clean \
 	lima-libvirt-list lima-libvirt-clean setup teardown fmt lint
@@ -41,6 +41,11 @@ NICO_VMS_BASE_IMAGE ?= images/ubuntu-cloud.qcow2
 build: ## Build this module's binaries.
 	$(GO) build -o $(BINARY) ./cmd/nico-sim
 	$(GO) build -o ./bin/nico-simctl ./cmd/nico-simctl
+
+build-static: ## Build a static nico-sim binary for minimal Linux containers.
+	CGO_ENABLED=1 $(GO) build -tags "netgo osusergo" \
+		-ldflags "-linkmode external -extldflags -static" \
+		-o $(BINARY) ./cmd/nico-sim
 
 # Build + apply CAP_NET_ADMIN (requires sudoers rule — see setup script)
 build-privileged: build
