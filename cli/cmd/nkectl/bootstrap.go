@@ -283,7 +283,7 @@ func createSiteCluster(
 	if err != nil {
 		return false, fmt.Errorf("building the CWE client for %s: %w", cweURL, err)
 	}
-	created, err := sitecluster.Create(ctx, client, inv, logger)
+	created, err := sitecluster.Create(ctx, client, inv, opts.disableMTLS, logger)
 	if err != nil {
 		return false, err
 	}
@@ -393,6 +393,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	// operator declares what this bootstrap is entitled to trust.
 	cfg.SPIFFEUpstreamCACertPath = inv.Spire.CACertFile
 	cfg.SPIFFEUpstreamCAKeyPath = inv.Spire.CAKeyFile
+	cfg.SPIREAgentServerAddress = inv.Spire.ServerAddress
 
 	// The allowlist of hardware allowed to attest, also from the sitespec. A
 	// bootstrap is only entitled to admit machines it was told about, so this
@@ -401,7 +402,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 
 	// No SPIFFE means no SPIRE and no attestation, so the thumbprints go
 	// unused; keep them off the config so nothing downstream acts on them.
-	cfg.DisableMTLS = disableMTLS
+	cfg.DisableMTLS = disableMTLS || len(cfg.TPMEKFingerprints) == 0
 	if disableMTLS {
 		cfg.TPMEKFingerprints = nil
 	}

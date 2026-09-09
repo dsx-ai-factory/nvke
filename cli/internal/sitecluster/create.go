@@ -41,8 +41,14 @@ var ErrClusterFailed = errors.New("cluster provisioning failed")
 
 // Create submits the cluster described by inv and returns what CWE recorded.
 // Provisioning is asynchronous; see WaitProvisioned.
-func Create(ctx context.Context, client ClusterAPI, inv *sitespec.SiteSpec, log *slog.Logger) (*api.Cluster, error) {
-	req, err := ClusterRequest(inv)
+func Create(
+	ctx context.Context,
+	client ClusterAPI,
+	inv *sitespec.SiteSpec,
+	disableMTLS bool,
+	log *slog.Logger,
+) (*api.Cluster, error) {
+	req, err := clusterRequest(inv, disableMTLS)
 	if err != nil {
 		return nil, err
 	}

@@ -50,6 +50,13 @@ const (
 //     with an empty spec. Everything a machine needs is already in the
 //     ProvisionedCluster's site spec, so there is nothing to say per machine.
 func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, error) {
+	return clusterRequest(inv, false)
+}
+
+// clusterRequest builds the request for the effective transport mode selected
+// by the bootstrap command. An explicit plaintext override must also disable
+// attestation in CWE, even if the inventory contains TPM identities.
+func clusterRequest(inv *sitespec.SiteSpec, disableMTLS bool) (api.CreateClusterJSONRequestBody, error) {
 	if inv == nil {
 		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("sitecluster: site spec is nil")
 	}
@@ -57,6 +64,11 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 	hosts, err := provisionedHosts(inv)
 	if err != nil {
 		return api.CreateClusterJSONRequestBody{}, err
+	}
+
+	spireAttestationMethod := api.SpireAttestationMethodCreateNone
+	if !disableMTLS && len(inv.Cluster.TPMEKThumbprints()) > 0 {
+		spireAttestationMethod = api.SpireAttestationMethodCreateTpm
 	}
 
 	req := api.CreateClusterJSONRequestBody{
@@ -74,7 +86,7 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 				// The provisioned provider copies the allocated host's TPM identity
 				// to the CAPI Machine. CWE uses it as the parent of the node-agent
 				// workload entry; no bootstrap join token is needed.
-				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+				SpireAttestationMethod: spireAttestationMethod,
 				MachineTemplate:        provisionedMachineTemplate(),
 			},
 		}},

@@ -4,10 +4,18 @@
 package sitespec
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // validYAML is a minimal well-formed site spec used as the happy-path baseline.
@@ -17,10 +25,13 @@ cluster:
   nodes:
     - name: node1
       ip: 10.0.0.1
+      tpmEkThumbprint: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
     - name: node2
       ip: 10.0.0.2
+      tpmEkThumbprint: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
     - name: node3
       ip: 10.0.0.3
+      tpmEkThumbprint: cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
   k8sVersion: "1.32.0"
   cniName: calico
   cniVersion: "3.31.4"
@@ -31,6 +42,8 @@ cluster:
 registry:
   bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
   bootstrapChart: "cloud-workflow-engine"
+spire:
+  serverAddress: "10.0.0.1"
 `
 
 func TestLoadValidSiteConfig(t *testing.T) {
@@ -83,6 +96,18 @@ registry:
 	}
 	if len(inv.Cluster.Nodes) != 1 {
 		t.Errorf("Nodes count = %d, want 1", len(inv.Cluster.Nodes))
+	}
+}
+
+func TestValidateRejectsMultipleNodesWithoutTPMThumbprints(t *testing.T) {
+	inv := minimalValid()
+	inv.Cluster.Nodes = append(inv.Cluster.Nodes,
+		Node{Name: "node2", IP: "10.0.0.2"},
+		Node{Name: "node3", IP: "10.0.0.3"},
+	)
+	err := inv.Validate()
+	if err == nil || !strings.Contains(err.Error(), "plaintext bootstrap is limited to single-node clusters") {
+		t.Fatalf("Validate error = %v, want plaintext single-node validation error", err)
 	}
 }
 
@@ -236,8 +261,6 @@ func TestValidValidatesClean(t *testing.T) {
 		Cluster: Cluster{
 			Nodes: []Node{
 				{Name: "node1", IP: "10.0.0.1"},
-				{Name: "node2", IP: "10.0.0.2"},
-				{Name: "node3", IP: "10.0.0.3"},
 			},
 			K8sVersion:    "1.32.0",
 			CniName:       "ovn-kubernetes",
@@ -303,14 +326,14 @@ func TestLoadEnvFillsField(t *testing.T) {
 }
 
 func TestLoadNodesFromEnv(t *testing.T) {
-	t.Setenv("NKECTL_CLUSTER_NODES", "node1:10.0.0.1,node2:10.0.0.2,node3:10.0.0.3")
+	t.Setenv("NKECTL_CLUSTER_NODES", "node1:10.0.0.1")
 
 	inv, err := Load(writeTemp(t, noNodesYAML))
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(inv.Cluster.Nodes) != 3 {
-		t.Fatalf("Nodes count = %d, want 3", len(inv.Cluster.Nodes))
+	if len(inv.Cluster.Nodes) != 1 {
+		t.Fatalf("Nodes count = %d, want 1", len(inv.Cluster.Nodes))
 	}
 	if inv.Cluster.Nodes[0].Name != "node1" || inv.Cluster.Nodes[0].IP != "10.0.0.1" {
 		t.Errorf("Nodes[0] = %+v, want {node1 10.0.0.1}", inv.Cluster.Nodes[0])
@@ -381,6 +404,29 @@ func TestValidate_TPMEKThumbprint(t *testing.T) {
 	}
 }
 
+func TestValidate_TPMEKThumbprintsAreAllOrNone(t *testing.T) {
+	inv := minimalValid()
+	inv.Cluster.Nodes = append(inv.Cluster.Nodes,
+		Node{Name: "node2", IP: "10.0.0.2"},
+		Node{Name: "node3", IP: "10.0.0.3"},
+	)
+	inv.Cluster.Nodes[0].TPMEKThumbprint = strings.Repeat("a", 64)
+	inv.Spire.ServerAddress = "10.0.0.1"
+	err := inv.Validate()
+	if err == nil || !strings.Contains(err.Error(), "every node") {
+		t.Fatalf("Validate error = %v, want all-or-none TPM error", err)
+	}
+}
+
+func TestValidate_TPMRequiresConfiguredSPIREServerAddress(t *testing.T) {
+	inv := minimalValid()
+	inv.Cluster.Nodes[0].TPMEKThumbprint = strings.Repeat("a", 64)
+	err := inv.Validate()
+	if err == nil || !strings.Contains(err.Error(), pathSpireServerAddress) {
+		t.Fatalf("Validate error = %v, want missing SPIRE server address", err)
+	}
+}
+
 // spireCAFiles writes a readable certificate and key and returns their paths,
 // alongside a path that does not exist.
 func spireCAFiles(t *testing.T) (cert, key, missing string) {
@@ -388,10 +434,32 @@ func spireCAFiles(t *testing.T) (cert, key, missing string) {
 	dir := t.TempDir()
 	cert = filepath.Join(dir, "ca.crt")
 	key = filepath.Join(dir, "ca.key")
-	for _, f := range []string{cert, key} {
-		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
-			t.Fatal(err)
-		}
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "test bootstrap CA"},
+		NotBefore:             time.Now().Add(-time.Minute),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyDER, err := x509.MarshalECPrivateKey(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	return cert, key, filepath.Join(dir, "nope")
 }
@@ -404,8 +472,6 @@ func minimalValid() *SiteSpec {
 		Cluster: Cluster{
 			Nodes: []Node{
 				{Name: "node1", IP: "10.0.0.1"},
-				{Name: "node2", IP: "10.0.0.2"},
-				{Name: "node3", IP: "10.0.0.3"},
 			},
 			K8sVersion:    "1.32.0",
 			CniName:       "ovn-kubernetes",
@@ -438,7 +504,7 @@ func TestValidate_SpireCA(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			v := &validator{}
-			v.checkSpire(tc.spire)
+			v.checkSpire(tc.spire, false)
 			if gotErr := v.err() != nil; gotErr != tc.wantErr {
 				t.Errorf("checkSpire(%+v) error = %v, want error: %v", tc.spire, v.err(), tc.wantErr)
 			}
@@ -498,7 +564,7 @@ func TestValidateReferences(t *testing.T) {
 // silently dropping the fail-early guarantee bootstrap site relies on.
 func TestLoad_StillChecksCAExistence(t *testing.T) {
 	_, _, missing := spireCAFiles(t)
-	path := writeTemp(t, validYAML+"\nspire:\n  caCertFile: \""+missing+"\"\n  caKeyFile: \""+missing+"\"\n")
+	path := writeTemp(t, validYAML+"\n  caCertFile: \""+missing+"\"\n  caKeyFile: \""+missing+"\"\n")
 
 	_, err := Load(path)
 	if err == nil {
@@ -516,7 +582,7 @@ func TestLoad_StillChecksCAExistence(t *testing.T) {
 func TestLoad_AggregatesDataAndReferenceErrors(t *testing.T) {
 	_, _, missing := spireCAFiles(t)
 	body := strings.Replace(validYAML, `podCidr: "10.100.0.0/16"`, `podCidr: "NOT-A-CIDR"`, 1) +
-		"\nspire:\n  caCertFile: \"" + missing + "\"\n  caKeyFile: \"" + missing + "\"\n"
+		"\n  caCertFile: \"" + missing + "\"\n  caKeyFile: \"" + missing + "\"\n"
 
 	_, err := Load(writeTemp(t, body))
 	if err == nil {

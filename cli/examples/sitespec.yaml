@@ -14,11 +14,11 @@ clusterName: "nke-site"
 cluster:
   # Pre-provisioned control-plane nodes. The site spec does not select which
   # node runs kubeadm init.
-  # tpmEkThumbprint is optional: the SHA-256 of the node's TPM endorsement key,
+  # tpmEkThumbprint is the SHA-256 of the node's TPM endorsement key,
   # read from the host before the bootstrap (spire-tpm-plugin's
   # get_tpm_pubhash). Every thumbprint listed here is allowlisted on the SPIRE
-  # server nkectl deploys, and nothing else is — a node without one cannot
-  # attest, and a file with none deploys no TPM attestor at all. It is a public
+  # server nkectl deploys. Set it on every node or on no nodes. A single-node
+  # file with no thumbprints uses plaintext agent connections. It is a public
   # key hash, not a secret.
   nodes:
     - name: "node1"
@@ -53,14 +53,17 @@ cluster:
   kubeletConfig:
     systemReservedMemory: "16Gi"
 
-# Identity plane. Optional.
+# Identity plane for TPM attestation.
 #
+# serverAddress is the address that the physical node agents use to reach the
+# SPIRE server. Set it explicitly. nkectl does not infer it from the node list.
 # A CA for SPIRE to chain its own CA to, so a node that was given this
 # certificate when it was provisioned can verify the SPIRE server the first time
 # it speaks to it. Paths, not inline PEM: the key must not be committed, and the
 # certificate already exists as a file because it has to be delivered to each
 # node. Both or neither — omitting them leaves SPIRE self-signed.
-# spire:
+spire:
+  serverAddress: "10.0.0.1"
 #   caCertFile: "/etc/nke/spire-ca.crt"
 #   caKeyFile: "/etc/nke/spire-ca.key"
 

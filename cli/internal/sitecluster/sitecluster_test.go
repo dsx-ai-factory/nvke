@@ -136,6 +136,33 @@ func TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec(t *testing.T) {
 	}
 }
 
+func TestClusterRequest_UsesNoSpireAttestationWithoutTPMHashes(t *testing.T) {
+	inv := testSiteSpec()
+	inv.Cluster.Nodes = inv.Cluster.Nodes[:1]
+	inv.Cluster.Nodes[0].TPMEKThumbprint = ""
+	req, err := ClusterRequest(inv)
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+	pool := (*req.NodePools)[0]
+	if pool.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateNone {
+		t.Errorf("infra.spireAttestationMethod = %q, want %q",
+			pool.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateNone)
+	}
+}
+
+func TestClusterRequest_UsesNoSpireAttestationWhenMTLSIsDisabled(t *testing.T) {
+	req, err := clusterRequest(testSiteSpec(), true)
+	if err != nil {
+		t.Fatalf("clusterRequest returned error: %v", err)
+	}
+	pool := (*req.NodePools)[0]
+	if pool.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateNone {
+		t.Errorf("infra.spireAttestationMethod = %q, want %q",
+			pool.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateNone)
+	}
+}
+
 // TestClusterRequest_PassesTheNetworkThrough covers both states: CIDRs named in
 // the site spec reach CWE, and a site spec that names none leaves CWE's own
 // defaults in place rather than sending empty strings.
