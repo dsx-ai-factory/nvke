@@ -253,9 +253,15 @@ def register(ctx):
     if _image_cache:
         nico_sim_env["NICO_VMS_IMAGE_CACHE_DIR"] = _image_cache
 
+    # CI stages a prebuilt binary: the runner container has no make or go.
+    if os.getenv("NICO_SIM_BINARY_PREBUILT", "false") == "true":
+        _nico_sim_build = "test -x %s" % _nico_sim_binary
+    else:
+        _nico_sim_build = "cd nico-sim && make BINARY=%s build-privileged" % _nico_sim_binary
+
     local_resource(
         "nico-sim",
-        cmd="truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make BINARY=%s build-privileged" % (_log_dir, _nico_sim_binary),
+        cmd="truncate -s 0 %s/nico-sim.log 2>/dev/null; %s" % (_log_dir, _nico_sim_build),
         serve_cmd=serve_with_log("nico-sim", _nico_sim_binary, "nico-sim"),
         serve_env=nico_sim_env,
         deps=[os.path.join(provider_dir, "cmd"), os.path.join(provider_dir, "internal")],

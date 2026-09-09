@@ -670,6 +670,19 @@ if [[ "${e2e_built}" != true ]]; then
   exit 1
 fi
 
+# nico-sim needs cgo for sqlite and runs inside the alpine runner container,
+# which has no toolchain, so build it in the alpine Go image and stage it.
+NICO_SIM_BIN="${TMP_DIR}/cwe-nico-sim"
+if jq -e 'index("nico") != null' <<<"${NKE_E2E_PROVIDERS}" >/dev/null; then
+  go_version="$(awk '/^go /{print $2}' "${WORKSPACE_ROOT}/go.work")"
+  log "compiling nico-sim for linux/${host_arch} in golang:${go_version}-alpine"
+  docker run --rm \
+    -v "${WORKSPACE_ROOT}:/src:ro" -v "${TMP_DIR}:/out" -w /src/controller/nico-sim \
+    -e CGO_ENABLED=1 -e GOTOOLCHAIN=local -e GOFLAGS=-mod=vendor \
+    "golang:${go_version}-alpine" \
+    sh -c 'apk add --no-cache gcc musl-dev >/dev/null && go build -o /out/cwe-nico-sim ./cmd/nico-sim'
+fi
+
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
   nkectl_smoke_build "${host_arch}"
 fi
@@ -747,6 +760,9 @@ for tool in kind kubectl; do
 done
 docker cp "${SOURCE_ARCHIVE}" "${RUNNER_NAME}:/state/cwe-source.tgz"
 docker cp "${E2E_BIN}" "${RUNNER_NAME}:/state/cwe-e2e.test"
+if [[ -f "${NICO_SIM_BIN}" ]]; then
+  docker cp "${NICO_SIM_BIN}" "${RUNNER_NAME}:/tmp/cwe-nico-sim"
+fi
 
 # The NICo backend builds CAPNICo from a checkout. The source archive is
 # extracted with --transform s,^controller/,, so /workspace/cloud-workflow-engine
@@ -880,6 +896,7 @@ runner_exec env \
   CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_CONTAINER_DIR}" \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \
+  NICO_SIM_BINARY_PREBUILT=true \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
   TILT_DISABLE_ANALYTICS=1 \
