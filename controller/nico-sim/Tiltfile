@@ -236,6 +236,8 @@ def register(ctx):
 
     nico_sim_env = {
         "NICO_SIM_LISTEN_ADDR": ":18080",
+        # mock in the containerized CI lane: no libvirt, no NET_ADMIN for the bridge.
+        "NICO_VMS_VM_BACKEND": os.getenv("NICO_VMS_VM_BACKEND", "auto"),
         "NICO_VMS_BRIDGE_CIDR": _bridge_cidr,
         "NICO_SIM_DB_PATH": os.path.join(_dev, "nico-sim.db"),
         "NICO_VMS_BASE_IMAGE": os.path.join(provider_dir, "images", "ubuntu-cloud.qcow2"),
