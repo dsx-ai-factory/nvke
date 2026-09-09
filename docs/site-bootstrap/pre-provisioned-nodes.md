@@ -49,6 +49,20 @@ Run these commands on **all nodes** (both join and init nodes):
 
 ### Install Kubernetes Components
 
+How you install kubeadm depends on whether your nodes were built from an NKE OS image.
+
+**Nodes built from the NKE OS image** — the image stages versioned Kubernetes Debian packages in a local apt repository at `/usr/lib/nke/debs`, but does not install them. Install them via cloud-init `runcmd` before the node is handed to bootstrap:
+
+```yaml
+runcmd:
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-kubeadm-distro-<k8s-version>
+  - DEBIAN_FRONTEND=noninteractive apt-get install -y nke-cni-calico-images-<stream> nke-cni-calico-manifests-<stream>
+```
+
+Replace `<k8s-version>` with the version matching `cluster.k8sVersion` in your site spec, and `<stream>` with the CNI stream for your Kubernetes version. If you skip this step, bootstrap runs its full 30-minute timeout and fails on `NodePreflight` / `check_cloud_init_status` — the error does not mention kubeadm.
+
+**Nodes not built from the NKE OS image** — install kubeadm directly from the upstream Kubernetes apt repository:
+
 ```bash
 # Create keyrings directory
 sudo mkdir -p -m 755 /etc/apt/keyrings
@@ -171,7 +185,7 @@ All nodes should show `Ready` status.
 
 - **Join nodes don't need `nkectl`** — only the init node runs it
 - **`nke-agent` must be running on all nodes** — verify `systemctl status nke-agent` before starting bootstrap
-- **Network connectivity** — init node must reach join nodes on the configured gRPC port (default `15005`)
+- **Network connectivity** — CWE must reach each node on **15005** (nke-agent gRPC) and **6443** (API server); nodes with a TPM EK thumbprint also need **30081** reachable for attestation
 - **Hostnames and IPs** — use actual hostnames and IPs that nodes use to communicate with each other
 - **User permissions** — commands must run with `sudo` or as root
 
