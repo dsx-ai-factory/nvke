@@ -54,7 +54,7 @@ type Client struct {
 // client.Client built from clientcmd, rather than a raw client-go Clientset.
 func New(kubeconfigPath string) (*Client, error) {
 	if kubeconfigPath == "" {
-		return nil, fmt.Errorf("management cluster kubeconfig path is empty")
+		return nil, fmt.Errorf("management cluster kubeconfig path is empty: run 'nkectl config set-site' with --kubeconfig to set the management cluster kubeconfig")
 	}
 	cfg, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
 	if err != nil {

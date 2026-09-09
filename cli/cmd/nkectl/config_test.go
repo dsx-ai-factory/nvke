@@ -4,7 +4,6 @@
 package main
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/NVIDIA/nke/cli/internal/config"
@@ -217,71 +216,5 @@ func TestResolveSiteConfigErrorsWhenCurrentSiteIsDangling(t *testing.T) {
 
 	if _, _, err := resolveSiteConfig(cfg); err == nil {
 		t.Fatal("expected error when CurrentSite is not in Sites, got nil")
-	}
-}
-
-func TestResolveMgmtKubeconfigReturnsSiteConfiguredPath(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	cfg := &config.Config{
-		Sites:       map[string]config.SiteConfig{"dev": {URL: "http://localhost:8080", Kubeconfig: "/kube/dev-mgmt.yaml"}},
-		CurrentSite: "dev",
-	}
-	if err := cfg.Save(); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	path, err := resolveMgmtKubeconfig()
-	if err != nil {
-		t.Fatalf("resolveMgmtKubeconfig: %v", err)
-	}
-	if path != "/kube/dev-mgmt.yaml" {
-		t.Errorf("path = %q, want %q", path, "/kube/dev-mgmt.yaml")
-	}
-}
-
-func TestResolveMgmtKubeconfigErrorsWhenSiteHasNoKubeconfig(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	cfg := &config.Config{
-		Sites:       map[string]config.SiteConfig{"dev": {URL: "http://localhost:8080"}},
-		CurrentSite: "dev",
-	}
-	if err := cfg.Save(); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	_, err := resolveMgmtKubeconfig()
-	if err == nil {
-		t.Fatal("expected error when site has no kubeconfig configured, got nil")
-	}
-	if !strings.Contains(err.Error(), "nkectl config set-site --kubeconfig") {
-		t.Errorf("error %q does not mention remediation command", err.Error())
-	}
-}
-
-func TestResolveMgmtKubeconfigUsesSiteFlagOverride(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-
-	cfg := &config.Config{
-		Sites: map[string]config.SiteConfig{
-			"dev":  {URL: "http://localhost:8080", Kubeconfig: "/kube/dev-mgmt.yaml"},
-			"prod": {URL: "https://prod-cwe.example.com", Kubeconfig: "/kube/prod-mgmt.yaml"},
-		},
-		CurrentSite: "dev",
-	}
-	if err := cfg.Save(); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-
-	site = "prod"
-	t.Cleanup(func() { site = "" })
-
-	path, err := resolveMgmtKubeconfig()
-	if err != nil {
-		t.Fatalf("resolveMgmtKubeconfig: %v", err)
-	}
-	if path != "/kube/prod-mgmt.yaml" {
-		t.Errorf("path = %q, want %q", path, "/kube/prod-mgmt.yaml")
 	}
 }

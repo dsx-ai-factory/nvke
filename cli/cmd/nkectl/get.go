@@ -19,7 +19,7 @@ func newGetCmd() *cobra.Command {
 	}
 	cmd.AddCommand(clusters.NewGetCmd(loadClient))
 	cmd.AddCommand(providercmd.NewGetCmd(loadSite, cwedeploy.ExecCommandRunner{}))
-	cmd.AddCommand(clusters.NewGetKubeconfigCmd(resolveMgmtKubeconfig, newMgmtClient))
+	cmd.AddCommand(clusters.NewGetKubeconfigCmd(loadSite, newMgmtClient))
 	return cmd
 }
 

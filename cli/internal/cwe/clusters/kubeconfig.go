@@ -9,11 +9,16 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/NVIDIA/nke/cli/internal/config"
 )
 
-// MgmtKubeconfigResolver returns the path to the management cluster
-// kubeconfig configured for the active site.
-type MgmtKubeconfigResolver func() (string, error)
+// SiteFn is a factory that resolves the active site's configuration.
+//
+// Commands take this rather than a resolved config so that the site is only
+// looked up when a command actually runs, leaving --help working on a machine
+// with no site configured at all.
+type SiteFn func() (config.SiteConfig, error)
 
 // KubeconfigFetcher is the subset of *mgmtcluster.Client NewGetKubeconfigCmd
 // depends on. Narrow on purpose, so tests can inject a fake without a real
@@ -30,14 +35,10 @@ type MgmtClientFactory func(kubeconfigPath string) (KubeconfigFetcher, error)
 // NewGetKubeconfigCmd returns "nkectl get kubeconfig <cluster-name>".
 //
 // It reads the admin kubeconfig for the named tenant cluster directly from
-// the management cluster. The management cluster kubeconfig is resolved via
-// resolveMgmtKubeconfig (the active site's configured kubeconfig) unless
-// --mgmt-kubeconfig overrides it for this invocation.
-func NewGetKubeconfigCmd(resolveMgmtKubeconfig MgmtKubeconfigResolver, newMgmtClient MgmtClientFactory) *cobra.Command {
-	var (
-		mgmtKubeconfig string
-		outputFile     string
-	)
+// the management cluster, using the active site's configured kubeconfig
+// (--site overrides which site is active, the same as every other command).
+func NewGetKubeconfigCmd(siteFn SiteFn, newMgmtClient MgmtClientFactory) *cobra.Command {
+	var outputFile string
 
 	cmd := &cobra.Command{
 		Use:   "kubeconfig <cluster-name>",
@@ -49,9 +50,9 @@ publishes into the management cluster at:
 
   nke-system/<cluster-name>-admin-kubeconfig  (key: value)
 
-The management cluster kubeconfig is resolved from the active site's
-configured kubeconfig (see 'nkectl config set-site --kubeconfig'), unless
---mgmt-kubeconfig overrides it for this invocation.
+The management cluster kubeconfig is the active site's configured kubeconfig
+(see 'nkectl config set-site --kubeconfig'); use --site to target a
+different, previously configured site for this invocation.
 
 By default the kubeconfig is printed to stdout. Use --output-file to write it
 to a file instead.
@@ -59,21 +60,17 @@ to a file instead.
 Example:
   nkectl get kubeconfig my-cluster
   nkectl get kubeconfig my-cluster --output-file ~/.kube/my-cluster.yaml
-  nkectl get kubeconfig my-cluster --mgmt-kubeconfig /path/to/mgmt.yaml`,
+  nkectl get kubeconfig my-cluster --site prod`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clusterName := args[0]
 
-			kubeconfigPath := mgmtKubeconfig
-			if kubeconfigPath == "" {
-				var err error
-				kubeconfigPath, err = resolveMgmtKubeconfig()
-				if err != nil {
-					return err
-				}
+			siteCfg, err := siteFn()
+			if err != nil {
+				return err
 			}
 
-			mc, err := newMgmtClient(kubeconfigPath)
+			mc, err := newMgmtClient(siteCfg.Kubeconfig)
 			if err != nil {
 				return err
 			}
@@ -103,7 +100,6 @@ Example:
 		},
 	}
 
-	cmd.Flags().StringVar(&mgmtKubeconfig, "mgmt-kubeconfig", "", "Path to management cluster kubeconfig (overrides the active site's configured kubeconfig)")
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
 
 	return cmd

@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/NVIDIA/nke/cli/internal/config"
 )
 
 // fakeKubeconfigFetcher is a KubeconfigFetcher double keyed by cluster name.
@@ -25,16 +27,16 @@ func (f fakeKubeconfigFetcher) GetClusterKubeconfig(_ context.Context, clusterNa
 	return data, nil
 }
 
-func newTestKubeconfigCmd(fetcher KubeconfigFetcher, resolverErr error) (*cobra.Command, *bytes.Buffer) {
-	resolver := func() (string, error) {
-		if resolverErr != nil {
-			return "", resolverErr
+func newTestKubeconfigCmd(fetcher KubeconfigFetcher, siteErr error) (*cobra.Command, *bytes.Buffer) {
+	siteFn := func() (config.SiteConfig, error) {
+		if siteErr != nil {
+			return config.SiteConfig{}, siteErr
 		}
-		return "/dev/null", nil
+		return config.SiteConfig{Kubeconfig: "/dev/null"}, nil
 	}
 	factory := func(string) (KubeconfigFetcher, error) { return fetcher, nil }
 
-	cmd := NewGetKubeconfigCmd(resolver, factory)
+	cmd := NewGetKubeconfigCmd(siteFn, factory)
 	out := &bytes.Buffer{}
 	cmd.SetOut(out)
 	cmd.SetErr(out)
@@ -115,12 +117,12 @@ func TestGetKubeconfigCmdPropagatesFetchError(t *testing.T) {
 	}
 }
 
-func TestGetKubeconfigCmdPropagatesResolverError(t *testing.T) {
+func TestGetKubeconfigCmdPropagatesSiteError(t *testing.T) {
 	cmd, _ := newTestKubeconfigCmd(fakeKubeconfigFetcher{}, errors.New("no site configured"))
 	cmd.SetArgs([]string{"my-cluster"})
 
 	if err := cmd.Execute(); err == nil {
-		t.Fatal("expected error when the resolver fails, got nil")
+		t.Fatal("expected error when resolving the site fails, got nil")
 	}
 }
 
