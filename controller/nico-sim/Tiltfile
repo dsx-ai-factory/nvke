@@ -234,10 +234,11 @@ def register(ctx):
     else:
         warn("dnsmasq not found -- VMs using DHCP will not get IPs. Install with: brew install dnsmasq")
 
+    # mock in the containerized CI lane: no libvirt, no NET_ADMIN for the bridge.
+    _vm_backend = os.getenv("NICO_VMS_VM_BACKEND", "auto")
     nico_sim_env = {
         "NICO_SIM_LISTEN_ADDR": ":18080",
-        # mock in the containerized CI lane: no libvirt, no NET_ADMIN for the bridge.
-        "NICO_VMS_VM_BACKEND": os.getenv("NICO_VMS_VM_BACKEND", "auto"),
+        "NICO_VMS_VM_BACKEND": _vm_backend,
         "NICO_VMS_BRIDGE_CIDR": _bridge_cidr,
         "NICO_SIM_DB_PATH": os.path.join(_dev, "nico-sim.db"),
         "NICO_VMS_BASE_IMAGE": os.path.join(provider_dir, "images", "ubuntu-cloud.qcow2"),
@@ -364,7 +365,8 @@ def register(ctx):
     )
 
     # Host Promtail: ships nico-vms + VM console logs to Loki in K8s via port-forward.
-    if _observability:
+    # Not with the mock backend: no VM logs, and in CI the docker daemon is not on this host.
+    if _observability and _vm_backend != "mock":
         local_resource(
             "nico-sim-log-shipper",
             serve_cmd=" ".join([
