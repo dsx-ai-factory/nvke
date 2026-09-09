@@ -111,6 +111,11 @@ if jq -e 'index("dsx-identity-exchange") != null' <<<"${NKE_E2E_PROVIDERS}" >/de
 else
   DSX_IDENTITY_EXCHANGE_ENABLED=false
 fi
+if jq -e 'index("nico") != null' <<<"${NKE_E2E_PROVIDERS}" >/dev/null; then
+  NICO_PROVIDER_ENABLED=true
+else
+  NICO_PROVIDER_ENABLED=false
+fi
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
@@ -740,7 +745,7 @@ if [[ "${e2e_built}" != true ]]; then
 fi
 
 NICO_SIM_BINARY_PREBUILT=false
-if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
   if [[ "$(uname -s)" != Linux ]]; then
     log "the NICo backend requires a Linux host to build nico-sim with CGO"
     exit 1
@@ -903,9 +908,9 @@ runner_exec env CLUSTER_TOPOLOGY=true clusterctl init \
   --infrastructure "docker:${CAPD_PROVIDER_VERSION}"
 runner_exec kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 runner_exec kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=5m
-if [[ -n "${NICO_PROVIDER_SRC:-}" ]]; then
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true ]]; then
   log "installing CAPNICo CRDs"
-  runner_exec kubectl apply -f "${NICO_PROVIDER_CONTAINER_DIR}/config/crd/bases"
+  runner_exec kubectl apply -f "${CAPNICO_SOURCE_CONTAINER_DIR}/config/crd/bases"
   runner_exec kubectl wait --for=condition=Established crd \
     nicoclusters.infrastructure.cluster.x-k8s.io \
     nicoclustertemplates.infrastructure.cluster.x-k8s.io \
@@ -937,7 +942,7 @@ fi
 e2e_write_tilt_config "${TMP_DIR}/tilt_config.json" \
   "${NKE_E2E_PROVIDERS}" "${CWE_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
   "${DSX_IDENTITY_EXCHANGE_IMAGE}"
-if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
   jq '.nico_vms_observability = false' "${TMP_DIR}/tilt_config.json" \
     >"${TMP_DIR}/tilt_config.json.tmp"
   mv "${TMP_DIR}/tilt_config.json.tmp" "${TMP_DIR}/tilt_config.json"
@@ -968,7 +973,7 @@ BGP_CONTAINER_OWNED=true
 # container-backed sites only, so reuse the host-built nico-sim in mock VM mode.
 tilt_exec=runner_exec
 tilt_mode=ci
-if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
   # NICo's simulator is a Tilt local resource. Keep Tilt alive through both
   # E2E legs; `tilt ci` exits after deployment and stops the simulator.
   tilt_exec=runner_exec_detached
