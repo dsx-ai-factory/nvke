@@ -863,6 +863,11 @@ fi
 e2e_write_tilt_config "${TMP_DIR}/tilt_config.json" \
   "${NKE_E2E_PROVIDERS}" "${CWE_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
   "${DSX_IDENTITY_EXCHANGE_IMAGE}"
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+  jq '.nico_vms_observability = false' "${TMP_DIR}/tilt_config.json" \
+    >"${TMP_DIR}/tilt_config.json.tmp"
+  mv "${TMP_DIR}/tilt_config.json.tmp" "${TMP_DIR}/tilt_config.json"
+fi
 docker cp "${TMP_DIR}/tilt_config.json" \
   "${RUNNER_NAME}:/workspace/cloud-workflow-engine/tilt_config.json"
 jq -n \
