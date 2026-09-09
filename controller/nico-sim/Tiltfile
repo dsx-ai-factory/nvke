@@ -84,6 +84,9 @@ def register(ctx):
     # apply CAP_NET_ADMIN consistently; source and persistent state stay in the
     # worktree.
     _nico_sim_binary = "/tmp/cwe-nico-sim"
+    _nico_sim_build_cmd = "truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make BINARY=%s build-privileged" % (_log_dir, _nico_sim_binary)
+    if os.getenv("NICO_SIM_BINARY_PREBUILT", "false") == "true":
+        _nico_sim_build_cmd = "test -x %s" % _nico_sim_binary
 
     # -----------------------------------------------------------------------
     # Network layout — partition bridge subnet into DHCP and VIP pools.
@@ -255,7 +258,7 @@ def register(ctx):
 
     local_resource(
         "nico-sim",
-        cmd="truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make BINARY=%s build-privileged" % (_log_dir, _nico_sim_binary),
+        cmd=_nico_sim_build_cmd,
         serve_cmd=serve_with_log("nico-sim", _nico_sim_binary, "nico-sim"),
         serve_env=nico_sim_env,
         deps=[os.path.join(provider_dir, "cmd"), os.path.join(provider_dir, "internal")],

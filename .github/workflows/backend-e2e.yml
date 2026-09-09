@@ -157,11 +157,27 @@ jobs:
       # be cluster-api-provider-nico: the script tars it by basename and expands
       # it under /workspace in the runner container, where everything after this
       # point executes.
+      # Source installation consumes CAPNICo's chart layout, so check out the
+      # same provider version whose API is compiled into CWE instead of the
+      # moving tip of the private repository.
+      - name: Read pinned CAPNICo version
+        if: inputs.needs-capnico-source
+        id: capnico_version
+        run: |
+          set -euo pipefail
+          capnico_ref="$(awk '$1 == "github.com/NVIDIA/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
+          if [[ -z "${capnico_ref}" ]]; then
+            echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
+            exit 1
+          fi
+          echo "ref=${capnico_ref}" >> "${GITHUB_OUTPUT}"
+
       - name: Checkout the CAPNICo provider
         if: inputs.needs-capnico-source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NVIDIA/cluster-api-provider-nico
+          ref: ${{ steps.capnico_version.outputs.ref }}
           token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico
           persist-credentials: false

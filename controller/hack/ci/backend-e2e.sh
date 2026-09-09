@@ -57,6 +57,7 @@ SOURCE_ARCHIVE="${TMP_DIR}/cwe-source.tgz"
 # Where the CAPNICo checkout lands inside the runner, when a NICo lane stages one.
 CAPNICO_SOURCE_CONTAINER_DIR=/workspace/cluster-api-provider-nico
 E2E_BIN="${TMP_DIR}/cwe-e2e.test"
+NICO_SIM_BIN="${TMP_DIR}/nico-sim"
 NKECTL_BIN="${TMP_DIR}/nkectl"
 E2E_CONFIG="${TMP_DIR}/e2e-config.json"
 RUNNER_DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
@@ -670,6 +671,19 @@ if [[ "${e2e_built}" != true ]]; then
   exit 1
 fi
 
+NICO_SIM_BINARY_PREBUILT=false
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+  if [[ "$(uname -s)" != Linux ]]; then
+    log "the NICo backend requires a Linux host to build nico-sim with CGO"
+    exit 1
+  fi
+  log "compiling nico-sim for linux/${host_arch}"
+  mkdir -p nico-sim/bin
+  CGO_ENABLED=1 GOOS=linux GOARCH="${host_arch}" \
+    make -C nico-sim BINARY="${NICO_SIM_BIN}" build
+  NICO_SIM_BINARY_PREBUILT=true
+fi
+
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
   nkectl_smoke_build "${host_arch}"
 fi
@@ -747,6 +761,9 @@ for tool in kind kubectl; do
 done
 docker cp "${SOURCE_ARCHIVE}" "${RUNNER_NAME}:/state/cwe-source.tgz"
 docker cp "${E2E_BIN}" "${RUNNER_NAME}:/state/cwe-e2e.test"
+if [[ "${NICO_SIM_BINARY_PREBUILT}" == "true" ]]; then
+  docker cp "${NICO_SIM_BIN}" "${RUNNER_NAME}:/tmp/cwe-nico-sim"
+fi
 
 # The NICo backend builds CAPNICo from a checkout. The source archive is
 # extracted with --transform s,^controller/,, so /workspace/cloud-workflow-engine
@@ -864,6 +881,8 @@ docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 
 log "deploying the management plane with Tilt"
 BGP_CONTAINER_OWNED=true
+# The inner runner has no Go toolchain, and this lane exercises
+# container-backed sites only, so reuse the host-built nico-sim in mock VM mode.
 runner_exec env \
   KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
   CWE_PROFILES_PRELOADED=true \
@@ -878,6 +897,8 @@ runner_exec env \
   CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_CONTAINER_DIR}" \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \
+  NICO_SIM_BINARY_PREBUILT="${NICO_SIM_BINARY_PREBUILT}" \
+  NICO_VMS_VM_BACKEND=mock \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
   TILT_DISABLE_ANALYTICS=1 \
