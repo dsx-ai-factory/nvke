@@ -195,6 +195,73 @@ runner_exec() {
     "${RUNNER_NAME}" "$@"
 }
 
+runner_exec_detached() {
+  docker exec -d \
+    -e KUBECONFIG=/state/management.kubeconfig \
+    -e DOCKER_HOST="${RUNNER_DOCKER_HOST}" \
+    -e NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
+    -e NKE_E2E_REQUIRE_AUTHN="${NKE_E2E_REQUIRE_AUTHN:-}" \
+    "${RUNNER_NAME}" "$@"
+}
+
+wait_for_runner_tilt() {
+  local deadline=$((SECONDS + 40 * 60))
+  local stall_limit=$((12 * 60))
+  local state errors pending total last_state="" last_change=${SECONDS}
+
+  while true; do
+    if runner_exec test -s /state/tilt.pid && \
+      ! runner_exec kill -0 "$(runner_exec cat /state/tilt.pid)"; then
+      runner_exec tail -n 250 /state/tilt.log >&2 || true
+      log "Tilt exited before the E2E suite started" >&2
+      return 1
+    fi
+    if state="$(runner_exec tilt get uiresources -o json 2>/dev/null | jq -r '
+        [.items[] | select(.status.disableStatus.state != "Disabled")] as $r
+        | {
+            errors: [$r[] | select(.status.updateStatus == "error" or .status.runtimeStatus == "error") | .metadata.name],
+            pending: [$r[] | select((.status.updateStatus | IN("pending", "in_progress")) or (.status.runtimeStatus | IN("pending"))) | .metadata.name],
+            total: ($r | length)
+          }
+        | "\(.errors | join(","))|\(.pending | join(","))|\(.total)"' 2>/dev/null)" && [[ -n "${state}" ]]; then
+      IFS='|' read -r errors pending total <<<"${state}"
+      if [[ "${state}" != "${last_state}" ]]; then
+        last_state="${state}"
+        last_change=${SECONDS}
+        log "tilt: ${total} resources, pending: ${pending:-none}"
+      fi
+      if [[ -n "${errors}" ]]; then
+        for name in ${errors//,/ }; do
+          echo "::group::tilt logs ${name}"
+          runner_exec tilt logs "${name}" 2>/dev/null | tail -n 150
+          echo "::endgroup::"
+        done
+        log "Tilt resources failed: ${errors}" >&2
+        return 1
+      fi
+      if [[ -z "${pending}" && "${total}" -gt 1 ]]; then
+        log "Tilt is ready: ${total} resources"
+        return 0
+      fi
+      if [[ -n "${pending}" ]] && ((SECONDS - last_change >= stall_limit)); then
+        for name in ${pending//,/ }; do
+          echo "::group::tilt logs ${name}"
+          runner_exec tilt logs "${name}" 2>/dev/null | tail -n 150
+          echo "::endgroup::"
+        done
+        log "no Tilt resource changed state for 12m; still pending: ${pending}" >&2
+        return 1
+      fi
+    fi
+    if ((SECONDS >= deadline)); then
+      runner_exec tilt get uiresources 2>/dev/null || true
+      log "Tilt did not become ready within 40m; still pending: ${pending:-unknown}" >&2
+      return 1
+    fi
+    sleep 15
+  done
+}
+
 configure_kind_dockerhub_mirror() {
   local node_name="${KIND_CLUSTER_NAME}-control-plane"
   local registry_host
@@ -378,6 +445,7 @@ collect_diagnostics() {
       done < <(docker ps -a --filter "ancestor=${CAPD_NODE_IMAGE}" --format '{{.Names}}')
 
       if docker inspect "${RUNNER_NAME}" >/dev/null 2>&1; then
+        runner_exec tilt snapshot create /state/tilt-snapshot.json >/dev/null 2>&1 || true
         runner_exec kubectl get nodes -o wide >"${STATE_DIR}/management-nodes.txt" 2>&1
         runner_exec kubectl get pods -A -o wide >"${STATE_DIR}/management-pods.txt" 2>&1
         runner_exec kubectl get events -A --sort-by=.lastTimestamp >"${STATE_DIR}/management-events.txt" 2>&1
@@ -898,7 +966,15 @@ log "deploying the management plane with Tilt"
 BGP_CONTAINER_OWNED=true
 # The inner runner has no Go toolchain, and this lane exercises
 # container-backed sites only, so reuse the host-built nico-sim in mock VM mode.
-runner_exec env \
+tilt_exec=runner_exec
+tilt_mode=ci
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+  # NICo's simulator is a Tilt local resource. Keep Tilt alive through both
+  # E2E legs; `tilt ci` exits after deployment and stops the simulator.
+  tilt_exec=runner_exec_detached
+  tilt_mode=up
+fi
+"${tilt_exec}" env \
   KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
   CWE_PROFILES_PRELOADED=true \
   TENANT_ACCESS_ENABLED=true \
@@ -915,12 +991,17 @@ runner_exec env \
   NICO_SIM_BINARY_PREBUILT="${NICO_SIM_BINARY_PREBUILT}" \
   NICO_SIM_ENDPOINT_HOST="${runner_kind_ip}" \
   NICO_VMS_VM_BACKEND=mock \
+  NKE_E2E_TILT_MODE="${tilt_mode}" \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
   TILT_DISABLE_ANALYTICS=1 \
   bash -lc '
     set -euo pipefail
     cd /workspace/cloud-workflow-engine
+    if [[ "${NKE_E2E_TILT_MODE}" == up ]]; then
+      echo $$ >/state/tilt.pid
+      exec tilt up --stream=true >/state/tilt.log 2>&1
+    fi
     if ! tilt ci \
       --timeout=40m \
       --output-snapshot-on-exit=/state/tilt-snapshot.json \
@@ -929,6 +1010,10 @@ runner_exec env \
       exit 1
     fi
   '
+if [[ "${tilt_mode}" == up ]]; then
+  wait_for_runner_tilt
+  runner_exec tilt snapshot create /state/tilt-snapshot.json >/dev/null
+fi
 
 for controller in \
   "capi-system capi-controller-manager" \
