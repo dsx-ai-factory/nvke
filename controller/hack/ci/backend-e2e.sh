@@ -348,6 +348,7 @@ ci_e2e_exec() {
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
     "E2E_BGP_CONTAINER_NAME=${BGP_CONTAINER_NAME}" \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
+    "NKE_E2E_SPIRE_RELEASE=${NKE_E2E_SPIRE_RELEASE:-}" \
     "$@"
 }
 
@@ -633,6 +634,8 @@ git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
 CWE_IMAGE="${CWE_IMAGE:-cwe-e2e:${git_short_sha}}"
 CWE_BUILD_VERSION="${CWE_BUILD_VERSION:-e2e-${git_short_sha}}"
 CWE_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
+# Matches the ref the manifest names; Tilt builds the same tag via custom_build.
+CAPD_REBOOT_IMAGE="ko.local/capd-reboot-controller"
 DSX_IDENTITY_EXCHANGE_IMAGE=""
 
 log "building the sanitized profiles fixture image"
@@ -791,6 +794,35 @@ kind create cluster \
 configure_kind_dockerhub_mirror
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
+
+# capd-reboot-controller is a CAPD test double, not management-plane software:
+# CAPD "nodes" are containers, so a machine reboot has no analogue and this
+# restarts the container instead. The Tilt path gets it from its provider
+# module; the nke-stack path has no Tilt, so it is built here and applied by
+# deploy-nke-stack.sh. It stays out of the nke-stack chart deliberately -- no
+# operator deploys it, and its image is a local ko.local reference.
+# The suite reads the SPIRE server's ConfigMap and lists its pods by label, and
+# both names derive from the helm release: <release>-server and
+# instance=<release>. Tilt installs SPIRE as its own release named "spire",
+# which is what the suite defaults to; under the umbrella every subchart
+# inherits the umbrella's release instead, so the defaults find nothing and
+# every spec needing the management trust domain fails with
+# `configmaps "spire-server" not found`. Must match STACK_RELEASE in
+# deploy-nke-stack.sh.
+NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-}"
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-nke-stack}"
+  log "spire release for the suite: ${NKE_E2E_SPIRE_RELEASE}"
+fi
+
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  log "building capd-reboot-controller for the nke-stack path"
+  docker build \
+    -t "${CAPD_REBOOT_IMAGE}" \
+    -f "${CONTROLLER_ROOT}/hack/capd-reboot-controller/Dockerfile" \
+    "${CONTROLLER_ROOT}/hack/capd-reboot-controller"
+  kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CAPD_REBOOT_IMAGE}"
+fi
 if [[ -n "${DSX_IDENTITY_EXCHANGE_IMAGE}" ]]; then
   kind load docker-image --name "${KIND_CLUSTER_NAME}" "${DSX_IDENTITY_EXCHANGE_IMAGE}"
 fi
@@ -889,6 +921,35 @@ runner_exec sh -lc '
 runner_exec mkdir -p /workspace/cloud-workflow-engine
 runner_exec tar -xzf /state/cwe-source.tgz -C /workspace/cloud-workflow-engine
 
+# The source archive carries only controller/ (tar --transform), so the umbrella
+# chart's build scripts and metadata -- which live at the monorepo root -- are
+# not in it. Stage them separately, preserving the build/ + generated/ layout the
+# script derives REPO_ROOT from. Only when the stack path is selected.
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  runner_exec mkdir -p /workspace/nke-stack/generated/nke-stack
+  docker cp "${WORKSPACE_ROOT}/build" "${RUNNER_NAME}:/workspace/nke-stack/build"
+  # .helmignore included: without it the packaged chart differs from what a
+  # normal build produces, and helm falls back to its built-in default.
+  for f in Chart.yaml values.yaml .helmignore; do
+    docker cp "${WORKSPACE_ROOT}/generated/nke-stack/${f}" \
+      "${RUNNER_NAME}:/workspace/nke-stack/generated/nke-stack/${f}"
+  done
+  docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-nke-stack.sh" \
+    "${RUNNER_NAME}:/usr/local/bin/deploy-nke-stack.sh"
+  # build-local packages the CWE chart from the working tree, so the build tree
+  # needs it at the path build/nke-stack.sh derives from REPO_ROOT.
+  runner_exec mkdir -p /workspace/nke-stack/controller/deploy
+  docker cp "${WORKSPACE_ROOT}/controller/deploy/charts" \
+    "${RUNNER_NAME}:/workspace/nke-stack/controller/deploy/charts"
+  # A chart in a private package needs credentials inside the runner too; helm
+  # on the outer host already has them if anyone pushed or pulled it.
+  if [[ -f "${HOME}/.config/helm/registry/config.json" ]]; then
+    runner_exec mkdir -p /root/.config/helm/registry
+    docker cp "${HOME}/.config/helm/registry/config.json" \
+      "${RUNNER_NAME}:/root/.config/helm/registry/config.json"
+  fi
+fi
+
 runner_exec bash -lc '
   set -euo pipefail
   for tool in curl docker git helm jq kind kubectl nc openssl python3 tar tilt; do
@@ -967,6 +1028,46 @@ jq -n \
   }' >"${E2E_CONFIG}"
 docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 
+# NKE_E2E_STACK_CHART deploys the six management-plane charts from the nke-stack
+# umbrella instead of Tilt. Everything below -- rollout checks, CAPI probes, the
+# Ginkgo legs -- is identical either way. Tilt remains the default: it also
+# runs the inner-loop live_update the umbrella has no equivalent for. The pieces
+# its providers deploy -- capd-reboot-controller, the CAPD RBAC for CWE and the
+# BGP container -- are handled explicitly on this path instead.
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  log "deploying the management plane from the nke-stack umbrella chart"
+
+  # FRR, so kube-vip on container-based tenant nodes can peer through the kind
+  # gateway. Tilt's bgp-containers provider runs this; without Tilt nothing did,
+  # and BGP_CONTAINER_OWNED was being set for a container that had never been
+  # created -- which is what "failed to stop owned BGP container" was reporting
+  # on every run. up.sh derives the gateway and subnet from the Docker network
+  # itself, so it needs only the name.
+  log "starting the BGP container ${BGP_CONTAINER_NAME}"
+  CONTAINER_NAME="${BGP_CONTAINER_NAME}" bash "${CONTROLLER_ROOT}/hack/bgp-containers/up.sh"
+  BGP_CONTAINER_OWNED=true
+  # VERSION is passed in because the runner holds a tar of the working tree, not
+  # a clone: `git describe` inside it finds no repository, so build-local cannot
+  # derive one. It is NOT CWE_BUILD_VERSION -- that is an image tag
+  # (e2e-<sha>), and a chart version has to be semver. The commit is carried in
+  # the prerelease field instead. The controller image tag is set separately
+  # from CWE_IMAGE, so the two need not match.
+  runner_exec env \
+    VERSION="0.0.0-e2e.${git_short_sha}" \
+    MANAGEMENT_VIP="${management_vip}" \
+    KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+    CAPD_REBOOT_SLEEP_DURATION="${CAPD_REBOOT_SLEEP_DURATION:-10s}" \
+    DGXC_TENANT_USER=capd-e2e \
+    DGXC_TENANT_PASSWORD=example-password \
+    CNPG_SUPERUSER_PASSWORD=example-password \
+    CNPG_CLOUD_PASSWORD=example-password \
+    CNPG_TEMPORAL_PASSWORD=example-password \
+    PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
+    SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
+    NKE_E2E_STACK_CHART="${NKE_E2E_STACK_CHART}" \
+    NKE_E2E_STACK_VERSION="${NKE_E2E_STACK_VERSION:-}" \
+    bash /usr/local/bin/deploy-nke-stack.sh "${CWE_IMAGE}"
+else
 log "deploying the management plane with Tilt"
 BGP_CONTAINER_OWNED=true
 # The inner runner has no Go toolchain, and this lane exercises
@@ -1018,6 +1119,7 @@ fi
 if [[ "${tilt_mode}" == up ]]; then
   wait_for_runner_tilt
   runner_exec tilt snapshot create /state/tilt-snapshot.json >/dev/null
+fi
 fi
 
 for controller in \
