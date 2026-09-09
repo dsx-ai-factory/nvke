@@ -49,10 +49,10 @@ install_released_chart() {
 
 install_source_chart() {
   source_dir="${CAPNICO_SOURCE_DIR}"
-  chart_source="${source_dir}/charts/capi-provider-nico"
+  chart_source="${source_dir}/chart"
 
   if [[ ! -d "${source_dir}/config/default" || ! -f "${chart_source}/Chart.yaml" ]]; then
-    echo "CAPNICo source '${source_dir}' is missing config/default or charts/capi-provider-nico." >&2
+    echo "CAPNICo source '${source_dir}' is missing config/default or chart/Chart.yaml." >&2
     exit 1
   fi
 
