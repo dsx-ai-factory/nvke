@@ -103,13 +103,11 @@ def register(ctx):
         endpoint = "http://%s:18080" % nico_sim_endpoint_host
 
     install_script = os.path.join(ctx.provider_dir, "install-capnico.sh")
-    provider_config_dir = os.path.join(ctx.provider_dir, "config")
     install_cmd = [
         "env",
         "CAPNICO_NAMESPACE=" + CAPNICO_NAMESPACE,
         "CAPNICO_RELEASE=" + CAPNICO_RELEASE,
         "CAPNICO_IMAGE=" + CAPNICO_IMAGE,
-        "CAPNICO_PROVIDER_CONFIG_DIR=" + provider_config_dir,
         "CAPNICO_STAGED_CHART_DIR=" + os.path.join(ctx.main_dir, ".local", "capnico-chart"),
         "KIND_CLUSTER_NAME=" + _get_kind_cluster_name(),
     ]
@@ -117,7 +115,7 @@ def register(ctx):
         install_cmd.append("CAPNICO_SOURCE_DIR=" + source_dir)
     install_cmd += ["bash", install_script]
 
-    provider_deps = [install_script, provider_config_dir]
+    provider_deps = [install_script]
     if source_dir:
         provider_deps.append(source_dir)
 
@@ -208,7 +206,7 @@ def register(ctx):
       command -v docker >/dev/null || { echo "docker is required for the nico provider" >&2; exit 1; }
     """
     if source_dir:
-        preflight_script += """      if [ ! -d "%s/config/default" ]; then
+        preflight_script += """      if [ ! -f "%s/chart/Chart.yaml" ]; then
         echo "CAPNICo source directory '%s' is incomplete." >&2
         exit 1
       fi

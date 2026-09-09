@@ -60,7 +60,7 @@ notices-check` verifies it is up to date.
 | `github.com/subosito/gotenv` | MIT | `github.com/subosito/gotenv@v1.6.0` | Unknown |
 | `github.com/x448/float16` | MIT | `github.com/x448/float16@v0.8.4` | Unknown |
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | Unknown |
-| `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.4` | Unknown |
+| `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | Unknown |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.57.0` | Unknown |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.36.0` | Unknown |
 | `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.47.0` | Unknown |
@@ -5656,7 +5656,7 @@ limitations under the License.
 
 ### go.yaml.in/yaml/v3
 
-_MIT — go.yaml.in/yaml/v3@v3.0.4_
+_MIT — go.yaml.in/yaml/v3@v3.0.5_
 
 #### LICENSE
 

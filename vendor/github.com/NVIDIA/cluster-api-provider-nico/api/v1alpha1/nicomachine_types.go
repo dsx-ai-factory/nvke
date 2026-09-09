@@ -11,18 +11,21 @@ import (
 )
 
 // NicoMachineInterface defines one NICo interface attachment request.
+// +kubebuilder:validation:XValidation:rule="has(self.subnetID) != has(self.vpcPrefixID)",message="exactly one of subnetID or vpcPrefixID must be set"
 // +kubebuilder:validation:XValidation:rule="!(has(self.ipAddress) && has(self.subnetID))",message="ipAddress is only supported with vpcPrefixID interfaces"
 type NicoMachineInterface struct {
 	// SubnetID is the subnet ID for this attachment.
 	// Use SubnetID for Ethernet network virtualization.
 	// Exactly one of SubnetID or VPCPrefixID must be set.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	SubnetID string `json:"subnetID,omitempty"`
 
 	// VPCPrefixID is the VPC prefix ID for this attachment.
 	// Use VPCPrefixID for next-generation networking.
 	// Exactly one of SubnetID or VPCPrefixID must be set.
 	// +optional
+	// +kubebuilder:validation:MinLength=1
 	VPCPrefixID string `json:"vpcPrefixID,omitempty"`
 
 	// IPAddress is the explicitly requested IP address for this interface.
@@ -89,6 +92,7 @@ type NicoMachineNVLinkInterface struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.nvLinkLogicalPartitionID) || has(self.instanceTypeID)",message="nvLinkLogicalPartitionID requires instanceTypeID"
 type NicoMachineSpec struct {
 	// VPCID is the VPC where this provider should create the instance.
+	// +kubebuilder:validation:MinLength=1
 	VPCID string `json:"vpcID"`
 
 	// InstanceTypeID is the instance type ID to provision.
@@ -220,13 +224,29 @@ type NicoMachineStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,categories=cluster-api,shortName=nicom
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || self.spec.vpcID == oldSelf.spec.vpcID",message="spec.vpcID is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.instanceTypeID) == has(oldSelf.spec.instanceTypeID) && (!has(self.spec.instanceTypeID) || self.spec.instanceTypeID == oldSelf.spec.instanceTypeID))",message="spec.instanceTypeID is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || self.spec.interfaces == oldSelf.spec.interfaces",message="spec.interfaces is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.infinibandInterfaces) == has(oldSelf.spec.infinibandInterfaces) && (!has(self.spec.infinibandInterfaces) || self.spec.infinibandInterfaces == oldSelf.spec.infinibandInterfaces))",message="spec.infinibandInterfaces is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.infinibandPartitionID) == has(oldSelf.spec.infinibandPartitionID) && (!has(self.spec.infinibandPartitionID) || self.spec.infinibandPartitionID == oldSelf.spec.infinibandPartitionID))",message="spec.infinibandPartitionID is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.nvLinkInterfaces) == has(oldSelf.spec.nvLinkInterfaces) && (!has(self.spec.nvLinkInterfaces) || self.spec.nvLinkInterfaces == oldSelf.spec.nvLinkInterfaces))",message="spec.nvLinkInterfaces is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.nvLinkLogicalPartitionID) == has(oldSelf.spec.nvLinkLogicalPartitionID) && (!has(self.spec.nvLinkLogicalPartitionID) || self.spec.nvLinkLogicalPartitionID == oldSelf.spec.nvLinkLogicalPartitionID))",message="spec.nvLinkLogicalPartitionID is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.sshKeyGroupIDs) == has(oldSelf.spec.sshKeyGroupIDs) && (!has(self.spec.sshKeyGroupIDs) || self.spec.sshKeyGroupIDs == oldSelf.spec.sshKeyGroupIDs))",message="spec.sshKeyGroupIDs is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.ipxeScript) == has(oldSelf.spec.ipxeScript) && (!has(self.spec.ipxeScript) || self.spec.ipxeScript == oldSelf.spec.ipxeScript))",message="spec.ipxeScript is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.cloudInitInjectHostname) == has(oldSelf.spec.cloudInitInjectHostname) && (!has(self.spec.cloudInitInjectHostname) || self.spec.cloudInitInjectHostname == oldSelf.spec.cloudInitInjectHostname))",message="spec.cloudInitInjectHostname is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.labels) == has(oldSelf.spec.labels) && (!has(self.spec.labels) || self.spec.labels == oldSelf.spec.labels))",message="spec.labels is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.machineID) == has(oldSelf.spec.machineID) && (!has(self.spec.machineID) || self.spec.machineID == oldSelf.spec.machineID))",message="spec.machineID is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.allowUnhealthyMachine) == has(oldSelf.spec.allowUnhealthyMachine) && (!has(self.spec.allowUnhealthyMachine) || self.spec.allowUnhealthyMachine == oldSelf.spec.allowUnhealthyMachine))",message="spec.allowUnhealthyMachine is immutable after providerID is set"
+// +kubebuilder:validation:XValidation:rule="!has(oldSelf.spec.providerID) || (has(self.spec.providerID) && self.spec.providerID == oldSelf.spec.providerID)",message="spec.providerID is immutable after it is set"
 // +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type=='Available')].status",description="Current machine infrastructure availability"
 // +kubebuilder:printcolumn:name="Synced",type="string",JSONPath=".status.conditions[?(@.type=='Synced')].status",description="Machine infrastructure reconciled"
 // +kubebuilder:printcolumn:name="Provisioned",type="string",JSONPath=".status.initialization.provisioned",description="Initial machine infrastructure provisioning completed"
 // +kubebuilder:printcolumn:name="Instance",type="string",JSONPath=".status.instanceID",description="NICo instance"
 // +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
 
-// NicoMachine is the Schema for the nicomachines API.
+// NicoMachine is the Schema for the nicomachines API. Once ProviderID is
+// assigned, the spec is immutable because the controller does not reconcile
+// these create-time settings onto an existing instance.
 type NicoMachine struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
