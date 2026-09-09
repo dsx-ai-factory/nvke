@@ -194,7 +194,7 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 		clusterService:        *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
 		nodePoolService:       *nodePoolService,
 		nodeSetService:        *NewNodeSetService(logger, database, temporalClient),
-		nodeService:           *NewNodeService(logger, database, temporalClient, cfg.AllowEtcdSafetyOverrides),
+		nodeService:           *NewNodeService(logger, database, temporalClient),
 		osProfileService:      *NewOSProfileService(cfg, logger),
 		configProfileService:  *NewConfigProfileService(cfg, logger),
 		cniPluginsService:     *NewCNIPluginsService(),

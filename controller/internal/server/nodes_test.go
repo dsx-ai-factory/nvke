@@ -281,7 +281,7 @@ func TestNodeService_ListNodes(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodes", mock.Anything, tt.filters).Return(tt.dbNodes, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
 
 			resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{
 				Params: api.ListNodesParams{
@@ -379,7 +379,7 @@ func TestNodeService_GetNode(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNode", mock.Anything, tt.nodeID).Return(tt.dbNode, tt.dbError)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
 
 			resp, err := service.GetNode(context.Background(), api.GetNodeRequestObject{
 				NodeID: tt.nodeID,
@@ -406,19 +406,16 @@ func TestNodeService_DeleteNode(t *testing.T) {
 	nodeID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440001")
 	tests := []struct {
-		name                     string
-		nodeID                   uuid.UUID
-		machineHealthIssue       *api.MachineHealthIssue
-		forceUnreachable         bool
-		allowQuorumLoss          bool
-		allowSingleVoter         bool
-		allowEtcdSafetyOverrides bool
-		setupMockCalls           func(*mockTx)
-		wantError                bool
-		want400                  bool
-		want400Contains          string
-		want404                  bool
-		verifyConditions         func(t *testing.T, conditions db.NodeConditions)
+		name               string
+		nodeID             uuid.UUID
+		machineHealthIssue *api.MachineHealthIssue
+		forceUnreachable   bool
+		setupMockCalls     func(*mockTx)
+		wantError          bool
+		want400            bool
+		want400Contains    string
+		want404            bool
+		verifyConditions   func(t *testing.T, conditions db.NodeConditions)
 	}{
 		{
 			name:   "success",
@@ -668,38 +665,6 @@ func TestNodeService_DeleteNode(t *testing.T) {
 				}).Return(db.WorkflowOutbox{}, nil)
 			},
 		},
-		{
-			name:                     "success single-voter rotation with override enabled",
-			nodeID:                   nodeID,
-			forceUnreachable:         true,
-			allowSingleVoter:         true,
-			allowEtcdSafetyOverrides: true,
-			setupMockCalls: func(tx *mockTx) {
-				tx.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
-				tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID}, nil)
-				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil)
-				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(db.Node{}, nil)
-				tx.On("CreateWorkflowOutboxEntry", mock.Anything, constants.TeardownNodeWorkflowType, mock.Anything, workflows.TeardownNodeInput{
-					NodeID:           nodeID,
-					Reason:           "API",
-					AllowCPNode:      true,
-					ForceUnreachable: true,
-					AllowSingleVoter: true,
-				}).Return(db.WorkflowOutbox{}, nil)
-			},
-		},
-		{
-			name:             "Bad request - single-voter override rejected when gate disabled",
-			nodeID:           nodeID,
-			allowSingleVoter: true,
-			want400:          true,
-		},
-		{
-			name:            "Bad request - quorum-loss override rejected when gate disabled",
-			nodeID:          nodeID,
-			allowQuorumLoss: true,
-			want400:         true,
-		},
 	}
 
 	for _, tt := range tests {
@@ -713,15 +678,13 @@ func TestNodeService_DeleteNode(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-			service := server.NewNodeService(&slog.Logger{}, mockDB, nil, tt.allowEtcdSafetyOverrides)
+			service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
 
 			var body *api.DeleteNodeJSONRequestBody
-			if tt.machineHealthIssue != nil || tt.forceUnreachable || tt.allowQuorumLoss || tt.allowSingleVoter {
+			if tt.machineHealthIssue != nil || tt.forceUnreachable {
 				body = &api.DeleteNodeJSONRequestBody{
 					MachineHealthIssue: tt.machineHealthIssue,
 					ForceUnreachable:   tt.forceUnreachable,
-					AllowQuorumLoss:    tt.allowQuorumLoss,
-					AllowSingleVoter:   tt.allowSingleVoter,
 				}
 			}
 
@@ -775,7 +738,7 @@ func TestNodeService_GetNodeHistory(t *testing.T) {
 		mockDB := &mockDB{}
 		mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID}, nil)
 
-		service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+		service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
 		resp, err := service.GetNodeHistory(context.Background(), api.GetNodeHistoryRequestObject{
 			NodeID: nodeID,
 		})
@@ -792,7 +755,7 @@ func TestNodeService_GetNodeHistory(t *testing.T) {
 		mockDB := &mockDB{}
 		mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, db.ErrNotFound)
 
-		service := server.NewNodeService(&slog.Logger{}, mockDB, nil, false)
+		service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
 		resp, err := service.GetNodeHistory(context.Background(), api.GetNodeHistoryRequestObject{
 			NodeID: nodeID,
 		})

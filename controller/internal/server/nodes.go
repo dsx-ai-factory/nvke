@@ -22,19 +22,13 @@ type nodeService struct {
 	logger         *slog.Logger
 	db             db.DB
 	temporalClient client.Client
-
-	// allowEtcdSafetyOverrides gates the dangerous etcd member-removal overrides
-	// (allowQuorumLoss / allowSingleVoter) on DeleteNode. When false, requests that
-	// set either override are rejected with a 400.
-	allowEtcdSafetyOverrides bool
 }
 
-func NewNodeService(logger *slog.Logger, database db.DB, temporalClient client.Client, allowEtcdSafetyOverrides bool) *nodeService {
+func NewNodeService(logger *slog.Logger, database db.DB, temporalClient client.Client) *nodeService {
 	return &nodeService{
-		logger:                   logger,
-		db:                       database,
-		temporalClient:           temporalClient,
-		allowEtcdSafetyOverrides: allowEtcdSafetyOverrides,
+		logger:         logger,
+		db:             database,
+		temporalClient: temporalClient,
 	}
 }
 
@@ -82,20 +76,9 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 		}
 	}
 
-	var forceUnreachable, allowQuorumLoss, allowSingleVoter bool
+	var forceUnreachable bool
 	if req.Body != nil {
 		forceUnreachable = req.Body.ForceUnreachable
-		allowQuorumLoss = req.Body.AllowQuorumLoss
-		allowSingleVoter = req.Body.AllowSingleVoter
-	}
-
-	// The etcd safety overrides can break etcd quorum or leave a single-voter
-	// cluster, so they are gated behind a server-side flag. Reject
-	// rather than silently ignore, so operators get clear feedback.
-	if (allowQuorumLoss || allowSingleVoter) && !s.allowEtcdSafetyOverrides {
-		return api.DeleteNode400JSONResponse{
-			Message: "etcd safety overrides (allowQuorumLoss/allowSingleVoter) are disabled on this server; set ALLOW_ETCD_SAFETY_OVERRIDES to enable them",
-		}, nil
 	}
 
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
@@ -104,8 +87,6 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 			nodes.WithAllowCPNode(true),
 			nodes.WithMachineHealthIssue(machineHealthIssue),
 			nodes.WithForceUnreachable(forceUnreachable),
-			nodes.WithAllowQuorumLoss(allowQuorumLoss),
-			nodes.WithAllowSingleVoter(allowSingleVoter),
 		)
 	})
 	if err != nil {

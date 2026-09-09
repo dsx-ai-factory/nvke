@@ -59,6 +59,7 @@ type FakeClient struct {
 	StartKubeVIPRestoreCalls                []uuid.UUID
 	StartKubeVIPRestoreIDs                  []string
 	ExecuteScriptNames                      []string
+	ExecuteScriptArgs                       [][]string
 	KubeadmUpgradeApplyCalls                []uuid.UUID
 	KubeadmUpgradeApplyRequests             []*nkeproto.KubeadmUpgradeApplyRequest
 	KubeadmUpgradeApplyResponse             *nkeproto.KubeadmUpgradeApplyResponse
@@ -253,8 +254,9 @@ func (f *FakeClient) GetK8sControlPlaneNodeGracefulShutdownStatus(context.Contex
 	return &nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse{}, nil
 }
 
-func (f *FakeClient) ExecuteScript(_ context.Context, node db.Node, scriptName, scriptContents string, _ []string) (*nkeproto.ExecuteScriptResponse, error) {
+func (f *FakeClient) ExecuteScript(_ context.Context, node db.Node, scriptName, scriptContents string, args []string) (*nkeproto.ExecuteScriptResponse, error) {
 	f.ExecuteScriptNames = append(f.ExecuteScriptNames, scriptName)
+	f.ExecuteScriptArgs = append(f.ExecuteScriptArgs, args)
 	if f.ExecuteScriptHook != nil {
 		return f.ExecuteScriptHook(node, scriptName, scriptContents)
 	}

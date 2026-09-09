@@ -87,13 +87,6 @@ type Config struct {
 	// This can act as an emergency switch to disable node health checks
 	NodeHealthCheckDisabled bool `env:"NODE_HEALTH_CHECK_DISABLED" default:"false"`
 
-	// AllowEtcdSafetyOverrides gates the dangerous etcd member-removal safety
-	// overrides (allowQuorumLoss / allowSingleVoter) on the DeleteNode API. It is
-	// disabled by default so production site controllers reject these overrides;
-	// enable it on development site controllers that need manual single-node
-	// control-plane rotation.
-	AllowEtcdSafetyOverrides bool `env:"ALLOW_ETCD_SAFETY_OVERRIDES" default:"false"`
-
 	// NodeHealthCheckTimeout is the timeout for a cluster's node health check reconcile
 	NodeHealthCheckTimeout time.Duration `env:"NODE_HEALTH_CHECK_TIMEOUT" default:"2m"`
 

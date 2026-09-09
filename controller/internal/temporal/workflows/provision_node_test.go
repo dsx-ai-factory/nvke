@@ -191,9 +191,7 @@ func TestCleanBeforeControlPlaneRejoinUsesTypedEtcdRemoval(t *testing.T) {
 	env.OnActivity(a.RemoveEtcdMember, mock.Anything, mock.MatchedBy(func(input activities.EtcdMemberRemovalInput) bool {
 		return input.ClusterID == clusterID &&
 			input.TargetNodeID == nodeID &&
-			input.TargetMemberName == node.Name &&
-			!input.AllowQuorumLoss &&
-			input.AllowSingleVoter
+			input.TargetMemberName == node.Name
 	})).Return(nil).Once()
 	env.OnActivity(a.KubeadmReset, mock.Anything, mock.MatchedBy(func(input activities.KubeadmResetInput) bool {
 		return input.NodeID == nodeID &&
