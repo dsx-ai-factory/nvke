@@ -80,9 +80,12 @@ install_source_chart() {
   grep -Fq "image: ${CAPNICO_IMAGE}" \
     "${CAPNICO_STAGED_CHART_DIR}/files/infrastructure-components.yaml"
 
+  # The chart renders the manager image itself, defaulting to controller:<appVersion>.
   helm upgrade --install "${CAPNICO_RELEASE}" "${CAPNICO_STAGED_CHART_DIR}" \
     --namespace "${CAPNICO_NAMESPACE}" \
     --reset-values \
+    --set "manager.image.repository=${CAPNICO_IMAGE%:*}" \
+    --set "manager.image.tag=${CAPNICO_IMAGE##*:}" \
     --wait --timeout 5m
 }
 
