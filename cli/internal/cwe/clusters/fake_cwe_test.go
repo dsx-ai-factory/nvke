@@ -104,6 +104,8 @@ func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.get(w, id)
 	case isItem && r.Method == http.MethodDelete:
 		f.remove(w, id)
+	case isItem && r.Method == http.MethodPatch:
+		f.update(w, id, r)
 	default:
 		writeJSON(w, http.StatusNotFound,
 			api.GenericError{Message: "no route for " + r.Method + " " + path})
@@ -168,6 +170,39 @@ func (f *fakeCWE) remove(w http.ResponseWriter, id string) {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
+	}
+	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "cluster " + id + " not found"})
+}
+
+// update answers PATCH /clusters/{id}, applying the subset of fields this
+// fake understands and returning the updated record. It exists to exercise
+// the CLI's request-building and response-decoding, not CWE's real merge
+// semantics — keep it to the fields the update-cluster tests actually cover.
+func (f *fakeCWE) update(w http.ResponseWriter, id string, r *http.Request) {
+	for i, c := range f.clusters {
+		if c.ID.String() != id {
+			continue
+		}
+		var req api.UpdateClusterJSONRequestBody
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "malformed body: " + err.Error()})
+			return
+		}
+		if req.ControlPlaneKubernetesVersion != nil {
+			c.ControlPlaneKubernetesVersion = *req.ControlPlaneKubernetesVersion
+		}
+		if req.EnableCPNodeRecycling != nil {
+			c.EnableCPNodeRecycling = req.EnableCPNodeRecycling
+		}
+		if req.TeleportEnabled != nil {
+			c.TeleportEnabled = req.TeleportEnabled
+		}
+		if req.EnableEtcdEncryption != nil {
+			c.EtcdEncrypted = *req.EnableEtcdEncryption
+		}
+		f.clusters[i] = c
+		writeJSON(w, http.StatusOK, c)
+		return
 	}
 	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "cluster " + id + " not found"})
 }

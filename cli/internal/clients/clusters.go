@@ -58,6 +58,23 @@ func (c *CWEClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api
 	return resp.JSON200, nil
 }
 
+// UpdateCluster applies a partial update to a cluster identified by UUID and
+// returns the cluster as it now stands. Only the fields set in req are
+// changed; nil fields are left untouched by the server.
+func (c *CWEClient) UpdateCluster(ctx context.Context, id openapi_types.UUID, req api.UpdateClusterJSONRequestBody) (*api.Cluster, error) {
+	resp, err := c.raw.UpdateClusterWithResponse(ctx, id, req)
+	if err != nil {
+		return nil, fmt.Errorf("updating cluster: %w", err)
+	}
+	if resp.StatusCode() != 200 {
+		return nil, fmt.Errorf("updating cluster: %w", apiError(resp.Status(), resp.Body))
+	}
+	if resp.JSON200 == nil {
+		return nil, fmt.Errorf("updating cluster: empty response body")
+	}
+	return resp.JSON200, nil
+}
+
 // DeleteCluster deletes a cluster by UUID. Deletion is async.
 func (c *CWEClient) DeleteCluster(ctx context.Context, id openapi_types.UUID) error {
 	resp, err := c.raw.DeleteClusterWithResponse(ctx, id)
