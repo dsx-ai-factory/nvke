@@ -18,7 +18,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl get clusters --cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
 | `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. | In Review ([#269](https://github.com/NVIDIA/nke/pull/269)) |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
-| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, Teleport, control plane config). | Planned |
+| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). | Planned |
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
 | `nkectl get nodepools` | Lists node pools. `--cluster <name>` filters by cluster. | Planned |
 | `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |

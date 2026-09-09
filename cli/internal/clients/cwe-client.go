@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package clients wraps the generated CWE API client with typed, error-parsed
-// methods and management-cluster authentication.
+// methods, management-cluster authentication, and optional proxy TLS client
+// authentication.
 package clients
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -46,11 +48,23 @@ func newClient(cfg config.SiteConfig, tokens tokenSource) (*CWEClient, error) {
 	if cfg.URL == "" {
 		return nil, fmt.Errorf("site URL is empty: run 'nkectl config set-site --url <url>'")
 	}
+	if (cfg.ProxyClientCertFile == "") != (cfg.ProxyClientKeyFile == "") {
+		return nil, fmt.Errorf("proxy TLS client certificate and key must be set together")
+	}
 	apiURL, err := url.JoinPath(cfg.URL, "api")
 	if err != nil {
 		return nil, fmt.Errorf("building API URL: %w", err)
 	}
 	httpClient := &http.Client{Timeout: 30 * time.Second}
+	if cfg.ProxyClientCertFile != "" {
+		cert, err := tls.LoadX509KeyPair(cfg.ProxyClientCertFile, cfg.ProxyClientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("loading TLS client cert/key: %w", err)
+		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
+		httpClient.Transport = transport
+	}
 	opts := []api.ClientOption{api.WithHTTPClient(httpClient)}
 	if tokens != nil {
 		opts = append(opts, api.WithRequestEditorFn(bearerToken(tokens)))

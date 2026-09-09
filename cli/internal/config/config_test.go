@@ -5,12 +5,17 @@ package config
 
 import "testing"
 
-func TestSaveLoadRoundTripsKubeconfig(t *testing.T) {
+func TestSaveLoadRoundTripsSiteConfig(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	cfg := &Config{
 		Sites: map[string]SiteConfig{
-			"dev": {URL: "http://localhost:8080", Kubeconfig: "/home/op/.kube/dev-mgmt.yaml"},
+			"dev": {
+				URL:                 "http://localhost:8080",
+				Kubeconfig:          "/home/op/.kube/dev-mgmt.yaml",
+				ProxyClientCertFile: "/home/op/.config/nkectl/client.crt",
+				ProxyClientKeyFile:  "/home/op/.config/nkectl/client.key",
+			},
 		},
 		CurrentSite: "dev",
 	}
@@ -31,5 +36,11 @@ func TestSaveLoadRoundTripsKubeconfig(t *testing.T) {
 	}
 	if site.Kubeconfig != "/home/op/.kube/dev-mgmt.yaml" {
 		t.Errorf("Kubeconfig = %q, want %q", site.Kubeconfig, "/home/op/.kube/dev-mgmt.yaml")
+	}
+	if site.ProxyClientCertFile != "/home/op/.config/nkectl/client.crt" {
+		t.Errorf("ProxyClientCertFile = %q, want proxy client certificate path", site.ProxyClientCertFile)
+	}
+	if site.ProxyClientKeyFile != "/home/op/.config/nkectl/client.key" {
+		t.Errorf("ProxyClientKeyFile = %q, want proxy client key path", site.ProxyClientKeyFile)
 	}
 }
