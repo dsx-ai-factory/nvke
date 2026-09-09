@@ -808,7 +808,9 @@ runner_exec env CLUSTER_TOPOLOGY=true clusterctl init \
   --infrastructure "docker:${CAPD_PROVIDER_VERSION}"
 runner_exec kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 runner_exec kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=5m
-if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+# Lanes that deploy the nico provider get the CRDs from its chart, and helm
+# refuses to adopt CRDs kubectl created. The others still need them for the smoke.
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]] && ! jq -e 'index("nico") != null' <<<"${NKE_E2E_PROVIDERS}" >/dev/null; then
   log "installing CAPNICo CRDs"
   runner_exec kubectl apply -f "${CAPNICO_SOURCE_CONTAINER_DIR}/config/crd/bases"
   runner_exec kubectl wait --for=condition=Established crd \
