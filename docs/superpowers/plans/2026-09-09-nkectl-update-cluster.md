@@ -554,13 +554,9 @@ func TestUpdateClusterRequiresFileOrSet(t *testing.T) {
 }
 
 func TestUpdateClusterSurfacesServerRejection(t *testing.T) {
-	seed := seedCluster("my-cluster")
-	fake, clientFn := newFakeCWE(t, seed)
-	_ = fake
-
 	// newBrokenCWE always answers with the same status/body regardless of
 	// path, so this exercises the client/error-surfacing path, not a
-	// specific fakeCWE route.
+	// specific fakeCWE route. A seeded fakeCWE is not needed here.
 	broken := newBrokenCWE(t, 409, `{"message":"k8s_upgrade is already in progress"}`)
 	_, err := run(t, NewUpdateCmd(broken), "my-cluster", "--set", "teleportEnabled=true")
 	if err == nil {
@@ -677,18 +673,19 @@ func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) (a
 }
 ```
 
-Add the missing imports to the top of `cli/internal/cwe/clusters/update.go` (merge with the ones from Task 2 — final import block):
+Merge these additions into the import block at the top of `cli/internal/cwe/clusters/update.go` (Task 2 already has `bytes`, `encoding/json`, `fmt`, `strings`, `gopkg.in/yaml.v3`, and `api`) — final import block:
 
 ```go
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
-	"strconv"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 
 	"github.com/NVIDIA/nke/cli/internal/util"
 	api "github.com/NVIDIA/nke/controller/api"
