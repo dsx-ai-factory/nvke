@@ -331,8 +331,6 @@ github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERo
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/NVIDIA/cluster-api-provider-nico v0.0.44-rc.1 h1:IiV5a91ayVN9IBJxZ9tSwhHGflN6ihvtQk2LUNa/yEU=
 github.com/NVIDIA/cluster-api-provider-nico v0.0.44-rc.1/go.mod h1:AXTJxC9fxBsiRWlZR63M6B2+qpUjNxISW2iShx9XDLE=
-github.com/NVIDIA/ncx-infra-controller-rest v1.3.0 h1:CqwfQHex1j7oaRhZcX6ACAFBnB7knOMY16c1hSYQs1Q=
-github.com/NVIDIA/ncx-infra-controller-rest v1.3.0/go.mod h1:Tzjd+qjUu29RLCsDHBg6EZeDCHC6hm6yfKOw6S69ILs=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
 github.com/Shopify/sarama v1.19.0/go.mod h1:FVkBWblsNy7DGZRfXLU0O9RCGt5g3g3yEuWXgklEdEo=

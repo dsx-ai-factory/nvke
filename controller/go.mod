@@ -5,7 +5,6 @@ go 1.26.6
 require (
 	github.com/GehirnInc/crypt v0.0.0-20230320061759-8cc1b52080c5
 	github.com/NVIDIA/cluster-api-provider-nico v0.0.44-rc.1
-	github.com/NVIDIA/ncx-infra-controller-rest v1.3.0
 	github.com/NVIDIA/nke/agent v0.0.0-00010101000000-000000000000
 	github.com/NVIDIA/nke/controller/api v0.0.0-00010101000000-000000000000
 	github.com/blang/semver/v4 v4.0.0

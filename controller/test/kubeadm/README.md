@@ -38,7 +38,7 @@ manifests directly rather than impersonating one.
 
 | Path | Purpose |
 |---|---|
-| `internal/nicovms/` | Launches the `nico-vms` binary as a subprocess and wraps the Forge SDK client (`CreateNode`/`CreateNodes`/`DeleteNode` with ready-state polling). The only place that talks to nico-vms; no nico-vms internal package is imported. |
+| `internal/nicovms/` | Launches the `nico-vms` binary as a subprocess and wraps its instance HTTP API (`CreateNode`/`CreateNodes`/`DeleteNode` with ready-state polling). The only place that talks to nico-vms; no nico-vms internal package is imported. |
 | `internal/cluster/` | gRPC client for `nke-agent`: `ExecuteInit`, `ExecuteJoin`, `GetJoinStrings`, `WaitForPhase`, `WaitForAgent`, `FetchKubeconfig`, and `RunScript` for on-failure diagnostics. |
 | `internal/cloudinit/` | Renders `testdata/user-data.yml.tmpl` by substituting the `__KEY__` placeholders. Every placeholder must resolve or `Render` fails. |
 | `testdata/user-data.yml.tmpl` | Per-VM cloud-init. The install block is a `__K8S_PROVISION__` placeholder filled by `internal/cloudinit`; it also drops the `--disable-mtls` systemd override. |

@@ -4,14 +4,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package nicovms launches the nico-sim HTTP server as a subprocess and
-// exposes a thin client for the Forge API that powers the kubeadm cluster
+// exposes a thin client for the NICo API that powers the kubeadm cluster
 // bring-up test.
 //
 // Seam: this package is the ONLY place that talks to the nico-sim binary.
-// It imports the public ncx-infra-controller-rest SDK — the same wire API
-// nico-vms serves — and never imports nico-vms internal packages. The
-// "forge" naming throughout is deliberate: nico-vms *emulates* the
-// Forge/Carbide API, so these names identify the upstream API, not the tool.
+// It uses the small part of the NICo wire API needed by this test and never
+// imports nico-vms internal packages.
 //
 // Invocation contract: nico-vms parses NO command-line flags. cmd/nico-sim
 // switches on os.Args[1] for "test-server" only, with no default case, so
@@ -30,15 +28,13 @@ import (
 	"strings"
 	"syscall"
 	"time"
-
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
 )
 
-// Per-HTTP-request timeout on Forge SDK Execute() calls. Forge HTTP API
+// Per-HTTP-request timeout on NICo API calls. NICo HTTP API
 // responses normally arrive in well under a second; 15s gives generous
 // headroom for a runner under load while still surfacing a hung server
 // as a fast error rather than an indefinite hang on the outer ctx.
-const forgeRequestTimeout = 15 * time.Second
+const nicoRequestTimeout = 15 * time.Second
 
 // Seeded by nico-vms's internal/seed/default-seed.yaml. Hardcoded here
 // because they are stable IDs the test driver references — if that seed
@@ -127,7 +123,7 @@ type LaunchOpts struct {
 type Process struct {
 	cmd          *exec.Cmd
 	baseURL      string
-	api          *forgesdk.APIClient
+	client       *nicoClient
 	ipxeImageURL string // when set, CreateNode provisions via an iPXE script (UEFI)
 }
 
@@ -204,12 +200,12 @@ func Launch(ctx context.Context, opts LaunchOpts) (*Process, error) {
 		baseURL = "http://127.0.0.1" + strings.TrimPrefix(opts.HTTPAddr, "0.0.0.0")
 	}
 
-	cfg := forgesdk.NewConfiguration()
-	cfg.Servers = forgesdk.ServerConfigurations{{URL: baseURL}}
-	cfg.DefaultHeader = map[string]string{"Authorization": "Bearer " + DefaultBearerToken}
-	api := forgesdk.NewAPIClient(cfg)
-
-	p := &Process{cmd: cmd, baseURL: baseURL, api: api, ipxeImageURL: opts.IpxeImageURL}
+	p := &Process{
+		cmd:          cmd,
+		baseURL:      baseURL,
+		client:       newNicoClient(baseURL),
+		ipxeImageURL: opts.IpxeImageURL,
+	}
 
 	if err := p.waitReady(ctx); err != nil {
 		// Best-effort kill if the server never came up.
@@ -227,7 +223,7 @@ func (p *Process) waitReady(ctx context.Context) error {
 		// (which may not exist in all nico-vms versions). If it 200s
 		// or even 404s with a JSON body, the HTTP server is up.
 		req, _ := http.NewRequestWithContext(ctx, http.MethodGet,
-			p.baseURL+"/v2/org/"+DefaultOrgID+"/forge/instance", nil)
+			p.baseURL+"/v1/orgs/"+DefaultOrgID+"/instances", nil)
 		req.Header.Set("Authorization", "Bearer "+DefaultBearerToken)
 		if resp, err := client.Do(req); err == nil {
 			resp.Body.Close()
@@ -252,9 +248,6 @@ func (p *Process) waitReady(ctx context.Context) error {
 
 // BaseURL returns the http://host:port the nico-sim API listens on.
 func (p *Process) BaseURL() string { return p.baseURL }
-
-// API returns the ncx-infra-controller-rest SDK client wired to talk to this nico-vms.
-func (p *Process) API() *forgesdk.APIClient { return p.api }
 
 // Stop signals the nico-sim process group to terminate and waits for it.
 // Safe to call multiple times.
@@ -312,17 +305,17 @@ boot
 // internal/cloudinit.Render). phoneHomeEnabled=true makes "ready" mean
 // cloud-init's runcmd has fully completed.
 func (p *Process) CreateNode(ctx context.Context, name, userData string, phoneHomeEnabled bool) (string, string, error) {
-	req := &forgesdk.InstanceCreateRequest{
+	req := instanceCreateRequest{
 		Name:           name,
-		TenantId:       DefaultTenantID,
-		InstanceTypeId: forgesdk.PtrString(DefaultInstanceTypeID),
-		VpcId:          DefaultVpcID,
+		TenantID:       DefaultTenantID,
+		InstanceTypeID: DefaultInstanceTypeID,
+		VPCID:          DefaultVpcID,
 		Labels:         map[string]string{"nke.nvidia.com/test-role": "cluster-bringup"},
-		Interfaces: []forgesdk.InterfaceCreateRequest{
-			{SubnetId: forgesdk.PtrString(DefaultSubnetID)},
+		Interfaces: []interfaceCreateRequest{
+			{SubnetID: DefaultSubnetID},
 		},
-		UserData:         *forgesdk.NewNullableString(forgesdk.PtrString(userData)),
-		PhoneHomeEnabled: forgesdk.PtrBool(phoneHomeEnabled),
+		UserData:         userData,
+		PhoneHomeEnabled: phoneHomeEnabled,
 	}
 
 	// NKE node images are UEFI + LUKS-encrypted. nico-vms only boots the
@@ -331,17 +324,17 @@ func (p *Process) CreateNode(ctx context.Context, name, userData string, phoneHo
 	// downloaded qcow2 under UEFI and injects the first-boot LUKS key. The
 	// plain Ubuntu cloud-image path (no URL) stays on BIOS.
 	if p.ipxeImageURL != "" {
-		req.IpxeScript = *forgesdk.NewNullableString(forgesdk.PtrString(buildIpxeScript(p.ipxeImageURL)))
+		ipxeScript := buildIpxeScript(p.ipxeImageURL)
+		req.IpxeScript = &ipxeScript
 	}
 
-	createCtx, createCancel := context.WithTimeout(ctx, forgeRequestTimeout)
+	createCtx, createCancel := context.WithTimeout(ctx, nicoRequestTimeout)
 	defer createCancel()
-	created, _, err := p.api.InstanceAPI.CreateInstance(createCtx, DefaultOrgID).
-		InstanceCreateRequest(*req).Execute()
+	created, err := p.client.createInstance(createCtx, req)
 	if err != nil {
 		return "", "", fmt.Errorf("nicovms.CreateNode: create %s: %w", name, err)
 	}
-	id := created.GetId()
+	id := created.ID
 	if id == "" {
 		return "", "", fmt.Errorf("nicovms.CreateNode: empty id in create response for %s", name)
 	}
@@ -351,17 +344,15 @@ func (p *Process) CreateNode(ctx context.Context, name, userData string, phoneHo
 	deadline := time.Now().Add(20 * time.Minute)
 	for {
 		// Per-iteration RPC timeout — don't defer across iterations.
-		pollCtx, pollCancel := context.WithTimeout(ctx, forgeRequestTimeout)
-		got, _, err := p.api.InstanceAPI.GetInstance(pollCtx, DefaultOrgID, id).Execute()
+		pollCtx, pollCancel := context.WithTimeout(ctx, nicoRequestTimeout)
+		got, _, err := p.client.getInstance(pollCtx, id)
 		pollCancel()
 		if err == nil {
-			state := got.GetStatus()
-			ifaces := got.GetInterfaces()
-			if state == "Ready" && len(ifaces) > 0 && len(ifaces[0].GetIpAddresses()) > 0 {
-				return id, ifaces[0].GetIpAddresses()[0], nil
+			if got.Status == "Ready" && len(got.Interfaces) > 0 && len(got.Interfaces[0].IPAddresses) > 0 {
+				return id, got.Interfaces[0].IPAddresses[0], nil
 			}
-			if state == "Error" {
-				return id, "", fmt.Errorf("nicovms.CreateNode: instance %s reached %q", id, state)
+			if got.Status == "Error" {
+				return id, "", fmt.Errorf("nicovms.CreateNode: instance %s reached %q", id, got.Status)
 			}
 		}
 		if time.Now().After(deadline) {
@@ -382,8 +373,8 @@ func (p *Process) DeleteNode(ctx context.Context, id string) error {
 	if id == "" {
 		return nil
 	}
-	delCtx, delCancel := context.WithTimeout(ctx, forgeRequestTimeout)
-	_, err := p.api.InstanceAPI.DeleteInstance(delCtx, DefaultOrgID, id).Execute()
+	delCtx, delCancel := context.WithTimeout(ctx, nicoRequestTimeout)
+	err := p.client.deleteInstance(delCtx, id)
 	delCancel()
 	if err != nil {
 		return fmt.Errorf("nicovms.DeleteNode: delete %s: %w", id, err)
@@ -391,10 +382,10 @@ func (p *Process) DeleteNode(ctx context.Context, id string) error {
 	deadline := time.Now().Add(2 * time.Minute)
 	for {
 		// Per-iteration RPC timeout — don't defer across iterations.
-		pollCtx, pollCancel := context.WithTimeout(ctx, forgeRequestTimeout)
-		_, resp, err := p.api.InstanceAPI.GetInstance(pollCtx, DefaultOrgID, id).Execute()
+		pollCtx, pollCancel := context.WithTimeout(ctx, nicoRequestTimeout)
+		_, statusCode, err := p.client.getInstance(pollCtx, id)
 		pollCancel()
-		if err != nil && resp != nil && resp.StatusCode == http.StatusNotFound {
+		if err != nil && statusCode == http.StatusNotFound {
 			return nil
 		}
 		if time.Now().After(deadline) {
