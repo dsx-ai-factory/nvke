@@ -752,6 +752,12 @@ docker create \
   "${RUNNER_DOCKER_ARGS[@]}" \
   "${RUNNER_IMAGE}" sleep infinity >/dev/null
 docker start "${RUNNER_NAME}" >/dev/null
+runner_kind_ip="$(docker inspect "${RUNNER_NAME}" \
+  --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')"
+if [[ ! "${runner_kind_ip}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+  log "inner runner has no valid IPv4 address on the kind network: ${runner_kind_ip}"
+  exit 1
+fi
 docker cp "${MANAGEMENT_KUBECONFIG}" "${RUNNER_NAME}:/state/management.kubeconfig"
 docker cp "${CLUSTERCTL_BIN}" "${RUNNER_NAME}:/usr/local/bin/clusterctl"
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
@@ -907,6 +913,7 @@ runner_exec env \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \
   NICO_SIM_BINARY_PREBUILT="${NICO_SIM_BINARY_PREBUILT}" \
+  NICO_SIM_ENDPOINT_HOST="${runner_kind_ip}" \
   NICO_VMS_VM_BACKEND=mock \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \

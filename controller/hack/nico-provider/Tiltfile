@@ -76,14 +76,14 @@ def _register_node_image(ctx, labels):
         allow_parallel=True,
     )
 
-def _register_nico_sim(ctx, labels, nico):
+def _register_nico_sim(ctx, labels, nico, endpoint_host):
     _register_node_image(ctx, labels)
     sim_dir = os.path.join(ctx.main_dir, "nico-sim")
     return load_dynamic(os.path.join(sim_dir, "Tiltfile"))["register"](struct(
         main_dir=ctx.main_dir,
         cfg=ctx.cfg,
         tilt_env=ctx.tilt_env,
-        kind_host_ip=ctx.kind_host_ip,
+        kind_host_ip=endpoint_host,
         provider_dir=sim_dir,
         nico_org_id=nico.org_id,
         nico_token=nico.token,
@@ -94,12 +94,13 @@ def register(ctx):
     nico = _nico_config(ctx)
     source_dir = _capnico_source_dir(ctx)
     use_nico_sim = not nico.endpoint
+    nico_sim_endpoint_host = os.getenv("NICO_SIM_ENDPOINT_HOST", ctx.kind_host_ip)
 
     sim_result = struct(cwe_resource_deps=[], cwe_env_overrides={})
     endpoint = nico.endpoint
     if use_nico_sim:
-        sim_result = _register_nico_sim(ctx, labels, nico)
-        endpoint = "http://%s:18080" % ctx.kind_host_ip
+        sim_result = _register_nico_sim(ctx, labels, nico, nico_sim_endpoint_host)
+        endpoint = "http://%s:18080" % nico_sim_endpoint_host
 
     install_script = os.path.join(ctx.provider_dir, "install-capnico.sh")
     provider_config_dir = os.path.join(ctx.provider_dir, "config")
