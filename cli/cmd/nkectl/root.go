@@ -55,7 +55,7 @@ func loadClient() (*clients.CWEClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading config: %w", err)
 	}
-	_, siteCfg, err := resolveSiteConfig(cfg)
+	siteCfg, err := resolveSiteConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -70,24 +70,19 @@ func loadSite() (config.SiteConfig, error) {
 	if err != nil {
 		return config.SiteConfig{}, fmt.Errorf("loading config: %w", err)
 	}
-	_, siteCfg, err := resolveSiteConfig(cfg)
-	return siteCfg, err
+	return resolveSiteConfig(cfg)
 }
 
-// resolveSiteConfig returns the active site's name and SiteConfig.
-func resolveSiteConfig(cfg *config.Config) (string, config.SiteConfig, error) {
+// resolveSiteConfig returns the active site's SiteConfig.
+func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 	if site == "" {
-		siteCfg, err := cfg.CurrentSiteConfig()
-		if err != nil {
-			return "", config.SiteConfig{}, err
-		}
-		return cfg.CurrentSite, siteCfg, nil
+		return cfg.CurrentSiteConfig()
 	}
 	siteCfg, ok := cfg.Sites[site]
 	if !ok {
-		return "", config.SiteConfig{}, fmt.Errorf("site %q not found in config", site)
+		return config.SiteConfig{}, fmt.Errorf("site %q not found in config", site)
 	}
-	return site, siteCfg, nil
+	return siteCfg, nil
 }
 
 // Execute is the entry point called from main.

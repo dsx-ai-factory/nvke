@@ -148,12 +148,9 @@ func TestResolveSiteConfigPrefersSiteFlagOverride(t *testing.T) {
 	site = "prod"
 	t.Cleanup(func() { site = "" })
 
-	name, resolved, err := resolveSiteConfig(cfg)
+	resolved, err := resolveSiteConfig(cfg)
 	if err != nil {
 		t.Fatalf("resolveSiteConfig: %v", err)
-	}
-	if name != "prod" {
-		t.Errorf("name = %q, want %q", name, "prod")
 	}
 	if resolved.URL != "https://prod-cwe.example.com" {
 		t.Errorf("URL = %q, want prod URL", resolved.URL)
@@ -168,12 +165,9 @@ func TestResolveSiteConfigFallsBackToCurrentSite(t *testing.T) {
 
 	site = ""
 
-	name, resolved, err := resolveSiteConfig(cfg)
+	resolved, err := resolveSiteConfig(cfg)
 	if err != nil {
 		t.Fatalf("resolveSiteConfig: %v", err)
-	}
-	if name != "dev" {
-		t.Errorf("name = %q, want %q", name, "dev")
 	}
 	if resolved.URL != "http://localhost:8080" {
 		t.Errorf("URL = %q, want dev URL", resolved.URL)
@@ -189,7 +183,7 @@ func TestResolveSiteConfigUnknownSiteFlagErrors(t *testing.T) {
 	site = "staging"
 	t.Cleanup(func() { site = "" })
 
-	if _, _, err := resolveSiteConfig(cfg); err == nil {
+	if _, err := resolveSiteConfig(cfg); err == nil {
 		t.Fatal("expected error for unknown --site override, got nil")
 	}
 }
@@ -199,7 +193,7 @@ func TestResolveSiteConfigErrorsWhenNoSiteConfigured(t *testing.T) {
 
 	site = ""
 
-	if _, _, err := resolveSiteConfig(cfg); err == nil {
+	if _, err := resolveSiteConfig(cfg); err == nil {
 		t.Fatal("expected error when no site is configured, got nil")
 	}
 }
@@ -214,7 +208,7 @@ func TestResolveSiteConfigErrorsWhenCurrentSiteIsDangling(t *testing.T) {
 
 	site = ""
 
-	if _, _, err := resolveSiteConfig(cfg); err == nil {
+	if _, err := resolveSiteConfig(cfg); err == nil {
 		t.Fatal("expected error when CurrentSite is not in Sites, got nil")
 	}
 }
