@@ -148,6 +148,38 @@ registry:
   bootstrapChart: "cloud-workflow-engine"
 `
 
+func TestCWEDeployConfigUsesConfiguredSPIREAgentAddress(t *testing.T) {
+	setBootstrapEnv(t)
+	inv := &sitespec.SiteSpec{
+		Spire: sitespec.Spire{ServerAddress: "spire.site.example"},
+		Cluster: sitespec.Cluster{Nodes: []sitespec.Node{{
+			TPMEKThumbprint: strings.Repeat("a", 64),
+		}}},
+	}
+
+	cfg, err := cweDeployConfig(inv, "bootstrap", false)
+	if err != nil {
+		t.Fatalf("cweDeployConfig returned error: %v", err)
+	}
+	if cfg.SPIREAgentServerAddress != "spire.site.example" {
+		t.Errorf("SPIREAgentServerAddress = %q, want site spec value", cfg.SPIREAgentServerAddress)
+	}
+	if cfg.DisableMTLS {
+		t.Error("mTLS disabled for a TPM-backed site")
+	}
+}
+
+func TestCWEDeployConfigDisablesMTLSWithoutTPMHashes(t *testing.T) {
+	setBootstrapEnv(t)
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "bootstrap", false)
+	if err != nil {
+		t.Fatalf("cweDeployConfig returned error: %v", err)
+	}
+	if !cfg.DisableMTLS {
+		t.Error("mTLS enabled for a site with no TPM identities")
+	}
+}
+
 // TestBootstrapSiteCommandWired verifies the command tree exposes
 // "nkectl bootstrap site" — the runnable command required by the ticket.
 func TestBootstrapSiteCommandWired(t *testing.T) {

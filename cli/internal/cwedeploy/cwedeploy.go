@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"text/template"
@@ -134,6 +135,10 @@ const (
 	// through it.
 	spireServerValuesPrefix = "spire-server"
 
+	// The hardened chart pins the AMD64 tpm-direct plugin checksum. The
+	// multi-architecture image contains different ARM64 bytes.
+	spireTPMDirectARM64Checksum = "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"
+
 	// DefaultCWEPort is the port the CWE API uses at every layer: the Helm
 	// Service, the external NodePort Service, and both sides of Kind's host port
 	// mapping.
@@ -221,6 +226,10 @@ type Config struct {
 	// When set, the server is also published on a NodePort: the hosts that
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
+
+	// SPIREAgentServerAddress is the site-configured address that physical
+	// node agents use to reach the bootstrap SPIRE server.
+	SPIREAgentServerAddress string
 
 	// DisableMTLS stands the site up without SPIFFE: no SPIRE is installed, and
 	// CWE dials each node agent in plaintext. The agent has to be running with
@@ -361,6 +370,9 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +
 			"objects CWE writes for a site cluster have no controller without it " +
 			"(see Config.ProvisionedProviderImage)")
+	}
+	if !cfg.DisableMTLS && cfg.SPIREAgentServerAddress == "" {
+		return errors.New("cwedeploy: Config.SPIREAgentServerAddress is required when mTLS is enabled")
 	}
 
 	chartPath := cfg.ChartPath
@@ -513,13 +525,18 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "profiles.image.tag=" + profTag,
 		"--set-string", "profiles.image.digest=" + profDigest,
 		"--set", "secrets.forgeSecret.enabled=false",
+		"--set", "controllers.nico.enabled=false",
 		"--set", "cni.installAfterInit=true",
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
-		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),
-		"--set-string", "spiffe.spire.serverPort=" + spireServerPort,
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
+	}
+	if !cfg.DisableMTLS {
+		cweArgs = append(cweArgs,
+			"--set-string", "spiffe.spire.serverAddress="+cfg.SPIREAgentServerAddress,
+			"--set-string", "spiffe.spire.serverPort="+strconv.FormatInt(int64(SPIREServerNodePort), 10),
+		)
 	}
 	cweArgs = append(cweArgs, nodeAgentPortArgs(cfg)...)
 	cweArgs = append(cweArgs, "--wait", "--timeout", helmTimeout.String())
@@ -828,11 +845,21 @@ func tpmAttestorArgs(cfg Config, prefix string) []string {
 		return nil
 	}
 	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
+	if checksum := tpmPluginChecksum(runtime.GOARCH); checksum != "" {
+		args = append(args, "--set-string", prefix+".nodeAttestor.tpmDirect.checksum="+checksum)
+	}
 	for i, fingerprint := range cfg.TPMEKFingerprints {
 		args = append(args, "--set-string",
 			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
 	}
 	return args
+}
+
+func tpmPluginChecksum(goarch string) string {
+	if goarch == "arm64" {
+		return spireTPMDirectARM64Checksum
+	}
+	return ""
 }
 
 // upstreamCAArgs points SPIRE at a CA the operator supplied.

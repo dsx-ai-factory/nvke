@@ -62,7 +62,7 @@ is a file `bootstrap site` accepts.
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.nodes` | list | yes | Must contain an odd number of control-plane nodes and at least one node. |
+| `cluster.nodes` | list | yes | Must contain one or an odd number of control-plane nodes. Multiple nodes require TPM thumbprints. |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
@@ -76,6 +76,7 @@ is a file `bootstrap site` accepts.
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
+| `spire.serverAddress` | string | with TPM | Site-reachable SPIRE server address for physical node agents. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 
@@ -91,12 +92,15 @@ being silently ignored.
   field, so a bad file can be fixed in one pass.
 - The site spec must contain an odd number of nodes and at least one node.
 - Node names and IPs must be unique across all nodes.
+- A site spec with no TPM thumbprints must contain exactly one node.
+- A multi-node site spec must give every node a TPM thumbprint.
+- `spire.serverAddress` is required when the nodes have TPM thumbprints.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry.
 
 ## Environment variable overrides
 
-Any field can be supplied — or overridden — through an environment variable, so
+Most fields can be supplied or overridden through an environment variable, so
 existing tier-0 / DS9 scripts can drive the site spec without editing the file.
 A set variable takes precedence over the file value.
 
@@ -120,6 +124,10 @@ A set variable takes precedence over the file value.
 A malformed `NKECTL_CLUSTER_NODES` entry fails the load rather than being
 silently discarded.
 
+`spire.serverAddress` has no environment override. Set it in the site spec.
+This rule prevents `nkectl` from selecting a different address than the one
+that the physical node agents use.
+
 `INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The site spec does not
 select a node for `kubeadm init`; the bootstrap process selects it downstream.
 
@@ -137,13 +145,15 @@ Every thumbprint in the file is seeded into the allowlist of the SPIRE server
 `bootstrap site` deploys, and it is the whole of that allowlist:
 
 - a node with a thumbprint can attest and be issued an identity
-- a node without one cannot
-- a site spec where no node has one deploys SPIRE with no TPM attestor at all
+- a node without one cannot attest
+- a site spec with no thumbprints deploys no SPIRE server and uses plaintext
+  agent connections
 
 It is a public key hash, not a secret, so it belongs in the site spec rather
 than beside the credentials, and a file carrying them stays safe to commit.
 
-A malformed thumbprint fails the load. Left to reach the allowlist it would
+A site spec must give a thumbprint for every node or for no nodes. The
+no-thumbprint mode is limited to one node. A malformed thumbprint fails the load. Left to reach the allowlist it would
 match nothing and surface much later as that one node failing attestation for no
 visible reason.
 
@@ -159,11 +169,20 @@ They are paths, not inline PEM. A private key does not belong in a file meant to
 be committed, and the same certificate has to be delivered to each node by
 whatever provisions it, so it already exists as a file.
 
-Both or neither. Omitting them leaves SPIRE self-signed, which is fine when
-nothing outside the cluster has to verify it — and means nodes cannot be given a
-trust anchor in advance. Both files are checked for existence at load, while
-nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
-helm failure naming a temporary file rather than the field that was wrong.
+Use both paths or neither path. The certificate must contain `CA:TRUE` and
+`keyCertSign`. Its public key must match the private key. `nkectl` checks these
+properties before it changes the bootstrap cluster.
+
+This command creates a short-lived test CA:
+
+```bash
+openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 7 \
+  -subj '/CN=nkectl bootstrap CA' \
+  -addext 'basicConstraints=critical,CA:TRUE' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -keyout spire-ca.key -out spire-ca.crt
+chmod 0600 spire-ca.key
+```
 
 ## Relationship to the tier-0 bootstrap template
 

@@ -90,6 +90,7 @@ site spec file rather than from flags or the environment. See
 | Field | |
 |---|---|
 | `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; a site spec with none deploys no TPM attestor at all. |
+| `spire.serverAddress` | The site-reachable SPIRE server address. Required for TPM attestation and never inferred from the node list. |
 | `spire.caCertFile` / `caKeyFile` | A CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
 
 ### What gets installed

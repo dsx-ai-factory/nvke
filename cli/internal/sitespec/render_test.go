@@ -16,8 +16,8 @@ import (
 func threeNodes() []Node {
 	return []Node{
 		{Name: "cp-01", IP: "10.10.50.2", TPMEKThumbprint: strings.Repeat("a", 64)},
-		{Name: "cp-02", IP: "10.10.50.3"},
-		{Name: "cp-03", IP: "10.10.50.4"},
+		{Name: "cp-02", IP: "10.10.50.3", TPMEKThumbprint: strings.Repeat("b", 64)},
+		{Name: "cp-03", IP: "10.10.50.4", TPMEKThumbprint: strings.Repeat("c", 64)},
 	}
 }
 

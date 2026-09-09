@@ -4,9 +4,8 @@
 # Values for controller/deploy/charts/controller on the ephemeral
 # bootstrap Kind cluster. Adapted from controller/hack/tilt-cwe-chart-values.yaml
 # (the chart's own local-dev override), trimmed to what this single-purpose
-# ephemeral deployment needs. SPIFFE is enabled at runtime after the SPIRE
-# umbrella chart installs its server, agent, CSI driver, and controller
-# manager. OIDC and ServiceMonitor stay disabled on the vanilla Kind cluster.
+# ephemeral deployment needs. Engine.Deploy enables SPIFFE only for an mTLS
+# bootstrap. OIDC and ServiceMonitor stay disabled on the vanilla Kind cluster.
 #
 # image.* and profiles.* are NOT set here -- Engine.Deploy passes them via
 # --set-string from Config.CWEImage and Config.ProfilesImage, since an image
@@ -59,7 +58,7 @@ temporal:
   port: 7233
 
 spiffe:
-  enabled: true
+  enabled: false
 
 nkeOIDCAuth:
   enabled: false
