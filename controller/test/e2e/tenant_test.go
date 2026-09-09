@@ -331,6 +331,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
 			kubernetesVersion: "1.34.2",
+			cniPlugin:         CNIPluginOVN, // Required by the Open vSwitch typed-path assertion below.
 			// Default cpu2-mem2gb cannot schedule ovnkube-node (500m/1500Mi).
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 3, InstanceTypeID: nicoVMSLargeInstanceID}},
 			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
