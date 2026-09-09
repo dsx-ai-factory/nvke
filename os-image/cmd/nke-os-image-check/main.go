@@ -32,6 +32,7 @@ func run(args []string) int {
 	endpoint := fs.String("endpoint", "", "nke-agent host or host:port (default port 15005)")
 	socket := fs.String("spiffe-socket", check.DefaultSPIFFESocket, "SPIFFE workload API address")
 	trustDomain := fs.String("expect-trust-domain", "", "If set, require the local SVID to be in this trust domain")
+	plaintext := fs.Bool("plaintext", false, "Probe using plaintext gRPC instead of SPIFFE mTLS")
 	timeout := fs.Duration("timeout", 30*time.Second, "Overall probe timeout")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -58,6 +59,7 @@ func run(args []string) int {
 		Endpoint:          *endpoint,
 		SPIFFESocket:      *socket,
 		ExpectTrustDomain: *trustDomain,
+		Plaintext:         *plaintext,
 	})
 	if err != nil {
 		slog.Error("probe failed", "err", err)

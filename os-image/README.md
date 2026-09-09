@@ -11,7 +11,6 @@ generic default. The contract is [SPEC.md](SPEC.md).
 | `packer/` | Packer + QEMU recipe that produces a qcow2 |
 | `files/` | systemd units, SPIRE template, first-boot script |
 | `files/luks/` | LUKS/TPM2 first-boot binding assets for the FDE variant |
-| `files/lvm/` | First-boot storage-growth assets for the non-FDE (no encryption) variant |
 | `docs/full-disk-encryption.md` | FDE variant: build, verify, failure modes |
 | `demo-fde.sh` | Runs the host-FDE acceptance scenarios against a built image |
 | `cmd/nke-os-image-check` | Connectivity checker (Go) |
@@ -44,10 +43,11 @@ they boot the build VM and fail fast with the install link above if it's
 missing.
 
 `nke-agent` is built from this checkout's `agent/` source (cross-compiled to
-`linux/amd64` when the host differs), so the baked agent is whatever your
+the target architecture when the host differs), so the baked agent is whatever your
 checkout says — no prebuilt artifact is pulled. To bake a released agent,
-check out its `agent/vX.Y.Z` tag first. SPIRE agent is pinned (version +
-sha256) from GitHub Releases.
+check out its `agent/vX.Y.Z` tag first. The SPIRE agent and TPM tools are
+pinned by version and SHA-256. The build also installs the Calico manifests
+package that the agent uses during offline bootstrap.
 
 Both variants install Ubuntu's NVIDIA-tuned kernel (`kernel.package` in
 `cidata/autoinstall-lvm.pkrtpl`), so the generic kernel never lands on disk in
@@ -92,12 +92,9 @@ once a node's first boot completes a verified TPM bind.
 
 ## Non-FDE variant (no encryption)
 
-The same installer + autoinstall + LVM flow as the FDE variant, with
-encryption turned off entirely — no LUKS, no Clevis, no TPM binding. Useful
-for telling FDE-specific issues apart from issues in the installer flow
-itself (partitioning, identity/SSH setup, first-boot storage growth), or as
-a starting point if you want the installer-based LVM layout without opting
-into encryption.
+This image uses a direct ext4 root partition. It has no LUKS, Clevis, TPM
+binding, or LVM layer. The root filesystem has the `cloudimg-rootfs` label so
+Forge can discover it during reimage.
 
 ```bash
 cd packer
@@ -214,7 +211,7 @@ write_files:
       -----END CERTIFICATE-----
 ```
 
-`nke-spire-configure.service` waits for `cloud-final`, renders
+`nke-spire-configure.service` reads the files after cloud-init writes them, renders
 `/etc/spire-agent/agent.conf`, and only then does `spire-agent` start.
 `nke-agent` starts after the workload API socket exists.
 
@@ -238,3 +235,8 @@ The process needs a SPIFFE workload API with an SVID whose path starts with
 Override with `--spiffe-socket`. This is the same shape as the controller
 dialer; it is not a SPIRE server. For a local SPIRE, see
 `controller/scripts/dev-env-spire.sh`.
+
+Use `--plaintext` only to verify a bootstrap that has mTLS disabled. The image
+installs the checker and `/usr/lib/nke/configure-nke-agent-plaintext.sh`.
+Cloud-init can run the helper to select plaintext mode. The helper first probes
+the agent and does not restart an agent that already responds.

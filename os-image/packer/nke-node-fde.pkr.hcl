@@ -187,6 +187,7 @@ source "qemu" "nke-fde" {
       luks_enabled          = true
       luks_passphrase       = var.luks_passphrase
       nvidia_kernel_package = local.nvidia_kernel_package
+      serial_console        = local.arch == "arm64" ? "ttyAMA0" : "ttyS0"
     })
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }

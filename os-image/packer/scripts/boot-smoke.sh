@@ -112,8 +112,8 @@ if [[ -n "${OVMF_CODE}" ]]; then
   EFIVARS="${WORKDIR}/OVMF_VARS.fd"
   cp "${OVMF_VARS_TEMPLATE}" "${EFIVARS}"
   EFI_ARGS=(
-    -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}"
-    -drive if=pflash,format=raw,file="${EFIVARS}"
+    -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}"
+    -drive "if=pflash,format=raw,file=${EFIVARS}"
   )
 fi
 
@@ -155,13 +155,32 @@ timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o ConnectTimeout=5 -o BatchMode=yes \
     ubuntu@127.0.0.1 bash -s <<'EOF'
 set -euo pipefail
+test "$(findmnt -n -o LABEL /)" = cloudimg-rootfs
 systemctl is-enabled nke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
 test -x /usr/local/bin/nke-agent || test -x /usr/bin/nke-agent
+test -x /usr/local/bin/nke-os-image-check
 test -x /usr/local/bin/spire-agent
+test -x /usr/local/lib/spire-agent/tpm_attestor_agent
+test -x /usr/local/bin/get_tpm_pubhash
+test -x /usr/lib/nke/configure-nke-agent-plaintext.sh
 test -x /usr/lib/nke/spire-configure.sh
 test -x /usr/lib/nke/wait-spiffe-socket.sh
+dpkg-query -W -f='${Status}\n' 'nke-cni-calico-manifests-*' | grep -Fxq 'install ok installed'
+
+sudo /usr/lib/nke/configure-nke-agent-plaintext.sh
+for attempt in $(seq 1 12); do
+  if /usr/local/bin/nke-os-image-check \
+      --plaintext --endpoint 127.0.0.1:15005 --timeout 5s; then
+    break
+  fi
+  if [[ "${attempt}" == 12 ]]; then
+    sudo systemctl --no-pager --full status nke-agent.service || true
+    exit 1
+  fi
+  sleep 5
+done
 EOF
 
-echo "boot-smoke: nke-agent and spire-agent are installed and enabled"
+echo "boot-smoke: image contract and plaintext bootstrap mode are operational"

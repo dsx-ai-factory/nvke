@@ -18,6 +18,8 @@ import (
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/reflection/grpc_reflection_v1"
 	"google.golang.org/grpc/status"
 
@@ -52,6 +54,7 @@ type Options struct {
 	Endpoint          string
 	SPIFFESocket      string
 	ExpectTrustDomain string
+	Plaintext         bool
 }
 
 // Result is a successful probe.
@@ -85,6 +88,9 @@ func Probe(ctx context.Context, opts Options) (Result, error) {
 	endpoint, err := NormalizeEndpoint(opts.Endpoint)
 	if err != nil {
 		return Result{}, err
+	}
+	if opts.Plaintext {
+		return probeWithCredentials(ctx, endpoint, insecure.NewCredentials(), "")
 	}
 	socket := opts.SPIFFESocket
 	if socket == "" {
@@ -130,10 +136,17 @@ func Probe(ctx context.Context, opts Options) (Result, error) {
 		return nil
 	})
 
-	conn, err := grpc.NewClient(
-		endpoint,
-		grpc.WithTransportCredentials(grpccredentials.MTLSClientCredentials(x509Source, bundleSource, authorizer)),
-	)
+	return probeWithCredentials(ctx, endpoint,
+		grpccredentials.MTLSClientCredentials(x509Source, bundleSource, authorizer), svid.ID.String())
+}
+
+func probeWithCredentials(
+	ctx context.Context,
+	endpoint string,
+	transportCredentials credentials.TransportCredentials,
+	clientSVID string,
+) (Result, error) {
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(transportCredentials))
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %w", ErrDial, err)
 	}
@@ -154,7 +167,7 @@ func Probe(ctx context.Context, opts Options) (Result, error) {
 
 	return Result{
 		Endpoint:     endpoint,
-		ClientSVID:   svid.ID.String(),
+		ClientSVID:   clientSVID,
 		AgentVersion: statusResp.GetAgentVersion(),
 		Kubeadm:      statusResp.GetKubeadmStatus(),
 		Services:     services,

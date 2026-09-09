@@ -22,6 +22,8 @@ case "${ARCH}" in
     SPIRE_ARCH=amd64
     # Pinned: same SPIRE release CAPD e2e already vendors (controller/hack/ci).
     SPIRE_SHA256_DEFAULT=0278af1e083fda58a6dfd09f97d41b5c34b011dca2fd53dc79d0e418996ed0ba
+    TPM_PLUGIN_SHA256_DEFAULT=64c9ed83857e802571f9e4c8377994bfb9d220708bcefe6b50674b2eee4bfbd2
+    TPM_PUBHASH_SHA256_DEFAULT=e70d183f48f6941c41525e690649f7003df69235d4eae6ab1a668dbb00948a47
     ;;
   arm64)
     AGENT_BUILD_TARGET=build-arm64
@@ -30,6 +32,8 @@ case "${ARCH}" in
     # Pinned from spire-1.14.1-linux-arm64-musl_sha256sum.txt on the v1.14.1
     # GitHub release, the same way the amd64 checksum above was sourced.
     SPIRE_SHA256_DEFAULT=94ec569b697323b067db05565ff098eb3d8fa217dad40f367c961e239d54858d
+    TPM_PLUGIN_SHA256_DEFAULT=b85502354358cd919691be022eb0f5678f5fdb9e84d86a2d1819362e18e796ae
+    TPM_PUBHASH_SHA256_DEFAULT=c0145069cb87d9b57563de66004c2aa0d10d9e87869046caf0faefe677efa1a8
     ;;
   *)
     echo "unsupported ARCH=${ARCH} (expected amd64 or arm64)" >&2
@@ -47,9 +51,12 @@ SPIRE_SHA256="${SPIRE_SHA256:-${SPIRE_SHA256_DEFAULT}}"
 # this plugin to join one; without it the agent can only use a join token, which
 # the site cluster never mints.
 TPM_PLUGIN_VERSION="${TPM_PLUGIN_VERSION:-1.9.0}"
-TPM_PLUGIN_TARBALL="spire_tpm_plugin_tpm_attestor_agent_linux_amd64_v${TPM_PLUGIN_VERSION}.tar.gz"
+TPM_PLUGIN_TARBALL="spire_tpm_plugin_tpm_attestor_agent_linux_${SPIRE_ARCH}_v${TPM_PLUGIN_VERSION}.tar.gz"
 TPM_PLUGIN_URL="https://github.com/spiffe/spire-tpm-plugin/releases/download/v${TPM_PLUGIN_VERSION}/${TPM_PLUGIN_TARBALL}"
-TPM_PLUGIN_SHA256="${TPM_PLUGIN_SHA256:-64c9ed83857e802571f9e4c8377994bfb9d220708bcefe6b50674b2eee4bfbd2}"
+TPM_PLUGIN_SHA256="${TPM_PLUGIN_SHA256:-${TPM_PLUGIN_SHA256_DEFAULT}}"
+TPM_PUBHASH_TARBALL="spire_tpm_plugin_get_tpm_pubhash_linux_${SPIRE_ARCH}_v${TPM_PLUGIN_VERSION}.tar.gz"
+TPM_PUBHASH_URL="https://github.com/spiffe/spire-tpm-plugin/releases/download/v${TPM_PLUGIN_VERSION}/${TPM_PUBHASH_TARBALL}"
+TPM_PUBHASH_SHA256="${TPM_PUBHASH_SHA256:-${TPM_PUBHASH_SHA256_DEFAULT}}"
 
 mkdir -p "${ARTIFACTS_DIR}"
 
@@ -67,6 +74,16 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 echo "building nke-agent from source (${repo_root}/agent, ${ARCH})"
 make -C "${repo_root}/agent" "${AGENT_BUILD_TARGET}"
 install -m 0755 "${repo_root}/agent/bin/${AGENT_BIN_DIR}/nke-agent" "${ARTIFACTS_DIR}/nke-agent"
+
+check_version="$(git -C "${repo_root}" describe --tags --dirty --match 'os-image/v[0-9]*' 2>/dev/null || git -C "${repo_root}" rev-parse --short HEAD)"
+echo "building nke-os-image-check from source (${repo_root}/os-image, ${ARCH})"
+(
+  cd "${repo_root}"
+  CGO_ENABLED=0 GOOS=linux GOARCH="${ARCH}" go build \
+    -ldflags "-X main.version=${check_version#os-image/}" \
+    -o "${ARTIFACTS_DIR}/nke-os-image-check" \
+    ./os-image/cmd/nke-os-image-check
+)
 
 # The CNI debs nke-agent installs at cluster create, plus a flat apt index that
 # provision.sh stages as a local repo. amd64 only: the locks pin amd64 digests.
@@ -100,7 +117,19 @@ if [[ "${ARCH}" == amd64 ]]; then
     echo "NGC_API_KEY is unset; skipping the nke-cni-ovn debs (this image cannot install OVN offline)"
   fi
 else
-  echo "skipping the CNI debs: the packages build amd64 only, this is ${ARCH}"
+  echo "building the architecture-independent Calico manifests deb"
+  bash "${repo_root}/controller/hack/ci/prepare-calico-assets.sh" "${ARTIFACTS_DIR}/calico-assets"
+  mkdir -p "${ARTIFACTS_DIR}/debs"
+  calico_deb="$(find "${ARTIFACTS_DIR}/calico-assets" -maxdepth 1 -type f -name 'nke-cni-calico-manifests-*_all.deb' -print -quit)"
+  if [[ -z "${calico_deb}" ]]; then
+    echo "Calico asset builder produced no manifests package" >&2
+    exit 1
+  fi
+  install -m 0644 "${calico_deb}" "${ARTIFACTS_DIR}/debs/"
+  (
+    cd "${ARTIFACTS_DIR}/debs"
+    dpkg-scanpackages . /dev/null >Packages
+  )
 fi
 
 spire_tar="${ARTIFACTS_DIR}/${SPIRE_TARBALL}"
@@ -141,10 +170,30 @@ if [[ -z "${tpm_bin}" ]]; then
 fi
 install -m 0755 "${tpm_bin}" "${ARTIFACTS_DIR}/tpm_attestor_agent"
 
+tpm_pubhash_tar="${ARTIFACTS_DIR}/${TPM_PUBHASH_TARBALL}"
+echo "fetching ${TPM_PUBHASH_URL}"
+curl --fail --silent --show-error --location \
+  --connect-timeout 10 --max-time 60 \
+  --retry 3 --retry-delay 5 --retry-connrefused \
+  -o "${tpm_pubhash_tar}" "${TPM_PUBHASH_URL}"
+printf '%s  %s\n' "${TPM_PUBHASH_SHA256}" "${tpm_pubhash_tar}" | sha256sum -c -
+
+tpm_pubhash_extract="${ARTIFACTS_DIR}/tpm-pubhash-extract"
+rm -rf "${tpm_pubhash_extract}"
+mkdir -p "${tpm_pubhash_extract}"
+tar -xzf "${tpm_pubhash_tar}" -C "${tpm_pubhash_extract}"
+tpm_pubhash_bin="$(find "${tpm_pubhash_extract}" -type f -name get_tpm_pubhash -print -quit)"
+if [[ -z "${tpm_pubhash_bin}" ]]; then
+  echo "TPM public-hash tarball did not contain get_tpm_pubhash" >&2
+  exit 1
+fi
+install -m 0755 "${tpm_pubhash_bin}" "${ARTIFACTS_DIR}/get_tpm_pubhash"
+
 files_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../files" && pwd)"
 install -m 0644 "${files_dir}/nke-agent.service" "${ARTIFACTS_DIR}/nke-agent.service"
 install -m 0644 "${files_dir}/spire-agent.service" "${ARTIFACTS_DIR}/spire-agent.service"
 install -m 0644 "${files_dir}/nke-spire-configure.service" "${ARTIFACTS_DIR}/nke-spire-configure.service"
 install -m 0644 "${files_dir}/spire-agent.conf.tmpl" "${ARTIFACTS_DIR}/spire-agent.conf.tmpl"
 install -m 0755 "${files_dir}/spire-configure.sh" "${ARTIFACTS_DIR}/spire-configure.sh"
+install -m 0755 "${files_dir}/configure-nke-agent-plaintext.sh" "${ARTIFACTS_DIR}/configure-nke-agent-plaintext.sh"
 install -m 0755 "${files_dir}/wait-spiffe-socket.sh" "${ARTIFACTS_DIR}/wait-spiffe-socket.sh"

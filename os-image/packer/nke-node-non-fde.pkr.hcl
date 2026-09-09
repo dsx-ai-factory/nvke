@@ -1,14 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Non-FDE variant: the same installer+autoinstall+LVM flow as
-# nke-node-fde.pkr.hcl, minus LUKS/Clevis/TPM entirely. No encryption is
-# configured or implied by this variant — it exists to isolate FDE-specific
-# issues from installer-flow issues by giving an otherwise-identical build to
-# compare against, and as a base for anyone who wants the installer-based
-# LVM partitioning (e.g. for its own first-boot storage growth) without
-# opting into encryption. Shares cidata/autoinstall-lvm.pkrtpl with the FDE
-# variant, with luks_enabled = false.
+# Non-FDE variant: an installer-based image with a direct ext4 root partition.
+# It has no LUKS, Clevis, TPM binding, or LVM layer. This layout remains
+# discoverable when a target retains an old LVM device mapping during reimage.
 
 packer {
   required_version = ">= 1.10.0"
@@ -147,6 +142,7 @@ source "qemu" "nke-non-fde" {
       luks_enabled          = false
       luks_passphrase       = ""
       nvidia_kernel_package = local.nvidia_kernel_package
+      serial_console        = local.arch == "arm64" ? "ttyAMA0" : "ttyS0"
     })
     "/meta-data" = "instance-id: nke-packer-non-fde\nlocal-hostname: nke-packer-non-fde\n"
   }
@@ -215,24 +211,12 @@ build {
   }
 
   provisioner "shell" {
-    inline = ["mkdir -p /tmp/nke-image/lvm"]
+    inline = ["mkdir -p /tmp/nke-image"]
   }
 
   provisioner "file" {
     source      = "${local.artifacts}/"
     destination = "/tmp/nke-image/"
-  }
-
-  provisioner "file" {
-    source      = "${path.root}/../files/lvm/"
-    destination = "/tmp/nke-image/lvm/"
-  }
-
-  # configure-lvm-growth.sh runs before provision.sh for the same reason as
-  # the FDE variant: provision.sh's final cleanup (cloud-init clean,
-  # machine-id truncate, removing the Packer SSH key) must be the last step.
-  provisioner "shell" {
-    script = "${path.root}/scripts/configure-lvm-growth.sh"
   }
 
   provisioner "shell" {

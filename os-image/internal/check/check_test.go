@@ -128,3 +128,32 @@ func TestListServicesAndStatus(t *testing.T) {
 		t.Fatalf("agent version = %q, want test", statusResp.GetAgentVersion())
 	}
 }
+
+func TestProbePlaintext(t *testing.T) {
+	t.Parallel()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	t.Cleanup(func() { _ = lis.Close() })
+
+	server := grpc.NewServer()
+	nkeproto.RegisterNodeAgentServer(server, &stubAgent{})
+	reflection.Register(server)
+	go func() { _ = server.Serve(lis) }()
+	t.Cleanup(server.Stop)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	result, err := Probe(ctx, Options{Endpoint: lis.Addr().String(), Plaintext: true})
+	if err != nil {
+		t.Fatalf("Probe plaintext: %v", err)
+	}
+	if result.AgentVersion != "test" {
+		t.Fatalf("agent version = %q, want test", result.AgentVersion)
+	}
+	if result.ClientSVID != "" {
+		t.Fatalf("client SVID = %q for plaintext probe, want empty", result.ClientSVID)
+	}
+}
