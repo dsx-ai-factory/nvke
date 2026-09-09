@@ -4,6 +4,7 @@
 package clusters
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -138,6 +139,125 @@ func TestApplySetRejectsInvalidUUID(t *testing.T) {
 	err := applySets(&req, []string{"controlPlaneConfig.nico.subnetIDs=not-a-uuid"})
 	if err == nil {
 		t.Fatal("applySets accepted a non-UUID subnet id")
+	}
+}
+
+func TestUpdateClusterSetSendsThePatchAndReportsSuccess(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	out, err := run(t, NewUpdateCmd(clientFn), "my-cluster",
+		"--set", "controlPlaneKubernetesVersion=1.31.0",
+		"--set", "enableCPNodeRecycling=true",
+	)
+	if err != nil {
+		t.Fatalf("update cluster: %v", err)
+	}
+
+	want := []string{
+		"GET /api/clusters?name=my-cluster",
+		"PATCH /api/clusters/" + seed.ID.String(),
+	}
+	seen := fake.seen()
+	if len(seen) != len(want) {
+		t.Fatalf("requests = %v, want %v", seen, want)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Errorf("request %d = %q, want %q", i, seen[i], want[i])
+		}
+	}
+
+	stored := fake.stored()
+	if len(stored) != 1 || stored[0].ControlPlaneKubernetesVersion != "1.31.0" {
+		t.Fatalf("stored cluster = %+v, want controlPlaneKubernetesVersion 1.31.0", stored)
+	}
+
+	if !strings.Contains(out, `"my-cluster" updated`) {
+		t.Errorf("output does not confirm the update:\n%s", out)
+	}
+	if !strings.Contains(out, seed.ID.String()) {
+		t.Errorf("output omits the cluster id:\n%s", out)
+	}
+}
+
+func TestUpdateClusterFileLoadsThePatch(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	cmd := NewUpdateCmd(clientFn)
+	cmd.SetIn(strings.NewReader(`controlPlaneKubernetesVersion: "1.31.0"`))
+	_, err := run(t, cmd, "my-cluster", "-f", "-")
+	if err != nil {
+		t.Fatalf("update cluster -f -: %v", err)
+	}
+
+	stored := fake.stored()
+	if len(stored) != 1 || stored[0].ControlPlaneKubernetesVersion != "1.31.0" {
+		t.Fatalf("stored cluster = %+v, want controlPlaneKubernetesVersion 1.31.0", stored)
+	}
+}
+
+func TestUpdateClusterSetOverridesFile(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	cmd := NewUpdateCmd(clientFn)
+	cmd.SetIn(strings.NewReader(`controlPlaneKubernetesVersion: "1.30.5"`))
+	_, err := run(t, cmd, "my-cluster", "-f", "-", "--set", "controlPlaneKubernetesVersion=1.31.0")
+	if err != nil {
+		t.Fatalf("update cluster: %v", err)
+	}
+
+	stored := fake.stored()
+	if len(stored) != 1 || stored[0].ControlPlaneKubernetesVersion != "1.31.0" {
+		t.Fatalf("stored cluster = %+v, want --set to win with 1.31.0", stored)
+	}
+}
+
+func TestUpdateClusterRejectsUnknownClusterName(t *testing.T) {
+	_, clientFn := newFakeCWE(t)
+
+	_, err := run(t, NewUpdateCmd(clientFn), "ghost", "--set", "teleportEnabled=true")
+	if err == nil {
+		t.Fatal("updating an unknown cluster returned no error")
+	}
+	if !strings.Contains(err.Error(), `cluster "ghost" not found`) {
+		t.Errorf("error = %v, want a not-found error naming the cluster", err)
+	}
+}
+
+func TestUpdateClusterRejectsBadSetEntry(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	_, clientFn := newFakeCWE(t, seed)
+
+	_, err := run(t, NewUpdateCmd(clientFn), "my-cluster", "--set", "notAField=x")
+	if err == nil {
+		t.Fatal("update accepted an unknown --set key")
+	}
+}
+
+func TestUpdateClusterRequiresFileOrSet(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	_, clientFn := newFakeCWE(t, seed)
+
+	_, err := run(t, NewUpdateCmd(clientFn), "my-cluster")
+	if err == nil {
+		t.Fatal("update with neither -f nor --set returned no error")
+	}
+}
+
+func TestUpdateClusterSurfacesServerRejection(t *testing.T) {
+	// newBrokenCWE always answers with the same status/body regardless of
+	// path, so this exercises the client/error-surfacing path, not a
+	// specific fakeCWE route.
+	broken := newBrokenCWE(t, 409, `{"message":"k8s_upgrade is already in progress"}`)
+	_, err := run(t, NewUpdateCmd(broken), "my-cluster", "--set", "teleportEnabled=true")
+	if err == nil {
+		t.Fatal("update against a 409 server returned no error")
+	}
+	if !strings.Contains(err.Error(), "k8s_upgrade is already in progress") {
+		t.Errorf("error = %v, want it to carry the server's message", err)
 	}
 }
 
