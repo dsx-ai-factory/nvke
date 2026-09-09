@@ -66,6 +66,11 @@ fullnameOverride: ""
 # -- Deploy into this namespace instead of the release namespace (umbrella use).
 namespaceOverride: ""
 
+controllers:
+  nico:
+    # -- Run controllers that watch NICo infrastructure resources.
+    enabled: true
+
 nkeSystemNamespace:
   # -- Create the shared nke-system namespace.
   create: true
