@@ -8,6 +8,8 @@ navigation:
     path: concepts.md
   - page: Architecture
     path: architecture.md
+  - page: Your First Cluster
+    path: first-cluster.md
 
   - section: Site Controller Bootstrap
     contents:
