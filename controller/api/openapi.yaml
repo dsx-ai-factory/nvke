@@ -2450,6 +2450,7 @@ components:
     SpireAttestationMethod:
       type: string
       enum:
+        - "none"
         - "tpm"
         - "joinToken"
       description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.
@@ -2457,6 +2458,7 @@ components:
     SpireAttestationMethodCreate:
       type: string
       enum:
+        - "none"
         - "tpm"
         - "joinToken"
       description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.

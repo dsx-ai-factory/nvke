@@ -73,8 +73,10 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	// read a bundle from, so a node gets neither the bundle nor an agent
 	// config. Asking anyway blocks provisioning: the dial fails, the activity
 	// retries forever, and the cluster never leaves Provisioning.
+	spireEnabledForNode := a.cfg.SpiffeEnabled &&
+		capiNodeSetProvider.SpireAttestationMethod != db.SpireAttestationMethodNone
 	var trustDomain, trustBundle string
-	if a.cfg.SpiffeEnabled {
+	if spireEnabledForNode {
 		trustDomain, trustBundle, err = a.getTrustDomainBundle(ctx, a.cfg)
 		if err != nil {
 			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
@@ -90,7 +92,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			Content:     file.Content,
 		})
 	}
-	if a.cfg.SpiffeEnabled {
+	if spireEnabledForNode {
 		files = append(files,
 			capiCloudInitFile{
 				Path:        constants.CAPISpireTrustBundlePath,

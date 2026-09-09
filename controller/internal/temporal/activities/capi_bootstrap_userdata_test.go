@@ -81,6 +81,34 @@ func TestRenderCAPIBootstrapUserData_JoinTokenRequiresToken(t *testing.T) {
 	require.EqualError(t, err, "spire join token is required when infra.spireAttestationMethod is joinToken")
 }
 
+func TestRenderCAPIBootstrapUserData_NoSpireAttestation(t *testing.T) {
+	called := false
+	activities := &Activities{
+		cfg: config.Config{SpiffeEnabled: true},
+		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			called = true
+			return "", "", errors.New("trust bundle must not be requested")
+		},
+	}
+
+	var nodeSet db.NodeSet
+	nodeSet.SetCapi(db.CAPINodePoolProvider{
+		SpireAttestationMethod: db.SpireAttestationMethodNone,
+		BootstrapFiles: []db.CloudInitFile{
+			{Path: "/etc/custom.conf", Owner: "root:root", Permissions: "0600", Content: "hello"},
+		},
+		PreKubeadmCommands: []string{"echo before kubeadm"},
+	})
+
+	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
+	require.NoError(t, err)
+	assert.False(t, called, "the workload API must not be used when node attestation is disabled")
+	assert.Contains(t, userData, "/etc/custom.conf")
+	assert.Contains(t, userData, "echo before kubeadm")
+	assert.NotContains(t, userData, "/etc/spire-agent")
+	assert.NotContains(t, userData, "NodeAttestor")
+}
+
 // A site stood up with --disable-mtls has no SPIRE, so there is no workload
 // socket to read a bundle from. The node gets no bundle and no agent config,
 // and rendering must not try to fetch one: the dial would fail, the activity
