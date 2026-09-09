@@ -4,7 +4,6 @@
 [Unit]
 Description=Render SPIRE agent config from instance identity
 Documentation=https://github.com/NVIDIA/nke/blob/main/os-image/SPEC.md
-After=cloud-final.service
 Before=spire-agent.service
 ConditionPathExists=/etc/nke/spire.env
 

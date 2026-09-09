@@ -7,8 +7,6 @@ set -Eeuo pipefail
 OUTPUT_DIR="${1:?usage: prepare-capd-bundles.sh OUTPUT_DIR}"
 SPIRE_AGENT_VERSION="1.14.1"
 TPM_PLUGIN_VERSION="1.9.0"
-CALICO_VERSION="3.30.1"
-CALICO_MANIFESTS_PACKAGE="nke-cni-calico-manifests-${CALICO_VERSION}"
 # SPIRE and the TPM plugin ship real binaries, so they follow the node image's
 # architecture. amd64 keeps the CI runners on the bytes they already used.
 BUNDLE_ARCH="${BUNDLE_ARCH:-amd64}"
@@ -83,68 +81,4 @@ printf 'TPM_PLUGIN_CHECKSUM=%s\n' "$(sha256sum "${spire_bundle}/bin/tpm_attestor
   >"${spire_bundle}/spire-agent.env"
 tar -czf "${OUTPUT_DIR}/spire-agent.tgz" -C "${TMP_DIR}" "${spire_bundle_name}"
 
-calico_bundle_name="calico_v${CALICO_VERSION}_na"
-calico_bundle="${TMP_DIR}/${calico_bundle_name}"
-mkdir -p "${calico_bundle}/manifests"
-download_verified \
-  "https://raw.githubusercontent.com/projectcalico/calico/v${CALICO_VERSION}/manifests/operator-crds.yaml" \
-  "5969b2393d9cab1212480ad08dd989023106373c23163441474e65ceb2bb734f" \
-  "${calico_bundle}/manifests/operator-crds.yaml"
-download_verified \
-  "https://raw.githubusercontent.com/projectcalico/calico/v${CALICO_VERSION}/manifests/tigera-operator.yaml" \
-  "65fc29459f236af44b31bd409640534db20ff940192f6b9023c972a69041977f" \
-  "${calico_bundle}/manifests/tigera-operator.yaml"
-download_verified \
-  "https://raw.githubusercontent.com/projectcalico/calico/v${CALICO_VERSION}/manifests/custom-resources.yaml" \
-  "f7cd142773609fc7f830b96d8f29bd1b5f05cdc5293324992d8524b54c09c717" \
-  "${calico_bundle}/manifests/custom-resources.yaml"
-install -m 0755 "${ASSET_DIR}/calico-install.py" "${calico_bundle}/calico-install.py"
-tar -czf "${OUTPUT_DIR}/${calico_bundle_name}.tgz" -C "${TMP_DIR}" "${calico_bundle_name}"
-
-# InstallCNI deliberately consumes a Debian package that dpkg can identify and
-# enumerate. Build that same contract from the checksum-verified public
-# manifests above so the local CAPD node image does not depend on an internal
-# apt repository or a prebuilt CNI artifact.
-calico_deb_root="${TMP_DIR}/${CALICO_MANIFESTS_PACKAGE}-deb"
-calico_deb_install_root="${calico_deb_root}/usr/share/nke-cni/calico"
-calico_deb="${OUTPUT_DIR}/${CALICO_MANIFESTS_PACKAGE}_${CALICO_VERSION}_all.deb"
-install -d -m 0755 "${calico_deb_root}/DEBIAN" "${calico_deb_install_root}/manifests"
-install -m 0644 \
-  "${calico_bundle}/manifests/operator-crds.yaml" \
-  "${calico_bundle}/manifests/tigera-operator.yaml" \
-  "${calico_bundle}/manifests/custom-resources.yaml" \
-  "${calico_deb_install_root}/manifests/"
-# The agent preferentially executes apply-manifests.sh. The existing Python
-# installer already orders CRDs, operator readiness and custom resources, and
-# its shebang allows it to retain that conventional package filename.
-install -m 0755 "${ASSET_DIR}/calico-install.py" "${calico_deb_install_root}/apply-manifests.sh"
-cat >"${calico_deb_root}/DEBIAN/control" <<EOF
-Package: ${CALICO_MANIFESTS_PACKAGE}
-Version: ${CALICO_VERSION}
-Architecture: all
-Maintainer: NVIDIA Kubernetes Engine
-Description: Calico manifests for local NKE CAPD testing
-EOF
-chmod 0644 "${calico_deb_root}/DEBIAN/control"
-dpkg-deb --root-owner-group --build "${calico_deb_root}" "${calico_deb}"
-
-[[ "$(dpkg-deb --field "${calico_deb}" Package)" == "${CALICO_MANIFESTS_PACKAGE}" ]]
-[[ "$(dpkg-deb --field "${calico_deb}" Version)" == "${CALICO_VERSION}" ]]
-calico_deb_contents="${TMP_DIR}/calico-deb-contents.txt"
-dpkg-deb --contents "${calico_deb}" >"${calico_deb_contents}"
-grep -Fq './usr/share/nke-cni/calico/apply-manifests.sh' "${calico_deb_contents}"
-grep -Fq './usr/share/nke-cni/calico/manifests/tigera-operator.yaml' "${calico_deb_contents}"
-
-cat >"${OUTPUT_DIR}/index.json" <<EOF
-{
-  "calico": {
-    "entries": [
-      {
-        "arch": "na",
-        "path": "${calico_bundle_name}.tgz",
-        "version": "${CALICO_VERSION}"
-      }
-    ]
-  }
-}
-EOF
+"$(dirname "${BASH_SOURCE[0]}")/prepare-calico-assets.sh" "${OUTPUT_DIR}"

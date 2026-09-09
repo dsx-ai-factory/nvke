@@ -131,6 +131,33 @@ func testConfig(t *testing.T) Config {
 		ProvisionedProviderPath:  t.TempDir(),
 		ChartPath:                t.TempDir(), // any existing dir stands in for the chart
 		PostgresPassword:         "test-password",
+		TPMEKFingerprints:        []string{strings.Repeat("a", 64)},
+		SPIREAgentServerAddress:  "10.0.0.1",
+	}
+}
+
+func TestDeployWithoutTPMDoesNotInstallSPIRE(t *testing.T) {
+	runner := &fakeRunner{}
+	cfg := testConfig(t)
+	cfg.TPMEKFingerprints = nil
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+
+	releases := helmCalls(runner)
+	if len(releases) != 3 {
+		t.Fatalf("expected postgres, temporal, and CWE only; got %d calls: %v", len(releases), releases)
+	}
+	for _, call := range releases {
+		if strings.Contains(call, "upgrade --install spire") {
+			t.Fatalf("SPIRE was installed without TPM nodes: %s", call)
+		}
+	}
+	cwe := releases[2]
+	for _, want := range []string{"spiffe.enabled=false", "controllers.nico.enabled=false"} {
+		if !strings.Contains(cwe, want) {
+			t.Errorf("CWE call = %q, want %q", cwe, want)
+		}
 	}
 }
 
@@ -342,8 +369,8 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	}
 	if !strings.Contains(cwe, "spiffe.enabled=true") ||
 		!strings.Contains(cwe, "spiffe.trustDomain=test-kind.nke.local") ||
-		!strings.Contains(cwe, "spiffe.spire.serverAddress="+spireServiceHost()) ||
-		!strings.Contains(cwe, "spiffe.spire.serverPort="+spireServerPort) {
+		!strings.Contains(cwe, "spiffe.spire.serverAddress=10.0.0.1") ||
+		!strings.Contains(cwe, fmt.Sprintf("spiffe.spire.serverPort=%d", SPIREServerNodePort)) {
 		t.Errorf("cwe call = %q, want SPIFFE enabled with the SPIRE trust domain", cwe)
 	}
 }
@@ -635,6 +662,17 @@ func TestTPMAttestorArgs(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("tpmAttestorArgs = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+func TestTPMPluginChecksum(t *testing.T) {
+	if got := tpmPluginChecksum("arm64"); got != spireTPMDirectARM64Checksum {
+		t.Fatalf("tpmPluginChecksum(arm64) = %q, want %q", got, spireTPMDirectARM64Checksum)
+	}
+	for _, arch := range []string{"amd64", "ppc64le", "s390x"} {
+		if got := tpmPluginChecksum(arch); got != "" {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want chart default", arch, got)
 		}
 	}
 }

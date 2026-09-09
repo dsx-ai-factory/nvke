@@ -17,9 +17,9 @@ cluster:
   # tpmEkThumbprint is optional: the SHA-256 of the node's TPM endorsement key,
   # read from the host before the bootstrap (spire-tpm-plugin's
   # get_tpm_pubhash). Every thumbprint listed here is allowlisted on the SPIRE
-  # server nkectl deploys, and nothing else is — a node without one cannot
-  # attest, and a file with none deploys no TPM attestor at all. It is a public
-  # key hash, not a secret.
+  # server nkectl deploys, and nothing else is. A file with no thumbprints uses
+  # plaintext node-agent connections and deploys no SPIRE server. It is a
+  # public key hash, not a secret. Multiple nodes require a hash on every node.
   nodes:
     - name: "node1"
       ip: "10.0.0.1"
@@ -59,10 +59,10 @@ cluster:
 # certificate when it was provisioned can verify the SPIRE server the first time
 # it speaks to it. Paths, not inline PEM: the key must not be committed, and the
 # certificate already exists as a file because it has to be delivered to each
-# node. Both or neither — omitting them leaves SPIRE self-signed.
-# spire:
-#   caCertFile: "/etc/nke/spire-ca.crt"
-#   caKeyFile: "/etc/nke/spire-ca.key"
+# node. Use both paths for the TPM mode.
+spire:
+  caCertFile: "/etc/nke/spire-ca.crt"
+  caKeyFile: "/etc/nke/spire-ca.key"
 
 # Container registry for the bootstrap engine image and chart. The version
 # (image/chart tag) is baked into the nkectl build, so it is not set here.

@@ -9,7 +9,6 @@ controller can reach the node over SPIFFE mTLS. The contract is [SPEC.md](SPEC.m
 | `packer/` | Packer + QEMU recipe that produces a qcow2 |
 | `files/` | systemd units, SPIRE template, first-boot script |
 | `files/luks/` | LUKS/TPM2 first-boot binding assets for the FDE variant |
-| `files/lvm/` | First-boot storage-growth assets for the non-FDE (no encryption) variant |
 | `docs/full-disk-encryption.md` | FDE variant: build, verify, failure modes |
 | `demo-fde.sh` | Runs the host-FDE acceptance scenarios against a built image |
 | `cmd/nke-os-image-check` | Connectivity checker (Go) |
@@ -23,7 +22,7 @@ Prereqs, on a Linux host:
 | [Packer](https://developer.hashicorp.com/packer) | >= 1.10.0 | https://developer.hashicorp.com/packer/install |
 | [Go](https://go.dev/) | per `go.work` | https://go.dev/dl/ |
 | `curl` | any | via your package manager |
-| `qemu-system-x86_64`, `cloud-localds`, `swtpm`, OVMF | any | via your package manager |
+| `qemu-system-x86_64` or `qemu-system-aarch64`, `cloud-localds`, `swtpm`, OVMF or AAVMF | any | via your package manager |
 | `xorriso`, `p7zip-full` (`7z`) | any | via your package manager |
 
 Both variants boot the Ubuntu Server installer (not a prebuilt cloud image),
@@ -42,10 +41,11 @@ they boot the build VM and fail fast with the install link above if it's
 missing.
 
 `nke-agent` is built from this checkout's `agent/` source (cross-compiled to
-`linux/amd64` when the host differs), so the baked agent is whatever your
+the image architecture when the host differs), so the baked agent is whatever your
 checkout says — no prebuilt artifact is pulled. To bake a released agent,
-check out its `agent/vX.Y.Z` tag first. SPIRE agent is pinned (version +
-sha256) from GitHub Releases.
+check out its `agent/vX.Y.Z` tag first. The SPIRE agent and TPM plugin are
+pinned by version and SHA-256 from GitHub Releases. The build also creates and
+installs the pinned Calico manifests Debian package used by `nke-agent`.
 
 The build-time cloud-init seed is only for Packer's SSH. The provisioner runs
 `cloud-init clean` and drops the build key, so each qcow2 is a golden image.
@@ -72,16 +72,16 @@ once a node's first boot completes a verified TPM bind.
 
 ## Non-FDE variant (no encryption)
 
-The same installer + autoinstall + LVM flow as the FDE variant, with
-encryption turned off entirely — no LUKS, no Clevis, no TPM binding. Useful
-for telling FDE-specific issues apart from issues in the installer flow
-itself (partitioning, identity/SSH setup, first-boot storage growth), or as
-a starting point if you want the installer-based LVM layout without opting
-into encryption.
+This image uses the Ubuntu installer, a separate `/boot` partition, and a
+direct ext4 root partition. It has no LUKS, Clevis, TPM binding, or LVM layer.
+Its partition boundaries match the FDE/LVM image. This lets the Forge qcow
+imager find the new root even if the old disk used Ubuntu LVM.
 
 ```bash
 cd packer
 make os-image-non-fde
+# On an arm64 host, or under QEMU TCG on another architecture:
+make os-image-non-fde-arm64
 ```
 
 Output: `packer/output-non-fde/nke-node-non-fde-ubuntu-<version>-<arch>.qcow2`
@@ -92,6 +92,9 @@ qcow2 under `output-non-fde/`, so it usually doesn't need to be passed):
 
 ```bash
 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
+# arm64
+ARCH=arm64 OVMF_CODE=/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd \
+  OVMF_VARS_TEMPLATE=/usr/share/AAVMF/AAVMF_VARS.fd ./scripts/boot-smoke.sh
 ```
 
 ## Interactive VM
@@ -109,6 +112,7 @@ image). Examples:
 
 ```bash
 make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-arm64.qcow2 OVMF_CODE=/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd
 make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd TPM=1
 ```
 
@@ -177,13 +181,20 @@ write_files:
       -----END CERTIFICATE-----
 ```
 
-`nke-spire-configure.service` waits for `cloud-final`, renders
-`/etc/spire-agent/agent.conf`, and only then does `spire-agent` start.
+Cloud-init writes the identity files and restarts
+`nke-spire-configure.service`. The unit renders
+`/etc/spire-agent/agent.conf`, and only then does `spire-agent` start. The
+renderer must not order itself after `cloud-final.service`: it is enabled for
+`multi-user.target`, and that dependency creates a systemd ordering cycle on
+Ubuntu.
 `nke-agent` starts after the workload API socket exists.
 
 The site SPIRE server must also register a workload entry for root
 `nke-agent` (unix attestor, uid 0) and a `/nke-service/...` identity for
 whatever will dial the node (controller or `nke-os-image-check`).
+
+For `nkectl bootstrap site`, including the TPM mTLS and single-node plaintext
+cloud-init variants, see the identity-mode addendum in [SPEC.md](SPEC.md).
 
 ## Checker
 
@@ -201,3 +212,7 @@ The process needs a SPIFFE workload API with an SVID whose path starts with
 Override with `--spiffe-socket`. This is the same shape as the controller
 dialer; it is not a SPIRE server. For a local SPIRE, see
 `controller/scripts/dev-env-spire.sh`.
+
+Use `--plaintext` only to verify the single-node bootstrap mode. The image
+installs this checker at `/usr/local/bin/nke-os-image-check` so cloud-init can
+avoid restarting an agent that already responds over plaintext.

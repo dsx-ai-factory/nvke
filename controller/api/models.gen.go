@@ -38,12 +38,14 @@ const (
 // Defines values for SpireAttestationMethod.
 const (
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
+	SpireAttestationMethodNone      SpireAttestationMethod = "none"
 	SpireAttestationMethodTpm       SpireAttestationMethod = "tpm"
 )
 
 // Defines values for SpireAttestationMethodCreate.
 const (
 	SpireAttestationMethodCreateJoinToken SpireAttestationMethodCreate = "joinToken"
+	SpireAttestationMethodCreateNone      SpireAttestationMethodCreate = "none"
 	SpireAttestationMethodCreateTpm       SpireAttestationMethodCreate = "tpm"
 )
 

@@ -28,6 +28,9 @@
 #   QCOW          path to the qcow2 to boot (required)
 #   SSH_KEY       ssh key to inject (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
+#   ARCH          guest architecture (amd64 or arm64); inferred from the qcow2
+#                 filename when it ends in -arm64.qcow2
+#   QEMU_BINARY   QEMU system emulator; defaults from ARCH
 #   OVMF_CODE     needed for the FDE/non-FDE variants (both UEFI-installed);
 #                 unset boots BIOS-style, for whatever other qcow2 you point
 #                 this at
@@ -64,18 +67,43 @@ fi
 SSH_PORT="${SSH_PORT:-2222}"
 MEMORY="${MEMORY:-4096}"
 CPUS="${CPUS:-2}"
+ARCH="${ARCH:-}"
+if [[ -z "${ARCH}" ]]; then
+  case "$(basename "${QCOW}")" in
+    *-arm64.qcow2) ARCH=arm64 ;;
+    *) ARCH=amd64 ;;
+  esac
+fi
+case "${ARCH}" in
+  amd64)
+    QEMU_BINARY="${QEMU_BINARY:-qemu-system-x86_64}"
+    MACHINE_TYPE=q35
+    ;;
+  arm64)
+    QEMU_BINARY="${QEMU_BINARY:-qemu-system-aarch64}"
+    MACHINE_TYPE=virt
+    ;;
+  *)
+    echo "run-vm: unsupported ARCH: ${ARCH}" >&2
+    exit 1
+    ;;
+esac
 
-if [[ -c /dev/kvm && -w /dev/kvm ]]; then
-  ACCEL_ARGS=(-enable-kvm)
+host_arch="$(uname -m)"
+if [[ ( "${host_arch}" == x86_64 && "${ARCH}" == amd64 ) || ( "${host_arch}" == aarch64 && "${ARCH}" == arm64 ) ]] \
+    && [[ -c /dev/kvm && -w /dev/kvm ]]; then
+  ACCEL_ARGS=(-accel kvm -cpu host)
 else
   echo "run-vm: no usable /dev/kvm, booting under software emulation (slower)" >&2
-  ACCEL_ARGS=(-accel tcg)
+  ACCEL_ARGS=(-accel tcg -cpu max)
 fi
 
 WORKDIR="$(mktemp -d)"
 DISK="${WORKDIR}/vm.qcow2"
 cleanup() {
-  [[ -n "${SWTPM_PID:-}" ]] && kill "${SWTPM_PID}" 2>/dev/null || true
+  if [[ -n "${SWTPM_PID:-}" ]]; then
+    kill "${SWTPM_PID}" 2>/dev/null || true
+  fi
   rm -rf "${WORKDIR}"
 }
 trap cleanup EXIT
@@ -96,10 +124,10 @@ QEMU_ARGS=(
   -m "${MEMORY}" -smp "${CPUS}"
   "${ACCEL_ARGS[@]}"
   -nographic
-  -drive if=virtio,file="${DISK}",format=qcow2
-  -drive if=virtio,file="${WORKDIR}/seed.iso",format=raw
+  -drive "if=virtio,file=${DISK},format=qcow2"
+  -drive "if=virtio,file=${WORKDIR}/seed.iso,format=raw"
   -netdev "user,id=net0,hostfwd=tcp::${SSH_PORT}-:22"
-  -device virtio-net,netdev=net0
+  -device "virtio-net,netdev=net0"
 )
 
 # UEFI/OVMF: needed for the FDE/non-FDE variants, and q35 + an explicit cpu
@@ -107,13 +135,16 @@ QEMU_ARGS=(
 # intermittent guest-kernel instability while developing those variants —
 # see the same comment in demo-fde.sh.
 if [[ -n "${OVMF_CODE:-}" ]]; then
-  OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+  if [[ "${ARCH}" == arm64 ]]; then
+    OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/AAVMF/AAVMF_VARS.fd}"
+  else
+    OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+  fi
   cp "${OVMF_VARS_TEMPLATE}" "${WORKDIR}/OVMF_VARS.fd"
   QEMU_ARGS=(
-    -machine type=q35
-    -cpu host
-    -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}"
-    -drive if=pflash,format=raw,file="${WORKDIR}/OVMF_VARS.fd"
+    -machine "type=${MACHINE_TYPE}"
+    -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}"
+    -drive "if=pflash,format=raw,file=${WORKDIR}/OVMF_VARS.fd"
     "${QEMU_ARGS[@]}"
   )
 fi
@@ -128,8 +159,8 @@ if [[ "${TPM:-}" == "1" ]]; then
   SWTPM_PID="$(cat "${WORKDIR}/tpm/swtpm.pid")"
   QEMU_ARGS+=(
     -chardev "socket,id=chrtpm,path=${WORKDIR}/tpm/swtpm-sock"
-    -tpmdev emulator,id=tpm0,chardev=chrtpm
-    -device tpm-tis,tpmdev=tpm0
+    -tpmdev "emulator,id=tpm0,chardev=chrtpm"
+    -device "tpm-tis,tpmdev=tpm0"
   )
 fi
 
@@ -142,4 +173,4 @@ echo
 # Not `exec`: the EXIT trap (swtpm teardown, workdir cleanup) needs this
 # shell to still be around when qemu exits, whether from Ctrl-C or a guest
 # shutdown.
-qemu-system-x86_64 "${QEMU_ARGS[@]}"
+"${QEMU_BINARY}" "${QEMU_ARGS[@]}"

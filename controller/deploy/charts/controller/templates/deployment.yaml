@@ -259,6 +259,8 @@ spec:
                   name: {{ default (printf "%s-%s" (include "controller.fullname" .) "forge-creds") .Values.secrets.forgeSecretName }}
                   key: {{ default "forge-api-key" .Values.secrets.forgeSecretKey }}
             {{- end }}
+            - name: NICO_CONTROLLERS_ENABLED
+              value: {{ .Values.controllers.nico.enabled | quote }}
             # Temporal config
             - name: TEMPORAL_HOST_PORT
               value: "{{ .Values.temporal.host }}:{{ .Values.temporal.port }}"

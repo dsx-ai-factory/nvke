@@ -106,6 +106,10 @@ type Config struct {
 	// FWEAPIKey is the NGC API key to pass to FWE, for use when calling the Forge API.
 	FWEAPIKey string `env:"FWE_API_KEY"`
 
+	// NicoControllersEnabled enables controllers that watch NICo infrastructure
+	// resources. Disable it when CWE manages only provisioned infrastructure.
+	NicoControllersEnabled bool `env:"NICO_CONTROLLERS_ENABLED" default:"true"`
+
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
 

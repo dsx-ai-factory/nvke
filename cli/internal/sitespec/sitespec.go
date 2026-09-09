@@ -21,6 +21,8 @@
 package sitespec
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"os"
@@ -383,9 +385,19 @@ func (v *validator) checkNodes(c Cluster) {
 
 	names := map[string]int{}
 	ips := map[string]int{}
+	thumbprints := 0
 
 	for i, n := range c.Nodes {
 		v.checkNode(fmt.Sprintf("%s[%d]", pathNodes, i), n, names, ips)
+		if n.TPMEKThumbprint != "" {
+			thumbprints++
+		}
+	}
+	if thumbprints > 0 && thumbprints != len(c.Nodes) {
+		v.addf("%s must either give every node a tpmEkThumbprint or give none; SPIRE attestation is a cluster-wide setting", pathNodes)
+	}
+	if thumbprints == 0 && len(c.Nodes) > 1 {
+		v.addf("%s without tpmEkThumbprint must contain exactly one node; plaintext bootstrap is limited to single-node clusters", pathNodes)
 	}
 
 	for name, count := range names {
@@ -502,7 +514,7 @@ func (v *validator) checkSpire(s Spire) {
 	}
 }
 
-// checkSpireFiles reports a bootstrap CA that cannot be read.
+// checkSpireFiles reports a bootstrap CA that cannot sign SPIRE identities.
 //
 // Existence is checked before the bootstrap rather than left to the deploy
 // because this is the last point at which nothing has been touched. A missing
@@ -516,13 +528,30 @@ func (v *validator) checkSpireFiles(s Spire) {
 		return
 	}
 
-	for path, file := range map[string]string{
-		pathSpireCACertFile: s.CACertFile,
-		pathSpireCAKeyFile:  s.CAKeyFile,
-	} {
-		if _, err := os.Stat(file); err != nil {
-			v.addf("%s %q cannot be read: %v", path, file, err)
-		}
+	certPEM, err := os.ReadFile(s.CACertFile)
+	if err != nil {
+		v.addf("%s %q cannot be read: %v", pathSpireCACertFile, s.CACertFile, err)
+		return
+	}
+	keyPEM, err := os.ReadFile(s.CAKeyFile)
+	if err != nil {
+		v.addf("%s %q cannot be read: %v", pathSpireCAKeyFile, s.CAKeyFile, err)
+		return
+	}
+
+	pair, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		v.addf("%s and %s must contain a matching PEM certificate and private key: %v",
+			pathSpireCACertFile, pathSpireCAKeyFile, err)
+		return
+	}
+	cert, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		v.addf("%s %q is not a valid X.509 certificate: %v", pathSpireCACertFile, s.CACertFile, err)
+		return
+	}
+	if !cert.IsCA || cert.KeyUsage&x509.KeyUsageCertSign == 0 {
+		v.addf("%s %q must be a CA certificate with keyCertSign usage", pathSpireCACertFile, s.CACertFile)
 	}
 }
 

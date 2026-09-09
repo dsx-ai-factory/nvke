@@ -16,23 +16,87 @@ autoinstall:
           name: "e*"
         dhcp4: true
 
-  # LVM layout (LUKS optional, gated by luks_enabled). VG: ubuntu-vg, LV:
-  # ubuntu-lv (Ubuntu defaults). The image ships at build-time disk_size and
-  # is grown to the target disk's full size on first boot — by
-  # luks-tpm-firstboot.sh when luks_enabled, or by cloud-init's growpart +
-  # a plain lvextend/resize2fs otherwise (see configure-lvm-growth.sh).
+  # The FDE image needs LVM so that its root volume can live inside LUKS. The
+  # non-FDE image uses a direct root partition. Forge's qcow imager can then
+  # discover the freshly written filesystem without colliding with an active
+  # ubuntu-vg/ubuntu-lv mapping left by the OS that was on the target disk.
   # No swap: not wanted on a Kubernetes node.
   storage:
     swap:
       size: 0
+%{ if luks_enabled ~}
     layout:
       name: lvm
       sizing-policy: all
-%{ if luks_enabled ~}
       password: ${luks_passphrase}
+%{ else ~}
+    # Keep the same partition boundaries as Subiquity's LVM layout. During
+    # reimaging, the kernel can keep the old table while an old LVM mapping
+    # holds partition 3 open. A plain ext4 root on the same partition remains
+    # discoverable and mountable in that state.
+    config:
+      - type: disk
+        id: disk0
+        ptable: gpt
+        wipe: superblock-recursive
+        preserve: false
+        grub_device: false
+        match:
+          size: largest
+      - type: partition
+        id: efi-partition
+        device: disk0
+        number: 1
+        offset: 1048576
+        size: 599785472
+        wipe: superblock
+        flag: boot
+        preserve: false
+        grub_device: true
+      - type: format
+        id: efi-format
+        volume: efi-partition
+        fstype: fat32
+        preserve: false
+      - type: partition
+        id: boot-partition
+        device: disk0
+        number: 2
+        offset: 600834048
+        size: 1879048192
+        wipe: superblock
+        preserve: false
+      - type: format
+        id: boot-format
+        volume: boot-partition
+        fstype: ext4
+        preserve: false
+      - type: partition
+        id: root-partition
+        device: disk0
+        number: 3
+        offset: 2479882240
+        size: -1
+        wipe: superblock
+        preserve: false
+      - type: format
+        id: root-format
+        volume: root-partition
+        fstype: ext4
+        preserve: false
+      - type: mount
+        id: root-mount
+        device: root-format
+        path: /
+      - type: mount
+        id: boot-mount
+        device: boot-format
+        path: /boot
+      - type: mount
+        id: efi-mount
+        device: efi-format
+        path: /boot/efi
 %{ endif ~}
-      match:
-        size: largest
 
   identity:
     hostname: nke-node
@@ -50,8 +114,8 @@ autoinstall:
     enabled: true
 
   packages:
-    - lvm2
 %{ if luks_enabled ~}
+    - lvm2
     - cryptsetup
     - cryptsetup-initramfs
     # Ubuntu 26.04 ships dracut, not initramfs-tools, by default.
@@ -68,6 +132,9 @@ autoinstall:
     - python3
     - python3-apt
     - openssh-server
+    # Creates the tss group and installs the TPM device udev rules used by the
+    # optional SPIRE TPM node attestor.
+    - tpm2-tools
 
   # security, not all: "all" was tried and reverted -- it pulls in every
   # linux-firmware-* split package (AMD/Intel/Broadcom/Qualcomm/Mellanox/
@@ -92,7 +159,7 @@ autoinstall:
     # -nographic/serial-only tooling (demo-fde.sh, `virsh console`, real
     # out-of-band/BMC serial access) never sees boot messages or the LUKS
     # unlock prompt — they only ever reach the VGA framebuffer.
-    - curtin in-target --target=/target -- sh -c 'echo "GRUB_CMDLINE_LINUX=\"console=tty0 console=ttyS0,115200\"" > /etc/default/grub.d/99-console.cfg'
+    - curtin in-target --target=/target -- sh -c 'echo "GRUB_CMDLINE_LINUX=\"console=tty0 console=${serial_console},115200\"" > /etc/default/grub.d/99-console.cfg'
 %{ if luks_enabled ~}
     # ========================================================================
     # Build-time-only unlock: a temporary keyfile so the post-autoinstall

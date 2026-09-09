@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package cwedeploy stands up Postgres, Temporal, SPIRE, and the CWE worker onto a
+// Package cwedeploy stands up Postgres, Temporal, optional SPIRE, and the CWE worker onto a
 // Kubernetes cluster (the ephemeral bootstrap Kind cluster
 // cli/internal/bootstrapengine creates), then waits for CWE to report
 // healthy on /readyz.
@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"text/template"
@@ -134,6 +135,11 @@ const (
 	// through it.
 	spireServerValuesPrefix = "spire-server"
 
+	// The hardened SPIRE chart pins the AMD64 tpm-direct plugin checksum.
+	// The plugin image is multi-architecture, but the ARM64 binary has a
+	// different checksum. Override the chart default when nkectl runs on ARM64.
+	spireTPMDirectARM64Checksum = "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"
+
 	// DefaultCWEPort is the port the CWE API uses at every layer: the Helm
 	// Service, the external NodePort Service, and both sides of Kind's host port
 	// mapping.
@@ -221,6 +227,11 @@ type Config struct {
 	// When set, the server is also published on a NodePort: the hosts that
 	// attest are outside the cluster, and a ClusterIP is not a route they have.
 	TPMEKFingerprints []string
+
+	// SPIREAgentServerAddress is the address that physical node agents use to
+	// reach the bootstrap SPIRE server. For a Kind cluster on an init host, it
+	// is that host's site IP. Empty uses the in-cluster Service address.
+	SPIREAgentServerAddress string
 
 	// ChartPath is the local filesystem path to
 	// controller/deploy/charts/controller. Empty triggers
@@ -418,37 +429,41 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return fmt.Errorf("cwedeploy: installing temporal: %w", err)
 	}
 
-	e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion)
-	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", spireCRDsReleaseName, spireCRDsChartName,
-		"--repo", spireChartRepo,
-		"--namespace", spireNamespace, "--create-namespace",
-		"--version", spireCRDsChartVersion,
-		"--wait", "--timeout", helmTimeout.String(),
-	); err != nil {
-		return fmt.Errorf("cwedeploy: installing SPIRE CRDs: %w", err)
+	spiffeEnabled := len(cfg.TPMEKFingerprints) > 0
+	spireAgentServerAddress := cfg.SPIREAgentServerAddress
+	spireAgentServerPort := spireServerPort
+	if spireAgentServerAddress != "" {
+		spireAgentServerPort = strconv.FormatInt(int64(SPIREServerNodePort), 10)
+	} else {
+		spireAgentServerAddress = spireServiceHost()
 	}
+	if spiffeEnabled {
+		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion)
+		if _, err := e.helm(ctx, kubeconfigPath,
+			"upgrade", "--install", spireCRDsReleaseName, spireCRDsChartName,
+			"--repo", spireChartRepo,
+			"--namespace", spireNamespace, "--create-namespace",
+			"--version", spireCRDsChartVersion,
+			"--wait", "--timeout", helmTimeout.String(),
+		); err != nil {
+			return fmt.Errorf("cwedeploy: installing SPIRE CRDs: %w", err)
+		}
 
-	spireValues, cleanup, err := writeEmbeddedFile(spireValuesFile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
+		spireValues, cleanup, err := writeEmbeddedFile(spireValuesFile)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
 
-	// CWE uses SPIFFE workload identity even when the site spec contains no
-	// external TPM nodes, so the SPIRE deployment is always required.
-	e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
-		"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
-		"tpmThumbprints", len(cfg.TPMEKFingerprints))
-	if _, err := e.helm(ctx, kubeconfigPath,
-		spireInstallArgs(cfg, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
-	); err != nil {
-		return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
-	}
+		e.log.Info("installing SPIRE", "namespace", spireNamespace, "version", spireChartVersion,
+			"clusterName", spireClusterName, "trustDomain", spireTrustDomain,
+			"tpmThumbprints", len(cfg.TPMEKFingerprints))
+		if _, err := e.helm(ctx, kubeconfigPath,
+			spireInstallArgs(cfg, spireValues, spireClusterName, spireTrustDomain, helmTimeout)...,
+		); err != nil {
+			return fmt.Errorf("cwedeploy: installing SPIRE: %w", err)
+		}
 
-	// Only external TPM nodes need the NodePort. CWE and the in-cluster agents
-	// use SPIRE's ClusterIP service.
-	if len(cfg.TPMEKFingerprints) > 0 {
 		if err := e.publishSpireExternally(ctx, kubeconfigPath); err != nil {
 			return err
 		}
@@ -488,12 +503,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "profiles.image.tag=" + profTag,
 		"--set-string", "profiles.image.digest=" + profDigest,
 		"--set", "secrets.forgeSecret.enabled=false",
+		"--set", "controllers.nico.enabled=false",
 		"--set", "cni.installAfterInit=true",
-		"--set", "spiffe.enabled=true",
+		"--set", fmt.Sprintf("spiffe.enabled=%t", spiffeEnabled),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
-		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),
-		"--set-string", "spiffe.spire.serverPort=" + spireServerPort,
+		"--set-string", "spiffe.spire.serverAddress=" + spireAgentServerAddress,
+		"--set-string", "spiffe.spire.serverPort=" + spireAgentServerPort,
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	cweArgs = append(cweArgs, nodeAgentPortArgs(cfg)...)
@@ -803,11 +819,24 @@ func tpmAttestorArgs(cfg Config, prefix string) []string {
 		return nil
 	}
 	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
+	if checksum := tpmPluginChecksum(runtime.GOARCH); checksum != "" {
+		args = append(args, "--set-string",
+			prefix+".nodeAttestor.tpmDirect.checksum="+checksum)
+	}
 	for i, fingerprint := range cfg.TPMEKFingerprints {
 		args = append(args, "--set-string",
 			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
 	}
 	return args
+}
+
+// tpmPluginChecksum returns an override only when the chart's AMD64 default
+// does not apply. An empty value preserves the checksum supplied by the chart.
+func tpmPluginChecksum(goarch string) string {
+	if goarch == "arm64" {
+		return spireTPMDirectARM64Checksum
+	}
+	return ""
 }
 
 // upstreamCAArgs points SPIRE at a CA the operator supplied.

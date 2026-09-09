@@ -392,6 +392,11 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string) (cwedeploy.Conf
 	// bootstrap is only entitled to admit machines it was told about, so this
 	// is the whole of it: no node listed, no node admitted.
 	cfg.TPMEKFingerprints = inv.Cluster.TPMEKThumbprints()
+	if len(cfg.TPMEKFingerprints) > 0 {
+		// The first inventory node is the init host for site bootstrap. Kind maps
+		// the SPIRE NodePort onto this host so all physical nodes can attest.
+		cfg.SPIREAgentServerAddress = inv.Cluster.Nodes[0].IP
+	}
 
 	// How the hosts were configured when they were provisioned, which is why it
 	// is in the site spec and not in the environment.

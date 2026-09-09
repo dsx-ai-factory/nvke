@@ -84,13 +84,22 @@ echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nke/
 sudo apt-get update
 sudo apt-get install -y nke-agent
 
-# Pre-provisioned nodes have no SPIRE workload API; disable mTLS (plaintext gRPC)
-echo 'AGENT_ARGS="--disable-mtls"' | sudo tee /etc/default/nke-agent
-sudo systemctl restart nke-agent
-
-# Verify agent is running
-sudo systemctl status nke-agent
+# For a one-node site with no TPM hash, select the plaintext mode.
+if test -x /usr/lib/nke/configure-nke-agent-plaintext.sh; then
+  sudo /usr/lib/nke/configure-nke-agent-plaintext.sh
+else
+  echo 'AGENT_ARGS="--disable-mtls"' | sudo tee /etc/default/nke-agent
+  sudo systemctl restart nke-agent
+fi
 ```
+
+The reference image helper performs a plaintext gRPC check first and does not
+restart an agent that already responds. A standalone agent package might not
+include this image helper.
+
+For a multi-node site, use TPM mTLS. Give every host the bootstrap CA and SPIRE
+endpoint through cloud-init before it boots. See the `nkectl bootstrap site`
+identity-mode addendum in the [OS contract](../../os-image/SPEC.md#addendum-nkectl-bootstrap-site-identity-modes).
 
 > **Warning:** Use `nke-agent` **0.1.12 or later**. Older agents do not implement kubeadm preflight checks, so configuration problems only surface mid-bootstrap.
 
@@ -174,4 +183,7 @@ Check that the init node can reach the join node on port 15005:
 curl -v telnet://<join-node-ip>:15005
 ```
 
-Check `nke-agent` on the join node and confirm `--disable-mtls` is set in `/etc/default/nke-agent`.
+For a single-node plaintext bootstrap, confirm `--disable-mtls` is set in
+`/etc/default/nke-agent`. For TPM mTLS, inspect `spire-agent.service` and
+`nke-agent.service`, then confirm that TCP port `30081` on the init host is
+reachable from every node.

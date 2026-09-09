@@ -80,11 +80,6 @@ func (a *Activities) renderCAPIBootstrapUserData(
 		return "", fmt.Errorf("spire join token is required when capiSpireAttestationMethod is joinToken")
 	}
 
-	trustDomain, trustBundle, err := getTrustDomainAndBundle(ctx, a.cfg)
-	if err != nil {
-		return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
-	}
-
 	files := make([]capiCloudInitFile, 0, len(capiNodeSetProvider.BootstrapFiles)+2)
 	for _, file := range capiNodeSetProvider.BootstrapFiles {
 		files = append(files, capiCloudInitFile{
@@ -94,26 +89,32 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			Content:     file.Content,
 		})
 	}
-	files = append(files,
-		capiCloudInitFile{
-			Path:        constants.CAPISpireTrustBundlePath,
-			Owner:       rootRoot,
-			Permissions: "0644",
-			Content:     trustBundle,
-		},
-		capiCloudInitFile{
-			Path:        constants.CAPISpireAgentConfigPath,
-			Owner:       rootRoot,
-			Permissions: "0644",
-			Content: buildCAPISpireAgentConfig(
-				capiNodeSetProvider.SpireAttestationMethod,
-				a.cfg.SpireServerAddress,
-				a.cfg.SpireServerPort,
-				trustDomain,
-				spireJoinToken,
-			),
-		},
-	)
+	if capiNodeSetProvider.SpireAttestationMethod != db.SpireAttestationMethodNone {
+		trustDomain, trustBundle, err := getTrustDomainAndBundle(ctx, a.cfg)
+		if err != nil {
+			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
+		}
+		files = append(files,
+			capiCloudInitFile{
+				Path:        constants.CAPISpireTrustBundlePath,
+				Owner:       rootRoot,
+				Permissions: "0644",
+				Content:     trustBundle,
+			},
+			capiCloudInitFile{
+				Path:        constants.CAPISpireAgentConfigPath,
+				Owner:       rootRoot,
+				Permissions: "0644",
+				Content: buildCAPISpireAgentConfig(
+					capiNodeSetProvider.SpireAttestationMethod,
+					a.cfg.SpireServerAddress,
+					a.cfg.SpireServerPort,
+					trustDomain,
+					spireJoinToken,
+				),
+			},
+		)
+	}
 
 	userData := capiCloudInitConfig{
 		WriteFiles: files,

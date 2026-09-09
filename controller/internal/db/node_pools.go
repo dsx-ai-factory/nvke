@@ -26,6 +26,7 @@ var ErrNodePoolNameNotUniqueInCluster = errors.New("node pool name not unique in
 type SpireAttestationMethod string
 
 const (
+	SpireAttestationMethodNone      SpireAttestationMethod = "none"
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
 )

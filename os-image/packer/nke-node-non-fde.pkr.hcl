@@ -1,14 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Non-FDE variant: the same installer+autoinstall+LVM flow as
-# nke-node-fde.pkr.hcl, minus LUKS/Clevis/TPM entirely. No encryption is
-# configured or implied by this variant — it exists to isolate FDE-specific
-# issues from installer-flow issues by giving an otherwise-identical build to
-# compare against, and as a base for anyone who wants the installer-based
-# LVM partitioning (e.g. for its own first-boot storage growth) without
-# opting into encryption. Shares cidata/autoinstall-lvm.pkrtpl with the FDE
-# variant, with luks_enabled = false.
+# Non-FDE variant: an installer-based image with a direct ext4 root partition.
+# It has no LUKS, Clevis, TPM, or LVM layer. The direct partition is compatible
+# with Forge's qcow imager even when the previous target OS left an LVM device
+# mapping active. Shares cidata/autoinstall-lvm.pkrtpl with the FDE variant,
+# with luks_enabled = false.
 
 packer {
   required_version = ">= 1.10.0"
@@ -32,6 +29,36 @@ variable "iso_checksum" {
   description = "Checksum file or hash for iso_url."
 }
 
+variable "qemu_binary" {
+  type        = string
+  default     = "qemu-system-x86_64"
+  description = "QEMU system emulator for the target architecture."
+}
+
+variable "machine_type" {
+  type        = string
+  default     = "q35"
+  description = "QEMU machine type for the target architecture."
+}
+
+variable "efi_firmware_code" {
+  type        = string
+  default     = "/usr/share/OVMF/OVMF_CODE_4M.fd"
+  description = "Read-only UEFI firmware image for the target architecture."
+}
+
+variable "efi_firmware_vars" {
+  type        = string
+  default     = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+  description = "Writable UEFI variable template for the target architecture."
+}
+
+variable "serial_console" {
+  type        = string
+  default     = "ttyS0"
+  description = "Kernel serial console device for the target architecture."
+}
+
 variable "disk_size" {
   type        = string
   default     = "12G"
@@ -49,6 +76,12 @@ variable "cpu_model" {
   type        = string
   default     = "host"
   description = "QEMU CPU model. Use 'host' with KVM, 'max' with TCG emulation."
+}
+
+variable "cpus" {
+  type        = number
+  default     = 4
+  description = "Number of virtual CPUs for the build VM."
 }
 
 variable "ssh_timeout" {
@@ -74,8 +107,8 @@ locals {
   iso_path  = "${local.iso_cache}/${basename(var.iso_url)}.patched.iso"
   # See the same local in nke-node-fde.pkr.hcl.
   build_logs = "${path.root}/build-logs"
-  # See the same locals in nke-node-fde.pkr.hcl: derived from iso_url so the
-  # output filename can't drift out of sync with the ISO actually being built.
+  # Derive the Ubuntu version and architecture from iso_url so the output and
+  # baked artifacts cannot drift out of sync with the ISO being built.
   iso_name_parts = regex("ubuntu-([0-9.]+)-live-server-([a-z0-9_]+)\\.iso$", var.iso_url)
   ubuntu_version = local.iso_name_parts[0]
   arch           = local.iso_name_parts[1]
@@ -90,7 +123,8 @@ source "qemu" "nke-non-fde" {
   # the QEMU chipset, not a CPU setting. q35 avoids the legacy "pc" (i440fx)
   # + OVMF/UEFI pairing that produced intermittent guest-kernel crashes
   # while developing these variants.
-  machine_type   = "q35"
+  qemu_binary    = var.qemu_binary
+  machine_type   = var.machine_type
   cpu_model      = var.cpu_model
   disk_size      = var.disk_size
   disk_interface = "virtio"
@@ -100,8 +134,8 @@ source "qemu" "nke-non-fde" {
   # fstrim to actually shrink the output qcow2.
   disk_discard = "unmap"
 
-  efi_firmware_code = "/usr/share/OVMF/OVMF_CODE_4M.fd"
-  efi_firmware_vars = "/usr/share/OVMF/OVMF_VARS_4M.fd"
+  efi_firmware_code = var.efi_firmware_code
+  efi_firmware_vars = var.efi_firmware_vars
   efi_boot          = true
 
   http_content = {
@@ -109,6 +143,7 @@ source "qemu" "nke-non-fde" {
       ssh_public_key  = file("${local.ssh_dir}/id_ed25519.pub")
       luks_enabled    = false
       luks_passphrase = ""
+      serial_console  = var.serial_console
     })
     "/meta-data" = "instance-id: nke-packer-non-fde\nlocal-hostname: nke-packer-non-fde\n"
   }
@@ -117,16 +152,24 @@ source "qemu" "nke-non-fde" {
   boot_command = [
     "<wait3>",
     "c<wait>",
-    "set root=(cd0)<enter><wait>",
-    "linux /casper/vmlinuz autoinstall console=ttyS0,115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
+    "search --no-floppy --file --set=root /casper/vmlinuz<enter><wait>",
+    "linux /casper/vmlinuz autoinstall console=${var.serial_console},115200 ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<enter><wait>",
     "initrd /casper/initrd<enter><wait>",
     "boot<enter>"
   ]
 
   # See the same block in nke-node-fde.pkr.hcl.
-  qemuargs = [
-    ["-serial", "file:${local.build_logs}/non-fde-install-console.log"]
-  ]
+  qemuargs = concat(
+    [["-serial", "file:${local.build_logs}/non-fde-install-console.log"]],
+    # QEMU's Arm virt machine has no default graphical display or keyboard.
+    # Packer sends boot_command through VNC, so give AAVMF a framebuffer and
+    # provide a keyboard that can receive those events.
+    local.arch == "arm64" ? [
+      ["-device", "ramfb"],
+      ["-device", "qemu-xhci"],
+      ["-device", "usb-kbd"],
+    ] : [],
+  )
 
   ssh_username           = "ubuntu"
   ssh_private_key_file   = "${local.ssh_dir}/id_ed25519"
@@ -138,7 +181,7 @@ source "qemu" "nke-non-fde" {
   output_directory = "${path.root}/output-non-fde"
   headless         = true
   memory           = 8192
-  cpus             = 4
+  cpus             = var.cpus
   net_device       = "virtio-net"
 }
 
@@ -150,29 +193,18 @@ build {
   provisioner "shell-local" {
     environment_vars = [
       "ARTIFACTS_DIR=${local.artifacts}",
+      "TARGET_ARCH=${local.arch}",
     ]
     script = "${path.root}/scripts/fetch-artifacts.sh"
   }
 
   provisioner "shell" {
-    inline = ["mkdir -p /tmp/nke-image/lvm"]
+    inline = ["mkdir -p /tmp/nke-image"]
   }
 
   provisioner "file" {
     source      = "${local.artifacts}/"
     destination = "/tmp/nke-image/"
-  }
-
-  provisioner "file" {
-    source      = "${path.root}/../files/lvm/"
-    destination = "/tmp/nke-image/lvm/"
-  }
-
-  # configure-lvm-growth.sh runs before provision.sh for the same reason as
-  # the FDE variant: provision.sh's final cleanup (cloud-init clean,
-  # machine-id truncate, removing the Packer SSH key) must be the last step.
-  provisioner "shell" {
-    script = "${path.root}/scripts/configure-lvm-growth.sh"
   }
 
   provisioner "shell" {

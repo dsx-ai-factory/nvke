@@ -31,6 +31,15 @@ func TestAPINodePoolFromDB_SpireAttestationMethod(t *testing.T) {
 		require.Equal(t, api.SpireAttestationMethodTpm, *apiNodePool.CapiSpireAttestationMethod)
 	})
 
+	t.Run("returns no attestation method when explicitly disabled", func(t *testing.T) {
+		apiNodePool := apiNodePoolFromDB(&db.NodePool{
+			CapiSpireAttestationMethod: db.SpireAttestationMethodNone,
+		})
+
+		require.NotNil(t, apiNodePool.CapiSpireAttestationMethod)
+		require.Equal(t, api.SpireAttestationMethodNone, *apiNodePool.CapiSpireAttestationMethod)
+	})
+
 	t.Run("returns join token attestation method when set", func(t *testing.T) {
 		apiNodePool := apiNodePoolFromDB(&db.NodePool{
 			CapiSpireAttestationMethod: db.SpireAttestationMethodJoinToken,
@@ -39,6 +48,10 @@ func TestAPINodePoolFromDB_SpireAttestationMethod(t *testing.T) {
 		require.NotNil(t, apiNodePool.CapiSpireAttestationMethod)
 		require.Equal(t, api.SpireAttestationMethodJoinToken, *apiNodePool.CapiSpireAttestationMethod)
 	})
+}
+
+func TestValidateCAPISpireAttestationMethodAllowsNone(t *testing.T) {
+	require.NoError(t, validateCAPISpireAttestationMethod(string(api.SpireAttestationMethodCreateNone)))
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiresCAPITemplate(t *testing.T) {

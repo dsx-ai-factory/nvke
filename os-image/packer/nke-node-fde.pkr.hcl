@@ -6,10 +6,8 @@
 # spire-agent, and seals the LUKS key to the node's TPM 2.0 on first boot.
 # See os-image/docs/full-disk-encryption.md.
 #
-# See nke-node-non-fde.pkr.hcl for the same installer+autoinstall+LVM flow with
-# LUKS turned off — useful for telling FDE-specific issues apart from
-# installer-flow issues. Both variants share cidata/autoinstall-lvm.pkrtpl,
-# gated by that template's luks_enabled flag.
+# The non-FDE image uses the same installer and template, but its root is a
+# direct ext4 partition. The template selects the layout with luks_enabled.
 
 packer {
   required_version = ">= 1.10.0"
@@ -153,6 +151,7 @@ source "qemu" "nke-fde" {
       ssh_public_key  = file("${local.ssh_dir}/id_ed25519.pub")
       luks_enabled    = true
       luks_passphrase = var.luks_passphrase
+      serial_console  = "ttyS0"
     })
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }

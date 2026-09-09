@@ -27,6 +27,11 @@ LUKS_PASSPHRASE ?= changeit
 # locals block in nke-node-fde.pkr.hcl).
 ISO_URL      ?= https://releases.ubuntu.com/26.04/ubuntu-26.04-live-server-amd64.iso
 ISO_CHECKSUM ?= file:https://releases.ubuntu.com/26.04/SHA256SUMS
+QEMU_BINARY  ?= qemu-system-x86_64
+MACHINE_TYPE ?= q35
+EFI_FIRMWARE_CODE ?= /usr/share/OVMF/OVMF_CODE_4M.fd
+EFI_FIRMWARE_VARS ?= /usr/share/OVMF/OVMF_VARS_4M.fd
+SERIAL_CONSOLE ?= ttyS0
 
 # Hardware acceleration where the host has it, software emulation where it does
 # not. Probed rather than declared: the CI runners are containers with no
@@ -39,6 +44,7 @@ ACCELERATOR ?= $(shell if [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; els
 
 # "host" needs KVM to be meaningful; "max" is the safe choice under TCG.
 CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)
+CPU_COUNT ?= 4
 
 # Emulated boot is minutes, not seconds. Overridable, so a slow runner can
 # raise it without editing this file. 60m wasn't enough under tcg: a real CI
@@ -60,7 +66,7 @@ SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),30m,120m)
 # nke-node-fde.pkr.hcl.
 BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
-.PHONY: os-image-fde os-image-non-fde init-fde init-non-fde ssh-key prepare-installer-iso clean check-deps
+.PHONY: os-image-fde os-image-non-fde os-image-non-fde-arm64 init-fde init-non-fde ssh-key prepare-installer-iso clean check-deps
 
 ssh-key: $(SSH_DIR)/id_ed25519
 
@@ -108,8 +114,8 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 		-var iso_checksum=$(ISO_CHECKSUM) \
 		$(PKR_FILE_FDE)
 
-# Non-FDE variant: same installer+autoinstall+LVM flow as os-image-fde,
-# minus LUKS/Clevis/TPM entirely. See nke-node-non-fde.pkr.hcl.
+# Non-FDE variant: installer-based direct-root image without LUKS, Clevis,
+# TPM, or LVM. See nke-node-non-fde.pkr.hcl.
 os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 	mkdir -p $(ARTIFACTS) $(BUILD_LOGS)
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
@@ -118,11 +124,33 @@ os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 	$(PACKER) build \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
+		-var cpus=$(CPU_COUNT) \
+		-var qemu_binary=$(QEMU_BINARY) \
+		-var machine_type=$(MACHINE_TYPE) \
+		-var efi_firmware_code=$(EFI_FIRMWARE_CODE) \
+		-var efi_firmware_vars=$(EFI_FIRMWARE_VARS) \
+		-var serial_console=$(SERIAL_CONSOLE) \
 		-var ssh_timeout=$(SSH_TIMEOUT) \
 		-var boot_wait=$(BOOT_WAIT) \
 		-var iso_url=$(ISO_URL) \
 		-var iso_checksum=$(ISO_CHECKSUM) \
 		$(PKR_FILE_NON_FDE)
+
+# The arm64 image uses the same contract and provisioning as amd64. Cross-arch
+# builds must use TCG; KVM can accelerate only a guest that matches the host.
+os-image-non-fde-arm64: ISO_URL = https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04-live-server-arm64.iso
+os-image-non-fde-arm64: ISO_CHECKSUM = file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS
+os-image-non-fde-arm64: QEMU_BINARY = qemu-system-aarch64
+os-image-non-fde-arm64: MACHINE_TYPE = virt
+os-image-non-fde-arm64: EFI_FIRMWARE_CODE = /usr/share/AAVMF/AAVMF_CODE.no-secboot.fd
+os-image-non-fde-arm64: EFI_FIRMWARE_VARS = /usr/share/AAVMF/AAVMF_VARS.fd
+os-image-non-fde-arm64: SERIAL_CONSOLE = ttyAMA0
+# Ubuntu 26.04's ARM installer can fault in overlayfs while curtin extracts the
+# installation source with concurrent directory walkers. One vCPU avoids that
+# installer-kernel race. It does not change the built image.
+os-image-non-fde-arm64: CPU_COUNT = 1
+os-image-non-fde-arm64: ACCELERATOR = $(shell if [ "$$(uname -m)" = aarch64 ] && [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; else echo tcg; fi)
+os-image-non-fde-arm64: os-image-non-fde
 
 clean:
 	rm -rf $(CURDIR)/output-fde $(CURDIR)/output-non-fde $(ARTIFACTS) $(ISO_CACHE) $(BUILD_LOGS)

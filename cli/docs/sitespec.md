@@ -15,7 +15,7 @@ A ready-to-copy example is in [`examples/sitespec.yaml`](../examples/sitespec.ya
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `clusterName` | string | yes | Lowercase RFC 1123 label. |
-| `cluster.nodes` | list | yes | Must contain an odd number of control-plane nodes and at least one node. |
+| `cluster.nodes` | list | yes | Must contain one or an odd number of control-plane nodes. Multiple nodes require TPM thumbprints. |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Unique across all nodes. |
 | `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. See below. |
@@ -44,6 +44,8 @@ being silently ignored.
   field, so a bad file can be fixed in one pass.
 - The site spec must contain an odd number of nodes and at least one node.
 - Node names and IPs must be unique across all nodes.
+- A site spec with no TPM thumbprints must contain exactly one node.
+- A multi-node site spec must give every node a TPM thumbprint.
 - `podCidr` / `serviceCidr` are parsed as CIDRs; `podCidr` also accepts a
   comma-separated list and validates each entry.
 
@@ -91,12 +93,14 @@ Every thumbprint in the file is seeded into the allowlist of the SPIRE server
 
 - a node with a thumbprint can attest and be issued an identity
 - a node without one cannot
-- a site spec where no node has one deploys SPIRE with no TPM attestor at all
+- a site spec where no node has one deploys no SPIRE server
 
 It is a public key hash, not a secret, so it belongs in the site spec rather
 than beside the credentials, and a file carrying them stays safe to commit.
 
-A malformed thumbprint fails the load. Left to reach the allowlist it would
+A site spec must give a thumbprint for every node or for no nodes. The
+no-thumbprint mode is limited to a single node and uses plaintext gRPC. A
+malformed thumbprint fails the load. Left to reach the allowlist it would
 match nothing and surface much later as that one node failing attestation for no
 visible reason.
 
@@ -112,11 +116,22 @@ They are paths, not inline PEM. A private key does not belong in a file meant to
 be committed, and the same certificate has to be delivered to each node by
 whatever provisions it, so it already exists as a file.
 
-Both or neither. Omitting them leaves SPIRE self-signed, which is fine when
-nothing outside the cluster has to verify it — and means nodes cannot be given a
-trust anchor in advance. Both files are checked for existence at load, while
-nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
-helm failure naming a temporary file rather than the field that was wrong.
+Both or neither. The TPM bootstrap mode must use a CA that the hosts received
+before boot. Omitting both files is suitable for the single-node plaintext
+mode. The certificate must have `CA:TRUE` and `keyCertSign`. Its public key
+must match the private key. `nkectl` checks these properties before it changes
+the bootstrap cluster.
+
+This command creates a suitable short-lived test CA:
+
+```bash
+openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 7 \
+  -subj '/CN=nkectl bootstrap CA' \
+  -addext 'basicConstraints=critical,CA:TRUE' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -keyout spire-ca.key -out spire-ca.crt
+chmod 0600 spire-ca.key
+```
 
 ## Relationship to the tier-0 bootstrap template
 

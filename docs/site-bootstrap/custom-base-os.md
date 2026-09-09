@@ -6,7 +6,9 @@ Before proceeding, write your [site spec file](configuration.md) so it can be pl
 
 ## Cloud-Init Example
 
-Below is a complete cloud-init configuration for bootstrapping a tier-0 cluster on a custom base OS. This installs Kubernetes components, `nke-agent`, and `nkectl`, then runs the bootstrap on first boot.
+Below is a cloud-init configuration for a single-node plaintext bootstrap on a
+custom base OS. For a multi-node TPM bootstrap, follow the identity-mode
+addendum in the [OS contract](../../os-image/SPEC.md#addendum-nkectl-bootstrap-site-identity-modes).
 
 ```yaml
 #cloud-config
@@ -53,10 +55,6 @@ autoinstall:
             nodes:
               - name: "ctrl-1"
                 ip: "10.0.0.10"
-              - name: "ctrl-2"
-                ip: "10.0.0.11"
-              - name: "ctrl-3"
-                ip: "10.0.0.12"
             k8sVersion: "1.34.2"
             cniName: "ovn-kubernetes"
             podCidr: "192.168.0.0/16"
@@ -87,7 +85,7 @@ autoinstall:
       - [sh, -c, "apt-get update"]
       - [sh, -c, "apt-get install -y nke-agent"]
       - [sh, -c, "echo 'AGENT_ARGS=\"--disable-mtls --secure-server-port 15005\"' > /etc/default/nke-agent"]
-      - [sh, -c, "systemctl restart nke-agent"]
+      - [systemctl, restart, nke-agent]
 
       # TODO: Replace with real release URL once the repo is public.
       # Download and install nkectl (bootstrap host only)
@@ -100,7 +98,8 @@ autoinstall:
 ## Key Components
 
 - **Kubernetes Installation**: Adds the Kubernetes apt repository and installs kubelet, kubeadm, and kubectl. Marks packages held to prevent automatic upgrades.
-- **nke-agent**: Installed from the NKE apt repository; configured with `--disable-mtls` and `--secure-server-port 15005` for pre-provisioned node bootstrap.
+- **nke-agent**: Installed from the NKE apt repository and configured with
+  `--disable-mtls` for this single-node bootstrap example.
 - **nkectl**: Install it only on the **bootstrap host**. Omit the nkectl download and bootstrap commands on other nodes.
 
 ## Bootstrap Host and Other Nodes

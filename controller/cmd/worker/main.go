@@ -289,36 +289,41 @@ func main() {
 
 	logger.Info("Kubernetes controller-runtime manager configuration",
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
+		"enableNicoControllers", cfg.NicoControllersEnabled,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
-	machineSpireEntryController := capi.NewMachineSpireEntryController(
-		cfg,
-		k8sControllerManager.GetClient(),
-		logger.With("logger", "machine-spire-entry-controller"),
-		trustDomain,
-	)
-	if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
-		os.Exit(1)
+	if cfg.SpiffeEnabled {
+		machineSpireEntryController := capi.NewMachineSpireEntryController(
+			cfg,
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "machine-spire-entry-controller"),
+			trustDomain,
+		)
+		if err := machineSpireEntryController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up machine SPIRE entry controller", "error", err)
+			os.Exit(1)
+		}
 	}
 
-	nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
-		k8sControllerManager.GetClient(),
-		logger.With("logger", "nico-tpm-spiffe-controller"),
-	)
-	if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
-		os.Exit(1)
-	}
+	if cfg.NicoControllersEnabled {
+		nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
+			k8sControllerManager.GetClient(),
+			logger.With("logger", "nico-tpm-spiffe-controller"),
+		)
+		if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
+			os.Exit(1)
+		}
 
-	nicoProviderIDController := capi.NewNicoProviderIDController(
-		k8sControllerManager.GetClient(),
-		tenantClientProvider,
-		logger.With("logger", "nico-provider-id-controller"),
-	)
-	if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
-		logger.Error("Failed to set up nico provider ID controller", "error", err)
-		os.Exit(1)
+		nicoProviderIDController := capi.NewNicoProviderIDController(
+			k8sControllerManager.GetClient(),
+			tenantClientProvider,
+			logger.With("logger", "nico-provider-id-controller"),
+		)
+		if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up nico provider ID controller", "error", err)
+			os.Exit(1)
+		}
 	}
 
 	if cfg.SpiffeEnabled {

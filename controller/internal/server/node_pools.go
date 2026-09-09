@@ -234,7 +234,7 @@ func validateCAPISpireAttestationMethod(method string) error {
 	switch method {
 	case "":
 		return fmt.Errorf("capiSpireAttestationMethod is required for CAPI clusters")
-	case string(db.SpireAttestationMethodTPM), string(db.SpireAttestationMethodJoinToken):
+	case string(db.SpireAttestationMethodNone), string(db.SpireAttestationMethodTPM), string(db.SpireAttestationMethodJoinToken):
 		return nil
 	default:
 		return fmt.Errorf("invalid capiSpireAttestationMethod: %q", method)

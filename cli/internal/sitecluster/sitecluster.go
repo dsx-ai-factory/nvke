@@ -61,6 +61,11 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		return api.CreateClusterJSONRequestBody{}, err
 	}
 
+	spireAttestationMethod := api.SpireAttestationMethodCreateNone
+	if len(inv.Cluster.TPMEKThumbprints()) > 0 {
+		spireAttestationMethod = api.SpireAttestationMethodCreateTpm
+	}
+
 	req := api.CreateClusterJSONRequestBody{
 		Name: inv.ClusterName,
 		// The nil UUID default site: CAPI-backed, not Forge-backed.
@@ -73,10 +78,10 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 			NodeNamePrefix:   controlPlaneNodeNamePrefix,
 			DesiredNodeCount: len(hosts),
 			ControlPlane:     true,
-			// The provisioned provider copies the allocated host's TPM identity
-			// to the CAPI Machine. CWE uses it as the parent of the node-agent
-			// workload entry; no bootstrap join token is needed.
-			CapiSpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+			// With TPM identities, the provisioned provider copies the allocated
+			// host's identity to the CAPI Machine. With no identities, CWE uses
+			// plaintext for the explicitly selected "none" mode.
+			CapiSpireAttestationMethod: spireAttestationMethod,
 			SystemReservedMemory:       inv.Cluster.KubeletConfig.SystemReservedMemory,
 			CapiInfraMachineTemplate:   provisionedMachineTemplate(),
 		}},

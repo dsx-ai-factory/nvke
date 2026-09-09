@@ -5,6 +5,7 @@ package activities
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -14,6 +15,33 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
+
+func TestRenderCAPIBootstrapUserData_NoSpireAttestation(t *testing.T) {
+	originalGetTrustDomainAndBundle := getTrustDomainAndBundle
+	t.Cleanup(func() {
+		getTrustDomainAndBundle = originalGetTrustDomainAndBundle
+	})
+	getTrustDomainAndBundle = func(context.Context, config.Config) (string, string, error) {
+		return "", "", errors.New("trust bundle must not be requested")
+	}
+
+	activities := &Activities{cfg: config.Config{}}
+	var nodeSet db.NodeSet
+	nodeSet.SetCapi(db.CAPINodePoolProvider{
+		SpireAttestationMethod: db.SpireAttestationMethodNone,
+		BootstrapFiles: []db.CloudInitFile{
+			{Path: "/etc/custom.conf", Owner: rootRoot, Permissions: "0600", Content: "hello"},
+		},
+		PreKubeadmCommands: []string{"echo before kubeadm"},
+	})
+
+	userData, err := activities.renderCAPIBootstrapUserData(context.Background(), nodeSet, "")
+	require.NoError(t, err)
+	assert.Contains(t, userData, "/etc/custom.conf")
+	assert.Contains(t, userData, "echo before kubeadm")
+	assert.NotContains(t, userData, "/etc/spire-agent")
+	assert.NotContains(t, userData, "NodeAttestor")
+}
 
 func TestRenderCAPIBootstrapUserData_TPMAttestor(t *testing.T) {
 	originalGetTrustDomainAndBundle := getTrustDomainAndBundle

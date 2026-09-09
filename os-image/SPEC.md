@@ -1,24 +1,24 @@
 # NKE reference node image — contract
 
 This is the contract an OS image must satisfy for NKE to manage a node.
-It is **not** a cluster-ready Kubernetes image: kubeadm, a CNI, and GPU
-drivers are installed later through `nke-agent`. The bar for v1 is that the
-controller can reach `nke-agent` over SPIFFE mTLS.
+It is **not** a cluster-ready Kubernetes image: kubeadm and GPU drivers are
+installed later through `nke-agent`. The image includes the Calico manifests
+package that `nke-agent` installs after kubeadm init. The bar for v1 is that
+the controller can reach `nke-agent` over SPIFFE mTLS.
 
 The in-tree Packer recipe (`packer/`) is one implementation of this contract,
 not the only allowed one.
 
 ## Must have (baked into the image)
 
-TODO:  Need to refine the requirements around spire-agent below
-
 | Item | Requirement |
 |---|---|
-| OS | Ubuntu 26.04 LTS, `linux/amd64` for the first reference image. |
+| OS | Ubuntu 26.04 LTS, `linux/amd64` or `linux/arm64`. |
 | `nke-agent` | Built from this repository's `agent/` source at bake time and installed at `/usr/local/bin/nke-agent`. systemd unit `nke-agent.service` **enabled**. Listens on TCP **15005**. mTLS is on (no `--disable-mtls` in `/etc/default/nke-agent`). The unit waits for the SPIRE workload API before exec. |
 | SPIRE agent | `spire-agent` at `/usr/local/bin/spire-agent`, unit `spire-agent.service` **enabled**. Workload API socket at `unix:///tmp/spire-agent/public/api.sock` (the `nke-agent` default). |
 | Unix workload attestor | SPIRE `WorkloadAttestor "unix"` so root `nke-agent` can fetch an X.509 SVID. |
-| Node attestor | Join-token (`NodeAttestor "join_token"`). TPM *node attestation* (proving node identity to SPIRE) is out of scope for this reference image — see "Must have (FDE variant)" below for the unrelated use of TPM to seal the disk-encryption key. |
+| Node attestor | Join-token (`NodeAttestor "join_token"`) by default. The image also includes the TPM agent plugin at `/usr/local/lib/spire-agent/tpm_attestor_agent`, `/usr/local/bin/get_tpm_pubhash`, and TPM device access through the `tss` group for the optional bootstrap mTLS mode below. |
+| Calico manifests | Debian package `nke-cni-calico-manifests-3.30.1` installed. Its version must match the supported bootstrap Calico version. |
 | Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 
@@ -30,7 +30,7 @@ user-data) on first boot, never at image-build time:
 - SPIRE server address and port
 - Trust domain
 - Trust bundle (PEM)
-- Join token (single-use, minted per node)
+- Join token when join-token attestation is selected
 
 The Packer build **enables** the units but does not start them against a live
 SPIRE server, and it runs `cloud-init clean` so the next boot is a real
@@ -38,8 +38,8 @@ instance.
 
 ### Cloud-init input
 
-Write these two files. Permissions: `spire.env` and the join token inside it
-are secrets (`0600`).
+Write these two files. Set `spire.env` mode to `0600` so only root can change
+the node identity endpoint.
 
 `/etc/nke/spire.env`:
 
@@ -58,6 +58,87 @@ After a successful `nke-agent` start, the image touches
 `/var/lib/spire-agent/.nke-attested` and subsequent boots omit `-joinToken`
 (the token is single-use).
 
+## Addendum: `nkectl bootstrap site` identity modes
+
+The site spec selects one mode for the whole bootstrap. Either every node has
+a `tpmEkThumbprint`, or no node has one.
+
+### Single node without mTLS
+
+A single-node site can omit its TPM thumbprint. In this mode, `nkectl` does not
+deploy SPIRE and tells CWE that the CAPI SPIRE attestation method is `none`.
+Cloud-init must select the plaintext agent mode:
+
+```yaml
+#cloud-config
+runcmd:
+  - [/usr/lib/nke/configure-nke-agent-plaintext.sh]
+```
+
+The helper first calls `GetKubeadmStatus` over plaintext gRPC. If the agent
+already responds, it changes nothing. Otherwise, it writes the systemd
+override, disables the SPIRE units, and restarts `nke-agent` with
+`--disable-mtls`.
+
+This mode is only for the single-node bootstrap path. It does not change the
+default NKE node-agent security model.
+
+### Bootstrap with TPM mTLS
+
+For mTLS, collect every node's TPM EK thumbprint with `get_tpm_pubhash` and put
+the values in the site spec. `nkectl` then deploys SPIRE into the bootstrap
+Kind cluster, allows those thumbprints, and exposes the server on TCP port
+`30081` of the init host.
+
+Before the hosts boot, choose the init host and generate a bootstrap CA. Give
+the CA certificate to every host through cloud-init. Give the same certificate
+and its private key to `nkectl` through `spire.caCertFile` and
+`spire.caKeyFile` in the site spec. The certificate must have `CA:TRUE` and
+`keyCertSign`. This command creates a suitable short-lived test CA:
+
+```bash
+openssl req -x509 -newkey rsa:4096 -sha256 -nodes -days 7 \
+  -subj '/CN=nkectl bootstrap CA' \
+  -addext 'basicConstraints=critical,CA:TRUE' \
+  -addext 'keyUsage=critical,keyCertSign,cRLSign' \
+  -keyout spire-ca.key -out spire-ca.crt
+chmod 0600 spire-ca.key
+```
+
+All hosts point at the init host IP:
+
+```yaml
+#cloud-config
+write_files:
+  - path: /etc/nke/spire.env
+    permissions: "0600"
+    content: |
+      SPIRE_SERVER_ADDRESS=192.0.2.10
+      SPIRE_SERVER_PORT=30081
+      SPIRE_TRUST_DOMAIN=nkectl-bootstrap.nke.local
+      SPIRE_ATTESTATION_METHOD=tpm
+  - path: /etc/nke/trust-bundle.pem
+    permissions: "0644"
+    content: |
+      -----BEGIN CERTIFICATE-----
+      ...
+      -----END CERTIFICATE-----
+  - path: /etc/default/nke-agent
+    permissions: "0644"
+    content: |
+      AGENT_ARGS=""
+runcmd:
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, nke-spire-configure.service, spire-agent.service, nke-agent.service]
+  - [systemctl, restart, --no-block, nke-spire-configure.service, spire-agent.service, nke-agent.service]
+```
+
+The image enables `nke-spire-configure.service`, `spire-agent.service`, and
+`nke-agent.service`. After cloud-init writes these files and completes, systemd
+renders the TPM configuration, starts SPIRE, and starts `nke-agent` after its
+SPIFFE workload socket becomes available. The SPIRE agent retries until
+`nkectl bootstrap site` exposes the server.
+
 ## Must have (FDE variant)
 
 `nke-node-fde.pkr.hcl` is an **opt-in** build variant, not the default image.
@@ -75,19 +156,15 @@ It satisfies everything above, plus:
 
 ## Must have (non-FDE variant, no encryption)
 
-`nke-node-non-fde.pkr.hcl` is also **opt-in**, not the default image. It follows
-the same installer + autoinstall + LVM flow as the FDE variant —
-`autoinstall-lvm.pkrtpl` with `luks_enabled = false` — but configures **no
-encryption at all**: no LUKS container, no Clevis, no TPM binding. It exists
-to isolate FDE-specific issues from installer-flow issues (same partitioning,
-same identity/SSH setup, same first-boot storage growth pattern, minus
-encryption), and as a base for anyone who wants the installer-based LVM
-layout without opting into encryption.
+`nke-node-non-fde.pkr.hcl` is also **opt-in**, not the default image. It uses
+the Ubuntu installer and autoinstall, but it uses a direct root partition. It
+configures no LUKS container, Clevis, TPM binding, or LVM layer. Use it to test
+the installer and node services without the FDE storage stack.
 
 | Item | Requirement |
 |---|---|
-| Root volume | Plain LVM (`ubuntu-vg`/`ubuntu-lv`), no LUKS container. |
-| Storage growth | `lvm-growth-firstboot.service` grows the partition/PV/LV/filesystem to the target disk's full size on first boot — the same growth logic the FDE variant's `luks-tpm-firstboot.sh` runs, minus everything LUKS/TPM. |
+| Root volume | Direct ext4 partition with a separate `/boot` partition, no LVM or LUKS container. Its three partition boundaries match the FDE/LVM image. This lets Forge mount the new root even if the kernel keeps the old table while a stale LVM mapping is active. |
+| Storage growth | The Forge qcow imager grows the root partition and filesystem after it writes the image. |
 | Serial console | Same `console=tty0 console=ttyS0,115200` GRUB parameter as the FDE variant (installer-based images otherwise carry no `console=` at all). |
 
 ## Identity rules (runtime)
@@ -101,8 +178,8 @@ These are enforced by `nke-agent`, not by the image:
   site SPIRE server must have a workload entry for unix uid 0 (root
   `nke-agent`) parented to the node's agent SPIFFE ID.
 
-Join-token attestation and those workload entries are the operator's SPIRE
-server, not this image.
+Join-token or TPM attestation and the workload entries are owned by the SPIRE
+server, not by the base image.
 
 ## Ports and paths
 
@@ -118,18 +195,15 @@ server, not this image.
 ## Out of scope for this image
 
 - kubeadm / kubelet / container runtime as a cluster-ready stack
-- CNI, GPU drivers, NVIDIA fabric
-- TPM as a SPIRE *node attestor* plugin, and swtpm for that purpose (the FDE
-  variant's use of TPM to seal the disk-encryption key is unrelated and in
-  scope — see "Must have (FDE variant)" above)
-- `--disable-mtls` as a supported production mode
+- GPU drivers and NVIDIA fabric
+- `--disable-mtls` outside the single-node bootstrap mode described above
 - Kubernetes Secrets / etcd encryption-at-rest — a controller/agent concern,
   not an image-build concern; out of scope for `os-image/`
 
 ## How to prove it
 
-Boot a VM from the image, feed it the cloud-init files above against a SPIRE
-server that has issued a join token and a `/nke-service/...` identity for the
+Boot a VM from the image, feed it the base cloud-init files above against a
+SPIRE server that has issued a join token and a `/nke-service/...` identity for the
 checker, then:
 
 ```bash
