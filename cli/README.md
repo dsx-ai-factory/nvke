@@ -44,7 +44,6 @@ NKECTL_CWE_IMAGE=nvcr.io/<org>/controller:edge \
 NKECTL_CWE_PROFILES_IMAGE=nvcr.io/<org>/profiles:edge \
   nkectl bootstrap site -f sitespec.yaml
 nkectl bootstrap site -f sitespec.yaml --dry-run              # validate only
-nkectl bootstrap site -f sitespec.yaml --bootstrap-provider docker  # use Docker instead of nerdctl
 nkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster     # leave Kind cluster for debugging
 
 # Point the CLI at a site controller
@@ -160,7 +159,6 @@ ever disagree.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NKECTL_BOOTSTRAP_PROVIDER` | `nerdctl` | Container runtime front end for the ephemeral cluster: `nerdctl` or `docker` |
 | `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
 | `NKECTL_CWE_IMAGE` | required | CWE image to deploy. Side-loaded from the local image store, so it must already be pulled. |
 | `NKECTL_CWE_PROFILES_IMAGE` | required | Image holding the OS profiles tree at `/profiles` |

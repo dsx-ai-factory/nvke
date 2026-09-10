@@ -37,7 +37,7 @@ After bootstrap completes:
 - Network connectivity between all nodes
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NKE container images)
-- On the **init node**: `kind` binary and either `nerdctl` (default) or `docker` installed — `nkectl` uses these to create the ephemeral bootstrap Kind cluster
+- On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
 - `NKECTL_CWE_IMAGE` — full image reference for the CWE controller (e.g. `nvcr.io/<org>/controller:edge`)
 - `NKECTL_CWE_PROFILES_IMAGE` — image holding the OS profiles tree at `/profiles`
 
@@ -140,7 +140,7 @@ NKECTL_CWE_PROFILES_IMAGE="nvcr.io/<org>/profiles:edge" \
 
 `nkectl` creates a temporary Kind cluster on the init node, deploys Postgres, Temporal, and CWE onto it, waits for CWE to be healthy, and then dispatches kubeadm init and join workflows to your nodes over `nke-agent` gRPC. The ephemeral Kind cluster is torn down automatically when bootstrap completes. No SSH required.
 
-Use `--bootstrap-provider docker` if Docker is your container runtime instead of nerdctl. Use `--keep-bootstrap-cluster` to leave the Kind cluster running after bootstrap for debugging.
+Use `--keep-bootstrap-cluster` to leave the Kind cluster running after bootstrap for debugging.
 
 **Duration**: Approximately **30–45 minutes**
 

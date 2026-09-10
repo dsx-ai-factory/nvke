@@ -208,8 +208,8 @@ new CA on every run that no node trusts.
 
 **A jump box** to run `nkectl` on, under `tmux` — not a laptop that sleeps.
 
-**A registry login** on that box: `nerdctl login nvcr.io`, or `docker login` if
-you pass `--bootstrap-provider docker`. The images are pulled with the host CLI.
+**A registry login** on that box: `nerdctl login nvcr.io`. The images are
+pulled with nerdctl.
 
 **On the NICo side:** a site, a VPC, a subnet or VPC prefix, instance types, and
 an **allocation** against each instance type. An instance type with no allocation
@@ -269,8 +269,7 @@ REGISTRY_API_KEY=<key> nkectl bootstrap site -f sitespec.yaml
 ```
 
 The key can come from the environment, from `--registry-api-key`, or from
-`registry.apiKey` in the spec; the flag wins. Add `--bootstrap-provider docker`
-on a box without nerdctl, which is the default.
+`registry.apiKey` in the spec; the flag wins.
 
 Where Docker Hub is slow or blocked, point the seed cluster at a mirror:
 `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` and `NKECTL_CWE_POSTGRES_CHART`. The Postgres
@@ -284,8 +283,13 @@ On failure it writes `cluster-diagnostics/` first, and **leaves the seed cluster
 behind** — delete it before retrying, or the next run stops on a name clash:
 
 ```bash
-kind delete cluster --name nkectl-bootstrap
+KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nkectl-bootstrap
 ```
+
+The prefix is not optional: kind resolves a cluster through the provider that
+created it, so a bare `kind delete cluster` looks for the seed cluster in
+Docker, does not find it, and exits 0 without deleting anything — leaving the
+name clash this step exists to prevent.
 
 ### 5. Install the site controller
 

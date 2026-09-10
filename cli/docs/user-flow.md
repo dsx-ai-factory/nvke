@@ -66,8 +66,8 @@ nkectl bootstrap site -f sitespec.yaml --dry-run
 REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml
 ```
 
-The command needs Docker or nerdctl on the host (`--bootstrap-provider`, nerdctl
-by default) and network reach to the hosts' `nke-agent` ports. On success it
+The command needs nerdctl and containerd on the host, and network reach to
+the hosts' `nke-agent` ports. On success it
 writes `my-tier0-site.kubeconfig` in the working directory (`--kubeconfig-out`
 changes the path) and removes the Kind cluster. On failure it writes cluster
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
