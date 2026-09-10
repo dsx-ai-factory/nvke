@@ -204,6 +204,13 @@ Skip this and the bootstrap runs its full 30 minutes before failing on
 certificate also reaches each node through cloud-init. Without it SPIRE mints a
 new CA on every run that no node trusts.
 
+**A SPIRE VIP pointed at the bootstrap node.** During the bootstrap the SPIRE
+server runs on the machine you run `nkectl bootstrap site` from, published on
+**30081**. Each node's `spire-agent` reaches it at the address you baked into its
+configuration when you provisioned it, so **that VIP must point at the node you
+run the bootstrap on.** Use a floating IP rather than the node's own address, so
+it still resolves after bootstrapping completes.
+
 **Network.** CWE must reach each node on **15005** and the new API server on
 **6443**, and **30081** on nodes with a TPM thumbprint.
 
