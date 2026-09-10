@@ -114,25 +114,36 @@ func setPath(m map[string]interface{}, path []string, value interface{}) error {
 }
 
 // parseSetValue coerces a --set value's raw text into the JSON type it most
-// likely represents. When isArray is true the value always becomes an
-// array, splitting on comma (even a single value with no comma becomes a
-// one-element array). Otherwise the whole value is parsed as one YAML
-// scalar, so "true"/"false" become booleans, bare integers become numbers,
-// and everything else stays a string.
+// likely represents. When isArray is false the whole value is parsed as one
+// YAML scalar, so "true"/"false" become booleans, bare integers become
+// numbers, and everything else stays a string.
+//
+// When isArray is true, the whole value is first tried as one YAML
+// document: real sequence syntax like "[{path: /etc/foo, content: bar}]"
+// parses directly into a list, which is what an array of objects (e.g.
+// bootstrapFiles) needs. If that doesn't parse, or parses to something
+// other than a list, raw falls back to a comma-separated list of scalars
+// (e.g. "id1,id2"), still becoming a one-element list for a single value
+// with no comma.
 func parseSetValue(raw string, isArray bool) (interface{}, error) {
-	if isArray {
-		parts := strings.Split(raw, ",")
-		out := make([]interface{}, len(parts))
-		for i, p := range parts {
-			v, err := parseScalar(p)
-			if err != nil {
-				return nil, err
-			}
-			out[i] = v
-		}
-		return out, nil
+	if !isArray {
+		return parseScalar(raw)
 	}
-	return parseScalar(raw)
+	if v, err := parseScalar(raw); err == nil {
+		if list, ok := v.([]interface{}); ok {
+			return list, nil
+		}
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]interface{}, len(parts))
+	for i, p := range parts {
+		v, err := parseScalar(p)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = v
+	}
+	return out, nil
 }
 
 // parseScalar parses one YAML scalar, e.g. "true", "3", "16Gi", or a UUID

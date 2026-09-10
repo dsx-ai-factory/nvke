@@ -82,6 +82,29 @@ func TestApplySetFlagsInfraPreKubeadmCommands(t *testing.T) {
 	}
 }
 
+func TestApplySetFlagsInfraBootstrapFilesYAMLSequence(t *testing.T) {
+	var req api.UpdateClusterRequest
+	err := ApplySetFlags(&req, []string{
+		`controlPlaneConfig.infra.bootstrapFiles=[{path: /etc/foo, content: bar}, {path: /etc/baz, content: "qux, quux"}]`,
+	})
+	if err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
+	}
+	files := req.ControlPlaneConfig.Infra.BootstrapFiles
+	if len(files) != 2 {
+		t.Fatalf("bootstrapFiles = %v, want 2 entries", files)
+	}
+	if files[0].Path != "/etc/foo" || files[0].Content != "bar" {
+		t.Errorf("bootstrapFiles[0] = %+v, want path=/etc/foo content=bar", files[0])
+	}
+	// The comma inside the quoted content only works because the whole
+	// value parses as one YAML sequence up front — the naive
+	// comma-split fallback would have cut this file's content in half.
+	if files[1].Path != "/etc/baz" || files[1].Content != "qux, quux" {
+		t.Errorf("bootstrapFiles[1] = %+v, want path=/etc/baz content=%q", files[1], "qux, quux")
+	}
+}
+
 func TestApplySetFlagsPointerToSliceField(t *testing.T) {
 	var req api.UpdateClusterRequest
 	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.nodeLabels=gpu=true"}); err != nil {
