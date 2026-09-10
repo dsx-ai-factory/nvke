@@ -36,11 +36,11 @@ import (
 	"time"
 )
 
-// containerCLI is the container runtime this fixture drives. It matches the
+// ContainerCLI is the container runtime this fixture drives. It matches the
 // runtime nkectl itself uses for the bootstrap cluster
 // (bootstrapengine.RuntimeCLI), so the suite needs one runtime rather than
 // two, and the node containers and the bootstrap cluster share a daemon.
-const containerCLI = "nerdctl"
+const ContainerCLI = "nerdctl"
 
 // Logf is a minimal logging sink so the substrate can report progress without
 // depending on a particular test framework.
@@ -268,10 +268,10 @@ func (s *Substrate) planNodes() ([]Node, error) {
 // already exist. Safe to call repeatedly: an existing network with the same
 // name is left alone.
 func (s *Substrate) ensureNetwork(ctx context.Context) error {
-	if exec.CommandContext(ctx, containerCLI, "network", "inspect", s.Config.Network).Run() == nil {
+	if exec.CommandContext(ctx, ContainerCLI, "network", "inspect", s.Config.Network).Run() == nil {
 		return nil
 	}
-	if out, err := exec.CommandContext(ctx, containerCLI, "network", "create",
+	if out, err := exec.CommandContext(ctx, ContainerCLI, "network", "create",
 		"--driver", "bridge", "--subnet", s.Config.Subnet, s.Config.Network).CombinedOutput(); err != nil {
 		return fmt.Errorf("creating network %s: %w\n%s", s.Config.Network, err, out)
 	}
@@ -321,12 +321,12 @@ func (s *Substrate) startNode(ctx context.Context, node Node) error {
 	}
 	args = append(args, s.Image)
 
-	if out, err := exec.CommandContext(ctx, containerCLI, args...).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, ContainerCLI, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("starting %s: %w\n%s", node.Container, err, out)
 	}
 	if dnsAddress != "" {
 		resolver := fmt.Sprintf("nameserver %s\noptions edns0 trust-ad ndots:0\n", dnsAddress)
-		command := exec.CommandContext(ctx, containerCLI, "exec", "-i", node.Container, "tee", "/etc/resolv.conf")
+		command := exec.CommandContext(ctx, ContainerCLI, "exec", "-i", node.Container, "tee", "/etc/resolv.conf")
 		command.Stdin = strings.NewReader(resolver)
 		if out, err := command.CombinedOutput(); err != nil {
 			return fmt.Errorf("setting resolver in %s: %w\n%s", node.Container, err, out)
@@ -396,7 +396,7 @@ func (s *Substrate) waitReady(ctx context.Context) error {
 
 // probeHost checks readiness from inside the container.
 func probeHost(ctx context.Context, node Node) error {
-	out, err := exec.CommandContext(ctx, containerCLI, "exec", node.Container,
+	out, err := exec.CommandContext(ctx, ContainerCLI, "exec", node.Container,
 		"systemctl", "is-active", "containerd", "swtpm-local", "spire-agent").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("required systemd units are not active: %w\n%s", err, out)
@@ -406,7 +406,7 @@ func probeHost(ctx context.Context, node Node) error {
 
 func (s *Substrate) allRunning(ctx context.Context) bool {
 	for _, node := range s.nodes {
-		out, err := exec.CommandContext(ctx, containerCLI, "inspect",
+		out, err := exec.CommandContext(ctx, ContainerCLI, "inspect",
 			"--format", "{{.State.Running}}", node.Container).Output()
 		if err != nil || strings.TrimSpace(string(out)) != "true" {
 			return false
@@ -422,8 +422,8 @@ func (s *Substrate) allRunning(ctx context.Context) bool {
 // across runs by ensureNetwork.
 func (s *Substrate) teardown(ctx context.Context) {
 	for _, node := range s.nodes {
-		_ = exec.CommandContext(ctx, containerCLI, "rm", "-f", "-v", node.Container).Run()
-		_ = exec.CommandContext(ctx, containerCLI, "volume", "rm", "-f",
+		_ = exec.CommandContext(ctx, ContainerCLI, "rm", "-f", "-v", node.Container).Run()
+		_ = exec.CommandContext(ctx, ContainerCLI, "volume", "rm", "-f",
 			node.Container+"-var", node.Container+"-containerd").Run()
 	}
 }
@@ -432,10 +432,10 @@ func (s *Substrate) teardown(ctx context.Context) {
 // after the containers are gone.
 func (s *Substrate) DumpDiagnostics(ctx context.Context) {
 	for _, node := range s.nodes {
-		if out, err := exec.CommandContext(ctx, containerCLI, "logs", "--tail", "50", node.Container).CombinedOutput(); err == nil {
-			s.log("substrate: --- %s logs %s (tail) ---\n%s", containerCLI, node.Container, out)
+		if out, err := exec.CommandContext(ctx, ContainerCLI, "logs", "--tail", "50", node.Container).CombinedOutput(); err == nil {
+			s.log("substrate: --- %s logs %s (tail) ---\n%s", ContainerCLI, node.Container, out)
 		}
-		if out, err := exec.CommandContext(ctx, containerCLI, "exec", node.Container,
+		if out, err := exec.CommandContext(ctx, ContainerCLI, "exec", node.Container,
 			"journalctl", "-u", "nke-agent", "--no-pager", "-n", "50").CombinedOutput(); err == nil {
 			s.log("substrate: --- journalctl -u nke-agent %s ---\n%s", node.Container, out)
 		}
@@ -444,7 +444,7 @@ func (s *Substrate) DumpDiagnostics(ctx context.Context) {
 
 // ContainerCount returns how many containers carry the substrate label.
 func ContainerCount(ctx context.Context) (int, error) {
-	out, err := exec.CommandContext(ctx, containerCLI, "ps", "-aq",
+	out, err := exec.CommandContext(ctx, ContainerCLI, "ps", "-aq",
 		"--filter", "label=nkectl-e2e=true").Output()
 	if err != nil {
 		return 0, fmt.Errorf("listing substrate containers: %w", err)

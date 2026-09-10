@@ -15,12 +15,12 @@ import (
 // other daemon would be on a network the cluster cannot reach, and images
 // built through it would be invisible to the loader.
 func TestContainerCLIIsNerdctl(t *testing.T) {
-	if containerCLI != "nerdctl" {
-		t.Errorf("containerCLI = %q, want %q", containerCLI, "nerdctl")
+	if ContainerCLI != "nerdctl" {
+		t.Errorf("ContainerCLI = %q, want %q", ContainerCLI, "nerdctl")
 	}
 }
 
-// Every call site must go through containerCLI rather than naming a runtime
+// Every call site must go through ContainerCLI rather than naming a runtime
 // directly. A single reintroduced "docker" literal would work on a CI runner
 // that still has Docker installed, so nothing else in this package would
 // notice — the suite would silently depend on Docker again.
@@ -28,31 +28,31 @@ func TestContainerCLIIsNerdctl(t *testing.T) {
 // Source text rather than behaviour: these call sites shell out to a real
 // runtime, so there is no seam to assert against without one present.
 func TestNoDockerInvocations(t *testing.T) {
-	entries, err := os.ReadDir(".")
-	if err != nil {
-		t.Fatalf("reading package directory: %v", err)
-	}
-
-	for _, entry := range entries {
-		name := entry.Name()
-		// Test files are excluded: this one names the literal it is looking
-		// for, and would report itself.
-		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		body, err := os.ReadFile(filepath.Clean(name))
+	// The whole tree under this package, not just this directory: cmd/nodes
+	// is where a `docker ps` for a developer convenience target lived
+	// unnoticed while a directory-only scan passed.
+	err := filepath.WalkDir(".", func(path string, d os.DirEntry, err error) error {
 		if err != nil {
-			t.Fatalf("reading %s: %v", name, err)
+			return err
 		}
-		// The command position specifically. "Dockerfile" is a filename this
-		// package legitimately reads, and the word appears in comments
-		// explaining why Docker is not used.
+		if d.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		body, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
 		for _, line := range strings.Split(string(body), "\n") {
 			// Trailing-quote match: catches "docker" and "/usr/bin/docker" alike.
+			// The command position specifically -- "Dockerfile" is a filename
+			// this package legitimately reads.
 			if strings.Contains(line, `docker"`) {
-				t.Errorf("%s: invokes docker directly; use containerCLI:\n\t%s",
-					name, strings.TrimSpace(line))
+				t.Errorf("%s: invokes docker directly; use ContainerCLI:\n\t%s", path, strings.TrimSpace(line))
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking the package tree: %v", err)
 	}
 }

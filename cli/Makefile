@@ -230,7 +230,7 @@ fmt: ## Format the source with golangci-lint's formatters.
 	@$(GOLANGCI_LINT_RUN) fmt ./...
 
 # One recipe for CI and local, pinned by version, as in the sibling modules.
-lint: ## Run golangci-lint over this module. (run by the merge gate)
+lint: check-no-docker ## Run golangci-lint over this module. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
@@ -283,14 +283,23 @@ file-license-check: license ## Verify all files have license headers.
 #
 # Invocations only: the word appears legitimately in Dockerfile paths, in
 # docker.io registry references, and in comments explaining why Docker is not
-# used here. Matching a command position -- bare or by absolute path -- rather
-# than the bare word keeps those out of it.
+# used here. A command position -- bare or by absolute path, followed by an
+# argument, end of line, or a line continuation -- is what is matched, so any
+# subcommand counts, including ones that did not exist when this was written.
+#
+# Shell and Makefile only. Go sources are covered by TestNoDockerInvocations
+# in the substrate package, which understands Go string literals; a text
+# grep over Go would match that test's own error message, among other prose.
+#
+# Also a dependency of `lint`, which the merge gate runs for this module: a
+# reintroduction then blocks a merge rather than only reddening the advisory
+# e2e lane.
 check-no-docker: ## Fail if the bootstrap e2e suite invokes docker.
-	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker[[:space:]]+(build|builder|exec|image|images|inspect|load|login|logs|network|ps|pull|push|rm|run|save|tag|version|volume)([[:space:]]|$$)' \
-	    e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
+	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)' \
+	    --include='*.sh' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
 	if [ -n "$$matches" ]; then \
 	  echo "The bootstrap e2e suite must not invoke docker; it runs on nerdctl/containerd."; \
 	  echo "$$matches"; \
 	  exit 1; \
 	fi; \
-	echo "no docker invocations in the bootstrap e2e suite."
+	echo "bootstrap e2e suite: no Docker invocations."
