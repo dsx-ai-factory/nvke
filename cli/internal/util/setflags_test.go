@@ -115,6 +115,129 @@ func TestApplySetFlagsPointerToSliceField(t *testing.T) {
 	}
 }
 
+// TestApplySetFlagsControlPlaneConfigScalarFields covers the
+// controlPlaneConfig.* scalar fields not already exercised by another test
+// in this file: the two provider-agnostic numeric/string/bool fields, one
+// nico.* string field, and one infra.* enum field.
+func TestApplySetFlagsControlPlaneConfigScalarFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		entry string
+		check func(t *testing.T, cfg *api.UpdateClusterControlPlaneConfig)
+	}{
+		{
+			name:  "maxSurge",
+			entry: "controlPlaneConfig.maxSurge=1",
+			check: func(t *testing.T, cfg *api.UpdateClusterControlPlaneConfig) {
+				if cfg.MaxSurge == nil || *cfg.MaxSurge != 1 {
+					t.Errorf("maxSurge = %v, want 1", cfg.MaxSurge)
+				}
+			},
+		},
+		{
+			name:  "systemReservedMemory",
+			entry: "controlPlaneConfig.systemReservedMemory=16Gi",
+			check: func(t *testing.T, cfg *api.UpdateClusterControlPlaneConfig) {
+				if cfg.SystemReservedMemory == nil || *cfg.SystemReservedMemory != "16Gi" {
+					t.Errorf("systemReservedMemory = %v, want 16Gi", cfg.SystemReservedMemory)
+				}
+			},
+		},
+		{
+			name:  "provisioningMonitorDisabled",
+			entry: "controlPlaneConfig.provisioningMonitorDisabled=true",
+			check: func(t *testing.T, cfg *api.UpdateClusterControlPlaneConfig) {
+				if cfg.ProvisioningMonitorDisabled == nil || !*cfg.ProvisioningMonitorDisabled {
+					t.Errorf("provisioningMonitorDisabled = %v, want true", cfg.ProvisioningMonitorDisabled)
+				}
+			},
+		},
+		{
+			// Distinct from the top-level teleportEnabled field, which
+			// TestApplySetFlagsMergesOntoExistingValue already covers.
+			name:  "controlPlaneConfig-scoped teleportEnabled",
+			entry: "controlPlaneConfig.teleportEnabled=false",
+			check: func(t *testing.T, cfg *api.UpdateClusterControlPlaneConfig) {
+				if cfg.TeleportEnabled == nil || *cfg.TeleportEnabled {
+					t.Errorf("controlPlaneConfig.teleportEnabled = %v, want false", cfg.TeleportEnabled)
+				}
+			},
+		},
+		{
+			name:  "nico.configProfile",
+			entry: "controlPlaneConfig.nico.configProfile=default",
+			check: func(t *testing.T, cfg *api.UpdateClusterControlPlaneConfig) {
+				if cfg.Nico == nil || cfg.Nico.ConfigProfile == nil || *cfg.Nico.ConfigProfile != "default" {
+					t.Errorf("nico.configProfile = %v, want default", cfg.Nico)
+				}
+			},
+		},
+		{
+			name:  "infra.spireAttestationMethod",
+			entry: "controlPlaneConfig.infra.spireAttestationMethod=tpm",
+			check: func(t *testing.T, cfg *api.UpdateClusterControlPlaneConfig) {
+				if cfg.Infra == nil || cfg.Infra.SpireAttestationMethod == nil ||
+					*cfg.Infra.SpireAttestationMethod != api.SpireAttestationMethodTpm {
+					t.Errorf("infra.spireAttestationMethod = %v, want tpm", cfg.Infra)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req api.UpdateClusterRequest
+			if err := ApplySetFlags(&req, []string{tt.entry}); err != nil {
+				t.Fatalf("ApplySetFlags(%q): %v", tt.entry, err)
+			}
+			if req.ControlPlaneConfig == nil {
+				t.Fatal("controlPlaneConfig is nil")
+			}
+			tt.check(t, req.ControlPlaneConfig)
+		})
+	}
+}
+
+func TestApplySetFlagsNicoRemainingUUIDListFields(t *testing.T) {
+	id1, id2 := uuid.New(), uuid.New()
+	var req api.UpdateClusterRequest
+	err := ApplySetFlags(&req, []string{
+		"controlPlaneConfig.nico.instanceTypePreference=" + id1.String(),
+		"controlPlaneConfig.nico.sshKeyGroupIDs=" + id1.String() + "," + id2.String(),
+		"controlPlaneConfig.nico.vpcPrefixIDs=" + id2.String(),
+	})
+	if err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
+	}
+	nico := req.ControlPlaneConfig.Nico
+	if len(nico.InstanceTypePreference) != 1 || nico.InstanceTypePreference[0] != id1 {
+		t.Errorf("instanceTypePreference = %v, want [%s]", nico.InstanceTypePreference, id1)
+	}
+	if len(nico.SSHKeyGroupIDs) != 2 || nico.SSHKeyGroupIDs[0] != id1 || nico.SSHKeyGroupIDs[1] != id2 {
+		t.Errorf("sshKeyGroupIDs = %v, want [%s %s]", nico.SSHKeyGroupIDs, id1, id2)
+	}
+	if len(nico.VpcPrefixIDs) != 1 || nico.VpcPrefixIDs[0] != id2 {
+		t.Errorf("vpcPrefixIDs = %v, want [%s]", nico.VpcPrefixIDs, id2)
+	}
+}
+
+func TestApplySetFlagsInfraMachineTemplateYAMLMapping(t *testing.T) {
+	var req api.UpdateClusterRequest
+	err := ApplySetFlags(&req, []string{
+		`controlPlaneConfig.infra.machineTemplate={kind: NicoMachineTemplate, apiVersion: "infrastructure.cluster.x-k8s.io/v1alpha1"}`,
+	})
+	if err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
+	}
+	mt := req.ControlPlaneConfig.Infra.MachineTemplate
+	if mt["kind"] != "NicoMachineTemplate" {
+		t.Errorf("machineTemplate[kind] = %v, want NicoMachineTemplate", mt["kind"])
+	}
+	if mt["apiVersion"] != "infrastructure.cluster.x-k8s.io/v1alpha1" {
+		t.Errorf("machineTemplate[apiVersion] = %v, want infrastructure.cluster.x-k8s.io/v1alpha1", mt["apiVersion"])
+	}
+}
+
 func TestApplySetFlagsRejectsUnknownKey(t *testing.T) {
 	var req api.UpdateClusterRequest
 	if err := ApplySetFlags(&req, []string{"bogusField=x"}); err == nil {
