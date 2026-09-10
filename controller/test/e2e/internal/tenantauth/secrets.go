@@ -74,6 +74,16 @@ func AssertKubeconfigAndTrustBundleDeleted(ctx context.Context, c client.Client,
 	return nil
 }
 
+// AssertAdminKubeconfigDeleted checks that the always-published admin
+// kubeconfig secret has been removed from the management cluster. Unlike the
+// OIDC kubeconfig and trust bundle, this secret is published for every
+// cluster regardless of OIDC mode, so it is the one universal proof that
+// deleting the CAPI Cluster garbage-collected its owned tenant-access
+// secrets rather than any workflow step deleting them explicitly.
+func AssertAdminKubeconfigDeleted(ctx context.Context, c client.Client, clusterName string) error {
+	return assertSecretAbsent(ctx, c, adminKubeconfigSecretName(clusterName))
+}
+
 func assertSecretKey(ctx context.Context, c client.Client, name, key string) error {
 	var secret corev1.Secret
 	if err := c.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: name}, &secret); err != nil {
@@ -97,5 +107,6 @@ func assertSecretAbsent(ctx context.Context, c client.Client, name string) error
 	}
 }
 
-func kubeconfigSecretName(clusterName string) string  { return clusterName + "-kubeconfig" }
-func trustBundleSecretName(clusterName string) string { return clusterName + "-cluster-trust-bundle" }
+func kubeconfigSecretName(clusterName string) string      { return clusterName + "-kubeconfig" }
+func trustBundleSecretName(clusterName string) string     { return clusterName + "-cluster-trust-bundle" }
+func adminKubeconfigSecretName(clusterName string) string { return clusterName + "-admin-kubeconfig" }
