@@ -73,6 +73,7 @@ func loadSite() (config.SiteConfig, error) {
 	return resolveSiteConfig(cfg)
 }
 
+// resolveSiteConfig returns the active site's SiteConfig.
 func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 	if site == "" {
 		return cfg.CurrentSiteConfig()

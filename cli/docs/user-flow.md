@@ -16,7 +16,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get clusters` | Lists tenant clusters. `-c <name>` filters, `-o json\|yaml` changes the format. | Available |
 | `nkectl get clusters --cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
-| `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. | In Review ([#269](https://github.com/NVIDIA/nke/pull/269)) |
+| `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
 | `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). | Planned |
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
@@ -89,7 +89,8 @@ nkectl config set-site --name my-tier0-site \
 nkectl config view
 ```
 
-`--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig.
+`--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig; `get
+providers` and `get kubeconfig` read the cluster directly and need it.
 
 CWE API commands (`get`/`create`/`describe`/`delete` clusters) use that
 kubeconfig to authenticate: they read the audience from ConfigMap
@@ -148,14 +149,13 @@ nkectl get clusters --cluster <cluster-name> -o yaml
 
 ### 8. Get the tenant cluster's kubeconfig
 
-`nkectl get kubeconfig <cluster-name>` is in review
-([#269](https://github.com/NVIDIA/nke/pull/269)). Until it merges, CWE
-publishes the kubeconfig as a Secret in the site cluster:
-
 ```bash
-kubectl --kubeconfig ./my-tier0-site.kubeconfig -n nke-system \
-  get secret <cluster-name>-admin-kubeconfig -o jsonpath='{.data.value}' | base64 -d
+nkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
 ```
+
+Without `--output-file`, the kubeconfig is written to stdout. This reads the
+site cluster directly, the same as `get providers`, so it needs the site
+kubeconfig from step 4.
 
 ### 9. Delete the tenant cluster
 
