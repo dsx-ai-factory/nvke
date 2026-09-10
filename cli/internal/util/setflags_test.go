@@ -437,6 +437,62 @@ func TestApplySetFlagsRejectsScalarThenNestedConflict(t *testing.T) {
 	}
 }
 
+// TestMergeMapRecursesIntoSharedNestedObjects verifies MergeMap's headline
+// case: two documents that each set a different field under the same
+// nested object both survive in the result, instead of the second
+// document's object replacing the first's wholesale.
+func TestMergeMapRecursesIntoSharedNestedObjects(t *testing.T) {
+	dst := map[string]interface{}{
+		"controlPlaneConfig": map[string]interface{}{
+			"nico": map[string]interface{}{
+				"osProfile": "from-file",
+			},
+		},
+	}
+	src := map[string]interface{}{
+		"controlPlaneConfig": map[string]interface{}{
+			"nico": map[string]interface{}{
+				"configProfile": "from-set",
+			},
+		},
+	}
+	MergeMap(dst, src)
+
+	nico := dst["controlPlaneConfig"].(map[string]interface{})["nico"].(map[string]interface{})
+	if nico["osProfile"] != "from-file" {
+		t.Errorf("osProfile = %v, want from-file (dst's sibling field) to survive the merge", nico["osProfile"])
+	}
+	if nico["configProfile"] != "from-set" {
+		t.Errorf("configProfile = %v, want from-set (src's field) to be added", nico["configProfile"])
+	}
+}
+
+// TestMergeMapReplacesSharedScalarKey verifies the non-recursive branch:
+// when a key is not a nested object on both sides, src replaces dst
+// entirely rather than merging.
+func TestMergeMapReplacesSharedScalarKey(t *testing.T) {
+	dst := map[string]interface{}{"controlPlaneKubernetesVersion": "1.30.0"}
+	src := map[string]interface{}{"controlPlaneKubernetesVersion": "1.31.0"}
+	MergeMap(dst, src)
+
+	if dst["controlPlaneKubernetesVersion"] != "1.31.0" {
+		t.Errorf("controlPlaneKubernetesVersion = %v, want 1.31.0", dst["controlPlaneKubernetesVersion"])
+	}
+}
+
+// TestMergeMapReplacesArraysWhole verifies that an array value is never
+// merged element-wise: src's array fully replaces dst's.
+func TestMergeMapReplacesArraysWhole(t *testing.T) {
+	dst := map[string]interface{}{"subnetIDs": []interface{}{"a", "b"}}
+	src := map[string]interface{}{"subnetIDs": []interface{}{"c"}}
+	MergeMap(dst, src)
+
+	got, ok := dst["subnetIDs"].([]interface{})
+	if !ok || len(got) != 1 || got[0] != "c" {
+		t.Errorf("subnetIDs = %v, want [c]", dst["subnetIDs"])
+	}
+}
+
 func TestIsArrayField(t *testing.T) {
 	tests := []struct {
 		path []string

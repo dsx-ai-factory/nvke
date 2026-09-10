@@ -148,6 +148,21 @@ func TestUpdateCmdBadSetEntryRejected(t *testing.T) {
 	}
 }
 
+// TestUpdateCmdMalformedYAMLRejected verifies that invalid YAML in a -f
+// patch file fails before the API is called.
+func TestUpdateCmdMalformedYAMLRejected(t *testing.T) {
+	path := writeSpec(t, ":\t:")
+	cmd := NewUpdateCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster", "-f", path})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for malformed YAML, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("malformed YAML should fail before reaching the API, got: %v", err)
+	}
+}
+
 // TestDeleteCmdRequiresName verifies that delete cluster requires exactly one arg.
 func TestDeleteCmdRequiresName(t *testing.T) {
 	cmd := NewDeleteCmd(clientFnErr)

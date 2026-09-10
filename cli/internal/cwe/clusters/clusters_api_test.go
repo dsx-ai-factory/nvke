@@ -233,6 +233,49 @@ func TestUpdateClusterSetOverridesFile(t *testing.T) {
 	}
 }
 
+// TestUpdateClusterSetAndFileMergeSiblingFields verifies that -f and --set
+// touching different fields under the same nested object both survive in
+// the PATCH body, instead of --set's object replacing -f's wholesale.
+func TestUpdateClusterSetAndFileMergeSiblingFields(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	cmd := NewUpdateCmd(clientFn)
+	cmd.SetIn(strings.NewReader("controlPlaneConfig:\n  nico:\n    osProfile: from-file\n"))
+	_, err := run(t, cmd, "my-cluster", "-f", "-",
+		"--set", "controlPlaneConfig.nico.configProfile=from-set",
+	)
+	if err != nil {
+		t.Fatalf("update cluster: %v", err)
+	}
+
+	body := string(fake.lastRequestBody())
+	if !strings.Contains(body, `"osProfile":"from-file"`) {
+		t.Errorf("PATCH body = %s, want the -f field to survive the merge", body)
+	}
+	if !strings.Contains(body, `"configProfile":"from-set"`) {
+		t.Errorf("PATCH body = %s, want the --set field to be present", body)
+	}
+}
+
+// TestUpdateClusterFileFromRealPath verifies -f <path>, reading from an
+// actual file rather than stdin.
+func TestUpdateClusterFileFromRealPath(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	path := writeSpec(t, `controlPlaneKubernetesVersion: "1.31.0"`)
+	_, err := run(t, NewUpdateCmd(clientFn), "my-cluster", "-f", path)
+	if err != nil {
+		t.Fatalf("update cluster -f %s: %v", path, err)
+	}
+
+	stored := fake.stored()
+	if len(stored) != 1 || stored[0].ControlPlaneKubernetesVersion != "1.31.0" {
+		t.Fatalf("stored cluster = %+v, want controlPlaneKubernetesVersion 1.31.0", stored)
+	}
+}
+
 // TestUpdateClusterEmptySetValueReachesTheWireAsALiteralEmptyArray verifies
 // that --set controlPlaneConfig.nico.subnetIDs= sends a literal
 // "subnetIDs":[] in the PATCH body.
