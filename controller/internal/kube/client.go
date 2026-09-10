@@ -25,7 +25,20 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 )
 
+const (
+	runtimeManagerLeaderElectionID = "controller.nke.nvidia.com"
+)
+
 type AddToSchemeFunc func(scheme *runtime.Scheme) error
+
+// RuntimeManagerOptions configures the Kubernetes controller-runtime manager.
+type RuntimeManagerOptions struct {
+	// ConfigMapCacheNamespace scopes the ConfigMap cache. An empty value disables
+	// ConfigMap caching.
+	ConfigMapCacheNamespace string
+	// LeaderElectionNamespace is the namespace containing the manager's Lease.
+	LeaderElectionNamespace string
+}
 
 // NewRuntimeClient creates a new Kubernetes client using the controller-runtime client.
 // It uses the clientcmd default loading rules to build the Kubernetes config.
@@ -63,7 +76,15 @@ func NewRuntimeScheme(addToSchemes ...AddToSchemeFunc) (*runtime.Scheme, error) 
 	return scheme, nil
 }
 
-func NewRuntimeManager(logger *slog.Logger, configMapNamespace string, addToSchemes ...AddToSchemeFunc) (ctrl.Manager, error) {
+func NewRuntimeManager(
+	logger *slog.Logger,
+	opts RuntimeManagerOptions,
+	addToSchemes ...AddToSchemeFunc,
+) (ctrl.Manager, error) {
+	if opts.LeaderElectionNamespace == "" {
+		return nil, fmt.Errorf("leader election namespace must not be empty")
+	}
+
 	config, err := NewRESTConfig()
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Kubernetes config: %w", err)
@@ -80,6 +101,10 @@ func NewRuntimeManager(logger *slog.Logger, configMapNamespace string, addToSche
 		ctrlruntimelog.SetLogger(logr.Discard())
 	}
 
+	return ctrl.NewManager(config, runtimeManagerOptions(scheme, opts))
+}
+
+func runtimeManagerOptions(scheme *runtime.Scheme, opts RuntimeManagerOptions) ctrl.Options {
 	cacheOptions := cache.Options{ByObject: map[client.Object]cache.ByObject{
 		&corev1.Secret{}: {
 			Namespaces: map[string]cache.Config{
@@ -87,20 +112,23 @@ func NewRuntimeManager(logger *slog.Logger, configMapNamespace string, addToSche
 			},
 		},
 	}}
-	if configMapNamespace != "" {
+	if opts.ConfigMapCacheNamespace != "" {
 		cacheOptions.ByObject[&corev1.ConfigMap{}] = cache.ByObject{
 			Namespaces: map[string]cache.Config{
-				configMapNamespace: {},
+				opts.ConfigMapCacheNamespace: {},
 			},
 		}
 	}
 
-	return ctrl.NewManager(config, ctrl.Options{
-		Scheme:                 scheme,
-		Cache:                  cacheOptions,
-		Metrics:                metricsserver.Options{BindAddress: "0"},
-		HealthProbeBindAddress: "0",
-	})
+	return ctrl.Options{
+		Scheme:                  scheme,
+		Cache:                   cacheOptions,
+		LeaderElection:          true,
+		LeaderElectionID:        runtimeManagerLeaderElectionID,
+		LeaderElectionNamespace: opts.LeaderElectionNamespace,
+		Metrics:                 metricsserver.Options{BindAddress: "0"},
+		HealthProbeBindAddress:  "0",
+	}
 }
 
 // NewClientset creates a new Kubernetes clientset using the clientcmd default loading rules.

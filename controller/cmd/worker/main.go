@@ -191,7 +191,10 @@ func main() {
 	controllerRuntimeLogger := logger.With("logger", "controller-runtime")
 	k8sControllerManager, err := kube.NewRuntimeManager(
 		controllerRuntimeLogger,
-		cfg.SpireServerNamespace,
+		kube.RuntimeManagerOptions{
+			ConfigMapCacheNamespace: cfg.SpireServerNamespace,
+			LeaderElectionNamespace: cfg.PodNamespace,
+		},
 		spirev1alpha1.AddToScheme,
 		nicov1.AddToScheme,
 	)
