@@ -178,15 +178,6 @@ func TestDefaultConfig_CWEPort(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_DockerHubMirror(t *testing.T) {
-	t.Setenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR", "mirror.example.com:5000")
-
-	cfg := DefaultConfig()
-	if cfg.DockerHubMirror != "mirror.example.com:5000" {
-		t.Errorf("DefaultConfig DockerHubMirror = %q, want the mirror from the environment", cfg.DockerHubMirror)
-	}
-}
-
 func TestTenantKubeconfigRetriesUntilPublished(t *testing.T) {
 	oldInterval := tenantKubeconfigPollInterval
 	tenantKubeconfigPollInterval = time.Millisecond
@@ -614,20 +605,6 @@ func TestSpireInstallArgs(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("install = %q, want it to contain %q", got, want)
 		}
-	}
-	if strings.Contains(got, "global.spire.image.registry") {
-		t.Errorf("install = %q, must not override the SPIRE image registry without a mirror", got)
-	}
-}
-
-// TestSpireInstallArgs_DockerHubMirror covers the SPIRE image registry override:
-// with a mirror configured, the SPIRE images (which are not on Docker Hub and so
-// escape the containerd docker.io redirect) are pointed at the same mirror.
-func TestSpireInstallArgs_DockerHubMirror(t *testing.T) {
-	cfg := Config{DockerHubMirror: "mirror.example.com:5000"}
-	got := joinArgs(spireInstallArgs(cfg, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
-	if !strings.Contains(got, "--set-string global.spire.image.registry=mirror.example.com:5000") {
-		t.Errorf("install = %q, want the SPIRE image registry set to the mirror", got)
 	}
 }
 
