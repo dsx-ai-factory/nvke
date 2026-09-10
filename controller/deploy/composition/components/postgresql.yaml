@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# postgresql values for the nke-stack composition. Merged under the
+# `postgresql` key of the generated chart's values.yaml -- the top-level key is
+# added by the generator, so it is deliberately absent here.
+
+# ─── postgresql ──────────────────────────────────────────────────────────────
+# Shared by cloud-workflow-engine and temporal. auth.password is not set here;
+# supply it at install time and pass the same value to temporal's two sql
+# password fields, which is what the Tiltfile does with one generated secret.
+#
+# This is the in-repo chart (controller/deploy/charts/postgresql), not the
+# Bitnami one -- see registry.yaml for why. Most of what the Bitnami values
+# configured is now the chart's own default, so only the deployment-specific
+# settings remain here.
+enabled: true
+namespaceOverride: postgres
+# Pin the service name so the FQDN temporal and cloud-workflow-engine resolve
+# stays correct regardless of what the release is called. Both dial
+# postgres-postgresql.postgres.svc.cluster.local from their own values, so this
+# is a contract with them. It is also the name the Bitnami chart produced under
+# release "postgres", which is why the swap needs no change on either consumer.
+fullnameOverride: postgres-postgresql
+auth:
+  username: postgres
+  database: postgres

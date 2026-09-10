@@ -497,9 +497,6 @@ for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
     -o "jsonpath={.spec.template.spec.containers[0].env[?(@.name==\"${env_name}\")].value}")"
   [[ "${env_value}" == "true" ]] || fail "${env_name} must be true in the CWE deployment, got ${env_value:-<empty>}"
 done
-forge_url="$(kubectl -n cloud-workflow-engine get deployment/cloud-workflow-engine \
-  -o 'jsonpath={.spec.template.spec.containers[0].env[?(@.name=="FORGE_URL")].value}')"
-log "CWE FORGE_URL=${forge_url}"
 kubectl -n capnico-system rollout status deployment/controller-manager --timeout=5m
 curl -fsS --max-time 5 http://localhost:18080/healthz >/dev/null || fail "nico-vms does not answer on localhost:18080"
 log "management plane is up: CWE, CAPNICo and nico-vms all answer"

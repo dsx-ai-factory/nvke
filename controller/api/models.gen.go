@@ -378,26 +378,11 @@ type CreateNodePoolRequest struct {
 
 // DeleteNodeRequest defines model for DeleteNodeRequest.
 type DeleteNodeRequest struct {
-	// AllowQuorumLoss Override the etcd member-removal safety check that blocks a removal which
-	// would break etcd quorum. Dangerous — only for control-plane node removal
-	// when quorum loss is understood and acceptable. Requires the server to have
-	// etcd safety overrides enabled (ALLOW_ETCD_SAFETY_OVERRIDES); otherwise the
-	// request is rejected.
-	AllowQuorumLoss bool `json:"allowQuorumLoss,omitempty"`
-
-	// AllowSingleVoter Override the etcd member-removal safety check that blocks a removal which
-	// would leave a single-voter etcd cluster. Intended for manual single-node
-	// control-plane rotation on development sites. Requires the server to have
-	// etcd safety overrides enabled (ALLOW_ETCD_SAFETY_OVERRIDES); otherwise the
-	// request is rejected.
-	AllowSingleVoter bool `json:"allowSingleVoter,omitempty"`
-
 	// ForceUnreachable Treat the node as unreachable. Best-effort graceful steps (drain, graceful
 	// shutdown) are still attempted, but their failures are logged and tolerated
 	// instead of failing the teardown. Use when a node's kubelet/node-agent is
 	// unresponsive and a normal delete would hang. This does not tolerate
-	// control-plane etcd member-removal failures; use allowQuorumLoss /
-	// allowSingleVoter to override those etcd safety checks.
+	// control-plane etcd member-removal failures.
 	ForceUnreachable   bool                `json:"forceUnreachable,omitempty"`
 	MachineHealthIssue *MachineHealthIssue `json:"machineHealthIssue,omitempty"`
 }

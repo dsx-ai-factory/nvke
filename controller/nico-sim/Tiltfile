@@ -413,9 +413,6 @@ def register(ctx):
     return struct(
         cwe_resource_deps = ["nico-sim"],
         cwe_env_overrides = {
-            "FORGE_URL": "http://%s:18080" % ctx.kind_host_ip,
-            "FORGE_ENVIRONMENT": "test",
-            "FWE_API_KEY": "not-needed-for-nico-sim",
             "SPIFFE_ENABLED": "true",
         },
     )

@@ -25,13 +25,11 @@ const (
 )
 
 // EtcdMemberRemovalInput identifies the member and a surviving node that may
-// execute its removal. The allow fields are used only by the legacy fallback.
+// execute its removal.
 type EtcdMemberRemovalInput struct {
 	ClusterID        uuid.UUID
 	TargetNodeID     uuid.UUID
 	TargetMemberName string
-	AllowQuorumLoss  bool
-	AllowSingleVoter bool
 }
 
 // RemoveEtcdMember removes the target through a surviving control-plane node.
@@ -86,13 +84,10 @@ func (a *Activities) pickEtcdMemberRemovalExecutor(ctx context.Context, input Et
 }
 
 func (a *Activities) removeEtcdMemberWithLegacyRunbook(ctx context.Context, input EtcdMemberRemovalInput, executor db.Node) error {
-	args := []string{input.TargetMemberName}
-	if input.AllowQuorumLoss {
-		args = append(args, "--allow-quorum-loss")
-	}
-	if input.AllowSingleVoter {
-		args = append(args, "--allow-single-voter")
-	}
+	// RemoveEtcdMember permits the expected 2-to-1 transition. Keep old agents
+	// behaviorally consistent by bypassing only the legacy runbook's additional
+	// single-voter policy guard; its quorum-loss guard remains enforced.
+	args := []string{input.TargetMemberName, "--allow-single-voter"}
 	if _, err := a.ExecuteHostRunbook(ctx, ExecuteHostRunbookInput{
 		HostID:      executor.ID,
 		RunbookName: legacyEtcdMemberRemoveRunbook,

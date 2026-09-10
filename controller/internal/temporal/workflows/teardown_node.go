@@ -363,8 +363,6 @@ func removeControlPlaneEtcdMember(ctx workflow.Context, input TeardownNodeInput,
 			ClusterID:        clusterID,
 			TargetNodeID:     input.NodeID,
 			TargetMemberName: node.Name,
-			AllowQuorumLoss:  input.AllowQuorumLoss,
-			AllowSingleVoter: input.AllowSingleVoter,
 		},
 	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to remove etcd member: %w", err)

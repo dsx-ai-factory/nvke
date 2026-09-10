@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	authnv1 "k8s.io/api/authentication/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -57,6 +58,104 @@ func TestTokenMintsForConfiguredAudience(t *testing.T) {
 	}
 	if token != "minted-token" {
 		t.Fatalf("token = %q, want minted-token", token)
+	}
+}
+
+func TestTokenUsesCachedToken(t *testing.T) {
+	const endpoint = "https://nke.example.internal"
+	cache := &tokenCache{tokens: map[string]cachedToken{
+		endpoint: {
+			Value:     "cached-token",
+			ExpiresAt: time.Now().Add(tokenRenewBefore + time.Minute),
+		},
+	}}
+	client := fake.NewClientset()
+	source := &Source{
+		client:   client,
+		endpoint: endpoint,
+		cache:    cache,
+	}
+
+	token, err := source.Mint(t.Context())
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	if token != "cached-token" {
+		t.Fatalf("token = %q, want cached-token", token)
+	}
+	if len(client.Actions()) != 0 {
+		t.Fatalf("cached token made Kubernetes API calls: %v", client.Actions())
+	}
+}
+
+func TestTokenRenewsAndCachesNearExpiryToken(t *testing.T) {
+	const endpoint = "https://nke.example.internal"
+	mintedExpiry := time.Now().Add(tokenLifetime)
+	client := fake.NewClientset(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: authConfigNamespace},
+		Data:       map[string]string{authConfigKey: "audiences:\n  - " + endpoint + "\n"},
+	})
+	client.PrependReactor("create", "serviceaccounts", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &authnv1.TokenRequest{
+			Status: authnv1.TokenRequestStatus{
+				Token:               "minted-token",
+				ExpirationTimestamp: metav1.NewTime(mintedExpiry),
+			},
+		}, nil
+	})
+	cache := &tokenCache{tokens: map[string]cachedToken{
+		endpoint: {
+			Value:     "old-token",
+			ExpiresAt: time.Now().Add(tokenRenewBefore),
+		},
+	}}
+	source := &Source{client: client, endpoint: endpoint, cache: cache}
+
+	token, err := source.Mint(t.Context())
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	if token != "minted-token" {
+		t.Fatalf("token = %q, want minted-token", token)
+	}
+	stored := cache.tokens[endpoint]
+	if stored.Value != "minted-token" || !stored.ExpiresAt.Equal(mintedExpiry) {
+		t.Fatalf("cached token = %#v, want minted token expiring at %v", stored, mintedExpiry)
+	}
+}
+
+func TestTokenReusesMintedTokenInMemory(t *testing.T) {
+	const configuredAudience = "https://nke.example.internal"
+	client := fake.NewClientset(&corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: authConfigMap, Namespace: authConfigNamespace},
+		Data:       map[string]string{authConfigKey: "audiences:\n  - " + configuredAudience + "\n"},
+	})
+	mints := 0
+	client.PrependReactor("create", "serviceaccounts", func(_ k8stesting.Action) (bool, runtime.Object, error) {
+		mints++
+		return true, &authnv1.TokenRequest{
+			Status: authnv1.TokenRequestStatus{
+				Token:               "minted-token",
+				ExpirationTimestamp: metav1.NewTime(time.Now().Add(tokenLifetime)),
+			},
+		}, nil
+	})
+	source := &Source{
+		client: client,
+		cache:  &tokenCache{tokens: make(map[string]cachedToken)},
+	}
+
+	for range 2 {
+		token, err := source.Mint(t.Context())
+		if err != nil {
+			t.Fatalf("Mint: %v", err)
+		}
+		if token != "minted-token" {
+			t.Fatalf("token = %q, want minted-token", token)
+		}
+	}
+	if mints != 1 {
+		t.Fatalf("mint calls = %d, want 1", mints)
 	}
 }
 

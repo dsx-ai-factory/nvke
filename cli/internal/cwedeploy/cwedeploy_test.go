@@ -178,6 +178,15 @@ func TestDefaultConfig_CWEPort(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_DockerHubMirror(t *testing.T) {
+	t.Setenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR", "mirror.example.com:5000")
+
+	cfg := DefaultConfig()
+	if cfg.DockerHubMirror != "mirror.example.com:5000" {
+		t.Errorf("DefaultConfig DockerHubMirror = %q, want the mirror from the environment", cfg.DockerHubMirror)
+	}
+}
+
 func TestTenantKubeconfigRetriesUntilPublished(t *testing.T) {
 	oldInterval := tenantKubeconfigPollInterval
 	tenantKubeconfigPollInterval = time.Millisecond
@@ -355,6 +364,9 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 
 	if !strings.Contains(cwe, "upgrade --install cloud-workflow-engine "+cfg.ChartPath) {
 		t.Errorf("cwe call = %q, want the cwe release/chart path", cwe)
+	}
+	if !strings.Contains(cwe, "--set-string supportedInfraProviders=infra") {
+		t.Errorf("cwe call = %q, want infra provider support enabled", cwe)
 	}
 	if !strings.Contains(cwe, "image.repository=nvcr.io/org/controller") || !strings.Contains(cwe, "image.tag=edge") {
 		t.Errorf("cwe call = %q, want the image split into repository/tag", cwe)
@@ -603,6 +615,20 @@ func TestSpireInstallArgs(t *testing.T) {
 			t.Errorf("install = %q, want it to contain %q", got, want)
 		}
 	}
+	if strings.Contains(got, "global.spire.image.registry") {
+		t.Errorf("install = %q, must not override the SPIRE image registry without a mirror", got)
+	}
+}
+
+// TestSpireInstallArgs_DockerHubMirror covers the SPIRE image registry override:
+// with a mirror configured, the SPIRE images (which are not on Docker Hub and so
+// escape the containerd docker.io redirect) are pointed at the same mirror.
+func TestSpireInstallArgs_DockerHubMirror(t *testing.T) {
+	cfg := Config{DockerHubMirror: "mirror.example.com:5000"}
+	got := joinArgs(spireInstallArgs(cfg, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
+	if !strings.Contains(got, "--set-string global.spire.image.registry=mirror.example.com:5000") {
+		t.Errorf("install = %q, want the SPIRE image registry set to the mirror", got)
+	}
 }
 
 // TestUpstreamCAArgs covers both states: a CA from the site spec is chained to,
@@ -659,6 +685,23 @@ func TestTPMAttestorArgs(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("tpmAttestorArgs = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+func TestTPMPluginChecksum(t *testing.T) {
+	tests := map[string]string{
+		"amd64": spireTPMDirectAMD64Checksum,
+		"arm64": spireTPMDirectARM64Checksum,
+	}
+	for arch, want := range tests {
+		if got := tpmPluginChecksum(arch); got != want {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want %q", arch, got, want)
+		}
+	}
+	for _, arch := range []string{"ppc64le", "s390x"} {
+		if got := tpmPluginChecksum(arch); got != "" {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want no checksum", arch, got)
 		}
 	}
 }

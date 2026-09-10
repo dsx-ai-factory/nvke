@@ -42,6 +42,25 @@ on:
   schedule:
     - cron: '0 2,14 * * *'
   workflow_dispatch:
+    inputs:
+      use-nke-stack:
+        description: Deploy from the nke-stack umbrella chart instead of Tilt.
+        required: false
+        type: boolean
+        default: false
+      stack-chart:
+        description: >-
+          OCI reference of an nke-stack umbrella chart, e.g.
+          oci://ghcr.io/<org>/nke/charts/nke-stack. Leave empty to deploy with
+          Tilt, which is what scheduled and push-triggered runs do.
+        required: false
+        type: string
+        default: ''
+      stack-version:
+        description: Chart version. Required when stack-chart is set.
+        required: false
+        type: string
+        default: ''
 
 permissions: {}
 
@@ -104,3 +123,8 @@ jobs:
       nkectl-smoke: true
       needs-capnico-source: true
       single-runner-control-plane-modes: true
+      # Only ever set by a manual dispatch: `inputs` is empty on push and
+      # schedule, so those runs keep the Tilt deploy.
+      use-nke-stack: ${{ inputs.use-nke-stack || false }}
+      stack-chart: ${{ inputs.stack-chart || '' }}
+      stack-version: ${{ inputs.stack-version || '' }}

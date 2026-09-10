@@ -75,19 +75,23 @@ https://kubernetes.default.svc/openid/v1/jwks
 ### 2. Create the identity your callers will use
 
 NKE admits callers by name, so the account has to exist before you name it in
-the configuration:
+the configuration. The Helm chart does not create these objects.
 
 ```bash
 kubectl create namespace nke-clients
 kubectl -n nke-clients create serviceaccount nke-client
 ```
 
-Any names will do — they just have to match the `admit` rule you write next. One
-account per caller is easier to revoke than one shared between them.
+**`nkectl` mints this pair and no other.** The names `nke-clients` /
+`nke-client` and ConfigMap `cloud-workflow-engine/nke-auth-config` are fixed in
+the CLI. Other names work for `curl` and `hack/nke-token.sh` if you override
+them; they will not work for `nkectl`. One account per caller is still easier
+to revoke when those callers are not the CLI.
 
 Minting a token for that account needs `create` on `serviceaccounts/token` in
 its namespace. A cluster administrator already has it. To let something else
-mint — a CI job, or an application that renews its own token — grant it:
+mint — `nkectl` under a least-privilege kubeconfig, a CI job, or an application
+that renews its own token — grant it:
 
 ```yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -104,7 +108,7 @@ rules:
 
 `resourceNames` holds that grant to the one account, so it does not become a way
 to mint tokens for anything else in the namespace. Bind it to whoever is doing
-the minting.
+the minting — the user or group in the kubeconfig `nkectl` uses.
 
 ### 3. Write the configuration
 
@@ -187,6 +191,12 @@ fix it now — while permissive, a failed fetch is only a warning, but when
 enforcing it stops NKE from starting at all.
 
 ### 6. Tell callers what to ask for
+
+`nkectl` mints on its own once `config set-site --kubeconfig` points at this
+cluster. The kubeconfig identity needs the Role above, the service
+account must exist, and the `admit` rule must list `nke-clients/nke-client`.
+
+For `curl` and scripts:
 
 ```bash
 kubectl create token nke-client -n nke-clients \
@@ -423,4 +433,4 @@ kubectl -n "$NS" get deploy cloud-workflow-engine \
 
 ## See also
 
-- [Authenticating to the NKE API](authenticating-to-the-api.md) — the caller's side.
+- [Authenticating to the NKE API](authenticating-to-the-api.md) — the caller's side, including `nkectl`.

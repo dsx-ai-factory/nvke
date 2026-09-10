@@ -318,18 +318,9 @@ linters:
         text: 'var-naming'
         linters:
           - revive
-      # Allow var-naming for forge API package
-      - path: 'internal/providers/forge/api/.*'
-        text: 'var-naming'
-        linters:
-          - revive
       # Allow var-naming for utils package
       - path: 'internal/utils/.*'
         text: 'var-naming'
-        linters:
-          - revive
-      # Allow stutter in type name ForgeProvider - it's clearer than just Provider
-      - text: 'type name will be used as forge.ForgeProvider'
         linters:
           - revive
       # Allow stutter in the internal/rollout framework's established public API

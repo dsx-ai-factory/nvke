@@ -100,6 +100,24 @@ generate: ## Run every generator in this module and in api/.
 generate-api: ## Regenerate the OpenAPI client, server and models.
 	cd api && go generate ./...
 
+.PHONY: composition
+composition: ## Regenerate the nke-stack umbrella chart from deploy/composition.
+	go run ./cmd/composition-gen
+
+# Kept out of `generate` above: that target runs `go generate ./...`, which loads
+# this module's whole package graph and therefore needs credentials or the
+# workspace vendor/ tree. This generator reads YAML and needs neither.
+#
+# Also kept out of `generate-check`: that runs in CI under controller/api's
+# pinned Go with GOTOOLCHAIN=local, and this module asks for a newer toolchain,
+# so invoking the generator there fails with "go.mod requires go >= 1.26.6"
+# before reading a file. The drift check is TestCompositionUpToDate in
+# cmd/composition-gen, which `make test` runs against a properly built module.
+# This target stays for running it directly.
+.PHONY: composition-check
+composition-check: ## Verify the committed chart matches the recipe. (run by the merge gate)
+	go run ./cmd/composition-gen -check
+
 # Verify the committed oapi-codegen output is reproducible with the pinned
 # generator (api/oapi-codegen.mod) and in sync with api/openapi.yaml. Catches an
 # un-pinned/wrong generator or an openapi.yaml edit that was not regenerated.

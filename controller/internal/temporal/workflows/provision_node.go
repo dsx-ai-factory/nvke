@@ -658,11 +658,9 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 	// surviving control-plane node, with join-scoped activity options so this path
 	// does not inherit teardown's retry/timeout preset or any future
 	// teardown-specific behavior. The activity retains the Unimplemented fallback
-	// for old agents. AllowSingleVoter is required because dropping a 2-voter
-	// cluster back to the lone survivor before re-adding this node is expected
-	// during control-plane scale-up. Quorum loss is intentionally not forced: if
-	// removing this member would break quorum, the node is unexpectedly a healthy
-	// voter and we would rather fail loudly than proceed.
+	// for old agents and keeps its behavior aligned with the typed RPC: dropping a
+	// 2-voter cluster back to the lone survivor before re-adding this node is
+	// expected during control-plane scale-up, while quorum loss still fails.
 	etcdCleanupOptions := workflow.ActivityOptions{
 		StartToCloseTimeout: 5 * time.Minute,
 		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
@@ -679,7 +677,6 @@ func cleanBeforeControlPlaneRejoin(ctx workflow.Context, nodeID uuid.UUID) {
 			ClusterID:        node.ClusterID,
 			TargetNodeID:     nodeID,
 			TargetMemberName: node.Name,
-			AllowSingleVoter: true,
 		},
 	).Get(ctx, nil); err != nil {
 		logger.Warn("Best-effort etcd member cleanup before rejoin failed; continuing",

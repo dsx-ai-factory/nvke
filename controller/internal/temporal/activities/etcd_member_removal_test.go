@@ -85,6 +85,9 @@ func TestRemoveEtcdMemberFallsBackOnlyOnUnimplemented(t *testing.T) {
 				require.ErrorContains(t, err, tt.wantError)
 			}
 			assert.Equal(t, tt.wantFallback, len(fakeAgent.ExecuteScriptNames) == 1)
+			if tt.wantFallback {
+				require.Equal(t, [][]string{{target.Name, "--allow-single-voter"}}, fakeAgent.ExecuteScriptArgs)
+			}
 			database.AssertExpectations(t)
 		})
 	}

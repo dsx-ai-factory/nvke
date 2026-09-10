@@ -16,6 +16,11 @@ type SiteConfig struct {
 	URL string `yaml:"url"`
 	// Kubeconfig is the path to the management cluster kubeconfig.
 	Kubeconfig string `yaml:"kubeconfig"`
+	// ProxyClientCertFile is the path to a TLS client certificate presented to
+	// the proxy on every CWE request.
+	ProxyClientCertFile string `yaml:"proxy-client-cert,omitempty"`
+	// ProxyClientKeyFile is the path to the private key matching ProxyClientCertFile.
+	ProxyClientKeyFile string `yaml:"proxy-client-key,omitempty"`
 }
 
 // Config is the top-level nkectl config file.

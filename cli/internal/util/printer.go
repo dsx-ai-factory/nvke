@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"slices"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -58,57 +57,6 @@ func Print(w io.Writer, f Format, v any) error {
 		return yaml.NewEncoder(w).Encode(m)
 	default:
 		return fmt.Errorf("cliutil.Print called with table format: use the table printer instead")
-	}
-}
-
-// PrintFields marshals v to a map via JSON and recursively prints every
-// field as key: value lines, indented for nested objects. This lets
-// describe commands show all API fields without hardcoding them — new
-// fields added to the API appear automatically.
-func PrintFields(w io.Writer, v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("marshalling response: %w", err)
-	}
-	var m map[string]any
-	if err := json.Unmarshal(b, &m); err != nil {
-		return fmt.Errorf("unmarshalling to map: %w", err)
-	}
-	printMap(w, m, 0)
-	return nil
-}
-
-func printMap(w io.Writer, m map[string]any, indent int) {
-	prefix := ""
-	for range indent {
-		prefix += "  "
-	}
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	slices.Sort(keys)
-	for _, k := range keys {
-		v := m[k]
-		switch val := v.(type) {
-		case map[string]any:
-			fmt.Fprintf(w, "%s%s:\n", prefix, k)
-			printMap(w, val, indent+1)
-		case []any:
-			fmt.Fprintf(w, "%s%s:\n", prefix, k)
-			for i, item := range val {
-				if sub, ok := item.(map[string]any); ok {
-					fmt.Fprintf(w, "%s  [%d]:\n", prefix, i)
-					printMap(w, sub, indent+2)
-				} else {
-					fmt.Fprintf(w, "%s  - %v\n", prefix, item)
-				}
-			}
-		case nil:
-			fmt.Fprintf(w, "%s%s: null\n", prefix, k)
-		default:
-			fmt.Fprintf(w, "%s%s: %v\n", prefix, k, val)
-		}
 	}
 }
 

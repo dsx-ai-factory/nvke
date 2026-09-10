@@ -48,59 +48,49 @@ func (f *fakeRunner) Run(_ context.Context, env map[string]string, name string, 
 
 func joinArgs(args []string) string { return strings.Join(args, " ") }
 
-func TestCreate_UsesProviderEnv(t *testing.T) {
-	tests := []struct {
-		name        string
-		provider    Provider
-		wantEnvKey  string
-		wantEnvVal  string
-		wantEnvNone bool
-	}{
-		{name: "nerdctl sets KIND_EXPERIMENTAL_PROVIDER", provider: ProviderNerdctl, wantEnvKey: "KIND_EXPERIMENTAL_PROVIDER", wantEnvVal: "nerdctl"},
-		{name: "docker sets no override", provider: ProviderDocker, wantEnvNone: true},
+// TestCreate_AlwaysSetsNerdctlProviderEnv pins that every kind invocation
+// carries the provider override. kind's built-in default is Docker, so an
+// unset variable silently reaches for a daemon this tool no longer supports.
+func TestCreate_AlwaysSetsNerdctlProviderEnv(t *testing.T) {
+	runner := &fakeRunner{
+		outputs: []fakeOutput{
+			{output: "No kind clusters found.\n", err: errors.New("exit status 1")}, // get clusters (Exists check)
+			{output: ""},                 // create cluster
+			{output: "apiVersion: v1\n"}, // get kubeconfig
+		},
+	}
+	e := New(runner, nil)
+
+	cluster, err := e.Create(context.Background(), Config{ClusterName: "test-cluster"})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if cluster.Name != "test-cluster" {
+		t.Errorf("cluster.Name = %q, want %q", cluster.Name, "test-cluster")
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeRunner{
-				outputs: []fakeOutput{
-					{output: "No kind clusters found.\n", err: errors.New("exit status 1")}, // get clusters (Exists check)
-					{output: ""},                 // create cluster
-					{output: "apiVersion: v1\n"}, // get kubeconfig
-				},
-			}
-			e := New(runner, nil)
+	// call[1] is `kind create cluster ...`.
+	if len(runner.calls) < 2 {
+		t.Fatalf("expected at least 2 calls, got %d", len(runner.calls))
+	}
+	createCall := runner.calls[1]
+	if createCall.name != "kind" || createCall.args[0] != "create" {
+		t.Fatalf("call[1] = %s %s, want a `kind create ...` call", createCall.name, joinArgs(createCall.args))
+	}
+	if got := createCall.env[kindExperimentalProviderEnv]; got != RuntimeCLI {
+		t.Errorf("%s = %q, want %q", kindExperimentalProviderEnv, got, RuntimeCLI)
+	}
 
-			cluster, err := e.Create(context.Background(), Config{
-				ClusterName: "test-cluster",
-				Provider:    tt.provider,
-			})
-			if err != nil {
-				t.Fatalf("Create returned error: %v", err)
-			}
-			if cluster.Name != "test-cluster" {
-				t.Errorf("cluster.Name = %q, want %q", cluster.Name, "test-cluster")
-			}
-
-			// call[1] is `kind create cluster ...`.
-			if len(runner.calls) < 2 {
-				t.Fatalf("expected at least 2 calls, got %d", len(runner.calls))
-			}
-			createCall := runner.calls[1]
-			if createCall.name != "kind" || createCall.args[0] != "create" {
-				t.Fatalf("call[1] = %s %s, want a `kind create ...` call", createCall.name, joinArgs(createCall.args))
-			}
-
-			if tt.wantEnvNone {
-				if v, ok := createCall.env[kindExperimentalProviderEnv]; ok {
-					t.Errorf("docker provider set %s=%q, want unset", kindExperimentalProviderEnv, v)
-				}
-				return
-			}
-			if got := createCall.env[tt.wantEnvKey]; got != tt.wantEnvVal {
-				t.Errorf("%s = %q, want %q", tt.wantEnvKey, got, tt.wantEnvVal)
-			}
-		})
+	// Every kind call, not just create: a cluster created through containerd
+	// is invisible to a kind call that forgot the override.
+	for i, call := range runner.calls {
+		if call.name != "kind" {
+			continue
+		}
+		if got := call.env[kindExperimentalProviderEnv]; got != RuntimeCLI {
+			t.Errorf("call[%d] (%s %s): %s = %q, want %q",
+				i, call.name, joinArgs(call.args), kindExperimentalProviderEnv, got, RuntimeCLI)
+		}
 	}
 }
 
@@ -118,7 +108,7 @@ func TestCreate_FailsIfClusterAlreadyExists(t *testing.T) {
 		},
 	}
 	e := New(runner, nil)
-	_, err := e.Create(context.Background(), Config{ClusterName: "test-cluster", Provider: ProviderNerdctl})
+	_, err := e.Create(context.Background(), Config{ClusterName: "test-cluster"})
 	if err == nil {
 		t.Fatal("expected an error when the cluster already exists")
 	}
@@ -135,7 +125,7 @@ func TestCreate_PropagatesKindError(t *testing.T) {
 		},
 	}
 	e := New(runner, nil)
-	_, err := e.Create(context.Background(), Config{ClusterName: "test-cluster", Provider: ProviderNerdctl})
+	_, err := e.Create(context.Background(), Config{ClusterName: "test-cluster"})
 	if err == nil {
 		t.Fatal("expected Create to propagate the kind create error")
 	}
@@ -147,17 +137,24 @@ func TestCreate_PropagatesKindError(t *testing.T) {
 func TestDelete_IsSafeWhenNothingWasCreated(t *testing.T) {
 	runner := &fakeRunner{outputs: []fakeOutput{{output: "Deleted clusters: [\"test-cluster\"]\n"}}}
 	e := New(runner, nil)
-	if err := e.Delete(context.Background(), "test-cluster", ProviderNerdctl); err != nil {
+	if err := e.Delete(context.Background(), "test-cluster"); err != nil {
 		t.Fatalf("Delete returned error: %v", err)
 	}
 	if len(runner.calls) != 1 || runner.calls[0].args[0] != "delete" {
 		t.Fatalf("unexpected call: %+v", runner.calls)
 	}
+	// Delete is the one path where losing the override is silent: `kind
+	// delete cluster` exits 0 on a cluster it cannot see, so the teardown
+	// reports success and the bootstrap cluster leaks on every run. Every
+	// other method surfaces the same regression as an error.
+	if got := runner.calls[0].env[kindExperimentalProviderEnv]; got != RuntimeCLI {
+		t.Errorf("%s = %q, want %q", kindExperimentalProviderEnv, got, RuntimeCLI)
+	}
 }
 
 func TestDelete_RequiresClusterName(t *testing.T) {
 	e := New(&fakeRunner{}, nil)
-	if err := e.Delete(context.Background(), "", ProviderNerdctl); err == nil {
+	if err := e.Delete(context.Background(), ""); err == nil {
 		t.Fatal("expected an error for a missing clusterName")
 	}
 }
@@ -179,7 +176,7 @@ func TestExists(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			runner := &fakeRunner{outputs: []fakeOutput{{output: tt.output, err: tt.err}}}
 			e := New(runner, nil)
-			got, err := e.Exists(context.Background(), "test-cluster", ProviderNerdctl)
+			got, err := e.Exists(context.Background(), "test-cluster")
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("expected an error")
@@ -197,15 +194,15 @@ func TestExists(t *testing.T) {
 }
 
 // TestExists_ScopesQueryToProvider guards the bug this package used to have:
-// Exists and Kubeconfig ignored the provider argument entirely, so a cluster
-// created via ProviderNerdctl was invisible to a later Exists/Kubeconfig
-// call, which always queried the Docker provider (kind's default). Create's
-// own duplicate-cluster guard and kubeconfig fetch depend on this being
-// right — see bootstrapengine.go's Create for both call sites.
+// Exists and Kubeconfig sent no provider override, so a cluster created
+// through containerd was invisible to a later Exists/Kubeconfig call, which
+// queried kind's Docker default instead. Create's own duplicate-cluster guard
+// and kubeconfig fetch depend on this being right — see bootstrapengine.go's
+// Create for both call sites.
 func TestExists_ScopesQueryToProvider(t *testing.T) {
 	runner := &fakeRunner{outputs: []fakeOutput{{output: "test-cluster\n"}}}
 	e := New(runner, nil)
-	if _, err := e.Exists(context.Background(), "test-cluster", ProviderNerdctl); err != nil {
+	if _, err := e.Exists(context.Background(), "test-cluster"); err != nil {
 		t.Fatalf("Exists returned error: %v", err)
 	}
 	if len(runner.calls) != 1 {
@@ -219,7 +216,7 @@ func TestExists_ScopesQueryToProvider(t *testing.T) {
 func TestKubeconfig_ScopesQueryToProvider(t *testing.T) {
 	runner := &fakeRunner{outputs: []fakeOutput{{output: "apiVersion: v1\n"}}}
 	e := New(runner, nil)
-	if _, err := e.Kubeconfig(context.Background(), "test-cluster", ProviderNerdctl); err != nil {
+	if _, err := e.Kubeconfig(context.Background(), "test-cluster"); err != nil {
 		t.Fatalf("Kubeconfig returned error: %v", err)
 	}
 	if len(runner.calls) != 1 {
@@ -240,7 +237,7 @@ func TestKubeconfig_LetsKindWriteTheFile(t *testing.T) {
 	}}
 	e := New(runner, nil)
 
-	path, err := e.Kubeconfig(context.Background(), "test-cluster", ProviderNerdctl)
+	path, err := e.Kubeconfig(context.Background(), "test-cluster")
 	if err != nil {
 		t.Fatalf("Kubeconfig returned error: %v", err)
 	}
@@ -259,35 +256,19 @@ func TestKubeconfig_LetsKindWriteTheFile(t *testing.T) {
 	}
 }
 
-func TestLoadImage_UsesProviderEnv(t *testing.T) {
-	runner := &fakeRunner{outputs: []fakeOutput{{output: "Image: \"my-image:local\" with ID"}}}
-	e := New(runner, nil)
-	if err := e.LoadImage(context.Background(), "test-cluster", ProviderDocker, "my-image:local"); err != nil {
-		t.Fatalf("LoadImage returned error: %v", err)
-	}
-	call := runner.calls[0]
-	if joinArgs(call.args) != "load docker-image my-image:local --name test-cluster" {
-		t.Errorf("args = %q, want the expected `kind load docker-image` invocation", joinArgs(call.args))
-	}
-	if v, ok := call.env[kindExperimentalProviderEnv]; ok {
-		t.Errorf("docker provider set %s=%q, want unset", kindExperimentalProviderEnv, v)
-	}
-}
-
 func TestLoadImage_RequiresImage(t *testing.T) {
 	e := New(&fakeRunner{}, nil)
-	if err := e.LoadImage(context.Background(), "test-cluster", ProviderNerdctl, ""); err == nil {
+	if err := e.LoadImage(context.Background(), "test-cluster", ""); err == nil {
 		t.Fatal("expected an error for a missing image")
 	}
 }
 
-// TestLoadImage_NerdctlSavesArchiveInstead guards the bug this package used
-// to have: `kind load docker-image` always shells out to `docker` to read
-// the image, regardless of provider, so it fails with "not present locally"
-// for a nerdctl-pulled image even though it exists. Under nerdctl, LoadImage
-// must save the image itself and use `kind load image-archive` instead,
-// which has no such docker dependency.
-func TestLoadImage_NerdctlSavesArchiveInstead(t *testing.T) {
+// TestLoadImage_AlwaysUsesImageArchive guards the bug this package used to
+// have: `kind load docker-image` always shells out to `docker` to read the
+// image, regardless of provider, so it fails with "not present locally" for a
+// nerdctl-pulled image even though it exists. LoadImage must save the image
+// itself and use `kind load image-archive`, which has no such dependency.
+func TestLoadImage_AlwaysUsesImageArchive(t *testing.T) {
 	runner := &fakeRunner{
 		outputs: []fakeOutput{
 			// Target == manifest: a local image, nothing to flatten.
@@ -297,11 +278,22 @@ func TestLoadImage_NerdctlSavesArchiveInstead(t *testing.T) {
 		},
 	}
 	e := New(runner, nil)
-	if err := e.LoadImage(context.Background(), "test-cluster", ProviderNerdctl, "my-image:local"); err != nil {
+	if err := e.LoadImage(context.Background(), "test-cluster", "my-image:local"); err != nil {
 		t.Fatalf("LoadImage returned error: %v", err)
 	}
 	if len(runner.calls) != 3 {
 		t.Fatalf("expected 3 calls, got %d: %+v", len(runner.calls), runner.calls)
+	}
+
+	// The deleted Docker fast path must not come back: `kind load
+	// docker-image` reads from Docker's image store, which nothing here fills.
+	for _, call := range runner.calls {
+		if call.name == "kind" && len(call.args) >= 2 && joinArgs(call.args[:2]) == "load docker-image" {
+			t.Fatalf("LoadImage used `kind load docker-image`, which requires a Docker daemon: %v", call.args)
+		}
+		if call.name == "docker" {
+			t.Fatalf("LoadImage shelled out to docker: %v", call.args)
+		}
 	}
 
 	saveCall := runner.calls[1]
@@ -346,7 +338,7 @@ func TestLoadImage_NerdctlFlattensMultiArchTag(t *testing.T) {
 	}}
 	e := New(runner, nil)
 	const ref = "ghcr.io/nvidia/nke/controller:v0.1.1-rc.2"
-	if err := e.LoadImage(context.Background(), "c", ProviderNerdctl, ref); err != nil {
+	if err := e.LoadImage(context.Background(), "c", ref); err != nil {
 		t.Fatalf("LoadImage returned error: %v", err)
 	}
 
@@ -436,18 +428,31 @@ func TestRenderKindConfig_OmitsEmptyOptionalFields(t *testing.T) {
 	}
 }
 
-func TestDefaultConfig_ProviderDefaultsToNerdctl(t *testing.T) {
-	t.Setenv("NKECTL_BOOTSTRAP_PROVIDER", "")
-	cfg := DefaultConfig()
-	if cfg.Provider != ProviderNerdctl {
-		t.Errorf("DefaultConfig().Provider = %q, want %q (docker stays available via NKECTL_BOOTSTRAP_PROVIDER)", cfg.Provider, ProviderNerdctl)
-	}
-}
-
-func TestDefaultConfig_ProviderOverride(t *testing.T) {
+// NKECTL_BOOTSTRAP_PROVIDER selected the container runtime front end before
+// the Docker provider was removed. A stale export of it must be inert rather
+// than steering the runtime, so a script that still sets it does not silently
+// bootstrap against a runtime this package no longer drives.
+func TestDefaultConfig_IgnoresBootstrapProviderEnv(t *testing.T) {
 	t.Setenv("NKECTL_BOOTSTRAP_PROVIDER", "docker")
+	t.Setenv("NKECTL_BOOTSTRAP_CLUSTER_NAME", "from-env")
+
 	cfg := DefaultConfig()
-	if cfg.Provider != ProviderDocker {
-		t.Errorf("DefaultConfig().Provider = %q, want %q", cfg.Provider, ProviderDocker)
+
+	// The neighbouring variable still works, so this asserts the provider
+	// variable is ignored rather than that env parsing broke wholesale.
+	if cfg.ClusterName != "from-env" {
+		t.Fatalf("DefaultConfig().ClusterName = %q, want %q", cfg.ClusterName, "from-env")
+	}
+
+	// Through a real call, not by reading the package's own constant back:
+	// what matters is the value kind is invoked with while the stale variable
+	// is set, and comparing two literals could not observe that.
+	runner := &fakeRunner{outputs: []fakeOutput{{output: "No kind clusters found.\n", err: errors.New("exit status 1")}}}
+	if _, err := New(runner, nil).Exists(context.Background(), "test-cluster"); err != nil {
+		t.Fatalf("Exists returned error: %v", err)
+	}
+	if got := runner.calls[0].env[kindExperimentalProviderEnv]; got != RuntimeCLI {
+		t.Errorf("%s = %q, want %q (NKECTL_BOOTSTRAP_PROVIDER must not steer this)",
+			kindExperimentalProviderEnv, got, RuntimeCLI)
 	}
 }

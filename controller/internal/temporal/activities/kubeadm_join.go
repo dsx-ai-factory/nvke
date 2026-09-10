@@ -111,6 +111,7 @@ func (a *Activities) kubeadmJoin(ctx context.Context, node db.Node) (KubeadmJoin
 	if err != nil {
 		return KubeadmJoinResult{}, err
 	}
+	joinConfig.KubernetesVersion = cluster.KubernetesVersion
 	joinConfig.SystemReservedMemory = nodePool.SystemReservedMemory
 	joinConfig.KubeReservedMemory = nodePool.KubeReservedMemory
 

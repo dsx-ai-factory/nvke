@@ -16,6 +16,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -47,11 +48,17 @@ const (
 
 	spireServerNamespace = "spire-server"
 	spireServerContainer = "spire-server"
-	spireServerConfigMap = "spire-server"
 	spireServerConfigKey = "server.conf"
 
-	spireServerInstanceLabel = "spire"
-	spireServerNameLabel     = "server"
+	spireServerNameLabel = "server"
+
+	// spireReleaseEnv overrides the helm release name SPIRE was installed
+	// under. Both the server ConfigMap and the instance label derive from it,
+	// so one variable covers both.
+	spireReleaseEnv = "NKE_E2E_SPIRE_RELEASE"
+	// defaultSpireRelease is what controller/Tiltfile installs SPIRE as, which
+	// is why the derived names were previously hardcoded.
+	defaultSpireRelease = "spire"
 
 	cweSPIFFEPath = "/nke-service/cloud-workflow-engine"
 	// adminSPIFFEPath is bound to cluster-admin in every tenant by the
@@ -536,20 +543,20 @@ func (f *TenantClientFactory) mintJWTAs(ctx context.Context, trustDomain, audien
 
 func (f *TenantClientFactory) managementTrustDomain(ctx context.Context) (string, error) {
 	configMap, err := f.coreClient.ConfigMaps(spireServerNamespace).Get(
-		ctx, spireServerConfigMap, metav1.GetOptions{},
+		ctx, spireServerConfigMapName(), metav1.GetOptions{},
 	)
 	if err != nil {
-		return "", fmt.Errorf("getting SPIRE server ConfigMap %s/%s: %w", spireServerNamespace, spireServerConfigMap, err)
+		return "", fmt.Errorf("getting SPIRE server ConfigMap %s/%s: %w", spireServerNamespace, spireServerConfigMapName(), err)
 	}
 
 	serverConfig, ok := configMap.Data[spireServerConfigKey]
 	if !ok || strings.TrimSpace(serverConfig) == "" {
-		return "", fmt.Errorf("SPIRE server ConfigMap %s/%s has no non-empty %q key", spireServerNamespace, spireServerConfigMap, spireServerConfigKey)
+		return "", fmt.Errorf("SPIRE server ConfigMap %s/%s has no non-empty %q key", spireServerNamespace, spireServerConfigMapName(), spireServerConfigKey)
 	}
 
 	trustDomain, err := trustDomainFromSPIREServerConfig([]byte(serverConfig))
 	if err != nil {
-		return "", fmt.Errorf("reading management trust domain from SPIRE server ConfigMap %s/%s: %w", spireServerNamespace, spireServerConfigMap, err)
+		return "", fmt.Errorf("reading management trust domain from SPIRE server ConfigMap %s/%s: %w", spireServerNamespace, spireServerConfigMapName(), err)
 	}
 	return trustDomain, nil
 }
@@ -613,9 +620,25 @@ func (f *TenantClientFactory) readySPIREServerPod(ctx context.Context) (*corev1.
 	return nil, fmt.Errorf("no Ready SPIRE server pod found in namespace %q with labels %v", spireServerNamespace, selectorLabels)
 }
 
+// spireRelease is the helm release SPIRE was installed under. Under the
+// nke-stack umbrella every subchart inherits the umbrella's release, so the
+// server is nke-stack-server with instance=nke-stack rather than spire-server
+// with instance=spire, and the hardcoded names find nothing.
+func spireRelease() string {
+	if release := os.Getenv(spireReleaseEnv); release != "" {
+		return release
+	}
+	return defaultSpireRelease
+}
+
+// spireServerConfigMapName is the chart's <release>-server.
+func spireServerConfigMapName() string {
+	return spireRelease() + "-server"
+}
+
 func spireServerSelector() map[string]string {
 	return map[string]string{
-		"app.kubernetes.io/instance": spireServerInstanceLabel,
+		"app.kubernetes.io/instance": spireRelease(),
 		"app.kubernetes.io/name":     spireServerNameLabel,
 	}
 }

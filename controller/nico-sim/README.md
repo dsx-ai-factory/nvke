@@ -902,14 +902,9 @@ Subnet CIDRs and VPC prefixes are auto-hydrated from `NICO_VMS_BRIDGE_CIDR` at s
 
 ### Manual
 
-Point nke-controller at the nico-sim server:
-
-```bash
-FORGE_ENVIRONMENT=test FORGE_URL=http://localhost:18080
-```
-
-Register each site that nke-controller should use. Clusters pointing at the VM site use
-nico-vms; clusters pointing at the container site use nico-containers.
+Configure CAPNICo's credentials Secret to use the nico-sim endpoint. Clusters
+pointing at the VM site use nico-vms; clusters pointing at the container site
+use nico-containers.
 
 ### With Tilt (recommended)
 

@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"text/template"
@@ -133,6 +134,11 @@ const (
 	// rather than rejected, so the values computed below are all addressed
 	// through it.
 	spireServerValuesPrefix = "spire-server"
+
+	// The tpm-direct plugin binary is architecture-specific. Keep both
+	// checksums explicit so that chart defaults cannot select the wrong binary.
+	spireTPMDirectAMD64Checksum = "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc"
+	spireTPMDirectARM64Checksum = "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"
 
 	// DefaultCWEPort is the port the CWE API uses at every layer: the Helm
 	// Service, the external NodePort Service, and both sides of Kind's host port
@@ -274,6 +280,16 @@ type Config struct {
 	// PostgresChartRef is where helm pulls the Bitnami postgresql chart from,
 	// as an OCI reference or a local path. Empty uses Docker Hub's OCI registry.
 	PostgresChartRef string
+
+	// DockerHubMirror is the registry host (with an optional port) the same
+	// NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR that redirects the seed node's docker.io
+	// pulls (see bootstrapengine.configureDockerHubMirror) names. When set, it is
+	// also passed to the SPIRE chart as global.spire.image.registry, so the SPIRE
+	// images -- which come from ghcr.io, registry.k8s.io and cgr.dev rather than
+	// Docker Hub, and so are not covered by that containerd redirect -- pull from
+	// the mirror too. Each keeps its upstream repository path under the mirror.
+	// Empty leaves the SPIRE images pointed at their upstream registries.
+	DockerHubMirror string
 }
 
 // DefaultConfig reads the package's knobs from the environment, mirroring
@@ -297,6 +313,7 @@ func DefaultConfig() Config {
 		ReadyTimeout: envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
 
 		PostgresChartRef: os.Getenv("NKECTL_CWE_POSTGRES_CHART"),
+		DockerHubMirror:  os.Getenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR"),
 	}
 }
 
@@ -512,13 +529,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "profiles.image.repository=" + profRepo,
 		"--set-string", "profiles.image.tag=" + profTag,
 		"--set-string", "profiles.image.digest=" + profDigest,
-		"--set", "secrets.forgeSecret.enabled=false",
 		"--set", "cni.installAfterInit=true",
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
 		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),
 		"--set-string", "spiffe.spire.serverPort=" + spireServerPort,
+		"--set-string", "supportedInfraProviders=infra",
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	cweArgs = append(cweArgs, nodeAgentPortArgs(cfg)...)
@@ -802,14 +819,24 @@ func spireInstallArgs(cfg Config, valuesPath, clusterName, trustDomain string, t
 		"--set-string", "global.spire.clusterName=" + clusterName,
 		"--set-string", "global.spire.trustDomain=" + trustDomain,
 		"--set-string", prefix + ".adminIDs[0]=spiffe://" + trustDomain + "/nke-service/cloud-workflow-engine",
+	}
+	// The SPIRE images live on ghcr.io, registry.k8s.io and cgr.dev, which the
+	// docker.io-only containerd mirror does not touch. Point them at the same
+	// mirror through the chart's one-shot registry override, so a bootstrap
+	// behind a blocked Docker Hub can pull them too. Each image keeps its
+	// upstream repository path, which is the layout the mirror is populated with.
+	if cfg.DockerHubMirror != "" {
+		args = append(args, "--set-string", "global.spire.image.registry="+cfg.DockerHubMirror)
+	}
+	args = append(args,
 		// Both halves of the two agreements CWE depends on. See the constants.
-		"--set-string", prefix + ".controllerManager.className=" + spireControllerManagerClass,
+		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
 		// --set, not --set-string: the chart's schema types these as integers.
-		"--set", prefix + ".service.port=" + spireServerPort,
+		"--set", prefix+".service.port="+spireServerPort,
 		// The agent's port is a separate value that does not follow the
 		// Service. Both or neither; see the constant.
-		"--set", spireAgentValuesPrefix + ".server.port=" + spireServerPort,
-	}
+		"--set", spireAgentValuesPrefix+".server.port="+spireServerPort,
+	)
 	args = append(args, upstreamCAArgs(cfg, prefix)...)
 	args = append(args, tpmAttestorArgs(cfg, prefix)...)
 	return append(args, "--wait", "--timeout", timeout.String())
@@ -828,11 +855,25 @@ func tpmAttestorArgs(cfg Config, prefix string) []string {
 		return nil
 	}
 	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
+	if checksum := tpmPluginChecksum(runtime.GOARCH); checksum != "" {
+		args = append(args, "--set-string", prefix+".nodeAttestor.tpmDirect.checksum="+checksum)
+	}
 	for i, fingerprint := range cfg.TPMEKFingerprints {
 		args = append(args, "--set-string",
 			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
 	}
 	return args
+}
+
+func tpmPluginChecksum(goarch string) string {
+	switch goarch {
+	case "amd64":
+		return spireTPMDirectAMD64Checksum
+	case "arm64":
+		return spireTPMDirectARM64Checksum
+	default:
+		return ""
+	}
 }
 
 // upstreamCAArgs points SPIRE at a CA the operator supplied.

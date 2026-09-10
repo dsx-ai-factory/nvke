@@ -796,7 +796,6 @@ func newTestServerWithValidator(t *testing.T, mockDB *testutil.MockDB) http.Hand
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	cfg := config.Config{
-		FWEAPIKey:            "test-key",
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}

@@ -67,57 +67,6 @@ func TestPrint_TableReturnsError(t *testing.T) {
 	}
 }
 
-func TestPrintFields_FlatAndNested(t *testing.T) {
-	type inner struct {
-		Count int `json:"count"`
-	}
-	type payload struct {
-		Name   string `json:"name"`
-		Detail inner  `json:"detail"`
-	}
-	var buf bytes.Buffer
-	if err := PrintFields(&buf, payload{Name: "x", Detail: inner{Count: 3}}); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "name: x") {
-		t.Errorf("missing name in output: %s", out)
-	}
-	if !strings.Contains(out, "detail:") {
-		t.Errorf("missing nested key in output: %s", out)
-	}
-	if !strings.Contains(out, "count: 3") {
-		t.Errorf("missing nested value in output: %s", out)
-	}
-}
-
-func TestPrintFields_NilValue(t *testing.T) {
-	type payload struct {
-		Val *string `json:"val"`
-	}
-	var buf bytes.Buffer
-	if err := PrintFields(&buf, payload{Val: nil}); err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(buf.String(), "val: null") {
-		t.Errorf("nil field not rendered as null: %s", buf.String())
-	}
-}
-
-func TestPrintFields_ArrayItems(t *testing.T) {
-	type payload struct {
-		Tags []string `json:"tags"`
-	}
-	var buf bytes.Buffer
-	if err := PrintFields(&buf, payload{Tags: []string{"a", "b"}}); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "- a") || !strings.Contains(out, "- b") {
-		t.Errorf("array items not rendered: %s", out)
-	}
-}
-
 func TestFormatAge(t *testing.T) {
 	now := time.Now()
 	tests := []struct {

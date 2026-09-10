@@ -1,0 +1,57 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Where the resources land. The umbrella release namespace is pinned to
+# `temporal`, so this component carries an explicit override like every other
+# one. The namespace must already exist -- helm --create-namespace creates only
+# the release namespace.
+namespaceOverride: postgres
+
+# The Service name, pinned rather than derived. cloud-workflow-engine and
+# temporal both dial postgres-postgresql.postgres.svc.cluster.local from their
+# own values, so this name is a contract with them, not a cosmetic choice. It
+# keeps the FQDN identical to what the Bitnami chart produced under the release
+# name `postgres`, which is why swapping the chart needs no change on either
+# consumer.
+fullnameOverride: postgres-postgresql
+
+image:
+  repository: docker.io/library/postgres
+  # Pinned by digest so the deployed bytes are identified exactly -- this is
+  # what the SBOM records. The tag is carried alongside for readability only;
+  # the digest is what is pulled.
+  tag: "18.6"
+  digest: sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+  pullPolicy: IfNotPresent
+
+auth:
+  username: postgres
+  database: postgres
+  # Supplied at install time. Shared with temporal's two sql password fields,
+  # which is what controller/Tiltfile does with one generated secret.
+  password: ""
+
+# Databases created on first start, by the standard postgres image entrypoint
+# (it runs anything in /docker-entrypoint-initdb.d against a fresh data
+# directory). Names must match what cloud-workflow-engine and temporal expect.
+initdb:
+  scripts:
+    init-cwe.sql: |
+      CREATE DATABASE "cloud-workflow";
+    init-temporal.sql: |
+      CREATE DATABASE temporal;
+      CREATE DATABASE temporal_visibility;
+
+# Off by default: the management plane's Postgres is a development and test
+# instance, and every consumer that runs a real one (nke-site-controller uses
+# CloudNativePG) disables this component outright. Enable to bind a PVC.
+persistence:
+  enabled: false
+  size: 1Gi
+  storageClass: ""
+
+resources:
+  limits:
+    memory: 512Mi
+  requests:
+    memory: 256Mi

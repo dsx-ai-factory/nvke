@@ -13,13 +13,10 @@
 // takes it one step further because Track A's own plan commits to a real,
 // mockable seam).
 //
-// The container runtime front end (Docker or nerdctl/containerd) is a Config
-// field, not a hardcoded assumption. kind's own provider abstraction
-// (KIND_EXPERIMENTAL_PROVIDER) does the work of routing `kind create
-// cluster`/`kind load docker-image` through nerdctl and containerd's content
-// store instead of the Docker daemon; this package just plumbs the selection
-// through consistently and keeps Docker available as the acceptance-criteria
-// rollback path.
+// kind is driven through nerdctl and containerd's content store, selected by
+// exporting KIND_EXPERIMENTAL_PROVIDER on every kind invocation. That matches
+// the runtime the target platform runs, and means a host needs no Docker
+// daemon to bootstrap a site.
 package bootstrapengine
 
 import (
@@ -35,35 +32,28 @@ import (
 	"time"
 )
 
-// Provider selects the container runtime front end kind drives the bootstrap
-// cluster through. kind treats every non-Docker provider as experimental;
-// callers that hit provider-specific breakage have Docker as a documented
-// rollback.
-type Provider string
-
 const (
-	// ProviderNerdctl drives kind through nerdctl/containerd. This is the
-	// default: it matches the target platform's runtime and removes the
-	// Docker daemon dependency.
-	ProviderNerdctl Provider = "nerdctl"
-	// ProviderDocker drives kind through the Docker daemon. Kept selectable
-	// as the rollback path until the nerdctl provider is proven out in CI.
-	ProviderDocker Provider = "docker"
+	// kindExperimentalProviderEnv is the env var kind itself reads to select a
+	// provider other than its built-in default. See https://kind.sigs.k8s.io —
+	// non-default providers are experimental as of the kind versions this repo
+	// pins.
+	kindExperimentalProviderEnv = "KIND_EXPERIMENTAL_PROVIDER"
+
+	// RuntimeCLI is the container runtime front end, both as the value kind
+	// reads from kindExperimentalProviderEnv and as the binary callers shell
+	// out to for the image operations kind does not cover.
+	RuntimeCLI = "nerdctl"
 )
 
-// kindExperimentalProviderEnv is the env var kind itself reads to select a
-// non-default provider. See https://kind.sigs.k8s.io — "Ahead of Time"
-// providers are experimental as of the kind versions this repo pins.
-const kindExperimentalProviderEnv = "KIND_EXPERIMENTAL_PROVIDER"
-
-// providerEnv returns the KIND_EXPERIMENTAL_PROVIDER value to export for p,
-// or empty for the Docker provider, which is kind's built-in default and
-// needs no override.
-func (p Provider) providerEnv() string {
-	if p == ProviderDocker {
-		return ""
-	}
-	return string(p)
+// kindEnv returns the environment a kind invocation runs with, so kind
+// resolves clusters and images through containerd rather than its default.
+//
+// A fresh map per call, not a package-level one: the result crosses the
+// CommandRunner interface, whose implementations include test fakes and
+// could include anything. One that annotated the map it was handed would
+// otherwise corrupt every later invocation in the process.
+func kindEnv() map[string]string {
+	return map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
 }
 
 // Mount is an extra bind mount into every cluster node container, for e.g.
@@ -88,9 +78,6 @@ type Config struct {
 	// in the site spec file — this is purely the kind/kubectl-context handle
 	// for the ephemeral host cluster CWE itself runs on).
 	ClusterName string
-
-	// Provider selects the container runtime front end. See Provider.
-	Provider Provider
 
 	// NodeImage overrides the kindest/node image kind uses for the
 	// cluster's single node. Empty uses kind's own pinned default.
@@ -117,7 +104,6 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		ClusterName: envOr("NKECTL_BOOTSTRAP_CLUSTER_NAME", "nkectl-bootstrap"),
-		Provider:    Provider(envOr("NKECTL_BOOTSTRAP_PROVIDER", string(ProviderNerdctl))),
 		NodeImage:   os.Getenv("NKECTL_BOOTSTRAP_NODE_IMAGE"),
 		WaitReady:   envDuration("NKECTL_BOOTSTRAP_WAIT_READY", 3*time.Minute),
 
@@ -158,7 +144,6 @@ func (ExecCommandRunner) Run(ctx context.Context, env map[string]string, name st
 // Cluster is a created, running bootstrap Kind cluster.
 type Cluster struct {
 	Name           string
-	Provider       Provider
 	KubeconfigPath string
 }
 
@@ -186,14 +171,11 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 	if cfg.ClusterName == "" {
 		return nil, fmt.Errorf("bootstrapengine: Config.ClusterName is required")
 	}
-	if cfg.Provider == "" {
-		cfg.Provider = ProviderNerdctl
-	}
 	if err := validateRegistryMirror(cfg.DockerHubMirror); err != nil {
 		return nil, err
 	}
 
-	exists, err := e.Exists(ctx, cfg.ClusterName, cfg.Provider)
+	exists, err := e.Exists(ctx, cfg.ClusterName)
 	if err != nil {
 		return nil, err
 	}
@@ -216,11 +198,9 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		args = append(args, "--wait", cfg.WaitReady.String())
 	}
 
-	env := providerEnvMap(cfg.Provider)
-	e.log.Info("creating bootstrap kind cluster",
-		"cluster", cfg.ClusterName, "provider", cfg.Provider)
-	if out, err := e.Runner.Run(ctx, env, "kind", args...); err != nil {
-		return nil, fmt.Errorf("kind create cluster %s (provider=%s): %w\n%s", cfg.ClusterName, cfg.Provider, err, out)
+	e.log.Info("creating bootstrap kind cluster", "cluster", cfg.ClusterName)
+	if out, err := e.Runner.Run(ctx, kindEnv(), "kind", args...); err != nil {
+		return nil, fmt.Errorf("kind create cluster %s: %w\n%s", cfg.ClusterName, err, out)
 	}
 
 	// Before anything pulls: the cluster exists from here on, so a failure
@@ -231,7 +211,7 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		}
 	}
 
-	kubeconfigPath, err := e.Kubeconfig(ctx, cfg.ClusterName, cfg.Provider)
+	kubeconfigPath, err := e.Kubeconfig(ctx, cfg.ClusterName)
 	if err != nil {
 		// The cluster came up but we could not retrieve its kubeconfig —
 		// leave it running rather than silently deleting state the caller
@@ -239,10 +219,9 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 		return nil, fmt.Errorf("bootstrap kind cluster %s created but kubeconfig fetch failed: %w", cfg.ClusterName, err)
 	}
 
-	e.log.Info("bootstrap kind cluster ready", "cluster", cfg.ClusterName, "provider", cfg.Provider)
+	e.log.Info("bootstrap kind cluster ready", "cluster", cfg.ClusterName)
 	return &Cluster{
 		Name:           cfg.ClusterName,
-		Provider:       cfg.Provider,
 		KubeconfigPath: kubeconfigPath,
 	}, nil
 }
@@ -250,32 +229,25 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 // Delete tears down the named cluster. Deleting a cluster that does not
 // exist is not an error — teardown has to be safe to call from a deferred
 // cleanup even when Create failed partway through.
-func (e *Engine) Delete(ctx context.Context, clusterName string, provider Provider) error {
+func (e *Engine) Delete(ctx context.Context, clusterName string) error {
 	if clusterName == "" {
 		return fmt.Errorf("bootstrapengine: clusterName is required")
 	}
-	if provider == "" {
-		provider = ProviderNerdctl
-	}
 
-	e.log.Info("deleting bootstrap kind cluster", "cluster", clusterName, "provider", provider)
-	env := providerEnvMap(provider)
-	out, err := e.Runner.Run(ctx, env, "kind", "delete", "cluster", "--name", clusterName)
+	e.log.Info("deleting bootstrap kind cluster", "cluster", clusterName)
+	out, err := e.Runner.Run(ctx, kindEnv(), "kind", "delete", "cluster", "--name", clusterName)
 	if err != nil {
-		return fmt.Errorf("kind delete cluster %s (provider=%s): %w\n%s", clusterName, provider, err, out)
+		return fmt.Errorf("kind delete cluster %s: %w\n%s", clusterName, err, out)
 	}
 	return nil
 }
 
 // Exists reports whether a kind cluster named clusterName is currently
-// registered with kind under provider. kind's cluster listing is scoped to
-// the provider that created it, the same way create/delete/load are — an
-// empty provider defaults to ProviderNerdctl like the rest of this package.
-func (e *Engine) Exists(ctx context.Context, clusterName string, provider Provider) (bool, error) {
-	if provider == "" {
-		provider = ProviderNerdctl
-	}
-	out, err := e.Runner.Run(ctx, providerEnvMap(provider), "kind", "get", "clusters")
+// registered with kind. kind's cluster listing is scoped to the provider that
+// created it, the same way create/delete/load are, so this only sees clusters
+// created through containerd.
+func (e *Engine) Exists(ctx context.Context, clusterName string) (bool, error) {
+	out, err := e.Runner.Run(ctx, kindEnv(), "kind", "get", "clusters")
 	if err != nil {
 		// kind returns exit code 1 with "No kind clusters found." on stderr
 		// when none exist — that is not a failure of the query itself.
@@ -293,21 +265,14 @@ func (e *Engine) Exists(ctx context.Context, clusterName string, provider Provid
 	return false, nil
 }
 
-// Kubeconfig returns the path to a kubeconfig file for clusterName. provider
-// must match whatever provider created clusterName -- kind resolves a
-// cluster's nodes through its provider, so the wrong one reports the
-// cluster's nodes as missing even though it exists. An empty provider
-// defaults to ProviderNerdctl like the rest of this package.
+// Kubeconfig returns the path to a kubeconfig file for clusterName.
 //
 // kind writes the file, rather than this function capturing its stdout: Run
 // merges stderr into stdout (see CommandRunner), and kind prints "using
-// nerdctl due to KIND_EXPERIMENTAL_PROVIDER" on stderr under every non-Docker
-// provider. Captured, that line became line 1 of the kubeconfig and clients
-// failed with "yaml: line 2: mapping values are not allowed in this context".
-func (e *Engine) Kubeconfig(ctx context.Context, clusterName string, provider Provider) (string, error) {
-	if provider == "" {
-		provider = ProviderNerdctl
-	}
+// nerdctl due to KIND_EXPERIMENTAL_PROVIDER" on stderr. Captured, that line
+// became line 1 of the kubeconfig and clients failed with "yaml: line 2:
+// mapping values are not allowed in this context".
+func (e *Engine) Kubeconfig(ctx context.Context, clusterName string) (string, error) {
 	// A new directory, not a temp file: `kind export kubeconfig` merges into
 	// whatever the path holds, and an empty file is not a kubeconfig.
 	dir, err := os.MkdirTemp("", "nkectl-bootstrap-kubeconfig-"+clusterName+"-*")
@@ -316,7 +281,7 @@ func (e *Engine) Kubeconfig(ctx context.Context, clusterName string, provider Pr
 	}
 	path := filepath.Join(dir, "config")
 
-	out, err := e.Runner.Run(ctx, providerEnvMap(provider),
+	out, err := e.Runner.Run(ctx, kindEnv(),
 		"kind", "export", "kubeconfig", "--name", clusterName, "--kubeconfig", path)
 	if err != nil {
 		return "", fmt.Errorf("kind export kubeconfig %s: %w\n%s", clusterName, err, out)
@@ -324,61 +289,43 @@ func (e *Engine) Kubeconfig(ctx context.Context, clusterName string, provider Pr
 	return path, nil
 }
 
-// LoadImage loads a locally built image into every node of clusterName.
+// LoadImage loads a locally built image into every node of clusterName. It
+// saves the image to a temporary archive first and hands kind that archive.
 //
-// Under the Docker provider this goes through `kind load docker-image`,
-// which itself shells out to `docker` to read the image. Under any other
-// provider it does not: `kind load docker-image`'s "is the image present,
-// and what is its ID" and "save it to a tarball" steps are hardcoded to the
+// `kind load docker-image` is unusable here: its "is the image present, and
+// what is its ID" and "save it to a tarball" steps are hardcoded to the
 // `docker` binary regardless of KIND_EXPERIMENTAL_PROVIDER — see
 // https://github.com/kubernetes-sigs/kind/blob/main/pkg/cmd/kind/load/docker-image/docker-image.go.
-// Only the final "load the tarball onto each node" step honors the
-// provider. An image pulled via `nerdctl pull` was never in Docker's own
-// image store, so `kind load docker-image` fails with "not present
-// locally" even though the image genuinely exists. `kind load
-// image-archive` has no such dependency: it just opens a tarball you
-// already produced and loads it via the provider abstraction, so under a
-// non-Docker provider this saves the image itself first and hands kind the
-// archive instead.
-func (e *Engine) LoadImage(ctx context.Context, clusterName string, provider Provider, image string) error {
+// Only the final "load the tarball onto each node" step honors the provider.
+// An image pulled via `nerdctl pull` was never in Docker's image store, so
+// that command fails with "not present locally" even though the image
+// genuinely exists. `kind load image-archive` has no such dependency: it
+// opens a tarball the caller already produced and loads it through the
+// provider abstraction.
+func (e *Engine) LoadImage(ctx context.Context, clusterName, image string) error {
 	if image == "" {
 		return fmt.Errorf("bootstrapengine: image is required")
 	}
-	if provider == "" {
-		provider = ProviderNerdctl
-	}
 	e.log.Info("loading image into bootstrap kind cluster",
-		"cluster", clusterName, "provider", provider, "image", image)
+		"cluster", clusterName, "image", image)
 
-	if provider == ProviderDocker {
-		out, err := e.Runner.Run(ctx, nil, "kind", "load", "docker-image", image, "--name", clusterName)
-		if err != nil {
-			return fmt.Errorf("kind load docker-image %s into %s (provider=%s): %w\n%s", image, clusterName, provider, err, out)
-		}
-		return nil
-	}
-
-	archivePath, cleanup, err := saveImageArchive(ctx, e.Runner, provider, image)
+	archivePath, cleanup, err := saveImageArchive(ctx, e.Runner, image)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
 
-	env := providerEnvMap(provider)
-	out, err := e.Runner.Run(ctx, env, "kind", "load", "image-archive", archivePath, "--name", clusterName)
+	out, err := e.Runner.Run(ctx, kindEnv(), "kind", "load", "image-archive", archivePath, "--name", clusterName)
 	if err != nil {
-		return fmt.Errorf("kind load image-archive %s into %s (provider=%s): %w\n%s", image, clusterName, provider, err, out)
+		return fmt.Errorf("kind load image-archive %s into %s: %w\n%s", image, clusterName, err, out)
 	}
 	return nil
 }
 
-// saveImageArchive saves image to a temp tarball via provider's own CLI
-// (e.g. `nerdctl save`), the same way ensureImageAvailable in
-// cmd/nkectl/bootstrap.go already treats the provider name as the CLI
-// binary to run. The caller must call cleanup once done with the file.
-func saveImageArchive(ctx context.Context, runner CommandRunner, provider Provider, image string) (path string, cleanup func(), err error) {
-	cli := string(provider)
-	if err := flattenToHostPlatform(ctx, runner, cli, image); err != nil {
+// saveImageArchive saves image to a temp tarball via `nerdctl save`. The
+// caller must call cleanup once done with the file.
+func saveImageArchive(ctx context.Context, runner CommandRunner, image string) (path string, cleanup func(), err error) {
+	if err := flattenToHostPlatform(ctx, runner, RuntimeCLI, image); err != nil {
 		return "", nil, err
 	}
 
@@ -390,9 +337,9 @@ func saveImageArchive(ctx context.Context, runner CommandRunner, provider Provid
 	_ = f.Close()
 	cleanup = func() { _ = os.Remove(archivePath) }
 
-	if out, err := runner.Run(ctx, nil, cli, "save", "-o", archivePath, image); err != nil {
+	if out, err := runner.Run(ctx, nil, RuntimeCLI, "save", "-o", archivePath, image); err != nil {
 		cleanup()
-		return "", nil, fmt.Errorf("%s save %s: %w\n%s", cli, image, err, out)
+		return "", nil, fmt.Errorf("%s save %s: %w\n%s", RuntimeCLI, image, err, out)
 	}
 	return archivePath, cleanup, nil
 }
@@ -473,16 +420,6 @@ func repoOfTaggedRef(image string) (repo string, ok bool) {
 		return "", false
 	}
 	return image[:i], true
-}
-
-// providerEnvMap returns the environment overrides Run should apply for the
-// given provider. Empty for Docker, which needs no override.
-func providerEnvMap(p Provider) map[string]string {
-	v := p.providerEnv()
-	if v == "" {
-		return nil
-	}
-	return map[string]string{kindExperimentalProviderEnv: v}
 }
 
 func envOr(key, fallback string) string {

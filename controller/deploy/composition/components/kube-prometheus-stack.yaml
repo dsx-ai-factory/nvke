@@ -1,0 +1,107 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# kube-prometheus-stack values for the nke-stack composition. Merged under the
+# `kube-prometheus-stack` key of the generated chart's values.yaml -- the
+# top-level key is added by the generator, so it is deliberately absent here.
+
+# ─── kube-prometheus-stack ───────────────────────────────────────────────────
+# Prometheus, Alertmanager, Grafana, node-exporter and kube-state-metrics. This
+# is what makes global.monitoring.enabled meaningful: without an operator the
+# monitoring.coreos.com CRDs do not exist and every ServiceMonitor the other
+# components render fails the install outright.
+#
+# Adopted from the AICR bundle's 004-kube-prometheus-stack component
+# (generated/aicr/observability/helm), which is the qualified configuration.
+enabled: true
+namespaceOverride: monitoring
+
+# CRDs come from the prometheus-operator-crds component instead. Helm does not
+# upgrade CRDs installed as part of a chart, so keeping them in their own
+# release is what makes them upgradable.
+crds:
+  enabled: false
+
+# Pinned so the operator-derived names stay stable regardless of the release
+# name -- the operator creates StatefulSets as <workload>-<cr-name>, and the
+# chart renders CR names as <fullname>-<workload>. Under this umbrella the
+# release is nke-stack, which would otherwise rename all of them. Same reason
+# postgresql and temporal carry fullnameOverride.
+fullnameOverride: kube-prometheus
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    # Scrape ServiceMonitors from every namespace, and do not restrict to ones
+    # this release created -- the components being scraped are sibling
+    # subcharts with their own labels.
+    serviceMonitorNamespaceSelector: {}
+    serviceMonitorSelectorNilUsesHelmValues: false
+    storageSpec:
+      emptyDir:
+        medium: ""
+        sizeLimit: 10Gi
+    resources:
+      limits:
+        cpu: 2
+        memory: 2Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    tolerations:
+      - operator: Exists
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      limits:
+        cpu: 500m
+        memory: 512Mi
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    tolerations:
+      - operator: Exists
+
+grafana:
+  enabled: true
+  fullnameOverride: grafana
+  # Development credential. A real deployment overrides this at install time;
+  # nothing here is a secret that survives to a site.
+  adminPassword: admin
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  tolerations:
+    - operator: Exists
+
+prometheusOperator:
+  tolerations:
+    - operator: Exists
+  admissionWebhooks:
+    patch:
+      tolerations:
+        - operator: Exists
+
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  fullnameOverride: prometheus-node-exporter
+  tolerations:
+    - operator: Exists
+
+kube-state-metrics:
+  fullnameOverride: kube-state-metrics
+  tolerations:
+    - operator: Exists
+
+thanosRuler:
+  thanosRulerSpec:
+    tolerations:
+      - operator: Exists

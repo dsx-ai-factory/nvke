@@ -405,10 +405,8 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		options:  nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{clusterConfig: true, nodeReplacement: true, manualScaleDown: true, nodePoolLifecycle: true, nodePoolCascade: true},
 	}),
-	// Opt-in via the "cp-rotation" label: it exercises the etcd single-voter
-	// override, so it only passes against CWE deployed with
-	// ALLOW_ETCD_SAFETY_OVERRIDES=true. The spec also self-skips unless
-	// E2E_ETCD_OVERRIDES_ENABLED=true (belt-and-suspenders).
+	// Opt-in via the "cp-rotation" label: it exercises a 2-to-1 etcd member
+	// transition while rotating a single-node control plane.
 	Entry("nico-vms single-node control-plane rotation", Ordered, ContinueOnFailure, Label("nico-vms", "extended", "cp-rotation"), testSpec{
 		buildSpec: nicoVMSSpec,
 		shape: clusterShape{
@@ -499,9 +497,7 @@ type validations struct {
 	nodePoolCascade bool
 	// upgrade performs an in-place Kubernetes version upgrade validation.
 	upgrade bool
-	// cpRotation rotates a single-node control plane using the etcd single-voter
-	// override. Requires a 1-CP shape and CWE deployed with
-	// ALLOW_ETCD_SAFETY_OVERRIDES=true (self-skips otherwise).
+	// cpRotation rotates a single-node control plane. Requires a 1-CP shape.
 	cpRotation bool
 	// controlPlaneController asserts the control plane is provisioned by the
 	// cluster-level control-plane controller with no control-plane node pool.

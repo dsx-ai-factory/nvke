@@ -117,36 +117,6 @@ func TestGetClustersFilterSendsTheNameQuery(t *testing.T) {
 	}
 }
 
-// describe resolves a name to an ID and then fetches that ID. Both calls are
-// asserted, because a regression that described the list entry instead would
-// still print plausible output.
-func TestDescribeClusterResolvesNameThenFetchesByID(t *testing.T) {
-	seed := seedCluster("alpha")
-	fake, clientFn := newFakeCWE(t, seed)
-
-	out, err := run(t, NewDescribeCmd(clientFn), "alpha")
-	if err != nil {
-		t.Fatalf("describe cluster alpha: %v", err)
-	}
-
-	want := []string{
-		"GET /api/clusters?name=alpha",
-		"GET /api/clusters/" + seed.ID.String(),
-	}
-	seen := fake.seen()
-	if len(seen) != len(want) {
-		t.Fatalf("requests = %v, want %v", seen, want)
-	}
-	for i := range want {
-		if seen[i] != want[i] {
-			t.Errorf("request %d = %q, want %q", i, seen[i], want[i])
-		}
-	}
-	if !strings.Contains(out, seed.ID.String()) {
-		t.Errorf("described output omits the cluster id:\n%s", out)
-	}
-}
-
 func TestCreateClusterPostsTheSpecAndReportsTheID(t *testing.T) {
 	fake, clientFn := newFakeCWE(t)
 
@@ -232,17 +202,5 @@ func TestServerErrorSurfacesTheAPIMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "database is on fire") {
 		t.Errorf("error = %v, want it to carry the server's message", err)
-	}
-}
-
-func TestDescribeUnknownClusterReportsNotFound(t *testing.T) {
-	_, clientFn := newFakeCWE(t)
-
-	_, err := run(t, NewDescribeCmd(clientFn), "ghost")
-	if err == nil {
-		t.Fatal("describing an unknown cluster returned no error")
-	}
-	if !strings.Contains(err.Error(), `cluster "ghost" not found`) {
-		t.Errorf("error = %v, want a not-found error naming the cluster", err)
 	}
 }

@@ -14,6 +14,7 @@ cd "${repo_root}"
 state_dir="${LOCAL_NKE_E2E_STATE_DIR:-${repo_root}/.local/backend-e2e}"
 tmp_dir="$(mktemp -d)"
 kind_cluster_name="${KIND_CLUSTER_NAME:-cwe-capi}"
+dockerhub_mirror="${NKE_E2E_DOCKERHUB_MIRROR:-}"
 runner_name="cwe-capd-local-e2e-${$}"
 runner_image="${LOCAL_NKE_E2E_RUNNER_IMAGE:-docker:29.1.3-cli@sha256:4fa0ee1f3a7e4354c4ea34558b6d4ee32859baf4973d4c8ccc8e7fe3dd730c04}"
 tilt_config="${repo_root}/tilt_config.json"
@@ -40,6 +41,25 @@ fail() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "$1 is required"
+}
+
+configure_kind_dockerhub_mirror() {
+  local node_name="${kind_cluster_name}-control-plane"
+  local registry_host
+
+  if [[ -z "${dockerhub_mirror}" ]]; then
+    return
+  fi
+  log "routing management-cluster Docker Hub pulls through ${dockerhub_mirror}"
+  for registry_host in docker.io registry-1.docker.io; do
+    docker exec "${node_name}" mkdir -p "/etc/containerd/certs.d/${registry_host}"
+    printf '%s\n' \
+      "server = \"https://${dockerhub_mirror}\"" \
+      '' \
+      "[host.\"https://${dockerhub_mirror}\"]" \
+      '  capabilities = ["pull", "resolve"]' | \
+      docker exec -i "${node_name}" cp /dev/stdin "/etc/containerd/certs.d/${registry_host}/hosts.toml"
+  done
 }
 
 collect_diagnostics() {
@@ -94,6 +114,9 @@ trap collect_diagnostics EXIT
 for command in curl docker dpkg-deb go jq kind kubectl make tilt; do
   require_command "${command}"
 done
+if [[ -n "${dockerhub_mirror}" && ! "${dockerhub_mirror}" =~ ^[a-zA-Z0-9.-]+(:[0-9]{1,5})?$ ]]; then
+  fail "NKE_E2E_DOCKERHUB_MIRROR must be a registry host with an optional port"
+fi
 
 case "$(uname -s)" in
   Darwin) host_os=darwin ;;
@@ -172,6 +195,7 @@ fi
 
 log "ensuring the Kind management cluster exists"
 make -C "${repo_root}" kind-up
+configure_kind_dockerhub_mirror
 kind get kubeconfig --name "${kind_cluster_name}" >"${host_kubeconfig}"
 export KUBECONFIG="${host_kubeconfig}"
 management_ready=true

@@ -175,10 +175,10 @@ dev-start-local: dev-check dev-postgres-start dev-temporal-start ## Start local-
 	@echo ""
 	@echo "📝 Next steps:"
 	@echo "  To start CWE worker:"
-	@echo "     FWE_API_KEY=<your-key> make run"
+	@echo "     make run"
 	@echo ""
 	@echo "  Or use the all-in-one command next time:"
-	@echo "     FWE_API_KEY=<your-key> make run-local"
+	@echo "     make run-local"
 	@echo ""
 	@echo "  Once running, access:"
 	@echo "     • CWE UI:     http://localhost:8080"
@@ -186,7 +186,7 @@ dev-start-local: dev-check dev-postgres-start dev-temporal-start ## Start local-
 	@echo "     • Temporal:   http://localhost:8233"
 	@echo ""
 	@echo "⚠️  Note: Using LOCAL Temporal"
-	@echo "    For remote access, use: FWE_API_KEY=<key> TARGET_CLUSTER=<cluster-name> make run-remote"
+	@echo "    For remote access, use: TARGET_CLUSTER=<cluster-name> make run-remote"
 
 .PHONY: dev-start-remote
 dev-start-remote: dev-check dev-postgres-start ## Start remote development (connect to remote Temporal via Teleport)
@@ -214,10 +214,10 @@ dev-start-remote: dev-check dev-postgres-start ## Start remote development (conn
 	@echo ""
 	@echo "📝 Next steps:"
 	@echo "  To start CWE worker with remote Temporal:"
-	@echo "     FWE_API_KEY=<your-key> TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT) make run"
+	@echo "     TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT) make run"
 	@echo ""
 	@echo "  Or use the all-in-one command next time:"
-	@echo "     FWE_API_KEY=<your-key> TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
+	@echo "     TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
 	@echo ""
 	@echo "  Once running, access:"
 	@echo "     • CWE UI:           http://localhost:8080"
@@ -232,8 +232,6 @@ run-local: dev-start-local ## Start local services and run CWE (sources .env.loc
 	@echo "🚀 Starting CWE worker..."
 	@bash -c '\
 		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
-		source $(DEV_ENV_SCRIPT) && validate_api_key "$${FWE_API_KEY:-$(FWE_API_KEY)}" "local" || exit 1; \
-		export FWE_API_KEY="$${FWE_API_KEY:-$(FWE_API_KEY)}"; \
 		export PROFILES_DIR="$${PROFILES_DIR:-$(CURDIR)/test/fixtures/profiles}"; \
 		export RUNBOOKS_DIR="$${RUNBOOKS_DIR:-$(CURDIR)/test/fixtures/runbooks}"; \
 		echo ""; \
@@ -246,8 +244,6 @@ run-remote: dev-start-remote ## Start remote services and run CWE (sources .env.
 	@echo "🚀 Starting CWE worker with remote Temporal..."
 	@bash -c '\
 		[ -f .env.local ] && echo "📄 Loading .env.local..." && set -a && source .env.local && set +a; \
-		source $(DEV_ENV_SCRIPT) && validate_api_key "$${FWE_API_KEY:-$(FWE_API_KEY)}" "remote" || exit 1; \
-		export FWE_API_KEY="$${FWE_API_KEY:-$(FWE_API_KEY)}"; \
 		export TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT); \
 		echo ""; \
 		go run cmd/worker/main.go \
@@ -260,16 +256,16 @@ dev-start: ## Start development environment (prompts for mode selection)
 	@echo "Choose your workflow:"
 	@echo ""
 	@echo "🚀 Setup + Run (all-in-one):"
-	@echo "  FWE_API_KEY=<key> make run-local                                        # Local mode"
-	@echo "  FWE_API_KEY=<key> TARGET_CLUSTER=<cluster-name> make run-remote        # Remote mode"
+	@echo "  make run-local                                        # Local mode"
+	@echo "  TARGET_CLUSTER=<cluster-name> make run-remote        # Remote mode"
 	@echo ""
 	@echo "🔧 Setup only (run later):"
 	@echo "  make local                                      # Local mode"
 	@echo "  TARGET_CLUSTER=<cluster-name> make remote       # Remote mode"
 	@echo ""
 	@echo "Examples:"
-	@echo "  FWE_API_KEY=abc123 make run-local"
-	@echo "  FWE_API_KEY=abc123 TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
+	@echo "  make run-local"
+	@echo "  TARGET_CLUSTER=nke-site-forge-az24-dev6 make run-remote"
 
 .PHONY: dev-stop-local
 dev-stop-local: dev-temporal-stop dev-postgres-stop dev-spire-stop ## Stop local-only services
@@ -329,14 +325,11 @@ dev-logs: ## Show logs from all development services
 .PHONY: dev-env-local
 dev-env-local: ## Print environment variables for local mode
 	@echo "# Local Development Mode Environment Variables"
-	@echo "export FWE_API_KEY=<your-ngc-api-key>"
-	@echo ""
 	@echo "# CWE will use local Temporal by default (localhost:7233)"
 
 .PHONY: dev-env-remote
 dev-env-remote: ## Print environment variables for remote mode
 	@echo "# Remote Development Mode Environment Variables"
-	@echo "export FWE_API_KEY=<your-ngc-api-key>"
 	@echo "export TEMPORAL_HOST_PORT=localhost:$(TEMPORAL_FRONTEND_PORT)"
 	@echo ""
 	@echo "# Optional: Customize Teleport settings"

@@ -18,16 +18,16 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl get clusters --cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
 | `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. | In Review ([#269](https://github.com/NVIDIA/nke/pull/269)) |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
-| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, Teleport, control plane config). | Planned |
+| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). | Planned |
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
 | `nkectl get nodepools` | Lists node pools. `--cluster <name>` filters by cluster. | Planned |
 | `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |
 | `nkectl update nodepool <name> --cluster <name>` | Updates a mutable node pool property (desired count, instance type). | Planned |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
-`cluster` and `clusters` are aliases on `create`, `describe`, `get` and
-`delete`. Global flags: `--site <name>` overrides the active site for one
-invocation, `-v` enables debug logging, `--json-logs` emits logs as JSON.
+`cluster` and `clusters` are aliases on `create`, `get` and `delete`. Global
+flags: `--site <name>` overrides the active site for one invocation, `-v`
+enables debug logging, `--json-logs` emits logs as JSON.
 
 ## Example
 
@@ -66,8 +66,8 @@ nkectl bootstrap site -f sitespec.yaml --dry-run
 REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml
 ```
 
-The command needs Docker or nerdctl on the host (`--bootstrap-provider`, nerdctl
-by default) and network reach to the hosts' `nke-agent` ports. On success it
+The command needs nerdctl and containerd on the host, and network reach to
+the hosts' `nke-agent` ports. On success it
 writes `my-tier0-site.kubeconfig` in the working directory (`--kubeconfig-out`
 changes the path) and removes the Kind cluster. On failure it writes cluster
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
@@ -89,9 +89,17 @@ nkectl config set-site --name my-tier0-site \
 nkectl config view
 ```
 
-`--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig; `get
-providers` and, once it lands, `get kubeconfig` read the cluster directly and
-need it.
+`--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig.
+
+CWE API commands (`get`/`create`/`describe`/`delete` clusters) use that
+kubeconfig to authenticate: they read the audience from ConfigMap
+`cloud-workflow-engine/nke-auth-config` and mint a TokenRequest for
+`nke-clients/nke-client`. If the ConfigMap is absent, authentication is off
+and the CLI sends no bearer token.
+
+The kubeconfig identity needs `create` on `serviceaccounts/token` for
+`nke-client`. See
+[Configuring NKE API Authentication](../../controller/docs/configuring-api-authentication.md).
 
 ### 5. Check the infrastructure providers
 

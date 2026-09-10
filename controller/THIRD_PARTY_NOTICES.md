@@ -99,8 +99,10 @@ notices-check` verifies it is up to date.
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | Unknown |
 | `github.com/spiffe/spire-api-sdk/proto/spire/api` | Apache-2.0 | `github.com/spiffe/spire-api-sdk@v1.15.1` | Unknown |
 | `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.6.6` | Unknown |
-| `github.com/stretchr/objx` | MIT | `github.com/stretchr/objx@v0.5.2` | Unknown |
-| `github.com/stretchr/testify` | MIT | `github.com/stretchr/testify@v1.11.1` | Unknown |
+| `github.com/stretchr/objx` | MIT | `github.com/stretchr/objx@v0.5.3` | Unknown |
+| `github.com/stretchr/testify` | MIT | `github.com/stretchr/testify@v1.12.1` | Unknown |
+| `github.com/stretchr/testify/internal/difflib` | BSD-3-Clause | `github.com/stretchr/testify@v1.12.1` | Unknown |
+| `github.com/stretchr/testify/internal/spew` | ISC | `github.com/stretchr/testify@v1.12.1` | Unknown |
 | `github.com/swaggest/swgui` | Apache-2.0 | `github.com/swaggest/swgui@v1.8.2` | Unknown |
 | `github.com/tmthrgd/go-hex` | BSD-2-Clause / BSD-3-Clause | `github.com/tmthrgd/go-hex@v0.0.0-20190904060850-447a3041c3bc` | Unknown |
 | `github.com/twmb/murmur3` | BSD-3-Clause | `github.com/twmb/murmur3@v1.1.5` | Unknown |
@@ -133,7 +135,7 @@ notices-check` verifies it is up to date.
 | `go.uber.org/atomic` | MIT | `go.uber.org/atomic@v1.11.0` | Unknown |
 | `go.uber.org/automaxprocs` | MIT | `go.uber.org/automaxprocs@v1.6.0` | Unknown |
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | Unknown |
-| `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.4` | Unknown |
+| `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | Unknown |
 | `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.6` | Unknown |
 | `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.56.0` | Unknown |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.57.0` | Unknown |
@@ -10273,7 +10275,7 @@ _Apache-2.0 — github.com/spiffe/spire-controller-manager@v0.6.6_
 
 ### github.com/stretchr/objx
 
-_MIT — github.com/stretchr/objx@v0.5.2_
+_MIT — github.com/stretchr/objx@v0.5.3_
 
 #### LICENSE
 
@@ -10305,7 +10307,7 @@ SOFTWARE.
 
 ### github.com/stretchr/testify
 
-_MIT — github.com/stretchr/testify@v1.11.1_
+_MIT — github.com/stretchr/testify@v1.12.1_
 
 #### LICENSE
 
@@ -10331,6 +10333,67 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+```
+
+### github.com/stretchr/testify/internal/difflib
+
+_BSD-3-Clause — github.com/stretchr/testify@v1.12.1_
+
+#### LICENSE
+
+```text
+Copyright (c) 2013, Patrick Mezard
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+    Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in the
+documentation and/or other materials provided with the distribution.
+    The names of its contributors may not be used to endorse or promote
+products derived from this software without specific prior written
+permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+### github.com/stretchr/testify/internal/spew
+
+_ISC — github.com/stretchr/testify@v1.12.1_
+
+#### LICENSE
+
+```text
+ISC License
+
+Copyright (c) 2012-2016 Dave Collins <dave@davec.name>
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ```
 
@@ -13858,7 +13921,7 @@ limitations under the License.
 
 ### go.yaml.in/yaml/v3
 
-_MIT — go.yaml.in/yaml/v3@v3.0.4_
+_MIT — go.yaml.in/yaml/v3@v3.0.5_
 
 #### LICENSE
 

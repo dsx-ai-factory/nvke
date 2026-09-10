@@ -29,6 +29,7 @@ apiServer:
     audit-log-path: /var/log/kubernetes_audit/audit.log
     audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
     bind-address: 0.0.0.0
+    feature-gates: ImageVolume=true
     kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
     profiling: "false"
     shutdown-delay-duration: 10s
@@ -80,6 +81,8 @@ kind: KubeProxyConfiguration
 metricsBindAddress: 0.0.0.0:10249
 ---
 apiVersion: kubelet.config.k8s.io/v1beta1
+featureGates:
+  ImageVolume: true
 kind: KubeletConfiguration
 kubeReserved:
   cpu: 1000m

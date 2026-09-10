@@ -188,13 +188,27 @@ func handleError(w http.ResponseWriter, logger *slog.Logger, message string, sta
 }
 
 func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, temporalClient client.Client) *serverImpl {
-	nodePoolService := NewNodePoolService(logger, database, cfg.Teleport, cfg.UseControlPlaneControllerForControlPlane())
+	nodePoolService := NewNodePoolService(
+		logger,
+		database,
+		cfg.Teleport,
+		cfg.SupportedInfraProviders,
+		cfg.UseControlPlaneControllerForControlPlane(),
+	)
 
 	return &serverImpl{
-		clusterService:        *NewClusterService(logger, database, nodePoolService, cfg.Teleport, cfg.NkeOIDCAuth.Enabled, cfg.UseControlPlaneControllerForControlPlane()),
+		clusterService: *NewClusterService(
+			logger,
+			database,
+			nodePoolService,
+			cfg.Teleport,
+			cfg.NkeOIDCAuth.Enabled,
+			cfg.SupportedInfraProviders,
+			cfg.UseControlPlaneControllerForControlPlane(),
+		),
 		nodePoolService:       *nodePoolService,
 		nodeSetService:        *NewNodeSetService(logger, database, temporalClient),
-		nodeService:           *NewNodeService(logger, database, temporalClient, cfg.AllowEtcdSafetyOverrides),
+		nodeService:           *NewNodeService(logger, database, temporalClient),
 		osProfileService:      *NewOSProfileService(cfg, logger),
 		configProfileService:  *NewConfigProfileService(cfg, logger),
 		cniPluginsService:     *NewCNIPluginsService(),

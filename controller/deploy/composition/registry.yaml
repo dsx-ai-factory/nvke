@@ -1,0 +1,126 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Component registry: what each component IS, independent of any composition
+# that selects it. Adding a component means adding an entry here.
+#
+# Scope: chart coordinates, a version, and where the component's resources land.
+# HOW a chart is relocated -- namespaceOverride vs namespace, fullnameOverride,
+# per-subchart keys -- is a property of the upstream chart, not of the
+# composition, and lives in the component's values file. That also keeps it
+# re-expressible by a consumer that nests this chart and never runs the
+# generator; see nke-site-controller's chart/values.yaml and
+# docs/namespace-matrix.md for the same split at 29 dependencies.
+#
+# defaultNamespace is declared here because the installer must pre-create every
+# namespace before helm install -- --create-namespace makes only the release
+# namespace.
+apiVersion: nke.nvidia.com/v1alpha1
+kind: ComponentRegistry
+
+components:
+  - name: postgresql
+    displayName: PostgreSQL
+    helm:
+      # In-repo chart wrapping the official postgres image, pinned by digest.
+      #
+      # This was oci://registry-1.docker.io/bitnamicharts/postgresql. Two
+      # problems with that. Helm resolves chart dependencies at PACKAGE time
+      # over plain HTTPS, so every nke-stack build pulled from Docker Hub
+      # anonymously and hit the unauthenticated rate limit -- 429s killed two
+      # consecutive CAPD e2e runs before the deploy started. The runner's
+      # containerd mirror does not help, because it mirrors images, not Helm's
+      # OCI chart fetch. Naming a Bitnami chart in the SBOM is also a
+      # dependency whose availability is not ours to control.
+      #
+      # The official image still comes from Docker Hub, but as an IMAGE it is
+      # pulled by containerd through the runner's mirror, and it is pinned by
+      # digest. Adapted from the AICR bundle's local postgresql component
+      # (generated/aicr/observability/helm/002-postgresql), which solved the
+      # same problem the same way.
+      # file://, relative to the generated chart directory. Both
+      # generated/nke-stack and the build's staging copy .local/nke-stack-src
+      # sit exactly two levels below the repository root, so one path resolves
+      # from either. helm copies the chart into charts/ itself, so no vendoring
+      # step is needed and the committed chart builds standalone -- with an
+      # empty repository, `helm dependency update` on it fails with
+      # "directory charts/postgresql not found". The upstream spire chart uses
+      # the same form for its file://../spire-lib siblings.
+      defaultRepository: "file://../../controller/deploy/charts/postgresql"
+      defaultChart: postgresql
+      defaultVersion: "0.1.0"
+      defaultNamespace: postgres
+    source:
+      path: controller/deploy/charts/postgresql
+
+  - name: prometheus-operator-crds
+    displayName: Prometheus Operator CRDs
+    helm:
+      # Shipped separately from kube-prometheus-stack, whose own crds.enabled is
+      # turned off. Helm never upgrades CRDs installed as part of a chart, so
+      # carrying them as their own release is what makes them upgradable.
+      defaultRepository: https://prometheus-community.github.io/helm-charts
+      defaultChart: prometheus-operator-crds
+      defaultVersion: "28.0.1"
+      defaultNamespace: monitoring
+
+  - name: kube-prometheus-stack
+    displayName: Kube Prometheus Stack
+    helm:
+      defaultRepository: https://prometheus-community.github.io/helm-charts
+      defaultChart: kube-prometheus-stack
+      defaultVersion: "84.4.0"
+      defaultNamespace: monitoring
+
+  - name: temporal
+    displayName: Temporal
+    helm:
+      defaultRepository: https://go.temporal.io/helm-charts
+      defaultChart: temporal
+      defaultVersion: "0.74.0"
+      # No defaultNamespace: temporal's core templates follow .Release.Namespace
+      # with no override, so it takes the release namespace and everything else
+      # is placed around it. See releaseNamespace in the composition.
+
+  - name: cert-manager
+    displayName: cert-manager
+    helm:
+      defaultRepository: https://charts.jetstack.io
+      defaultChart: cert-manager
+      defaultVersion: "v1.20.2"
+      defaultNamespace: cert-manager
+
+  - name: spire-crds
+    displayName: SPIRE CRDs
+    helm:
+      defaultRepository: https://spiffe.github.io/helm-charts-hardened/
+      defaultChart: spire-crds
+      defaultVersion: "0.5.0"
+
+  - name: spire
+    displayName: SPIRE
+    helm:
+      defaultRepository: oci://ghcr.io/nvidia/nke/charts
+      defaultChart: spire
+      defaultVersion: "0.29.0"
+      defaultNamespace: spire-server
+    # Not a released chart: pinned to a commit for global.spire.jwtIssuer,
+    # which has no upstream release yet. build/nke-stack.sh publishes it.
+    upstream:
+      repo: https://github.com/spiffe/helm-charts-hardened.git
+      commit: "585203462b6bc7aa06d67b3a153bfff7ff287173"
+      path: charts/spire
+
+  - name: controller
+    displayName: NKE controller (cloud-workflow-engine)
+    helm:
+      defaultRepository: oci://ghcr.io/nvidia/nke/charts
+      defaultChart: controller
+      # Version is derived from `git describe --match controller/v*`, never
+      # authored: the pin does not exist until the tag does.
+      defaultVersion: derived
+      defaultNamespace: cloud-workflow-engine
+    # In-repo chart. Published by chart-publish.yml on a controller/v* tag, and
+    # by build/nke-stack.sh publish-deps for an untagged build.
+    source:
+      path: controller/deploy/charts/controller

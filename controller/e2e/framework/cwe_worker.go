@@ -128,7 +128,6 @@ func StartCWEWorkerBinary(t testing.TB, cfg CWEWorkerBinaryConfig) *Process {
 		"NODE_HEALTH_CHECK_DISABLED=true",
 		"SPIFFE_ENABLED=false",
 		"TELEPORT_ENABLED=false",
-		"FWE_API_KEY=",
 		"GOFAIL_FAILPOINTS=",
 		"GOFAIL_HTTP=",
 		"SERVER_LISTEN_ADDRESS=127.0.0.1:0",

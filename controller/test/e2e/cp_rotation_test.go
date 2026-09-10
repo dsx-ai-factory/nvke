@@ -5,38 +5,22 @@ package e2e
 
 import (
 	"context"
-	"os"
 	"time"
 
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-
-	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
 )
 
 // validateSingleNodeControlPlaneRotation exercises the manual single-node
 // control-plane rotation path. On a cluster whose only
 // control-plane node is A, it stages a replacement B (scale to two), then
-// force-removes A with the etcd single-voter override.
+// removes A.
 //
-// Why the override is required: removing A while B is the only other joined CP
-// takes etcd from two voters to one. CWE's etcd-member-remove dry-run reports
-// the single-voter condition (exit 3) and blocks the teardown unless
-// AllowSingleVoter is set. (Deleting the *last* CP would instead skip live
-// removal entirely when the last joined CP is removed, so it does not exercise this path.)
-//
-// This asserts only the positive path — that the override lets the rotation
-// complete. The negative (blocked without the flag) is covered deterministically
-// by the CWE unit/workflow tests, and asserting an async teardown failure here
-// would be flaky. Requires CWE deployed with ALLOW_ETCD_SAFETY_OVERRIDES=true;
-// self-skips unless E2E_ETCD_OVERRIDES_ENABLED=true.
+// Removing A while B is the only other joined CP takes etcd from two voters to
+// one. This verifies that expected transition completes without API overrides.
 func validateSingleNodeControlPlaneRotation(test *tenantTest) {
-	It("rotates a single-node control plane using the etcd single-voter override", func(ctx context.Context) {
-		if os.Getenv("E2E_ETCD_OVERRIDES_ENABLED") != "true" {
-			Skip("requires CWE deployed with ALLOW_ETCD_SAFETY_OVERRIDES=true; set E2E_ETCD_OVERRIDES_ENABLED=true to run")
-		}
-
+	It("rotates a single-node control plane", func(ctx context.Context) {
 		controlPlanePool, _ := expectScalePools(ctx, test)
 		Expect(controlPlanePool.DesiredNodeCount).To(Equal(1),
 			"single-node control-plane rotation requires a 1-CP cluster")
@@ -56,9 +40,9 @@ func validateSingleNodeControlPlaneRotation(test *tenantTest) {
 		By("Restoring the desired count to one so healing does not re-add a node after removal")
 		expectSucceed(test.nke.UpdateNodePoolDesiredCount(ctx, controlPlanePool.ID, 1))
 
-		By("Force-removing the original control-plane node with the single-voter override")
-		Expect(test.nke.DeleteNode(ctx, original, nke.WithAllowSingleVoter())).To(Succeed(),
-			"single-voter override should let the original control-plane node be removed")
+		By("Removing the original control-plane node")
+		Expect(test.nke.DeleteNode(ctx, original)).To(Succeed(),
+			"the original control-plane node should be removed")
 
 		By("Waiting for the control-plane pool to settle at the replacement node")
 		Expect(test.nke.WaitForProvisionedNodeCountExcluding(ctx, controlPlanePool.ID, 1, original)).To(Succeed())
