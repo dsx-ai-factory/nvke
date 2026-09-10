@@ -663,6 +663,23 @@ func TestTPMAttestorArgs(t *testing.T) {
 	}
 }
 
+func TestTPMPluginChecksum(t *testing.T) {
+	tests := map[string]string{
+		"amd64": spireTPMDirectAMD64Checksum,
+		"arm64": spireTPMDirectARM64Checksum,
+	}
+	for arch, want := range tests {
+		if got := tpmPluginChecksum(arch); got != want {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want %q", arch, got, want)
+		}
+	}
+	for _, arch := range []string{"ppc64le", "s390x"} {
+		if got := tpmPluginChecksum(arch); got != "" {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want no checksum", arch, got)
+		}
+	}
+}
+
 // TestSpireAndCWEAgreeOnTheClassName is the guard for a mismatch neither side
 // reports. CWE stamps its ClusterStaticEntry objects with its configured class
 // and the SPIRE controller manager only acts on objects carrying its own, so

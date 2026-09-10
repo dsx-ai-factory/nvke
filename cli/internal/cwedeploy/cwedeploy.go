@@ -32,6 +32,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"text/template"
@@ -133,6 +134,11 @@ const (
 	// rather than rejected, so the values computed below are all addressed
 	// through it.
 	spireServerValuesPrefix = "spire-server"
+
+	// The tpm-direct plugin binary is architecture-specific. Keep both
+	// checksums explicit so that chart defaults cannot select the wrong binary.
+	spireTPMDirectAMD64Checksum = "46d0caad8c25a027dd11c93e18b58a8bc6fbd9f1fe2e36fa2a0dd440986de4dc"
+	spireTPMDirectARM64Checksum = "b69d0153c8241383f24da138bc85429a620d9f962a2f10abb314aa0e39046d16"
 
 	// DefaultCWEPort is the port the CWE API uses at every layer: the Helm
 	// Service, the external NodePort Service, and both sides of Kind's host port
@@ -828,11 +834,25 @@ func tpmAttestorArgs(cfg Config, prefix string) []string {
 		return nil
 	}
 	args := []string{"--set", prefix + ".nodeAttestor.tpmDirect.enabled=true"}
+	if checksum := tpmPluginChecksum(runtime.GOARCH); checksum != "" {
+		args = append(args, "--set-string", prefix+".nodeAttestor.tpmDirect.checksum="+checksum)
+	}
 	for i, fingerprint := range cfg.TPMEKFingerprints {
 		args = append(args, "--set-string",
 			fmt.Sprintf("%s.nodeAttestor.tpmDirect.hashes[%d]=%s", prefix, i, fingerprint))
 	}
 	return args
+}
+
+func tpmPluginChecksum(goarch string) string {
+	switch goarch {
+	case "amd64":
+		return spireTPMDirectAMD64Checksum
+	case "arm64":
+		return spireTPMDirectARM64Checksum
+	default:
+		return ""
+	}
 }
 
 // upstreamCAArgs points SPIRE at a CA the operator supplied.
