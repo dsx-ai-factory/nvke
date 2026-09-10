@@ -95,15 +95,41 @@ additionally publishes the controller image and Helm chart:
 
 | Workflow | What it publishes |
 |---|---|
-| `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/controller`, then promotes that released image to `ghcr.io/nvidia/nke/controller` with `crane copy`, preserving the digest and the full index |
+| `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/controller`, and promotes release tags to `ghcr.io/nvidia/nke/controller` |
 | `chart-publish.yml` | chart to `ghcr.io/nvidia/nke/charts/controller` |
-| `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/controller-chart` |
+| `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/controller-chart` and `nvcr.io/<dsx-org-team>/controller-chart` |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
 `ghcr.io/nvidia/nke/controller:<version>` while a chart built from `main` could not.
 Releases from `controller/v0.1.1-rc.1` onward are present on GHCR; `controller/v0.1.0`
 predates the promotion job and was never copied there.
+
+DSX receives the controller image from `image-nvcr.yml`, after the NKE multi-arch
+manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`.
+Both use separate credentials from the same protected GitHub environment:
+
+| Name | Type | Purpose |
+|---|---|---|
+| `NKE_NGC_ORG` | variable | Source NGC org for `nvcr.io/<org>/controller` |
+| `NGC_REGISTRY_TOKEN_NKE` | secret | Read/write token for the source NKE NGC org |
+| `DSX_NGC_ORG_TEAM` | variable | Destination NGC org/team, for example `<org>/components-dev` |
+| `NGC_REGISTRY_TOKEN_DSX` | secret | Write token for the DSX NGC org/team |
+
+The source and destination both live on `nvcr.io`, but they may require different
+NGC tokens. Docker auth stores one credential per registry host, so the DSX
+promotion pulls the source image into a local OCI layout with the NKE token, then
+logs in with the DSX token and pushes that same index to
+`nvcr.io/<dsx-org-team>/controller`. Immutable tags
+(`sha-<commit>` and the git-described version) are treated as idempotent only
+when an existing destination digest matches the source digest; a mismatch fails
+the run. The `edge` tag is mutable and moves only on `main`.
+
+The DSX chart is packaged from the controller chart as `controller-chart`, the
+same chart artifact name used for the NKE NVCR chart, and pushed to
+`oci://nvcr.io/<dsx-org-team>`. Its chart version is the controller git describe
+string without the leading `v`, while `appVersion` keeps the leading `v` so the
+rendered Deployment pulls the same image tag promoted by `image-nvcr.yml`.
 
 Push tags to `upstream`. The release workflow has no repository guard, so a tag
 pushed to a fork cuts a real release there.
