@@ -24,9 +24,10 @@ MANIFEST_BASE="https://raw.githubusercontent.com/projectcalico/calico/${VERSION}
 
 # The manifests the agent applies. calicoInstallRootFromFiles in
 # agent/internal/agent/cni.go finds the install root by looking for
-# manifests/tigera-operator.yaml, and runCalicoKubectlApplyFromDir applies both.
+# manifests/tigera-operator.yaml. runCalicoKubectlApplyFromDir establishes the
+# CRDs before it applies the operator and custom resources.
 mkdir -p "${STAGE}/manifests"
-for name in tigera-operator.yaml custom-resources.yaml; do
+for name in operator-crds.yaml tigera-operator.yaml custom-resources.yaml; do
   fetch "${MANIFEST_BASE}/${name}" "${STAGE}/manifests/${name}"
   verify_artifact "$name" "${STAGE}/manifests/${name}" "${MANIFEST_BASE}/${name}"
 done

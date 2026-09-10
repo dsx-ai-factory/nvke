@@ -52,9 +52,10 @@ if [[ -d "${SRC}/debs" ]]; then
   echo 'deb [trusted=yes] file:/usr/lib/nke/debs ./' | sudo tee /etc/apt/sources.list.d/nke-local.list >/dev/null
 fi
 
-# Install the architecture-independent Calico manifest package. The agent can
-# then use the manifests without an external bundle service during bootstrap.
-calico_manifest_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nke-cni-calico-manifests-*_all.deb' -print -quit 2>/dev/null || true)"
+# Install the Calico manifest package. The content-only ARM64 build writes an
+# `_all.deb` package, while the normal AMD64 build writes an `_amd64.deb`
+# package.
+calico_manifest_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nke-cni-calico-manifests-*.deb' -print -quit 2>/dev/null || true)"
 if [[ -n "${calico_manifest_deb}" ]]; then
   sudo dpkg -i "${calico_manifest_deb}"
 fi

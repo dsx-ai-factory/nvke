@@ -4,7 +4,7 @@ Builds the two Debian packages `nke-agent` installs when it sets up Calico:
 
 | Package | Contents | Installed to |
 |---|---|---|
-| `nke-cni-calico-manifests-<stream>` | Upstream `tigera-operator.yaml` and `custom-resources.yaml` | `/usr/share/nke-cni/calico/<stream>/manifests/` |
+| `nke-cni-calico-manifests-<stream>` | Upstream `operator-crds.yaml`, `tigera-operator.yaml`, and `custom-resources.yaml` | `/usr/share/nke-cni/calico/<stream>/manifests/` |
 | `nke-cni-calico-images-<stream>` | Every image the operator resolves, as one docker-archive | `/usr/lib/nke/cni-calico/<stream>/`, imported into containerd by `postinst` |
 
 `provision.sh` stages both into the image under `/usr/lib/nke/debs` as a local
@@ -25,10 +25,11 @@ makes that true; without it a cluster comes up and Calico never does.
 `agent/internal/agent/cni.go` asks apt for `nke-cni-calico-manifests-<stream>`
 and `nke-cni-calico-images-<stream>`, where `<stream>` is the request's Calico
 version or `defaultCalicoCniStream`. It then finds the install root by looking
-through `dpkg-query -L` for a path ending in `manifests/tigera-operator.yaml`,
-and applies that file and `custom-resources.yaml` beside it.
+through `dpkg-query -L` for a path ending in `manifests/tigera-operator.yaml`.
+It applies `operator-crds.yaml` and waits for the CRDs to be established. It
+then applies the operator and `custom-resources.yaml`.
 
-So both manifests must be owned by the package and live in the same
+All three manifests must be owned by the package and live in the same
 `manifests/` directory. `TestCalicoInstallRootFromFiles` in the agent has a case
 pinned to this package's exact layout.
 
