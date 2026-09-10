@@ -175,4 +175,4 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@echo "Workspace re-derivation needs access to the internal provider; work-check reports if it skips."
 	@echo "CAPD backend e2e is advisory, not part of the merge gate: make test-e2e-backend-ci"
 	@echo "nkectl bootstrap e2e is advisory too, not part of the merge gate:"
-	@echo "  make -C cli test-e2e-bootstrap   (nerdctl, Docker, kind, and root)"
+	@echo "  make -C cli test-e2e-bootstrap   (nerdctl, buildkitd, kind, and root)"

@@ -15,22 +15,20 @@
 # (cli/e2e/bootstrap/substrate, `make -C cli nodes-up`) and, since the
 # cli/internal/bootstrapengine, a real ephemeral Kind cluster that
 # `nkectl bootstrap site` creates and tears down itself.
-# ubuntu-latest ships Docker, so no self-hosted runner is needed for that;
-# `kind` itself is not preinstalled and is set up below the same way
-# capd-e2e.yml does it (.github/actions/setup-kind).
+# `kind` is not preinstalled and is set up below the same way capd-e2e.yml
+# does it (.github/actions/setup-kind).
 #
-# One leg, nerdctl: `nkectl bootstrap site` drives kind through
-# KIND_EXPERIMENTAL_PROVIDER=nerdctl and nothing else, so that is what this
-# exercises, against a standalone containerd this job installs and starts
-# itself (see the "Install nerdctl" step below).
+# Everything runs on one containerd, which this job installs and starts
+# itself (see the "Install nerdctl" step below): `nkectl bootstrap site`
+# drives kind through KIND_EXPERIMENTAL_PROVIDER=nerdctl, Stage 1's fake-node
+# fixture runs its containers on it, and every fixture image is built into it
+# by `nerdctl build` against the buildkitd started alongside.
 #
-# That containerd is deliberately separate from the one Docker's own
-# containerd.io package runs: ubuntu-latest ships Docker, and reusing its
-# daemon would mean the containerd-driven path is secretly riding on Docker.
-# Docker is still installed on the runner and Stage 1's fake-node fixture and
-# the profiles image still build through it -- see nodes-up,
-# ensure-capd-image and ensure-profiles-image in cli/Makefile. That is a known
-# remaining dependency of the test harness, not of nkectl itself.
+# ubuntu-latest ships Docker, and this job deliberately does not use it. The
+# containerd above is separate from the one Docker's own containerd.io
+# package runs, because reusing that daemon would mean the containerd-driven
+# path is secretly riding on Docker. Nothing here invokes `docker`; the
+# `no-docker` step below is what keeps that true.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -51,11 +49,11 @@
 # on /readyz -- see run.sh's Stage 2. The job builds CWE from the checkout so
 # the CLI and controller changes under test stay compatible.
 #
-# A tag, not the manifest digest under it: `docker save <repo>@<digest>`
-# writes `RepoTags: null`, so `kind load docker-image` leaves the node with an
-# anonymous image the kubelet cannot match, and it falls back to pulling from
-# ghcr.io with no credentials. Multi-arch images are handled in
-# bootstrapengine's flattenToHostPlatform instead.
+# A tag, not the manifest digest under it: saving `<repo>@<digest>` writes
+# `RepoTags: null`, so the node ends up with an anonymous image the kubelet
+# cannot match, and it falls back to pulling from ghcr.io with no
+# credentials. Multi-arch images are handled in bootstrapengine's
+# flattenToHostPlatform instead.
 name: nkectl bootstrap e2e
 
 # No workflow_call: this lane left the merge gate when it moved to the mirror
@@ -135,9 +133,18 @@ jobs:
       # `containerd.service` on `/run/containerd/containerd.sock` -- reusing
       # either would mean this job is secretly still riding on Docker's
       # daemon, which is exactly what the separate socket exists to rule out).
-      # Docker is left running rather than stopped, because Stage 1's
-      # fake-node fixture and the profiles image build through it directly.
+      # Docker is left running rather than stopped: nothing here uses it, and
+      # stopping a daemon the runner image manages is not this job's business.
       CONTAINERD_ADDRESS: /run/containerd-nerdctl/containerd.sock
+      # buildkitd's own socket, named to match the containerd it builds into.
+      # BUILDKIT_HOST is the variable `nerdctl build` itself reads to find a
+      # builder, so setting it here is what points nerdctl at this buildkitd
+      # rather than at a default that does not exist on this runner.
+      BUILDKIT_HOST: unix:///run/buildkit-nerdctl/buildkitd.sock
+      # nerdctl's default namespace. Named explicitly because buildkitd has a
+      # different default ("buildkit"), and an image built into that one is
+      # invisible to the nerdctl and kind that later look for it.
+      CONTAINERD_NAMESPACE: default
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -304,7 +311,7 @@ jobs:
 
           # A dedicated unit, config and data root -- see the CONTAINERD_ADDRESS
           # comment above for why this does not reuse Docker's `containerd`.
-          sudo mkdir -p /etc/containerd-nerdctl /var/lib/containerd-nerdctl /run/containerd-nerdctl
+          sudo mkdir -p /etc/containerd-nerdctl /var/lib/containerd-nerdctl /run/containerd-nerdctl /run/buildkit-nerdctl
           /usr/local/bin/containerd config default | sudo tee /etc/containerd-nerdctl/config.toml >/dev/null
           # containerd's `config default` output quotes strings with single
           # quotes, not double -- matching only the path (not the quote
@@ -337,6 +344,37 @@ jobs:
           WantedBy=multi-user.target
           UNIT
 
+          # `nerdctl build` is a BuildKit client, not a builder: without a
+          # buildkitd it fails outright. buildkitd ships in the same
+          # nerdctl-full archive already unpacked above, so this is a unit
+          # rather than another pinned download.
+          #
+          # --oci-worker=false --containerd-worker=true: build into the same
+          # containerd this job runs, and the same namespace nerdctl and kind
+          # read from. A default buildkitd would use its own OCI worker, and
+          # the images would build successfully into a store nothing else can
+          # see -- which fails much later, as an ImagePullBackOff inside the
+          # bootstrap cluster rather than as a build error.
+          sudo tee /etc/systemd/system/buildkit-nerdctl.service >/dev/null <<UNIT
+          [Unit]
+          Description=buildkitd for nerdctl build, on the standalone containerd
+          After=containerd-nerdctl.service
+          Requires=containerd-nerdctl.service
+
+          [Service]
+          ExecStart=/usr/local/bin/buildkitd \\
+            --addr unix://${BUILDKIT_HOST#unix://} \\
+            --oci-worker=false \\
+            --containerd-worker=true \\
+            --containerd-worker-addr ${CONTAINERD_ADDRESS} \\
+            --containerd-worker-namespace ${CONTAINERD_NAMESPACE}
+          Restart=on-failure
+          KillMode=process
+
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+
           sudo systemctl daemon-reload
           sudo systemctl enable --now containerd-nerdctl
 
@@ -360,10 +398,25 @@ jobs:
 
           sudo -E env "PATH=$PATH" nerdctl info
 
+          sudo systemctl enable --now buildkit-nerdctl
+          for _ in $(seq 1 30); do
+            sudo test -S "${BUILDKIT_HOST#unix://}" && break
+            sleep 1
+          done
+          if ! sudo test -S "${BUILDKIT_HOST#unix://}"; then
+            echo "::error::buildkitd never opened ${BUILDKIT_HOST}"
+            echo "::group::buildkit-nerdctl journal"
+            sudo journalctl -u buildkit-nerdctl --no-pager || true
+            echo "::endgroup::"
+            exit 1
+          fi
+
+      # Into the standalone containerd, not Docker: nkectl loads the image
+      # from there, so a Docker-built one would be invisible to it.
       - name: Build CWE image
         shell: bash
         run: |
-          docker build \
+          sudo -E env "PATH=$PATH" nerdctl build \
             --file controller/Dockerfile \
             --platform linux/amd64 \
             --tag "${CWE_IMAGE}" \
@@ -378,6 +431,13 @@ jobs:
       - name: Build nkectl
         working-directory: cli
         run: make build
+
+      # Docker is installed on this runner, so a reintroduced `docker` call in
+      # the suite would work here and pass unnoticed. Cheap to assert, and the
+      # only thing standing between that and a silent dependency coming back.
+      - name: Assert the suite invokes no docker
+        working-directory: cli
+        run: make check-no-docker
 
       # sudo -E: kind and nerdctl reach the standalone containerd's socket as
       # root, the same way every other step below that touches them does.

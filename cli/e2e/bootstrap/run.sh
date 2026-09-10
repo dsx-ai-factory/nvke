@@ -42,34 +42,36 @@
 #      is the end-to-end statement the earlier stages only imply: a cluster
 #      built out of hosts that already existed serves traffic like any other.
 #
-# This suite needs BOTH runtimes on the host:
+# This suite runs entirely on nerdctl/containerd. It needs, on the host:
 #
-#   - nerdctl >= 1.7.0 and a containerd for it to talk to. The ephemeral
-#     cluster runs there, because nkectl drives kind through
+#   - nerdctl and a containerd for it to talk to. The ephemeral cluster runs
+#     there, because nkectl drives kind through
 #     KIND_EXPERIMENTAL_PROVIDER=nerdctl unconditionally (see
-#     cli/internal/bootstrapengine). See the CI workflow
+#     cli/internal/bootstrapengine), and so do the fake-node containers. kind
+#     states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the
+#     version CI exercises. See the CI workflow
 #     (.github/workflows/nkectl-bootstrap-e2e.yml) for the standalone install
-#     this repo has verified; the version floor is kind's stated minimum for
-#     its nerdctl provider, and only 2.3.5 is actually exercised here.
-#   - Docker. The fake-node fixture and all three fixture images still build
-#     and run through it (see nodes-up and the ensure-*-image targets in
-#     cli/Makefile), and this script bridges those images into containerd
-#     below with `docker save | nerdctl load`.
+#     this repo has verified.
+#   - buildkitd, for `nerdctl build` to reach. The three fixture images are
+#     built through it (see the ensure-*-image targets in cli/Makefile);
+#     nerdctl is a BuildKit client, not a builder, and fails outright without
+#     one. The CI workflow starts it on the same containerd.
+#   - root, or sudo: attaching the bootstrap cluster to the node network
+#     installs an iptables rule and assigns the SPIRE VIP to a bridge.
+#     Without it the run fails at "the bootstrap cluster was never attached
+#     to the node network", after the images have already been built.
 #
-# It also needs root, or to be run under sudo: attaching the bootstrap cluster
-# to the node network installs an iptables rule and assigns the SPIRE VIP to a
-# bridge. Without it the run fails at "the bootstrap cluster was never
-# attached to the node network", after the images have already been built.
+# Docker is not used anywhere here, and `make -C cli check-no-docker` is what
+# keeps that true.
 #
 # The fake nodes emulate a TPM with swtpm, which asks the kernel for a device
 # through /dev/vtpmx. This script loads tpm_vtpm_proxy if it is not already
 # there; a host that cannot load it cannot run this suite.
 #
-# NKECTL_CWE_IMAGE must already be present in DOCKER's image store -- built
-# there, or pulled with `docker pull` -- before this script runs. The bridging
-# loop below reads it with `docker save`, so an image pulled only into
-# containerd fails there with "reference does not exist". nkectl then loads it
-# into the kind cluster rather than pulling from inside the cluster (see
+# NKECTL_CWE_IMAGE must already be present in containerd's image store --
+# built there, or pulled with `nerdctl pull` -- before this script runs. That
+# is the store nkectl loads from: it saves the image and loads it into the
+# kind cluster rather than pulling from inside the cluster (see
 # cmd/nkectl/bootstrap.go's ensureImageAvailable), so no registry credentials
 # are needed past that point. CI builds the image locally rather than pulling
 # it (see the workflow's "Build CWE image" step).
@@ -169,29 +171,29 @@ collect_node_diagnostics() {
     output="${DIAGNOSTICS_DIR}/host-diagnostics-${name_prefix}${i}.txt"
     {
       printf '### journalctl: kubelet and containerd\n'
-      docker exec "${node}" journalctl -u kubelet -u containerd \
+      nerdctl exec "${node}" journalctl -u kubelet -u containerd \
         --boot --no-pager --output=short-iso-precise --lines=10000 || true
 
       printf '\n### systemctl status\n'
-      docker exec "${node}" systemctl status kubelet containerd --no-pager || true
+      nerdctl exec "${node}" systemctl status kubelet containerd --no-pager || true
 
       printf '\n### crictl ps -a\n'
-      docker exec "${node}" crictl ps -a || true
+      nerdctl exec "${node}" crictl ps -a || true
 
       printf '\n### crictl pods\n'
-      docker exec "${node}" crictl pods || true
+      nerdctl exec "${node}" crictl pods || true
 
       printf '\n### crictl info\n'
-      docker exec "${node}" crictl info || true
+      nerdctl exec "${node}" crictl info || true
 
       printf '\n### ip addr\n'
-      docker exec "${node}" ip addr || true
+      nerdctl exec "${node}" ip addr || true
 
       printf '\n### ip route\n'
-      docker exec "${node}" ip route || true
+      nerdctl exec "${node}" ip route || true
 
       printf '\n### CNI files\n'
-      docker exec "${node}" ls -la /etc/cni/net.d /opt/cni/bin || true
+      nerdctl exec "${node}" ls -la /etc/cni/net.d /opt/cni/bin || true
     } >"${output}" 2>&1
   done
 }
@@ -317,24 +319,17 @@ log "building the provisioned CAPI provider image (${NKECTL_CAPI_PROVISIONED_IMA
 make -C "${CLI_DIR}" ensure-provisioned-provider-image \
   CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE}"
 
-# The workflow and ensure-* targets build these images through `docker`:
-# `nerdctl build` needs a running buildkitd, which this suite does not stand
-# up (a second daemon alongside the containerd-nerdctl.service the CI job
-# already installs -- see nkectl-bootstrap-e2e.yml). A local Docker image is
-# invisible to nerdctl's separate containerd instance, and nkectl loads from
-# containerd, so bridge all three images across once here.
-image_platform="$(go env GOOS)/$(go env GOARCH)"
-for image in "${NKECTL_CWE_IMAGE}" "${NKECTL_CWE_PROFILES_IMAGE}" "${NKECTL_CAPI_PROVISIONED_IMAGE}"; do
-  log "loading ${image} for ${image_platform} into nerdctl's containerd (built via docker above)"
-  docker save --platform="${image_platform}" "${image}" | nerdctl load
-done
+# No cross-runtime image bridge here: every image above is built by `nerdctl
+# build`, so it already lives in the containerd store nkectl loads from. This
+# used to be a `docker save | nerdctl load` of all three, because the builds
+# went through Docker and a Docker image is invisible to containerd.
 
 # The completed images are sufficient from this point. On GitHub's 14 GB
 # runner, retaining their BuildKit intermediates competes with the container
 # storage needed by the bootstrap cluster and three site nodes.
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-  log "removing Docker build cache before cluster provisioning"
-  docker builder prune --all --force
+  log "removing the BuildKit cache before cluster provisioning"
+  nerdctl builder prune --all --force || true
 fi
 
 # The site spec is generated, not committed, so this lane exercises the command
@@ -405,11 +400,8 @@ bootstrap_pid=$!
 attach_bootstrap_to_node_network() {
   local node_network="${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"
   local network_id bridge nerdctl_network_id
-  network_id="$(docker network inspect --format '{{.Id}}' "${node_network}")" || return 1
-  bridge="$(docker network inspect --format '{{index .Options "com.docker.network.bridge.name"}}' "${node_network}")" || return 1
-  if [ -z "${bridge}" ] || [ "${bridge}" = "<no value>" ]; then
-    bridge="br-${network_id:0:12}"
-  fi
+  network_id="$(nerdctl network inspect --format '{{.Id}}' "${node_network}")" || return 1
+  bridge="br-${network_id:0:12}"
   ip link show "${bridge}" >/dev/null || return 1
   nerdctl_network_id="$(nerdctl network inspect --format '{{.Id}}' kind)" || return 1
   nerdctl_bridge="br-${nerdctl_network_id:0:12}"
@@ -543,7 +535,7 @@ log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
 # Which registries the nodes will reach. A pull that falls through to upstream
 # is the difference between a 30 second install and a helm timeout.
 log "node registry routing (${NKECTL_E2E_NAME_PREFIX:-node}1):"
-docker exec "nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1" \
+nerdctl exec "nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1" \
   cat /etc/containerd/certs.d/docker.io/hosts.toml 2>&1 | sed 's/^/  /' || true
 # The bootstrap Kind cluster is still up (--keep-bootstrap-cluster above); its
 # node pulls the CWE stack's images, so show where those went too.
