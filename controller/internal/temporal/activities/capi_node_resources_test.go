@@ -321,6 +321,89 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockTx.AssertExpectations(t)
 	})
 
+	t.Run("stamps Forge instance and machine IDs from NicoMachine status", func(t *testing.T) {
+		instanceID := "8f9efd7f-8f3b-4bb3-b523-ee179e7dca22"
+		machineID := "fm100ht9b2uffrr8uj92siejras651v9143ev6ikit22mj7lfh2i22vema0"
+		k8sClient := newCAPIMachineReadyClient(t,
+			testCAPIMachineWithNicoInfraRef(clusterv1.MachineAddresses{{
+				Type:    clusterv1.MachineInternalIP,
+				Address: "10.0.0.10",
+			}}),
+			testNicoMachineForCAPIMachineReady(nicoMachineRotationParameters{
+				InstanceID: instanceID,
+				MachineID:  machineID,
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+			}),
+		)
+		mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
+		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == node.ID &&
+				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
+		})).Return(node, nil).Once()
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == node.ID &&
+				nodeForUpdate.IP == "10.0.0.10" &&
+				nodeForUpdate.ForgeInstanceID == instanceID &&
+				nodeForUpdate.ForgeMachineID == machineID
+		})).Return(node, nil)
+
+		a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+		ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+		require.NoError(t, err)
+		assert.Equal(t, "10.0.0.10", ipAddress)
+		mockDB.AssertExpectations(t)
+		mockTx.AssertExpectations(t)
+	})
+
+	t.Run("does not clobber existing Forge identity when status IDs are absent", func(t *testing.T) {
+		existing := node
+		existing.ForgeInstanceID = "existing-instance"
+		existing.ForgeMachineID = "existing-machine"
+		k8sClient := newCAPIMachineReadyClient(t,
+			testCAPIMachineWithNicoInfraRef(clusterv1.MachineAddresses{{
+				Type:    clusterv1.MachineInternalIP,
+				Address: "10.0.0.10",
+			}}),
+			testNicoMachineForCAPIMachineReady(nicoMachineRotationParameters{
+				Interface: nicov1.NicoMachineInterface{
+					VPCPrefixID: firstVpcPrefixID.String(),
+				},
+				Generation:         1,
+				ObservedGeneration: 1,
+			}),
+		)
+		mockDB, mockTx := newCAPIMachineReadyDB(t, existing, cluster)
+		mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+		mockTx.On("GetNodeForUpdate", mock.Anything, existing.ID).Return(existing, nil)
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == existing.ID &&
+				nodeForUpdate.Conditions.Pending.Status == db.ConditionStatusTrue &&
+				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
+		})).Return(existing, nil).Once()
+		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			return nodeForUpdate.ID == existing.ID &&
+				nodeForUpdate.IP == "10.0.0.10" &&
+				nodeForUpdate.ForgeInstanceID == "existing-instance" &&
+				nodeForUpdate.ForgeMachineID == "existing-machine"
+		})).Return(existing, nil)
+
+		a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+		ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+		require.NoError(t, err)
+		assert.Equal(t, "10.0.0.10", ipAddress)
+		mockDB.AssertExpectations(t)
+		mockTx.AssertExpectations(t)
+	})
+
 	t.Run("rotates one network candidate and waits when IP is absent", func(t *testing.T) {
 		k8sClient := newCAPIMachineReadyClient(t,
 			testCAPIMachineWithNicoInfraRef(nil),
@@ -463,6 +546,8 @@ func testCAPIMachineWithNicoInfraRef(addresses clusterv1.MachineAddresses) *clus
 type nicoMachineRotationParameters struct {
 	Interface          nicov1.NicoMachineInterface
 	InstanceTypeID     string
+	InstanceID         string
+	MachineID          string
 	Reason             string
 	Generation         int64
 	ObservedGeneration int64
@@ -489,6 +574,8 @@ func testNicoMachineForRotation(params nicoMachineRotationParameters) *nicov1.Ni
 			Interfaces:     []nicov1.NicoMachineInterface{params.Interface},
 		},
 		Status: nicov1.NicoMachineStatus{
+			InstanceID: params.InstanceID,
+			MachineID:  params.MachineID,
 			Conditions: []metav1.Condition{{
 				Type:               nicov1.MachineProvisionedCondition,
 				Status:             metav1.ConditionFalse,

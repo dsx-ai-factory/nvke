@@ -418,6 +418,16 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		}
 	}
 
+	// NicoMachine status carries Forge identity; CAPD and other providers leave
+	// these empty. Lookup must never block provisioning.
+	observedInstanceID, observedMachineID, err := identityFromInfraRef(ctx, a.k8sClient, machine)
+	if err != nil {
+		logger.Warn("Could not resolve Forge identity for CAPI machine; skipping identity stamp",
+			"nodeID", input.NodeID, "machine", machine.Name, "error", err)
+		observedInstanceID = ""
+		observedMachineID = ""
+	}
+
 	if err := a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		nodeForUpdate, err := tx.GetNodeForUpdate(ctx, input.NodeID)
 		if err != nil {
@@ -428,6 +438,12 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		// a CWE-selected (Forge) type or an already-recorded value.
 		if observedInstanceTypeID != uuid.Nil && nodeForUpdate.InstanceTypeID == uuid.Nil {
 			nodeForUpdate.InstanceTypeID = observedInstanceTypeID
+		}
+		if observedInstanceID != "" && nodeForUpdate.ForgeInstanceID == "" {
+			nodeForUpdate.ForgeInstanceID = observedInstanceID
+		}
+		if observedMachineID != "" && nodeForUpdate.ForgeMachineID == "" {
+			nodeForUpdate.ForgeMachineID = observedMachineID
 		}
 		if _, err := tx.UpdateNode(ctx, &nodeForUpdate); err != nil {
 			return fmt.Errorf("failed to update node IP address: %w", err)
@@ -443,6 +459,8 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		"nodeID", input.NodeID,
 		"nodeName", node.Name,
 		"ip", ipAddress,
+		"forgeInstanceID", observedInstanceID,
+		"forgeMachineID", observedMachineID,
 	)
 
 	return ipAddress, nil
@@ -568,6 +586,27 @@ func instanceTypeIDFromInfraRef(ctx context.Context, k8sClient client.Client, ma
 		return uuid.Nil, fmt.Errorf("infra machine %s has invalid instanceTypeID %q: %w", infraObj.GetName(), raw, err)
 	}
 	return instanceTypeID, nil
+}
+
+// identityFromInfraRef reads instance and machine IDs off the Machine's
+// infrastructure object (e.g. NicoMachine.status). Missing fields return
+// empty strings so CAPD and other providers are a no-op.
+func identityFromInfraRef(ctx context.Context, k8sClient client.Client, machine *clusterv1.Machine) (string, string, error) {
+	infraObj, err := capiexternal.GetObjectFromContractVersionedRef(ctx, k8sClient, machine.Spec.InfrastructureRef, machine.Namespace)
+	if err != nil {
+		return "", "", err
+	}
+
+	instanceID, _, err := unstructured.NestedString(infraObj.Object, "status", "instanceID")
+	if err != nil {
+		return "", "", err
+	}
+	machineID, _, err := unstructured.NestedString(infraObj.Object, "status", "machineID")
+	if err != nil {
+		return "", "", err
+	}
+
+	return instanceID, machineID, nil
 }
 
 func (a *Activities) ApplyCAPIMachineRebootAnnotation(ctx context.Context, input ApplyCAPIMachineRebootAnnotationInput) (ApplyCAPIMachineRebootAnnotationResult, error) {
