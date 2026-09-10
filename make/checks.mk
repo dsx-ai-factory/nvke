@@ -68,6 +68,7 @@ lint-chart: ## Lint and render the Helm chart, then validate it. (run by the mer
 		-schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
 		"$$out"
 	@./controller/hack/chart-auth-assertions.sh
+	@./controller/hack/chart-provider-assertions.sh
 
 chart-rbac-check: ## Assert that tenant RBAC grants every permission the controller uses.
 	@$(call require_tool,helm,$(HELM_VERSION))

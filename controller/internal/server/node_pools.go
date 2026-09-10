@@ -44,6 +44,7 @@ type nodePoolService struct {
 	logger      *slog.Logger
 	db          db.DB
 	teleportCfg config.TeleportConfig
+	providers   providerSupport
 	// useControlPlaneController mirrors the CWE feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true,
 	// control-plane node pools are rejected on create/update because the control
@@ -51,11 +52,18 @@ type nodePoolService struct {
 	useControlPlaneController bool
 }
 
-func NewNodePoolService(logger *slog.Logger, database db.DB, teleportCfg config.TeleportConfig, useControlPlaneController bool) *nodePoolService {
+func NewNodePoolService(
+	logger *slog.Logger,
+	database db.DB,
+	teleportCfg config.TeleportConfig,
+	supportedInfraProviders []string,
+	useControlPlaneController bool,
+) *nodePoolService {
 	return &nodePoolService{
 		logger:                    logger,
 		db:                        database,
 		teleportCfg:               teleportCfg,
+		providers:                 newProviderSupport(supportedInfraProviders),
 		useControlPlaneController: useControlPlaneController,
 	}
 }
@@ -247,8 +255,14 @@ func (s *nodePoolService) validateCreateNodePoolRequest(cluster db.Cluster, req 
 
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
+		if err := s.providers.require(config.InfraProviderInfra); err != nil {
+			return err
+		}
 		return validateCreateCAPINodePoolRequest(req)
 	case db.ProviderTypeNico:
+		if err := s.providers.require(config.InfraProviderNico); err != nil {
+			return err
+		}
 		return validateCreateNicoNodePoolRequest(req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")
@@ -623,8 +637,18 @@ func validateUpdatedForgeNodePool(dbNodePool *db.NodePool) error {
 func (s *nodePoolService) validateUpdateNodePoolRequest(cluster db.Cluster, req *api.UpdateNodePoolRequest) error {
 	switch cluster.ProviderType {
 	case db.ProviderTypeCAPI:
+		if req != nil && (req.Infra != nil || req.Nico != nil) {
+			if err := s.providers.require(config.InfraProviderInfra); err != nil {
+				return err
+			}
+		}
 		return validateUpdateCAPINodePoolRequest(req)
 	case db.ProviderTypeNico:
+		if req != nil && (req.Nico != nil || req.Infra != nil) {
+			if err := s.providers.require(config.InfraProviderNico); err != nil {
+				return err
+			}
+		}
 		return validateUpdateNicoNodePoolRequest(req)
 	default:
 		return fmt.Errorf("unsupported cluster provider")

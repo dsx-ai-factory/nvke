@@ -20,6 +20,11 @@ const (
 	// ForgeEnvironmentTest selects the local test mock server.
 	// Skips NGC auth (uses a self-signed JWT) and does not require FWE_API_KEY.
 	ForgeEnvironmentTest = "test"
+
+	// InfraProviderNico is the API-facing name for the Nico provider block.
+	InfraProviderNico = "nico"
+	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
+	InfraProviderInfra = "infra"
 )
 
 type Config struct {
@@ -452,8 +457,40 @@ func (c *Config) Validate() error {
 	if err := c.Teleport.Validate(); err != nil {
 		return err
 	}
+	supportedInfraProviders, err := normalizeSupportedInfraProviders(c.SupportedInfraProviders)
+	if err != nil {
+		return err
+	}
+	c.SupportedInfraProviders = supportedInfraProviders
 
 	return nil
+}
+
+func normalizeSupportedInfraProviders(providers []string) ([]string, error) {
+	if providers == nil {
+		return []string{InfraProviderNico}, nil
+	}
+	if len(providers) == 0 {
+		return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS must contain at least one provider")
+	}
+
+	seen := make(map[string]struct{}, len(providers))
+	normalizedProviders := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		normalized := strings.TrimSpace(provider)
+		if normalized == "" {
+			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS must not contain empty provider names")
+		}
+		if normalized != InfraProviderNico && normalized != InfraProviderInfra {
+			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS contains unsupported provider %q", normalized)
+		}
+		if _, ok := seen[normalized]; ok {
+			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS contains duplicate provider %q", normalized)
+		}
+		seen[normalized] = struct{}{}
+		normalizedProviders = append(normalizedProviders, normalized)
+	}
+	return normalizedProviders, nil
 }
 
 func (c *TeleportConfig) Validate() error {

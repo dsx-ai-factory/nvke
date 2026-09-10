@@ -181,6 +181,8 @@ spec:
             # Metrics server listen address
             - name: METRICS_LISTEN_ADDRESS
               value: {{ .Values.metrics.listenAddress | quote }}
+            - name: SUPPORTED_INFRA_PROVIDERS
+              value: {{ .Values.supportedInfraProviders | quote }}
             {{- if .Values.tracing.enabled }}
             - name: OTEL_TRACING_ENABLED
               value: "true"

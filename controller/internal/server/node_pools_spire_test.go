@@ -42,7 +42,7 @@ func TestAPINodePoolFromDB_SpireAttestationMethod(t *testing.T) {
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiresCAPITemplate(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 
 	err := service.validateCreateNodePoolRequest(capiCluster(), &api.CreateNodePoolRequest{
 		Name:             "worker",
@@ -56,7 +56,7 @@ func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiresCAPITemplat
 }
 
 func TestValidateCreateNodePoolRequest_SpireAttestationMethodRequiredForCAPIClusters(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 
 	req := &api.CreateNodePoolRequest{
 		Name:             "worker",
