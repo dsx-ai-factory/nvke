@@ -6,6 +6,8 @@
 package clusters
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -155,6 +157,11 @@ wins on any key present in both). A -f patch document's fields must match
 the CWE UpdateClusterRequest schema exactly. See /api/docs on your site
 controller.
 
+Some controlPlaneConfig.nico.* and controlPlaneConfig.infra.* fields treat
+an empty value as "clear this field", unlike omitting it, which leaves it
+alone. --set key= (nothing after =), or an empty value in a -f document
+(e.g. subnetIDs: [] or osProfile: ""), both send that empty value through.
+
 Example — bump the Kubernetes version:
   nkectl update cluster my-cluster --set controlPlaneKubernetesVersion=1.31.0
 
@@ -199,8 +206,17 @@ Example — file plus an inline override:
 // optional YAML patch file and a list of --set entries. When path is
 // non-empty its contents are decoded first; each entry in sets is then
 // applied in order, so --set overrides a same-named field loaded from path.
-func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) (api.UpdateClusterJSONRequestBody, error) {
-	var req api.UpdateClusterJSONRequestBody
+// loadUpdateClusterRequest builds the raw JSON body to PATCH, merging an
+// optional YAML patch file with --set entries at the document level (not by
+// decoding onto a struct and re-marshaling it) so an explicit empty
+// array/string a caller sets survives onto the wire instead of collapsing
+// to the same representation as an omitted field the way
+// UpdateClusterRequest's omitempty tags would on a struct re-marshal. The
+// merged document is validated by decoding it into UpdateClusterRequest
+// with unknown fields disallowed before it is returned; that decoded value
+// itself is discarded; only the raw bytes go over the wire.
+func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) ([]byte, error) {
+	patch := map[string]interface{}{}
 	if path != "" {
 		var r io.Reader
 		if path == "-" {
@@ -208,24 +224,39 @@ func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) (a
 		} else {
 			f, err := os.Open(path)
 			if err != nil {
-				return req, fmt.Errorf("opening %q: %w", path, err)
+				return nil, fmt.Errorf("opening %q: %w", path, err)
 			}
 			defer f.Close()
 			r = f
 		}
 		data, err := io.ReadAll(r)
 		if err != nil {
-			return req, fmt.Errorf("reading patch: %w", err)
+			return nil, fmt.Errorf("reading patch: %w", err)
 		}
-		req, err = util.YAMLToRequest[api.UpdateClusterJSONRequestBody](data)
+		fileMap, err := util.YAMLToGenericMap(data)
 		if err != nil {
-			return req, err
+			return nil, err
 		}
+		patch = fileMap
 	}
-	if err := util.ApplySetFlags(&req, sets); err != nil {
-		return req, err
+
+	setPatch, err := util.BuildPatch[api.UpdateClusterRequest](sets)
+	if err != nil {
+		return nil, err
 	}
-	return req, nil
+	util.MergeMap(patch, setPatch)
+
+	data, err := json.Marshal(patch)
+	if err != nil {
+		return nil, fmt.Errorf("encoding patch: %w", err)
+	}
+	var validate api.UpdateClusterRequest
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&validate); err != nil {
+		return nil, fmt.Errorf("applying patch: %w", err)
+	}
+	return data, nil
 }
 
 // NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.

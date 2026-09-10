@@ -13,19 +13,12 @@ import (
 
 // YAMLToRequest reads a YAML document and deserialises it into a CWE API
 // request type T. Field names in the YAML must match the json tags of T.
-//
-// The conversion goes YAML → interface{} → JSON → T so that json tags on
-// generated API types are honoured. Direct yaml.Unmarshal is avoided because
-// generated structs only carry json tags, not yaml tags.
 func YAMLToRequest[T any](data []byte) (T, error) {
-	var raw interface{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return *new(T), fmt.Errorf("unmarshal yaml: %w", err)
+	m, err := YAMLToGenericMap(data)
+	if err != nil {
+		return *new(T), err
 	}
-	if raw == nil {
-		return *new(T), fmt.Errorf("spec file is empty")
-	}
-	j, err := json.Marshal(raw)
+	j, err := json.Marshal(m)
 	if err != nil {
 		return *new(T), fmt.Errorf("marshal json: %w", err)
 	}
@@ -36,4 +29,26 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 		return *new(T), fmt.Errorf("unmarshal request: %w", err)
 	}
 	return req, nil
+}
+
+// YAMLToGenericMap parses a YAML document into a map[string]interface{}
+// keyed the same way json.Marshal would read it back out, so the result can
+// be merged with another such map (see MergeMap) or marshaled straight to
+// JSON. Direct yaml.Unmarshal into a typed request struct is avoided
+// because generated API types only carry json tags, not yaml tags — going
+// through this generic map first is what lets YAML field names line up
+// with a struct's json tags.
+func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
+	var raw interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("unmarshal yaml: %w", err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("spec file is empty")
+	}
+	m, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("yaml document is not a mapping")
+	}
+	return m, nil
 }

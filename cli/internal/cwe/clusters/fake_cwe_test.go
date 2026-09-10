@@ -4,7 +4,9 @@
 package clusters
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -30,6 +32,7 @@ type fakeCWE struct {
 	mu       sync.Mutex
 	clusters []api.Cluster
 	requests []string
+	lastBody []byte
 	server   *httptest.Server
 
 	// updateFailStatus, when non-zero, makes update answer with this status
@@ -93,11 +96,23 @@ func (f *fakeCWE) stored() []api.Cluster {
 	return append([]api.Cluster(nil), f.clusters...)
 }
 
+// lastRequestBody returns the raw body of the most recent request, exactly
+// as the client sent it — for asserting on wire-level JSON a decoded
+// api.Cluster wouldn't show, like a literal empty array or object.
+func (f *fakeCWE) lastRequestBody() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]byte(nil), f.lastBody...)
+}
+
 func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.requests = append(f.requests, r.Method+" "+r.URL.RequestURI())
+	body, _ := io.ReadAll(r.Body)
+	f.lastBody = body
+	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	// The client appends /api to the configured site URL. Matching on that
 	// prefix rather than stripping it silently means a client that stops

@@ -4,6 +4,7 @@
 package clients
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 
@@ -58,11 +59,15 @@ func (c *CWEClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api
 	return resp.JSON200, nil
 }
 
-// UpdateCluster applies a partial update to a cluster identified by UUID and
-// returns the cluster as it now stands. Only the fields set in req are
-// changed; nil fields are left untouched by the server.
-func (c *CWEClient) UpdateCluster(ctx context.Context, id openapi_types.UUID, req api.UpdateClusterJSONRequestBody) (*api.Cluster, error) {
-	resp, err := c.raw.UpdateClusterWithResponse(ctx, id, req)
+// UpdateCluster PATCHes a cluster identified by UUID with body, a JSON
+// document matching UpdateClusterRequest, and returns the cluster as it now
+// stands. body is sent as-is rather than through the generated client's
+// typed request (which would marshal a Go struct and lose the distinction
+// between an omitted field and one explicitly set to an empty value, since
+// UpdateClusterRequest's fields carry omitempty), so the caller's exact
+// intent — including any deliberately empty field — reaches CWE unchanged.
+func (c *CWEClient) UpdateCluster(ctx context.Context, id openapi_types.UUID, body []byte) (*api.Cluster, error) {
+	resp, err := c.raw.UpdateClusterWithBodyWithResponse(ctx, id, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("updating cluster: %w", err)
 	}

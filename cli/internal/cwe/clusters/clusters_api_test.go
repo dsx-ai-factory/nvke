@@ -233,6 +233,48 @@ func TestUpdateClusterSetOverridesFile(t *testing.T) {
 	}
 }
 
+// TestUpdateClusterEmptySetValueReachesTheWireAsALiteralEmptyArray proves
+// the fix end to end: nkectl update cluster sends the raw merged patch as
+// the PATCH body, so --set controlPlaneConfig.nico.subnetIDs= reaches CWE
+// as a literal "subnetIDs":[] — not silently dropped the way marshaling a
+// Go struct through UpdateClusterRequest's omitempty tags would drop it.
+func TestUpdateClusterEmptySetValueReachesTheWireAsALiteralEmptyArray(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	_, err := run(t, NewUpdateCmd(clientFn), "my-cluster",
+		"--set", "controlPlaneConfig.nico.subnetIDs=",
+	)
+	if err != nil {
+		t.Fatalf("update cluster: %v", err)
+	}
+
+	body := fake.lastRequestBody()
+	if !strings.Contains(string(body), `"subnetIDs":[]`) {
+		t.Errorf("PATCH body = %s, want a literal \"subnetIDs\":[]", body)
+	}
+}
+
+// TestUpdateClusterFileEmptyValueReachesTheWireAsALiteralEmptyObject is the
+// -f counterpart: an empty value in a YAML patch document goes through the
+// same merged-raw-bytes path as --set, so it reaches the wire the same way.
+func TestUpdateClusterFileEmptyValueReachesTheWireAsALiteralEmptyObject(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	cmd := NewUpdateCmd(clientFn)
+	cmd.SetIn(strings.NewReader("controlPlaneConfig:\n  infra:\n    machineTemplate: {}\n"))
+	_, err := run(t, cmd, "my-cluster", "-f", "-")
+	if err != nil {
+		t.Fatalf("update cluster -f -: %v", err)
+	}
+
+	body := fake.lastRequestBody()
+	if !strings.Contains(string(body), `"machineTemplate":{}`) {
+		t.Errorf("PATCH body = %s, want a literal \"machineTemplate\":{}", body)
+	}
+}
+
 // The name resolves and only the PATCH is rejected, matching how CWE
 // actually applies the 409: GET/list aren't blocked by an in-progress
 // mutation, only a new PATCH racing it is. The client's error path also
