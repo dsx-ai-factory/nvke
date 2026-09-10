@@ -62,7 +62,6 @@ the workspace fits together and why `vendor/` is committed.
 | `internal/temporal/outbox_processor.go` | Polls the outbox table and starts workflows |
 | `internal/controllers/` | The controller-runtime reconcilers |
 | `internal/db/` | Bun ORM and the PostgreSQL migrations |
-| `internal/providers/forge/` | Forge bare-metal API client, cached |
 | `profiles/` | OS image and Kubernetes config profiles, as YAML |
 
 ### How a cluster request becomes work
@@ -78,8 +77,9 @@ they first read the handlers.
    or neither does, so a committed cluster always has its work queued.
 3. `OutboxProcessor` polls that table, starts the matching Temporal workflow,
    and marks the row processed (`internal/temporal/outbox_processor.go`).
-4. The workflow calls the Forge API to provision bare-metal nodes, then
-   bootstraps Kubernetes with kubeadm.
+4. The workflow creates Cluster API resources. The configured infrastructure
+   provider provisions or adopts the nodes, then CWE bootstraps Kubernetes with
+   kubeadm.
 5. The engine dials `nke-agent` on each node over gRPC to drive the node side of
    the bootstrap (`internal/agent/client.go`).
 6. The cluster reaches `Ready` and the kubeconfig becomes available.

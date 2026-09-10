@@ -57,7 +57,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | nkeOIDCAuth.discoveryURL | string | `""` | Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers. |
 | nkeOIDCAuth.enabled | bool | `false` | Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers. |
 | nkeOIDCAuth.issuerURL | string | `""` | OIDC issuer URL trusted by tenant kube-apiservers. |
-| deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`; when the Forge Secret is enabled, the chart adds a default Reloader annotation unless one is provided) |
+| deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`) |
 | podAnnotations | object | `{}` |  |
 | podLabels.app | string | `"cloud-workflow-engine"` |  |
 | podLabels.project | string | `"nke"` |  |
@@ -74,10 +74,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | secrets.createDbSecret | bool | `true` | Create the DB connection Secret from appDb values. Set false when the connection Secret is managed externally, e.g. by Vault Secrets Operator. |
 | secrets.dbSecretKey | string | `""` | secretKey with db connectionString. If not specified, defaults to "database-connection-string" |
 | secrets.dbSecretName | string | `""` | If specified, secret is created with the name provided. otherwise defaults to name based on fullname template "<fulName>-db" |
-| secrets.forgeSecret.enabled | bool | `true` | Read FWE_API_KEY from a Kubernetes Secret. |
 | secrets.cnpgDbPasswordsSecretName | string | `""` | Name of the Kubernetes Secret providing CNPG database passwords (CNPG_SUPERUSER_PASSWORD, CNPG_CLOUD_PASSWORD, CNPG_TEMPORAL_PASSWORD). When empty, CNPG_* env vars are not injected. When set, all three keys are required to exist in the Secret. |
-| secrets.forgeSecretKey | string | `""` | secretKey with forge-key. If not specified, will defaults to "forge-api-key" |
-| secrets.forgeSecretName | string | `""` | secret with forge-creds. If not specified, will default to secret with "<fulName>-forge-creds" |
 | securityContext.readOnlyRootFilesystem | bool | `true` |  |
 | service.annotations | object | `{}` | Additional annotations for the service |
 | service.labels | object | `{}` | Additional labels for the service |

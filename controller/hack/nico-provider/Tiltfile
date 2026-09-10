@@ -169,12 +169,8 @@ def register(ctx):
     cwe_resource_deps = sim_result.cwe_resource_deps + [CAPNICO_CREDENTIALS_RESOURCE]
     cwe_env_overrides = {}
     cwe_env_overrides.update(sim_result.cwe_env_overrides)
-    cwe_env_overrides.update({"ENABLE_CAPI": "true", "ENABLE_FORGE_CAPI": "true"})
     if not use_nico_sim:
         cwe_env_overrides.update({
-            "FORGE_URL": endpoint,
-            "FORGE_ENVIRONMENT": nico.environment,
-            "FWE_API_KEY": nico.token,
             "SPIFFE_ENABLED": "true",
         })
 

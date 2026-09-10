@@ -243,11 +243,6 @@ func (m *MockDB) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error)
 	return v, args.Error(1)
 }
 
-func (m *MockDB) UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.UUID, forgeInstanceID, forgeMachineID, ip *string) error {
-	args := m.Called(ctx, nodeID, forgeInstanceID, forgeMachineID, ip)
-	return args.Error(0)
-}
-
 func (m *MockDB) UpdateNodeTeleportRegistered(ctx context.Context, nodeID uuid.UUID, condition db.Condition) error {
 	args := m.Called(ctx, nodeID, condition)
 	return args.Error(0)
@@ -498,11 +493,6 @@ func (m *MockTx) UpdateNode(ctx context.Context, node *db.Node) (db.Node, error)
 		return db.Node{}, args.Error(1)
 	}
 	return v, args.Error(1)
-}
-
-func (m *MockTx) UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.UUID, forgeInstanceID, forgeMachineID, ip *string) error {
-	args := m.Called(ctx, nodeID, forgeInstanceID, forgeMachineID, ip)
-	return args.Error(0)
 }
 
 func (m *MockTx) UpdateNodeTeleportRegistered(ctx context.Context, nodeID uuid.UUID, condition db.Condition) error {

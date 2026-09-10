@@ -36,15 +36,14 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
 #
 # Output — returned struct with:
-#   cwe_resource_deps  (list[string])  Tilt resource names CWE should depend on.
-#                                      Appended to the CWE k8s_resource resource_deps.
-#   cwe_env_overrides  (dict[string, string])  Env vars injected into CWE's chart
-#                                              values (e.g. FORGE_URL, FWE_API_KEY).
+#   cwe_resource_deps  (list[string])           Tilt resource names CWE should depend on.
+#                                               Appended to the CWE k8s_resource resource_deps.
+#   cwe_env_overrides  (dict[string, string])   Env vars injected into CWE's chart values.
 #   cwe_chart_flags    (list[string], optional) Additional Helm flags for CWE.
-#   preflight_script   (string, optional)      Bash fragment appended to the
-#                                              check-management-cluster preflight script.
-#                                              Use to assert provider-required tooling or
-#                                              CRDs are present in the cluster.
+#   preflight_script   (string, optional)       Bash fragment appended to the
+#                                               check-management-cluster preflight script.
+#                                               Use to assert provider-required tooling or
+#                                               CRDs are present in the cluster.
 #
 # Inside register(), the provider creates its own Tilt resources (local_resource,
 # helm_resource, etc.) and returns the struct to wire itself into CWE.
@@ -965,14 +964,11 @@ _cwe_permissive_mode = os.getenv(
 
 _cwe_chart_extra_env_names = [
     "TEMPORAL_UI_URL",
-    "NODE_SCHEDULING_RETRY_INTERVAL",
     "NODE_HEALTH_CHECK_POLLING_INTERVAL",
     "NODE_HEALTH_CHECK_INTERVAL",
     "NODE_PROVISIONING_TIMEOUT",
     "NODE_REBOOT_POLLING_INTERVAL",
     "LOG_LEVEL",
-    "FORGE_URL",
-    "FORGE_ENVIRONMENT",
     "LOCAL_DEV_FORCE_DOCKER_MACHINE_BOOTSTRAP",
     "SPIRE_SERVER_API_ADDRESS",
     "SSL_CERT_FILE",
@@ -981,11 +977,6 @@ _cwe_chart_extra_env = []
 for _name in _cwe_chart_extra_env_names:
     if _name in _tilt_env:
         _cwe_chart_extra_env.append({"name": _name, "value": _tilt_env[_name]})
-if _tilt_env.get("FWE_API_KEY", "") != "":
-    _cwe_chart_extra_env.append({
-        "name": "FWE_API_KEY",
-        "value": _tilt_env["FWE_API_KEY"],
-    })
 # PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER is honored from the
 # process environment first (with the .env.tilt value as a fallback) so CI lanes
 # can toggle control-plane-controller provisioning per run without editing a file.

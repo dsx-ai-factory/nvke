@@ -21,14 +21,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/temporal/workflows"
 )
 
-func TestUnit_ServiceRetryAfter(t *testing.T) {
-	require.Equal(t, 3*time.Minute, NewService(config.Config{
-		NodeSchedulingRetryInterval: 3 * time.Minute,
-	}, slog.Default(), nil, nil).RetryAfter())
-
-	require.Equal(t, 2*time.Minute, NewService(config.Config{}, slog.Default(), nil, nil).RetryAfter())
-}
-
 func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T) {
 	ctx := context.Background()
 	firstNodeID := uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
@@ -50,9 +42,8 @@ func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T
 	})).Return(mockWorkflowRun{id: "second"}, nil).Once()
 
 	service := NewService(config.Config{
-		TemporalTaskQueue:           "test-task-queue",
-		NodeRebootMaxTimeout:        7 * time.Minute,
-		NodeSchedulingRetryInterval: time.Minute,
+		TemporalTaskQueue:    "test-task-queue",
+		NodeRebootMaxTimeout: 7 * time.Minute,
 	}, slog.Default(), nil, temporalClient)
 
 	result, err := service.ScheduleCAPIInfraNodes(ctx, slog.Default(), []db.Node{

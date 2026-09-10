@@ -9,6 +9,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
 
@@ -59,7 +60,47 @@ const (
 	// Kept modest: parallel pulls share the node's disk and network, and past
 	// four the contention costs more than the queueing it removes.
 	defaultMaxParallelImagePulls = 4
+
+	// imageVolumeFeatureGate is the KEP-4639 OCI image volume gate. Manifests
+	// that mount a plugin binary through an `image:` volume source need it on
+	// both kube-apiserver (which otherwise strips the volume during admission,
+	// silently) and kubelet (which otherwise cannot mount it).
+	imageVolumeFeatureGate = "ImageVolume"
+
+	// featureGatesFlag is the kube-apiserver flag carrying comma-separated
+	// `Name=bool` pairs.
+	featureGatesFlag = "feature-gates"
 )
+
+// imageVolumeGAVersion is the release where KEP-4639 went GA and the gate
+// became enabled by default. Kubernetes removes a gate roughly two releases
+// after GA, and passing a removed gate stops the component from starting, so
+// the flag is only set below this floor.
+func imageVolumeGAVersion() *version.Version { return version.MustParseGeneric("1.36.0") }
+
+// needsImageVolumeFeatureGate reports whether kubernetesVersion is old enough
+// that KEP-4639 must be turned on explicitly.
+//
+// An unparseable version yields false on purpose. Omitting the gate leaves an
+// image volume silently stripped, which is recoverable; passing an unknown or
+// removed gate prevents kube-apiserver from starting at all, which is not.
+func needsImageVolumeFeatureGate(kubernetesVersion string) bool {
+	parsed, err := version.ParseGeneric(kubernetesVersion)
+	if err != nil {
+		return false
+	}
+	return parsed.LessThan(imageVolumeGAVersion())
+}
+
+// imageVolumeKubeletFeatureGates returns the kubelet featureGates map for
+// kubernetesVersion, or nil when the gate is unnecessary. nil keeps the field
+// omitted from the rendered YAML rather than emitting an empty map.
+func imageVolumeKubeletFeatureGates(kubernetesVersion string) map[string]bool {
+	if !needsImageVolumeFeatureGate(kubernetesVersion) {
+		return nil
+	}
+	return map[string]bool{imageVolumeFeatureGate: true}
+}
 
 func renderYAMLDocuments(documents ...any) ([]byte, error) {
 	var buf bytes.Buffer
@@ -103,7 +144,7 @@ func kubeProxyConfiguration(containerMode bool) kubeproxyconfigv1alpha1.KubeProx
 	return cfg
 }
 
-func initKubeletConfiguration(containerMode bool) kubeletconfigv1beta1.KubeletConfiguration {
+func initKubeletConfiguration(containerMode bool, kubernetesVersion string) kubeletconfigv1beta1.KubeletConfiguration {
 	cfg := kubeletconfigv1beta1.KubeletConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: kubeletconfigv1beta1.APIVersion,
@@ -123,6 +164,7 @@ func initKubeletConfiguration(containerMode bool) kubeletconfigv1beta1.KubeletCo
 		SystemReserved: map[string]string{
 			memoryKey: defaultSystemReservedMemory,
 		},
+		FeatureGates: imageVolumeKubeletFeatureGates(kubernetesVersion),
 	}
 	if containerMode {
 		// kindest-as-Forge-node containers share the host kernel and
@@ -147,7 +189,7 @@ func initKubeletConfiguration(containerMode bool) kubeletconfigv1beta1.KubeletCo
 	return cfg
 }
 
-func joinKubeletConfiguration() kubeletconfigv1beta1.KubeletConfiguration {
+func joinKubeletConfiguration(kubernetesVersion string) kubeletconfigv1beta1.KubeletConfiguration {
 	return kubeletconfigv1beta1.KubeletConfiguration{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: kubeletconfigv1beta1.APIVersion,
@@ -156,6 +198,7 @@ func joinKubeletConfiguration() kubeletconfigv1beta1.KubeletConfiguration {
 		ServerTLSBootstrap:    true,
 		SerializeImagePulls:   ptr.To(false),
 		MaxParallelImagePulls: ptr.To[int32](defaultMaxParallelImagePulls),
+		FeatureGates:          imageVolumeKubeletFeatureGates(kubernetesVersion),
 	}
 }
 

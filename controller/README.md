@@ -138,9 +138,6 @@ make capd-up
 # optional if your kind cluster name is not cwe-capi
 # export KIND_CLUSTER_NAME=<your-kind-cluster-name>
 
-# required for Forge/NGC-backed operations
-export FWE_API_KEY=${NGC_API_KEY}
-
 # required: copy the template and fill in the credentials it declares
 cp .env.tilt.example .env.tilt
 
@@ -155,7 +152,6 @@ tilt up
   controller through Helm. VM and container clusters select different sites
   through the same endpoint and controller. `cp tilt_config.json.example
   tilt_config.json` provides the local starting point.
-- Tilt no longer hard-requires `FWE_API_KEY` just to start. When NICo is enabled and `FWE_API_KEY` is unset, the NICo provider forces Forge `test` mode for local development.
 - `.env.tilt` configures in-cluster CWE env overrides. Keep host-local settings in `.env.local`.
 - `DGXC_TENANT_USER`, `DGXC_TENANT_PASSWORD`, `CNPG_SUPERUSER_PASSWORD`, `CNPG_CLOUD_PASSWORD`, and `CNPG_TEMPORAL_PASSWORD` have no defaults — set them in `.env.tilt` or export them, or `tilt up` fails with the list of what is missing. `CNPG_SUPERUSER_PASSWORD` is what the local postgres chart is installed with, so changing it after the first `tilt up` requires deleting the postgres PVC.
 - Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
@@ -430,7 +426,7 @@ kubectl port-forward -n temporal svc/temporal-web 18233:8080
 
 And now you're ready to build and run CWE:
 ```bash
-TEMPORAL_HOST_PORT=localhost:17233 FWE_API_KEY=<NGC API KEY> go run ./cmd/worker/main.go
+TEMPORAL_HOST_PORT=localhost:17233 go run ./cmd/worker/main.go
 ```
 
 You should now see the Swagger UI at http://localhost:8080/api/docs.

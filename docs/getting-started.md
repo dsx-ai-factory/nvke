@@ -79,18 +79,12 @@ Never hand-edit `*.gen.go` files — they will be overwritten.
 ### Run locally
 
 ```bash
-kind create cluster                                  # CWE watches a cluster
-FORGE_ENVIRONMENT=test make -C controller run-local  # Postgres, Temporal, then CWE
+kind create cluster                       # CWE watches a cluster
+make -C controller run-local              # Postgres, Temporal, then CWE
 ```
 
-Swagger is on <http://localhost:8080/api/docs/>. `FORGE_ENVIRONMENT=test` signs a
-self-signed JWT rather than authenticating against NGC, so it needs no
-`FWE_API_KEY`. Against a real Forge environment:
-
-```bash
-CNPG_SUPERUSER_PASSWORD=postgres FWE_API_KEY=<your-NGC-api-key> \
-  make -C controller run-local
-```
+Swagger is on <http://localhost:8080/api/docs/>. Infrastructure credentials are
+configured on the Cluster API provider rather than CWE.
 
 [first-cluster.md](first-cluster.md#path-a--the-api-alone) covers this path in
 full, and goes on to tenant clusters.
