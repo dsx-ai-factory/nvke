@@ -26,6 +26,12 @@ name: Image NVCR
 #
 # A workflow_dispatch from a non-main branch publishes only `sha-*` tags — a
 # safe smoke-test mode that never moves `edge`.
+#
+# The DSX promotion jobs use the same protected GitHub environment, but a
+# separate NGC token. The source NKE and target DSX repositories both live on
+# nvcr.io, and docker auth stores one credential per registry host, so those jobs
+# pull the source index into an OCI layout with the NKE token and then push it
+# with the DSX token rather than depending on two simultaneous nvcr.io logins.
 on:
   push:
     branches:
@@ -267,6 +273,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up Go
@@ -310,6 +317,124 @@ jobs:
           {
             echo "- \`${dst}:${version}\` is \`${digest}\`"
             echo "- copied from \`${src}\`, not rebuilt"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+  promote-dsx:
+    name: Promote to DSX
+    if: github.repository == 'NVIDIA/nke'
+    runs-on: linux-amd64-cpu8
+    needs: [manifest]
+    environment: nvcr
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: controller/go.mod
+          cache: false
+
+      - name: Build crane
+        run: make -C controller crane
+
+      - name: Promote image
+        shell: bash
+        env:
+          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+          DSX_NGC_ORG_TEAM: ${{ vars.DSX_NGC_ORG_TEAM }}
+          NKE_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+          DSX_NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_DSX }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${NKE_NGC_ORG}" ]]; then
+            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+            exit 1
+          fi
+          if [[ -z "${DSX_NGC_ORG_TEAM}" ]]; then
+            echo "::error::DSX_NGC_ORG_TEAM is not set in the nvcr environment"
+            exit 1
+          fi
+          if [[ -z "${NKE_NGC_TOKEN}" ]]; then
+            echo "::error::NGC_REGISTRY_TOKEN_NKE is not set in the nvcr environment"
+            exit 1
+          fi
+          if [[ -z "${DSX_NGC_TOKEN}" ]]; then
+            echo "::error::NGC_REGISTRY_TOKEN_DSX is not set in the nvcr environment"
+            exit 1
+          fi
+
+          image_version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
+          image_version="${image_version#controller/}"
+          src="nvcr.io/${NKE_NGC_ORG}/controller:${image_version}"
+          dst="nvcr.io/${DSX_NGC_ORG_TEAM}/controller"
+          crane="controller/bin/crane"
+          layout="${RUNNER_TEMP}/controller-image.oci"
+
+          # shellcheck disable=SC2016
+          echo "${NKE_NGC_TOKEN}" | "${crane}" auth login nvcr.io \
+            -u '$oauthtoken' --password-stdin
+
+          if ! source_digest="$("${crane}" digest "${src}")"; then
+            echo "::error::${src} does not exist. The manifest job should have pushed it."
+            exit 1
+          fi
+
+          mkdir -p "${layout}"
+          "${crane}" pull --format=oci "${src}" "${layout}"
+
+          # shellcheck disable=SC2016
+          echo "${DSX_NGC_TOKEN}" | "${crane}" auth login nvcr.io \
+            -u '$oauthtoken' --password-stdin
+
+          ensure_immutable_tag() {
+            local tag="$1"
+            local target="${dst}:${tag}"
+
+            if target_digest="$("${crane}" digest "${target}" 2>/dev/null)"; then
+              if [[ "${target_digest}" != "${source_digest}" ]]; then
+                echo "::error::${target} already exists with digest ${target_digest}, expected ${source_digest}"
+                exit 1
+              fi
+              echo "${target} already exists with matching digest ${target_digest}"
+              return
+            fi
+
+            "${crane}" push --index "${layout}" "${target}"
+            target_digest="$("${crane}" digest "${target}")"
+            if [[ "${target_digest}" != "${source_digest}" ]]; then
+              echo "::error::${target} pushed with digest ${target_digest}, expected ${source_digest}"
+              exit 1
+            fi
+          }
+
+          ensure_immutable_tag "${image_version}"
+          ensure_immutable_tag "sha-${GITHUB_SHA}"
+
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            "${crane}" tag "${dst}:${image_version}" edge
+          fi
+
+          "${crane}" manifest "${dst}:${image_version}" > "${RUNNER_TEMP}/dsx-controller-manifest.json"
+          grep -Eq '"architecture"[[:space:]]*:[[:space:]]*"amd64"' "${RUNNER_TEMP}/dsx-controller-manifest.json" \
+            || { echo "::error::DSX image is missing linux/amd64"; exit 1; }
+          grep -Eq '"architecture"[[:space:]]*:[[:space:]]*"arm64"' "${RUNNER_TEMP}/dsx-controller-manifest.json" \
+            || { echo "::error::DSX image is missing linux/arm64"; exit 1; }
+
+          {
+            echo "- \`${dst}:${image_version}\` is \`${source_digest}\`"
+            echo "- \`${dst}:sha-${GITHUB_SHA}\` is \`${source_digest}\`"
+            if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+              echo "- \`${dst}:edge\` now points at \`${source_digest}\`"
+            fi
+            echo "- promoted from \`${src}\`, not rebuilt"
           } >> "${GITHUB_STEP_SUMMARY}"
 
   # Scans the pushed image rather than attesting at build time. `buildx

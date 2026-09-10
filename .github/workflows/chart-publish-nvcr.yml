@@ -7,14 +7,17 @@ name: Chart Publish NVCR
 # Mirrors chart-publish.yml but targets NVCR for NGC cluster consumers that
 # hold NGC pull credentials but not GHCR credentials.
 #
-# The destination org is not written here. It comes from the `nvcr` environment:
+# The destination orgs are not written here. They come from the `nvcr`
+# environment:
 #
 #   NKE_NGC_ORG              variable  NGC org id
 #   NGC_REGISTRY_TOKEN_NKE   secret    NGC API key with write access on the org
+#   DSX_NGC_ORG_TEAM         variable  DSX NGC org/team path
+#   NGC_REGISTRY_TOKEN_DSX   secret    NGC API key with write access on DSX
 #
-# The chart is pushed to nvcr.io/<NKE_NGC_ORG>/controller-chart, so the chart
-# is REPACKAGED under the name controller-chart below. On GHCR the same chart
-# publishes as charts/controller; the two deliberately differ.
+# The chart is pushed to nvcr.io/<destination>/controller-chart, so the chart is
+# REPACKAGED under the name controller-chart below. On GHCR the same chart
+# publishes as charts/controller; the NVCR and GHCR paths deliberately differ.
 #
 # NVCR cannot take the `charts/` path segment GHCR uses. An NGC reference is
 # nvcr.io/<org>/<repo> or nvcr.io/<org>/<team>/<repo> -- at most one middle
@@ -61,13 +64,25 @@ env:
 
 jobs:
   publish:
-    name: Publish chart
+    name: Publish chart (${{ matrix.destination }})
     runs-on: ubuntu-latest
     if: github.repository == 'NVIDIA/nke'
     environment: nvcr
     timeout-minutes: 10
     permissions:
       contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - destination: nke
+            org_var: NKE_NGC_ORG
+            token_secret_var_name: NGC_REGISTRY_TOKEN_NKE
+            pull_secret: svc-nke-ngc-imagepull
+          - destination: dsx
+            org_var: DSX_NGC_ORG_TEAM
+            token_secret_var_name: NGC_REGISTRY_TOKEN_DSX
+            pull_secret: ngc-dsx-registry-creds
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -91,101 +106,95 @@ jobs:
         id: meta
         shell: bash
         env:
-          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
+          DESTINATION: ${{ matrix.destination }}
+          ORG_TEAM: ${{ vars[matrix.org_var] }}
+          ORG_VAR: ${{ matrix.org_var }}
         run: |
           set -euo pipefail
-          if [[ -z "${NKE_NGC_ORG}" ]]; then
-            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
+          if [[ -z "${ORG_TEAM}" ]]; then
+            echo "::error::${ORG_VAR} is not set in the nvcr environment"
             exit 1
           fi
+
           describe="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           describe="${describe#controller/}"
           version="${describe#v}"
+          repo="nvcr.io/${ORG_TEAM}"
+          image="${repo}/controller"
+
           {
             echo "version=${version}"
             echo "app_version=${describe}"
-            echo "repo=nvcr.io/${NKE_NGC_ORG}"
+            echo "repo=${repo}"
+            echo "image=${image}"
           } >> "${GITHUB_OUTPUT}"
-          echo "Chart version: ${version}  appVersion: ${describe}  repo: nvcr.io/${NKE_NGC_ORG}"
+          echo "${DESTINATION} chart version: ${version}  appVersion: ${describe}  image: ${image}"
 
-      # values.yaml defaults to the GHCR image, which is the right default for
-      # someone reading the repository. This chart goes to NVCR, so it has to
-      # name the NVCR copy instead: GHCR carries release tags only, while NVCR
-      # carries every main commit, and this workflow runs on both.
-      - name: Point the chart at the NVCR image
+      - name: Package chart for NVCR
+        id: package
         shell: bash
         env:
-          NKE_NGC_ORG: ${{ vars.NKE_NGC_ORG }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${NKE_NGC_ORG}" ]]; then
-            echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
-            exit 1
-          fi
-
-          image="nvcr.io/${NKE_NGC_ORG}/controller"
-
-          # Anchored at exactly two spaces so this hits image.repository and
-          # NOT profiles.image.repository, which is nested one level deeper and
-          # names an image nke-site-deploy builds. An unanchored `repository:`
-          # match would rewrite both.
-          sed -i -e "s#^  repository: .*#  repository: ${image}#" \
-            "${CHART}/values.yaml"
-
-          # Fail loudly rather than ship a chart naming an image that is not
-          # there. A wrong repository here surfaces at install time, to someone
-          # who cannot fix it.
-          grep -q "^  repository: ${image}\$" "${CHART}/values.yaml" \
-            || { echo "::error::image rewrite did not apply"; exit 1; }
-
-          # The pull secret has to move with the registry. values.yaml ships
-          # `imagePullSecrets: []` because it defaults to ghcr.io, where an NGC
-          # credential is useless; this chart names nvcr.io, so it needs the NGC
-          # one back or every pod it creates lands in ImagePullBackOff.
-          sed -i -e "s#^imagePullSecrets: \[\]\$#imagePullSecrets:\n  - name: svc-nke-ngc-imagepull#" \
-            "${CHART}/values.yaml"
-          grep -q "^  - name: svc-nke-ngc-imagepull\$" "${CHART}/values.yaml" \
-            || { echo "::error::pull-secret rewrite did not apply"; exit 1; }
-
-      # helm push takes the destination's last path segment from `name:` in
-      # Chart.yaml, not from the argument, so this rename IS the publish path:
-      # it is what puts the chart at nvcr.io/<org>/controller-chart instead of
-      # colliding with the controller image at nvcr.io/<org>/controller.
-      - name: Rename the chart for NVCR
-        shell: bash
+          CHART_NAME: controller-chart
+          IMAGE_REPOSITORY: ${{ steps.meta.outputs.image }}
+          IMAGE_PULL_SECRET: ${{ matrix.pull_secret }}
+          CHART_VERSION: ${{ steps.meta.outputs.version }}
+          APP_VERSION: ${{ steps.meta.outputs.app_version }}
+          CHART_DIST: ${{ runner.temp }}/chart-dist
         run: |
           set -euo pipefail
 
-          # Anchored to the top-level key so it cannot touch `name:` inside
-          # maintainers, dependencies, or annotations.
-          sed -i -e "s#^name: controller\$#name: controller-chart#" \
+          mkdir -p "${CHART_DIST}"
+
+          # helm push takes the destination's last path segment from `name:` in
+          # Chart.yaml, not from the push argument. Keep this explicit so image
+          # and chart repositories do not accidentally collide in NVCR.
+          sed -i -e "s#^name: controller\$#name: ${CHART_NAME}#" \
             "${CHART}/Chart.yaml"
-
-          # A silent miss here republishes over the controller image's
-          # repository, so fail instead.
-          grep -q "^name: controller-chart\$" "${CHART}/Chart.yaml" \
+          grep -q "^name: ${CHART_NAME}\$" "${CHART}/Chart.yaml" \
             || { echo "::error::chart rename did not apply"; exit 1; }
 
-      - name: Package
-        shell: bash
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          APP_VERSION: ${{ steps.meta.outputs.app_version }}
-        run: |
-          set -euo pipefail
+          # Anchored at exactly two spaces so this hits image.repository and not
+          # profiles.image.repository, which is nested one level deeper and
+          # names an image nke-site-deploy builds.
+          sed -i -e "s#^  repository: .*#  repository: ${IMAGE_REPOSITORY}#" \
+            "${CHART}/values.yaml"
+          grep -q "^  repository: ${IMAGE_REPOSITORY}\$" "${CHART}/values.yaml" \
+            || { echo "::error::image rewrite did not apply"; exit 1; }
+
+          sed -i -e "s#^imagePullSecrets: \[\]\$#imagePullSecrets:\n  - name: ${IMAGE_PULL_SECRET}#" \
+            "${CHART}/values.yaml"
+          grep -q "^  - name: ${IMAGE_PULL_SECRET}\$" "${CHART}/values.yaml" \
+            || { echo "::error::pull-secret rewrite did not apply"; exit 1; }
+
           helm package "${CHART}" \
-            --version "${VERSION}" \
+            --version "${CHART_VERSION}" \
             --app-version "${APP_VERSION}" \
-            --destination "${RUNNER_TEMP}/chart-dist"
-          ls -lh "${RUNNER_TEMP}/chart-dist"
+            --destination "${CHART_DIST}"
+
+          chart_package="${CHART_DIST}/${CHART_NAME}-${CHART_VERSION}.tgz"
+          test -f "${chart_package}" \
+            || { echo "::error::${chart_package} was not created"; exit 1; }
+
+          rendered="${CHART_DIST}/${CHART_NAME}-rendered.yaml"
+          helm template "${CHART_NAME}" "${chart_package}" > "${rendered}"
+          grep -Fq "image: \"${IMAGE_REPOSITORY}:${APP_VERSION}\"" "${rendered}" \
+            || { echo "::error::rendered chart does not reference ${IMAGE_REPOSITORY}:${APP_VERSION}"; exit 1; }
+
+          echo "chart_package=${chart_package}" >> "${GITHUB_OUTPUT}"
+          ls -lh "${CHART_DIST}"
 
       # $oauthtoken is NGC's literal username, not a shell variable.
       - name: Log in to NVCR
         shell: bash
         env:
-          NGC_TOKEN: ${{ secrets.NGC_REGISTRY_TOKEN_NKE }}
+          NGC_TOKEN: ${{ secrets[matrix.token_secret_var_name] }}
+          TOKEN_SECRET_VAR_NAME: ${{ matrix.token_secret_var_name }}
         run: |
           set -euo pipefail
+          if [[ -z "${NGC_TOKEN}" ]]; then
+            echo "::error::${TOKEN_SECRET_VAR_NAME} is not set in the nvcr environment"
+            exit 1
+          fi
           # shellcheck disable=SC2016
           echo "${NGC_TOKEN}" | helm registry login nvcr.io \
             --username '$oauthtoken' --password-stdin
@@ -195,9 +204,8 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           REPO: ${{ steps.meta.outputs.repo }}
+          CHART_PACKAGE: ${{ steps.package.outputs.chart_package }}
         run: |
           set -euo pipefail
-          helm push \
-            "${RUNNER_TEMP}/chart-dist/controller-chart-${VERSION}.tgz" \
-            "oci://${REPO}"
+          helm push "${CHART_PACKAGE}" "oci://${REPO}"
           echo "Pushed ${REPO}/controller-chart:${VERSION}"
