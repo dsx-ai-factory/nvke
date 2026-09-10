@@ -31,6 +31,11 @@ type fakeCWE struct {
 	clusters []api.Cluster
 	requests []string
 	server   *httptest.Server
+
+	// updateFailStatus, when non-zero, makes update answer with this status
+	// and updateFailMessage instead of applying the patch.
+	updateFailStatus  int
+	updateFailMessage string
 }
 
 // newFakeCWE starts a fake CWE seeded with clusters, and returns it together
@@ -70,6 +75,15 @@ func (f *fakeCWE) seen() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.requests...)
+}
+
+// failUpdate makes the next PATCH /clusters/{id} request fail with status
+// and message instead of applying the patch.
+func (f *fakeCWE) failUpdate(status int, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.updateFailStatus = status
+	f.updateFailMessage = message
 }
 
 // stored returns the clusters the fake currently holds.
@@ -179,6 +193,10 @@ func (f *fakeCWE) remove(w http.ResponseWriter, id string) {
 // the CLI's request-building and response-decoding, not CWE's real merge
 // semantics — keep it to the fields the update-cluster tests actually cover.
 func (f *fakeCWE) update(w http.ResponseWriter, id string, r *http.Request) {
+	if f.updateFailStatus != 0 {
+		writeJSON(w, f.updateFailStatus, api.GenericError{Message: f.updateFailMessage})
+		return
+	}
 	for i, c := range f.clusters {
 		if c.ID.String() != id {
 			continue

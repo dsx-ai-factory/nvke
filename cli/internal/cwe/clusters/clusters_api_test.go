@@ -233,16 +233,29 @@ func TestUpdateClusterSetOverridesFile(t *testing.T) {
 	}
 }
 
-// The client's error path doesn't branch by status code, so a 409 here
-// covers the same code a 400 would exercise.
+// The name resolves and only the PATCH is rejected, matching how CWE
+// actually applies the 409: GET/list aren't blocked by an in-progress
+// mutation, only a new PATCH racing it is. The client's error path also
+// doesn't branch by status code, so 409 here covers 400 too.
 func TestUpdateClusterSurfacesServerRejection(t *testing.T) {
-	broken := newBrokenCWE(t, 409, `{"message":"k8s_upgrade is already in progress"}`)
-	_, err := run(t, NewUpdateCmd(broken), "my-cluster", "--set", "teleportEnabled=true")
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+	fake.failUpdate(409, "k8s_upgrade is already in progress")
+
+	_, err := run(t, NewUpdateCmd(clientFn), "my-cluster", "--set", "teleportEnabled=true")
 	if err == nil {
 		t.Fatal("update against a 409 server returned no error")
 	}
 	if !strings.Contains(err.Error(), "k8s_upgrade is already in progress") {
 		t.Errorf("error = %v, want it to carry the server's message", err)
+	}
+
+	want := []string{
+		"GET /api/clusters?name=my-cluster",
+		"PATCH /api/clusters/" + seed.ID.String(),
+	}
+	if seen := fake.seen(); len(seen) != len(want) || seen[0] != want[0] || seen[1] != want[1] {
+		t.Errorf("requests = %v, want %v", seen, want)
 	}
 }
 
