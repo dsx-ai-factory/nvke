@@ -281,8 +281,13 @@ On failure it writes `cluster-diagnostics/` first, and **leaves the seed cluster
 behind** — delete it before retrying, or the next run stops on a name clash:
 
 ```bash
-kind delete cluster --name nkectl-bootstrap
+KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nkectl-bootstrap
 ```
+
+The prefix is not optional: kind resolves a cluster through the provider that
+created it, so a bare `kind delete cluster` looks for the seed cluster in
+Docker, does not find it, and exits 0 without deleting anything — leaving the
+name clash this step exists to prevent.
 
 ### 5. Install the site controller
 

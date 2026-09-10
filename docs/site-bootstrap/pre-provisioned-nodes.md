@@ -37,7 +37,7 @@ After bootstrap completes:
 - Network connectivity between all nodes
 - Each node has an available NVMe device for local storage (non-root, unpartitioned, not in use)
 - NGC API key (required for pulling NKE container images)
-- On the **init node**: `kind` binary and `nerdctl` (>= 1.7.0) with containerd installed — `nkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported
+- On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
 - `NKECTL_CWE_IMAGE` — full image reference for the CWE controller (e.g. `nvcr.io/<org>/controller:edge`)
 - `NKECTL_CWE_PROFILES_IMAGE` — image holding the OS profiles tree at `/profiles`
 

@@ -53,7 +53,7 @@ The binary lands at `bin/nkectl`.
 `nkectl bootstrap site` creates an ephemeral Kind cluster on the init node to run the bootstrap workflow engine. The init node needs:
 
 - **`kind`** — `brew install kind` (macOS) or download from https://kind.sigs.k8s.io/docs/user/quick-start/#installation
-- **`nerdctl`** (>= 1.7.0) and a **containerd** for it to talk to — the container runtime `nkectl` uses to create the Kind cluster and load images into it. Docker is not supported.
+- **`nerdctl`** and a **containerd** for it to talk to — the container runtime `nkectl` uses to create the Kind cluster and load images into it. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises.
 
 Join nodes do not need `kind` or a container runtime — only the init node runs `nkectl`.
 

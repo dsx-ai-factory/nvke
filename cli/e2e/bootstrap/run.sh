@@ -42,25 +42,37 @@
 #      is the end-to-end statement the earlier stages only imply: a cluster
 #      built out of hosts that already existed serves traffic like any other.
 #
-# The ephemeral cluster runs on nerdctl/containerd, which nkectl drives kind
-# through unconditionally (see cli/internal/bootstrapengine). A local run
-# needs nerdctl >= 1.7.0 and a containerd for it to talk to; see the CI
-# workflow (.github/workflows/nkectl-bootstrap-e2e.yml) for the exact
-# standalone install this repo has verified. Docker alone is not enough to
-# run this suite, though the fake-node fixture and the fixture image builds
-# below still use it.
+# This suite needs BOTH runtimes on the host:
+#
+#   - nerdctl >= 1.7.0 and a containerd for it to talk to. The ephemeral
+#     cluster runs there, because nkectl drives kind through
+#     KIND_EXPERIMENTAL_PROVIDER=nerdctl unconditionally (see
+#     cli/internal/bootstrapengine). See the CI workflow
+#     (.github/workflows/nkectl-bootstrap-e2e.yml) for the standalone install
+#     this repo has verified; the version floor is kind's stated minimum for
+#     its nerdctl provider, and only 2.3.5 is actually exercised here.
+#   - Docker. The fake-node fixture and all three fixture images still build
+#     and run through it (see nodes-up and the ensure-*-image targets in
+#     cli/Makefile), and this script bridges those images into containerd
+#     below with `docker save | nerdctl load`.
+#
+# It also needs root, or to be run under sudo: attaching the bootstrap cluster
+# to the node network installs an iptables rule and assigns the SPIRE VIP to a
+# bridge. Without it the run fails at "the bootstrap cluster was never
+# attached to the node network", after the images have already been built.
 #
 # The fake nodes emulate a TPM with swtpm, which asks the kernel for a device
 # through /dev/vtpmx. This script loads tpm_vtpm_proxy if it is not already
 # there; a host that cannot load it cannot run this suite.
 #
-# NKECTL_CWE_IMAGE must already be pulled into containerd (`nerdctl pull`)
-# before this script runs -- nkectl saves it and loads it into the kind
-# cluster rather than pulling from inside the cluster (see
-# cmd/nkectl/bootstrap.go's ensureImageAvailable), so it does not itself need
-# registry credentials. The CI workflow logs in to GHCR and pulls the image
-# through nerdctl before invoking this script; a local
-# run needs the same login + pull done by hand first.
+# NKECTL_CWE_IMAGE must already be present in DOCKER's image store -- built
+# there, or pulled with `docker pull` -- before this script runs. The bridging
+# loop below reads it with `docker save`, so an image pulled only into
+# containerd fails there with "reference does not exist". nkectl then loads it
+# into the kind cluster rather than pulling from inside the cluster (see
+# cmd/nkectl/bootstrap.go's ensureImageAvailable), so no registry credentials
+# are needed past that point. CI builds the image locally rather than pulling
+# it (see the workflow's "Build CWE image" step).
 
 set -Eeuo pipefail
 
@@ -132,9 +144,8 @@ export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
 log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
 
 # kind resolves a cluster through its provider, so ask the same one bootstrap
-# site used. Bare, kind asks Docker, sees none of nerdctl's clusters
-# and answers "no" without checking anything. kind accepts "docker" here as
-# well as its own default.
+# site used. Bare, kind asks Docker, sees none of nerdctl's clusters, and
+# answers "no" without checking anything.
 kind_lists_bootstrap_cluster() {
   KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters 2>/dev/null |
     grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"

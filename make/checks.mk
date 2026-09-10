@@ -150,7 +150,8 @@ lint: ## Lint every module. (run by the merge gate)
 		$(MAKE) --no-print-directory -C $$m lint || exit 1; \
 	 done
 
-# Two merge-gate jobs need Docker or live services. They are listed below.
+# One merge-gate job needs live services, and is listed below alongside the
+# advisory lanes that are not part of the gate at all.
 gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory tools-check
 	@$(MAKE) --no-print-directory version-check
@@ -169,7 +170,8 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory vulncheck
 	@echo
 	@echo "Merge-gate jobs not run locally:"
-	@echo "  nkectl bootstrap e2e   make -C cli test-e2e-bootstrap   nerdctl, Docker and kind"
 	@echo "  gofail e2e             make -C controller e2e-gofail    PostgreSQL, envtest and Temporal"
 	@echo "Workspace re-derivation needs access to the internal provider; work-check reports if it skips."
 	@echo "CAPD backend e2e is advisory, not part of the merge gate: make test-e2e-backend-ci"
+	@echo "nkectl bootstrap e2e is advisory too, not part of the merge gate:"
+	@echo "  make -C cli test-e2e-bootstrap   (nerdctl, Docker, kind, and root)"
