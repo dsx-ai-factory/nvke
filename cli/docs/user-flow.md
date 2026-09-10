@@ -18,14 +18,14 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl get clusters --cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
 | `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
-| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). | Planned |
+| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config) via `--set key=value` and/or `-f patch.yaml`. | Available |
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
 | `nkectl get nodepools` | Lists node pools. `--cluster <name>` filters by cluster. | Planned |
 | `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |
 | `nkectl update nodepool <name> --cluster <name>` | Updates a mutable node pool property (desired count, instance type). | Planned |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
-`cluster` and `clusters` are aliases on `create`, `get` and `delete`. Global
+`cluster` and `clusters` are aliases on `create`, `get`, `update` and `delete`. Global
 flags: `--site <name>` overrides the active site for one invocation, `-v`
 enables debug logging, `--json-logs` emits logs as JSON.
 
