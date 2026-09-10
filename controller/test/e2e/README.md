@@ -158,6 +158,11 @@ ConfigMap) and, for `authn-spire`, `deploy/k8s/nke-spire-client.yaml`. NKE's
 permission to read the cluster JWKS comes from the chart
 (`apiAuth.clusterIssuerDiscovery`).
 
+`nkectl` uses the same admitted identity (`nke-clients/nke-client`) against a
+Tilt or E2E cluster. The token-minter RoleBinding in that file is for the
+`nke-e2e` ServiceAccount the suite impersonates; a cluster-admin kubeconfig
+(the usual Tilt user) can mint without it.
+
 Run from the repository root:
 
 ```bash

@@ -8,7 +8,7 @@
 #
 # Prerequisites:
 #   - controller/tilt_config.json lists the "nico" provider, and tilt up is running
-#   - nkectl config set-site --url http://localhost:8080
+#   - nkectl config set-site --url http://localhost:8080 --kubeconfig ~/.kube/config
 #
 # The UUIDs below are nico-mock's seeded identifiers. They are fixed, so this
 # file works as-is. Override them with NICO_MOCK_SITE_ID and friends.

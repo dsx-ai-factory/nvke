@@ -474,11 +474,22 @@ what to check when you get an unexpected 401, see
 `deploy/k8s/nke-auth-dev.yaml`, two client identities (one admitted, one not),
 and the binding described under RBAC Prerequisite.
 
+`nkectl` uses that admitted identity. After `nkectl config set-site` with the
+kind kubeconfig, CWE commands mint on their own — there is no token
+environment variable:
+
+```bash
+nkectl config set-site --name local \
+  --url http://localhost:8080 \
+  --kubeconfig ~/.kube/config
+nkectl get clusters
+```
+
 ```bash
 ./hack/nke-auth-demo.sh    # four credentials, prints the status code for each
 ```
 
-Mint a token yourself:
+Mint a token for `curl` yourself:
 
 ```bash
 kubectl create token nke-client -n nke-clients \
@@ -693,8 +704,10 @@ kubectl create clusterrolebinding nke-service-account-issuer-discovery \
 
 ### Calling the API from Scripts and CI
 
-`hack/nke-token.sh` prints a bearer token, or nothing when authentication is off,
-so the same call works either way:
+Interactive use is `nkectl`: it mints the same identity from the site
+kubeconfig. `hack/nke-token.sh` is for `curl` and scripts. It prints a bearer
+token, or nothing when authentication is off, so the same call works either
+way:
 
 ```bash
 TOKEN="$(hack/nke-token.sh)"

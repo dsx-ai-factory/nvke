@@ -193,7 +193,17 @@ The two local paths differ, and that is the usual source of confusion:
 | `make run` / `go run ./cmd/worker/main.go` | **off** — `AUTH_CONFIG_PATH` is unset, every request is served |
 | `tilt up` | **enforcing** — `/api/*` needs a bearer token |
 
-So a bare `curl` that works host-local returns 401 under Tilt. Get a token:
+So a bare `curl` that works host-local returns 401 under Tilt. `nkectl` mints
+from the kind kubeconfig and does not need a token environment variable:
+
+```bash
+nkectl config set-site --name local \
+  --url http://localhost:8080 \
+  --kubeconfig ~/.kube/config
+nkectl get clusters
+```
+
+For `curl`, get a token:
 
 ```bash
 TOKEN="$(hack/nke-token.sh)"
