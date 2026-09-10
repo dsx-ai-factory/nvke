@@ -76,8 +76,11 @@ If that ConfigMap is missing, the CLI treats authentication as off and sends no
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
+- `get` on `secrets` in `nke-system`, for `nkectl get kubeconfig` and
+  `nkectl get providers`, which read the management cluster directly rather
+  than through CWE
 
-A cluster-admin kubeconfig already has it. Least-privilege grants, and
+A cluster-admin kubeconfig already has both. Least-privilege grants, and
 creating the service account on a real site, are in
 [Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
 

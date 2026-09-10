@@ -161,16 +161,13 @@ ConfigMap and sends requests unauthenticated.
 
 ### Getting a tenant kubeconfig
 
-There is no `nkectl get kubeconfig` yet. Read the Secret:
-
 ```bash
-kubectl -n nke-system get secret <cluster>-admin-kubeconfig \
-  -o jsonpath='{.data.value}' | base64 -d > tenant.kubeconfig
+nkectl get kubeconfig <cluster> --output-file tenant.kubeconfig
 ```
 
-`-admin-kubeconfig` holds the verbatim `admin.conf`. The `-kubeconfig` Secret
-beside it is the one CWE consumes, and it becomes a SPIRE exec-auth kubeconfig
-when OIDC is on.
+This reads the `<cluster>-admin-kubeconfig` Secret in `nke-system`, which
+holds the verbatim `admin.conf`. The `-kubeconfig` Secret beside it is the one
+CWE consumes, and it becomes a SPIRE exec-auth kubeconfig when OIDC is on.
 
 ## Path C — a real site
 
