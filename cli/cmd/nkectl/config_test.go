@@ -187,3 +187,28 @@ func TestResolveSiteConfigUnknownSiteFlagErrors(t *testing.T) {
 		t.Fatal("expected error for unknown --site override, got nil")
 	}
 }
+
+func TestResolveSiteConfigErrorsWhenNoSiteConfigured(t *testing.T) {
+	cfg := &config.Config{Sites: map[string]config.SiteConfig{}}
+
+	site = ""
+
+	if _, err := resolveSiteConfig(cfg); err == nil {
+		t.Fatal("expected error when no site is configured, got nil")
+	}
+}
+
+func TestResolveSiteConfigErrorsWhenCurrentSiteIsDangling(t *testing.T) {
+	// CurrentSite names a site no longer present in Sites -- e.g. a hand-edited
+	// config.yaml, or a site removed without clearing current-site.
+	cfg := &config.Config{
+		Sites:       map[string]config.SiteConfig{"prod": {URL: "https://prod-cwe.example.com"}},
+		CurrentSite: "dev",
+	}
+
+	site = ""
+
+	if _, err := resolveSiteConfig(cfg); err == nil {
+		t.Fatal("expected error when CurrentSite is not in Sites, got nil")
+	}
+}

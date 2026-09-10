@@ -8,6 +8,8 @@ import (
 
 	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
 	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
+	"github.com/NVIDIA/nke/cli/internal/mgmtcluster"
+	mgmtcommand "github.com/NVIDIA/nke/cli/internal/mgmtcluster/command"
 	providercmd "github.com/NVIDIA/nke/cli/internal/providers/command"
 )
 
@@ -18,5 +20,12 @@ func newGetCmd() *cobra.Command {
 	}
 	cmd.AddCommand(clusters.NewGetCmd(loadClient))
 	cmd.AddCommand(providercmd.NewGetCmd(loadSite, cwedeploy.ExecCommandRunner{}))
+	cmd.AddCommand(mgmtcommand.NewGetKubeconfigCmd(loadSite, newMgmtClient))
 	return cmd
+}
+
+// newMgmtClient adapts mgmtcluster.New's concrete return type to
+// mgmtcommand.MgmtClientFactory.
+func newMgmtClient(kubeconfigPath string) (mgmtcommand.KubeconfigFetcher, error) {
+	return mgmtcluster.New(kubeconfigPath)
 }
