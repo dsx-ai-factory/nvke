@@ -43,11 +43,6 @@ func teardownCluster(ctx workflow.Context, input TeardownClusterInput) error {
 		return errors.New("clusterID is required")
 	}
 
-	var cluster db.Cluster
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetCluster, input.ClusterID).Get(ctx, &cluster); err != nil {
-		return fmt.Errorf("failed to get cluster: %w", err)
-	}
-
 	if err := cancelClusterProvisionWorkflow(ctx, input.ClusterID); err != nil {
 		return fmt.Errorf("failed to cancel provision workflow: %w", err)
 	}
@@ -77,17 +72,6 @@ func teardownCluster(ctx workflow.Context, input TeardownClusterInput) error {
 
 	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.DeleteCluster, input.ClusterID).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to delete cluster: %w", err)
-	}
-
-	// Revoke the published tenant-access credentials last, after the cluster row
-	// is gone. The tenant-access controller reconciles from a ListClusters
-	// snapshot, so a pass that started before the row was deleted would otherwise
-	// re-publish the Secrets we just removed and orphan them permanently. Deleting
-	// the row first means no later pass can observe the cluster at all. The name
-	// comes from the context read at the top of teardown, since the row no longer
-	// exists to look it up.
-	if err := deleteTenantAccessSecrets(ctx, input.ClusterID, cluster.Name); err != nil {
-		return fmt.Errorf("failed to delete tenant-access secrets: %w", err)
 	}
 
 	return nil
@@ -200,23 +184,6 @@ func deleteEtcdEncryptionKeySecret(ctx workflow.Context, clusterID uuid.UUID) er
 		},
 	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to delete etcd encryption key secret: %w", err)
-	}
-
-	return nil
-}
-
-func deleteTenantAccessSecrets(ctx workflow.Context, clusterID uuid.UUID, clusterName string) error {
-	var a *activities.Activities
-
-	if err := workflow.ExecuteActivity(
-		withK8sDeleteWaitOptions(ctx),
-		a.DeleteTenantAccessSecrets,
-		activities.DeleteTenantAccessSecretsInput{
-			ClusterID:   clusterID,
-			ClusterName: clusterName,
-		},
-	).Get(ctx, nil); err != nil {
-		return fmt.Errorf("failed to delete tenant-access secrets: %w", err)
 	}
 
 	return nil
