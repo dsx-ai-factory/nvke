@@ -83,6 +83,11 @@ type bootstrapSiteOptions struct {
 	// Nil in production; tests set it to a fake for the same reason as
 	// bootstrapRunner above.
 	cweRunner cwedeploy.CommandRunner
+
+	// lookPath resolves the container runtime binary. Nil uses exec.LookPath;
+	// tests substitute it so they do not require a real nerdctl installation,
+	// the same seam bootstrapRunner and cweRunner provide for the commands.
+	lookPath func(string) (string, error)
 }
 
 func newBootstrapSiteCmd() *cobra.Command {
@@ -166,6 +171,15 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	if opts.dryRun {
 		fmt.Fprintln(out, "\nDry run: site spec is valid. No workflow dispatched.")
 		return nil
+	}
+
+	// Before anything is stood up: the whole command runs on
+	// nerdctl/containerd, and the first thing to reach for it is kind, which
+	// execs it internally. That failure surfaces as kind's own "failed to list
+	// clusters" rather than as a missing prerequisite, so check here where the
+	// error can say what is actually wrong.
+	if err := requireContainerRuntime(opts.lookPath); err != nil {
+		return err
 	}
 
 	// Step 2: stand up the ephemeral bootstrap Kind cluster CWE will run on.
@@ -488,6 +502,22 @@ func waitForCWEHostEndpoint(ctx context.Context, baseURL string, timeout time.Du
 	}
 }
 
+// requireContainerRuntime reports a missing container runtime as the missing
+// prerequisite it is. Without this the first failure is kind's, several steps
+// in and phrased as a cluster-listing problem, because kind execs the runtime
+// itself rather than this process doing it.
+func requireContainerRuntime(lookPath func(string) (string, error)) error {
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	if _, err := lookPath(bootstrapengine.RuntimeCLI); err != nil {
+		return fmt.Errorf("%s is required to bootstrap a site but was not found on PATH: %w\n"+
+			"the bootstrap cluster runs on nerdctl/containerd; Docker is not supported",
+			bootstrapengine.RuntimeCLI, err)
+	}
+	return nil
+}
+
 // ensureImageAvailable makes sure image is present in containerd's image
 // store before handing it to Engine.LoadImage, pulling it if it is not
 // already cached from a previous run. That store is the one kind loads from.
@@ -500,8 +530,9 @@ func ensureImageAvailable(
 ) error {
 	if _, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "image", "inspect", image); err != nil {
 		// An absent binary is not a cache miss, and pulling cannot fix it.
-		// Reported here because this is the first command to reach for the
-		// runtime, so a host without it fails here first.
+		// requireContainerRuntime catches this before any of it runs; this is
+		// defence in depth for a runtime that leaves PATH mid-bootstrap, and
+		// keeps the message the same either way.
 		if errors.Is(err, exec.ErrNotFound) {
 			return fmt.Errorf("%s is required to bootstrap a site but was not found on PATH: %w\n"+
 				"the bootstrap cluster runs on nerdctl/containerd; Docker is not supported",

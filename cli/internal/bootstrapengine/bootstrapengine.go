@@ -45,9 +45,16 @@ const (
 	RuntimeCLI = "nerdctl"
 )
 
-// kindEnv is the environment every kind invocation runs with, so kind resolves
-// clusters and images through containerd rather than its default.
-var kindEnv = map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
+// kindEnv returns the environment a kind invocation runs with, so kind
+// resolves clusters and images through containerd rather than its default.
+//
+// A fresh map per call, not a package-level one: the result crosses the
+// CommandRunner interface, whose implementations include test fakes and
+// could include anything. One that annotated the map it was handed would
+// otherwise corrupt every later invocation in the process.
+func kindEnv() map[string]string {
+	return map[string]string{kindExperimentalProviderEnv: RuntimeCLI}
+}
 
 // Mount is an extra bind mount into every cluster node container, for e.g.
 // exposing a local image cache or CNI manifests directory.
@@ -192,7 +199,7 @@ func (e *Engine) Create(ctx context.Context, cfg Config) (*Cluster, error) {
 	}
 
 	e.log.Info("creating bootstrap kind cluster", "cluster", cfg.ClusterName)
-	if out, err := e.Runner.Run(ctx, kindEnv, "kind", args...); err != nil {
+	if out, err := e.Runner.Run(ctx, kindEnv(), "kind", args...); err != nil {
 		return nil, fmt.Errorf("kind create cluster %s: %w\n%s", cfg.ClusterName, err, out)
 	}
 
@@ -228,7 +235,7 @@ func (e *Engine) Delete(ctx context.Context, clusterName string) error {
 	}
 
 	e.log.Info("deleting bootstrap kind cluster", "cluster", clusterName)
-	out, err := e.Runner.Run(ctx, kindEnv, "kind", "delete", "cluster", "--name", clusterName)
+	out, err := e.Runner.Run(ctx, kindEnv(), "kind", "delete", "cluster", "--name", clusterName)
 	if err != nil {
 		return fmt.Errorf("kind delete cluster %s: %w\n%s", clusterName, err, out)
 	}
@@ -240,7 +247,7 @@ func (e *Engine) Delete(ctx context.Context, clusterName string) error {
 // created it, the same way create/delete/load are, so this only sees clusters
 // created through containerd.
 func (e *Engine) Exists(ctx context.Context, clusterName string) (bool, error) {
-	out, err := e.Runner.Run(ctx, kindEnv, "kind", "get", "clusters")
+	out, err := e.Runner.Run(ctx, kindEnv(), "kind", "get", "clusters")
 	if err != nil {
 		// kind returns exit code 1 with "No kind clusters found." on stderr
 		// when none exist — that is not a failure of the query itself.
@@ -274,7 +281,7 @@ func (e *Engine) Kubeconfig(ctx context.Context, clusterName string) (string, er
 	}
 	path := filepath.Join(dir, "config")
 
-	out, err := e.Runner.Run(ctx, kindEnv,
+	out, err := e.Runner.Run(ctx, kindEnv(),
 		"kind", "export", "kubeconfig", "--name", clusterName, "--kubeconfig", path)
 	if err != nil {
 		return "", fmt.Errorf("kind export kubeconfig %s: %w\n%s", clusterName, err, out)
@@ -308,7 +315,7 @@ func (e *Engine) LoadImage(ctx context.Context, clusterName, image string) error
 	}
 	defer cleanup()
 
-	out, err := e.Runner.Run(ctx, kindEnv, "kind", "load", "image-archive", archivePath, "--name", clusterName)
+	out, err := e.Runner.Run(ctx, kindEnv(), "kind", "load", "image-archive", archivePath, "--name", clusterName)
 	if err != nil {
 		return fmt.Errorf("kind load image-archive %s into %s: %w\n%s", image, clusterName, err, out)
 	}

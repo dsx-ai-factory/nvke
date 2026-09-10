@@ -220,6 +220,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   kubeconfigOut,
+		lookPath:        runtimeOnPath,
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -256,6 +257,7 @@ func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
 		cweRunner:       fakeCWERunner{},
 		clusterTimeout:  5 * time.Millisecond,
 		kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:        runtimeOnPath,
 	})
 	if err == nil {
 		t.Fatal("expected an error when the cluster never reports provisioned")
@@ -282,6 +284,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 		cweRunner:         missingKubeconfigRunner{},
 		kubeconfigTimeout: 5 * time.Millisecond,
 		kubeconfigOut:     filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:          runtimeOnPath,
 	})
 	if err == nil {
 		t.Fatal("expected an error when the kubeconfig Secret is not published")
@@ -289,12 +292,25 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 	if runner.sawArgs("delete", "cluster") {
 		t.Error("bootstrap cluster was deleted after the site cluster became provisioned")
 	}
-	for _, want := range []string{"not published", "retained for recovery", "kind delete cluster"} {
+	// The env prefix specifically, not just the command: without it the
+	// operator's copy-pasted `kind delete cluster` resolves through kind's
+	// Docker default, reports the cluster as missing, exits 0, and leaves the
+	// cluster behind for the next run to collide with.
+	for _, want := range []string{
+		"not published",
+		"retained for recovery",
+		"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name",
+	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
 	}
 }
+
+// runtimeOnPath stands in for exec.LookPath finding the container runtime, so
+// tests do not require a real nerdctl installation on the machine running
+// `go test`. Tests about the preflight itself supply their own stub.
+func runtimeOnPath(name string) (string, error) { return "/usr/local/bin/" + name, nil }
 
 // setBootstrapEnv fills in the images `bootstrap site` requires, so a test
 // about something else does not fail on one of them.
@@ -321,6 +337,7 @@ func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:        runtimeOnPath,
 	})
 
 	if !slices.Contains(runner.names, bootstrapengine.RuntimeCLI) {
@@ -328,6 +345,39 @@ func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 	}
 	if slices.Contains(runner.names, "docker") {
 		t.Errorf("shelled out to docker; ran %v", runner.names)
+	}
+}
+
+// A Docker-only host must be told what it is missing, through the command
+// itself rather than through a unit-level call. Without the preflight the
+// first failure is kind's — "failed to list clusters", several steps in,
+// with the runtime named only in nested output — because kind execs nerdctl
+// internally rather than this process doing it.
+func TestRunBootstrapSiteRequiresNerdctlOnPath(t *testing.T) {
+	setBootstrapEnv(t)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		lookPath: func(name string) (string, error) {
+			return "", fmt.Errorf("exec: %q: %w", name, exec.ErrNotFound)
+		},
+	})
+	if err == nil {
+		t.Fatal("expected an error when nerdctl is not on PATH")
+	}
+	if !strings.Contains(err.Error(), bootstrapengine.RuntimeCLI) {
+		t.Errorf("error %q does not name the missing runtime", err)
+	}
+	if !strings.Contains(err.Error(), "Docker is not supported") {
+		t.Errorf("error %q does not say Docker is unsupported", err)
+	}
+	// Before the cluster, not after: the point is to fail without having
+	// stood anything up.
+	if runner.sawArgs("create", "cluster") {
+		t.Errorf("a missing runtime should be caught before the cluster is built; calls: %v", runner.calls)
 	}
 }
 
@@ -393,6 +443,7 @@ func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
+		lookPath:        runtimeOnPath,
 	})
 	if err == nil {
 		t.Fatal("expected an error for a missing NKECTL_CWE_IMAGE")
@@ -500,6 +551,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       fakeCWERunner{},
 			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+			lookPath:        runtimeOnPath,
 		})
 		if err != nil {
 			t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -520,6 +572,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			diagnosticsDir:  dir,
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       unhealthyCWERunner{},
+			lookPath:        runtimeOnPath,
 		})
 		if err == nil {
 			t.Fatal("expected a real failure")

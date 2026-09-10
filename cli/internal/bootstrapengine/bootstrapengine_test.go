@@ -143,6 +143,13 @@ func TestDelete_IsSafeWhenNothingWasCreated(t *testing.T) {
 	if len(runner.calls) != 1 || runner.calls[0].args[0] != "delete" {
 		t.Fatalf("unexpected call: %+v", runner.calls)
 	}
+	// Delete is the one path where losing the override is silent: `kind
+	// delete cluster` exits 0 on a cluster it cannot see, so the teardown
+	// reports success and the bootstrap cluster leaks on every run. Every
+	// other method surfaces the same regression as an error.
+	if got := runner.calls[0].env[kindExperimentalProviderEnv]; got != RuntimeCLI {
+		t.Errorf("%s = %q, want %q", kindExperimentalProviderEnv, got, RuntimeCLI)
+	}
 }
 
 func TestDelete_RequiresClusterName(t *testing.T) {
@@ -436,7 +443,16 @@ func TestDefaultConfig_IgnoresBootstrapProviderEnv(t *testing.T) {
 	if cfg.ClusterName != "from-env" {
 		t.Fatalf("DefaultConfig().ClusterName = %q, want %q", cfg.ClusterName, "from-env")
 	}
-	if got := kindEnv[kindExperimentalProviderEnv]; got != RuntimeCLI {
-		t.Errorf("%s = %q, want %q", kindExperimentalProviderEnv, got, RuntimeCLI)
+
+	// Through a real call, not by reading the package's own constant back:
+	// what matters is the value kind is invoked with while the stale variable
+	// is set, and comparing two literals could not observe that.
+	runner := &fakeRunner{outputs: []fakeOutput{{output: "No kind clusters found.\n", err: errors.New("exit status 1")}}}
+	if _, err := New(runner, nil).Exists(context.Background(), "test-cluster"); err != nil {
+		t.Fatalf("Exists returned error: %v", err)
+	}
+	if got := runner.calls[0].env[kindExperimentalProviderEnv]; got != RuntimeCLI {
+		t.Errorf("%s = %q, want %q (NKECTL_BOOTSTRAP_PROVIDER must not steer this)",
+			kindExperimentalProviderEnv, got, RuntimeCLI)
 	}
 }
