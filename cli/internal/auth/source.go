@@ -8,6 +8,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -25,16 +26,21 @@ const (
 	tokenNamespace      = "nke-clients"
 	tokenServiceAccount = "nke-client"
 	tokenLifetime       = 10 * time.Minute
+	tokenRenewBefore    = time.Minute
 )
 
 // Source supplies audience-scoped tokens for nkectl's CWE identity. Mint
 // returns no credential when the management cluster has no CWE auth ConfigMap.
 type Source struct {
-	client kubernetes.Interface
+	client   kubernetes.Interface
+	endpoint string
+	cache    *tokenCache
+
+	mu sync.Mutex
 }
 
 // NewSource builds a token source from a management cluster kubeconfig.
-func NewSource(kubeconfig string) (*Source, error) {
+func NewSource(kubeconfig, endpoint string) (*Source, error) {
 	if kubeconfig == "" {
 		return nil, fmt.Errorf("kubeconfig is empty: run 'nkectl config set-site --kubeconfig <path>'")
 	}
@@ -47,11 +53,26 @@ func NewSource(kubeconfig string) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("building Kubernetes client from kubeconfig %q: %w", kubeconfig, err)
 	}
-	return &Source{client: client}, nil
+	return &Source{
+		client:   client,
+		endpoint: endpoint,
+		cache:    loadTokenCache(),
+	}, nil
 }
 
-// Mint creates a token for nkectl using the configured CWE audience.
+// Mint returns a cached token when it remains valid beyond the renewal window,
+// or creates and caches a token for nkectl using the configured CWE audience.
 func (s *Source) Mint(ctx context.Context) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now()
+	if s.cache != nil {
+		if token, ok := s.cache.tokens[s.endpoint]; ok && token.usableAt(now) {
+			return token.Value, nil
+		}
+	}
+
 	audience, enabled, err := s.audience(ctx)
 	if err != nil {
 		return "", err
@@ -75,6 +96,15 @@ func (s *Source) Mint(ctx context.Context) (string, error) {
 	}
 	if response.Status.Token == "" {
 		return "", fmt.Errorf("minting token for %s/%s: apiserver returned an empty token", tokenNamespace, tokenServiceAccount)
+	}
+	token := cachedToken{
+		Value:     response.Status.Token,
+		ExpiresAt: response.Status.ExpirationTimestamp.Time,
+	}
+	if !token.ExpiresAt.IsZero() {
+		if s.cache != nil {
+			s.cache.store(s.endpoint, token)
+		}
 	}
 	return response.Status.Token, nil
 }

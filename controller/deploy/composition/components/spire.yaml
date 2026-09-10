@@ -1,0 +1,128 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# spire values for the nke-stack composition. Merged under the `spire` key of the
+# generated chart's values.yaml -- the top-level key is added by the generator,
+# so it is deliberately absent here.
+
+# ─── spire ───────────────────────────────────────────────────────────────────
+# Site identity (clusterName, trustDomain, jwtIssuer), the TPM attestor
+# checksum, and the OIDC leaf's IP SANs are all deployment-specific and are
+# supplied at install time, exactly as controller/Tiltfile passes them.
+enabled: true
+# Each spire subchart resolves its namespace as: its own namespaceOverride,
+# else the global.spire.namespaces.* layout (only consulted when
+# global.spire.recommendations.enabled is true), else the release namespace.
+# controller/Tiltfile installs spire with `--namespace spire-server`, so every
+# resource lands there; the overrides below reproduce that from inside a
+# release whose namespace is temporal. The namespace must already exist --
+# helm's --create-namespace only creates the release namespace.
+# spire-agent and spiffe-csi-driver deliberately carry NO namespaceOverride:
+# they fall through to spire-system under the recommended layout. Both need
+# hostNetwork/hostPID and privileged, which the restricted PodSecurity label
+# on spire-server rejects outright. Pinning them to spire-server is what
+# nke-spire 0.1.0 did, and 0.1.1 had to undo after the DaemonSets failed to
+# create.
+spiffe-csi-driver: {}
+spire-agent:
+  serviceAccount:
+    # Pin the ServiceAccount name. The chart derives it as
+    # "<Release.Name>-agent" unless this is set -- fullnameOverride does NOT
+    # affect it -- and the server's PSAT allowlist has to name it exactly.
+    # Pinning here keeps the allowlist correct whether this chart is installed
+    # standalone or nested under another release; nke-spire hardcodes
+    # nke-site-controller-agent instead, which holds for one release name only.
+    name: spire-agent
+  server:
+    # Where the agent dials the server, which is a separate key from where
+    # the agent's own resources land. Without it the agent derives
+    # "<release>-server.<release namespace>" and dials into temporal, where
+    # no server Service exists -- the agent then fails attestation with
+    # "no children to pick from" and the DaemonSet never becomes Available.
+    namespaceOverride: spire-server
+spire-server:
+  namespaceOverride: spire-server
+  # The bundle ConfigMap the agent mounts must land where the agent runs, or
+  # the agent sits at Init:0/2 forever (nke-spire 0.1.2).
+  bundlePublisher:
+    k8sConfigMap:
+      namespace: spire-system
+  adminIDs:
+    - spiffe://example.org/nke-service/cloud-workflow-engine
+  controllerManager:
+    className: spire-mgmt-spire
+    identities:
+      clusterSPIFFEIDs:
+        default:
+          # cloud-workflow-engine workloads use a dedicated nke-service
+          # identity. Keep the fallback from racing it during reconciliation.
+          namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: NotIn
+                values:
+                  - cloud-workflow-engine
+  nodeAttestor:
+    k8sPSAT:
+      # The agent moved to spire-system, so the server must accept it from
+      # there: the default allowlist is empty and attestation fails with
+      # "is not an allowed service account". Stable because spire-agent's
+      # fullnameOverride pins the ServiceAccount name (nke-spire 0.1.3 hit
+      # this and pinned the release name instead).
+      serviceAccountAllowList: ["spire-system:spire-agent"]
+    tpmDirect:
+      enabled: true
+  extraVolumes:
+    - name: tpm-pubhashes
+      configMap:
+        name: tpm-pubhashes
+        optional: true
+  extraVolumeMounts:
+    - name: tpm-pubhashes
+      mountPath: /run/spire/data/tpm-direct/hashes
+      readOnly: true
+spiffe-oidc-discovery-provider:
+  enabled: true
+  namespaceOverride: spire-server
+  replicaCount: 2
+  tls:
+    spire:
+      enabled: false
+    certManager:
+      enabled: true
+      issuer:
+        # The composition's consumer owns the Issuer
+        # (controller/deploy/k8s/oidc-upstream-ca.yaml).
+        create: false
+      certificate:
+        duration: 2160h
+        privateKey:
+          algorithm: ECDSA
+          size: 256
+        dnsNames:
+          - nke.site-controller.internal
+          - localhost
+        issuerRef:
+          group: cert-manager.io
+          kind: Issuer
+          name: nke-oidc-upstream-ca
+  config:
+    # The provider rejects requests whose Host header is absent here. Literal
+    # IPs tenants hit are appended at install time -- kube-apiserver fetches
+    # the discovery URL by IP, not by the logical issuer host.
+    additionalDomains:
+      - "nke.site-controller.internal"
+      - "localhost"
+      - "127.0.0.1"
+
+# ─── cloud-workflow-engine ───────────────────────────────────────────────────
+# image.repository/tag are left at the chart's own defaults. The nvcr-published
+# chart already carries nvcr.io/j7sbcjl3qgta/controller and the
+# svc-nke-ngc-imagepull secret -- chart-publish-nvcr.yml rewrites both at
+# package time -- so pulling the chart from nvcr gets a matching image without
+# any override here.
+#
+# An installer can still repoint them, which the CAPD e2e depends on: it builds
+# the controller at HEAD and loads it into kind, so it overrides repository and
+# tag and never pulls from a registry. Keeping cloud-workflow-engine a subchart
+# with live values is what makes that possible.

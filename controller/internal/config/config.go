@@ -100,6 +100,10 @@ type Config struct {
 	// FWEAPIKey is the NGC API key to pass to FWE, for use when calling the Forge API.
 	FWEAPIKey string `env:"FWE_API_KEY"`
 
+	// NicoControllersEnabled enables controllers that watch NICo infrastructure
+	// resources. Disable it when CWE manages only provisioned infrastructure.
+	NicoControllersEnabled bool `env:"NICO_CONTROLLERS_ENABLED" default:"true"`
+
 	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
 	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
 	// subnet-based NICo pools use the static Forge peer ASN.

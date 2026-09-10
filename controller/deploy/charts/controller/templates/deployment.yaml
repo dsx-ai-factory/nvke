@@ -276,6 +276,8 @@ spec:
             {{- end }}
             - name: PROFILES_DIR
               value: {{ .Values.profiles.path | quote }}
+            - name: NICO_CONTROLLERS_ENABLED
+              value: {{ .Values.controllers.nico.enabled | quote }}
             {{- if .Values.profiles.image.enabled }}
             - name: RUNBOOKS_DIR
               value: {{ printf "%s/runbooks" .Values.profiles.path | quote }}

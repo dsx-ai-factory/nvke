@@ -19,7 +19,7 @@ func TestSetSiteRequiresKubeconfig(t *testing.T) {
 	}
 }
 
-func TestSetSitePersistsKubeconfigAndCurrentSite(t *testing.T) {
+func TestSetSitePersistsConnectionDetailsAndCurrentSite(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 
 	root := newRootCmd("test", "test", "test", "test")
@@ -27,6 +27,8 @@ func TestSetSitePersistsKubeconfigAndCurrentSite(t *testing.T) {
 		"config", "set-site",
 		"--url", "http://localhost:8080",
 		"--kubeconfig", "/home/op/.kube/dev-mgmt.yaml",
+		"--proxy-client-cert", "/home/op/.config/nkectl/client.crt",
+		"--proxy-client-key", "/home/op/.config/nkectl/client.key",
 		"--name", "dev",
 	})
 	if err := root.Execute(); err != nil {
@@ -46,6 +48,36 @@ func TestSetSitePersistsKubeconfigAndCurrentSite(t *testing.T) {
 	}
 	if site.Kubeconfig != "/home/op/.kube/dev-mgmt.yaml" {
 		t.Errorf("Kubeconfig = %q, want %q", site.Kubeconfig, "/home/op/.kube/dev-mgmt.yaml")
+	}
+	if site.ProxyClientCertFile != "/home/op/.config/nkectl/client.crt" {
+		t.Errorf("ProxyClientCertFile = %q, want proxy client certificate path", site.ProxyClientCertFile)
+	}
+	if site.ProxyClientKeyFile != "/home/op/.config/nkectl/client.key" {
+		t.Errorf("ProxyClientKeyFile = %q, want proxy client key path", site.ProxyClientKeyFile)
+	}
+}
+
+func TestSetSiteRequiresClientCertificateAndKeyTogether(t *testing.T) {
+	tests := map[string][]string{
+		"certificate only": {"--proxy-client-cert", "/client.crt"},
+		"key only":         {"--proxy-client-key", "/client.key"},
+	}
+	for name, flags := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			args := []string{
+				"config", "set-site",
+				"--url", "https://site.example.com",
+				"--kubeconfig", "/management.kubeconfig",
+			}
+			args = append(args, flags...)
+
+			root := newRootCmd("test", "test", "test", "test")
+			root.SetArgs(args)
+			if err := root.Execute(); err == nil {
+				t.Fatal("expected an error for an incomplete client certificate pair")
+			}
+		})
 	}
 }
 

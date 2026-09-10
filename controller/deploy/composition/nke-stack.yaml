@@ -1,0 +1,166 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The NKE management-plane composition: which components ship together, how they
+# depend on each other, and what the deployment needs that this chart does not
+# own. Generates generated/nke-stack/{Chart.yaml,values.yaml}.
+#
+# dependsOn declares EDGES, not phases. Install order is a topological sort of
+# this graph, so a phase list is derived rather than asserted -- there is nothing
+# for a hand-written ordering to drift from.
+apiVersion: nke.nvidia.com/v1alpha1
+kind: Composition
+
+metadata:
+  name: nke-stack
+  description: NKE management-plane composition (controller + its requisites)
+
+spec:
+  # temporal's core templates have no namespaceOverride path, so the release
+  # namespace is pinned to the one name it cannot move away from.
+  releaseNamespace: temporal
+
+  # This chart does not create namespaces. A consumer supplies them, and each
+  # consumer already has its own mechanism:
+  #
+  #   nested in nke-site-controller  tier0-base-config phase 1 pre-creates
+  #                                  cloud-workflow-engine and the cnpg set;
+  #                                  ArgoCD supplies the release namespace via
+  #                                  CreateNamespace=true.
+  #   standalone / CAPD e2e          build/nke-stack.sh install pre-creates
+  #                                  every namespace in the registry before the
+  #                                  first phase.
+  #
+  # Emitting Namespace objects here would collide with tier0 on the nested path
+  # and hand ArgoCD ownership of resources tier0 also manages, so the chart
+  # stays out of it.
+  #
+  # Note the upstream `spire` chart does NOT emit its own namespaces, despite
+  # accepting global.spire.namespaces.create: the Namespace templates live in
+  # spire-lib and are rendered only by spire-lib and spire-nested.
+  # nke-site-controller gets them because it depends on nke-spire, an NVIDIA
+  # wrapper, not on the upstream chart. Verified by rendering: with create:true
+  # set, this composition emitted no spire Namespace objects.
+  #
+  # The same applies to the PodSecurity levels those templates would carry, so
+  # THE CONSUMER MUST APPLY THEM. spire-agent and spiffe-csi-driver need
+  # hostNetwork, hostPID and privileged containers, which `restricted` rejects:
+  #
+  #   spire-system    pod-security.kubernetes.io/enforce: privileged
+  #   spire-server    pod-security.kubernetes.io/enforce: restricted
+  #
+  # build/nke-stack.sh create_namespaces applies these on the standalone and
+  # CAPD e2e paths. Easy to miss because kind does not enforce Pod Security by
+  # default, so the DaemonSets come up unlabelled there and fail only on a
+  # cluster that does enforce.
+  namespaces:
+    providedBy: consumer
+
+  # Release-wide values. Not any one component's configuration -- Helm merges
+  # `global` into every subchart at every depth -- so they live here rather than
+  # in components/.
+  globals:
+    monitoring:
+      # True because this composition now installs the Prometheus Operator, so
+      # the monitoring.coreos.com CRDs a rendered ServiceMonitor needs do exist.
+      # cloud-workflow-engine ANDs its serviceMonitor.enabled with this.
+      #
+      # This travels WITH kube-prometheus-stack.enabled. Turning the stack off
+      # while leaving this true renders ServiceMonitors against CRDs that are
+      # not there, which fails the install outright -- so a consumer disabling
+      # the stack must disable this too, as overlays/capd-e2e.yaml does.
+      enabled: true
+    spire:
+      recommendations:
+        # Required for the two-namespace layout: without it a subchart carrying
+        # no namespaceOverride falls through to the RELEASE namespace, not
+        # spire-system. Also applies the restricted/privileged PodSecurity
+        # labels that make the split necessary.
+        enabled: true
+        # The e2e uses trustDomain example.org, which strict mode rejects. A
+        # real site sets a real trust domain and can leave this on.
+        strictMode: false
+      trustDomain: example.org
+      jwtIssuer: "https://nke.site-controller.internal"
+    installAndUpgradeHooks:
+      enabled: false
+    deleteHooks:
+      enabled: false
+
+  componentRefs:
+    - name: postgresql
+      valuesFile: components/postgresql.yaml
+
+    - name: cert-manager
+      valuesFile: components/cert-manager.yaml
+
+    # Cluster-scoped CRDs only: enabled with no configuration, so no valuesFile.
+    - name: spire-crds
+
+    # Cluster-scoped CRDs only, same as spire-crds.
+    - name: prometheus-operator-crds
+
+    - name: kube-prometheus-stack
+      valuesFile: components/kube-prometheus-stack.yaml
+      # The operator's admission webhook rejects Prometheus and Alertmanager
+      # objects until their CRDs are established, so the CRDs are their own
+      # release installed first.
+      dependsOn: [prometheus-operator-crds]
+
+    - name: temporal
+      valuesFile: components/temporal.yaml
+      # Temporal's schema jobs connect to Postgres to create and migrate
+      # temporal and temporal_visibility.
+      dependsOn: [postgresql]
+
+    - name: spire
+      valuesFile: components/spire.yaml
+      # cert-manager must be SERVING, not merely applied: spire's OIDC provider
+      # creates a Certificate, and an admission webhook that is not up yet is a
+      # hard failure rather than a retry.
+      dependsOn: [spire-crds, cert-manager]
+
+    - name: controller
+      valuesFile: components/controller.yaml
+      # spire listed explicitly even though it is reachable through nothing else
+      # here -- the controller blocks on "no identity issued" until SPIRE issues its SVID.
+      dependsOn: [postgresql, temporal, spire]
+
+  # Version alignment for the nesting milestone (nke-site-controller embeds this
+  # chart). Decision: nke-stack's versions are authoritative, because for
+  # cloud-workflow-engine and spire this repository is the OSS source of truth,
+  # and the rest are newer. Only spire-crds already matches.
+  #
+  #   component              nke-stack     site-controller today
+  #   cert-manager           v1.20.2       v1.15.1
+  #   temporal               0.74.0        0.57.0
+  #   controller             controller/v* 0.0.624 (internal GitLab lineage)
+  #   spire                  0.29.0        via nke-spire 0.1.3 (wraps 0.27.1)
+  #   spire-crds             0.5.0         0.5.0
+  #
+  # EXCEPTION -- postgresql. This is not a version difference. nke-stack ships
+  # an in-repo chart wrapping the official postgres image (see registry.yaml for
+  # why it is not Bitnami's): a single pod, ephemeral by default, with a 512Mi
+  # memory limit, mirroring controller/Tiltfile as a development datastore. The site
+  # controller runs three CloudNativePG clusters (cloud, site, temporal) with
+  # operator-managed failover. Adopting nke-stack's postgres there would be a
+  # downgrade in kind, so the nested composition should keep CNPG and disable
+  # postgresql.enabled, with temporal and the controller repointed at the
+  # CNPG services.
+
+  # Preconditions the composition needs but deliberately does not own. The OIDC
+  # CA is long-lived; mutating its Certificate spec re-issues with a new private
+  # key and invalidates every tenant's embedded trust anchor, so it belongs to
+  # site bootstrap rather than to a chart that gets upgraded.
+  #
+  # Checked explicitly because helm --wait only waits on workloads: a Certificate
+  # is not one, so --wait returns before the CA is issued.
+  requires:
+    - kind: certificate
+      name: oidc-provider-upstream-ca
+      namespace: spire-server
+      condition: Ready
+      # What supplies it, for the error message when it is absent.
+      providedBy: controller/deploy/k8s/oidc-upstream-ca.yaml
+      # The edge it gates: spire cannot become ready without it.
+      before: spire

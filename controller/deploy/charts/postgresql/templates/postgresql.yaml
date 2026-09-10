@@ -1,0 +1,148 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+{{/* Right-trim deliberately omitted: `-}}` would pull the line below up onto
+     the SPDX comment above and comment out the first apiVersion. */}}
+{{- $name := include "postgresql.fullname" . }}
+{{- $ns := include "postgresql.namespace" . }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  username: {{ .Values.auth.username | quote }}
+  password: {{ required "postgresql.auth.password is required" .Values.auth.password | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}-init
+  namespace: {{ $ns }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+data:
+  {{- range $file, $content := .Values.initdb.scripts }}
+  {{ $file }}: |
+    {{- $content | nindent 4 }}
+  {{- end }}
+{{- if .Values.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  {{- with .Values.persistence.storageClass }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  # Recreate, not RollingUpdate: a second pod cannot attach the same volume,
+  # and two postgres processes must never share a data directory.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "postgresql.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "postgresql.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll the pod when the init scripts change. Note this only has an
+        # effect on a fresh data directory -- the entrypoint skips
+        # /docker-entrypoint-initdb.d when one already exists.
+        checksum/init: {{ toYaml .Values.initdb.scripts | sha256sum }}
+    spec:
+      containers:
+        - name: postgresql
+          image: {{ include "postgresql.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            # postgres:18 moved the image default to
+            # /var/lib/postgresql/18/docker and now refuses to start when it
+            # finds a mount at the old path. Pin PGDATA back so the data
+            # directory stays on the volume mounted below.
+            - name: PGDATA
+              value: /var/lib/postgresql/data
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $name }}
+                  key: password
+            - name: POSTGRES_DB
+              value: {{ .Values.auth.database | quote }}
+          ports:
+            - name: postgresql
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: [sh, -c, "pg_isready -U ${POSTGRES_USER}"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # Without this the Deployment reports Available as soon as the
+          # process is up, and helm --wait returns before the databases the
+          # init scripts create exist -- which the next phase depends on.
+          livenessProbe:
+            exec:
+              command: [sh, -c, "pg_isready -U ${POSTGRES_USER}"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+      volumes:
+        - name: data
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ $name }}
+          {{- else }}
+          emptyDir:
+            sizeLimit: {{ .Values.persistence.size }}
+          {{- end }}
+        - name: init
+          configMap:
+            name: {{ $name }}-init
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "postgresql.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "postgresql.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: postgresql
+      port: 5432
+      targetPort: postgresql
