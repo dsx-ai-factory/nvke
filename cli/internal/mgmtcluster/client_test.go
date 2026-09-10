@@ -5,14 +5,18 @@ package mgmtcluster
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
 
 // validKubeconfig is a syntactically valid, minimal kubeconfig. New() never
@@ -38,12 +42,7 @@ users:
 
 func newTestClient(t *testing.T, objs ...runtime.Object) *Client {
 	t.Helper()
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		t.Fatalf("AddToScheme: %v", err)
-	}
-	kube := fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...).Build()
-	return newWithClient(kube)
+	return newWithClient(fake.NewSimpleClientset(objs...))
 }
 
 func TestGetClusterKubeconfigReturnsAdminSecretData(t *testing.T) {
@@ -81,6 +80,24 @@ func TestGetClusterKubeconfigErrorsWhenSecretMissing(t *testing.T) {
 	_, err := c.GetClusterKubeconfig(context.Background(), "missing-cluster")
 	if err == nil {
 		t.Fatal("expected error for missing secret, got nil")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("error = %q, want it to mention \"not found\"", err)
+	}
+}
+
+func TestGetClusterKubeconfigErrorsWhenForbidden(t *testing.T) {
+	c := newTestClient(t)
+	c.kube.(*fake.Clientset).PrependReactor("get", "secrets", func(clienttesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewForbidden(corev1.Resource("secrets"), "my-cluster-admin-kubeconfig", errors.New("denied"))
+	})
+
+	_, err := c.GetClusterKubeconfig(context.Background(), "my-cluster")
+	if err == nil {
+		t.Fatal("expected error when the request is forbidden, got nil")
+	}
+	if !strings.Contains(err.Error(), "not allowed to read secret") {
+		t.Errorf("error = %q, want it to mention the identity needs 'get' on secrets", err)
 	}
 }
 

@@ -1,12 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package clusters
+// Package command holds the nkectl subcommands that read the management
+// cluster directly rather than the CWE API.
+package command
 
 import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -81,15 +84,8 @@ Example:
 			}
 
 			if outputFile != "" {
-				// os.WriteFile only applies the mode argument when it creates the
-				// file; an existing file (e.g. a pre-existing kubeconfig at 0644)
-				// keeps its old, possibly more permissive mode. Chmod explicitly so
-				// this kubeconfig's credentials are never left world/group readable.
-				if err := os.WriteFile(outputFile, data, 0o600); err != nil {
-					return fmt.Errorf("writing kubeconfig to %q: %w", outputFile, err)
-				}
-				if err := os.Chmod(outputFile, 0o600); err != nil {
-					return fmt.Errorf("setting permissions on %q: %w", outputFile, err)
+				if err := writeKubeconfigFile(outputFile, data); err != nil {
+					return err
 				}
 				fmt.Fprintf(cmd.OutOrStdout(), "kubeconfig written to %s\n", outputFile)
 				return nil
@@ -103,4 +99,35 @@ Example:
 	cmd.Flags().StringVar(&outputFile, "output-file", "", "Write kubeconfig to file instead of stdout")
 
 	return cmd
+}
+
+// writeKubeconfigFile writes data to path at mode 0600, atomically and
+// without following a symlink at path. It writes to a temp file in the same
+// directory first and renames over path, so a failure never leaves a partial
+// or wrongly-permissioned kubeconfig on disk, and a symlink at path gets its
+// target replaced rather than written through.
+func writeKubeconfigFile(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".kubeconfig-*")
+	if err != nil {
+		return fmt.Errorf("creating temp file in %q: %w", dir, err)
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("setting permissions on %q: %w", tmpPath, err)
+	}
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("writing kubeconfig to %q: %w", tmpPath, err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing %q: %w", tmpPath, err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("writing kubeconfig to %q: %w", path, err)
+	}
+	return nil
 }

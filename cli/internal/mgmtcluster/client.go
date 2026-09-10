@@ -5,21 +5,21 @@
 // management cluster — specifically the per-cluster admin kubeconfig Secret
 // that the tenantaccess controller publishes into the nke-system namespace.
 //
-// Note: cwedeploy.Engine.TenantKubeconfig reads a different Secret
-// (<cluster>-kubeconfig, not -admin-kubeconfig) via a polling kubectl
-// subprocess, because it waits for a freshly-bootstrapped site's own
-// kubeconfig to appear. This package does a single, non-polling read for an
-// already-provisioned cluster, so it doesn't reuse that function.
+// cwedeploy.Engine.TenantKubeconfig reads a different Secret
+// (<cluster>-kubeconfig) via a polling kubectl subprocess; this package does
+// a single, non-polling read of a different Secret, so it doesn't reuse that
+// function.
 package mgmtcluster
 
 import (
 	"context"
 	"fmt"
+	"time"
 
-	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/runtime"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 const (
@@ -38,20 +38,22 @@ const (
 	// kubeconfigSecretKey is the data key inside the kubeconfig Secret
 	// (mirrors tenantaccess.KubeconfigSecretKey in the controller).
 	kubeconfigSecretKey = "value"
+
+	// requestTimeout bounds every request this package issues. Without it an
+	// unreachable management cluster leaves the command waiting on a
+	// connection that will not open, and it never returns. Mirrors
+	// providers/inspect.defaultTimeout.
+	requestTimeout = 30 * time.Second
 )
 
-// Client is a thin wrapper around a management-cluster k8s client.
+// Client is a thin wrapper around a management-cluster Kubernetes client.
 type Client struct {
-	kube client.Client
+	kube kubernetes.Interface
 }
 
 // New builds a Client from a management cluster kubeconfig path. The caller
-// must resolve the path (e.g. from the active site's configured kubeconfig,
-// or an explicit override) — New does not fall back to KUBECONFIG or
-// ~/.kube/config.
-//
-// Follows the pattern in controller/internal/kube: a controller-runtime
-// client.Client built from clientcmd, rather than a raw client-go Clientset.
+// must resolve the path (e.g. from the active site's configured kubeconfig)
+// — New does not fall back to KUBECONFIG or ~/.kube/config.
 func New(kubeconfigPath string) (*Client, error) {
 	if kubeconfigPath == "" {
 		return nil, fmt.Errorf("management cluster kubeconfig path is empty: run 'nkectl config set-site' with --kubeconfig to set the management cluster kubeconfig")
@@ -60,20 +62,17 @@ func New(kubeconfigPath string) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading management cluster kubeconfig %q: %w", kubeconfigPath, err)
 	}
-	scheme := runtime.NewScheme()
-	if err := corev1.AddToScheme(scheme); err != nil {
-		return nil, fmt.Errorf("building scheme: %w", err)
-	}
-	kube, err := client.New(cfg, client.Options{Scheme: scheme})
+	cfg.Timeout = requestTimeout
+	kube, err := kubernetes.NewForConfig(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("building management cluster client: %w", err)
 	}
 	return &Client{kube: kube}, nil
 }
 
-// newWithClient builds a Client from an existing controller-runtime client,
-// bypassing kubeconfig resolution. Used by tests to inject a fake.
-func newWithClient(kube client.Client) *Client {
+// newWithClient builds a Client from an existing Kubernetes client, bypassing
+// kubeconfig resolution. Used by tests to inject a fake clientset.
+func newWithClient(kube kubernetes.Interface) *Client {
 	return &Client{kube: kube}
 }
 
@@ -82,13 +81,20 @@ func newWithClient(kube client.Client) *Client {
 // into nke-system/<cluster-name>-admin-kubeconfig.
 func (c *Client) GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error) {
 	secretName := clusterName + adminKubeconfigSecretSuffix
-	secret := &corev1.Secret{}
-	if err := c.kube.Get(ctx, client.ObjectKey{Namespace: secretsNamespace, Name: secretName}, secret); err != nil {
-		return nil, fmt.Errorf("reading admin kubeconfig secret nke-system/%s: %w", secretName, err)
+	secret, err := c.kube.CoreV1().Secrets(secretsNamespace).Get(ctx, secretName, metav1.GetOptions{})
+	if err != nil {
+		switch {
+		case apierrors.IsNotFound(err):
+			return nil, fmt.Errorf("admin kubeconfig secret nke-system/%s not found -- check the cluster name, or the cluster may not be provisioned yet: %w", secretName, err)
+		case apierrors.IsForbidden(err):
+			return nil, fmt.Errorf("not allowed to read secret nke-system/%s -- the site kubeconfig identity needs 'get' on secrets in nke-system: %w", secretName, err)
+		default:
+			return nil, fmt.Errorf("reading admin kubeconfig secret nke-system/%s: %w", secretName, err)
+		}
 	}
 	data, ok := secret.Data[kubeconfigSecretKey]
 	if !ok || len(data) == 0 {
-		return nil, fmt.Errorf("admin kubeconfig secret nke-system/%s has no %q key — cluster may not be provisioned yet", secretName, kubeconfigSecretKey)
+		return nil, fmt.Errorf("admin kubeconfig secret nke-system/%s has no %q key", secretName, kubeconfigSecretKey)
 	}
 	return data, nil
 }

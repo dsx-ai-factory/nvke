@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package clusters
+package command
 
 import (
 	"bytes"
@@ -108,6 +108,63 @@ func TestGetKubeconfigCmdOutputFileSetsPermissionsOnNewFile(t *testing.T) {
 	}
 }
 
+// TestGetKubeconfigCmdOutputFileDoesNotWriteThroughSymlink is the case
+// writeKubeconfigFile's rename-based approach exists for: os.WriteFile would
+// follow a symlink at outputFile and both leak the credential into its
+// target and chmod that target, rather than replacing the symlink itself.
+func TestGetKubeconfigCmdOutputFileDoesNotWriteThroughSymlink(t *testing.T) {
+	fetcher := fakeKubeconfigFetcher{"my-cluster": []byte("fake-kubeconfig-bytes")}
+	cmd, _ := newTestKubeconfigCmd(fetcher, nil)
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("unrelated-file-outside-output"), 0o644); err != nil {
+		t.Fatalf("seeding symlink target: %v", err)
+	}
+	link := filepath.Join(dir, "kubeconfig-link")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatalf("Symlink: %v", err)
+	}
+
+	cmd.SetArgs([]string{"my-cluster", "--output-file", link})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// The symlink must be gone, replaced by a regular file holding the
+	// kubeconfig -- not still pointing at target.
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("Lstat: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Error("--output-file left the symlink in place instead of replacing it")
+	}
+	data, err := os.ReadFile(link)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(data) != "fake-kubeconfig-bytes" {
+		t.Errorf("link contents = %q, want %q", data, "fake-kubeconfig-bytes")
+	}
+
+	// target must be untouched: neither the credential nor a chmod landed on it.
+	targetData, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile(target): %v", err)
+	}
+	if string(targetData) != "unrelated-file-outside-output" {
+		t.Errorf("symlink target was written through: contents = %q", targetData)
+	}
+	targetInfo, err := os.Stat(target)
+	if err != nil {
+		t.Fatalf("Stat(target): %v", err)
+	}
+	if got := targetInfo.Mode().Perm(); got != 0o644 {
+		t.Errorf("symlink target mode = %o, want unchanged %o", got, 0o644)
+	}
+}
+
 func TestGetKubeconfigCmdPropagatesFetchError(t *testing.T) {
 	cmd, _ := newTestKubeconfigCmd(fakeKubeconfigFetcher{}, nil)
 	cmd.SetArgs([]string{"missing-cluster"})
@@ -132,5 +189,18 @@ func TestGetKubeconfigCmdRequiresClusterNameArg(t *testing.T) {
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("expected error when the cluster-name argument is omitted, got nil")
+	}
+}
+
+func TestGetKubeconfigCmdOutputFileErrorsWhenDirectoryMissing(t *testing.T) {
+	cmd, _ := newTestKubeconfigCmd(fakeKubeconfigFetcher{"my-cluster": []byte("x")}, nil)
+
+	path := filepath.Join(t.TempDir(), "does-not-exist", "kubeconfig")
+	cmd.SetArgs([]string{"my-cluster", "--output-file", path})
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected error when the output directory does not exist, got nil")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("expected no file left behind when the write path errors")
 	}
 }
