@@ -10,7 +10,7 @@ Three paths. Start with A.
 |---|---|---|
 | [**A — the API alone**](#path-a--the-api-alone) | Go, Docker, kind | CWE running and its API to explore, in minutes. No tenant clusters. |
 | [**B — a tenant cluster with mock NICo**](#path-b--a-tenant-cluster-with-mock-nico) | Docker, kind, ~16 GB free, a CAPNICo checkout | The real create-a-cluster loop against real CAPNICo, no hardware |
-| [**C — a real site**](#path-c--a-real-site) | Imaged nodes, a jump box, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
+| [**C — a real site**](#path-c--a-real-site) | Imaged nodes, nerdctl, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
 
 ## Before you start
 
@@ -22,7 +22,8 @@ cd nke
 | Tool | Needed for | Notes |
 |---|---|---|
 | [Go](https://go.dev/dl/) 1.26.6+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
-| [Docker](https://docs.docker.com/get-docker/) 24+ | all | |
+| [Docker](https://docs.docker.com/get-docker/) 24+ | A and B | Not supported for path C bootstrapping |
+| [nerdctl](https://github.com/containerd/nerdctl) with containerd | C | The bootstrap drives kind and pulls images through it; no Docker daemon |
 | GNU Make 4.0+ | all | macOS ships 3.81; `brew install make` gives `gmake` |
 | [temporal](https://docs.temporal.io/cli) | A | `brew install temporal`, or `curl -sSf https://temporal.download/cli.sh \| sh` |
 | [kind](https://kind.sigs.k8s.io/), `kubectl` | A and B | |
@@ -206,9 +207,16 @@ new CA on every run that no node trusts.
 **Network.** CWE must reach each node on **15005** and the new API server on
 **6443**, and **30081** on nodes with a TPM thumbprint.
 
-**A jump box** to run `nkectl` on, under `tmux` — not a laptop that sleeps.
+**Run the bootstrap on one of the provisioned bare metal machines**, under
+`tmux` — not a laptop that sleeps. `nkectl` runs directly on that node; there is
+no jump box.
 
-**A registry login** on that box: `nerdctl login nvcr.io`. The images are
+**nerdctl with containerd**, on that machine. `nkectl` drives kind and pulls
+every bootstrap image through nerdctl, and exports
+`KIND_EXPERIMENTAL_PROVIDER=nerdctl` on every kind call itself. **Docker is not
+supported for bootstrapping** — the machine needs no Docker daemon.
+
+**A registry login** on that machine: `nerdctl login nvcr.io`. The images are
 pulled with nerdctl.
 
 **On the NICo side:** a site, a VPC, a subnet or VPC prefix, instance types, and
