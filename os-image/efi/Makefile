@@ -34,6 +34,7 @@ IC_COMMIT ?= 288755ffba508af7086af5463779f5ebf6e8ef8f
 IC_DIR ?= $(CURDIR)/.infra-controller
 OUTPUT_DIR ?= $(CURDIR)/output
 PATCHES := $(sort $(wildcard $(CURDIR)/patches/*.patch))
+MKOSI_PATCHES := $(sort $(wildcard $(CURDIR)/patches/mkosi/*.patch))
 
 # Upstream derives this from `git describe --tags`, and the depth-1 checkout
 # below has no tags. Nothing in the qcow-imager profile reads the value.
@@ -100,9 +101,22 @@ upstream: ## Check out NVIDIA/infra-controller at the pinned commit.
 		fi; \
 		git -C "$(IC_DIR)" apply --unidiff-zero "$$patch"; \
 	done
+	@for patch in $(MKOSI_PATCHES); do \
+		if git -C "$(IC_DIR)/pxe/mkosi" apply --reverse --check "$$patch" >/dev/null 2>&1; then \
+			continue; \
+		fi; \
+		git -C "$(IC_DIR)/pxe/mkosi" apply "$$patch"; \
+	done
 
 test-patches: upstream ## Test the downstream disk-imaging fixes.
 	bash "$(IC_DIR)/pxe/common_files/disk_imaging_test.sh"
+	@if grep -Fq '?exact-name(grub-pc-bin)' \
+		"$(IC_DIR)/pxe/mkosi/mkosi/resources/mkosi-tools/mkosi.conf.d/10-debian-kali-ubuntu/mkosi.conf"; then \
+		echo "architecture-neutral mkosi tools still require grub-pc-bin" >&2; \
+		exit 1; \
+	fi
+	@grep -Fq 'grub-pc-bin' \
+		"$(IC_DIR)/pxe/mkosi/mkosi.conf.d/30-debian-kali-ubuntu/mkosi.conf.d/20-x86-64.conf"
 
 # `--cwd pxe`, not a cd: upstream's copy step writes to a path relative to pxe.
 # This is how infra-controller's own CI invokes it.

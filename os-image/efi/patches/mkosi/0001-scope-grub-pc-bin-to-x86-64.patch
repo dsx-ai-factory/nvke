@@ -1,0 +1,11 @@
+diff --git a/mkosi/resources/mkosi-tools/mkosi.conf.d/10-debian-kali-ubuntu/mkosi.conf b/mkosi/resources/mkosi-tools/mkosi.conf.d/10-debian-kali-ubuntu/mkosi.conf
+--- a/mkosi/resources/mkosi-tools/mkosi.conf.d/10-debian-kali-ubuntu/mkosi.conf
++++ b/mkosi/resources/mkosi-tools/mkosi.conf.d/10-debian-kali-ubuntu/mkosi.conf
+@@ -8,7 +8,6 @@ Distribution=|ubuntu
+ [Content]
+ Packages=
+         ?exact-name(distribution-gpg-keys)
+-        ?exact-name(grub-pc-bin)
+         ?exact-name(kali-archive-keyring)
+         ?exact-name(virtiofsd)
+         apt
