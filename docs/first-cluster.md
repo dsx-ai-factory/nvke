@@ -10,7 +10,7 @@ Three paths. Start with A.
 |---|---|---|
 | [**A — the API alone**](#path-a--the-api-alone) | Go, Docker, kind | CWE running and its API to explore, in minutes. No tenant clusters. |
 | [**B — a tenant cluster with mock NICo**](#path-b--a-tenant-cluster-with-mock-nico) | Docker, kind, ~16 GB free, a CAPNICo checkout | The real create-a-cluster loop against real CAPNICo, no hardware |
-| [**C — a real site**](#path-c--a-real-site) | Imaged nodes, a jump box, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
+| [**C — a real site**](#path-c--a-real-site) | Imaged nodes, nerdctl, a NICo site | A site controller minting CAPNICo-backed tenant clusters |
 
 ## Before you start
 
@@ -22,7 +22,8 @@ cd nke
 | Tool | Needed for | Notes |
 |---|---|---|
 | [Go](https://go.dev/dl/) 1.26.6+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
-| [Docker](https://docs.docker.com/get-docker/) 24+ | all | |
+| [Docker](https://docs.docker.com/get-docker/) 24+ | A and B | Not supported for path C bootstrapping |
+| [nerdctl](https://github.com/containerd/nerdctl) with containerd | C | The bootstrap drives kind and pulls images through it; no Docker daemon |
 | GNU Make 4.0+ | all | macOS ships 3.81; `brew install make` gives `gmake` |
 | [temporal](https://docs.temporal.io/cli) | A | `brew install temporal`, or `curl -sSf https://temporal.download/cli.sh \| sh` |
 | [kind](https://kind.sigs.k8s.io/), `kubectl` | A and B | |
@@ -203,12 +204,29 @@ Skip this and the bootstrap runs its full 30 minutes before failing on
 certificate also reaches each node through cloud-init. Without it SPIRE mints a
 new CA on every run that no node trusts.
 
+**A SPIRE VIP pointed at the bootstrap node.** During the bootstrap the SPIRE
+server runs on the machine you run `nkectl bootstrap site` from, published on
+**30081**. Each node's `spire-agent` reaches it at the address you baked into its
+configuration when you provisioned it, so **that VIP must point at the node you
+run the bootstrap on.** Use a floating IP rather than the node's own address, so
+it still resolves after bootstrapping completes.
+
 **Network.** CWE must reach each node on **15005** and the new API server on
 **6443**, and **30081** on nodes with a TPM thumbprint.
 
-**A jump box** to run `nkectl` on, under `tmux` — not a laptop that sleeps.
+**Run the bootstrap on one of the provisioned bare metal machines**, under
+`tmux` — not a laptop that sleeps. `nkectl` runs directly on that node; there is
+no jump box.
 
-**A registry login** on that box: `nerdctl login nvcr.io`. The images are
+**nerdctl with containerd**, on that machine. `nkectl` drives kind and pulls
+every bootstrap image through nerdctl, and exports
+`KIND_EXPERIMENTAL_PROVIDER=nerdctl` on every kind call itself. **Docker is not
+supported for bootstrapping** — the machine needs no Docker daemon. **Do not run
+nerdctl rootless.** The bootstrap sets up the kind node's networking — an
+iptables rule and a bridge address — which needs a rootful nerdctl; run it as
+root.
+
+**A registry login** on that machine: `nerdctl login nvcr.io`. The images are
 pulled with nerdctl.
 
 **On the NICo side:** a site, a VPC, a subnet or VPC prefix, instance types, and
@@ -273,7 +291,10 @@ The key can come from the environment, from `--registry-api-key`, or from
 
 Where Docker Hub is slow or blocked, point the seed cluster at a mirror:
 `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` and `NKECTL_CWE_POSTGRES_CHART`. The Postgres
-chart pull is the step that times out.
+chart pull is the step that times out. For the full set of third-party images
+the bootstrap pulls — Postgres, Temporal, and the SPIRE stack — and to mirror
+them into a local or private registry,
+see [`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh).
 
 It creates a throwaway kind cluster, installs Postgres, Temporal, SPIRE, CAPI and
 CWE into it, builds the site cluster on your hosts through `nke-agent`, and

@@ -280,6 +280,16 @@ type Config struct {
 	// PostgresChartRef is where helm pulls the Bitnami postgresql chart from,
 	// as an OCI reference or a local path. Empty uses Docker Hub's OCI registry.
 	PostgresChartRef string
+
+	// DockerHubMirror is the registry host (with an optional port) the same
+	// NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR that redirects the seed node's docker.io
+	// pulls (see bootstrapengine.configureDockerHubMirror) names. When set, it is
+	// also passed to the SPIRE chart as global.spire.image.registry, so the SPIRE
+	// images -- which come from ghcr.io, registry.k8s.io and cgr.dev rather than
+	// Docker Hub, and so are not covered by that containerd redirect -- pull from
+	// the mirror too. Each keeps its upstream repository path under the mirror.
+	// Empty leaves the SPIRE images pointed at their upstream registries.
+	DockerHubMirror string
 }
 
 // DefaultConfig reads the package's knobs from the environment, mirroring
@@ -303,6 +313,7 @@ func DefaultConfig() Config {
 		ReadyTimeout: envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
 
 		PostgresChartRef: os.Getenv("NKECTL_CWE_POSTGRES_CHART"),
+		DockerHubMirror:  os.Getenv("NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR"),
 	}
 }
 
@@ -808,14 +819,24 @@ func spireInstallArgs(cfg Config, valuesPath, clusterName, trustDomain string, t
 		"--set-string", "global.spire.clusterName=" + clusterName,
 		"--set-string", "global.spire.trustDomain=" + trustDomain,
 		"--set-string", prefix + ".adminIDs[0]=spiffe://" + trustDomain + "/nke-service/cloud-workflow-engine",
+	}
+	// The SPIRE images live on ghcr.io, registry.k8s.io and cgr.dev, which the
+	// docker.io-only containerd mirror does not touch. Point them at the same
+	// mirror through the chart's one-shot registry override, so a bootstrap
+	// behind a blocked Docker Hub can pull them too. Each image keeps its
+	// upstream repository path, which is the layout the mirror is populated with.
+	if cfg.DockerHubMirror != "" {
+		args = append(args, "--set-string", "global.spire.image.registry="+cfg.DockerHubMirror)
+	}
+	args = append(args,
 		// Both halves of the two agreements CWE depends on. See the constants.
-		"--set-string", prefix + ".controllerManager.className=" + spireControllerManagerClass,
+		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
 		// --set, not --set-string: the chart's schema types these as integers.
-		"--set", prefix + ".service.port=" + spireServerPort,
+		"--set", prefix+".service.port="+spireServerPort,
 		// The agent's port is a separate value that does not follow the
 		// Service. Both or neither; see the constant.
-		"--set", spireAgentValuesPrefix + ".server.port=" + spireServerPort,
-	}
+		"--set", spireAgentValuesPrefix+".server.port="+spireServerPort,
+	)
 	args = append(args, upstreamCAArgs(cfg, prefix)...)
 	args = append(args, tpmAttestorArgs(cfg, prefix)...)
 	return append(args, "--wait", "--timeout", timeout.String())
