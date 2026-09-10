@@ -518,7 +518,6 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "profiles.image.repository=" + profRepo,
 		"--set-string", "profiles.image.tag=" + profTag,
 		"--set-string", "profiles.image.digest=" + profDigest,
-		"--set", "secrets.forgeSecret.enabled=false",
 		"--set", "cni.installAfterInit=true",
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,

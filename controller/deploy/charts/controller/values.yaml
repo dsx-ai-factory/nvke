@@ -387,13 +387,6 @@ secrets:
   dbSecretName: ""
   # -- secretKey with db connectionString. If not specified, defaults to "database-connection-string"
   dbSecretKey: ""
-  forgeSecret:
-    # -- Read FWE_API_KEY from a Kubernetes Secret.
-    enabled: true
-  # -- secret with forge-creds. If not specified, will default to secret with "<fulName>-forge-creds"
-  forgeSecretName: ""
-  # -- secretKey with forge-key. If not specified, will defaults to "forge-api-key"
-  forgeSecretKey: ""
   # -- Name of the Kubernetes Secret (created out-of-band by Vault Secrets Operator)
   # providing DGXC tenant credentials. Expected keys: user, password.
   # When empty, DGXC_TENANT_USER and DGXC_TENANT_PASSWORD are not injected.

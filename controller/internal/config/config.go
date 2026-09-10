@@ -15,12 +15,6 @@ import (
 )
 
 const (
-	// ForgeEnvironmentProduction is the standard production Forge environment.
-	ForgeEnvironmentProduction = "production"
-	// ForgeEnvironmentTest selects the local test mock server.
-	// Skips NGC auth (uses a self-signed JWT) and does not require FWE_API_KEY.
-	ForgeEnvironmentTest = "test"
-
 	// InfraProviderNico is the API-facing name for the Nico provider block.
 	InfraProviderNico = "nico"
 	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
@@ -95,20 +89,9 @@ type Config struct {
 	// NodeHealthCheckTimeout is the timeout for a cluster's node health check reconcile
 	NodeHealthCheckTimeout time.Duration `env:"NODE_HEALTH_CHECK_TIMEOUT" default:"2m"`
 
-	// ForgeEnvironment selects which Forge environment to use (production|test).
-	// Defaults to production.
-	ForgeEnvironment string `env:"FORGE_ENVIRONMENT" default:"production"`
-
-	// ForgeURL is the Forge API base URL.
-	ForgeURL string `env:"FORGE_URL" default:"https://api.ngc.nvidia.com"`
-
-	// FWEAPIKey is the NGC API key to pass to FWE, for use when calling the Forge API.
-	FWEAPIKey string `env:"FWE_API_KEY"`
-
 	// NicoControllersEnabled enables controllers that watch NICo infrastructure
 	// resources. Disable it when CWE manages only provisioned infrastructure.
 	NicoControllersEnabled bool `env:"NICO_CONTROLLERS_ENABLED" default:"true"`
-
 	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
 	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
 	// subnet-based NICo pools use the static Forge peer ASN.
@@ -143,10 +126,6 @@ type Config struct {
 	// automatic timeout-based provisioning remediation.
 	NodeProvisioningTimeout time.Duration `env:"NODE_PROVISIONING_TIMEOUT" default:"2h"`
 
-	// NodeSchedulingRetryInterval is the retry interval for node scheduling when
-	// external capacity or provider readiness is temporarily unavailable.
-	NodeSchedulingRetryInterval time.Duration `env:"NODE_SCHEDULING_RETRY_INTERVAL" default:"2m"`
-
 	// CertRenewalControllerEnabled enables CWE-owned periodic Kubernetes control-plane certificate renewal.
 	CertRenewalControllerEnabled bool `env:"CERT_RENEWAL_CONTROLLER_ENABLED" default:"true"`
 
@@ -156,38 +135,8 @@ type Config struct {
 	// CertRenewalThresholdDays is passed to the certificate-renewal runbook.
 	CertRenewalThresholdDays int `env:"CERT_RENEWAL_THRESHOLD_DAYS" default:"30"`
 
-	// TenantSitesCacheTTL is the time-to-live for site cache entries
-	TenantSitesCacheTTL time.Duration `env:"TENANT_SITES_CACHE_TTL" default:"24h"`
-
 	// NKESiteControllerName is the name of the site controller
 	NKESiteControllerName string `env:"NKE_SITE_CONTROLLER_NAME"`
-
-	// SiteInstancesCacheTTL is the time-to-live for instance cache entries
-	SiteInstancesCacheTTL time.Duration `env:"SITE_INSTANCES_CACHE_TTL" default:"30s"`
-
-	// SiteInstanceTypesCacheTTL is the time-to-live for instance type cache entries
-	SiteInstanceTypesCacheTTL time.Duration `env:"SITE_INSTANCE_TYPES_CACHE_TTL" default:"5m"`
-
-	// SiteSubnetsCacheTTL is the time-to-live for subnet cache entries
-	SiteSubnetsCacheTTL time.Duration `env:"SITE_SUBNETS_CACHE_TTL" default:"30s"`
-
-	// SiteVpcPrefixesCacheTTL is the time-to-live for VPC prefix cache entries
-	SiteVpcPrefixesCacheTTL time.Duration `env:"SITE_VPC_PREFIXES_CACHE_TTL" default:"30s"`
-
-	// SiteVPCsCacheTTL is the time-to-live for VPC cache entries
-	SiteVPCsCacheTTL time.Duration `env:"SITE_VPCS_CACHE_TTL" default:"5m"`
-
-	// SiteSSHKeyGroupsCacheTTL is the time-to-live for SSH key group cache entries
-	SiteSSHKeyGroupsCacheTTL time.Duration `env:"SITE_SSH_KEY_GROUPS_CACHE_TTL" default:"5m"`
-
-	// SiteIPBlocksCacheTTL is the time-to-live for IP block cache entries
-	SiteIPBlocksCacheTTL time.Duration `env:"SITE_IP_BLOCKS_CACHE_TTL" default:"5m"`
-
-	// SiteInfiniBandPartitionsCacheTTL is the time-to-live for InfiniBand partition cache entries
-	SiteInfiniBandPartitionsCacheTTL time.Duration `env:"SITE_INFINIBAND_PARTITIONS_CACHE_TTL" default:"5m"`
-
-	// SiteNVLinkLogicalPartitionsCacheTTL is the time-to-live for NVLink logical partition cache entries
-	SiteNVLinkLogicalPartitionsCacheTTL time.Duration `env:"SITE_NVLINK_LOGICAL_PARTITIONS_CACHE_TTL" default:"30s"`
 
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `env:"SPIFFE_ENABLED" default:"false"`

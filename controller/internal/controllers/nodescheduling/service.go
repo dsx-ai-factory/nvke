@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"time"
 
 	"github.com/google/uuid"
 	"go.temporal.io/api/enums/v1"
@@ -58,15 +57,6 @@ func NewService(
 		logger:            logger,
 		cweTemporalClient: cweTemporalClient,
 	}
-}
-
-// RetryAfter returns the scheduler retry interval for temporary external
-// unavailability such as Forge capacity or provider readiness.
-func (s *Service) RetryAfter() time.Duration {
-	if s.cfg.NodeSchedulingRetryInterval > 0 {
-		return s.cfg.NodeSchedulingRetryInterval
-	}
-	return 2 * time.Minute
 }
 
 // ScheduleCAPIInfraNodes starts ProvisionNode workflows without Forge

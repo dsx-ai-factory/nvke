@@ -167,7 +167,6 @@ type NodeQueries interface {
 	GetNodeForUpdate(ctx context.Context, id uuid.UUID) (Node, error)
 	CreateNode(ctx context.Context, node *Node) (Node, error)
 	UpdateNode(ctx context.Context, node *Node) (Node, error)
-	UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.UUID, forgeInstanceID, forgeMachineID, ip *string) error
 	DeleteNode(ctx context.Context, id uuid.UUID) error
 
 	// TryAcquireNodeProvisioningLock tries to acquire a transaction-level advisory lock for a specific node.
@@ -370,32 +369,6 @@ func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) 
 		return Node{}, err
 	}
 	return *node, notFoundErrIfNoRowsAffected(res)
-}
-
-func (q *queriesImpl) UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.UUID, forgeInstanceID, forgeMachineID, ip *string) error {
-	if forgeInstanceID == nil && forgeMachineID == nil && ip == nil {
-		return nil
-	}
-
-	return q.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		qi := queriesImpl{db: tx}
-		node, err := qi.GetNodeForUpdate(ctx, nodeID)
-		if err != nil {
-			return err
-		}
-		if forgeInstanceID != nil {
-			node.ForgeInstanceID = *forgeInstanceID
-		}
-		if forgeMachineID != nil {
-			node.ForgeMachineID = *forgeMachineID
-		}
-		if ip != nil {
-			node.IP = *ip
-		}
-
-		_, err = qi.UpdateNode(ctx, &node)
-		return err
-	})
 }
 
 func (q *queriesImpl) DeleteNode(ctx context.Context, id uuid.UUID) error {

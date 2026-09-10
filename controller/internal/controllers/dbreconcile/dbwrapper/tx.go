@@ -160,29 +160,6 @@ func (tx *reconcileTx) UpdateNode(ctx context.Context, node *db.Node) (db.Node, 
 	return updated, nil
 }
 
-func (tx *reconcileTx) UpdateNodeForgeDetails(ctx context.Context, nodeID uuid.UUID, forgeInstanceID, forgeMachineID, ip *string) error {
-	if forgeInstanceID == nil && forgeMachineID == nil && ip == nil {
-		return tx.Tx.UpdateNodeForgeDetails(ctx, nodeID, forgeInstanceID, forgeMachineID, ip)
-	}
-
-	previous, err := tx.Tx.GetNode(ctx, nodeID)
-	if err != nil {
-		return err
-	}
-
-	if err := tx.Tx.UpdateNodeForgeDetails(ctx, nodeID, forgeInstanceID, forgeMachineID, ip); err != nil {
-		return err
-	}
-
-	updated, err := tx.Tx.GetNode(ctx, nodeID)
-	if err != nil {
-		return err
-	}
-
-	tx.nodes = append(tx.nodes, previous, updated)
-	return nil
-}
-
 func (tx *reconcileTx) UpdateNodeTeleportRegistered(ctx context.Context, nodeID uuid.UUID, condition db.Condition) error {
 	previous, err := tx.Tx.GetNode(ctx, nodeID)
 	if err != nil {

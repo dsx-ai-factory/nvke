@@ -56,7 +56,7 @@ NGC authentication. No tenant clusters, no hardware.
 kind create cluster
 
 # Postgres, Temporal, then CWE.
-FORGE_ENVIRONMENT=test make -C controller run-local
+make -C controller run-local
 ```
 
 - Swagger — <http://localhost:8080/api/docs/>. Keep the trailing slash.
@@ -313,8 +313,8 @@ Use the chart in
 [`controller/deploy/charts/controller`](../controller/deploy/charts/controller).
 It installs **CWE alone**, against a database and a Temporal you provide, and
 defaults to a ClusterIP service with ingress off, so nothing reaches the API
-until you change that. Give it CWE's NICo settings too — `FORGE_URL` and the
-Forge credential Secret — which the bootstrap does not carry over.
+until you change that. Install and configure the infrastructure provider
+separately; the bootstrap does not carry its credentials over.
 
 ```bash
 nkectl config set-site --name my-site --url https://<cwe-url> \

@@ -52,7 +52,6 @@ func TestConfig_ValidateSupportedInfraProviders(t *testing.T) {
 		SpireServerAPIAddress:   "spire-server.spire-server.svc.cluster.local:8081",
 		SpireJoinTokenTTL:       time.Hour,
 		SupportedInfraProviders: []string{config.InfraProviderNico, config.InfraProviderInfra},
-		FWEAPIKey:               "test-key",
 	}
 
 	type parameters struct {

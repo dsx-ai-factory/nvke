@@ -133,7 +133,6 @@ func TestServerHealthEndpoints(t *testing.T) {
 	mockDB := &testutil.MockDB{}
 	mockDB.On("Ping", mock.Anything).Return(nil).Once()
 	cfg := config.Config{
-		FWEAPIKey:            "test-key",
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}

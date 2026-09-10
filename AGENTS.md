@@ -120,7 +120,7 @@ build pass. Removing those dependencies is tracked work with its own design.
   certificates, or `.env` files.** Nothing resembling a credential belongs in
   this repository, in test fixtures, or in example manifests or profiles. This
   repository is being prepared to go public and its full history goes with it.
-  Use placeholder values such as `REDACTED` or `example-token`. `FWE_API_KEY`,
+  Use placeholder values such as `REDACTED` or `example-token`.
   `DB_CONNECTION_STRING` and the SPIFFE socket path are supplied by the
   environment at runtime — never inline a real value. If you find a real secret
   already committed, **stop and report it** rather than pushing a fix that

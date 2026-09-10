@@ -8,9 +8,6 @@ metadata:
     {{- include "controller.labels" . | nindent 4 }}
   {{- $reloadSecrets := list }}
   {{- $reloadConfigMaps := list }}
-  {{- if and .Values.secrets.forgeSecret.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
-  {{- $reloadSecrets = append $reloadSecrets (default (printf "%s-%s" (include "controller.fullname" .) "forge-creds") .Values.secrets.forgeSecretName) }}
-  {{- end }}
   {{- if and .Values.secrets.dgxcTenantCredSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
   {{- $reloadSecrets = append $reloadSecrets .Values.secrets.dgxcTenantCredSecretName }}
   {{- end }}
@@ -250,14 +247,6 @@ spec:
             {{- else }}
             - name: DB_CONNECTION_STRING
               value: {{ printf "postgres://%s:%s@%s/%s?sslmode=%s" .Values.appDb.postgresUser (default "placeholder" .Values.appDb.postgresPassword) .Values.appDb.url .Values.appDb.dbName (default "disable" .Values.appDb.sslMode) | quote }}
-            {{- end }}
-            # forge apikey
-            {{- if .Values.secrets.forgeSecret.enabled }}
-            - name: FWE_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ default (printf "%s-%s" (include "controller.fullname" .) "forge-creds") .Values.secrets.forgeSecretName }}
-                  key: {{ default "forge-api-key" .Values.secrets.forgeSecretKey }}
             {{- end }}
             # Temporal config
             - name: TEMPORAL_HOST_PORT
