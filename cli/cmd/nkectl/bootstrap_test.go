@@ -9,11 +9,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -304,25 +307,73 @@ func setBootstrapEnv(t *testing.T) {
 	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
 }
 
-// The image lookup must run against the runtime kind loads from. nerdctl is
-// the default provider, and such a host need not have Docker at all.
-func TestRunBootstrapSiteUsesTheProviderCLI(t *testing.T) {
+// The image lookup must run against the runtime kind loads from, and a
+// stale NKECTL_BOOTSTRAP_PROVIDER export must not steer it back to a Docker
+// daemon a host is no longer required to have.
+func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 	setBootstrapEnv(t)
+	t.Setenv("NKECTL_BOOTSTRAP_PROVIDER", "docker")
 	startFakeCWEAPI(t, true)
 
-	// --bootstrap-provider value -> the CLI the lookup must use.
-	for provider, wantCLI := range map[string]string{"": "nerdctl", "docker": "docker"} {
-		runner := &recordingRunner{next: fakeBootstrapRunner{}}
-		_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			siteSpec:        writeSiteSpec(t, validSiteSpec),
-			provider:        provider,
-			bootstrapRunner: runner,
-			cweRunner:       fakeCWERunner{},
-			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		})
-		if !slices.Contains(runner.names, wantCLI) {
-			t.Errorf("provider %q: no %s call; ran %v", provider, wantCLI, runner.names)
-		}
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+	})
+
+	if !slices.Contains(runner.names, bootstrapengine.RuntimeCLI) {
+		t.Errorf("no %s call; ran %v", bootstrapengine.RuntimeCLI, runner.names)
+	}
+	if slices.Contains(runner.names, "docker") {
+		t.Errorf("shelled out to docker; ran %v", runner.names)
+	}
+}
+
+// An absent nerdctl is the first thing a Docker-only host hits, and pulling
+// cannot fix it. The error has to name the requirement rather than blaming a
+// registry login the operator has already done.
+func TestEnsureImageAvailableDiagnosesMissingNerdctl(t *testing.T) {
+	engine := bootstrapengine.New(runnerFunc(
+		func(_ context.Context, _ map[string]string, _ string, _ ...string) (string, error) {
+			return "", fmt.Errorf("exec %q: %w", bootstrapengine.RuntimeCLI, exec.ErrNotFound)
+		}), nil)
+
+	err := ensureImageAvailable(context.Background(), engine,
+		&bootstrapengine.Cluster{Name: "c"}, "nvcr.io/org/controller:edge", slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("expected an error when nerdctl is not on PATH")
+	}
+	if !strings.Contains(err.Error(), bootstrapengine.RuntimeCLI) {
+		t.Errorf("error %q does not name the missing runtime", err)
+	}
+	if strings.Contains(err.Error(), "authentication failure") {
+		t.Errorf("a missing binary was reported as an auth failure: %v", err)
+	}
+}
+
+// runnerFunc adapts a function to bootstrapengine.CommandRunner.
+type runnerFunc func(ctx context.Context, env map[string]string, name string, args ...string) (string, error)
+
+func (f runnerFunc) Run(ctx context.Context, env map[string]string, name string, args ...string) (string, error) {
+	return f(ctx, env, name, args...)
+}
+
+// The flag is gone outright rather than rejecting "docker" by value, so
+// cobra's own unknown-flag error is the contract.
+func TestBootstrapSiteRejectsBootstrapProviderFlag(t *testing.T) {
+	cmd := newBootstrapCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"site", "-f", writeSiteSpec(t, validSiteSpec), "--bootstrap-provider", "docker"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected --bootstrap-provider to be rejected")
+	}
+	if !strings.Contains(err.Error(), "unknown flag") {
+		t.Errorf("error %q does not report an unknown flag", err)
 	}
 }
 

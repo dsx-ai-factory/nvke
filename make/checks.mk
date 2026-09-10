@@ -169,7 +169,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory vulncheck
 	@echo
 	@echo "Merge-gate jobs not run locally:"
-	@echo "  nkectl bootstrap e2e   make -C cli test-e2e-bootstrap   Docker and kind"
+	@echo "  nkectl bootstrap e2e   make -C cli test-e2e-bootstrap   nerdctl, Docker and kind"
 	@echo "  gofail e2e             make -C controller e2e-gofail    PostgreSQL, envtest and Temporal"
 	@echo "Workspace re-derivation needs access to the internal provider; work-check reports if it skips."
 	@echo "CAPD backend e2e is advisory, not part of the merge gate: make test-e2e-backend-ci"
