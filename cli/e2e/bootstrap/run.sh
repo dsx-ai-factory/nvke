@@ -57,7 +57,8 @@
 #     nerdctl is a BuildKit client, not a builder, and fails outright without
 #     one. The CI workflow starts it on the same containerd.
 #   - root, or sudo: attaching the bootstrap cluster to the node network
-#     installs an iptables rule and assigns the SPIRE VIP to a bridge.
+#     installs two iptables FORWARD rules and assigns the SPIRE VIP to a
+#     bridge.
 #     Without it the run fails at "the bootstrap cluster was never attached
 #     to the node network", after the images have already been built.
 #
@@ -165,13 +166,21 @@ collect_node_diagnostics() {
   local i node output
 
   mkdir -p "${DIAGNOSTICS_DIR}" || return 0
+  log "host forwarding and network state (for the cross-bridge path)"
+  {
+    echo "### iptables -S FORWARD"; iptables -S FORWARD
+    echo "### iptables -S CNI-ISOLATION-STAGE-1"; iptables -S CNI-ISOLATION-STAGE-1
+    echo "### iptables -S CNI-ISOLATION-STAGE-2"; iptables -S CNI-ISOLATION-STAGE-2
+    echo "### iptables -t nat -S CNI-HOSTPORT-DNAT"; iptables -t nat -S CNI-HOSTPORT-DNAT
+    echo "### nerdctl network inspect"; nerdctl network inspect kind "${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"
+  } > "${DIAGNOSTICS_DIR}/host-network.txt" 2>&1 || true
   log "collecting kubelet and containerd diagnostics from ${node_count} fake node(s)"
   for ((i = 1; i <= node_count; i++)); do
     node="nkectl-e2e-${name_prefix}${i}"
     output="${DIAGNOSTICS_DIR}/host-diagnostics-${name_prefix}${i}.txt"
     {
       printf '### journalctl: kubelet and containerd\n'
-      nerdctl exec "${node}" journalctl -u kubelet -u containerd \
+      nerdctl exec "${node}" journalctl -u kubelet -u containerd -u nke-agent -u spire-agent \
         --boot --no-pager --output=short-iso-precise --lines=10000 || true
 
       printf '\n### systemctl status\n'
@@ -214,9 +223,9 @@ cleanup() {
   fi
   if [ "${nodes_up}" = true ]; then
     if [ "${nerdctl_node_access}" = true ]; then
-      log "removing nerdctl access to the node network"
-      iptables -t raw -D PREROUTING -i "${nerdctl_bridge}" \
-        -d "${NKECTL_E2E_SUBNET:-172.26.0.0/24}" -j ACCEPT 2>/dev/null || true
+      log "removing the cross-bridge forwarding rules"
+      iptables -D FORWARD -i "${nerdctl_bridge}" -o "${spire_vip_device}" -j ACCEPT 2>/dev/null || true
+      iptables -D FORWARD -i "${spire_vip_device}" -o "${nerdctl_bridge}" -j ACCEPT 2>/dev/null || true
     fi
     if [ -n "${spire_vip_device}" ]; then
       log "removing ${SPIRE_VIP} from ${spire_vip_device}"
@@ -397,6 +406,31 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
   --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
+# Both directions across the two bridges, checked the moment the cluster is
+# attached. A break here used to surface fifteen minutes later as "did not
+# report provisioned", with the cause buried in CWE's pod log; this names it
+# in seconds. bash's /dev/tcp is used because neither image ships curl.
+probe_cross_bridge_connectivity() {
+  local cp="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
+  local node1="nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1"
+  local cp_ip
+  cp_ip="$(nerdctl inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${cp}")" || return 1
+  # kind -> node: the path CWE takes to nke-agent (the site spec's nodeAgentPort).
+  if ! nerdctl exec "${cp}" timeout 5 bash -c "exec 3<>/dev/tcp/${INIT_NODE_IP}/15005"; then
+    log "FAIL: the bootstrap cluster cannot reach nke-agent at ${INIT_NODE_IP}:15005 across the bridges"
+    iptables -S FORWARD | sed 's/^/  /'
+    return 1
+  fi
+  # node -> kind: the path a node takes to the SPIRE VIP, tested against the
+  # control plane's kubelet port since SPIRE is not deployed yet at this point.
+  if ! nerdctl exec "${node1}" timeout 5 bash -c "exec 3<>/dev/tcp/${cp_ip}/10250"; then
+    log "FAIL: ${node1} cannot reach the bootstrap cluster at ${cp_ip}:10250 across the bridges"
+    iptables -S FORWARD | sed 's/^/  /'
+    return 1
+  fi
+  log "cross-bridge connectivity confirmed in both directions"
+}
+
 attach_bootstrap_to_node_network() {
   local node_network="${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"
   local network_id bridge nerdctl_network_id
@@ -407,11 +441,19 @@ attach_bootstrap_to_node_network() {
   nerdctl_bridge="br-${nerdctl_network_id:0:12}"
   ip link show "${nerdctl_bridge}" >/dev/null || return 1
 
-  # Docker drops packets addressed directly to its containers when they
-  # arrive from another bridge. Permit only this Kind bridge and node subnet,
-  # so CWE can call the node agents while both runtimes remain isolated.
-  iptables -t raw -I PREROUTING 1 -i "${nerdctl_bridge}" \
-    -d "${NKECTL_E2E_SUBNET:-172.26.0.0/24}" -j ACCEPT || return 1
+  # Both networks are nerdctl bridges, and nerdctl's default network config
+  # gives the CNI firewall plugin ingressPolicy "same-bridge"
+  # (nerdctl pkg/netutil/cni_plugin_unix.go). The plugin implements that as
+  # `iptables -I FORWARD -j CNI-ISOLATION-STAGE-1`, whose STAGE-2 DROPs any
+  # forward from one CNI bridge out another
+  # (containernetworking/plugins plugins/meta/firewall/ingresspolicy.go). So
+  # CWE -> nke-agent and node -> SPIRE VIP are both dropped by default; CWE's
+  # NodePreflight then times out dialing 172.26.0.x:15005, and no node ever
+  # attests. Permit exactly this pair of bridges, both directions, inserted
+  # at position 1 so it precedes STAGE-1. Nothing else on the host is
+  # reachable through these rules.
+  iptables -I FORWARD 1 -i "${nerdctl_bridge}" -o "${bridge}" -j ACCEPT || return 1
+  iptables -I FORWARD 1 -i "${bridge}" -o "${nerdctl_bridge}" -j ACCEPT || return 1
   nerdctl_node_access=true
   ip address replace "${SPIRE_VIP}/32" dev "${bridge}" || return 1
   spire_vip_device="${bridge}"
@@ -433,6 +475,7 @@ while kill -0 "${bootstrap_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${attach_dea
   if grep -q "bootstrap kind cluster ready" "${BOOTSTRAP_LOG}" 2>/dev/null; then
     if attach_bootstrap_to_node_network; then
       log "attached the bootstrap cluster at ${SPIRE_VIP}"
+  probe_cross_bridge_connectivity || exit 1
       attached=true
     else
       log "WARN: could not attach the bootstrap cluster to the node network"
