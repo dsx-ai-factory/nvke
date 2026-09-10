@@ -9,7 +9,7 @@ NKE control-plane CLI. Bootstraps site controllers and manages tenant cluster li
 ## What it does
 
 - **Site bootstrap** — `nkectl bootstrap site` creates an ephemeral Kind cluster, deploys CWE onto it, then drives kubeadm init/join across pre-provisioned nodes via `nke-agent` gRPC; no SSH required
-- **Cluster lifecycle** — `nkectl get/create/delete/describe clusters` manages tenant clusters through the CWE API
+- **Cluster lifecycle** — `nkectl get/create/delete clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nkectl generate sitespec` writes a site spec from a node CSV; `nkectl bootstrap site --dry-run` validates one without touching a node
 - **Config** — `nkectl config set-site` points the CLI at a site controller.
 
@@ -57,7 +57,7 @@ nkectl get providers -o json
 # Tenant cluster lifecycle
 nkectl get clusters                    # table with AGE and status
 nkectl get clusters -o json            # JSON output
-nkectl describe cluster <name>
+nkectl get clusters --cluster <name> -o yaml  # full detail for one cluster
 nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create cluster -f -
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
 ```

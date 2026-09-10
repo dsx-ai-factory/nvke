@@ -25,9 +25,9 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl update nodepool <name> --cluster <name>` | Updates a mutable node pool property (desired count, instance type). | Planned |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
-`cluster` and `clusters` are aliases on `create`, `describe`, `get` and
-`delete`. Global flags: `--site <name>` overrides the active site for one
-invocation, `-v` enables debug logging, `--json-logs` emits logs as JSON.
+`cluster` and `clusters` are aliases on `create`, `get` and `delete`. Global
+flags: `--site <name>` overrides the active site for one invocation, `-v`
+enables debug logging, `--json-logs` emits logs as JSON.
 
 ## Example
 

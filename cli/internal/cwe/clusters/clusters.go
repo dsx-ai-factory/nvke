@@ -70,43 +70,6 @@ func NewGetCmd(clientFn ClientFn) *cobra.Command {
 	return cmd
 }
 
-// NewDescribeCmd returns the "nkectl describe cluster <name>" subcommand.
-func NewDescribeCmd(clientFn ClientFn) *cobra.Command {
-	var outputFormat string
-
-	cmd := &cobra.Command{
-		Use:     "cluster <name>",
-		Aliases: []string{"clusters"},
-		Short:   "Show details of a tenant cluster",
-		Args:    cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			f, err := util.ParseFormat(outputFormat)
-			if err != nil {
-				return err
-			}
-			c, err := clientFn()
-			if err != nil {
-				return err
-			}
-			cl, err := c.FindClusterByName(cmd.Context(), args[0])
-			if err != nil {
-				return err
-			}
-			cl2, err := c.GetCluster(cmd.Context(), cl.ID)
-			if err != nil {
-				return err
-			}
-			if f == util.FormatTable {
-				return util.PrintFields(cmd.OutOrStdout(), cl2)
-			}
-			return util.Print(cmd.OutOrStdout(), f, cl2)
-		},
-	}
-
-	cmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format: json or yaml (default: key-value)")
-	return cmd
-}
-
 // NewCreateCmd returns the "nkectl create cluster" subcommand.
 func NewCreateCmd(clientFn ClientFn) *cobra.Command {
 	var filename string
