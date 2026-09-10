@@ -676,12 +676,18 @@ func TestTPMAttestorArgs(t *testing.T) {
 }
 
 func TestTPMPluginChecksum(t *testing.T) {
-	if got := tpmPluginChecksum("arm64"); got != spireTPMDirectARM64Checksum {
-		t.Fatalf("tpmPluginChecksum(arm64) = %q, want %q", got, spireTPMDirectARM64Checksum)
+	tests := map[string]string{
+		"amd64": spireTPMDirectAMD64Checksum,
+		"arm64": spireTPMDirectARM64Checksum,
 	}
-	for _, arch := range []string{"amd64", "ppc64le", "s390x"} {
+	for arch, want := range tests {
+		if got := tpmPluginChecksum(arch); got != want {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want %q", arch, got, want)
+		}
+	}
+	for _, arch := range []string{"ppc64le", "s390x"} {
 		if got := tpmPluginChecksum(arch); got != "" {
-			t.Errorf("tpmPluginChecksum(%s) = %q, want chart default", arch, got)
+			t.Errorf("tpmPluginChecksum(%s) = %q, want no checksum", arch, got)
 		}
 	}
 }
