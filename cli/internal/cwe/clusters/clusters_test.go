@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/clients"
@@ -120,6 +121,34 @@ func TestCreateCmdEmptySpecRejected(t *testing.T) {
 	}
 }
 
+// TestUpdateCmdRequiresSetOrFile verifies that omitting both --set and -f
+// fails before the API is called.
+func TestUpdateCmdRequiresSetOrFile(t *testing.T) {
+	cmd := NewUpdateCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when neither --set nor -f is given, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("missing --set/-f should fail before reaching the API, got: %v", err)
+	}
+}
+
+// TestUpdateCmdBadSetEntryRejected verifies that an unknown --set key fails
+// before the API is called.
+func TestUpdateCmdBadSetEntryRejected(t *testing.T) {
+	cmd := NewUpdateCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster", "--set", "notAField=x"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for an unknown --set key, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("unknown --set key should fail before reaching the API, got: %v", err)
+	}
+}
+
 // TestDeleteCmdRequiresName verifies that delete cluster requires exactly one arg.
 func TestDeleteCmdRequiresName(t *testing.T) {
 	cmd := NewDeleteCmd(clientFnErr)
@@ -148,7 +177,7 @@ func withParent(cmd *cobra.Command, args []string) error {
 }
 
 // TestCmdAliases verifies that "cluster" and "clusters" are interchangeable
-// for get, create, and delete.
+// for get, create, update, and delete.
 func TestCmdAliases(t *testing.T) {
 	validSpec := writeSpec(t, `
 name: my-cluster
@@ -166,6 +195,8 @@ etcdEncrypted: false
 		{"get cluster", func() *cobra.Command { return NewGetCmd(clientFnErr) }, []string{"cluster"}},
 		{"create clusters", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"clusters", "-f", validSpec}},
 		{"create cluster", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"cluster", "-f", validSpec}},
+		{"update clusters", func() *cobra.Command { return NewUpdateCmd(clientFnErr) }, []string{"clusters", "my-cluster", "--set", "teleportEnabled=true"}},
+		{"update cluster", func() *cobra.Command { return NewUpdateCmd(clientFnErr) }, []string{"cluster", "my-cluster", "--set", "teleportEnabled=true"}},
 		{"delete clusters", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"clusters", "my-cluster"}},
 		{"delete cluster", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"cluster", "my-cluster"}},
 	}
@@ -272,6 +303,90 @@ func TestClusterStatus(t *testing.T) {
 				t.Errorf("clusterStatus() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// The generic value-parsing and merge-decode behavior of applySets is
+// covered by util.ApplySetFlags's own tests. These four instead prove that
+// arrayKeys — the one piece of schema-specific knowledge this package
+// supplies (see arrayKeys's doc comment) — is correct against the real
+// UpdateClusterRequest's nested nico/infra provider structs.
+
+func TestApplySetControlPlaneConfigScalars(t *testing.T) {
+	var req api.UpdateClusterRequest
+	if err := applySets(&req, []string{
+		"controlPlaneConfig.desiredCount=3",
+		"controlPlaneConfig.maxSurge=1",
+		"controlPlaneConfig.systemReservedMemory=16Gi",
+		"controlPlaneConfig.nodeLabels=gpu=true,zone=us-east",
+	}); err != nil {
+		t.Fatalf("applySets: %v", err)
+	}
+	cfg := req.ControlPlaneConfig
+	if cfg == nil {
+		t.Fatal("controlPlaneConfig is nil")
+	}
+	if cfg.DesiredCount == nil || *cfg.DesiredCount != 3 {
+		t.Errorf("desiredCount = %v, want 3", cfg.DesiredCount)
+	}
+	if cfg.MaxSurge == nil || *cfg.MaxSurge != 1 {
+		t.Errorf("maxSurge = %v, want 1", cfg.MaxSurge)
+	}
+	if cfg.SystemReservedMemory == nil || *cfg.SystemReservedMemory != "16Gi" {
+		t.Errorf("systemReservedMemory = %v, want 16Gi", cfg.SystemReservedMemory)
+	}
+	if cfg.NodeLabels == nil || len(*cfg.NodeLabels) != 2 || (*cfg.NodeLabels)[0] != "gpu=true" {
+		t.Errorf("nodeLabels = %v, want [gpu=true zone=us-east]", cfg.NodeLabels)
+	}
+}
+
+func TestApplySetNicoFields(t *testing.T) {
+	id1, id2 := uuid.New(), uuid.New()
+	var req api.UpdateClusterRequest
+	if err := applySets(&req, []string{
+		"controlPlaneConfig.nico.osProfile=gpu-profile",
+		"controlPlaneConfig.nico.configProfile=default",
+		"controlPlaneConfig.nico.subnetIDs=" + id1.String() + "," + id2.String(),
+	}); err != nil {
+		t.Fatalf("applySets: %v", err)
+	}
+	nico := req.ControlPlaneConfig.Nico
+	if nico == nil {
+		t.Fatal("controlPlaneConfig.nico is nil")
+	}
+	if nico.OSProfile == nil || *nico.OSProfile != "gpu-profile" {
+		t.Errorf("osProfile = %v, want gpu-profile", nico.OSProfile)
+	}
+	if len(nico.SubnetIDs) != 2 || nico.SubnetIDs[0] != id1 || nico.SubnetIDs[1] != id2 {
+		t.Errorf("subnetIDs = %v, want [%s %s]", nico.SubnetIDs, id1, id2)
+	}
+}
+
+func TestApplySetInfraFields(t *testing.T) {
+	var req api.UpdateClusterRequest
+	if err := applySets(&req, []string{
+		"controlPlaneConfig.infra.spireAttestationMethod=tpm",
+		"controlPlaneConfig.infra.preKubeadmCommands=echo one,echo two",
+	}); err != nil {
+		t.Fatalf("applySets: %v", err)
+	}
+	infra := req.ControlPlaneConfig.Infra
+	if infra == nil {
+		t.Fatal("controlPlaneConfig.infra is nil")
+	}
+	if infra.SpireAttestationMethod == nil || *infra.SpireAttestationMethod != api.SpireAttestationMethodTpm {
+		t.Errorf("spireAttestationMethod = %v, want tpm", infra.SpireAttestationMethod)
+	}
+	if len(infra.PreKubeadmCommands) != 2 || infra.PreKubeadmCommands[1] != "echo two" {
+		t.Errorf("preKubeadmCommands = %v, want [echo one, echo two]", infra.PreKubeadmCommands)
+	}
+}
+
+func TestApplySetRejectsInvalidUUID(t *testing.T) {
+	var req api.UpdateClusterRequest
+	err := applySets(&req, []string{"controlPlaneConfig.nico.subnetIDs=not-a-uuid"})
+	if err == nil {
+		t.Fatal("applySets accepted a non-UUID subnet id")
 	}
 }
 
