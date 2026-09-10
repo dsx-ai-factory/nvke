@@ -409,22 +409,47 @@ bootstrap_pid=$!
 # Both directions across the two bridges, checked the moment the cluster is
 # attached. A break here used to surface fifteen minutes later as "did not
 # report provisioned", with the cause buried in CWE's pod log; this names it
-# in seconds. bash's /dev/tcp is used because neither image ships curl.
+# in seconds.
+#
+# What is being tested is forwarding, not the services. nke-agent does not
+# bind its port until the node has an SVID (agent/cmd/agent/main.go blocks on
+# workloadapi.NewX509Source before net.Listen), and SPIRE is not deployed yet
+# at this point, so a connection to 15005 cannot succeed here. A refused
+# connection is the pass: the packet crossed the bridges and the node
+# answered that nothing is listening. A timeout is the failure: nothing
+# answered, which is what the CNI firewall's cross-bridge DROP looks like.
+# bash's /dev/tcp gives that distinction for free (neither image ships curl):
+# refused fails instantly, dropped hangs until `timeout` kills it with 124.
+cross_bridge_reachable() {
+  local from="$1" ip="$2" port="$3" what="$4"
+  local out rc
+  out="$(nerdctl exec "${from}" timeout 5 bash -c "exec 3<>/dev/tcp/${ip}/${port}" 2>&1)" && rc=0 || rc=$?
+  case "${rc}" in
+    0) log "  ${what}: ${ip}:${port} accepted the connection"; return 0 ;;
+    124) log "FAIL: ${what}: ${ip}:${port} timed out -- packets are not crossing the bridges"; return 1 ;;
+    *)
+      if printf '%s' "${out}" | grep -qi "refused"; then
+        log "  ${what}: ${ip}:${port} reachable (refused; nothing listening yet, as expected before SPIRE)"
+        return 0
+      fi
+      log "FAIL: ${what}: ${ip}:${port} failed (exit ${rc}): ${out}"
+      return 1
+      ;;
+  esac
+}
+
 probe_cross_bridge_connectivity() {
   local cp="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
   local node1="nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1"
-  local cp_ip
+  local cp_ip ok=true
   cp_ip="$(nerdctl inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${cp}")" || return 1
   # kind -> node: the path CWE takes to nke-agent (the site spec's nodeAgentPort).
-  if ! nerdctl exec "${cp}" timeout 5 bash -c "exec 3<>/dev/tcp/${INIT_NODE_IP}/15005"; then
-    log "FAIL: the bootstrap cluster cannot reach nke-agent at ${INIT_NODE_IP}:15005 across the bridges"
-    iptables -S FORWARD | sed 's/^/  /'
-    return 1
-  fi
-  # node -> kind: the path a node takes to the SPIRE VIP, tested against the
-  # control plane's kubelet port since SPIRE is not deployed yet at this point.
-  if ! nerdctl exec "${node1}" timeout 5 bash -c "exec 3<>/dev/tcp/${cp_ip}/10250"; then
-    log "FAIL: ${node1} cannot reach the bootstrap cluster at ${cp_ip}:10250 across the bridges"
+  cross_bridge_reachable "${cp}" "${INIT_NODE_IP}" 15005 "kind -> node" || ok=false
+  # node -> kind: the path a node takes to the SPIRE VIP, against the control
+  # plane's kubelet port, which is listening as soon as the cluster is Ready.
+  cross_bridge_reachable "${node1}" "${cp_ip}" 10250 "node -> kind" || ok=false
+  if [ "${ok}" != true ]; then
+    log "host FORWARD chain:"
     iptables -S FORWARD | sed 's/^/  /'
     return 1
   fi
