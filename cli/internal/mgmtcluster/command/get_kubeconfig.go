@@ -100,11 +100,8 @@ Example:
 	return cmd
 }
 
-// writeKubeconfigFile writes data to path at mode 0600, atomically and
-// without following a symlink at path. It writes to a temp file in the same
-// directory first and renames over path, so a failure never leaves a partial
-// or wrongly-permissioned kubeconfig on disk, and a symlink at path gets its
-// target replaced rather than written through.
+// writeKubeconfigFile writes data to a temp file in path's directory, sets
+// its mode to 0600, and renames it over path.
 func writeKubeconfigFile(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".kubeconfig-*")

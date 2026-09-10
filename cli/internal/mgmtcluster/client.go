@@ -2,13 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package mgmtcluster provides a client for reading resources from the NKE
-// management cluster — specifically the per-cluster admin kubeconfig Secret
-// that the tenantaccess controller publishes into the nke-system namespace.
-//
-// cwedeploy.Engine.TenantKubeconfig reads a different Secret
-// (<cluster>-kubeconfig) via a polling kubectl subprocess; this package does
-// a single, non-polling read of a different Secret, so it doesn't reuse that
-// function.
+// management cluster.
 package mgmtcluster
 
 import (
@@ -39,10 +33,7 @@ const (
 	// (mirrors tenantaccess.KubeconfigSecretKey in the controller).
 	kubeconfigSecretKey = "value"
 
-	// requestTimeout bounds every request this package issues. Without it an
-	// unreachable management cluster leaves the command waiting on a
-	// connection that will not open, and it never returns. Mirrors
-	// providers/inspect.defaultTimeout.
+	// requestTimeout bounds every request this package issues.
 	requestTimeout = 30 * time.Second
 )
 
