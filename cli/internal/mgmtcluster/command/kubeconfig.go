@@ -24,8 +24,7 @@ import (
 type SiteFn func() (config.SiteConfig, error)
 
 // KubeconfigFetcher is the subset of *mgmtcluster.Client NewGetKubeconfigCmd
-// depends on. Narrow on purpose, so tests can inject a fake without a real
-// management cluster kubeconfig or a live server.
+// depends on.
 type KubeconfigFetcher interface {
 	GetClusterKubeconfig(ctx context.Context, clusterName string) ([]byte, error)
 }
