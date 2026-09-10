@@ -4,6 +4,7 @@
 package kubeadmconfig
 
 import (
+	"flag"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,10 +13,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// updateGolden rewrites the testdata fixtures from the rendered output instead
+// of asserting against them. The fixtures order map keys the way
+// sigs.k8s.io/yaml emits them, so hand-editing them when a field is added is
+// error-prone; run `go test ./internal/kubeadmconfig/... -update-golden` and
+// review the diff instead.
+var updateGolden = flag.Bool("update-golden", false, "rewrite testdata golden fixtures from rendered output")
+
 func assertGolden(t *testing.T, goldenFile, got string) {
 	t.Helper()
 
-	want, err := os.ReadFile(filepath.Join("testdata", goldenFile))
+	path := filepath.Join("testdata", goldenFile)
+	if *updateGolden {
+		require.NoError(t, os.WriteFile(path, []byte(got), 0o600), "failed to update golden file %q", goldenFile)
+		return
+	}
+
+	want, err := os.ReadFile(path)
 	require.NoError(t, err, "failed to read golden file %q", goldenFile)
 	assert.Equal(t, string(want), got, "golden mismatch for %s", goldenFile)
 }

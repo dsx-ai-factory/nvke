@@ -106,7 +106,7 @@ func (config *InitConfig) Render() (*BootstrapArtifacts, error) {
 		initConfig,
 		clusterConfiguration(&cfg),
 		kubeProxyConfiguration(cfg.KubeadmContainerMode),
-		initKubeletConfiguration(cfg.KubeadmContainerMode),
+		initKubeletConfiguration(cfg.KubeadmContainerMode, cfg.KubernetesVersion),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("rendering kubeadm init yaml config: %w", err)
@@ -237,6 +237,15 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 			},
 		},
 		TimeoutForControlPlane: &metav1.Duration{Duration: 4 * time.Minute},
+	}
+
+	// KEP-4639 image volumes are stripped during admission when the gate is off,
+	// so a manifest mounting a plugin through an `image:` volume fails with a
+	// missing-file error far from the cause. Only set below the GA floor: the
+	// flag is removed a couple of releases after GA and kube-apiserver refuses
+	// to start when passed a gate it no longer knows.
+	if needsImageVolumeFeatureGate(config.KubernetesVersion) {
+		apiServer.ExtraArgs[featureGatesFlag] = imageVolumeFeatureGate + "=true"
 	}
 
 	if config.EnableEncryption {
