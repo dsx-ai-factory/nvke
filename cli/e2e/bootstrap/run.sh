@@ -442,7 +442,16 @@ probe_cross_bridge_connectivity() {
   local cp="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
   local node1="nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1"
   local cp_ip ok=true
-  cp_ip="$(nerdctl inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "${cp}")" || return 1
+  # From the network, not the container: the control plane's own inspect
+  # lists its pod bridge alongside the kind network, and ranging over both
+  # concatenated the addresses. The network knows exactly one address for it.
+  cp_ip="$(nerdctl network inspect kind --format \
+    "{{range .Containers}}{{if eq .Name \"${cp}\"}}{{.IPv4Address}}{{end}}{{end}}")" || return 1
+  cp_ip="${cp_ip%/*}"
+  if [ -z "${cp_ip}" ]; then
+    log "FAIL: could not find ${cp} on the kind network"
+    return 1
+  fi
   # kind -> node: the path CWE takes to nke-agent (the site spec's nodeAgentPort).
   cross_bridge_reachable "${cp}" "${INIT_NODE_IP}" 15005 "kind -> node" || ok=false
   # node -> kind: the path a node takes to the SPIRE VIP, against the control
