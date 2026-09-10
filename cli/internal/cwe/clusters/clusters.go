@@ -157,11 +157,6 @@ wins on any key present in both). A -f patch document's fields must match
 the CWE UpdateClusterRequest schema exactly. See /api/docs on your site
 controller.
 
-Some controlPlaneConfig.nico.* and controlPlaneConfig.infra.* fields treat
-an empty value as "clear this field", unlike omitting it, which leaves it
-alone. --set key= (nothing after =), or an empty value in a -f document
-(e.g. subnetIDs: [] or osProfile: ""), both send that empty value through.
-
 Example — bump the Kubernetes version:
   nkectl update cluster my-cluster --set controlPlaneKubernetesVersion=1.31.0
 
