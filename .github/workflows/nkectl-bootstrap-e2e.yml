@@ -27,8 +27,10 @@
 # ubuntu-latest ships Docker, and this job deliberately does not use it. The
 # containerd above is separate from the one Docker's own containerd.io
 # package runs, because reusing that daemon would mean the containerd-driven
-# path is secretly riding on Docker. Nothing here invokes `docker`; the
-# `no-docker` step below is what keeps that true.
+# path is secretly riding on Docker. Nothing here invokes `docker`, and two
+# steps below keep that true: "Assert the suite invokes no docker" greps for
+# an invocation before the run, and "Remove Docker" stops the daemon and
+# replaces the binary so anything the grep misses fails at runtime.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -133,8 +135,8 @@ jobs:
       # `containerd.service` on `/run/containerd/containerd.sock` -- reusing
       # either would mean this job is secretly still riding on Docker's
       # daemon, which is exactly what the separate socket exists to rule out).
-      # Docker is left running rather than stopped: nothing here uses it, and
-      # stopping a daemon the runner image manages is not this job's business.
+      # Docker is stopped and masked in the "Remove Docker" step below, so
+      # nothing here can reach it even by accident.
       CONTAINERD_ADDRESS: /run/containerd-nerdctl/containerd.sock
       # buildkitd's own socket, named to match the containerd it builds into.
       # BUILDKIT_HOST is the variable `nerdctl build` itself reads to find a
@@ -411,6 +413,62 @@ jobs:
             exit 1
           fi
 
+      # Docker is installed on this pool and nothing here needs it. Left in
+      # place, a reintroduced dependency would work and pass unnoticed -- a
+      # `docker build` slipped back into a Makefile target, kind falling back
+      # to its Docker default if KIND_EXPERIMENTAL_PROVIDER were ever dropped,
+      # nerdctl reaching Docker's containerd if CONTAINERD_ADDRESS were. So
+      # Docker is removed, and its absence asserted, before the first image is
+      # built. The daemon, its socket and Docker's own containerd are stopped
+      # and masked; every `docker` binary on PATH is replaced in place by a
+      # shim that fails with a pointer here, so an absolute-path invocation
+      # fails the same way a bare one does.
+      #
+      # Safe to do because linux-amd64-cpu16 is a container-based pool:
+      # nothing done to this environment outlives the job. The standalone
+      # containerd-nerdctl.service installed above is a separate unit on a
+      # separate socket and is untouched.
+      - name: Remove Docker
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          # containerd.service here is Docker's (the containerd.io package),
+          # on /run/containerd/containerd.sock -- the socket nerdctl defaults
+          # to without CONTAINERD_ADDRESS. Masked so that fallback fails
+          # loudly instead of quietly riding on Docker's daemon.
+          sudo systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
+          sudo systemctl mask docker.socket docker.service containerd.service 2>/dev/null || true
+          sudo rm -f /var/run/docker.sock /run/docker.sock
+
+          shim="$(mktemp)"
+          cat >"${shim}" <<'SHIM'
+          #!/bin/sh
+          echo "docker was invoked by the bootstrap e2e suite: docker $*" >&2
+          echo "this job removes Docker so a reintroduced dependency fails here rather than passing unnoticed." >&2
+          echo "The suite runs on nerdctl/containerd. See cli/Makefile's check-no-docker and the 'Remove Docker' step in nkectl-bootstrap-e2e.yml." >&2
+          exit 1
+          SHIM
+          # Every copy on PATH, replaced where it lives, plus one first on
+          # PATH in case none was installed at all.
+          while read -r path; do
+            sudo install -m 0755 "${shim}" "${path}"
+          done < <(type -aP docker || true)
+          sudo install -m 0755 "${shim}" /usr/local/bin/docker
+
+          # Prove it. A removal that did not take is worse than none: it
+          # would read as a guarantee while providing nothing.
+          if docker version >/dev/null 2>&1; then
+            echo "::error::docker still runs after removal"; exit 1
+          fi
+          if systemctl is-active --quiet docker.service; then
+            echo "::error::docker.service is still active after removal"; exit 1
+          fi
+          if [ -S /var/run/docker.sock ]; then
+            echo "::error::/var/run/docker.sock still exists after removal"; exit 1
+          fi
+          echo "docker removed; invoking it now fails with:"
+          docker version 2>&1 | sed 's/^/  /' || true
+
       # Into the standalone containerd, not Docker: nkectl loads the image
       # from there, so a Docker-built one would be invisible to it.
       - name: Build CWE image
@@ -432,9 +490,9 @@ jobs:
         working-directory: cli
         run: make build
 
-      # Docker is installed on this runner, so a reintroduced `docker` call in
-      # the suite would work here and pass unnoticed. Cheap to assert, and the
-      # only thing standing between that and a silent dependency coming back.
+      # The cheap, early half of the no-Docker guarantee: a grep for an
+      # invocation, before a twelve-minute run. "Remove Docker" above is the
+      # runtime half, for anything the grep cannot see.
       - name: Assert the suite invokes no docker
         working-directory: cli
         run: make check-no-docker

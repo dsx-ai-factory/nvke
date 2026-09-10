@@ -48,7 +48,8 @@ func TestNoDockerInvocations(t *testing.T) {
 		// package legitimately reads, and the word appears in comments
 		// explaining why Docker is not used.
 		for _, line := range strings.Split(string(body), "\n") {
-			if strings.Contains(line, `"docker"`) {
+			// Trailing-quote match: catches "docker" and "/usr/bin/docker" alike.
+			if strings.Contains(line, `docker"`) {
 				t.Errorf("%s: invokes docker directly; use containerCLI:\n\t%s",
 					name, strings.TrimSpace(line))
 			}

@@ -283,10 +283,10 @@ file-license-check: license ## Verify all files have license headers.
 #
 # Invocations only: the word appears legitimately in Dockerfile paths, in
 # docker.io registry references, and in comments explaining why Docker is not
-# used here. Matching a command position rather than the bare word keeps those
-# out of it.
+# used here. Matching a command position -- bare or by absolute path -- rather
+# than the bare word keeps those out of it.
 check-no-docker: ## Fail if the bootstrap e2e suite invokes docker.
-	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?docker[[:space:]]+(build|builder|exec|image|images|inspect|load|login|logs|network|ps|pull|push|rm|run|save|tag|version|volume)([[:space:]]|$$)' \
+	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker[[:space:]]+(build|builder|exec|image|images|inspect|load|login|logs|network|ps|pull|push|rm|run|save|tag|version|volume)([[:space:]]|$$)' \
 	    e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
 	if [ -n "$$matches" ]; then \
 	  echo "The bootstrap e2e suite must not invoke docker; it runs on nerdctl/containerd."; \
