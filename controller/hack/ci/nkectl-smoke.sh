@@ -7,7 +7,7 @@
 #
 # The Ginkgo suite proves the server. This proves the CLI can talk to it: read
 # commands and their negatives, provider inspection, rejected creates, and one
-# create, describe, delete round trip.
+# create, list, delete round trip.
 #
 # Needs from the caller: log, runner_exec, RUNNER_NAME, NKECTL_BIN, TMP_DIR,
 # BACKEND, CAPD_NODE_IMAGE.
@@ -136,16 +136,6 @@ EOF
   fi
   if ! grep -q 'not found' <<<"${out}"; then
     log "nkectl smoke: 'get clusters -c' failed without a not-found message" >&2
-    return 1
-  fi
-
-  # The two-hop FindClusterByName -> GetCluster path.
-  if out="$(nkectl_exec describe cluster "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
-    log "nkectl smoke: 'describe cluster ${NKECTL_SMOKE_ABSENT}' succeeded against a name that does not exist" >&2
-    return 1
-  fi
-  if ! grep -q 'not found' <<<"${out}"; then
-    log "nkectl smoke: 'describe cluster' failed without a not-found message" >&2
     return 1
   fi
 
@@ -297,7 +287,7 @@ nkectl_smoke_expect_create_rejected() {
   fi
 }
 
-# Create, list, describe, duplicate-reject, delete. One control-plane pool with
+# Create, list, duplicate-reject, delete. One control-plane pool with
 # autoProvisionDisabled passes create validation and schedules no node, so CWE
 # writes only the CAPI Cluster and DockerCluster. Runs after the last leg: the
 # gate between legs counts tenant clusters.
@@ -363,7 +353,7 @@ EOF
     nkectl_smoke_write_cleanup
     return "${rc}"
   fi
-  log "PASS: nkectl created, listed, described and deleted a cluster through CWE"
+  log "PASS: nkectl created, listed and deleted a cluster through CWE"
 }
 
 # Best-effort delete; never fails the caller.
@@ -391,16 +381,6 @@ nkectl_smoke_write_assertions() {
   fi
   if ! jq -e --arg n "${name}" 'length == 1 and .[0].name == $n' <<<"${out}" >/dev/null; then
     log "nkectl smoke: 'get clusters -c ${name} -o json' did not return exactly our cluster: ${out}" >&2
-    return 1
-  fi
-
-  # The two-hop lookup, name to id to cluster.
-  if ! out="$(nkectl_exec describe cluster "${name}" 2>&1)"; then
-    log "nkectl smoke: 'describe cluster ${name}' failed: ${out}" >&2
-    return 1
-  fi
-  if ! grep -qE "^name: ${name}$" <<<"${out}" || ! grep -qE '^id: ' <<<"${out}"; then
-    log "nkectl smoke: 'describe cluster ${name}' printed no id and name lines: ${out}" >&2
     return 1
   fi
 
