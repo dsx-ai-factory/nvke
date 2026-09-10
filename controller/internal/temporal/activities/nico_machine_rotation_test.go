@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
@@ -21,23 +20,23 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
-func TestNicoMachineRotation_NicoMachineReadyCondition(t *testing.T) {
+func TestNicoMachineRotation_NicoMachineProvisionedCondition(t *testing.T) {
 	conditions := []metav1.Condition{{
 		Type:   "Other",
 		Status: metav1.ConditionTrue,
 	}, {
-		Type:   clusterv1.ReadyCondition,
+		Type:   nicov1.MachineProvisionedCondition,
 		Status: metav1.ConditionFalse,
 		Reason: "CreateFailed",
 	}}
 
-	readyCondition := nicoMachineReadyCondition(conditions)
+	provisionedCondition := nicoMachineProvisionedCondition(conditions)
 
-	if assert.NotNil(t, readyCondition) {
-		assert.Equal(t, clusterv1.ReadyCondition, readyCondition.Type)
-		assert.Equal(t, metav1.ConditionFalse, readyCondition.Status)
+	if assert.NotNil(t, provisionedCondition) {
+		assert.Equal(t, nicov1.MachineProvisionedCondition, provisionedCondition.Type)
+		assert.Equal(t, metav1.ConditionFalse, provisionedCondition.Status)
 	}
-	assert.Nil(t, nicoMachineReadyCondition(nil))
+	assert.Nil(t, nicoMachineProvisionedCondition(nil))
 }
 
 func TestNicoMachineRotation_IsNicoNetworkExhaustionMessage(t *testing.T) {
