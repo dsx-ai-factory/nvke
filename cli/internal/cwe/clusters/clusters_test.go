@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/clients"
+	"github.com/NVIDIA/nke/cli/internal/util"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
@@ -306,21 +307,19 @@ func TestClusterStatus(t *testing.T) {
 	}
 }
 
-// The generic value-parsing and merge-decode behavior of applySets is
-// covered by util.ApplySetFlags's own tests. These four instead prove that
-// arrayKeys — the one piece of schema-specific knowledge this package
-// supplies (see arrayKeys's doc comment) — is correct against the real
-// UpdateClusterRequest's nested nico/infra provider structs.
+// These four tests check updateClusterArrayKeys against the real
+// UpdateClusterRequest's nested nico/infra provider structs;
+// util/setflags_test.go covers ApplySetFlags's own generic behavior.
 
 func TestApplySetControlPlaneConfigScalars(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := applySets(&req, []string{
+	if err := util.ApplySetFlags(&req, []string{
 		"controlPlaneConfig.desiredCount=3",
 		"controlPlaneConfig.maxSurge=1",
 		"controlPlaneConfig.systemReservedMemory=16Gi",
 		"controlPlaneConfig.nodeLabels=gpu=true,zone=us-east",
-	}); err != nil {
-		t.Fatalf("applySets: %v", err)
+	}, updateClusterArrayKeys); err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	cfg := req.ControlPlaneConfig
 	if cfg == nil {
@@ -343,12 +342,12 @@ func TestApplySetControlPlaneConfigScalars(t *testing.T) {
 func TestApplySetNicoFields(t *testing.T) {
 	id1, id2 := uuid.New(), uuid.New()
 	var req api.UpdateClusterRequest
-	if err := applySets(&req, []string{
+	if err := util.ApplySetFlags(&req, []string{
 		"controlPlaneConfig.nico.osProfile=gpu-profile",
 		"controlPlaneConfig.nico.configProfile=default",
 		"controlPlaneConfig.nico.subnetIDs=" + id1.String() + "," + id2.String(),
-	}); err != nil {
-		t.Fatalf("applySets: %v", err)
+	}, updateClusterArrayKeys); err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	nico := req.ControlPlaneConfig.Nico
 	if nico == nil {
@@ -364,11 +363,11 @@ func TestApplySetNicoFields(t *testing.T) {
 
 func TestApplySetInfraFields(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := applySets(&req, []string{
+	if err := util.ApplySetFlags(&req, []string{
 		"controlPlaneConfig.infra.spireAttestationMethod=tpm",
 		"controlPlaneConfig.infra.preKubeadmCommands=echo one,echo two",
-	}); err != nil {
-		t.Fatalf("applySets: %v", err)
+	}, updateClusterArrayKeys); err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	infra := req.ControlPlaneConfig.Infra
 	if infra == nil {
@@ -384,9 +383,9 @@ func TestApplySetInfraFields(t *testing.T) {
 
 func TestApplySetRejectsInvalidUUID(t *testing.T) {
 	var req api.UpdateClusterRequest
-	err := applySets(&req, []string{"controlPlaneConfig.nico.subnetIDs=not-a-uuid"})
+	err := util.ApplySetFlags(&req, []string{"controlPlaneConfig.nico.subnetIDs=not-a-uuid"}, updateClusterArrayKeys)
 	if err == nil {
-		t.Fatal("applySets accepted a non-UUID subnet id")
+		t.Fatal("ApplySetFlags accepted a non-UUID subnet id")
 	}
 }
 

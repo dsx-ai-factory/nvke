@@ -136,31 +136,16 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 	return util.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
 }
 
-// arrayKeys is the set of --set paths whose value is a comma-separated list
-// rather than a scalar, so a single value with no comma is still wrapped as
-// a one-element array. This is the only per-field knowledge applySets needs:
-// value *types* (string, bool, int, []uuid.UUID, ...) come entirely from the
-// generated UpdateClusterRequest struct's own json tags, enforced by
-// util.ApplySetFlags's json.Decoder — not hand-listed here. util.ApplySetFlags
-// can't infer this table itself: given only a value's raw text, it can't
-// tell a single-element list field from a scalar field, and it deliberately
-// doesn't reflect on UpdateClusterRequest to find out — that would
-// reintroduce per-field logic into the generic engine.
-var arrayKeys = map[string]bool{ //nolint:gochecknoglobals // static lookup table, not mutated after init
+// updateClusterArrayKeys lists the --set paths whose value is a list
+// rather than a scalar, so util.ApplySetFlags always wraps the value in an
+// array — even a single value with no comma.
+var updateClusterArrayKeys = map[string]bool{ //nolint:gochecknoglobals // static lookup table, not mutated after init
 	"controlPlaneConfig.nodeLabels":                  true,
 	"controlPlaneConfig.nico.instanceTypePreference": true,
 	"controlPlaneConfig.nico.sshKeyGroupIDs":         true,
 	"controlPlaneConfig.nico.subnetIDs":              true,
 	"controlPlaneConfig.nico.vpcPrefixIDs":           true,
 	"controlPlaneConfig.infra.preKubeadmCommands":    true,
-}
-
-// applySets merges --set entries onto req using util.ApplySetFlags. See
-// arrayKeys for the one piece of UpdateClusterRequest-specific knowledge
-// this needs to supply; everything else (dot-path parsing, YAML scalar
-// coercion, the merge-decode against req's json tags) is generic.
-func applySets(req *api.UpdateClusterRequest, entries []string) error {
-	return util.ApplySetFlags(req, entries, arrayKeys)
 }
 
 // NewUpdateCmd returns the "nkectl update cluster <name>" subcommand.
@@ -249,7 +234,7 @@ func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) (a
 			return req, err
 		}
 	}
-	if err := applySets(&req, sets); err != nil {
+	if err := util.ApplySetFlags(&req, sets, updateClusterArrayKeys); err != nil {
 		return req, err
 	}
 	return req, nil

@@ -9,9 +9,7 @@ import (
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-// arrayKeys mirrors the subset of clusters.arrayKeys this file's tests
-// exercise — ApplySetFlags is generic, but a caller must always supply
-// which dot-paths are list-valued (see ApplySetFlags's doc comment for why).
+// testArrayKeys is the arrayKeys argument these tests pass to ApplySetFlags.
 var testArrayKeys = map[string]bool{
 	"controlPlaneConfig.nico.subnetIDs": true,
 }

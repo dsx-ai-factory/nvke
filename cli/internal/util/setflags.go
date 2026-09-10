@@ -15,25 +15,15 @@ import (
 // ApplySetFlags merges dot-notation "key=value" --set entries onto dst, an
 // existing pointer to a JSON-tagged struct. Each key is dot notation
 // matching dst's json field names (e.g. "controlPlaneConfig.nico.subnetIDs").
-// Entries are assembled into a nested JSON document and decoded onto dst
-// with decodeStrict, so dst's own json tags — not this function — decide
-// which keys are valid and what type each value must be. Unknown keys or
-// values that don't fit their field's type surface as the decoder's own
-// errors.
+// Values are parsed as YAML scalars, then merged into dst by JSON-decoding
+// with unknown fields disallowed, so dst's own json tags decide which keys
+// are valid and what type each value must be.
 //
-// Decoding onto the existing dst (rather than into a fresh T) merges into
-// whatever the caller already populated: encoding/json only overwrites
-// fields present in the JSON document, so a key no entry mentions keeps its
-// prior value. Later entries for the same key override earlier ones, since
-// entries are applied in order.
+// Fields no entry mentions keep their prior value on dst; later entries for
+// the same key override earlier ones.
 //
-// arrayKeys is the set of dot-paths whose value should always become a JSON
-// array, even a single value with no comma. Callers must supply this: given
-// only a value's raw text, a comma-count heuristic can't tell a
-// single-element list field from a scalar field, and this function
-// deliberately doesn't reflect on dst's type to find out — that per-field
-// knowledge is schema-specific and belongs with the caller, not baked into
-// this generic engine.
+// arrayKeys lists the dot-paths whose value is always a JSON array, even a
+// single value with no comma.
 func ApplySetFlags[T any](dst *T, entries []string, arrayKeys map[string]bool) error {
 	if len(entries) == 0 {
 		return nil
