@@ -1,0 +1,45 @@
+{{- /*
+  nke-system grants for CAPI bootstrap Secrets, tenant-access
+  publish/repair/teardown, and tenant manager Secret reconciliation.
+
+  Always rendered: nke-system exists unconditionally. Persisted-OIDC clusters
+  keep publishing from OIDCAuthEnabled after live nkeOIDCAuth.enabled is
+  flipped off, so ConfigMap get on nke-rbac is not gated on that flag.
+  Teardown must still delete owned Secrets.
+*/}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "controller.fullname" . }}-nke-rbac
+  namespace: nke-system
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+rules:
+  # applyRBAC reads this ConfigMap for persisted-OIDC clusters even when the
+  # live Helm flag is off (the ConfigMap is rendered whenever
+  # spiffe.trustDomain is set, not gated on nkeOIDCAuth.enabled).
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - nke-rbac
+    verbs: ["get"]
+  # Publish, rotate, and clean up Secrets owned by CWE.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "controller.fullname" . }}-nke-rbac
+  namespace: nke-system
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "controller.fullname" . }}-nke-rbac
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "controller.serviceAccountName" . }}
+    namespace: {{ include "controller.namespace" . }}
