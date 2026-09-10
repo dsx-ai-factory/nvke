@@ -9,11 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/clients"
-	"github.com/NVIDIA/nke/cli/internal/util"
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
@@ -304,88 +302,6 @@ func TestClusterStatus(t *testing.T) {
 				t.Errorf("clusterStatus() = %q, want %q", got, tt.want)
 			}
 		})
-	}
-}
-
-// These four tests check updateClusterArrayKeys against the real
-// UpdateClusterRequest's nested nico/infra provider structs;
-// util/setflags_test.go covers ApplySetFlags's own generic behavior.
-
-func TestApplySetControlPlaneConfigScalars(t *testing.T) {
-	var req api.UpdateClusterRequest
-	if err := util.ApplySetFlags(&req, []string{
-		"controlPlaneConfig.desiredCount=3",
-		"controlPlaneConfig.maxSurge=1",
-		"controlPlaneConfig.systemReservedMemory=16Gi",
-		"controlPlaneConfig.nodeLabels=gpu=true,zone=us-east",
-	}, updateClusterArrayKeys); err != nil {
-		t.Fatalf("ApplySetFlags: %v", err)
-	}
-	cfg := req.ControlPlaneConfig
-	if cfg == nil {
-		t.Fatal("controlPlaneConfig is nil")
-	}
-	if cfg.DesiredCount == nil || *cfg.DesiredCount != 3 {
-		t.Errorf("desiredCount = %v, want 3", cfg.DesiredCount)
-	}
-	if cfg.MaxSurge == nil || *cfg.MaxSurge != 1 {
-		t.Errorf("maxSurge = %v, want 1", cfg.MaxSurge)
-	}
-	if cfg.SystemReservedMemory == nil || *cfg.SystemReservedMemory != "16Gi" {
-		t.Errorf("systemReservedMemory = %v, want 16Gi", cfg.SystemReservedMemory)
-	}
-	if cfg.NodeLabels == nil || len(*cfg.NodeLabels) != 2 || (*cfg.NodeLabels)[0] != "gpu=true" {
-		t.Errorf("nodeLabels = %v, want [gpu=true zone=us-east]", cfg.NodeLabels)
-	}
-}
-
-func TestApplySetNicoFields(t *testing.T) {
-	id1, id2 := uuid.New(), uuid.New()
-	var req api.UpdateClusterRequest
-	if err := util.ApplySetFlags(&req, []string{
-		"controlPlaneConfig.nico.osProfile=gpu-profile",
-		"controlPlaneConfig.nico.configProfile=default",
-		"controlPlaneConfig.nico.subnetIDs=" + id1.String() + "," + id2.String(),
-	}, updateClusterArrayKeys); err != nil {
-		t.Fatalf("ApplySetFlags: %v", err)
-	}
-	nico := req.ControlPlaneConfig.Nico
-	if nico == nil {
-		t.Fatal("controlPlaneConfig.nico is nil")
-	}
-	if nico.OSProfile == nil || *nico.OSProfile != "gpu-profile" {
-		t.Errorf("osProfile = %v, want gpu-profile", nico.OSProfile)
-	}
-	if len(nico.SubnetIDs) != 2 || nico.SubnetIDs[0] != id1 || nico.SubnetIDs[1] != id2 {
-		t.Errorf("subnetIDs = %v, want [%s %s]", nico.SubnetIDs, id1, id2)
-	}
-}
-
-func TestApplySetInfraFields(t *testing.T) {
-	var req api.UpdateClusterRequest
-	if err := util.ApplySetFlags(&req, []string{
-		"controlPlaneConfig.infra.spireAttestationMethod=tpm",
-		"controlPlaneConfig.infra.preKubeadmCommands=echo one,echo two",
-	}, updateClusterArrayKeys); err != nil {
-		t.Fatalf("ApplySetFlags: %v", err)
-	}
-	infra := req.ControlPlaneConfig.Infra
-	if infra == nil {
-		t.Fatal("controlPlaneConfig.infra is nil")
-	}
-	if infra.SpireAttestationMethod == nil || *infra.SpireAttestationMethod != api.SpireAttestationMethodTpm {
-		t.Errorf("spireAttestationMethod = %v, want tpm", infra.SpireAttestationMethod)
-	}
-	if len(infra.PreKubeadmCommands) != 2 || infra.PreKubeadmCommands[1] != "echo two" {
-		t.Errorf("preKubeadmCommands = %v, want [echo one, echo two]", infra.PreKubeadmCommands)
-	}
-}
-
-func TestApplySetRejectsInvalidUUID(t *testing.T) {
-	var req api.UpdateClusterRequest
-	err := util.ApplySetFlags(&req, []string{"controlPlaneConfig.nico.subnetIDs=not-a-uuid"}, updateClusterArrayKeys)
-	if err == nil {
-		t.Fatal("ApplySetFlags accepted a non-UUID subnet id")
 	}
 }
 

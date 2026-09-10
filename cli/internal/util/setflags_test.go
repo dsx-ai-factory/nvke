@@ -6,17 +6,14 @@ package util
 import (
 	"testing"
 
+	"github.com/google/uuid"
+
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-// testArrayKeys is the arrayKeys argument these tests pass to ApplySetFlags.
-var testArrayKeys = map[string]bool{
-	"controlPlaneConfig.nico.subnetIDs": true,
-}
-
 func TestApplySetFlagsScalarField(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := ApplySetFlags(&req, []string{"controlPlaneKubernetesVersion=1.31.0"}, nil); err != nil {
+	if err := ApplySetFlags(&req, []string{"controlPlaneKubernetesVersion=1.31.0"}); err != nil {
 		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	if req.ControlPlaneKubernetesVersion == nil || *req.ControlPlaneKubernetesVersion != "1.31.0" {
@@ -26,7 +23,7 @@ func TestApplySetFlagsScalarField(t *testing.T) {
 
 func TestApplySetFlagsBuildsNestedPath(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.desiredCount=3"}, nil); err != nil {
+	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.desiredCount=3"}); err != nil {
 		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	if req.ControlPlaneConfig == nil || req.ControlPlaneConfig.DesiredCount == nil || *req.ControlPlaneConfig.DesiredCount != 3 {
@@ -34,10 +31,16 @@ func TestApplySetFlagsBuildsNestedPath(t *testing.T) {
 	}
 }
 
+// TestApplySetFlagsArrayKeyWrapsSingleValue and the three below it prove
+// that ApplySetFlags's reflection-based array detection (isArrayField)
+// works against the real UpdateClusterRequest, including a *[]string field
+// (nodeLabels), a plain []uuid.UUID field, and a []string field nested
+// under a different provider struct (infra vs nico).
+
 func TestApplySetFlagsArrayKeyWrapsSingleValue(t *testing.T) {
 	id := "3fa85f64-5717-4562-b3fc-2c963f66afa6"
 	var req api.UpdateClusterRequest
-	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.nico.subnetIDs=" + id}, testArrayKeys); err != nil {
+	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.nico.subnetIDs=" + id}); err != nil {
 		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	if req.ControlPlaneConfig == nil || req.ControlPlaneConfig.Nico == nil || len(req.ControlPlaneConfig.Nico.SubnetIDs) != 1 {
@@ -48,24 +51,72 @@ func TestApplySetFlagsArrayKeyWrapsSingleValue(t *testing.T) {
 	}
 }
 
+func TestApplySetFlagsNicoSubnetIDsMultiValue(t *testing.T) {
+	id1, id2 := uuid.New(), uuid.New()
+	var req api.UpdateClusterRequest
+	if err := ApplySetFlags(&req, []string{
+		"controlPlaneConfig.nico.osProfile=gpu-profile",
+		"controlPlaneConfig.nico.subnetIDs=" + id1.String() + "," + id2.String(),
+	}); err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
+	}
+	nico := req.ControlPlaneConfig.Nico
+	if nico.OSProfile == nil || *nico.OSProfile != "gpu-profile" {
+		t.Errorf("osProfile = %v, want gpu-profile", nico.OSProfile)
+	}
+	if len(nico.SubnetIDs) != 2 || nico.SubnetIDs[0] != id1 || nico.SubnetIDs[1] != id2 {
+		t.Errorf("subnetIDs = %v, want [%s %s]", nico.SubnetIDs, id1, id2)
+	}
+}
+
+func TestApplySetFlagsInfraPreKubeadmCommands(t *testing.T) {
+	var req api.UpdateClusterRequest
+	if err := ApplySetFlags(&req, []string{
+		"controlPlaneConfig.infra.preKubeadmCommands=echo one,echo two",
+	}); err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
+	}
+	infra := req.ControlPlaneConfig.Infra
+	if infra == nil || len(infra.PreKubeadmCommands) != 2 || infra.PreKubeadmCommands[1] != "echo two" {
+		t.Errorf("preKubeadmCommands = %v, want [echo one, echo two]", infra)
+	}
+}
+
+func TestApplySetFlagsPointerToSliceField(t *testing.T) {
+	var req api.UpdateClusterRequest
+	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.nodeLabels=gpu=true"}); err != nil {
+		t.Fatalf("ApplySetFlags: %v", err)
+	}
+	if req.ControlPlaneConfig == nil || req.ControlPlaneConfig.NodeLabels == nil || len(*req.ControlPlaneConfig.NodeLabels) != 1 {
+		t.Fatalf("nodeLabels = %v, want a one-element list", req.ControlPlaneConfig)
+	}
+}
+
 func TestApplySetFlagsRejectsUnknownKey(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := ApplySetFlags(&req, []string{"bogusField=x"}, nil); err == nil {
+	if err := ApplySetFlags(&req, []string{"bogusField=x"}); err == nil {
 		t.Fatal("ApplySetFlags accepted an unknown key")
 	}
 }
 
 func TestApplySetFlagsRejectsMissingEquals(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := ApplySetFlags(&req, []string{"controlPlaneKubernetesVersion"}, nil); err == nil {
+	if err := ApplySetFlags(&req, []string{"controlPlaneKubernetesVersion"}); err == nil {
 		t.Fatal("ApplySetFlags accepted an entry without '='")
 	}
 }
 
 func TestApplySetFlagsRejectsTypeMismatch(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.desiredCount=not-a-number"}, nil); err == nil {
+	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.desiredCount=not-a-number"}); err == nil {
 		t.Fatal("ApplySetFlags accepted a non-integer desiredCount")
+	}
+}
+
+func TestApplySetFlagsRejectsInvalidUUID(t *testing.T) {
+	var req api.UpdateClusterRequest
+	if err := ApplySetFlags(&req, []string{"controlPlaneConfig.nico.subnetIDs=not-a-uuid"}); err == nil {
+		t.Fatal("ApplySetFlags accepted a non-UUID subnet id")
 	}
 }
 
@@ -74,7 +125,7 @@ func TestApplySetFlagsLaterEntryOverridesEarlier(t *testing.T) {
 	err := ApplySetFlags(&req, []string{
 		"controlPlaneKubernetesVersion=1.30.0",
 		"controlPlaneKubernetesVersion=1.31.0",
-	}, nil)
+	})
 	if err != nil {
 		t.Fatalf("ApplySetFlags: %v", err)
 	}
@@ -86,7 +137,7 @@ func TestApplySetFlagsLaterEntryOverridesEarlier(t *testing.T) {
 func TestApplySetFlagsMergesOntoExistingValue(t *testing.T) {
 	version := "1.30.0"
 	req := api.UpdateClusterRequest{ControlPlaneKubernetesVersion: &version}
-	if err := ApplySetFlags(&req, []string{"teleportEnabled=true"}, nil); err != nil {
+	if err := ApplySetFlags(&req, []string{"teleportEnabled=true"}); err != nil {
 		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	if req.ControlPlaneKubernetesVersion == nil || *req.ControlPlaneKubernetesVersion != "1.30.0" {
@@ -99,10 +150,30 @@ func TestApplySetFlagsMergesOntoExistingValue(t *testing.T) {
 
 func TestApplySetFlagsNoEntriesIsNoop(t *testing.T) {
 	var req api.UpdateClusterRequest
-	if err := ApplySetFlags(&req, nil, nil); err != nil {
+	if err := ApplySetFlags(&req, nil); err != nil {
 		t.Fatalf("ApplySetFlags: %v", err)
 	}
 	if req.ControlPlaneKubernetesVersion != nil {
 		t.Errorf("controlPlaneKubernetesVersion = %v, want nil", req.ControlPlaneKubernetesVersion)
+	}
+}
+
+func TestIsArrayField(t *testing.T) {
+	tests := []struct {
+		path []string
+		want bool
+	}{
+		{[]string{"controlPlaneConfig", "nico", "osProfile"}, false},
+		{[]string{"controlPlaneConfig", "nico", "subnetIDs"}, true},
+		{[]string{"controlPlaneConfig", "nodeLabels"}, true},
+		{[]string{"controlPlaneConfig", "infra", "preKubeadmCommands"}, true},
+		{[]string{"controlPlaneConfig", "infra", "machineTemplate"}, false},
+		{[]string{"enableCPNodeRecycling"}, false},
+		{[]string{"bogusField"}, false},
+	}
+	for _, tt := range tests {
+		if got := isArrayField[api.UpdateClusterRequest](tt.path); got != tt.want {
+			t.Errorf("isArrayField(%v) = %v, want %v", tt.path, got, tt.want)
+		}
 	}
 }

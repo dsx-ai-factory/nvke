@@ -136,18 +136,6 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 	return util.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
 }
 
-// updateClusterArrayKeys lists the --set paths whose value is a list
-// rather than a scalar, so util.ApplySetFlags always wraps the value in an
-// array — even a single value with no comma.
-var updateClusterArrayKeys = map[string]bool{ //nolint:gochecknoglobals // static lookup table, not mutated after init
-	"controlPlaneConfig.nodeLabels":                  true,
-	"controlPlaneConfig.nico.instanceTypePreference": true,
-	"controlPlaneConfig.nico.sshKeyGroupIDs":         true,
-	"controlPlaneConfig.nico.subnetIDs":              true,
-	"controlPlaneConfig.nico.vpcPrefixIDs":           true,
-	"controlPlaneConfig.infra.preKubeadmCommands":    true,
-}
-
 // NewUpdateCmd returns the "nkectl update cluster <name>" subcommand.
 func NewUpdateCmd(clientFn ClientFn) *cobra.Command {
 	var (
@@ -234,7 +222,7 @@ func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) (a
 			return req, err
 		}
 	}
-	if err := util.ApplySetFlags(&req, sets, updateClusterArrayKeys); err != nil {
+	if err := util.ApplySetFlags(&req, sets); err != nil {
 		return req, err
 	}
 	return req, nil
