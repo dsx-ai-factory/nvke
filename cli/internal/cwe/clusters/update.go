@@ -56,11 +56,9 @@ func NewUpdateCmd(clientFn ClientFn) *cobra.Command {
 
 PATCH semantics apply: only the fields you supply are changed. Use --set for
 one or two fields, -f for a full patch document, or both together (--set
-wins on any key present in both).
-
-Some downstream effects (a rolling Kubernetes upgrade, control-plane node
-recycling, etcd encryption enablement) run asynchronously after this command
-returns.
+wins on any key present in both). A -f patch document's fields must match
+the CWE UpdateClusterRequest schema exactly. See /api/docs on your site
+controller.
 
 Example — bump the Kubernetes version:
   nkectl update cluster my-cluster --set controlPlaneKubernetesVersion=1.31.0
@@ -92,12 +90,12 @@ Example — file plus an inline override:
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Cluster %q updated (id: %s)\n", updated.Name, updated.ID)
-			fmt.Fprintf(cmd.OutOrStdout(), "Update is async — run 'nkectl get clusters --cluster %s' to check status.\n", updated.Name)
+			fmt.Fprintf(cmd.OutOrStdout(), "Update is async — run 'nkectl get clusters' to check status.\n")
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVarP(&filename, "filename", "f", "", "Path to a YAML patch file, or '-' to read from stdin")
+	cmd.Flags().StringVarP(&filename, "filename", "f", "", "Path to YAML patch file, or '-' to read from stdin")
 	cmd.Flags().StringArrayVar(&sets, "set", nil, "Set a field: key=value (repeatable); dot notation for nested fields, comma-separated for lists")
 	return cmd
 }
