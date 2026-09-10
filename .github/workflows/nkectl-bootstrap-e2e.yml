@@ -424,10 +424,17 @@ jobs:
       # shim that fails with a pointer here, so an absolute-path invocation
       # fails the same way a bare one does.
       #
-      # Safe to do because linux-amd64-cpu16 is a container-based pool:
-      # nothing done to this environment outlives the job. The standalone
+      # Expected to be safe because linux-amd64-cpu16 is a container-based
+      # pool -- os-image-artifact.yml records it as one when explaining why it
+      # never exposed /dev/kvm -- so nothing done here should outlive the job.
+      # That is an inference from one comment, though, and actionlint.yaml
+      # registers the label only as self-hosted. image.yml and thirteen other
+      # workflows run on the same pool, so the "Restore Docker" step at the
+      # end of this job puts everything back regardless; if the premise is
+      # right it costs a second, and if it is wrong it is the difference
+      # between one red job and fourteen. The standalone
       # containerd-nerdctl.service installed above is a separate unit on a
-      # separate socket and is untouched.
+      # separate socket and is untouched by either step.
       - name: Remove Docker
         shell: bash
         run: |
@@ -436,8 +443,10 @@ jobs:
           # on /run/containerd/containerd.sock -- the socket nerdctl defaults
           # to without CONTAINERD_ADDRESS. Masked so that fallback fails
           # loudly instead of quietly riding on Docker's daemon.
+          # disable --now may fail for a unit that is not loaded; mask must not,
+          # because the assertions below rely on it having taken.
           sudo systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
-          sudo systemctl mask docker.socket docker.service containerd.service 2>/dev/null || true
+          sudo systemctl mask docker.socket docker.service containerd.service
           sudo rm -f /var/run/docker.sock /run/docker.sock
 
           shim="$(mktemp)"
@@ -449,11 +458,18 @@ jobs:
           exit 1
           SHIM
           # Every copy on PATH, replaced where it lives, plus one first on
-          # PATH in case none was installed at all.
+          # PATH in case none was installed at all. Originals are kept beside
+          # their path and listed for the restore step.
+          : > "${RUNNER_TEMP}/docker-removed.list"
           while read -r path; do
+            sudo mv "${path}" "${path}.nke-removed"
+            echo "${path}" >> "${RUNNER_TEMP}/docker-removed.list"
             sudo install -m 0755 "${shim}" "${path}"
           done < <(type -aP docker || true)
-          sudo install -m 0755 "${shim}" /usr/local/bin/docker
+          if [ ! -e /usr/local/bin/docker ]; then
+            sudo install -m 0755 "${shim}" /usr/local/bin/docker
+            echo "/usr/local/bin/docker:shim-only" >> "${RUNNER_TEMP}/docker-removed.list"
+          fi
 
           # Prove it. A removal that did not take is worse than none: it
           # would read as a guarantee while providing nothing.
@@ -466,6 +482,16 @@ jobs:
           if [ -S /var/run/docker.sock ]; then
             echo "::error::/var/run/docker.sock still exists after removal"; exit 1
           fi
+          # Masked, not merely stopped: docker.socket could otherwise
+          # socket-activate the daemon back after the is-active check above,
+          # and containerd.service is what a dropped CONTAINERD_ADDRESS would
+          # silently ride on.
+          for unit in docker.socket docker.service containerd.service; do
+            state="$(systemctl is-enabled "${unit}" 2>/dev/null || true)"
+            if [ "${state}" != "masked" ]; then
+              echo "::error::${unit} is '${state:-absent}' after removal, want masked"; exit 1
+            fi
+          done
           echo "docker removed; invoking it now fails with:"
           docker version 2>&1 | sed 's/^/  /' || true
 
@@ -522,3 +548,25 @@ jobs:
           path: cli/cluster-diagnostics/
           if-no-files-found: ignore
           retention-days: 7
+
+      # Insurance against the pool being persistent after all -- see the
+      # "Remove Docker" comment. Puts back what that step took: the masked
+      # units and the moved-aside binaries. always(), so a failed run is not
+      # the one that leaves the runner without Docker.
+      - name: Restore Docker
+        if: always()
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          sudo systemctl unmask docker.socket docker.service containerd.service 2>/dev/null || true
+          if [ -f "${RUNNER_TEMP}/docker-removed.list" ]; then
+            while IFS=: read -r path mode; do
+              if [ "${mode}" = "shim-only" ]; then
+                sudo rm -f "${path}"
+              elif [ -e "${path}.nke-removed" ]; then
+                sudo mv -f "${path}.nke-removed" "${path}"
+              fi
+            done < "${RUNNER_TEMP}/docker-removed.list"
+          fi
+          sudo systemctl start containerd.service docker.socket docker.service 2>/dev/null || true
+          echo "docker restored: $(docker version --format '{{.Client.Version}}' 2>/dev/null || echo 'client unavailable')"
