@@ -770,13 +770,12 @@ func TestCreateTokenForNode(t *testing.T) {
 
 		// Create a NodePool pointing to a non-existent Cluster
 		orphanPool := db.NodePool{
-			ID:                     uuid.New(),
-			ClusterID:              uuid.New(), // Non-existent Cluster
-			Name:                   "orphan-pool",
-			NodeNamePrefix:         "test",
-			NodeLabels:             []string{},
-			SystemReservedMemory:   "16Gi",
-			CapiPreKubeadmCommands: []string{},
+			ID:                   uuid.New(),
+			ClusterID:            uuid.New(), // Non-existent Cluster
+			Name:                 "orphan-pool",
+			NodeNamePrefix:       "test",
+			NodeLabels:           []string{},
+			SystemReservedMemory: "16Gi",
 		}
 		orphanPool.SetNico(db.NicoNodePoolProvider{
 			InstanceTypeID: uuid.New(),

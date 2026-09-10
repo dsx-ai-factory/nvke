@@ -24,25 +24,14 @@ import (
 // inside ControlPlaneConfiguration.Config JSONB rather than mapped to columns
 // on the clusters table.
 type ControlPlaneConfigSpec struct {
-	InstanceTypePreference          []uuid.UUID               `json:"instance_type_preference" bun:"-"`
-	InfraMachineTemplatePreferences []json.RawMessage         `json:"infra_machine_template_preferences,omitempty" bun:"-"`
-	SubnetIDs                       []uuid.UUID               `json:"subnet_ids,omitempty" bun:"-"`
-	VpcPrefixIDs                    []uuid.UUID               `json:"vpc_prefix_ids,omitempty" bun:"-"`
-	OSProfile                       string                    `json:"os_profile" bun:"-"`
-	DiskSelectionStrategy           DiskSelectionStrategy     `json:"disk_selection_strategy,omitempty" bun:"-"`
-	ConfigProfile                   string                    `json:"config_profile" bun:"-"`
-	SystemReservedMemory            string                    `json:"system_reserved_memory,omitempty" bun:"-"`
-	KubeReservedMemory              string                    `json:"kube_reserved_memory,omitempty" bun:"-"`
-	SSHKeyGroupIDs                  []uuid.UUID               `json:"ssh_key_group_ids,omitempty" bun:"-"`
-	NodeLabels                      []string                  `json:"node_labels,omitempty" bun:"-"`
-	TeleportEnabled                 bool                      `json:"teleport_enabled,omitempty" bun:"-"`
-	ProvisioningMonitorDisabled     bool                      `json:"provisioning_monitor_disabled,omitempty" bun:"-"`
-	KubernetesVersion               string                    `json:"kubernetes_version,omitempty" bun:"-"`
-	CapiSpireAttestationMethod      SpireAttestationMethod    `json:"capi_spire_attestation_method,omitempty" bun:"-"`
-	CapiBootstrapFiles              []CloudInitFile           `json:"capi_bootstrap_files,omitempty" bun:"-"`
-	CapiPreKubeadmCommands          []string                  `json:"capi_pre_kubeadm_commands,omitempty" bun:"-"`
-	Nico                            *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
-	Capi                            *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
+	SystemReservedMemory        string                    `json:"system_reserved_memory,omitempty" bun:"-"`
+	KubeReservedMemory          string                    `json:"kube_reserved_memory,omitempty" bun:"-"`
+	NodeLabels                  []string                  `json:"node_labels,omitempty" bun:"-"`
+	TeleportEnabled             bool                      `json:"teleport_enabled,omitempty" bun:"-"`
+	ProvisioningMonitorDisabled bool                      `json:"provisioning_monitor_disabled,omitempty" bun:"-"`
+	KubernetesVersion           string                    `json:"kubernetes_version,omitempty" bun:"-"`
+	Nico                        *NicoControlPlaneProvider `json:"nico,omitempty" bun:"-"`
+	Capi                        *CAPIControlPlaneProvider `json:"capi,omitempty" bun:"-"`
 }
 
 type NicoControlPlaneProvider struct {
@@ -65,22 +54,11 @@ type CAPIControlPlaneProvider struct {
 func (c *ControlPlaneConfigSpec) SetNico(provider NicoControlPlaneProvider) {
 	c.Nico = cloneNicoControlPlaneProvider(&provider)
 	c.Capi = nil
-	c.InstanceTypePreference = append([]uuid.UUID(nil), provider.InstanceTypePreference...)
-	c.SubnetIDs = append([]uuid.UUID(nil), provider.SubnetIDs...)
-	c.VpcPrefixIDs = append([]uuid.UUID(nil), provider.VpcPrefixIDs...)
-	c.OSProfile = provider.OSProfile
-	c.DiskSelectionStrategy = provider.DiskSelectionStrategy
-	c.ConfigProfile = provider.ConfigProfile
-	c.SSHKeyGroupIDs = append([]uuid.UUID(nil), provider.SSHKeyGroupIDs...)
 }
 
 func (c *ControlPlaneConfigSpec) SetCapi(provider CAPIControlPlaneProvider) {
 	c.Capi = cloneCAPIControlPlaneProvider(&provider)
 	c.Nico = nil
-	c.InfraMachineTemplatePreferences = cloneRawMessages(provider.InfraMachineTemplatePreferences)
-	c.CapiSpireAttestationMethod = provider.SpireAttestationMethod
-	c.CapiBootstrapFiles = append([]CloudInitFile(nil), provider.BootstrapFiles...)
-	c.CapiPreKubeadmCommands = append([]string(nil), provider.PreKubeadmCommands...)
 }
 
 func (c ControlPlaneConfigSpec) NicoProvider() (NicoControlPlaneProvider, error) {

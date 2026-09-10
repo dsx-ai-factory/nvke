@@ -43,11 +43,13 @@ func TestAddControllerReconcilesDatabaseAndKubernetesChanges(t *testing.T) {
 	cluster := db.Cluster{
 		ID:                uuid.New(),
 		Name:              "initial-name",
-		OrgID:             "example-org",
-		SiteID:            uuid.New(),
-		VpcID:             uuid.New(),
 		KubernetesVersion: "v1.34.0",
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "example-org",
+		SiteID: uuid.New(),
+		VpcID:  uuid.New(),
+	})
 	cluster, err = database.CreateCluster(t.Context(), &cluster)
 	require.NoError(t, err)
 

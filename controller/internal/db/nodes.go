@@ -27,10 +27,7 @@ type Node struct {
 	NodeSetID                   uuid.UUID         `bun:"type:uuid,nullzero"`
 	ClusterID                   uuid.UUID         `bun:"type:uuid,notnull"`
 	ControlPlane                bool              `bun:"type:boolean,notnull,default:false"`
-	InstanceTypeID              uuid.UUID         `bun:"type:uuid,notnull"`
 	Name                        string            `bun:"type:text,notnull"`
-	ForgeInstanceID             string            `bun:"type:text,notnull"`
-	ForgeMachineID              string            `bun:"type:text,notnull"`
 	IP                          string            `bun:"type:text,notnull"`
 	SpiffeEnabled               bool              `bun:"type:boolean,notnull,default:false"`
 	Conditions                  NodeConditions    `bun:"type:jsonb"`
@@ -122,9 +119,6 @@ func (n *Node) NicoProvider() (NicoNodeProvider, error) {
 
 func (n *Node) SetNico(provider NicoNodeProvider) {
 	n.Nico = &provider
-	n.ForgeInstanceID = provider.ForgeInstanceID
-	n.ForgeMachineID = provider.ForgeMachineID
-	n.InstanceTypeID = provider.InstanceTypeID
 }
 
 // NicoInstanceTypeID returns the instance type recorded on the node's Nico

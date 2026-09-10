@@ -50,9 +50,6 @@ type CAPIClusterProvider struct {
 type Cluster struct {
 	ID                    uuid.UUID  `bun:"type:uuid,pk,default:gen_random_uuid()"`
 	Name                  string     `bun:"type:text,notnull"`
-	OrgID                 string     `bun:"type:text,notnull"`
-	SiteID                uuid.UUID  `bun:"type:uuid,notnull"`
-	VpcID                 uuid.UUID  `bun:"type:uuid,notnull"`
 	CniPlugin             CniPlugin  `bun:"type:text"`
 	CniVersion            string     `bun:"type:text"`
 	EtcdEncrypted         bool       `bun:"type:boolean,notnull,default:false"`
@@ -65,10 +62,9 @@ type Cluster struct {
 	OIDCAuthEnabled       bool       `bun:"type:boolean,notnull,default:false"`
 	NextCertRenewalDue    *time.Time `bun:"type:timestamptz"`
 
-	CapiInfraCluster json.RawMessage      `bun:"type:jsonb,notnull,default:'{}'"`
-	ProviderType     ProviderType         `bun:"provider_type,type:text,notnull"`
-	Nico             *NicoClusterProvider `bun:"nico,type:jsonb"`
-	Capi             *CAPIClusterProvider `bun:"capi,type:jsonb"`
+	ProviderType ProviderType         `bun:"provider_type,type:text,notnull"`
+	Nico         *NicoClusterProvider `bun:"nico,type:jsonb"`
+	Capi         *CAPIClusterProvider `bun:"capi,type:jsonb"`
 
 	// ControlPlaneConfig keeps the API/business shape while persisting these
 	// fields as real DB columns on clusters (configuration_id, cp_desired_count,
@@ -117,9 +113,6 @@ func (c *Cluster) SetNicoProvider(provider NicoClusterProvider) {
 	c.ProviderType = ProviderTypeNico
 	c.Nico = &provider
 	c.Capi = nil
-	c.OrgID = provider.OrgID
-	c.SiteID = provider.SiteID
-	c.VpcID = provider.VpcID
 }
 
 func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
@@ -128,7 +121,6 @@ func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
 	c.Capi = &CAPIClusterProvider{
 		InfraCluster: cloneRawMessage(provider.InfraCluster),
 	}
-	c.CapiInfraCluster = cloneRawMessage(provider.InfraCluster)
 }
 
 func cloneRawMessage(raw json.RawMessage) json.RawMessage {

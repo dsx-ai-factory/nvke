@@ -373,8 +373,6 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == node.ID &&
 				nodeForUpdate.IP == "10.0.0.10" &&
-				nodeForUpdate.ForgeInstanceID == instanceID &&
-				nodeForUpdate.ForgeMachineID == machineID &&
 				nodeForUpdate.Nico != nil &&
 				nodeForUpdate.Nico.ForgeInstanceID == instanceID &&
 				nodeForUpdate.Nico.ForgeMachineID == machineID
@@ -422,8 +420,6 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == existing.ID &&
 				nodeForUpdate.IP == "10.0.0.10" &&
-				nodeForUpdate.ForgeInstanceID == "existing-instance" &&
-				nodeForUpdate.ForgeMachineID == "existing-machine" &&
 				nodeForUpdate.Nico != nil &&
 				nodeForUpdate.Nico.ForgeInstanceID == "existing-instance" &&
 				nodeForUpdate.Nico.ForgeMachineID == "existing-machine"
@@ -924,10 +920,8 @@ func TestForgeIdentityFromNode(t *testing.T) {
 		wantInstanceID string
 		wantMachineID  string
 	}{
-		"prefers nico payload": {
+		"reads the nico payload": {
 			node: db.Node{
-				ForgeInstanceID: "legacy-instance",
-				ForgeMachineID:  "legacy-machine",
 				Nico: &db.NicoNodeProvider{
 					ForgeInstanceID: "nico-instance",
 					ForgeMachineID:  "nico-machine",
@@ -936,26 +930,15 @@ func TestForgeIdentityFromNode(t *testing.T) {
 			wantInstanceID: "nico-instance",
 			wantMachineID:  "nico-machine",
 		},
-		"falls back to legacy columns when nico is empty": {
+		"reports a partially stamped payload as-is": {
 			node: db.Node{
-				ForgeInstanceID: "legacy-instance",
-				ForgeMachineID:  "legacy-machine",
-			},
-			wantInstanceID: "legacy-instance",
-			wantMachineID:  "legacy-machine",
-		},
-		"fills missing nico fields from legacy columns": {
-			node: db.Node{
-				ForgeInstanceID: "legacy-instance",
-				ForgeMachineID:  "legacy-machine",
 				Nico: &db.NicoNodeProvider{
 					ForgeInstanceID: "nico-instance",
 				},
 			},
 			wantInstanceID: "nico-instance",
-			wantMachineID:  "legacy-machine",
 		},
-		"empty when neither payload nor columns are set": {
+		"empty when there is no nico payload": {
 			node: db.Node{},
 		},
 	}

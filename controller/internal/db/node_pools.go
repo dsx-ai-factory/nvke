@@ -90,26 +90,18 @@ func cloudInitFilesEqual(a, b []CloudInitFile) bool {
 }
 
 type NodePool struct {
-	ID                       uuid.UUID          `bun:"type:uuid,pk"`
-	ClusterID                uuid.UUID          `bun:"type:uuid,notnull"`
-	Name                     string             `bun:"type:text,notnull"`
-	NodeNamePrefix           string             `bun:"type:text,notnull"`
-	SubnetIDs                []uuid.UUID        `bun:"subnet_ids,type:uuid[],notnull"`
-	VpcPrefixIDs             []uuid.UUID        `bun:"vpc_prefix_ids,type:uuid[],notnull"`
-	InstanceTypeID           uuid.UUID          `bun:"type:uuid,notnull"`
-	Description              *string            `bun:"type:text"`
-	InfinibandPartitionID    *uuid.UUID         `bun:"type:uuid"`
-	NvLinkLogicalPartitionID *uuid.UUID         `bun:"type:uuid"`
-	SSHKeyGroupIDs           []uuid.UUID        `bun:"type:uuid[],notnull"`
-	OSProfile                string             `bun:"type:text,notnull"`
-	ConfigProfile            string             `bun:"type:text,notnull"`
-	SystemReservedMemory     string             `bun:"type:text,notnull,default:'16Gi'"`
-	KubeReservedMemory       string             `bun:"type:text,notnull,default:''"`
-	ControlPlane             bool               `bun:"type:boolean,notnull"`
-	NodeLabels               []string           `bun:"type:text[],notnull"`
-	Conditions               NodePoolConditions `bun:"type:jsonb"`
-	CreatedAt                time.Time          `bun:"type:timestamptz,notnull,default:current_timestamp"`
-	UpdatedAt                time.Time          `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	ID                   uuid.UUID          `bun:"type:uuid,pk"`
+	ClusterID            uuid.UUID          `bun:"type:uuid,notnull"`
+	Name                 string             `bun:"type:text,notnull"`
+	NodeNamePrefix       string             `bun:"type:text,notnull"`
+	Description          *string            `bun:"type:text"`
+	SystemReservedMemory string             `bun:"type:text,notnull,default:'16Gi'"`
+	KubeReservedMemory   string             `bun:"type:text,notnull,default:''"`
+	ControlPlane         bool               `bun:"type:boolean,notnull"`
+	NodeLabels           []string           `bun:"type:text[],notnull"`
+	Conditions           NodePoolConditions `bun:"type:jsonb"`
+	CreatedAt            time.Time          `bun:"type:timestamptz,notnull,default:current_timestamp"`
+	UpdatedAt            time.Time          `bun:"type:timestamptz,notnull,default:current_timestamp"`
 
 	// This is the desired Kubernetes version for this NodePool.
 	// During upgrades, existing NodeSets may contain different Kubernetes versions
@@ -160,15 +152,8 @@ type NodePool struct {
 
 	TeleportEnabled bool `bun:"type:boolean,notnull,default:false"`
 
-	// DiskSelectionStrategy is the strategy to use for selecting the OS install disk to use for the nodes in this NodePool.
-	DiskSelectionStrategy DiskSelectionStrategy `bun:"type:text,notnull"`
-
-	CapiInfraMachineTemplate   json.RawMessage        `bun:"type:jsonb,notnull,default:'{}'"`
-	CapiBootstrapFiles         []CloudInitFile        `bun:"capi_bootstrap_files,type:jsonb,notnull,default:'[]'"`
-	CapiPreKubeadmCommands     []string               `bun:"capi_pre_kubeadm_commands,type:text[],notnull,default:'{}'"`
-	CapiSpireAttestationMethod SpireAttestationMethod `bun:"capi_spire_attestation_method,type:text,notnull,default:'tpm'"`
-	Nico                       *NicoNodePoolProvider  `bun:"nico,type:jsonb"`
-	Capi                       *CAPINodePoolProvider  `bun:"capi,type:jsonb"`
+	Nico *NicoNodePoolProvider `bun:"nico,type:jsonb"`
+	Capi *CAPINodePoolProvider `bun:"capi,type:jsonb"`
 }
 
 // IsCurrentNodeSet returns true if the NodeSet is the current NodeSet for the NodePool.
@@ -199,34 +184,11 @@ func (n *NodePool) CAPIProvider() (CAPINodePoolProvider, error) {
 func (n *NodePool) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
 	n.Capi = nil
-	n.SubnetIDs = append([]uuid.UUID{}, provider.SubnetIDs...)
-	n.VpcPrefixIDs = append([]uuid.UUID{}, provider.VpcPrefixIDs...)
-	n.InstanceTypeID = provider.InstanceTypeID
-	n.InfinibandPartitionID = cloneUUIDPtr(provider.InfinibandPartitionID)
-	n.NvLinkLogicalPartitionID = cloneUUIDPtr(provider.NvLinkLogicalPartitionID)
-	n.SSHKeyGroupIDs = append([]uuid.UUID{}, provider.SSHKeyGroupIDs...)
-	n.OSProfile = provider.OSProfile
-	n.ConfigProfile = provider.ConfigProfile
-	n.DiskSelectionStrategy = provider.DiskSelectionStrategy
 }
 
 func (n *NodePool) SetCapi(provider CAPINodePoolProvider) {
 	n.Capi = cloneCAPINodePoolProvider(provider)
 	n.Nico = nil
-	n.CapiInfraMachineTemplate = cloneRawMessage(provider.InfraMachineTemplate)
-	n.CapiBootstrapFiles = append([]CloudInitFile{}, provider.BootstrapFiles...)
-	n.CapiPreKubeadmCommands = append([]string{}, provider.PreKubeadmCommands...)
-	n.CapiSpireAttestationMethod = provider.SpireAttestationMethod
-	// CAPI pools do not use Nico columns, but those uuid[] columns are NOT NULL.
-	if n.SubnetIDs == nil {
-		n.SubnetIDs = []uuid.UUID{}
-	}
-	if n.VpcPrefixIDs == nil {
-		n.VpcPrefixIDs = []uuid.UUID{}
-	}
-	if n.SSHKeyGroupIDs == nil {
-		n.SSHKeyGroupIDs = []uuid.UUID{}
-	}
 }
 
 func cloneNicoNodePoolProvider(provider NicoNodePoolProvider) *NicoNodePoolProvider {
@@ -374,10 +336,6 @@ func (q *queriesImpl) GetNodePoolForUpdate(ctx context.Context, id uuid.UUID) (N
 }
 
 func (q *queriesImpl) CreateNodePool(ctx context.Context, nodePool *NodePool) (NodePool, error) {
-	if nodePool.CapiPreKubeadmCommands == nil {
-		nodePool.CapiPreKubeadmCommands = []string{}
-	}
-
 	if nodePool.ControlPlane {
 		if err := q.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 			qi := queriesImpl{db: tx}

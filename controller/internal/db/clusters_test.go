@@ -475,7 +475,6 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_NoActiveCPPools(t *testing
 				Conditions: db.NodePoolConditions{
 					Deleting: db.Condition{Status: db.ConditionStatusTrue},
 				},
-				CapiPreKubeadmCommands: []string{},
 				Nico: &db.NicoNodePoolProvider{
 					SubnetIDs:             []uuid.UUID{},
 					VpcPrefixIDs:          []uuid.UUID{},
@@ -564,7 +563,6 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_PreservesClusterOverrides(
 		Conditions: db.NodePoolConditions{
 			Deleting: db.Condition{Status: db.ConditionStatusFalse},
 		},
-		CapiPreKubeadmCommands: []string{},
 	}
 	cpPool.SetNico(db.NicoNodePoolProvider{
 		InstanceTypeID:        poolInst,

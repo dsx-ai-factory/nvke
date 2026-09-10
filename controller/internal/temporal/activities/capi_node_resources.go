@@ -678,19 +678,11 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	return nil
 }
 
-// forgeIdentityFromNode returns the node's Forge instance and machine IDs.
-// nico is canonical; the legacy columns cover nodes stamped before the nico payload.
+// forgeIdentityFromNode returns the node's Forge instance and machine IDs, or
+// empty strings when the node carries no nico payload.
 func forgeIdentityFromNode(node db.Node) (string, string) {
-	var instanceID, machineID string
-	if node.Nico != nil {
-		instanceID = node.Nico.ForgeInstanceID
-		machineID = node.Nico.ForgeMachineID
+	if node.Nico == nil {
+		return "", ""
 	}
-	if instanceID == "" {
-		instanceID = node.ForgeInstanceID
-	}
-	if machineID == "" {
-		machineID = node.ForgeMachineID
-	}
-	return instanceID, machineID
+	return node.Nico.ForgeInstanceID, node.Nico.ForgeMachineID
 }
