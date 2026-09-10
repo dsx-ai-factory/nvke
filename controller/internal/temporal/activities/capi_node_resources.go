@@ -313,7 +313,13 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		}
 	}
 
-	logger.Info("Deleting CAPI machine", "nodeID", input.NodeID, "machine", machine.Name)
+	forgeInstanceID, forgeMachineID := forgeIdentityFromNode(node)
+	logger.Info("Deleting CAPI machine",
+		"nodeID", input.NodeID,
+		"machine", machine.Name,
+		"forgeInstanceID", forgeInstanceID,
+		"forgeMachineID", forgeMachineID,
+	)
 	if err := a.k8sClient.Delete(ctx, machine); err != nil && !apierrors.IsNotFound(err) {
 		return fmt.Errorf("failed to delete machine %s: %w", machine.Name, err)
 	}
@@ -439,11 +445,22 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		if observedInstanceTypeID != uuid.Nil && nodeForUpdate.InstanceTypeID == uuid.Nil {
 			nodeForUpdate.InstanceTypeID = observedInstanceTypeID
 		}
-		if observedInstanceID != "" && nodeForUpdate.ForgeInstanceID == "" {
-			nodeForUpdate.ForgeInstanceID = observedInstanceID
-		}
-		if observedMachineID != "" && nodeForUpdate.ForgeMachineID == "" {
-			nodeForUpdate.ForgeMachineID = observedMachineID
+		// Stamp only when identity is present or nico already exists. Empty CAPD
+		// lookups must not invent a nico payload.
+		if observedInstanceID != "" || observedMachineID != "" || nodeForUpdate.Nico != nil {
+			nico := db.NicoNodeProvider{}
+			if nodeForUpdate.Nico != nil {
+				nico = *nodeForUpdate.Nico
+			}
+			nico.InstanceTypeID = nodeForUpdate.InstanceTypeID
+			if nico.ForgeInstanceID == "" {
+				nico.ForgeInstanceID = observedInstanceID
+			}
+			if nico.ForgeMachineID == "" {
+				nico.ForgeMachineID = observedMachineID
+			}
+			// UpdateNode rebuilds nico from columns; SetNico keeps payload and columns in step.
+			nodeForUpdate.SetNico(nico)
 		}
 		if _, err := tx.UpdateNode(ctx, &nodeForUpdate); err != nil {
 			return fmt.Errorf("failed to update node IP address: %w", err)
@@ -672,4 +689,21 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	}
 
 	return nil
+}
+
+// forgeIdentityFromNode returns the node's Forge instance and machine IDs.
+// nico is canonical; the legacy columns cover nodes stamped before the nico payload.
+func forgeIdentityFromNode(node db.Node) (string, string) {
+	var instanceID, machineID string
+	if node.Nico != nil {
+		instanceID = node.Nico.ForgeInstanceID
+		machineID = node.Nico.ForgeMachineID
+	}
+	if instanceID == "" {
+		instanceID = node.ForgeInstanceID
+	}
+	if machineID == "" {
+		machineID = node.ForgeMachineID
+	}
+	return instanceID, machineID
 }
