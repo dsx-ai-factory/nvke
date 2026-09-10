@@ -31,13 +31,9 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 	return req, nil
 }
 
-// YAMLToGenericMap parses a YAML document into a map[string]interface{}
-// keyed the same way json.Marshal would read it back out, so the result can
-// be merged with another such map (see MergeMap) or marshaled straight to
-// JSON. Direct yaml.Unmarshal into a typed request struct is avoided
-// because generated API types only carry json tags, not yaml tags — going
-// through this generic map first is what lets YAML field names line up
-// with a struct's json tags.
+// YAMLToGenericMap parses a YAML document into a map[string]interface{},
+// keyed the same way json.Marshal would read it back out. Merge the result
+// with another such map via MergeMap, or marshal it directly to JSON.
 func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
 	var raw interface{}
 	if err := yaml.Unmarshal(data, &raw); err != nil {

@@ -202,19 +202,12 @@ Example — file plus an inline override:
 	return cmd
 }
 
-// loadUpdateClusterRequest builds an UpdateClusterJSONRequestBody from an
-// optional YAML patch file and a list of --set entries. When path is
-// non-empty its contents are decoded first; each entry in sets is then
-// applied in order, so --set overrides a same-named field loaded from path.
-// loadUpdateClusterRequest builds the raw JSON body to PATCH, merging an
-// optional YAML patch file with --set entries at the document level (not by
-// decoding onto a struct and re-marshaling it) so an explicit empty
-// array/string a caller sets survives onto the wire instead of collapsing
-// to the same representation as an omitted field the way
-// UpdateClusterRequest's omitempty tags would on a struct re-marshal. The
-// merged document is validated by decoding it into UpdateClusterRequest
-// with unknown fields disallowed before it is returned; that decoded value
-// itself is discarded; only the raw bytes go over the wire.
+// loadUpdateClusterRequest builds the raw JSON PATCH body from an optional
+// YAML patch file and a list of --set entries, merging the two at the
+// document level (--set overrides path on a shared key). The merged
+// document is validated by decoding it into UpdateClusterRequest with
+// unknown fields disallowed; the decoded value is discarded, and the raw
+// bytes are returned.
 func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) ([]byte, error) {
 	patch := map[string]interface{}{}
 	if path != "" {

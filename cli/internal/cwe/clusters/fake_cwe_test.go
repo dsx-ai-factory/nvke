@@ -97,8 +97,7 @@ func (f *fakeCWE) stored() []api.Cluster {
 }
 
 // lastRequestBody returns the raw body of the most recent request, exactly
-// as the client sent it — for asserting on wire-level JSON a decoded
-// api.Cluster wouldn't show, like a literal empty array or object.
+// as the client sent it.
 func (f *fakeCWE) lastRequestBody() []byte {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -110,6 +109,8 @@ func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer f.mu.Unlock()
 
 	f.requests = append(f.requests, r.Method+" "+r.URL.RequestURI())
+	// Reading r.Body drains it, so replace it with a fresh reader over the
+	// same bytes for the route handlers below to decode.
 	body, _ := io.ReadAll(r.Body)
 	f.lastBody = body
 	r.Body = io.NopCloser(bytes.NewReader(body))
@@ -204,9 +205,7 @@ func (f *fakeCWE) remove(w http.ResponseWriter, id string) {
 }
 
 // update answers PATCH /clusters/{id}, applying the subset of fields this
-// fake understands and returning the updated record. It exists to exercise
-// the CLI's request-building and response-decoding, not CWE's real merge
-// semantics — keep it to the fields the update-cluster tests actually cover.
+// fake understands and returning the updated record.
 func (f *fakeCWE) update(w http.ResponseWriter, id string, r *http.Request) {
 	if f.updateFailStatus != 0 {
 		writeJSON(w, f.updateFailStatus, api.GenericError{Message: f.updateFailMessage})

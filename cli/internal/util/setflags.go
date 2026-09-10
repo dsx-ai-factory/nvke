@@ -13,19 +13,9 @@ import (
 
 // BuildPatch parses dot-notation "key=value" --set entries (matching T's
 // json field names, e.g. "controlPlaneConfig.nico.subnetIDs") into a nested
-// map[string]interface{} document. Field types come from T's own json tags
-// and field kinds (via resolvedFieldKind), not from any hand-maintained
-// list of keys, so adding a field to T needs no change here.
-//
-// Later entries for the same key override earlier ones. The result is
-// meant to be merged with another such document (see MergeMap) or
-// marshaled straight to JSON — callers that need the request as a typed
-// Go value can json.Marshal the result and json.Decode it onto T; going
-// through the map first (rather than decoding each entry directly onto T)
-// is what lets a caller send the merged document itself as the request
-// body, preserving an explicit empty value instead of a struct re-marshal
-// collapsing it to the same wire representation as an omitted field via
-// omitempty.
+// map[string]interface{} document. Later entries for the same key override
+// earlier ones. Merge the result with another such document via MergeMap,
+// or marshal it directly to JSON.
 func BuildPatch[T any](entries []string) (map[string]interface{}, error) {
 	patch := map[string]interface{}{}
 	for _, entry := range entries {
@@ -51,12 +41,10 @@ func BuildPatch[T any](entries []string) (map[string]interface{}, error) {
 	return patch, nil
 }
 
-// MergeMap deep-merges src onto dst in place: when both dst[key] and
-// src[key] are nested objects, they merge recursively (so --set can touch
-// one field under a path while a -f document's other fields under the same
-// path survive); otherwise src[key] replaces dst[key] entirely, including
-// when the value is an array — arrays are never merged element-wise, only
-// ever replaced as a whole.
+// MergeMap deep-merges src onto dst in place. When both dst[key] and
+// src[key] are nested objects, they merge recursively; otherwise src[key]
+// replaces dst[key] entirely, including when the value is an array — arrays
+// are never merged element-wise, only replaced as a whole.
 func MergeMap(dst, src map[string]interface{}) {
 	for k, v := range src {
 		if srcMap, ok := v.(map[string]interface{}); ok {
@@ -70,14 +58,13 @@ func MergeMap(dst, src map[string]interface{}) {
 }
 
 // resolvedFieldKind walks T's struct tags along path's segments (descending
-// through structs and pointers, unwrapping the final field's pointer too),
-// and returns the Kind of the field found there — e.g.
-// "controlPlaneConfig.nico.subnetIDs" resolves to reflect.Slice because
-// NicoControlPlaneProviderUpdate.SubnetIDs is []uuid.UUID, and
-// "controlPlaneConfig.nodeLabels" also resolves to reflect.Slice despite
-// being *[]string. An unresolvable path (unknown key, or a segment that
-// isn't a struct) returns reflect.Invalid — the caller's own decode of the
-// final document is what actually rejects an unknown key.
+// through structs and pointers, unwrapping the final field's pointer too)
+// and returns the Kind of the field found there. For example,
+// "controlPlaneConfig.nico.subnetIDs" resolves to reflect.Slice, because
+// NicoControlPlaneProviderUpdate.SubnetIDs is []uuid.UUID; so does
+// "controlPlaneConfig.nodeLabels", despite being *[]string. An unresolvable
+// path (unknown key, or a segment that isn't a struct) returns
+// reflect.Invalid.
 func resolvedFieldKind[T any](path []string) reflect.Kind {
 	t := reflect.TypeOf(*new(T))
 	for _, seg := range path {
@@ -108,19 +95,11 @@ func isArrayField[T any](path []string) bool {
 // emptyValueFor returns the JSON-empty value matching the Kind of T's field
 // at path: an empty array for a slice field, an empty object for a map
 // field, an empty string otherwise. This is what --set key= (nothing after
-// =) becomes, so a field whose API contract treats an empty value as
-// "clear this field" — as opposed to omitting the key, which leaves it
-// alone — can be reached through --set with the type its own field
-// actually needs, not just a bare YAML null.
+// =) becomes.
 //
-// This only produces the right wire behavior for a caller that marshals
-// BuildPatch's result directly and sends those bytes as the request body.
-// A caller that instead decodes to build a Go value first has two separate
-// traps to avoid: decoding this empty value onto a *struct field whose type
-// still has omitempty* re-collapses it to "omitted" on any later
-// re-marshal of that struct; decoding it onto an *already-populated map
-// field* is a no-op, because encoding/json merges a JSON object onto an
-// existing map instead of replacing it.
+// Correct only when the caller marshals BuildPatch's result directly onto
+// the wire. Decoding it onto a struct field whose type carries omitempty,
+// or onto an already-populated map field, does not produce a clear.
 func emptyValueFor[T any](path []string) interface{} {
 	switch resolvedFieldKind[T](path) {
 	case reflect.Slice:
@@ -145,10 +124,9 @@ func fieldByJSONTag(t reflect.Type, name string) (reflect.StructField, bool) {
 }
 
 // setPath writes value into the nested map at the dot-separated path,
-// creating intermediate maps as needed. It errors rather than silently
-// overwriting when an earlier entry already put a scalar at a path segment
-// this one needs to descend through (e.g. --set controlPlaneConfig=x before
-// --set controlPlaneConfig.nico.osProfile=y).
+// creating intermediate maps as needed. Returns an error if an earlier
+// entry already set a scalar at a path segment this one needs to descend
+// through.
 func setPath(m map[string]interface{}, path []string, value interface{}) error {
 	if path[0] == "" {
 		return fmt.Errorf("empty key")
@@ -171,18 +149,16 @@ func setPath(m map[string]interface{}, path []string, value interface{}) error {
 }
 
 // parseSetValue coerces a non-empty --set value's raw text into the JSON
-// type it most likely represents. When isArray is false the whole value is
-// parsed as one YAML scalar, so "true"/"false" become booleans, bare
-// integers become numbers, and everything else stays a string.
+// type it most likely represents. When isArray is false, the value is
+// parsed as one YAML scalar: "true"/"false" become booleans, bare integers
+// become numbers, everything else stays a string.
 //
 // When isArray is true, the whole value is first tried as one YAML
-// document: real sequence syntax like "[{path: /etc/foo, content: bar}]"
-// parses directly into a list, which is what an array of objects (e.g.
-// bootstrapFiles) needs. If that doesn't parse, or parses to something
-// other than a list, raw falls back to a comma-separated list of scalars
-// (e.g. "id1,id2"), still becoming a one-element list for a single value
-// with no comma. An empty raw never reaches this function — see
-// emptyValueFor.
+// document, so sequence syntax like "[{path: /etc/foo, content: bar}]"
+// parses directly into a list. Otherwise it falls back to a
+// comma-separated list of scalars (e.g. "id1,id2"), with a single value
+// becoming a one-element list. An empty raw never reaches this function —
+// see emptyValueFor.
 func parseSetValue(raw string, isArray bool) (interface{}, error) {
 	if !isArray {
 		return parseScalar(raw)

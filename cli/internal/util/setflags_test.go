@@ -13,12 +13,8 @@ import (
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-// applyPatch builds a patch from entries via BuildPatch (the function
-// production code actually calls) and decodes it onto dst, the way a
-// caller that wants a typed Go value — rather than the raw bytes
-// loadUpdateClusterRequest sends over the wire — would. Decoding onto dst
-// merges onto whatever dst already had, matching encoding/json's normal
-// merge-onto-existing-value behavior.
+// applyPatch builds a patch from entries via BuildPatch and decodes it onto
+// dst, merging onto whatever dst already holds.
 func applyPatch[T any](dst *T, entries []string) error {
 	patch, err := BuildPatch[T](entries)
 	if err != nil {
@@ -33,11 +29,7 @@ func applyPatch[T any](dst *T, entries []string) error {
 	return dec.Decode(dst)
 }
 
-// applyPatchFresh is applyPatch against a zero-value T, matching how
-// loadUpdateClusterRequest validates its merged patch (against a fresh
-// UpdateClusterRequest, not one already carrying prior state) before
-// sending the patch's own raw bytes — not this decoded value — over the
-// wire.
+// applyPatchFresh is applyPatch against a zero-value T.
 func applyPatchFresh[T any](entries []string) (T, error) {
 	var dst T
 	err := applyPatch(&dst, entries)
@@ -64,11 +56,10 @@ func TestApplySetFlagsBuildsNestedPath(t *testing.T) {
 	}
 }
 
-// TestApplySetFlagsArrayKeyWrapsSingleValue and the three below it prove
-// that BuildPatch's reflection-based array detection (isArrayField) works
-// against the real UpdateClusterRequest, including a *[]string field
-// (nodeLabels), a plain []uuid.UUID field, and a []string field nested
-// under a different provider struct (infra vs nico).
+// TestApplySetFlagsArrayKeyWrapsSingleValue and the three below it check
+// BuildPatch's array detection against the real UpdateClusterRequest: a
+// *[]string field (nodeLabels), a plain []uuid.UUID field, and a []string
+// field nested under a different provider struct (infra vs nico).
 
 func TestApplySetFlagsArrayKeyWrapsSingleValue(t *testing.T) {
 	id := "3fa85f64-5717-4562-b3fc-2c963f66afa6"
@@ -130,9 +121,8 @@ func TestApplySetFlagsInfraBootstrapFilesYAMLSequence(t *testing.T) {
 	if files[0].Path != "/etc/foo" || files[0].Content != "bar" {
 		t.Errorf("bootstrapFiles[0] = %+v, want path=/etc/foo content=bar", files[0])
 	}
-	// The comma inside the quoted content only works because the whole
-	// value parses as one YAML sequence up front — the naive
-	// comma-split fallback would have cut this file's content in half.
+	// The comma inside the quoted content parses correctly only because
+	// the whole value is tried as one YAML sequence first.
 	if files[1].Path != "/etc/baz" || files[1].Content != "qux, quux" {
 		t.Errorf("bootstrapFiles[1] = %+v, want path=/etc/baz content=%q", files[1], "qux, quux")
 	}
@@ -379,24 +369,18 @@ func TestApplySetFlagsEmptyValueClearsPlainSliceField(t *testing.T) {
 	if err := applyPatch(&req, []string{"controlPlaneConfig.nico.subnetIDs="}); err != nil {
 		t.Fatalf("applyPatch: %v", err)
 	}
-	// A JSON array decode replaces a slice's contents (unlike a JSON object
-	// decoding onto a map, which merges — see the map test below) — so this
-	// genuinely goes from one element to zero, proving the value isn't a
-	// fabricated element and isn't merely "started empty, stayed empty".
+	// A JSON array decode replaces a slice's contents, unlike a JSON object
+	// decoding onto a map (see the map test below). Starting from one
+	// element proves the result is genuinely empty, not merely untouched.
 	if len(req.ControlPlaneConfig.Nico.SubnetIDs) != 0 {
 		t.Errorf("subnetIDs = %v, want empty", req.ControlPlaneConfig.Nico.SubnetIDs)
 	}
 }
 
-// TestApplySetFlagsEmptyValueOnMapFieldIsANoOpOntoAnExistingMap documents an
-// encoding/json quirk applyPatch inherits when decoding onto a dst that
-// already has a populated map field: a JSON object decode merges onto an
-// existing map instead of replacing it, so {} leaves prior keys untouched.
-// This is specific to decoding onto an already-populated Go value —
-// loadUpdateClusterRequest never does that (it validates the merged patch
-// against a fresh UpdateClusterRequest and sends the patch's own bytes, not
-// this decoded value, over the wire), so this is not a limit on what
-// nkectl update cluster can actually send; see
+// TestApplySetFlagsEmptyValueOnMapFieldIsANoOpOntoAnExistingMap documents
+// that decoding an empty object onto an already-populated map field is a
+// no-op: encoding/json merges a JSON object onto an existing map instead of
+// replacing it. Compare with
 // TestBuildPatchEmptyValueOnMapFieldReachesTheWireAsAGenuineClear.
 func TestApplySetFlagsEmptyValueOnMapFieldIsANoOpOntoAnExistingMap(t *testing.T) {
 	req := api.UpdateClusterRequest{
@@ -413,13 +397,10 @@ func TestApplySetFlagsEmptyValueOnMapFieldIsANoOpOntoAnExistingMap(t *testing.T)
 	}
 }
 
-// TestBuildPatchEmptyValueOnMapFieldReachesTheWireAsAGenuineClear proves the
-// production path: BuildPatch's result, marshaled directly (as
-// loadUpdateClusterRequest does — not decoded onto a pre-populated struct),
-// contains a literal empty object for machineTemplate, and validates
-// cleanly against a fresh UpdateClusterRequest (a nil map field decoding an
-// empty object allocates a new, empty map — no merge involved, since there
-// was nothing to merge onto).
+// TestBuildPatchEmptyValueOnMapFieldReachesTheWireAsAGenuineClear verifies
+// that BuildPatch's result for an empty machineTemplate value marshals to a
+// literal empty object, and decodes cleanly onto a fresh
+// UpdateClusterRequest.
 func TestBuildPatchEmptyValueOnMapFieldReachesTheWireAsAGenuineClear(t *testing.T) {
 	patch, err := BuildPatch[api.UpdateClusterRequest]([]string{"controlPlaneConfig.infra.machineTemplate="})
 	if err != nil {
@@ -442,10 +423,9 @@ func TestBuildPatchEmptyValueOnMapFieldReachesTheWireAsAGenuineClear(t *testing.
 	}
 }
 
-// TestApplySetFlagsRejectsScalarThenNestedConflict proves that setting a
-// path to a scalar and then setting a nested field under that same path in
-// a later entry errors, instead of the later entry silently discarding the
-// earlier one when setPath finds a non-map value already there.
+// TestApplySetFlagsRejectsScalarThenNestedConflict verifies that setting a
+// path to a scalar, then a nested field under that same path in a later
+// entry, errors instead of silently discarding the earlier entry.
 func TestApplySetFlagsRejectsScalarThenNestedConflict(t *testing.T) {
 	var req api.UpdateClusterRequest
 	err := applyPatch(&req, []string{

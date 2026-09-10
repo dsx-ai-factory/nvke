@@ -233,11 +233,9 @@ func TestUpdateClusterSetOverridesFile(t *testing.T) {
 	}
 }
 
-// TestUpdateClusterEmptySetValueReachesTheWireAsALiteralEmptyArray proves
-// the fix end to end: nkectl update cluster sends the raw merged patch as
-// the PATCH body, so --set controlPlaneConfig.nico.subnetIDs= reaches CWE
-// as a literal "subnetIDs":[] — not silently dropped the way marshaling a
-// Go struct through UpdateClusterRequest's omitempty tags would drop it.
+// TestUpdateClusterEmptySetValueReachesTheWireAsALiteralEmptyArray verifies
+// that --set controlPlaneConfig.nico.subnetIDs= sends a literal
+// "subnetIDs":[] in the PATCH body.
 func TestUpdateClusterEmptySetValueReachesTheWireAsALiteralEmptyArray(t *testing.T) {
 	seed := seedCluster("my-cluster")
 	fake, clientFn := newFakeCWE(t, seed)
@@ -255,9 +253,9 @@ func TestUpdateClusterEmptySetValueReachesTheWireAsALiteralEmptyArray(t *testing
 	}
 }
 
-// TestUpdateClusterFileEmptyValueReachesTheWireAsALiteralEmptyObject is the
-// -f counterpart: an empty value in a YAML patch document goes through the
-// same merged-raw-bytes path as --set, so it reaches the wire the same way.
+// TestUpdateClusterFileEmptyValueReachesTheWireAsALiteralEmptyObject
+// verifies that an empty value in a -f YAML patch document sends a literal
+// "machineTemplate":{} in the PATCH body.
 func TestUpdateClusterFileEmptyValueReachesTheWireAsALiteralEmptyObject(t *testing.T) {
 	seed := seedCluster("my-cluster")
 	fake, clientFn := newFakeCWE(t, seed)
@@ -275,10 +273,10 @@ func TestUpdateClusterFileEmptyValueReachesTheWireAsALiteralEmptyObject(t *testi
 	}
 }
 
-// The name resolves and only the PATCH is rejected, matching how CWE
-// actually applies the 409: GET/list aren't blocked by an in-progress
-// mutation, only a new PATCH racing it is. The client's error path also
-// doesn't branch by status code, so 409 here covers 400 too.
+// The name resolves successfully; only the PATCH is rejected. GET/list
+// aren't blocked by an in-progress mutation on CWE, only a new PATCH racing
+// it is. A 409 here also covers 400, since the client's error path doesn't
+// branch on status code.
 func TestUpdateClusterSurfacesServerRejection(t *testing.T) {
 	seed := seedCluster("my-cluster")
 	fake, clientFn := newFakeCWE(t, seed)
