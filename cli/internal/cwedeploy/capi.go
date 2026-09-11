@@ -92,7 +92,7 @@ func (e *Engine) installCAPICore(ctx context.Context, kubeconfigPath string) err
 }
 
 // installProvisionedProvider renders cluster-api-provider-provisioned's
-// kustomize base, points it at the image the caller built, and applies it.
+// kustomize base, points it at Config.ProvisionedProviderImage, and applies it.
 //
 // Server-side apply: the CRDs are large enough that a client-side apply can
 // exceed the last-applied-configuration annotation limit.
@@ -104,7 +104,8 @@ func (e *Engine) installProvisionedProvider(
 ) error {
 	if cfg.ProvisionedProviderImage == "" {
 		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; it names the " +
-			"cluster-api-provider-provisioned image to run (build it with " +
+			"cluster-api-provider-provisioned image to run (published by " +
+			".github/workflows/image-provisioned-nvcr.yml, or build it with " +
 			"`docker build -f cluster-api-provider-provisioned/Dockerfile .`)")
 	}
 

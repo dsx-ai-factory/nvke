@@ -249,8 +249,11 @@ type Config struct {
 
 	// ProvisionedProviderImage is the cluster-api-provider-provisioned image to
 	// run as the CAPI infrastructure provider for hosts that already exist.
-	// Required for site-cluster creation. Nothing publishes this image yet, so
-	// the caller builds it and loads it into the cluster rather than pulling it.
+	// Required for site-cluster creation. Published by
+	// .github/workflows/image-provisioned-nvcr.yml on every push to main, the
+	// same way CWEImage is; a checkout build still works and is what the e2e
+	// lane uses. Either way the image is loaded into the cluster rather than
+	// pulled, because the bootstrap cluster has no pull secret.
 	ProvisionedProviderImage string
 
 	// ProvisionedProviderPath is the local path to

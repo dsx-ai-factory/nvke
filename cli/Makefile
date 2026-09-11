@@ -186,7 +186,9 @@ ensure-profiles-image:
 # The Cluster API infrastructure provider for hosts that already exist, which is
 # what makes a site cluster reconcile: `nkectl bootstrap site` installs it onto
 # the ephemeral bootstrap cluster (cli/internal/cwedeploy) and loads this image
-# into it. Nothing publishes the image yet, so it is built here.
+# into it. image-provisioned-nvcr.yml publishes the image, but this target
+# builds it from the checkout regardless: the e2e lane has to exercise the
+# provider the pull request changed, not the last one published.
 #
 # A plain `nerdctl build`, not `make -C ../cluster-api-provider-provisioned
 # docker-build`: that target is a multi-arch buildx build into an OCI archive,

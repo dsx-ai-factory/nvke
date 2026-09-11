@@ -40,7 +40,6 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root.AddCommand(newGenerateCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newCreateCmd())
-	root.AddCommand(newUpdateCmd())
 	root.AddCommand(newDeleteCmd())
 
 	return root

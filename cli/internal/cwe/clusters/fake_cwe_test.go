@@ -4,9 +4,7 @@
 package clusters
 
 import (
-	"bytes"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,13 +30,7 @@ type fakeCWE struct {
 	mu       sync.Mutex
 	clusters []api.Cluster
 	requests []string
-	lastBody []byte
 	server   *httptest.Server
-
-	// updateFailStatus, when non-zero, makes update answer with this status
-	// and updateFailMessage instead of applying the patch.
-	updateFailStatus  int
-	updateFailMessage string
 }
 
 // newFakeCWE starts a fake CWE seeded with clusters, and returns it together
@@ -80,15 +72,6 @@ func (f *fakeCWE) seen() []string {
 	return append([]string(nil), f.requests...)
 }
 
-// failUpdate makes the next PATCH /clusters/{id} request fail with status
-// and message instead of applying the patch.
-func (f *fakeCWE) failUpdate(status int, message string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.updateFailStatus = status
-	f.updateFailMessage = message
-}
-
 // stored returns the clusters the fake currently holds.
 func (f *fakeCWE) stored() []api.Cluster {
 	f.mu.Lock()
@@ -96,24 +79,11 @@ func (f *fakeCWE) stored() []api.Cluster {
 	return append([]api.Cluster(nil), f.clusters...)
 }
 
-// lastRequestBody returns the raw body of the most recent request, exactly
-// as the client sent it.
-func (f *fakeCWE) lastRequestBody() []byte {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]byte(nil), f.lastBody...)
-}
-
 func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.requests = append(f.requests, r.Method+" "+r.URL.RequestURI())
-	// Reading r.Body drains it, so replace it with a fresh reader over the
-	// same bytes for the route handlers below to decode.
-	body, _ := io.ReadAll(r.Body)
-	f.lastBody = body
-	r.Body = io.NopCloser(bytes.NewReader(body))
 
 	// The client appends /api to the configured site URL. Matching on that
 	// prefix rather than stripping it silently means a client that stops
@@ -134,8 +104,6 @@ func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.get(w, id)
 	case isItem && r.Method == http.MethodDelete:
 		f.remove(w, id)
-	case isItem && r.Method == http.MethodPatch:
-		f.update(w, id, r)
 	default:
 		writeJSON(w, http.StatusNotFound,
 			api.GenericError{Message: "no route for " + r.Method + " " + path})
@@ -200,41 +168,6 @@ func (f *fakeCWE) remove(w http.ResponseWriter, id string) {
 			w.WriteHeader(http.StatusAccepted)
 			return
 		}
-	}
-	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "cluster " + id + " not found"})
-}
-
-// update answers PATCH /clusters/{id}, applying the subset of fields this
-// fake understands and returning the updated record.
-func (f *fakeCWE) update(w http.ResponseWriter, id string, r *http.Request) {
-	if f.updateFailStatus != 0 {
-		writeJSON(w, f.updateFailStatus, api.GenericError{Message: f.updateFailMessage})
-		return
-	}
-	for i, c := range f.clusters {
-		if c.ID.String() != id {
-			continue
-		}
-		var req api.UpdateClusterJSONRequestBody
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "malformed body: " + err.Error()})
-			return
-		}
-		if req.ControlPlaneKubernetesVersion != nil {
-			c.ControlPlaneKubernetesVersion = *req.ControlPlaneKubernetesVersion
-		}
-		if req.EnableCPNodeRecycling != nil {
-			c.EnableCPNodeRecycling = req.EnableCPNodeRecycling
-		}
-		if req.TeleportEnabled != nil {
-			c.TeleportEnabled = req.TeleportEnabled
-		}
-		if req.EnableEtcdEncryption != nil {
-			c.EtcdEncrypted = *req.EnableEtcdEncryption
-		}
-		f.clusters[i] = c
-		writeJSON(w, http.StatusOK, c)
-		return
 	}
 	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "cluster " + id + " not found"})
 }
