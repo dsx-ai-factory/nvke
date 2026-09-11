@@ -17,18 +17,15 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
-	capikubeconfig "sigs.k8s.io/cluster-api/util/kubeconfig"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
 
-// A CAPI Cluster that has not been migrated out of the legacy per-cluster
-// namespace must still resolve, because TenantAccess publishes only into
-// nke-system regardless of where the Cluster object lives.
-func TestDBClusterTenantClientProviderResolvesCAPIClusterFromLegacyNamespace(t *testing.T) {
+// A CAPI Cluster resolves through its CWE cluster row, which is what says the
+// kubeconfig comes from the Secret TenantAccess publishes.
+func TestDBClusterTenantClientProviderResolvesCAPIClusterViaClusterRow(t *testing.T) {
 	ctx := context.Background()
 	cluster := newSiteDBClusterForTenantClientProviderTest()
 	managementClient := fake.NewClientBuilder().
@@ -42,7 +39,7 @@ func TestDBClusterTenantClientProviderResolvesCAPIClusterFromLegacyNamespace(t *
 
 	capiCluster := &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{
 		Name:      cluster.Name,
-		Namespace: capi.LegacyClusterNamespace(cluster.Name),
+		Namespace: tenantAccessKubeconfigNamespace,
 	}}
 
 	tenantClient, err := provider.ClientForCluster(ctx, capiCluster)
@@ -107,11 +104,9 @@ func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyCAPIPublishedSecret
 		CapiInfraCluster: []byte(`{"kind":"test"}`),
 	}
 	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: cluster.CapiInfraCluster})
-	capiCluster := newCAPIClusterForTenantClientProviderTest()
-	capiSecret := capikubeconfig.GenerateSecret(capiCluster, newTenantClientProviderTestKubeconfig(t))
 	managementClient := fake.NewClientBuilder().
 		WithScheme(newTenantClientProviderTestScheme(t)).
-		WithObjects(capiCluster, capiSecret, &corev1.Secret{
+		WithObjects(&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: tenantAccessKubeconfigNamespace,
 				Name:      cluster.Name + "-kubeconfig",
@@ -123,6 +118,7 @@ func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyCAPIPublishedSecret
 	_, err := provider.ClientForDBCluster(context.Background(), cluster)
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrTenantClientNotReady)
+	require.Contains(t, err.Error(), "published tenant kubeconfig")
 }
 
 func TestDBClusterTenantClientProviderErrorsForUnsupportedProviderType(t *testing.T) {
@@ -229,8 +225,6 @@ func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 		CapiInfraCluster: []byte(`{"kind":"DockerCluster"}`),
 	}
 	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: cluster.CapiInfraCluster})
-	capiCluster := newCAPIClusterForTenantClientProviderTest()
-	capiAdminSecret := capikubeconfig.GenerateSecret(capiCluster, newTenantClientProviderTestKubeconfig(t))
 	published := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: tenantAccessKubeconfigNamespace,
@@ -244,10 +238,10 @@ func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 		Data: map[string][]byte{tenantAccessKubeconfigKey: newTenantClientProviderExecKubeconfig()},
 	}
 
-	t.Run("SPIRE published secret is used even when CAPI secret is admin", func(t *testing.T) {
+	t.Run("SPIRE published secret is used", func(t *testing.T) {
 		managementClient := fake.NewClientBuilder().
 			WithScheme(newTenantClientProviderTestScheme(t)).
-			WithObjects(capiCluster, capiAdminSecret, published).
+			WithObjects(published).
 			Build()
 		provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false)
 		tenantClient, err := provider.ClientForDBCluster(context.Background(), cluster)
@@ -255,10 +249,9 @@ func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 		require.NotNil(t, tenantClient)
 	})
 
-	t.Run("CAPI admin secret alone is not ready after OIDC", func(t *testing.T) {
+	t.Run("no published secret is not ready", func(t *testing.T) {
 		managementClient := fake.NewClientBuilder().
 			WithScheme(newTenantClientProviderTestScheme(t)).
-			WithObjects(capiCluster, capiAdminSecret).
 			Build()
 		provider := NewDBClusterTenantClientProvider(nil, managementClient, nil, false)
 		_, err := provider.ClientForDBCluster(context.Background(), cluster)
@@ -275,28 +268,6 @@ func newTenantClientProviderTestScheme(t *testing.T) *runtime.Scheme {
 	require.NoError(t, corev1.AddToScheme(scheme))
 	require.NoError(t, clusterv1.AddToScheme(scheme))
 	return scheme
-}
-
-func newTenantClientProviderTestKubeconfig(t *testing.T) []byte {
-	t.Helper()
-
-	return []byte(`apiVersion: v1
-kind: Config
-clusters:
-- cluster:
-    server: https://127.0.0.1:6443
-  name: test-cluster
-contexts:
-- context:
-    cluster: test-cluster
-    user: test-user
-  name: test-context
-current-context: test-context
-users:
-- name: test-user
-  user:
-    token: test-token
-`)
 }
 
 func newTenantClientProviderExecKubeconfig() []byte {
@@ -345,24 +316,6 @@ func newPublishedTenantKubeconfigSecret(clusterName string) *corev1.Secret {
 		},
 		Data: map[string][]byte{
 			tenantAccessKubeconfigKey: newTenantClientProviderExecKubeconfig(),
-		},
-	}
-}
-
-// newCAPIClusterForTenantClientProviderTest builds an unmigrated Cluster, still
-// in the legacy per-cluster namespace. Tests pair it with a same-named kubeconfig
-// Secret in that namespace to assert the published nke-system Secret is what
-// actually gets used.
-func newCAPIClusterForTenantClientProviderTest() *clusterv1.Cluster {
-	return &clusterv1.Cluster{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: clusterv1.GroupVersion.String(),
-			Kind:       "Cluster",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-cluster",
-			Namespace: capi.LegacyClusterNamespace("test-cluster"),
-			UID:       types.UID("test-cluster-uid"),
 		},
 	}
 }

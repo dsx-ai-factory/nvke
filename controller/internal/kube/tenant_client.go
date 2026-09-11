@@ -142,10 +142,9 @@ func (p *DBClusterTenantClientProvider) ClientForDBCluster(ctx context.Context, 
 }
 
 // ClientForCluster resolves the CWE cluster row a CAPI Cluster stands for and
-// returns that row's tenant client. Going through the row rather than reading a
-// kubeconfig out of the Cluster's own namespace is what keeps CAPI controllers
-// working for clusters whose objects have not been migrated into
-// constants.NamespaceNKESystem yet: TenantAccess publishes only there.
+// returns that row's tenant client. The row is what carries the provider type
+// that decides where the kubeconfig comes from, so CAPI controllers go through
+// it rather than reading a kubeconfig out of the Cluster's namespace directly.
 //
 // clusters.name is uniquely indexed, and every CAPI Cluster CWE creates is named
 // after its row, so the name is an unambiguous key.

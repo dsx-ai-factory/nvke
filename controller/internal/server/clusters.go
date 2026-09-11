@@ -329,10 +329,7 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		return err
 	}
 	if len(req.Name) > capi.ClusterNameMaxLength {
-		return fmt.Errorf(
-			"cluster name must be %d characters or fewer so it can be used as a cluster namespace name",
-			capi.ClusterNameMaxLength,
-		)
+		return fmt.Errorf("cluster name must be %d characters or fewer so Kubernetes object names derived from it stay within limits", capi.ClusterNameMaxLength)
 	}
 
 	var nodePools []api.NodePoolCreateConfig

@@ -215,7 +215,7 @@ func TestOpenAPIValidator_CreateCluster(t *testing.T) {
 			{"valid max length", strings.Repeat("a", capi.ClusterNameMaxLength), false},
 			{"contains dot", "test.cluster", true},
 			{"contains uppercase", "Test-cluster", true},
-			{"too long for cluster namespace", strings.Repeat("a", capi.ClusterNameMaxLength+1), true},
+			{"over max length", strings.Repeat("a", capi.ClusterNameMaxLength+1), true},
 		}
 
 		for _, tt := range tests {

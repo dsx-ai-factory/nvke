@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # CAPD workload kubeconfig for local Mac/Colima. Looks up <name>-kubeconfig in
-# nke-system (OIDC-mode) then cluster-<name> (legacy). SPIRE exec kubeconfigs
-# are skipped — they are not usable as laptop kubectl without the plugin.
+# nke-system. SPIRE exec kubeconfigs are skipped — they are not usable as
+# laptop kubectl without the plugin.
 # Falls back to admin.conf from a CAPD control-plane container. Rewrites
 # apiserver to 127.0.0.1:<docker-published 6443> (<name>-lb first, else the
 # same control-plane container).
@@ -33,7 +33,7 @@ secret_usable() {
     && ! grep -q 'k8s-spiffe-workload-jwt-exec-auth' "${TEMP_FILE}"
 }
 
-if secret_usable nke-system || secret_usable "cluster-${CLUSTER_NAME}"; then
+if secret_usable nke-system; then
   :
 else
   docker exec "${CONTROL_PLANE_CONTAINER_ID}" cat /etc/kubernetes/admin.conf >"${TEMP_FILE}"

@@ -170,11 +170,6 @@ func (f *TenantClientFactory) GetClient(ctx context.Context, clusterName string)
 // publishes. Post-ready probes use it to create short-lived workloads without
 // widening the production CWE SPIFFE identity's permissions for test setup.
 //
-// This read cluster-<name>/<name>-kubeconfig, the CAPI Secret. Nothing writes
-// that any more: provision_cluster gates the legacy publish behind the
-// "tenant-access-sole-publisher" workflow version, and every new cluster is on
-// it, so TenantAccess is the only publisher.
-//
 // With OIDC off TenantAccess publishes the admin kubeconfig itself, and that
 // Secret is used as it stands. With OIDC on it publishes a SPIRE exec-auth
 // kubeconfig for the CWE identity, which is deliberately not an admin

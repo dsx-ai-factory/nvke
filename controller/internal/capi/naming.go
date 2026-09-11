@@ -4,10 +4,8 @@
 package capi
 
 const (
-	clusterNamespacePrefix = "cluster-"
-	ClusterNameMaxLength   = 63 - len(clusterNamespacePrefix)
+	// ClusterNameMaxLength caps cluster names so the Kubernetes object names
+	// derived from them stay inside the 63-character limit. The eight characters
+	// of headroom date from the retired per-cluster "cluster-<name>" namespace.
+	ClusterNameMaxLength = 63 - 8
 )
-
-func LegacyClusterNamespace(clusterName string) string {
-	return clusterNamespacePrefix + clusterName
-}

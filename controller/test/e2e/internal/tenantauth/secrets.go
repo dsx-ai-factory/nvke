@@ -107,6 +107,7 @@ func assertSecretAbsent(ctx context.Context, c client.Client, name string) error
 	}
 }
 
-func kubeconfigSecretName(clusterName string) string      { return clusterName + "-kubeconfig" }
-func trustBundleSecretName(clusterName string) string     { return clusterName + "-cluster-trust-bundle" }
+func kubeconfigSecretName(clusterName string) string  { return clusterName + "-kubeconfig" }
+func trustBundleSecretName(clusterName string) string { return clusterName + "-cluster-trust-bundle" }
+
 func adminKubeconfigSecretName(clusterName string) string { return clusterName + "-admin-kubeconfig" }

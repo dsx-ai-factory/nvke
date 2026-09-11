@@ -72,10 +72,6 @@ func (a *Activities) CreateCAPIInfraMachineForNode(ctx context.Context, input Cr
 	if err != nil {
 		return err
 	}
-	if err := a.rejectUnmigratedCluster(ctx, cluster.Name); err != nil {
-		return err
-	}
-
 	createCtx := &capiMachineCreateContext{
 		node:      node,
 		nodeSet:   nodeSet,
@@ -284,10 +280,6 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	if err != nil {
 		return fmt.Errorf("failed to get node: %w", err)
 	}
-	if err := a.rejectUnmigratedClusterForNode(ctx, input.NodeID); err != nil {
-		return err
-	}
-
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
@@ -656,10 +648,6 @@ func (a *Activities) applyCAPIMachineRebootAnnotation(ctx context.Context, nodeI
 	if err != nil {
 		return fmt.Errorf("failed to get node: %w", err)
 	}
-	if err := a.rejectUnmigratedClusterForNode(ctx, nodeID); err != nil {
-		return err
-	}
-
 	namespace := constants.NamespaceNKESystem
 	machineName := node.Name
 

@@ -797,10 +797,6 @@ func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testin
 		ClusterID: clusterID,
 		Name:      "worker-0",
 	}
-	cluster := db.Cluster{
-		ID:   clusterID,
-		Name: "cluster-a",
-	}
 
 	machine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
@@ -835,8 +831,7 @@ func TestDeleteCAPIMachineForNode_WaitFalseReturnsWhileObjectsFinalize(t *testin
 		Build()
 
 	mockDB := &testutil.MockDB{}
-	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil).Twice()
-	mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
 
 	a := &Activities{db: mockDB, k8sClient: k8sClient}
 
