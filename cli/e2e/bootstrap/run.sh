@@ -214,7 +214,7 @@ cleanup() {
     collect_node_diagnostics
   fi
 
-  # --keep-bootstrap-cluster means the command no longer cleans up after
+  # --keep-bootstrap-cluster means the command does not clean up after
   # itself, so a failure between it and the explicit teardown below would
   # otherwise leak a cluster that the next run's stage 3 then trips over.
   if [ "${bootstrap_cluster_cleanup_pending}" = true ]; then
@@ -330,9 +330,7 @@ make -C "${CLI_DIR}" ensure-provisioned-provider-image \
   CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE}"
 
 # No cross-runtime image bridge here: every image above is built by `nerdctl
-# build`, so it already lives in the containerd store nkectl loads from. This
-# used to be a `docker save | nerdctl load` of all three, because the builds
-# went through Docker and a Docker image is invisible to containerd.
+# build`, so it already lives in the containerd store nkectl loads from.
 
 # The completed images are sufficient from this point. On GitHub's 14 GB
 # runner, retaining their BuildKit intermediates competes with the container
@@ -392,7 +390,7 @@ log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-clu
 
 # In the background, because the run has to be joined while it is still going.
 #
-# The command no longer stops after deploying CWE: it creates the cluster and
+# The command does not stop after deploying CWE: it creates the cluster and
 # waits for CWE to build it on the fake nodes. CWE reaches those nodes, and
 # their spire-agents reach SPIRE, over the node network — which the bootstrap
 # cluster is not on, because the nodes came up before it existed. So the attach
@@ -408,7 +406,7 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 bootstrap_pid=$!
 
 # Both directions across the two bridges, checked the moment the cluster is
-# attached. A break here used to surface fifteen minutes later as "did not
+# attached. Unchecked, a break here surfaces fifteen minutes later as "did not
 # report provisioned", with the cause buried in CWE's pod log; this names it
 # in seconds.
 #

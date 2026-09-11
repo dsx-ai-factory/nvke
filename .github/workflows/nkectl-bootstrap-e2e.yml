@@ -212,10 +212,9 @@ jobs:
       # Version pins come from make/versions.mk, so `make show-versions` and CI
       # cannot disagree.
       # Each version is read into a variable and checked before it is written:
-      # `set -e` does not fire on a failed $(...) inside `echo "k=$(...)"`, so
-      # a broken make/versions.mk would have written empty values, and the
-      # setup actions below resolve an empty version to "latest" rather than
-      # failing. Pinned means pinned.
+      # `set -e` does not fire on a failed $(...) inside `echo "k=$(...)"`, and
+      # the setup actions below resolve an empty version to "latest" rather
+      # than failing, so an empty value has to be caught here.
       - name: Read pinned tool versions
         id: versions
         shell: bash
@@ -433,25 +432,20 @@ jobs:
       #
       # Removed means: the daemon, its socket and Docker's own containerd are
       # stopped and masked, and a shim that fails with a pointer here is put
-      # first on PATH. The binaries themselves are not touched. The masking is
+      # first on PATH. The binaries themselves are not touched: the masking is
       # what makes an absolute-path `/usr/bin/docker build` fail as well --
       # with Docker's own "cannot connect to the daemon" rather than the
-      # shim's message, a worse error but the same outcome, and the assertions
-      # below prove it against every real binary on PATH. An earlier version
-      # replaced the binaries in place for the nicer message; the masking
-      # already guarantees the failure, and the shim gives the same message
-      # without touching a system file, so the replacement bought nothing.
+      # shim's message, a worse error but the same outcome -- and the
+      # assertions below prove it against every real binary on PATH.
+      # Replacing the binaries would buy only the nicer message, at the cost
+      # of modifying system files.
       #
-      # Nothing here needs undoing. linux-amd64-cpu16 is an ephemeral,
-      # single-use runner scale set (confirmed with the pool owner; the runner
-      # names are ARC's per-job `...-runner-<random>` and never repeat), and
-      # the GitHub-hosted runners are single-use too. A job's runner, with its
-      # own systemd and dockerd, is destroyed when the job ends, so the masks
-      # cannot reach a sibling job on the same node or the next job anywhere.
-      # An earlier version restored Docker at the end as insurance against a
-      # persistent pool; it protected nothing and was the one step that
-      # failed spuriously. The standalone containerd-nerdctl.service installed
-      # above is a separate unit on a separate socket and is untouched here.
+      # Nothing here needs undoing. linux-amd64-cpu16 is a single-use runner
+      # scale set, and the GitHub-hosted runners are single-use too: a job's
+      # runner, with its own systemd and dockerd, is destroyed when the job
+      # ends, so the masks cannot reach any other job and there is no restore
+      # step. The standalone containerd-nerdctl.service installed above is a
+      # separate unit on a separate socket and is untouched here.
       - name: Remove Docker
         shell: bash
         run: |
