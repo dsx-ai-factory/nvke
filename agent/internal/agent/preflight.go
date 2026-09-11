@@ -5,8 +5,10 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -14,6 +16,14 @@ import (
 )
 
 const defaultCloudInitStatusCheckName = "cloud-init-status"
+
+// cloudInitStatusRecoverableExitCode is the exit code `cloud-init status` uses
+// to report recoverable errors, which it reports as a "degraded" status. It
+// says nothing about how far cloud-init got: "degraded done" means cloud-init
+// completed its work and recorded warnings on the way, so it still satisfies a
+// completion check. Exit code 1 means cloud-init hit an unrecoverable error.
+// See https://docs.cloud-init.io/en/latest/explanation/failure_states.html.
+const cloudInitStatusRecoverableExitCode = 2
 
 func (s *NodeAgentServer) ExecuteNodePreflight(
 	ctx context.Context,
@@ -87,12 +97,25 @@ func (s *NodeAgentServer) runCloudInitStatusPreflightCheck() (*pb.NodePreflightR
 		return nil, fmt.Errorf("check_cloud_init_status: command runner not configured")
 	}
 
-	output, err := s.Runner.Run("cloud-init", []string{"status"}, nil) //nolint:goconst // cloud-init argv fragment; naming each CLI flag reads worse than the literal
-	if err != nil {
-		return nil, fmt.Errorf("check_cloud_init_status: cloud-init status: %w", err)
+	output, runErr := s.Runner.Run("cloud-init", []string{"status"}, nil)
+	report := strings.TrimSpace(string(output))
+
+	// A non-zero exit only tells us cloud-init recorded errors, not that it
+	// failed to report a status, so the report on stdout still decides this
+	// check. Anything other than a degraded exit is treated as fatal.
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(runErr, &exitErr) {
+			return nil, fmt.Errorf("check_cloud_init_status: cloud-init status: %w", runErr)
+		}
+
+		if exitCode := exitErr.ExitCode(); exitCode != cloudInitStatusRecoverableExitCode {
+			return nil, fmt.Errorf(
+				"check_cloud_init_status: cloud-init status exited %d: %s", exitCode, report)
+		}
 	}
 
-	passed, message, permanentErr := evaluateCloudInitStatus(string(output))
+	passed, message, permanentErr := evaluateCloudInitStatus(report)
 	if permanentErr != nil {
 		return nil, fmt.Errorf("check_cloud_init_status: %w", permanentErr)
 	}

@@ -32,23 +32,6 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
-  /infraProviders:
-    get:
-      summary: List Infrastructure Providers
-      operationId: listInfraProviders
-      description: Returns the provider payload keys this deployment advertises for CreateClusterRequest cluster specs.
-      responses:
-        "200":
-          description: A list of infrastructure provider payload keys
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ListInfraProvidersResponse"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
-
   /clusters:
     get:
       summary: List Clusters
@@ -1073,13 +1056,6 @@ components:
           type: string
           description: Canonical IPv4 service network CIDR applied to the cluster.
 
-    InfraProvider:
-      type: string
-      enum:
-        - nico
-        - infra
-      description: A top-level provider payload key advertised for CreateClusterRequest cluster specs.
-
     ListCNIPluginsResponse:
       type: object
       required:
@@ -1090,17 +1066,6 @@ components:
           items:
             type: string
           description: A list of CNI plugins
-
-    ListInfraProvidersResponse:
-      type: object
-      required:
-        - providers
-      properties:
-        providers:
-          type: array
-          items:
-            $ref: "#/components/schemas/InfraProvider"
-          description: The provider payload keys advertised for CreateClusterRequest cluster specs.
 
     ListClustersResponse:
       type: object

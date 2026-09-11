@@ -9,7 +9,7 @@ without pulling in the engine and everything the engine needs. It is imported by
 
 ## What is written by hand, and what is generated
 
-`openapi.yaml` is the source of truth. It is OpenAPI 3.0.3, and it describes 17
+`openapi.yaml` is the source of truth. It is OpenAPI 3.0.3, and it describes 16
 paths.
 
 These three files are generated from it and must not be edited:

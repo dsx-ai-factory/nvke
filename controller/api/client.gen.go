@@ -121,9 +121,6 @@ type ClientInterface interface {
 	// ListConfigProfiles request
 	ListConfigProfiles(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListInfraProviders request
-	ListInfraProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListNodePools request
 	ListNodePools(ctx context.Context, params *ListNodePoolsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -280,18 +277,6 @@ func (c *Client) ListCNIPlugins(ctx context.Context, reqEditors ...RequestEditor
 
 func (c *Client) ListConfigProfiles(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListConfigProfilesRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ListInfraProviders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListInfraProvidersRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -767,33 +752,6 @@ func NewListConfigProfilesRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/configProfiles")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewListInfraProvidersRequest generates requests for ListInfraProviders
-func NewListInfraProvidersRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/infraProviders")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1472,9 +1430,6 @@ type ClientWithResponsesInterface interface {
 	// ListConfigProfilesWithResponse request
 	ListConfigProfilesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListConfigProfilesClientResponse, error)
 
-	// ListInfraProvidersWithResponse request
-	ListInfraProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInfraProvidersClientResponse, error)
-
 	// ListNodePoolsWithResponse request
 	ListNodePoolsWithResponse(ctx context.Context, params *ListNodePoolsParams, reqEditors ...RequestEditorFn) (*ListNodePoolsClientResponse, error)
 
@@ -1707,30 +1662,6 @@ func (r ListConfigProfilesClientResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r ListConfigProfilesClientResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ListInfraProvidersClientResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *ListInfraProvidersResponse
-	JSON401      *Unauthorized
-	JSON403      *Forbidden
-}
-
-// Status returns HTTPResponse.Status
-func (r ListInfraProvidersClientResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListInfraProvidersClientResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2138,15 +2069,6 @@ func (c *ClientWithResponses) ListConfigProfilesWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseListConfigProfilesClientResponse(rsp)
-}
-
-// ListInfraProvidersWithResponse request returning *ListInfraProvidersClientResponse
-func (c *ClientWithResponses) ListInfraProvidersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInfraProvidersClientResponse, error) {
-	rsp, err := c.ListInfraProviders(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListInfraProvidersClientResponse(rsp)
 }
 
 // ListNodePoolsWithResponse request returning *ListNodePoolsClientResponse
@@ -2585,46 +2507,6 @@ func ParseListConfigProfilesClientResponse(rsp *http.Response) (*ListConfigProfi
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ListConfigProfilesResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthorized
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest Forbidden
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseListInfraProvidersClientResponse parses an HTTP response from a ListInfraProvidersWithResponse call
-func ParseListInfraProvidersClientResponse(rsp *http.Response) (*ListInfraProvidersClientResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListInfraProvidersClientResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ListInfraProvidersResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

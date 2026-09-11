@@ -47,20 +47,6 @@ rules:
       - provisionedmachinetemplates.infrastructure.cluster.x-k8s.io
     verbs:
       - get
-  # Needed for cluster specific namespaces and bootstrap secrets
-  # ToDo: consider narrowing the scope of these permissions in future CAPI milestones
-  - apiGroups:
-      - ""
-    resources:
-      - secrets
-      - namespaces
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - watch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

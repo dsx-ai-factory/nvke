@@ -18,7 +18,6 @@ import (
 	"go.temporal.io/sdk/worker"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
-	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/temporal/activities"
 )
 
@@ -40,18 +39,14 @@ func (r *callRecorder) indexOf(name string) int {
 	return slices.Index(r.calls, name)
 }
 
-// TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow pins the ordering
-// that makes tenant-access cleanup safe.
-//
-// The tenant-access controller reconciles from a ListClusters snapshot taken at
-// the top of its pass, so a pass already in flight can publish a cluster it saw
-// as live. Deleting the Secrets while the row still exists therefore races: the
-// controller re-creates them, teardown finishes, and they are orphaned with no
-// row left to drive another cleanup. Deleting the row first closes that window —
-// once it is gone no later pass can observe the cluster at all.
-func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) {
+// TestTeardownClusterDeletesCAPIClusterBeforeClusterRow pins the ordering that
+// makes tenant-access cleanup safe without an explicit teardown step: the
+// tenant-access controller owns its published Secrets by a reference to the
+// CAPI Cluster, so deleting that Cluster (and waiting for it to finish
+// deleting) before the DB row is what lets Kubernetes GC remove them, with no
+// Temporal-driven Secret deletion required.
+func TestTeardownClusterDeletesCAPIClusterBeforeClusterRow(t *testing.T) {
 	clusterID := uuid.New()
-	const clusterName = "tenant-a"
 
 	rec := &callRecorder{}
 
@@ -61,8 +56,6 @@ func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) 
 
 	a := activities.NewActivities(config.Config{}, nil, nil, nil, "", nil)
 
-	env.OnActivity(a.GetCluster, mock.Anything, clusterID).
-		Return(db.Cluster{ID: clusterID, Name: clusterName}, nil)
 	env.OnActivity(a.UpdateClusterConditions, mock.Anything, mock.Anything).Return(nil).Maybe()
 	env.OnActivity(a.TriggerClusterTeardownNodePools, mock.Anything, mock.Anything).
 		Return(activities.TriggerClusterTeardownNodePoolsResult{}, nil)
@@ -73,19 +66,15 @@ func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) 
 	env.OnActivity(a.WaitForClusterControlPlaneNodesDeleted, mock.Anything, mock.Anything).
 		Return(activities.WaitForClusterControlPlaneNodesDeletedResult{}, nil)
 	env.OnActivity(a.DeleteEtcdEncryptionKeySecret, mock.Anything, mock.Anything).Return(nil)
-	env.OnActivity(a.DeleteCAPIClusterResources, mock.Anything, mock.Anything).Return(nil)
 
+	env.OnActivity(a.DeleteCAPIClusterResources, mock.Anything, mock.Anything).
+		Return(func(context.Context, activities.DeleteCAPIClusterResourcesInput) error {
+			rec.record("DeleteCAPIClusterResources")
+			return nil
+		})
 	env.OnActivity(a.DeleteCluster, mock.Anything, mock.Anything).
 		Return(func(context.Context, uuid.UUID) error {
 			rec.record("DeleteCluster")
-			return nil
-		})
-	env.OnActivity(a.DeleteTenantAccessSecrets, mock.Anything, mock.Anything).
-		Return(func(_ context.Context, input activities.DeleteTenantAccessSecretsInput) error {
-			rec.record("DeleteTenantAccessSecrets")
-			// The row is gone by now, so the name must have been carried in.
-			assert.Equal(t, clusterName, input.ClusterName)
-			assert.Equal(t, clusterID, input.ClusterID)
 			return nil
 		})
 
@@ -96,10 +85,10 @@ func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 
+	capiIdx := rec.indexOf("DeleteCAPIClusterResources")
 	rowIdx := rec.indexOf("DeleteCluster")
-	secretsIdx := rec.indexOf("DeleteTenantAccessSecrets")
+	require.NotEqual(t, -1, capiIdx, "DeleteCAPIClusterResources should run")
 	require.NotEqual(t, -1, rowIdx, "DeleteCluster should run")
-	require.NotEqual(t, -1, secretsIdx, "DeleteTenantAccessSecrets should run")
-	assert.Less(t, rowIdx, secretsIdx,
-		"tenant-access Secrets must be deleted after the cluster row, or the controller can re-publish them")
+	assert.Less(t, capiIdx, rowIdx,
+		"the CAPI cluster (and, via GC, its owned tenant-access Secrets) must be deleted before the cluster row")
 }

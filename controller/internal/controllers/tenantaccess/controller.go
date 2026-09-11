@@ -17,9 +17,12 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	ctrl "sigs.k8s.io/controller-runtime"
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -28,7 +31,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/constants"
-	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile"
 	"github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/dbwrapper"
 	dbfilters "github.com/NVIDIA/nke/controller/internal/controllers/dbreconcile/filters"
 	"github.com/NVIDIA/nke/controller/internal/db"
@@ -78,6 +80,7 @@ type Controller struct {
 	nodeAgentClient agent.Client
 	tenantManagers  TenantManagerSet
 	tenantClientFor func(adminConf []byte) (ctrlclient.Client, error)
+	scheme          *runtime.Scheme
 }
 
 // NewController creates a new TenantAccessController.
@@ -100,46 +103,91 @@ func NewController(
 	}
 }
 
-// SetupWithManager registers the cluster-scoped tenant-access reconciler. A
-// joined control-plane node write is the low-latency bootstrap trigger, while
-// the cluster source performs startup and periodic scans for eventual repair.
+// SetupWithManager registers the CAPI-Cluster-scoped tenant-access
+// reconciler. Existence of the CAPI Cluster is the publish gate; a joined
+// control-plane node write and a DB cluster row change (e.g. EnableOIDC) are
+// low-latency triggers mapped onto the same Cluster's request.
 func (c *Controller) SetupWithManager(mgr manager.Manager) error {
-	return dbreconcile.SetupController(
-		mgr,
-		"tenant-access",
-		c,
-		dbwrapper.NewClusterSource(c.db, dbfilters.Cluster{}),
-		dbwrapper.NewNodeSource(c.db, dbfilters.Node{
-			ControlPlane: ptr.To(true),
-			Joined:       ptr.To(true),
-			Deleting:     ptr.To(false),
-		}, nodeClusterKeys),
-	)
+	c.scheme = mgr.GetScheme()
+
+	nodeSource := dbwrapper.NewMappedNodeSource(c.db, dbfilters.Node{
+		ControlPlane: ptr.To(true),
+		Joined:       ptr.To(true),
+		Deleting:     ptr.To(false),
+	}, c.nodeClusterRequest)
+
+	clusterSource := dbwrapper.NewMappedClusterSource(c.db, dbfilters.Cluster{}, dbClusterRequest)
+
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&clusterv1.Cluster{}).
+		WatchesRawSource(nodeSource).
+		WatchesRawSource(clusterSource).
+		Named("tenant-access").
+		Complete(c)
 }
 
-func nodeClusterKeys(_ context.Context, node db.Node) ([]dbreconcile.Key, error) {
+// nodeClusterRequest maps a control-plane node write to its cluster's
+// tenant-access request, looking up the cluster name the request is keyed on.
+func (c *Controller) nodeClusterRequest(ctx context.Context, node db.Node) ([]reconcile.Request, error) {
 	if node.ClusterID == uuid.Nil {
 		return nil, nil
 	}
-	return []dbreconcile.Key{dbreconcile.ClusterKey(node.ClusterID)}, nil
-}
-
-// Reconcile publishes access material for one cluster. The cluster row is
-// loaded at execution time so queued events are hints, never state snapshots.
-func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconcile.Result, error) {
-	cluster, err := c.db.GetCluster(ctx, key.ID)
+	cluster, err := c.db.GetCluster(ctx, node.ClusterID)
 	if errors.Is(err, db.ErrNotFound) {
-		return reconcile.Result{}, nil
+		return nil, nil
 	}
 	if err != nil {
-		return reconcile.Result{}, fmt.Errorf("getting cluster %s: %w", key.ID, err)
+		return nil, fmt.Errorf("getting cluster %s for node %s: %w", node.ClusterID, node.ID, err)
 	}
-	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
+	return []reconcile.Request{clusterRequest(cluster.Name)}, nil
+}
+
+// dbClusterRequest maps a DB cluster row change to its tenant-access request.
+func dbClusterRequest(_ context.Context, cluster db.Cluster) ([]reconcile.Request, error) {
+	if cluster.Name == "" {
+		return nil, nil
+	}
+	return []reconcile.Request{clusterRequest(cluster.Name)}, nil
+}
+
+func clusterRequest(clusterName string) reconcile.Request {
+	return reconcile.Request{NamespacedName: types.NamespacedName{Namespace: SecretsNamespace, Name: clusterName}}
+}
+
+// Reconcile publishes access material for one cluster. Existence of the CAPI
+// Cluster named by req is the publish gate: a missing Cluster means no
+// unowned Secret is ever created, and Kubernetes GC (via the owner reference
+// set on every published Secret) removes them once the Cluster is deleted --
+// this controller never deletes a Secret itself.
+func (c *Controller) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	capiCluster := &clusterv1.Cluster{}
+	if err := c.k8sClient.Get(ctx, req.NamespacedName, capiCluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, fmt.Errorf("getting CAPI cluster %s: %w", req.NamespacedName, err)
+	}
+
+	clusters, err := c.db.ListClusters(ctx, db.ClusterFilters{Name: &capiCluster.Name})
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("listing clusters named %s: %w", capiCluster.Name, err)
+	}
+	if len(clusters) == 0 {
+		c.logger.Debug("No DB cluster row for CAPI cluster; skipping tenant-access publish", "clusterName", capiCluster.Name)
+		return ctrl.Result{}, nil
+	}
+	if len(clusters) > 1 {
+		return ctrl.Result{}, fmt.Errorf("%d DB clusters named %s, want at most 1", len(clusters), capiCluster.Name)
+	}
+	cluster := clusters[0]
+
+	if !capiCluster.DeletionTimestamp.IsZero() || cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		c.tenantManagers.RemoveCluster(cluster.ID)
-		// Temporal owns Secret deletion after it no longer needs tenant access.
-		return reconcile.Result{}, nil
+		// No Secret writes: Kubernetes GC removes the owned Secrets once the
+		// CAPI Cluster itself finishes deleting.
+		return ctrl.Result{}, nil
 	}
-	return reconcile.Result{}, c.reconcileCluster(ctx, cluster)
+	return ctrl.Result{}, c.reconcileCluster(ctx, cluster)
 }
 
 // reconcileCluster fetches a control-plane node's admin kubeconfig and publishes

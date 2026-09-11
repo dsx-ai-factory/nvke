@@ -22,6 +22,7 @@ import (
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/config"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/tenantauth"
 )
 
 // tenantTest carries everything a backend's specs share: the wiring built once
@@ -173,6 +174,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 				}
 			})
 
+			validateTenantAccessSecretGCPostDelete(&test)
 			if !spec.validate.provisioningOnly {
 				validateOIDCPostDelete(&test)
 			}
@@ -624,6 +626,19 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	t.log.Info("Cluster provisioned", "name", cluster.Name, "duration", time.Since(start).Round(time.Second).String())
 
 	t.cluster = cluster
+}
+
+// validateTenantAccessSecretGCPostDelete proves the tenant-access controller's
+// owner-reference design: the admin kubeconfig secret is published for every
+// cluster regardless of OIDC mode, and this controller never deletes it
+// itself, so its absence here can only come from Kubernetes garbage
+// collecting it once the CAPI Cluster it is owned by finished deleting.
+func validateTenantAccessSecretGCPostDelete(test *tenantTest) {
+	It("garbage-collects the tenant-access admin kubeconfig secret", func(ctx context.Context) {
+		Eventually(func() error {
+			return tenantauth.AssertAdminKubeconfigDeleted(ctx, test.k8sClient, test.cluster.Name)
+		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+	}, Label("tenant-access", "cleanup"), NodeTimeout(6*time.Minute))
 }
 
 // deleteClusterAndWait deletes the tenant cluster and blocks until CWE reports

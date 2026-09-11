@@ -206,13 +206,12 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 			cfg.SupportedInfraProviders,
 			cfg.UseControlPlaneControllerForControlPlane(),
 		),
-		nodePoolService:       *nodePoolService,
-		nodeSetService:        *NewNodeSetService(logger, database, temporalClient),
-		nodeService:           *NewNodeService(logger, database, temporalClient),
-		osProfileService:      *NewOSProfileService(cfg, logger),
-		configProfileService:  *NewConfigProfileService(cfg, logger),
-		cniPluginsService:     *NewCNIPluginsService(),
-		infraProvidersService: *NewInfraProvidersService(cfg.SupportedInfraProviders),
+		nodePoolService:      *nodePoolService,
+		nodeSetService:       *NewNodeSetService(logger, database, temporalClient),
+		nodeService:          *NewNodeService(logger, database, temporalClient),
+		osProfileService:     *NewOSProfileService(cfg, logger),
+		configProfileService: *NewConfigProfileService(cfg, logger),
+		cniPluginsService:    *NewCNIPluginsService(),
 	}
 }
 
@@ -224,7 +223,6 @@ type serverImpl struct {
 	osProfileService
 	configProfileService
 	cniPluginsService
-	infraProvidersService
 }
 
 // temporalUIURL returns the Temporal Web UI base URL to surface in the version
