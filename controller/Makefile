@@ -217,7 +217,13 @@ ARGS ?=
 test-e2e: ## Run all NKE e2e tests; optional ARGS forwards ginkgo flags Example: make test-e2e ARGS='--label-filter="nico-vms && happy-path"'
 	cd $(E2E_DIR) && go run github.com/onsi/ginkgo/v2/ginkgo@$(GINKGO_VERSION) run -v --timeout=$(E2E_TIMEOUT) $(ARGS) .
 
-.PHONY: test-e2e-happy-path
+.PHONY: test-e2e-core-capd test-e2e-core-nico-containers test-e2e-happy-path
+test-e2e-core-capd: ## Run the bounded CAPD create, readiness, and delete lifecycle.
+	make test-e2e ARGS='--fail-on-empty --label-filter="core-docker"'
+
+test-e2e-core-nico-containers: ## Run the bounded NICo containers create, readiness, and delete lifecycle.
+	make test-e2e ARGS='--fail-on-empty --label-filter="core-nico"'
+
 test-e2e-happy-path: ## Run CAPD and NICo VMs happy-path e2e tests
 	make test-e2e ARGS='--label-filter="happy-path && (lifecycle || readiness) && !scale && !upgrade && !reboot"'
 
