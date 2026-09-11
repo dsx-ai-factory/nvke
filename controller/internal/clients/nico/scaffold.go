@@ -37,7 +37,8 @@ func (*Client) GetClusterScaffoldManifest(cluster db.Cluster) (json.RawMessage, 
 			Kind:       "NicoCluster",
 		},
 		Spec: nicov1.NicoClusterSpec{
-			SiteID: provider.SiteID.String(),
+			SiteID:                provider.SiteID.String(),
+			FailureDomainLabelKey: "failure_domain",
 		},
 	}
 	manifest, err := json.Marshal(nicoCluster)
