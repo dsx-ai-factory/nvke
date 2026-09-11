@@ -72,8 +72,15 @@ controllers:
     enabled: true
 
 nkeSystemNamespace:
-  # -- Create the shared nke-system namespace.
+  # -- Create the shared nke-system namespace. The object always carries
+  # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and
+  # argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or
+  # Application delete does not either. Both are set by the template for default delete protection.
   create: true
+  # -- Extra annotations merged onto nke-system. This is useful for
+  # adding additional annotations to the namespace to protect it from being deleted. Listing annotations that
+  # template already defaults here duplicates the key in the rendered Namespace.
+  annotations: {}
 
 # This section builds out the service account.
 # https://kubernetes.io/docs/concepts/security/service-accounts/

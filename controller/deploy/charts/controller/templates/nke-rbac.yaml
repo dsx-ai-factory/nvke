@@ -1,11 +1,16 @@
 # Shared nke-system namespace and tenant RBAC ConfigMap.
 #
-# The nke-system namespace is created unconditionally (Prune=false): the CWE
-# controller that reconciles tenant access publishes per-cluster Secrets
-# (<cluster>-kubeconfig, <cluster>-cluster-trust-bundle) into it for every reconciled
-# cluster, so it must exist whenever that controller runs, independent of
-# tenantAccess.enabled and nkeOIDCAuth.enabled. Keeping it unconditional also means
-# a site that has published Secrets and is then disabled keeps them addressable.
+# The nke-system Namespace is rendered when nkeSystemNamespace.create is true
+# (the default), irrespective of whether tenantAccess.enabled or nkeOIDCAuth.enabled is true.
+# controller publishes per-cluster Secrets (<cluster>-kubeconfig,
+# <cluster>-cluster-trust-bundle) into it, so the Namespace must stay even if
+# those flags are later turned off. Two annotations are set unconditionally
+# rather than left to values, because they are invariants and not preferences:
+# helm.sh/resource-policy: keep skips Helm uninstall, and
+# argocd.argoproj.io/sync-options: Prune=false,Delete=false survives an Argo
+# prune or Application delete. Neither stops a kubectl delete of the Namespace;
+# only an admission policy does. Further annotations come from
+# nkeSystemNamespace.annotations.
 #
 # The nke-rbac ConfigMap (key manifest.yaml) is rendered whenever
 # spiffe.trustDomain is set, not when the live nkeOIDCAuth flag is on.
@@ -19,7 +24,11 @@ kind: Namespace
 metadata:
   name: nke-system
   annotations:
-    argocd.argoproj.io/sync-options: Prune=false
+    helm.sh/resource-policy: keep
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    {{- with .Values.nkeSystemNamespace.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}
 {{- if .Values.nkeOIDCAuth.enabled }}
 {{- /*
