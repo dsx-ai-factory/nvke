@@ -30,6 +30,14 @@ chmod +x nkectl
 sudo mv nkectl /usr/local/bin/
 ```
 
+```bash
+# macOS (Intel)
+curl -fsSL -o nkectl \
+  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-darwin-amd64
+chmod +x nkectl
+sudo mv nkectl /usr/local/bin/
+```
+
 Verify the download with `checksums.txt` from the same release.
 
 ## Verify
@@ -43,17 +51,21 @@ nkectl version
 ```bash
 git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
-make build          # links all binaries including nkectl into bin/
+make -C cli build   # → cli/bin/nkectl; not `go build`, which leaves the Cluster API version unset
 ```
 
-The binary lands at `bin/nkectl`.
+`make build` at the repository root builds every module and copies `nkectl` to
+`bin/` as well; it needs GNU Make 4.0+ (`gmake` on macOS).
 
 ## Additional Prerequisites for Bootstrap
 
 `nkectl bootstrap site` creates an ephemeral Kind cluster on the init node to run the bootstrap workflow engine. The init node needs:
 
 - **`kind`** — `brew install kind` (macOS) or download from https://kind.sigs.k8s.io/docs/user/quick-start/#installation
-- **`nerdctl`** and a **containerd** for it to talk to — the container runtime `nkectl` uses to create the Kind cluster and load images into it. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises.
+- **`nerdctl`** and a **containerd** for it to talk to — the container runtime `nkectl` uses to create the Kind cluster and load images into it. Docker is not supported. Rootful nerdctl, run as root, is what CI exercises; rootless is untested. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises.
+- **`helm`**, **`kubectl`** and **`clusterctl`** — `nkectl` shells out to all three: Helm for the Postgres, Temporal, SPIRE and CWE releases, `kubectl` for manifests, and `clusterctl init` for the Cluster API providers.
+
+Only nerdctl is checked before the run starts. A missing `kind` fails in the pre-flight check for a leftover bootstrap cluster, before anything is created; a missing `helm`, `kubectl` or `clusterctl` surfaces mid-bootstrap, after the Kind cluster is already up.
 
 Join nodes do not need `kind` or a container runtime — only the init node runs `nkectl`.
 

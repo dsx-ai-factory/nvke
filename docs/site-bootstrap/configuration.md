@@ -2,6 +2,12 @@
 
 `nkectl bootstrap site` reads a single YAML site spec file that describes your pre-provisioned nodes and the Kubernetes cluster to build on them. The file is loaded and fully validated before any node is touched — a typo or missing field fails fast with a clear error.
 
+`nkectl generate sitespec <name> --nodes hosts.csv` writes one from a node CSV, so
+the file rarely needs assembling by hand — see
+[Pre-Provisioned Nodes](pre-provisioned-nodes.md#step-2-run-bootstrap-on-init-node).
+This page summarises the schema; the CLI's
+[site spec reference](../../cli/docs/sitespec.md) is the full one.
+
 ## Example
 
 ```yaml
@@ -40,6 +46,7 @@ registry:
 | `cluster.nodes` | list | yes | Must contain an odd number of control-plane nodes and at least one node. |
 | `cluster.nodes[].name` | string | yes, per entry | Lowercase RFC 1123 label. Must be unique across all nodes. |
 | `cluster.nodes[].ip` | string | yes, per entry | Valid IPv4 or IPv6 address. Must be unique across all nodes. |
+| `cluster.nodes[].tpmEkThumbprint` | string | no | SHA-256 of the node's TPM endorsement key: 64 lowercase hex digits. Every thumbprint listed is allowlisted on the SPIRE server the bootstrap deploys; a node without one cannot attest, and a file with none deploys no TPM attestor. Ignored with `--disable-mtls`. |
 | `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
 | `cluster.cniName` | string | yes | `ovn-kubernetes`. `calico` is accepted for development. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
@@ -48,10 +55,13 @@ registry:
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | gRPC port nke-agent listens on. Defaults to `15005`. Set it only if you passed `--secure-server-port` to the agent. |
 | `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. |
-| `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
+| `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`, which is also the template default. kubelet subtracts it from capacity, so on a node with 16Gi or less nothing is allocatable and the node never reaches `Ready`; set it to fit the hardware. |
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never logged or printed. See below. |
+| `spire.trustDomain` | string | no | SPIFFE trust domain for the identities the bootstrap SPIRE server issues. Defaults to `<bootstrap-cluster>.nke.local`. |
+| `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
+| `spire.caKeyFile` | string | no | Path to that CA's private key. Both or neither; both files are checked for existence at load. |
 
 Unknown fields are rejected. A typo in a field name fails the load rather than being silently ignored.
 
@@ -74,6 +84,9 @@ Any field can be supplied or overridden via an environment variable. A set varia
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
+| `NKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
+| `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
+| `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
 
 `INIT_NODE_IP` and `INIT_NODE_NAME` are not supported. The inventory does not

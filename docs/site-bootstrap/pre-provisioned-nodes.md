@@ -35,7 +35,7 @@ After bootstrap completes:
 
 ## Prerequisites
 
-- 1 or 3 Ubuntu 24.04 or 26.04 nodes (single-node or HA deployment)
+- An odd number of Ubuntu 24.04 or 26.04 nodes — one, three, five; an even count is rejected
 - SSH access to all nodes with sudo privileges
 - Nodes can reach the internet for downloading packages and artifacts
 - Network connectivity between all nodes
@@ -177,7 +177,8 @@ echo 'deb [signed-by=/etc/apt/keyrings/nke.asc] https://packages.nvidia.com/nke/
 sudo apt-get update
 sudo apt-get install -y nke-agent
 
-# Pre-provisioned nodes have no SPIRE workload API; disable mTLS (plaintext gRPC)
+# Nodes prepared this way run no spire-agent, so the agent speaks plaintext gRPC.
+# nkectl bootstrap site must then be run with --disable-mtls too (Step 2).
 echo 'AGENT_ARGS="--disable-mtls"' | sudo tee /etc/default/nke-agent
 sudo systemctl restart nke-agent
 
@@ -186,6 +187,13 @@ sudo systemctl status nke-agent
 ```
 
 > **Warning:** Use `nke-agent` **0.1.12 or later**. Older agents do not implement kubeadm preflight checks, so configuration problems only surface mid-bootstrap.
+
+> **Plaintext mode.** `--disable-mtls` on the agent turns SPIFFE off, so
+> `nkectl bootstrap site` has to be run with `--disable-mtls` as well — CWE
+> otherwise dials the agents over mTLS and never connects. `nkectl` labels this
+> mode development only. For the attested path — `spire-agent` on every node, a
+> TPM EK thumbprint per host in the CSV, and a SPIRE CA in the site spec — follow
+> [Your First Cluster, Real Site](../first-cluster.md#real-site).
 
 ### Install Open vSwitch (OVN-Kubernetes only)
 
@@ -213,10 +221,13 @@ EOF
 nkectl generate sitespec my-tier0-site --nodes hosts.csv > sitespec.yaml
 ```
 
-The result needs no editing. Fill in `tpm_ek_thumbprint` per host to enable TPM
-attestation, and use `--set` for anything the CSV does not carry — for example
-`--set cluster.podCidr=10.244.0.0/16`. See [configuration.md](configuration.md) for
-every field.
+The result needs no editing. Leave `tpm_ek_thumbprint` empty for the plaintext
+mode this guide uses; `--disable-mtls` ignores it. Use `--set` for anything the
+CSV does not carry — for example `--set cluster.podCidr=10.244.0.0/16`. See
+[configuration.md](configuration.md) for every field, and check the template's
+`systemReservedMemory` default of `16Gi` against your hardware: kubelet subtracts
+it from capacity, so on a smaller node nothing is allocatable and the node never
+reaches `Ready`.
 
 3. Run bootstrap:
 
@@ -224,11 +235,11 @@ every field.
 # Validate the site spec first (no nodes or clusters touched)
 nkectl bootstrap site -f sitespec.yaml --dry-run
 
-# Run bootstrap
+# Run bootstrap. --disable-mtls matches the plaintext agents from Step 1.
 REGISTRY_API_KEY="<your-registry-api-key>" \
 NKECTL_CONTROLLER_IMAGE="nvcr.io/<org>/nke-controller:edge" \
 NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
-  nkectl bootstrap site -f sitespec.yaml
+  nkectl bootstrap site -f sitespec.yaml --disable-mtls
 ```
 
 The two images are loaded into the Kind cluster from containerd's image store on
@@ -238,9 +249,9 @@ to your registry on the init node (`nerdctl login nvcr.io`) before running. The
 local build from `make -C cli images` needs no login.
 
 `nkectl` creates a temporary Kind cluster on the init node, deploys Postgres,
-Temporal, SPIRE and the Cluster API providers onto it, then CWE, waits for CWE to be
-healthy, and dispatches the kubeadm init and join work to your nodes through Cluster
-API and `nke-agent` gRPC. No SSH required.
+Temporal and the Cluster API providers onto it — and SPIRE, unless `--disable-mtls`
+is set — then CWE, waits for CWE to be healthy, and dispatches the kubeadm init and
+join work to your nodes through Cluster API and `nke-agent` gRPC. No SSH required.
 
 The ephemeral Kind cluster is torn down when bootstrap succeeds. It is **kept** if you
 pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was
@@ -256,7 +267,7 @@ Useful flags:
 | `--keep-bootstrap-cluster` | off | Leave the ephemeral Kind cluster running for debugging. |
 | `--kubeconfig-out` | `<clusterName>.kubeconfig` | Where to write the finished cluster's admin kubeconfig. |
 | `--encryption-key-out` | `<clusterName>-etcd-encryption-key.json` | Where to write the cluster's etcd encryption key, as a Secret manifest. |
-| `--disable-mtls` | off | Stand the site up with no SPIRE, CWE dialling agents in plaintext. **Development only**, and the agents must be started with `--disable-mtls` too. |
+| `--disable-mtls` | off | Stand the site up with no SPIRE, CWE dialling agents in plaintext. **Development only.** This guide uses it because the agents in Step 1 run with `--disable-mtls`; the two sides must agree. Drop it only when every node runs `spire-agent` and has a thumbprint in the CSV. |
 
 When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, the cluster's admin credential, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. The cluster does not depend on the key file: every control-plane node holds the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml`, and that is what kube-apiserver reads. The file is for two things the nodes cannot do. It is what a controller installed later is given, so nobody has to pull the key off a node by hand, and it is the copy that restores etcd onto new hosts when no control-plane node survives. **Move it off this host** — this host is one of the nodes it protects — and keep it with the cluster's other credentials. Use `--kubeconfig-out` and `--encryption-key-out` to write the files elsewhere.
 
@@ -266,11 +277,16 @@ When bootstrap finishes it writes two files into the working directory: `<cluste
 
 ## Step 3: Verify the Cluster
 
+On success `nkectl` writes the new cluster's admin kubeconfig to
+`my-tier0-site.kubeconfig` in the working directory (`--kubeconfig-out` changes the
+path) and prints the command to use it:
+
 ```bash
-sudo kubectl get nodes --kubeconfig /etc/kubernetes/admin.conf
+kubectl --kubeconfig ./my-tier0-site.kubeconfig get nodes
 ```
 
-All nodes should show `Ready` status.
+All nodes should show `Ready` status. On the init node,
+`/etc/kubernetes/admin.conf` is the same credential.
 
 ## What Happens Next
 
@@ -365,4 +381,4 @@ Check that the init node can reach the join node on port 15005:
 curl -v telnet://<join-node-ip>:15005
 ```
 
-Check `nke-agent` on the join node and confirm `--disable-mtls` is set in `/etc/default/nke-agent`.
+Check `nke-agent` on the join node and confirm `--disable-mtls` is set in `/etc/default/nke-agent` — and that `nkectl bootstrap site` was run with `--disable-mtls` too. One side in plaintext and the other in mTLS never connects.
