@@ -290,13 +290,16 @@ file-license-check: license ## Verify all files have license headers.
 # Shell and Makefile only. Go sources are covered by TestNoDockerInvocations
 # in the substrate package, which understands Go string literals; a text
 # grep over Go would match that test's own error message, among other prose.
+# GNU grep applies --include to command-line file names as well as to files
+# found while recursing, so the Makefile has to be included by name or the
+# explicit argument is silently skipped.
 #
 # Also a dependency of `lint`, which the merge gate runs for this module: a
 # reintroduction then blocks a merge rather than only reddening the advisory
 # e2e lane.
 check-no-docker: ## Fail if the bootstrap e2e suite invokes docker.
 	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)' \
-	    --include='*.sh' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
+	    --include='*.sh' --include='Makefile' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
 	if [ -n "$$matches" ]; then \
 	  echo "The bootstrap e2e suite must not invoke docker; it runs on nerdctl/containerd."; \
 	  echo "$$matches"; \
