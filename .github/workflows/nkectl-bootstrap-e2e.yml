@@ -438,11 +438,9 @@ jobs:
       # with Docker's own "cannot connect to the daemon" rather than the
       # shim's message, a worse error but the same outcome, and the assertions
       # below prove it against every real binary on PATH. An earlier version
-      # replaced the binaries in place for the nicer message; that mutated
-      # files a run cancelled mid-job (routine under cancel-in-progress) could
-      # leave half-done for the next job on the runner, and the restore step
-      # could then put the shim back as the permanent /usr/bin/docker. Nothing
-      # here is worth that.
+      # replaced the binaries in place for the nicer message; the masking
+      # already guarantees the failure, and the shim gives the same message
+      # without touching a system file, so the replacement bought nothing.
       #
       # Nothing here needs undoing. linux-amd64-cpu16 is an ephemeral,
       # single-use runner scale set (confirmed with the pool owner; the runner
