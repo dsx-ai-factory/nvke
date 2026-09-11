@@ -53,17 +53,10 @@ rules:
     resources:
     - resources: ["configmaps", "limitranges", "namespaces", "nodes", "serviceaccounts", "resourcequotas", "daemonsets", "tokenreviews" , "certificatesigningrequests", "globalnetworkpolicies", "networkpolicies", "podsecuritypolicies", "clusterrolebindings", "rolebindings", "clusterroles", "roles", "virtualmachineinstances", "virtualmachines", "kubevirts"]
 
-  # Secrets list/watch: same high-volume, low-risk reasoning as the drop rule
-  # above, kept separate so a get on secrets can be logged instead of dropped.
-  - level: None
-    verbs: ["list", "watch"]
-    resources:
-    - resources: ["secrets"]
-
-  # Secrets get: a direct, security-relevant read. Logged at Metadata rather
-  # than dropped, matching the level already used for secret writes below.
+  # get/list/watch on secrets all return full secret contents, so all three
+  # are logged rather than just get.
   - level: Metadata
-    verbs: ["get"]
+    verbs: ["get", "list", "watch"]
     resources:
     - resources: ["secrets"]
 
