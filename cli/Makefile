@@ -294,11 +294,16 @@ file-license-check: license ## Verify all files have license headers.
 # found while recursing, so the Makefile has to be included by name or the
 # explicit argument is silently skipped.
 #
+# The second alternation is the assignment-then-expand form, `CLI=docker` and
+# then `$CLI build`, which the first cannot see. A grep is a heuristic either
+# way; the runtime removal in the workflow is the backstop for whatever shape
+# this does not anticipate.
+#
 # Also a dependency of `lint`, which the merge gate runs for this module: a
 # reintroduction then blocks a merge rather than only reddening the advisory
 # e2e lane.
 check-no-docker: ## Fail if the bootstrap e2e suite invokes docker.
-	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)' \
+	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)|(^|[[:space:]])[A-Za-z_][A-Za-z0-9_]*=[\"]?docker([[:space:];]|$$|[\"])' \
 	    --include='*.sh' --include='Makefile' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
 	if [ -n "$$matches" ]; then \
 	  echo "The bootstrap e2e suite must not invoke docker; it runs on nerdctl/containerd."; \
