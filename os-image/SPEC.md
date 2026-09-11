@@ -1,5 +1,7 @@
 # NKE reference node image — contract
 
+> **Which path is this?** This spec covers nodes built from the NKE OS image — SPIRE agent pre-installed, mTLS on by default, TPM attestation supported. If you are bringing your own Ubuntu nodes without a SPIRE agent or TPM (bootstrapping with `--disable-mtls`), see [`docs/site-bootstrap/pre-provisioned-nodes.md`](../docs/site-bootstrap/pre-provisioned-nodes.md) instead.
+
 This is the contract an OS image must satisfy for NKE to manage a node.
 It is **not** a cluster-ready Kubernetes image: kubeadm and GPU drivers are
 installed later through `nke-agent`. The image includes the Calico manifests

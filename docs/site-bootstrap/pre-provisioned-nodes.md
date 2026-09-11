@@ -1,5 +1,7 @@
 # Using Pre-Provisioned Nodes
 
+> **Which path is this?** This guide covers bootstrap on nodes you bring yourself — no SPIRE workload API, no TPM, `--disable-mtls` on `nke-agent`. If your nodes are built from the NKE OS image (SPIRE agent pre-installed, mTLS on by default), see [`os-image/SPEC.md`](../../os-image/SPEC.md) for the image contract and [`docs/first-cluster.md`](../first-cluster.md) Path C for the full flow.
+
 If you already have nodes provisioned and running, you can manually prepare them for tier-0 bootstrap.
 
 > **Tested platforms:** Tier-0 bootstrap on pre-provisioned nodes is tested on **Ubuntu 24.04 (Noble) and 26.04 (Resolute)** with **Kubernetes up to 1.34**. Kubernetes 1.35 and 1.36 are experimental. Ubuntu 22.04 (Jammy) is no longer supported.
