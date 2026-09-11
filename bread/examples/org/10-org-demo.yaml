@@ -1,0 +1,33 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# The demo Org (shape in internal/apis/nke/management/v1/org.go): metadata.name is the immutable
+# org id, so its
+# namespace is org-demo, and spec.members is the only source of who may act in it and as what.
+# The subjects are the mock IdP's fixture identities (step 6); the token carries no org or role
+# claim, so a member's role here is what the API server impersonates (admin or viewer). Until the
+# onboarding controller exists, the namespace, ServiceAccounts, Roles and RoleBindings this Org
+# implies are the rendered fixture manifests/rbac/90-org-demo.yaml, applied alongside. This file
+# is applied to the management cluster on the internal group by an operator, never through the
+# tenant API server; it sits in examples/org/ so `kubectl apply -f examples/` (tenant fixtures) does
+# not pick it up.
+apiVersion: internal.nke.nvidia.com/v1
+kind: Org
+metadata:
+  name: demo                               # the org id: a DNS-1123 label of at most 59 characters (63 minus the org- prefix)
+spec:
+  displayName: Demo Org                    # mutable; listings only
+  members:                                 # (subject, issuer) appears at most once
+  - subject: tenant-a
+    issuer: http://nke-mock-idp.nke-system.svc:8080
+    role: admin                            # admin | viewer
+  - subject: tenant-a-viewer
+    issuer: http://nke-mock-idp.nke-system.svc:8080
+    role: viewer
+  # later (UC-003, NKE-DS9-002; needs the catalog kinds): entitlements: {channels: [stable], instanceTypes: [gb200-nvl72], osProfiles: [], acceleratedRuntimes: [gpu-runtime-3.2.0]}
+  #   an empty list = all non-hidden offerings; nke-apiserver filters tenant list by it and refuses references outside it with the 404/422 a missing object produces
+  # later (UC-024, P1; front-door D6): quota: {clusters: 4, nodes: 256}
+  # later (front-door D7): federation: [{issuer: https://demo.org-demo.nke.example, subjects: ["system:serviceaccount:ci:deployer"]}]
+# status: written by the onboarding controller; shown for reference.
+# status:
+#   namespace: org-demo                    # the NAMESPACE column, once onboarding has created it

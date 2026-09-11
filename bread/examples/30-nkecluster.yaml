@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# NKECluster demo: a managed cluster as its tenant writes it, applied through nke-apiserver as
+# org-demo's admin. The
+# controller creates a ClusterRelease for it on the internal group and reconciles it to Ready; the
+# tenant reads the running version in status.kubernetesVersion and the release position in
+# status.release. Every field of the API is shown: plain fields are populated and acted on in the
+# PoC; `shape` fields are accepted and round-tripped but nothing acts on them yet; `later` fields
+# are not in the API (examples/README.md, legend).
+apiVersion: nke/v1
+kind: NKECluster
+metadata:
+  name: demo                               # a DNS-1123 label of at most 55 characters: it becomes a hostname
+  namespace: org-demo                      # the org's namespace; the token decides which org, and -A is refused
+spec:
+  release:
+    channel: stable                        # required; a ReleaseChannel name. Mutable: a switch is admitted only if status.release.current is in the target channel's available (else 422)
+    # name: v1.34.1-cr2.1.0                # optional pin within the channel; must be in status.release.available (else 422). Omitted = follow the channel head. Pinned form: examples/promote/31-nkecluster-pin.yaml
+  networking:                              # create-only and immutable (CEL): it cannot be added, removed or changed after creation
+    podCIDR: 192.168.0.0/16                # isCIDR
+    serviceCIDR: 10.96.0.0/12              # isCIDR
+    # later (Open Items): vpcName: team-a-vpc
+  apiServerAccess:
+    authorizedNetworks:                    # shape: CIDRs permitted to reach the API server, empty = the cluster's VPC only, at most 40, isCIDR each; future writer: the machine-provider adapter for the control-plane load balancer
+    - 10.20.0.0/16
+    # later (Open Items, machine-provider req 22): publicEndpoint: false
+  acceleratedRuntime:                      # shape: optional accelerated-runtime pin, changing version is an upgrade or a rollback (NKE-DS9-011); future writer: the tenant, acted on by the accelerated-runtime controller
+    name: gpu-runtime-3.2.0                # required within the block; ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$; the AcceleratedRuntime kind's name when it lands
+    version: 3.2.0                         # optional
+  # repair acceptance is a pool setting (NodePool.spec.repairAcceptance); there is no cluster-level copy
+  # later (no SRD row; shape fixed in PROPOSAL-FRONT-DOOR.md): deletionProtection: false
+# status: written by the controller; shown for reference.
+# status:
+#   observedGeneration: 1
+#   kubernetesVersion: v1.34.1             # the control plane's running version; the VERSION column
+#   release:
+#     channel: stable
+#     current: v1.34.1-cr2.1.0             # running; the CURRENT column
+#     offered: v1.34.1-cr2.1.0             # the channel's head
+#     available:                           # what spec.release.name may name: the head, then prior offered Releases neither deprecated nor hidden, newest first
+#     - v1.34.1-cr2.1.0
+#   endpoint: https://demo.org-demo.nke.example:6443     # CSP convention: the non-secret half of a kubeconfig
+#   certificateAuthorityData: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUJ...   # base64 PEM CA bundle for endpoint
+#   acceleratedRuntime:                    # shape: the bundle actually installed; future writer: the machine-provider adapter, projected by the reconciler. Empty in the PoC, so the ACCEL-RUNTIME column renders blank
+#     name: gpu-runtime-3.2.0
+#     version: 3.2.0
+#     state: Installed                     # Installing | Installed | Upgrading | RollingBack | Failed
+#   conditions:
+#   - type: Ready                          # the READY column; gated by Validated
+#     status: "True"
+#     reason: Serving                      # Serving | Provisioning | Deleting | ChannelNotFound
+#     message: control plane is serving at https://demo.org-demo.nke.example:6443
+#     lastTransitionTime: "2026-09-10T08:09:52Z"
+#   - type: Progressing
+#     status: "False"
+#     reason: Idle                         # Idle | Provisioning | Upgrading | Deleting | Blocked
+#     message: nothing in flight
+#     lastTransitionTime: "2026-09-10T08:09:52Z"
+#   - type: ReleaseCurrent
+#     status: "True"
+#     reason: Current                      # Current | UpgradeAvailable (held behind a supported head) | UpgradeRequired (held Release deprecated); ForcedUpgrade later
+#     message: running the channel head v1.34.1-cr2.1.0
+#     lastTransitionTime: "2026-09-10T08:09:52Z"
+#   - type: Validated                      # the VALIDATED column; readiness validation aggregate (NKE-DS9-012), folded from the adapter's report
+#     status: "True"
+#     reason: Passed                       # Pending | Running | Passed | Failed
+#     message: basic, east-west-network, gpu, nvlink, infiniband passed
+#     lastTransitionTime: "2026-09-10T08:09:52Z"
+#   - type: NetworkValidated               # east-west network checks
+#     status: "True"
+#     reason: Passed
+#     message: east-west-network passed
+#     lastTransitionTime: "2026-09-10T08:04:30Z"
+#   - type: AcceleratorValidated           # GPU, NVLink and InfiniBand checks
+#     status: "True"
+#     reason: Passed
+#     message: gpu, nvlink, infiniband passed
+#     lastTransitionTime: "2026-09-10T08:09:52Z"
+#   The STATUS column (Running, Provisioning, Upgrading, Terminating) is derived by nke-apiserver
+#   from the conditions and is not a stored field.
+#   later (NKE-DS9-017; provider reqs 7/8): controlPlane: {replicas: 3, readyReplicas: 3, faultDomains: [fd-a, fd-b, fd-c]}
+#   later (NKE-DS9-011): acceleratedRuntime.components: [{name: gpu-operator, version: 25.3.0, ready: true}]
+#   later (NKE-DS9-012, UC-006): the ValidationRun kind carries the per-check log and history behind the three conditions
+#   later (UC-019): the SPIFFE trust domain is per tenant and pending the DSX identity design; likely on Org, not here

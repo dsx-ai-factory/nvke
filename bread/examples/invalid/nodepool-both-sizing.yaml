@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rejected by nke-apiserver at admission (422 Unprocessable Entity, Invalid on spec).
+# Rule: a NodePool sets exactly one of spec.replicas and spec.autoscaling (CEL on spec:
+# has(self.replicas) != has(self.autoscaling)). This one sets both. Nothing is stored.
+apiVersion: nke/v1
+kind: NodePool
+metadata:
+  name: bad-sizing
+  namespace: org-demo
+spec:
+  clusterName: demo
+  instanceType: gb200-nvl72
+  replicas: 2
+  autoscaling:
+    minReplicas: 2
+    maxReplicas: 4

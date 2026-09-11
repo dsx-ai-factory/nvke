@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rejected by nke-apiserver at admission (422 Unprocessable Entity, Invalid on
+# spec.kubernetesVersion).
+# Rule: the optional worker pin must be within the upstream version-skew policy against the
+# cluster's Release: the kubelet may lag the control plane by at most two minors and never lead
+# (docs/PROPOSAL-API-FIELDS.md, "The version model"). Cluster demo runs v1.34.1, so v1.31.0 is three
+# minors behind. v1.32.x and v1.33.x are accepted; v1.35.x is refused for leading. The format alone
+# (v1.N.P) is checked by CEL before this. A pin that was valid and is later breached by a channel
+# promotion is not refused: the pool reports VersionSkewWithinTolerance False/SkewExceeded instead.
+apiVersion: nke/v1
+kind: NodePool
+metadata:
+  name: bad-skew
+  namespace: org-demo
+spec:
+  clusterName: demo
+  instanceType: gb200-nvl72
+  replicas: 1
+  kubernetesVersion: v1.31.0

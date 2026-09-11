@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Release v1.34.1-cr2.1.0: one Kubernetes + core-runtime recipe release, the operator catalog entry
+# every cluster on channel `stable` runs (docs/PROPOSAL-API-FIELDS.md, "The catalog"). The name is
+# <kubernetes>-cr<coreRuntime>: a CNI-only fix ships as v1.34.1-cr2.1.1 and Kubernetes does not move.
+#
+# Cluster-scoped and operator-written on the management cluster's internal group; tenants read it
+# through nke-apiserver as `kubectl get releases`. spec.kubernetes and spec.coreRuntime are immutable (CEL):
+# a fix is a new Release (examples/promote/11-release-v1.34.2.yaml). Only the envelope flags
+# deprecated and hidden are edited in place (examples/promote/12-, 13-).
+apiVersion: nke/v1
+kind: Release
+metadata:
+  name: v1.34.1-cr2.1.0
+spec:
+  kubernetes:                              # immutable
+    version: v1.34.1                       # CNCF-conformant upstream version of control plane and kubelet; ^v[0-9]+\.[0-9]+\.[0-9]+(-...)?$
+    # later (NKE-DS9-004/006, NKD dependency): controlPlaneArtifact: {ref: oci://reg.local/nkd/k8s-cp:v1.34.1, digest: sha256:...}
+    # later (NKE-DS9-004/006, NKD dependency): workerArtifact: {ref: oci://reg.local/nkd/k8s-worker:v1.34.1, digest: sha256:...}
+  coreRuntime:                             # immutable; the core-runtime recipe release (NKE-DS9-007)
+    version: 2.1.0
+    components:                            # fixed enum for the PoC: dns, nke-agent, spire-agent, cni, cri, csi; at most one per name, at most 16
+    - name: dns
+      version: 1.11.3
+    - name: nke-agent
+      version: 0.9.1
+    - name: spire-agent
+      version: 1.9.0
+    - name: cni
+      version: 1.16.2
+    - name: cri
+      version: 2.0.1
+    - name: csi
+      version: 2.4.0
+    # later (NKE-DS9-004, NKD dependency): artifact: {ref: oci://reg.local/nkd/cni:1.16.2, digest: sha256:...} on each component
+  deprecated: false                        # UC-002 envelope: still usable, surfaced in the DEPRECATED column; clusters holding it report ReleaseCurrent False/UpgradeRequired; never blocks
+  hidden: false                            # UC-002 envelope: off the menu: omitted from list and from status.release.available, refused as a new pin (422); get by name still succeeds
+  # later (NKE-DS9-004, required, blocked on the NKD SRD fixing the release-set artifact): artifact: {ref: oci://reg.local/nkd/release:v1.34.1-cr2.1.0, digest: sha256:9f2c...}
+  # later (NKE-DS9-004, NKD signing pipeline): artifact.signature: ..., artifact.provenance: ...
+  # later (NKE-DS9-009): compatibility: {acceleratedRuntimes: [">=3.0.0 <4.0.0"], osProfiles: {gb200-ubuntu-24.04: ">=2026.06"}}
+  # later (NKE-DS9-016): qualifiedScale: [{instanceType: gb200-nvl72, maxNodes: 1024, acceleratedRuntime: "3.2.0", method: clusterloader2}]
+  # later (UC-016; Gardener expirationDate): supportedUntil: "2027-03-01T00:00:00Z"
+# Release has no status in the PoC: nothing is observed about a catalog object, and a Ready derived
+# from spec.deprecated would be spec restated as status. The kubectl columns K8S, CORE-RUNTIME,
+# DEPRECATED, HIDDEN and AGE all read from spec and metadata.
+# later (NKE-DS9-004/009): status.conditions: [{type: Ready}, {type: Verified}, {type: Compatible}]

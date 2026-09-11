@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rejected by nke-apiserver at admission (422 Unprocessable Entity, Invalid on spec.release.channel).
+# Rule: a channel switch is admitted only if status.release.current is in the target channel's
+# available (GKE's rule), so a switch is never a back-door downgrade. Apply after examples/ has
+# reconciled demo to v1.34.1-cr2.1.0 and after the operator has created a channel whose history
+# lacks that Release, for example one that has only ever offered v1.34.2-cr2.1.0
+# (examples/promote/11-release-v1.34.2.yaml first):
+#
+#   printf 'apiVersion: internal.nke.nvidia.com/v1\nkind: ReleaseChannelInternal\nmetadata: {name: rapid}\nspec: {releaseName: v1.34.2-cr2.1.0}\n' | kubectl --kubeconfig management.kubeconfig apply -f -
+#
+# Switching demo to rapid then fails: v1.34.1-cr2.1.0 is not in rapid's available. Without the
+# channel the write fails too, but for the different reason that the target does not exist.
+# networking is repeated because it is immutable and may not be dropped by an apply.
+apiVersion: nke/v1
+kind: NKECluster
+metadata:
+  name: demo
+  namespace: org-demo
+spec:
+  release:
+    channel: rapid
+  networking:
+    podCIDR: 192.168.0.0/16
+    serviceCIDR: 10.96.0.0/12

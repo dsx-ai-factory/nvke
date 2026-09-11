@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Rejected by nke-apiserver (405 Method Not Allowed on POST .../nkenodes).
+# Rule: tenants never create or delete an NKENode. The controller creates one per machine when the
+# owning NodePool provisions it and deletes it once the machine is released; tenants only update
+# spec (retire, acceptRepair) and read status (examples/reference/50-nkenode.yaml). `kubectl apply`
+# of a name that does not exist is a create, hence 405; `kubectl delete nkenode` is 405 as well.
+apiVersion: nke/v1
+kind: NKENode
+metadata:
+  name: gpu-a-9999
+  namespace: org-demo
+spec:
+  acceptRepair: true

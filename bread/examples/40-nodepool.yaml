@@ -1,0 +1,97 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# NodePool gpu-a: an autoscaled pool of identically configured GB200 workers in NKECluster demo,
+# applied through nke-apiserver as org-demo's admin after examples/30-nkecluster.yaml. The
+# controller creates one NKENode per machine (examples/reference/50-nkenode.yaml) and reconciles the
+# pool to Ready. Every field of the API is shown: plain fields are populated and acted on in the
+# PoC; `shape` fields are accepted and round-tripped but nothing acts on them yet; `later` fields
+# are not in the API (examples/README.md, legend).
+apiVersion: nke/v1
+kind: NodePool
+metadata:
+  name: gpu-a                              # a DNS-1123 label of at most 55 characters: it becomes a hostname
+  namespace: org-demo
+spec:
+  clusterName: demo                        # the NKECluster in this namespace; immutable; a selectable field (kubectl get np --field-selector spec.clusterName=demo)
+  instanceType: gb200-nvl72                # hardware class by concept name; immutable; a DNS-1123 label, format-validated only until the InstanceType kind lands
+  osProfile:                               # shape: node OS by family and build, changing either is the OS update rolled under spec.rollout (UC-017); future writer: the tenant, resolved by the OS-profile controller
+    name: gb200-ubuntu-24.04               # the family; ^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$; omitted = the instance type's default family
+    version: "2026.09"                     # an immutable build; omitted = the family's latest supported build, so CVE builds are taken as published; set = a pin
+  autoscaling:                             # exactly one of replicas and autoscaling (CEL); the sim adapter honours maxReplicas
+    minReplicas: 2                         # >= 0
+    maxReplicas: 4                         # >= 1 and >= minReplicas
+  # kubernetesVersion: v1.34.1             # optional worker pin, v1.N.P, at most two minors behind the cluster's Release (else 422); omitted = follow the cluster's control plane (VersionSkewWithinTolerance True/FollowsCluster)
+  template:                                # a template change is the rollout trigger
+    metadata:
+      labels:                              # applied to every node; keys under nke.nvidia.com, kubernetes.io and k8s.io (and subdomains) are reserved; at most 64
+        nvidia.com/gpu.product: gb200
+    spec:
+      taints:                              # applied to every node; keys under nke.nvidia.com (and subdomains) are reserved for platform health taints; at most 64
+      - key: nvidia.com/gpu
+        value: present
+        effect: NoSchedule                 # NoSchedule | PreferNoSchedule | NoExecute
+      kubelet:                             # kubelet configuration, not Node.spec; systemReserved and the like go here later
+        maxPods: 110                       # default 110; 1..250; immutable
+  rollout:                                 # the pool's one disruption budget: template, version and OS changes, and how many retire/repair replacements are in flight at once
+    strategy:
+      type: RollingUpdate                  # default and the only value
+      rollingUpdate:
+        maxSurge: 1                        # default 1: nodes (or a percentage) that may exist above the desired count; scale up new, then down old
+        maxUnavailable: 0                  # default 0: nodes (or a percentage) that may be unavailable at once, for any reason; never shrink a GPU pool mid-job
+  repairAcceptance: Manual                 # default Manual: each operator repair request waits for spec.acceptRepair on the NKENode or its acceptBy deadline. Automatic: accepted at once, acceptedBy Policy (examples/41-nodepool-fixed.yaml)
+  # later (NKE-DS9-018/019, P1): placement: {strategy: Pack, nvlinkDomain: nvl-07, faultDomains: [fd-b]}
+# status: written by the controller; shown for reference.
+# status:
+#   observedGeneration: 1
+#   desiredReplicas: 2                     # the DESIRED column: replicas, or the autoscaler's choice within autoscaling
+#   replicas: 2                            # the CURRENT column: nodes that exist (NKENodes of this pool)
+#   readyReplicas: 2
+#   upToDateReplicas: 2                    # the UP-TO-DATE column: nodes at the current template and version
+#   kubernetesVersion: v1.34.1             # the kubelet version the nodes run: the pin, else the cluster's
+#   osProfile:                             # shape: the family and build the nodes are actually at, lags spec.osProfile during a rollout; future writer: the reconciler, from the machine-provider adapter's report. Empty in the PoC, so the OS-PROFILE column renders blank
+#     name: gb200-ubuntu-24.04
+#     version: "2026.09"
+#   conditions:
+#   - type: Ready                          # the READY column
+#     status: "True"
+#     reason: AllNodesReady                # AllNodesReady | Scaling | ClusterNotFound | ClusterReplaced
+#     message: 2 of 2 nodes Ready
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   - type: AtDesiredSize
+#     status: "True"
+#     reason: AtDesiredSize                # AtDesiredSize | Scaling
+#     message: 2 nodes, desired 2
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   - type: RollingOut
+#     status: "False"
+#     reason: Idle                         # Idle | Rolling | DrainBlocked (the blocking PodDisruptionBudget in message; NKE never forces a drain) | WaitingForCapacity
+#     message: no rollout in progress
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   - type: VersionSkewWithinTolerance
+#     status: "True"
+#     reason: FollowsCluster               # FollowsCluster | WithinTolerance | SkewExceeded (a promotion breached the pin's skew; the operator's signal) | ClusterVersionUnknown
+#     message: no worker pin; nodes follow the cluster at v1.34.1
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   - type: RepairsPending                 # True while any node of the pool has an open repairRequest (UC-010)
+#     status: "False"
+#     reason: None
+#     message: no repair requests open
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   - type: Validated                      # shape: the VALIDATED column, readiness validation aggregate (NKE-DS9-012); future writer: the reconciler, from the adapter's observedValidation. Absent in the PoC, so the column renders blank
+#     status: "True"
+#     reason: Passed                       # Pending | Running | Passed | Failed
+#     message: basic, east-west-network, gpu, nvlink, infiniband passed on every node
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   - type: NetworkValidated               # shape; future writer: the reconciler
+#     status: "True"
+#     reason: Passed
+#     message: east-west-network passed on every node
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   - type: AcceleratorValidated           # shape; future writer: the reconciler
+#     status: "True"
+#     reason: Passed
+#     message: gpu, nvlink, infiniband passed on every node
+#     lastTransitionTime: "2026-09-10T08:12:40Z"
+#   The STATUS column is derived by nke-apiserver from the conditions and is not a stored field.
+#   later: conditions InstanceTypeAvailable, OSProfileAvailable, once the catalog kinds exist to be unavailable
