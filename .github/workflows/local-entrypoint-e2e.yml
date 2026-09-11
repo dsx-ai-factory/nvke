@@ -84,7 +84,7 @@ jobs:
       LOCAL_NKE_E2E_LABEL_FILTER: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '' }}
       LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'false' || 'true' }}
       # Same override as backend-e2e.yml (capd-e2e, nico-e2e).
-      NODE_REBOOT_SOFT_CONFIRM_TIMEOUT: 2m
+      NODE_REBOOT_SOFT_REBOOT_ENABLED: false
       # These runners reach Docker Hub through an NVIDIA mirror. backend-e2e.yml
       # sets the same value; helm needs the shim below to honour it for OCI
       # charts, which is how the CI entrypoint does it too.

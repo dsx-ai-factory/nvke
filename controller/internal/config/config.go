@@ -121,16 +121,13 @@ type Config struct {
 	// NodeRebootPollingInterval is the polling interval for the node reboot workflow.
 	NodeRebootPollingInterval time.Duration `env:"NODE_REBOOT_POLLING_INTERVAL" default:"1m"`
 
-	// NodeRebootSoftConfirmTimeout bounds how long a CAPI node reboot waits for a detectable
-	// boot change before falling back to a hard reboot within the same attempt. Defaults to one
-	// minute above NodeRebootMaxTimeout, its largest possible per-attempt timeout, so it always
-	// wins the comparison in waitForNodeReboot and the hard fallback never fires in production:
-	// we don't have data showing any bounded window reliably covers a real hard reboot cycle
-	// (BIOS POST, firmware init, OS boot, kubeadm re-join), and firing it early risks catching a
-	// node still mid-graceful-shutdown - the corruption risk soft-first exists to avoid. Hard
-	// reboot triggers only from a soft-reboot RPC error, matching pre-bound behavior. CI backends
-	// that only need to observe a container restart override this low to make the bound real.
-	NodeRebootSoftConfirmTimeout time.Duration `env:"NODE_REBOOT_SOFT_CONFIRM_TIMEOUT" default:"61m"`
+	// NodeRebootSoftRebootEnabled selects a CAPI node reboot's strategy: true tries the in-guest
+	// soft reboot RPC first, falling back to a hard reboot only on RPC error - matching behavior
+	// from before this flag existed. false skips straight to the hard CAPI Machine reboot
+	// annotation. Disabled for CI backends where a container restart can never produce a
+	// detectable boot change (CAPD, and the NICo containers lane, which share the host kernel),
+	// so attempting soft there would only add latency with no chance of success.
+	NodeRebootSoftRebootEnabled bool `env:"NODE_REBOOT_SOFT_REBOOT_ENABLED" default:"true"`
 
 	// NodeProvisioningTimeout is the maximum time a worker node may remain provisioning
 	// before the provisioning monitor gives up and recycles it. A value of 0 disables

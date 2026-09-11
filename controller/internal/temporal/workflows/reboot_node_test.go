@@ -26,7 +26,7 @@ func TestRebootCAPINode_SoftRebootSucceeds_NoHardFallback(t *testing.T) {
 	env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.Anything).Return(nil).Once()
 	env.OnActivity(a.SoftRebootNode, mock.Anything, mock.Anything).Return(activities.SoftRebootNodeResult{}, nil).Once()
 
-	env.ExecuteWorkflow(testRebootCAPINodeWorkflow, nodeID)
+	env.ExecuteWorkflow(testRebootCAPINodeWorkflow, nodeID, true)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -44,7 +44,7 @@ func TestRebootCAPINode_SoftRebootFails_FallsBackToHard(t *testing.T) {
 		activities.ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: time.Now()}, nil,
 	).Once()
 
-	env.ExecuteWorkflow(testRebootCAPINodeWorkflow, nodeID)
+	env.ExecuteWorkflow(testRebootCAPINodeWorkflow, nodeID, true)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -60,7 +60,7 @@ func TestRebootCAPINode_SoftRebootCanceled_PropagatesWithoutFallback(t *testing.
 		activities.SoftRebootNodeResult{}, temporal.NewCanceledError(),
 	).Once()
 
-	env.ExecuteWorkflow(testRebootCAPINodeWorkflow, nodeID)
+	env.ExecuteWorkflow(testRebootCAPINodeWorkflow, nodeID, true)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.Error(t, env.GetWorkflowError())
@@ -68,62 +68,35 @@ func TestRebootCAPINode_SoftRebootCanceled_PropagatesWithoutFallback(t *testing.
 	env.AssertNotCalled(t, "ApplyCAPIMachineRebootAnnotation", mock.Anything, mock.Anything)
 }
 
-// A confirmed soft reboot should never fall back to hard.
-func TestWaitForNodeReboot_SoftRebootConfirmed(t *testing.T) {
+// SoftRebootEnabled=false (CAPD, and the NICo containers lane) skips the soft RPC entirely.
+func TestRebootCAPINode_SoftRebootDisabled_GoesStraightToHard(t *testing.T) {
+	nodeID := uuid.New()
+
+	env, a := setupRebootNodeWorkflowEnv(t)
+	env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.Anything).Return(nil).Once()
+	env.OnActivity(a.ApplyCAPIMachineRebootAnnotation, mock.Anything, mock.Anything).Return(
+		activities.ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: time.Now()}, nil,
+	).Once()
+
+	env.ExecuteWorkflow(testRebootCAPINodeWorkflow, nodeID, false)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+	env.AssertNotCalled(t, "SoftRebootNode", mock.Anything, mock.Anything)
+}
+
+func TestWaitForNodeReboot_BootChangeDetected(t *testing.T) {
 	nodeID := uuid.New()
 
 	env, a := setupRebootNodeWorkflowEnv(t)
 	env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.Anything).Return(activities.WaitForNodeRebootResult{BootID: "new-boot-id"}, nil).Once()
 
 	input := RebootNodeInput{
-		NodeID:                   nodeID,
-		InitialTimeout:           30 * time.Minute,
-		MaxTimeout:               time.Hour,
-		SoftRebootConfirmTimeout: 5 * time.Minute,
-		PollingInterval:          time.Minute,
-	}
-	env.ExecuteWorkflow(testWaitForNodeRebootWorkflow, input)
-
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-	env.AssertExpectations(t)
-	env.AssertNotCalled(t, "ApplyCAPIMachineRebootAnnotation", mock.Anything, mock.Anything)
-}
-
-// A soft reboot that acked but produced no detectable change (the CAPD case) must fall back to
-// hard within the same attempt, not wait out the whole timeout.
-func TestWaitForNodeReboot_SoftRebootNotConfirmed_FallsBackToHardWithinSameAttempt(t *testing.T) {
-	nodeID := uuid.New()
-
-	env, a := setupRebootNodeWorkflowEnv(t)
-
-	// waitForBootChange sets no explicit RetryPolicy, so a mocked error is retried by the SDK's
-	// default policy within its own ScheduleToCloseTimeout - matching pre-fix behavior. Distinguish
-	// the soft-phase call (any AnnotationAfterTime other than the hard reboot's) from the
-	// post-fallback call by that field, not by call order, so those internal retries don't
-	// accidentally consume the second expectation.
-	hardRebootStartedTime := time.Date(2099, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	// Bounded wait for the soft reboot: always times out, however many times the SDK retries it.
-	env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.MatchedBy(func(input activities.WaitForNodeRebootInput) bool {
-		return input.NodeID == nodeID && !input.AnnotationAfterTime.Equal(hardRebootStartedTime)
-	})).Return(activities.WaitForNodeRebootResult{}, errors.New("deadline exceeded"))
-
-	env.OnActivity(a.ApplyCAPIMachineRebootAnnotation, mock.Anything, mock.Anything).Return(
-		activities.ApplyCAPIMachineRebootAnnotationResult{RebootStartedTime: hardRebootStartedTime}, nil,
-	).Once()
-
-	// Wait after the hard fallback: succeeds.
-	env.OnActivity(a.WaitForNodeReboot, mock.Anything, mock.MatchedBy(func(input activities.WaitForNodeRebootInput) bool {
-		return input.NodeID == nodeID && input.AnnotationAfterTime.Equal(hardRebootStartedTime)
-	})).Return(activities.WaitForNodeRebootResult{BootID: "new-boot-id"}, nil).Once()
-
-	input := RebootNodeInput{
-		NodeID:                   nodeID,
-		InitialTimeout:           30 * time.Minute,
-		MaxTimeout:               time.Hour,
-		SoftRebootConfirmTimeout: 5 * time.Minute,
-		PollingInterval:          time.Minute,
+		NodeID:          nodeID,
+		InitialTimeout:  30 * time.Minute,
+		MaxTimeout:      time.Hour,
+		PollingInterval: time.Minute,
 	}
 	env.ExecuteWorkflow(testWaitForNodeRebootWorkflow, input)
 
@@ -132,8 +105,8 @@ func TestWaitForNodeReboot_SoftRebootNotConfirmed_FallsBackToHardWithinSameAttem
 	env.AssertExpectations(t)
 }
 
-func testRebootCAPINodeWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
-	_, err := rebootCAPINode(ctx, nodeID, 1, "test")
+func testRebootCAPINodeWorkflow(ctx workflow.Context, nodeID uuid.UUID, softRebootEnabled bool) error {
+	_, err := rebootCAPINode(ctx, RebootNodeInput{NodeID: nodeID, SoftRebootEnabled: softRebootEnabled}, 1)
 	return err
 }
 
