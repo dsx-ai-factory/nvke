@@ -159,10 +159,12 @@ func TestApplyClusterLevelControlPlaneSpecUpdate_ScaleDown(t *testing.T) {
 
 	newCAPICluster := func(current int) *db.Cluster {
 		return &db.Cluster{
-			ID:     uuid.New(),
-			SiteID: uuid.Nil, // CAPI cluster avoids Forge networking lookups.
+			ID: uuid.New(),
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				DesiredCount: current,
+			},
+			Nico: &db.NicoClusterProvider{
+				SiteID: uuid.Nil, // CAPI cluster avoids Forge networking lookups.
 			},
 		}
 	}
@@ -216,9 +218,11 @@ func TestCreateNodePool_RejectsControlPlanePoolWhenControllerEnabled(t *testing.
 	clusterID := uuid.New()
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-		ID:     clusterID,
-		OrgID:  "test-org",
-		SiteID: uuid.New(),
+		ID: clusterID,
+		Nico: &db.NicoClusterProvider{
+			OrgID:  "test-org",
+			SiteID: uuid.New(),
+		},
 	}, nil)
 
 	service := NewNodePoolService(slog.Default(), mockDB, config.TeleportConfig{}, nil, true)
@@ -258,18 +262,17 @@ func TestGetClusterControlPlane(t *testing.T) {
 			KubernetesVersion: "1.29.0",
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				DesiredCount: 3,
-				ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-					InstanceTypePreference: []uuid.UUID{instanceType},
-					OSProfile:              "ubuntu",
-					ConfigProfile:          "default",
-				},
 			},
 			Conditions: db.ClusterConditions{
 				ControlPlaneUpgrading: db.NewCondition(true, "upgrading to 1.29.0"),
 				CPNodesRecycling:      db.NewCondition(false, "not recycling"),
 			},
 		}
-		cluster.ControlPlaneConfig.ControlPlaneConfigSpec.SyncProviderFields(db.ProviderTypeNico)
+		cluster.ControlPlaneConfig.SetNico(db.NicoControlPlaneProvider{
+			InstanceTypePreference: []uuid.UUID{instanceType},
+			OSProfile:              "ubuntu",
+			ConfigProfile:          "default",
+		})
 		return cluster
 	}
 
@@ -345,8 +348,10 @@ func TestGetClusterControlPlane(t *testing.T) {
 	t.Run("controller-managed control plane surfaces a rollout summary", func(t *testing.T) {
 		desiredCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d1")
 		driftedCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d2")
-		desiredSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
-		driftedSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
+		desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+		desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+		driftedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+		driftedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v2"})
 
 		cluster := newCluster()
 		cluster.EnableCPNodeRecycling = true
@@ -452,20 +457,17 @@ func TestApplyClusterControlPlaneConfigUpdate_RejectsClearingRequiredField(t *te
 
 	newForgeCluster := func() *db.Cluster {
 		cluster := &db.Cluster{
-			ID:     uuid.New(),
-			OrgID:  "test-org",
-			SiteID: uuid.New(), // Forge cluster.
+			ID: uuid.New(),
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				DesiredCount: 3,
-				ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-					InstanceTypePreference: []uuid.UUID{uuid.New()},
-					OSProfile:              "ubuntu",
-					ConfigProfile:          "default",
-				},
 			},
 		}
-		cluster.SyncProviderFields()
-		cluster.ControlPlaneConfig.ControlPlaneConfigSpec.SyncProviderFields(db.ProviderTypeNico)
+		cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()})
+		cluster.ControlPlaneConfig.SetNico(db.NicoControlPlaneProvider{
+			InstanceTypePreference: []uuid.UUID{uuid.New()},
+			OSProfile:              "ubuntu",
+			ConfigProfile:          "default",
+		})
 		return cluster
 	}
 

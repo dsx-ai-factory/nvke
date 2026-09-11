@@ -67,10 +67,12 @@ func TestUnit_Reconcile(t *testing.T) {
 	baseCluster := db.Cluster{
 		ID:           clusterID,
 		Name:         "test-cluster",
-		SiteID:       siteID,
-		OrgID:        "test-org",
-		VpcID:        uuid.New(),
 		ProviderType: db.ProviderTypeNico,
+		Nico: &db.NicoClusterProvider{
+			SiteID: siteID,
+			OrgID:  "test-org",
+			VpcID:  uuid.New(),
+		},
 	}
 
 	type parameters struct {
@@ -99,7 +101,7 @@ func TestUnit_Reconcile(t *testing.T) {
 						node.NodePoolID == nodePoolID &&
 						node.NodeSetID == nodeSetID &&
 						node.ControlPlane &&
-						node.InstanceTypeID == instanceTypeID
+						node.NicoInstanceTypeID() == instanceTypeID
 				})).Return(db.Node{}, nil).Once()
 			},
 		},

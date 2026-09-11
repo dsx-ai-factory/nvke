@@ -127,12 +127,34 @@ func (n *Node) SetNico(provider NicoNodeProvider) {
 	n.InstanceTypeID = provider.InstanceTypeID
 }
 
-func (n *Node) SyncProviderFields() {
-	n.Nico = &NicoNodeProvider{
-		ForgeInstanceID: n.ForgeInstanceID,
-		ForgeMachineID:  n.ForgeMachineID,
-		InstanceTypeID:  n.InstanceTypeID,
+// NicoInstanceTypeID returns the instance type recorded on the node's Nico
+// payload, or the zero UUID when no type has been recorded yet. Control-plane
+// nodes are created before the scheduler picks a type, so the zero value is a
+// normal state rather than an error.
+func (n *Node) NicoInstanceTypeID() uuid.UUID {
+	if n.Nico == nil {
+		return uuid.Nil
 	}
+	return n.Nico.InstanceTypeID
+}
+
+// NicoForgeInstanceID returns the Forge instance backing the node, or the empty
+// string when the node has no Forge instance — a CAPI node never has one, and a
+// Nico node does not until Forge has created it.
+func (n *Node) NicoForgeInstanceID() string {
+	if n.Nico == nil {
+		return ""
+	}
+	return n.Nico.ForgeInstanceID
+}
+
+// NicoForgeMachineID returns the Forge machine backing the node, or the empty
+// string when the node has none.
+func (n *Node) NicoForgeMachineID() string {
+	if n.Nico == nil {
+		return ""
+	}
+	return n.Nico.ForgeMachineID
 }
 
 type NodeFilters struct {
@@ -200,7 +222,6 @@ type NodeQueries interface {
 func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Node, error) {
 	var nodes []Node
 	query := q.db.NewSelect().Model(&nodes).
-		ColumnExpr("node.*").
 		Join("LEFT JOIN node_sets nps ON nps.id = node.node_set_id").
 		Join("LEFT JOIN node_pools np ON np.id = COALESCE(nps.node_pool_id, node.node_pool_id)").
 		Join("LEFT JOIN clusters c ON c.id = COALESCE(np.cluster_id, node.cluster_id)")
@@ -218,7 +239,7 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 		query = query.Where("node.cluster_id = ?", filters.ClusterID)
 	}
 	if filters.SiteID != nil {
-		query = query.Where("c.site_id = ?", filters.SiteID)
+		query = query.Where("c.nico->>'site_id' = ?", filters.SiteID.String())
 	}
 	if filters.ControlPlane != nil {
 		query = query.Where("COALESCE(np.control_plane, node.control_plane) = ?", *filters.ControlPlane)
@@ -308,9 +329,9 @@ func (q *queriesImpl) ListNodeInfo(ctx context.Context) ([]NodeInfo, error) {
 			n.ip,
 			n.agent_version,
 			n.spiffe_enabled,
-			n.forge_machine_id,
-			ns.os_profile,
-			ns.config_profile
+			COALESCE(n.nico->>'forge_machine_id', '') as forge_machine_id,
+			COALESCE(ns.nico->>'os_profile', '') as os_profile,
+			COALESCE(ns.nico->>'config_profile', '') as config_profile
 		FROM nodes n
 		JOIN node_sets ns ON ns.id = n.node_set_id
 		JOIN node_pools np ON np.id = ns.node_pool_id
@@ -363,13 +384,11 @@ func (q *queriesImpl) GetNodeForUpdate(ctx context.Context, id uuid.UUID) (Node,
 }
 
 func (q *queriesImpl) CreateNode(ctx context.Context, node *Node) (Node, error) {
-	node.SyncProviderFields()
 	_, err := q.db.NewInsert().Model(node).Exec(ctx)
 	return *node, err
 }
 
 func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) {
-	node.SyncProviderFields()
 	node.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(node).WherePK().Exec(ctx)
 	if err != nil {
@@ -399,11 +418,10 @@ func (q *queriesImpl) UpdateNodeTeleportRegistered(ctx context.Context, nodeID u
 func (q *queriesImpl) ListTeleportEligibleNodes(ctx context.Context, siteID uuid.UUID) ([]Node, error) {
 	var nodes []Node
 	query := q.db.NewSelect().Model(&nodes).
-		ColumnExpr("node.*").
 		Join("LEFT JOIN node_sets ns ON ns.id = node.node_set_id").
 		Join("LEFT JOIN node_pools np ON np.id = COALESCE(ns.node_pool_id, node.node_pool_id)").
 		Join("LEFT JOIN clusters c ON c.id = COALESCE(np.cluster_id, node.cluster_id)").
-		Where("c.site_id = ?", siteID).
+		Where("c.nico->>'site_id' = ?", siteID.String()).
 		Where("c.teleport_enabled = true").
 		Where(`(
 			COALESCE(ns.teleport_enabled, false) = true
@@ -419,11 +437,10 @@ func (q *queriesImpl) ListTeleportEligibleNodes(ctx context.Context, siteID uuid
 func (q *queriesImpl) ListTeleportRegisteredNodes(ctx context.Context, siteID uuid.UUID) ([]Node, error) {
 	var nodes []Node
 	query := q.db.NewSelect().Model(&nodes).
-		ColumnExpr("node.*").
 		Join("JOIN node_sets ns ON ns.id = node.node_set_id").
 		Join("JOIN node_pools np ON np.id = ns.node_pool_id").
 		Join("JOIN clusters c ON c.id = np.cluster_id").
-		Where("c.site_id = ?", siteID).
+		Where("c.nico->>'site_id' = ?", siteID.String()).
 		Where("c.teleport_enabled = true").
 		Where("ns.teleport_enabled = true")
 	query = whereNodeConditionStatus(query, "teleportRegistered", true)
@@ -469,7 +486,6 @@ func (q *queriesImpl) ListNodesEligibleForRecycling(ctx context.Context, nodePoo
 
 	var nodes []Node
 	query := q.db.NewSelect().Model(&nodes).
-		ColumnExpr("node.*").
 		Join("JOIN node_sets ns ON ns.id = node.node_set_id").
 		Join("JOIN node_pools np ON np.id = ns.node_pool_id").
 		Where("ns.node_pool_id = ?", nodePoolID).

@@ -475,7 +475,8 @@ func (r *reconciler) updateNodePoolKubeVersion(
 				return fmt.Errorf("failed to resolve OSProfile: %w", err)
 			}
 			logger.Info("KubernetesVersion embedded in OSProfile - Resolved new OSProfile", "newOSProfile", newOSProfile)
-			np.OSProfile = newOSProfile
+			nicoNodePoolProvider.OSProfile = newOSProfile
+			np.SetNico(nicoNodePoolProvider)
 			np.KubernetesVersion = cluster.KubernetesVersion
 		}
 
@@ -494,7 +495,7 @@ func (r *reconciler) updateNodePoolKubeVersion(
 	}
 
 	logger.Info("Updated NodePool KubernetesVersion and/or OSProfile",
-		"nodePoolOSProfile", np.OSProfile,
+		"nodePoolOSProfile", nodePoolOSProfileForLog(np),
 		"nodePoolKubernetesVersion", np.KubernetesVersion,
 	)
 

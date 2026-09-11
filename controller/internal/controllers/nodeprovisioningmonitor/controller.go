@@ -98,8 +98,8 @@ func (c *Controller) reconcile(ctx context.Context, tx db.Tx, dbNode db.Node) (r
 		"nodePoolName", nodePool.Name,
 		"nodeID", dbNode.ID,
 		"nodeName", dbNode.Name,
-		"forgeInstanceID", dbNode.ForgeInstanceID,
-		"forgeMachineID", dbNode.ForgeMachineID,
+		"forgeInstanceID", dbNode.NicoForgeInstanceID(),
+		"forgeMachineID", dbNode.NicoForgeMachineID(),
 		"nodeProvisioningTimeout", c.cfg.NodeProvisioningTimeout.String(),
 		"provisioningAge", provisioningAge.String(),
 	)
@@ -137,7 +137,7 @@ func (c *Controller) reconcile(ctx context.Context, tx db.Tx, dbNode db.Node) (r
 	}
 
 	metrics.RecordNodeProvisioningGiveup(
-		cluster.SiteID.String(),
+		cluster.NicoSiteID().String(),
 		nodePool.ClusterID.String(),
 		nodePool.ID.String(),
 		cluster.Name,

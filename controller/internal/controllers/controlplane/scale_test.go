@@ -142,7 +142,7 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 			node.ControlPlane &&
 			node.NodePoolID == uuid.Nil &&
 			node.NodeSetID == uuid.Nil &&
-			node.InstanceTypeID == uuid.Nil &&
+			node.NicoInstanceTypeID() == uuid.Nil &&
 			node.ControlPlaneConfigurationID == controlPlaneConfigID
 	})).Return(db.Node{}, nil).Once()
 
@@ -158,6 +158,54 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 	_, err := r.createPendingNode(context.Background(), cluster, nil)
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
+}
+
+func TestCreatePendingNode_ProviderPayload(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		providerType    db.ProviderType
+		wantNicoPayload bool
+	}{
+		{
+			name:            "nico cluster nodes carry a payload for strict readers",
+			providerType:    db.ProviderTypeNico,
+			wantNicoPayload: true,
+		},
+		{
+			name:            "capi cluster nodes carry no nico payload",
+			providerType:    db.ProviderTypeCAPI,
+			wantNicoPayload: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			controlPlaneConfigID := uuid.New()
+			mockTx := &testutil.MockTx{}
+			mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+				return (node.Nico != nil) == tt.wantNicoPayload &&
+					node.NicoInstanceTypeID() == uuid.Nil
+			})).Return(db.Node{}, nil).Once()
+
+			r := &reconciler{db: mockTx, logger: slog.Default()}
+			cluster := db.Cluster{
+				ID:           uuid.New(),
+				Name:         "test-cluster",
+				ProviderType: tt.providerType,
+				ControlPlaneConfig: db.ControlPlaneConfig{
+					ConfigurationID: controlPlaneConfigID,
+				},
+			}
+
+			_, err := r.createPendingNode(context.Background(), cluster, nil)
+			require.NoError(t, err)
+			mockTx.AssertExpectations(t)
+		})
+	}
 }
 
 func TestReconcile_SkipsClusterBeingDeleted(t *testing.T) {
@@ -224,7 +272,7 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 			node.ControlPlane &&
 			// The control-plane controller no longer stamps an instance type;
 			// the control plane node scheduler selects it at schedule time.
-			node.InstanceTypeID == uuid.Nil &&
+			node.NicoInstanceTypeID() == uuid.Nil &&
 			node.ControlPlaneConfigurationID == controlPlaneConfigID
 	})).Return(db.Node{}, nil).Twice()
 
@@ -237,11 +285,13 @@ func TestReconcileControlPlaneScaleUp_FeatureFlagEnabled(t *testing.T) {
 	}
 
 	cluster := db.Cluster{
-		ID:     clusterID,
-		SiteID: uuid.New(),
+		ID: clusterID,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: controlPlaneConfigID,
 			DesiredCount:    3,
+		},
+		Nico: &db.NicoClusterProvider{
+			SiteID: uuid.New(),
 		},
 	}
 	// One existing no-nodepool control-plane node => deficit is 2.
@@ -285,7 +335,7 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 					return node.ControlPlane &&
 						node.NodePoolID == uuid.Nil &&
 						node.NodeSetID == uuid.Nil &&
-						node.InstanceTypeID == uuid.Nil &&
+						node.NicoInstanceTypeID() == uuid.Nil &&
 						node.ControlPlaneConfigurationID == controlPlaneConfigID
 				})).Return(db.Node{}, nil).Times(tc.wantCreated)
 			}
@@ -297,11 +347,13 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			}
 
 			cluster := db.Cluster{
-				ID:     clusterID,
-				SiteID: uuid.New(),
+				ID: clusterID,
 				ControlPlaneConfig: db.ControlPlaneConfig{
 					ConfigurationID: controlPlaneConfigID,
 					DesiredCount:    tc.desiredCount,
+				},
+				Nico: &db.NicoClusterProvider{
+					SiteID: uuid.New(),
 				},
 			}
 

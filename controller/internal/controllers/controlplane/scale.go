@@ -75,11 +75,8 @@ func (r *reconciler) createPendingNode(
 	}
 
 	pendingNode := db.Node{
-		ClusterID:    cluster.ID,
-		ControlPlane: true,
-		// InstanceTypeID is intentionally left as the zero UUID. The node
-		// scheduler selects the Forge instance type at schedule time from the
-		// node's pinned InstanceTypePreference and persists it back onto the row.
+		ClusterID:                   cluster.ID,
+		ControlPlane:                true,
 		ControlPlaneConfigurationID: cluster.ControlPlaneConfig.ConfigurationID,
 		Name:                        generateControlPlaneNodeName(existingNodeNames, cluster.Name, defaultControlPlaneNodePrefix),
 		SpiffeEnabled:               r.cfg.SpiffeEnabled,
@@ -94,6 +91,13 @@ func (r *reconciler) createPendingNode(
 			KubernetesUnschedulable: db.NewCondition(false, "Status unknown"),
 			NodeAgentReady:          db.NewCondition(false, "Status unknown"),
 		},
+	}
+
+	if cluster.ProviderType == db.ProviderTypeNico {
+		// Every node on a Nico cluster carries a payload, which strict readers
+		// such as labelNode rely on. The instance type is left unset here: the
+		// infra provider settles it, and waitForCAPIMachineReady records it.
+		pendingNode.SetNico(db.NicoNodeProvider{})
 	}
 
 	createdNode, err := r.db.CreateNode(ctx, &pendingNode)

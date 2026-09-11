@@ -30,7 +30,7 @@ func (q *queriesImpl) ListTeleportRolloutStats(ctx context.Context) ([]TeleportR
 	var rows []TeleportRolloutRow
 	err := q.db.NewRaw(`
 		SELECT
-			c.site_id,
+			COALESCE(c.nico->>'site_id', '00000000-0000-0000-0000-000000000000') as site_id,
 			c.id as cluster_id, c.name as cluster_name, c.teleport_enabled as cluster_teleport_enabled,
 			np.id as node_pool_id, np.name as node_pool_name,
 			(COALESCE(MAX(CASE WHEN ns.teleport_enabled = true THEN 1 ELSE 0 END), 0) > 0) as node_pool_teleport_enabled,
@@ -47,8 +47,8 @@ func (q *queriesImpl) ListTeleportRolloutStats(ctx context.Context) ([]TeleportR
 		JOIN node_pools np ON np.cluster_id = c.id
 		LEFT JOIN node_sets ns ON ns.node_pool_id = np.id
 		LEFT JOIN nodes n ON n.node_set_id = ns.id
-		GROUP BY c.site_id, c.id, c.name, c.teleport_enabled, np.id, np.name
-		ORDER BY c.site_id, c.name, np.name
+		GROUP BY c.nico->>'site_id', c.id, c.name, c.teleport_enabled, np.id, np.name
+		ORDER BY site_id, c.name, np.name
 	`).Scan(ctx, &rows)
 	if err != nil {
 		return nil, err

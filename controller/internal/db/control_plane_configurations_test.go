@@ -45,13 +45,6 @@ func TestControlPlaneConfigSpecProviderSettersMirrorFlatFields(t *testing.T) {
 	assert.Equal(t, db.DiskSelectionStrategyLargest, nicoCfg.Nico.DiskSelectionStrategy)
 	assert.Equal(t, "gpu", nicoCfg.Nico.ConfigProfile)
 	assert.Equal(t, []uuid.UUID{sshKeyGroupID}, nicoCfg.Nico.SSHKeyGroupIDs)
-	assert.Equal(t, []uuid.UUID{instanceTypeID}, nicoCfg.InstanceTypePreference)
-	assert.Equal(t, []uuid.UUID{subnetID}, nicoCfg.SubnetIDs)
-	assert.Equal(t, []uuid.UUID{vpcPrefixID}, nicoCfg.VpcPrefixIDs)
-	assert.Equal(t, "nke-260318", nicoCfg.OSProfile)
-	assert.Equal(t, db.DiskSelectionStrategyLargest, nicoCfg.DiskSelectionStrategy)
-	assert.Equal(t, "gpu", nicoCfg.ConfigProfile)
-	assert.Equal(t, []uuid.UUID{sshKeyGroupID}, nicoCfg.SSHKeyGroupIDs)
 
 	var capiCfg db.ControlPlaneConfigSpec
 	capiCfg.SetCapi(db.CAPIControlPlaneProvider{
@@ -68,11 +61,6 @@ func TestControlPlaneConfigSpecProviderSettersMirrorFlatFields(t *testing.T) {
 	assert.Equal(t, db.SpireAttestationMethodJoinToken, capiCfg.Capi.SpireAttestationMethod)
 	assert.Equal(t, []db.CloudInitFile{{Path: "/etc/test", Content: "ok"}}, capiCfg.Capi.BootstrapFiles)
 	assert.Equal(t, []string{"echo pre"}, capiCfg.Capi.PreKubeadmCommands)
-	require.Len(t, capiCfg.InfraMachineTemplatePreferences, 1)
-	assert.JSONEq(t, string(machineTemplate), string(capiCfg.InfraMachineTemplatePreferences[0]))
-	assert.Equal(t, db.SpireAttestationMethodJoinToken, capiCfg.CapiSpireAttestationMethod)
-	assert.Equal(t, []db.CloudInitFile{{Path: "/etc/test", Content: "ok"}}, capiCfg.CapiBootstrapFiles)
-	assert.Equal(t, []string{"echo pre"}, capiCfg.CapiPreKubeadmCommands)
 }
 
 func TestControlPlaneConfigSpecProviderAccessors(t *testing.T) {
@@ -90,32 +78,21 @@ func TestControlPlaneConfigSpecProviderAccessors(t *testing.T) {
 		},
 	}
 
-	nico := cfg.NicoControlPlaneProvider()
-	require.NotNil(t, nico)
+	nico, err := cfg.NicoProvider()
+	require.NoError(t, err)
 	assert.Equal(t, []uuid.UUID{instanceTypeID}, nico.InstanceTypePreference)
 	nico.InstanceTypePreference[0] = uuid.New()
 	assert.Equal(t, []uuid.UUID{instanceTypeID}, cfg.Nico.InstanceTypePreference)
 
-	capi := cfg.CAPIControlPlaneProvider()
-	require.NotNil(t, capi)
+	capi, err := cfg.CAPIProvider()
+	require.NoError(t, err)
 	require.Len(t, capi.InfraMachineTemplatePreferences, 1)
 	assert.JSONEq(t, string(machineTemplate), string(capi.InfraMachineTemplatePreferences[0]))
 	capi.PreKubeadmCommands[0] = "mutated"
 	assert.Equal(t, []string{"echo pre"}, cfg.Capi.PreKubeadmCommands)
 }
 
-func TestControlPlaneConfigSpecProviderAccessors_ReturnNilForLegacyFlatOnly(t *testing.T) {
-	cfg := db.ControlPlaneConfigSpec{
-		InstanceTypePreference:          []uuid.UUID{uuid.New()},
-		SubnetIDs:                       []uuid.UUID{uuid.New()},
-		InfraMachineTemplatePreferences: []json.RawMessage{[]byte(`{"kind":"ForgeMachineTemplate"}`)},
-	}
-
-	assert.Nil(t, cfg.NicoControlPlaneProvider())
-	assert.Nil(t, cfg.CAPIControlPlaneProvider())
-}
-
-func TestCreateControlPlaneConfigRowIfChanged_SyncsProviderPayload(t *testing.T) {
+func TestCreateControlPlaneConfigRowIfChanged_StoresProviderPayload(t *testing.T) {
 	ctx := context.Background()
 	bunDB := testutil.SetupDB(ctx, t, (*db.Cluster)(nil), (*db.ControlPlaneConfiguration)(nil))
 	dbImpl := db.NewDB(bunDB)
@@ -125,12 +102,13 @@ func TestCreateControlPlaneConfigRowIfChanged_SyncsProviderPayload(t *testing.T)
 
 	instanceTypeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	subnetID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
-	snapshotCfg := db.ControlPlaneConfigSpec{
+	snapshotCfg := db.ControlPlaneConfigSpec{}
+	snapshotCfg.SetNico(db.NicoControlPlaneProvider{
 		InstanceTypePreference: []uuid.UUID{instanceTypeID},
 		SubnetIDs:              []uuid.UUID{subnetID},
 		OSProfile:              "nke-260318",
 		ConfigProfile:          "gpu",
-	}
+	})
 
 	require.NoError(t, db.CreateControlPlaneConfigRowIfChanged(ctx, dbImpl, &createdCluster, snapshotCfg, db.CreateControlPlaneConfigRowOpts{
 		ChangeReason: "test provider sync",
@@ -144,16 +122,17 @@ func TestCreateControlPlaneConfigRowIfChanged_SyncsProviderPayload(t *testing.T)
 	assert.Equal(t, []uuid.UUID{subnetID}, row.Config.Nico.SubnetIDs)
 	assert.Equal(t, "nke-260318", row.Config.Nico.OSProfile)
 	assert.Equal(t, "gpu", row.Config.Nico.ConfigProfile)
-	assert.Equal(t, []uuid.UUID{instanceTypeID}, row.Config.InstanceTypePreference)
-	assert.Equal(t, []uuid.UUID{subnetID}, row.Config.SubnetIDs)
+}
+
+// withNicoProfiles returns spec with the nico payload's OS and config profiles
+// replaced, which is where the rollout diff reads them from.
+func withNicoProfiles(spec db.ControlPlaneConfigSpec, osProfile, configProfile string) db.ControlPlaneConfigSpec {
+	spec.SetNico(db.NicoControlPlaneProvider{OSProfile: osProfile, ConfigProfile: configProfile})
+	return spec
 }
 
 func TestIsControlPlaneRolloutRequired(t *testing.T) {
-	base := db.ControlPlaneConfigSpec{
-		OSProfile:         "os-v1",
-		ConfigProfile:     "cfg-v1",
-		KubernetesVersion: "1.34.2",
-	}
+	base := withNicoProfiles(db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}, "os-v1", "cfg-v1")
 
 	tests := []struct {
 		name string
@@ -176,16 +155,14 @@ func TestIsControlPlaneRolloutRequired(t *testing.T) {
 		{
 			name: "os profile differs",
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
-				s.OSProfile = "os-v2"
-				return s
+				return withNicoProfiles(s, "os-v2", "cfg-v1")
 			},
 			want: true,
 		},
 		{
 			name: "config profile differs",
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
-				s.ConfigProfile = "cfg-v2"
-				return s
+				return withNicoProfiles(s, "os-v1", "cfg-v2")
 			},
 			want: true,
 		},
@@ -211,11 +188,7 @@ func TestIsControlPlaneRolloutRequired(t *testing.T) {
 }
 
 func TestComputeControlPlaneRolloutChanges(t *testing.T) {
-	base := db.ControlPlaneConfigSpec{
-		OSProfile:         "os-v1",
-		ConfigProfile:     "cfg-v1",
-		KubernetesVersion: "1.34.2",
-	}
+	base := withNicoProfiles(db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}, "os-v1", "cfg-v1")
 
 	tests := []struct {
 		name string
@@ -238,16 +211,14 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 		{
 			name: "os profile differs",
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
-				s.OSProfile = "os-v2"
-				return s
+				return withNicoProfiles(s, "os-v2", "cfg-v1")
 			},
 			want: []db.ControlPlaneRolloutChange{{Field: "osProfile", From: "os-v1", To: "os-v2"}},
 		},
 		{
 			name: "config profile differs",
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
-				s.ConfigProfile = "cfg-v2"
-				return s
+				return withNicoProfiles(s, "os-v1", "cfg-v2")
 			},
 			want: []db.ControlPlaneRolloutChange{{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"}},
 		},
@@ -255,9 +226,7 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 			name: "all rollout fields differ, in stable order",
 			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
 				s.KubernetesVersion = "1.34.3"
-				s.OSProfile = "os-v2"
-				s.ConfigProfile = "cfg-v2"
-				return s
+				return withNicoProfiles(s, "os-v2", "cfg-v2")
 			},
 			want: []db.ControlPlaneRolloutChange{
 				{Field: "kubernetesVersion", From: "1.34.2", To: "1.34.3"},
@@ -288,15 +257,17 @@ func TestComputeControlPlaneRolloutChanges(t *testing.T) {
 
 func newControlPlaneConfigTestCluster() db.Cluster {
 	now := time.Now()
-	return db.Cluster{
+	cluster := db.Cluster{
 		ID:                uuid.New(),
 		Name:              fmt.Sprintf("cluster-%s", uuid.New().String()),
-		OrgID:             "org1",
-		SiteID:            uuid.MustParse("11111111-1111-1111-1111-111111111111"),
-		ProviderType:      db.ProviderTypeNico,
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.29",
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "org1",
+		SiteID: uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+		VpcID:  uuid.New(),
+	})
+	return cluster
 }

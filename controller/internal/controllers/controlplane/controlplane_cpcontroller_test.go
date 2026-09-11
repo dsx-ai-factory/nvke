@@ -47,6 +47,26 @@ func makeCPControllerNode(name string, configID uuid.UUID) db.Node {
 	}
 }
 
+// nicoCPSpec builds the control-plane snapshot a stored Nico cluster carries.
+// The os and config profiles live in the nested nico payload, so a spec written
+// as a bare literal with root-level profiles would compare as having none.
+func nicoCPSpec(osProfile, configProfile, kubernetesVersion string) db.ControlPlaneConfigSpec {
+	spec := db.ControlPlaneConfigSpec{KubernetesVersion: kubernetesVersion}
+	spec.SetNico(db.NicoControlPlaneProvider{OSProfile: osProfile, ConfigProfile: configProfile})
+	return spec
+}
+
+// staleCPSpec returns spec carrying an older OS profile, which is what makes a
+// node's pinned snapshot stale relative to the cluster's current one.
+func staleCPSpec(t *testing.T, spec db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+	t.Helper()
+	nico, err := spec.NicoProvider()
+	require.NoError(t, err)
+	nico.OSProfile = "nke-1.33.6"
+	spec.SetNico(nico)
+	return spec
+}
+
 func clusterWithCurrentSnapshot(spec db.ControlPlaneConfigSpec, maxSurge int) db.Cluster {
 	return db.Cluster{
 		ID:                uuid.New(),
@@ -66,8 +86,8 @@ func TestReadControlPlane_PreloadsControlPlaneConfigs(t *testing.T) {
 	clusterID := uuid.New()
 	configA := uuid.New()
 	configB := uuid.New()
-	specA := db.ControlPlaneConfigSpec{OSProfile: "nke-1.34.2", KubernetesVersion: "1.34.2"}
-	specB := db.ControlPlaneConfigSpec{OSProfile: "nke-1.33.6", KubernetesVersion: "1.33.6"}
+	specA := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	specB := nicoCPSpec("nke-1.33.6", "", "1.33.6")
 
 	// Two nodes share configA (dedup expected), one uses configB.
 	nodes := []db.Node{
@@ -124,8 +144,8 @@ func TestIsK8sVersionUpgradeNeeded_CPController(t *testing.T) {
 	oldConfigID := uuid.New()
 	currentConfigID := uuid.New()
 
-	currentSpec := db.ControlPlaneConfigSpec{OSProfile: "nke-1.34.2", ConfigProfile: "cfg", KubernetesVersion: "1.34.2"}
-	oldSpec := db.ControlPlaneConfigSpec{OSProfile: "nke-1.33.6", ConfigProfile: "cfg", KubernetesVersion: "1.33.6"}
+	currentSpec := nicoCPSpec("nke-1.34.2", "cfg", "1.34.2")
+	oldSpec := nicoCPSpec("nke-1.33.6", "cfg", "1.33.6")
 	configs := map[uuid.UUID]db.ControlPlaneConfigSpec{oldConfigID: oldSpec, currentConfigID: currentSpec}
 
 	tests := []struct {
@@ -156,13 +176,12 @@ func TestIsK8sVersionUpgradeNeeded_CPController(t *testing.T) {
 func TestNodesNeedingRollout_TemplateVsLabelOnly(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := db.ControlPlaneConfigSpec{OSProfile: "nke-1.34.2", ConfigProfile: "cfg", KubernetesVersion: "1.34.2"}
+	currentSpec := nicoCPSpec("nke-1.34.2", "cfg", "1.34.2")
 	// Same replacing template as current, but a non-replacing (label-only) delta.
 	labelOnlySpec := currentSpec
 	labelOnlySpec.NodeLabels = []string{"role=cp"}
 	// Replacing delta: different OS profile.
-	replacingSpec := currentSpec
-	replacingSpec.OSProfile = "nke-1.33.6"
+	replacingSpec := staleCPSpec(t, currentSpec)
 
 	replacingID := uuid.New()
 	currentID := uuid.New()
@@ -189,9 +208,8 @@ func TestNodesNeedingRollout_TemplateVsLabelOnly(t *testing.T) {
 func TestNodesNeedingRollout_IncludesInFlightSkipsMissingSnapshot(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := db.ControlPlaneConfigSpec{OSProfile: "nke-1.34.2", KubernetesVersion: "1.34.2"}
-	replacingSpec := currentSpec
-	replacingSpec.OSProfile = "nke-1.33.6"
+	currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	replacingSpec := staleCPSpec(t, currentSpec)
 	replacingID := uuid.New()
 
 	pendingNode := makeCPControllerNode("cp-pending", replacingID)
@@ -218,9 +236,8 @@ func TestNodesNeedingRollout_IncludesInFlightSkipsMissingSnapshot(t *testing.T) 
 func TestIsControlPlaneUpgradeComplete_CPController(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := db.ControlPlaneConfigSpec{OSProfile: "nke-1.34.2", KubernetesVersion: "1.34.2"}
-	replacingSpec := currentSpec
-	replacingSpec.OSProfile = "nke-1.33.6"
+	currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	replacingSpec := staleCPSpec(t, currentSpec)
 	replacingID := uuid.New()
 	currentID := uuid.New()
 	configs := map[uuid.UUID]db.ControlPlaneConfigSpec{replacingID: replacingSpec, currentID: currentSpec}
@@ -290,9 +307,8 @@ func TestIsControlPlaneUpgradeComplete_CPController(t *testing.T) {
 func TestExpectedControlPlaneCount_CPController(t *testing.T) {
 	t.Parallel()
 
-	currentSpec := db.ControlPlaneConfigSpec{OSProfile: "nke-1.34.2", KubernetesVersion: "1.34.2"}
-	replacingSpec := currentSpec
-	replacingSpec.OSProfile = "nke-1.33.6"
+	currentSpec := nicoCPSpec("nke-1.34.2", "", "1.34.2")
+	replacingSpec := staleCPSpec(t, currentSpec)
 	replacingID := uuid.New()
 	currentID := uuid.New()
 	configs := map[uuid.UUID]db.ControlPlaneConfigSpec{replacingID: replacingSpec, currentID: currentSpec}

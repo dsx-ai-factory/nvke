@@ -60,12 +60,9 @@ func TestNode_NicoProvider(t *testing.T) {
 	}
 
 	tests := map[string]parameters{
-		"returns payload without legacy fallback": {
+		"returns payload": {
 			node: db.Node{
-				ID:              uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-				ForgeInstanceID: "legacy-instance",
-				ForgeMachineID:  "legacy-machine",
-				InstanceTypeID:  uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+				ID: uuid.MustParse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
 				Nico: &db.NicoNodeProvider{
 					ForgeInstanceID: "payload-instance",
 					ForgeMachineID:  "payload-machine",
@@ -98,19 +95,22 @@ func TestNode_NicoProvider(t *testing.T) {
 	}
 }
 
-func TestNodeProviderSettersAndSync(t *testing.T) {
+func TestNodeProviderSetters(t *testing.T) {
 	instanceTypeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	node := db.Node{
+	node := db.Node{}
+
+	node.SetNico(db.NicoNodeProvider{
 		ForgeInstanceID: "forge-instance",
 		ForgeMachineID:  "forge-machine",
 		InstanceTypeID:  instanceTypeID,
-	}
-
-	node.SyncProviderFields()
+	})
 
 	require.Equal(t, "forge-instance", node.Nico.ForgeInstanceID)
 	require.Equal(t, "forge-machine", node.Nico.ForgeMachineID)
 	require.Equal(t, instanceTypeID, node.Nico.InstanceTypeID)
+	require.Equal(t, instanceTypeID, node.NicoInstanceTypeID())
+	require.Equal(t, "forge-instance", node.NicoForgeInstanceID())
+	require.Equal(t, "forge-machine", node.NicoForgeMachineID())
 
 	nextInstanceTypeID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	node.SetNico(db.NicoNodeProvider{
@@ -118,7 +118,7 @@ func TestNodeProviderSettersAndSync(t *testing.T) {
 		ForgeMachineID:  "next-machine",
 		InstanceTypeID:  nextInstanceTypeID,
 	})
-	require.Equal(t, "next-instance", node.ForgeInstanceID)
-	require.Equal(t, "next-machine", node.ForgeMachineID)
-	require.Equal(t, nextInstanceTypeID, node.InstanceTypeID)
+	require.Equal(t, "next-instance", node.Nico.ForgeInstanceID)
+	require.Equal(t, "next-machine", node.Nico.ForgeMachineID)
+	require.Equal(t, nextInstanceTypeID, node.Nico.InstanceTypeID)
 }

@@ -597,23 +597,24 @@ func validateUpdatedNodePool(cluster db.Cluster, dbNodePool *db.NodePool) error 
 }
 
 func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
-	if dbNodePool.DiskSelectionStrategy != "" {
+	if dbNodePool.Nico != nil && dbNodePool.Nico.DiskSelectionStrategy != "" {
 		return newBadRequestErrorf("nico.diskSelectionStrategy is not supported")
 	}
-	if capi.IsEmptyManifest(dbNodePool.CapiInfraMachineTemplate) {
+	capiNodePoolProvider, err := dbNodePool.CAPIProvider()
+	if err != nil || capi.IsEmptyManifest(capiNodePoolProvider.InfraMachineTemplate) {
 		return newBadRequestErrorf("infra.machineTemplate is required")
 	}
-	capiInfraMachineTemplate, err := objectFromRawManifest(dbNodePool.CapiInfraMachineTemplate)
+	capiInfraMachineTemplate, err := objectFromRawManifest(capiNodePoolProvider.InfraMachineTemplate)
 	if err != nil {
 		return newBadRequestErrorf("failed to parse infra.machineTemplate: %v", err)
 	}
 	if err := validateCAPIInfrastructureManifest(capiInfraMachineTemplate); err != nil {
 		return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 	}
-	if err := validateCAPISpireAttestationMethod(string(dbNodePool.CapiSpireAttestationMethod)); err != nil {
+	if err := validateCAPISpireAttestationMethod(string(capiNodePoolProvider.SpireAttestationMethod)); err != nil {
 		return newBadRequestErrorf("%s", err.Error())
 	}
-	for _, file := range dbNodePool.CapiBootstrapFiles {
+	for _, file := range capiNodePoolProvider.BootstrapFiles {
 		switch file.Path {
 		case constants.CAPISpireAgentConfigPath, constants.CAPISpireTrustBundlePath:
 			return newBadRequestErrorf("file path %q is managed by CWE and must not be provided", file.Path)
@@ -624,10 +625,14 @@ func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
 }
 
 func validateUpdatedForgeNodePool(dbNodePool *db.NodePool) error {
-	if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(dbNodePool.DiskSelectionStrategy)); err != nil {
+	var diskSelectionStrategy db.DiskSelectionStrategy
+	if dbNodePool.Nico != nil {
+		diskSelectionStrategy = dbNodePool.Nico.DiskSelectionStrategy
+	}
+	if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(diskSelectionStrategy)); err != nil {
 		return newBadRequestErrorf("%s", err.Error())
 	}
-	if dbNodePool.CapiSpireAttestationMethod != "" {
+	if dbNodePool.Capi != nil && dbNodePool.Capi.SpireAttestationMethod != "" {
 		return newBadRequestErrorf("infra.spireAttestationMethod is not supported on a nico node pool")
 	}
 	return nil

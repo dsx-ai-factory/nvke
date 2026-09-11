@@ -78,8 +78,12 @@ func controlPlaneConfigDiff(prev, curr *db.ControlPlaneConfigSpec) []api.Control
 		}
 	}
 
-	addIfChanged("osProfile", prev.OSProfile, curr.OSProfile)
-	addIfChanged("configProfile", prev.ConfigProfile, curr.ConfigProfile)
+	// A CAPI cluster has no nico payload on either side, so both read as the zero
+	// value and the profile comparisons are a no-op for it.
+	prevNico, _ := prev.NicoProvider()
+	currNico, _ := curr.NicoProvider()
+	addIfChanged("osProfile", prevNico.OSProfile, currNico.OSProfile)
+	addIfChanged("configProfile", prevNico.ConfigProfile, currNico.ConfigProfile)
 	addIfChanged("kubernetesVersion", prev.KubernetesVersion, curr.KubernetesVersion)
 	addIfChanged("systemReservedMemory", prev.SystemReservedMemory, curr.SystemReservedMemory)
 	addIfChanged("kubeReservedMemory", prev.KubeReservedMemory, curr.KubeReservedMemory)

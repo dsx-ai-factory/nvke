@@ -69,6 +69,7 @@ func (n *NodeSet) CAPIProvider() (CAPINodePoolProvider, error) {
 
 func (n *NodeSet) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
+	n.Capi = nil
 	n.SubnetIDs = append([]uuid.UUID{}, provider.SubnetIDs...)
 	n.VpcPrefixIDs = append([]uuid.UUID{}, provider.VpcPrefixIDs...)
 	n.OSProfile = provider.OSProfile
@@ -78,6 +79,7 @@ func (n *NodeSet) SetNico(provider NicoNodePoolProvider) {
 
 func (n *NodeSet) SetCapi(provider CAPINodePoolProvider) {
 	n.Capi = cloneCAPINodePoolProvider(provider)
+	n.Nico = nil
 	n.CapiInfraMachineTemplate = cloneRawMessage(provider.InfraMachineTemplate)
 	n.CapiBootstrapFiles = append([]CloudInitFile{}, provider.BootstrapFiles...)
 	n.CapiPreKubeadmCommands = append([]string{}, provider.PreKubeadmCommands...)
@@ -87,32 +89,6 @@ func (n *NodeSet) SetCapi(provider CAPINodePoolProvider) {
 	}
 	if n.VpcPrefixIDs == nil {
 		n.VpcPrefixIDs = []uuid.UUID{}
-	}
-}
-
-func (n *NodeSet) SyncProviderFields(providerType ProviderType) {
-	n.Nico = nil
-	n.Capi = nil
-
-	switch providerType {
-	case ProviderTypeCAPI:
-		n.Capi = &CAPINodePoolProvider{
-			InfraMachineTemplate:   cloneRawMessage(n.CapiInfraMachineTemplate),
-			BootstrapFiles:         append([]CloudInitFile(nil), n.CapiBootstrapFiles...),
-			PreKubeadmCommands:     append([]string(nil), n.CapiPreKubeadmCommands...),
-			SpireAttestationMethod: n.CapiSpireAttestationMethod,
-		}
-		if n.Capi.PreKubeadmCommands == nil {
-			n.Capi.PreKubeadmCommands = []string{}
-		}
-	case ProviderTypeNico:
-		n.Nico = &NicoNodePoolProvider{
-			SubnetIDs:             append([]uuid.UUID(nil), n.SubnetIDs...),
-			VpcPrefixIDs:          append([]uuid.UUID(nil), n.VpcPrefixIDs...),
-			OSProfile:             n.OSProfile,
-			ConfigProfile:         n.ConfigProfile,
-			DiskSelectionStrategy: n.DiskSelectionStrategy,
-		}
 	}
 }
 
@@ -133,7 +109,6 @@ type NodeSetQueries interface {
 func (q *queriesImpl) ListNodeSets(ctx context.Context, filters NodeSetFilters) ([]NodeSet, error) {
 	var nodeSets []NodeSet
 	query := q.db.NewSelect().Model(&nodeSets).
-		ColumnExpr("node_set.*").
 		Join("JOIN node_pools np ON np.id = node_set.node_pool_id").
 		Join("JOIN clusters c ON c.id = np.cluster_id")
 
@@ -145,7 +120,7 @@ func (q *queriesImpl) ListNodeSets(ctx context.Context, filters NodeSetFilters) 
 	}
 
 	if filters.SiteID != nil {
-		query = query.Where("c.site_id = ?", filters.SiteID)
+		query = query.Where("c.nico->>'site_id' = ?", filters.SiteID.String())
 	}
 
 	err := query.Scan(ctx)
@@ -168,16 +143,11 @@ func (q *queriesImpl) GetNodeSet(ctx context.Context, id uuid.UUID) (NodeSet, er
 }
 
 func (q *queriesImpl) CreateNodeSet(ctx context.Context, nodeSet *NodeSet) (NodeSet, error) {
-	providerType, err := q.providerTypeForNodeSet(ctx, nodeSet)
-	if err != nil {
-		return NodeSet{}, err
-	}
 	if nodeSet.CapiPreKubeadmCommands == nil {
 		nodeSet.CapiPreKubeadmCommands = []string{}
 	}
-	nodeSet.SyncProviderFields(providerType)
 
-	_, err = q.db.NewInsert().Model(nodeSet).Exec(ctx)
+	_, err := q.db.NewInsert().Model(nodeSet).Exec(ctx)
 	if err != nil {
 		return NodeSet{}, err
 	}
@@ -185,33 +155,12 @@ func (q *queriesImpl) CreateNodeSet(ctx context.Context, nodeSet *NodeSet) (Node
 }
 
 func (q *queriesImpl) UpdateNodeSet(ctx context.Context, nodeSet *NodeSet) (NodeSet, error) {
-	providerType, err := q.providerTypeForNodeSet(ctx, nodeSet)
-	if err != nil {
-		return NodeSet{}, err
-	}
-	nodeSet.SyncProviderFields(providerType)
 	nodeSet.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(nodeSet).WherePK().Exec(ctx)
 	if err != nil {
 		return NodeSet{}, err
 	}
 	return *nodeSet, notFoundErrIfNoRowsAffected(res)
-}
-
-func (q *queriesImpl) providerTypeForNodeSet(ctx context.Context, nodeSet *NodeSet) (ProviderType, error) {
-	var nodePool NodePool
-	err := q.db.NewSelect().
-		Model(&nodePool).
-		Column("cluster_id").
-		Where("id = ?", nodeSet.NodePoolID).
-		Scan(ctx)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", ErrNotFound
-		}
-		return "", err
-	}
-	return q.providerTypeForCluster(ctx, nodePool.ClusterID)
 }
 
 func (q *queriesImpl) DeleteNodeSet(ctx context.Context, id uuid.UUID) error {

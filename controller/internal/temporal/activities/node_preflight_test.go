@@ -152,69 +152,85 @@ func setupNodePreflightRequestTest(
 
 	cluster := db.Cluster{
 		ID:                uuid.New(),
-		SiteID:            siteID,
 		Name:              "test-cluster",
-		OrgID:             "test-org",
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.34.0",
-		CapiInfraCluster:  capiInfraCluster,
+	}
+	// The cases without a site are the CAPI ones; the provider is explicit on the
+	// row now rather than inferred from whether a site is set.
+	if siteID == uuid.Nil {
+		cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: capiInfraCluster})
+	} else {
+		cluster.SetNicoProvider(db.NicoClusterProvider{
+			OrgID:  "test-org",
+			SiteID: siteID,
+			VpcID:  uuid.New(),
+		})
 	}
 	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
 	nodePoolID := uuid.New()
 	nodeSetID := uuid.New()
-	nodePool := db.NodePool{
-		ID:                         nodePoolID,
-		ClusterID:                  cluster.ID,
-		Name:                       "worker",
-		NodeNamePrefix:             "w",
-		SubnetIDs:                  []uuid.UUID{},
-		VpcPrefixIDs:               []uuid.UUID{},
-		InstanceTypeID:             uuid.New(),
-		SSHKeyGroupIDs:             []uuid.UUID{},
-		OSProfile:                  "os",
-		ConfigProfile:              "config",
-		SystemReservedMemory:       "1Gi",
-		NodeLabels:                 []string{},
-		KubernetesVersion:          "1.34.0",
-		CurrentNodeSetID:           pointerTo(nodeSetID),
-		DiskSelectionStrategy:      db.DiskSelectionStrategySmallest,
-		CapiInfraMachineTemplate:   capiInfraMachineTemplate,
-		CapiBootstrapFiles:         []db.CloudInitFile{},
-		CapiPreKubeadmCommands:     []string{},
-		CapiSpireAttestationMethod: db.SpireAttestationMethodTPM,
+	nicoPool := db.NicoNodePoolProvider{
+		SubnetIDs:             []uuid.UUID{},
+		VpcPrefixIDs:          []uuid.UUID{},
+		InstanceTypeID:        uuid.New(),
+		SSHKeyGroupIDs:        []uuid.UUID{},
+		OSProfile:             "os",
+		ConfigProfile:         "config",
+		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	}
+	capiPool := db.CAPINodePoolProvider{
+		InfraMachineTemplate:   capiInfraMachineTemplate,
+		BootstrapFiles:         []db.CloudInitFile{},
+		PreKubeadmCommands:     []string{},
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+	}
+
+	nodePool := db.NodePool{
+		ID:                   nodePoolID,
+		ClusterID:            cluster.ID,
+		Name:                 "worker",
+		NodeNamePrefix:       "w",
+		SystemReservedMemory: "1Gi",
+		NodeLabels:           []string{},
+		KubernetesVersion:    "1.34.0",
+		CurrentNodeSetID:     pointerTo(nodeSetID),
+	}
+	nodeSet := db.NodeSet{
+		ID:                   nodeSetID,
+		NodePoolID:           nodePoolID,
+		DesiredCount:         1,
+		KubernetesVersion:    "1.34.0",
+		SystemReservedMemory: "1Gi",
+	}
+	if siteID == uuid.Nil {
+		nodePool.SetCapi(capiPool)
+		nodeSet.SetCapi(capiPool)
+	} else {
+		nodePool.SetNico(nicoPool)
+		nodeSet.SetNico(nicoPool)
+	}
+
 	_, err = database.CreateNodePool(ctx, &nodePool)
 	require.NoError(t, err)
-
-	nodeSet := db.NodeSet{
-		ID:                         nodeSetID,
-		NodePoolID:                 nodePoolID,
-		DesiredCount:               1,
-		OSProfile:                  "os",
-		ConfigProfile:              "config",
-		KubernetesVersion:          "1.34.0",
-		SystemReservedMemory:       "1Gi",
-		SubnetIDs:                  []uuid.UUID{},
-		VpcPrefixIDs:               []uuid.UUID{},
-		DiskSelectionStrategy:      db.DiskSelectionStrategySmallest,
-		CapiInfraMachineTemplate:   capiInfraMachineTemplate,
-		CapiBootstrapFiles:         []db.CloudInitFile{},
-		CapiPreKubeadmCommands:     []string{},
-		CapiSpireAttestationMethod: db.SpireAttestationMethodTPM,
-	}
 	_, err = database.CreateNodeSet(ctx, &nodeSet)
 	require.NoError(t, err)
 
 	node := db.Node{
-		ID:             uuid.New(),
-		NodePoolID:     nodePoolID,
-		NodeSetID:      nodeSetID,
-		ClusterID:      cluster.ID,
-		InstanceTypeID: nodePool.InstanceTypeID,
-		Name:           "w-1",
-		IP:             "10.0.0.10",
+		ID:         uuid.New(),
+		NodePoolID: nodePoolID,
+		NodeSetID:  nodeSetID,
+		ClusterID:  cluster.ID,
+		Name:       "w-1",
+		IP:         "10.0.0.10",
+	}
+	// Only a nico node carries a nico payload; a CAPI node is left without one
+	// rather than given an empty shell.
+	if siteID != uuid.Nil {
+		poolNico, err := nodePool.NicoProvider()
+		require.NoError(t, err)
+		node.SetNico(db.NicoNodeProvider{InstanceTypeID: poolNico.InstanceTypeID})
 	}
 	_, err = database.CreateNode(ctx, &node)
 	require.NoError(t, err)

@@ -85,17 +85,20 @@ func seedTeardownScenario(ctx context.Context, database db.DB, scenario Teardown
 
 func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScenario) error {
 	siteID := uuid.New()
-	if _, err := tx.CreateCluster(ctx, &db.Cluster{
+	cluster := db.Cluster{
 		ID:                scenario.ClusterID,
 		Name:              "cwe-gofail-" + scenario.Name,
-		OrgID:             "cwe-gofail-org",
-		SiteID:            siteID,
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.30.0",
 		Conditions: db.ClusterConditions{
 			Provisioned: db.NewCondition(true, "seeded"),
 		},
-	}); err != nil {
+	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "cwe-gofail-org",
+		SiteID: siteID,
+		VpcID:  uuid.New(),
+	})
+	if _, err := tx.CreateCluster(ctx, &cluster); err != nil {
 		return fmt.Errorf("create cluster: %w", err)
 	}
 
@@ -103,41 +106,47 @@ func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScen
 	nodeSetID := uuid.New()
 	instanceTypeID := uuid.New()
 
-	if _, err := tx.CreateNodePool(ctx, &db.NodePool{
-		ID:                    nodePoolID,
-		ClusterID:             scenario.ClusterID,
-		Name:                  "cp",
-		NodeNamePrefix:        "cp",
-		ControlPlane:          true,
-		DesiredCount:          2,
-		InstanceTypeID:        instanceTypeID,
-		OSProfile:             "test",
-		ConfigProfile:         TeardownHookConfigProfile,
-		SystemReservedMemory:  "16Gi",
-		SubnetIDs:             []uuid.UUID{},
-		VpcPrefixIDs:          []uuid.UUID{},
-		SSHKeyGroupIDs:        []uuid.UUID{},
-		NodeLabels:            []string{},
-		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+	nodePool := db.NodePool{
+		ID:                   nodePoolID,
+		ClusterID:            scenario.ClusterID,
+		Name:                 "cp",
+		NodeNamePrefix:       "cp",
+		ControlPlane:         true,
+		DesiredCount:         2,
+		SystemReservedMemory: "16Gi",
+		NodeLabels:           []string{},
 		Conditions: db.NodePoolConditions{
 			Provisioned: db.NewCondition(true, "seeded"),
 		},
-	}); err != nil {
+	}
+	nodePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID:        instanceTypeID,
+		OSProfile:             "test",
+		ConfigProfile:         TeardownHookConfigProfile,
+		SubnetIDs:             []uuid.UUID{},
+		VpcPrefixIDs:          []uuid.UUID{},
+		SSHKeyGroupIDs:        []uuid.UUID{},
+		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+	})
+	if _, err := tx.CreateNodePool(ctx, &nodePool); err != nil {
 		return fmt.Errorf("create node pool: %w", err)
 	}
 
-	if _, err := tx.CreateNodeSet(ctx, &db.NodeSet{
-		ID:                    nodeSetID,
-		NodePoolID:            nodePoolID,
-		DesiredCount:          2,
+	nodeSet := db.NodeSet{
+		ID:                   nodeSetID,
+		NodePoolID:           nodePoolID,
+		DesiredCount:         2,
+		KubernetesVersion:    "1.30.0",
+		SystemReservedMemory: "16Gi",
+	}
+	nodeSet.SetNico(db.NicoNodePoolProvider{
 		OSProfile:             "test",
 		ConfigProfile:         TeardownHookConfigProfile,
-		KubernetesVersion:     "1.30.0",
-		SystemReservedMemory:  "16Gi",
 		SubnetIDs:             []uuid.UUID{},
 		VpcPrefixIDs:          []uuid.UUID{},
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
-	}); err != nil {
+	})
+	if _, err := tx.CreateNodeSet(ctx, &nodeSet); err != nil {
 		return fmt.Errorf("create node set: %w", err)
 	}
 
@@ -149,23 +158,24 @@ func seedTeardownScenarioTx(ctx context.Context, tx db.Tx, scenario TeardownScen
 		{scenario.SurvivorNde, scenario.Name + "-survivor"},
 	}
 	for _, node := range nodes {
-		if _, err := tx.CreateNode(ctx, &db.Node{
-			ID:              node.id,
-			ClusterID:       scenario.ClusterID,
-			NodePoolID:      nodePoolID,
-			NodeSetID:       nodeSetID,
-			ControlPlane:    true,
-			InstanceTypeID:  instanceTypeID,
-			Name:            node.name,
-			ForgeInstanceID: node.name + "-instance",
-			ForgeMachineID:  node.name + "-machine",
-			IP:              "127.0.0.1",
+		dbNode := db.Node{
+			ID:           node.id,
+			ClusterID:    scenario.ClusterID,
+			NodePoolID:   nodePoolID,
+			NodeSetID:    nodeSetID,
+			ControlPlane: true,
+			Name:         node.name,
+			IP:           "127.0.0.1",
 			Conditions: db.NodeConditions{
 				Joined:          db.NewCondition(true, "seeded"),
 				KubernetesReady: db.NewCondition(true, "seeded"),
 				NodeAgentReady:  db.NewCondition(true, "seeded"),
 			},
-		}); err != nil {
+		}
+		dbNode.SetNico(db.NicoNodeProvider{
+			InstanceTypeID: instanceTypeID,
+		})
+		if _, err := tx.CreateNode(ctx, &dbNode); err != nil {
 			return fmt.Errorf("create node %s: %w", node.name, err)
 		}
 	}

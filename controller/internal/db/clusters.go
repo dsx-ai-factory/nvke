@@ -102,6 +102,17 @@ func (c *Cluster) CAPIProvider() (CAPIClusterProvider, error) {
 	}, nil
 }
 
+// NicoSiteID returns the site the cluster belongs to, or the zero UUID when its
+// provider has no notion of a site, which is every CAPI cluster. Callers that
+// only need a site to label or scope by should use this rather than
+// NicoProvider, which treats a CAPI cluster as an error.
+func (c *Cluster) NicoSiteID() uuid.UUID {
+	if c.Nico == nil {
+		return uuid.Nil
+	}
+	return c.Nico.SiteID
+}
+
 func (c *Cluster) SetNicoProvider(provider NicoClusterProvider) {
 	c.ProviderType = ProviderTypeNico
 	c.Nico = &provider
@@ -118,25 +129,6 @@ func (c *Cluster) SetCAPIProvider(provider CAPIClusterProvider) {
 		InfraCluster: cloneRawMessage(provider.InfraCluster),
 	}
 	c.CapiInfraCluster = cloneRawMessage(provider.InfraCluster)
-}
-
-func (c *Cluster) SyncProviderFields() {
-	c.Nico = nil
-	c.Capi = nil
-	if c.SiteID == uuid.Nil {
-		c.ProviderType = ProviderTypeCAPI
-		c.Capi = &CAPIClusterProvider{
-			InfraCluster: cloneRawMessage(c.CapiInfraCluster),
-		}
-		return
-	}
-
-	c.ProviderType = ProviderTypeNico
-	c.Nico = &NicoClusterProvider{
-		OrgID:  c.OrgID,
-		SiteID: c.SiteID,
-		VpcID:  c.VpcID,
-	}
 }
 
 func cloneRawMessage(raw json.RawMessage) json.RawMessage {
@@ -385,10 +377,19 @@ func preserveClusterControlPlaneOverrides(existing Cluster, merged *ControlPlane
 	// MaxSurge is cluster-level only; sync must not derive it from node pools.
 	merged.MaxSurge = existing.ControlPlaneConfig.MaxSurge
 	merged.ProvisioningMonitorDisabled = existing.ControlPlaneConfig.ProvisioningMonitorDisabled
-	merged.InstanceTypePreference = mergeInstanceTypePreferences(
-		existing.ControlPlaneConfig.InstanceTypePreference,
-		merged.InstanceTypePreference,
+
+	// The instance type preference an operator set on the cluster outranks the one
+	// derived from the pools, so it has to survive the merge. Only Nico carries it.
+	nicoProvider, err := merged.NicoProvider()
+	if err != nil {
+		return
+	}
+	existingNico, _ := existing.ControlPlaneConfig.NicoProvider()
+	nicoProvider.InstanceTypePreference = mergeInstanceTypePreferences(
+		existingNico.InstanceTypePreference,
+		nicoProvider.InstanceTypePreference,
 	)
+	merged.SetNico(nicoProvider)
 }
 
 type ClusterConditions struct {
@@ -473,7 +474,7 @@ func (q *queriesImpl) ListClusters(ctx context.Context, filters ClusterFilters) 
 	}
 
 	if filters.SiteID != nil {
-		query = query.Where("site_id = ?", *filters.SiteID)
+		query = query.Where("nico->>'site_id' = ?", filters.SiteID.String())
 	}
 
 	err := query.Scan(ctx)
@@ -517,7 +518,6 @@ func (q *queriesImpl) GetClusterForUpdate(ctx context.Context, id uuid.UUID) (Cl
 }
 
 func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
-	cluster.SyncProviderFields()
 	_, err := q.db.NewInsert().Model(cluster).Exec(ctx)
 	if err != nil {
 		if isViolationOfConstraint(err, ConstraintClustersNameUnique) {
@@ -529,7 +529,6 @@ func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Clus
 }
 
 func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
-	cluster.SyncProviderFields()
 	cluster.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(cluster).WherePK().Exec(ctx)
 	if err != nil {
@@ -553,28 +552,6 @@ func (q *queriesImpl) UpdateClusterNextCertRenewalDue(ctx context.Context, clust
 func (q *queriesImpl) DeleteCluster(ctx context.Context, id uuid.UUID) error {
 	_, err := q.db.NewDelete().Model(&Cluster{}).Where("id = ?", id).Exec(ctx)
 	return err
-}
-
-func (q *queriesImpl) providerTypeForCluster(ctx context.Context, clusterID uuid.UUID) (ProviderType, error) {
-	var cluster Cluster
-	err := q.db.NewSelect().
-		Model(&cluster).
-		Column("provider_type", "site_id").
-		Where("id = ?", clusterID).
-		Scan(ctx)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", ErrNotFound
-		}
-		return "", err
-	}
-	if cluster.ProviderType != "" {
-		return cluster.ProviderType, nil
-	}
-	if cluster.SiteID == uuid.Nil {
-		return ProviderTypeCAPI, nil
-	}
-	return ProviderTypeNico, nil
 }
 
 func (q *queriesImpl) SyncClusterControlPlaneConfigFromCPNodePools(ctx context.Context, clusterID uuid.UUID) error {

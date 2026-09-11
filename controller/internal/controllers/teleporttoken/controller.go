@@ -194,7 +194,7 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 		return reconcile.Result{}, err
 	}
 
-	siteID := cluster.SiteID
+	siteID := cluster.NicoSiteID()
 	eligible, err := c.isTeleportEligible(ctx, node, cluster)
 	if err != nil {
 		return reconcile.Result{}, err
@@ -443,7 +443,7 @@ func (c *Controller) createTokenForNode(ctx context.Context, node db.Node, ekPub
 	c.logger.Info("Creating Teleport TPM join token",
 		"nodeID", node.ID,
 		"nodeName", node.Name,
-		"forgeInstanceID", node.ForgeInstanceID,
+		"forgeInstanceID", node.NicoForgeInstanceID(),
 		"tokenName", tokenName,
 		"expiresAt", expiresAt,
 	)

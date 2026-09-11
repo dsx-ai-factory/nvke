@@ -37,8 +37,10 @@ func TestControlPlaneRolloutRequiredMessage(t *testing.T) {
 }
 
 func TestRefreshControlPlaneRolloutRequiredCondition(t *testing.T) {
-	desired := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
-	drifted := db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v1", KubernetesVersion: "1.33.6"}
+	desired := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+	desired.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	drifted := db.ControlPlaneConfigSpec{KubernetesVersion: "1.33.6"}
+	drifted.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
 	desiredID := uuid.New()
 	driftedID := uuid.New()
 
@@ -111,8 +113,10 @@ func TestRefreshControlPlaneRolloutRequiredCondition(t *testing.T) {
 }
 
 func TestReconcileControlPlaneRolloutRequiredCondition(t *testing.T) {
-	desired := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
-	drifted := db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v1", KubernetesVersion: "1.33.6"}
+	desired := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+	desired.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	drifted := db.ControlPlaneConfigSpec{KubernetesVersion: "1.33.6"}
+	drifted.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
 	desiredID := uuid.New()
 	driftedID := uuid.New()
 

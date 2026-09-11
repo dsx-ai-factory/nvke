@@ -92,7 +92,9 @@ func TestIsSurgeAtClusterLevel_InstanceTypePreferenceNotRequired(t *testing.T) {
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			MaxSurge: 1,
 			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-				InstanceTypePreference: []uuid.UUID{uuid.New()},
+				Nico: &db.NicoControlPlaneProvider{
+					InstanceTypePreference: []uuid.UUID{uuid.New()},
+				},
 			},
 		},
 	}

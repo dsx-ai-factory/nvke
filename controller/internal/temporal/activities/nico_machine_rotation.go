@@ -260,9 +260,9 @@ func (a *Activities) controlPlaneInstanceTypePreference(ctx context.Context, nod
 	if err != nil {
 		return nil, fmt.Errorf("failed to get control plane configuration %s: %w", node.ControlPlaneConfigurationID, err)
 	}
-	nico := row.Config.NicoControlPlaneProvider()
-	if nico == nil {
-		return nil, fmt.Errorf("nico control-plane provider payload is required")
+	nico, err := row.Config.NicoProvider()
+	if err != nil {
+		return nil, err
 	}
 	return nico.InstanceTypePreference, nil
 }

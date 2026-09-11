@@ -64,6 +64,7 @@ type CAPIControlPlaneProvider struct {
 
 func (c *ControlPlaneConfigSpec) SetNico(provider NicoControlPlaneProvider) {
 	c.Nico = cloneNicoControlPlaneProvider(&provider)
+	c.Capi = nil
 	c.InstanceTypePreference = append([]uuid.UUID(nil), provider.InstanceTypePreference...)
 	c.SubnetIDs = append([]uuid.UUID(nil), provider.SubnetIDs...)
 	c.VpcPrefixIDs = append([]uuid.UUID(nil), provider.VpcPrefixIDs...)
@@ -75,35 +76,11 @@ func (c *ControlPlaneConfigSpec) SetNico(provider NicoControlPlaneProvider) {
 
 func (c *ControlPlaneConfigSpec) SetCapi(provider CAPIControlPlaneProvider) {
 	c.Capi = cloneCAPIControlPlaneProvider(&provider)
+	c.Nico = nil
 	c.InfraMachineTemplatePreferences = cloneRawMessages(provider.InfraMachineTemplatePreferences)
 	c.CapiSpireAttestationMethod = provider.SpireAttestationMethod
 	c.CapiBootstrapFiles = append([]CloudInitFile(nil), provider.BootstrapFiles...)
 	c.CapiPreKubeadmCommands = append([]string(nil), provider.PreKubeadmCommands...)
-}
-
-func (c *ControlPlaneConfigSpec) SyncProviderFields(providerType ProviderType) {
-	c.Nico = nil
-	c.Capi = nil
-
-	switch providerType {
-	case ProviderTypeNico:
-		c.Nico = &NicoControlPlaneProvider{
-			InstanceTypePreference: append([]uuid.UUID(nil), c.InstanceTypePreference...),
-			SubnetIDs:              append([]uuid.UUID(nil), c.SubnetIDs...),
-			VpcPrefixIDs:           append([]uuid.UUID(nil), c.VpcPrefixIDs...),
-			OSProfile:              c.OSProfile,
-			DiskSelectionStrategy:  c.DiskSelectionStrategy,
-			ConfigProfile:          c.ConfigProfile,
-			SSHKeyGroupIDs:         append([]uuid.UUID(nil), c.SSHKeyGroupIDs...),
-		}
-	case ProviderTypeCAPI:
-		c.Capi = &CAPIControlPlaneProvider{
-			InfraMachineTemplatePreferences: cloneRawMessages(c.InfraMachineTemplatePreferences),
-			SpireAttestationMethod:          c.CapiSpireAttestationMethod,
-			BootstrapFiles:                  append([]CloudInitFile(nil), c.CapiBootstrapFiles...),
-			PreKubeadmCommands:              append([]string(nil), c.CapiPreKubeadmCommands...),
-		}
-	}
 }
 
 func (c ControlPlaneConfigSpec) NicoProvider() (NicoControlPlaneProvider, error) {
@@ -118,14 +95,6 @@ func (c ControlPlaneConfigSpec) CAPIProvider() (CAPIControlPlaneProvider, error)
 		return CAPIControlPlaneProvider{}, fmt.Errorf("%w: control plane config capi", ErrMissingProviderPayload)
 	}
 	return *cloneCAPIControlPlaneProvider(c.Capi), nil
-}
-
-func (c ControlPlaneConfigSpec) NicoControlPlaneProvider() *NicoControlPlaneProvider {
-	return cloneNicoControlPlaneProvider(c.Nico)
-}
-
-func (c ControlPlaneConfigSpec) CAPIControlPlaneProvider() *CAPIControlPlaneProvider {
-	return cloneCAPIControlPlaneProvider(c.Capi)
 }
 
 // ControlPlaneConfig is the cluster control plane configuration shape used by
@@ -177,14 +146,7 @@ func (c ControlPlaneConfigSpec) Equal(other ControlPlaneConfigSpec) bool {
 
 func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out := cfg
-	out.InstanceTypePreference = append([]uuid.UUID(nil), cfg.InstanceTypePreference...)
-	out.InfraMachineTemplatePreferences = cloneRawMessages(cfg.InfraMachineTemplatePreferences)
-	out.SubnetIDs = append([]uuid.UUID(nil), cfg.SubnetIDs...)
-	out.VpcPrefixIDs = append([]uuid.UUID(nil), cfg.VpcPrefixIDs...)
-	out.SSHKeyGroupIDs = append([]uuid.UUID(nil), cfg.SSHKeyGroupIDs...)
 	out.NodeLabels = append([]string(nil), cfg.NodeLabels...)
-	out.CapiBootstrapFiles = append([]CloudInitFile(nil), cfg.CapiBootstrapFiles...)
-	out.CapiPreKubeadmCommands = append([]string(nil), cfg.CapiPreKubeadmCommands...)
 	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
 	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
 	return out
@@ -247,11 +209,15 @@ func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) [
 	if pinned.KubernetesVersion != desired.KubernetesVersion {
 		changes = append(changes, ControlPlaneRolloutChange{Field: "kubernetesVersion", From: pinned.KubernetesVersion, To: desired.KubernetesVersion})
 	}
-	if pinned.OSProfile != desired.OSProfile {
-		changes = append(changes, ControlPlaneRolloutChange{Field: "osProfile", From: pinned.OSProfile, To: desired.OSProfile})
+	// A CAPI cluster has no nico payload on either side, so both read as the
+	// zero value and the profile comparisons below are a no-op for it.
+	pinnedNico, _ := pinned.NicoProvider()
+	desiredNico, _ := desired.NicoProvider()
+	if pinnedNico.OSProfile != desiredNico.OSProfile {
+		changes = append(changes, ControlPlaneRolloutChange{Field: "osProfile", From: pinnedNico.OSProfile, To: desiredNico.OSProfile})
 	}
-	if pinned.ConfigProfile != desired.ConfigProfile {
-		changes = append(changes, ControlPlaneRolloutChange{Field: "configProfile", From: pinned.ConfigProfile, To: desired.ConfigProfile})
+	if pinnedNico.ConfigProfile != desiredNico.ConfigProfile {
+		changes = append(changes, ControlPlaneRolloutChange{Field: "configProfile", From: pinnedNico.ConfigProfile, To: desiredNico.ConfigProfile})
 	}
 	return changes
 }
@@ -408,7 +374,6 @@ func createControlPlaneConfigRowIfChanged(
 	snapshotCfg ControlPlaneConfigSpec,
 	opts CreateControlPlaneConfigRowOpts,
 ) error {
-	snapshotCfg.SyncProviderFields(cluster.ProviderType)
 	current := ControlPlaneConfigSpec{}
 	if cluster.ControlPlaneConfig.ConfigurationID != uuid.Nil {
 		row, err := q.GetControlPlaneConfiguration(ctx, cluster.ControlPlaneConfig.ConfigurationID)

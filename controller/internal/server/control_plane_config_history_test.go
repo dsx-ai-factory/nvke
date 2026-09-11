@@ -34,6 +34,13 @@ func TestGetClusterControlPlaneConfigHistory(t *testing.T) {
 		// cfg2 is the cluster's current desired snapshot.
 		cluster.ControlPlaneConfig.ConfigurationID = cfg2
 
+		cfg1Spec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.33.6"}
+		cfg1Spec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
+		cfg2Spec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+		cfg2Spec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
+		cfg3Spec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2", TeleportEnabled: true}
+		cfg3Spec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v1"})
+
 		mockDB := &testutil.MockDB{}
 		mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil)
 		mockDB.On("ListControlPlaneConfigurationsByCluster", mock.Anything, clusterID).Return(
@@ -42,7 +49,7 @@ func TestGetClusterControlPlaneConfigHistory(t *testing.T) {
 					ID:        cfg1,
 					ClusterID: clusterID,
 					CreatedAt: base,
-					Config:    db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v1", KubernetesVersion: "1.33.6"},
+					Config:    cfg1Spec,
 				},
 				{
 					ID:           cfg2,
@@ -50,13 +57,13 @@ func TestGetClusterControlPlaneConfigHistory(t *testing.T) {
 					CreatedAt:    base.Add(time.Hour),
 					ChangeReason: "bump kubernetes version",
 					CreatedBy:    "operator@example.com",
-					Config:       db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v1", KubernetesVersion: "1.34.2"},
+					Config:       cfg2Spec,
 				},
 				{
 					ID:        cfg3,
 					ClusterID: clusterID,
 					CreatedAt: base.Add(2 * time.Hour),
-					Config:    db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v1", KubernetesVersion: "1.34.2", TeleportEnabled: true},
+					Config:    cfg3Spec,
 				},
 				{
 					// Identical to cfg3: a snapshot with a predecessor but no
@@ -64,7 +71,7 @@ func TestGetClusterControlPlaneConfigHistory(t *testing.T) {
 					ID:        cfg4,
 					ClusterID: clusterID,
 					CreatedAt: base.Add(3 * time.Hour),
-					Config:    db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v1", KubernetesVersion: "1.34.2", TeleportEnabled: true},
+					Config:    cfg3Spec,
 				},
 			}, nil,
 		)

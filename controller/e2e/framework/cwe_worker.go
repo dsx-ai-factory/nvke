@@ -209,75 +209,85 @@ func seedCWEGofailDB(ctx context.Context, database db.DB) error {
 }
 
 func seedCWEGofailDBTx(ctx context.Context, database db.Tx) error {
-	if _, err := database.CreateCluster(ctx, &db.Cluster{
+	cluster := db.Cluster{
 		ID:                CWEGofailClusterID,
 		Name:              "cwe-gofail-cluster",
-		OrgID:             "cwe-gofail-org",
-		SiteID:            cweGofailSiteID,
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.30.0",
 		Conditions: db.ClusterConditions{
 			Provisioned: db.NewCondition(true, "seeded"),
 		},
-	}); err != nil {
+	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "cwe-gofail-org",
+		SiteID: cweGofailSiteID,
+		VpcID:  uuid.New(),
+	})
+	if _, err := database.CreateCluster(ctx, &cluster); err != nil {
 		return fmt.Errorf("create cluster: %w", err)
 	}
 
-	if _, err := database.CreateNodePool(ctx, &db.NodePool{
-		ID:                    cweGofailNodePoolID,
-		ClusterID:             CWEGofailClusterID,
-		Name:                  "cwe-gofail-cp",
-		NodeNamePrefix:        "cwe-gofail-cp",
-		ControlPlane:          true,
-		DesiredCount:          1,
-		InstanceTypeID:        cweGofailInstanceID,
-		OSProfile:             "test",
-		ConfigProfile:         "test",
-		SystemReservedMemory:  "16Gi",
-		SubnetIDs:             []uuid.UUID{},
-		VpcPrefixIDs:          []uuid.UUID{},
-		SSHKeyGroupIDs:        []uuid.UUID{},
-		NodeLabels:            []string{},
-		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+	nodePool := db.NodePool{
+		ID:                   cweGofailNodePoolID,
+		ClusterID:            CWEGofailClusterID,
+		Name:                 "cwe-gofail-cp",
+		NodeNamePrefix:       "cwe-gofail-cp",
+		ControlPlane:         true,
+		DesiredCount:         1,
+		SystemReservedMemory: "16Gi",
+		NodeLabels:           []string{},
 		Conditions: db.NodePoolConditions{
 			Provisioned: db.NewCondition(true, "seeded"),
 		},
-	}); err != nil {
+	}
+	nodePool.SetNico(db.NicoNodePoolProvider{
+		InstanceTypeID:        cweGofailInstanceID,
+		OSProfile:             "test",
+		ConfigProfile:         "test",
+		SubnetIDs:             []uuid.UUID{},
+		VpcPrefixIDs:          []uuid.UUID{},
+		SSHKeyGroupIDs:        []uuid.UUID{},
+		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+	})
+	if _, err := database.CreateNodePool(ctx, &nodePool); err != nil {
 		return fmt.Errorf("create node pool: %w", err)
 	}
 
-	if _, err := database.CreateNodeSet(ctx, &db.NodeSet{
-		ID:                    cweGofailNodeSetID,
-		NodePoolID:            cweGofailNodePoolID,
-		DesiredCount:          1,
+	nodeSet := db.NodeSet{
+		ID:                   cweGofailNodeSetID,
+		NodePoolID:           cweGofailNodePoolID,
+		DesiredCount:         1,
+		KubernetesVersion:    "1.30.0",
+		SystemReservedMemory: "16Gi",
+	}
+	nodeSet.SetNico(db.NicoNodePoolProvider{
 		OSProfile:             "test",
 		ConfigProfile:         "test",
-		KubernetesVersion:     "1.30.0",
-		SystemReservedMemory:  "16Gi",
 		SubnetIDs:             []uuid.UUID{},
 		VpcPrefixIDs:          []uuid.UUID{},
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
-	}); err != nil {
+	})
+	if _, err := database.CreateNodeSet(ctx, &nodeSet); err != nil {
 		return fmt.Errorf("create node set: %w", err)
 	}
 
-	if _, err := database.CreateNode(ctx, &db.Node{
-		ID:              CWEGofailNodeID,
-		ClusterID:       CWEGofailClusterID,
-		NodePoolID:      cweGofailNodePoolID,
-		NodeSetID:       cweGofailNodeSetID,
-		ControlPlane:    true,
-		InstanceTypeID:  cweGofailInstanceID,
-		Name:            cweGofailControlNode,
-		ForgeInstanceID: "cwe-gofail-instance",
-		ForgeMachineID:  "cwe-gofail-machine",
-		IP:              "127.0.0.1",
+	node := db.Node{
+		ID:           CWEGofailNodeID,
+		ClusterID:    CWEGofailClusterID,
+		NodePoolID:   cweGofailNodePoolID,
+		NodeSetID:    cweGofailNodeSetID,
+		ControlPlane: true,
+		Name:         cweGofailControlNode,
+		IP:           "127.0.0.1",
 		Conditions: db.NodeConditions{
 			Joined:          db.NewCondition(true, "seeded"),
 			KubernetesReady: db.NewCondition(true, "seeded"),
 			NodeAgentReady:  db.NewCondition(true, "seeded"),
 		},
-	}); err != nil {
+	}
+	node.SetNico(db.NicoNodeProvider{
+		InstanceTypeID: cweGofailInstanceID,
+	})
+	if _, err := database.CreateNode(ctx, &node); err != nil {
 		return fmt.Errorf("create node: %w", err)
 	}
 

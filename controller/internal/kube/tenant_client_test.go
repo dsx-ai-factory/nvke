@@ -99,11 +99,13 @@ func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyPublishedSecret(t *
 
 func TestDBClusterTenantClientProviderReturnsNotReadyForEmptyCAPIPublishedSecret(t *testing.T) {
 	cluster := db.Cluster{
-		ID:               uuid.New(),
-		Name:             "test-cluster",
-		CapiInfraCluster: []byte(`{"kind":"test"}`),
+		ID:           uuid.New(),
+		Name:         "test-cluster",
+		ProviderType: db.ProviderTypeCAPI,
+		Capi: &db.CAPIClusterProvider{
+			InfraCluster: []byte(`{"kind":"test"}`),
+		},
 	}
-	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: cluster.CapiInfraCluster})
 	managementClient := fake.NewClientBuilder().
 		WithScheme(newTenantClientProviderTestScheme(t)).
 		WithObjects(&corev1.Secret{
@@ -219,12 +221,14 @@ func TestDBClusterTenantClientProviderKeepsNodeAgentFallbackWhenTenantAccessDisa
 
 func TestDBClusterTenantClientProviderCAPIUsesPublishedSecret(t *testing.T) {
 	cluster := db.Cluster{
-		ID:               uuid.New(),
-		Name:             "test-cluster",
-		OIDCAuthEnabled:  true,
-		CapiInfraCluster: []byte(`{"kind":"DockerCluster"}`),
+		ID:              uuid.New(),
+		Name:            "test-cluster",
+		OIDCAuthEnabled: true,
+		ProviderType:    db.ProviderTypeCAPI,
+		Capi: &db.CAPIClusterProvider{
+			InfraCluster: []byte(`{"kind":"DockerCluster"}`),
+		},
 	}
-	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: cluster.CapiInfraCluster})
 	published := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: tenantAccessKubeconfigNamespace,

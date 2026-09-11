@@ -13,7 +13,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
-func TestNodePoolProviderGettersSettersAndSync(t *testing.T) {
+func TestNodePoolProviderGettersAndSetters(t *testing.T) {
 	subnetID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	vpcPrefixID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	instanceTypeID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
@@ -21,24 +21,19 @@ func TestNodePoolProviderGettersSettersAndSync(t *testing.T) {
 	nvlinkPartitionID := uuid.MustParse("55555555-5555-5555-5555-555555555555")
 	sshKeyGroupID := uuid.MustParse("66666666-6666-6666-6666-666666666666")
 	machineTemplate := json.RawMessage(`{"kind":"ForgeMachineTemplate"}`)
-	nodePool := db.NodePool{
-		SubnetIDs:                  []uuid.UUID{subnetID},
-		VpcPrefixIDs:               []uuid.UUID{vpcPrefixID},
-		InstanceTypeID:             instanceTypeID,
-		InfinibandPartitionID:      &ibPartitionID,
-		NvLinkLogicalPartitionID:   &nvlinkPartitionID,
-		SSHKeyGroupIDs:             []uuid.UUID{sshKeyGroupID},
-		OSProfile:                  "nke-260318",
-		ConfigProfile:              "gpu",
-		SystemReservedMemory:       "32Gi",
-		DiskSelectionStrategy:      db.DiskSelectionStrategyLargest,
-		CapiInfraMachineTemplate:   machineTemplate,
-		CapiBootstrapFiles:         []db.CloudInitFile{{Path: "/etc/test", Content: "ok"}},
-		CapiPreKubeadmCommands:     []string{"echo pre"},
-		CapiSpireAttestationMethod: db.SpireAttestationMethodJoinToken,
-	}
+	nodePool := db.NodePool{SystemReservedMemory: "32Gi"}
 
-	nodePool.SyncProviderFields(db.ProviderTypeNico)
+	nodePool.SetNico(db.NicoNodePoolProvider{
+		SubnetIDs:                []uuid.UUID{subnetID},
+		VpcPrefixIDs:             []uuid.UUID{vpcPrefixID},
+		InstanceTypeID:           instanceTypeID,
+		InfinibandPartitionID:    &ibPartitionID,
+		NvLinkLogicalPartitionID: &nvlinkPartitionID,
+		SSHKeyGroupIDs:           []uuid.UUID{sshKeyGroupID},
+		OSProfile:                "nke-260318",
+		ConfigProfile:            "gpu",
+		DiskSelectionStrategy:    db.DiskSelectionStrategyLargest,
+	})
 
 	require.Equal(t, []uuid.UUID{subnetID}, nodePool.Nico.SubnetIDs)
 	require.Nil(t, nodePool.Capi)
@@ -58,7 +53,13 @@ func TestNodePoolProviderGettersSettersAndSync(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, db.ErrMissingProviderPayload)
 
-	nodePool.SyncProviderFields(db.ProviderTypeCAPI)
+	// Setting one provider clears the other, so a pool never carries both.
+	nodePool.SetCapi(db.CAPINodePoolProvider{
+		InfraMachineTemplate:   machineTemplate,
+		BootstrapFiles:         []db.CloudInitFile{{Path: "/etc/test", Content: "ok"}},
+		PreKubeadmCommands:     []string{"echo pre"},
+		SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+	})
 	require.Nil(t, nodePool.Nico)
 	require.JSONEq(t, string(machineTemplate), string(nodePool.Capi.InfraMachineTemplate))
 	require.Equal(t, []db.CloudInitFile{{Path: "/etc/test", Content: "ok"}}, nodePool.Capi.BootstrapFiles)
@@ -81,63 +82,8 @@ func TestNodePoolProviderGettersSettersAndSync(t *testing.T) {
 		ConfigProfile:         "next-config",
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	})
-	require.Equal(t, nextInstanceTypeID, nodePool.InstanceTypeID)
-	require.Equal(t, "next-os", nodePool.OSProfile)
-	require.Equal(t, "next-config", nodePool.ConfigProfile)
+	require.Equal(t, nextInstanceTypeID, nodePool.Nico.InstanceTypeID)
+	require.Equal(t, "next-os", nodePool.Nico.OSProfile)
+	require.Equal(t, "next-config", nodePool.Nico.ConfigProfile)
 	require.Equal(t, "32Gi", nodePool.SystemReservedMemory)
-}
-
-func TestNodePoolSetCapiInitializesNotNullUUIDArrays(t *testing.T) {
-	pool := db.NodePool{}
-	pool.SetCapi(db.CAPINodePoolProvider{
-		SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
-	})
-	require.NotNil(t, pool.SubnetIDs)
-	require.Empty(t, pool.SubnetIDs)
-	require.NotNil(t, pool.VpcPrefixIDs)
-	require.Empty(t, pool.VpcPrefixIDs)
-	require.NotNil(t, pool.SSHKeyGroupIDs)
-	require.Empty(t, pool.SSHKeyGroupIDs)
-}
-
-func TestNodePoolSetNicoPreservesEmptyNotNullUUIDArrays(t *testing.T) {
-	pool := db.NodePool{}
-	pool.SetNico(db.NicoNodePoolProvider{
-		SubnetIDs:      []uuid.UUID{},
-		VpcPrefixIDs:   []uuid.UUID{},
-		SSHKeyGroupIDs: []uuid.UUID{},
-	})
-
-	require.NotNil(t, pool.SubnetIDs)
-	require.Empty(t, pool.SubnetIDs)
-	require.NotNil(t, pool.VpcPrefixIDs)
-	require.Empty(t, pool.VpcPrefixIDs)
-	require.NotNil(t, pool.SSHKeyGroupIDs)
-	require.Empty(t, pool.SSHKeyGroupIDs)
-
-	provider, err := pool.NicoProvider()
-	require.NoError(t, err)
-	require.Empty(t, provider.SSHKeyGroupIDs)
-}
-
-// TestNodePoolSetNicoNeverWritesNilIntoNotNullColumns covers the case a live
-// update hits: the nico JSONB column's slice fields use `omitempty`, so a
-// previously empty value comes back nil from NicoProvider(), not empty. If a
-// merge only touches one of subnetIDs/vpcPrefixIDs/sshKeyGroupIDs and leaves
-// the others as that nil clone, SetNico must still never write nil into the
-// NOT NULL flat columns.
-func TestNodePoolSetNicoNeverWritesNilIntoNotNullColumns(t *testing.T) {
-	pool := db.NodePool{}
-	pool.SetNico(db.NicoNodePoolProvider{
-		SubnetIDs:      nil,
-		VpcPrefixIDs:   nil,
-		SSHKeyGroupIDs: nil,
-	})
-
-	require.NotNil(t, pool.SubnetIDs)
-	require.Empty(t, pool.SubnetIDs)
-	require.NotNil(t, pool.VpcPrefixIDs)
-	require.Empty(t, pool.VpcPrefixIDs)
-	require.NotNil(t, pool.SSHKeyGroupIDs)
-	require.Empty(t, pool.SSHKeyGroupIDs)
 }

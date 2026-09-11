@@ -56,11 +56,17 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// forgeDBCluster stamps the nested provider payload that a stored row always
-// carries. The API mappers read that payload, so a fixture built as a bare
-// struct literal would surface no provider at all.
+// forgeDBCluster stamps the provider type that a stored row always carries. The
+// API mappers key off it, so a fixture built as a bare struct literal would
+// surface no provider at all.
 func forgeDBCluster(cluster db.Cluster) db.Cluster {
-	cluster.SyncProviderFields()
+	// Read the payload directly: NicoProvider gates on the provider type, which is
+	// exactly what these fixtures have not set yet.
+	var nico db.NicoClusterProvider
+	if cluster.Nico != nil {
+		nico = *cluster.Nico
+	}
+	cluster.SetNicoProvider(nico)
 	return cluster
 }
 
@@ -86,15 +92,17 @@ func TestClusterService_ListClusters(t *testing.T) {
 				forgeDBCluster(db.Cluster{
 					ID:                uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 					Name:              "test-cluster",
-					OrgID:             testOrgID,
-					SiteID:            uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-					VpcID:             uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 					CniPlugin:         "calico",
 					KubernetesVersion: "1.29.0",
 					ControlPlaneVIP:   "10.0.0.1",
 					PodCIDR:           "192.168.0.0/16",
 					ServiceCIDR:       "10.96.0.0/12",
 					Conditions:        mockDBClusterConditions(now),
+					Nico: &db.NicoClusterProvider{
+						OrgID:  testOrgID,
+						SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+						VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+					},
 				}),
 			},
 			wantCluster: []api.Cluster{
@@ -127,15 +135,17 @@ func TestClusterService_ListClusters(t *testing.T) {
 				forgeDBCluster(db.Cluster{
 					ID:                uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"),
 					Name:              "test-cluster",
-					OrgID:             testOrgID,
-					SiteID:            uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-					VpcID:             uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 					CniPlugin:         "calico",
 					KubernetesVersion: "1.29.0",
 					ControlPlaneVIP:   "10.0.0.1",
 					PodCIDR:           "192.168.0.0/16",
 					ServiceCIDR:       "10.96.0.0/12",
 					Conditions:        mockDBClusterConditions(now),
+					Nico: &db.NicoClusterProvider{
+						OrgID:  testOrgID,
+						SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+						VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+					},
 				}),
 			},
 			wantCluster: []api.Cluster{
@@ -254,19 +264,23 @@ func TestClusterService_CreateCluster(t *testing.T) {
 			},
 			setupMockCalls: func(tx *mockTx) {
 				tx.On("CreateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-					return c.Name == "test-cluster" &&
-						c.OrgID == orgID &&
+					nico, err := c.NicoProvider()
+					return err == nil &&
+						c.Name == "test-cluster" &&
+						nico.OrgID == orgID &&
 						c.PodCIDR == "10.233.64.0/18" &&
 						c.ServiceCIDR == "10.233.0.0/18" &&
 						c.ControlPlaneVIP == "172.31.1.10"
 				})).Return(forgeDBCluster(db.Cluster{
 					ID:              clusterID,
-					OrgID:           orgID,
-					SiteID:          siteID,
 					Name:            "test-cluster",
 					PodCIDR:         "10.233.64.0/18",
 					ServiceCIDR:     "10.233.0.0/18",
 					ControlPlaneVIP: "172.31.1.10",
+					Nico: &db.NicoClusterProvider{
+						OrgID:  orgID,
+						SiteID: siteID,
+					},
 				}), nil)
 
 				tx.On("CreateWorkflowOutboxEntry", mock.Anything, "ProvisionCluster", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
@@ -336,18 +350,22 @@ func TestClusterService_CreateCluster(t *testing.T) {
 			},
 			setupMockCalls: func(tx *mockTx) {
 				tx.On("CreateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-					return c.Name == "test-cluster-vpc" &&
-						c.OrgID == orgID &&
+					nico, err := c.NicoProvider()
+					return err == nil &&
+						c.Name == "test-cluster-vpc" &&
+						nico.OrgID == orgID &&
 						c.PodCIDR == "192.168.0.0/16" &&
 						c.ServiceCIDR == "10.96.0.0/12" &&
 						c.ControlPlaneVIP == ""
 				})).Return(forgeDBCluster(db.Cluster{
 					ID:          clusterID,
-					OrgID:       orgID,
-					SiteID:      siteID,
 					Name:        "test-cluster-vpc",
 					PodCIDR:     "192.168.0.0/16",
 					ServiceCIDR: "10.96.0.0/12",
+					Nico: &db.NicoClusterProvider{
+						OrgID:  orgID,
+						SiteID: siteID,
+					},
 				}), nil)
 
 				tx.On("CreateWorkflowOutboxEntry", mock.Anything, "ProvisionCluster", mock.Anything, mock.MatchedBy(func(input interface{}) bool {
@@ -357,7 +375,8 @@ func TestClusterService_CreateCluster(t *testing.T) {
 
 				cpNodePoolID := uuid.New()
 				tx.On("CreateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
-					return np.ClusterID == clusterID && np.ControlPlane && np.NodeNamePrefix == "cp-prefix" && len(np.VpcPrefixIDs) > 0
+					nico, err := np.NicoProvider()
+					return err == nil && np.ClusterID == clusterID && np.ControlPlane && np.NodeNamePrefix == "cp-prefix" && len(nico.VpcPrefixIDs) > 0
 				})).Return(db.NodePool{
 					ID:             cpNodePoolID,
 					ControlPlane:   true,
@@ -366,7 +385,8 @@ func TestClusterService_CreateCluster(t *testing.T) {
 
 				workerNodePoolID := uuid.New()
 				tx.On("CreateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
-					return np.ClusterID == clusterID && !np.ControlPlane && np.NodeNamePrefix == "w-prefix" && len(np.VpcPrefixIDs) > 0
+					nico, err := np.NicoProvider()
+					return err == nil && np.ClusterID == clusterID && !np.ControlPlane && np.NodeNamePrefix == "w-prefix" && len(nico.VpcPrefixIDs) > 0
 				})).Return(db.NodePool{
 					ID:             workerNodePoolID,
 					ControlPlane:   false,
@@ -405,7 +425,8 @@ func TestClusterService_CreateCluster(t *testing.T) {
 			},
 			setupMockCalls: func(tx *mockTx) {
 				tx.On("CreateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-					return c.Name == "test-cluster" && c.OrgID == orgID
+					nico, err := c.NicoProvider()
+					return err == nil && c.Name == "test-cluster" && nico.OrgID == orgID
 				})).Return(db.Cluster{}, db.ErrClusterNameNotUnique)
 			},
 			wantResponseError: true,
@@ -511,9 +532,11 @@ func TestClusterService_CreateCluster(t *testing.T) {
 				// But validation happens before CreateCluster completes, so we need to mock it with the expected clusterID
 				// Actually, validation uses the cluster.ID from the created cluster, so we need to mock it with clusterID
 				mockDB.On("GetCluster", mock.Anything, clusterID).Return(forgeDBCluster(db.Cluster{
-					ID:     clusterID,
-					OrgID:  tt.request.Nico.OrgID,
-					SiteID: tt.request.Nico.SiteID,
+					ID: clusterID,
+					Nico: &db.NicoClusterProvider{
+						OrgID:  tt.request.Nico.OrgID,
+						SiteID: tt.request.Nico.SiteID,
+					},
 				}), nil).Maybe() // Use Maybe() since validation might not be called if CreateCluster fails early
 
 				service = newTestClusterService(discardLogger(), mockDB)
@@ -720,15 +743,17 @@ func TestClusterService_GetCluster(t *testing.T) {
 			dbCluster: forgeDBCluster(db.Cluster{
 				ID:                clusterID,
 				Name:              "test-cluster",
-				OrgID:             testOrgID,
-				SiteID:            uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-				VpcID:             uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:         "calico",
 				KubernetesVersion: "1.29.0",
 				ControlPlaneVIP:   "10.0.0.1",
 				PodCIDR:           "192.168.0.0/16",
 				ServiceCIDR:       "10.96.0.0/12",
 				Conditions:        mockDBClusterConditions(now),
+				Nico: &db.NicoClusterProvider{
+					OrgID:  testOrgID,
+					SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+					VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+				},
 			}),
 			wantCluster: api.GetCluster200JSONResponse{
 				ID:   clusterID,
@@ -815,12 +840,14 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			dbCluster: db.Cluster{
 				ID:                clusterID,
 				Name:              "test-cluster",
-				OrgID:             testOrgID,
-				SiteID:            uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-				VpcID:             uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 				CniPlugin:         "calico",
 				KubernetesVersion: "1.29.0",
 				ControlPlaneVIP:   "10.0.0.1",
+				Nico: &db.NicoClusterProvider{
+					OrgID:  testOrgID,
+					SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+					VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+				},
 			},
 			setupMockCalls: func(tx *mockTx) {
 				tx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
@@ -1230,13 +1257,15 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_StartsWorkflow(t *tes
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:            clusterID,
 		Name:          "test-cluster",
-		OrgID:         testOrgID,
-		SiteID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		EtcdEncrypted: false,
 		Conditions: db.ClusterConditions{
 			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
 			Deleting:    db.Condition{Status: db.ConditionStatusFalse},
+		},
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		},
 	}, nil).Once()
 	mockDB.MockTx.On(
@@ -1262,12 +1291,14 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_StartsWorkflow(t *tes
 	})).Return(db.Cluster{
 		ID:            clusterID,
 		Name:          "test-cluster",
-		OrgID:         testOrgID,
-		SiteID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		EtcdEncrypted: false,
 		Conditions: db.ClusterConditions{
 			UpdateInProgress: &db.UpdateInProgress{Type: db.OperationTypeEtcdEncryption, StartedAt: time.Now()},
+		},
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
@@ -1328,10 +1359,12 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_AlreadyEncryptedNoop(
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:            clusterID,
 		Name:          "test-cluster",
-		OrgID:         testOrgID,
-		SiteID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:         uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		EtcdEncrypted: true,
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
@@ -1359,7 +1392,6 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_RejectsLegacyOperatio
 	mockDB.MockTx = &mockTx{}
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:            clusterID,
-		SiteID:        uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 		EtcdEncrypted: false,
 		Conditions: db.ClusterConditions{
 			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
@@ -1368,6 +1400,9 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_RejectsLegacyOperatio
 				Message:            "upgrade in flight",
 				LastTransitionTime: started,
 			},
+		},
+		Nico: &db.NicoClusterProvider{
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
@@ -1396,13 +1431,15 @@ func TestClusterService_UpdateCluster_EnableOIDC_StartsWorkflow(t *testing.T) {
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:              clusterID,
 		Name:            "test-cluster",
-		OrgID:           testOrgID,
-		SiteID:          uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		OIDCAuthEnabled: false,
 		Conditions: db.ClusterConditions{
 			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
 			Deleting:    db.Condition{Status: db.ConditionStatusFalse},
+		},
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		},
 	}, nil).Once()
 	mockDB.MockTx.On(
@@ -1423,13 +1460,15 @@ func TestClusterService_UpdateCluster_EnableOIDC_StartsWorkflow(t *testing.T) {
 			uip.Message == "enabling OIDC authentication" &&
 			uip.StartedAt.After(startedAfter)
 	})).Return(db.Cluster{
-		ID:     clusterID,
-		Name:   "test-cluster",
-		OrgID:  testOrgID,
-		SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+		ID:   clusterID,
+		Name: "test-cluster",
 		Conditions: db.ClusterConditions{
 			UpdateInProgress: &db.UpdateInProgress{Type: db.OperationTypeOIDCEnable, StartedAt: time.Now()},
+		},
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
@@ -1491,10 +1530,12 @@ func TestClusterService_UpdateCluster_EnableOIDC_RejectsWithKubernetesUpgrade(t 
 	mockDB.MockTx = &mockTx{}
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:                clusterID,
-		SiteID:            uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 		KubernetesVersion: "1.30.1",
 		Conditions: db.ClusterConditions{
 			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
+		},
+		Nico: &db.NicoClusterProvider{
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
@@ -1521,10 +1562,12 @@ func TestClusterService_UpdateCluster_EnableOIDC_AlreadyEnabledNoop(t *testing.T
 	alreadyEnabled := db.Cluster{
 		ID:              clusterID,
 		Name:            "test-cluster",
-		OrgID:           testOrgID,
-		SiteID:          uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:           uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		OIDCAuthEnabled: true,
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+		},
 	}
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(alreadyEnabled, nil).Once()
 	// OIDC already enabled: the toggle is a no-op — no outbox row, no lock taken —
@@ -1556,7 +1599,6 @@ func TestClusterService_UpdateCluster_EnableOIDC_RejectsLegacyOperation(t *testi
 	mockDB.MockTx = &mockTx{}
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:              clusterID,
-		SiteID:          uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 		OIDCAuthEnabled: false,
 		Conditions: db.ClusterConditions{
 			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
@@ -1565,6 +1607,9 @@ func TestClusterService_UpdateCluster_EnableOIDC_RejectsLegacyOperation(t *testi
 				Message:            "upgrade in flight",
 				LastTransitionTime: started,
 			},
+		},
+		Nico: &db.NicoClusterProvider{
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
@@ -1591,11 +1636,13 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_StartsWorkflowForCAPI
 	mockDB.MockTx = &mockTx{}
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:            clusterID,
-		SiteID:        uuid.Nil,
 		EtcdEncrypted: false,
 		Conditions: db.ClusterConditions{
 			Provisioned: db.Condition{Status: db.ConditionStatusTrue},
 			Deleting:    db.Condition{Status: db.ConditionStatusFalse},
+		},
+		Nico: &db.NicoClusterProvider{
+			SiteID: uuid.Nil,
 		},
 	}, nil).Once()
 	mockDB.MockTx.On(
@@ -1617,10 +1664,12 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_StartsWorkflowForCAPI
 			uip.Type == db.OperationTypeEtcdEncryption
 	})).Return(db.Cluster{
 		ID:            clusterID,
-		SiteID:        uuid.Nil,
 		EtcdEncrypted: false,
 		Conditions: db.ClusterConditions{
 			UpdateInProgress: &db.UpdateInProgress{Type: db.OperationTypeEtcdEncryption, StartedAt: time.Now()},
+		},
+		Nico: &db.NicoClusterProvider{
+			SiteID: uuid.Nil,
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
@@ -1648,17 +1697,19 @@ func TestClusterService_GetCluster_ExposesUpdateInProgress(t *testing.T) {
 
 	mockDB := &mockDB{}
 	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-		ID:     clusterID,
-		Name:   "test-cluster",
-		OrgID:  testOrgID,
-		SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+		ID:   clusterID,
+		Name: "test-cluster",
 		Conditions: db.ClusterConditions{
 			UpdateInProgress: &db.UpdateInProgress{
 				Type:      db.OperationTypeEtcdEncryption,
 				Message:   "enabling etcd encryption",
 				StartedAt: started,
 			},
+		},
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		},
 	}, nil).Once()
 
@@ -1682,13 +1733,15 @@ func TestClusterService_GetCluster_ExposesUpdateFailed(t *testing.T) {
 
 	mockDB := &mockDB{}
 	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-		ID:     clusterID,
-		Name:   "test-cluster",
-		OrgID:  testOrgID,
-		SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
-		VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
+		ID:   clusterID,
+		Name: "test-cluster",
 		Conditions: db.ClusterConditions{
 			UpdateFailed: &updateFailed,
+		},
+		Nico: &db.NicoClusterProvider{
+			OrgID:  testOrgID,
+			SiteID: uuid.MustParse("550e8400-e29b-41d4-a716-446655440001"),
+			VpcID:  uuid.MustParse("550e8400-e29b-41d4-a716-446655440002"),
 		},
 	}, nil).Once()
 
@@ -1718,13 +1771,15 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig(t *testing.T) {
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
 		ID:           clusterID,
-		SiteID:       uuid.New(),
 		ProviderType: db.ProviderTypeNico,
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			MaxSurge: 0,
 			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
 				Nico: &db.NicoControlPlaneProvider{},
 			},
+		},
+		Nico: &db.NicoClusterProvider{
+			SiteID: uuid.New(),
 		},
 	}, nil).Once()
 	mockDB.MockTx.On(
@@ -1736,14 +1791,18 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig(t *testing.T) {
 		ID:        createdCfgID,
 		ClusterID: clusterID,
 		Config: db.ControlPlaneConfigSpec{
-			InstanceTypePreference:      []uuid.UUID{customInst},
 			ProvisioningMonitorDisabled: true,
+			Nico: &db.NicoControlPlaneProvider{
+				InstanceTypePreference: []uuid.UUID{customInst},
+			},
 		},
 	}, nil).Once()
 	mockDB.MockTx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
-		return c.ControlPlaneConfig.MaxSurge == 1 &&
-			len(c.ControlPlaneConfig.InstanceTypePreference) == 1 &&
-			c.ControlPlaneConfig.InstanceTypePreference[0] == customInst &&
+		cpNico, err := c.ControlPlaneConfig.NicoProvider()
+		return err == nil &&
+			c.ControlPlaneConfig.MaxSurge == 1 &&
+			len(cpNico.InstanceTypePreference) == 1 &&
+			cpNico.InstanceTypePreference[0] == customInst &&
 			c.ControlPlaneConfig.ProvisioningMonitorDisabled
 	})).Return(db.Cluster{
 		ID: clusterID,
@@ -1756,8 +1815,10 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig(t *testing.T) {
 		ID:        createdCfgID,
 		ClusterID: clusterID,
 		Config: db.ControlPlaneConfigSpec{
-			InstanceTypePreference:      []uuid.UUID{customInst},
 			ProvisioningMonitorDisabled: true,
+			Nico: &db.NicoControlPlaneProvider{
+				InstanceTypePreference: []uuid.UUID{customInst},
+			},
 		},
 	}, nil).Once()
 
@@ -2212,13 +2273,10 @@ func TestDbClusterFromAPI_NestedProvidersReachTheStoredCluster(t *testing.T) {
 
 func TestApiClusterFromDB_OmitsMissingProviderPayload(t *testing.T) {
 	// The nico mapper reads the JSONB payload, so a row whose payload has not
-	// been stamped yet emits nico:null rather than reconstructing it.
+	// been stamped yet emits nico:null rather than inventing one.
 	cluster := db.Cluster{
-		ID:     uuid.New(),
-		Name:   "unstamped",
-		OrgID:  "org",
-		SiteID: uuid.New(),
-		VpcID:  uuid.New(),
+		ID:   uuid.New(),
+		Name: "unstamped",
 	}
 	got := server.APIClusterFromDB(&cluster)
 	assert.Nil(t, got.Nico)

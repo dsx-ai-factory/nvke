@@ -407,7 +407,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	// (which carry no CWE-selected type). Only authoritative once ready, and must
 	// never block provisioning; CAPD and template-backed nodes are unaffected.
 	var observedInstanceTypeID uuid.UUID
-	if node.InstanceTypeID == uuid.Nil {
+	if node.NicoInstanceTypeID() == uuid.Nil {
 		observedInstanceTypeID, err = instanceTypeIDFromInfraRef(ctx, a.k8sClient, machine)
 		if err != nil {
 			logger.Warn("Could not resolve instance type for CAPI machine; skipping instance type stamp",
@@ -432,26 +432,25 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 			return nonRetryableIfNotFound("failed to get node", err)
 		}
 		nodeForUpdate.IP = ipAddress
-		// Sticky: only stamp when the node has no type yet, so we never clobber
-		// a CWE-selected (Forge) type or an already-recorded value.
-		if observedInstanceTypeID != uuid.Nil && nodeForUpdate.InstanceTypeID == uuid.Nil {
-			nodeForUpdate.InstanceTypeID = observedInstanceTypeID
-		}
-		// Stamp only when identity is present or nico already exists. Empty CAPD
-		// lookups must not invent a nico payload.
-		if observedInstanceID != "" || observedMachineID != "" || nodeForUpdate.Nico != nil {
+		// Sticky: only stamp the type when the node has no type yet, so we never
+		// clobber a CWE-selected (Forge) type or an already-recorded value.
+		stampInstanceType := observedInstanceTypeID != uuid.Nil && nodeForUpdate.NicoInstanceTypeID() == uuid.Nil
+		// Stamp only when there is something to record or nico already exists.
+		// Empty CAPD lookups must not invent a nico payload.
+		if stampInstanceType || observedInstanceID != "" || observedMachineID != "" || nodeForUpdate.Nico != nil {
 			nico := db.NicoNodeProvider{}
 			if nodeForUpdate.Nico != nil {
 				nico = *nodeForUpdate.Nico
 			}
-			nico.InstanceTypeID = nodeForUpdate.InstanceTypeID
+			if stampInstanceType {
+				nico.InstanceTypeID = observedInstanceTypeID
+			}
 			if nico.ForgeInstanceID == "" {
 				nico.ForgeInstanceID = observedInstanceID
 			}
 			if nico.ForgeMachineID == "" {
 				nico.ForgeMachineID = observedMachineID
 			}
-			// UpdateNode rebuilds nico from columns; SetNico keeps payload and columns in step.
 			nodeForUpdate.SetNico(nico)
 		}
 		if _, err := tx.UpdateNode(ctx, &nodeForUpdate); err != nil {

@@ -38,9 +38,6 @@ func TestDeleteCAPIClusterResources_LeavesSharedNamespaceIntact(t *testing.T) {
 	cluster := db.Cluster{
 		ID:           uuid.New(),
 		Name:         "alpha",
-		OrgID:        "org-1",
-		SiteID:       siteID,
-		VpcID:        vpcID,
 		ProviderType: db.ProviderTypeNico,
 		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}
@@ -80,9 +77,6 @@ func TestDeleteCAPIClusterResources_WaitsForRemainingMachines(t *testing.T) {
 	cluster := db.Cluster{
 		ID:           uuid.New(),
 		Name:         "alpha",
-		OrgID:        "org-1",
-		SiteID:       siteID,
-		VpcID:        vpcID,
 		ProviderType: db.ProviderTypeNico,
 		Nico:         &db.NicoClusterProvider{OrgID: "org-1", SiteID: siteID, VpcID: vpcID},
 	}

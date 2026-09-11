@@ -33,24 +33,29 @@ func TestGetNodePoolConfigHistory(t *testing.T) {
 	t3 := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
 
 	baseNodeSet := db.NodeSet{
-		NodePoolID:             nodePoolID,
-		OSProfile:              "nke-1.34.2-251201-arm64-ytl",
-		ConfigProfile:          "nvcf-cp-v3",
-		KubernetesVersion:      "1.34.2",
-		SystemReservedMemory:   "16Gi",
-		KubeReservedMemory:     "2Gi",
-		DiskSelectionStrategy:  db.DiskSelectionStrategySmallest,
-		TeleportEnabled:        false,
-		SubnetIDs:              []uuid.UUID{},
-		VpcPrefixIDs:           []uuid.UUID{},
-		CapiPreKubeadmCommands: []string{},
-		CapiBootstrapFiles:     []db.CloudInitFile{},
+		NodePoolID:           nodePoolID,
+		KubernetesVersion:    "1.34.2",
+		SystemReservedMemory: "16Gi",
+		KubeReservedMemory:   "2Gi",
+		TeleportEnabled:      false,
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile:             "nke-1.34.2-251201-arm64-ytl",
+			ConfigProfile:         "nvcf-cp-v3",
+			DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+			SubnetIDs:             []uuid.UUID{},
+			VpcPrefixIDs:          []uuid.UUID{},
+		},
 	}
 
 	makeNodeSet := func(id uuid.UUID, createdAt time.Time, mutate func(*db.NodeSet)) db.NodeSet {
 		ns := baseNodeSet
 		ns.ID = id
 		ns.CreatedAt = createdAt
+		// The base fixture's payload pointer is shared across every node set built
+		// here, so each needs its own copy before a mutator touches one.
+		nico, err := ns.NicoProvider()
+		require.NoError(t, err)
+		ns.Nico = &nico
 		if mutate != nil {
 			mutate(&ns)
 		}
@@ -151,7 +156,7 @@ func TestGetNodePoolConfigHistory(t *testing.T) {
 				)
 				ns1 := makeNodeSet(nodeSetID1, t1, nil)
 				ns2 := makeNodeSet(nodeSetID2, t2, func(ns *db.NodeSet) {
-					ns.OSProfile = "nke-260414-24.04-arm64-fde"
+					ns.Nico.OSProfile = "nke-260414-24.04-arm64-fde"
 				})
 				m.On("ListNodeSets", mock.Anything, db.NodeSetFilters{NodePoolID: &nodePoolID}).Return([]db.NodeSet{ns1, ns2}, nil)
 			},
@@ -210,9 +215,9 @@ func TestGetNodePoolConfigHistory(t *testing.T) {
 					db.NodePool{ID: nodePoolID, CurrentNodeSetID: &nodeSetID3}, nil,
 				)
 				// Return in reverse order to verify sorting
-				ns3 := makeNodeSet(nodeSetID3, t3, func(ns *db.NodeSet) { ns.OSProfile = "nke-v3" })
+				ns3 := makeNodeSet(nodeSetID3, t3, func(ns *db.NodeSet) { ns.Nico.OSProfile = "nke-v3" })
 				ns1 := makeNodeSet(nodeSetID1, t1, nil)
-				ns2 := makeNodeSet(nodeSetID2, t2, func(ns *db.NodeSet) { ns.OSProfile = "nke-v2" })
+				ns2 := makeNodeSet(nodeSetID2, t2, func(ns *db.NodeSet) { ns.Nico.OSProfile = "nke-v2" })
 				m.On("ListNodeSets", mock.Anything, db.NodeSetFilters{NodePoolID: &nodePoolID}).Return([]db.NodeSet{ns3, ns1, ns2}, nil)
 			},
 			wantStatusCode: http.StatusOK,

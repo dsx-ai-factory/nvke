@@ -5,7 +5,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,9 +15,6 @@ import (
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
-	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/capi"
@@ -120,15 +116,6 @@ func (s *clusterService) applyClusterDefaults(req *api.CreateClusterRequest, clu
 		cluster.TeleportEnabled = s.teleportCfg.DefaultClusterEnabled
 	}
 
-	if cluster.SiteID == uuid.Nil || !capi.IsEmptyManifest(cluster.CapiInfraCluster) {
-		return nil
-	}
-
-	manifest, err := forgeCAPINicoClusterManifest(cluster.SiteID)
-	if err != nil {
-		return fmt.Errorf("failed to build default Forge CAPI NicoCluster manifest: %w", err)
-	}
-	cluster.CapiInfraCluster = manifest
 	return nil
 }
 
@@ -308,20 +295,6 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 	}
 
 	return network, nil
-}
-
-func forgeCAPINicoClusterManifest(siteID uuid.UUID) ([]byte, error) {
-	nicoCluster := nicov1.NicoCluster{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: nicov1.GroupVersion.String(),
-			Kind:       "NicoCluster",
-		},
-		Spec: nicov1.NicoClusterSpec{
-			SiteID: siteID.String(),
-		},
-	}
-
-	return json.Marshal(nicoCluster)
 }
 
 func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
@@ -913,7 +886,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		spec.SetNico(nico)
 
 		if req.Nico.SubnetIDs != nil || req.Nico.VpcPrefixIDs != nil {
-			if err := validateControlPlaneNicoNetworking(spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
+			if err := validateControlPlaneNicoNetworking(nico.SubnetIDs, nico.VpcPrefixIDs); err != nil {
 				return err
 			}
 		}

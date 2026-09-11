@@ -6,11 +6,9 @@ package nodescheduling
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 
-	"github.com/google/uuid"
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -20,16 +18,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/temporal/workflows"
 )
-
-var ErrForgeResourcesTemporarilyUnavailable = errors.New("forge resources temporarily unavailable")
-
-// ForgePlacementSpec describes the Forge networking placement to check before
-// starting a node provisioning workflow.
-type ForgePlacementSpec struct {
-	InstanceTypeID uuid.UUID
-	SubnetIDs      []uuid.UUID
-	VpcPrefixIDs   []uuid.UUID
-}
 
 // Service owns shared node scheduling side effects.
 type Service struct {

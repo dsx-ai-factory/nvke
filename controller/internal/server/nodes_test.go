@@ -934,8 +934,10 @@ func TestNodeService_ListNodes_ControlPlaneRollout(t *testing.T) {
 	inSyncNodeID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000002")
 	poolNodeID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000003")
 
-	desiredSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
-	driftedSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v1", KubernetesVersion: "1.33.6"}
+	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+	desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	driftedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.33.6"}
+	driftedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v1", ConfigProfile: "cfg-v1"})
 
 	now := time.Now()
 	dbNodes := []db.Node{
@@ -1032,8 +1034,10 @@ func TestNodeService_GetNode_ControlPlaneRollout(t *testing.T) {
 	desiredCfgID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	driftedCfgID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
 
-	desiredSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
-	driftedSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v1", KubernetesVersion: "1.34.2"}
+	desiredSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+	desiredSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v2"})
+	driftedSpec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.34.2"}
+	driftedSpec.SetNico(db.NicoControlPlaneProvider{OSProfile: "os-v2", ConfigProfile: "cfg-v1"})
 
 	now := time.Now()
 	dbNode := db.Node{

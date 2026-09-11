@@ -107,10 +107,12 @@ func TestApplyNicoMachineInstanceLabels_MergesOntoTemplateSpec(t *testing.T) {
 		},
 		nodePool: db.NodePool{ID: nodePoolID},
 		cluster: db.Cluster{
-			ID:     clusterID,
-			OrgID:  "org-1",
-			SiteID: siteID,
-			VpcID:  vpcID,
+			ID: clusterID,
+			Nico: &db.NicoClusterProvider{
+				OrgID:  "org-1",
+				SiteID: siteID,
+				VpcID:  vpcID,
+			},
 		},
 	}, infraMachine)
 	require.NoError(t, err)
@@ -216,11 +218,13 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		" does not have enough IP addresses: 1 of 2 IP addresses remain available, " +
 		"but the 1 interface(s) in this request require 2 IP addresses"
 	node := db.Node{
-		ID:             nodeID,
-		ClusterID:      clusterID,
-		ControlPlane:   true,
-		Name:           "worker-0",
-		InstanceTypeID: nodeInstanceTypeID,
+		ID:           nodeID,
+		ClusterID:    clusterID,
+		ControlPlane: true,
+		Name:         "worker-0",
+		Nico: &db.NicoNodeProvider{
+			InstanceTypeID: nodeInstanceTypeID,
+		},
 	}
 	cluster := db.Cluster{
 		ID:   clusterID,
@@ -299,6 +303,9 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 			ClusterID:    clusterID,
 			ControlPlane: true,
 			Name:         "worker-0",
+			// A payload with no type in it: every stored Nico node has one, and
+			// the type is only settled by the infra provider.
+			Nico: &db.NicoNodeProvider{},
 		}
 		k8sClient := newCAPIMachineReadyClient(t,
 			testCAPIMachineWithNicoInfraRef(clusterv1.MachineAddresses{{
@@ -325,7 +332,7 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
 			return nodeForUpdate.ID == typelessNode.ID &&
 				nodeForUpdate.IP == "10.0.0.10" &&
-				nodeForUpdate.InstanceTypeID == instanceTypeID
+				nodeForUpdate.NicoInstanceTypeID() == instanceTypeID
 		})).Return(typelessNode, nil)
 
 		a := &Activities{db: mockDB, k8sClient: k8sClient}
@@ -454,11 +461,13 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
 		})).Return(node, nil).Once()
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			// The instance-type stamp legitimately populates the nico payload, so
+			// assert that no Forge identity was invented rather than no payload.
+			forgeInstanceID, forgeMachineID := forgeIdentityFromNode(*nodeForUpdate)
 			return nodeForUpdate.ID == node.ID &&
 				nodeForUpdate.IP == "10.0.0.10" &&
-				nodeForUpdate.ForgeInstanceID == "" &&
-				nodeForUpdate.ForgeMachineID == "" &&
-				nodeForUpdate.Nico == nil
+				forgeInstanceID == "" &&
+				forgeMachineID == ""
 		})).Return(node, nil)
 
 		a := &Activities{db: mockDB, k8sClient: k8sClient}
@@ -486,11 +495,13 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 				nodeForUpdate.Conditions.Provisioning.Status == db.ConditionStatusFalse
 		})).Return(node, nil).Once()
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+			// The instance-type stamp legitimately populates the nico payload, so
+			// assert that no Forge identity was invented rather than no payload.
+			forgeInstanceID, forgeMachineID := forgeIdentityFromNode(*nodeForUpdate)
 			return nodeForUpdate.ID == node.ID &&
 				nodeForUpdate.IP == "10.0.0.10" &&
-				nodeForUpdate.ForgeInstanceID == "" &&
-				nodeForUpdate.ForgeMachineID == "" &&
-				nodeForUpdate.Nico == nil
+				forgeInstanceID == "" &&
+				forgeMachineID == ""
 		})).Return(node, nil)
 
 		a := &Activities{db: mockDB, k8sClient: k8sClient}

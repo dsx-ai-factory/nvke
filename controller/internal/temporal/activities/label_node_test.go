@@ -31,6 +31,7 @@ func TestLabelNodePatchesTenantNodeDirectly(t *testing.T) {
 		ControlPlane: true,
 	}
 	cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()})
 
 	database := &testutil.MockDB{}
 	database.On("GetNode", mock.Anything, nodeID).Return(node, nil)
@@ -90,6 +91,7 @@ func TestLabelNodeRejectsInvalidLabelBeforeTenantAccess(t *testing.T) {
 		ControlPlane: true,
 	}
 	cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()})
 
 	database := &testutil.MockDB{}
 	database.On("GetNode", mock.Anything, nodeID).Return(node, nil)

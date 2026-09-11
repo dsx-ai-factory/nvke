@@ -73,15 +73,16 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 	if dbNodeSet == nil {
 		return api.NodeSet{}, nil
 	}
-	_, err := objectFromRawManifest(dbNodeSet.CapiInfraMachineTemplate)
-	if err != nil {
-		return api.NodeSet{}, fmt.Errorf(
-			"objectFromRawManifest failed for capiInfraMachineTemplate on node set %s (nodePoolID=%s, preview=%q): %w",
-			dbNodeSet.ID,
-			dbNodeSet.NodePoolID,
-			truncateManifestForLog(dbNodeSet.CapiInfraMachineTemplate, 200),
-			err,
-		)
+	if dbNodeSet.Capi != nil {
+		if _, err := objectFromRawManifest(dbNodeSet.Capi.InfraMachineTemplate); err != nil {
+			return api.NodeSet{}, fmt.Errorf(
+				"objectFromRawManifest failed for infra.machineTemplate on node set %s (nodePoolID=%s, preview=%q): %w",
+				dbNodeSet.ID,
+				dbNodeSet.NodePoolID,
+				truncateManifestForLog(dbNodeSet.Capi.InfraMachineTemplate, 200),
+				err,
+			)
+		}
 	}
 	var kubeReservedMemory *string
 	if dbNodeSet.KubeReservedMemory != "" {

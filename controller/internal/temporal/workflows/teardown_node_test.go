@@ -752,16 +752,30 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 	if opts.clusterDeleting {
 		clusterConditions.Deleting = db.NewCondition(true, "Cluster deletion in progress")
 	}
-	_, err := database.CreateCluster(ctx, &db.Cluster{
+	cluster := db.Cluster{
 		ID:                clusterID,
 		Name:              "test-cluster",
-		OrgID:             "test-org",
-		SiteID:            siteID,
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.30.0",
 		Conditions:        clusterConditions,
+	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "test-org",
+		SiteID: siteID,
+		VpcID:  uuid.New(),
 	})
+	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
+
+	// The pools and node sets below all carry the same Forge config; it lives in
+	// the nested nico payload, which is where the provisioning context reads the
+	// config profile that decides whether hooks run.
+	nicoProfiles := db.NicoNodePoolProvider{
+		OSProfile:      "test",
+		ConfigProfile:  configProfileName,
+		SubnetIDs:      []uuid.UUID{},
+		VpcPrefixIDs:   []uuid.UUID{},
+		SSHKeyGroupIDs: []uuid.UUID{},
+	}
 
 	testNodePoolID := nodePoolID
 	testNodeSetID := nodeSetID
@@ -771,62 +785,48 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 
 		testNodePoolID = uuid.New()
 		testNodeSetID = uuid.New()
-		_, err = database.CreateNodePool(ctx, &db.NodePool{
+		workerPool := db.NodePool{
 			ID:             testNodePoolID,
 			ClusterID:      clusterID,
 			Name:           "worker-pool",
 			NodeNamePrefix: "worker",
 			ControlPlane:   false,
-			OSProfile:      "test",
-			ConfigProfile:  configProfileName,
-			SubnetIDs:      []uuid.UUID{},
-			VpcPrefixIDs:   []uuid.UUID{},
-			SSHKeyGroupIDs: []uuid.UUID{},
 			NodeLabels:     []string{},
-		})
+		}
+		workerPool.SetNico(nicoProfiles)
+		_, err = database.CreateNodePool(ctx, &workerPool)
 		require.NoError(t, err)
 
-		_, err = database.CreateNodeSet(ctx, &db.NodeSet{
-			ID:                     testNodeSetID,
-			NodePoolID:             testNodePoolID,
-			OSProfile:              "test",
-			ConfigProfile:          configProfileName,
-			CapiBootstrapFiles:     []db.CloudInitFile{},
-			CapiPreKubeadmCommands: []string{},
-			SubnetIDs:              []uuid.UUID{},
-			VpcPrefixIDs:           []uuid.UUID{},
-		})
+		workerNodeSet := db.NodeSet{
+			ID:         testNodeSetID,
+			NodePoolID: testNodePoolID,
+		}
+		workerNodeSet.SetNico(nicoProfiles)
+		_, err = database.CreateNodeSet(ctx, &workerNodeSet)
 		require.NoError(t, err)
 
 		nodePoolID = cpNodePoolID
 		nodeSetID = cpNodeSetID
 	}
 
-	_, err = database.CreateNodePool(ctx, &db.NodePool{
+	cpPool := db.NodePool{
 		ID:             nodePoolID,
 		ClusterID:      clusterID,
 		Name:           "cp-pool",
 		NodeNamePrefix: "cp",
 		ControlPlane:   true,
-		OSProfile:      "test",
-		ConfigProfile:  configProfileName,
-		SubnetIDs:      []uuid.UUID{},
-		VpcPrefixIDs:   []uuid.UUID{},
-		SSHKeyGroupIDs: []uuid.UUID{},
 		NodeLabels:     []string{},
-	})
+	}
+	cpPool.SetNico(nicoProfiles)
+	_, err = database.CreateNodePool(ctx, &cpPool)
 	require.NoError(t, err)
 
-	_, err = database.CreateNodeSet(ctx, &db.NodeSet{
-		ID:                     nodeSetID,
-		NodePoolID:             nodePoolID,
-		OSProfile:              "test",
-		ConfigProfile:          configProfileName,
-		CapiBootstrapFiles:     []db.CloudInitFile{},
-		CapiPreKubeadmCommands: []string{},
-		SubnetIDs:              []uuid.UUID{},
-		VpcPrefixIDs:           []uuid.UUID{},
-	})
+	cpNodeSet := db.NodeSet{
+		ID:         nodeSetID,
+		NodePoolID: nodePoolID,
+	}
+	cpNodeSet.SetNico(nicoProfiles)
+	_, err = database.CreateNodeSet(ctx, &cpNodeSet)
 	require.NoError(t, err)
 
 	nodeID := uuid.New()
@@ -834,16 +834,17 @@ func setupTestDB(t *testing.T, opts seedOpts) (db.DB, seedResult) {
 	if opts.onlyJoinedCPUnderTeardown {
 		nodeConditions.Joined = db.NewCondition(true, "Joined")
 	}
-	_, err = database.CreateNode(ctx, &db.Node{
-		ID:             nodeID,
-		ClusterID:      clusterID,
-		NodePoolID:     testNodePoolID,
-		NodeSetID:      testNodeSetID,
-		Name:           "test-node",
-		IP:             "10.0.0.1",
-		ForgeMachineID: opts.forgeMachineID,
-		Conditions:     nodeConditions,
-	})
+	node := db.Node{
+		ID:         nodeID,
+		ClusterID:  clusterID,
+		NodePoolID: testNodePoolID,
+		NodeSetID:  testNodeSetID,
+		Name:       "test-node",
+		IP:         "10.0.0.1",
+		Conditions: nodeConditions,
+	}
+	node.SetNico(db.NicoNodeProvider{ForgeMachineID: opts.forgeMachineID})
+	_, err = database.CreateNode(ctx, &node)
 	require.NoError(t, err)
 
 	// A separate surviving joined CP keeps the tenant API reachable and serves

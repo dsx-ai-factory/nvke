@@ -79,45 +79,47 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 	siteID := uuid.New()
 	cluster := db.Cluster{
 		ID:                uuid.New(),
-		SiteID:            siteID,
 		Name:              "test-cluster",
-		OrgID:             "test-org",
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.31.0",
 		TeleportEnabled:   true,
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "test-org",
+		SiteID: siteID,
+		VpcID:  uuid.New(),
+	})
 	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
 	nodePool := db.NodePool{
-		ID:                     uuid.New(),
-		ClusterID:              cluster.ID,
-		Name:                   "test-pool",
-		NodeNamePrefix:         "test",
-		SubnetIDs:              []uuid.UUID{uuid.New()},
-		VpcPrefixIDs:           []uuid.UUID{uuid.New()},
-		InstanceTypeID:         uuid.New(),
-		SSHKeyGroupIDs:         []uuid.UUID{},
-		OSProfile:              "test-os",
-		ConfigProfile:          "test-config",
-		CapiBootstrapFiles:     []db.CloudInitFile{},
-		CapiPreKubeadmCommands: []string{},
-		NodeLabels:             []string{},
-		SystemReservedMemory:   "16Gi",
+		ID:                   uuid.New(),
+		ClusterID:            cluster.ID,
+		Name:                 "test-pool",
+		NodeNamePrefix:       "test",
+		NodeLabels:           []string{},
+		SystemReservedMemory: "16Gi",
 	}
+	nodePool.SetNico(db.NicoNodePoolProvider{
+		SubnetIDs:      []uuid.UUID{uuid.New()},
+		VpcPrefixIDs:   []uuid.UUID{uuid.New()},
+		InstanceTypeID: uuid.New(),
+		SSHKeyGroupIDs: []uuid.UUID{},
+		OSProfile:      "test-os",
+		ConfigProfile:  "test-config",
+	})
 	_, err = database.CreateNodePool(ctx, &nodePool)
 	require.NoError(t, err)
 
 	nodeSet := db.NodeSet{
-		ID:                     uuid.New(),
-		NodePoolID:             nodePool.ID,
-		OSProfile:              "test-os",
-		ConfigProfile:          "test-config",
-		CapiBootstrapFiles:     []db.CloudInitFile{},
-		CapiPreKubeadmCommands: []string{},
-		SystemReservedMemory:   "16Gi",
-		TeleportEnabled:        true,
+		ID:                   uuid.New(),
+		NodePoolID:           nodePool.ID,
+		SystemReservedMemory: "16Gi",
+		TeleportEnabled:      true,
 	}
+	nodeSet.SetNico(db.NicoNodePoolProvider{
+		OSProfile:     "test-os",
+		ConfigProfile: "test-config",
+	})
 	_, err = database.CreateNodeSet(ctx, &nodeSet)
 	require.NoError(t, err)
 
@@ -138,14 +140,16 @@ func setupTestEnv(ctx context.Context, t *testing.T) *testEnv {
 func (te *testEnv) createNode(ctx context.Context, t *testing.T, name, forgeID, ekHash string) db.Node {
 	t.Helper()
 	node := db.Node{
-		ID:              uuid.New(),
-		ClusterID:       te.cluster.ID,
-		NodePoolID:      te.nodePool.ID,
-		NodeSetID:       te.nodeSet.ID,
-		Name:            name,
-		ForgeInstanceID: forgeID,
-		ForgeMachineID:  "machine-" + name,
-		IP:              "10.0.0.1",
+		ID:         uuid.New(),
+		ClusterID:  te.cluster.ID,
+		NodePoolID: te.nodePool.ID,
+		NodeSetID:  te.nodeSet.ID,
+		Name:       name,
+		IP:         "10.0.0.1",
+		Nico: &db.NicoNodeProvider{
+			ForgeInstanceID: forgeID,
+			ForgeMachineID:  "machine-" + name,
+		},
 	}
 	created, err := te.database.CreateNode(ctx, &node)
 	require.NoError(t, err)
@@ -348,16 +352,18 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:              uuid.New(),
-			ClusterID:       te.cluster.ID,
-			NodePoolID:      te.nodePool.ID,
-			NodeSetID:       te.nodeSet.ID,
-			Name:            "registered-node",
-			ForgeInstanceID: "forge-1",
-			ForgeMachineID:  "machine-1",
-			IP:              "10.0.0.1",
+			ID:         uuid.New(),
+			ClusterID:  te.cluster.ID,
+			NodePoolID: te.nodePool.ID,
+			NodeSetID:  te.nodeSet.ID,
+			Name:       "registered-node",
+			IP:         "10.0.0.1",
 			Conditions: db.NodeConditions{
 				TeleportRegistered: db.Condition{Status: db.ConditionStatusTrue},
+			},
+			Nico: &db.NicoNodeProvider{
+				ForgeInstanceID: "forge-1",
+				ForgeMachineID:  "machine-1",
 			},
 		}
 		_, err := te.database.CreateNode(ctx, &node)
@@ -373,14 +379,16 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:              uuid.New(),
-			ClusterID:       te.cluster.ID,
-			NodePoolID:      te.nodePool.ID,
-			NodeSetID:       te.nodeSet.ID,
-			Name:            "capi-node",
-			ForgeInstanceID: "",
-			ForgeMachineID:  "machine-1",
-			IP:              "10.0.0.1",
+			ID:         uuid.New(),
+			ClusterID:  te.cluster.ID,
+			NodePoolID: te.nodePool.ID,
+			NodeSetID:  te.nodeSet.ID,
+			Name:       "capi-node",
+			IP:         "10.0.0.1",
+			Nico: &db.NicoNodeProvider{
+				ForgeInstanceID: "",
+				ForgeMachineID:  "machine-1",
+			},
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
@@ -395,13 +403,15 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:              uuid.New(),
-			ClusterID:       te.cluster.ID,
-			ControlPlane:    true,
-			Name:            "cp-no-pool",
-			ForgeInstanceID: "forge-cp",
-			ForgeMachineID:  "machine-cp",
-			IP:              "10.0.0.9",
+			ID:           uuid.New(),
+			ClusterID:    te.cluster.ID,
+			ControlPlane: true,
+			Name:         "cp-no-pool",
+			IP:           "10.0.0.9",
+			Nico: &db.NicoNodeProvider{
+				ForgeInstanceID: "forge-cp",
+				ForgeMachineID:  "machine-cp",
+			},
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
@@ -416,14 +426,16 @@ func TestListTeleportEligibleNodes(t *testing.T) {
 		te := setupTestEnv(ctx, t)
 
 		node := db.Node{
-			ID:              uuid.New(),
-			ClusterID:       te.cluster.ID,
-			NodePoolID:      te.nodePool.ID,
-			NodeSetID:       te.nodeSet.ID,
-			Name:            "no-hash-node",
-			ForgeInstanceID: "forge-1",
-			ForgeMachineID:  "machine-1",
-			IP:              "10.0.0.1",
+			ID:         uuid.New(),
+			ClusterID:  te.cluster.ID,
+			NodePoolID: te.nodePool.ID,
+			NodeSetID:  te.nodeSet.ID,
+			Name:       "no-hash-node",
+			IP:         "10.0.0.1",
+			Nico: &db.NicoNodeProvider{
+				ForgeInstanceID: "forge-1",
+				ForgeMachineID:  "machine-1",
+			},
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
@@ -704,13 +716,15 @@ func TestCreateTokenForNode(t *testing.T) {
 		controller := te.newController(mockTeleport)
 
 		node := db.Node{
-			ID:              uuid.New(),
-			ClusterID:       te.cluster.ID,
-			ControlPlane:    true,
-			Name:            "cp-no-pool",
-			ForgeInstanceID: "forge-cp",
-			ForgeMachineID:  "machine-cp",
-			IP:              "10.0.0.9",
+			ID:           uuid.New(),
+			ClusterID:    te.cluster.ID,
+			ControlPlane: true,
+			Name:         "cp-no-pool",
+			IP:           "10.0.0.9",
+			Nico: &db.NicoNodeProvider{
+				ForgeInstanceID: "forge-cp",
+				ForgeMachineID:  "machine-cp",
+			},
 		}
 		_, err := te.database.CreateNode(ctx, &node)
 		require.NoError(t, err)
@@ -732,14 +746,16 @@ func TestCreateTokenForNode(t *testing.T) {
 		controller := te.newController(mockTeleport)
 
 		node := db.Node{
-			ID:              uuid.New(),
-			ClusterID:       te.cluster.ID,
-			NodePoolID:      te.nodePool.ID,
-			NodeSetID:       uuid.New(), // Non-existent node set
-			Name:            "test-node",
-			ForgeInstanceID: "forge-123",
-			ForgeMachineID:  "machine-1",
-			IP:              "10.0.0.1",
+			ID:         uuid.New(),
+			ClusterID:  te.cluster.ID,
+			NodePoolID: te.nodePool.ID,
+			NodeSetID:  uuid.New(), // Non-existent node set
+			Name:       "test-node",
+			IP:         "10.0.0.1",
+			Nico: &db.NicoNodeProvider{
+				ForgeInstanceID: "forge-123",
+				ForgeMachineID:  "machine-1",
+			},
 		}
 
 		err := controller.createTokenForNode(ctx, node, validEKPubHash("abcd"))
@@ -760,7 +776,6 @@ func TestCreateTokenForNode(t *testing.T) {
 			NodeNamePrefix:         "test",
 			NodeLabels:             []string{},
 			SystemReservedMemory:   "16Gi",
-			CapiBootstrapFiles:     []db.CloudInitFile{},
 			CapiPreKubeadmCommands: []string{},
 		}
 		orphanPool.SetNico(db.NicoNodePoolProvider{
@@ -775,14 +790,16 @@ func TestCreateTokenForNode(t *testing.T) {
 		require.NoError(t, err)
 
 		node := db.Node{
-			ID:              uuid.New(),
-			ClusterID:       orphanPool.ClusterID,
-			NodePoolID:      orphanPool.ID,
-			NodeSetID:       te.nodeSet.ID,
-			Name:            "test-node",
-			ForgeInstanceID: "forge-123",
-			ForgeMachineID:  "machine-1",
-			IP:              "10.0.0.1",
+			ID:         uuid.New(),
+			ClusterID:  orphanPool.ClusterID,
+			NodePoolID: orphanPool.ID,
+			NodeSetID:  te.nodeSet.ID,
+			Name:       "test-node",
+			IP:         "10.0.0.1",
+			Nico: &db.NicoNodeProvider{
+				ForgeInstanceID: "forge-123",
+				ForgeMachineID:  "machine-1",
+			},
 		}
 
 		err = controller.createTokenForNode(ctx, node, validEKPubHash("abcd"))
@@ -835,14 +852,16 @@ func TestCreateTokenForNode_InvalidEKPubHash(t *testing.T) {
 	controller := te.newController(mockTeleport)
 
 	node := db.Node{
-		ID:              uuid.New(),
-		ClusterID:       te.cluster.ID,
-		NodePoolID:      te.nodePool.ID,
-		NodeSetID:       te.nodeSet.ID,
-		Name:            "test-node",
-		ForgeInstanceID: "forge-123",
-		ForgeMachineID:  "machine-1",
-		IP:              "10.0.0.1",
+		ID:         uuid.New(),
+		ClusterID:  te.cluster.ID,
+		NodePoolID: te.nodePool.ID,
+		NodeSetID:  te.nodeSet.ID,
+		Name:       "test-node",
+		IP:         "10.0.0.1",
+		Nico: &db.NicoNodeProvider{
+			ForgeInstanceID: "forge-123",
+			ForgeMachineID:  "machine-1",
+		},
 	}
 
 	// UpsertToken should NOT be called because validation fails first
@@ -1164,26 +1183,28 @@ func TestTeleportDependencyKeyMappers(t *testing.T) {
 	node1 := te.createNode(ctx, t, "node-1", "forge-1", validEKPubHash("0001"))
 	node2 := te.createNode(ctx, t, "node-2", "forge-2", validEKPubHash("0002"))
 	otherNodeSet := db.NodeSet{
-		ID:                     uuid.New(),
-		NodePoolID:             te.nodePool.ID,
-		OSProfile:              "test-os",
-		ConfigProfile:          "test-config",
-		CapiBootstrapFiles:     []db.CloudInitFile{},
-		CapiPreKubeadmCommands: []string{},
-		SystemReservedMemory:   "16Gi",
-		TeleportEnabled:        true,
+		ID:                   uuid.New(),
+		NodePoolID:           te.nodePool.ID,
+		SystemReservedMemory: "16Gi",
+		TeleportEnabled:      true,
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile:     "test-os",
+			ConfigProfile: "test-config",
+		},
 	}
 	_, err := te.database.CreateNodeSet(ctx, &otherNodeSet)
 	require.NoError(t, err)
 	otherNode := db.Node{
-		ID:              uuid.New(),
-		ClusterID:       te.cluster.ID,
-		NodePoolID:      te.nodePool.ID,
-		NodeSetID:       otherNodeSet.ID,
-		Name:            "other-node",
-		ForgeInstanceID: "forge-3",
-		ForgeMachineID:  "machine-other-node",
-		IP:              "10.0.0.3",
+		ID:         uuid.New(),
+		ClusterID:  te.cluster.ID,
+		NodePoolID: te.nodePool.ID,
+		NodeSetID:  otherNodeSet.ID,
+		Name:       "other-node",
+		IP:         "10.0.0.3",
+		Nico: &db.NicoNodeProvider{
+			ForgeInstanceID: "forge-3",
+			ForgeMachineID:  "machine-other-node",
+		},
 	}
 	otherNode, err = te.database.CreateNode(ctx, &otherNode)
 	require.NoError(t, err)

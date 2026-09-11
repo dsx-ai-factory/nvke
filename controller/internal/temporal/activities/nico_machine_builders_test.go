@@ -48,7 +48,7 @@ func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T
 	tests := map[string]parameters{
 		"control plane uses resolved node context for config": {
 			createCtx: &capiMachineCreateContext{
-				node: db.Node{InstanceTypeID: controlPlaneInstanceTypeID, ControlPlane: true},
+				node: db.Node{ControlPlane: true, Nico: &db.NicoNodeProvider{InstanceTypeID: controlPlaneInstanceTypeID}},
 				nodeSet: func() db.NodeSet {
 					nodeSet := db.NodeSet{
 						KubernetesVersion: "1.32.1",
@@ -65,11 +65,13 @@ func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T
 					ControlPlaneConfig: db.ControlPlaneConfig{
 						ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
 							// Deliberately different from the resolved node context to ensure no fallback drift.
-							OSProfile:         "stale-cluster-control-plane-os",
 							KubernetesVersion: "1.30.0",
 							TeleportEnabled:   false,
-							SSHKeyGroupIDs:    []uuid.UUID{uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")},
-							SubnetIDs:         []uuid.UUID{uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")},
+							Nico: &db.NicoControlPlaneProvider{
+								OSProfile:      "stale-cluster-control-plane-os",
+								SSHKeyGroupIDs: []uuid.UUID{uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")},
+								SubnetIDs:      []uuid.UUID{uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")},
+							},
 						},
 					},
 				},
@@ -152,19 +154,23 @@ func TestNicoMachineBuilders_ControlPlaneConfigPinning(t *testing.T) {
 
 	createCtx := &capiMachineCreateContext{
 		node: db.Node{
-			InstanceTypeID: controlPlaneInstanceTypeID,
-			ControlPlane:   true,
+			ControlPlane: true,
+			Nico: &db.NicoNodeProvider{
+				InstanceTypeID: controlPlaneInstanceTypeID,
+			},
 		},
 		nodeSet:  nodeSet,
 		nodePool: nodePool,
 		cluster: db.Cluster{
 			ControlPlaneConfig: db.ControlPlaneConfig{
 				ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-					OSProfile:         "cp-os-b",
 					KubernetesVersion: "1.40.1",
 					TeleportEnabled:   false,
-					SSHKeyGroupIDs:    []uuid.UUID{uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000002")},
-					SubnetIDs:         []uuid.UUID{uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000001")},
+					Nico: &db.NicoControlPlaneProvider{
+						OSProfile:      "cp-os-b",
+						SSHKeyGroupIDs: []uuid.UUID{uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000002")},
+						SubnetIDs:      []uuid.UUID{uuid.MustParse("bbbbbbbb-0000-0000-0000-000000000001")},
+					},
 				},
 			},
 		},
@@ -211,7 +217,7 @@ func TestNicoMachineBuilders_ValidateTemplateLessForgeCAPINodeConfig(t *testing.
 	tests := map[string]parameters{
 		"fails fast when resolved context is missing": {
 			createCtx: &capiMachineCreateContext{
-				node: db.Node{InstanceTypeID: uuid.New()},
+				node: db.Node{Nico: &db.NicoNodeProvider{InstanceTypeID: uuid.New()}},
 				nodeSet: func() db.NodeSet {
 					nodeSet := db.NodeSet{}
 					nodeSet.SetNico(db.NicoNodePoolProvider{})

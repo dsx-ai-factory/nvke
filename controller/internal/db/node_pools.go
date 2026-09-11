@@ -198,6 +198,7 @@ func (n *NodePool) CAPIProvider() (CAPINodePoolProvider, error) {
 
 func (n *NodePool) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
+	n.Capi = nil
 	n.SubnetIDs = append([]uuid.UUID{}, provider.SubnetIDs...)
 	n.VpcPrefixIDs = append([]uuid.UUID{}, provider.VpcPrefixIDs...)
 	n.InstanceTypeID = provider.InstanceTypeID
@@ -211,6 +212,7 @@ func (n *NodePool) SetNico(provider NicoNodePoolProvider) {
 
 func (n *NodePool) SetCapi(provider CAPINodePoolProvider) {
 	n.Capi = cloneCAPINodePoolProvider(provider)
+	n.Nico = nil
 	n.CapiInfraMachineTemplate = cloneRawMessage(provider.InfraMachineTemplate)
 	n.CapiBootstrapFiles = append([]CloudInitFile{}, provider.BootstrapFiles...)
 	n.CapiPreKubeadmCommands = append([]string{}, provider.PreKubeadmCommands...)
@@ -258,36 +260,6 @@ func cloneUUIDPtr(id *uuid.UUID) *uuid.UUID {
 	return &clone
 }
 
-func (n *NodePool) SyncProviderFields(providerType ProviderType) {
-	n.Nico = nil
-	n.Capi = nil
-
-	switch providerType {
-	case ProviderTypeCAPI:
-		n.Capi = &CAPINodePoolProvider{
-			InfraMachineTemplate:   cloneRawMessage(n.CapiInfraMachineTemplate),
-			BootstrapFiles:         append([]CloudInitFile(nil), n.CapiBootstrapFiles...),
-			PreKubeadmCommands:     append([]string(nil), n.CapiPreKubeadmCommands...),
-			SpireAttestationMethod: n.CapiSpireAttestationMethod,
-		}
-		if n.Capi.PreKubeadmCommands == nil {
-			n.Capi.PreKubeadmCommands = []string{}
-		}
-	case ProviderTypeNico:
-		n.Nico = &NicoNodePoolProvider{
-			SubnetIDs:                append([]uuid.UUID(nil), n.SubnetIDs...),
-			VpcPrefixIDs:             append([]uuid.UUID(nil), n.VpcPrefixIDs...),
-			InstanceTypeID:           n.InstanceTypeID,
-			InfinibandPartitionID:    cloneUUIDPtr(n.InfinibandPartitionID),
-			NvLinkLogicalPartitionID: cloneUUIDPtr(n.NvLinkLogicalPartitionID),
-			SSHKeyGroupIDs:           append([]uuid.UUID(nil), n.SSHKeyGroupIDs...),
-			OSProfile:                n.OSProfile,
-			ConfigProfile:            n.ConfigProfile,
-			DiskSelectionStrategy:    n.DiskSelectionStrategy,
-		}
-	}
-}
-
 type NodePoolFilters struct {
 	ClusterID    *uuid.UUID
 	ControlPlane *bool
@@ -331,7 +303,7 @@ func (q *queriesImpl) ListNodePools(ctx context.Context, filters NodePoolFilters
 		query = query.Where("control_plane = ?", filters.ControlPlane)
 	}
 	if filters.SiteID != nil {
-		query = query.Where("c.site_id = ?", filters.SiteID)
+		query = query.Where("c.nico->>'site_id' = ?", filters.SiteID.String())
 	}
 	if filters.Name != nil {
 		query = query.Where("node_pool.name = ?", filters.Name)
@@ -402,14 +374,9 @@ func (q *queriesImpl) GetNodePoolForUpdate(ctx context.Context, id uuid.UUID) (N
 }
 
 func (q *queriesImpl) CreateNodePool(ctx context.Context, nodePool *NodePool) (NodePool, error) {
-	providerType, err := q.providerTypeForCluster(ctx, nodePool.ClusterID)
-	if err != nil {
-		return NodePool{}, err
-	}
 	if nodePool.CapiPreKubeadmCommands == nil {
 		nodePool.CapiPreKubeadmCommands = []string{}
 	}
-	nodePool.SyncProviderFields(providerType)
 
 	if nodePool.ControlPlane {
 		if err := q.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
@@ -431,7 +398,7 @@ func (q *queriesImpl) CreateNodePool(ctx context.Context, nodePool *NodePool) (N
 		return *nodePool, nil
 	}
 
-	_, err = q.db.NewInsert().Model(nodePool).Exec(ctx)
+	_, err := q.db.NewInsert().Model(nodePool).Exec(ctx)
 	if isViolationOfConstraint(err, ConstraintNodePoolsClusterIDNameUnique) {
 		return NodePool{}, ErrNodePoolNameNotUniqueInCluster
 	}
@@ -442,11 +409,6 @@ func (q *queriesImpl) CreateNodePool(ctx context.Context, nodePool *NodePool) (N
 }
 
 func (q *queriesImpl) UpdateNodePool(ctx context.Context, nodePool *NodePool) (NodePool, error) {
-	providerType, err := q.providerTypeForCluster(ctx, nodePool.ClusterID)
-	if err != nil {
-		return NodePool{}, err
-	}
-	nodePool.SyncProviderFields(providerType)
 	nodePool.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(nodePool).WherePK().Exec(ctx)
 	if err != nil {

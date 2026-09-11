@@ -128,9 +128,11 @@ func TestController_Reconcile(t *testing.T) {
 		mockTx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(node, nil)
 		mockNodeContextFromPool(mockTx, nodeSetID, nodePool)
 		mockTx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
-			ID:     clusterID,
-			SiteID: siteID,
-			Name:   "test-cluster",
+			ID:   clusterID,
+			Name: "test-cluster",
+			Nico: &db.NicoClusterProvider{
+				SiteID: siteID,
+			},
 		}, nil)
 		mockTx.On("GetNode", mock.Anything, nodeID).Return(node, nil)
 		mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {

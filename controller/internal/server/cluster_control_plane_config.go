@@ -246,7 +246,7 @@ func validateMergedCAPIControlPlaneSpec(spec db.ControlPlaneConfigSpec) error {
 		return newBadRequestErrorf("controlPlaneConfig.infra.machineTemplate is required")
 	}
 	var bootstrapFiles []api.CloudInitFile
-	if files := apiCloudInitFilesFromDB(spec.CapiBootstrapFiles); files != nil {
+	if files := apiCloudInitFilesFromDB(spec.Capi.BootstrapFiles); files != nil {
 		bootstrapFiles = *files
 	}
 	if err := validateCloudInitFiles(bootstrapFiles); err != nil {

@@ -159,14 +159,16 @@ func TestDelete(t *testing.T) {
 
 func newTestNode(id, nodePoolID, nodeSetID uuid.UUID) db.Node {
 	return db.Node{
-		ID:              id,
-		NodePoolID:      nodePoolID,
-		NodeSetID:       nodeSetID,
-		Name:            "test-node-" + id.String()[:8],
-		ForgeInstanceID: "forge-instance-" + id.String()[:8],
-		ForgeMachineID:  "forge-machine-" + id.String()[:8],
-		IP:              "10.0.0.1",
-		Conditions:      db.NodeConditions{},
+		ID:         id,
+		NodePoolID: nodePoolID,
+		NodeSetID:  nodeSetID,
+		Name:       "test-node-" + id.String()[:8],
+		IP:         "10.0.0.1",
+		Conditions: db.NodeConditions{},
+		Nico: &db.NicoNodeProvider{
+			ForgeInstanceID: "forge-instance-" + id.String()[:8],
+			ForgeMachineID:  "forge-machine-" + id.String()[:8],
+		},
 	}
 }
 

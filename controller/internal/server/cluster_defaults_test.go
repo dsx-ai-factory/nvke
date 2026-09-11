@@ -237,11 +237,13 @@ func TestAPIClusterFromDB_CNIVersionDefaultsOldRows(t *testing.T) {
 	got := APIClusterFromDB(&db.Cluster{
 		ID:                uuid.New(),
 		Name:              "test",
-		OrgID:             "org-1",
-		SiteID:            uuid.New(),
-		VpcID:             uuid.New(),
 		CniPlugin:         db.CNICalico,
 		KubernetesVersion: "1.30.0",
+		Nico: &db.NicoClusterProvider{
+			OrgID:  "org-1",
+			SiteID: uuid.New(),
+			VpcID:  uuid.New(),
+		},
 	})
 
 	assert.Equal(t, db.DefaultCalicoCNIVersion, got.CniVersion)
@@ -326,5 +328,5 @@ func TestDbNodePoolFromAPI_TeleportDefault(t *testing.T) {
 }
 
 func dbClusterWithSiteID(siteID uuid.UUID) db.Cluster {
-	return db.Cluster{SiteID: siteID}
+	return db.Cluster{Nico: &db.NicoClusterProvider{SiteID: siteID}}
 }

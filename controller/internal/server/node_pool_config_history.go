@@ -113,16 +113,26 @@ func (s *nodeSetService) configHistoryFromTemporal(ctx context.Context, nodePool
 // PrevNodeSetID is set to the pool's current NodeSet so configDiffFromInput renders the diff.
 // The bool is true only when an audited field actually changed.
 func nodePoolConfigChangeInput(old, updated db.NodePool) (workflows.RecordNodePoolConfigChangeInput, bool) {
+	// A pool carries exactly one payload, so the absent provider reads as the zero
+	// value and its fields below compare equal, contributing nothing to the diff.
+	oldNico, _ := old.NicoProvider()
+	updatedNico, _ := updated.NicoProvider()
+	oldCapi, _ := old.CAPIProvider()
+	updatedCapi, _ := updated.CAPIProvider()
+
+	// The field names here are a Temporal payload contract — historical workflow
+	// inputs are decoded back into this struct by fetchWorkflowInput — so they
+	// keep their flat names even though the values now come from the payloads.
 	input := workflows.RecordNodePoolConfigChangeInput{
 		NodePoolID:    updated.ID,
 		NewNodeSetID:  uuid.New(),
 		PrevNodeSetID: updated.CurrentNodeSetID,
 
-		OldOSProfile: old.OSProfile,
-		NewOSProfile: updated.OSProfile,
+		OldOSProfile: oldNico.OSProfile,
+		NewOSProfile: updatedNico.OSProfile,
 
-		OldConfigProfile: old.ConfigProfile,
-		NewConfigProfile: updated.ConfigProfile,
+		OldConfigProfile: oldNico.ConfigProfile,
+		NewConfigProfile: updatedNico.ConfigProfile,
 
 		OldKubernetesVersion: old.KubernetesVersion,
 		NewKubernetesVersion: updated.KubernetesVersion,
@@ -133,23 +143,23 @@ func nodePoolConfigChangeInput(old, updated db.NodePool) (workflows.RecordNodePo
 		OldKubeReservedMemory: old.KubeReservedMemory,
 		NewKubeReservedMemory: updated.KubeReservedMemory,
 
-		OldDiskSelectionStrategy: string(old.DiskSelectionStrategy),
-		NewDiskSelectionStrategy: string(updated.DiskSelectionStrategy),
+		OldDiskSelectionStrategy: string(oldNico.DiskSelectionStrategy),
+		NewDiskSelectionStrategy: string(updatedNico.DiskSelectionStrategy),
 
-		OldCapiSpireAttestationMethod: string(old.CapiSpireAttestationMethod),
-		NewCapiSpireAttestationMethod: string(updated.CapiSpireAttestationMethod),
+		OldCapiSpireAttestationMethod: string(oldCapi.SpireAttestationMethod),
+		NewCapiSpireAttestationMethod: string(updatedCapi.SpireAttestationMethod),
 
 		OldTeleportEnabled: old.TeleportEnabled,
 		NewTeleportEnabled: updated.TeleportEnabled,
 
-		OldSubnetIDs: old.SubnetIDs,
-		NewSubnetIDs: updated.SubnetIDs,
+		OldSubnetIDs: oldNico.SubnetIDs,
+		NewSubnetIDs: updatedNico.SubnetIDs,
 
-		OldVpcPrefixIDs: old.VpcPrefixIDs,
-		NewVpcPrefixIDs: updated.VpcPrefixIDs,
+		OldVpcPrefixIDs: oldNico.VpcPrefixIDs,
+		NewVpcPrefixIDs: updatedNico.VpcPrefixIDs,
 
-		OldCapiPreKubeadmCommands: old.CapiPreKubeadmCommands,
-		NewCapiPreKubeadmCommands: updated.CapiPreKubeadmCommands,
+		OldCapiPreKubeadmCommands: oldCapi.PreKubeadmCommands,
+		NewCapiPreKubeadmCommands: updatedCapi.PreKubeadmCommands,
 	}
 
 	return input, len(configDiffFromInput(input)) > 0
@@ -274,19 +284,26 @@ func nodeSetConfigDiff(prev, curr *db.NodeSet) []api.NodePoolConfigField {
 		return b
 	}
 
-	addIfChanged("osProfile", prev.OSProfile, curr.OSProfile)
-	addIfChanged("configProfile", prev.ConfigProfile, curr.ConfigProfile)
+	// A node set carries exactly one payload, so the absent provider reads as the
+	// zero value and its fields below compare equal, adding nothing to the diff.
+	prevNico, _ := prev.NicoProvider()
+	currNico, _ := curr.NicoProvider()
+	prevCapi, _ := prev.CAPIProvider()
+	currCapi, _ := curr.CAPIProvider()
+
+	addIfChanged("osProfile", prevNico.OSProfile, currNico.OSProfile)
+	addIfChanged("configProfile", prevNico.ConfigProfile, currNico.ConfigProfile)
 	addIfChanged("kubernetesVersion", prev.KubernetesVersion, curr.KubernetesVersion)
 	addIfChanged("systemReservedMemory", prev.SystemReservedMemory, curr.SystemReservedMemory)
 	addIfChanged("kubeReservedMemory", prev.KubeReservedMemory, curr.KubeReservedMemory)
-	addIfChanged("diskSelectionStrategy", string(prev.DiskSelectionStrategy), string(curr.DiskSelectionStrategy))
-	addIfChanged("capiSpireAttestationMethod", string(prev.CapiSpireAttestationMethod), string(curr.CapiSpireAttestationMethod))
+	addIfChanged("diskSelectionStrategy", string(prevNico.DiskSelectionStrategy), string(currNico.DiskSelectionStrategy))
+	addIfChanged("capiSpireAttestationMethod", string(prevCapi.SpireAttestationMethod), string(currCapi.SpireAttestationMethod))
 	addJSONIfChanged("teleportEnabled", marshalField(prev.TeleportEnabled), marshalField(curr.TeleportEnabled))
-	addJSONIfChanged("subnetIDs", marshalField(prev.SubnetIDs), marshalField(curr.SubnetIDs))
-	addJSONIfChanged("vpcPrefixIDs", marshalField(prev.VpcPrefixIDs), marshalField(curr.VpcPrefixIDs))
-	addJSONIfChanged("capiInfraMachineTemplate", prev.CapiInfraMachineTemplate, curr.CapiInfraMachineTemplate)
-	addJSONIfChanged("capiBootstrapFiles", marshalField(prev.CapiBootstrapFiles), marshalField(curr.CapiBootstrapFiles))
-	addJSONIfChanged("capiPreKubeadmCommands", marshalField(prev.CapiPreKubeadmCommands), marshalField(curr.CapiPreKubeadmCommands))
+	addJSONIfChanged("subnetIDs", marshalField(prevNico.SubnetIDs), marshalField(currNico.SubnetIDs))
+	addJSONIfChanged("vpcPrefixIDs", marshalField(prevNico.VpcPrefixIDs), marshalField(currNico.VpcPrefixIDs))
+	addJSONIfChanged("capiInfraMachineTemplate", prevCapi.InfraMachineTemplate, currCapi.InfraMachineTemplate)
+	addJSONIfChanged("capiBootstrapFiles", marshalField(prevCapi.BootstrapFiles), marshalField(currCapi.BootstrapFiles))
+	addJSONIfChanged("capiPreKubeadmCommands", marshalField(prevCapi.PreKubeadmCommands), marshalField(currCapi.PreKubeadmCommands))
 
 	return fields
 }

@@ -58,8 +58,8 @@ func GetNodeContext(ctx context.Context, queries db.Queries, node db.Node) (db.N
 // control plane settings and the resolved node-level template snapshot.
 func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg db.ControlPlaneConfigSpec) (db.NodeSet, db.NodePool) {
 	template := json.RawMessage(`{}`)
-	if len(snapshotCfg.InfraMachineTemplatePreferences) > 0 {
-		template = append(json.RawMessage(nil), snapshotCfg.InfraMachineTemplatePreferences[0]...)
+	if snapshotCfg.Capi != nil && len(snapshotCfg.Capi.InfraMachineTemplatePreferences) > 0 {
+		template = append(json.RawMessage(nil), snapshotCfg.Capi.InfraMachineTemplatePreferences[0]...)
 	}
 
 	// default to smallest disk for control plane
@@ -104,7 +104,6 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		ClusterID:                   cluster.ID,
 		Name:                        "control-plane-config",
 		NodeNamePrefix:              "cp",
-		InstanceTypeID:              node.InstanceTypeID,
 		ControlPlane:                true,
 		NodeLabels:                  append([]string(nil), snapshotCfg.NodeLabels...),
 		KubernetesVersion:           snapshotCfg.KubernetesVersion,
@@ -115,12 +114,11 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		ProvisioningMonitorDisabled: snapshotCfg.ProvisioningMonitorDisabled,
 	}
 
-	// Populate provider payloads from the snapshot. New snapshot rows carry typed
-	// Nico/Capi providers; SetNico/SetCapi also sync the legacy flat columns so
-	// any code still reading them gets consistent values.
+	// Populate provider payloads from the snapshot, so downstream strict-getter
+	// reads on this synthetic NodePool succeed.
 	if snapshotCfg.Nico != nil {
 		nodePool.SetNico(db.NicoNodePoolProvider{
-			InstanceTypeID:        node.InstanceTypeID,
+			InstanceTypeID:        node.NicoInstanceTypeID(),
 			SubnetIDs:             append([]uuid.UUID(nil), snapshotCfg.Nico.SubnetIDs...),
 			VpcPrefixIDs:          append([]uuid.UUID(nil), snapshotCfg.Nico.VpcPrefixIDs...),
 			SSHKeyGroupIDs:        append([]uuid.UUID(nil), snapshotCfg.Nico.SSHKeyGroupIDs...),

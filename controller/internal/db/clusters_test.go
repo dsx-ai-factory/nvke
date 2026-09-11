@@ -117,19 +117,13 @@ func TestListClusters(t *testing.T) {
 	}
 }
 
-func TestClusterProviderGettersSettersAndSync(t *testing.T) {
+func TestClusterProviderGettersAndSetters(t *testing.T) {
 	siteID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	vpcID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	infraCluster := json.RawMessage(`{"kind":"ForgeCluster"}`)
-	cluster := db.Cluster{
-		OrgID:             "org-a",
-		SiteID:            siteID,
-		VpcID:             vpcID,
-		CapiInfraCluster:  infraCluster,
-		KubernetesVersion: "1.29",
-	}
+	cluster := db.Cluster{KubernetesVersion: "1.29"}
 
-	cluster.SyncProviderFields()
+	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-a", SiteID: siteID, VpcID: vpcID})
 
 	require.Equal(t, db.ProviderTypeNico, cluster.ProviderType)
 	require.Equal(t, &db.NicoClusterProvider{OrgID: "org-a", SiteID: siteID, VpcID: vpcID}, cluster.Nico)
@@ -137,9 +131,12 @@ func TestClusterProviderGettersSettersAndSync(t *testing.T) {
 	provider, err := cluster.NicoProvider()
 	require.NoError(t, err)
 	require.Equal(t, "org-a", provider.OrgID)
+	require.Equal(t, siteID, cluster.NicoSiteID())
+	_, err = cluster.CAPIProvider()
+	require.Error(t, err, "a nico cluster has no capi payload")
 
-	cluster.SiteID = uuid.Nil
-	cluster.SyncProviderFields()
+	// Setting one provider clears the other, so a cluster never carries both.
+	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: infraCluster})
 
 	require.Equal(t, db.ProviderTypeCAPI, cluster.ProviderType)
 	require.Nil(t, cluster.Nico)
@@ -147,19 +144,10 @@ func TestClusterProviderGettersSettersAndSync(t *testing.T) {
 	capiProvider, err := cluster.CAPIProvider()
 	require.NoError(t, err)
 	require.JSONEq(t, string(infraCluster), string(capiProvider.InfraCluster))
-
-	nextInfraCluster := json.RawMessage(`{"kind":"DockerCluster"}`)
-	cluster.SetNicoProvider(db.NicoClusterProvider{OrgID: "org-b", SiteID: siteID, VpcID: vpcID})
-	cluster.CapiInfraCluster = nextInfraCluster
-	require.Equal(t, db.ProviderTypeNico, cluster.ProviderType)
-	require.Nil(t, cluster.Capi)
-	require.Equal(t, "org-b", cluster.OrgID)
-
-	cluster.SetCAPIProvider(db.CAPIClusterProvider{InfraCluster: nextInfraCluster})
-	cluster.CapiInfraCluster = json.RawMessage(`{"kind":"LegacyStale"}`)
-	require.Equal(t, db.ProviderTypeCAPI, cluster.ProviderType)
-	require.Nil(t, cluster.Nico)
-	require.JSONEq(t, string(nextInfraCluster), string(cluster.Capi.InfraCluster))
+	// A CAPI cluster has no notion of a site.
+	require.Equal(t, uuid.Nil, cluster.NicoSiteID())
+	_, err = cluster.NicoProvider()
+	require.Error(t, err, "a capi cluster has no nico payload")
 }
 
 func newValidCluster(opts ...func(*db.Cluster)) db.Cluster {
@@ -167,15 +155,17 @@ func newValidCluster(opts ...func(*db.Cluster)) db.Cluster {
 	cluster := db.Cluster{
 		ID:                uuid.New(),
 		Name:              fmt.Sprintf("cluster-%s", uuid.New().String()),
-		OrgID:             "org1",
-		SiteID:            uuid.MustParse("11111111-1111-1111-1111-111111111111"),
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.29",
 		Conditions:        db.ClusterConditions{},
 		CreatedAt:         now,
 		UpdatedAt:         now,
 		EtcdEncrypted:     true,
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "org1",
+		SiteID: uuid.MustParse("11111111-1111-1111-1111-111111111111"),
+		VpcID:  uuid.New(),
+	})
 
 	for _, opt := range opts {
 		opt(&cluster)
@@ -188,7 +178,7 @@ func withName(name string) func(*db.Cluster) {
 }
 
 func withSiteID(siteID uuid.UUID) func(*db.Cluster) {
-	return func(c *db.Cluster) { c.SiteID = siteID }
+	return func(c *db.Cluster) { c.Nico.SiteID = siteID }
 }
 
 func TestControlPlaneConfigFromNodePool(t *testing.T) {
@@ -367,19 +357,11 @@ func TestMergeControlPlaneConfigFromNodePools_InstanceTypeOrderOldestFirst(t *te
 
 	// Newest first (required contract); resulting instance preference must be oldest-first.
 	pools := []db.NodePool{
-		{ControlPlane: true, Name: "mixed", InstanceTypeID: instOther, DesiredCount: 1, OSProfile: "os", ConfigProfile: "cfg", CreatedAt: now.Add(3 * time.Second)},
-		{ControlPlane: true, Name: "cpu-cp", InstanceTypeID: instCPU, DesiredCount: 1, OSProfile: "os", ConfigProfile: "cfg", CreatedAt: now.Add(2 * time.Second)},
-		{ControlPlane: true, Name: "storage-cp", InstanceTypeID: instStorage, DesiredCount: 1, OSProfile: "os", ConfigProfile: "cfg", CreatedAt: now.Add(time.Second)},
-		{ControlPlane: true, Name: "gpu-cp", InstanceTypeID: instGPU, DesiredCount: 1, OSProfile: "os", ConfigProfile: "cfg", CreatedAt: now},
+		{ControlPlane: true, Name: "mixed", DesiredCount: 1, Nico: &db.NicoNodePoolProvider{InstanceTypeID: instOther, OSProfile: "os", ConfigProfile: "cfg"}, CreatedAt: now.Add(3 * time.Second)},
+		{ControlPlane: true, Name: "cpu-cp", DesiredCount: 1, Nico: &db.NicoNodePoolProvider{InstanceTypeID: instCPU, OSProfile: "os", ConfigProfile: "cfg"}, CreatedAt: now.Add(2 * time.Second)},
+		{ControlPlane: true, Name: "storage-cp", DesiredCount: 1, Nico: &db.NicoNodePoolProvider{InstanceTypeID: instStorage, OSProfile: "os", ConfigProfile: "cfg"}, CreatedAt: now.Add(time.Second)},
+		{ControlPlane: true, Name: "gpu-cp", DesiredCount: 1, Nico: &db.NicoNodePoolProvider{InstanceTypeID: instGPU, OSProfile: "os", ConfigProfile: "cfg"}, CreatedAt: now},
 	}
-	for i := range pools {
-		pools[i].SetNico(db.NicoNodePoolProvider{
-			InstanceTypeID: pools[i].InstanceTypeID,
-			OSProfile:      pools[i].OSProfile,
-			ConfigProfile:  pools[i].ConfigProfile,
-		})
-	}
-
 	cfg := db.MergeControlPlaneConfigFromNodePools(pools)
 	require.NotNil(t, cfg)
 	require.NotNil(t, cfg.Nico)
@@ -482,27 +464,26 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_NoActiveCPPools(t *testing
 			require.NoError(t, err)
 
 			cpPool := db.NodePool{
-				ID:                         uuid.New(),
-				ClusterID:                  cluster.ID,
-				Name:                       "control-plane",
-				NodeNamePrefix:             "cp",
-				SubnetIDs:                  []uuid.UUID{},
-				VpcPrefixIDs:               []uuid.UUID{},
-				InstanceTypeID:             uuid.Nil,
-				SSHKeyGroupIDs:             []uuid.UUID{},
-				OSProfile:                  "",
-				ConfigProfile:              "",
-				SystemReservedMemory:       "1Gi",
-				ControlPlane:               true,
-				NodeLabels:                 []string{},
-				KubernetesVersion:          "1.34.2",
-				DiskSelectionStrategy:      "",
-				CapiInfraMachineTemplate:   json.RawMessage(`{}`),
-				CapiBootstrapFiles:         []db.CloudInitFile{},
-				CapiPreKubeadmCommands:     []string{},
-				CapiSpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+				ID:                   uuid.New(),
+				ClusterID:            cluster.ID,
+				Name:                 "control-plane",
+				NodeNamePrefix:       "cp",
+				SystemReservedMemory: "1Gi",
+				ControlPlane:         true,
+				NodeLabels:           []string{},
+				KubernetesVersion:    "1.34.2",
 				Conditions: db.NodePoolConditions{
 					Deleting: db.Condition{Status: db.ConditionStatusTrue},
+				},
+				CapiPreKubeadmCommands: []string{},
+				Nico: &db.NicoNodePoolProvider{
+					SubnetIDs:             []uuid.UUID{},
+					VpcPrefixIDs:          []uuid.UUID{},
+					InstanceTypeID:        uuid.Nil,
+					SSHKeyGroupIDs:        []uuid.UUID{},
+					OSProfile:             "",
+					ConfigProfile:         "",
+					DiskSelectionStrategy: "",
 				},
 			}
 			_, err = bunDB.NewInsert().Model(&cpPool).Exec(ctx)
@@ -539,18 +520,21 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_PreservesClusterOverrides(
 	cluster.ControlPlaneConfig = db.ControlPlaneConfig{
 		MaxSurge: 1,
 		ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-			InstanceTypePreference:      []uuid.UUID{customInst},
 			ProvisioningMonitorDisabled: true,
 		},
 	}
+	cluster.ControlPlaneConfig.SetNico(db.NicoControlPlaneProvider{
+		InstanceTypePreference: []uuid.UUID{customInst},
+	})
 	_, err := bunDB.NewInsert().Model(&cluster).Exec(ctx)
 	require.NoError(t, err)
+	initialSnapshotCfg := db.ControlPlaneConfigSpec{ProvisioningMonitorDisabled: true}
+	initialSnapshotCfg.SetNico(db.NicoControlPlaneProvider{
+		InstanceTypePreference: []uuid.UUID{customInst},
+	})
 	initialSnapshot, err := dbImpl.CreateControlPlaneConfiguration(ctx, &db.ControlPlaneConfiguration{
 		ClusterID: cluster.ID,
-		Config: db.ControlPlaneConfigSpec{
-			InstanceTypePreference:      []uuid.UUID{customInst},
-			ProvisioningMonitorDisabled: true,
-		},
+		Config:    initialSnapshotCfg,
 	})
 	require.NoError(t, err)
 	_, err = bunDB.NewUpdate().
@@ -568,22 +552,19 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_PreservesClusterOverrides(
 	require.NoError(t, err)
 
 	cpPool := db.NodePool{
-		ID:                         uuid.New(),
-		ClusterID:                  cluster.ID,
-		Name:                       "control-plane",
-		NodeNamePrefix:             "cp",
-		SystemReservedMemory:       "1Gi",
-		ControlPlane:               true,
-		NodeLabels:                 []string{},
-		KubernetesVersion:          "1.34.2",
-		MaxSurge:                   0,
-		CapiInfraMachineTemplate:   json.RawMessage(`{}`),
-		CapiBootstrapFiles:         []db.CloudInitFile{},
-		CapiPreKubeadmCommands:     []string{},
-		CapiSpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+		ID:                   uuid.New(),
+		ClusterID:            cluster.ID,
+		Name:                 "control-plane",
+		NodeNamePrefix:       "cp",
+		SystemReservedMemory: "1Gi",
+		ControlPlane:         true,
+		NodeLabels:           []string{},
+		KubernetesVersion:    "1.34.2",
+		MaxSurge:             0,
 		Conditions: db.NodePoolConditions{
 			Deleting: db.Condition{Status: db.ConditionStatusFalse},
 		},
+		CapiPreKubeadmCommands: []string{},
 	}
 	cpPool.SetNico(db.NicoNodePoolProvider{
 		InstanceTypeID:        poolInst,
@@ -603,7 +584,9 @@ func TestSyncClusterControlPlaneConfigFromCPNodePools_PreservesClusterOverrides(
 	updated, err := dbImpl.GetCluster(ctx, cluster.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, updated.ControlPlaneConfig.MaxSurge)
-	assert.Equal(t, []uuid.UUID{customInst, poolInst}, updated.ControlPlaneConfig.InstanceTypePreference)
+	updatedNico, err := updated.ControlPlaneConfig.NicoProvider()
+	require.NoError(t, err)
+	assert.Equal(t, []uuid.UUID{customInst, poolInst}, updatedNico.InstanceTypePreference)
 	assert.True(t, updated.ControlPlaneConfig.ProvisioningMonitorDisabled)
 }
 
@@ -623,11 +606,13 @@ func TestLoadClusterControlPlaneConfig_LoadsSnapshotConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	snapshotCfg := db.ControlPlaneConfigSpec{
-		OSProfile:                   "ubuntu-24",
-		DiskSelectionStrategy:       db.DiskSelectionStrategyLargest,
-		ConfigProfile:               "cp-default",
 		ProvisioningMonitorDisabled: true,
-		InstanceTypePreference:      []uuid.UUID{uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000001")},
+		Nico: &db.NicoControlPlaneProvider{
+			OSProfile:              "ubuntu-24",
+			DiskSelectionStrategy:  db.DiskSelectionStrategyLargest,
+			ConfigProfile:          "cp-default",
+			InstanceTypePreference: []uuid.UUID{uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000001")},
+		},
 	}
 	snapshot, err := dbImpl.CreateControlPlaneConfiguration(ctx, &db.ControlPlaneConfiguration{
 		ClusterID: cluster.ID,
@@ -654,9 +639,11 @@ func TestLoadClusterControlPlaneConfig_LoadsSnapshotConfig(t *testing.T) {
 	assert.Equal(t, snapshot.ID, got.ControlPlaneConfig.ConfigurationID)
 	assert.Equal(t, 3, got.ControlPlaneConfig.DesiredCount)
 	assert.Equal(t, 1, got.ControlPlaneConfig.MaxSurge)
-	assert.Equal(t, "ubuntu-24", got.ControlPlaneConfig.OSProfile)
-	assert.Equal(t, db.DiskSelectionStrategyLargest, got.ControlPlaneConfig.DiskSelectionStrategy)
-	assert.Equal(t, "cp-default", got.ControlPlaneConfig.ConfigProfile)
+	gotNico, err := got.ControlPlaneConfig.NicoProvider()
+	require.NoError(t, err)
+	assert.Equal(t, "ubuntu-24", gotNico.OSProfile)
+	assert.Equal(t, db.DiskSelectionStrategyLargest, gotNico.DiskSelectionStrategy)
+	assert.Equal(t, "cp-default", gotNico.ConfigProfile)
 	assert.True(t, got.ControlPlaneConfig.ProvisioningMonitorDisabled)
 }
 
@@ -676,9 +663,11 @@ func TestCreateControlPlaneConfigRowIfChanged_NoOpWhenUnchanged(t *testing.T) {
 	require.NoError(t, err)
 
 	snapshotCfg := db.ControlPlaneConfigSpec{
-		OSProfile:             "ubuntu-24",
-		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
-		ConfigProfile:         "cp-default",
+		Nico: &db.NicoControlPlaneProvider{
+			OSProfile:             "ubuntu-24",
+			DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+			ConfigProfile:         "cp-default",
+		},
 	}
 	require.NoError(t, db.CreateControlPlaneConfigRowIfChanged(ctx, dbImpl, &cluster, snapshotCfg, db.CreateControlPlaneConfigRowOpts{
 		ChangeReason: "initial snapshot",
@@ -712,9 +701,11 @@ func TestCreateControlPlaneConfigRowIfChanged_CreatesRowWhenDiskStrategyChanges(
 	require.NoError(t, err)
 
 	initial := db.ControlPlaneConfigSpec{
-		OSProfile:             "ubuntu-24",
-		ConfigProfile:         "cp-default",
-		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+		Nico: &db.NicoControlPlaneProvider{
+			OSProfile:             "ubuntu-24",
+			ConfigProfile:         "cp-default",
+			DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
+		},
 	}
 	require.NoError(t, db.CreateControlPlaneConfigRowIfChanged(ctx, dbImpl, &cluster, initial, db.CreateControlPlaneConfigRowOpts{
 		ChangeReason: "initial snapshot",
@@ -723,12 +714,17 @@ func TestCreateControlPlaneConfigRowIfChanged_CreatesRowWhenDiskStrategyChanges(
 	require.NotEqual(t, uuid.Nil, firstID)
 
 	changed := initial
-	changed.DiskSelectionStrategy = db.DiskSelectionStrategyLargest
+	changedNico, err := changed.NicoProvider()
+	require.NoError(t, err)
+	changedNico.DiskSelectionStrategy = db.DiskSelectionStrategyLargest
+	changed.SetNico(changedNico)
 	require.NoError(t, db.CreateControlPlaneConfigRowIfChanged(ctx, dbImpl, &cluster, changed, db.CreateControlPlaneConfigRowOpts{
 		ChangeReason: "disk strategy changed",
 	}))
 	require.NotEqual(t, firstID, cluster.ControlPlaneConfig.ConfigurationID)
-	assert.Equal(t, db.DiskSelectionStrategyLargest, cluster.ControlPlaneConfig.DiskSelectionStrategy)
+	clusterNico, err := cluster.ControlPlaneConfig.NicoProvider()
+	require.NoError(t, err)
+	assert.Equal(t, db.DiskSelectionStrategyLargest, clusterNico.DiskSelectionStrategy)
 
 	count, err := bunDB.NewSelect().TableExpr("control_plane_configurations").Count(ctx)
 	require.NoError(t, err)

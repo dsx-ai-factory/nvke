@@ -203,7 +203,11 @@ func TestUnit_DBTypedSourceUnregistersWhenContextCancels(t *testing.T) {
 			setup: func(database *testutil.MockDB, wrapper *DB, ctx context.Context) workqueue.TypedRateLimitingInterface[string] {
 				database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
 				source := NewMappedNodeSetSource[string](wrapper, dbfilters.NodeSet{}, func(_ context.Context, nodeSet db.NodeSet) ([]string, error) {
-					return []string{nodeSet.OSProfile}, nil
+					nico, err := nodeSet.NicoProvider()
+					if err != nil {
+						return nil, err
+					}
+					return []string{nico.OSProfile}, nil
 				})
 				return startStringSource(ctx, t, source)
 			},
@@ -213,7 +217,7 @@ func TestUnit_DBTypedSourceUnregistersWhenContextCancels(t *testing.T) {
 				return len(wrapper.nodeSetSources) == 0
 			},
 			create: func(ctx context.Context, database *testutil.MockDB, wrapper *DB) error {
-				nodeSet := db.NodeSet{ID: uuid.New(), OSProfile: "ubuntu-22.04"}
+				nodeSet := db.NodeSet{ID: uuid.New(), Nico: &db.NicoNodePoolProvider{OSProfile: "ubuntu-22.04"}}
 				database.On("CreateNodeSet", mock.Anything, &nodeSet).Return(nodeSet, nil)
 				_, err := wrapper.CreateNodeSet(ctx, &nodeSet)
 				return err
@@ -277,7 +281,11 @@ func TestUnit_DBSourceRegistersWhenStarted(t *testing.T) {
 			setup: func(database *testutil.MockDB, wrapper *DB) crsource.TypedSource[string] {
 				database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
 				return NewMappedNodeSetSource[string](wrapper, dbfilters.NodeSet{}, func(_ context.Context, nodeSet db.NodeSet) ([]string, error) {
-					return []string{nodeSet.OSProfile}, nil
+					nico, err := nodeSet.NicoProvider()
+					if err != nil {
+						return nil, err
+					}
+					return []string{nico.OSProfile}, nil
 				})
 			},
 			registered: func(wrapper *DB) bool {
@@ -371,7 +379,7 @@ func TestUnit_DBTypedNodePoolSourceEnqueuesMappedKey(t *testing.T) {
 }
 
 func TestUnit_DBTypedNodeSetSourceEnqueuesMappedKey(t *testing.T) {
-	nodeSet := db.NodeSet{ID: uuid.New(), OSProfile: "ubuntu-22.04"}
+	nodeSet := db.NodeSet{ID: uuid.New(), Nico: &db.NicoNodePoolProvider{OSProfile: "ubuntu-22.04"}}
 	database := &testutil.MockDB{}
 	database.On("ListNodeSets", mock.Anything, db.NodeSetFilters{}).Return([]db.NodeSet{}, nil)
 	database.On("CreateNodeSet", mock.Anything, &nodeSet).Return(nodeSet, nil)
@@ -382,7 +390,11 @@ func TestUnit_DBTypedNodeSetSourceEnqueuesMappedKey(t *testing.T) {
 		wrapper,
 		dbfilters.NodeSet{},
 		func(_ context.Context, nodeSet db.NodeSet) ([]string, error) {
-			return []string{nodeSet.OSProfile}, nil
+			nico, err := nodeSet.NicoProvider()
+			if err != nil {
+				return nil, err
+			}
+			return []string{nico.OSProfile}, nil
 		},
 	)
 	queue := startStringSource(ctx, t, source)

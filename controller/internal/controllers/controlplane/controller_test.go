@@ -227,11 +227,13 @@ func newControllerTest(ctx context.Context, t *testing.T) *controllerTest {
 	cluster := db.Cluster{
 		ID:                clusterID,
 		Name:              "test-cluster",
-		OrgID:             "test-org",
-		SiteID:            siteID,
-		VpcID:             uuid.New(),
 		KubernetesVersion: testKubernetesVersion,
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "test-org",
+		SiteID: siteID,
+		VpcID:  uuid.New(),
+	})
 	_, err := database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 
@@ -311,15 +313,17 @@ func newNodePool(clusterID uuid.UUID, name string, controlPlane bool, opts ...no
 		ClusterID:         clusterID,
 		Name:              name,
 		NodeNamePrefix:    "node",
-		SubnetIDs:         []uuid.UUID{uuid.New()},
-		VpcPrefixIDs:      []uuid.UUID{uuid.New()},
-		InstanceTypeID:    uuid.New(),
-		SSHKeyGroupIDs:    []uuid.UUID{uuid.New()},
-		OSProfile:         "test-os-profile",
-		ConfigProfile:     "test-config-profile",
 		ControlPlane:      controlPlane,
 		NodeLabels:        []string{},
 		KubernetesVersion: testKubernetesVersion,
+		Nico: &db.NicoNodePoolProvider{
+			SubnetIDs:      []uuid.UUID{uuid.New()},
+			VpcPrefixIDs:   []uuid.UUID{uuid.New()},
+			InstanceTypeID: uuid.New(),
+			SSHKeyGroupIDs: []uuid.UUID{uuid.New()},
+			OSProfile:      "test-os-profile",
+			ConfigProfile:  "test-config-profile",
+		},
 	}
 	for _, opt := range opts {
 		opt(&np)
@@ -341,10 +345,12 @@ func newNodeSet(nodePoolID uuid.UUID, opts ...nodeSetOpt) db.NodeSet {
 	ns := db.NodeSet{
 		ID:                   uuid.New(),
 		NodePoolID:           nodePoolID,
-		OSProfile:            "test-os-profile",
-		ConfigProfile:        "test-config-profile",
 		SystemReservedMemory: "16Gi",
 		KubernetesVersion:    testKubernetesVersion,
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile:     "test-os-profile",
+			ConfigProfile: "test-config-profile",
+		},
 	}
 	for _, opt := range opts {
 		opt(&ns)
@@ -364,22 +370,25 @@ func createNodeSet(ctx context.Context, t *testing.T, database db.DB, nodePoolID
 // newNode creates a new Node struct with sensible defaults for testing.
 // By default, nodes are healthy (KubernetesReady=True, Provisioned=True, NodeAgentReady=True, Pending=False).
 func newNode(nodePool db.NodePool, nodeSetID uuid.UUID, name string, opts ...nodeOpt) db.Node {
+	poolNico, _ := nodePool.NicoProvider()
 	n := db.Node{
-		ID:              uuid.New(),
-		NodePoolID:      nodePool.ID,
-		NodeSetID:       nodeSetID,
-		ClusterID:       nodePool.ClusterID,
-		ControlPlane:    nodePool.ControlPlane,
-		InstanceTypeID:  nodePool.InstanceTypeID,
-		Name:            name,
-		ForgeInstanceID: "forge-instance-" + name,
-		ForgeMachineID:  "forge-machine-" + name,
-		IP:              "10.0.0.1",
+		ID:           uuid.New(),
+		NodePoolID:   nodePool.ID,
+		NodeSetID:    nodeSetID,
+		ClusterID:    nodePool.ClusterID,
+		ControlPlane: nodePool.ControlPlane,
+		Name:         name,
+		IP:           "10.0.0.1",
 		Conditions: db.NodeConditions{
 			KubernetesReady: db.Condition{Status: db.ConditionStatusTrue},
 			Provisioned:     db.Condition{Status: db.ConditionStatusTrue},
 			NodeAgentReady:  db.Condition{Status: db.ConditionStatusTrue},
 			Pending:         db.Condition{Status: db.ConditionStatusFalse},
+		},
+		Nico: &db.NicoNodeProvider{
+			ForgeInstanceID: "forge-instance-" + name,
+			ForgeMachineID:  "forge-machine-" + name,
+			InstanceTypeID:  poolNico.InstanceTypeID,
 		},
 	}
 	for _, opt := range opts {

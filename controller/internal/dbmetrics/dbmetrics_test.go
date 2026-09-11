@@ -62,14 +62,16 @@ func (te *collectorTestEnv) createNodePool(ctx context.Context, t *testing.T, cl
 		Name:               name,
 		NodeNamePrefix:     "n",
 		ControlPlane:       false,
-		SubnetIDs:          []uuid.UUID{uuid.New()},
-		VpcPrefixIDs:       []uuid.UUID{uuid.New()},
-		InstanceTypeID:     uuid.New(),
-		SSHKeyGroupIDs:     []uuid.UUID{},
-		OSProfile:          "test-os",
-		ConfigProfile:      "test-config",
 		KubeReservedMemory: "250Mi",
 		NodeLabels:         []string{},
+		Nico: &db.NicoNodePoolProvider{
+			SubnetIDs:      []uuid.UUID{uuid.New()},
+			VpcPrefixIDs:   []uuid.UUID{uuid.New()},
+			InstanceTypeID: uuid.New(),
+			SSHKeyGroupIDs: []uuid.UUID{},
+			OSProfile:      "test-os",
+			ConfigProfile:  "test-config",
+		},
 	}
 	created, err := te.database.CreateNodePool(ctx, &np)
 	require.NoError(t, err)
@@ -81,12 +83,14 @@ func (te *collectorTestEnv) createNodeSet(ctx context.Context, t *testing.T, np 
 	ns := db.NodeSet{
 		ID:                   uuid.New(),
 		NodePoolID:           np.ID,
-		OSProfile:            "test-os",
-		ConfigProfile:        "test-config",
 		SystemReservedMemory: "16Gi",
 		KubeReservedMemory:   "250Mi",
-		SubnetIDs:            []uuid.UUID{uuid.New()},
-		VpcPrefixIDs:         []uuid.UUID{uuid.New()},
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile:     "test-os",
+			ConfigProfile: "test-config",
+			SubnetIDs:     []uuid.UUID{uuid.New()},
+			VpcPrefixIDs:  []uuid.UUID{uuid.New()},
+		},
 	}
 	created, err := te.database.CreateNodeSet(ctx, &ns)
 	require.NoError(t, err)

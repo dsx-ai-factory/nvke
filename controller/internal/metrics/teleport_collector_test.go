@@ -44,13 +44,15 @@ func (te *collectorTestEnv) createCluster(ctx context.Context, t *testing.T, nam
 	t.Helper()
 	cluster := db.Cluster{
 		ID:                uuid.New(),
-		SiteID:            te.siteID,
 		Name:              name,
-		OrgID:             "test-org",
-		VpcID:             uuid.New(),
 		KubernetesVersion: "1.31.0",
 		TeleportEnabled:   teleportEnabled,
 	}
+	cluster.SetNicoProvider(db.NicoClusterProvider{
+		OrgID:  "test-org",
+		SiteID: te.siteID,
+		VpcID:  uuid.New(),
+	})
 	created, err := te.database.CreateCluster(ctx, &cluster)
 	require.NoError(t, err)
 	return created
@@ -63,13 +65,15 @@ func (te *collectorTestEnv) createNodePool(ctx context.Context, t *testing.T, cl
 		ClusterID:      cluster.ID,
 		Name:           name,
 		NodeNamePrefix: "n",
-		SubnetIDs:      []uuid.UUID{uuid.New()},
-		VpcPrefixIDs:   []uuid.UUID{uuid.New()},
-		InstanceTypeID: uuid.New(),
-		SSHKeyGroupIDs: []uuid.UUID{},
-		OSProfile:      "test-os",
-		ConfigProfile:  "test-config",
 		NodeLabels:     []string{},
+		Nico: &db.NicoNodePoolProvider{
+			SubnetIDs:      []uuid.UUID{uuid.New()},
+			VpcPrefixIDs:   []uuid.UUID{uuid.New()},
+			InstanceTypeID: uuid.New(),
+			SSHKeyGroupIDs: []uuid.UUID{},
+			OSProfile:      "test-os",
+			ConfigProfile:  "test-config",
+		},
 	}
 	created, err := te.database.CreateNodePool(ctx, &np)
 	require.NoError(t, err)
@@ -81,10 +85,12 @@ func (te *collectorTestEnv) createNodeSet(ctx context.Context, t *testing.T, np 
 	ns := db.NodeSet{
 		ID:                   uuid.New(),
 		NodePoolID:           np.ID,
-		OSProfile:            "test-os",
-		ConfigProfile:        "test-config",
 		SystemReservedMemory: "16Gi",
 		TeleportEnabled:      teleportEnabled,
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile:     "test-os",
+			ConfigProfile: "test-config",
+		},
 	}
 	created, err := te.database.CreateNodeSet(ctx, &ns)
 	require.NoError(t, err)
@@ -94,13 +100,15 @@ func (te *collectorTestEnv) createNodeSet(ctx context.Context, t *testing.T, np 
 func (te *collectorTestEnv) createEligibleNode(ctx context.Context, t *testing.T, np db.NodePool, ns db.NodeSet, name string) db.Node {
 	t.Helper()
 	node := db.Node{
-		ID:              uuid.New(),
-		NodePoolID:      np.ID,
-		NodeSetID:       ns.ID,
-		Name:            name,
-		ForgeInstanceID: "forge-" + name,
-		ForgeMachineID:  "machine-" + name,
-		IP:              "10.0.0.1",
+		ID:         uuid.New(),
+		NodePoolID: np.ID,
+		NodeSetID:  ns.ID,
+		Name:       name,
+		IP:         "10.0.0.1",
+		Nico: &db.NicoNodeProvider{
+			ForgeInstanceID: "forge-" + name,
+			ForgeMachineID:  "machine-" + name,
+		},
 	}
 	created, err := te.database.CreateNode(ctx, &node)
 	require.NoError(t, err)
@@ -299,16 +307,18 @@ func TestListTeleportRolloutStats(t *testing.T) {
 		// CAPNICo node without a Forge instance ID is eligible.
 		noForge := db.Node{
 			ID: uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
-			Name: "no-forge", ForgeInstanceID: "", ForgeMachineID: "m",
-			IP: "10.0.0.1",
+			Name: "no-forge",
+			Nico: &db.NicoNodeProvider{ForgeInstanceID: "", ForgeMachineID: "m"},
+			IP:   "10.0.0.1",
 		}
 		_, err := te.database.CreateNode(ctx, &noForge)
 		require.NoError(t, err)
 
 		pendingHash := db.Node{
 			ID: uuid.New(), NodePoolID: np.ID, NodeSetID: ns.ID,
-			Name: "pending-hash", ForgeInstanceID: "forge-x", ForgeMachineID: "m",
-			IP: "10.0.0.1",
+			Name: "pending-hash",
+			Nico: &db.NicoNodeProvider{ForgeInstanceID: "forge-x", ForgeMachineID: "m"},
+			IP:   "10.0.0.1",
 		}
 		_, err = te.database.CreateNode(ctx, &pendingHash)
 		require.NoError(t, err)

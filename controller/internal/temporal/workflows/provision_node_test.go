@@ -104,10 +104,9 @@ func TestLabelNode(t *testing.T) {
 				siteID := uuid.MustParse("50000000-0000-0000-0000-000000000003")
 				vpcID := uuid.MustParse("50000000-0000-0000-0000-000000000004")
 				node := db.Node{
-					ID:             nodeID,
-					ClusterID:      clusterID,
-					Name:           "worker-0",
-					ForgeMachineID: "legacy-machine",
+					ID:        nodeID,
+					ClusterID: clusterID,
+					Name:      "worker-0",
 					Nico: &db.NicoNodeProvider{
 						ForgeMachineID: "payload-machine",
 					},

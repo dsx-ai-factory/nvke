@@ -27,14 +27,18 @@ func TestUpdateNodePoolKubeVersion_EmptyOSProfile(t *testing.T) {
 	storedPool := db.NodePool{
 		ID:                nodePoolID,
 		KubernetesVersion: "1.34.2",
-		OSProfile:         "",
+		Nico: &db.NicoNodePoolProvider{
+			OSProfile: "",
+		},
 	}
 	mockTx := &testutil.MockTx{}
 	mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(storedPool, nil)
 	mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(pool *db.NodePool) bool {
-		return pool.ID == nodePoolID &&
+		nico, err := pool.NicoProvider()
+		return err == nil &&
+			pool.ID == nodePoolID &&
 			pool.KubernetesVersion == "1.35.0" &&
-			pool.OSProfile == ""
+			nico.OSProfile == ""
 	})).Return(db.NodePool{}, nil)
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 
 	"github.com/google/uuid"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -318,11 +317,6 @@ func buildBaseNodeSet(nodePool db.NodePool) *db.NodeSet {
 		SystemReservedMemory: nodePool.SystemReservedMemory,
 		KubeReservedMemory:   nodePool.KubeReservedMemory,
 		TeleportEnabled:      nodePool.TeleportEnabled,
-		// SubnetIDs and VpcPrefixIDs are copied from the legacy NodePool columns
-		// to satisfy the DB notnull constraint. These legacy flat fields will be
-		// deprecated once all consumers read from the typed provider payloads.
-		SubnetIDs:    slices.Clone(nodePool.SubnetIDs),
-		VpcPrefixIDs: slices.Clone(nodePool.VpcPrefixIDs),
 	}
 }
 

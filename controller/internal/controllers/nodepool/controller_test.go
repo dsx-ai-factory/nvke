@@ -106,7 +106,8 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
-			return ns.NodePoolID == poolID && ns.OSProfile == osProfile && ns.ConfigProfile == configProfile
+			nico, err := ns.NicoProvider()
+			return err == nil && ns.NodePoolID == poolID && nico.OSProfile == osProfile && nico.ConfigProfile == configProfile
 		})).Return(newNodeSet, nil)
 		mockTx.On("GetNodePool", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
@@ -309,7 +310,8 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
-			return ns.NodePoolID == poolID && len(ns.SubnetIDs) == 1 && ns.SubnetIDs[0] == newSubnet
+			nico, err := ns.NicoProvider()
+			return err == nil && ns.NodePoolID == poolID && len(nico.SubnetIDs) == 1 && nico.SubnetIDs[0] == newSubnet
 		})).Return(newNodeSet, nil)
 		mockTx.On("GetNodePool", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
@@ -395,7 +397,8 @@ func TestUnit_NodePoolControllerReconcile(t *testing.T) {
 		mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 		mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
-			return ns.NodePoolID == poolID && len(ns.VpcPrefixIDs) == 1 && ns.VpcPrefixIDs[0] == newVpcPrefix
+			nico, err := ns.NicoProvider()
+			return err == nil && ns.NodePoolID == poolID && len(nico.VpcPrefixIDs) == 1 && nico.VpcPrefixIDs[0] == newVpcPrefix
 		})).Return(newNodeSet, nil)
 		mockTx.On("GetNodePool", mock.Anything, poolID).Return(pool, nil)
 		mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
@@ -588,7 +591,8 @@ func TestUnit_NodePoolControllerReconcileCAPIInfraTemplateChange(t *testing.T) {
 	mockTx.On("GetNodePoolForUpdate", mock.Anything, poolID).Return(pool, nil)
 	mockTx.On("GetNodeSet", mock.Anything, oldNodeSetID).Return(oldNodeSet, nil)
 	mockTx.On("CreateNodeSet", mock.Anything, mock.MatchedBy(func(ns *db.NodeSet) bool {
-		return ns.NodePoolID == poolID && string(ns.CapiInfraMachineTemplate) == string(newTemplate)
+		capi, err := ns.CAPIProvider()
+		return err == nil && ns.NodePoolID == poolID && string(capi.InfraMachineTemplate) == string(newTemplate)
 	})).Return(newNodeSet, nil)
 	mockTx.On("GetNodePool", mock.Anything, poolID).Return(pool, nil)
 	mockTx.On("UpdateNodePool", mock.Anything, mock.MatchedBy(func(np *db.NodePool) bool {
