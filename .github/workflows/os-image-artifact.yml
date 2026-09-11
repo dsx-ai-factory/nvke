@@ -123,21 +123,24 @@ jobs:
       contents: write
       packages: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
       # GitHub's own timeout-minutes has no grace period: it kills the whole
       # job process tree at once, so nothing started beforehand (a
       # background "sleep, then cat" included) gets a chance to run once it
       # fires. The build steps below self-impose a shorter timeout, computed
       # from this recorded start time, so they can dump the serial console
-      # log and exit cleanly before GitHub's hard kill ever lands.
+      # log and exit cleanly before GitHub's hard kill ever lands. Recorded
+      # before Checkout, not after: Checkout does a full-history fetch on
+      # this repo, and every second it takes would otherwise silently eat
+      # into the 30s diagnostic buffer those self-timeouts leave themselves.
       - name: Record job start time
         id: start_time
         run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
