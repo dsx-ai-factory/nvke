@@ -44,11 +44,21 @@ rules:
     - group: "admissionregistration.k8s.io"
     - group: "coordination.k8s.io"
 
-  # Drop the list/get/watch events
+  # Drop the list/get/watch events. Secrets are excluded here: list/watch stay
+  # dropped below (high-volume, low-risk connection registrations), but get is
+  # a direct, security-relevant read and is logged at Metadata level instead
+  # of dropped with the rest of this bundle.
   - level: None
     verbs: ["list", "get", "watch"]
     resources:
-    - resources: ["secrets", "configmaps", "limitranges", "namespaces", "nodes", "serviceaccounts", "resourcequotas", "daemonsets", "tokenreviews" , "certificatesigningrequests", "globalnetworkpolicies", "networkpolicies", "podsecuritypolicies", "clusterrolebindings", "rolebindings", "clusterroles", "roles", "virtualmachineinstances", "virtualmachines", "kubevirts"]
+    - resources: ["configmaps", "limitranges", "namespaces", "nodes", "serviceaccounts", "resourcequotas", "daemonsets", "tokenreviews" , "certificatesigningrequests", "globalnetworkpolicies", "networkpolicies", "podsecuritypolicies", "clusterrolebindings", "rolebindings", "clusterroles", "roles", "virtualmachineinstances", "virtualmachines", "kubevirts"]
+
+  # get/list/watch on secrets all return full secret contents, so all three
+  # are logged rather than just get.
+  - level: Metadata
+    verbs: ["get", "list", "watch"]
+    resources:
+    - resources: ["secrets"]
 
   ################ Logging Level : Metadata #############
   # This is most important section, where we log NGN2.0 sensitive events at Metadata level (to prevent sensitive information)
