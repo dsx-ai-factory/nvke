@@ -125,7 +125,7 @@ jobs:
       - name: Checkout the CAPNICo provider
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: NVIDIA/cluster-api-provider-nico
+          repository: dsx-ai-factory/cluster-api-provider-nico
           ref: ${{ steps.capnico_version.outputs.ref }}
           token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico

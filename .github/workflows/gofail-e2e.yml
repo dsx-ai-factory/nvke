@@ -168,7 +168,7 @@ jobs:
           drift=0
           for f in nicoclusters nicoclustertemplates nicomachines nicomachinetemplates; do
             name="infrastructure.cluster.x-k8s.io_${f}.yaml"
-            gh api "repos/NVIDIA/cluster-api-provider-nico/contents/config/crd/bases/${name}?ref=${ver}" --jq '.content' | base64 -d > "/tmp/${name}"
+            gh api "repos/dsx-ai-factory/cluster-api-provider-nico/contents/config/crd/bases/${name}?ref=${ver}" --jq '.content' | base64 -d > "/tmp/${name}"
             if ! diff -u "controller/test/fixtures/capnico-crds/${name}" "/tmp/${name}"; then
               echo "::error::${name} differs from cluster-api-provider-nico ${ver}; refresh the fixture (see its README)"
               drift=1
