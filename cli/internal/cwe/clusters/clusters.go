@@ -154,31 +154,27 @@ func NewUpdateCmd(clientFn ClientFn) *cobra.Command {
 		Long: `Update a tenant cluster on the site controller.
 
 PATCH semantics apply: only the fields you supply are changed. Use --set for
-one or two fields, -f for a full patch document, or both together (--set
-wins on any leaf key present in both; sibling fields under a shared object
-are merged rather than replaced). Clear a field with --set key= (empty
-value). A -f patch document's fields must match the CWE UpdateClusterRequest
-schema exactly. See /api/docs on your site controller.
+one or two fields, -f for a full patch document, or both together.
 
 Example — bump the Kubernetes version:
   nkectl update cluster my-cluster --set controlPlaneKubernetesVersion=1.31.0
 
-Example — clear a field:
+Example — clear a field back to its default:
   nkectl update cluster my-cluster --set controlPlaneConfig.infra.preKubeadmCommands=
 
 Example — patch file:
   nkectl update cluster my-cluster -f patch.yaml
 
-Example — file plus an inline override:
+Example — patch file plus an inline override:
   nkectl update cluster my-cluster -f patch.yaml --set controlPlaneConfig.desiredCount=5
+  # both fields are applied; if they overlap, --set wins
 
-A --set value is parsed as YAML, so under a free-form field (e.g.
-controlPlaneConfig.*.machineTemplate) a bare number or true/false is
-coerced to that type; use --set-string for that key instead to keep it a
-literal string. A list value splits on commas; escape a literal comma inside
-one element as \, (--set ...preKubeadmCommands='mount -o rw\,noatime /x').
---set-string always wins over --set for the same key, regardless of flag
-order.`,
+List fields take comma-separated values (escape a literal comma as \,).
+Use --set-string instead of --set to force a value like 1.31 to stay text
+rather than become a number; it wins over --set on the same field.
+
+A -f patch document's fields must match the CWE UpdateClusterRequest schema
+exactly. See /api/docs on your site controller.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if filename == "" && len(sets) == 0 && len(setStrings) == 0 {
@@ -207,8 +203,8 @@ order.`,
 	}
 
 	cmd.Flags().StringVarP(&filename, "filename", "f", "", "Path to YAML patch file, or '-' to read from stdin")
-	cmd.Flags().StringArrayVar(&sets, "set", nil, "Set a field: key=value (repeatable); dot notation for nested fields, comma-separated for lists")
-	cmd.Flags().StringArrayVar(&setStrings, "set-string", nil, "Like --set, but the value is always kept as a literal string instead of YAML-coerced")
+	cmd.Flags().StringArrayVar(&sets, "set", nil, "Set a field: key=value (repeatable, dot notation for nested fields, comma-separated for lists); an empty value clears the field")
+	cmd.Flags().StringArrayVar(&setStrings, "set-string", nil, "Like --set, but keeps the value as literal text instead of a number or boolean")
 	return cmd
 }
 
