@@ -164,7 +164,7 @@ Key configuration (see `internal/config/config.go` for full list):
 | `LOG_LEVEL` | `info` | Log level (debug/info/warn/error) |
 | `DB_CONNECTION_STRING` | `postgres://...` | PostgreSQL connection string |
 | `TEMPORAL_HOST_PORT` | `localhost:7233` | Temporal server for CWE workflows |
-| `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. |
+| `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. The directory may be empty: CWE starts without a profiles tree, and one is needed to provision a node, not to come up. |
 | `SPIFFE_ENDPOINT_SOCKET` | (optional) | SPIRE agent socket path for SPIFFE identity (e.g., `unix:///tmp/spire-agent/agent.sock`) |
 | `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what a host-local `go run` gets. Set but unreadable is a startup failure, never "disabled". |
 | `PERMISSIVE_MODE` | `false` | Only read when `AUTH_CONFIG_PATH` is set. `true` evaluates, logs and counts every request, then serves it anyway — nothing is rejected. |
