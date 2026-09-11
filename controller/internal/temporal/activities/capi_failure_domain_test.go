@@ -101,7 +101,7 @@ func TestActivitiesApplyCAPIMachineLeavesPlacementEmptyWithoutEligibleDomains(t 
 			clusterv1.FailureDomain{Name: "fd-a", ControlPlane: &ineligible},
 		),
 	)
-	activity, tx, database := failureDomainTestActivity(cluster, k8sClient)
+	activity := &Activities{k8sClient: k8sClient}
 	machine := failureDomainTestMachine("cp-new", cluster.Name, true, "")
 
 	require.NoError(t, activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
@@ -113,8 +113,30 @@ func TestActivitiesApplyCAPIMachineLeavesPlacementEmptyWithoutEligibleDomains(t 
 	applied := &clusterv1.Machine{}
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(machine), applied))
 	assert.Empty(t, applied.Spec.FailureDomain)
-	tx.AssertExpectations(t)
-	database.AssertExpectations(t)
+}
+
+func TestActivitiesApplyCAPIMachineWaitsForInfrastructureProvisioning(t *testing.T) {
+	t.Parallel()
+
+	cluster := failureDomainTestDBCluster()
+	namespace := constants.NamespaceNKESystem
+	capiCluster := failureDomainTestCAPICluster(cluster.Name)
+	capiCluster.Status.Initialization.InfrastructureProvisioned = nil
+	k8sClient := failureDomainTestClient(t, capiCluster)
+	activity := &Activities{k8sClient: k8sClient}
+	machine := failureDomainTestMachine("cp-new", cluster.Name, true, "")
+
+	err := activity.applyCAPIMachine(context.Background(), &capiMachineCreateContext{
+		node:      db.Node{ID: uuid.New(), ControlPlane: true},
+		cluster:   cluster,
+		namespace: namespace,
+	}, machine)
+	require.ErrorContains(t, err, "capi cluster infrastructure is not yet provisioned")
+
+	applied := &clusterv1.Machine{}
+	err = k8sClient.Get(context.Background(), client.ObjectKeyFromObject(machine), applied)
+	require.Error(t, err)
+	require.NoError(t, client.IgnoreNotFound(err))
 }
 
 func TestActivitiesApplyCAPIMachinePreservesExistingPlacement(t *testing.T) {
@@ -131,7 +153,7 @@ func TestActivitiesApplyCAPIMachinePreservesExistingPlacement(t *testing.T) {
 		),
 		existing,
 	)
-	activity, tx, database := failureDomainTestActivity(cluster, k8sClient)
+	activity := &Activities{k8sClient: k8sClient}
 	retryMachine := existing.DeepCopy()
 	retryMachine.Spec.FailureDomain = ""
 
@@ -144,8 +166,6 @@ func TestActivitiesApplyCAPIMachinePreservesExistingPlacement(t *testing.T) {
 	applied := &clusterv1.Machine{}
 	require.NoError(t, k8sClient.Get(context.Background(), client.ObjectKeyFromObject(existing), applied))
 	assert.Equal(t, "fd-b", applied.Spec.FailureDomain)
-	tx.AssertExpectations(t)
-	database.AssertExpectations(t)
 }
 
 func TestActivitiesApplyCAPIMachineCountsObservedPlacement(t *testing.T) {
@@ -263,7 +283,7 @@ func TestActivitiesApplyCAPIMachineSerializesConcurrentAssignments(t *testing.T)
 	activity := &Activities{
 		k8sClient:              k8sClient,
 		db:                     database,
-		failureDomainSelection: selection,
+		failureDomainSelection: selection.Select,
 	}
 	createCtx := &capiMachineCreateContext{
 		cluster:   cluster,
@@ -339,7 +359,7 @@ func (s *concurrencyProbeSelection) Select(eligibleDomains, assignments []string
 	s.mu.Unlock()
 
 	time.Sleep(time.Millisecond)
-	selected, err := (capi.LeastUsedFailureDomainSelection{}).Select(eligibleDomains, assignments)
+	selected, err := capi.LeastUsedFailureDomainSelection(eligibleDomains, assignments)
 
 	s.mu.Lock()
 	s.active--
@@ -358,7 +378,11 @@ func failureDomainTestActivity(cluster db.Cluster, k8sClient client.Client) (*Ac
 	tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 	database := &testutil.MockDB{GetTx: func() db.Tx { return tx }}
 	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
-	return &Activities{k8sClient: k8sClient, db: database}, tx, database
+	return &Activities{
+		k8sClient:              k8sClient,
+		db:                     database,
+		failureDomainSelection: capi.LeastUsedFailureDomainSelection,
+	}, tx, database
 }
 
 func failureDomainTestClient(t *testing.T, objects ...client.Object) client.Client {
@@ -380,6 +404,7 @@ func failureDomainTestDBCluster() db.Cluster {
 }
 
 func failureDomainTestCAPICluster(name string, domains ...clusterv1.FailureDomain) *clusterv1.Cluster {
+	infrastructureProvisioned := true
 	return &clusterv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -387,6 +412,9 @@ func failureDomainTestCAPICluster(name string, domains ...clusterv1.FailureDomai
 		},
 		Status: clusterv1.ClusterStatus{
 			FailureDomains: domains,
+			Initialization: clusterv1.ClusterInitializationStatus{
+				InfrastructureProvisioned: &infrastructureProvisioned,
+			},
 		},
 	}
 }

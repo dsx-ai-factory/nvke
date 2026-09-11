@@ -51,7 +51,7 @@ func NewActivities(
 		trustDomain:              trustDomain,
 		controllerClientCABundle: controllerClientCABundle,
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
-		failureDomainSelection:   capi.LeastUsedFailureDomainSelection{},
+		failureDomainSelection:   capi.LeastUsedFailureDomainSelection,
 	}
 }
 

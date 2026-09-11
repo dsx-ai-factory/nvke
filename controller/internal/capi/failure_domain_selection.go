@@ -9,25 +9,19 @@ import (
 
 // FailureDomainSelectionAlgorithm selects a failure domain from the eligible
 // domains using the assignments of existing Machines.
-type FailureDomainSelectionAlgorithm interface {
-	Select(eligibleDomains, assignments []string) (string, error)
-}
+type FailureDomainSelectionAlgorithm func(eligibleDomains, assignments []string) (string, error)
 
-// LeastUsedFailureDomainSelection selects the eligible domain with the fewest
-// existing assignments and breaks ties by domain name.
-type LeastUsedFailureDomainSelection struct{}
+// LeastUsedFailureDomainSelection returns the eligible domain with the fewest
+// existing assignments, breaking ties by domain name, or an empty string when
+// no eligible domains are available.
+func LeastUsedFailureDomainSelection(eligibleDomains, assignments []string) (string, error) {
+	if len(eligibleDomains) == 0 {
+		return "", nil
+	}
 
-// Select returns the least-used eligible domain, or an empty string when no
-// eligible domains are available.
-func (LeastUsedFailureDomainSelection) Select(eligibleDomains, assignments []string) (string, error) {
 	counts := make(map[string]int, len(eligibleDomains))
 	for _, domain := range eligibleDomains {
-		if domain != "" {
-			counts[domain] = 0
-		}
-	}
-	if len(counts) == 0 {
-		return "", nil
+		counts[domain] = 0
 	}
 
 	for _, assignment := range assignments {
@@ -36,10 +30,7 @@ func (LeastUsedFailureDomainSelection) Select(eligibleDomains, assignments []str
 		}
 	}
 
-	domains := make([]string, 0, len(counts))
-	for domain := range counts {
-		domains = append(domains, domain)
-	}
+	domains := slices.Clone(eligibleDomains)
 	slices.Sort(domains)
 
 	selected := domains[0]

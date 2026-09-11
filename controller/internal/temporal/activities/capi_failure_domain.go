@@ -9,16 +9,28 @@ import (
 	"fmt"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
 func (a *Activities) applyCAPIMachine(ctx context.Context, createCtx *capiMachineCreateContext, machine *clusterv1.Machine) error {
 	if _, isControlPlane := machine.Labels[clusterv1.MachineControlPlaneLabel]; !isControlPlane {
+		return a.patchCAPIMachine(ctx, machine)
+	}
+
+	if patched, err := a.patchExistingCAPIMachine(ctx, machine); err != nil || patched {
+		return err
+	}
+
+	eligibleDomains, err := a.controlPlaneFailureDomains(ctx, createCtx)
+	if err != nil {
+		return err
+	}
+	if len(eligibleDomains) == 0 {
 		return a.patchCAPIMachine(ctx, machine)
 	}
 
@@ -29,17 +41,13 @@ func (a *Activities) applyCAPIMachine(ctx context.Context, createCtx *capiMachin
 			return fmt.Errorf("failed to lock cluster for failure domain placement: %w", err)
 		}
 
-		existing := &clusterv1.Machine{}
-		err := a.k8sClient.Get(ctx, client.ObjectKeyFromObject(machine), existing)
-		if err == nil {
-			machine.Spec.FailureDomain = existing.Spec.FailureDomain
-			return a.patchCAPIMachine(ctx, machine)
-		}
-		if !apierrors.IsNotFound(err) {
-			return fmt.Errorf("failed to get existing CAPI machine %s: %w", machine.Name, err)
+		// Recheck after taking the lock in case another activity created this
+		// Machine after the unlocked fast-path lookup.
+		if patched, err := a.patchExistingCAPIMachine(ctx, machine); err != nil || patched {
+			return err
 		}
 
-		failureDomain, err := a.selectControlPlaneFailureDomain(ctx, createCtx)
+		failureDomain, err := a.selectControlPlaneFailureDomain(ctx, createCtx, eligibleDomains)
 		if err != nil {
 			return err
 		}
@@ -48,13 +56,28 @@ func (a *Activities) applyCAPIMachine(ctx context.Context, createCtx *capiMachin
 	})
 }
 
-func (a *Activities) selectControlPlaneFailureDomain(ctx context.Context, createCtx *capiMachineCreateContext) (string, error) {
+func (a *Activities) patchExistingCAPIMachine(ctx context.Context, machine *clusterv1.Machine) (bool, error) {
+	existing := &clusterv1.Machine{}
+	if err := a.k8sClient.Get(ctx, client.ObjectKeyFromObject(machine), existing); err != nil {
+		if apierrors.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get existing CAPI machine %s: %w", machine.Name, err)
+	}
+	machine.Spec.FailureDomain = existing.Spec.FailureDomain
+	return true, a.patchCAPIMachine(ctx, machine)
+}
+
+func (a *Activities) controlPlaneFailureDomains(ctx context.Context, createCtx *capiMachineCreateContext) ([]string, error) {
 	cluster := &clusterv1.Cluster{}
 	if err := a.k8sClient.Get(ctx, client.ObjectKey{
 		Name:      createCtx.cluster.Name,
 		Namespace: createCtx.namespace,
 	}, cluster); err != nil {
-		return "", fmt.Errorf("failed to get CAPI cluster for failure domain placement: %w", err)
+		return nil, fmt.Errorf("failed to get CAPI cluster for failure domain placement: %w", err)
+	}
+	if !ptr.Deref(cluster.Status.Initialization.InfrastructureProvisioned, false) {
+		return nil, fmt.Errorf("capi cluster infrastructure is not yet provisioned")
 	}
 
 	eligibleDomains := make([]string, 0, len(cluster.Status.FailureDomains))
@@ -63,7 +86,10 @@ func (a *Activities) selectControlPlaneFailureDomain(ctx context.Context, create
 			eligibleDomains = append(eligibleDomains, domain.Name)
 		}
 	}
+	return eligibleDomains, nil
+}
 
+func (a *Activities) selectControlPlaneFailureDomain(ctx context.Context, createCtx *capiMachineCreateContext, eligibleDomains []string) (string, error) {
 	machines := &clusterv1.MachineList{}
 	if err := a.k8sClient.List(
 		ctx,
@@ -86,17 +112,14 @@ func (a *Activities) selectControlPlaneFailureDomain(ctx context.Context, create
 		if !machine.DeletionTimestamp.IsZero() {
 			continue
 		}
-		// Status is where the provider placed the machine; spec is only the request.
+		// Status is where the provider placed the machine; spec is only the request
+		// and is used until the provider reports an observed placement.
 		if domain := cmp.Or(machine.Status.FailureDomain, machine.Spec.FailureDomain); domain != "" {
 			assignments = append(assignments, domain)
 		}
 	}
 
-	algorithm := a.failureDomainSelection
-	if algorithm == nil {
-		algorithm = capi.LeastUsedFailureDomainSelection{}
-	}
-	failureDomain, err := algorithm.Select(eligibleDomains, assignments)
+	failureDomain, err := a.failureDomainSelection(eligibleDomains, assignments)
 	if err != nil {
 		return "", fmt.Errorf("failed to select control-plane failure domain: %w", err)
 	}

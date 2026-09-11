@@ -12,7 +12,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 )
 
-func TestLeastUsedFailureDomainSelectionSelect(t *testing.T) {
+func TestLeastUsedFailureDomainSelection(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -49,12 +49,11 @@ func TestLeastUsedFailureDomainSelectionSelect(t *testing.T) {
 		},
 	}
 
-	algorithm := capi.LeastUsedFailureDomainSelection{}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			got, err := algorithm.Select(tc.eligibleDomains, tc.assignments)
+			got, err := capi.LeastUsedFailureDomainSelection(tc.eligibleDomains, tc.assignments)
 
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
