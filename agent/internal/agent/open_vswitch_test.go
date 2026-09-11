@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,14 +54,14 @@ func (*openVSwitchTestRunner) RunDetached(string, []string, *nkeutils.CommandOpt
 	return errors.New("unexpected detached command")
 }
 
-func TestReconcileOpenVSwitchRejectsNilRequest(t *testing.T) {
+func TestStartOpenVSwitchReconciliationRejectsNilRequest(t *testing.T) {
 	server := &NodeAgentServer{}
-	_, err := server.ReconcileOpenVSwitch(context.Background(), nil)
+	_, err := server.StartOpenVSwitchReconciliation(context.Background(), nil)
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))
 }
 
-func TestReconcileOpenVSwitchReturnsUnchangedForLiveBridge(t *testing.T) {
+func TestOpenVSwitchReconciliationReturnsUnchangedForLiveBridge(t *testing.T) {
 	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
 		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
 		"systemctl enable --now openvswitch-switch":                             {{}},
@@ -69,15 +70,15 @@ func TestReconcileOpenVSwitchReturnsUnchangedForLiveBridge(t *testing.T) {
 	})
 	server := &NodeAgentServer{Runner: runner}
 
-	response, err := server.ReconcileOpenVSwitch(context.Background(), &pb.ReconcileOpenVSwitchRequest{})
+	result, _, err := server.reconcileOpenVSwitchLocked(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, pb.ReconcileOpenVSwitchResponse_OUTCOME_UNCHANGED, response.GetOutcome())
-	assert.Equal(t, "breth0", response.GetBridgeName())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED, result.GetOutcome())
+	assert.Equal(t, "breth0", result.GetBridgeName())
 	assert.NotContains(t, runner.calls, "systemctl restart ovs-vswitchd")
 }
 
-func TestReconcileOpenVSwitchTransformsNetplanAndVerifiesBridge(t *testing.T) {
+func TestOpenVSwitchReconciliationTransformsNetplanAndVerifiesBridge(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/netplan"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/openvswitch"), 0o755))
@@ -114,13 +115,13 @@ func TestReconcileOpenVSwitchTransformsNetplanAndVerifiesBridge(t *testing.T) {
 	})
 	server := &NodeAgentServer{Runner: runner, RootPath: root, openVSwitchSettleDelay: 1}
 
-	response, err := server.ReconcileOpenVSwitch(context.Background(), &pb.ReconcileOpenVSwitchRequest{})
+	result, _, err := server.reconcileOpenVSwitchLocked(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, pb.ReconcileOpenVSwitchResponse_OUTCOME_CONFIGURED, response.GetOutcome())
-	assert.Equal(t, pb.ReconcileOpenVSwitchResponse_NETWORK_BACKEND_NETPLAN, response.GetNetworkBackend())
-	assert.Equal(t, "breth0", response.GetBridgeName())
-	assert.Equal(t, "eth0", response.GetUplinkInterface())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED, result.GetOutcome())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN, result.GetNetworkBackend())
+	assert.Equal(t, "breth0", result.GetBridgeName())
+	assert.Equal(t, "eth0", result.GetUplinkInterface())
 	_, err = os.Stat(filepath.Join(root, "etc/openvswitch/system-id.conf"))
 	assert.ErrorIs(t, err, os.ErrNotExist)
 	_, err = os.Stat(filepath.Join(root, "etc/openvswitch/install_uuid.conf"))
@@ -145,7 +146,7 @@ func TestReconcileOpenVSwitchTransformsNetplanAndVerifiesBridge(t *testing.T) {
 	assert.Equal(t, map[string]any{"addresses": []any{"10.0.0.53"}}, bridge["nameservers"])
 }
 
-func TestReconcileOpenVSwitchResumesWrittenNetplanAfterInterruptedApply(t *testing.T) {
+func TestOpenVSwitchReconciliationResumesWrittenNetplanAfterInterruptedApply(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/netplan"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(root, "etc/netplan/50-cloud-init.yaml"), []byte(`network:
@@ -182,14 +183,14 @@ func TestReconcileOpenVSwitchResumesWrittenNetplanAfterInterruptedApply(t *testi
 	})
 	server := &NodeAgentServer{Runner: runner, RootPath: root, openVSwitchSettleDelay: 1}
 
-	response, err := server.ReconcileOpenVSwitch(context.Background(), &pb.ReconcileOpenVSwitchRequest{})
+	result, _, err := server.reconcileOpenVSwitchLocked(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, pb.ReconcileOpenVSwitchResponse_OUTCOME_CONFIGURED, response.GetOutcome())
-	assert.Equal(t, pb.ReconcileOpenVSwitchResponse_NETWORK_BACKEND_NETPLAN, response.GetNetworkBackend())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED, result.GetOutcome())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN, result.GetNetworkBackend())
 }
 
-func TestReconcileOpenVSwitchConfiguresIfupdownAndPinsLocalMAC(t *testing.T) {
+func TestOpenVSwitchReconciliationConfiguresIfupdownAndPinsLocalMAC(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/network/interfaces.d"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/openvswitch"), 0o755))
@@ -224,11 +225,11 @@ iface eth0 inet static
 	})
 	server := &NodeAgentServer{Runner: runner, RootPath: root}
 
-	response, err := server.ReconcileOpenVSwitch(context.Background(), &pb.ReconcileOpenVSwitchRequest{})
+	result, _, err := server.reconcileOpenVSwitchLocked(context.Background())
 
 	require.NoError(t, err)
-	assert.Equal(t, pb.ReconcileOpenVSwitchResponse_OUTCOME_CONFIGURED, response.GetOutcome())
-	assert.Equal(t, pb.ReconcileOpenVSwitchResponse_NETWORK_BACKEND_IFUPDOWN, response.GetNetworkBackend())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED, result.GetOutcome())
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_IFUPDOWN, result.GetNetworkBackend())
 	uplink, err := os.ReadFile(uplinkPath)
 	require.NoError(t, err)
 	assert.Equal(t, "auto eth0\niface eth0 inet manual\n\tmtu 1500\n", string(uplink))
@@ -238,18 +239,168 @@ iface eth0 inet static
 	assert.Contains(t, string(bridge), "ovs_ports eth0")
 }
 
-func TestReconcileOpenVSwitchDoesNotHideOperationalErrors(t *testing.T) {
+func TestOpenVSwitchReconciliationDoesNotHideOperationalErrors(t *testing.T) {
 	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
 		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
 		"systemctl enable --now openvswitch-switch":                             {{err: errors.New("systemd unavailable")}},
 	})
 	server := &NodeAgentServer{Runner: runner}
 
-	_, err := server.ReconcileOpenVSwitch(context.Background(), &pb.ReconcileOpenVSwitchRequest{})
+	_, _, err := server.reconcileOpenVSwitchLocked(context.Background())
 
 	require.Error(t, err)
 	assert.Equal(t, codes.Internal, status.Code(err))
 	assert.Contains(t, err.Error(), "systemd unavailable")
+}
+
+func TestStartOpenVSwitchReconciliationPersistsBeforeRunning(t *testing.T) {
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
+		"systemctl enable --now openvswitch-switch":                             {{}},
+		"ip -j route show default":                                              {{output: []byte(`[{"dst":"default","dev":"breth0"}]`)}},
+		"ovs-vsctl list-br":                                                     {{output: []byte("breth0\n")}},
+	})
+	persister := &recordingPersister{}
+	server := &NodeAgentServer{
+		Runner:     runner,
+		Persister:  persister,
+		NodeStatus: &NodeStatus{},
+	}
+
+	response, err := server.StartOpenVSwitchReconciliation(
+		context.Background(),
+		&pb.StartOpenVSwitchReconciliationRequest{OperationId: "op-1"},
+	)
+
+	require.NoError(t, err)
+	require.NotNil(t, response.GetOperation())
+	assert.Equal(t, pb.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING, response.GetOperation().GetOperation().GetPhase())
+	snapshots := persister.Snapshots()
+	require.NotEmpty(t, snapshots)
+	assert.Equal(t, NodeAgentOperationPhaseRunning, snapshots[0].NodeAgentOperations["op-1"].Phase)
+
+	require.Eventually(t, func() bool {
+		statusResponse, statusErr := server.GetOpenVSwitchReconciliationStatus(
+			context.Background(),
+			&pb.GetOpenVSwitchReconciliationStatusRequest{OperationId: "op-1"},
+		)
+		return statusErr == nil &&
+			statusResponse.GetOperation().GetOperation().GetPhase() == pb.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED
+	}, time.Second, time.Millisecond)
+	statusResponse, err := server.GetOpenVSwitchReconciliationStatus(
+		context.Background(),
+		&pb.GetOpenVSwitchReconciliationStatusRequest{OperationId: "op-1"},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_UNCHANGED, statusResponse.GetOperation().GetResult().GetOutcome())
+	assert.Equal(t, "breth0", statusResponse.GetOperation().GetResult().GetBridgeName())
+}
+
+func TestStartOpenVSwitchReconciliationDoesNotRunWhenPersistenceFails(t *testing.T) {
+	runner := newOpenVSwitchTestRunner(t, nil)
+	server := &NodeAgentServer{
+		Runner:     runner,
+		Persister:  &recordingPersister{err: errors.New("disk unavailable")},
+		NodeStatus: &NodeStatus{},
+	}
+
+	_, err := server.StartOpenVSwitchReconciliation(
+		context.Background(),
+		&pb.StartOpenVSwitchReconciliationRequest{OperationId: "op-1"},
+	)
+
+	require.Error(t, err)
+	assert.Equal(t, codes.Internal, status.Code(err))
+	assert.Empty(t, runner.calls)
+}
+
+func TestStartOpenVSwitchReconciliationRecoversPersistedRunningOperation(t *testing.T) {
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
+		"systemctl enable --now openvswitch-switch":                             {{}},
+		"ip -j route show default":                                              {{output: []byte(`[{"dst":"default","dev":"breth0"}]`)}},
+		"ovs-vsctl list-br":                                                     {{output: []byte("breth0\n")}},
+	})
+	server := &NodeAgentServer{
+		Runner:    runner,
+		Persister: &recordingPersister{},
+		NodeStatus: &NodeStatus{NodeAgentOperations: map[string]NodeAgentOperation{
+			"op-1": {
+				ID:    "op-1",
+				Type:  operationTypeOpenVSwitchReconciliation,
+				Phase: NodeAgentOperationPhaseRunning,
+				Step:  "waiting_for_network",
+			},
+		}},
+	}
+
+	_, err := server.StartOpenVSwitchReconciliation(
+		context.Background(),
+		&pb.StartOpenVSwitchReconciliationRequest{OperationId: "op-1"},
+	)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		statusResponse, statusErr := server.GetOpenVSwitchReconciliationStatus(
+			context.Background(),
+			&pb.GetOpenVSwitchReconciliationStatusRequest{OperationId: "op-1"},
+		)
+		return statusErr == nil &&
+			statusResponse.GetOperation().GetOperation().GetPhase() == pb.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED
+	}, time.Second, time.Millisecond)
+}
+
+func TestOpenVSwitchOperationWaitsForTransientDefaultRouteGap(t *testing.T) {
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/netplan"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/openvswitch"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(root, "etc/netplan/50-cloud-init.yaml"), []byte(`network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+`), 0o600))
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
+		"systemctl enable --now openvswitch-switch":                             {{}},
+		"ip -j route show default": {
+			{output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"eth0"}]`)},
+			{output: []byte(`[]`)},
+			{output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"breth0"}]`)},
+		},
+		"ovs-vsctl list-br": {
+			{output: nil},
+			{output: []byte("breth0\n")},
+			{output: []byte("breth0\n")},
+		},
+		"ip -j link show dev eth0":       {{output: []byte(`[{"ifname":"eth0","address":"00:11:22:33:44:55","mtu":1500}]`)}},
+		"systemctl restart ovs-vswitchd": {{}},
+		"netplan generate":               {{}},
+		"netplan apply":                  {{}},
+	})
+	server := &NodeAgentServer{
+		Runner:                      runner,
+		Persister:                   &recordingPersister{},
+		NodeStatus:                  &NodeStatus{},
+		RootPath:                    root,
+		openVSwitchSettleDelay:      time.Nanosecond,
+		openVSwitchConvergenceDelay: time.Nanosecond,
+	}
+
+	_, err := server.StartOpenVSwitchReconciliation(
+		context.Background(),
+		&pb.StartOpenVSwitchReconciliationRequest{OperationId: "op-route-gap"},
+	)
+	require.NoError(t, err)
+
+	require.Eventually(t, func() bool {
+		statusResponse, statusErr := server.GetOpenVSwitchReconciliationStatus(
+			context.Background(),
+			&pb.GetOpenVSwitchReconciliationStatusRequest{OperationId: "op-route-gap"},
+		)
+		return statusErr == nil &&
+			statusResponse.GetOperation().GetOperation().GetPhase() == pb.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_SUCCEEDED
+	}, time.Second, time.Millisecond)
 }
 
 func newOpenVSwitchTestRunner(t *testing.T, responses map[string][]openVSwitchCommandResult) *openVSwitchTestRunner {

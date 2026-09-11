@@ -31,12 +31,16 @@ service NodeAgent {
   // restore the service before returning a structured failure outcome.
   rpc ReconfigureKubeletAPIServer(ReconfigureKubeletAPIServerRequest) returns (ReconfigureKubeletAPIServerResponse) {}
 
-  // ReconcileOpenVSwitch moves the default-route interface's existing network
+  // StartOpenVSwitchReconciliation durably accepts an asynchronous host-network
+  // reconciliation that moves the default-route interface's existing network
   // configuration onto an Open vSwitch bridge named br<interface>. The
-  // operation is convergent: after a lost response or interrupted connection,
-  // retrying either applies the already-written network configuration or
-  // reports OUTCOME_UNCHANGED when the bridge is live.
-  rpc ReconcileOpenVSwitch(ReconcileOpenVSwitchRequest) returns (ReconcileOpenVSwitchResponse) {}
+  // operation_id is an idempotency key, so losing this RPC response while the
+  // default route moves does not start duplicate work.
+  rpc StartOpenVSwitchReconciliation(StartOpenVSwitchReconciliationRequest) returns (StartOpenVSwitchReconciliationResponse) {}
+
+  // GetOpenVSwitchReconciliationStatus returns the persisted state of a
+  // previously accepted Open vSwitch reconciliation.
+  rpc GetOpenVSwitchReconciliationStatus(GetOpenVSwitchReconciliationStatusRequest) returns (GetOpenVSwitchReconciliationStatusResponse) {}
 
   // KubeadmUpgradeApply upgrades the Kubernetes control plane and its add-ons
   // to target_version. The request is accepted only on a control-plane node.
@@ -1214,9 +1218,7 @@ message RemoveEtcdMemberRequest {
 
 message RemoveEtcdMemberResponse {}
 
-message ReconcileOpenVSwitchRequest {}
-
-message ReconcileOpenVSwitchResponse {
+message OpenVSwitchReconciliationResult {
   enum Outcome {
     OUTCOME_UNSPECIFIED = 0;
     OUTCOME_CONFIGURED = 1;
@@ -1233,4 +1235,26 @@ message ReconcileOpenVSwitchResponse {
   string bridge_name = 2;
   string uplink_interface = 3;
   NetworkBackend network_backend = 4;
+}
+
+message StartOpenVSwitchReconciliationRequest {
+  string operation_id = 1;
+}
+
+message StartOpenVSwitchReconciliationResponse {
+  OpenVSwitchReconciliationOperation operation = 1;
+}
+
+message GetOpenVSwitchReconciliationStatusRequest {
+  string operation_id = 1;
+}
+
+message GetOpenVSwitchReconciliationStatusResponse {
+  OpenVSwitchReconciliationOperation operation = 1;
+}
+
+message OpenVSwitchReconciliationOperation {
+  NodeAgentOperationStatus operation = 1;
+  // Populated after a successful reconciliation.
+  OpenVSwitchReconciliationResult result = 2;
 }

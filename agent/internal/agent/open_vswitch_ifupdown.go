@@ -77,7 +77,7 @@ func (s *NodeAgentServer) buildOpenVSwitchIfupdownPlan(link openVSwitchLink, gat
 	}
 	config := []byte(fmt.Sprintf("auto %s\niface %s inet manual\n\tmtu %d\n", link.Name, link.Name, link.MTU))
 	return openVSwitchPlan{
-		backend:        pb.ReconcileOpenVSwitchResponse_NETWORK_BACKEND_IFUPDOWN,
+		backend:        pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_IFUPDOWN,
 		bridgeName:     bridgeName,
 		uplinkName:     link.Name,
 		uplinkMAC:      link.Address,

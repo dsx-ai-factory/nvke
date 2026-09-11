@@ -36,7 +36,8 @@ type Client interface {
 	ExecuteKubeadmJoin(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinRequest) (*nkeproto.KubeadmJoinStatusResponse, error)
 	ExecuteKubeadmReset(ctx context.Context, node db.Node, req *nkeproto.KubeadmResetRequest) (*nkeproto.KubeadmResetStatusResponse, error)
 	ReconfigureKubeletAPIServer(ctx context.Context, node db.Node, req *nkeproto.ReconfigureKubeletAPIServerRequest) (*nkeproto.ReconfigureKubeletAPIServerResponse, error)
-	ReconcileOpenVSwitch(ctx context.Context, node db.Node, req *nkeproto.ReconcileOpenVSwitchRequest) (*nkeproto.ReconcileOpenVSwitchResponse, error)
+	StartOpenVSwitchReconciliation(ctx context.Context, node db.Node, req *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error)
+	GetOpenVSwitchReconciliationStatus(ctx context.Context, node db.Node, req *nkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nkeproto.GetOpenVSwitchReconciliationStatusResponse, error)
 	KubeadmUpgradeApply(ctx context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error)
 	ReconcileKubeVip(ctx context.Context, node db.Node, req *nkeproto.ReconcileKubeVipRequest) (*nkeproto.ReconcileKubeVipResponse, error)
 	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
@@ -316,16 +317,38 @@ func (c *NodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, node 
 	return resp, nil
 }
 
-func (c *NodeAgentClient) ReconcileOpenVSwitch(ctx context.Context, node db.Node, req *nkeproto.ReconcileOpenVSwitchRequest) (*nkeproto.ReconcileOpenVSwitchResponse, error) {
+func (c *NodeAgentClient) StartOpenVSwitchReconciliation(
+	ctx context.Context,
+	node db.Node,
+	req *nkeproto.StartOpenVSwitchReconciliationRequest,
+) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
 	conn, cleanup, err := c.getGRPCConnection(ctx, node)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to node agent for Open vSwitch reconciliation on node %s: %w", node.Name, err)
+		return nil, fmt.Errorf("failed to connect to node agent to start Open vSwitch reconciliation on node %s: %w", node.Name, err)
 	}
 	defer cleanup()
 
-	resp, err := nkeproto.NewNodeAgentClient(conn).ReconcileOpenVSwitch(ctx, req)
+	resp, err := nkeproto.NewNodeAgentClient(conn).StartOpenVSwitchReconciliation(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to reconcile Open vSwitch on node %s: %w", node.Name, err)
+		return nil, fmt.Errorf("failed to start Open vSwitch reconciliation on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+func (c *NodeAgentClient) GetOpenVSwitchReconciliationStatus(
+	ctx context.Context,
+	node db.Node,
+	req *nkeproto.GetOpenVSwitchReconciliationStatusRequest,
+) (*nkeproto.GetOpenVSwitchReconciliationStatusResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for Open vSwitch reconciliation status on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nkeproto.NewNodeAgentClient(conn).GetOpenVSwitchReconciliationStatus(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get Open vSwitch reconciliation status from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

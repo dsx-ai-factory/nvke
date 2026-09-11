@@ -47,10 +47,10 @@ type FakeClient struct {
 	ReconfigureKubeletAPIServerRequests []*nkeproto.ReconfigureKubeletAPIServerRequest
 	ReconfigureKubeletAPIServerResponse *nkeproto.ReconfigureKubeletAPIServerResponse
 	ReconfigureKubeletAPIServerErr      error
-	ReconcileOpenVSwitchCalls           []uuid.UUID
-	ReconcileOpenVSwitchRequests        []*nkeproto.ReconcileOpenVSwitchRequest
-	ReconcileOpenVSwitchResponse        *nkeproto.ReconcileOpenVSwitchResponse
-	ReconcileOpenVSwitchErr             error
+	StartOpenVSwitchCalls               []uuid.UUID
+	StartOpenVSwitchHook                func(db.Node, *nkeproto.StartOpenVSwitchReconciliationRequest) (*nkeproto.StartOpenVSwitchReconciliationResponse, error)
+	GetOpenVSwitchStatusCalls           []uuid.UUID
+	GetOpenVSwitchStatusHook            func(db.Node, *nkeproto.GetOpenVSwitchReconciliationStatusRequest) (*nkeproto.GetOpenVSwitchReconciliationStatusResponse, error)
 
 	InitializeAPIEncryptionCalls            []uuid.UUID
 	InitializeAPIEncryptionKeys             []string
@@ -194,10 +194,28 @@ func (f *FakeClient) ReconfigureKubeletAPIServer(_ context.Context, node db.Node
 	return f.ReconfigureKubeletAPIServerResponse, f.ReconfigureKubeletAPIServerErr
 }
 
-func (f *FakeClient) ReconcileOpenVSwitch(_ context.Context, node db.Node, req *nkeproto.ReconcileOpenVSwitchRequest) (*nkeproto.ReconcileOpenVSwitchResponse, error) {
-	f.ReconcileOpenVSwitchCalls = append(f.ReconcileOpenVSwitchCalls, node.ID)
-	f.ReconcileOpenVSwitchRequests = append(f.ReconcileOpenVSwitchRequests, req)
-	return f.ReconcileOpenVSwitchResponse, f.ReconcileOpenVSwitchErr
+func (f *FakeClient) StartOpenVSwitchReconciliation(
+	_ context.Context,
+	node db.Node,
+	req *nkeproto.StartOpenVSwitchReconciliationRequest,
+) (*nkeproto.StartOpenVSwitchReconciliationResponse, error) {
+	f.StartOpenVSwitchCalls = append(f.StartOpenVSwitchCalls, node.ID)
+	if f.StartOpenVSwitchHook == nil {
+		return nil, errors.New("StartOpenVSwitchHook is nil")
+	}
+	return f.StartOpenVSwitchHook(node, req)
+}
+
+func (f *FakeClient) GetOpenVSwitchReconciliationStatus(
+	_ context.Context,
+	node db.Node,
+	req *nkeproto.GetOpenVSwitchReconciliationStatusRequest,
+) (*nkeproto.GetOpenVSwitchReconciliationStatusResponse, error) {
+	f.GetOpenVSwitchStatusCalls = append(f.GetOpenVSwitchStatusCalls, node.ID)
+	if f.GetOpenVSwitchStatusHook == nil {
+		return nil, errors.New("GetOpenVSwitchStatusHook is nil")
+	}
+	return f.GetOpenVSwitchStatusHook(node, req)
 }
 
 func (f *FakeClient) KubeadmUpgradeApply(_ context.Context, node db.Node, req *nkeproto.KubeadmUpgradeApplyRequest) (*nkeproto.KubeadmUpgradeApplyResponse, error) {

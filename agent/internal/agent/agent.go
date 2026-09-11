@@ -126,6 +126,7 @@ type NodeAgentServer struct {
 	nodeAgentCfgMu                 sync.Mutex          // serializes NodeSpec/config.yaml writes
 	openVSwitchMu                  sync.Mutex          // serializes host network configuration changes
 	openVSwitchSettleDelay         time.Duration       // overrides the post-netplan settle delay in tests
+	openVSwitchConvergenceDelay    time.Duration       // overrides the asynchronous convergence poll delay in tests
 	reloadPollInterval             time.Duration       // overrides the 2s poll interval in tests
 	drainKubeVipPollInterval       time.Duration       // overrides kube-vip drain polling in tests
 	drainKubeVipSocketQuietWindow  time.Duration       // overrides kube-vip socket quiet window in tests

@@ -163,7 +163,7 @@ func (s *NodeAgentServer) buildOpenVSwitchNetplanPlan(link openVSwitchLink, gate
 		return openVSwitchPlan{}, fmt.Errorf("render %s: %w", selected.path, err)
 	}
 	return openVSwitchPlan{
-		backend:        pb.ReconcileOpenVSwitchResponse_NETWORK_BACKEND_NETPLAN,
+		backend:        pb.OpenVSwitchReconciliationResult_NETWORK_BACKEND_NETPLAN,
 		bridgeName:     bridgeName,
 		uplinkName:     link.Name,
 		uplinkMAC:      link.Address,

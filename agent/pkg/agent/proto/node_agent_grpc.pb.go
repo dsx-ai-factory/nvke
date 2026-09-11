@@ -29,7 +29,8 @@ const (
 	NodeAgent_ExecuteKubeadmJoin_FullMethodName                           = "/proto.NodeAgent/ExecuteKubeadmJoin"
 	NodeAgent_ExecuteKubeadmReset_FullMethodName                          = "/proto.NodeAgent/ExecuteKubeadmReset"
 	NodeAgent_ReconfigureKubeletAPIServer_FullMethodName                  = "/proto.NodeAgent/ReconfigureKubeletAPIServer"
-	NodeAgent_ReconcileOpenVSwitch_FullMethodName                         = "/proto.NodeAgent/ReconcileOpenVSwitch"
+	NodeAgent_StartOpenVSwitchReconciliation_FullMethodName               = "/proto.NodeAgent/StartOpenVSwitchReconciliation"
+	NodeAgent_GetOpenVSwitchReconciliationStatus_FullMethodName           = "/proto.NodeAgent/GetOpenVSwitchReconciliationStatus"
 	NodeAgent_KubeadmUpgradeApply_FullMethodName                          = "/proto.NodeAgent/KubeadmUpgradeApply"
 	NodeAgent_ReconcileKubeVip_FullMethodName                             = "/proto.NodeAgent/ReconcileKubeVip"
 	NodeAgent_StartKubernetesCertificateRenewal_FullMethodName            = "/proto.NodeAgent/StartKubernetesCertificateRenewal"
@@ -93,12 +94,15 @@ type NodeAgentClient interface {
 	// after a config change, the agent restores the original config and tries to
 	// restore the service before returning a structured failure outcome.
 	ReconfigureKubeletAPIServer(ctx context.Context, in *ReconfigureKubeletAPIServerRequest, opts ...grpc.CallOption) (*ReconfigureKubeletAPIServerResponse, error)
-	// ReconcileOpenVSwitch moves the default-route interface's existing network
+	// StartOpenVSwitchReconciliation durably accepts an asynchronous host-network
+	// reconciliation that moves the default-route interface's existing network
 	// configuration onto an Open vSwitch bridge named br<interface>. The
-	// operation is convergent: after a lost response or interrupted connection,
-	// retrying either applies the already-written network configuration or
-	// reports OUTCOME_UNCHANGED when the bridge is live.
-	ReconcileOpenVSwitch(ctx context.Context, in *ReconcileOpenVSwitchRequest, opts ...grpc.CallOption) (*ReconcileOpenVSwitchResponse, error)
+	// operation_id is an idempotency key, so losing this RPC response while the
+	// default route moves does not start duplicate work.
+	StartOpenVSwitchReconciliation(ctx context.Context, in *StartOpenVSwitchReconciliationRequest, opts ...grpc.CallOption) (*StartOpenVSwitchReconciliationResponse, error)
+	// GetOpenVSwitchReconciliationStatus returns the persisted state of a
+	// previously accepted Open vSwitch reconciliation.
+	GetOpenVSwitchReconciliationStatus(ctx context.Context, in *GetOpenVSwitchReconciliationStatusRequest, opts ...grpc.CallOption) (*GetOpenVSwitchReconciliationStatusResponse, error)
 	// KubeadmUpgradeApply upgrades the Kubernetes control plane and its add-ons
 	// to target_version. The request is accepted only on a control-plane node.
 	// Retrying the same target is safe because kubeadm upgrade apply is
@@ -357,10 +361,20 @@ func (c *nodeAgentClient) ReconfigureKubeletAPIServer(ctx context.Context, in *R
 	return out, nil
 }
 
-func (c *nodeAgentClient) ReconcileOpenVSwitch(ctx context.Context, in *ReconcileOpenVSwitchRequest, opts ...grpc.CallOption) (*ReconcileOpenVSwitchResponse, error) {
+func (c *nodeAgentClient) StartOpenVSwitchReconciliation(ctx context.Context, in *StartOpenVSwitchReconciliationRequest, opts ...grpc.CallOption) (*StartOpenVSwitchReconciliationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(ReconcileOpenVSwitchResponse)
-	err := c.cc.Invoke(ctx, NodeAgent_ReconcileOpenVSwitch_FullMethodName, in, out, cOpts...)
+	out := new(StartOpenVSwitchReconciliationResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_StartOpenVSwitchReconciliation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) GetOpenVSwitchReconciliationStatus(ctx context.Context, in *GetOpenVSwitchReconciliationStatusRequest, opts ...grpc.CallOption) (*GetOpenVSwitchReconciliationStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetOpenVSwitchReconciliationStatusResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_GetOpenVSwitchReconciliationStatus_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -845,12 +859,15 @@ type NodeAgentServer interface {
 	// after a config change, the agent restores the original config and tries to
 	// restore the service before returning a structured failure outcome.
 	ReconfigureKubeletAPIServer(context.Context, *ReconfigureKubeletAPIServerRequest) (*ReconfigureKubeletAPIServerResponse, error)
-	// ReconcileOpenVSwitch moves the default-route interface's existing network
+	// StartOpenVSwitchReconciliation durably accepts an asynchronous host-network
+	// reconciliation that moves the default-route interface's existing network
 	// configuration onto an Open vSwitch bridge named br<interface>. The
-	// operation is convergent: after a lost response or interrupted connection,
-	// retrying either applies the already-written network configuration or
-	// reports OUTCOME_UNCHANGED when the bridge is live.
-	ReconcileOpenVSwitch(context.Context, *ReconcileOpenVSwitchRequest) (*ReconcileOpenVSwitchResponse, error)
+	// operation_id is an idempotency key, so losing this RPC response while the
+	// default route moves does not start duplicate work.
+	StartOpenVSwitchReconciliation(context.Context, *StartOpenVSwitchReconciliationRequest) (*StartOpenVSwitchReconciliationResponse, error)
+	// GetOpenVSwitchReconciliationStatus returns the persisted state of a
+	// previously accepted Open vSwitch reconciliation.
+	GetOpenVSwitchReconciliationStatus(context.Context, *GetOpenVSwitchReconciliationStatusRequest) (*GetOpenVSwitchReconciliationStatusResponse, error)
 	// KubeadmUpgradeApply upgrades the Kubernetes control plane and its add-ons
 	// to target_version. The request is accepted only on a control-plane node.
 	// Retrying the same target is safe because kubeadm upgrade apply is
@@ -1057,8 +1074,11 @@ func (UnimplementedNodeAgentServer) ExecuteKubeadmReset(context.Context, *Kubead
 func (UnimplementedNodeAgentServer) ReconfigureKubeletAPIServer(context.Context, *ReconfigureKubeletAPIServerRequest) (*ReconfigureKubeletAPIServerResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReconfigureKubeletAPIServer not implemented")
 }
-func (UnimplementedNodeAgentServer) ReconcileOpenVSwitch(context.Context, *ReconcileOpenVSwitchRequest) (*ReconcileOpenVSwitchResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method ReconcileOpenVSwitch not implemented")
+func (UnimplementedNodeAgentServer) StartOpenVSwitchReconciliation(context.Context, *StartOpenVSwitchReconciliationRequest) (*StartOpenVSwitchReconciliationResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartOpenVSwitchReconciliation not implemented")
+}
+func (UnimplementedNodeAgentServer) GetOpenVSwitchReconciliationStatus(context.Context, *GetOpenVSwitchReconciliationStatusRequest) (*GetOpenVSwitchReconciliationStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetOpenVSwitchReconciliationStatus not implemented")
 }
 func (UnimplementedNodeAgentServer) KubeadmUpgradeApply(context.Context, *KubeadmUpgradeApplyRequest) (*KubeadmUpgradeApplyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method KubeadmUpgradeApply not implemented")
@@ -1322,20 +1342,38 @@ func _NodeAgent_ReconfigureKubeletAPIServer_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
-func _NodeAgent_ReconcileOpenVSwitch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(ReconcileOpenVSwitchRequest)
+func _NodeAgent_StartOpenVSwitchReconciliation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartOpenVSwitchReconciliationRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(NodeAgentServer).ReconcileOpenVSwitch(ctx, in)
+		return srv.(NodeAgentServer).StartOpenVSwitchReconciliation(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: NodeAgent_ReconcileOpenVSwitch_FullMethodName,
+		FullMethod: NodeAgent_StartOpenVSwitchReconciliation_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(NodeAgentServer).ReconcileOpenVSwitch(ctx, req.(*ReconcileOpenVSwitchRequest))
+		return srv.(NodeAgentServer).StartOpenVSwitchReconciliation(ctx, req.(*StartOpenVSwitchReconciliationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_GetOpenVSwitchReconciliationStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOpenVSwitchReconciliationStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).GetOpenVSwitchReconciliationStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_GetOpenVSwitchReconciliationStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).GetOpenVSwitchReconciliationStatus(ctx, req.(*GetOpenVSwitchReconciliationStatusRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2125,8 +2163,12 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _NodeAgent_ReconfigureKubeletAPIServer_Handler,
 		},
 		{
-			MethodName: "ReconcileOpenVSwitch",
-			Handler:    _NodeAgent_ReconcileOpenVSwitch_Handler,
+			MethodName: "StartOpenVSwitchReconciliation",
+			Handler:    _NodeAgent_StartOpenVSwitchReconciliation_Handler,
+		},
+		{
+			MethodName: "GetOpenVSwitchReconciliationStatus",
+			Handler:    _NodeAgent_GetOpenVSwitchReconciliationStatus_Handler,
 		},
 		{
 			MethodName: "KubeadmUpgradeApply",
