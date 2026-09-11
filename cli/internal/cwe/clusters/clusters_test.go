@@ -120,6 +120,78 @@ func TestCreateCmdEmptySpecRejected(t *testing.T) {
 	}
 }
 
+// TestPatchCmdRequiresPatchOrFile verifies that omitting both --patch and
+// --patch-file fails before the API is called.
+func TestPatchCmdRequiresPatchOrFile(t *testing.T) {
+	cmd := NewPatchCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when neither --patch nor --patch-file is given, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("missing --patch/--patch-file should fail before reaching the API, got: %v", err)
+	}
+}
+
+// TestPatchCmdRejectsBothPatchAndFile verifies that passing both --patch and
+// --patch-file is rejected before the API is called.
+func TestPatchCmdRejectsBothPatchAndFile(t *testing.T) {
+	path := writeSpec(t, "teleportEnabled: true")
+	cmd := NewPatchCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster", "--patch", "teleportEnabled: true", "--patch-file", path})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error when both --patch and --patch-file are given, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("--patch and --patch-file together should fail before reaching the API, got: %v", err)
+	}
+}
+
+// TestPatchCmdUnknownFieldRejected verifies that a patch with an unknown
+// field fails before the API is called.
+func TestPatchCmdUnknownFieldRejected(t *testing.T) {
+	cmd := NewPatchCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster", "--patch", "notAField: x"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for an unknown field, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("unknown field should fail before reaching the API, got: %v", err)
+	}
+}
+
+// TestPatchCmdMalformedYAMLRejected verifies that invalid YAML in
+// --patch-file fails before the API is called.
+func TestPatchCmdMalformedYAMLRejected(t *testing.T) {
+	path := writeSpec(t, ":\t:")
+	cmd := NewPatchCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster", "--patch-file", path})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for malformed YAML, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("malformed YAML should fail before reaching the API, got: %v", err)
+	}
+}
+
+// TestPatchCmdEmptyPatchRejected verifies that an empty --patch document
+// fails before the API is called.
+func TestPatchCmdEmptyPatchRejected(t *testing.T) {
+	cmd := NewPatchCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster", "--patch", "{}"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for an empty patch document, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("an empty patch document reaching validation is fine; it should still fail before the API, got: %v", err)
+	}
+}
+
 // TestDeleteCmdRequiresName verifies that delete cluster requires exactly one arg.
 func TestDeleteCmdRequiresName(t *testing.T) {
 	cmd := NewDeleteCmd(clientFnErr)
@@ -148,7 +220,7 @@ func withParent(cmd *cobra.Command, args []string) error {
 }
 
 // TestCmdAliases verifies that "cluster" and "clusters" are interchangeable
-// for get, create, and delete.
+// for get, create, patch, and delete.
 func TestCmdAliases(t *testing.T) {
 	validSpec := writeSpec(t, `
 name: my-cluster
@@ -166,6 +238,8 @@ etcdEncrypted: false
 		{"get cluster", func() *cobra.Command { return NewGetCmd(clientFnErr) }, []string{"cluster"}},
 		{"create clusters", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"clusters", "-f", validSpec}},
 		{"create cluster", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"cluster", "-f", validSpec}},
+		{"patch clusters", func() *cobra.Command { return NewPatchCmd(clientFnErr) }, []string{"clusters", "my-cluster", "--patch", "teleportEnabled: true"}},
+		{"patch cluster", func() *cobra.Command { return NewPatchCmd(clientFnErr) }, []string{"cluster", "my-cluster", "--patch", "teleportEnabled: true"}},
 		{"delete clusters", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"clusters", "my-cluster"}},
 		{"delete cluster", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"cluster", "my-cluster"}},
 	}

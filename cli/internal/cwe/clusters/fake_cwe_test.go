@@ -5,6 +5,7 @@ package clusters
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,6 +32,18 @@ type fakeCWE struct {
 	clusters []api.Cluster
 	requests []string
 	server   *httptest.Server
+
+	// lastBody captures the most recent PATCH request body, so a test can
+	// assert on the literal wire bytes the CLI sent rather than a decoded
+	// struct, which would hide an omitempty regression.
+	lastBody []byte
+
+	// patchFailStatus/patchFailMessage, when patchFailStatus is nonzero,
+	// make the next PATCH answer with that status and message instead of
+	// applying it — for testing server-side rejection without blocking the
+	// preceding GET that resolves the cluster name.
+	patchFailStatus  int
+	patchFailMessage string
 }
 
 // newFakeCWE starts a fake CWE seeded with clusters, and returns it together
@@ -79,6 +92,22 @@ func (f *fakeCWE) stored() []api.Cluster {
 	return append([]api.Cluster(nil), f.clusters...)
 }
 
+// lastRequestBody returns the most recent PATCH request's raw body.
+func (f *fakeCWE) lastRequestBody() []byte {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]byte(nil), f.lastBody...)
+}
+
+// failPatch makes the next PATCH answer with status and message instead of
+// applying it.
+func (f *fakeCWE) failPatch(status int, message string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.patchFailStatus = status
+	f.patchFailMessage = message
+}
+
 func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -102,6 +131,8 @@ func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.create(w, r)
 	case isItem && r.Method == http.MethodGet:
 		f.get(w, id)
+	case isItem && r.Method == http.MethodPatch:
+		f.patch(w, r, id)
 	case isItem && r.Method == http.MethodDelete:
 		f.remove(w, id)
 	default:
@@ -147,6 +178,45 @@ func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 	}
 	f.clusters = append(f.clusters, cl)
 	writeJSON(w, http.StatusCreated, cl)
+}
+
+// patch answers PATCH /clusters/{id}, storing the raw request body for
+// lastRequestBody and merging the decoded fields onto the stored cluster.
+// If failPatch was called, it answers with that status/message instead.
+func (f *fakeCWE) patch(w http.ResponseWriter, r *http.Request, id string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "reading body: " + err.Error()})
+		return
+	}
+	f.lastBody = body
+
+	if f.patchFailStatus != 0 {
+		status, message := f.patchFailStatus, f.patchFailMessage
+		f.patchFailStatus, f.patchFailMessage = 0, ""
+		writeJSON(w, status, api.GenericError{Message: message})
+		return
+	}
+
+	var req api.UpdateClusterRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "malformed body: " + err.Error()})
+		return
+	}
+	for i, c := range f.clusters {
+		if c.ID.String() != id {
+			continue
+		}
+		if req.ControlPlaneKubernetesVersion != nil {
+			f.clusters[i].ControlPlaneKubernetesVersion = *req.ControlPlaneKubernetesVersion
+		}
+		if req.TeleportEnabled != nil {
+			f.clusters[i].TeleportEnabled = req.TeleportEnabled
+		}
+		writeJSON(w, http.StatusOK, f.clusters[i])
+		return
+	}
+	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "cluster " + id + " not found"})
 }
 
 func (f *fakeCWE) get(w http.ResponseWriter, id string) {

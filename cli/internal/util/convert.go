@@ -18,14 +18,11 @@ import (
 // generated API types are honoured. Direct yaml.Unmarshal is avoided because
 // generated structs only carry json tags, not yaml tags.
 func YAMLToRequest[T any](data []byte) (T, error) {
-	var raw interface{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return *new(T), fmt.Errorf("unmarshal yaml: %w", err)
+	m, err := YAMLToGenericMap(data)
+	if err != nil {
+		return *new(T), err
 	}
-	if raw == nil {
-		return *new(T), fmt.Errorf("spec file is empty")
-	}
-	j, err := json.Marshal(raw)
+	j, err := json.Marshal(m)
 	if err != nil {
 		return *new(T), fmt.Errorf("marshal json: %w", err)
 	}
@@ -36,4 +33,21 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 		return *new(T), fmt.Errorf("unmarshal request: %w", err)
 	}
 	return req, nil
+}
+
+// YAMLToGenericMap parses a YAML document into a map[string]interface{},
+// keyed the same way json.Marshal would read it back out.
+func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
+	var raw interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("unmarshal yaml: %w", err)
+	}
+	if raw == nil {
+		return nil, fmt.Errorf("empty document")
+	}
+	m, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("yaml document is not a mapping")
+	}
+	return m, nil
 }

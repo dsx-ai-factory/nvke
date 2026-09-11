@@ -6,6 +6,8 @@
 package clusters
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -134,6 +136,116 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 		return api.CreateClusterJSONRequestBody{}, fmt.Errorf("reading spec: %w", err)
 	}
 	return util.YAMLToRequest[api.CreateClusterJSONRequestBody](data)
+}
+
+// NewPatchCmd returns the "nkectl patch cluster <name>" subcommand.
+func NewPatchCmd(clientFn ClientFn) *cobra.Command {
+	var (
+		patch     string
+		patchFile string
+	)
+
+	cmd := &cobra.Command{
+		Use:     "cluster <name>",
+		Aliases: []string{"clusters"},
+		Short:   "Patch a tenant cluster",
+		Long: `Patch a tenant cluster on the site controller.
+
+PATCH semantics apply: only the fields in the patch document are changed;
+everything else on the cluster is left as it is. Pass the patch inline with
+--patch, or from a file (or stdin via -) with --patch-file.
+
+Example — bump the Kubernetes version:
+  nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
+
+Example — patch file:
+  nkectl patch cluster my-cluster --patch-file patch.yaml
+
+Example — clear a field back to its default:
+  nkectl patch cluster my-cluster --patch 'controlPlaneConfig: {infra: {preKubeadmCommands: []}}'
+
+The patch document's fields must match the CWE UpdateClusterRequest schema
+exactly. See /api/docs on your site controller.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if patch == "" && patchFile == "" {
+				return fmt.Errorf("nothing to patch: pass --patch or --patch-file")
+			}
+			if patch != "" && patchFile != "" {
+				return fmt.Errorf("pass only one of --patch or --patch-file")
+			}
+			req, err := loadPatchClusterRequest(cmd, patch, patchFile)
+			if err != nil {
+				return err
+			}
+			c, err := clientFn()
+			if err != nil {
+				return err
+			}
+			cl, err := c.FindClusterByName(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			updated, err := c.PatchCluster(cmd.Context(), cl.ID, req)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "Cluster %q patched (id: %s)\n", updated.Name, updated.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Update is async — run 'nkectl get clusters' to check status.\n")
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&patch, "patch", "", "Inline YAML patch document")
+	cmd.Flags().StringVar(&patchFile, "patch-file", "", "Path to a YAML patch file, or '-' to read from stdin")
+	return cmd
+}
+
+// loadPatchClusterRequest reads the patch document from patch, or from
+// patchFile (a path, or "-" for stdin) when patch is empty, and validates it
+// by decoding into UpdateClusterRequest with unknown fields disallowed; the
+// decoded value is discarded, and the raw bytes are returned so the document
+// reaches the wire exactly as written.
+func loadPatchClusterRequest(cmd *cobra.Command, patch, patchFile string) ([]byte, error) {
+	raw := []byte(patch)
+	if patch == "" {
+		var r io.Reader
+		if patchFile == "-" {
+			r = cmd.InOrStdin()
+		} else {
+			f, err := os.Open(patchFile)
+			if err != nil {
+				return nil, fmt.Errorf("opening %q: %w", patchFile, err)
+			}
+			defer f.Close()
+			r = f
+		}
+		data, err := io.ReadAll(r)
+		if err != nil {
+			return nil, fmt.Errorf("reading patch: %w", err)
+		}
+		raw = data
+	}
+
+	patchMap, err := util.YAMLToGenericMap(raw)
+	if err != nil {
+		return nil, err
+	}
+	if len(patchMap) == 0 {
+		return nil, fmt.Errorf("nothing to patch: the patch document is empty")
+	}
+	data, err := json.Marshal(patchMap)
+	if err != nil {
+		return nil, fmt.Errorf("encoding patch: %w", err)
+	}
+
+	var validate api.UpdateClusterRequest
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&validate); err != nil {
+		return nil, fmt.Errorf("validating patch: %w", err)
+	}
+	return data, nil
 }
 
 // NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.
