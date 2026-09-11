@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Host preparation for the "nkectl bootstrap e2e" job
+# (.github/workflows/nkectl-bootstrap-e2e.yml), and for reproducing that host
+# locally. cli/e2e/bootstrap/run.sh needs a standalone containerd with nerdctl
+# and buildkitd, and must not be able to reach Docker.
+#
+#   install-runtime   nerdctl-full pinned by NERDCTL_VERSION/NERDCTL_FULL_SHA256;
+#                     a containerd on CONTAINERD_ADDRESS with its own data root;
+#                     a buildkitd on BUILDKIT_HOST building into
+#                     CONTAINERD_NAMESPACE.
+#   remove-docker     mask Docker, its socket and Docker's own containerd, put a
+#                     failing `docker` shim first on PATH, and assert both took.
+#
+# Rootful, not rootless: kind's nerdctl provider and bootstrapengine exec a bare
+# `nerdctl`/`kind` with no `sudo` baked in, so every caller runs them under
+# `sudo -E`. Rootless would need cgroup delegation, subuid/subgid ranges and
+# rootlesskit for no gain on a single-tenant CI runner.
+#
+# Docker is masked rather than left unused so that a reintroduced dependency
+# fails here instead of passing unnoticed: a `docker build` back in a Makefile,
+# kind falling back to its Docker default, nerdctl reaching Docker's containerd.
+# The binaries are untouched -- masking is what makes an absolute-path
+# `/usr/bin/docker build` fail too, and remove-docker proves that against every
+# real binary on PATH.
+#
+# Nothing is undone: the runners are single-use, so the masks, the shim and the
+# runtime all die with the job. The shim lives in STATE_DIR, RUNNER_TEMP on a
+# runner, which is per-job.
+set -Eeuo pipefail
+
+STATE_DIR="${RUNNER_TEMP:-${TMPDIR:-/tmp}/bootstrap-e2e-host}"
+
+log() { printf '[bootstrap-e2e-host] %s\n' "$*"; }
+
+# wait_for_socket waits up to $2 seconds for socket $1. As root: containerd's
+# and buildkitd's sockets are root-owned.
+wait_for_socket() {
+  local path="$1" tries="${2:-30}"
+  for _ in $(seq 1 "${tries}"); do
+    if sudo test -S "${path}"; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
+# install_runtime installs nerdctl-full and starts the standalone containerd
+# and buildkitd, pinned by the environment guarded below.
+install_runtime() {
+  : "${NERDCTL_VERSION:?}" "${NERDCTL_FULL_SHA256:?}" "${CONTAINERD_ADDRESS:?}" "${BUILDKIT_HOST:?}" "${CONTAINERD_NAMESPACE:?}"
+  archive="nerdctl-full-${NERDCTL_VERSION}-linux-amd64.tar.gz"
+  curl -fsSL -o "/tmp/${archive}" \
+    "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${archive}"
+  echo "${NERDCTL_FULL_SHA256}  /tmp/${archive}" | sha256sum -c -
+  sudo tar Cxzf /usr/local "/tmp/${archive}"
+
+  # A dedicated unit, config and data root, so this never reuses Docker's
+  # `containerd`.
+  sudo mkdir -p /etc/containerd-nerdctl /var/lib/containerd-nerdctl /run/containerd-nerdctl /run/buildkit-nerdctl
+  /usr/local/bin/containerd config default | sudo tee /etc/containerd-nerdctl/config.toml >/dev/null
+  # Match on the path only, not the quoting, which differs across containerd
+  # versions. The grpc address is the only line carrying this path; the
+  # debug, grpc-tcp and metrics addresses are empty.
+  sudo sed -i \
+    -e "s#^root = .*#root = \"/var/lib/containerd-nerdctl\"#" \
+    -e "s#^state = .*#state = \"/run/containerd-nerdctl\"#" \
+    -e "s#/run/containerd/containerd.sock#${CONTAINERD_ADDRESS}#" \
+    /etc/containerd-nerdctl/config.toml
+
+  sudo tee /etc/systemd/system/containerd-nerdctl.service >/dev/null <<'UNIT'
+[Unit]
+Description=standalone containerd for the nerdctl kind provider
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/containerd --config /etc/containerd-nerdctl/config.toml
+Restart=on-failure
+Delegate=yes
+KillMode=process
+OOMScoreAdjust=-999
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+  # `nerdctl build` is a BuildKit client, not a builder, and buildkitd ships
+  # in the archive unpacked above. --containerd-worker builds into the same
+  # containerd and namespace nerdctl and kind read from; the default OCI
+  # worker would build into a store nothing else can see, surfacing much
+  # later as an ImagePullBackOff rather than as a build error.
+  sudo tee /etc/systemd/system/buildkit-nerdctl.service >/dev/null <<UNIT
+[Unit]
+Description=buildkitd for nerdctl build, on the standalone containerd
+After=containerd-nerdctl.service
+Requires=containerd-nerdctl.service
+
+[Service]
+ExecStart=/usr/local/bin/buildkitd \\
+  --addr unix://${BUILDKIT_HOST#unix://} \\
+  --oci-worker=false \\
+  --containerd-worker=true \\
+  --containerd-worker-addr ${CONTAINERD_ADDRESS} \\
+  --containerd-worker-namespace ${CONTAINERD_NAMESPACE}
+Restart=on-failure
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now containerd-nerdctl
+
+  if ! wait_for_socket "${CONTAINERD_ADDRESS}" 30; then
+    echo "::error::containerd-nerdctl never opened ${CONTAINERD_ADDRESS}"
+    echo "::group::containerd-nerdctl.service status"
+    sudo systemctl status containerd-nerdctl --no-pager -l || true
+    echo "::endgroup::"
+    echo "::group::containerd-nerdctl journal"
+    sudo journalctl -u containerd-nerdctl --no-pager || true
+    echo "::endgroup::"
+    echo "::group::/etc/containerd-nerdctl/config.toml"
+    sudo cat /etc/containerd-nerdctl/config.toml || true
+    echo "::endgroup::"
+    exit 1
+  fi
+
+  sudo -E env "PATH=$PATH" nerdctl info
+
+  sudo systemctl enable --now buildkit-nerdctl
+  if ! wait_for_socket "${BUILDKIT_HOST#unix://}" 30; then
+    echo "::error::buildkitd never opened ${BUILDKIT_HOST}"
+    echo "::group::buildkit-nerdctl journal"
+    sudo journalctl -u buildkit-nerdctl --no-pager || true
+    echo "::endgroup::"
+    exit 1
+  fi
+}
+
+# remove_docker masks Docker, shims it on PATH, and asserts it is gone.
+remove_docker() {
+  # containerd.service here is Docker's, on /run/containerd/containerd.sock:
+  # the socket nerdctl falls back to without CONTAINERD_ADDRESS. `disable`
+  # may fail for a unit that is not loaded; `mask` must not, because the
+  # assertions below rely on it.
+  sudo systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
+  sudo systemctl mask docker.socket docker.service containerd.service
+  sudo rm -f /var/run/docker.sock /run/docker.sock
+
+  shim_dir="${STATE_DIR}/no-docker"
+  mkdir -p "${shim_dir}"
+  cat >"${shim_dir}/docker" <<'SHIM'
+#!/bin/sh
+echo "docker was invoked by the bootstrap e2e suite: docker $*" >&2
+echo "this job removes Docker so a reintroduced dependency fails here rather than passing unnoticed." >&2
+echo "The suite runs on nerdctl/containerd. See cli/Makefile's check-no-docker and the 'Remove Docker' step in nkectl-bootstrap-e2e.yml." >&2
+exit 1
+SHIM
+  chmod 0755 "${shim_dir}/docker"
+  # GITHUB_PATH prepends for every later step of the job; off a runner the
+  # caller has to do it. Both it and RUNNER_TEMP are per-job.
+  if [ -n "${GITHUB_PATH:-}" ]; then
+    echo "${shim_dir}" >> "${GITHUB_PATH}"
+  else
+    log "not on a runner: prepend ${shim_dir} to PATH for the commands that follow"
+  fi
+  export PATH="${shim_dir}:${PATH}"
+
+  # Prove it: a removal that did not take reads as a guarantee while
+  # providing nothing.
+  resolved="$(command -v docker || true)"
+  if [ "${resolved}" != "${shim_dir}/docker" ]; then
+    echo "::error::docker resolves to '${resolved:-nothing}', not the shim"; exit 1
+  fi
+  if docker version >/dev/null 2>&1; then
+    echo "::error::docker still runs after removal"; exit 1
+  fi
+  # Every real binary too, by its own path: this proves the masking, not the
+  # shim.
+  while read -r real; do
+    if [ "${real}" = "${shim_dir}/docker" ]; then
+      continue
+    fi
+    if "${real}" version >/dev/null 2>&1; then
+      echo "::error::${real} still reaches a daemon after removal"; exit 1
+    fi
+  done < <(type -aP docker || true)
+  if systemctl is-active --quiet docker.service; then
+    echo "::error::docker.service is still active after removal"; exit 1
+  fi
+  if [ -S /var/run/docker.sock ]; then
+    echo "::error::/var/run/docker.sock still exists after removal"; exit 1
+  fi
+  # Masked, not merely stopped: docker.socket could otherwise socket-activate
+  # the daemon back after the check above.
+  for unit in docker.socket docker.service containerd.service; do
+    state="$(systemctl is-enabled "${unit}" 2>/dev/null || true)"
+    if [ "${state}" != "masked" ]; then
+      echo "::error::${unit} is '${state:-absent}' after removal, want masked"; exit 1
+    fi
+  done
+  echo "docker removed; invoking it now fails with:"
+  docker version 2>&1 | sed 's/^/  /' || true
+}
+
+usage() {
+  echo "usage: $0 install-runtime | remove-docker" >&2
+  exit 2
+}
+
+case "${1:-}" in
+  install-runtime) install_runtime ;;
+  remove-docker) remove_docker ;;
+  *) usage ;;
+esac

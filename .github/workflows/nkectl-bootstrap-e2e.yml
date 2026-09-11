@@ -1,61 +1,25 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# e2e coverage for "nkectl bootstrap site" specifically, separate from
-# Controller Unit Tests' `cli` matrix entry: `make -C cli test` is `go test
-# ./...`, this is `make -C cli test-e2e-bootstrap`, a self-contained
-# integration run driven by cli/e2e/bootstrap/run.sh. cli/e2e/ may grow other
-# e2e/<command>/ suites the same way as nkectl gains more commands worth
-# covering this way -- each gets its own workflow rather than growing this
-# one into a multi-command suite.
+# e2e coverage for `nkectl bootstrap site`, driven by cli/e2e/bootstrap/run.sh.
+# Separate from the `cli` unit-test lane, which is plain `go test ./...`.
 #
-# Unlike controller/test/e2e (excluded from the pull-request lane in
-# controller-test.yml because it needs a live cluster in KUBECONFIG), this
-# suite stands up everything it needs itself: fake node containers
-# (cli/e2e/bootstrap/substrate, `make -C cli nodes-up`) and, since the
-# cli/internal/bootstrapengine, a real ephemeral Kind cluster that
-# `nkectl bootstrap site` creates and tears down itself.
-# `kind` is not preinstalled and is set up below the same way capd-e2e.yml
-# does it (.github/actions/setup-kind).
+# The suite stands up everything it needs: fake node containers
+# (cli/e2e/bootstrap/substrate) and a real ephemeral Kind cluster that the
+# command creates, deploys Postgres, Temporal and CWE onto, and tears down.
+# CWE is built from this checkout, so the CLI and controller changes under
+# test stay compatible.
 #
-# Everything runs on one containerd, which this job installs and starts
-# itself (see the "Install nerdctl" step below): `nkectl bootstrap site`
-# drives kind through KIND_EXPERIMENTAL_PROVIDER=nerdctl, Stage 1's fake-node
-# fixture runs its containers on it, and every fixture image is built into it
-# by `nerdctl build` against the buildkitd started alongside.
+# All of it runs on one containerd, which the "Install nerdctl" step below
+# installs: kind drives it through KIND_EXPERIMENTAL_PROVIDER=nerdctl, and
+# every fixture image is built into it by `nerdctl build`. The runner image
+# ships Docker and this job deliberately does not use it -- "Assert the suite
+# invokes no docker" greps for invocations, and "Remove Docker" masks the
+# daemon so anything the grep misses fails at runtime.
 #
-# ubuntu-latest ships Docker, and this job deliberately does not use it. The
-# containerd above is separate from the one Docker's own containerd.io
-# package runs, because reusing that daemon would mean the containerd-driven
-# path is secretly riding on Docker. Nothing here invokes `docker`, and two
-# steps below keep that true: "Assert the suite invokes no docker" greps for
-# an invocation before the run, and "Remove Docker" masks the daemon and puts
-# a failing shim first on PATH so anything the grep misses fails at runtime.
-#
-# The fixture's node image is a thin derivation of
-# controller/hack/capd-kindest-node's CAPD node image (see
-# cli/e2e/bootstrap/substrate/node/Dockerfile), built here with nke-agent
-# compiled from this checkout's own agent/ module -- no external registry or
-# credentials needed beyond the public bundle host that image already uses.
-#
-# Advisory, not gating. This lane is not in merge-gate.yml's `gate` and has no
-# workflow_call for one to reach it by -- see the `on:` block below for why.
-# Nothing here blocks a merge, so a red run has to be looked at deliberately;
-# it will not stop the merge button. cli/e2e/bootstrap/run.sh's stages are
-# added one at a time alongside the bootstrap-site code they exercise, so the
-# job is expected to stay green throughout rather than going red until some
-# later change makes it pass.
-#
-# Since cli/internal/cwedeploy, the job also deploys Postgres,
-# Temporal and CWE onto the ephemeral cluster and asserts CWE reports healthy
-# on /readyz -- see run.sh's Stage 2. The job builds CWE from the checkout so
-# the CLI and controller changes under test stay compatible.
-#
-# A tag, not the manifest digest under it: saving `<repo>@<digest>` writes
-# `RepoTags: null`, so the node ends up with an anonymous image the kubelet
-# cannot match, and it falls back to pulling from ghcr.io with no
-# credentials. Multi-arch images are handled in bootstrapengine's
-# flattenToHostPlatform instead.
+# Advisory, not gating: this lane is not in merge-gate.yml's `gate` and has no
+# workflow_call for one to reach it by, so a red run has to be looked at
+# deliberately rather than blocking a merge.
 name: nkectl bootstrap e2e
 
 # No workflow_call: this lane left the merge gate when it moved to the mirror
@@ -65,18 +29,17 @@ on:
     branches:
       - main
       # The mirror branch copy-pr-bot pushes, which is how capd-e2e, nico-e2e
-      # and local-entrypoint-e2e get a pull request onto NVIDIA runners.
+      # and local-entrypoint-e2e get a pull request onto self-hosted runners.
       - "pull-request/[0-9]+"
     paths:
       - 'cli/**'
       - 'agent/**'
-      # The suite builds CWE from controller/Dockerfile. Off the gate the paths
-      # decide, so without this a controller-only change never runs it.
+      # The suite builds CWE from controller/Dockerfile, so a controller-only
+      # change has to run it too.
       - 'controller/**'
       - '.github/workflows/nkectl-bootstrap-e2e.yml'
-  # Also twice a day, so a break the paths above filtered out, or one a flake
-  # hid, still surfaces within twelve hours. A schedule ignores those paths, so
-  # these runs always exercise the whole suite.
+  # Twice a day as well: a schedule ignores the paths above, so a break they
+  # filtered out still surfaces within twelve hours.
   schedule:
     - cron: '0 3,15 * * *'
   workflow_dispatch: {}
@@ -92,61 +55,45 @@ concurrency:
 jobs:
   e2e:
     name: e2e
-    # The bootstrap cluster and three nested control planes need the 16-CPU pool.
-    # Pull requests reach it through the mirror branch, so no GitHub-hosted
-    # fallback: there, image pulls go to docker.io at rates that have taken
-    # traefik's 55 MB past the smoke install's helm wait.
+    # The bootstrap cluster and three nested control planes need the 16-CPU
+    # pool; pull requests reach it through the mirror branch.
     runs-on: linux-amd64-cpu16
     if: github.repository == 'dsx-ai-factory/nke'
-    # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
-    # bundle fetch, local agent compile) plus the thin derivation on top has
-    # not yet been timed end to end in this CI lane, and the standalone
-    # containerd install sits on top of that.
+    # A full run takes 12-17 minutes on this pool, most of it the node image
+    # build and CWE's three sequential control-plane joins. The margin covers
+    # a cold image cache and a slow mirror; queue time does not count.
     timeout-minutes: 45
     permissions:
       contents: read
     env:
       CWE_IMAGE: cwe-controller:nkectl-bootstrap-e2e
       # Same mirror backend-e2e and local-entrypoint-e2e use. The node image
-      # tries it first and falls through, so an unreachable mirror costs a dial
-      # rather than the run. Without it every pull went to docker.io, and on a
-      # GitHub-hosted runner traefik's 55 MB took 5m48s against a 5m helm wait.
+      # tries it first and falls through, so an unreachable mirror costs a
+      # dial rather than the run.
       NKE_E2E_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
       # The same mirror for the ephemeral bootstrap Kind cluster, which pulls
-      # the temporal, postgres, SPIRE and Cluster API images itself. Unmirrored,
-      # six merges in eight minutes put twelve of these clusters on Docker Hub's
-      # anonymous limit at once and the last four to start got 429 Too Many
-      # Requests (2026-09-06).
+      # the temporal, postgres, SPIRE and Cluster API images itself. Concurrent
+      # runs hit Docker Hub's anonymous rate limit without it.
       NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
       # The postgres chart is an OCI artifact on Docker Hub too, and helm's
-      # pull of it counts against the same limit: with the images mirrored, the
-      # next run's nerdctl leg failed on the chart manifest alone with 429.
+      # pull of it counts against the same limit.
       NKECTL_CWE_POSTGRES_CHART: oci://dc.local.gha-runners.nvidia.com/bitnamicharts/postgresql
-      # nerdctl >= 1.7.0 is kind's own stated minimum for its nerdctl
-      # provider (KIND_EXPERIMENTAL_PROVIDER=nerdctl, added in kind v0.23.0,
-      # comfortably below the v0.32.0 this job pins). nerdctl-full bundles a
-      # matching containerd, runc and CNI plugins so nothing here depends on
-      # whatever containerd version ships with ubuntu-latest's Docker.
+      # nerdctl >= 1.7.0 is kind's stated minimum for its nerdctl provider.
+      # nerdctl-full bundles a matching containerd, runc and CNI plugins, so
+      # nothing here depends on the containerd shipped with the image's Docker.
       NERDCTL_VERSION: 2.3.5
       NERDCTL_FULL_SHA256: b697295c623639734aaab737523c808fd3cc8d3046039fd94fff1744e4c317aa
-      # A standalone socket and containerd data/state root, distinct from
-      # the ones ubuntu-latest's Docker installation already runs (Docker's
-      # own containerd.io package also owns a unit literally named
-      # `containerd.service` on `/run/containerd/containerd.sock` -- reusing
-      # either would mean this job is secretly still riding on Docker's
-      # daemon, which is exactly what the separate socket exists to rule out).
-      # Docker is stopped and masked in the "Remove Docker" step below, so
-      # nothing here can reach it even by accident; the runner is single-use,
-      # so nothing has to put it back.
+      # A standalone socket and data root. Docker's containerd.io package owns
+      # a unit also named `containerd.service`, on
+      # /run/containerd/containerd.sock; reusing it would mean this job is
+      # still riding on Docker, which the separate socket exists to rule out.
       CONTAINERD_ADDRESS: /run/containerd-nerdctl/containerd.sock
-      # buildkitd's own socket, named to match the containerd it builds into.
-      # BUILDKIT_HOST is the variable `nerdctl build` itself reads to find a
-      # builder, so setting it here is what points nerdctl at this buildkitd
-      # rather than at a default that does not exist on this runner.
+      # buildkitd's own socket. BUILDKIT_HOST is what `nerdctl build` reads to
+      # find a builder, so this is what points it at the buildkitd below.
       BUILDKIT_HOST: unix:///run/buildkit-nerdctl/buildkitd.sock
-      # nerdctl's default namespace. Named explicitly because buildkitd has a
-      # different default ("buildkit"), and an image built into that one is
-      # invisible to the nerdctl and kind that later look for it.
+      # nerdctl's default namespace, named explicitly because buildkitd's
+      # default ("buildkit") would put images where nerdctl and kind cannot
+      # see them.
       CONTAINERD_NAMESPACE: default
     steps:
       - name: Checkout
@@ -154,10 +101,9 @@ jobs:
         with:
           persist-credentials: false
 
-      # The standard runner guarantees little free space and includes large
-      # toolchains that this Go and container test does not use. Remove only
-      # those fixed paths before any build writes more data; the Go toolchain
-      # cache stays, because Set up Go reads it.
+      # Large toolchains this job does not use, removed before any build
+      # writes more data. A no-op on an image without them, and it still logs
+      # the disk headroom for when a run fails on space.
       - name: Free disk space
         shell: bash
         run: |
@@ -207,14 +153,10 @@ jobs:
             go.work.sum
             **/go.sum
 
-      # Same pinned version as capd-e2e.yml: cli/internal/cwedeploy shells
-      # out to `helm` directly, so the binary is installed here.
-      # Version pins come from make/versions.mk, so `make show-versions` and CI
-      # cannot disagree.
-      # Each version is read into a variable and checked before it is written:
-      # `set -e` does not fire on a failed $(...) inside `echo "k=$(...)"`, and
-      # the setup actions below resolve an empty version to "latest" rather
-      # than failing, so an empty value has to be caught here.
+      # Pins come from make/versions.mk so `make show-versions` and CI cannot
+      # disagree. Each value is checked before it is written: `set -e` does not
+      # fire on a failed $(...) inside `echo "k=$(...)"`, and the setup actions
+      # below resolve an empty version to "latest" rather than failing.
       - name: Read pinned tool versions
         id: versions
         shell: bash
@@ -241,11 +183,9 @@ jobs:
           kind_version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
 
-      # clusterctl, which `nkectl bootstrap site` runs to install Cluster API
-      # onto the ephemeral bootstrap cluster (see cli/internal/cwedeploy). Same
-      # hand-downloaded-binary shape as this repo's other such steps, and the
-      # same version the binary asks for: cli/Makefile injects CAPI_VERSION from
-      # make/tool-versions.mk into nkectl at build time.
+      # `nkectl bootstrap site` runs clusterctl to install Cluster API onto the
+      # bootstrap cluster. Same version nkectl asks for: cli/Makefile injects
+      # CAPI_VERSION into the binary at build time.
       - name: Set up clusterctl
         shell: bash
         env:
@@ -263,17 +203,11 @@ jobs:
             exit 1
           fi
 
-      # The fake nodes emulate a TPM with swtpm, which asks the *host* kernel to
-      # allocate a device through /dev/vtpmx. That comes from tpm_vtpm_proxy,
-      # which Ubuntu builds per kernel flavour and version. Record the runner's
-      # capacity and kernel, install the matching extra-modules package, and
-      # prove that the module creates the required character device.
-      #
-      # Done here rather than left to run.sh (which does the same for a local
-      # run) so a runner image that stops shipping it fails on this line,
-      # naming it, instead of ten minutes later underneath a node container
-      # that could not find a TPM. Both legs need it, so this is not
-      # conditioned on the provider.
+      # The fake nodes emulate a TPM with swtpm, which asks the host kernel for
+      # a device through /dev/vtpmx. That comes from tpm_vtpm_proxy, built per
+      # kernel version, so install the matching extra-modules package and prove
+      # the device appears. Done here, not in run.sh, so a runner image that
+      # stops shipping it fails on this line rather than ten minutes later.
       - name: Load the vTPM proxy driver
         run: |
           echo "CPU count: $(nproc)"
@@ -292,227 +226,17 @@ jobs:
           # -c, not -e: it has to be the character device swtpm opens.
           test -c /dev/vtpmx
 
-      # Standalone nerdctl + containerd for the nerdctl leg only. Installed
-      # from the upstream nerdctl-full bundle (containerd, runc, CNI plugins,
-      # nerdctl itself -- see https://github.com/containerd/nerdctl#install),
-      # checksummed against the release's published SHA256SUMS, same as this
-      # repo's other hand-downloaded-binary steps (see actionlint.yml).
-      #
-      # Rootful, not rootless: kind's nerdctl provider and bootstrapengine's
-      # own CommandRunner both exec a bare `nerdctl`/`kind` with no `sudo`
-      # baked in (see cli/internal/bootstrapengine/bootstrapengine.go and
-      # cmd/nkectl/bootstrap.go's ensureImageAvailable). Rootless nerdctl
-      # reaches the same no-sudo shape, but through systemd user-session
-      # cgroup delegation, subuid/subgid ranges and a rootlesskit network
-      # stack -- real moving parts to get right blind on a runner image
-      # nobody has run this provider on before, and irrelevant here: a
-      # GitHub-hosted runner is already a single-tenant, ephemeral VM with
-      # passwordless sudo, so rootless's isolation benefit is nil. This job
-      # gets root's access to the standalone containerd socket the same way:
-      # every step below that touches `nerdctl`/`kind` runs under `sudo -E`.
+      # Standalone nerdctl, containerd and buildkitd, pinned by the env above.
+      # The script documents what it installs and why it is rootful.
       - name: Install nerdctl + standalone containerd
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          archive="nerdctl-full-${NERDCTL_VERSION}-linux-amd64.tar.gz"
-          curl -fsSL -o "/tmp/${archive}" \
-            "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/${archive}"
-          echo "${NERDCTL_FULL_SHA256}  /tmp/${archive}" | sha256sum -c -
-          sudo tar Cxzf /usr/local "/tmp/${archive}"
+        run: cli/hack/bootstrap-e2e-host.sh install-runtime
 
-          # A dedicated unit, config and data root -- see the CONTAINERD_ADDRESS
-          # comment above for why this does not reuse Docker's `containerd`.
-          sudo mkdir -p /etc/containerd-nerdctl /var/lib/containerd-nerdctl /run/containerd-nerdctl /run/buildkit-nerdctl
-          /usr/local/bin/containerd config default | sudo tee /etc/containerd-nerdctl/config.toml >/dev/null
-          # containerd's `config default` output quotes strings with single
-          # quotes, not double -- matching only the path (not the quote
-          # style) keeps this working across containerd versions that differ
-          # on that. The grpc address is the only line with this exact path;
-          # the debug/grpc-tcp/metrics addresses are all empty.
-          sudo sed -i \
-            -e "s#^root = .*#root = \"/var/lib/containerd-nerdctl\"#" \
-            -e "s#^state = .*#state = \"/run/containerd-nerdctl\"#" \
-            -e "s#/run/containerd/containerd.sock#${CONTAINERD_ADDRESS}#" \
-            /etc/containerd-nerdctl/config.toml
-
-          sudo tee /etc/systemd/system/containerd-nerdctl.service >/dev/null <<'UNIT'
-          [Unit]
-          Description=standalone containerd for the nerdctl kind provider
-          After=network.target
-
-          [Service]
-          ExecStart=/usr/local/bin/containerd --config /etc/containerd-nerdctl/config.toml
-          Restart=on-failure
-          Delegate=yes
-          KillMode=process
-          OOMScoreAdjust=-999
-          LimitNOFILE=infinity
-          LimitNPROC=infinity
-          LimitCORE=infinity
-          TasksMax=infinity
-
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
-
-          # `nerdctl build` is a BuildKit client, not a builder: without a
-          # buildkitd it fails outright. buildkitd ships in the same
-          # nerdctl-full archive already unpacked above, so this is a unit
-          # rather than another pinned download.
-          #
-          # --oci-worker=false --containerd-worker=true: build into the same
-          # containerd this job runs, and the same namespace nerdctl and kind
-          # read from. A default buildkitd would use its own OCI worker, and
-          # the images would build successfully into a store nothing else can
-          # see -- which fails much later, as an ImagePullBackOff inside the
-          # bootstrap cluster rather than as a build error.
-          sudo tee /etc/systemd/system/buildkit-nerdctl.service >/dev/null <<UNIT
-          [Unit]
-          Description=buildkitd for nerdctl build, on the standalone containerd
-          After=containerd-nerdctl.service
-          Requires=containerd-nerdctl.service
-
-          [Service]
-          ExecStart=/usr/local/bin/buildkitd \\
-            --addr unix://${BUILDKIT_HOST#unix://} \\
-            --oci-worker=false \\
-            --containerd-worker=true \\
-            --containerd-worker-addr ${CONTAINERD_ADDRESS} \\
-            --containerd-worker-namespace ${CONTAINERD_NAMESPACE}
-          Restart=on-failure
-          KillMode=process
-
-          [Install]
-          WantedBy=multi-user.target
-          UNIT
-
-          sudo systemctl daemon-reload
-          sudo systemctl enable --now containerd-nerdctl
-
-          for _ in $(seq 1 30); do
-            sudo test -S "${CONTAINERD_ADDRESS}" && break
-            sleep 1
-          done
-          if ! sudo test -S "${CONTAINERD_ADDRESS}"; then
-            echo "::error::containerd-nerdctl never opened ${CONTAINERD_ADDRESS}"
-            echo "::group::containerd-nerdctl.service status"
-            sudo systemctl status containerd-nerdctl --no-pager -l || true
-            echo "::endgroup::"
-            echo "::group::containerd-nerdctl journal"
-            sudo journalctl -u containerd-nerdctl --no-pager || true
-            echo "::endgroup::"
-            echo "::group::/etc/containerd-nerdctl/config.toml"
-            sudo cat /etc/containerd-nerdctl/config.toml || true
-            echo "::endgroup::"
-            exit 1
-          fi
-
-          sudo -E env "PATH=$PATH" nerdctl info
-
-          sudo systemctl enable --now buildkit-nerdctl
-          for _ in $(seq 1 30); do
-            sudo test -S "${BUILDKIT_HOST#unix://}" && break
-            sleep 1
-          done
-          if ! sudo test -S "${BUILDKIT_HOST#unix://}"; then
-            echo "::error::buildkitd never opened ${BUILDKIT_HOST}"
-            echo "::group::buildkit-nerdctl journal"
-            sudo journalctl -u buildkit-nerdctl --no-pager || true
-            echo "::endgroup::"
-            exit 1
-          fi
-
-      # Docker is installed on this pool and nothing here needs it. Left in
-      # place, a reintroduced dependency would work and pass unnoticed -- a
-      # `docker build` slipped back into a Makefile target, kind falling back
-      # to its Docker default if KIND_EXPERIMENTAL_PROVIDER were ever dropped,
-      # nerdctl reaching Docker's containerd if CONTAINERD_ADDRESS were. So
-      # Docker is removed, and its absence asserted, before the first image is
-      # built.
-      #
-      # Removed means: the daemon, its socket and Docker's own containerd are
-      # stopped and masked, and a shim that fails with a pointer here is put
-      # first on PATH. The binaries themselves are not touched: the masking is
-      # what makes an absolute-path `/usr/bin/docker build` fail as well --
-      # with Docker's own "cannot connect to the daemon" rather than the
-      # shim's message, a worse error but the same outcome -- and the
-      # assertions below prove it against every real binary on PATH.
-      # Replacing the binaries would buy only the nicer message, at the cost
-      # of modifying system files.
-      #
-      # Nothing here needs undoing. linux-amd64-cpu16 is a single-use runner
-      # scale set, and the GitHub-hosted runners are single-use too: a job's
-      # runner, with its own systemd and dockerd, is destroyed when the job
-      # ends, so the masks cannot reach any other job and there is no restore
-      # step. The standalone containerd-nerdctl.service installed above is a
-      # separate unit on a separate socket and is untouched here.
+      # Docker is installed on this pool and nothing here needs it, so it is
+      # masked and shimmed before the first image is built. Nothing undoes it:
+      # the runners are single-use, so the masks die with the job. The
+      # containerd installed above is a separate unit on a separate socket.
       - name: Remove Docker
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          # containerd.service here is Docker's (the containerd.io package),
-          # on /run/containerd/containerd.sock -- the socket nerdctl defaults
-          # to without CONTAINERD_ADDRESS. Masked so that fallback fails
-          # loudly instead of quietly riding on Docker's daemon. disable --now
-          # may fail for a unit that is not loaded; mask must not, because the
-          # assertions below rely on it having taken.
-          sudo systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
-          sudo systemctl mask docker.socket docker.service containerd.service
-          sudo rm -f /var/run/docker.sock /run/docker.sock
-
-          # The shim lives under RUNNER_TEMP and is prepended through
-          # GITHUB_PATH: both are per-job, so nothing about it can outlive the
-          # job or need restoring.
-          shim_dir="${RUNNER_TEMP}/no-docker"
-          mkdir -p "${shim_dir}"
-          cat >"${shim_dir}/docker" <<'SHIM'
-          #!/bin/sh
-          echo "docker was invoked by the bootstrap e2e suite: docker $*" >&2
-          echo "this job removes Docker so a reintroduced dependency fails here rather than passing unnoticed." >&2
-          echo "The suite runs on nerdctl/containerd. See cli/Makefile's check-no-docker and the 'Remove Docker' step in nkectl-bootstrap-e2e.yml." >&2
-          exit 1
-          SHIM
-          chmod 0755 "${shim_dir}/docker"
-          echo "${shim_dir}" >> "${GITHUB_PATH}"
-          export PATH="${shim_dir}:${PATH}"
-
-          # Prove it. A removal that did not take is worse than none: it
-          # would read as a guarantee while providing nothing.
-          resolved="$(command -v docker || true)"
-          if [ "${resolved}" != "${shim_dir}/docker" ]; then
-            echo "::error::docker resolves to '${resolved:-nothing}', not the shim"; exit 1
-          fi
-          if docker version >/dev/null 2>&1; then
-            echo "::error::docker still runs after removal"; exit 1
-          fi
-          # Every real binary too, by its own path. Nothing on PATH shadows
-          # these, so this is the masking being proven, not the shim.
-          while read -r real; do
-            if [ "${real}" = "${shim_dir}/docker" ]; then
-              continue
-            fi
-            if "${real}" version >/dev/null 2>&1; then
-              echo "::error::${real} still reaches a daemon after removal"; exit 1
-            fi
-          done < <(type -aP docker || true)
-          if systemctl is-active --quiet docker.service; then
-            echo "::error::docker.service is still active after removal"; exit 1
-          fi
-          if [ -S /var/run/docker.sock ]; then
-            echo "::error::/var/run/docker.sock still exists after removal"; exit 1
-          fi
-          # Masked, not merely stopped: docker.socket could otherwise
-          # socket-activate the daemon back after the is-active check above,
-          # and containerd.service is what a dropped CONTAINERD_ADDRESS would
-          # silently ride on.
-          for unit in docker.socket docker.service containerd.service; do
-            state="$(systemctl is-enabled "${unit}" 2>/dev/null || true)"
-            if [ "${state}" != "masked" ]; then
-              echo "::error::${unit} is '${state:-absent}' after removal, want masked"; exit 1
-            fi
-          done
-          echo "docker removed; invoking it now fails with:"
-          docker version 2>&1 | sed 's/^/  /' || true
+        run: cli/hack/bootstrap-e2e-host.sh remove-docker
 
       # Into the standalone containerd, not Docker: nkectl loads the image
       # from there, so a Docker-built one would be invisible to it.
@@ -527,17 +251,14 @@ jobs:
             --build-arg "GIT_VERSION=${GITHUB_SHA}" \
             .
 
-      # The profiles image needs no registry: run.sh builds it from
-      # controller/test/fixtures. Built as the ordinary runner user, and
-      # `make build` ahead of run.sh keeps `sudo -E` scoped to the
-      # kind/nerdctl-touching part of the run rather than the Go build too.
+      # Built as the ordinary runner user: building ahead of run.sh keeps
+      # `sudo -E` scoped to the part of the run that touches kind and nerdctl.
       - name: Build nkectl
         working-directory: cli
         run: make build
 
-      # The cheap, early half of the no-Docker guarantee: a grep for an
-      # invocation, before a twelve-minute run. "Remove Docker" above is the
-      # runtime half, for anything the grep cannot see.
+      # The cheap half of the no-Docker guarantee: a grep before a twelve-minute
+      # run. "Remove Docker" above catches what a grep cannot see.
       - name: Assert the suite invokes no docker
         working-directory: cli
         run: make check-no-docker
@@ -550,15 +271,10 @@ jobs:
           NKECTL_CWE_IMAGE: ${{ env.CWE_IMAGE }}
         run: sudo -E env "PATH=$PATH" ./e2e/bootstrap/run.sh
 
-      # Written by `nkectl bootstrap site` itself when a bootstrap fails: a
-      # `kubectl cluster-info dump` of the ephemeral cluster, plus the object
-      # state and helm releases that explain a pod which never started. The
-      # command collects it before tearing the cluster down, which is the only
-      # moment it can — afterwards there is nothing left to ask, and a CI
-      # failure says only that something timed out.
-      #
-      # if-no-files-found: ignore, because the directory is absent on every
-      # successful run — which is most of them.
+      # Written by `nkectl bootstrap site` when a bootstrap fails: a
+      # cluster-info dump plus the object state and helm releases that explain
+      # a pod which never started, collected before the cluster goes away.
+      # if-no-files-found: ignore, since a successful run writes nothing.
       - name: Upload bootstrap cluster diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
