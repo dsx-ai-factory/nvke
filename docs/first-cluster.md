@@ -238,9 +238,9 @@ no jump box.
 every bootstrap image through nerdctl, and exports
 `KIND_EXPERIMENTAL_PROVIDER=nerdctl` on every kind call itself. **Docker is not
 supported for bootstrapping** — the machine needs no Docker daemon. **Do not run
-nerdctl rootless.** The bootstrap sets up the kind node's networking — an
-iptables rule and a bridge address — which needs a rootful nerdctl; run it as
-root.
+nerdctl rootless.** `nkectl` and kind's nerdctl provider both exec a bare
+`nerdctl` with no `sudo`, and rootful is the only configuration CI exercises;
+run it as root.
 
 **A registry login** on that machine: `nerdctl login nvcr.io`. The images are
 pulled with nerdctl.
