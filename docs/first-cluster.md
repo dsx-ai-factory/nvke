@@ -122,7 +122,7 @@ bin/nkectl config view
 ```
 
 `--kubeconfig` is the management cluster. `get providers` reads it directly, and
-CWE API commands (`get`/`create`/`delete` clusters) use it to mint a
+CWE API commands (`get`/`create`/`patch`/`delete` clusters) use it to mint a
 bearer token for `nke-clients/nke-client` when authentication is on. Tilt
 applies that identity in `controller/deploy/k8s/nke-auth-dev.yaml`. You do
 not export a token for `nkectl`.
@@ -137,6 +137,8 @@ bin/nkectl get providers      # wait for nico: CONFIGURED
 bin/nkectl create cluster -f cli/examples/nico-mock-cluster.yaml
 bin/nkectl get clusters
 bin/nkectl get clusters --cluster <name>
+bin/nkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: <new-version>'
+bin/nkectl patch cluster <name> --patch-file patch.yaml
 bin/nkectl delete cluster <name>
 ```
 

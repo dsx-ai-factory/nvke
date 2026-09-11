@@ -196,16 +196,15 @@ exactly. See /api/docs on your site controller.`,
 		},
 	}
 
-	cmd.Flags().StringVar(&patch, "patch", "", "Inline YAML patch document")
+	cmd.Flags().StringVarP(&patch, "patch", "p", "", "Inline YAML patch document")
 	cmd.Flags().StringVar(&patchFile, "patch-file", "", "Path to a YAML patch file, or '-' to read from stdin")
 	return cmd
 }
 
 // loadPatchClusterRequest reads the patch document from patch, or from
-// patchFile (a path, or "-" for stdin) when patch is empty, and validates it
-// by decoding into UpdateClusterRequest with unknown fields disallowed; the
-// decoded value is discarded, and the raw bytes are returned so the document
-// reaches the wire exactly as written.
+// patchFile (a path, or "-" for stdin) when patch is empty, validates it by
+// decoding into UpdateClusterRequest with unknown fields disallowed, and
+// returns the validated document as raw bytes.
 func loadPatchClusterRequest(cmd *cobra.Command, patch, patchFile string) ([]byte, error) {
 	raw := []byte(patch)
 	if patch == "" {

@@ -188,7 +188,7 @@ func TestPatchCmdEmptyPatchRejected(t *testing.T) {
 		t.Fatal("expected error for an empty patch document, got nil")
 	}
 	if isNotConfigured(err) {
-		t.Errorf("an empty patch document reaching validation is fine; it should still fail before the API, got: %v", err)
+		t.Errorf("an empty patch document should fail before reaching the API, got: %v", err)
 	}
 }
 
