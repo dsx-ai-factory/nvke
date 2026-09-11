@@ -19,6 +19,7 @@ import (
 
 const (
 	configureKubeVipRunbookName = "configure-kube-vip"
+	fmdsBGPPeerAS               = "FROM_FMDS"
 )
 
 type ConfigureKubeVipInput struct {
@@ -92,20 +93,25 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 
 	const kubeVipASN = 65100
 
-	// When FNN (Forge Native Networking) is enabled in the site we want to query the DPU ASN from the Forge Metadata Service (FMDS).
-	// We know FNN is enabled when the node pool has VPC prefixes instead of subnets.
-	// CAPI clusters do not use Nico provider payloads or VPC prefixes, so skip the check for them.
+	// Native-networking sites learn the per-node DPU ASN from FMDS. The
+	// site-scoped endpoint supports every infrastructure provider; VPC prefixes
+	// remain a compatibility signal for existing NICo deployments.
 	const defaultBGPPeerASN uint32 = 4294967000
 	bgpPeerAS := "4294967000"
 	bgpPeerASN := defaultBGPPeerASN
 	bgpPeerASNSource := nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC
-	if nodePool.Nico != nil {
+	fmdsEndpoint := a.cfg.KubeVipFMDSEndpoint
+	if fmdsEndpoint != "" {
+		bgpPeerAS = fmdsBGPPeerAS
+		bgpPeerASN = 0
+		bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
+	} else if nodePool.Nico != nil {
 		nicoNodePoolProvider, err := nodePool.NicoProvider()
 		if err != nil {
 			return ConfigureKubeVipResult{}, err
 		}
 		if len(nicoNodePoolProvider.VpcPrefixIDs) > 0 {
-			bgpPeerAS = "FROM_FMDS"
+			bgpPeerAS = fmdsBGPPeerAS
 			bgpPeerASN = 0
 			bgpPeerASNSource = nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS
 		}
@@ -130,6 +136,7 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		NodeIp:           node.IP,
 		BgpPeerAsnSource: bgpPeerASNSource,
 		BgpPeerAsn:       bgpPeerASN,
+		FmdsEndpoint:     fmdsEndpoint,
 	})
 	if err == nil {
 		if reconcileResponse == nil {
@@ -186,10 +193,11 @@ func (a *Activities) configureKubeVip(ctx context.Context, input ConfigureKubeVi
 		HostID:      hostID,
 		RunbookName: configureKubeVipRunbookName,
 		RunbookEnv: map[string]string{
-			"VIP_ADDRESS": cluster.ControlPlaneVIP,
-			"BGP_AS":      fmt.Sprintf("%d", kubeVipASN),
-			"BGP_PEER_AS": bgpPeerAS,
-			"NODE_IP":     node.IP,
+			"VIP_ADDRESS":   cluster.ControlPlaneVIP,
+			"BGP_AS":        fmt.Sprintf("%d", kubeVipASN),
+			"BGP_PEER_AS":   bgpPeerAS,
+			"FMDS_ENDPOINT": fmdsEndpoint,
+			"NODE_IP":       node.IP,
 		},
 	})
 	if err != nil {

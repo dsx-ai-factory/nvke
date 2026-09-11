@@ -36,16 +36,16 @@ func (a *Activities) shouldRotateNicoMachineNetworkCandidate(ctx context.Context
 		return false, nil
 	}
 
-	readyCondition := nicoMachineReadyCondition(nicoMachine.Status.Conditions)
-	if readyCondition == nil ||
-		readyCondition.Status != metav1.ConditionFalse ||
-		readyCondition.Reason != nicov1.InstanceCreateFailedReason {
+	provisionedCondition := nicoMachineProvisionedCondition(nicoMachine.Status.Conditions)
+	if provisionedCondition == nil ||
+		provisionedCondition.Status != metav1.ConditionFalse ||
+		provisionedCondition.Reason != nicov1.InstanceCreateFailedReason {
 		return false, nil
 	}
-	if readyCondition.ObservedGeneration != 0 && readyCondition.ObservedGeneration < nicoMachine.Generation {
+	if provisionedCondition.ObservedGeneration != 0 && provisionedCondition.ObservedGeneration < nicoMachine.Generation {
 		return false, nil
 	}
-	if !isNicoNetworkExhaustionMessage(readyCondition.Message) {
+	if !isNicoNetworkExhaustionMessage(provisionedCondition.Message) {
 		return false, nil
 	}
 
@@ -102,8 +102,8 @@ func (a *Activities) rotateNicoMachineVpcPrefix(ctx context.Context, nicoMachine
 	}
 	if currentIndex == len(vpcPrefixIDs)-1 {
 		failureMessage := ""
-		if readyCondition := nicoMachineReadyCondition(nicoMachine.Status.Conditions); readyCondition != nil {
-			failureMessage = readyCondition.Message
+		if provisionedCondition := nicoMachineProvisionedCondition(nicoMachine.Status.Conditions); provisionedCondition != nil {
+			failureMessage = provisionedCondition.Message
 		}
 		return fmt.Errorf("all %d VPC prefixes are exhausted, error from the last NicoMachine create attempt: %s", len(vpcPrefixIDs), failureMessage)
 	}
@@ -133,8 +133,8 @@ func (a *Activities) rotateNicoMachineSubnet(ctx context.Context, nicoMachine *n
 	}
 	if currentIndex == len(subnetIDs)-1 {
 		failureMessage := ""
-		if readyCondition := nicoMachineReadyCondition(nicoMachine.Status.Conditions); readyCondition != nil {
-			failureMessage = readyCondition.Message
+		if provisionedCondition := nicoMachineProvisionedCondition(nicoMachine.Status.Conditions); provisionedCondition != nil {
+			failureMessage = provisionedCondition.Message
 		}
 		return fmt.Errorf("all %d subnets are exhausted, error from the last NicoMachine create attempt: %s", len(subnetIDs), failureMessage)
 	}
@@ -176,13 +176,13 @@ func (a *Activities) shouldRotateNicoMachineInstanceType(ctx context.Context, ma
 		return false, nil
 	}
 
-	readyCondition := nicoMachineReadyCondition(nicoMachine.Status.Conditions)
-	if readyCondition == nil ||
-		readyCondition.Status != metav1.ConditionFalse ||
-		!isNicoInstanceTypeUnavailableReason(readyCondition.Reason) {
+	provisionedCondition := nicoMachineProvisionedCondition(nicoMachine.Status.Conditions)
+	if provisionedCondition == nil ||
+		provisionedCondition.Status != metav1.ConditionFalse ||
+		!isNicoInstanceTypeUnavailableReason(provisionedCondition.Reason) {
 		return false, nil
 	}
-	if readyCondition.ObservedGeneration != 0 && readyCondition.ObservedGeneration < nicoMachine.Generation {
+	if provisionedCondition.ObservedGeneration != 0 && provisionedCondition.ObservedGeneration < nicoMachine.Generation {
 		return false, nil
 	}
 
@@ -293,9 +293,15 @@ func (a *Activities) seedControlPlaneInstanceType(ctx context.Context, createCtx
 	return nil
 }
 
-func nicoMachineReadyCondition(conditions []metav1.Condition) *metav1.Condition {
+// nicoMachineProvisionedCondition returns the NicoMachine MachineProvisioned
+// condition, which carries the specific provisioning-failure reason
+// (InstanceTypeUnavailable, InstanceTypeNotFound, InstanceCreateFailed, ...).
+// The aggregate Ready condition only summarizes those with a generic reason
+// (e.g. "NotReady"), so the rotation gates must key off MachineProvisioned to
+// see why provisioning actually failed.
+func nicoMachineProvisionedCondition(conditions []metav1.Condition) *metav1.Condition {
 	for i := range conditions {
-		if conditions[i].Type == clusterv1.ReadyCondition {
+		if conditions[i].Type == nicov1.MachineProvisionedCondition {
 			return &conditions[i]
 		}
 	}

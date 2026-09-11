@@ -40,7 +40,7 @@ func newRootCmd(ver, commit, treeState, date string) *cobra.Command {
 	root.AddCommand(newGenerateCmd())
 	root.AddCommand(newGetCmd())
 	root.AddCommand(newCreateCmd())
-	root.AddCommand(newDescribeCmd())
+	root.AddCommand(newUpdateCmd())
 	root.AddCommand(newDeleteCmd())
 
 	return root
@@ -74,6 +74,7 @@ func loadSite() (config.SiteConfig, error) {
 	return resolveSiteConfig(cfg)
 }
 
+// resolveSiteConfig returns the active site's SiteConfig.
 func resolveSiteConfig(cfg *config.Config) (config.SiteConfig, error) {
 	if site == "" {
 		return cfg.CurrentSiteConfig()

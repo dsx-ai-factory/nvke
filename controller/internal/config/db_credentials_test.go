@@ -80,20 +80,3 @@ func TestValidateWeakDBCredentials(t *testing.T) {
 		})
 	}
 }
-
-// The guard must not key on FORGE_ENVIRONMENT. That variable selects a Forge
-// backend and says nothing about which database the connection string names, so
-// setting it must not stand the check down.
-func TestValidateWeakDBCredentialsIgnoresForgeEnvironment(t *testing.T) {
-	t.Parallel()
-
-	cfg := config.Config{
-		MetricsListenAddress:  "127.0.0.1:9090",
-		SpireServerAPIAddress: "spire-server.spire-server.svc.cluster.local:8081",
-		SpireJoinTokenTTL:     time.Hour,
-		DBConnectionString:    "postgres://postgres:postgres@postgres-postgresql.postgres.svc.cluster.local:5432/cwe?sslmode=disable",
-		ForgeEnvironment:      config.ForgeEnvironmentTest,
-	}
-
-	require.ErrorContains(t, cfg.Validate(), "CNPG_SUPERUSER_PASSWORD")
-}

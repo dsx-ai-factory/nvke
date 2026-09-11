@@ -21,7 +21,7 @@ import (
 // flag becomes an NKE_BRINGUP_* environment variable with the same default.
 //
 // The prefix is deliberately NOT NICO_VMS_*: that namespace belongs to the
-// nico-vms binary itself, which parses its own environment. Mixing test-driver
+// nico-sim binary itself, which parses its own environment. Mixing test-driver
 // settings into it would make it impossible to tell which process owns a
 // given variable.
 const (
@@ -159,13 +159,13 @@ func loadConfig(t *testing.T) config {
 		keepVMs:       os.Getenv("NKE_BRINGUP_KEEP_VMS") != "",
 	}
 
-	// Only the nico-vms binary is required here. The kubeadm settings are
+	// Only the nico-sim binary is required here. The kubeadm settings are
 	// validated separately by requireKubeadmConfig, because the smoke test
 	// needs none of them: it boots stock Ubuntu and installs nothing, which is
 	// exactly what lets it run when the NKE apt repo is unreachable.
 	if c.nicoVMSBin == "" {
 		t.Fatal("missing required configuration:\n" +
-			"  - NKE_BRINGUP_NICO_VMS_BIN (path to the nico-vms binary; build it with `CGO_ENABLED=1 make -C controller/nico-vms build-privileged`)")
+			"  - NKE_BRINGUP_NICO_VMS_BIN (path to the nico-sim binary; build it with `CGO_ENABLED=1 make -C controller/nico-sim build-privileged`)")
 	}
 
 	abs, err := filepath.Abs(c.nicoVMSBin)
@@ -174,12 +174,12 @@ func loadConfig(t *testing.T) config {
 	}
 	c.nicoVMSBin = abs
 	if _, err := os.Stat(c.nicoVMSBin); err != nil {
-		t.Fatalf("nico-vms binary not usable at %s: %v", c.nicoVMSBin, err)
+		t.Fatalf("nico-sim binary not usable at %s: %v", c.nicoVMSBin, err)
 	}
 
 	// nico-vms resolves its seed relative to its own working directory, so it
 	// must be handed an absolute path or it exits 1. The binary lands at
-	// <module-root>/bin/nico-vms, which makes the seed derivable; the override
+	// <module-root>/bin/nico-sim, which makes the seed derivable; the override
 	// exists for anyone running a binary from somewhere else.
 	c.seedPath = os.Getenv("NKE_BRINGUP_SEED_PATH")
 	if c.seedPath == "" {
@@ -193,7 +193,7 @@ func loadConfig(t *testing.T) config {
 	}
 	if _, err := os.Stat(c.seedPath); err != nil {
 		t.Fatalf("nico-vms seed not readable at %s: %v\n"+
-			"set NKE_BRINGUP_SEED_PATH if the binary is not at <module-root>/bin/nico-vms", c.seedPath, err)
+			"set NKE_BRINGUP_SEED_PATH if the binary is not at <module-root>/bin/nico-sim", c.seedPath, err)
 	}
 
 	// A `go test` runs with the package directory as its working directory,

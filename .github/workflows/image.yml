@@ -101,13 +101,12 @@ jobs:
           # module lives in the root Go workspace and needs go.work + vendor/.
           check controller/Dockerfile                    .
           check cluster-api-provider-provisioned/Dockerfile .
-          check controller/hack/nico-mock/Dockerfile     controller/hack/nico-mock
+          check controller/hack/capd-reboot-controller/Dockerfile controller/hack/capd-reboot-controller
           check agent/Dockerfile.nke-builder             agent
 
-          # These four are checked but never built: capd-kindest-node and
+          # These three are checked but never built: capd-kindest-node and
           # cwe.tilt need inputs CI does not have, and Dockerfile.proto is
           # developer tooling.
-          check controller/hack/capd-reboot-controller/Dockerfile controller/hack/capd-reboot-controller
           check controller/hack/capd-kindest-node/Dockerfile      controller/hack/capd-kindest-node
           check agent/internal-scripts/docker/Dockerfile.proto    agent/internal-scripts/docker
 
@@ -143,21 +142,21 @@ jobs:
             --tag cwe-profiles-fixture:ci \
             controller/test/fixtures
 
-      # A real end-to-end image build. nico-mock is used because it has no
-      # private module dependencies, so it builds from public sources alone —
-      # which is exactly the property this check exists to protect.
-      - name: Build nico-mock image
+      # A real end-to-end image build. capd-reboot-controller is used because it
+      # has no private module dependencies, so it builds from public sources
+      # alone — which is exactly the property this check exists to protect.
+      - name: Build capd-reboot-controller image
         shell: bash
         run: |
           docker buildx build \
-            --file controller/hack/nico-mock/Dockerfile \
-            --tag nke/nico-mock:ci \
+            --file controller/hack/capd-reboot-controller/Dockerfile \
+            --tag nke/capd-reboot-controller:ci \
             --load \
-            controller/hack/nico-mock
+            controller/hack/capd-reboot-controller
 
       - name: Show image
         shell: bash
-        run: docker image inspect nke/nico-mock:ci --format 'built {{.RepoTags}} {{.Size}} bytes'
+        run: docker image inspect nke/capd-reboot-controller:ci --format 'built {{.RepoTags}} {{.Size}} bytes'
 
       # A real end-to-end controller image build: it compiles the controller
       # inside the build, resolving every dependency from the committed

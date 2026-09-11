@@ -40,6 +40,7 @@ type Client interface {
 	ReconcileKubeVip(ctx context.Context, node db.Node, req *nkeproto.ReconcileKubeVipRequest) (*nkeproto.ReconcileKubeVipResponse, error)
 	StartKubernetesCertificateRenewal(ctx context.Context, node db.Node, req *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
 	GetKubernetesCertificateRenewalStatus(ctx context.Context, node db.Node, req *nkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
+	RemoveEtcdMember(ctx context.Context, node db.Node, req *nkeproto.RemoveEtcdMemberRequest) (*nkeproto.RemoveEtcdMemberResponse, error)
 	ExecuteNodePreflight(ctx context.Context, node db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error)
 	GetKubeadmJoinString(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
 	UpdateAndFetchKubeAdmJoinStrings(ctx context.Context, node db.Node, req *nkeproto.KubeadmJoinStringRequest) (*nkeproto.KubeadmJoinStringResponse, error)
@@ -372,6 +373,20 @@ func (c *NodeAgentClient) GetKubernetesCertificateRenewalStatus(
 	resp, err := nkeproto.NewNodeAgentClient(conn).GetKubernetesCertificateRenewalStatus(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get certificate renewal status from node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+func (c *NodeAgentClient) RemoveEtcdMember(ctx context.Context, node db.Node, req *nkeproto.RemoveEtcdMemberRequest) (*nkeproto.RemoveEtcdMemberResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent for etcd member removal on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nkeproto.NewNodeAgentClient(conn).RemoveEtcdMember(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove etcd member from node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

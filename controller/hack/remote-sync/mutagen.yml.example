@@ -83,7 +83,7 @@ forward:
   postgres:
     source: "tcp:localhost:6432"
     destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:5432"
-  nico-vms:
+  nico-sim:
     source: "tcp:localhost:19080"
     destination: "__REMOTE_SSH_ALIAS__:tcp:localhost:18080"
   grafana:

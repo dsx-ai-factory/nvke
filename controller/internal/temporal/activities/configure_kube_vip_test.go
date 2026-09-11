@@ -17,6 +17,7 @@ import (
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
 	"github.com/NVIDIA/nke/controller/internal/agent/agenttest"
+	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
@@ -27,8 +28,10 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 	tests := map[string]struct {
 		cluster    db.Cluster
 		nodePool   db.NodePool
+		cfg        config.Config
 		wantSource nkeproto.ReconcileKubeVipRequest_BGPPeerASNSource
 		wantASN    uint32
+		wantFMDS   string
 	}{
 		"CAPI pool without Nico payload uses default ASN": {
 			cluster: db.Cluster{
@@ -41,6 +44,22 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 			},
 			wantSource: nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC,
 			wantASN:    4294967000,
+		},
+		"CAPI pool with site FMDS endpoint uses FMDS ASN": {
+			cluster: db.Cluster{
+				ProviderType:    db.ProviderTypeCAPI,
+				ControlPlaneVIP: "10.0.0.10",
+			},
+			nodePool: db.NodePool{
+				ControlPlane: true,
+				Capi:         &db.CAPINodePoolProvider{},
+			},
+			cfg: config.Config{
+				KubeVipFMDSEndpoint: "http://169.254.169.254/latest/meta-data/asn",
+			},
+			wantSource: nkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
+			wantASN:    0,
+			wantFMDS:   "http://169.254.169.254/latest/meta-data/asn",
 		},
 		"Nico pool with VPC prefix uses FMDS ASN": {
 			cluster: db.Cluster{
@@ -95,7 +114,7 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 				},
 			}
 
-			a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
+			a := &Activities{cfg: tt.cfg, db: mockDB, nodeAgentClient: fakeAgent}
 			testSuite := &testsuite.WorkflowTestSuite{}
 			env := testSuite.NewTestActivityEnvironment()
 			env.RegisterActivity(a.configureKubeVip)
@@ -115,6 +134,7 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 			require.Equal(t, uint32(65100), request.GetBgpAsn())
 			require.Equal(t, tt.wantSource, request.GetBgpPeerAsnSource())
 			require.Equal(t, tt.wantASN, request.GetBgpPeerAsn())
+			require.Equal(t, tt.wantFMDS, request.GetFmdsEndpoint())
 			mockDB.AssertExpectations(t)
 		})
 	}
@@ -126,6 +146,7 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 	tests := map[string]struct {
 		rpcError            error
 		configureSuperAdmin bool
+		fmdsEndpoint        string
 		wantRunbooks        []string
 		wantError           string
 	}{
@@ -137,6 +158,11 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 			rpcError:            fmt.Errorf("reconcile call: %w", status.Error(codes.Unimplemented, "unknown method ReconcileKubeVip")),
 			configureSuperAdmin: true,
 			wantRunbooks:        []string{"configure-super-admin", configureKubeVipRunbookName},
+		},
+		"unimplemented passes FMDS endpoint to legacy runbook": {
+			rpcError:     status.Error(codes.Unimplemented, "unknown method ReconcileKubeVip"),
+			fmdsEndpoint: "http://169.254.169.254/latest/meta-data/asn",
+			wantRunbooks: []string{configureKubeVipRunbookName},
 		},
 		"operational RPC error is propagated": {
 			rpcError:  status.Error(codes.Internal, "manifest write failed"),
@@ -171,15 +197,26 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 			fakeAgent := &agenttest.FakeClient{ReconcileKubeVipError: tt.rpcError}
 			fakeAgent.ExecuteScriptHook = func(_ db.Node, runbookName, script string) (*nkeproto.ExecuteScriptResponse, error) {
 				if runbookName == configureKubeVipRunbookName {
+					wantPeerAS := "4294967000"
+					if tt.fmdsEndpoint != "" {
+						wantPeerAS = "FROM_FMDS"
+					}
 					require.Contains(t, script, "export VIP_ADDRESS='10.0.0.10'")
 					require.Contains(t, script, "export BGP_AS='65100'")
-					require.Contains(t, script, "export BGP_PEER_AS='4294967000'")
+					require.Contains(t, script, "export BGP_PEER_AS='"+wantPeerAS+"'")
+					require.Contains(t, script, "export FMDS_ENDPOINT='"+tt.fmdsEndpoint+"'")
 					require.Contains(t, script, "export NODE_IP='10.0.0.20'")
 				}
 				return &nkeproto.ExecuteScriptResponse{ExitCode: 0, Output: runbookName + " output"}, nil
 			}
 
-			a := &Activities{db: mockDB, nodeAgentClient: fakeAgent}
+			a := &Activities{
+				cfg: config.Config{
+					KubeVipFMDSEndpoint: tt.fmdsEndpoint,
+				},
+				db:              mockDB,
+				nodeAgentClient: fakeAgent,
+			}
 			testSuite := &testsuite.WorkflowTestSuite{}
 			env := testSuite.NewTestActivityEnvironment()
 			env.RegisterActivity(a.configureKubeVip)
@@ -204,6 +241,7 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 				}
 			}
 			require.Len(t, fakeAgent.ReconcileKubeVipRequests, 1)
+			require.Equal(t, tt.fmdsEndpoint, fakeAgent.ReconcileKubeVipRequests[0].GetFmdsEndpoint())
 			mockDB.AssertExpectations(t)
 		})
 	}

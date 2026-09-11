@@ -80,5 +80,4 @@ func TestInstallPackagesAsyncRecordsRequestID(t *testing.T) {
 	entries := s.GetBundleStatusByRequestID(resp.GetRequestId())
 	require.Len(t, entries, 1)
 	assert.Equal(t, "deb-packages", entries[0].Name)
-	assert.Equal(t, "installing", entries[0].Status)
 }

@@ -356,6 +356,9 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(cwe, "upgrade --install cloud-workflow-engine "+cfg.ChartPath) {
 		t.Errorf("cwe call = %q, want the cwe release/chart path", cwe)
 	}
+	if !strings.Contains(cwe, "--set-string supportedInfraProviders=infra") {
+		t.Errorf("cwe call = %q, want infra provider support enabled", cwe)
+	}
 	if !strings.Contains(cwe, "image.repository=nvcr.io/org/controller") || !strings.Contains(cwe, "image.tag=edge") {
 		t.Errorf("cwe call = %q, want the image split into repository/tag", cwe)
 	}
@@ -659,6 +662,23 @@ func TestTPMAttestorArgs(t *testing.T) {
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("tpmAttestorArgs = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+func TestTPMPluginChecksum(t *testing.T) {
+	tests := map[string]string{
+		"amd64": spireTPMDirectAMD64Checksum,
+		"arm64": spireTPMDirectARM64Checksum,
+	}
+	for arch, want := range tests {
+		if got := tpmPluginChecksum(arch); got != want {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want %q", arch, got, want)
+		}
+	}
+	for _, arch := range []string{"ppc64le", "s390x"} {
+		if got := tpmPluginChecksum(arch); got != "" {
+			t.Errorf("tpmPluginChecksum(%s) = %q, want no checksum", arch, got)
 		}
 	}
 }

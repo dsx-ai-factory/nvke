@@ -2,12 +2,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Boot a bare VM on the local nico-vms backend through CAPNICo (the replacement
-# for `self-bootstrap create`).
+# Create a VM or container instance through CAPNICo.
 #
 # Applies the six resources CAPNICo needs -- Namespace, bootstrap Secret,
 # NicoCluster, Cluster, NicoMachine, Machine -- then waits for the NicoMachine to
-# report ready and prints the nico-vms instance JSON.
+# report ready and prints the nico-sim instance JSON.
 #
 # Notes:
 #   - The iPXE script comes from the CWE-side OS profile
@@ -28,28 +27,56 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+INSTANCE_BACKEND="${INSTANCE_BACKEND:-vm}"
+case "${INSTANCE_BACKEND}" in
+  VM | vm)
+    INSTANCE_BACKEND="vm"
+    DEFAULT_CLUSTER_NAME="nico-vms-bare"
+    DEFAULT_INSTANCE_NAME="capnico-vm-1"
+    DEFAULT_SITE_ID="a1b2c3d4-0001-4000-8000-000000000001"
+    DEFAULT_VPC_ID="a1b2c3d4-0002-4000-8000-000000000001"
+    DEFAULT_SUBNET_ID="a1b2c3d4-0003-4000-8000-000000000001"
+    DEFAULT_SSH_KEY_GROUP_ID="a1b2c3d4-0006-4000-8000-000000000001"
+    DEFAULT_INSTANCE_TYPE_ID="a1b2c3d4-0005-4000-8000-000000000005"
+    ;;
+  Container | container)
+    INSTANCE_BACKEND="container"
+    DEFAULT_CLUSTER_NAME="nico-containers-bare"
+    DEFAULT_INSTANCE_NAME="capnico-container-1"
+    DEFAULT_SITE_ID="00000000-0000-0000-0000-000000000001"
+    DEFAULT_VPC_ID="00000000-0000-0000-0000-000000000002"
+    DEFAULT_SUBNET_ID="00000000-0000-0000-0000-000000000003"
+    DEFAULT_SSH_KEY_GROUP_ID="00000000-0000-0000-0000-000000000004"
+    DEFAULT_INSTANCE_TYPE_ID="00000000-0000-0000-0000-000000000005"
+    ;;
+  *)
+    echo "Unsupported INSTANCE_BACKEND '${INSTANCE_BACKEND}' (expected VM or Container)" >&2
+    exit 1
+    ;;
+esac
+
 NAMESPACE="${NAMESPACE:-nico-test}"
-CLUSTER_NAME="${CLUSTER_NAME:-nico-vms-bare}"
-INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}"
+CLUSTER_NAME="${CLUSTER_NAME:-${DEFAULT_CLUSTER_NAME}}"
+INSTANCE_NAME="${INSTANCE_NAME:-${DEFAULT_INSTANCE_NAME}}"
 BOOTSTRAP_SECRET_NAME="${BOOTSTRAP_SECRET_NAME:-${INSTANCE_NAME}-bootstrap}"
 
 OS_PROFILE="${OS_PROFILE:-nke-260611-24.04-amd64-fde}"
 DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}"
 
-# nico-vms seed resources (nico-vms/internal/seed/default-seed.yaml).
+# Seed resources for the selected backend.
 ORG_ID="${ORG_ID:-novxwn552ssc}"
-SITE_ID="${SITE_ID:-a1b2c3d4-0001-4000-8000-000000000001}"
-VPC_ID="${VPC_ID:-a1b2c3d4-0002-4000-8000-000000000001}"
-SUBNET_ID="${SUBNET_ID:-a1b2c3d4-0003-4000-8000-000000000001}"
-SSH_KEY_GROUP_ID="${SSH_KEY_GROUP_ID:-a1b2c3d4-0006-4000-8000-000000000001}"
+SITE_ID="${SITE_ID:-${DEFAULT_SITE_ID}}"
+VPC_ID="${VPC_ID:-${DEFAULT_VPC_ID}}"
+SUBNET_ID="${SUBNET_ID:-${DEFAULT_SUBNET_ID}}"
+SSH_KEY_GROUP_ID="${SSH_KEY_GROUP_ID:-${DEFAULT_SSH_KEY_GROUP_ID}}"
 # cpu2-mem4gb-disk50gb. The instance type's disk_gib overrides
 # NICO_VMS_VM_DISK_GIB, and 50 GiB is ample for a bare boot. Use
 # a1b2c3d4-0005-4000-8000-000000000004 (cpu6-mem32gb-disk60gb) for real NKE-node
 # work later.
-INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-a1b2c3d4-0005-4000-8000-000000000005}"
+INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-${DEFAULT_INSTANCE_TYPE_ID}}"
 
-NICO_VMS_URL="${NICO_VMS_URL:-http://localhost:18080}"
-NICO_VMS_TOKEN="${NICO_VMS_TOKEN:-nico-vmsctl-token}"
+NICO_SIM_URL="${NICO_SIM_URL:-http://localhost:18080}"
+NICO_SIM_TOKEN="${NICO_SIM_TOKEN:-nico-simctl-token}"
 
 # cluster.x-k8s.io/v1beta1 is still served on the pinned CAPI v1.12.3 and
 # matches CWE's own nico_machine_builders output, but the CRDs mark it
@@ -71,18 +98,17 @@ RECREATE="${RECREATE:-false}"
 PROVIDER_ID_TIMEOUT_SECONDS="${PROVIDER_ID_TIMEOUT_SECONDS:-120}"
 PROVIDER_ID_POLL_INTERVAL_SECONDS="${PROVIDER_ID_POLL_INTERVAL_SECONDS:-2}"
 
-# Login for the bare-boot VM. Required from the environment -- credentials are
-# never committed, so there is no default and an unset value fails fast here
-# rather than baking a well-known password into every VM.
-VM_USER="${VM_USER:?export VM_USER (bare-boot VM login user)}"
-VM_PASSWORD="${VM_PASSWORD:?export VM_PASSWORD (bare-boot VM login password)}"
+# Use the same local-only login as nico-sim diagnostics. Callers can override
+# either value when they need a different bare-boot account.
+VM_USER="${VM_USER:-nico-diag}"
+VM_PASSWORD="${VM_PASSWORD:-nico-diag}"
 
 command -v jq >/dev/null || {
   echo "jq is required (it escapes the VM login into the cloud-config and prints the instance JSON)" >&2
   exit 1
 }
 command -v curl >/dev/null || {
-  echo "curl is required (it queries the nico-vms instance after the VM is ready)" >&2
+  echo "curl is required (it queries the nico-sim instance after it is ready)" >&2
   exit 1
 }
 
@@ -200,8 +226,8 @@ write_files:
       capnico bare boot marker
 
 runcmd:
-  - [sh, -c, "date -Is >> /etc/capnico-bare-boot-ok"]
-  - [sh, -c, "echo 'capnico bare boot complete' > /dev/console"]
+  - date -Is >> /etc/capnico-bare-boot-ok
+  - echo 'capnico bare boot complete' > /dev/console
 
 final_message: "capnico bare boot complete"
 EOF
@@ -250,7 +276,7 @@ fi
 # must already exist, and every apply is idempotent.
 # ---------------------------------------------------------------------------
 
-echo "Creating instance '${INSTANCE_NAME}' (cluster ${CLUSTER_NAME}, profile ${OS_PROFILE}) in namespace ${NAMESPACE}" >&2
+echo "Creating ${INSTANCE_BACKEND} instance '${INSTANCE_NAME}' (cluster ${CLUSTER_NAME}) in namespace ${NAMESPACE}" >&2
 
 # A namespace left over from a delete run may still be Terminating. `apply` is a
 # no-op PATCH on it and succeeds, but the Secret apply below is then rejected by
@@ -396,11 +422,11 @@ if [ -z "${INSTANCE_ID}" ]; then
   exit 1
 fi
 
-echo "Instance ${INSTANCE_NAME} is ready (nico-vms instance ${INSTANCE_ID})" >&2
+echo "Instance ${INSTANCE_NAME} is ready (nico-sim instance ${INSTANCE_ID})" >&2
 # The fields are projected deliberately: the instance JSON carries `userData`
 # verbatim, and that is the cloud-config holding the VM login password. Dumping
 # the bare object would print the credential into the Tilt resource log (and any
 # tilt snapshot or CI log). Do not replace this with a plain `| jq`.
-curl -fsS -H "Authorization: Bearer ${NICO_VMS_TOKEN}" \
-  "${NICO_VMS_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}" |
+curl -fsS -H "Authorization: Bearer ${NICO_SIM_TOKEN}" \
+  "${NICO_SIM_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}" |
   jq '{id, name, status, instanceTypeId, vpcId, siteId, interfaces}'

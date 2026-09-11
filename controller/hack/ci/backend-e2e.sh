@@ -55,8 +55,9 @@ TILT_BIN="${TMP_DIR}/tilt"
 BUNDLE_DIR="${TMP_DIR}/bundles"
 SOURCE_ARCHIVE="${TMP_DIR}/cwe-source.tgz"
 # Where the CAPNICo checkout lands inside the runner, when a NICo lane stages one.
-NICO_PROVIDER_CONTAINER_DIR=/workspace/cluster-api-provider-nico
+CAPNICO_SOURCE_CONTAINER_DIR=/workspace/cluster-api-provider-nico
 E2E_BIN="${TMP_DIR}/cwe-e2e.test"
+NICO_SIM_BIN="${TMP_DIR}/nico-sim"
 NKECTL_BIN="${TMP_DIR}/nkectl"
 E2E_CONFIG="${TMP_DIR}/e2e-config.json"
 RUNNER_DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
@@ -109,6 +110,11 @@ if jq -e 'index("dsx-identity-exchange") != null' <<<"${NKE_E2E_PROVIDERS}" >/de
   DSX_IDENTITY_EXCHANGE_ENABLED=true
 else
   DSX_IDENTITY_EXCHANGE_ENABLED=false
+fi
+if jq -e 'index("nico") != null' <<<"${NKE_E2E_PROVIDERS}" >/dev/null; then
+  NICO_PROVIDER_ENABLED=true
+else
+  NICO_PROVIDER_ENABLED=false
 fi
 
 require_command() {
@@ -194,6 +200,73 @@ runner_exec() {
     "${RUNNER_NAME}" "$@"
 }
 
+runner_exec_detached() {
+  docker exec -d \
+    -e KUBECONFIG=/state/management.kubeconfig \
+    -e DOCKER_HOST="${RUNNER_DOCKER_HOST}" \
+    -e NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
+    -e NKE_E2E_REQUIRE_AUTHN="${NKE_E2E_REQUIRE_AUTHN:-}" \
+    "${RUNNER_NAME}" "$@"
+}
+
+wait_for_runner_tilt() {
+  local deadline=$((SECONDS + 40 * 60))
+  local stall_limit=$((12 * 60))
+  local state errors pending total last_state="" last_change=${SECONDS}
+
+  while true; do
+    if runner_exec test -s /state/tilt.pid && \
+      ! runner_exec kill -0 "$(runner_exec cat /state/tilt.pid)"; then
+      runner_exec tail -n 250 /state/tilt.log >&2 || true
+      log "Tilt exited before the E2E suite started" >&2
+      return 1
+    fi
+    if state="$(runner_exec tilt get uiresources -o json 2>/dev/null | jq -r '
+        [.items[] | select(.status.disableStatus.state != "Disabled")] as $r
+        | {
+            errors: [$r[] | select(.status.updateStatus == "error" or .status.runtimeStatus == "error") | .metadata.name],
+            pending: [$r[] | select((.status.updateStatus | IN("pending", "in_progress")) or (.status.runtimeStatus | IN("pending"))) | .metadata.name],
+            total: ($r | length)
+          }
+        | "\(.errors | join(","))|\(.pending | join(","))|\(.total)"' 2>/dev/null)" && [[ -n "${state}" ]]; then
+      IFS='|' read -r errors pending total <<<"${state}"
+      if [[ "${state}" != "${last_state}" ]]; then
+        last_state="${state}"
+        last_change=${SECONDS}
+        log "tilt: ${total} resources, pending: ${pending:-none}"
+      fi
+      if [[ -n "${errors}" ]]; then
+        for name in ${errors//,/ }; do
+          echo "::group::tilt logs ${name}"
+          runner_exec tilt logs "${name}" 2>/dev/null | tail -n 150
+          echo "::endgroup::"
+        done
+        log "Tilt resources failed: ${errors}" >&2
+        return 1
+      fi
+      if [[ -z "${pending}" && "${total}" -gt 1 ]]; then
+        log "Tilt is ready: ${total} resources"
+        return 0
+      fi
+      if [[ -n "${pending}" ]] && ((SECONDS - last_change >= stall_limit)); then
+        for name in ${pending//,/ }; do
+          echo "::group::tilt logs ${name}"
+          runner_exec tilt logs "${name}" 2>/dev/null | tail -n 150
+          echo "::endgroup::"
+        done
+        log "no Tilt resource changed state for 12m; still pending: ${pending}" >&2
+        return 1
+      fi
+    fi
+    if ((SECONDS >= deadline)); then
+      runner_exec tilt get uiresources 2>/dev/null || true
+      log "Tilt did not become ready within 40m; still pending: ${pending:-unknown}" >&2
+      return 1
+    fi
+    sleep 15
+  done
+}
+
 configure_kind_dockerhub_mirror() {
   local node_name="${KIND_CLUSTER_NAME}-control-plane"
   local registry_host
@@ -275,6 +348,7 @@ ci_e2e_exec() {
     "NKE_E2E_DSX_IDENTITY_EXCHANGE=${DSX_IDENTITY_EXCHANGE_ENABLED}" \
     "E2E_BGP_CONTAINER_NAME=${BGP_CONTAINER_NAME}" \
     "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=${cp_flag}" \
+    "NKE_E2E_SPIRE_RELEASE=${NKE_E2E_SPIRE_RELEASE:-}" \
     "$@"
 }
 
@@ -377,6 +451,7 @@ collect_diagnostics() {
       done < <(docker ps -a --filter "ancestor=${CAPD_NODE_IMAGE}" --format '{{.Names}}')
 
       if docker inspect "${RUNNER_NAME}" >/dev/null 2>&1; then
+        runner_exec tilt snapshot create /state/tilt-snapshot.json >/dev/null 2>&1 || true
         runner_exec kubectl get nodes -o wide >"${STATE_DIR}/management-nodes.txt" 2>&1
         runner_exec kubectl get pods -A -o wide >"${STATE_DIR}/management-pods.txt" 2>&1
         runner_exec kubectl get events -A --sort-by=.lastTimestamp >"${STATE_DIR}/management-events.txt" 2>&1
@@ -559,6 +634,8 @@ git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
 CWE_IMAGE="${CWE_IMAGE:-cwe-e2e:${git_short_sha}}"
 CWE_BUILD_VERSION="${CWE_BUILD_VERSION:-e2e-${git_short_sha}}"
 CWE_PROFILES_TILT_IMAGE="docker.local/cwe-profiles:tilt"
+# Matches the ref the manifest names; Tilt builds the same tag via custom_build.
+CAPD_REBOOT_IMAGE="ko.local/capd-reboot-controller"
 DSX_IDENTITY_EXCHANGE_IMAGE=""
 
 log "building the sanitized profiles fixture image"
@@ -670,6 +747,23 @@ if [[ "${e2e_built}" != true ]]; then
   exit 1
 fi
 
+NICO_SIM_BINARY_PREBUILT=false
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+  if [[ "$(uname -s)" != Linux ]]; then
+    log "the NICo backend requires a Linux host to build nico-sim with CGO"
+    exit 1
+  fi
+  log "compiling nico-sim for linux/${host_arch}"
+  mkdir -p nico-sim/bin
+  GOOS=linux GOARCH="${host_arch}" \
+    make -C nico-sim BINARY="${NICO_SIM_BIN}" build-static
+  if readelf -l "${NICO_SIM_BIN}" | grep -q 'INTERP'; then
+    echo "nico-sim binary is dynamically linked; the inner runner requires a static binary" >&2
+    exit 1
+  fi
+  NICO_SIM_BINARY_PREBUILT=true
+fi
+
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
   nkectl_smoke_build "${host_arch}"
 fi
@@ -700,6 +794,35 @@ kind create cluster \
 configure_kind_dockerhub_mirror
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
+
+# capd-reboot-controller is a CAPD test double, not management-plane software:
+# CAPD "nodes" are containers, so a machine reboot has no analogue and this
+# restarts the container instead. The Tilt path gets it from its provider
+# module; the nke-stack path has no Tilt, so it is built here and applied by
+# deploy-nke-stack.sh. It stays out of the nke-stack chart deliberately -- no
+# operator deploys it, and its image is a local ko.local reference.
+# The suite reads the SPIRE server's ConfigMap and lists its pods by label, and
+# both names derive from the helm release: <release>-server and
+# instance=<release>. Tilt installs SPIRE as its own release named "spire",
+# which is what the suite defaults to; under the umbrella every subchart
+# inherits the umbrella's release instead, so the defaults find nothing and
+# every spec needing the management trust domain fails with
+# `configmaps "spire-server" not found`. Must match STACK_RELEASE in
+# deploy-nke-stack.sh.
+NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-}"
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-nke-stack}"
+  log "spire release for the suite: ${NKE_E2E_SPIRE_RELEASE}"
+fi
+
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  log "building capd-reboot-controller for the nke-stack path"
+  docker build \
+    -t "${CAPD_REBOOT_IMAGE}" \
+    -f "${CONTROLLER_ROOT}/hack/capd-reboot-controller/Dockerfile" \
+    "${CONTROLLER_ROOT}/hack/capd-reboot-controller"
+  kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CAPD_REBOOT_IMAGE}"
+fi
 if [[ -n "${DSX_IDENTITY_EXCHANGE_IMAGE}" ]]; then
   kind load docker-image --name "${KIND_CLUSTER_NAME}" "${DSX_IDENTITY_EXCHANGE_IMAGE}"
 fi
@@ -734,6 +857,12 @@ docker create \
   "${RUNNER_DOCKER_ARGS[@]}" \
   "${RUNNER_IMAGE}" sleep infinity >/dev/null
 docker start "${RUNNER_NAME}" >/dev/null
+runner_kind_ip="$(docker inspect "${RUNNER_NAME}" \
+  --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}')"
+if [[ ! "${runner_kind_ip}" =~ ^[0-9]+(\.[0-9]+){3}$ ]]; then
+  log "inner runner has no valid IPv4 address on the kind network: ${runner_kind_ip}"
+  exit 1
+fi
 docker cp "${MANAGEMENT_KUBECONFIG}" "${RUNNER_NAME}:/state/management.kubeconfig"
 docker cp "${CLUSTERCTL_BIN}" "${RUNNER_NAME}:/usr/local/bin/clusterctl"
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
@@ -747,23 +876,26 @@ for tool in kind kubectl; do
 done
 docker cp "${SOURCE_ARCHIVE}" "${RUNNER_NAME}:/state/cwe-source.tgz"
 docker cp "${E2E_BIN}" "${RUNNER_NAME}:/state/cwe-e2e.test"
+if [[ "${NICO_SIM_BINARY_PREBUILT}" == "true" ]]; then
+  docker cp "${NICO_SIM_BIN}" "${RUNNER_NAME}:/tmp/cwe-nico-sim"
+fi
 
 # The NICo backend builds CAPNICo from a checkout. The source archive is
 # extracted with --transform s,^controller/,, so /workspace/cloud-workflow-engine
 # holds the CONTROLLER directory, not the monorepo root. That makes the
 # Tiltfile's relative default resolve outside /workspace, so the path is passed
-# explicitly as NICO_PROVIDER_REPO_DIR at the tilt invocation below rather than
+# explicitly as CAPNICO_SOURCE_DIR at the tilt invocation below rather than
 # inferred. Every other backend skips this entirely.
-if [[ -n "${NICO_PROVIDER_SRC:-}" ]]; then
-  if [[ ! -d "${NICO_PROVIDER_SRC}" ]]; then
-    log "NICO_PROVIDER_SRC is set but not a directory: ${NICO_PROVIDER_SRC}"
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" ]]; then
+  if [[ ! -d "${CAPNICO_SOURCE_SRC}" ]]; then
+    log "CAPNICO_SOURCE_SRC is set but not a directory: ${CAPNICO_SOURCE_SRC}"
     exit 1
   fi
-  log "staging the CAPNICo provider from ${NICO_PROVIDER_SRC}"
+  log "staging the CAPNICo provider from ${CAPNICO_SOURCE_SRC}"
   nico_archive="${TMP_DIR}/cluster-api-provider-nico.tgz"
-  tar -C "$(dirname "${NICO_PROVIDER_SRC}")" \
+  tar -C "$(dirname "${CAPNICO_SOURCE_SRC}")" \
     --exclude .git \
-    -czf "${nico_archive}" "$(basename "${NICO_PROVIDER_SRC}")"
+    -czf "${nico_archive}" "$(basename "${CAPNICO_SOURCE_SRC}")"
   docker cp "${nico_archive}" "${RUNNER_NAME}:/state/cluster-api-provider-nico.tgz"
   runner_exec sh -lc '
     set -eu
@@ -789,6 +921,35 @@ runner_exec sh -lc '
 runner_exec mkdir -p /workspace/cloud-workflow-engine
 runner_exec tar -xzf /state/cwe-source.tgz -C /workspace/cloud-workflow-engine
 
+# The source archive carries only controller/ (tar --transform), so the umbrella
+# chart's build scripts and metadata -- which live at the monorepo root -- are
+# not in it. Stage them separately, preserving the build/ + generated/ layout the
+# script derives REPO_ROOT from. Only when the stack path is selected.
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  runner_exec mkdir -p /workspace/nke-stack/generated/nke-stack
+  docker cp "${WORKSPACE_ROOT}/build" "${RUNNER_NAME}:/workspace/nke-stack/build"
+  # .helmignore included: without it the packaged chart differs from what a
+  # normal build produces, and helm falls back to its built-in default.
+  for f in Chart.yaml values.yaml .helmignore; do
+    docker cp "${WORKSPACE_ROOT}/generated/nke-stack/${f}" \
+      "${RUNNER_NAME}:/workspace/nke-stack/generated/nke-stack/${f}"
+  done
+  docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-nke-stack.sh" \
+    "${RUNNER_NAME}:/usr/local/bin/deploy-nke-stack.sh"
+  # build-local packages the CWE chart from the working tree, so the build tree
+  # needs it at the path build/nke-stack.sh derives from REPO_ROOT.
+  runner_exec mkdir -p /workspace/nke-stack/controller/deploy
+  docker cp "${WORKSPACE_ROOT}/controller/deploy/charts" \
+    "${RUNNER_NAME}:/workspace/nke-stack/controller/deploy/charts"
+  # A chart in a private package needs credentials inside the runner too; helm
+  # on the outer host already has them if anyone pushed or pulled it.
+  if [[ -f "${HOME}/.config/helm/registry/config.json" ]]; then
+    runner_exec mkdir -p /root/.config/helm/registry
+    docker cp "${HOME}/.config/helm/registry/config.json" \
+      "${RUNNER_NAME}:/root/.config/helm/registry/config.json"
+  fi
+fi
+
 runner_exec bash -lc '
   set -euo pipefail
   for tool in curl docker git helm jq kind kubectl nc openssl python3 tar tilt; do
@@ -808,9 +969,9 @@ runner_exec env CLUSTER_TOPOLOGY=true clusterctl init \
   --infrastructure "docker:${CAPD_PROVIDER_VERSION}"
 runner_exec kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 runner_exec kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=5m
-if [[ -n "${NICO_PROVIDER_SRC:-}" ]]; then
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true ]]; then
   log "installing CAPNICo CRDs"
-  runner_exec kubectl apply -f "${NICO_PROVIDER_CONTAINER_DIR}/config/crd/bases"
+  runner_exec kubectl apply -f "${CAPNICO_SOURCE_CONTAINER_DIR}/config/crd/bases"
   runner_exec kubectl wait --for=condition=Established crd \
     nicoclusters.infrastructure.cluster.x-k8s.io \
     nicoclustertemplates.infrastructure.cluster.x-k8s.io \
@@ -842,6 +1003,11 @@ fi
 e2e_write_tilt_config "${TMP_DIR}/tilt_config.json" \
   "${NKE_E2E_PROVIDERS}" "${CWE_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
   "${DSX_IDENTITY_EXCHANGE_IMAGE}"
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+  jq '.nico_vms_observability = false' "${TMP_DIR}/tilt_config.json" \
+    >"${TMP_DIR}/tilt_config.json.tmp"
+  mv "${TMP_DIR}/tilt_config.json.tmp" "${TMP_DIR}/tilt_config.json"
+fi
 docker cp "${TMP_DIR}/tilt_config.json" \
   "${RUNNER_NAME}:/workspace/cloud-workflow-engine/tilt_config.json"
 jq -n \
@@ -862,9 +1028,59 @@ jq -n \
   }' >"${E2E_CONFIG}"
 docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 
+# NKE_E2E_STACK_CHART deploys the six management-plane charts from the nke-stack
+# umbrella instead of Tilt. Everything below -- rollout checks, CAPI probes, the
+# Ginkgo legs -- is identical either way. Tilt remains the default: it also
+# runs the inner-loop live_update the umbrella has no equivalent for. The pieces
+# its providers deploy -- capd-reboot-controller, the CAPD RBAC for CWE and the
+# BGP container -- are handled explicitly on this path instead.
+if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  log "deploying the management plane from the nke-stack umbrella chart"
+
+  # FRR, so kube-vip on container-based tenant nodes can peer through the kind
+  # gateway. Tilt's bgp-containers provider runs this; without Tilt nothing did,
+  # and BGP_CONTAINER_OWNED was being set for a container that had never been
+  # created -- which is what "failed to stop owned BGP container" was reporting
+  # on every run. up.sh derives the gateway and subnet from the Docker network
+  # itself, so it needs only the name.
+  log "starting the BGP container ${BGP_CONTAINER_NAME}"
+  CONTAINER_NAME="${BGP_CONTAINER_NAME}" bash "${CONTROLLER_ROOT}/hack/bgp-containers/up.sh"
+  BGP_CONTAINER_OWNED=true
+  # VERSION is passed in because the runner holds a tar of the working tree, not
+  # a clone: `git describe` inside it finds no repository, so build-local cannot
+  # derive one. It is NOT CWE_BUILD_VERSION -- that is an image tag
+  # (e2e-<sha>), and a chart version has to be semver. The commit is carried in
+  # the prerelease field instead. The controller image tag is set separately
+  # from CWE_IMAGE, so the two need not match.
+  runner_exec env \
+    VERSION="0.0.0-e2e.${git_short_sha}" \
+    MANAGEMENT_VIP="${management_vip}" \
+    KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+    CAPD_REBOOT_SLEEP_DURATION="${CAPD_REBOOT_SLEEP_DURATION:-10s}" \
+    DGXC_TENANT_USER=capd-e2e \
+    DGXC_TENANT_PASSWORD=example-password \
+    CNPG_SUPERUSER_PASSWORD=example-password \
+    CNPG_CLOUD_PASSWORD=example-password \
+    CNPG_TEMPORAL_PASSWORD=example-password \
+    PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
+    SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
+    NKE_E2E_STACK_CHART="${NKE_E2E_STACK_CHART}" \
+    NKE_E2E_STACK_VERSION="${NKE_E2E_STACK_VERSION:-}" \
+    bash /usr/local/bin/deploy-nke-stack.sh "${CWE_IMAGE}"
+else
 log "deploying the management plane with Tilt"
 BGP_CONTAINER_OWNED=true
-runner_exec env \
+# The inner runner has no Go toolchain, and this lane exercises
+# container-backed sites only, so reuse the host-built nico-sim in mock VM mode.
+tilt_exec=runner_exec
+tilt_mode=ci
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+  # NICo's simulator is a Tilt local resource. Keep Tilt alive through both
+  # E2E legs; `tilt ci` exits after deployment and stops the simulator.
+  tilt_exec=runner_exec_detached
+  tilt_mode=up
+fi
+"${tilt_exec}" env \
   KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
   CWE_PROFILES_PRELOADED=true \
   TENANT_ACCESS_ENABLED=true \
@@ -875,15 +1091,23 @@ runner_exec env \
   CNPG_CLOUD_PASSWORD=example-password \
   CNPG_TEMPORAL_PASSWORD=example-password \
   CWE_PROFILES_DIR=/workspace/cloud-workflow-engine/test/fixtures/profiles \
-  NICO_PROVIDER_REPO_DIR="${NICO_PROVIDER_CONTAINER_DIR}" \
+  CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_CONTAINER_DIR}" \
   CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
   CAPD_KINDEST_NODE_IMAGE_PREBUILT=true \
+  NICO_SIM_BINARY_PREBUILT="${NICO_SIM_BINARY_PREBUILT}" \
+  NICO_SIM_ENDPOINT_HOST="${runner_kind_ip}" \
+  NICO_VMS_VM_BACKEND=mock \
+  NKE_E2E_TILT_MODE="${tilt_mode}" \
   INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-false}" \
   PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER="${PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER:-}" \
   TILT_DISABLE_ANALYTICS=1 \
   bash -lc '
     set -euo pipefail
     cd /workspace/cloud-workflow-engine
+    if [[ "${NKE_E2E_TILT_MODE}" == up ]]; then
+      echo $$ >/state/tilt.pid
+      exec tilt up --stream=true >/state/tilt.log 2>&1
+    fi
     if ! tilt ci \
       --timeout=40m \
       --output-snapshot-on-exit=/state/tilt-snapshot.json \
@@ -892,6 +1116,11 @@ runner_exec env \
       exit 1
     fi
   '
+if [[ "${tilt_mode}" == up ]]; then
+  wait_for_runner_tilt
+  runner_exec tilt snapshot create /state/tilt-snapshot.json >/dev/null
+fi
+fi
 
 for controller in \
   "capi-system capi-controller-manager" \

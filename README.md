@@ -52,14 +52,14 @@ What distinguishes it from a generic CAPI distribution:
 | `cluster-api-provider-provisioned/` | Cluster API infrastructure provider for hosts that NKE provisions before CAPI bootstraps them. |
 | `agent/` | The on-node daemon. Exposes a gRPC API the controller drives to run `kubeadm`, install a CNI, and configure disk and etcd encryption. |
 | `cli/` | `nkectl`, the command-line interface. Validates a site spec and drives bootstrap. |
-| `controller/nico-vms/` | VM lifecycle service used by the development and test environments. |
+| `controller/nico-sim/` | `nico-sim`, the NICo-compatible VM and Docker-container simulator used by development and tests. |
 | `build/` | Build and publish scripts per component. |
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 
-**Ten Go modules**, tied together by a workspace at the repository root, each
-independently buildable. `make build` links seven binaries: `agent`, `updater`,
-`controller`, `nkectl`, `capd-reboot-controller`, `nico-mock` and
+**Nine Go modules**, tied together by a workspace at the repository root, each
+independently buildable. `make build` links six binaries: `agent`, `updater`,
+`controller`, `nkectl`, `capd-reboot-controller` and
 `nke-os-image-check`.
 See [docs/go-workspace.md](docs/go-workspace.md) for how the workspace fits
 together and why `vendor/` is committed.
@@ -74,7 +74,6 @@ What each binary is, and where it ends up running:
 | `nkectl` | `cli/` | Validates a site spec and drives bootstrap | Your machine |
 | `nke-os-image-check` | `os-image/` | Checks a node image against the contract in `os-image/SPEC.md` | Your machine, or an image build |
 | `capd-reboot-controller` | `controller/hack/capd-reboot-controller/` | Test helper that reboots CAPD machines | Test clusters |
-| `nico-mock` | `controller/hack/nico-mock/` | Stand-in for the NICo provider, so tests need no real hardware | Your machine |
 
 ### Platforms
 

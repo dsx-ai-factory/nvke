@@ -20,8 +20,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	forgesdk "github.com/NVIDIA/ncx-infra-controller-rest/sdk/standard"
-
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
@@ -34,18 +32,6 @@ import (
 // testOrgID is a real orgID from the tenant list for use in tests
 const testOrgID = "novxwn552ssc"
 
-// mockForgeProvider is a test-only forge provider that allows mocking GetSiteByID
-type mockForgeProvider struct {
-	getSiteByIDFunc func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error)
-}
-
-func (m *mockForgeProvider) GetSiteByID(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error) {
-	if m.getSiteByIDFunc != nil {
-		return m.getSiteByIDFunc(ctx, orgID, siteID)
-	}
-	return nil, errors.New("GetSiteByID not mocked")
-}
-
 type clusterService interface {
 	ListClusters(ctx context.Context, req api.ListClustersRequestObject) (api.ListClustersResponseObject, error)
 	CreateCluster(ctx context.Context, req api.CreateClusterRequestObject) (api.CreateClusterResponseObject, error)
@@ -54,21 +40,16 @@ type clusterService interface {
 	DeleteCluster(ctx context.Context, req api.DeleteClusterRequestObject) (api.DeleteClusterResponseObject, error)
 }
 
-// newTestClusterService creates a clusterService with a nodePoolService that has a mock forge provider
-// The getSiteByIDFunc is optional - if nil, GetSiteByID will return an error if called
-func newTestClusterService(logger *slog.Logger, mockDB *mockDB, getSiteByIDFunc func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error)) clusterService {
-	return newTestClusterServiceWithControlPlaneController(logger, mockDB, getSiteByIDFunc, false)
+func newTestClusterService(logger *slog.Logger, mockDB *mockDB) clusterService {
+	return newTestClusterServiceWithControlPlaneController(logger, mockDB, false)
 }
 
 // newTestClusterServiceWithControlPlaneController builds a clusterService with the
 // PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER feature flag set to
 // useControlPlaneController.
-func newTestClusterServiceWithControlPlaneController(logger *slog.Logger, mockDB *mockDB, getSiteByIDFunc func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error), useControlPlaneController bool) clusterService {
-	mockForge := &mockForgeProvider{
-		getSiteByIDFunc: getSiteByIDFunc,
-	}
-	nodePoolService := server.NewNodePoolService(logger, mockDB, mockForge, config.TeleportConfig{}, useControlPlaneController)
-	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, useControlPlaneController)
+func newTestClusterServiceWithControlPlaneController(logger *slog.Logger, mockDB *mockDB, useControlPlaneController bool) clusterService {
+	nodePoolService := server.NewNodePoolService(logger, mockDB, config.TeleportConfig{}, nil, useControlPlaneController)
+	return server.NewClusterService(logger, mockDB, nodePoolService, config.TeleportConfig{}, false, nil, useControlPlaneController)
 }
 
 func discardLogger() *slog.Logger {
@@ -195,7 +176,7 @@ func TestClusterService_ListClusters(t *testing.T) {
 					(filters.Name != nil && tt.nameFilter != nil && *filters.Name == *tt.nameFilter)
 			})).Return(tt.dbClusters, tt.dbError)
 
-			service := newTestClusterService(discardLogger(), mockDB, nil)
+			service := newTestClusterService(discardLogger(), mockDB)
 
 			req := api.ListClustersRequestObject{}
 			if tt.nameFilter != nil {
@@ -535,27 +516,9 @@ func TestClusterService_CreateCluster(t *testing.T) {
 					SiteID: tt.request.Nico.SiteID,
 				}), nil).Maybe() // Use Maybe() since validation might not be called if CreateCluster fails early
 
-				// Determine if native networking should be enabled based on whether node pools use VpcPrefixIDs
-				hasVpcPrefixIDs := false
-				for _, np := range requestNodePools {
-					if np.Nico != nil && len(np.Nico.VpcPrefixIDs) > 0 {
-						hasVpcPrefixIDs = true
-						break
-					}
-				}
-
-				// Mock GetSiteByID to return a site with appropriate native networking setting
-				site := &forgesdk.Site{}
-				site.SetId(tt.request.Nico.SiteID.String())
-				capabilities := forgesdk.NewSiteCapabilities()
-				capabilities.SetNativeNetworking(hasVpcPrefixIDs)
-				site.SetCapabilities(*capabilities)
-
-				service = newTestClusterService(discardLogger(), mockDB, func(ctx context.Context, orgID, siteID string) (*forgesdk.Site, error) {
-					return site, nil
-				})
+				service = newTestClusterService(discardLogger(), mockDB)
 			} else {
-				service = newTestClusterService(discardLogger(), mockDB, nil)
+				service = newTestClusterService(discardLogger(), mockDB)
 			}
 
 			if tt.setupMockCalls != nil {
@@ -600,7 +563,7 @@ func TestClusterService_CreateCluster(t *testing.T) {
 
 func TestClusterService_CreateClusterRejectsInsufficientPodCIDRCapacity(t *testing.T) {
 	mockDB := &mockDB{}
-	service := newTestClusterService(discardLogger(), mockDB, nil)
+	service := newTestClusterService(discardLogger(), mockDB)
 	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
 		Body: &api.CreateClusterRequest{
 			Name:                          "test-cluster",
@@ -639,7 +602,7 @@ func TestClusterService_CreateClusterRejectsControlPlaneVIPOverlap(t *testing.T)
 	subnetID := uuid.New()
 	mockDB := &mockDB{MockTx: &mockTx{}}
 
-	service := newTestClusterService(discardLogger(), mockDB, nil)
+	service := newTestClusterService(discardLogger(), mockDB)
 	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
 		Body: &api.CreateClusterRequest{
 			Name:                          "test-cluster",
@@ -672,7 +635,7 @@ func TestClusterService_CreateClusterRejectsControlPlaneVIPOverlap(t *testing.T)
 
 func TestClusterService_CreateClusterRejectsCustomNetworkForCalico(t *testing.T) {
 	mockDB := &mockDB{MockTx: &mockTx{}}
-	service := newTestClusterService(discardLogger(), mockDB, nil)
+	service := newTestClusterService(discardLogger(), mockDB)
 
 	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
 		Body: &api.CreateClusterRequest{
@@ -703,6 +666,39 @@ func TestClusterService_CreateClusterRejectsCustomNetworkForCalico(t *testing.T)
 	badRequest, ok := resp.(api.CreateCluster400JSONResponse)
 	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
 	assert.Contains(t, badRequest.Message, "custom pod or service CIDRs require CNI plugin \"ovn-kubernetes\"")
+	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+}
+
+func TestClusterService_CreateClusterRejectsUnsupportedInfraProvider(t *testing.T) {
+	mockDB := &mockDB{MockTx: &mockTx{}}
+	service := server.NewClusterService(
+		discardLogger(),
+		mockDB,
+		nil,
+		config.TeleportConfig{},
+		false,
+		[]string{config.InfraProviderNico},
+		false,
+	)
+
+	resp, err := service.CreateCluster(context.Background(), api.CreateClusterRequestObject{
+		Body: &api.CreateClusterRequest{
+			Name:                          "test-cluster",
+			CniPlugin:                     "calico",
+			ControlPlaneKubernetesVersion: "1.29.0",
+			Infra: &api.InfraClusterProvider{
+				Cluster: map[string]interface{}{
+					"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1",
+					"kind":       "DockerCluster",
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	badRequest, ok := resp.(api.CreateCluster400JSONResponse)
+	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
+	assert.Contains(t, badRequest.Message, "infra provider is not supported by this deployment")
 	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
 }
 
@@ -774,7 +770,7 @@ func TestClusterService_GetCluster(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetCluster", mock.Anything, tt.clusterID).Return(tt.dbCluster, tt.dbError)
 
-			service := newTestClusterService(discardLogger(), mockDB, nil)
+			service := newTestClusterService(discardLogger(), mockDB)
 
 			resp, err := service.GetCluster(context.Background(), api.GetClusterRequestObject{
 				ClusterID: tt.clusterID,
@@ -891,7 +887,7 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(tt.txCommitErr)
 
-			service := newTestClusterService(discardLogger(), mockDB, nil)
+			service := newTestClusterService(discardLogger(), mockDB)
 
 			resp, err := service.DeleteCluster(context.Background(), api.DeleteClusterRequestObject{
 				ClusterID: tt.clusterID,
@@ -1210,7 +1206,7 @@ func TestClusterService_UpdateCluster_Rejects409WhenUpdateInProgress(t *testing.
 	// short-circuits with *updateInProgressError, which the handler maps to 409.
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{},
@@ -1276,7 +1272,7 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_StartsWorkflow(t *tes
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableEtcdEncryption: &enable},
@@ -1294,7 +1290,7 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_RejectsFalse(t *testi
 	enable := false
 
 	mockDB := &mockDB{}
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: uuid.New(),
 		Body:      &api.UpdateClusterRequest{EnableEtcdEncryption: &enable},
@@ -1308,7 +1304,7 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_RejectsFalse(t *testi
 
 func TestClusterService_UpdateCluster_RejectsNetworkChange(t *testing.T) {
 	mockDB := &mockDB{}
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: uuid.New(),
 		Body: &api.UpdateClusterRequest{
@@ -1339,7 +1335,7 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_AlreadyEncryptedNoop(
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableEtcdEncryption: &enable},
@@ -1376,7 +1372,7 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_RejectsLegacyOperatio
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableEtcdEncryption: &enable},
@@ -1438,7 +1434,7 @@ func TestClusterService_UpdateCluster_EnableOIDC_StartsWorkflow(t *testing.T) {
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableOidc: &enable},
@@ -1456,7 +1452,7 @@ func TestClusterService_UpdateCluster_EnableOIDC_RejectsFalse(t *testing.T) {
 	disable := false
 
 	mockDB := &mockDB{}
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: uuid.New(),
 		Body:      &api.UpdateClusterRequest{EnableOidc: &disable},
@@ -1473,7 +1469,7 @@ func TestClusterService_UpdateCluster_EnableOIDC_RejectsWithEtcdEncryption(t *te
 	enable := true
 
 	mockDB := &mockDB{}
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: uuid.New(),
 		Body:      &api.UpdateClusterRequest{EnableOidc: &enable, EnableEtcdEncryption: &enable},
@@ -1503,7 +1499,7 @@ func TestClusterService_UpdateCluster_EnableOIDC_RejectsWithKubernetesUpgrade(t 
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableOidc: &enable, ControlPlaneKubernetesVersion: &newVersion},
@@ -1538,7 +1534,7 @@ func TestClusterService_UpdateCluster_EnableOIDC_AlreadyEnabledNoop(t *testing.T
 	})).Return(alreadyEnabled, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableOidc: &enable},
@@ -1573,7 +1569,7 @@ func TestClusterService_UpdateCluster_EnableOIDC_RejectsLegacyOperation(t *testi
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableOidc: &enable},
@@ -1629,7 +1625,7 @@ func TestClusterService_UpdateCluster_EnableEtcdEncryption_StartsWorkflowForCAPI
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{EnableEtcdEncryption: &enable},
@@ -1666,7 +1662,7 @@ func TestClusterService_GetCluster_ExposesUpdateInProgress(t *testing.T) {
 		},
 	}, nil).Once()
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.GetCluster(context.Background(), api.GetClusterRequestObject{ClusterID: clusterID})
 	require.NoError(t, err)
 
@@ -1696,7 +1692,7 @@ func TestClusterService_GetCluster_ExposesUpdateFailed(t *testing.T) {
 		},
 	}, nil).Once()
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.GetCluster(context.Background(), api.GetClusterRequestObject{ClusterID: clusterID})
 	require.NoError(t, err)
 
@@ -1765,7 +1761,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig(t *testing.T) {
 		},
 	}, nil).Once()
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body: &api.UpdateClusterRequest{
@@ -1848,7 +1844,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_CreatesSnapshotOnVersio
 		},
 	}, nil).Once()
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body: &api.UpdateClusterRequest{
@@ -1898,7 +1894,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsPodCIDRCapacityE
 		MaxSurge:     1,
 	}}, nil).Once()
 
-	svc := newTestClusterServiceWithControlPlaneController(discardLogger(), mockDB, nil, true)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body: &api.UpdateClusterRequest{
@@ -1926,7 +1922,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsMaxSurgeAboveOne
 		ProviderType: db.ProviderTypeCAPI,
 	}, nil).Once()
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body: &api.UpdateClusterRequest{
@@ -1957,7 +1953,7 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsMismatchedProvid
 
 	assertRejected := func(t *testing.T, mockDB *mockDB, body *api.UpdateClusterControlPlaneConfig, clusterID uuid.UUID, wantMsg string) {
 		t.Helper()
-		svc := newTestClusterService(discardLogger(), mockDB, nil)
+		svc := newTestClusterService(discardLogger(), mockDB)
 		resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 			ClusterID: clusterID,
 			Body:      &api.UpdateClusterRequest{ControlPlaneConfig: body},
@@ -2019,6 +2015,45 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsMismatchedProvid
 	})
 }
 
+func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsUnsupportedProviderPayload(t *testing.T) {
+	clusterID := uuid.New()
+	mockDB := &mockDB{MockTx: &mockTx{}}
+	mockDB.GetTx = func() db.Tx { return mockDB.MockTx }
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+		ID:           clusterID,
+		ProviderType: db.ProviderTypeNico,
+	}, nil).Once()
+
+	nodePoolService := server.NewNodePoolService(discardLogger(), mockDB, config.TeleportConfig{}, []string{config.InfraProviderInfra}, false)
+	svc := server.NewClusterService(
+		discardLogger(),
+		mockDB,
+		nodePoolService,
+		config.TeleportConfig{},
+		false,
+		[]string{config.InfraProviderInfra},
+		false,
+	)
+
+	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
+		ClusterID: clusterID,
+		Body: &api.UpdateClusterRequest{
+			ControlPlaneConfig: &api.UpdateClusterControlPlaneConfig{
+				Nico: &api.NicoControlPlaneProviderUpdate{
+					InstanceTypePreference: []openapi_types.UUID{uuid.New()},
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	badRequest, ok := resp.(api.UpdateCluster400JSONResponse)
+	require.True(t, ok, "expected UpdateCluster400JSONResponse, got %T", resp)
+	assert.Contains(t, badRequest.Message, "nico provider is not supported by this deployment")
+	mockDB.MockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
+}
+
 // TestClusterService_UpdateCluster_NotFound confirms UpdateCluster surfaces
 // 404 when the cluster row is missing — regression guard for the
 // GetCluster → GetClusterForUpdate swap.
@@ -2030,7 +2065,7 @@ func TestClusterService_UpdateCluster_NotFound(t *testing.T) {
 	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	svc := newTestClusterService(discardLogger(), mockDB, nil)
+	svc := newTestClusterService(discardLogger(), mockDB)
 	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
 		ClusterID: clusterID,
 		Body:      &api.UpdateClusterRequest{},
@@ -2068,7 +2103,7 @@ func baseNicoClusterCreateRequest() *api.CreateClusterRequest {
 }
 
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
 
 	t.Run("neither provider", func(t *testing.T) {
 		req := baseNicoClusterCreateRequest()
@@ -2091,7 +2126,7 @@ func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testin
 // The Forge identity fields are required, and they are only reachable through
 // the nested nico payload.
 func TestValidateCreateClusterRequestFields_NicoIdentityFieldsRequired(t *testing.T) {
-	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, false)
+	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false)
 
 	cases := []struct {
 		name    string

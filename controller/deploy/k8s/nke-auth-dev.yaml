@@ -13,6 +13,12 @@
 #   kubectl create token nke-client -n nke-clients \
 #     --audience=https://nke.tilt.local --duration=10m
 #
+# nkectl mints that same admitted identity from a management-cluster kubeconfig
+# (nkectl config set-site --kubeconfig). The token-minter RoleBindings below
+# are for the nke-e2e ServiceAccount the e2e suite uses, not for a human
+# operator. A cluster-admin kubeconfig, including Tilt's kind user, can mint
+# without them.
+#
 # See hack/nke-auth-demo.sh.
 ---
 # Tilt owns the release namespace rather than Helm's --create-namespace: this

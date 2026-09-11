@@ -30,11 +30,12 @@ RUN grep -q -- "--secure-server-port ${NODE_AGENT_PORT}" /etc/default/nke-agent
 RUN ! grep -q -- '--disable-mtls' /etc/default/nke-agent
 
 # These hosts are already provisioned. The CAPD base image has a cloud-init
-# status shim for mock NICO, but this test has no mock NICO process to update
-# it. Mark the completed host setup explicitly so CWE's node preflight can
-# proceed.
-RUN install -d /var/lib/nico-mock-cloud-init && \
-    printf 'done\n' >/var/lib/nico-mock-cloud-init/status
+# status shim (controller/hack/capd-kindest-node/scripts/cloud-init-status-shim)
+# that reads /var/lib/nico-containers/cloud-init/status. This suite has no
+# nico-sim process to write that file, so mark setup complete here or CWE's
+# NodePreflight stays on "cloud-init not done: status: running" forever.
+RUN install -d /var/lib/nico-containers/cloud-init && \
+    printf 'done\n' >/var/lib/nico-containers/cloud-init/status
 
 # SPIRE.
 #

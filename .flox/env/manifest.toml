@@ -25,7 +25,7 @@ schema-version = "1.11.0"
 # Leaving a package unpinned is not neutral. Re-locking moved kubernetes-helm
 # from 3.19.1 to 4.2.4, a major release.
 [install]
-# go.work, and every go.mod except agent and nico-vms. CI reads go-version-file:
+# go.work, and every go.mod except agent and nico-sim. CI reads go-version-file:
 # go.work with GOTOOLCHAIN=local. An older go here does not fail loudly, because
 # GOTOOLCHAIN=auto downloads 1.26.5 on top and hides the gap.
 go = { pkg-path = "go", version = "1.26.5", pkg-group = "go" }

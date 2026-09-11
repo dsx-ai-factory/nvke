@@ -15,11 +15,10 @@ import (
 )
 
 const (
-	// ForgeEnvironmentProduction is the standard production Forge environment.
-	ForgeEnvironmentProduction = "production"
-	// ForgeEnvironmentTest selects the local test mock server.
-	// Skips NGC auth (uses a self-signed JWT) and does not require FWE_API_KEY.
-	ForgeEnvironmentTest = "test"
+	// InfraProviderNico is the API-facing name for the Nico provider block.
+	InfraProviderNico = "nico"
+	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
+	InfraProviderInfra = "infra"
 )
 
 type Config struct {
@@ -87,28 +86,23 @@ type Config struct {
 	// This can act as an emergency switch to disable node health checks
 	NodeHealthCheckDisabled bool `env:"NODE_HEALTH_CHECK_DISABLED" default:"false"`
 
-	// AllowEtcdSafetyOverrides gates the dangerous etcd member-removal safety
-	// overrides (allowQuorumLoss / allowSingleVoter) on the DeleteNode API. It is
-	// disabled by default so production site controllers reject these overrides;
-	// enable it on development site controllers that need manual single-node
-	// control-plane rotation.
-	AllowEtcdSafetyOverrides bool `env:"ALLOW_ETCD_SAFETY_OVERRIDES" default:"false"`
-
 	// NodeHealthCheckTimeout is the timeout for a cluster's node health check reconcile
 	NodeHealthCheckTimeout time.Duration `env:"NODE_HEALTH_CHECK_TIMEOUT" default:"2m"`
 
-	// ForgeEnvironment selects which Forge environment to use (production|test).
-	// Defaults to production.
-	ForgeEnvironment string `env:"FORGE_ENVIRONMENT" default:"production"`
-
-	// ForgeURL is the Forge API base URL.
-	ForgeURL string `env:"FORGE_URL" default:"https://api.ngc.nvidia.com"`
-
-	// FWEAPIKey is the NGC API key to pass to FWE, for use when calling the Forge API.
-	FWEAPIKey string `env:"FWE_API_KEY"`
+	// NicoControllersEnabled enables controllers that watch NICo infrastructure
+	// resources. Disable it when CWE manages only provisioned infrastructure.
+	NicoControllersEnabled bool `env:"NICO_CONTROLLERS_ENABLED" default:"true"`
+	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
+	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
+	// subnet-based NICo pools use the static Forge peer ASN.
+	KubeVipFMDSEndpoint string `env:"KUBE_VIP_FMDS_ENDPOINT"`
 
 	// ProfilesDir is the directory from which to read osProfiles and configProfiles
 	ProfilesDir string `env:"PROFILES_DIR" default:"./profiles"`
+
+	// SupportedInfraProviders is the list of provider payload keys this CWE
+	// deployment advertises for cluster specs.
+	SupportedInfraProviders []string `env:"SUPPORTED_INFRA_PROVIDERS" envSeparator:"," default:"nico"`
 
 	// RunbooksDir is the optional directory containing config-profile hook scripts.
 	// When omitted, hook execution looks under ProfilesDir/runbooks before falling
@@ -132,10 +126,6 @@ type Config struct {
 	// automatic timeout-based provisioning remediation.
 	NodeProvisioningTimeout time.Duration `env:"NODE_PROVISIONING_TIMEOUT" default:"2h"`
 
-	// NodeSchedulingRetryInterval is the retry interval for node scheduling when
-	// external capacity or provider readiness is temporarily unavailable.
-	NodeSchedulingRetryInterval time.Duration `env:"NODE_SCHEDULING_RETRY_INTERVAL" default:"2m"`
-
 	// CertRenewalControllerEnabled enables CWE-owned periodic Kubernetes control-plane certificate renewal.
 	CertRenewalControllerEnabled bool `env:"CERT_RENEWAL_CONTROLLER_ENABLED" default:"true"`
 
@@ -145,38 +135,8 @@ type Config struct {
 	// CertRenewalThresholdDays is passed to the certificate-renewal runbook.
 	CertRenewalThresholdDays int `env:"CERT_RENEWAL_THRESHOLD_DAYS" default:"30"`
 
-	// TenantSitesCacheTTL is the time-to-live for site cache entries
-	TenantSitesCacheTTL time.Duration `env:"TENANT_SITES_CACHE_TTL" default:"24h"`
-
 	// NKESiteControllerName is the name of the site controller
 	NKESiteControllerName string `env:"NKE_SITE_CONTROLLER_NAME"`
-
-	// SiteInstancesCacheTTL is the time-to-live for instance cache entries
-	SiteInstancesCacheTTL time.Duration `env:"SITE_INSTANCES_CACHE_TTL" default:"30s"`
-
-	// SiteInstanceTypesCacheTTL is the time-to-live for instance type cache entries
-	SiteInstanceTypesCacheTTL time.Duration `env:"SITE_INSTANCE_TYPES_CACHE_TTL" default:"5m"`
-
-	// SiteSubnetsCacheTTL is the time-to-live for subnet cache entries
-	SiteSubnetsCacheTTL time.Duration `env:"SITE_SUBNETS_CACHE_TTL" default:"30s"`
-
-	// SiteVpcPrefixesCacheTTL is the time-to-live for VPC prefix cache entries
-	SiteVpcPrefixesCacheTTL time.Duration `env:"SITE_VPC_PREFIXES_CACHE_TTL" default:"30s"`
-
-	// SiteVPCsCacheTTL is the time-to-live for VPC cache entries
-	SiteVPCsCacheTTL time.Duration `env:"SITE_VPCS_CACHE_TTL" default:"5m"`
-
-	// SiteSSHKeyGroupsCacheTTL is the time-to-live for SSH key group cache entries
-	SiteSSHKeyGroupsCacheTTL time.Duration `env:"SITE_SSH_KEY_GROUPS_CACHE_TTL" default:"5m"`
-
-	// SiteIPBlocksCacheTTL is the time-to-live for IP block cache entries
-	SiteIPBlocksCacheTTL time.Duration `env:"SITE_IP_BLOCKS_CACHE_TTL" default:"5m"`
-
-	// SiteInfiniBandPartitionsCacheTTL is the time-to-live for InfiniBand partition cache entries
-	SiteInfiniBandPartitionsCacheTTL time.Duration `env:"SITE_INFINIBAND_PARTITIONS_CACHE_TTL" default:"5m"`
-
-	// SiteNVLinkLogicalPartitionsCacheTTL is the time-to-live for NVLink logical partition cache entries
-	SiteNVLinkLogicalPartitionsCacheTTL time.Duration `env:"SITE_NVLINK_LOGICAL_PARTITIONS_CACHE_TTL" default:"30s"`
 
 	// SpiffeEnabled is a feature flag to enable SPIFFE support.
 	SpiffeEnabled bool `env:"SPIFFE_ENABLED" default:"false"`
@@ -246,7 +206,7 @@ type Config struct {
 	// (the /run/cluster-api/bootstrap-success.complete sentinel) regardless of
 	// its CAPI infra machine template.
 	//
-	// LOCAL-DEV ONLY: the local nico-mock flow provisions nodes as bare Docker
+	// LOCAL-DEV ONLY: the local NICo container flow provisions nodes as bare Docker
 	// containers with no real cloud-init, so the normal cloud-init-based
 	// bootstrap never signals completion. This flag must NEVER be set in a real
 	// environment; doing so would misroute production nodes to the DinD contract.
@@ -446,8 +406,40 @@ func (c *Config) Validate() error {
 	if err := c.Teleport.Validate(); err != nil {
 		return err
 	}
+	supportedInfraProviders, err := normalizeSupportedInfraProviders(c.SupportedInfraProviders)
+	if err != nil {
+		return err
+	}
+	c.SupportedInfraProviders = supportedInfraProviders
 
 	return nil
+}
+
+func normalizeSupportedInfraProviders(providers []string) ([]string, error) {
+	if providers == nil {
+		return []string{InfraProviderNico}, nil
+	}
+	if len(providers) == 0 {
+		return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS must contain at least one provider")
+	}
+
+	seen := make(map[string]struct{}, len(providers))
+	normalizedProviders := make([]string, 0, len(providers))
+	for _, provider := range providers {
+		normalized := strings.TrimSpace(provider)
+		if normalized == "" {
+			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS must not contain empty provider names")
+		}
+		if normalized != InfraProviderNico && normalized != InfraProviderInfra {
+			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS contains unsupported provider %q", normalized)
+		}
+		if _, ok := seen[normalized]; ok {
+			return nil, fmt.Errorf("SUPPORTED_INFRA_PROVIDERS contains duplicate provider %q", normalized)
+		}
+		seen[normalized] = struct{}{}
+		normalizedProviders = append(normalizedProviders, normalized)
+	}
+	return normalizedProviders, nil
 }
 
 func (c *TeleportConfig) Validate() error {

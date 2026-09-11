@@ -1,5 +1,12 @@
 # SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
+
+# strcase (vendored via teleport/api) asserts its Unicode tables match the
+# stdlib's, so a toolchain newer than go.work's `go` directive panics at init.
+# Pin every go invocation to it; an explicit GOTOOLCHAIN, as CI sets, still wins.
+GOTOOLCHAIN ?= go$(shell awk '/^go /{print $$2; exit}' $(CURDIR)/../go.work)
+export GOTOOLCHAIN
+
 WORKER_BIN_NAME			?= controller
 TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
 CWE_GOFAIL_E2E_WORKER_BINARY	?= $(CURDIR)/.go/bin/cwe-worker-gofail
@@ -65,7 +72,7 @@ lint: ## Lint source files. (run by the merge gate)
 
 .PHONY: license
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-vms/ui/vendor/**' -ignore 'nico-vms/test/integration/testutil/testdata/**' -ignore 'nico-vms/.dev/**' -ignore 'deploy/charts/**' .
+	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" -ignore '.local/**' -ignore 'hack/**' -ignore 'test/fixtures/profiles/**' -ignore 'test/fixtures/capnico-crds/**' -ignore '**/testUserData.yaml' -ignore 'internal/kubeadmconfig/testdata/**' -ignore 'internal/controllers/tenantaccess/testdata/**' -ignore 'nico-sim/ui/vendor/**' -ignore 'nico-sim/test/integration/testutil/testdata/**' -ignore 'nico-sim/.dev/**' -ignore 'deploy/charts/**' .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check
@@ -92,6 +99,24 @@ generate: ## Run every generator in this module and in api/.
 .PHONY: generate-api
 generate-api: ## Regenerate the OpenAPI client, server and models.
 	cd api && go generate ./...
+
+.PHONY: composition
+composition: ## Regenerate the nke-stack umbrella chart from deploy/composition.
+	go run ./cmd/composition-gen
+
+# Kept out of `generate` above: that target runs `go generate ./...`, which loads
+# this module's whole package graph and therefore needs credentials or the
+# workspace vendor/ tree. This generator reads YAML and needs neither.
+#
+# Also kept out of `generate-check`: that runs in CI under controller/api's
+# pinned Go with GOTOOLCHAIN=local, and this module asks for a newer toolchain,
+# so invoking the generator there fails with "go.mod requires go >= 1.26.6"
+# before reading a file. The drift check is TestCompositionUpToDate in
+# cmd/composition-gen, which `make test` runs against a properly built module.
+# This target stays for running it directly.
+.PHONY: composition-check
+composition-check: ## Verify the committed chart matches the recipe. (run by the merge gate)
+	go run ./cmd/composition-gen -check
 
 # Verify the committed oapi-codegen output is reproducible with the pinned
 # generator (api/oapi-codegen.mod) and in sync with api/openapi.yaml. Catches an
@@ -143,7 +168,7 @@ test: ## Execute unit tests (excludes integration tests). (run by the merge gate
 	# .gitlab-ci.yml, no workflow reading either file, and both are gitignored.
 	# It cost about 9 seconds of download and compile per run on a cold cache,
 	# and pulled golang.org/x/tools, 15 MB, to convert one file to XML.
-	# nico-vms already produces a coverprofile without it.
+	# nico-sim already produces a coverprofile without it.
 	#
 	# integration-test/ is behind the `integration_test` build tag, so
 	# `go list ./...` no longer needs filtering here. The old grep matched

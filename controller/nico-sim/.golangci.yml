@@ -1,0 +1,177 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Lint config for the nico-sim module. The rule is unchanged: enable only
+# linters that pass cleanly today, and tighten incrementally. controller's
+# .golangci.yml is the target set.
+#
+# Every linter below was measured against this module before being added, and
+# each finds nothing today. What is still missing, with the count each one
+# reports right now, is listed at the bottom of this file so the remaining work
+# is a list rather than a rediscovery.
+
+version: "2"
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/NVIDIA/nke/controller
+    gofumpt:
+      extra-rules: true
+
+run:
+  timeout: 5m
+  allow-parallel-runners: true
+  concurrency: 8
+  modules-download-mode: readonly
+
+output:
+  print-issued-lines: false
+  print-linter-name: true
+  sort-results: true
+
+linters:
+  default: none
+  enable:
+    - asasalint
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - containedctx
+    - copyloopvar
+    - decorder
+    - depguard
+    - durationcheck
+    - errchkjson
+    - errname
+    - exhaustive
+    - funlen
+    - ginkgolinter
+    - gocheckcompilerdirectives
+    - gochecksumtype
+    - goheader
+    - gomoddirectives
+    - gomodguard_v2
+    - goprintffuncname
+    - gosmopolitan
+    - govet
+    - importas
+    - inamedparam
+    - interfacebloat
+    - loggercheck
+    - maintidx
+    - makezero
+    - mirror
+    - musttag
+    - nakedret
+    - nilnil
+    - predeclared
+    - promlinter
+    - protogetter
+    - reassign
+    - rowserrcheck
+    - spancheck
+    - sqlclosecheck
+    - staticcheck
+    - testableexamples
+    - testifylint
+    - tparallel
+    - unconvert
+    - usestdlibvars
+    - zerologlint
+  settings:
+    # Carried from controller/.golangci.yml, so both modules judge these the
+    # same way. funlen and depguard in particular behave very differently on
+    # defaults -- funlen would flag this module immediately without the limit.
+    funlen:
+      lines: 500
+      statements: -1
+      ignore-comments: true
+    depguard:
+      rules:
+        main:
+          list-mode: lax
+          files:
+            - $all
+          deny:
+            - pkg: github.com/pkg/errors
+              desc: use stdlib instead
+    gomoddirectives:
+      replace-local: true
+      replace-allow-list:
+        - google.golang.org/genproto
+        - sigs.k8s.io/controller-runtime
+    goheader:
+      template: |-
+        SPDX-FileCopyrightText: Copyright (c) {{MOD_YEAR-RANGE}} NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+        SPDX-License-Identifier: Apache-2.0
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Mirror the parent .golangci.yml: shadow declarations of err/ctx are a
+      # common idiom across the codebase and not worth flagging.
+      - text: 'shadow: declaration of "(err|ctx|ip)" shadows declaration at'
+        linters:
+          - govet
+      # Also from the parent, so test files are judged the same way in both
+      # modules. maintidx is the only one of that set enabled here today; the
+      # rest are listed so they carry over when they are adopted.
+      - path: (.+)_test\.go
+        linters:
+          - forcetypeassert
+          - gochecknoglobals
+          - goconst
+          - gocyclo
+          - gosec
+          - grouper
+          - maintidx
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+
+# Still missing, against controller/.golangci.yml: 29 linters, 206 findings.
+# Counts measured with the controller's settings AND this module's own lint
+# flags (--max-same-issues 0 --max-issues-per-linter 0, see the Makefile). The
+# defaults cap repeats at 3 per message and understate the noisy ones badly.
+#
+#   gosec 35   gocritic 27   errcheck 24   misspell 17   contextcheck 10
+#   gochecknoglobals 10   grouper 9   noctx 8   nonamedreturns 8   intrange 7
+#   errorlint 6   prealloc 6   revive 6   forbidigo 5   goconst 5
+#   forcetypeassert 4   godox 4   unparam 3   unused 3   sloglint 2
+#   dogsled 1   dupword 1   ineffassign 1   nolintlint 1   thelper 1   whitespace 1
+#
+# gosec is the one to take first: G306 21 (file permissions), G204 7 (tainted
+# subprocess arguments), G112 3 (missing ReadHeaderTimeout), G101 2 (hardcoded
+# credentials), G505 1 and G401 1 (weak crypto). The seven //nolint:gosec
+# comments already in this module are NOT in that count -- golangci-lint honours
+# them. CodeQL does not, which is why four of those same lines appear there.
+#
+# Several counts depend on settings this file does not carry, so enabling a
+# linter without them reports 0 and looks done. misspell is the clearest: all 17
+# need controller's `locale: US`. gocritic, goconst, godox, grouper and revive
+# are the same. Copy the settings with the linter.
+#
+# wastedassign is held back for a reason that is not a lint problem. It reports
+# internal/ipxe/bootpatch.go:443, where initrdURL is computed from
+# Params.InitrdURL with a default fallback and then never read. That field is
+# documented as overriding the download location, so setting it does nothing
+# today. Deleting the dead local would silence the linter and hide that. Decide
+# whether the field should work, then enable this.
+#
+# exhaustruct and varnamelen are also held back. The controller enables both but
+# neuters them (exclude ".*", min-name-length 1), so adopting them here would
+# add configuration without adding a check.

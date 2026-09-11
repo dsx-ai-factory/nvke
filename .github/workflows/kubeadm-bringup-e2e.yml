@@ -20,7 +20,7 @@ on:
       - main
       - "pull-request/[0-9]+"
     paths:
-      - "controller/nico-vms/**"
+      - "controller/nico-sim/**"
       - "controller/test/kubeadm/**"
       # Without this, a change to the lane's own definition does not run it.
       - .github/workflows/kubeadm-bringup-e2e.yml
@@ -62,7 +62,7 @@ jobs:
       NICO_VMS_BRIDGE_CIDR: 172.30.0.0/24
       # Absolute: nico-vms resolves this relative to its own working directory.
       # setup-ci-host.sh fetches the image here; nico-vms will not download it.
-      NICO_VMS_BASE_IMAGE: ${{ github.workspace }}/controller/nico-vms/images/ubuntu-cloud.qcow2
+      NICO_VMS_BASE_IMAGE: ${{ github.workspace }}/controller/nico-sim/images/ubuntu-cloud.qcow2
       # Where the test, teardown and upload meet. Under the git-ignored .local/.
       NKE_BRINGUP_ARTIFACT_DIR: ${{ github.workspace }}/controller/.local/kubeadm-bringup/${{ github.run_id }}-${{ github.run_attempt }}
     steps:
@@ -102,8 +102,8 @@ jobs:
 
       # build-privileged, not build: Makefile:34-35 adds cap_net_admin, which
       # bridge mode needs for `ip link`.
-      - name: Build nico-vms
-        run: make -C controller/nico-vms build-privileged
+      - name: Build nico-sim
+        run: make -C controller/nico-sim build-privileged
 
       # ── Step A ──────────────────────────────────────────────────────────────
       # Boots two stock Ubuntu VMs and proves they can reach each other. Installs
@@ -123,7 +123,7 @@ jobs:
           # UNVERIFIED: session mode wants XDG_RUNTIME_DIR. If domain start
           # fails, qemu:///system plus running under sudo -E is the fallback.
           NICO_VMS_LIBVIRT_URI: qemu:///session
-          NKE_BRINGUP_NICO_VMS_BIN: ${{ github.workspace }}/controller/nico-vms/bin/nico-vms
+          NKE_BRINGUP_NICO_VMS_BIN: ${{ github.workspace }}/controller/nico-sim/bin/nico-sim
           NKE_BRINGUP_WORK_DIR: ${{ env.NKE_BRINGUP_ARTIFACT_DIR }}/smoke
         run: go test -C controller -tags kubeadm_bringup -timeout 60m -v -run TestNicoVMSSmoke ./test/kubeadm/...
 
@@ -166,10 +166,10 @@ jobs:
           # pre-embedded in Debian packages, so its budget covered no pull.
           NKE_BRINGUP_CNI_TIMEOUT: 20m
           NKE_BRINGUP_READY_TIMEOUT: 30m
-          NKE_BRINGUP_NICO_VMS_BIN: ${{ github.workspace }}/controller/nico-vms/bin/nico-vms
+          NKE_BRINGUP_NICO_VMS_BIN: ${{ github.workspace }}/controller/nico-sim/bin/nico-sim
           NKE_BRINGUP_PROVISION_MODE: community
           NKE_BRINGUP_AGENT_DEB: ${{ steps.agent_deb.outputs.path }}
-          # Inside the artifact dir, or nico-vms.log and admin.conf land in a
+          # Inside the artifact dir, or nico-sim.log and admin.conf land in a
           # temp dir and never get uploaded.
           NKE_BRINGUP_WORK_DIR: ${{ env.NKE_BRINGUP_ARTIFACT_DIR }}/bringup
         run: go test -C controller -tags kubeadm_bringup -timeout 200m -v -run TestKubeadmBringup ./test/kubeadm/...

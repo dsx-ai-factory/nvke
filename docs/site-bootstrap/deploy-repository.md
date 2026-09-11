@@ -39,7 +39,6 @@ my-deploy-repo/
 │   │   ├── 10-image-pull-secret.yaml.tmpl
 │   │   ├── 20-argocd-repo-secrets.yaml.tmpl
 │   │   ├── 30-cnpg-secrets.yaml.tmpl
-│   │   ├── 40-forge-api-token.yaml.tmpl
 │   │   └── 50-monitoring-secrets.yaml.tmpl
 │   ├── nke-storage/                     # manifest: StorageClasses and PVs
 │   │   ├── storage-classes.yaml
@@ -205,7 +204,6 @@ Template files use Go [`text/template`](https://pkg.go.dev/text/template) syntax
 | Expression | Type | Description |
 |------------|------|-------------|
 | `.ClusterName` | string | Cluster name |
-| `.ForgeAPIKey` | string | Infrastructure provider API key |
 | `.OrgID` | string | Organization ID |
 | `.BaremetalMode` | bool | Whether baremetal mode is active |
 
@@ -318,20 +316,6 @@ stringData:
 {{- end }}
 ```
 
-### Conditional on baremetal mode
-
-```yaml
-{{- if not .BaremetalMode }}
-apiVersion: v1
-kind: Secret
-metadata:
-  name: forge-creds
-  namespace: cloud-workflow-engine
-stringData:
-  forge-api-key: "{{ .ForgeAPIKey }}"
-{{- end }}
-```
-
 ### Multi-document YAML
 
 A single `.yaml.tmpl` file can produce multiple Kubernetes resources:
@@ -368,7 +352,6 @@ The reference repository includes an `nke-base-config` template item that create
 | `10-image-pull-secret.yaml.tmpl` | `ngc-registry-nke-imagepull` image pull secret |
 | `20-argocd-repo-secrets.yaml.tmpl` | ArgoCD repo secrets for each configured repo, plus NGC Helm repo secrets |
 | `30-cnpg-secrets.yaml.tmpl` | CNPG superuser and per-app bootstrap secrets across 3 namespaces |
-| `40-forge-api-token.yaml.tmpl` | Infrastructure provider API token (skipped in baremetal mode) |
 | `50-monitoring-secrets.yaml.tmpl` | Grafana/Prometheus/Loki credentials (conditional) |
 
 ## Secret-Only Repos

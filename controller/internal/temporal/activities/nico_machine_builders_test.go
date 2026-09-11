@@ -4,12 +4,14 @@
 package activities
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
 
@@ -302,4 +304,185 @@ func TestNicoMachineBuilders_BuildNicoMachineInterfaces(t *testing.T) {
 			assert.Equal(t, params.wantPrefixID, interfaces[0].VPCPrefixID)
 		})
 	}
+}
+
+func TestNicoMachineBuilders_RenderIpxeScript(t *testing.T) {
+	script, err := renderIpxeScript("set disk-strategy {{ .DiskSelectionStrategy }}\n", string(db.DiskSelectionStrategyLargest))
+	require.NoError(t, err)
+	assert.Equal(t, "set disk-strategy largest\n", script)
+}
+
+const userDataTemplate = `
+username={{ .Username }}
+password={{ .HashedPassword }}
+hostname={{ .Hostname }}
+kubernetesVersion={{ trimPrefix .KubernetesVersion "v" }}
+nodeAgentPort={{ .NodeAgentPort }}
+diskSelectionStrategy={{ .DiskSelectionStrategy }}
+calicoEnabled={{ .CalicoEnabled }}
+ovnEnabled={{ .OvnEnabled }}
+cniImagePackage={{ .CNIImagePackage }}
+cniChartsPackage={{ .CNIChartsPackage }}
+spiffeEnabled={{ .SpiffeEnabled }}
+spireServer={{ .SpireServerAddress }}:{{ .SpireServerPort }}
+trustDomain={{ .TrustDomain }}
+trustBundle:
+{{ indent 2 .TrustBundle }}
+teleportEnabled={{ .TeleportEnabled }}
+teleportToken={{ .TeleportTokenName }}
+teleportProxy={{ .TeleportProxyAddress }}
+teleportJoinMethod={{ .TeleportJoinMethod }}
+teleportLabels={{ .TeleportLabels }}
+`
+
+func TestNicoMachineBuilders_RenderUserData(t *testing.T) {
+	bundleLookupCalled := false
+	activities := &Activities{
+		cfg: config.Config{
+			DgxcTenantUser:     "test-admin",
+			DgxcTenantPassword: "test-password",
+			NodeAgentPort:      "15005",
+			SpireServerAddress: "spire.example.com",
+			SpireServerPort:    "9091",
+		},
+		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			bundleLookupCalled = true
+			return "example.com", "first certificate\nsecond certificate\n", nil
+		},
+	}
+
+	userData, err := activities.renderUserData(
+		context.Background(),
+		userDataTemplate,
+		db.Node{Name: "test-node", SpiffeEnabled: true},
+		db.DiskSelectionStrategyLargest,
+		"v1.33.0",
+		&TeleportUserDataConfig{
+			Enabled:      true,
+			TokenName:    "test-token",
+			ProxyAddress: "teleport.example.com:443",
+			JoinMethod:   "tpm",
+			Labels:       "environment: test",
+		},
+		db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+	)
+	require.NoError(t, err)
+
+	assert.True(t, bundleLookupCalled)
+	assert.Contains(t, userData, "username=test-admin\n")
+	assert.Regexp(t, `(?m)^password=\$6\$[^\n]+$`, userData)
+	assert.NotContains(t, userData, "password=test-password")
+	assert.Contains(t, userData, "hostname=test-node\n")
+	assert.Contains(t, userData, "kubernetesVersion=1.33.0\n")
+	assert.Contains(t, userData, "nodeAgentPort=15005\n")
+	assert.Contains(t, userData, "diskSelectionStrategy=largest\n")
+	assert.Contains(t, userData, "calicoEnabled=true\n")
+	assert.Contains(t, userData, "ovnEnabled=false\n")
+	assert.Contains(t, userData, "cniImagePackage=nke-cni-calico-images-3.31.5\n")
+	assert.Contains(t, userData, "cniChartsPackage=nke-cni-calico-manifests-3.31.5\n")
+	assert.Contains(t, userData, "spiffeEnabled=true\n")
+	assert.Contains(t, userData, "spireServer=spire.example.com:9091\n")
+	assert.Contains(t, userData, "trustDomain=example.com\n")
+	assert.Contains(t, userData, "trustBundle:\n  first certificate\n  second certificate\n")
+	assert.Contains(t, userData, "teleportEnabled=true\n")
+	assert.Contains(t, userData, "teleportToken=test-token\n")
+	assert.Contains(t, userData, "teleportProxy=teleport.example.com:443\n")
+	assert.Contains(t, userData, "teleportJoinMethod=tpm\n")
+	assert.Contains(t, userData, "teleportLabels=environment: test\n")
+}
+
+func TestNicoMachineBuilders_RenderUserDataCNIPackages(t *testing.T) {
+	const userDataTemplate = "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n"
+	activities := &Activities{cfg: config.Config{
+		DgxcTenantUser:     "test-admin",
+		DgxcTenantPassword: "test-password",
+	}}
+
+	tests := map[string]struct {
+		cluster    db.Cluster
+		wantImages string
+		wantCharts string
+	}{
+		"Calico": {
+			cluster:    db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			wantImages: "nke-cni-calico-images-3.31.5",
+			wantCharts: "nke-cni-calico-manifests-3.31.5",
+		},
+		"OVN-Kubernetes": {
+			cluster:    db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
+			wantImages: "nke-cni-ovn-images-1.4.1",
+			wantCharts: "nke-cni-ovn-charts-1.4.1",
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			userData, err := activities.renderUserData(
+				context.Background(),
+				userDataTemplate,
+				db.Node{Name: "test-node"},
+				"",
+				"1.33.0",
+				nil,
+				params.cluster,
+			)
+			require.NoError(t, err)
+			assert.Equal(t, "images="+params.wantImages+"\ncharts="+params.wantCharts+"\n", userData)
+		})
+	}
+}
+
+func TestNicoMachineBuilders_BuildTeleportLabels(t *testing.T) {
+	nodeID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
+	siteID := uuid.MustParse("11111111-2222-3333-4444-555555555555")
+	clusterID := uuid.MustParse("66666666-7777-8888-9999-000000000000")
+	nodePoolID := uuid.MustParse("abababab-cdcd-efef-0101-232323232323")
+
+	for _, params := range []struct {
+		name         string
+		controlPlane bool
+		wantRole     string
+	}{
+		{name: "control plane node", controlPlane: true, wantRole: "control-plane"},
+		{name: "worker node", controlPlane: false, wantRole: "worker"},
+	} {
+		t.Run(params.name, func(t *testing.T) {
+			got := buildTeleportLabels(
+				db.Node{ID: nodeID, Name: "my-node-01"},
+				db.Cluster{ID: clusterID, Name: "test-cluster"},
+				db.NicoClusterProvider{SiteID: siteID},
+				nodePoolID,
+				params.controlPlane,
+				"test-site",
+				"staging",
+			)
+
+			assert.Contains(t, got, "node-role: "+params.wantRole+"\n")
+			assert.Contains(t, got, "node-name: my-node-01\n")
+			assert.Contains(t, got, "node-id: "+nodeID.String()+"\n")
+			assert.Contains(t, got, "site: "+siteID.String()+"\n")
+			assert.Contains(t, got, "nke-site-controller-name: test-site\n")
+			assert.Contains(t, got, "cluster: "+clusterID.String()+"\n")
+			assert.Contains(t, got, "cluster-name: test-cluster\n")
+			assert.Contains(t, got, "node-pool: "+nodePoolID.String()+"\n")
+			assert.Contains(t, got, "environment: staging\n")
+			assert.Contains(t, got, "resource-group: nke\n")
+			assert.Contains(t, got, "managed-by: nke-cloud-workflow-engine\n")
+		})
+	}
+
+	t.Run("nil node pool id", func(t *testing.T) {
+		got := buildTeleportLabels(
+			db.Node{ID: nodeID, Name: "my-node-01"},
+			db.Cluster{ID: clusterID, Name: "test-cluster"},
+			db.NicoClusterProvider{SiteID: siteID},
+			uuid.Nil,
+			false,
+			"test-site",
+			"staging",
+		)
+
+		assert.NotContains(t, got, "node-pool:")
+		assert.NotContains(t, got, uuid.Nil.String())
+	})
 }

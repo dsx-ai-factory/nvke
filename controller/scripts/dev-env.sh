@@ -250,36 +250,8 @@ validate_cluster_arg() {
         echo "  export TARGET_CLUSTER=nke-site-forge-az24-dev6"
         echo "  make remote"
         echo ""
-        echo "💡 Tip: Use 'FWE_API_KEY=<key> TARGET_CLUSTER=<name> make run-remote' to setup and run in one command"
-        echo ""
         return 1
     fi
-}
-
-# Validate API key
-validate_api_key() {
-    local api_key="${1:-}"
-    local mode="${2:-remote}"
-
-    # The test Forge environment signs its own JWT instead of authenticating
-    # against NGC, so it needs no key.
-    if [ "${FORGE_ENVIRONMENT:-}" = "test" ]; then
-        return 0
-    fi
-
-    if [ -z "$api_key" ]; then
-        error "❌ FWE_API_KEY is not set"
-        echo ""
-        echo "Usage:"
-        if [ "$mode" = "local" ]; then
-            echo "  FWE_API_KEY=<your-key> make run-local"
-        else
-            echo "  FWE_API_KEY=<your-key> TARGET_CLUSTER=<cluster-name> make run-remote"
-        fi
-        echo ""
-        return 1
-    fi
-    return 0
 }
 
 # Check if local Temporal is running
@@ -384,7 +356,7 @@ export -f postgres_start postgres_stop postgres_clean
 export -f temporal_start temporal_stop
 export -f tsh_check_status tsh_login tsh_kube_login
 export -f remote_check remote_temporal_start remote_temporal_stop
-export -f validate_cluster_arg validate_api_key
+export -f validate_cluster_arg
 export -f is_local_temporal_running is_remote_temporal_running is_postgres_running
 export -f detect_mode print_status
 

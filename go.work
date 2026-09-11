@@ -1,7 +1,7 @@
 // Go workspace for every module in the repository.
 //
 // `go work sync` and `go build` here need no NVIDIA credentials for module
-// downloads: all ten modules build from public dependencies, except
+// downloads: all nine modules build from public dependencies, except
 // github.com/NVIDIA/cluster-api-provider-nico, which is still INTERNAL
 // visibility and is carried in the committed vendor/ tree until it goes
 // public. Re-running `go work vendor` (dependency bumps) needs access to that
@@ -16,8 +16,7 @@ use (
 	./controller
 	./controller/api
 	./controller/hack/capd-reboot-controller
-	./controller/hack/nico-mock
-	./controller/nico-vms
+	./controller/nico-sim
 	./controller/test/e2e
 	./os-image
 )

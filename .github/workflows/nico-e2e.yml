@@ -9,9 +9,9 @@
 # repository. NKE_INTERNAL_RO_TOKEN reads it, the same secret go-work-check.yml
 # already uses for the internal module in controller/go.mod.
 #
-# nico-mock stands in for the NICo and Forge APIs. It is Docker-backed and
-# provisions kind-style node containers, so this needs no real infrastructure,
-# and it reuses the CAPD kindest node image the CAPD lane already builds.
+# nico-sim's nico-containers backend provisions kind-style node containers, so
+# this needs no real infrastructure and reuses the CAPD kindest node image the
+# CAPD lane already builds.
 #
 # NOT in merge-gate.yml, and deliberately so. The nico entry allows 15 minutes to
 # provision and 10 to delete, so this lane's cost is unknown until it has run a
@@ -88,14 +88,14 @@ jobs:
       # Same expression the CAPD lane runs. health and authn hit the
       # management-cluster CWE, not the tenant backend, so this lane already
       # pays for them. authn-spire is out because the NICo provider does not
-      # set SPIFFE_ENABLED. This cannot reach the nico-vms specs: different
-      # backend, and the Tiltfile rejects nico and nico-vms together.
+      # set SPIFFE_ENABLED. The label filter keeps this job focused on the
+      # nico-containers specs; nico-vms uses its own job below.
       # Ignored under single-runner-control-plane-modes below, which derives a
       # filter per leg. Kept to satisfy the required input and to record what the
       # node-pool leg runs.
       label-filter: nico-containers || health || (authn && !authn-spire) || authn-permissive
-      # No capd here: the Tiltfile rejects nico alongside nico-vms, and the
-      # NICo provider brings its own node image step. capi_core is required.
+      # The nico provider installs CAPNICo, starts nico-sim by default, and
+      # brings its own node image step. capi_core is required.
       providers: '["capi_core", "bgp-containers", "nico"]'
       # Two control-plane legs over five clusters, on two arches. The one-leg
       # 55-spec run took 60 minutes, so this is sized for roughly double.
@@ -111,4 +111,4 @@ jobs:
       # deployment-wide, so it needs its own leg. Without this the lane is the
       # only one in CI not covering controller-managed control planes.
       single-runner-control-plane-modes: true
-      needs-nico-provider: true
+      needs-capnico-source: true

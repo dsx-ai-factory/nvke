@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# cert-manager values for the nke-stack composition. Merged under the `cert-manager` key of the
+# generated chart's values.yaml -- the top-level key is added by the generator,
+# so it is deliberately absent here.
+
+# ─── cert-manager ────────────────────────────────────────────────────────────
+# CRDs ship with the chart so Issuer/Certificate resources can be applied
+# immediately -- spire's OIDC provider leaf certificate depends on it.
+enabled: true
+namespace: cert-manager
+crds:
+  enabled: true
+replicaCount: 1
+webhook:
+  replicaCount: 1
+cainjector:
+  replicaCount: 1
+
+# ─── spire ───────────────────────────────────────────────────────────────────
+# Site identity (clusterName, trustDomain, jwtIssuer), the TPM attestor
+# checksum, and the OIDC leaf's IP SANs are all deployment-specific and are
+# supplied at install time, exactly as controller/Tiltfile passes them.

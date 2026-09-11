@@ -5,7 +5,7 @@
 # Shared helper for building the custom kindest node image used by local CAPD
 # and NICo flows. The Dockerfile remains the source of truth for image-content
 # defaults like KINDEST_NODE_TAG and NODE_AGENT_VERSION. This helper selects the
-# image platform and matching NKE bundle architecture for the Docker daemon, and
+# image platform and matching NKE bundle architecture for the container runtime, and
 # can package a sibling agent checkout into the image for local CAPD tests.
 
 set -euo pipefail
@@ -41,6 +41,11 @@ fi
 # Retry budget for every artifact download.
 : "${DOWNLOAD_RETRIES:=5}"
 : "${DOWNLOAD_RETRY_DELAY:=3}"
+# The container CLI to build through. Docker by default, for the consumers
+# that run on it (controller/Makefile.dev, controller/hack/ci/backend-e2e.sh).
+# cli/e2e/bootstrap passes nerdctl, because that suite has no Docker daemon
+# and the image has to land in the containerd store nkectl loads from.
+: "${CONTAINER_CLI:=docker}"
 
 if [[ "$(uname -s)" == "Darwin" && -z "${DOCKER_HOST:-}" ]]; then
   : "${COLIMA_DOCKER_HOST:=unix://${HOME}/.colima/default/docker.sock}"
@@ -126,7 +131,7 @@ assemble_spire_bundle_from_upstream() {
 
 detect_default_platform() {
   local arch
-  arch="$(docker version --format '{{.Server.Arch}}' 2>/dev/null || true)"
+  arch="$("${CONTAINER_CLI}" version --format '{{.Server.Arch}}' 2>/dev/null || true)"
   if [[ -z "${arch}" ]]; then
     arch="$(uname -m)"
   fi
@@ -146,7 +151,7 @@ detect_default_platform() {
 
 default_platform="$(detect_default_platform)"
 if [[ "${default_platform}" == "unsupported" ]]; then
-  echo "Unsupported Docker architecture; set CAPD_KINDEST_NODE_PLATFORM explicitly." >&2
+  echo "Unsupported ${CONTAINER_CLI} architecture; set CAPD_KINDEST_NODE_PLATFORM explicitly." >&2
   exit 1
 fi
 
@@ -305,7 +310,7 @@ else
 fi
 
 echo "Ensuring kindest/node:${CAPD_KINDEST_NODE_TAG} is available for ${effective_platform}..."
-docker pull --platform "${effective_platform}" "kindest/node:${CAPD_KINDEST_NODE_TAG}"
+"${CONTAINER_CLI}" pull --platform "${effective_platform}" "kindest/node:${CAPD_KINDEST_NODE_TAG}"
 
 build_args=(
   build
@@ -330,4 +335,4 @@ fi
 
 build_args+=("${build_context}")
 
-docker "${build_args[@]}"
+"${CONTAINER_CLI}" "${build_args[@]}"

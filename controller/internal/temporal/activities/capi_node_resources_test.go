@@ -490,7 +490,7 @@ func testNicoMachineForRotation(params nicoMachineRotationParameters) *nicov1.Ni
 		},
 		Status: nicov1.NicoMachineStatus{
 			Conditions: []metav1.Condition{{
-				Type:               clusterv1.ReadyCondition,
+				Type:               nicov1.MachineProvisionedCondition,
 				Status:             metav1.ConditionFalse,
 				Reason:             reason,
 				Message:            params.Message,

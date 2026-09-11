@@ -17,19 +17,14 @@ import (
 )
 
 func TestRenderCAPIBootstrapUserData_TPMAttestor(t *testing.T) {
-	originalGetTrustDomainAndBundle := getTrustDomainAndBundle
-	t.Cleanup(func() {
-		getTrustDomainAndBundle = originalGetTrustDomainAndBundle
-	})
-	getTrustDomainAndBundle = func(context.Context, config.Config) (string, string, error) {
-		return "example.org", "-----BEGIN CERT-----\nabc123\n-----END CERT-----", nil
-	}
-
 	activities := &Activities{
 		cfg: config.Config{
 			SpiffeEnabled:      true,
 			SpireServerAddress: "spire.example.org",
 			SpireServerPort:    "9091",
+		},
+		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			return "example.org", "-----BEGIN CERT-----\nabc123\n-----END CERT-----", nil
 		},
 	}
 
@@ -56,19 +51,14 @@ func TestRenderCAPIBootstrapUserData_TPMAttestor(t *testing.T) {
 }
 
 func TestRenderCAPIBootstrapUserData_JoinTokenAttestor(t *testing.T) {
-	originalGetTrustDomainAndBundle := getTrustDomainAndBundle
-	t.Cleanup(func() {
-		getTrustDomainAndBundle = originalGetTrustDomainAndBundle
-	})
-	getTrustDomainAndBundle = func(context.Context, config.Config) (string, string, error) {
-		return "example.org", "bundle", nil
-	}
-
 	activities := &Activities{
 		cfg: config.Config{
 			SpiffeEnabled:      true,
 			SpireServerAddress: "spire.example.org",
 			SpireServerPort:    "9091",
+		},
+		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			return "example.org", "bundle", nil
 		},
 	}
 
@@ -96,17 +86,14 @@ func TestRenderCAPIBootstrapUserData_JoinTokenRequiresToken(t *testing.T) {
 // and rendering must not try to fetch one: the dial would fail, the activity
 // would retry forever, and the cluster would never leave Provisioning.
 func TestRenderCAPIBootstrapUserData_SpiffeDisabled(t *testing.T) {
-	originalGetTrustDomainAndBundle := getTrustDomainAndBundle
-	t.Cleanup(func() {
-		getTrustDomainAndBundle = originalGetTrustDomainAndBundle
-	})
 	called := false
-	getTrustDomainAndBundle = func(context.Context, config.Config) (string, string, error) {
-		called = true
-		return "", "", errors.New("workload API is not reachable without SPIRE")
+	activities := &Activities{
+		cfg: config.Config{SpiffeEnabled: false},
+		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+			called = true
+			return "", "", errors.New("workload API is not reachable without SPIRE")
+		},
 	}
-
-	activities := &Activities{cfg: config.Config{SpiffeEnabled: false}}
 
 	var nodeSet db.NodeSet
 	nodeSet.SetCapi(db.CAPINodePoolProvider{

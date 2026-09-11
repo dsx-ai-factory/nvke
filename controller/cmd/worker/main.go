@@ -49,7 +49,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/kube"
 	"github.com/NVIDIA/nke/controller/internal/metrics"
 	"github.com/NVIDIA/nke/controller/internal/otelx"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/runbook"
 	"github.com/NVIDIA/nke/controller/internal/server"
 	"github.com/NVIDIA/nke/controller/internal/spiffe"
@@ -175,9 +174,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	forgeProviderLogger := logger.With("logger", "forge-provider")
-	forgeProvider := forge.NewForgeProvider(cfg, dbInstance, forgeProviderLogger)
-
 	managementK8sClient, err := kube.NewRuntimeClient(spirev1alpha1.AddToScheme, nicov1.AddToScheme)
 	if err != nil {
 		logger.Error("Failed to create management-cluster Kubernetes client", "error", err)
@@ -275,6 +271,7 @@ func main() {
 
 	logger.Info("Kubernetes controller-runtime manager configuration",
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
+		"enableNicoControllers", cfg.NicoControllersEnabled,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
 	// Watches Cluster API's Machine, and takes the manager down where Cluster
@@ -301,36 +298,38 @@ func main() {
 		}
 	}
 
-	// Both controllers below watch NicoMachine, and either takes the manager
-	// down where CAPNICo is not installed. Read once: every deployment path
-	// installs the infrastructure providers before CWE.
-	nicoCRDInstalled, err := capi.NicoMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
-	if err != nil {
-		logger.Error("Failed to look up the NicoMachine CRD", "error", err)
-		os.Exit(1)
-	}
-	if !nicoCRDInstalled {
-		logger.Warn("NicoMachine CRD not installed; skipping the NICo controllers")
-	}
-
-	if nicoCRDInstalled {
-		nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
-			k8sControllerManager.GetClient(),
-			logger.With("logger", "nico-tpm-spiffe-controller"),
-		)
-		if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
-			logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
+	if !cfg.NicoControllersEnabled {
+		logger.Info("NICo controllers disabled by configuration")
+	} else {
+		// Both controllers below watch NicoMachine, and either takes the manager
+		// down where CAPNICo is not installed. Read once: every deployment path
+		// installs the infrastructure providers before CWE.
+		nicoCRDInstalled, err := capi.NicoMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
+		if err != nil {
+			logger.Error("Failed to look up the NicoMachine CRD", "error", err)
 			os.Exit(1)
 		}
+		if !nicoCRDInstalled {
+			logger.Warn("NicoMachine CRD not installed; skipping the NICo controllers")
+		} else {
+			nicoTpmSpiffeController := capi.NewNicoTpmSpiffeController(
+				k8sControllerManager.GetClient(),
+				logger.With("logger", "nico-tpm-spiffe-controller"),
+			)
+			if err := nicoTpmSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up nico TPM SPIFFE controller", "error", err)
+				os.Exit(1)
+			}
 
-		nicoProviderIDController := capi.NewNicoProviderIDController(
-			k8sControllerManager.GetClient(),
-			tenantClientProvider,
-			logger.With("logger", "nico-provider-id-controller"),
-		)
-		if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
-			logger.Error("Failed to set up nico provider ID controller", "error", err)
-			os.Exit(1)
+			nicoProviderIDController := capi.NewNicoProviderIDController(
+				k8sControllerManager.GetClient(),
+				tenantClientProvider,
+				logger.With("logger", "nico-provider-id-controller"),
+			)
+			if err := nicoProviderIDController.SetupWithManager(k8sControllerManager); err != nil {
+				logger.Error("Failed to set up nico provider ID controller", "error", err)
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -455,7 +454,6 @@ func main() {
 		logger.With("logger", "node-pool-node-scheduler"),
 		dbInstance,
 		temporalClient,
-		forgeProvider,
 	)
 	if err := nodePoolNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up node pool node scheduler", "error", err)
@@ -467,7 +465,6 @@ func main() {
 		logger.With("logger", "control-plane-node-scheduler"),
 		dbInstance,
 		temporalClient,
-		forgeProvider,
 	)
 	if err := controlPlaneNodeScheduler.SetupWithManager(k8sControllerManager); err != nil {
 		logger.Error("Failed to set up control plane node scheduler", "error", err)
@@ -489,7 +486,7 @@ func main() {
 		logger.Info("Cert renewal controller disabled")
 	}
 
-	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, forgeProvider, temporalClient, authenticator)
+	httpServer, err := server.NewServer(cfg, serverLogger, dbInstance, temporalClient, authenticator)
 	if err != nil {
 		logger.Error("Failed to construct HTTP server", "error", err)
 		os.Exit(1)
@@ -504,7 +501,6 @@ func main() {
 		dbInstance,
 		managementK8sClient,
 		nodeAgentClient,
-		forgeProvider,
 		trustDomain,
 		tenantClientProvider,
 	)
@@ -572,17 +568,6 @@ func main() {
 		return err
 	})
 
-	// Start the forge provider cache engine
-	g.Go(func() error {
-		if cfg.FWEAPIKey == "" {
-			logger.Warn("Forge API key is not set, skipping forge provider cache engine")
-			return nil
-		}
-		logger.Info("Starting forge provider cache engine")
-		forgeProvider.GetCacheEngine().Start(ctx)
-		return nil
-	})
-
 	// Wait for context cancellation or an error from any service
 	go func() {
 		<-ctx.Done()
@@ -615,10 +600,6 @@ func main() {
 		// Stop the workflow outbox processor
 		outboxProcessor.Stop()
 		logger.Info("Workflow outbox processor shut down gracefully")
-
-		// Stop the forge provider cache engine
-		forgeProvider.GetCacheEngine().Stop()
-		logger.Info("Forge provider cache engine shut down gracefully")
 	}()
 
 	// Wait for all goroutines to complete

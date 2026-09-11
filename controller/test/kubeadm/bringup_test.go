@@ -60,7 +60,7 @@ func TestKubeadmBringup(t *testing.T) {
 	//
 	// t.Cleanup, not defer: deferred calls run when the test function returns,
 	// BEFORE any t.Cleanup callback. Cancelling here with defer would kill the
-	// nico-vms subprocess (started with exec.CommandContext) while the cleanup
+	// nico-sim subprocess (started with exec.CommandContext) while the cleanup
 	// that deletes the instances through its API is still to come, and those
 	// deletes would fail with "connection reset by peer". Registering first
 	// means it runs last, because cleanups run in reverse order.
@@ -195,10 +195,10 @@ func renderCloudInit(t *testing.T, cfg config, workDir string) []nicovms.NodeSpe
 
 func launchNicoVMS(ctx context.Context, t *testing.T, cfg config, workDir string) *nicovms.Process {
 	t.Helper()
-	logPath := filepath.Join(workDir, "nico-vms.log")
+	logPath := filepath.Join(workDir, "nico-sim.log")
 	logFile, err := os.Create(logPath)
 	if err != nil {
-		t.Fatalf("open nico-vms log %s: %v", logPath, err)
+		t.Fatalf("open nico-sim log %s: %v", logPath, err)
 	}
 	t.Cleanup(func() { _ = logFile.Close() })
 
@@ -218,7 +218,7 @@ func launchNicoVMS(ctx context.Context, t *testing.T, cfg config, workDir string
 		// The server log is the only place the real reason appears — a bad
 		// seed path, a missing bridge or a cgo-less sqlite build all surface
 		// there and nowhere else.
-		t.Logf("--- tail of nico-vms.log ---\n%s", tailFile(logPath, 100))
+		t.Logf("--- tail of nico-sim.log ---\n%s", tailFile(logPath, 100))
 		t.Fatalf("launch nico-vms: %v", err)
 	}
 	t.Cleanup(func() {

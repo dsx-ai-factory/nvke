@@ -26,10 +26,8 @@ type DeleteOptions struct {
 	// Which allows a delete or TeardownNode workflow to complete even if the node is unreachable.
 	// Control-plane etcd member removal runs on a surviving control-plane node, so its failure is
 	// not tolerated even when ForceUnreachable is set: leaving a stale member would endanger etcd
-	// quorum. Use AllowQuorumLoss/AllowSingleVoter to override the dry-run safety checks instead.
+	// quorum.
 	ForceUnreachable bool
-	AllowQuorumLoss  bool
-	AllowSingleVoter bool
 
 	// Tearing down a control-plane node is not allowed by default,
 	// But we do want to allow deleting control-plane nodes from the API.
@@ -68,22 +66,10 @@ func WithAllowCPNode(allow bool) DeleteOpt {
 // Which allows a delete or TeardownNode workflow to complete even if the node is unreachable.
 // Control-plane etcd member removal runs on a surviving control-plane node, so its failure is
 // not tolerated even when ForceUnreachable is set: leaving a stale member would endanger etcd
-// quorum. Use AllowQuorumLoss/AllowSingleVoter to override the dry-run safety checks instead.
+// quorum.
 func WithForceUnreachable(forceUnreachable bool) DeleteOpt {
 	return func(o *DeleteOptions) {
 		o.ForceUnreachable = forceUnreachable
-	}
-}
-
-func WithAllowQuorumLoss(allowQuorumLoss bool) DeleteOpt {
-	return func(o *DeleteOptions) {
-		o.AllowQuorumLoss = allowQuorumLoss
-	}
-}
-
-func WithAllowSingleVoter(allowSingleVoter bool) DeleteOpt {
-	return func(o *DeleteOptions) {
-		o.AllowSingleVoter = allowSingleVoter
 	}
 }
 
@@ -105,12 +91,6 @@ func (o *DeleteOptions) toWorkflowInput() TeardownNodeInput {
 	}
 	if o.ForceUnreachable {
 		input.ForceUnreachable = o.ForceUnreachable
-	}
-	if o.AllowQuorumLoss {
-		input.AllowQuorumLoss = o.AllowQuorumLoss
-	}
-	if o.AllowSingleVoter {
-		input.AllowSingleVoter = o.AllowSingleVoter
 	}
 	if o.AllowCPNode {
 		input.AllowCPNode = o.AllowCPNode

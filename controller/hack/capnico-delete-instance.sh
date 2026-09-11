@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Delete a bare VM created by hack/capnico-create-instance.sh.
+# Delete an instance created by hack/capnico-create-instance.sh.
 #
 # Deleting the Machine triggers the NicoMachine finalizer, which calls nico-vms
 # DeleteInstance (VM + qemu/swtpm torn down in ~4s); deleting the Cluster
@@ -26,9 +26,25 @@
 
 set -euo pipefail
 
+INSTANCE_BACKEND="${INSTANCE_BACKEND:-vm}"
+case "${INSTANCE_BACKEND}" in
+  VM | vm)
+    DEFAULT_CLUSTER_NAME="nico-vms-bare"
+    DEFAULT_INSTANCE_NAME="capnico-vm-1"
+    ;;
+  Container | container)
+    DEFAULT_CLUSTER_NAME="nico-containers-bare"
+    DEFAULT_INSTANCE_NAME="capnico-container-1"
+    ;;
+  *)
+    echo "Unsupported INSTANCE_BACKEND '${INSTANCE_BACKEND}' (expected VM or Container)" >&2
+    exit 1
+    ;;
+esac
+
 NAMESPACE="${NAMESPACE:-nico-test}"
-CLUSTER_NAME="${CLUSTER_NAME:-nico-vms-bare}"
-INSTANCE_NAME="${INSTANCE_NAME:-capnico-vm-1}"
+CLUSTER_NAME="${CLUSTER_NAME:-${DEFAULT_CLUSTER_NAME}}"
+INSTANCE_NAME="${INSTANCE_NAME:-${DEFAULT_INSTANCE_NAME}}"
 BOOTSTRAP_SECRET_NAME="${BOOTSTRAP_SECRET_NAME:-${INSTANCE_NAME}-bootstrap}"
 DELETE_NAMESPACE="${DELETE_NAMESPACE:-true}"
 
@@ -38,8 +54,8 @@ DELETE_NAMESPACE="${DELETE_NAMESPACE:-true}"
 DELETE_CLUSTER="${DELETE_CLUSTER:-auto}"
 
 ORG_ID="${ORG_ID:-novxwn552ssc}"
-NICO_VMS_URL="${NICO_VMS_URL:-http://localhost:18080}"
-NICO_VMS_TOKEN="${NICO_VMS_TOKEN:-nico-vmsctl-token}"
+NICO_SIM_URL="${NICO_SIM_URL:-http://localhost:18080}"
+NICO_SIM_TOKEN="${NICO_SIM_TOKEN:-nico-simctl-token}"
 
 DELETE_TIMEOUT="${DELETE_TIMEOUT:-5m}"
 
@@ -113,21 +129,21 @@ if [ "${REMOVE_CLUSTER}" = "true" ]; then
 fi
 
 if [ -z "${INSTANCE_ID}" ]; then
-  echo "Machine had no providerID -- no nico-vms instance to verify." >&2
+  echo "Machine had no providerID -- no nico-sim instance to verify." >&2
   exit 0
 fi
 
-echo "Verifying nico-vms instance ${INSTANCE_ID} is gone..." >&2
+echo "Verifying nico-sim instance ${INSTANCE_ID} is gone..." >&2
 for _ in $(seq 1 30); do
   HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' \
-    -H "Authorization: Bearer ${NICO_VMS_TOKEN}" \
-    "${NICO_VMS_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}")"
+    -H "Authorization: Bearer ${NICO_SIM_TOKEN}" \
+    "${NICO_SIM_URL}/v2/org/${ORG_ID}/forge/instance/${INSTANCE_ID}")"
   if [ "${HTTP_CODE}" = "404" ]; then
-    echo "nico-vms instance ${INSTANCE_ID} is deleted (404)."
+    echo "nico-sim instance ${INSTANCE_ID} is deleted (404)."
     exit 0
   fi
   sleep 2
 done
 
-echo "nico-vms still returns HTTP ${HTTP_CODE} for instance ${INSTANCE_ID} after 60s." >&2
+echo "nico-sim still returns HTTP ${HTTP_CODE} for instance ${INSTANCE_ID} after 60s." >&2
 exit 1

@@ -159,7 +159,7 @@ func tpmSubstrate(ctx context.Context, logf substrate.Logf) (*substrate.Substrat
 }
 
 func status(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "docker", "ps", "-a",
+	cmd := exec.CommandContext(ctx, substrate.ContainerCLI, "ps", "-a",
 		"--filter", "label=nkectl-e2e=true",
 		"--format", "table {{.Names}}\t{{.Status}}\t{{.Networks}}")
 	cmd.Stdout = os.Stdout

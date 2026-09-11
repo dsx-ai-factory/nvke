@@ -4,11 +4,15 @@
 package activities
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"strings"
+	"text/template"
 
+	"github.com/GehirnInc/crypt/sha512_crypt"
 	"github.com/google/uuid"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -17,6 +21,7 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/teleport"
+	"github.com/NVIDIA/nke/controller/internal/utils"
 )
 
 type templateLessForgeCAPINodeConfig struct {
@@ -264,4 +269,235 @@ func uuidStrings(ids []uuid.UUID) []string {
 		strings = append(strings, id.String())
 	}
 	return strings
+}
+
+type IpxeData struct {
+	DiskSelectionStrategy string
+}
+
+func getIpxeScript(osProfileDir, diskSelectionStrategy string) (string, error) {
+	ipxeScriptBytes, err := os.ReadFile(path.Join(osProfileDir, "ipxeScript"))
+	if err != nil {
+		return "", fmt.Errorf("failed to read ipxeScript file: %w", err)
+	}
+
+	return renderIpxeScript(string(ipxeScriptBytes), diskSelectionStrategy)
+}
+
+func renderIpxeScript(ipxeScriptTemplate, diskSelectionStrategy string) (string, error) {
+	tmpl, err := template.New("ipxeScript").Parse(ipxeScriptTemplate)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse ipxeScript template: %w", err)
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, IpxeData{DiskSelectionStrategy: diskSelectionStrategy}); err != nil {
+		return "", fmt.Errorf("failed to execute ipxeScript template: %w", err)
+	}
+
+	return buf.String(), nil
+}
+
+// TeleportUserDataConfig holds Teleport configuration for userData templates.
+type TeleportUserDataConfig struct {
+	Enabled      bool
+	TokenName    string
+	ProxyAddress string
+	JoinMethod   string
+	Labels       string
+}
+
+func (a *Activities) getUserData(
+	ctx context.Context,
+	osProfileDir string,
+	node db.Node,
+	diskSelectionStrategy db.DiskSelectionStrategy,
+	kubernetesVersion string,
+	teleportCfg *TeleportUserDataConfig,
+	cluster db.Cluster,
+) (string, error) {
+	userDataTemplateBytes, err := os.ReadFile(path.Join(osProfileDir, "userData.tmpl"))
+	if err != nil {
+		return "", fmt.Errorf("failed to read user data template file: %w", err)
+	}
+
+	return a.renderUserData(ctx, string(userDataTemplateBytes), node, diskSelectionStrategy, kubernetesVersion, teleportCfg, cluster)
+}
+
+func (a *Activities) renderUserData(
+	ctx context.Context,
+	userDataTemplateText string,
+	node db.Node,
+	diskSelectionStrategy db.DiskSelectionStrategy,
+	kubernetesVersion string,
+	teleportCfg *TeleportUserDataConfig,
+	cluster db.Cluster,
+) (string, error) {
+	userDataTemplate, err := template.New("userData").Funcs(
+		template.FuncMap{
+			"indent":     utils.Indent,
+			"trimPrefix": utils.TrimPrefix,
+		},
+	).Parse(userDataTemplateText)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse userData template: %w", err)
+	}
+
+	var trustDomain string
+	var trustBundle string
+	if node.SpiffeEnabled {
+		trustDomain, trustBundle, err = a.getTrustDomainBundle(ctx, a.cfg)
+		if err != nil {
+			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
+		}
+	}
+
+	// Exactly one CNI Plugin must be enabled
+	calicoEnabled := false
+	ovnEnabled := false
+
+	switch cluster.CniPlugin {
+	case db.CNICalico:
+		calicoEnabled = true
+	case db.CNIOvnKubernetes:
+		ovnEnabled = true
+	default:
+		return "", fmt.Errorf("unsupported CNI plugin: %s", cluster.CniPlugin)
+	}
+	cniVersion := db.EffectiveCNIVersion(cluster.CniPlugin, strings.TrimSpace(cluster.CniVersion))
+	cniImagePackage, err := cniImagePackageName(cluster.CniPlugin, cniVersion)
+	if err != nil {
+		return "", err
+	}
+	cniChartsPackage, err := cniChartsPackageName(cluster.CniPlugin, cniVersion)
+	if err != nil {
+		return "", err
+	}
+
+	type UserData struct {
+		CalicoEnabled         bool
+		CNIChartsPackage      string
+		CNIImagePackage       string
+		DiskSelectionStrategy string
+		HashedPassword        string
+		Hostname              string
+		KubernetesVersion     string
+		NodeAgentPort         string
+		OvnEnabled            bool
+		SpiffeEnabled         bool
+		SpireServerAddress    string
+		SpireServerPort       string
+		TrustBundle           string
+		TrustDomain           string
+		TeleportEnabled       bool
+		TeleportTokenName     string
+		TeleportProxyAddress  string
+		TeleportJoinMethod    string
+		TeleportLabels        string
+		Username              string
+	}
+
+	if err := a.validateDgxcTenantCredentials(); err != nil {
+		return "", err
+	}
+	hashedPassword, err := sha512_crypt.New().Generate([]byte(a.cfg.DgxcTenantPassword), nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash DGXC tenant password: %w", err)
+	}
+
+	// Note: Adding the trust bundle into the user data template does not present a security risk.
+	// Only public certs are included in the trust bundle, and this is how zero-trust systems are intended to bootstrap.
+	userDataTemplateData := UserData{
+		CalicoEnabled:         calicoEnabled,
+		CNIChartsPackage:      cniChartsPackage,
+		CNIImagePackage:       cniImagePackage,
+		DiskSelectionStrategy: string(diskSelectionStrategy),
+		HashedPassword:        hashedPassword,
+		Hostname:              node.Name,
+		KubernetesVersion:     kubernetesVersion,
+		NodeAgentPort:         a.cfg.NodeAgentPort,
+		OvnEnabled:            ovnEnabled,
+		SpiffeEnabled:         node.SpiffeEnabled,
+		SpireServerAddress:    a.cfg.SpireServerAddress,
+		SpireServerPort:       a.cfg.SpireServerPort,
+		TrustBundle:           trustBundle,
+		TrustDomain:           trustDomain,
+		Username:              a.cfg.DgxcTenantUser,
+	}
+
+	if teleportCfg != nil && teleportCfg.Enabled {
+		userDataTemplateData.TeleportEnabled = true
+		userDataTemplateData.TeleportTokenName = teleportCfg.TokenName
+		userDataTemplateData.TeleportProxyAddress = teleportCfg.ProxyAddress
+		userDataTemplateData.TeleportJoinMethod = teleportCfg.JoinMethod
+		userDataTemplateData.TeleportLabels = teleportCfg.Labels
+	}
+
+	userDataByteBuffer := new(bytes.Buffer)
+	if err := userDataTemplate.Execute(userDataByteBuffer, userDataTemplateData); err != nil {
+		return "", fmt.Errorf("failed to execute userData template: %w", err)
+	}
+
+	return userDataByteBuffer.String(), nil
+}
+
+func (a *Activities) validateDgxcTenantCredentials() error {
+	if strings.TrimSpace(a.cfg.DgxcTenantUser) == "" {
+		return fmt.Errorf("DGXC_TENANT_USER is required for Forge OS profile user-data rendering")
+	}
+	if strings.TrimSpace(a.cfg.DgxcTenantPassword) == "" {
+		return fmt.Errorf("DGXC_TENANT_PASSWORD is required for Forge OS profile user-data rendering")
+	}
+	return nil
+}
+
+func cniImagePackageName(plugin db.CniPlugin, version string) (string, error) {
+	switch plugin {
+	case db.CNICalico:
+		return "nke-cni-calico-images-" + version, nil
+	case db.CNIOvnKubernetes:
+		return "nke-cni-ovn-images-" + version, nil
+	default:
+		return "", fmt.Errorf("unsupported CNI plugin: %s", plugin)
+	}
+}
+
+// cniChartsPackageName returns the Debian package carrying the CNI Helm charts.
+//
+// InstallCNI refuses to run until this package is registered in dpkg, and it reads the chart
+// directory out of that package's own file list. The images package carries no charts, so a node
+// that installs only that one fails before helm runs.
+//
+// These names must match the CHARTS role of nkeCniAptSpec in agent/internal/agent/cni.go, which is
+// what the agent looks up. Note Calico's package is named "manifests" and OVN's is named "charts".
+func cniChartsPackageName(plugin db.CniPlugin, version string) (string, error) {
+	switch plugin {
+	case db.CNICalico:
+		return "nke-cni-calico-manifests-" + version, nil
+	case db.CNIOvnKubernetes:
+		return "nke-cni-ovn-charts-" + version, nil
+	default:
+		return "", fmt.Errorf("unsupported CNI plugin: %s", plugin)
+	}
+}
+
+// buildTeleportLabels constructs YAML-formatted label lines for the Teleport config in userData.
+// Output is "key: value" per line (no leading indent); the template applies indentation.
+func buildTeleportLabels(node db.Node, cluster db.Cluster, nicoProvider db.NicoClusterProvider, nodePoolID uuid.UUID, controlPlane bool, siteName, environment string) string {
+	labels := map[string]string{
+		teleport.LabelNodeID:                node.ID.String(),
+		teleport.LabelNodeName:              node.Name,
+		teleport.LabelNodeRole:              teleport.NodeRoleLabel(controlPlane),
+		teleport.LabelSite:                  nicoProvider.SiteID.String(),
+		teleport.LabelNKESiteControllerName: siteName,
+		teleport.LabelCluster:               cluster.ID.String(),
+		teleport.LabelClusterName:           cluster.Name,
+		teleport.LabelResourceGroup:         teleport.LabelResourceGroupNKEValue,
+		teleport.LabelManagedBy:             teleport.LabelManagedByValue,
+		teleport.LabelEnvironment:           environment,
+	}
+	if nodePoolID != uuid.Nil {
+		labels[teleport.LabelNodePool] = nodePoolID.String()
+	}
+	return teleport.BuildLabelsYAML(labels)
 }

@@ -19,7 +19,7 @@ instructions.
   - [agent/AGENTS.md](agent/AGENTS.md) — proto generation, packaging, gRPC conventions
   - [cli/AGENTS.md](cli/AGENTS.md) — nkectl, verification, doc-comment conventions
   - [os-image/AGENTS.md](os-image/AGENTS.md) — reference node OS image spec, Packer, connectivity checker
-  - [controller/nico-vms/AGENTS.md](controller/nico-vms/AGENTS.md) — local VM-backed Forge emulator
+  - [controller/nico-sim/AGENTS.md](controller/nico-sim/AGENTS.md) — local NICo simulator with VM and container backends
 
 ## Read if needed
 
@@ -51,7 +51,7 @@ no credentials and no network:
 GOPROXY=off make build
 ```
 
-compiles all ten modules and links seven binaries. `GOPROXY=off` is not a
+compiles all nine modules and links six binaries. `GOPROXY=off` is not a
 suggestion to copy — it is how you can tell nothing is being fetched.
 
 This changed in #76, which replaced the internal carbide SDK
@@ -120,7 +120,7 @@ build pass. Removing those dependencies is tracked work with its own design.
   certificates, or `.env` files.** Nothing resembling a credential belongs in
   this repository, in test fixtures, or in example manifests or profiles. This
   repository is being prepared to go public and its full history goes with it.
-  Use placeholder values such as `REDACTED` or `example-token`. `FWE_API_KEY`,
+  Use placeholder values such as `REDACTED` or `example-token`.
   `DB_CONNECTION_STRING` and the SPIFFE socket path are supplied by the
   environment at runtime — never inline a real value. If you find a real secret
   already committed, **stop and report it** rather than pushing a fix that

@@ -18,8 +18,8 @@ on:
       - main
       - "pull-request/[0-9]+"
     paths:
-      - "controller/nico-vms/**"
-      - "controller/hack/nico-vm-provider/**"
+      - "controller/nico-sim/**"
+      - "controller/hack/nico-provider/**"
       - "controller/hack/ci/nico-vms-e2e.sh"
       - "controller/test/kubeadm/scripts/**"
       # Without these, a change to the lane's own definition or its gate does
@@ -61,7 +61,7 @@ jobs:
       pull-requests: read
     with:
       # Keep in step with the push paths above.
-      relevant_paths: '^controller/(nico-vms/|hack/nico-vm-provider/|hack/ci/nico-vms-e2e\.sh$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
+      relevant_paths: '^controller/(nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
 
   nico-vms-e2e:
     name: nico-vms-e2e (amd64, KVM)
@@ -80,7 +80,7 @@ jobs:
       NICO_VMS_BRIDGE_NAME: cwebr0
       NICO_VMS_BRIDGE_CIDR: 172.30.0.0/24
       # Required by nico-vms even on the iPXE path, which never boots it.
-      NICO_VMS_BASE_IMAGE: ${{ github.workspace }}/controller/nico-vms/images/ubuntu-cloud.qcow2
+      NICO_VMS_BASE_IMAGE: ${{ github.workspace }}/controller/nico-sim/images/ubuntu-cloud.qcow2
       NICO_VMS_LIBVIRT_URI: qemu:///session
       NICO_VMS_READINESS_TIMEOUT: 30m
       # setup-ci-host.sh: UEFI firmware, swtpm, and the guests' metadata paths.
@@ -106,10 +106,25 @@ jobs:
           fetch-tags: true
           persist-credentials: false
 
+      # Source installation consumes CAPNICo's chart layout, so check out the
+      # same provider version whose API is compiled into CWE instead of the
+      # moving tip of the private repository.
+      - name: Read pinned CAPNICo version
+        id: capnico_version
+        run: |
+          set -euo pipefail
+          capnico_ref="$(awk '$1 == "github.com/NVIDIA/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
+          if [[ -z "${capnico_ref}" ]]; then
+            echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
+            exit 1
+          fi
+          echo "ref=${capnico_ref}" >> "${GITHUB_OUTPUT}"
+
       - name: Checkout the CAPNICo provider
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NVIDIA/cluster-api-provider-nico
+          ref: ${{ steps.capnico_version.outputs.ref }}
           token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico
           persist-credentials: false
@@ -138,11 +153,10 @@ jobs:
           version: ${{ steps.versions.outputs.helm_version }}
 
       - name: Set up Kind and kubectl
-        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        uses: ./.github/actions/setup-kind
         with:
-          version: ${{ steps.versions.outputs.kind_version }}
+          kind_version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
-          install_only: true
 
       - name: Install Tilt
         run: |
@@ -215,8 +229,10 @@ jobs:
             echo "Diagnostics are absent or were not marked safe to upload."
           fi
 
+      # Runner egress has answered FinalizeArtifact with 403; a lost upload must not fail a passing suite.
       - name: Upload redacted diagnostics
         if: always() && steps.diagnostics.outputs.safe == 'true'
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: nico-vms-e2e-${{ github.run_id }}-${{ github.run_attempt }}

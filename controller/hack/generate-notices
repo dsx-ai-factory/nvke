@@ -68,8 +68,8 @@ REL_MODULE="${MODULE_ROOT#"${WORK_ROOT}"/}"
 
 OUTPUT="${OUTPUT:-${MODULE_ROOT}/THIRD_PARTY_NOTICES.md}"
 
-# The binary shipped in the container image. nico-vms and
-# nico-vmsctl are development tooling and are not distributed.
+# The binary shipped in the container image. nico-sim and
+# nico-simctl are development tooling and are not distributed.
 # PACKAGES entries are given relative to the module and rewritten to WORK_ROOT.
 read -r -a _pkgs <<< "${PACKAGES:-./cmd/worker}"
 PACKAGES=()

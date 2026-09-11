@@ -81,6 +81,7 @@ type clusterService struct {
 	nodePoolService *nodePoolService
 	teleportCfg     config.TeleportConfig
 	oidcAuthEnabled bool
+	providers       providerSupport
 	// useControlPlaneController mirrors the CWE feature flag
 	// PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER. When true, the
 	// cluster-level controlPlaneConfig is authoritative: it is required on
@@ -97,6 +98,7 @@ func NewClusterService(
 	nodePoolService *nodePoolService,
 	teleportCfg config.TeleportConfig,
 	oidcAuthEnabled bool,
+	supportedInfraProviders []string,
 	useControlPlaneController bool,
 ) *clusterService {
 	return &clusterService{
@@ -105,6 +107,7 @@ func NewClusterService(
 		nodePoolService:           nodePoolService,
 		teleportCfg:               teleportCfg,
 		oidcAuthEnabled:           oidcAuthEnabled,
+		providers:                 newProviderSupport(supportedInfraProviders),
 		useControlPlaneController: useControlPlaneController,
 	}
 }
@@ -252,7 +255,7 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 }
 
 func (s *clusterService) preflightCheckCreateClusterRequest(
-	ctx context.Context,
+	_ context.Context,
 	req *api.CreateClusterRequest,
 ) (resolvedClusterNetwork, error) {
 	if err := s.ValidateCreateClusterRequestFields(req); err != nil {
@@ -296,10 +299,7 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 				"controlPlaneConfig.nico is required for a nico cluster control plane",
 			)
 		}
-		if err := s.validateControlPlaneForgeNetworking(
-			ctx,
-			req.Nico.OrgID,
-			req.Nico.SiteID,
+		if err := validateControlPlaneNicoNetworking(
 			req.ControlPlaneConfig.Nico.SubnetIDs,
 			req.ControlPlaneConfig.Nico.VpcPrefixIDs,
 		); err != nil {
@@ -342,12 +342,20 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 
 	var providerType db.ProviderType
 	switch {
+	case req.Infra != nil && req.Nico != nil:
+		return fmt.Errorf("exactly one provider must be set")
 	case req.Infra != nil:
+		if err := s.providers.require(config.InfraProviderInfra); err != nil {
+			return err
+		}
 		if err := validateCreateCAPIClusterProvider(req); err != nil {
 			return err
 		}
 		providerType = db.ProviderTypeCAPI
 	case req.Nico != nil:
+		if err := s.providers.require(config.InfraProviderNico); err != nil {
+			return err
+		}
 		if err := validateCreateNicoClusterProvider(req); err != nil {
 			return err
 		}
@@ -447,7 +455,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			Infra:                       nodePoolConfig.Infra,
 		}
 
-		if err := s.nodePoolService.validateCreateNodePoolRequest(ctx, cluster, &nodePoolReq); err != nil {
+		if err := s.nodePoolService.validateCreateNodePoolRequest(cluster, &nodePoolReq); err != nil {
 			return fmt.Errorf("invalid node pool %q: %w", nodePoolConfig.Name, err)
 		}
 
@@ -742,6 +750,16 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	if req == nil {
 		req = &api.UpdateClusterControlPlaneConfig{}
 	}
+	if req.Nico != nil {
+		if err := s.providers.require(config.InfraProviderNico); err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
+	}
+	if req.Infra != nil {
+		if err := s.providers.require(config.InfraProviderInfra); err != nil {
+			return newBadRequestErrorf("%s", err)
+		}
+	}
 
 	// MaxSurge is cluster-level only; it is not part of ControlPlaneConfigSpec revisions.
 	if req.MaxSurge != nil {
@@ -845,7 +863,7 @@ func hasNestedNicoControlPlanePatch(n *api.NicoControlPlaneProviderUpdate) bool 
 // match cluster.ProviderType, so this can assume req carries only the provider the
 // cluster actually has.
 func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
-	ctx context.Context,
+	_ context.Context,
 	cluster *db.Cluster,
 	req *api.UpdateClusterControlPlaneConfig,
 	spec *db.ControlPlaneConfigSpec,
@@ -898,7 +916,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		spec.SetNico(nico)
 
 		if req.Nico.SubnetIDs != nil || req.Nico.VpcPrefixIDs != nil {
-			if err := s.validateControlPlaneForgeNetworking(ctx, cluster.OrgID, cluster.SiteID, spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
+			if err := validateControlPlaneNicoNetworking(spec.SubnetIDs, spec.VpcPrefixIDs); err != nil {
 				return err
 			}
 		}
