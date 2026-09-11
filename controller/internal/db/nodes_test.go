@@ -4,13 +4,51 @@
 package db_test
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 
 	"github.com/NVIDIA/nke/controller/internal/db"
+	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
+
+// TestUpdateNode_BumpsUpdatedAt guards against a regression where Node's
+// BeforeUpdate hook silently stopped firing because its signature didn't
+// match bun.BeforeUpdateHook (BeforeUpdate(context.Context, *bun.UpdateQuery)
+// error), so Bun never invoked it and UpdatedAt stayed stuck at its
+// insert-time value on every subsequent write.
+func TestUpdateNode_BumpsUpdatedAt(t *testing.T) {
+	ctx := context.Background()
+	bunDB := testutil.SetupDB(ctx, t, (*db.Node)(nil))
+	database := db.NewDB(bunDB)
+
+	node := db.Node{
+		ID:   uuid.New(),
+		Name: "worker-1",
+	}
+	created, err := database.CreateNode(ctx, &node)
+	require.NoError(t, err)
+	insertedAt := created.UpdatedAt
+
+	// SQLite (used by the test harness) stores timestamps with second
+	// precision, so sleep past a full second boundary to make the change
+	// unambiguous rather than relying on sub-second resolution.
+	time.Sleep(1100 * time.Millisecond)
+
+	created.AgentVersion = "v1.2.3"
+	_, err = database.UpdateNode(ctx, &created)
+	require.NoError(t, err)
+
+	// UpdateNode's return value doesn't round-trip UpdatedAt from the DB (no
+	// RETURNING clause), so re-fetch to see what was actually persisted.
+	persisted, err := database.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	require.True(t, persisted.UpdatedAt.After(insertedAt),
+		"UpdatedAt should advance on update: before=%s after=%s", insertedAt.Format(time.RFC3339Nano), persisted.UpdatedAt.Format(time.RFC3339Nano))
+}
 
 func TestNode_NicoProvider(t *testing.T) {
 	instanceTypeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")

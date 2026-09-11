@@ -1004,7 +1004,7 @@ e2e_write_tilt_config "${TMP_DIR}/tilt_config.json" \
   "${NKE_E2E_PROVIDERS}" "${CWE_IMAGE}" "${management_vip}" "${BGP_CONTAINER_NAME}" \
   "${DSX_IDENTITY_EXCHANGE_IMAGE}"
 if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
-  jq '.nico_vms_observability = false' "${TMP_DIR}/tilt_config.json" \
+  jq '.nico_vms_observability = false | .nico_sim_backends = ["container"]' "${TMP_DIR}/tilt_config.json" \
     >"${TMP_DIR}/tilt_config.json.tmp"
   mv "${TMP_DIR}/tilt_config.json.tmp" "${TMP_DIR}/tilt_config.json"
 fi

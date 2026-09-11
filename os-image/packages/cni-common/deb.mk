@@ -34,7 +34,7 @@ BUNDLE_DEPS ?=
 
 ##@ Build
 
-.PHONY: debs
+.PHONY: debs content-debs
 debs: check-host check-deb-tools bundle ## Build the content and images debs into OUT_DIR, and reindex it.
 	@# A .deb left from a different VERSIONS would be indexed too.
 	rm -f "$(OUT_DIR)"/nke-$(CNI)-*.deb
@@ -45,6 +45,18 @@ debs: check-host check-deb-tools bundle ## Build the content and images debs int
 			$(COMMON_DIR)/build-deb.sh "$$v" "$(DIST_DIR)/$$v" "$(OUT_DIR)"; \
 	done
 	@# Index everything in OUT_DIR: the CNI packages share it.
+	@cd "$(OUT_DIR)" && dpkg-scanpackages . /dev/null >Packages
+	@echo "wrote $(OUT_DIR)/Packages"
+
+content-debs: check-host check-deb-tools ## Build only the architecture-independent content debs.
+	rm -f "$(OUT_DIR)"/nke-$(CNI)-$(CONTENT_KIND)-*.deb
+	@set -eu; \
+	for v in $(VERSIONS); do \
+		./bundle.sh --content-only --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane ""; \
+		CNI="$(CNI)" PRODUCT="$(PRODUCT)" CONTENT_SPEC="$(CONTENT_SPEC)" CONTENT_KIND="$(CONTENT_KIND)" \
+		DEB_REVISION="$(DEB_REVISION)" CONTENT_ONLY=true NFPM_BIN="$(BIN_DIR)/nfpm" \
+			$(COMMON_DIR)/build-deb.sh "$$v" "$(DIST_DIR)/$$v" "$(OUT_DIR)"; \
+	done
 	@cd "$(OUT_DIR)" && dpkg-scanpackages . /dev/null >Packages
 	@echo "wrote $(OUT_DIR)/Packages"
 

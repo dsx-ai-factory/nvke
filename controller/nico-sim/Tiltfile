@@ -66,6 +66,27 @@ def _parse_bridge_ranges(bridge_cidr):
         dhcp_end   = _int_to_ip(network_int + host_count - 2),
     )
 
+def _nico_sim_backends(cfg):
+    raw = cfg.get("nico_sim_backends", ["container"])
+
+    if type(raw) == "string":
+        raw = [raw]
+    if type(raw) != "list":
+        fail("tilt_config.json field 'nico_sim_backends' must be a string or list")
+
+    backends = []
+    for backend in raw:
+        normalized = str(backend)
+        if normalized != "container" and normalized != "vm":
+            fail("tilt_config.json field 'nico_sim_backends' supports only 'container' and 'vm' (got %s)" % backend)
+        if normalized not in backends:
+            backends.append(normalized)
+
+    if len(backends) == 0:
+        fail("tilt_config.json field 'nico_sim_backends' must include at least one backend")
+
+    return backends
+
 def register(ctx):
     """Register nico-sim component resources.
 
@@ -79,12 +100,19 @@ def register(ctx):
     _deploy = os.path.join(provider_dir, "deploy")
     _dev = os.path.join(provider_dir, ".dev")
     _log_dir = os.path.join(_dev, "logs")
+    _host_os = str(local("uname -s", quiet=True, echo_off=True)).strip()
+    _backends = _nico_sim_backends(ctx.cfg)
+    _container_backend_enabled = "container" in _backends
+    _vm_backend_enabled = "vm" in _backends
     # NFS-backed worktrees cannot store Linux file capabilities. Build the
     # runnable server on the host-local /tmp filesystem so build-privileged can
     # apply CAP_NET_ADMIN consistently; source and persistent state stay in the
     # worktree.
     _nico_sim_binary = "/tmp/cwe-nico-sim"
-    _nico_sim_build_cmd = "truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make BINARY=%s build-privileged" % (_log_dir, _nico_sim_binary)
+    _build_target = "build"
+    if _vm_backend_enabled and _host_os == "Linux":
+        _build_target = "build-privileged"
+    _nico_sim_build_cmd = "truncate -s 0 %s/nico-sim.log 2>/dev/null; cd nico-sim && make BINARY=%s %s" % (_log_dir, _nico_sim_binary, _build_target)
     if os.getenv("NICO_SIM_BINARY_PREBUILT", "false") == "true":
         _nico_sim_build_cmd = "test -x %s" % _nico_sim_binary
 
@@ -101,16 +129,18 @@ def register(ctx):
     # withdrawal (and produces spurious stale-ARP artifacts during CP drain).
     # Keep it off the kind Docker subnet (172.18.0.0/16) too.
     _vip_cidr = os.getenv("NICO_VMS_VIP_CIDR", "172.31.0.0/24")
-    print("nico-vms network layout (bridge %s):" % _bridge_cidr)
-    print("  gateway:    %s" % _ranges.gateway)
-    print("  DHCP pool:  %s - %s" % (_ranges.dhcp_start, _ranges.dhcp_end))
-    print("  VIP range (off-link, routed via BGP):   %s" % _vip_cidr)
+    if _vm_backend_enabled:
+        print("nico-vms network layout (bridge %s):" % _bridge_cidr)
+        print("  gateway:    %s" % _ranges.gateway)
+        print("  DHCP pool:  %s - %s" % (_ranges.dhcp_start, _ranges.dhcp_end))
+        print("  VIP range (off-link, routed via BGP):   %s" % _vip_cidr)
 
     # -----------------------------------------------------------------------
     # Preflight: ensure inotify limit is high enough for Promtail.
     # -----------------------------------------------------------------------
-    local("bash -c '" +
-        'inotify_instances="$(cat /proc/sys/fs/inotify/max_user_instances 2>/dev/null || echo 0)"; ' +
+    if _vm_backend_enabled and _host_os == "Linux":
+        local("bash -c '" +
+        'inotify_instances="$(cat /proc/sys/fs/inotify/max_user_instances)"; ' +
         'if [ "${inotify_instances}" -lt 512 ]; then ' +
         '  echo "Raising fs.inotify.max_user_instances from ${inotify_instances} to 1024 (needed by Promtail)..."; ' +
         "  sudo sysctl -w fs.inotify.max_user_instances=1024 >/dev/null; " +
@@ -127,7 +157,7 @@ def register(ctx):
     # and a host Promtail container that nothing in the lane reads, and one more
     # chart repository and image registry that can be down.
     # -----------------------------------------------------------------------
-    _observability = ctx.cfg.get("nico_vms_observability", True)
+    _observability = _vm_backend_enabled and ctx.cfg.get("nico_vms_observability", True)
     _helm_values = os.path.join(_deploy, "helm-values")
 
     if _observability:
@@ -219,13 +249,15 @@ def register(ctx):
             working_dir, binary, _log_dir, service_name)
 
     # dnsmasq: DHCP/DNS for VMs on the local bridge (skip if not installed).
-    _dnsmasq_available = str(local("command -v dnsmasq >/dev/null 2>&1 && echo yes || echo no", quiet=True)).strip() == "yes"
+    _dnsmasq_available = False
+    if _vm_backend_enabled:
+        _dnsmasq_available = str(local("command -v dnsmasq >/dev/null 2>&1 && echo yes || echo no", quiet=True)).strip() == "yes"
     _nico_sim_deps = ["check-management-cluster"]
 
-    if "nico" in ctx.cfg.get("providers", []):
+    if _container_backend_enabled and "nico" in ctx.cfg.get("providers", []):
         _nico_sim_deps.append("nico-kind-node-image")
 
-    if _dnsmasq_available:
+    if _vm_backend_enabled and _dnsmasq_available:
         local_resource(
             "nico-vms-dnsmasq",
             serve_cmd=serve_with_log("nico-sim", "./scripts/run-dnsmasq.sh", "nico-vms-dnsmasq"),
@@ -234,7 +266,7 @@ def register(ctx):
             labels=["5-nico-sim"],
         )
         _nico_sim_deps.append("nico-vms-dnsmasq")
-    else:
+    elif _vm_backend_enabled:
         warn("dnsmasq not found -- VMs using DHCP will not get IPs. Install with: brew install dnsmasq")
 
     nico_sim_env = {
@@ -242,12 +274,23 @@ def register(ctx):
         "NICO_VMS_BRIDGE_CIDR": _bridge_cidr,
         "NICO_SIM_DB_PATH": os.path.join(_dev, "nico-sim.db"),
         "NICO_VMS_BASE_IMAGE": os.path.join(provider_dir, "images", "ubuntu-cloud.qcow2"),
-        "NICO_VMS_PROMTAIL_TARGETS_FILE": os.path.join(_dev, "nico-vms-targets.json"),
-        "NICO_VMS_PROMTAIL_LOG_PATH_PREFIX": "/var/log/vm-instances",
         "NICO_VMS_BGP_VIP_CIDRS": _vip_cidr,
         "NICO_VMS_VM_DISK_GIB": "40",
+        "NICO_CONTAINERS_ENABLED": "false",
     }
-    if "nico" in ctx.cfg.get("providers", []):
+    if _container_backend_enabled:
+        nico_sim_env["NICO_CONTAINERS_ENABLED"] = "true"
+    if not _vm_backend_enabled:
+        nico_sim_env.update({
+            "NICO_VMS_VM_BACKEND": "mock",
+            "NICO_VMS_BGP_ENABLED": "false",
+        })
+    else:
+        nico_sim_env.update({
+            "NICO_VMS_PROMTAIL_TARGETS_FILE": os.path.join(_dev, "nico-vms-targets.json"),
+            "NICO_VMS_PROMTAIL_LOG_PATH_PREFIX": "/var/log/vm-instances",
+        })
+    if _container_backend_enabled and "nico" in ctx.cfg.get("providers", []):
         nico_sim_env.update({
             "NICO_CONTAINERS_REQUIRE_HEALTHY": "true",
             "NICO_CONTAINERS_NODE_IMAGE": os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local"),
@@ -268,6 +311,15 @@ def register(ctx):
         labels=["5-nico-sim"],
     )
 
+    _instance_backend_choices = []
+    if _vm_backend_enabled:
+        _instance_backend_choices.append("VM")
+    if _container_backend_enabled:
+        _instance_backend_choices.append("Container")
+    _default_instance_backend = "Container"
+    if _vm_backend_enabled:
+        _default_instance_backend = "VM"
+
     # Manual CAPNICo instance controls. The buttons run the same scripts that can be
     # called directly from the controller directory.
     cmd_button(
@@ -275,18 +327,18 @@ def register(ctx):
         argv=["bash", "-c", """
           set -euo pipefail
           cd %s
-          INSTANCE_BACKEND="${INSTANCE_BACKEND:-VM}" \
+          INSTANCE_BACKEND="${INSTANCE_BACKEND:-%s}" \
           INSTANCE_NAME="${INSTANCE_NAME:-}" \
           OS_PROFILE="${OS_PROFILE:-nke-260611-24.04-amd64-fde}" \
           INSTANCE_TYPE_ID="${INSTANCE_TYPE_ID:-}" \
           DISK_SELECTION_STRATEGY="${DISK_SELECTION_STRATEGY:-smallest}" \
           ./hack/capnico-create-instance.sh
-        """ % ctx.main_dir],
+        """ % (ctx.main_dir, _default_instance_backend)],
         resource="nico-sim",
         icon_name="add_box",
         text="Create instance",
         inputs=[
-            choice_input("INSTANCE_BACKEND", label="Type", choices=["VM", "Container"]),
+            choice_input("INSTANCE_BACKEND", label="Type", choices=_instance_backend_choices),
             text_input("INSTANCE_NAME", label="Instance name (optional)", default="", placeholder="Uses the selected type's default name"),
             text_input("OS_PROFILE", label="OS profile (VM)", default="nke-260611-24.04-amd64-fde"),
             text_input("INSTANCE_TYPE_ID", label="Instance type ID (optional)", default="", placeholder="Uses the selected type's default"),
@@ -345,15 +397,15 @@ def register(ctx):
         argv=["bash", "-c", """
           set -euo pipefail
           cd %s
-          INSTANCE_BACKEND="${INSTANCE_BACKEND:-VM}" \
+          INSTANCE_BACKEND="${INSTANCE_BACKEND:-%s}" \
           INSTANCE_NAME="${INSTANCE_NAME:-}" \
           ./hack/capnico-delete-instance.sh
-        """ % ctx.main_dir],
+        """ % (ctx.main_dir, _default_instance_backend)],
         resource="nico-sim",
         icon_name="delete",
         text="Delete instance",
         inputs=[
-            choice_input("INSTANCE_BACKEND", label="Type", choices=["VM", "Container"]),
+            choice_input("INSTANCE_BACKEND", label="Type", choices=_instance_backend_choices),
             text_input("INSTANCE_NAME", label="Instance name (optional)", default="", placeholder="Uses the selected type's default name"),
         ],
     )
@@ -383,32 +435,33 @@ def register(ctx):
     # Defaults to 1 control-plane + 1 worker node using the seed resources.
     # -----------------------------------------------------------------------
     _cwe_port = os.getenv("CWE_HTTP_PORT", "8080")
-    cmd_button(
-        "5-create-sample-nico-vms-cluster",
-        argv=["bash", "-c", """
-          set -euo pipefail
-          cd %s
-          CWE_HTTP_PORT="%s" \
-          CLUSTER_NAME="${CLUSTER_NAME:-nico-vms}" \
-          KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
-          CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
-          WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
-          CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}" \
-          CNI_VERSION="${CNI_VERSION:-}" \
-          ./hack/create-nico-vms-cluster.sh
-        """ % (ctx.main_dir, _cwe_port)],
-        resource="cwe",
-        icon_name="add_box",
-        text="Create sample nico-vms cluster",
-        inputs=[
-            text_input("CLUSTER_NAME", label="Cluster name", default="nico-vms", placeholder="Name for the NKE cluster"),
-            text_input("KUBERNETES_VERSION", label="Kubernetes version", default="1.34.2", placeholder="Tenant Kubernetes version"),
-            text_input("CONTROL_PLANE_DESIRED_COUNT", label="Control-plane nodes", default="1", placeholder="Number of control-plane VMs"),
-            text_input("WORKER_DESIRED_COUNT", label="Worker nodes", default="1", placeholder="Number of worker VMs"),
-            choice_input("CNI_PLUGIN", label="CNI plugin", choices=["ovn-kubernetes", "calico"]),
-            text_input("CNI_VERSION", label="CNI version (optional)", default="", placeholder="e.g. 1.4.0 (OVN) or 3.30.1 (Calico); empty = server default"),
-        ],
-    )
+    if _vm_backend_enabled:
+        cmd_button(
+            "5-create-sample-nico-vms-cluster",
+            argv=["bash", "-c", """
+              set -euo pipefail
+              cd %s
+              CWE_HTTP_PORT="%s" \
+              CLUSTER_NAME="${CLUSTER_NAME:-nico-vms}" \
+              KUBERNETES_VERSION="${KUBERNETES_VERSION:-1.34.2}" \
+              CONTROL_PLANE_DESIRED_COUNT="${CONTROL_PLANE_DESIRED_COUNT:-1}" \
+              WORKER_DESIRED_COUNT="${WORKER_DESIRED_COUNT:-1}" \
+              CNI_PLUGIN="${CNI_PLUGIN:-ovn-kubernetes}" \
+              CNI_VERSION="${CNI_VERSION:-}" \
+              ./hack/create-nico-vms-cluster.sh
+            """ % (ctx.main_dir, _cwe_port)],
+            resource="cwe",
+            icon_name="add_box",
+            text="Create sample nico-vms cluster",
+            inputs=[
+                text_input("CLUSTER_NAME", label="Cluster name", default="nico-vms", placeholder="Name for the NKE cluster"),
+                text_input("KUBERNETES_VERSION", label="Kubernetes version", default="1.34.2", placeholder="Tenant Kubernetes version"),
+                text_input("CONTROL_PLANE_DESIRED_COUNT", label="Control-plane nodes", default="1", placeholder="Number of control-plane VMs"),
+                text_input("WORKER_DESIRED_COUNT", label="Worker nodes", default="1", placeholder="Number of worker VMs"),
+                choice_input("CNI_PLUGIN", label="CNI plugin", choices=["ovn-kubernetes", "calico"]),
+                text_input("CNI_VERSION", label="CNI version (optional)", default="", placeholder="e.g. 1.4.0 (OVN) or 3.30.1 (Calico); empty = server default"),
+            ],
+        )
 
     return struct(
         cwe_resource_deps = ["nico-sim"],

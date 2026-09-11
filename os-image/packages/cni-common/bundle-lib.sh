@@ -16,7 +16,7 @@ die() {
 }
 
 parse_bundle_args() {
-  VERSION="" DIST="" LOCK_DIR="" CRANE="" ARCH="amd64" WRITE_LOCK=false
+  VERSION="" DIST="" LOCK_DIR="" CRANE="" ARCH="amd64" WRITE_LOCK=false CONTENT_ONLY=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --version) VERSION="${2:-}"; shift 2 ;;
@@ -24,6 +24,7 @@ parse_bundle_args() {
       --lock-dir) LOCK_DIR="${2:-}"; shift 2 ;;
       --crane) CRANE="${2:-}"; shift 2 ;;
       --arch) ARCH="${2:-}"; shift 2 ;;
+      --content-only) CONTENT_ONLY=true; shift ;;
       --write-lock) WRITE_LOCK=true; shift ;;
       *) die "unknown argument: $1" ;;
     esac
@@ -31,7 +32,9 @@ parse_bundle_args() {
   [[ -n "$VERSION" ]] || die "--version is required"
   [[ -n "$DIST" ]] || die "--dist is required"
   [[ -n "$LOCK_DIR" ]] || die "--lock-dir is required"
-  [[ -n "$CRANE" && -x "$CRANE" ]] || die "--crane must point at an executable crane"
+  if [[ "$CONTENT_ONLY" == false ]]; then
+    [[ -n "$CRANE" && -x "$CRANE" ]] || die "--crane must point at an executable crane"
+  fi
 
   LOCK="${LOCK_DIR}/${VERSION}.lock"
   STAGE="${DIST}/${VERSION}"

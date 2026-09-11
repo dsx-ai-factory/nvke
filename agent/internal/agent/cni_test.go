@@ -747,3 +747,63 @@ func TestCNIHelmArgsAreIdempotent(t *testing.T) {
 		assert.Equal(t, []string{"upgrade", "--install", "tigera-operator", chartDir}, runner.args[:4])
 	})
 }
+
+// calicoApplyRunner records ordering and can fail a specific installation step.
+type calicoApplyRunner struct {
+	recordingRunner
+	calls  [][]string
+	failAt int
+}
+
+func (r *calicoApplyRunner) Run(name string, args []string, opts *nkeutils.CommandOptions) ([]byte, error) {
+	r.calls = append(r.calls, append([]string{name}, args...))
+	if len(r.calls) == r.failAt {
+		return nil, errors.New("simulated kubectl failure")
+	}
+	return r.recordingRunner.Run(name, args, opts)
+}
+
+func TestCalicoCRDApplyOrder(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		crds      bool
+		failAt    int
+		wantCalls int
+	}{
+		{"separate CRDs are established before installation", true, 0, 3},
+		{"CRD apply failure stops installation", true, 1, 1},
+		{"CRD establishment failure stops installation", true, 2, 2},
+		{"legacy bundled CRDs retain existing path", false, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			dir := filepath.Join(root, "manifests")
+			require.NoError(t, os.Mkdir(dir, 0o755))
+			for _, name := range []string{"tigera-operator.yaml", "custom-resources.yaml"} {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o644))
+			}
+			crds := filepath.Join(dir, "operator-crds.yaml")
+			if tc.crds {
+				require.NoError(t, os.WriteFile(crds, []byte("test"), 0o644))
+			}
+			runner := &calicoApplyRunner{failAt: tc.failAt}
+			server := &NodeAgentServer{Runner: runner}
+			err := server.runCalicoKubectlApplyFromDir(root, "")
+			if tc.failAt > 0 {
+				require.ErrorContains(t, err, "simulated kubectl failure")
+			} else {
+				require.NoError(t, err)
+			}
+			require.Len(t, runner.calls, tc.wantCalls)
+			if tc.crds {
+				assert.Equal(t, []string{"kubectl", "apply", "--server-side", "-f", crds}, runner.calls[0])
+				if tc.wantCalls > 1 {
+					assert.Equal(t, []string{"kubectl", "wait", "--for=condition=Established", "--timeout=120s", "-f", crds}, runner.calls[1])
+				}
+			}
+			if tc.failAt == 0 {
+				assert.Equal(t, []string{"kubectl", "apply", "-f", filepath.Join(dir, "tigera-operator.yaml"), "-f", filepath.Join(dir, "custom-resources.yaml")}, runner.calls[len(runner.calls)-1])
+			}
+		})
+	}
+}

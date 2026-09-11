@@ -37,6 +37,8 @@ OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
 # amd64 or arm64. Must match the qcow2 being smoke-tested -- see the same
 # ARCH-vs-host-arch reasoning in packer/Makefile's ACCELERATOR probe.
 ARCH="${ARCH:-amd64}"
+ROOT_FS_LABEL="${ROOT_FS_LABEL:-cloudimg-rootfs}"
+TARGET_DISK_SIZE="${TARGET_DISK_SIZE:-20G}"
 
 case "${ARCH}" in
   amd64)
@@ -94,8 +96,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Copy-on-write overlay so the smoke test never mutates the built artifact.
-qemu-img create -f qcow2 -F qcow2 -b "${QCOW}" "${DISK}" >/dev/null
+# Load the artifact into an independent target and make that target larger
+# than the build disk. This exercises the same size change as a deployment to
+# a larger physical disk and never mutates the source artifact.
+qemu-img convert -f qcow2 -O qcow2 "${QCOW}" "${DISK}"
+qemu-img resize "${DISK}" "${TARGET_DISK_SIZE}" >/dev/null
+target_disk_bytes="$(qemu-img info --output=json "${DISK}" | awk '/"virtual-size"/ {gsub(/[^0-9]/, "", $0); print; exit}')"
+if [[ -z "${target_disk_bytes}" ]]; then
+  echo "boot-smoke: could not determine target disk size" >&2
+  exit 1
+fi
 
 cat >"${WORKDIR}/user-data" <<EOF
 #cloud-config
@@ -112,8 +122,8 @@ if [[ -n "${OVMF_CODE}" ]]; then
   EFIVARS="${WORKDIR}/OVMF_VARS.fd"
   cp "${OVMF_VARS_TEMPLATE}" "${EFIVARS}"
   EFI_ARGS=(
-    -drive if=pflash,format=raw,readonly=on,file="${OVMF_CODE}"
-    -drive if=pflash,format=raw,file="${EFIVARS}"
+    -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}"
+    -drive "if=pflash,format=raw,file=${EFIVARS}"
   )
 fi
 
@@ -153,15 +163,26 @@ echo "boot-smoke: VM booted and completed cloud-init OK"
 timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o BatchMode=yes \
-    ubuntu@127.0.0.1 bash -s <<'EOF'
+    ubuntu@127.0.0.1 bash -s -- "${ROOT_FS_LABEL}" "${target_disk_bytes}" <<'EOF'
 set -euo pipefail
+root_fs_label=$1
+target_disk_bytes=$2
+test "$(findmnt -n -o LABEL /)" = "${root_fs_label}"
+systemctl is-active lvm-growth-firstboot.service
+root_bytes=$(df -B1 --output=size / | tail -n 1 | tr -d ' ')
+minimum_root_bytes=$((target_disk_bytes * 80 / 100))
+test "${root_bytes}" -ge "${minimum_root_bytes}"
 systemctl is-enabled nke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
 test -x /usr/local/bin/nke-agent || test -x /usr/bin/nke-agent
 test -x /usr/local/bin/spire-agent
+test -x /usr/local/lib/spire-agent/tpm_attestor_agent
+test -x /usr/local/bin/get_tpm_pubhash
 test -x /usr/lib/nke/spire-configure.sh
 test -x /usr/lib/nke/wait-spiffe-socket.sh
+dpkg-query -W -f='${Status}\n' 'nke-cni-calico-manifests-*' | grep -Fxq 'install ok installed'
+
 EOF
 
-echo "boot-smoke: nke-agent and spire-agent are installed and enabled"
+echo "boot-smoke: image contract and root-filesystem growth are satisfied"

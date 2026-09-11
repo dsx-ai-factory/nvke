@@ -6,7 +6,7 @@
 # nke-cni-calico-<stream> debs.
 #
 # Usage: bundle.sh --version v3.30.1 --dist DIR --lock-dir DIR --crane PATH
-#                  [--arch amd64] [--write-lock]
+#                  [--arch amd64] [--content-only] [--write-lock]
 #
 # The lock and image handling is ../cni-common/bundle-lib.sh.
 
@@ -24,14 +24,21 @@ MANIFEST_BASE="https://raw.githubusercontent.com/projectcalico/calico/${VERSION}
 
 # The manifests the agent applies. calicoInstallRootFromFiles in
 # agent/internal/agent/cni.go finds the install root by looking for
-# manifests/tigera-operator.yaml, and runCalicoKubectlApplyFromDir applies both.
+# manifests/tigera-operator.yaml. runCalicoKubectlApplyFromDir establishes the
+# CRDs before it applies the operator and custom resources.
 mkdir -p "${STAGE}/manifests"
-for name in tigera-operator.yaml custom-resources.yaml; do
+for name in operator-crds.yaml tigera-operator.yaml custom-resources.yaml; do
   fetch "${MANIFEST_BASE}/${name}" "${STAGE}/manifests/${name}"
   verify_artifact "$name" "${STAGE}/manifests/${name}" "${MANIFEST_BASE}/${name}"
 done
 
 # The image list is the lock's, seeded by hand: the manifests name only the
 # operator, which resolves the rest at runtime.
+if [[ "$CONTENT_ONLY" == true ]]; then
+  rm -rf "$WORK"
+  echo "${CNI}: staged ${VERSION} manifests into ${STAGE}"
+  exit 0
+fi
+
 stage_images
 finish_bundle

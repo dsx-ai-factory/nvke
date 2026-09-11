@@ -24,8 +24,12 @@ holds `pxe/common_files/disk_imaging.sh`, the `qcow-imager` and
 them. Older notes call it `ncx-infra-controller-core`; that name redirects
 there.
 
-This directory adds no build logic. `make build-efi-x86` checks that repo out
-at a pinned commit and runs its `build-qcow-imager-x86` task.
+This directory checks out the pinned source and applies the patches under
+`patches/`. The disk-state patch deactivates old LVM mappings and clears the
+old partition signatures before it writes a new image. This prevents stale
+device state from hiding the root filesystem in a replacement image.
+
+`make build-efi-x86` then runs the upstream `build-qcow-imager-x86` task.
 
 [ic]: https://github.com/NVIDIA/infra-controller
 

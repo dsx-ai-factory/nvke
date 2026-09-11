@@ -1,5 +1,6 @@
 # nke-cni-calico lock for v3.30.1 (amd64). Regenerate with `make lock`; review the diff before committing.
 calico v3.30.1
+artifact operator-crds.yaml 5969b2393d9cab1212480ad08dd989023106373c23163441474e65ceb2bb734f https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/operator-crds.yaml
 artifact tigera-operator.yaml 65fc29459f236af44b31bd409640534db20ff940192f6b9023c972a69041977f https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/tigera-operator.yaml
 artifact custom-resources.yaml f7cd142773609fc7f830b96d8f29bd1b5f05cdc5293324992d8524b54c09c717 https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/custom-resources.yaml
 image quay.io/tigera/operator:v1.38.1 sha256:692a8bc462a0fa1849264d9c6b33c34714259d50fbc889bdb64b174b259dd1ce
