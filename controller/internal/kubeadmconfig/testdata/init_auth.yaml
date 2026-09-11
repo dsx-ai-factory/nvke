@@ -30,6 +30,7 @@ apiServer:
     audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
     authentication-config: /etc/kubernetes/oidc/auth-config.yaml
     bind-address: 0.0.0.0
+    enable-admission-plugins: NodeRestriction,DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction
     feature-gates: ImageVolume=true
     kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
     profiling: "false"

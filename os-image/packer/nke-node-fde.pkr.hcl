@@ -46,6 +46,17 @@ variable "luks_passphrase" {
   description = "Build-time-only LUKS passphrase (must match the autoinstall storage password). Replaced by a TPM binding on first boot; see docs/full-disk-encryption.md."
 }
 
+variable "root_fs_label" {
+  type        = string
+  default     = "cloudimg-rootfs"
+  description = "Filesystem label applied to the root volume for cloud-image discovery."
+
+  validation {
+    condition     = length(var.root_fs_label) > 0 && length(var.root_fs_label) <= 16
+    error_message = "The root_fs_label value must contain 1 to 16 characters for ext4."
+  }
+}
+
 # "kvm" when the host exposes /dev/kvm, "tcg" for software emulation.
 # Probed rather than declared: not every build host (or CI runner) exposes
 # /dev/kvm, and a fixed value would either fail to build at all where it's
@@ -187,6 +198,7 @@ source "qemu" "nke-fde" {
       luks_enabled          = true
       luks_passphrase       = var.luks_passphrase
       nvidia_kernel_package = local.nvidia_kernel_package
+      serial_console        = local.arch == "arm64" ? "ttyAMA0" : "ttyS0"
     })
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }
@@ -271,7 +283,8 @@ build {
   }
 
   provisioner "shell" {
-    script = "${path.root}/scripts/provision.sh"
+    environment_vars = ["ROOT_FS_LABEL=${var.root_fs_label}"]
+    script           = "${path.root}/scripts/provision.sh"
   }
 
   # See scripts/compress-qcow2.sh's header: the qemu builder's own

@@ -19,6 +19,9 @@ PKR_FILE_FDE := $(CURDIR)/nke-node-fde.pkr.hcl
 PKR_FILE_NON_FDE := $(CURDIR)/nke-node-non-fde.pkr.hcl
 
 LUKS_PASSPHRASE ?= changeit
+# Label applied to the root filesystem. Cloud-image importers can use this
+# stable identifier instead of depending on a partition or device path.
+ROOT_FS_LABEL ?= cloudimg-rootfs
 
 # amd64 or arm64. Drives ISO_URL's default below and, through it,
 # local.arch in nke-node-fde.pkr.hcl / nke-node-non-fde.pkr.hcl (parsed back
@@ -143,10 +146,11 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 		-var boot_wait=$(BOOT_WAIT) \
 		-var iso_url=$(ISO_URL) \
 		-var iso_checksum=$(ISO_CHECKSUM) \
+		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PKR_FILE_FDE)
 
-# Non-FDE variant: same installer+autoinstall+LVM flow as os-image-fde,
-# minus LUKS/Clevis/TPM entirely. See nke-node-non-fde.pkr.hcl.
+# Non-FDE variant: LVM-backed ext4 without LUKS. See
+# nke-node-non-fde.pkr.hcl.
 os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 	mkdir -p $(ARTIFACTS) $(BUILD_LOGS)
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
@@ -159,6 +163,7 @@ os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 		-var boot_wait=$(BOOT_WAIT) \
 		-var iso_url=$(ISO_URL) \
 		-var iso_checksum=$(ISO_CHECKSUM) \
+		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PKR_FILE_NON_FDE)
 
 clean:

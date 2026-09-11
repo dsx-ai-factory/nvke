@@ -11,7 +11,7 @@ generic default. The contract is [SPEC.md](SPEC.md).
 | `packer/` | Packer + QEMU recipe that produces a qcow2 |
 | `files/` | systemd units, SPIRE template, first-boot script |
 | `files/luks/` | LUKS/TPM2 first-boot binding assets for the FDE variant |
-| `files/lvm/` | First-boot storage-growth assets for the non-FDE (no encryption) variant |
+| `files/lvm/` | First-boot storage-growth assets for the non-FDE variant |
 | `docs/full-disk-encryption.md` | FDE variant: build, verify, failure modes |
 | `demo-fde.sh` | Runs the host-FDE acceptance scenarios against a built image |
 | `cmd/nke-os-image-check` | Connectivity checker (Go) |
@@ -44,10 +44,11 @@ they boot the build VM and fail fast with the install link above if it's
 missing.
 
 `nke-agent` is built from this checkout's `agent/` source (cross-compiled to
-`linux/amd64` when the host differs), so the baked agent is whatever your
+the target architecture when the host differs), so the baked agent is whatever your
 checkout says — no prebuilt artifact is pulled. To bake a released agent,
-check out its `agent/vX.Y.Z` tag first. SPIRE agent is pinned (version +
-sha256) from GitHub Releases.
+check out its `agent/vX.Y.Z` tag first. The SPIRE agent and TPM tools are
+pinned by version and SHA-256. The build also installs the Calico manifests
+package that the agent uses during offline bootstrap.
 
 Both variants install Ubuntu's NVIDIA-tuned kernel (`kernel.package` in
 `cidata/autoinstall-lvm.pkrtpl`), so the generic kernel never lands on disk in
@@ -92,12 +93,17 @@ once a node's first boot completes a verified TPM bind.
 
 ## Non-FDE variant (no encryption)
 
-The same installer + autoinstall + LVM flow as the FDE variant, with
-encryption turned off entirely — no LUKS, no Clevis, no TPM binding. Useful
-for telling FDE-specific issues apart from issues in the installer flow
-itself (partitioning, identity/SSH setup, first-boot storage growth), or as
-a starting point if you want the installer-based LVM layout without opting
-into encryption.
+This image uses the same LVM-backed ext4 layout as the FDE variant. It has no
+LUKS, Clevis, or TPM binding. `lvm-growth-firstboot.service` expands the
+partition, PV, LV, and filesystem after the image boots on a larger disk.
+
+Both variants apply `ROOT_FS_LABEL` to the root filesystem. Its default is
+`cloudimg-rootfs`. An image importer can use this label instead of a device
+path. Set a different label when you build the image:
+
+```bash
+make os-image-non-fde ROOT_FS_LABEL=nke-rootfs
+```
 
 ```bash
 cd packer
@@ -113,6 +119,9 @@ qcow2 under `output-non-fde/`, so it usually doesn't need to be passed):
 ```bash
 OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./scripts/boot-smoke.sh
 ```
+
+The smoke test copies the qcow2 to a larger virtual disk. It then boots that
+disk and verifies that the first-boot service expands the root filesystem.
 
 ## Interactive VM
 
@@ -214,7 +223,7 @@ write_files:
       -----END CERTIFICATE-----
 ```
 
-`nke-spire-configure.service` waits for `cloud-final`, renders
+`nke-spire-configure.service` reads the files after cloud-init writes them, renders
 `/etc/spire-agent/agent.conf`, and only then does `spire-agent` start.
 `nke-agent` starts after the workload API socket exists.
 

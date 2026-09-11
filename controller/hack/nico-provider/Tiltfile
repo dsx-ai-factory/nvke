@@ -76,8 +76,38 @@ def _register_node_image(ctx, labels):
         allow_parallel=True,
     )
 
+def _nico_sim_backends(ctx):
+    raw = ctx.cfg.get("nico_sim_backends", ["container"])
+
+    if type(raw) == "string":
+        raw = [raw]
+    if type(raw) != "list":
+        fail("tilt_config.json field 'nico_sim_backends' must be a string or list")
+
+    backends = []
+    for backend in raw:
+        normalized = str(backend)
+        if normalized != "container" and normalized != "vm":
+            fail("tilt_config.json field 'nico_sim_backends' supports only 'container' and 'vm' (got %s)" % backend)
+        if normalized not in backends:
+            backends.append(normalized)
+
+    if len(backends) == 0:
+        fail("tilt_config.json field 'nico_sim_backends' must include at least one backend")
+
+    return backends
+
+def _nico_sim_endpoint_host(ctx):
+    default_host = ctx.kind_host_ip
+    host_os = str(local("uname -s", quiet=True, echo_off=True)).strip()
+    if host_os == "Darwin":
+        default_host = "host.docker.internal"
+
+    return os.getenv("NICO_SIM_ENDPOINT_HOST", default_host)
+
 def _register_nico_sim(ctx, labels, nico, endpoint_host):
-    _register_node_image(ctx, labels)
+    if "container" in _nico_sim_backends(ctx):
+        _register_node_image(ctx, labels)
     sim_dir = os.path.join(ctx.main_dir, "nico-sim")
     return load_dynamic(os.path.join(sim_dir, "Tiltfile"))["register"](struct(
         main_dir=ctx.main_dir,
@@ -94,7 +124,7 @@ def register(ctx):
     nico = _nico_config(ctx)
     source_dir = _capnico_source_dir(ctx)
     use_nico_sim = not nico.endpoint
-    nico_sim_endpoint_host = os.getenv("NICO_SIM_ENDPOINT_HOST", ctx.kind_host_ip)
+    nico_sim_endpoint_host = _nico_sim_endpoint_host(ctx)
 
     sim_result = struct(cwe_resource_deps=[], cwe_env_overrides={})
     endpoint = nico.endpoint

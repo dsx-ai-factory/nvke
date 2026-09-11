@@ -152,6 +152,13 @@ tilt up
   controller through Helm. VM and container clusters select different sites
   through the same endpoint and controller. `cp tilt_config.json.example
   tilt_config.json` provides the local starting point.
+- `nico_sim_backends` controls which local nico-sim backends Tilt prepares.
+  `["container"]` uses container-backed mock NICo and skips VM-only host
+  requirements such as dnsmasq, Linux inotify sysctl tuning, BGP route setup,
+  and VM log shipping. This is the default; use `["container", "vm"]` when you
+  explicitly want the local nico-vms path.
+- CAPNICo reaches nico-sim through `NICO_SIM_ENDPOINT_HOST` when set. Otherwise
+  Tilt uses `host.docker.internal` on macOS and the Kind gateway on Linux.
 - `.env.tilt` configures in-cluster CWE env overrides. Keep host-local settings in `.env.local`.
 - `DGXC_TENANT_USER`, `DGXC_TENANT_PASSWORD`, `CNPG_SUPERUSER_PASSWORD`, `CNPG_CLOUD_PASSWORD`, and `CNPG_TEMPORAL_PASSWORD` have no defaults — set them in `.env.tilt` or export them, or `tilt up` fails with the list of what is missing. `CNPG_SUPERUSER_PASSWORD` is what the local postgres chart is installed with, so changing it after the first `tilt up` requires deleting the postgres PVC.
 - Personal Tilt customizations can go in `tilt.d/*.tilt` or `tilt.d/*.star`.
@@ -169,16 +176,18 @@ Then enable the single NICo provider:
 
 ```json
 {
-  "providers": ["capi_core", "bgp-containers", "nico"]
+  "providers": ["capi_core", "bgp-containers", "nico"],
+  "nico_sim_backends": ["container"]
 }
 ```
 
 With no additional NICo configuration, Tilt starts nico-sim, installs the
 released CAPNICo Helm chart, and points the `nico-credentials` Secret at
-nico-sim. One CAPNICo controller can then operate the seeded `nico-vms` and
-`nico-containers` sites at the same time. Export `NGC_API_KEY` in the shell that
-runs Tilt so Helm and the management cluster can pull the released chart and
-image.
+nico-sim. The example config prepares only the seeded `nico-containers` site.
+To operate the seeded `nico-vms` site as well, set
+`"nico_sim_backends": ["container", "vm"]`. Export `NGC_API_KEY` in the shell
+that runs Tilt so Helm and the management cluster can pull the released chart
+and image.
 
 Use the buttons on the `nico-sim` resource in the Tilt UI to create the VM,
 inspect its status, read its console log, and delete it. The create and delete

@@ -182,11 +182,6 @@ type NodePoolConditions struct {
 	Deleting     Condition `json:"deleting"`
 }
 
-func (n *NodePool) BeforeUpdate() error {
-	n.UpdatedAt = time.Now()
-	return nil
-}
-
 func (n *NodePool) NicoProvider() (NicoNodePoolProvider, error) {
 	if n.Nico == nil {
 		return NicoNodePoolProvider{}, fmt.Errorf("%w: node pool %s nico", ErrMissingProviderPayload, n.ID)
@@ -452,6 +447,7 @@ func (q *queriesImpl) UpdateNodePool(ctx context.Context, nodePool *NodePool) (N
 		return NodePool{}, err
 	}
 	nodePool.SyncProviderFields(providerType)
+	nodePool.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(nodePool).WherePK().Exec(ctx)
 	if err != nil {
 		return NodePool{}, err

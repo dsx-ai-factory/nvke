@@ -1,9 +1,9 @@
 # NKE reference node image — contract
 
 This is the contract an OS image must satisfy for NKE to manage a node.
-It is **not** a cluster-ready Kubernetes image: kubeadm, a CNI, and GPU
-drivers are installed later through `nke-agent`. The bar for v1 is that the
-controller can reach `nke-agent` over SPIFFE mTLS.
+It is **not** a cluster-ready Kubernetes image: kubeadm and GPU drivers are
+installed later through `nke-agent`. The image includes the Calico manifests
+package used during bootstrap.
 
 The in-tree Packer recipe (`packer/`) is one implementation of this contract,
 not the only allowed one.
@@ -20,6 +20,8 @@ TODO:  Need to refine the requirements around spire-agent below
 | SPIRE agent | `spire-agent` at `/usr/local/bin/spire-agent`, unit `spire-agent.service` **enabled**. Workload API socket at `unix:///tmp/spire-agent/public/api.sock` (the `nke-agent` default). |
 | Unix workload attestor | SPIRE `WorkloadAttestor "unix"` so root `nke-agent` can fetch an X.509 SVID. |
 | Node attestor | Whichever the instance can use, chosen on first boot: join-token (`NodeAttestor "join_token"`) when cloud-init supplied `SPIRE_JOIN_TOKEN`, TPM (`NodeAttestor "tpm"`, via `/usr/local/lib/spire-agent/tpm_attestor_agent`) otherwise. A site cluster attests its nodes by TPM and mints no join token, so an image that could only do join-token could not join one. This is separate from the FDE variant's use of TPM to seal the disk-encryption key. |
+| TPM identity tool | `/usr/local/bin/get_tpm_pubhash` for the image architecture. |
+| Calico manifests | An `nke-cni-calico-manifests` Debian package is installed. |
 | Unit ordering | `nke-spire-configure.service` before `spire-agent.service` before `nke-agent.service`. `nke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nke/spire-configure.sh`, driven by `nke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 
@@ -82,19 +84,14 @@ It satisfies everything above, plus:
 
 ## Must have (non-FDE variant, no encryption)
 
-`nke-node-non-fde.pkr.hcl` is also **opt-in**, not the default image. It follows
-the same installer + autoinstall + LVM flow as the FDE variant —
-`autoinstall-lvm.pkrtpl` with `luks_enabled = false` — but configures **no
-encryption at all**: no LUKS container, no Clevis, no TPM binding. It exists
-to isolate FDE-specific issues from installer-flow issues (same partitioning,
-same identity/SSH setup, same first-boot storage growth pattern, minus
-encryption), and as a base for anyone who wants the installer-based LVM
-layout without opting into encryption.
+`nke-node-non-fde.pkr.hcl` is also **opt-in**, not the default image. It uses
+the same LVM layout as the FDE image but configures no encryption. This layout
+parity is intentional.
 
 | Item | Requirement |
 |---|---|
-| Root volume | Plain LVM (`ubuntu-vg`/`ubuntu-lv`), no LUKS container. |
-| Storage growth | `lvm-growth-firstboot.service` grows the partition/PV/LV/filesystem to the target disk's full size on first boot — the same growth logic the FDE variant's `luks-tpm-firstboot.sh` runs, minus everything LUKS/TPM. |
+| Root volume | Plain LVM (`ubuntu-vg`/`ubuntu-lv`), no LUKS container. The root filesystem has a configurable cloud-image label. Its default is `cloudimg-rootfs`. |
+| Storage growth | `lvm-growth-firstboot.service` grows the partition, PV, LV, and filesystem to the target disk's full size on first boot. |
 | Serial console | Same `console=tty0 console=ttyS0,115200` GRUB parameter as the FDE variant (installer-based images otherwise carry no `console=` at all). |
 
 ## Identity rules (runtime)
@@ -125,10 +122,7 @@ server, not this image.
 ## Out of scope for this image
 
 - kubeadm / kubelet / container runtime as a cluster-ready stack
-- CNI, GPU drivers, NVIDIA fabric
-- TPM as a SPIRE *node attestor* plugin, and swtpm for that purpose (the FDE
-  variant's use of TPM to seal the disk-encryption key is unrelated and in
-  scope — see "Must have (FDE variant)" above)
+- GPU drivers and NVIDIA fabric
 - `--disable-mtls` as a supported production mode
 - Kubernetes Secrets / etcd encryption-at-rest — a controller/agent concern,
   not an image-build concern; out of scope for `os-image/`

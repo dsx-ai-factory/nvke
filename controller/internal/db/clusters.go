@@ -403,11 +403,6 @@ type ClusterConditions struct {
 	UpdateFailed     *Condition        `json:"updateFailed,omitempty"`
 }
 
-func (c *Cluster) BeforeUpdate() error {
-	c.UpdatedAt = time.Now()
-	return nil
-}
-
 type ClusterFilters struct {
 	ID     *uuid.UUID
 	Name   *string
@@ -535,6 +530,7 @@ func (q *queriesImpl) CreateCluster(ctx context.Context, cluster *Cluster) (Clus
 
 func (q *queriesImpl) UpdateCluster(ctx context.Context, cluster *Cluster) (Cluster, error) {
 	cluster.SyncProviderFields()
+	cluster.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(cluster).WherePK().Exec(ctx)
 	if err != nil {
 		return Cluster{}, err

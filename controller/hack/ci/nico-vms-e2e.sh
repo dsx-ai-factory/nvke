@@ -425,6 +425,7 @@ jq -n \
     providers: ["capi_core", "nico"],
     cwe_image: $cwe_image,
     capnico_source_dir: $capnico,
+    nico_sim_backends: ["vm"],
     nico_vms_observability: false
   }' >"${TILT_CONFIG}"
 

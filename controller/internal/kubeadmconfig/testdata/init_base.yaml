@@ -29,6 +29,7 @@ apiServer:
     audit-log-path: /var/log/kubernetes_audit/audit.log
     audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
     bind-address: 0.0.0.0
+    enable-admission-plugins: NodeRestriction,DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction
     feature-gates: ImageVolume=true
     kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
     profiling: "false"

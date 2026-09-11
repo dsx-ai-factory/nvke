@@ -646,7 +646,26 @@ func (s *NodeAgentServer) runCalicoKubectlApplyFromDir(root, podNetworkCidr stri
 			return fmt.Errorf("calico manifest %s: %w", p, err)
 		}
 	}
-	args := []string{"apply", "-f", paths[0], "-f", paths[1]} //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
+	// Newer bundles carry CRDs separately. Older bundles can embed them in the
+	// operator manifest. Keep the existing install path when this file is absent.
+	crdsPath := filepath.Join(manifestsDir, "operator-crds.yaml")
+	if _, err := os.Stat(crdsPath); err == nil {
+		commands := [][]string{
+			{"apply", "--server-side", "-f", crdsPath}, //nolint:goconst // kubectl argv fragment; naming each CLI flag reads worse than the literal
+			{"wait", "--for=condition=Established", "--timeout=120s", "-f", crdsPath},
+		}
+		for _, args := range commands {
+			out, err := s.Runner.Run("kubectl", args, &nkeutils.CommandOptions{
+				Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
+			})
+			if err != nil {
+				return fmt.Errorf("kubectl %s calico CRDs: %w, output: %s", args[0], err, out)
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("stat calico CRDs: %w", err)
+	}
+	args := []string{"apply", "-f", paths[0], "-f", paths[1]}
 	stdout, err := s.Runner.Run("kubectl", args, &nkeutils.CommandOptions{
 		Env: append(os.Environ(), "KUBECONFIG="+KubeConfig),
 	})

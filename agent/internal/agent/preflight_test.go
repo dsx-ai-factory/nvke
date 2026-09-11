@@ -5,7 +5,9 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 
@@ -58,20 +60,9 @@ func TestExecuteNodePreflight(t *testing.T) {
 	})
 
 	t.Run("check cloud init status done passes", func(t *testing.T) {
-		server := &NodeAgentServer{
-			Runner: &MockRunner{
-				Runners: []runner{
-					func(name string, args []string, _ *nkeutils.CommandOptions) (bool, []byte, error) {
-						if name == "cloud-init" && len(args) == 1 && args[0] == "status" {
-							return true, []byte("status: done\n"), nil
-						}
-						return false, nil, nil
-					},
-				},
-			},
-		}
+		srv := cloudInitStatusServer([]byte("status: done\n"), nil)
 
-		resp, err := server.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
 		})
 		require.NoError(t, err)
@@ -82,20 +73,9 @@ func TestExecuteNodePreflight(t *testing.T) {
 	})
 
 	t.Run("check cloud init status running is notready", func(t *testing.T) {
-		server := &NodeAgentServer{
-			Runner: &MockRunner{
-				Runners: []runner{
-					func(name string, args []string, _ *nkeutils.CommandOptions) (bool, []byte, error) {
-						if name == "cloud-init" && len(args) == 1 && args[0] == "status" {
-							return true, []byte("status: running\n"), nil
-						}
-						return false, nil, nil
-					},
-				},
-			},
-		}
+		srv := cloudInitStatusServer([]byte("status: running\n"), nil)
 
-		resp, err := server.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
 		})
 		require.NoError(t, err)
@@ -104,25 +84,70 @@ func TestExecuteNodePreflight(t *testing.T) {
 	})
 
 	t.Run("check cloud init status error returns error response", func(t *testing.T) {
-		server := &NodeAgentServer{
-			Runner: &MockRunner{
-				Runners: []runner{
-					func(name string, args []string, _ *nkeutils.CommandOptions) (bool, []byte, error) {
-						if name == "cloud-init" && len(args) == 1 && args[0] == "status" {
-							return true, []byte("status: error\n"), nil
-						}
-						return false, nil, nil
-					},
-				},
-			},
-		}
+		srv := cloudInitStatusServer([]byte("status: error\n"), nil)
 
-		resp, err := server.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
 		})
 		require.NoError(t, err)
 		assert.Equal(t, ErrorStatus, resp.GetStatus())
 		assert.Contains(t, resp.GetErrorMessage(), "cloud-init error status")
+	})
+
+	// `cloud-init status` exits 2 once cloud-init records a recoverable error,
+	// even after it finishes, so a degraded node must still report ready.
+	t.Run("check cloud init status degraded done passes", func(t *testing.T) {
+		srv := cloudInitStatusServer(
+			[]byte("status: done\n"),
+			cloudInitExitError(t, cloudInitStatusRecoverableExitCode),
+		)
+
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, ReadyStatus, resp.GetStatus())
+		assert.Empty(t, resp.GetErrorMessage())
+		require.Len(t, resp.GetResults(), 1)
+		assert.True(t, resp.GetResults()[0].GetPassed())
+	})
+
+	t.Run("check cloud init status degraded running is notready", func(t *testing.T) {
+		srv := cloudInitStatusServer(
+			[]byte("status: running\n"),
+			cloudInitExitError(t, cloudInitStatusRecoverableExitCode),
+		)
+
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, NotReadyStatus, resp.GetStatus())
+		require.Len(t, resp.GetResults(), 1)
+		assert.False(t, resp.GetResults()[0].GetPassed())
+	})
+
+	t.Run("check cloud init status unrecoverable exit returns error response", func(t *testing.T) {
+		srv := cloudInitStatusServer([]byte("status: error\n"), cloudInitExitError(t, 1))
+
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, ErrorStatus, resp.GetStatus())
+		assert.Contains(t, resp.GetErrorMessage(), "exited 1")
+		assert.Contains(t, resp.GetErrorMessage(), "status: error")
+	})
+
+	t.Run("check cloud init status unavailable returns error response", func(t *testing.T) {
+		srv := cloudInitStatusServer(nil, &exec.Error{Name: "cloud-init", Err: exec.ErrNotFound})
+
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, ErrorStatus, resp.GetStatus())
+		assert.Contains(t, resp.GetErrorMessage(), "cloud-init status")
 	})
 
 	t.Run("empty request returns error response", func(t *testing.T) {
@@ -183,4 +208,37 @@ func TestEvaluateCloudInitStatus(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "cloud-init error status")
 	})
+}
+
+// cloudInitStatusServer builds a server whose runner answers
+// `cloud-init status` with the given output and error.
+func cloudInitStatusServer(output []byte, runErr error) *NodeAgentServer {
+	return &NodeAgentServer{
+		Runner: &MockRunner{
+			Runners: []runner{
+				func(name string, args []string, _ *nkeutils.CommandOptions) (bool, []byte, error) {
+					if name == "cloud-init" && len(args) == 1 && args[0] == "status" {
+						return true, output, runErr
+					}
+					return false, nil, nil
+				},
+			},
+		},
+	}
+}
+
+// cloudInitExitError returns a real *exec.ExitError carrying the given exit
+// code, matching what a command runner surfaces for a non-zero `cloud-init
+// status` run.
+func cloudInitExitError(t *testing.T, code int) error {
+	t.Helper()
+
+	err := exec.Command("sh", "-c", fmt.Sprintf("exit %d", code)).Run()
+	require.Error(t, err)
+
+	var exitErr *exec.ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Equal(t, code, exitErr.ExitCode())
+
+	return err
 }

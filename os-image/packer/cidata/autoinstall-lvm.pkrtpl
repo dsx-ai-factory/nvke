@@ -24,11 +24,9 @@ autoinstall:
     package: ${nvidia_kernel_package}
 
   # LVM layout (LUKS optional, gated by luks_enabled). VG: ubuntu-vg, LV:
-  # ubuntu-lv (Ubuntu defaults). The image ships at build-time disk_size and
-  # is grown to the target disk's full size on first boot — by
-  # luks-tpm-firstboot.sh when luks_enabled, or by cloud-init's growpart +
-  # a plain lvextend/resize2fs otherwise (see configure-lvm-growth.sh).
-  # No swap: not wanted on a Kubernetes node.
+  # ubuntu-lv (Ubuntu defaults). Each variant grows to the target disk's full
+  # size through its in-image first-boot service. No swap: not wanted on a
+  # Kubernetes node.
   storage:
     swap:
       size: 0
@@ -75,6 +73,7 @@ autoinstall:
     - python3
     - python3-apt
     - openssh-server
+    - tpm2-tools
     # ovn-kubernetes runs against the host's Open vSwitch (values-nke.yaml: ovs-node false).
     - openvswitch-switch
     # kubeadm preflight requires conntrack and warns without socat/ethtool;
@@ -107,7 +106,7 @@ autoinstall:
     # -nographic/serial-only tooling (demo-fde.sh, `virsh console`, real
     # out-of-band/BMC serial access) never sees boot messages or the LUKS
     # unlock prompt — they only ever reach the VGA framebuffer.
-    - curtin in-target --target=/target -- sh -c 'echo "GRUB_CMDLINE_LINUX=\"console=tty0 console=ttyS0,115200\"" > /etc/default/grub.d/99-console.cfg'
+    - curtin in-target --target=/target -- sh -c 'echo "GRUB_CMDLINE_LINUX=\"console=tty0 console=${serial_console},115200\"" > /etc/default/grub.d/99-console.cfg'
 %{ if luks_enabled ~}
     # ========================================================================
     # Build-time-only unlock: a temporary keyfile so the post-autoinstall

@@ -129,6 +129,14 @@ func main() {
 		logger.Error("Failed to set up API authentication", "error", err)
 		os.Exit(1)
 	}
+	switch {
+	case cfg.AuthConfigPath == "":
+		metrics.SetAuthMode("off")
+	case cfg.PermissiveMode:
+		metrics.SetAuthMode("permissive")
+	default:
+		metrics.SetAuthMode("enforcing")
+	}
 
 	// Get cloud-workflow-engine workload trust domain and bundle
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)
@@ -384,7 +392,7 @@ func main() {
 	}
 	if !cfg.NodeHealthCheckDisabled {
 		tenantRegistrars = append(tenantRegistrars,
-			tenantnodestatus.NewRegistrar(dbInstance),
+			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller")),
 			tenantnoderemediation.NewRegistrar(
 				cfg,
 				dbInstance,
