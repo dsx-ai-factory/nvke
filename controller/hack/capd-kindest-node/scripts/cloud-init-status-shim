@@ -6,7 +6,7 @@
 # checks it runs in production images.
 # Since we don't actually run cloud-init in container backed nodes,
 # cloud-init will never report done. Instead, we let the higher level
-# orchestrator that simulates cloud-init (in our case, mock-nico)
+# orchestrator that simulates cloud-init (in our case, nico-containers)
 # write a status file to track the progress of the simulated cloud-init
 # process. From this script we just read that file and print it
 # following the `cloud-init status` contract.
@@ -18,7 +18,7 @@ if [ "$#" -ne 1 ] || [ "$1" != "status" ]; then
     exit 2
 fi
 
-status_file="${NICO_MOCK_CLOUD_INIT_STATUS_FILE:-/var/lib/nico-mock-cloud-init/status}"
+status_file="${NICO_CONTAINERS_CLOUD_INIT_STATUS_FILE:-/var/lib/nico-containers/cloud-init/status}"
 
 if [ -e "$status_file" ]; then
     state="$(cat "$status_file" 2>/dev/null)" || state=error

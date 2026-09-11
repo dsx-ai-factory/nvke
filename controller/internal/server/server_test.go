@@ -23,7 +23,6 @@ import (
 	"github.com/NVIDIA/nke/controller/internal/capi"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 	"github.com/NVIDIA/nke/controller/internal/server"
 	"github.com/NVIDIA/nke/controller/internal/testutil"
 )
@@ -797,14 +796,11 @@ func newTestServerWithValidator(t *testing.T, mockDB *testutil.MockDB) http.Hand
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 
 	cfg := config.Config{
-		FWEAPIKey:            "test-key",
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}
 
-	forgeProvider := forge.NewForgeProvider(cfg, mockDB, logger)
-
-	srv, err := server.NewServer(cfg, logger, mockDB, forgeProvider, nil, nil)
+	srv, err := server.NewServer(cfg, logger, mockDB, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, srv)
 

@@ -4,6 +4,12 @@
 package v1alpha1
 
 // Condition types published by the provider's reconcilers.
+//
+// When adding a reason that means a control-plane NicoMachine is genuinely
+// waiting on instance-type capacity -- one a freed allocation would actually
+// unblock -- also add it to capacityWaitReasons in controllers/helpers.go.
+// That list is an allowlist, so a reason left out simply does not defer
+// workers; nothing needs doing for reasons capacity cannot fix.
 const (
 	// NicoReadyCondition reports whether NICo is ready for use by the cluster.
 	NicoReadyCondition = "NicoReady"
@@ -87,4 +93,9 @@ const (
 
 	// WaitingForNicoMachinesDeletionReason indicates the cluster is waiting for all NicoMachines to be deleted.
 	WaitingForNicoMachinesDeletionReason = "WaitingForNicoMachinesDeletion"
+
+	// ControlPlanePriorityDeferredReason indicates a worker NicoMachine's instance
+	// create is being held back so a control-plane NicoMachine waiting on the same
+	// instance type can claim scarce capacity first.
+	ControlPlanePriorityDeferredReason = "ControlPlanePriorityDeferred"
 )

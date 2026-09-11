@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -54,7 +55,6 @@ type bootstrapSiteOptions struct {
 	// diagnosticsDir is where a failed bootstrap writes what the cluster had
 	// to say for itself, before it is torn down.
 	diagnosticsDir    string
-	provider          string
 	keepBootstrapKind bool
 
 	// disableMTLS stands the site up without SPIFFE, for bring-up debugging.
@@ -83,6 +83,11 @@ type bootstrapSiteOptions struct {
 	// Nil in production; tests set it to a fake for the same reason as
 	// bootstrapRunner above.
 	cweRunner cwedeploy.CommandRunner
+
+	// lookPath resolves the container runtime binary. Nil uses exec.LookPath;
+	// tests substitute it so they do not require a real nerdctl installation,
+	// the same seam bootstrapRunner and cweRunner provide for the commands.
+	lookPath func(string) (string, error)
 }
 
 func newBootstrapSiteCmd() *cobra.Command {
@@ -126,10 +131,6 @@ site spec file format.`,
 		envOrDefault("NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR", "cluster-diagnostics"),
 		"Directory a failed bootstrap writes cluster diagnostics to before tearing the cluster down. "+
 			"Overrides NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR.")
-	cmd.Flags().StringVar(&opts.provider, "bootstrap-provider", "",
-		"Container runtime front end for the ephemeral bootstrap Kind cluster: "+
-			string(bootstrapengine.ProviderNerdctl)+" (default) or "+string(bootstrapengine.ProviderDocker)+
-			" (rollback path). Overrides NKECTL_BOOTSTRAP_PROVIDER.")
 	cmd.Flags().BoolVar(&opts.disableMTLS, "disable-mtls", false,
 		"Stand the site up without SPIFFE: no SPIRE, and CWE dials node agents in plaintext. "+
 			"The agents must be running with --disable-mtls too. Development only.")
@@ -172,15 +173,21 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		return nil
 	}
 
+	// Before anything is stood up: the whole command runs on
+	// nerdctl/containerd, and the first thing to reach for it is kind, which
+	// execs it internally. That failure surfaces as kind's own "failed to list
+	// clusters" rather than as a missing prerequisite, so check here where the
+	// error can say what is actually wrong.
+	if err := requireContainerRuntime(opts.lookPath); err != nil {
+		return err
+	}
+
 	// Step 2: stand up the ephemeral bootstrap Kind cluster CWE will run on.
 	// It is normally torn down on exit. After site-cluster creation starts, a
 	// later failure retains it so the operator does not lose the controllers and
 	// credentials needed for recovery.
 	ctx := context.Background()
 	cfg := bootstrapengine.DefaultConfig()
-	if opts.provider != "" {
-		cfg.Provider = bootstrapengine.Provider(opts.provider)
-	}
 	cweCfg, err := cweDeployConfig(inv, cfg.ClusterName, opts.disableMTLS)
 	if err != nil {
 		return err
@@ -188,8 +195,8 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 
 	// The CWE API has to be reachable from this host: this command deploys it
 	// and then calls it. A host port mapping rather than the node container's
-	// own address, because that address is only routable from the host on
-	// Linux with the Docker provider.
+	// own address, because that address is not routable from the host on
+	// every platform this runs on.
 	cfg.ExtraPortMappings = append(cfg.ExtraPortMappings, bootstrapengine.PortMapping{
 		ContainerPort: cweCfg.CWEPort,
 		HostPort:      cweCfg.CWEPort,
@@ -202,8 +209,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	}
 
 	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
-	logger.Info("creating ephemeral bootstrap kind cluster",
-		"cluster", cfg.ClusterName, "provider", cfg.Provider)
+	logger.Info("creating ephemeral bootstrap kind cluster", "cluster", cfg.ClusterName)
 	cluster, err := engine.Create(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("standing up bootstrap kind cluster: %w", err)
@@ -232,7 +238,7 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 			return
 		}
 		logger.Info("tearing down bootstrap kind cluster", "cluster", cluster.Name)
-		if deleteErr := engine.Delete(ctx, cluster.Name, cluster.Provider); deleteErr != nil {
+		if deleteErr := engine.Delete(ctx, cluster.Name); deleteErr != nil {
 			logger.Error("failed to tear down bootstrap kind cluster",
 				"cluster", cluster.Name, "err", deleteErr)
 		}
@@ -251,10 +257,11 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	// site spec's hosts.
 	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)
 	if err != nil && siteClusterCreated {
-		deleteCommand := fmt.Sprintf("kind delete cluster --name %s", cluster.Name)
-		if cluster.Provider != bootstrapengine.ProviderDocker {
-			deleteCommand = fmt.Sprintf("KIND_EXPERIMENTAL_PROVIDER=%s %s", cluster.Provider, deleteCommand)
-		}
+		// The env prefix is not optional: kind resolves a cluster through the
+		// provider that created it, so without it the command reports the
+		// cluster as missing rather than deleting it.
+		deleteCommand := fmt.Sprintf(
+			"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s", cluster.Name)
 		return fmt.Errorf("%w; site cluster creation has started, so bootstrap cluster %q was retained for recovery "+
 			"(kubeconfig: %s); delete it after recovery with `%s`",
 			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)
@@ -495,12 +502,25 @@ func waitForCWEHostEndpoint(ctx context.Context, baseURL string, timeout time.Du
 	}
 }
 
-// ensureImageAvailable makes sure image is present in the local container
-// runtime's image store before handing it to Engine.LoadImage, pulling it if
-// it is not already cached from a previous run.
-//
-// The CLI follows cluster.Provider, because that is the store kind loads
-// from. A nerdctl host need not have Docker at all.
+// requireContainerRuntime reports a missing container runtime as the missing
+// prerequisite it is. Without this the first failure is kind's, several steps
+// in and phrased as a cluster-listing problem, because kind execs the runtime
+// itself rather than this process doing it.
+func requireContainerRuntime(lookPath func(string) (string, error)) error {
+	if lookPath == nil {
+		lookPath = exec.LookPath
+	}
+	if _, err := lookPath(bootstrapengine.RuntimeCLI); err != nil {
+		return fmt.Errorf("%s is required to bootstrap a site but was not found on PATH: %w\n"+
+			"the bootstrap cluster runs on nerdctl/containerd; Docker is not supported",
+			bootstrapengine.RuntimeCLI, err)
+	}
+	return nil
+}
+
+// ensureImageAvailable makes sure image is present in containerd's image
+// store before handing it to Engine.LoadImage, pulling it if it is not
+// already cached from a previous run. That store is the one kind loads from.
 func ensureImageAvailable(
 	ctx context.Context,
 	engine *bootstrapengine.Engine,
@@ -508,16 +528,24 @@ func ensureImageAvailable(
 	image string,
 	logger *slog.Logger,
 ) error {
-	cli := string(cluster.Provider)
-	if _, err := engine.Runner.Run(ctx, nil, cli, "image", "inspect", image); err != nil {
-		logger.Info("image not cached locally; pulling", "image", image, "runtime", cli)
-		if out, err := engine.Runner.Run(ctx, nil, cli, "pull", image); err != nil {
+	if _, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "image", "inspect", image); err != nil {
+		// An absent binary is not a cache miss, and pulling cannot fix it.
+		// requireContainerRuntime catches this before any of it runs; this is
+		// defence in depth for a runtime that leaves PATH mid-bootstrap, and
+		// keeps the message the same either way.
+		if errors.Is(err, exec.ErrNotFound) {
+			return fmt.Errorf("%s is required to bootstrap a site but was not found on PATH: %w\n"+
+				"the bootstrap cluster runs on nerdctl/containerd; Docker is not supported",
+				bootstrapengine.RuntimeCLI, err)
+		}
+		logger.Info("image not cached locally; pulling", "image", image, "runtime", bootstrapengine.RuntimeCLI)
+		if out, err := engine.Runner.Run(ctx, nil, bootstrapengine.RuntimeCLI, "pull", image); err != nil {
 			return fmt.Errorf("%s pull %s: %w\n%s\n"+
 				"if this is an authentication failure, log in to the image's registry "+
-				"(e.g. `%s login nvcr.io`) and re-run", cli, image, err, out, cli)
+				"(e.g. `%s login nvcr.io`) and re-run", bootstrapengine.RuntimeCLI, image, err, out, bootstrapengine.RuntimeCLI)
 		}
 	}
-	return engine.LoadImage(ctx, cluster.Name, cluster.Provider, image)
+	return engine.LoadImage(ctx, cluster.Name, image)
 }
 
 // dumpSiteSpec prints the loaded, defaulted site spec as YAML so the operator

@@ -45,8 +45,6 @@ appDb:
   sslMode: disable
 
 secrets:
-  forgeSecret:
-    enabled: false
   dgxcTenantCredSecretName: ""
 
 temporal:

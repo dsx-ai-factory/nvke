@@ -75,7 +75,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	// retries forever, and the cluster never leaves Provisioning.
 	var trustDomain, trustBundle string
 	if a.cfg.SpiffeEnabled {
-		trustDomain, trustBundle, err = getTrustDomainAndBundle(ctx, a.cfg)
+		trustDomain, trustBundle, err = a.getTrustDomainBundle(ctx, a.cfg)
 		if err != nil {
 			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
 		}

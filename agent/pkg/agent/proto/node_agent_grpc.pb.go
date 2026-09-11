@@ -33,6 +33,7 @@ const (
 	NodeAgent_ReconcileKubeVip_FullMethodName                             = "/proto.NodeAgent/ReconcileKubeVip"
 	NodeAgent_StartKubernetesCertificateRenewal_FullMethodName            = "/proto.NodeAgent/StartKubernetesCertificateRenewal"
 	NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName        = "/proto.NodeAgent/GetKubernetesCertificateRenewalStatus"
+	NodeAgent_RemoveEtcdMember_FullMethodName                             = "/proto.NodeAgent/RemoveEtcdMember"
 	NodeAgent_StartK8SControlPlaneNodeGracefulShutdown_FullMethodName     = "/proto.NodeAgent/StartK8sControlPlaneNodeGracefulShutdown"
 	NodeAgent_GetK8SControlPlaneNodeGracefulShutdownStatus_FullMethodName = "/proto.NodeAgent/GetK8sControlPlaneNodeGracefulShutdownStatus"
 	NodeAgent_StartKubeVipRestore_FullMethodName                          = "/proto.NodeAgent/StartKubeVipRestore"
@@ -108,6 +109,11 @@ type NodeAgentClient interface {
 	// GetKubernetesCertificateRenewalStatus returns the current status for a
 	// previously started certificate renewal operation.
 	GetKubernetesCertificateRenewalStatus(ctx context.Context, in *GetKubernetesCertificateRenewalStatusRequest, opts ...grpc.CallOption) (*GetKubernetesCertificateRenewalStatusResponse, error)
+	// RemoveEtcdMember removes a remote member through the local kubeadm etcd
+	// endpoint. It rejects removal of the local member, attempts to transfer
+	// leadership to the local member before removing a leader, and treats an
+	// absent target as success.
+	RemoveEtcdMember(ctx context.Context, in *RemoveEtcdMemberRequest, opts ...grpc.CallOption) (*RemoveEtcdMemberResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -378,6 +384,16 @@ func (c *nodeAgentClient) GetKubernetesCertificateRenewalStatus(ctx context.Cont
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(GetKubernetesCertificateRenewalStatusResponse)
 	err := c.cc.Invoke(ctx, NodeAgent_GetKubernetesCertificateRenewalStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodeAgentClient) RemoveEtcdMember(ctx context.Context, in *RemoveEtcdMemberRequest, opts ...grpc.CallOption) (*RemoveEtcdMemberResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveEtcdMemberResponse)
+	err := c.cc.Invoke(ctx, NodeAgent_RemoveEtcdMember_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -829,6 +845,11 @@ type NodeAgentServer interface {
 	// GetKubernetesCertificateRenewalStatus returns the current status for a
 	// previously started certificate renewal operation.
 	GetKubernetesCertificateRenewalStatus(context.Context, *GetKubernetesCertificateRenewalStatusRequest) (*GetKubernetesCertificateRenewalStatusResponse, error)
+	// RemoveEtcdMember removes a remote member through the local kubeadm etcd
+	// endpoint. It rejects removal of the local member, attempts to transfer
+	// leadership to the local member before removing a leader, and treats an
+	// absent target as success.
+	RemoveEtcdMember(context.Context, *RemoveEtcdMemberRequest) (*RemoveEtcdMemberResponse, error)
 	// StartK8sControlPlaneNodeGracefulShutdown starts an asynchronous
 	// control-plane node graceful shutdown operation. The operation_id is an
 	// idempotency key; retrying with the same operation_id returns the existing
@@ -1024,6 +1045,9 @@ func (UnimplementedNodeAgentServer) StartKubernetesCertificateRenewal(context.Co
 }
 func (UnimplementedNodeAgentServer) GetKubernetesCertificateRenewalStatus(context.Context, *GetKubernetesCertificateRenewalStatusRequest) (*GetKubernetesCertificateRenewalStatusResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetKubernetesCertificateRenewalStatus not implemented")
+}
+func (UnimplementedNodeAgentServer) RemoveEtcdMember(context.Context, *RemoveEtcdMemberRequest) (*RemoveEtcdMemberResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveEtcdMember not implemented")
 }
 func (UnimplementedNodeAgentServer) StartK8SControlPlaneNodeGracefulShutdown(context.Context, *StartK8SControlPlaneNodeGracefulShutdownRequest) (*StartK8SControlPlaneNodeGracefulShutdownResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method StartK8SControlPlaneNodeGracefulShutdown not implemented")
@@ -1340,6 +1364,24 @@ func _NodeAgent_GetKubernetesCertificateRenewalStatus_Handler(srv interface{}, c
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NodeAgentServer).GetKubernetesCertificateRenewalStatus(ctx, req.(*GetKubernetesCertificateRenewalStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodeAgent_RemoveEtcdMember_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveEtcdMemberRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodeAgentServer).RemoveEtcdMember(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodeAgent_RemoveEtcdMember_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodeAgentServer).RemoveEtcdMember(ctx, req.(*RemoveEtcdMemberRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -2053,6 +2095,10 @@ var NodeAgent_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetKubernetesCertificateRenewalStatus",
 			Handler:    _NodeAgent_GetKubernetesCertificateRenewalStatus_Handler,
+		},
+		{
+			MethodName: "RemoveEtcdMember",
+			Handler:    _NodeAgent_RemoveEtcdMember_Handler,
 		},
 		{
 			MethodName: "StartK8sControlPlaneNodeGracefulShutdown",

@@ -37,13 +37,12 @@ func NewControlPlaneNodeScheduler(
 	logger *slog.Logger,
 	dbInstance *dbwrapper.DB,
 	cweTemporalClient nodescheduling.WorkflowStarter,
-	forgeProvider nodescheduling.ForgeResourceReader,
 ) *ControlPlaneNodeScheduler {
 	return &ControlPlaneNodeScheduler{
 		cfg:     cfg,
 		db:      dbInstance,
 		logger:  logger,
-		service: nodescheduling.NewService(cfg, logger, dbInstance, cweTemporalClient, forgeProvider),
+		service: nodescheduling.NewService(cfg, logger, dbInstance, cweTemporalClient),
 	}
 }
 

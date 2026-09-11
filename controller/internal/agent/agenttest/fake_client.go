@@ -59,6 +59,7 @@ type FakeClient struct {
 	StartKubeVIPRestoreCalls                []uuid.UUID
 	StartKubeVIPRestoreIDs                  []string
 	ExecuteScriptNames                      []string
+	ExecuteScriptArgs                       [][]string
 	KubeadmUpgradeApplyCalls                []uuid.UUID
 	KubeadmUpgradeApplyRequests             []*nkeproto.KubeadmUpgradeApplyRequest
 	KubeadmUpgradeApplyResponse             *nkeproto.KubeadmUpgradeApplyResponse
@@ -71,6 +72,10 @@ type FakeClient struct {
 	StartKubernetesCertificateRenewalHook   func(db.Node, *nkeproto.StartKubernetesCertificateRenewalRequest) (*nkeproto.StartKubernetesCertificateRenewalResponse, error)
 	GetKubernetesCertificateRenewalCalls    []uuid.UUID
 	GetKubernetesCertificateRenewalHook     func(db.Node, *nkeproto.GetKubernetesCertificateRenewalStatusRequest) (*nkeproto.GetKubernetesCertificateRenewalStatusResponse, error)
+	RemoveEtcdMemberCalls                   []uuid.UUID
+	RemoveEtcdMemberRequests                []*nkeproto.RemoveEtcdMemberRequest
+	RemoveEtcdMemberResponse                *nkeproto.RemoveEtcdMemberResponse
+	RemoveEtcdMemberError                   error
 
 	// ExecuteScriptHook, when set, produces the response for ExecuteScript calls,
 	// letting tests drive per-node script output (e.g. /readyz probes).
@@ -221,6 +226,12 @@ func (f *FakeClient) GetKubernetesCertificateRenewalStatus(
 	return f.GetKubernetesCertificateRenewalHook(node, req)
 }
 
+func (f *FakeClient) RemoveEtcdMember(_ context.Context, node db.Node, req *nkeproto.RemoveEtcdMemberRequest) (*nkeproto.RemoveEtcdMemberResponse, error) {
+	f.RemoveEtcdMemberCalls = append(f.RemoveEtcdMemberCalls, node.ID)
+	f.RemoveEtcdMemberRequests = append(f.RemoveEtcdMemberRequests, req)
+	return f.RemoveEtcdMemberResponse, f.RemoveEtcdMemberError
+}
+
 func (f *FakeClient) ExecuteNodePreflight(_ context.Context, _ db.Node, req *nkeproto.ExecuteNodePreflightRequest) (*nkeproto.ExecuteNodePreflightResponse, error) {
 	f.PreflightCalls++
 	f.LastPreflightReq = req
@@ -243,8 +254,9 @@ func (f *FakeClient) GetK8sControlPlaneNodeGracefulShutdownStatus(context.Contex
 	return &nkeproto.GetK8SControlPlaneNodeGracefulShutdownStatusResponse{}, nil
 }
 
-func (f *FakeClient) ExecuteScript(_ context.Context, node db.Node, scriptName, scriptContents string, _ []string) (*nkeproto.ExecuteScriptResponse, error) {
+func (f *FakeClient) ExecuteScript(_ context.Context, node db.Node, scriptName, scriptContents string, args []string) (*nkeproto.ExecuteScriptResponse, error) {
 	f.ExecuteScriptNames = append(f.ExecuteScriptNames, scriptName)
+	f.ExecuteScriptArgs = append(f.ExecuteScriptArgs, args)
 	if f.ExecuteScriptHook != nil {
 		return f.ExecuteScriptHook(node, scriptName, scriptContents)
 	}

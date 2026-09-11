@@ -2,10 +2,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Leave an EK certificate on disk for Forge/NICo-style APIs. `nico-mock`
+# Leave an EK certificate on disk for Forge/NICo-style APIs. `nico-containers`
 # reads `/var/lib/swtpm/ek.cert` directly and returns it via
 # `tpmEkCertificate`, which lets CWE keep its normal TPM pubhash
-# reconciliation flow without having the mock duplicate TPM state outside the
+# reconciliation flow without duplicating TPM state outside the
 # container.
 #
 # `swtpm_setup` may emit algorithm-specific EK cert filenames, so normalize the

@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Installs kind and kubectl at pinned versions and verifies their sha256.
+# Replaces helm/kind-action, whose curl runs without -f: an egress error page
+# gets saved as the checksum file and the job dies before the suite starts.
+
+name: Set up Kind and kubectl
+description: Download kind and kubectl at pinned versions, verify sha256, add them to PATH
+
+inputs:
+  kind_version:
+    description: kind release tag, for example v0.32.0
+    required: true
+  kubectl_version:
+    description: kubectl release tag, for example v1.36.3
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        KIND_VERSION: ${{ inputs.kind_version }}
+        KUBECTL_VERSION: ${{ inputs.kubectl_version }}
+      run: |
+        set -euo pipefail
+        arch=$(uname -m)
+        case "${arch}" in x86_64) arch=amd64 ;; aarch64) arch=arm64 ;; esac
+        bin="${RUNNER_TEMP}/kind-bin"
+        mkdir -p "${bin}"
+        cd "${bin}"
+        fetch() { curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o "$1" "$2"; }
+        fetch kind "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${arch}"
+        fetch kind.sha256sum "https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-${arch}.sha256sum"
+        echo "$(cut -d' ' -f1 kind.sha256sum)  kind" | sha256sum -c
+        fetch kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl"
+        fetch kubectl.sha256 "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${arch}/kubectl.sha256"
+        echo "$(cat kubectl.sha256)  kubectl" | sha256sum -c
+        chmod +x kind kubectl
+        echo "${bin}" >> "${GITHUB_PATH}"

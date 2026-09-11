@@ -14,6 +14,11 @@ says what each one is.
 | Flox (optional) | latest | https://flox.dev/ — pins the whole toolchain, repository-wide |
 | GNU Make | 4.0+ | macOS ships 3.81; `brew install make` gives you `gmake` |
 
+A newer Go than 1.26 is fine. `make` pins `GOTOOLCHAIN` to the version `go.work`
+declares and fetches it if needed, so builds do not depend on which Go is on your
+`PATH`. Building with `go` directly, outside `make`, does — and a toolchain newer
+than the declared one panics at startup with a `strcase.UnicodeVersion` mismatch.
+
 ## Clone the repository
 
 ```bash
@@ -28,7 +33,7 @@ cd nke
 > `github.com/NVIDIA/ncx-infra-controller-rest`. The one internal dependency
 > left, `cluster-api-provider-nico`, is carried in the committed `vendor/` tree,
 > so the commands in this section need no credentials. From the repository root,
-> `GOPROXY=off make build` compiles all ten modules and proves it. See
+> `GOPROXY=off make build` compiles all nine modules and proves it. See
 > [AGENTS.md](../AGENTS.md).
 
 The repository uses [Flox](https://flox.dev/) to pin its toolchain, in one
@@ -74,18 +79,12 @@ Never hand-edit `*.gen.go` files — they will be overwritten.
 ### Run locally
 
 ```bash
-kind create cluster                                  # CWE watches a cluster
-FORGE_ENVIRONMENT=test make -C controller run-local  # Postgres, Temporal, then CWE
+kind create cluster                       # CWE watches a cluster
+make -C controller run-local              # Postgres, Temporal, then CWE
 ```
 
-Swagger is on <http://localhost:8080/api/docs/>. `FORGE_ENVIRONMENT=test` signs a
-self-signed JWT rather than authenticating against NGC, so it needs no
-`FWE_API_KEY`. Against a real Forge environment:
-
-```bash
-CNPG_SUPERUSER_PASSWORD=postgres FWE_API_KEY=<your-NGC-api-key> \
-  make -C controller run-local
-```
+Swagger is on <http://localhost:8080/api/docs/>. Infrastructure credentials are
+configured on the Cluster API provider rather than CWE.
 
 [first-cluster.md](first-cluster.md#path-a--the-api-alone) covers this path in
 full, and goes on to tenant clusters.

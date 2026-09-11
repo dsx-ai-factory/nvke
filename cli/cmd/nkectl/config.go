@@ -24,12 +24,16 @@ func newConfigCmd() *cobra.Command {
 }
 
 func newConfigSetSiteCmd() *cobra.Command {
-	var url, kubeconfig, name string
+	var url, kubeconfig, name, proxyClientCert, proxyClientKey string
 	cmd := &cobra.Command{
 		Use:   "set-site",
 		Short: "Configure the site controller the CLI connects to",
-		Long:  `Store the URL and management cluster kubeconfig for a site controller in ~/.config/nkectl/config.yaml.`,
-		Args:  cobra.NoArgs,
+		Long: `Store the URL and management cluster kubeconfig for a site controller in ~/.config/nkectl/config.yaml.
+
+For sites fronted by a proxy that requires TLS client authentication, pass
+--proxy-client-cert and --proxy-client-key. nkectl presents the certificate to
+the proxy on every request.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if url == "" {
 				return fmt.Errorf("--url is required")
@@ -44,7 +48,12 @@ func newConfigSetSiteCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("loading config: %w", err)
 			}
-			cfg.Sites[name] = config.SiteConfig{URL: url, Kubeconfig: kubeconfig}
+			cfg.Sites[name] = config.SiteConfig{
+				URL:                 url,
+				Kubeconfig:          kubeconfig,
+				ProxyClientCertFile: proxyClientCert,
+				ProxyClientKeyFile:  proxyClientKey,
+			}
 			cfg.CurrentSite = name
 			if err := cfg.Save(); err != nil {
 				return fmt.Errorf("saving config: %w", err)
@@ -56,6 +65,9 @@ func newConfigSetSiteCmd() *cobra.Command {
 	cmd.Flags().StringVar(&url, "url", "", "CWE API base URL (e.g. http://localhost:8080)")
 	cmd.Flags().StringVar(&kubeconfig, "kubeconfig", "", "Path to the management cluster kubeconfig")
 	cmd.Flags().StringVar(&name, "name", "default", "Name for this site entry")
+	cmd.Flags().StringVar(&proxyClientCert, "proxy-client-cert", "", "Path to the proxy TLS client certificate")
+	cmd.Flags().StringVar(&proxyClientKey, "proxy-client-key", "", "Path to the private key matching --proxy-client-cert")
+	cmd.MarkFlagsRequiredTogether("proxy-client-cert", "proxy-client-key")
 	return cmd
 }
 

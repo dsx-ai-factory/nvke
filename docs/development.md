@@ -44,8 +44,8 @@ make -C controller lint   # one module, when that is all you changed
 ```
 
 Each module answers the same four verbs, so `make -C <module> {build,test,lint,fmt}`
-works for `agent`, `cli`, `controller`, `controller/nico-vms`,
-`controller/hack/nico-mock` and `os-image`.
+works for `agent`, `cli`, `controller`, `controller/nico-sim`,
+and `os-image`.
 
 For the controller specifically, `make -C controller generate` regenerates the
 OpenAPI client, server and models from `api/openapi.yaml`. **It is the one most

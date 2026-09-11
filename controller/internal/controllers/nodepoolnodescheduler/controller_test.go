@@ -63,7 +63,7 @@ func TestUnit_NodePoolNodeSchedulerReconcileCAPIStartsPendingNodeWorkflows(t *te
 	scheduler := NewNodePoolNodeScheduler(config.Config{
 		TemporalTaskQueue:    "test-task-queue",
 		NodeRebootMaxTimeout: 5 * time.Minute,
-	}, slog.Default(), dbwrapper.New(database, slog.Default()), temporalClient, nil)
+	}, slog.Default(), dbwrapper.New(database, slog.Default()), temporalClient)
 
 	result, err := scheduler.Reconcile(ctx, dbreconcile.NodePoolKey(nodePoolID))
 	require.NoError(t, err)
@@ -81,7 +81,7 @@ func TestUnit_NodePoolNodeSchedulerSkipsAutoProvisionDisabledNodePool(t *testing
 		AutoProvisionDisabled: true,
 	}, nil).Once()
 
-	scheduler := NewNodePoolNodeScheduler(config.Config{}, slog.Default(), dbwrapper.New(database, slog.Default()), nil, nil)
+	scheduler := NewNodePoolNodeScheduler(config.Config{}, slog.Default(), dbwrapper.New(database, slog.Default()), nil)
 	result, err := scheduler.Reconcile(ctx, dbreconcile.NodePoolKey(nodePoolID))
 	require.NoError(t, err)
 	require.Zero(t, result)

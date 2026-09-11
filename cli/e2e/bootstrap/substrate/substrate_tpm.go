@@ -286,7 +286,7 @@ func parseJournalCursor(out string) (string, error) {
 }
 
 func (s *Substrate) exec(ctx context.Context, node Node, args ...string) (string, error) {
-	out, err := exec.CommandContext(ctx, "docker",
+	out, err := exec.CommandContext(ctx, ContainerCLI,
 		append([]string{"exec", node.Container}, args...)...).CombinedOutput()
 	return string(out), err
 }

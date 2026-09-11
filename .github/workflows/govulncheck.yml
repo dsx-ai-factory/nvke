@@ -32,7 +32,7 @@
 # agent.startSecureServer to grpc.Server.Serve, and it reached main behind a
 # green check because this job reported it without failing on it. See #89.
 #
-# controller/nico-vms is waived rather than gated:
+# controller/nico-sim is waived rather than gated:
 #
 #   GO-2026-4736  github.com/osrg/gobgp/v3 v3.37.0  Fixed in: N/A
 #

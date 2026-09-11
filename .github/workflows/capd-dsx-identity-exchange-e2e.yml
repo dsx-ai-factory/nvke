@@ -54,5 +54,5 @@ jobs:
       label-filter: identity-exchange
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller", "dsx-identity-exchange"]'
       install-cni-after-init: true
-      needs-nico-provider: true
+      needs-capnico-source: true
       timeout-minutes: 75

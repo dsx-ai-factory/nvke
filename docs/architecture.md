@@ -1,7 +1,7 @@
 # Architecture overview
 
 nke (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
-on NVIDIA infrastructure. The repository is a Go workspace of ten modules. Three
+on NVIDIA infrastructure. The repository is a Go workspace of nine modules. Three
 of them run in production: the Cloud Workflow Engine, deployed as a Helm chart,
 the node agent, installed on each node as a Debian package and run by systemd,
 and the Cluster API infrastructure provider, deployed into the same cluster as
@@ -34,7 +34,7 @@ development tooling.
               └──────────────────────┘  └─────────────┘
 ```
 
-## The ten modules
+## The nine modules
 
 | Module | Binary | What it is |
 |---|---|---|
@@ -43,10 +43,9 @@ development tooling.
 | `cluster-api-provider-provisioned/` | `manager` | Cluster API infrastructure provider for hosts NKE provisions before CAPI bootstraps them |
 | `cli/` | `nkectl` | The command line client |
 | `controller/api/` | none | The OpenAPI spec and the generated server and client types |
-| `controller/nico-vms/` | `nico-vms`, `nico-vmsctl` | Local VM manager used by tests and development |
+| `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |
 | `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
-| `controller/hack/nico-mock/` | `nico-mock` | A stand-in for the NICo provider |
 | `os-image/` | `nke-os-image-check` | OS image checks |
 
 `go.work` is the list of record. See [go-workspace.md](go-workspace.md) for how
@@ -63,7 +62,6 @@ the workspace fits together and why `vendor/` is committed.
 | `internal/temporal/outbox_processor.go` | Polls the outbox table and starts workflows |
 | `internal/controllers/` | The controller-runtime reconcilers |
 | `internal/db/` | Bun ORM and the PostgreSQL migrations |
-| `internal/providers/forge/` | Forge bare-metal API client, cached |
 | `profiles/` | OS image and Kubernetes config profiles, as YAML |
 
 ### How a cluster request becomes work
@@ -79,8 +77,9 @@ they first read the handlers.
    or neither does, so a committed cluster always has its work queued.
 3. `OutboxProcessor` polls that table, starts the matching Temporal workflow,
    and marks the row processed (`internal/temporal/outbox_processor.go`).
-4. The workflow calls the Forge API to provision bare-metal nodes, then
-   bootstraps Kubernetes with kubeadm.
+4. The workflow creates Cluster API resources. The configured infrastructure
+   provider provisions or adopts the nodes, then CWE bootstraps Kubernetes with
+   kubeadm.
 5. The engine dials `nke-agent` on each node over gRPC to drive the node side of
    the bootstrap (`internal/agent/client.go`).
 6. The cluster reaches `Ready` and the kubeconfig becomes available.

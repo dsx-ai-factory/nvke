@@ -133,6 +133,7 @@ type NodeAgentServer struct {
 	certificateRenewalPollInterval time.Duration       // overrides certificate-renewal polling in tests
 	rebootLockPollInterval         time.Duration       // overrides the package-lock poll interval in tests
 	rebootLockWaitTimeout          time.Duration       // overrides the package-lock wait timeout in tests
+	etcdClient                     etcdMemberClient    // overrides the local etcd client in tests
 	now                            func() time.Time    // overrides wall-clock reads in tests
 	clientRegistry                 kubernetesClientRegistry
 
@@ -169,7 +170,7 @@ type NodeAgentServer struct {
 
 	kubeletConfigMu          sync.Mutex // serializes kubelet.conf reconfiguration transactions
 	kubeletConfigAtomicWrite func(string, []byte, os.FileMode) error
-	kubeVipFetchASN          func(context.Context) (uint32, error)
+	kubeVipFetchASN          func(context.Context, string) (uint32, error)
 	staticPodMutationMu      sync.Mutex // serializes agent-owned static-pod manifest transactions
 }
 

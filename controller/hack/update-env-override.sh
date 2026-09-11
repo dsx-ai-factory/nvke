@@ -9,8 +9,7 @@ set -euo pipefail
 #
 # We intentionally avoid `sed -i` here because BSD `sed` (macOS) and GNU `sed`
 # (Linux) behave differently for in-place edits. We also need to collapse any
-# duplicate entries for the same key into exactly one line; we previously hit a
-# duplicate-key failure for `FORGE_ENVIRONMENT` when generating the ConfigMap.
+# duplicate entries for the same key into exactly one line.
 
 if [[ "$#" -ne 3 ]]; then
   echo "usage: $0 <path> <key> <value>" >&2

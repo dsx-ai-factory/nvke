@@ -36,7 +36,7 @@ func TestCloudInitStatusShim(t *testing.T) {
 
 			cmd := exec.CommandContext(t.Context(), "sh", "scripts/cloud-init-status-shim", "status")
 			cmd.Env = append(os.Environ(),
-				"NICO_MOCK_CLOUD_INIT_STATUS_FILE="+statusFile,
+				"NICO_CONTAINERS_CLOUD_INIT_STATUS_FILE="+statusFile,
 			)
 			output, err := cmd.CombinedOutput()
 			require.NoError(t, err, string(output))

@@ -35,6 +35,12 @@ const (
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
 )
 
+// Defines values for InfraProvider.
+const (
+	InfraProviderInfra InfraProvider = "infra"
+	InfraProviderNico  InfraProvider = "nico"
+)
+
 // Defines values for SpireAttestationMethod.
 const (
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
@@ -372,26 +378,11 @@ type CreateNodePoolRequest struct {
 
 // DeleteNodeRequest defines model for DeleteNodeRequest.
 type DeleteNodeRequest struct {
-	// AllowQuorumLoss Override the etcd member-removal safety check that blocks a removal which
-	// would break etcd quorum. Dangerous — only for control-plane node removal
-	// when quorum loss is understood and acceptable. Requires the server to have
-	// etcd safety overrides enabled (ALLOW_ETCD_SAFETY_OVERRIDES); otherwise the
-	// request is rejected.
-	AllowQuorumLoss bool `json:"allowQuorumLoss,omitempty"`
-
-	// AllowSingleVoter Override the etcd member-removal safety check that blocks a removal which
-	// would leave a single-voter etcd cluster. Intended for manual single-node
-	// control-plane rotation on development sites. Requires the server to have
-	// etcd safety overrides enabled (ALLOW_ETCD_SAFETY_OVERRIDES); otherwise the
-	// request is rejected.
-	AllowSingleVoter bool `json:"allowSingleVoter,omitempty"`
-
 	// ForceUnreachable Treat the node as unreachable. Best-effort graceful steps (drain, graceful
 	// shutdown) are still attempted, but their failures are logged and tolerated
 	// instead of failing the teardown. Use when a node's kubelet/node-agent is
 	// unresponsive and a normal delete would hang. This does not tolerate
-	// control-plane etcd member-removal failures; use allowQuorumLoss /
-	// allowSingleVoter to override those etcd safety checks.
+	// control-plane etcd member-removal failures.
 	ForceUnreachable   bool                `json:"forceUnreachable,omitempty"`
 	MachineHealthIssue *MachineHealthIssue `json:"machineHealthIssue,omitempty"`
 }
@@ -493,6 +484,9 @@ type InfraNodeSetProvider struct {
 	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
 }
 
+// InfraProvider A top-level provider payload key advertised for CreateClusterRequest cluster specs.
+type InfraProvider string
+
 // ListCNIPluginsResponse defines model for ListCNIPluginsResponse.
 type ListCNIPluginsResponse struct {
 	// CniPlugins A list of CNI plugins
@@ -509,6 +503,12 @@ type ListClustersResponse struct {
 type ListConfigProfilesResponse struct {
 	// ConfigProfiles The list of config profiles
 	ConfigProfiles []ConfigProfile `json:"configProfiles"`
+}
+
+// ListInfraProvidersResponse defines model for ListInfraProvidersResponse.
+type ListInfraProvidersResponse struct {
+	// Providers The provider payload keys advertised for CreateClusterRequest cluster specs.
+	Providers []InfraProvider `json:"providers"`
 }
 
 // ListNodePoolsResponse defines model for ListNodePoolsResponse.

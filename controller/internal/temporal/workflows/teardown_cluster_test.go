@@ -59,7 +59,7 @@ func TestTeardownClusterDeletesTenantAccessSecretsAfterClusterRow(t *testing.T) 
 	env := testSuite.NewTestWorkflowEnvironment()
 	env.SetWorkerOptions(worker.Options{DeadlockDetectionTimeout: 5 * time.Second})
 
-	a := activities.NewActivities(config.Config{}, nil, nil, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, nil, nil, nil, "", nil)
 
 	env.OnActivity(a.GetCluster, mock.Anything, clusterID).
 		Return(db.Cluster{ID: clusterID, Name: clusterName}, nil)

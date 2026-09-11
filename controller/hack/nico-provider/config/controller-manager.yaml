@@ -14,3 +14,4 @@ spec:
           args:
             - --leader-elect
             - --reboot-annotation=nke.nvidia.com/reboot
+            - --repair-annotation=nke.nvidia.com/machine-health-issue

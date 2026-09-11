@@ -139,8 +139,8 @@ CAPD containers from other runs unless
 `LOCAL_NKE_E2E_STATE_DIR` to keep logs and JUnit output in a specific directory.
 
 The harness also installs the CAPNICo CRDs expected by the current controller.
-It uses a sibling `cluster-api-provider-nico` checkout by default; set
-`NICO_PROVIDER_REPO_DIR` when that checkout is elsewhere.
+It uses the committed CAPNICo CRD fixture by default; set
+`CAPNICO_SOURCE_DIR` to read the CRDs from a provider checkout instead.
 
 ## Files
 

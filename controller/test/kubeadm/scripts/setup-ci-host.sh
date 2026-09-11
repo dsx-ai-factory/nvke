@@ -5,11 +5,11 @@
 # setup-ci-host.sh -- prepare a GitHub Actions runner to host nico-vms in
 # native bridge mode for the kubeadm bring-up lane.
 #
-# WHY THIS EXISTS, rather than calling controller/nico-vms/scripts/setup-linux.sh
+# WHY THIS EXISTS, rather than calling controller/nico-sim/scripts/setup-linux.sh
 #
 #   setup-linux.sh is a *workstation* installer. Alongside the networking it
 #   also installs docker, tilt, kubectl, kind, helm, Go and ko, appends to
-#   ~/.profile and ~/.bashrc, writes /etc/sudoers.d/nico-vms-setcap, edits the
+#   ~/.profile and ~/.bashrc, writes /etc/sudoers.d/nico-sim-setcap, edits the
 #   swtpm AppArmor profile and rewrites virtlogd.conf. None of that belongs on
 #   a single-use runner: Go arrives via actions/setup-go, nothing here uses
 #   kind/tilt/helm, and the machine is destroyed when the job ends.
@@ -299,7 +299,7 @@ fi
 
 sudo mkdir -p "${DHCP_HOSTS_DIR}"
 sudo chmod 777 "${DHCP_HOSTS_DIR}"
-# The lease file must be writable by the (non-root) nico-vms process so it can
+# The lease file must be writable by the (non-root) nico-sim process so it can
 # purge stale leases -- same reason as setup-linux.sh:418-420.
 sudo touch "${DHCP_LEASE_FILE}"
 sudo chmod 666 "${DHCP_LEASE_FILE}"
@@ -569,10 +569,10 @@ fi
 # available", which surfaces as an instance in state Error rather than as a
 # startup failure -- so a missing image looks like a broken VM, not a missing
 # file. Same URLs nico-vms' own integration tests use
-# (controller/nico-vms/test/integration/testutil/image.go:24-26).
+# (controller/nico-sim/test/integration/testutil/image.go:24-26).
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
-BASE_IMAGE="${NICO_VMS_BASE_IMAGE:-${REPO_ROOT}/controller/nico-vms/images/ubuntu-cloud.qcow2}"
+BASE_IMAGE="${NICO_VMS_BASE_IMAGE:-${REPO_ROOT}/controller/nico-sim/images/ubuntu-cloud.qcow2}"
 IMAGE_BASE_URL="${NKE_BRINGUP_IMAGE_BASE_URL:-https://cloud-images.ubuntu.com/releases/24.04/release}"
 case "${DEB_ARCH}" in
   amd64) IMAGE_NAME="ubuntu-24.04-server-cloudimg-amd64.img" ;;

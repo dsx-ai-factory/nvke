@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# CAPD e2e overlay for nke-stack.
+#
+# The composition installs the management plane; this is the application-level
+# configuration the suite needs on top of it, and it mirrors what
+# controller/Tiltfile assembles as --set flags for the cwe helm_resource.
+#
+# Everything here is static. The values that genuinely vary per run -- the
+# management VIP, the trust domain (derived from the kind cluster name), the
+# locally built image and the generated database password -- are passed as
+# --set by controller/hack/ci/deploy-nke-stack.sh, which is the only place that
+# knows them.
+#
+# Keep in step with _cwe_chart_flags in controller/Tiltfile.
+
+# Monitoring is off in this lane. kube-prometheus-stack asks for 500m CPU and
+# 1Gi of memory for Prometheus alone, before Grafana, Alertmanager and the
+# node exporters, on a single-node kind cluster that is already tight enough
+# for tenant provisioning to have timed out at ten minutes. The suite asserts
+# nothing about metrics, so it would be cost without coverage.
+#
+# Both keys, not one: global.monitoring.enabled left true with the stack off
+# renders ServiceMonitors against CRDs that no longer exist, which fails the
+# install rather than degrading it.
+global:
+  monitoring:
+    enabled: false
+prometheus-operator-crds:
+  enabled: false
+kube-prometheus-stack:
+  enabled: false
+
+controller:
+  # The suite mints its own token and presents it on every call, so the ordinary
+  # specs exercise the shipping authentication path rather than bypassing it.
+  # backend-e2e.sh fails rather than skips when authentication is not enforced.
+  apiAuth:
+    enabled: true
+    permissive: false
+
+  # CWE reconciles CAPI objects, so it needs the RBAC for them.
+  capi:
+    rbac:
+      create: true
+
+  tenantAccess:
+    enabled: true
+
+  nkeOIDCAuth:
+    enabled: true
+    # Logical issuer, string-compared against the JWT's iss claim; it does not
+    # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
+    issuerURL: "https://nke.site-controller.internal"
+    # The CA the OIDC provider's leaf is signed by, published by the chain in
+    # controller/deploy/k8s/oidc-upstream-ca.yaml.
+    caBundleSecret:
+      namespace: spire-server
+      name: oidc-provider-upstream-ca
+      key: ca.crt
+
+  # The CAPD lane installs the CNI as part of cluster creation rather than after
+  # init; the node-pool lane differs and overrides this.
+  cni:
+    installAfterInit: false
+
+  # Empty on this path: none of the twelve variables the Tiltfile forwards
+  # (TEMPORAL_UI_URL, LOG_LEVEL, FORGE_URL, ...) are set by backend-e2e.sh.
+  env: []

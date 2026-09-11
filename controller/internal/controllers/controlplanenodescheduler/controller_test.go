@@ -76,7 +76,7 @@ func TestUnit_ControlPlaneNodeSchedulerReconcileCAPIStartsManagedPendingNodeWork
 	scheduler := NewControlPlaneNodeScheduler(config.Config{
 		TemporalTaskQueue:    "test-task-queue",
 		NodeRebootMaxTimeout: 5 * time.Minute,
-	}, slog.Default(), dbwrapper.New(database, slog.Default()), temporalClient, nil)
+	}, slog.Default(), dbwrapper.New(database, slog.Default()), temporalClient)
 
 	result, err := scheduler.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func TestUnit_ControlPlaneNodeSchedulerSkipsDeletingCluster(t *testing.T) {
 		},
 	}, nil).Once()
 
-	scheduler := NewControlPlaneNodeScheduler(config.Config{}, slog.Default(), dbwrapper.New(database, slog.Default()), nil, nil)
+	scheduler := NewControlPlaneNodeScheduler(config.Config{}, slog.Default(), dbwrapper.New(database, slog.Default()), nil)
 	result, err := scheduler.Reconcile(ctx, dbreconcile.ClusterKey(clusterID))
 	require.NoError(t, err)
 	require.Zero(t, result)

@@ -9,11 +9,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -217,6 +220,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   kubeconfigOut,
+		lookPath:        runtimeOnPath,
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -253,6 +257,7 @@ func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
 		cweRunner:       fakeCWERunner{},
 		clusterTimeout:  5 * time.Millisecond,
 		kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:        runtimeOnPath,
 	})
 	if err == nil {
 		t.Fatal("expected an error when the cluster never reports provisioned")
@@ -279,6 +284,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 		cweRunner:         missingKubeconfigRunner{},
 		kubeconfigTimeout: 5 * time.Millisecond,
 		kubeconfigOut:     filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:          runtimeOnPath,
 	})
 	if err == nil {
 		t.Fatal("expected an error when the kubeconfig Secret is not published")
@@ -286,12 +292,25 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 	if runner.sawArgs("delete", "cluster") {
 		t.Error("bootstrap cluster was deleted after the site cluster became provisioned")
 	}
-	for _, want := range []string{"not published", "retained for recovery", "kind delete cluster"} {
+	// The env prefix specifically, not just the command: without it the
+	// operator's copy-pasted `kind delete cluster` resolves through kind's
+	// Docker default, reports the cluster as missing, exits 0, and leaves the
+	// cluster behind for the next run to collide with.
+	for _, want := range []string{
+		"not published",
+		"retained for recovery",
+		"KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name",
+	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
 		}
 	}
 }
+
+// runtimeOnPath stands in for exec.LookPath finding the container runtime, so
+// tests do not require a real nerdctl installation on the machine running
+// `go test`. Tests about the preflight itself supply their own stub.
+func runtimeOnPath(name string) (string, error) { return "/usr/local/bin/" + name, nil }
 
 // setBootstrapEnv fills in the images `bootstrap site` requires, so a test
 // about something else does not fail on one of them.
@@ -304,25 +323,107 @@ func setBootstrapEnv(t *testing.T) {
 	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
 }
 
-// The image lookup must run against the runtime kind loads from. nerdctl is
-// the default provider, and such a host need not have Docker at all.
-func TestRunBootstrapSiteUsesTheProviderCLI(t *testing.T) {
+// The image lookup must run against the runtime kind loads from, and a
+// stale NKECTL_BOOTSTRAP_PROVIDER export must not steer it back to a Docker
+// daemon a host is no longer required to have.
+func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 	setBootstrapEnv(t)
+	t.Setenv("NKECTL_BOOTSTRAP_PROVIDER", "docker")
 	startFakeCWEAPI(t, true)
 
-	// --bootstrap-provider value -> the CLI the lookup must use.
-	for provider, wantCLI := range map[string]string{"": "nerdctl", "docker": "docker"} {
-		runner := &recordingRunner{next: fakeBootstrapRunner{}}
-		_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			siteSpec:        writeSiteSpec(t, validSiteSpec),
-			provider:        provider,
-			bootstrapRunner: runner,
-			cweRunner:       fakeCWERunner{},
-			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		})
-		if !slices.Contains(runner.names, wantCLI) {
-			t.Errorf("provider %q: no %s call; ran %v", provider, wantCLI, runner.names)
-		}
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:        runtimeOnPath,
+	})
+
+	if !slices.Contains(runner.names, bootstrapengine.RuntimeCLI) {
+		t.Errorf("no %s call; ran %v", bootstrapengine.RuntimeCLI, runner.names)
+	}
+	if slices.Contains(runner.names, "docker") {
+		t.Errorf("shelled out to docker; ran %v", runner.names)
+	}
+}
+
+// A Docker-only host must be told what it is missing, through the command
+// itself rather than through a unit-level call. Without the preflight the
+// first failure is kind's — "failed to list clusters", several steps in,
+// with the runtime named only in nested output — because kind execs nerdctl
+// internally rather than this process doing it.
+func TestRunBootstrapSiteRequiresNerdctlOnPath(t *testing.T) {
+	setBootstrapEnv(t)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		lookPath: func(name string) (string, error) {
+			return "", fmt.Errorf("exec: %q: %w", name, exec.ErrNotFound)
+		},
+	})
+	if err == nil {
+		t.Fatal("expected an error when nerdctl is not on PATH")
+	}
+	if !strings.Contains(err.Error(), bootstrapengine.RuntimeCLI) {
+		t.Errorf("error %q does not name the missing runtime", err)
+	}
+	if !strings.Contains(err.Error(), "Docker is not supported") {
+		t.Errorf("error %q does not say Docker is unsupported", err)
+	}
+	// Before the cluster, not after: the point is to fail without having
+	// stood anything up.
+	if runner.sawArgs("create", "cluster") {
+		t.Errorf("a missing runtime should be caught before the cluster is built; calls: %v", runner.calls)
+	}
+}
+
+// An absent nerdctl is the first thing a Docker-only host hits, and pulling
+// cannot fix it. The error has to name the requirement rather than blaming a
+// registry login the operator has already done.
+func TestEnsureImageAvailableDiagnosesMissingNerdctl(t *testing.T) {
+	engine := bootstrapengine.New(runnerFunc(
+		func(_ context.Context, _ map[string]string, _ string, _ ...string) (string, error) {
+			return "", fmt.Errorf("exec %q: %w", bootstrapengine.RuntimeCLI, exec.ErrNotFound)
+		}), nil)
+
+	err := ensureImageAvailable(context.Background(), engine,
+		&bootstrapengine.Cluster{Name: "c"}, "nvcr.io/org/controller:edge", slog.New(slog.DiscardHandler))
+	if err == nil {
+		t.Fatal("expected an error when nerdctl is not on PATH")
+	}
+	if !strings.Contains(err.Error(), bootstrapengine.RuntimeCLI) {
+		t.Errorf("error %q does not name the missing runtime", err)
+	}
+	if strings.Contains(err.Error(), "authentication failure") {
+		t.Errorf("a missing binary was reported as an auth failure: %v", err)
+	}
+}
+
+// runnerFunc adapts a function to bootstrapengine.CommandRunner.
+type runnerFunc func(ctx context.Context, env map[string]string, name string, args ...string) (string, error)
+
+func (f runnerFunc) Run(ctx context.Context, env map[string]string, name string, args ...string) (string, error) {
+	return f(ctx, env, name, args...)
+}
+
+// The flag is gone outright rather than rejecting "docker" by value, so
+// cobra's own unknown-flag error is the contract.
+func TestBootstrapSiteRejectsBootstrapProviderFlag(t *testing.T) {
+	cmd := newBootstrapCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"site", "-f", writeSiteSpec(t, validSiteSpec), "--bootstrap-provider", "docker"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected --bootstrap-provider to be rejected")
+	}
+	if !strings.Contains(err.Error(), "unknown flag") {
+		t.Errorf("error %q does not report an unknown flag", err)
 	}
 }
 
@@ -342,6 +443,7 @@ func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
+		lookPath:        runtimeOnPath,
 	})
 	if err == nil {
 		t.Fatal("expected an error for a missing NKECTL_CWE_IMAGE")
@@ -449,6 +551,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       fakeCWERunner{},
 			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+			lookPath:        runtimeOnPath,
 		})
 		if err != nil {
 			t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -469,6 +572,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			diagnosticsDir:  dir,
 			bootstrapRunner: fakeBootstrapRunner{},
 			cweRunner:       unhealthyCWERunner{},
+			lookPath:        runtimeOnPath,
 		})
 		if err == nil {
 			t.Fatal("expected a real failure")

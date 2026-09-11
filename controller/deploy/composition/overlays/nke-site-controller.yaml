@@ -1,0 +1,90 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# nke-site-controller nesting overlay.
+#
+# These are the values that make nke-site-controller embed nke-stack, verified
+# by rendering against the real chart with all 27 of its dependencies resolved:
+# 364 resources, zero duplicates, zero references to the Bitnami postgres
+# service. They belong in nke-site-controller's own values.yaml -- this file
+# records them so the milestone starts from a tested delta rather than
+# rediscovering it.
+#
+# TWO UPSTREAM CHANGES ARE REQUIRED FIRST, both one line:
+#   * nke-site-controller Chart.yaml: cloud-workflow-engine is the only
+#     dependency with no `condition:`, so cloud-workflow-engine.enabled=false is
+#     a no-op and its chart renders alongside nke-stack's. Add
+#     `condition: cloud-workflow-engine.enabled`.
+#   * nke-spire Chart.yaml: its `spire` dependency has no condition either, so
+#     nke-spire cannot contribute its three registration templates without also
+#     installing spire 0.27.1. Add `condition: spire.enabled` -- or drop
+#     nke-spire entirely and move its three templates into nke-site-controller,
+#     which is the cleaner option since registration.namespaces names
+#     site-workflow-engine, a concern nke-stack knows nothing about.
+#
+# Chart repositories cannot be overridden by values -- Helm resolves
+# dependencies before values exist -- but IMAGE repositories can, at any
+# nesting depth. That is why the image override below works without rebuilding
+# nke-stack against nvcr.
+# ── values for nke-site-controller ──────────────────────────────────────────
+nke-stack:
+  enabled: true
+  postgresql:
+    enabled: false          # CNPG stays; see the rewiring below
+  spire-crds:
+    enabled: false          # site-controller already declares it
+  # nke-stack's controller chart. Renamed upstream from cloud-workflow-engine;
+  # site-controller's own dependency below still carries the old name because it
+  # pins 0.0.624 from the internal GitLab lineage.
+  controller:
+    # site-workflow-engine renders nke-system unconditionally, so CWE must not.
+    nkeSystemNamespace:
+      create: false
+    # The DB connection comes from a tier0-provisioned secret, not from values,
+    # so nothing here names a host. This replaces nke-stack's appDb.url, which
+    # points at the Bitnami service that postgresql.enabled=false removes.
+    # Chart repository is build-time only (helm resolves dependencies before
+    # values exist), but the IMAGE is a value -- so the nested deployment points
+    # at the nvcr mirror and its pull secret without rebuilding nke-stack.
+    image:
+      repository: nvcr.io/j7sbcjl3qgta/controller
+    imagePullSecrets:
+      - name: svc-nke-ngc-imagepull
+    secrets:
+      createDbSecret: false
+      dbSecretName: cloud-workflow-engine-db
+    additionalInitContainers:
+      - name: wait-for-cnpg-cloud
+        image: nvcr.io/j7sbcjl3qgta/cgr_dev__chainguard__bash:latest
+        command: ["bash","-c","until (exec 3<>/dev/tcp/cnpg-cloud-rw.cnpg-cloud.svc.cluster.local/5432) 2>/dev/null; do sleep 2; done"]
+  temporal:
+    server:
+      config:
+        persistence:
+          default:
+            sql:
+              host: cnpg-temporal-rw.cnpg-temporal.svc.cluster.local
+              existingSecret: temporal-db
+              maxConns: 20
+              maxConnLifetime: "1h"
+          visibility:
+            sql:
+              host: cnpg-temporal-rw.cnpg-temporal.svc.cluster.local
+              existingSecret: temporal-db
+              maxConns: 20
+              maxConnLifetime: "1h"
+      additionalInitContainers:
+        - name: wait-for-cnpg-temporal
+          image: nvcr.io/j7sbcjl3qgta/cgr_dev__chainguard__bash:latest
+          command: ["bash","-c","until nc -z cnpg-temporal-rw.cnpg-temporal.svc.cluster.local 5432; do sleep 2; done"]
+
+# site-controller stops declaring what nke-stack now carries. Without these,
+# both charts render the same <release>-<component> names and collide.
+cert-manager:
+  enabled: false
+cloud-workflow-engine:
+  enabled: false
+temporal:
+  enabled: false
+nke-spire:
+  enabled: false

@@ -44,9 +44,9 @@ the dependency tree without the build going red.
 **Nothing.** Every binary this repository redistributes now carries generated
 attribution, and CI regenerates and compares all four on every push.
 
-`capd-reboot-controller` and `nico-mock` are built by `make build` but shipped
-nowhere — no image, no artifact, no package. If either starts shipping, it needs
-a row above and a `notices` target of its own.
+`capd-reboot-controller` is built by `make build` but shipped nowhere — no
+image, no artifact, no package. If it starts shipping, it needs a row above and
+a `notices` target of its own.
 
 ⚠️ **This section listed two open gaps until 2026-08-16**, describing a
 `controller/THIRD_PARTY_NOTICES.md` that existed but was unverified, and a

@@ -123,7 +123,6 @@ All Go files must use the repository's Apache-2.0 SPDX header. Run `make license
 │   ├── controllers/        # Background controllers (auto-provisioner, health checks)
 │   ├── db/                 # Database layer (Bun ORM, migrations)
 │   │   └── migrations/     # Database migration files
-│   ├── providers/forge/    # Forge API client with caching
 │   ├── server/             # HTTP server and API handlers
 │   └── temporal/
 │       ├── activities/     # Temporal activity implementations
@@ -165,7 +164,6 @@ Key configuration (see `internal/config/config.go` for full list):
 | `LOG_LEVEL` | `info` | Log level (debug/info/warn/error) |
 | `DB_CONNECTION_STRING` | `postgres://...` | PostgreSQL connection string |
 | `TEMPORAL_HOST_PORT` | `localhost:7233` | Temporal server for CWE workflows |
-| `FWE_API_KEY` | (required) | NGC API key for Forge API |
 | `PROFILES_DIR` | `./profiles` | Directory for OS/config profiles. Fleet profile content is maintained outside this repository and supplied at deploy time; this repo ships only example profiles. |
 | `SPIFFE_ENDPOINT_SOCKET` | (optional) | SPIRE agent socket path for SPIFFE identity (e.g., `unix:///tmp/spire-agent/agent.sock`) |
 | `AUTH_CONFIG_PATH` | (unset) | API authentication config file. Unset disables authentication entirely, which is what a host-local `go run` gets. Set but unreadable is a startup failure, never "disabled". |
@@ -180,7 +178,7 @@ Preferred day-to-day path is CAPI + Tilt (see `README.md` in this directory).
 2. Start PostgreSQL (see above)
 3. Run CWE:
  ```bash
- TEMPORAL_HOST_PORT=localhost:7233 FWE_API_KEY=<NGC_API_KEY> go run ./cmd/worker/main.go
+ TEMPORAL_HOST_PORT=localhost:7233 go run ./cmd/worker/main.go
  ```
 4. Access Swagger UI at http://localhost:8080/api/docs.
 
@@ -193,7 +191,17 @@ The two local paths differ, and that is the usual source of confusion:
 | `make run` / `go run ./cmd/worker/main.go` | **off** — `AUTH_CONFIG_PATH` is unset, every request is served |
 | `tilt up` | **enforcing** — `/api/*` needs a bearer token |
 
-So a bare `curl` that works host-local returns 401 under Tilt. Get a token:
+So a bare `curl` that works host-local returns 401 under Tilt. `nkectl` mints
+from the kind kubeconfig and does not need a token environment variable:
+
+```bash
+nkectl config set-site --name local \
+  --url http://localhost:8080 \
+  --kubeconfig ~/.kube/config
+nkectl get clusters
+```
+
+For `curl`, get a token:
 
 ```bash
 TOKEN="$(hack/nke-token.sh)"
@@ -246,7 +254,7 @@ make test
 ```
 
 ### Integration Tests
-These run against a live CWE deployment and use real Forge resources:
+These run against a live CWE deployment:
 ```bash
 cd integration-test
 CWE_API_URL=http://localhost:8080/api go test -tags integration_test -v -timeout=3h

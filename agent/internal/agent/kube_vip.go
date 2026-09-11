@@ -36,7 +36,7 @@ const (
 	kubeVipKubeconfigPath      = "/etc/kubernetes/kube-vip.conf"
 	kubeVipContainerKubeconfig = "/etc/kubernetes/admin.conf"
 	kubeVipCACertPath          = "/etc/kubernetes/pki/ca.crt"
-	forgeFMDSASNURL            = "http://169.254.169.254:7777/latest/meta-data/asn"
+	defaultForgeFMDSASNURL     = "http://169.254.169.254:7777/latest/meta-data/asn"
 	kubeVipImage               = "ghcr.io/kube-vip/kube-vip:v1.2.0@sha256:fe8c7b6641ba7633a12b337821e9e83a6456e8edc3434f97577058edd4eecaf6"
 	kubeVipLocalAPIServer      = "https://kubernetes:6443"
 	kubeVipFMDSConnectTimeout  = 10 * time.Second
@@ -253,13 +253,17 @@ func (s *NodeAgentServer) resolveKubeVipPeerASN(ctx context.Context, req *pb.Rec
 	if req.GetBgpPeerAsnSource() == pb.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC {
 		return req.GetBgpPeerAsn(), nil
 	}
-	if s.kubeVipFetchASN != nil {
-		return s.kubeVipFetchASN(ctx)
+	fmdsEndpoint := req.GetFmdsEndpoint()
+	if fmdsEndpoint == "" {
+		fmdsEndpoint = defaultForgeFMDSASNURL
 	}
-	return fetchKubeVipASNFromFMDS(ctx)
+	if s.kubeVipFetchASN != nil {
+		return s.kubeVipFetchASN(ctx, fmdsEndpoint)
+	}
+	return fetchKubeVipASNFromFMDS(ctx, fmdsEndpoint)
 }
 
-func fetchKubeVipASNFromFMDS(ctx context.Context) (uint32, error) {
+func fetchKubeVipASNFromFMDS(ctx context.Context, fmdsEndpoint string) (uint32, error) {
 	// FNN sites learn the DPU peer ASN from Forge Metadata Service. Bound both
 	// connection establishment and the complete request so reconciliation does
 	// not hang during metadata-service failures.
@@ -270,7 +274,7 @@ func fetchKubeVipASNFromFMDS(ctx context.Context) (uint32, error) {
 		Timeout:   kubeVipFMDSRequestTimeout,
 		Transport: transport,
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, forgeFMDSASNURL, nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, fmdsEndpoint, nil)
 	if err != nil {
 		return 0, fmt.Errorf("create FMDS request: %w", err)
 	}

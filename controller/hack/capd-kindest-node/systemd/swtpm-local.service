@@ -2,7 +2,7 @@
 # The order matters because:
 #   - `spire-agent` needs `/dev/tpm0` or `/dev/tpmrm0` before the TPM attestor
 #     can complete node attestation
-#   - `nico-mock` only marks a container ready after the EK cert exists
+#   - `nico-containers` only marks a container ready after the EK cert exists
 #   - `nke-agent` should not advertise a SPIFFE-enabled node until the SPIRE
 #     agent can actually come up successfully
 [Unit]

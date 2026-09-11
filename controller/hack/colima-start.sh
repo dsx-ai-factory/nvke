@@ -37,6 +37,30 @@ ensure_command() {
     command -v "${cmd}" >/dev/null 2>&1 || fail "'${cmd}' is required but not installed"
 }
 
+setup_failed() {
+    local step="$1"
+    echo "" >&2
+    echo "colima-start: failed while ${step}." >&2
+    echo "colima-start: the VM is NOT ready for CWE local development." >&2
+    echo "" >&2
+    echo "If Docker did not come up:" >&2
+    echo "  colima ssh -- sudo systemctl reset-failed docker.service && colima ssh -- sudo systemctl start docker.service" >&2
+    echo "  colima ssh -- sudo journalctl -u docker.service -n 120 --no-pager" >&2
+    echo "If /dev/vtpmx is missing, the vTPM proxy module is not loaded:" >&2
+    echo "  colima ssh -- modinfo tpm_vtpm_proxy && colima ssh -- ls -l /dev/vtpmx" >&2
+}
+
+# Check steps individually: bash ignores `set -e` where a command's status is
+# tested, so `if ! ( set -euo pipefail; ... )` silently swallowed every failure.
+run_step() {
+    local description="$1"
+    shift
+    if ! "$@"; then
+        setup_failed "${description}"
+        return 1
+    fi
+}
+
 configure_colima_vm() {
     colima ssh -- sudo sh -c "
 set -eu
@@ -140,32 +164,24 @@ main() {
     local docker_host
     docker_host="$(docker_host_for_profile)"
 
-    if ! (
-        set -euo pipefail
+    ensure_command colima
 
-        ensure_command colima
+    if [[ "$(uname -s)" != "Darwin" ]]; then
+        echo "colima-start: Colima setup is primarily intended for macOS." >&2
+    fi
 
-        if [[ "$(uname -s)" != "Darwin" ]]; then
-            echo "colima-start: Colima setup is primarily intended for macOS." >&2
-        fi
-
+    run_step "starting the Colima VM" \
         colima start \
             --cpu "${COLIMA_CPUS}" \
             --memory "${COLIMA_MEMORY_GIB}" \
             --disk "${COLIMA_DISK_GIB}" \
             --runtime "${COLIMA_RUNTIME}" \
-            --profile "${COLIMA_PROFILE}"
+            --profile "${COLIMA_PROFILE}" || return 1
 
-        configure_colima_vm
-        ensure_colima_vtpm_proxy
-        verify_colima_vm
-        verify_colima_size
-    ); then
-        echo "colima-start: failed to configure/start Docker in Colima" >&2
-        echo "Try: colima ssh -- sudo systemctl reset-failed docker.service && colima ssh -- sudo systemctl start docker.service" >&2
-        echo "Then inspect: colima ssh -- sudo journalctl -u docker.service -n 120 --no-pager" >&2
-        return 1
-    fi
+    run_step "configuring the Colima VM" configure_colima_vm || return 1
+    run_step "installing the vTPM proxy module" ensure_colima_vtpm_proxy || return 1
+    run_step "verifying the Colima VM" verify_colima_vm || return 1
+    run_step "verifying the Colima VM size" verify_colima_size || return 1
 
     echo ""
     echo "Colima is ready for CWE local development."

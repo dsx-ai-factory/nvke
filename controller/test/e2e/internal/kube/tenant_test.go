@@ -753,7 +753,7 @@ func testClientKubeconfig(t *testing.T) []byte {
 
 func spireServerConfigMapObject(serverConfig string) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Name: spireServerConfigMap, Namespace: spireServerNamespace},
+		ObjectMeta: metav1.ObjectMeta{Name: spireServerConfigMapName(), Namespace: spireServerNamespace},
 		Data:       map[string]string{spireServerConfigKey: serverConfig},
 	}
 }

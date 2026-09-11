@@ -42,6 +42,7 @@ indexes both.
 |---|---|
 | [tenant-clusters/node-lifecycle.md](tenant-clusters/node-lifecycle.md) | What happens to a node through its life |
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
+| [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nkectl` |
 | [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |
 
 ## The modules
@@ -55,10 +56,9 @@ exist.
 | Node agent | [../agent/README.md](../agent/README.md) |
 | `nkectl` | [../cli/README.md](../cli/README.md) |
 | Generated API | [../controller/api/README.md](../controller/api/README.md) |
-| VM manager for tests | [../controller/nico-vms/README.md](../controller/nico-vms/README.md) |
+| `nico-sim` VM and container simulator | [../controller/nico-sim/README.md](../controller/nico-sim/README.md) |
 | Reference node OS image | [../os-image/README.md](../os-image/README.md) |
 | Cluster API provider | [../cluster-api-provider-provisioned/README.md](../cluster-api-provider-provisioned/README.md) |
-| NICo and Forge stand-in | [../controller/hack/nico-mock/README.md](../controller/hack/nico-mock/README.md) |
 | CAPD reboot test helper | [../controller/hack/capd-reboot-controller/README.md](../controller/hack/capd-reboot-controller/README.md) |
 
 Deeper module documentation:
@@ -79,7 +79,7 @@ Deeper module documentation:
 |---|---|
 | [../controller/test/e2e/README.md](../controller/test/e2e/README.md) | The end to end suite |
 | [../controller/integration-test/README.md](../controller/integration-test/README.md) | The integration tests |
-| [../controller/nico-vms/docs/e2e-testing.md](../controller/nico-vms/docs/e2e-testing.md) | End to end testing for nico-vms |
+| [../controller/nico-sim/docs/e2e-testing.md](../controller/nico-sim/docs/e2e-testing.md) | End-to-end testing for nico-sim's VM backend |
 
 ## Project and process
 

@@ -159,8 +159,8 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		return fmt.Errorf("unsupported CNI plugin: %s", cluster.CniPlugin)
 	}
 
-	if err := a.ensureKubeadmPatches(ctx, node, nodePool); err != nil {
-		return fmt.Errorf("failed to prepare kubeadm patches on node %s: %w", node.Name, err)
+	if err := a.ensureKubeadmFiles(ctx, node, artifacts.Files); err != nil {
+		return fmt.Errorf("failed to prepare kubeadm files on node %s: %w", node.Name, err)
 	}
 
 	if _, err := a.nodeAgentClient.ExecuteKubeadmInit(ctx, node, req); err != nil {

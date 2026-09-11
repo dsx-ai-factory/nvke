@@ -1,7 +1,7 @@
 # Site and Tenant Cluster Flow
 
 What `nkectl` does today, in the order an operator uses it. Every command
-below is on `main`; the steps the CLI does not cover yet are marked.
+below is on `main`; the steps the CLI does not cover are marked.
 `nkectl <command> --help` is the authoritative reference for flags.
 
 ## Commands
@@ -12,18 +12,22 @@ below is on `main`; the steps the CLI does not cover yet are marked.
 | `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
 | Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nkectl` command yet. | Not in the CLI |
 | `nkectl config set-site --url <cwe-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
-| `nkectl configure provider --type <nico\|launchlayer> ...` | Gives an installed infrastructure provider the endpoint and credentials it needs to create machines. Alpha. | Planned |
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get clusters` | Lists tenant clusters. `-c <name>` filters, `-o json\|yaml` changes the format. | Available |
-| `nkectl describe cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
-| `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. | Not on `main`: [#269](https://github.com/NVIDIA/nke/pull/269) |
+| `nkectl get clusters --cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
+| `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
+| `nkectl update cluster <name>` | Updates a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config) via `--set key=value` and/or `-f patch.yaml`. | Available |
+| `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
+| `nkectl get nodepools` | Lists node pools. `--cluster <name>` filters by cluster. | Planned |
+| `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |
+| `nkectl update nodepool <name> --cluster <name>` | Updates a mutable node pool property (desired count, instance type). | Planned |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
-`cluster` and `clusters` are aliases on `create`, `describe`, `get` and
-`delete`. Global flags: `--site <name>` overrides the active site for one
-invocation, `-v` enables debug logging, `--json-logs` emits logs as JSON.
+`cluster` and `clusters` are aliases on `create`, `get`, `update` and `delete`. Global
+flags: `--site <name>` overrides the active site for one invocation, `-v`
+enables debug logging, `--json-logs` emits logs as JSON.
 
 ## Example
 
@@ -62,8 +66,8 @@ nkectl bootstrap site -f sitespec.yaml --dry-run
 REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml
 ```
 
-The command needs Docker or nerdctl on the host (`--bootstrap-provider`, nerdctl
-by default) and network reach to the hosts' `nke-agent` ports. On success it
+The command needs nerdctl and containerd on the host, and network reach to
+the hosts' `nke-agent` ports. On success it
 writes `my-tier0-site.kubeconfig` in the working directory (`--kubeconfig-out`
 changes the path) and removes the Kind cluster. On failure it writes cluster
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
@@ -86,30 +90,41 @@ nkectl config view
 ```
 
 `--url` is the CWE API. `--kubeconfig` is the site cluster's kubeconfig; `get
-providers` and, once it lands, `get kubeconfig` read the cluster directly and
-need it.
+providers` and `get kubeconfig` read the cluster directly and need it.
 
-### 5. Configure and check the infrastructure providers
+CWE API commands (`get`/`create`/`describe`/`delete` clusters) use that
+kubeconfig to authenticate: they read the audience from ConfigMap
+`cloud-workflow-engine/nke-auth-config` and mint a TokenRequest for
+`nke-clients/nke-client`. If the ConfigMap is absent, authentication is off
+and the CLI sends no bearer token.
 
-A tenant cluster is created on an infrastructure provider that is installed on
-the site cluster and holds credentials for its backend. Configure one, then
-confirm the site can use it:
+The kubeconfig identity needs `create` on `serviceaccounts/token` for
+`nke-client`. See
+[Configuring NKE API Authentication](../../controller/docs/configuring-api-authentication.md).
+
+### 5. Check the infrastructure providers
+
+A tenant cluster is created on an infrastructure provider: a controller running
+on the site cluster that holds credentials for its backend and creates machines
+there. Installing a provider and giving it those credentials is a deployment
+step, done with Helm, Argo CD, or `kubectl` against the site cluster — not with
+`nkectl`. Once it is done, confirm the site can use it:
 
 ```bash
-# Planned: gives the provider its backend endpoint and credentials
-nkectl configure provider --type nico ...
-
 nkectl get providers
 ```
 
-`get providers` lists each provider the CLI knows about and its state;
-`CONFIGURED` means the provider is installed and has credentials. Needs
-`kubectl` on `PATH`.
+`get providers` lists each provider the CLI knows about and its state, so you
+can tell an uninstalled provider from a misconfigured one before creating a
+cluster on it. `CONFIGURED` means the provider's CRDs are established, its
+controller is running, and its credentials are in place; it does not prove the
+credentials work. Needs `kubectl` on `PATH` and the site kubeconfig from
+step 4.
 
-On a site where Argo CD manages the providers, do not run `configure provider`.
-Keep the provider and its credentials in git and let Argo apply them, as for the
-rest of the site. `get providers` is the same either way: it reports what is on
-the cluster, whichever tool put it there.
+`nkectl` only reads this state and never changes it, so it makes no difference
+whether Helm, Argo CD, or a person applied the provider — the same command
+reports it either way. On a site managed by Argo CD, that makes `get providers`
+the check that what Argo synced is something a provider can actually use.
 
 ### 6. Create a tenant cluster
 
@@ -128,20 +143,19 @@ is a starting point.
 
 ```bash
 nkectl get clusters
-nkectl describe cluster <cluster-name>
-nkectl describe cluster <cluster-name> -o yaml
+nkectl get clusters --cluster <cluster-name>
+nkectl get clusters --cluster <cluster-name> -o yaml
 ```
 
 ### 8. Get the tenant cluster's kubeconfig
 
-`nkectl get kubeconfig <cluster-name>` is in review
-([#269](https://github.com/NVIDIA/nke/pull/269)). Until it merges, CWE
-publishes the kubeconfig as a Secret in the site cluster:
-
 ```bash
-kubectl --kubeconfig ./my-tier0-site.kubeconfig -n nke-system \
-  get secret <cluster-name>-admin-kubeconfig -o jsonpath='{.data.value}' | base64 -d
+nkectl get kubeconfig <cluster-name> --output-file ./tenant.kubeconfig
 ```
+
+Without `--output-file`, the kubeconfig is written to stdout. This reads the
+site cluster directly, the same as `get providers`, so it needs the site
+kubeconfig from step 4.
 
 ### 9. Delete the tenant cluster
 

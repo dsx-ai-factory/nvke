@@ -1,0 +1,914 @@
+/**
+ * SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+:root {
+    --nvidia-green: #76b900;
+    --nvidia-highlight: #8dd419;
+    --nvidia-dark: #1a1a1a;
+    --nvidia-darker: #121212;
+    --nvidia-light: #333333;
+    --nvidia-text: #e0e0e0;
+    --nvidia-text-dim: #999999;
+    --nvidia-border: #555555;
+    --nvidia-hover: #444444;
+    --nvidia-shadow: rgba(0, 0, 0, 0.5);
+    --nvidia-error: #ff5555;
+    --nvidia-warning: #ff9900;
+    --nvidia-info: #4a90e2;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--nvidia-darker);
+    color: var(--nvidia-text);
+}
+
+/* ── Header ─────────────────────────────────────────── */
+
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 0;
+    border-bottom: 2px solid var(--nvidia-green);
+    margin-bottom: 20px;
+}
+
+.logo {
+    font-size: 1.4em;
+    font-weight: 700;
+    color: var(--nvidia-green);
+    letter-spacing: -0.5px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85em;
+    color: var(--nvidia-text-dim);
+}
+
+.auto-refresh-toggle {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.auto-refresh-toggle input {
+    accent-color: var(--nvidia-green);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--nvidia-green);
+    transition: background 0.3s;
+}
+
+.status-dot.error { background: var(--nvidia-error); }
+
+/* ── Layout ─────────────────────────────────────────── */
+
+.wrapper {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 16px 24px;
+}
+
+.view-tabs {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+    border-bottom: 1px solid rgba(118, 185, 0, 0.18);
+    padding-bottom: 10px;
+}
+
+.view-tab {
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--nvidia-text-dim);
+    padding: 7px 12px;
+    font-size: 0.82em;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.view-tab:hover {
+    color: var(--nvidia-text);
+    background: rgba(118, 185, 0, 0.06);
+}
+
+.view-tab.active {
+    color: var(--nvidia-green);
+    background: rgba(118, 185, 0, 0.1);
+    border-color: rgba(118, 185, 0, 0.24);
+}
+
+.view-panel[hidden] {
+    display: none;
+}
+
+#instances-view .panel + .panel {
+    margin-top: 18px;
+}
+
+.files-note {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(118, 185, 0, 0.18);
+    border-radius: 4px;
+    background: rgba(118, 185, 0, 0.05);
+    color: var(--nvidia-text-dim);
+    font-size: 0.82em;
+    line-height: 1.5;
+}
+
+.files-note code {
+    color: #b9ea72;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(85, 85, 85, 0.4);
+    border-radius: 4px;
+    padding: 2px 5px;
+}
+
+/* ── Panel ──────────────────────────────────────────── */
+
+.panel {
+    background: var(--nvidia-dark);
+    border-radius: 6px;
+    box-shadow: 0 4px 12px var(--nvidia-shadow);
+    overflow: hidden;
+}
+
+.panel-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--nvidia-light);
+}
+
+.panel-header h2 {
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--nvidia-text);
+}
+
+.panel-header-split {
+    justify-content: space-between;
+}
+
+.panel-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.panel-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1 1 auto;
+    justify-content: flex-end;
+}
+
+.panel-meta {
+    color: var(--nvidia-text-dim);
+    font-size: 0.78em;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    max-width: none;
+    flex: 1 1 auto;
+    text-align: right;
+    word-break: break-all;
+}
+
+.count-badge {
+    font-size: 0.75em;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(118, 185, 0, 0.15);
+    color: var(--nvidia-green);
+    font-weight: 600;
+}
+
+/* ── Table ──────────────────────────────────────────── */
+
+.table-wrap { overflow-x: auto; }
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85em;
+}
+
+#vm-instance-table,
+#container-instance-table {
+    table-layout: fixed;
+    min-width: 1100px;
+}
+
+.instance-col-name { width: 18%; }
+.instance-col-status { width: 10%; }
+.instance-col-ip { width: 13%; }
+.instance-col-type { width: 18%; }
+.instance-col-dhcp { width: 8%; }
+.instance-col-phone { width: 10%; }
+.instance-col-created { width: 11%; }
+.instance-col-actions { width: 12%; }
+
+#vm-instance-table > tbody > tr:not(.detail-row) > td,
+#container-instance-table > tbody > tr:not(.detail-row) > td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#vm-instance-table > tbody > tr:not(.detail-row) > td:last-child,
+#container-instance-table > tbody > tr:not(.detail-row) > td:last-child {
+    overflow: visible;
+    text-overflow: clip;
+}
+
+#vm-instance-table td:last-child .btn,
+#container-instance-table td:last-child .btn {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+thead th {
+    text-align: left;
+    padding: 10px 16px;
+    font-weight: 600;
+    font-size: 0.8em;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--nvidia-text-dim);
+    border-bottom: 1px solid var(--nvidia-light);
+    white-space: nowrap;
+}
+
+tbody td {
+    padding: 10px 16px;
+    border-bottom: 1px solid rgba(85, 85, 85, 0.3);
+    white-space: nowrap;
+}
+
+tbody tr {
+    transition: background 0.15s;
+}
+
+tbody tr:hover {
+    background: rgba(118, 185, 0, 0.04);
+}
+
+.col-name {
+    font-weight: 600;
+    color: #fff;
+}
+
+.col-ip {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.92em;
+}
+
+.col-id {
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.88em;
+    color: var(--nvidia-text-dim);
+}
+
+/* ── Expandable rows ─────────────────────────────── */
+
+tr.expandable { cursor: pointer; }
+
+.chevron {
+    display: inline-block;
+    font-size: 0.75em;
+    transition: transform 0.15s;
+    color: var(--nvidia-text-dim);
+    width: 12px;
+}
+
+.chevron.open { transform: rotate(90deg); }
+
+.detail-row td {
+    padding: 0 !important;
+    border-bottom: 1px solid rgba(85, 85, 85, 0.3);
+    background: var(--nvidia-darker);
+}
+
+.detail-row[hidden] { display: none; }
+
+.detail-content {
+    padding: 12px 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.detail-field label {
+    display: block;
+    font-size: 0.75em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--nvidia-text-dim);
+    margin-bottom: 4px;
+}
+
+.detail-field pre code.hljs { background: transparent; padding: 0; }
+
+.detail-empty {
+    color: var(--nvidia-text-dim);
+    font-style: italic;
+}
+
+.detail-field pre {
+    margin: 0;
+    padding: 10px 14px;
+    background: rgba(30, 30, 30, 0.6);
+    border: 1px solid var(--nvidia-light);
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.95em;
+    line-height: 1.5;
+    color: var(--nvidia-text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--nvidia-text-dim);
+    padding: 40px 16px !important;
+    font-style: italic;
+}
+
+/* ── Status badges ──────────────────────────────────── */
+
+.badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.82em;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+.badge-ready       { background: rgba(118, 185, 0, 0.15); color: #8dd419; }
+.badge-provisioning,
+.badge-configuring  { background: rgba(255, 153, 0, 0.15); color: var(--nvidia-warning); }
+.badge-new          { background: rgba(74, 144, 226, 0.15); color: var(--nvidia-info); }
+.badge-rebooting    { background: rgba(74, 144, 226, 0.15); color: var(--nvidia-info); }
+.badge-error        { background: rgba(255, 85, 85, 0.15); color: var(--nvidia-error); }
+.badge-terminating  { background: rgba(153, 153, 153, 0.15); color: var(--nvidia-text-dim); }
+
+/* ── Buttons ────────────────────────────────────────── */
+
+.btn {
+    border: none;
+    border-radius: 4px;
+    padding: 6px 14px;
+    font-size: 0.82em;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, opacity 0.15s;
+}
+
+.btn:hover { opacity: 0.85; }
+
+.btn-console {
+    background: rgba(118, 185, 0, 0.12);
+    color: var(--nvidia-green);
+    border: 1px solid rgba(118, 185, 0, 0.3);
+}
+
+.btn-console:hover {
+    background: rgba(118, 185, 0, 0.25);
+}
+
+.btn-delete {
+    background: rgba(255, 85, 85, 0.12);
+    color: var(--nvidia-error);
+    border: 1px solid rgba(255, 85, 85, 0.3);
+}
+
+.btn-delete:hover {
+    background: rgba(255, 85, 85, 0.25);
+}
+
+.btn-secondary {
+    background: var(--nvidia-light);
+    color: var(--nvidia-text);
+}
+
+.btn-small {
+    padding: 5px 10px;
+    font-size: 0.78em;
+}
+
+/* ── Boolean indicators ─────────────────────────────── */
+
+.bool-yes { color: var(--nvidia-green); }
+.bool-no  { color: var(--nvidia-text-dim); }
+
+/* ── Files Browser ─────────────────────────────────── */
+
+.files-browser {
+    display: grid;
+    grid-template-columns: minmax(300px, 420px) minmax(0, 1fr);
+    min-height: 420px;
+}
+
+.files-tree-pane {
+    border-right: 1px solid var(--nvidia-light);
+    background: rgba(18, 18, 18, 0.55);
+    min-width: 0;
+}
+
+.files-details-pane {
+    min-width: 0;
+}
+
+.files-tree,
+.files-details {
+    height: 100%;
+    min-height: 420px;
+}
+
+.files-tree {
+    padding: 14px 16px 18px;
+    overflow: auto;
+}
+
+.files-tree-empty {
+    color: var(--nvidia-text-dim);
+    font-size: 0.85em;
+}
+
+.file-tree-node {
+    position: relative;
+}
+
+.file-tree-node.root {
+    padding-left: 0;
+}
+
+.file-tree-node:not(.root) {
+    padding-left: 18px;
+}
+
+.file-tree-node:not(.root)::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid rgba(118, 185, 0, 0.18);
+    pointer-events: none;
+}
+
+.file-tree-node.last-sibling:not(.root)::before {
+    bottom: auto;
+    height: 15px;
+}
+
+.file-tree-node:not(.root)::after {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 15px;
+    width: 10px;
+    border-top: 1px solid rgba(118, 185, 0, 0.22);
+    pointer-events: none;
+}
+
+.file-tree-children {
+    position: relative;
+}
+
+.file-tree-entry {
+    display: block;
+    width: 100%;
+    min-height: 30px;
+    padding: 6px 8px;
+    border: none;
+    background: none;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    position: relative;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--nvidia-text);
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+
+.file-tree-entry:hover {
+    background: rgba(118, 185, 0, 0.08);
+}
+
+.file-tree-entry.selected {
+    background: rgba(118, 185, 0, 0.14);
+    color: #fff;
+}
+
+.file-tree-entry.selected:hover {
+    background: rgba(118, 185, 0, 0.18);
+}
+
+.file-tree-node.is-dir > .file-tree-entry {
+    font-weight: 600;
+}
+
+.file-tree-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.84em;
+}
+
+.file-tree-meta {
+    flex-shrink: 0;
+    color: var(--nvidia-text-dim);
+    font-size: 0.72em;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+.files-details {
+    padding: 18px 20px 22px;
+    overflow: auto;
+    background:
+        linear-gradient(180deg, rgba(118, 185, 0, 0.09), rgba(141, 212, 25, 0.03) 18%, transparent 42%),
+        var(--nvidia-dark);
+}
+
+.files-details-header {
+    margin-bottom: 14px;
+}
+
+.files-details-header h3 {
+    font-size: 1em;
+    font-weight: 600;
+    color: var(--nvidia-highlight);
+    word-break: break-word;
+}
+
+.files-details-subtitle {
+    margin-top: 4px;
+    color: #9ed34a;
+    font-size: 0.8em;
+    word-break: break-all;
+}
+
+.files-details-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 18px;
+    margin-bottom: 16px;
+}
+
+.files-detail-field label,
+.files-preview label {
+    display: block;
+    margin-bottom: 4px;
+    color: #b2de67;
+    font-size: 0.74em;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.files-detail-field code,
+.files-detail-field a {
+    color: var(--nvidia-text);
+    font-size: 0.84em;
+    word-break: break-all;
+}
+
+.files-detail-field code {
+    display: inline-block;
+    padding: 5px 8px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(85, 85, 85, 0.45);
+}
+
+.files-detail-field code.value-type-dir {
+    color: #8dd419;
+}
+
+.files-detail-field code.value-type-file {
+    color: #c7eb84;
+}
+
+.files-detail-field code.value-number {
+    color: #8dd419;
+}
+
+.files-detail-field code.value-path {
+    color: #b9ea72;
+}
+
+.files-detail-field code.value-muted {
+    color: var(--nvidia-text-dim);
+}
+
+.files-detail-field a {
+    display: inline-block;
+    padding: 5px 8px;
+    border-radius: 4px;
+    text-decoration: none;
+    color: #b9ea72;
+    background: rgba(118, 185, 0, 0.1);
+    border: 1px solid rgba(118, 185, 0, 0.26);
+}
+
+.files-detail-field a:hover {
+    color: var(--nvidia-green);
+    border-color: rgba(118, 185, 0, 0.28);
+}
+
+.files-preview {
+    margin-top: 12px;
+}
+
+.files-preview pre {
+    margin: 0;
+    padding: 12px 14px;
+    background: rgba(16, 20, 24, 0.85);
+    border: 1px solid rgba(118, 185, 0, 0.22);
+    border-radius: 4px;
+    max-height: 420px;
+    overflow: auto;
+}
+
+.files-preview code.hljs {
+    background: transparent;
+    padding: 0;
+}
+
+@media (max-width: 980px) {
+    .files-browser {
+        grid-template-columns: 1fr;
+    }
+
+    .files-tree-pane {
+        border-right: none;
+        border-bottom: 1px solid var(--nvidia-light);
+    }
+
+    .files-details-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .panel-actions {
+        flex-direction: column;
+        align-items: flex-end;
+    }
+
+    .panel-meta {
+        max-width: 100%;
+        text-align: right;
+    }
+}
+
+/* ── Modal ──────────────────────────────────────────── */
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+
+.modal-overlay[hidden] { display: none; }
+
+.modal {
+    background: var(--nvidia-dark);
+    border-radius: 8px;
+    width: min(95vw, 1600px);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--nvidia-light);
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--nvidia-light);
+}
+
+.modal-header h3 {
+    font-size: 0.95em;
+    font-weight: 600;
+    color: var(--nvidia-text);
+}
+
+.modal-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.spinner {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--nvidia-border);
+    border-top-color: var(--nvidia-green);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+.spinner[hidden] { display: none; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.console-search {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+}
+
+.console-search[hidden] { display: none; }
+
+.console-search input {
+    background: var(--nvidia-darker);
+    border: 1px solid var(--nvidia-border);
+    border-radius: 3px;
+    color: var(--nvidia-text);
+    padding: 3px 8px;
+    font-size: 0.82em;
+    width: 180px;
+    outline: none;
+}
+
+.console-search input:focus { border-color: var(--nvidia-green); }
+
+.btn-search {
+    background: none;
+    border: 1px solid var(--nvidia-border);
+    border-radius: 3px;
+    color: var(--nvidia-text-dim);
+    cursor: pointer;
+    padding: 2px 6px;
+    font-size: 0.82em;
+    line-height: 1;
+}
+
+.btn-search:hover { color: var(--nvidia-text); border-color: var(--nvidia-text-dim); }
+
+mark.search-match {
+    background: #3d5c00;
+    color: #fff;
+    border-radius: 2px;
+    padding: 0 1px;
+}
+
+mark.search-match.active {
+    background: #4a7a00;
+    outline: 1px solid #76b900;
+}
+
+.modal-close {
+    background: none;
+    border: none;
+    color: var(--nvidia-text-dim);
+    font-size: 1.4em;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.modal-close:hover { color: var(--nvidia-text); }
+
+.diag-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 16px;
+    background: var(--nvidia-dark);
+    border-bottom: 1px solid var(--nvidia-light);
+    overflow-x: auto;
+    flex-shrink: 0;
+}
+
+.diag-tab {
+    padding: 8px 14px;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: var(--nvidia-text-dim);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+}
+
+.diag-tab:hover { color: var(--nvidia-text); }
+.diag-tab.active { color: var(--nvidia-green); border-bottom-color: var(--nvidia-green); }
+
+.modal-body {
+    flex: 1;
+    overflow: auto;
+    padding: 0;
+    min-height: 65vh;
+}
+
+#log-output {
+    margin: 0;
+    padding: 8px 16px;
+    background: var(--nvidia-darker);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.82em;
+    line-height: 1.45;
+    color: var(--nvidia-text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    height: 65vh;
+    overflow-y: auto;
+}
+
+#log-output[hidden] { display: none; }
+#log-output .log-line { min-height: 1.45em; }
+
+/* Log level colors */
+.hljs-log-error { color: #ff5555; font-weight: bold; }
+.hljs-log-warn  { color: #ff9900; font-weight: bold; }
+.hljs-log-info  { color: #76b900; }
+.hljs-log-debug { color: #777; }
+
+#file-output {
+    margin: 0;
+    padding: 16px 20px;
+    background: var(--nvidia-darker);
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.88em;
+    line-height: 1.5;
+    color: var(--nvidia-text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    height: 65vh;
+    overflow-y: auto;
+}
+
+#file-output[hidden] { display: none; }
+#file-output code.hljs { background: transparent; padding: 0; }
+
+#console-output {
+    height: 65vh;
+    background: var(--nvidia-darker);
+    padding: 4px;
+}
+
+#console-output .xterm { height: 100%; }
+#console-output .xterm-viewport { overflow-y: auto !important; }
+
+.modal-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    border-top: 1px solid var(--nvidia-light);
+}
+
+.follow-toggle {
+    margin-right: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.82em;
+    color: var(--nvidia-text-dim);
+    cursor: pointer;
+}
+
+.follow-toggle input { accent-color: var(--nvidia-green); }

@@ -5,11 +5,7 @@ package nodes
 
 import (
 	"github.com/google/uuid"
-
-	"github.com/NVIDIA/nke/controller/internal/providers/forge"
 )
-
-type MachineHealthIssue = forge.MachineHealthIssue
 
 // TeardownNodeInput is the workflow input for TeardownNode.
 type TeardownNodeInput struct {
@@ -22,8 +18,6 @@ type TeardownNodeInput struct {
 	SkipRemoveFromCluster bool
 	Reason                string
 	ForceUnreachable      bool
-	AllowQuorumLoss       bool
-	AllowSingleVoter      bool
 
 	// Tearing down a control-plane node is not allowed by default,
 	// But we do want to allow deleting control-plane nodes from the API.

@@ -11,13 +11,25 @@ in the main README.
 
 ## The short version
 
+With `nkectl`, point at the cluster Tilt created and call the API. The CLI
+mints for `nke-clients/nke-client`; you do not export a token.
+
+```bash
+nkectl config set-site --name local \
+  --url http://localhost:8080 \
+  --kubeconfig ~/.kube/config
+nkectl get clusters
+```
+
+With `curl`, mint a token yourself:
+
 ```bash
 TOKEN="$(hack/nke-token.sh)"
 curl -H "Authorization: Bearer ${TOKEN}" http://localhost:8080/api/clusters
 ```
 
 If that returns your clusters, you're done. The rest of this page explains what
-it did, so you can fix it when it doesn't.
+the token path did, so you can fix it when it doesn't.
 
 ## Before you start
 
@@ -248,6 +260,21 @@ CASE                                 EXPECTED     ACTUAL  RESULT
 all 4 checks passed
 ```
 
+## From nkectl
+
+`nkectl` is a caller of this API. After `nkectl config set-site --kubeconfig`,
+every CWE command mints the same identity this page uses (`nke-clients/nke-client`)
+with the audience from ConfigMap `cloud-workflow-engine/nke-auth-config`. There
+is no `NKECTL_DEV_TOKEN` and no `hack/nke-token.sh` step.
+
+Those names are fixed in the CLI. A cluster-admin kubeconfig (Tilt's kind
+cluster) can mint without extra RBAC. On a real site, grant the kubeconfig
+identity the roles in
+[Configuring NKE API Authentication](configuring-api-authentication.md).
+
+If the ConfigMap is missing, `nkectl` sends no bearer token — the same as
+authentication being off.
+
 ## Endpoints that need no token
 
 `/healthz`, `/readyz`, `/api/version`, `/openapi.yaml`, `/docs`, and the Swagger
@@ -298,5 +325,6 @@ not a setting to leave on — it accepts everything.
 
 - [API Authentication](../README.md#api-authentication) — configuration schema,
   RBAC prerequisite, the full rejection-reason table.
+- [nkectl](../../cli/README.md#authenticating-to-cwe) — how the CLI mints.
 - `deploy/k8s/nke-auth-dev.yaml` — the local identities and auth config.
 - `internal/auth/` — the implementation.

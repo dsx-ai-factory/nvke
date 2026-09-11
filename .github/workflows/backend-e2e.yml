@@ -47,8 +47,8 @@ on:
       providers:
         description: >-
           JSON array of Tilt providers, written into tilt_config.json. capi_core
-          is required by capd, nico and nico-vm alike; the Tiltfile rejects a
-          list that omits it.
+          is required by capd and nico alike; the Tiltfile rejects a list that
+          omits it.
         required: true
         type: string
       timeout-minutes:
@@ -78,7 +78,7 @@ on:
         required: false
         type: boolean
         default: false
-      needs-nico-provider:
+      needs-capnico-source:
         description: >-
           Check out NVIDIA/cluster-api-provider-nico next to the monorepo. It is
           an internal repository, so this needs NKE_INTERNAL_RO_TOKEN.
@@ -106,6 +106,31 @@ on:
         required: false
         type: boolean
         default: false
+      use-nke-stack:
+        description: >-
+          Deploy the management plane from the nke-stack umbrella chart instead
+          of Tilt. The chart is built from this commit unless stack-chart names
+          a published one -- building is the default because subcharts are baked
+          into a package, so a published artifact would test the chart templates
+          as they were when it was published.
+        required: false
+        type: boolean
+        default: false
+      stack-chart:
+        description: >-
+          OCI reference of an nke-stack umbrella chart. When set, the six
+          management-plane charts are installed from it instead of by Tilt, and
+          stack-version is required. Empty (the default) keeps the Tilt deploy,
+          which also brings up capd-reboot-controller, the BGP wiring and the
+          profiles renderer that the umbrella does not cover.
+        required: false
+        type: string
+        default: ''
+      stack-version:
+        description: Chart version to install. Required when stack-chart is set.
+        required: false
+        type: string
+        default: ''
     secrets:
       NKE_INTERNAL_RO_TOKEN:
         description: Read-only token for internal NVIDIA repositories.
@@ -130,6 +155,11 @@ jobs:
       NKE_E2E_REQUIRE_AUTHN: ${{ inputs.require-authn }}
       NKE_E2E_NKECTL_SMOKE: ${{ inputs.nkectl-smoke }}
       INSTALL_CNI_AFTER_INIT: ${{ inputs.install-cni-after-init }}
+      # Empty unless the caller selects the umbrella-chart deploy. backend-e2e.sh
+      # branches on NKE_E2E_STACK_CHART being non-empty; Tilt stays the default.
+      NKE_E2E_USE_STACK: ${{ inputs.use-nke-stack }}
+      NKE_E2E_STACK_CHART: ${{ inputs.stack-chart }}
+      NKE_E2E_STACK_VERSION: ${{ inputs.stack-version }}
       # Deploy CWE flag-on for the cp-controller lane; the CI script forwards this
       # to the Tilt deploy and the e2e binary. Empty/false keeps the node-pool
       # control plane (CWE's own default).
@@ -143,7 +173,7 @@ jobs:
       # into the runner container only when this is set, so every other backend
       # skips that work. This is the HOST path; the container path is a constant
       # in the script, and is what Tilt is told.
-      NICO_PROVIDER_SRC: ${{ inputs.needs-nico-provider && format('{0}/.capnico/cluster-api-provider-nico', github.workspace) || '' }}
+      CAPNICO_SOURCE_SRC: ${{ inputs.needs-capnico-source && format('{0}/.capnico/cluster-api-provider-nico', github.workspace) || '' }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -157,11 +187,27 @@ jobs:
       # be cluster-api-provider-nico: the script tars it by basename and expands
       # it under /workspace in the runner container, where everything after this
       # point executes.
+      # Source installation consumes CAPNICo's chart layout, so check out the
+      # same provider version whose API is compiled into CWE instead of the
+      # moving tip of the private repository.
+      - name: Read pinned CAPNICo version
+        if: inputs.needs-capnico-source
+        id: capnico_version
+        run: |
+          set -euo pipefail
+          capnico_ref="$(awk '$1 == "github.com/NVIDIA/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
+          if [[ -z "${capnico_ref}" ]]; then
+            echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
+            exit 1
+          fi
+          echo "ref=${capnico_ref}" >> "${GITHUB_OUTPUT}"
+
       - name: Checkout the CAPNICo provider
-        if: inputs.needs-nico-provider
+        if: inputs.needs-capnico-source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: NVIDIA/cluster-api-provider-nico
+          ref: ${{ steps.capnico_version.outputs.ref }}
           token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico
           persist-credentials: false
@@ -192,11 +238,10 @@ jobs:
           version: ${{ steps.versions.outputs.helm_version }}
 
       - name: Set up Kind and kubectl
-        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        uses: ./.github/actions/setup-kind
         with:
-          version: ${{ steps.versions.outputs.kind_version }}
+          kind_version: ${{ steps.versions.outputs.kind_version }}
           kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
-          install_only: true
 
       - name: Show runner tools
         shell: bash
@@ -290,8 +335,10 @@ jobs:
             echo "::endgroup::"
           done
 
+      # Runner egress has answered FinalizeArtifact with 403; a lost upload must not fail a passing suite.
       - name: Upload redacted diagnostics
         if: always() && steps.diagnostics.outputs.safe == 'true'
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ inputs.backend }}-${{ inputs.arch }}-e2e-${{ github.run_id }}-${{ github.run_attempt }}

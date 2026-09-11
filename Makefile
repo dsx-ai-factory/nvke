@@ -58,9 +58,8 @@ WORK_MODULES := agent \
                 cluster-api-provider-provisioned \
                 controller \
                 controller/api \
-                controller/nico-vms \
+                controller/nico-sim \
                 controller/hack/capd-reboot-controller \
-                controller/hack/nico-mock \
                 cli \
                 controller/test/e2e \
                 os-image
@@ -72,14 +71,13 @@ WORK_MODULES := agent \
 #
 # controller does not belong here: its command is ./cmd/worker, but the binary
 # it ships is named controller, so this loop would produce the wrong
-# name. `build` delegates to controller/Makefile for it. controller/nico-vms
+# name. `build` delegates to controller/Makefile for it. controller/nico-sim
 # ships through its own Makefile and the container image.
 #
 # cli is absent because its Makefile stamps four symbols, not one,
 # and asserts the stamp took. `build` delegates to cli/Makefile.
 CMD_MODULES := agent \
                controller/hack/capd-reboot-controller \
-               controller/hack/nico-mock \
                os-image
 
 # The version stamped into a CMD_MODULES binary. First hit wins: the module's own
@@ -93,9 +91,10 @@ CMD_MODULES := agent \
 # --always only degrades to a bare commit when no tag describes HEAD, and in
 # this repository some tag always does. An unmatched --always therefore returns
 # another component's tag. ${v##*/} (from #216) strips whichever prefix came
-# back, so nico-mock reported v0.2.1-rc.2-6-g… — an agent version, just without
-# the agent/ prefix — and version-check could not catch it. Scoping --always
-# with --match makes that step a commit when the module has no tags of its own.
+# back, so a hack tool reported v0.2.1-rc.2-6-g… — an agent version, just
+# without the agent/ prefix — and version-check could not catch it. Scoping
+# --always with --match makes that step a commit when the module has no tags
+# of its own.
 cmd_version = $(shell \
     v=$$(git describe --tags --dirty --match '$(notdir $(1))/v[0-9]*' 2>/dev/null \
       || git describe --tags --dirty --match 'v[0-9]*' 2>/dev/null \
@@ -378,21 +377,20 @@ test-compile: ## Type-check test variants that need external services to run.
 	@cd controller && CGO_ENABLED=1 $(GO) vet -tags gofail ./e2e/...
 	@echo "- compile controller Teleport integration tests"
 	@cd controller && CGO_ENABLED=1 $(GO) vet -tags integration ./internal/teleport/...
-	@echo "- compile nico-vms integration tests"
-	@cd controller/nico-vms && CGO_ENABLED=1 $(GO) vet -tags integration ./test/integration/...
+	@echo "- compile nico-sim integration tests"
+	@cd controller/nico-sim && CGO_ENABLED=1 $(GO) vet -tags integration ./test/integration/...
 	@echo "- compile controller integration tests"
 	@cd controller && CGO_ENABLED=1 $(GO) vet -tags integration_test ./integration-test/...
 
 # The modules that own lint and test targets.
 #
-# Deepest first, so the first match wins. controller/nico-vms/x.go sits inside
-# both controller/nico-vms and controller, and only the first is right.
+# Deepest first, so the first match wins. controller/nico-sim/x.go sits inside
+# both controller/nico-sim and controller, and only the first is right.
 #
 # controller/api has no fmt target because its Go is generated.
 PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
-                     controller/hack/nico-mock \
                      controller/test/e2e \
-                     controller/nico-vms \
+                     controller/nico-sim \
                      controller/api \
                      agent \
                      cli \
@@ -416,8 +414,7 @@ API_DEPENDENTS := controller cli controller/test/e2e
 RACE_MODULES := agent \
                 cli \
                 controller \
-                controller/nico-vms \
-                controller/hack/nico-mock \
+                controller/nico-sim \
                 controller/test/e2e
 
 # Root lint covers every module CI lints. Root fmt excludes generated API code,
@@ -590,7 +587,6 @@ build: ## Build every workspace package, and the released commands into bin/.
 VERSION_CMDS := agent:--version \
                 capd-reboot-controller:--version \
                 controller:--version \
-                nico-mock:--version \
                 nke-os-image-check:--version \
                 nkectl:version \
                 updater:--version
