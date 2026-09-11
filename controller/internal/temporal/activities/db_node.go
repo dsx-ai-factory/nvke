@@ -152,37 +152,6 @@ func (a *Activities) UpdateNodeConditionsWithTx(ctx context.Context, tx db.Tx, u
 	return nil
 }
 
-type NodeForgeDetailsUpdate struct {
-	NodeID          uuid.UUID
-	ForgeInstanceID string
-	ForgeMachineID  string
-	IP              string
-}
-
-// UpdateNodeForgeDetails updates the Forge instance ID and IP address of a node in the database.
-func (a *Activities) UpdateNodeForgeDetails(ctx context.Context, update NodeForgeDetailsUpdate) error {
-	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
-		var forgeInstanceID *string
-		if update.ForgeInstanceID != "" {
-			forgeInstanceID = &update.ForgeInstanceID
-		}
-		var forgeMachineID *string
-		if update.ForgeMachineID != "" {
-			forgeMachineID = &update.ForgeMachineID
-		}
-		var ip *string
-		if update.IP != "" {
-			ip = &update.IP
-		}
-
-		if err := tx.UpdateNodeForgeDetails(ctx, update.NodeID, forgeInstanceID, forgeMachineID, ip); err != nil {
-			return fmt.Errorf("failed to update node Forge details: %w", err)
-		}
-
-		return nil
-	})
-}
-
 // ListControlPlaneNodes returns all control plane nodes for a cluster.
 func (a *Activities) ListControlPlaneNodes(ctx context.Context, clusterID uuid.UUID) ([]db.Node, error) {
 	controlPlane := true

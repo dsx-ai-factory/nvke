@@ -51,8 +51,6 @@ spec:
               value: {{ $component.temporalAddress | quote }}
             - name: PROFILES_DIR
               value: {{ $component.profilesDirectory | quote }}
-            - name: FORGE_ENVIRONMENT
-              value: test
             - name: SPIFFE_ENABLED
               value: {{ $component.spiffe.enabled | quote }}
             - name: SPIFFE_ENDPOINT_SOCKET

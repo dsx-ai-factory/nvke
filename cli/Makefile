@@ -78,7 +78,7 @@ NKECTL_LDFLAGS := \
 	-X 'github.com/NVIDIA/nke/cli/internal/cwedeploy.capiVersion=$(CAPI_VERSION)' \
 	$(RELEASE_LDFLAGS)
 
-.PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check \
+.PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
 	ensure-capd-image ensure-profiles-image ensure-provisioned-provider-image \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
@@ -150,7 +150,7 @@ test: ## Run this module's tests. (run by the merge gate)
 test-e2e-bootstrap: build
 	./e2e/bootstrap/run.sh
 
-# Fake-node fixture for the bootstrap e2e suite: docker containers running
+# Fake-node fixture for the bootstrap e2e suite: nerdctl containers running
 # nke-agent, standing in for pre-provisioned hardware. cli/e2e/bootstrap/substrate
 # is a thin derivation of controller/hack/capd-kindest-node's node image
 # (nke-agent, SPIRE/TPM plumbing, kubeadm/reboot shims and registry mirrors
@@ -166,7 +166,8 @@ CAPD_CNI_MANIFESTS_DEB_PATH ?=
 # supplies a local Calico manifests package for CWE's post-init CNI path. A
 # no-op once the image exists locally.
 ensure-capd-image:
-	@docker image inspect $(CAPD_KINDEST_NODE_IMAGE) >/dev/null 2>&1 || \
+	@nerdctl image inspect $(CAPD_KINDEST_NODE_IMAGE) >/dev/null 2>&1 || \
+	  CONTAINER_CLI=nerdctl \
 	  CAPD_NODE_AGENT_LOCAL_BUILD=true NODE_AGENT_REPO_PATH=$(CURDIR)/../agent \
 	  CAPD_CNI_MANIFESTS_DEB_PATH="$(CAPD_CNI_MANIFESTS_DEB_PATH)" \
 	  CAPD_KINDEST_NODE_IMAGE=$(CAPD_KINDEST_NODE_IMAGE) \
@@ -178,8 +179,8 @@ ensure-capd-image:
 CWE_PROFILES_IMAGE ?= cwe-profiles:local
 
 ensure-profiles-image:
-	@docker image inspect $(CWE_PROFILES_IMAGE) >/dev/null 2>&1 || \
-	  docker build -t $(CWE_PROFILES_IMAGE) \
+	@nerdctl image inspect $(CWE_PROFILES_IMAGE) >/dev/null 2>&1 || \
+	  nerdctl build -t $(CWE_PROFILES_IMAGE) \
 	    -f ../controller/test/fixtures/Dockerfile ../controller/test/fixtures
 
 # The Cluster API infrastructure provider for hosts that already exist, which is
@@ -187,7 +188,7 @@ ensure-profiles-image:
 # the ephemeral bootstrap cluster (cli/internal/cwedeploy) and loads this image
 # into it. Nothing publishes the image yet, so it is built here.
 #
-# A plain `docker build`, not `make -C ../cluster-api-provider-provisioned
+# A plain `nerdctl build`, not `make -C ../cluster-api-provider-provisioned
 # docker-build`: that target is a multi-arch buildx build into an OCI archive,
 # which is what a release wants and not what a local `kind load` can use. The
 # build context is the repository root, because the Dockerfile builds from the
@@ -195,8 +196,8 @@ ensure-profiles-image:
 CAPI_PROVISIONED_IMAGE ?= cluster-api-provider-provisioned:local
 
 ensure-provisioned-provider-image:
-	@docker image inspect $(CAPI_PROVISIONED_IMAGE) >/dev/null 2>&1 || \
-	  docker build -t $(CAPI_PROVISIONED_IMAGE) \
+	@nerdctl image inspect $(CAPI_PROVISIONED_IMAGE) >/dev/null 2>&1 || \
+	  nerdctl build -t $(CAPI_PROVISIONED_IMAGE) \
 	    -f ../cluster-api-provider-provisioned/Dockerfile ..
 
 nodes-up: ensure-capd-image
@@ -229,7 +230,7 @@ fmt: ## Format the source with golangci-lint's formatters.
 	@$(GOLANGCI_LINT_RUN) fmt ./...
 
 # One recipe for CI and local, pinned by version, as in the sibling modules.
-lint: ## Run golangci-lint over this module. (run by the merge gate)
+lint: check-no-docker ## Run golangci-lint over this module. (run by the merge gate)
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m --max-same-issues 0 --max-issues-per-linter 0 ./...
 
 license: ## Ensure license headers at code.
@@ -274,3 +275,31 @@ file-license-check: license ## Verify all files have license headers.
 		git diff --name-only -- .; \
 		exit 1; \
 	fi
+
+# The bootstrap e2e suite runs entirely on nerdctl/containerd. Docker is still
+# installed on the CI runner, though, so a reintroduced `docker` call would
+# work there and pass unnoticed -- the suite would quietly depend on Docker
+# again without anyone choosing that. This is the check that keeps it honest.
+#
+# Invocations only: the word appears legitimately in Dockerfile paths, in
+# docker.io registry references, and in comments explaining why Docker is not
+# used here. A command position -- bare or by absolute path, followed by an
+# argument, end of line, or a line continuation -- is what is matched, so any
+# subcommand counts, including ones that did not exist when this was written.
+#
+# Shell and Makefile only. Go sources are covered by TestNoDockerInvocations
+# in the substrate package, which understands Go string literals; a text
+# grep over Go would match that test's own error message, among other prose.
+#
+# Also a dependency of `lint`, which the merge gate runs for this module: a
+# reintroduction then blocks a merge rather than only reddening the advisory
+# e2e lane.
+check-no-docker: ## Fail if the bootstrap e2e suite invokes docker.
+	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)' \
+	    --include='*.sh' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
+	if [ -n "$$matches" ]; then \
+	  echo "The bootstrap e2e suite must not invoke docker; it runs on nerdctl/containerd."; \
+	  echo "$$matches"; \
+	  exit 1; \
+	fi; \
+	echo "bootstrap e2e suite: no Docker invocations."

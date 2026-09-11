@@ -518,13 +518,13 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "profiles.image.repository=" + profRepo,
 		"--set-string", "profiles.image.tag=" + profTag,
 		"--set-string", "profiles.image.digest=" + profDigest,
-		"--set", "secrets.forgeSecret.enabled=false",
 		"--set", "cni.installAfterInit=true",
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
 		"--set-string", "spiffe.spire.className=" + spireControllerManagerClass,
 		"--set-string", "spiffe.spire.serverAddress=" + spireServiceHost(),
 		"--set-string", "spiffe.spire.serverPort=" + spireServerPort,
+		"--set-string", "supportedInfraProviders=infra",
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
 	cweArgs = append(cweArgs, nodeAgentPortArgs(cfg)...)

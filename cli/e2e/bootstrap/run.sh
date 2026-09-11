@@ -42,32 +42,40 @@
 #      is the end-to-end statement the earlier stages only imply: a cluster
 #      built out of hosts that already existed serves traffic like any other.
 #
-# NKECTL_BOOTSTRAP_PROVIDER selects the container runtime front end the
-# ephemeral cluster runs on (see cli/internal/bootstrapengine).
-# Defaults to "docker" here for a bare local run, since that is what a
-# checkout has without any extra setup. The CI workflow
-# (.github/workflows/nkectl-bootstrap-e2e.yml) now runs this script once per
-# provider in a matrix and exports NKECTL_BOOTSTRAP_PROVIDER explicitly for
-# each leg, exercising both docker and nerdctl end to end on the
-# ubuntu-latest runner rather than relying on this default. See that
-# workflow's own comments for how it stands up a standalone containerd for
-# the nerdctl leg, and why that leg is advisory (continue-on-error) rather
-# than required while it earns a track record. Override this var to try the
-# nerdctl provider locally too, once nerdctl/containerd are set up on the
-# host (see the workflow for the exact install this repo has verified).
+# This suite runs entirely on nerdctl/containerd. It needs, on the host:
+#
+#   - nerdctl and a containerd for it to talk to. The ephemeral cluster runs
+#     there, because nkectl drives kind through
+#     KIND_EXPERIMENTAL_PROVIDER=nerdctl unconditionally (see
+#     cli/internal/bootstrapengine), and so do the fake-node containers. kind
+#     states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the
+#     version CI exercises. See the CI workflow
+#     (.github/workflows/nkectl-bootstrap-e2e.yml) for the standalone install
+#     this repo has verified.
+#   - buildkitd, for `nerdctl build` to reach. The three fixture images are
+#     built through it (see the ensure-*-image targets in cli/Makefile);
+#     nerdctl is a BuildKit client, not a builder, and fails outright without
+#     one. The CI workflow starts it on the same containerd.
+#   - root, or sudo: attaching the bootstrap cluster to the node network
+#     installs two iptables FORWARD rules and assigns the SPIRE VIP to a
+#     bridge.
+#     Without it the run fails at "the bootstrap cluster was never attached
+#     to the node network", after the images have already been built.
+#
+# Docker is not used anywhere here, and `make -C cli check-no-docker` is what
+# keeps that true.
 #
 # The fake nodes emulate a TPM with swtpm, which asks the kernel for a device
 # through /dev/vtpmx. This script loads tpm_vtpm_proxy if it is not already
 # there; a host that cannot load it cannot run this suite.
 #
-# NKECTL_CWE_IMAGE must already be pulled locally, through whichever runtime
-# NKECTL_BOOTSTRAP_PROVIDER names (`docker pull`/`nerdctl pull`), before this
-# script runs -- nkectl loads it into the kind cluster via `kind load
-# docker-image` rather than pulling from inside the cluster (see
-# cmd/nkectl/bootstrap.go's ensureImageAvailable), so it does not itself need
-# registry credentials. The CI workflow logs in to GHCR and pulls the image
-# through the matching CLI for each leg before invoking this script; a local
-# run needs the same login + pull done by hand first.
+# NKECTL_CWE_IMAGE must already be present in containerd's image store --
+# built there, or pulled with `nerdctl pull` -- before this script runs. That
+# is the store nkectl loads from: it saves the image and loads it into the
+# kind cluster rather than pulling from inside the cluster (see
+# cmd/nkectl/bootstrap.go's ensureImageAvailable), so no registry credentials
+# are needed past that point. CI builds the image locally rather than pulling
+# it (see the workflow's "Build CWE image" step).
 
 set -Eeuo pipefail
 
@@ -94,7 +102,6 @@ INIT_NODE_IP="${NKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 TRAEFIK_NODE_PORT="${NKECTL_E2E_TRAEFIK_NODE_PORT:-30082}"
 # Where `bootstrap site` writes the finished cluster's kubeconfig.
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
-export NKECTL_BOOTSTRAP_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER:-docker}"
 : "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already pulled locally (see comment above)}"
 export NKECTL_CWE_IMAGE
 
@@ -121,12 +128,11 @@ export NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR="${DIAGNOSTICS_DIR}"
 # `kind create cluster` merges into $KUBECONFIG, defaulting to ~/.kube/config
 # if unset -- own scratch path instead, so this run never touches (or takes
 # ownership of) the caller's default kubeconfig. This matters most for the
-# nerdctl leg's CI job, which runs this whole script under `sudo -E`: without
+# CI job, which runs this whole script under `sudo -E`: without
 # this, `kind create cluster` running as root would leave ~/.kube/config
 # root-owned, and a later, unrelated cleanup step running as the normal user
 # (helm/kind-action's own post-job step) would fail with "permission denied"
-# trying to update it. Harmless for the docker leg too, so it is not
-# provider-conditional.
+# trying to update it.
 KUBECONFIG_DIR="$(mktemp -d)"
 export KUBECONFIG="${KUBECONFIG_DIR}/config"
 CNI_BUNDLE_DIR="$(mktemp -d)"
@@ -141,11 +147,10 @@ export KUBECACHEDIR="${KUBECONFIG_DIR}/cache"
 log() { printf '[nkectl-bootstrap-e2e] %s\n' "$*"; }
 
 # kind resolves a cluster through its provider, so ask the same one bootstrap
-# site used. Bare, the nerdctl leg asks Docker, sees none of nerdctl's clusters
-# and answers "no" without checking anything. kind accepts "docker" here as
-# well as its own default.
+# site used. Bare, kind asks Docker, sees none of nerdctl's clusters, and
+# answers "no" without checking anything.
 kind_lists_bootstrap_cluster() {
-  KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters 2>/dev/null |
+  KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters 2>/dev/null |
     grep -Fxq "${BOOTSTRAP_KIND_CLUSTER}"
 }
 
@@ -161,35 +166,43 @@ collect_node_diagnostics() {
   local i node output
 
   mkdir -p "${DIAGNOSTICS_DIR}" || return 0
+  log "host forwarding and network state (for the cross-bridge path)"
+  {
+    echo "### iptables -S FORWARD"; iptables -S FORWARD
+    echo "### iptables -S CNI-ISOLATION-STAGE-1"; iptables -S CNI-ISOLATION-STAGE-1
+    echo "### iptables -S CNI-ISOLATION-STAGE-2"; iptables -S CNI-ISOLATION-STAGE-2
+    echo "### iptables -t nat -S CNI-HOSTPORT-DNAT"; iptables -t nat -S CNI-HOSTPORT-DNAT
+    echo "### nerdctl network inspect"; nerdctl network inspect kind "${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"
+  } > "${DIAGNOSTICS_DIR}/host-network.txt" 2>&1 || true
   log "collecting kubelet and containerd diagnostics from ${node_count} fake node(s)"
   for ((i = 1; i <= node_count; i++)); do
     node="nkectl-e2e-${name_prefix}${i}"
     output="${DIAGNOSTICS_DIR}/host-diagnostics-${name_prefix}${i}.txt"
     {
       printf '### journalctl: kubelet and containerd\n'
-      docker exec "${node}" journalctl -u kubelet -u containerd \
+      nerdctl exec "${node}" journalctl -u kubelet -u containerd -u nke-agent -u spire-agent \
         --boot --no-pager --output=short-iso-precise --lines=10000 || true
 
       printf '\n### systemctl status\n'
-      docker exec "${node}" systemctl status kubelet containerd --no-pager || true
+      nerdctl exec "${node}" systemctl status kubelet containerd --no-pager || true
 
       printf '\n### crictl ps -a\n'
-      docker exec "${node}" crictl ps -a || true
+      nerdctl exec "${node}" crictl ps -a || true
 
       printf '\n### crictl pods\n'
-      docker exec "${node}" crictl pods || true
+      nerdctl exec "${node}" crictl pods || true
 
       printf '\n### crictl info\n'
-      docker exec "${node}" crictl info || true
+      nerdctl exec "${node}" crictl info || true
 
       printf '\n### ip addr\n'
-      docker exec "${node}" ip addr || true
+      nerdctl exec "${node}" ip addr || true
 
       printf '\n### ip route\n'
-      docker exec "${node}" ip route || true
+      nerdctl exec "${node}" ip route || true
 
       printf '\n### CNI files\n'
-      docker exec "${node}" ls -la /etc/cni/net.d /opt/cni/bin || true
+      nerdctl exec "${node}" ls -la /etc/cni/net.d /opt/cni/bin || true
     } >"${output}" 2>&1
   done
 }
@@ -205,14 +218,14 @@ cleanup() {
   # otherwise leak a cluster that the next run's stage 3 then trips over.
   if [ "${bootstrap_cluster_cleanup_pending}" = true ]; then
     log "tearing down the kept bootstrap kind cluster"
-    KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" \
+    KIND_EXPERIMENTAL_PROVIDER=nerdctl \
       kind delete cluster --name "${BOOTSTRAP_KIND_CLUSTER}" || true
   fi
   if [ "${nodes_up}" = true ]; then
     if [ "${nerdctl_node_access}" = true ]; then
-      log "removing nerdctl access to the node network"
-      iptables -t raw -D PREROUTING -i "${nerdctl_bridge}" \
-        -d "${NKECTL_E2E_SUBNET:-172.26.0.0/24}" -j ACCEPT 2>/dev/null || true
+      log "removing the cross-bridge forwarding rules"
+      iptables -D FORWARD -i "${nerdctl_bridge}" -o "${spire_vip_device}" -j ACCEPT 2>/dev/null || true
+      iptables -D FORWARD -i "${spire_vip_device}" -o "${nerdctl_bridge}" -j ACCEPT 2>/dev/null || true
     fi
     if [ -n "${spire_vip_device}" ]; then
       log "removing ${SPIRE_VIP} from ${spire_vip_device}"
@@ -223,7 +236,7 @@ cleanup() {
   fi
 
   # Same class of bug as the KUBECONFIG one above, and the same cause: under
-  # `sudo -E` (the nerdctl leg) nkectl wrote this bundle as root. The CI step
+  # `sudo -E` nkectl wrote this bundle as root. The CI step
   # that uploads it runs as the normal user, which cannot so much as traverse
   # into a root-owned 0750 directory -- so without this the diagnostics are
   # collected and then silently dropped, on exactly the failing runs they
@@ -315,26 +328,17 @@ log "building the provisioned CAPI provider image (${NKECTL_CAPI_PROVISIONED_IMA
 make -C "${CLI_DIR}" ensure-provisioned-provider-image \
   CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE}"
 
-# The workflow and ensure-* targets build these images through `docker`:
-# `nerdctl build` needs a running buildkitd, which this suite does not stand
-# up (a second daemon alongside the containerd-nerdctl.service the nerdctl
-# CI leg already installs -- see nkectl-bootstrap-e2e.yml). A local Docker
-# image is invisible to nerdctl's separate containerd instance, so bridge all
-# three images across once here.
-if [ "${NKECTL_BOOTSTRAP_PROVIDER}" = "nerdctl" ]; then
-  image_platform="$(go env GOOS)/$(go env GOARCH)"
-  for image in "${NKECTL_CWE_IMAGE}" "${NKECTL_CWE_PROFILES_IMAGE}" "${NKECTL_CAPI_PROVISIONED_IMAGE}"; do
-    log "loading ${image} for ${image_platform} into nerdctl's containerd (built via docker above)"
-    docker save --platform="${image_platform}" "${image}" | nerdctl load
-  done
-fi
+# No cross-runtime image bridge here: every image above is built by `nerdctl
+# build`, so it already lives in the containerd store nkectl loads from. This
+# used to be a `docker save | nerdctl load` of all three, because the builds
+# went through Docker and a Docker image is invisible to containerd.
 
 # The completed images are sufficient from this point. On GitHub's 14 GB
 # runner, retaining their BuildKit intermediates competes with the container
 # storage needed by the bootstrap cluster and three site nodes.
 if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-  log "removing Docker build cache before cluster provisioning"
-  docker builder prune --all --force
+  log "removing the BuildKit cache before cluster provisioning"
+  nerdctl builder prune --all --force || true
 fi
 
 # The site spec is generated, not committed, so this lane exercises the command
@@ -381,7 +385,7 @@ log "allowlisting $(grep -cE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPE
 # cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
 log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
-  "(NKECTL_BOOTSTRAP_PROVIDER=${NKECTL_BOOTSTRAP_PROVIDER}, NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
+  "(NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
   "NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE}," \
   "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
 
@@ -402,33 +406,91 @@ BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
   --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
+# Both directions across the two bridges, checked the moment the cluster is
+# attached. A break here used to surface fifteen minutes later as "did not
+# report provisioned", with the cause buried in CWE's pod log; this names it
+# in seconds.
+#
+# What is being tested is forwarding, not the services. nke-agent does not
+# bind its port until the node has an SVID (agent/cmd/agent/main.go blocks on
+# workloadapi.NewX509Source before net.Listen), and SPIRE is not deployed yet
+# at this point, so a connection to 15005 cannot succeed here. A refused
+# connection is the pass: the packet crossed the bridges and the node
+# answered that nothing is listening. A timeout is the failure: nothing
+# answered, which is what the CNI firewall's cross-bridge DROP looks like.
+# bash's /dev/tcp gives that distinction for free (neither image ships curl):
+# refused fails instantly, dropped hangs until `timeout` kills it with 124.
+cross_bridge_reachable() {
+  local from="$1" ip="$2" port="$3" what="$4"
+  local out rc
+  out="$(nerdctl exec "${from}" timeout 5 bash -c "exec 3<>/dev/tcp/${ip}/${port}" 2>&1)" && rc=0 || rc=$?
+  case "${rc}" in
+    0) log "  ${what}: ${ip}:${port} accepted the connection"; return 0 ;;
+    124) log "FAIL: ${what}: ${ip}:${port} timed out -- packets are not crossing the bridges"; return 1 ;;
+    *)
+      if printf '%s' "${out}" | grep -qi "refused"; then
+        log "  ${what}: ${ip}:${port} reachable (refused; nothing listening yet, as expected before SPIRE)"
+        return 0
+      fi
+      log "FAIL: ${what}: ${ip}:${port} failed (exit ${rc}): ${out}"
+      return 1
+      ;;
+  esac
+}
+
+probe_cross_bridge_connectivity() {
+  local cp="${BOOTSTRAP_KIND_CLUSTER}-control-plane"
+  local node1="nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1"
+  local cp_ip ok=true
+  # From the network, not the container: the control plane's own inspect
+  # lists its pod bridge alongside the kind network, and ranging over both
+  # concatenated the addresses. The network knows exactly one address for it.
+  cp_ip="$(nerdctl network inspect kind --format \
+    "{{range .Containers}}{{if eq .Name \"${cp}\"}}{{.IPv4Address}}{{end}}{{end}}")" || return 1
+  cp_ip="${cp_ip%/*}"
+  if [ -z "${cp_ip}" ]; then
+    log "FAIL: could not find ${cp} on the kind network"
+    return 1
+  fi
+  # kind -> node: the path CWE takes to nke-agent (the site spec's nodeAgentPort).
+  cross_bridge_reachable "${cp}" "${INIT_NODE_IP}" 15005 "kind -> node" || ok=false
+  # node -> kind: the path a node takes to the SPIRE VIP, against the control
+  # plane's kubelet port, which is listening as soon as the cluster is Ready.
+  cross_bridge_reachable "${node1}" "${cp_ip}" 10250 "node -> kind" || ok=false
+  if [ "${ok}" != true ]; then
+    log "host FORWARD chain:"
+    iptables -S FORWARD | sed 's/^/  /'
+    return 1
+  fi
+  log "cross-bridge connectivity confirmed in both directions"
+}
+
 attach_bootstrap_to_node_network() {
   local node_network="${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"
-  if [ "${NKECTL_BOOTSTRAP_PROVIDER}" = "nerdctl" ]; then
-    local network_id bridge nerdctl_network_id
-    network_id="$(docker network inspect --format '{{.Id}}' "${node_network}")" || return 1
-    bridge="$(docker network inspect --format '{{index .Options "com.docker.network.bridge.name"}}' "${node_network}")" || return 1
-    if [ -z "${bridge}" ] || [ "${bridge}" = "<no value>" ]; then
-      bridge="br-${network_id:0:12}"
-    fi
-    ip link show "${bridge}" >/dev/null || return 1
-    nerdctl_network_id="$(nerdctl network inspect --format '{{.Id}}' kind)" || return 1
-    nerdctl_bridge="br-${nerdctl_network_id:0:12}"
-    ip link show "${nerdctl_bridge}" >/dev/null || return 1
+  local network_id bridge nerdctl_network_id
+  network_id="$(nerdctl network inspect --format '{{.Id}}' "${node_network}")" || return 1
+  bridge="br-${network_id:0:12}"
+  ip link show "${bridge}" >/dev/null || return 1
+  nerdctl_network_id="$(nerdctl network inspect --format '{{.Id}}' kind)" || return 1
+  nerdctl_bridge="br-${nerdctl_network_id:0:12}"
+  ip link show "${nerdctl_bridge}" >/dev/null || return 1
 
-    # Docker drops packets addressed directly to its containers when they
-    # arrive from another bridge. Permit only this Kind bridge and node subnet,
-    # so CWE can call the node agents while both runtimes remain isolated.
-    iptables -t raw -I PREROUTING 1 -i "${nerdctl_bridge}" \
-      -d "${NKECTL_E2E_SUBNET:-172.26.0.0/24}" -j ACCEPT || return 1
-    nerdctl_node_access=true
-    ip address replace "${SPIRE_VIP}/32" dev "${bridge}" || return 1
-    spire_vip_device="${bridge}"
-    return 0
-  fi
-
-  docker network connect --ip "${SPIRE_VIP}" \
-    "${node_network}" "${BOOTSTRAP_KIND_CLUSTER}-control-plane"
+  # Both networks are nerdctl bridges, and nerdctl's default network config
+  # gives the CNI firewall plugin ingressPolicy "same-bridge"
+  # (nerdctl pkg/netutil/cni_plugin_unix.go). The plugin implements that as
+  # `iptables -I FORWARD -j CNI-ISOLATION-STAGE-1`, whose STAGE-2 DROPs any
+  # forward from one CNI bridge out another
+  # (containernetworking/plugins plugins/meta/firewall/ingresspolicy.go). So
+  # CWE -> nke-agent and node -> SPIRE VIP are both dropped by default; CWE's
+  # NodePreflight then times out dialing 172.26.0.x:15005, and no node ever
+  # attests. Permit exactly this pair of bridges, both directions, inserted
+  # at position 1 so it precedes STAGE-1. Nothing else on the host is
+  # reachable through these rules.
+  iptables -I FORWARD 1 -i "${nerdctl_bridge}" -o "${bridge}" -j ACCEPT || return 1
+  iptables -I FORWARD 1 -i "${bridge}" -o "${nerdctl_bridge}" -j ACCEPT || return 1
+  nerdctl_node_access=true
+  ip address replace "${SPIRE_VIP}/32" dev "${bridge}" || return 1
+  spire_vip_device="${bridge}"
 }
 
 # Attach as soon as Kind reports the bootstrap cluster ready. This is before CWE
@@ -437,9 +499,9 @@ attach_bootstrap_to_node_network() {
 # container, so the additional network cannot affect cluster creation.
 #
 # Bounded separately from the command's own timeout, and abandoned if the
-# command exits first. Docker can attach the control-plane container directly.
-# nerdctl cannot connect a running container to another network, so its Kind
-# host mapping receives the SPIRE VIP on the Docker node-network bridge.
+# command exits first. nerdctl cannot connect a running container to another
+# network, so the Kind host mapping receives the SPIRE VIP on the Docker
+# node-network bridge instead.
 log "waiting for the bootstrap cluster to become ready, to attach it to the node network at ${SPIRE_VIP}"
 attached=false
 attach_deadline=$((SECONDS + ${NKECTL_E2E_ATTACH_TIMEOUT:-1200}))
@@ -447,6 +509,7 @@ while kill -0 "${bootstrap_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${attach_dea
   if grep -q "bootstrap kind cluster ready" "${BOOTSTRAP_LOG}" 2>/dev/null; then
     if attach_bootstrap_to_node_network; then
       log "attached the bootstrap cluster at ${SPIRE_VIP}"
+  probe_cross_bridge_connectivity || exit 1
       attached=true
     else
       log "WARN: could not attach the bootstrap cluster to the node network"
@@ -549,12 +612,12 @@ log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
 # Which registries the nodes will reach. A pull that falls through to upstream
 # is the difference between a 30 second install and a helm timeout.
 log "node registry routing (${NKECTL_E2E_NAME_PREFIX:-node}1):"
-docker exec "nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1" \
+nerdctl exec "nkectl-e2e-${NKECTL_E2E_NAME_PREFIX:-node}1" \
   cat /etc/containerd/certs.d/docker.io/hosts.toml 2>&1 | sed 's/^/  /' || true
 # The bootstrap Kind cluster is still up (--keep-bootstrap-cluster above); its
 # node pulls the CWE stack's images, so show where those went too.
 log "bootstrap cluster registry routing (${BOOTSTRAP_KIND_CLUSTER}-control-plane):"
-"${NKECTL_BOOTSTRAP_PROVIDER}" exec "${BOOTSTRAP_KIND_CLUSTER}-control-plane" \
+nerdctl exec "${BOOTSTRAP_KIND_CLUSTER}-control-plane" \
   cat /etc/containerd/certs.d/docker.io/hosts.toml 2>&1 | sed 's/^/  /' || true
 
 log "installing traefik on the new cluster"
@@ -600,12 +663,12 @@ log "PASS: the cluster built from pre-provisioned hosts serves hello world throu
 # makes its later absence evidence.
 if ! kind_lists_bootstrap_cluster; then
   log "FAIL: ${BOOTSTRAP_KIND_CLUSTER} is not registered before teardown, so this"
-  log "  suite cannot see the ${NKECTL_BOOTSTRAP_PROVIDER} provider and the check below proves nothing"
+  log "  suite cannot see the nerdctl provider and the check below proves nothing"
   exit 1
 fi
 
 log "tearing down the bootstrap kind cluster kept for attestation"
-KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" \
+KIND_EXPERIMENTAL_PROVIDER=nerdctl \
   kind delete cluster --name "${BOOTSTRAP_KIND_CLUSTER}"
 bootstrap_cluster_cleanup_pending=false
 
@@ -619,7 +682,7 @@ bootstrap_cluster_cleanup_pending=false
 #
 if kind_lists_bootstrap_cluster; then
   log "FAIL: kind cluster ${BOOTSTRAP_KIND_CLUSTER} is still registered after this suite deleted it"
-  KIND_EXPERIMENTAL_PROVIDER="${NKECTL_BOOTSTRAP_PROVIDER}" kind get clusters || true
+  KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get clusters || true
   exit 1
 fi
 log "PASS: this suite's teardown left no ${BOOTSTRAP_KIND_CLUSTER} cluster behind"

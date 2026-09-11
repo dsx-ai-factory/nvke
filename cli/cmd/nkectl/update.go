@@ -9,11 +9,11 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
 )
 
-func newDescribeCmd() *cobra.Command {
+func newUpdateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "describe",
-		Short: "Show details of a resource",
+		Use:   "update",
+		Short: "Update a resource",
 	}
-	cmd.AddCommand(clusters.NewDescribeCmd(loadClient))
+	cmd.AddCommand(clusters.NewUpdateCmd(loadClient))
 	return cmd
 }

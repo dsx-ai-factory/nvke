@@ -20,7 +20,7 @@ import (
 // A CAPI cluster rejects a nico payload whatever it carries: the provider shape
 // is what is unsupported, so every field spelling reaches the same rejection.
 func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayloadWhateverItCarries(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 
 	cases := []struct {
 		name string
@@ -50,7 +50,7 @@ func TestValidateCreateNodePoolRequest_CAPIRejectsNicoPayloadWhateverItCarries(t
 // The mirror of the above: a nico cluster rejects an infra payload whatever it
 // carries, even alongside an otherwise valid nico payload.
 func TestValidateCreateNodePoolRequest_NicoRejectsInfraPayloadWhateverItCarries(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 
 	cases := []struct {
 		name  string
@@ -84,8 +84,76 @@ func TestValidateCreateNodePoolRequest_NicoRejectsInfraPayloadWhateverItCarries(
 	}
 }
 
+func TestValidateCreateNodePoolRequest_RejectsUnsupportedParentProvider(t *testing.T) {
+	t.Run("capi cluster requires infra support", func(t *testing.T) {
+		service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderNico}, false)
+
+		err := service.validateCreateNodePoolRequest(capiCluster(), &api.CreateNodePoolRequest{
+			Name:             "worker",
+			NodeNamePrefix:   "worker",
+			DesiredNodeCount: 1,
+			Infra: &api.InfraNodePoolProvider{
+				MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
+				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+			},
+		})
+
+		require.EqualError(t, err, "infra provider is not supported by this deployment")
+	})
+
+	t.Run("nico cluster requires nico support", func(t *testing.T) {
+		service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderInfra}, false)
+
+		err := service.validateCreateNodePoolRequest(forgeCluster(), &api.CreateNodePoolRequest{
+			Name:             "worker",
+			NodeNamePrefix:   "worker",
+			DesiredNodeCount: 1,
+			Nico: &api.NicoNodePoolProvider{
+				SubnetIDs:      []uuid.UUID{uuid.New()},
+				InstanceTypeID: uuid.New(),
+				OSProfile:      "ubuntu",
+				ConfigProfile:  "default",
+			},
+		})
+
+		require.EqualError(t, err, "nico provider is not supported by this deployment")
+	})
+}
+
+func TestValidateCreateNodePoolRequest_DisabledProviderPrecedesProviderShape(t *testing.T) {
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderNico}, false)
+
+	err := service.validateCreateNodePoolRequest(capiCluster(), &api.CreateNodePoolRequest{
+		Name:             "worker",
+		NodeNamePrefix:   "worker",
+		DesiredNodeCount: 1,
+		Nico: &api.NicoNodePoolProvider{
+			InstanceTypeID: uuid.New(),
+		},
+	})
+
+	require.EqualError(t, err, "infra provider is not supported by this deployment")
+}
+
+func TestValidateUpdateNodePoolRequest_DisabledProviderOnlyBlocksProviderPayloads(t *testing.T) {
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, []string{config.InfraProviderNico}, false)
+	cluster := db.Cluster{ProviderType: db.ProviderTypeCAPI}
+
+	require.NoError(t, service.validateUpdateNodePoolRequest(cluster, &api.UpdateNodePoolRequest{}))
+
+	err := service.validateUpdateNodePoolRequest(cluster, &api.UpdateNodePoolRequest{
+		Infra: &api.InfraNodePoolProviderUpdate{},
+	})
+	require.EqualError(t, err, "infra provider is not supported by this deployment")
+
+	err = service.validateUpdateNodePoolRequest(cluster, &api.UpdateNodePoolRequest{
+		Nico: &api.NicoNodePoolProviderUpdate{},
+	})
+	require.EqualError(t, err, "infra provider is not supported by this deployment")
+}
+
 func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividually(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 
 	t.Run("nico provider shape", func(t *testing.T) {
 		err := service.validateUpdateNodePoolRequest(db.Cluster{SiteID: uuid.Nil, ProviderType: db.ProviderTypeCAPI}, &api.UpdateNodePoolRequest{
@@ -114,7 +182,7 @@ func TestValidateUpdateNodePoolRequest_CAPIRejectsForgeSpecificFieldsIndividuall
 }
 
 func TestValidateUpdateNodePoolRequest_ForgeRejectsCAPISpecificFieldsIndividually(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 
 	t.Run("infra.bootstrapFiles", func(t *testing.T) {
 		err := service.validateUpdateNodePoolRequest(db.Cluster{SiteID: uuid.New(), ProviderType: db.ProviderTypeNico}, &api.UpdateNodePoolRequest{
@@ -148,7 +216,7 @@ func TestValidateUpdatedNodePool_CAPIRequiresEmptyDiskSelectionStrategy(t *testi
 }
 
 func TestValidateCreateNodePoolRequest_NodeNamePrefixLength(t *testing.T) {
-	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, false)
+	service := NewNodePoolService(slog.Default(), nil, config.TeleportConfig{}, nil, false)
 	clusterName := "runtime-dgxc-k8s-forge-ytl-dev1"
 
 	capiNodePoolRequest := func(nodeNamePrefix string) *api.CreateNodePoolRequest {

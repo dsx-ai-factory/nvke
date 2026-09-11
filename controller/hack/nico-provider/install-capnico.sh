@@ -10,7 +10,6 @@ set -euo pipefail
 : "${CAPNICO_REBOOT_ANNOTATION:=nke.nvidia.com/reboot}"
 : "${CAPNICO_REPAIR_ANNOTATION:=nke.nvidia.com/machine-health-issue}"
 : "${CAPNICO_STAGED_CHART_DIR:?CAPNICO_STAGED_CHART_DIR is required}"
-: "${CAPNICO_PROVIDER_CONFIG_DIR:?CAPNICO_PROVIDER_CONFIG_DIR is required}"
 : "${KIND_CLUSTER_NAME:?KIND_CLUSTER_NAME is required}"
 : "${KIND_BIN:=kind}"
 
@@ -49,10 +48,14 @@ install_released_chart() {
 
 install_source_chart() {
   source_dir="${CAPNICO_SOURCE_DIR}"
-  chart_source="${source_dir}/charts/capi-provider-nico"
+  chart_source="${source_dir}/chart"
 
-  if [[ ! -d "${source_dir}/config/default" || ! -f "${chart_source}/Chart.yaml" ]]; then
-    echo "CAPNICo source '${source_dir}' is missing config/default or charts/capi-provider-nico." >&2
+  if [[ ! -f "${chart_source}/Chart.yaml" ]]; then
+    echo "CAPNICo source '${source_dir}' is missing chart/Chart.yaml." >&2
+    exit 1
+  fi
+  if [[ "${CAPNICO_IMAGE##*/}" != *:* ]]; then
+    echo "CAPNICO_IMAGE must include a tag: '${CAPNICO_IMAGE}'." >&2
     exit 1
   fi
 
@@ -67,22 +70,12 @@ install_source_chart() {
   rm -rf "${CAPNICO_STAGED_CHART_DIR}"
   mkdir -p "$(dirname "${CAPNICO_STAGED_CHART_DIR}")"
   cp -R "${chart_source}" "${CAPNICO_STAGED_CHART_DIR}"
-  mkdir -p "${CAPNICO_STAGED_CHART_DIR}/files"
-
-  render_dir="$(mktemp -d)"
-  trap 'rm -rf "${render_dir}"' EXIT
-  cp -R "${CAPNICO_PROVIDER_CONFIG_DIR}/." "${render_dir}/"
-  ln -s "${source_dir}/config/default" "${render_dir}/capnico-base"
-  kubectl kustomize "${render_dir}" --load-restrictor=LoadRestrictionsNone \
-    > "${CAPNICO_STAGED_CHART_DIR}/files/infrastructure-components.yaml"
-  sed -i "s#image: controller:latest#image: ${CAPNICO_IMAGE}#" \
-    "${CAPNICO_STAGED_CHART_DIR}/files/infrastructure-components.yaml"
-  grep -Fq "image: ${CAPNICO_IMAGE}" \
-    "${CAPNICO_STAGED_CHART_DIR}/files/infrastructure-components.yaml"
 
   helm upgrade --install "${CAPNICO_RELEASE}" "${CAPNICO_STAGED_CHART_DIR}" \
     --namespace "${CAPNICO_NAMESPACE}" \
     --reset-values \
+    --set-string "manager.image.repository=${CAPNICO_IMAGE%:*}" \
+    --set-string "manager.image.tag=${CAPNICO_IMAGE##*:}" \
     --wait --timeout 5m
 }
 

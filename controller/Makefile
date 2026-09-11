@@ -380,19 +380,6 @@ $(GO_LICENSES):
 .PHONY: go-licenses
 go-licenses: $(GO_LICENSES) ## Build the pinned go-licenses into ./bin.
 
-# crane copies an image between registries without pulling or rebuilding it. The
-# three CAPI provider repositories use it for the same promotion, at the same
-# version.
-CRANE_VERSION ?= v0.21.9
-CRANE         ?= $(CURDIR)/bin/crane
-
-$(CRANE):
-	@echo "Installing crane $(CRANE_VERSION)..."
-	@GOBIN=$(CURDIR)/bin go install github.com/google/go-containerregistry/cmd/crane@$(CRANE_VERSION)
-
-.PHONY: crane
-crane: $(CRANE) ## Build the pinned crane into ./bin.
-
 # Permissive licenses approved for redistribution. Matches the allowlist used by
 # NVIDIA/aicr. A dependency introducing anything else - copyleft in particular -
 # fails the check and needs a conscious decision rather than silent acceptance.

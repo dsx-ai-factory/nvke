@@ -82,8 +82,21 @@ repro-check: ## Build `debs` twice into throwaway OUT_DIRs and diff every .deb b
 	fi; \
 	echo "$(CNI): reproducible: every .deb matched byte-for-byte"
 
-$(BIN_DIR)/crane: ## Build the pinned crane (go-containerregistry) into ./bin.
-	@GOBIN=$(BIN_DIR) $(GO) install github.com/google/go-containerregistry/cmd/crane@v$(CRANE_VERSION)
+$(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release into ./bin.
+	@set -eu; \
+	mkdir -p "$(BIN_DIR)"; \
+	arch="$$(uname -m)"; \
+	case "$$arch" in aarch64) arch=arm64 ;; esac; \
+	archive="go-containerregistry_$$(uname -s)_$${arch}.tar.gz"; \
+	base="https://github.com/google/go-containerregistry/releases/download/v$(CRANE_VERSION)"; \
+	tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	curl -fsSL -o "$$tmp/$$archive" "$$base/$$archive"; \
+	curl -fsSL -o "$$tmp/checksums.txt" "$$base/checksums.txt"; \
+	(cd "$$tmp" && grep " $$archive\$$" checksums.txt | sha256sum -c); \
+	tar -xzf "$$tmp/$$archive" -C "$$tmp" crane; \
+	chmod +x "$$tmp/crane"; \
+	mv "$$tmp/crane" "$(BIN_DIR)/crane"
 
 .PHONY: nfpm
 nfpm: $(BIN_DIR)/nfpm ## Build the pinned nfpm (goreleaser) into ./bin.

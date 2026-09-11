@@ -112,8 +112,21 @@ lock: check-host $(BIN_DIR)/crane ## Regenerate lock/<version>.lock from upstrea
 	@echo "Review the lock diff before committing it:"
 	@echo "    git diff -- $(LOCK_DIR)"
 
-$(BIN_DIR)/crane: ## Build the pinned crane (go-containerregistry) into ./bin.
-	@GOBIN=$(BIN_DIR) $(GO) install github.com/google/go-containerregistry/cmd/crane@v$(CRANE_VERSION)
+$(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release into ./bin.
+	@set -eu; \
+	mkdir -p "$(BIN_DIR)"; \
+	arch="$(UNAME_M)"; \
+	case "$$arch" in aarch64) arch=arm64 ;; esac; \
+	archive="go-containerregistry_$(UNAME_S)_$${arch}.tar.gz"; \
+	base="https://github.com/google/go-containerregistry/releases/download/v$(CRANE_VERSION)"; \
+	tmp="$$(mktemp -d)"; \
+	trap 'rm -rf "$$tmp"' EXIT; \
+	curl -fsSL -o "$$tmp/$$archive" "$$base/$$archive"; \
+	curl -fsSL -o "$$tmp/checksums.txt" "$$base/checksums.txt"; \
+	(cd "$$tmp" && grep " $$archive\$$" checksums.txt | sha256sum -c); \
+	tar -xzf "$$tmp/$$archive" -C "$$tmp" crane; \
+	chmod +x "$$tmp/crane"; \
+	mv "$$tmp/crane" "$(BIN_DIR)/crane"
 
 # Phony alias so ../../Makefile's `test` can ask for the binary by name rather
 # than by the absolute $(BIN_DIR)/nfpm path.

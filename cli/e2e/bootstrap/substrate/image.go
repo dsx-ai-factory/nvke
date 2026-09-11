@@ -121,12 +121,12 @@ func EnsureNodeImage(ctx context.Context, cfg Config, log Logf) (string, error) 
 	}
 
 	log("substrate: building node image %s from %s", tag, cfg.BaseImage)
-	build := exec.CommandContext(ctx, "docker", "build",
+	build := exec.CommandContext(ctx, ContainerCLI, "build",
 		"--build-arg", "BASE_IMAGE="+cfg.BaseImage,
 		"--build-arg", "NODE_AGENT_PORT="+cfg.AgentPort,
 		"-t", tag, buildDir)
 	if out, err := build.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("docker build %s: %w\n%s", tag, err, out)
+		return "", fmt.Errorf("%s build %s: %w\n%s", ContainerCLI, tag, err, out)
 	}
 
 	return tag, nil
@@ -208,7 +208,7 @@ func stageGetTPMPubhash(ctx context.Context, cfg Config, toolsDir string, log Lo
 }
 
 func imageExists(ctx context.Context, tag string) bool {
-	return exec.CommandContext(ctx, "docker", "image", "inspect", tag).Run() == nil
+	return exec.CommandContext(ctx, ContainerCLI, "image", "inspect", tag).Run() == nil
 }
 
 // sanitizeTag turns an image reference into something usable as a tag

@@ -67,7 +67,6 @@ func newEnforcingTestServer(t *testing.T) http.Handler {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := config.Config{
-		FWEAPIKey:            "test-key",
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}
@@ -117,7 +116,6 @@ func newPermissiveTestServer(t *testing.T) (http.Handler, *decisions) {
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelError}))
 	cfg := config.Config{
-		FWEAPIKey:            "test-key",
 		ManagedByK8sPlatform: false,
 		ProfilesDir:          "./profiles",
 	}
@@ -238,7 +236,6 @@ func TestDisabledServerLogsTheManagedByRejection(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelDebug}))
 
 	cfg := config.Config{
-		FWEAPIKey:            "test-key",
 		ManagedByK8sPlatform: true,
 		ProfilesDir:          "./profiles",
 	}

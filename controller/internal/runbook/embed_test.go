@@ -4,6 +4,8 @@
 package runbook
 
 import (
+	"encoding/base64"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -55,9 +57,44 @@ func TestNames(t *testing.T) {
 	require.NotEmpty(t, names)
 	require.Contains(t, names, "reboot")
 	require.Contains(t, names, "uptime")
+	require.Contains(t, names, "kubeadm-files")
 	require.Contains(t, names, "kubeadm-patches")
 	require.Contains(t, names, "etcd-member-remove")
 	require.True(t, sort.StringsAreSorted(names))
+}
+
+func TestKubeadmFilesScriptStagesExactContentsAndModes(t *testing.T) {
+	tempDir := t.TempDir()
+	script, err := Script("", "kubeadm-files")
+	require.NoError(t, err)
+	scriptPath := filepath.Join(tempDir, "kubeadm-files.sh")
+	require.NoError(t, os.WriteFile(scriptPath, []byte(script), 0o700))
+
+	firstPath := filepath.Join(tempDir, "patches", "kubelet.yaml")
+	secondPath := filepath.Join(tempDir, "policies", "audit.yaml")
+	firstContent := []byte("kubeReserved: 2Gi\n")
+	secondContent := []byte("rules:\n- level: Metadata\n")
+	owner := fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	cmd := exec.CommandContext(t.Context(), "bash", scriptPath,
+		firstPath, base64.StdEncoding.EncodeToString(firstContent), "640", owner,
+		secondPath, base64.StdEncoding.EncodeToString(secondContent), "600", owner,
+	)
+	output, err := cmd.CombinedOutput()
+	require.NoError(t, err, string(output))
+
+	gotFirst, err := os.ReadFile(firstPath)
+	require.NoError(t, err)
+	require.Equal(t, firstContent, gotFirst)
+	firstInfo, err := os.Stat(firstPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o640), firstInfo.Mode().Perm())
+
+	gotSecond, err := os.ReadFile(secondPath)
+	require.NoError(t, err)
+	require.Equal(t, secondContent, gotSecond)
+	secondInfo, err := os.Stat(secondPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o600), secondInfo.Mode().Perm())
 }
 
 func TestKubeadmPatchesScriptWritesConfiguredMemoryReservations(t *testing.T) {

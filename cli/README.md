@@ -9,7 +9,7 @@ NKE control-plane CLI. Bootstraps site controllers and manages tenant cluster li
 ## What it does
 
 - **Site bootstrap** — `nkectl bootstrap site` creates an ephemeral Kind cluster, deploys CWE onto it, then drives kubeadm init/join across pre-provisioned nodes via `nke-agent` gRPC; no SSH required
-- **Cluster lifecycle** — `nkectl get/create/delete/describe clusters` manages tenant clusters through the CWE API
+- **Cluster lifecycle** — `nkectl get/create/update/delete clusters` manages tenant clusters through the CWE API
 - **Site spec** — `nkectl generate sitespec` writes a site spec from a node CSV; `nkectl bootstrap site --dry-run` validates one without touching a node
 - **Config** — `nkectl config set-site` points the CLI at a site controller.
 
@@ -44,7 +44,6 @@ NKECTL_CWE_IMAGE=nvcr.io/<org>/controller:edge \
 NKECTL_CWE_PROFILES_IMAGE=nvcr.io/<org>/profiles:edge \
   nkectl bootstrap site -f sitespec.yaml
 nkectl bootstrap site -f sitespec.yaml --dry-run              # validate only
-nkectl bootstrap site -f sitespec.yaml --bootstrap-provider docker  # use Docker instead of nerdctl
 nkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster     # leave Kind cluster for debugging
 
 # Point the CLI at a site controller
@@ -58,8 +57,10 @@ nkectl get providers -o json
 # Tenant cluster lifecycle
 nkectl get clusters                    # table with AGE and status
 nkectl get clusters -o json            # JSON output
-nkectl describe cluster <name>
+nkectl get clusters --cluster <name> -o yaml  # full detail for one cluster
 nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create cluster -f -
+nkectl update cluster <name> --set controlPlaneKubernetesVersion=1.31.0
+nkectl update cluster <name> -f patch.yaml   # or combine with --set; --set wins
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
 ```
 
@@ -77,8 +78,11 @@ If that ConfigMap is missing, the CLI treats authentication as off and sends no
 The kubeconfig identity needs:
 
 - `create` on `serviceaccounts/token` for `nke-client` in `nke-clients`
+- `get` on `secrets` in `nke-system`, for `nkectl get kubeconfig` and
+  `nkectl get providers`, which read the management cluster directly rather
+  than through CWE
 
-A cluster-admin kubeconfig already has it. Least-privilege grants, and
+A cluster-admin kubeconfig already has both. Least-privilege grants, and
 creating the service account on a real site, are in
 [Configuring NKE API Authentication](../controller/docs/configuring-api-authentication.md).
 
@@ -160,7 +164,6 @@ ever disagree.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `NKECTL_BOOTSTRAP_PROVIDER` | `nerdctl` | Container runtime front end for the ephemeral cluster: `nerdctl` or `docker` |
 | `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
 | `NKECTL_CWE_IMAGE` | required | CWE image to deploy. Side-loaded from the local image store, so it must already be pulled. |
 | `NKECTL_CWE_PROFILES_IMAGE` | required | Image holding the OS profiles tree at `/profiles` |

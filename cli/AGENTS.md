@@ -16,7 +16,10 @@ make test
 ```
 
 Run `make preflight` from the repository root before submission. The bootstrap
-end-to-end test also requires Docker, Kind, `/dev/vtpmx`, and the CWE image.
+end-to-end test also requires nerdctl with containerd, a buildkitd for
+`nerdctl build` to reach, Kind, `/dev/vtpmx`, and the CWE image. It does not
+need Docker. It does need root — it installs an iptables rule and assigns an
+address to a bridge — so run it under `sudo`.
 
 After a dependency change, run `go mod tidy` in `cli/` and `make work-sync` at
 the repository root.

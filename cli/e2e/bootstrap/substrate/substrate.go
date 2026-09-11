@@ -1,8 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package substrate stands up docker containers that stand in for
-// pre-provisioned bare-metal hosts, for the nkectl bootstrap-site E2E suite.
+// Package substrate stands up containers that stand in for pre-provisioned
+// bare-metal hosts, for the nkectl bootstrap-site E2E suite.
 //
 // Each container runs systemd with nke-agent listening on the node-agent
 // port, exactly as a pre-provisioned host would. The suite owns the
@@ -19,7 +19,7 @@
 //     bootstrap cluster does not exist yet when these fixture nodes come up,
 //     so there is nothing to join.
 //   - Addresses are assigned, not discovered. CWE's substrate reads addresses
-//     back from docker specifically to avoid assuming IPAM behavior on a
+//     back from the runtime specifically to avoid assuming IPAM behavior on a
 //     shared network it does not own. This package owns its network outright,
 //     so pinning addresses is safe, and the fixture's site spec file needs a
 //     stable IP to reference before any container exists.
@@ -36,13 +36,19 @@ import (
 	"time"
 )
 
+// ContainerCLI is the container runtime this fixture drives. It matches the
+// runtime nkectl itself uses for the bootstrap cluster
+// (bootstrapengine.RuntimeCLI), so the suite needs one runtime rather than
+// two, and the node containers and the bootstrap cluster share a daemon.
+const ContainerCLI = "nerdctl"
+
 // Logf is a minimal logging sink so the substrate can report progress without
 // depending on a particular test framework.
 type Logf func(format string, args ...any)
 
-// Config describes the docker-level substrate.
+// Config describes the container-level substrate.
 type Config struct {
-	// Network is the private docker network the nodes run on. Created if it
+	// Network is the private network the nodes run on. Created if it
 	// does not already exist.
 	Network string
 	// Subnet is the IPv4 CIDR for Network. Node addresses are assigned from
@@ -122,7 +128,7 @@ type Node struct {
 	// IP is the address assigned on the substrate network. It is what CWE
 	// dials for node-agent and what kubeadm advertises.
 	IP string
-	// Container is the docker container name.
+	// Container is the container name.
 	Container string
 	// AgentPort is the nke-agent gRPC port.
 	AgentPort string
@@ -262,12 +268,12 @@ func (s *Substrate) planNodes() ([]Node, error) {
 // already exist. Safe to call repeatedly: an existing network with the same
 // name is left alone.
 func (s *Substrate) ensureNetwork(ctx context.Context) error {
-	if exec.CommandContext(ctx, "docker", "network", "inspect", s.Config.Network).Run() == nil {
+	if exec.CommandContext(ctx, ContainerCLI, "network", "inspect", s.Config.Network).Run() == nil {
 		return nil
 	}
-	if out, err := exec.CommandContext(ctx, "docker", "network", "create",
+	if out, err := exec.CommandContext(ctx, ContainerCLI, "network", "create",
 		"--driver", "bridge", "--subnet", s.Config.Subnet, s.Config.Network).CombinedOutput(); err != nil {
-		return fmt.Errorf("creating docker network %s: %w\n%s", s.Config.Network, err, out)
+		return fmt.Errorf("creating network %s: %w\n%s", s.Config.Network, err, out)
 	}
 	s.log("substrate: created network %s (%s)", s.Config.Network, s.Config.Subnet)
 	return nil
@@ -315,12 +321,12 @@ func (s *Substrate) startNode(ctx context.Context, node Node) error {
 	}
 	args = append(args, s.Image)
 
-	if out, err := exec.CommandContext(ctx, "docker", args...).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(ctx, ContainerCLI, args...).CombinedOutput(); err != nil {
 		return fmt.Errorf("starting %s: %w\n%s", node.Container, err, out)
 	}
 	if dnsAddress != "" {
 		resolver := fmt.Sprintf("nameserver %s\noptions edns0 trust-ad ndots:0\n", dnsAddress)
-		command := exec.CommandContext(ctx, "docker", "exec", "-i", node.Container, "tee", "/etc/resolv.conf")
+		command := exec.CommandContext(ctx, ContainerCLI, "exec", "-i", node.Container, "tee", "/etc/resolv.conf")
 		command.Stdin = strings.NewReader(resolver)
 		if out, err := command.CombinedOutput(); err != nil {
 			return fmt.Errorf("setting resolver in %s: %w\n%s", node.Container, err, out)
@@ -390,7 +396,7 @@ func (s *Substrate) waitReady(ctx context.Context) error {
 
 // probeHost checks readiness from inside the container.
 func probeHost(ctx context.Context, node Node) error {
-	out, err := exec.CommandContext(ctx, "docker", "exec", node.Container,
+	out, err := exec.CommandContext(ctx, ContainerCLI, "exec", node.Container,
 		"systemctl", "is-active", "containerd", "swtpm-local", "spire-agent").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("required systemd units are not active: %w\n%s", err, out)
@@ -400,8 +406,8 @@ func probeHost(ctx context.Context, node Node) error {
 
 func (s *Substrate) allRunning(ctx context.Context) bool {
 	for _, node := range s.nodes {
-		out, err := exec.CommandContext(ctx, "docker", "inspect",
-			"-f", "{{.State.Running}}", node.Container).Output()
+		out, err := exec.CommandContext(ctx, ContainerCLI, "inspect",
+			"--format", "{{.State.Running}}", node.Container).Output()
 		if err != nil || strings.TrimSpace(string(out)) != "true" {
 			return false
 		}
@@ -416,8 +422,8 @@ func (s *Substrate) allRunning(ctx context.Context) bool {
 // across runs by ensureNetwork.
 func (s *Substrate) teardown(ctx context.Context) {
 	for _, node := range s.nodes {
-		_ = exec.CommandContext(ctx, "docker", "rm", "-f", "-v", node.Container).Run()
-		_ = exec.CommandContext(ctx, "docker", "volume", "rm", "-f",
+		_ = exec.CommandContext(ctx, ContainerCLI, "rm", "-f", "-v", node.Container).Run()
+		_ = exec.CommandContext(ctx, ContainerCLI, "volume", "rm", "-f",
 			node.Container+"-var", node.Container+"-containerd").Run()
 	}
 }
@@ -426,10 +432,10 @@ func (s *Substrate) teardown(ctx context.Context) {
 // after the containers are gone.
 func (s *Substrate) DumpDiagnostics(ctx context.Context) {
 	for _, node := range s.nodes {
-		if out, err := exec.CommandContext(ctx, "docker", "logs", "--tail", "50", node.Container).CombinedOutput(); err == nil {
-			s.log("substrate: --- docker logs %s (tail) ---\n%s", node.Container, out)
+		if out, err := exec.CommandContext(ctx, ContainerCLI, "logs", "--tail", "50", node.Container).CombinedOutput(); err == nil {
+			s.log("substrate: --- %s logs %s (tail) ---\n%s", ContainerCLI, node.Container, out)
 		}
-		if out, err := exec.CommandContext(ctx, "docker", "exec", node.Container,
+		if out, err := exec.CommandContext(ctx, ContainerCLI, "exec", node.Container,
 			"journalctl", "-u", "nke-agent", "--no-pager", "-n", "50").CombinedOutput(); err == nil {
 			s.log("substrate: --- journalctl -u nke-agent %s ---\n%s", node.Container, out)
 		}
@@ -438,7 +444,7 @@ func (s *Substrate) DumpDiagnostics(ctx context.Context) {
 
 // ContainerCount returns how many containers carry the substrate label.
 func ContainerCount(ctx context.Context) (int, error) {
-	out, err := exec.CommandContext(ctx, "docker", "ps", "-aq",
+	out, err := exec.CommandContext(ctx, ContainerCLI, "ps", "-aq",
 		"--filter", "label=nkectl-e2e=true").Output()
 	if err != nil {
 		return 0, fmt.Errorf("listing substrate containers: %w", err)

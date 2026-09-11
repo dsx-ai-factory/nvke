@@ -45,10 +45,9 @@ func (e *Engine) configureDockerHubMirror(ctx context.Context, cfg Config) error
 	hostsTOML := fmt.Sprintf("server = \"https://%[1]s\"\n\n[host.\"https://%[1]s\"]\n  capabilities = [\"pull\", \"resolve\"]\n", cfg.DockerHubMirror)
 	for _, registry := range dockerHubRegistries {
 		dir := "/etc/containerd/certs.d/" + registry
-		// The provider name is the CLI binary, as saveImageArchive already
-		// relies on. hostsTOML holds no single quote, so the literal is safe.
+		// hostsTOML holds no single quote, so the literal is safe.
 		script := fmt.Sprintf("mkdir -p %s && printf '%%s' '%s' > %s/hosts.toml", dir, hostsTOML, dir)
-		out, err := e.Runner.Run(ctx, nil, string(cfg.Provider), "exec", node, "sh", "-c", script)
+		out, err := e.Runner.Run(ctx, nil, RuntimeCLI, "exec", node, "sh", "-c", script)
 		if err != nil {
 			return fmt.Errorf("configuring the docker.io mirror %s on %s: %w\n%s", cfg.DockerHubMirror, node, err, out)
 		}

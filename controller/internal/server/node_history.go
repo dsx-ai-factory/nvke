@@ -37,15 +37,12 @@ var (
 		"UpdateNodeConditions":       true,
 		"UpdateNodePoolConditions":   true,
 		"UpdateClusterConditions":    true,
-		"UpdateNodeForgeDetails":     true,
 		"GetNode":                    true,
 		"GetNodePoolForNode":         true,
 		"GetClusterForNode":          true,
 		"GetNodeConfigProfile":       true,
 		"GetNodeProvisioningContext": true,
-		"GetTenantID":                true,
 		"ListControlPlaneNodes":      true,
-		"GetInstanceType":            true,
 	}
 
 	// runbookHookActivities maps activity names whose input carries a RunbookName

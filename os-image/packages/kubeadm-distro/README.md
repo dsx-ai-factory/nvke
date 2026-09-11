@@ -76,11 +76,12 @@ make -C os-image/packages/kubeadm-distro test
 make -C os-image/packages/kubeadm-distro repro-check
 ```
 
-`OUT_DIR` is required and must be absolute. `nfpm` and `crane` are `go install`ed
-into `./bin` at the versions in
-[`make/tool-versions.mk`](../../../make/tool-versions.mk). `curl`, `gpg`,
-`gzip`, `sha256sum` and `tar` must be on `PATH`; `make debs` checks all of this
-before downloading anything.
+`OUT_DIR` is required and must be absolute. `nfpm` is `go install`ed into
+`./bin` at the version in
+[`make/tool-versions.mk`](../../../make/tool-versions.mk). `crane` is
+downloaded from its GitHub release at the same pinned version, and its
+checksum is verified. `curl`, `gpg`, `gzip`, `sha256sum` and `tar` must be on
+`PATH`; `make debs` checks all of this before downloading anything.
 
 | Variable | Default | Purpose |
 |---|---|---|

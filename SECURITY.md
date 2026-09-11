@@ -134,8 +134,8 @@ miss a real issue.
 If you deploy or operate nke:
 
 - **Secrets.** Never commit credentials, API keys, tokens, or kubeconfigs.
-  Supply them through the environment or a secrets manager. `FWE_API_KEY` and
-  the database connection string are read from the environment for this reason.
+  Supply them through the environment or a secrets manager. The database
+  connection string is read from the environment for this reason.
 - **Node identity.** The agent authenticates with SPIFFE/SPIRE mTLS by default.
   `--disable-mtls` exists for local development only — never enable it on a
   network anyone else can reach.
