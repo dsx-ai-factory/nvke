@@ -10,13 +10,13 @@ The process has three steps:
 2. [Write a site spec file](configuration.md) — declare your nodes, versions, and registry
 3. [Run `nkectl bootstrap site`](pre-provisioned-nodes.md#step-2-run-bootstrap-on-init-node) — bootstrap the cluster
 
-**Total time**: Approximately 30–45 minutes for cluster bring-up, plus time to deploy the NKE services stack afterward.
+**Total time**: Typically 10–15 minutes for cluster bring-up on a three-node site, plus time to deploy the NKE services stack afterward. `nkectl bootstrap site` waits `--timeout` (default `30m`) for the cluster to provision, so raise it for a larger site.
 
 ## What Happens During Bootstrap
 
-`nkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NKE site controller (Postgres, Temporal, CWE) onto it, and then uses that controller to drive the init and join workflows against your actual nodes over `nke-agent`'s gRPC API — no SSH required.
+`nkectl bootstrap site` does more than call kubeadm. It first stands up an ephemeral Kind cluster on the init node, deploys a self-contained NKE site controller (Postgres, Temporal, SPIRE, the Cluster API providers, and CWE) onto it — `--disable-mtls`, the development-only plaintext mode, skips SPIRE — and then uses that controller to drive the init and join workflows against your actual nodes over `nke-agent`'s gRPC API — no SSH required.
 
-The ephemeral Kind cluster is torn down automatically when bootstrap completes.
+The ephemeral Kind cluster is torn down when bootstrap succeeds. It is retained if you pass `--keep-bootstrap-cluster`, or if the run fails after the site cluster was created — see [Pre-Provisioned Nodes](pre-provisioned-nodes.md) for the recovery steps.
 
 ```mermaid
 sequenceDiagram
@@ -31,7 +31,7 @@ sequenceDiagram
     Op->>Ctl: nkectl bootstrap site -f sitespec.yaml
     Ctl->>Ctl: Load and validate inventory
     Ctl->>Kind: Create ephemeral bootstrap Kind cluster
-    Ctl->>Kind: Deploy Postgres + Temporal + CWE
+    Ctl->>Kind: Deploy Postgres + Temporal + SPIRE (default path) + Cluster API + CWE
     Ctl->>CWE: Wait for /readyz healthy
     CWE->>Init: ExecuteKubeadmInit (gRPC)
     Init->>K8s: kubeadm init
