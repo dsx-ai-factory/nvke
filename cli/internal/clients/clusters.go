@@ -61,9 +61,7 @@ func (c *CWEClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api
 
 // PatchCluster PATCHes the cluster identified by id with body, a JSON
 // document matching UpdateClusterRequest, and returns the cluster as it now
-// stands. body is sent exactly as given, never decoded and re-marshaled
-// through a Go struct — that would let omitempty drop an explicit empty
-// value the same as an omitted field.
+// stands.
 func (c *CWEClient) PatchCluster(ctx context.Context, id openapi_types.UUID, body []byte) (*api.Cluster, error) {
 	resp, err := c.raw.UpdateClusterWithBodyWithResponse(ctx, id, "application/json", bytes.NewReader(body))
 	if err != nil {
