@@ -67,11 +67,6 @@ func (n *NodeSet) CAPIProvider() (CAPINodePoolProvider, error) {
 	return *cloneCAPINodePoolProvider(*n.Capi), nil
 }
 
-func (n *NodeSet) BeforeUpdate() error {
-	n.UpdatedAt = time.Now()
-	return nil
-}
-
 func (n *NodeSet) SetNico(provider NicoNodePoolProvider) {
 	n.Nico = cloneNicoNodePoolProvider(provider)
 	n.SubnetIDs = append([]uuid.UUID{}, provider.SubnetIDs...)
@@ -195,6 +190,7 @@ func (q *queriesImpl) UpdateNodeSet(ctx context.Context, nodeSet *NodeSet) (Node
 		return NodeSet{}, err
 	}
 	nodeSet.SyncProviderFields(providerType)
+	nodeSet.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(nodeSet).WherePK().Exec(ctx)
 	if err != nil {
 		return NodeSet{}, err

@@ -106,11 +106,6 @@ type NodeInfo struct {
 	ConfigProfile  string    `bun:"config_profile"`
 }
 
-func (n *Node) BeforeUpdate() error {
-	n.UpdatedAt = time.Now()
-	return nil
-}
-
 func (n *Node) NicoProvider() (NicoNodeProvider, error) {
 	if n.Nico == nil {
 		return NicoNodeProvider{}, fmt.Errorf("%w: node %s nico", ErrMissingProviderPayload, n.ID)
@@ -364,6 +359,7 @@ func (q *queriesImpl) CreateNode(ctx context.Context, node *Node) (Node, error) 
 
 func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) {
 	node.SyncProviderFields()
+	node.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(node).WherePK().Exec(ctx)
 	if err != nil {
 		return Node{}, err

@@ -84,6 +84,7 @@ func TestUnit_ReconcileUpdatesKubernetesConditionsOnly(t *testing.T) {
 		clusterID: clusterID,
 		db:        dbwrapper.New(database, slog.New(slog.DiscardHandler)),
 		client:    k8sClient,
+		logger:    slog.New(slog.DiscardHandler),
 	}
 
 	result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: nodeName}})

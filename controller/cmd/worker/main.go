@@ -384,7 +384,7 @@ func main() {
 	}
 	if !cfg.NodeHealthCheckDisabled {
 		tenantRegistrars = append(tenantRegistrars,
-			tenantnodestatus.NewRegistrar(dbInstance),
+			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller")),
 			tenantnoderemediation.NewRegistrar(
 				cfg,
 				dbInstance,
