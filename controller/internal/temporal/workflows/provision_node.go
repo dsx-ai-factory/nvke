@@ -147,6 +147,10 @@ func provisionCAPINode(ctx workflow.Context, nodeID uuid.UUID) error {
 				Status:  db.ConditionStatusTrue,
 				Message: "Waiting for infrastructure allocation",
 			},
+			ProvisioningClaimed: &activities.ConditionUpdate{
+				Status:  db.ConditionStatusTrue,
+				Message: "Provisioning workflow claimed node",
+			},
 			Provisioning: &activities.ConditionUpdate{
 				Status:  db.ConditionStatusFalse,
 				Message: "",

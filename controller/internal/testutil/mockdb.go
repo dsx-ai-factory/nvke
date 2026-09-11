@@ -262,6 +262,11 @@ func (m *MockDB) DeleteNode(ctx context.Context, id uuid.UUID) error {
 	return args.Error(0)
 }
 
+func (m *MockDB) TryAcquireNodeProvisioningLock(ctx context.Context, nodeID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, nodeID)
+	return args.Bool(0), args.Error(1)
+}
+
 func (m *MockDB) ListNodeSets(ctx context.Context, filters db.NodeSetFilters) ([]db.NodeSet, error) {
 	args := m.Called(ctx, filters)
 	v, ok := args.Get(0).([]db.NodeSet)
@@ -512,6 +517,11 @@ func (m *MockTx) UpdateNodeTeleportRegistered(ctx context.Context, nodeID uuid.U
 func (m *MockTx) DeleteNode(ctx context.Context, id uuid.UUID) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
+}
+
+func (m *MockTx) TryAcquireNodeProvisioningLock(ctx context.Context, nodeID uuid.UUID) (bool, error) {
+	args := m.Called(ctx, nodeID)
+	return args.Bool(0), args.Error(1)
 }
 
 func (m *MockDB) ListNodeConditions(ctx context.Context) ([]db.NodeConditionStatus, error) {

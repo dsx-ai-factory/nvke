@@ -22,6 +22,7 @@ type NodeConditionsUpdate struct {
 
 type NodeConditions struct {
 	Pending                 *ConditionUpdate `json:"pending,omitempty"`
+	ProvisioningClaimed     *ConditionUpdate `json:"provisioningClaimed,omitempty"`
 	Provisioning            *ConditionUpdate `json:"provisioning,omitempty"`
 	ReadyToJoin             *ConditionUpdate `json:"readyToJoin,omitempty"`
 	Joined                  *ConditionUpdate `json:"joined,omitempty"`
@@ -134,6 +135,7 @@ func (a *Activities) UpdateNodeConditionsWithTx(ctx context.Context, tx db.Tx, u
 	}
 
 	updateCondition(&node.Conditions.Pending, update.Conditions.Pending)
+	updateCondition(&node.Conditions.ProvisioningClaimed, update.Conditions.ProvisioningClaimed)
 	updateCondition(&node.Conditions.Provisioning, update.Conditions.Provisioning)
 	updateCondition(&node.Conditions.ReadyToJoin, update.Conditions.ReadyToJoin)
 	updateCondition(&node.Conditions.Joined, update.Conditions.Joined)

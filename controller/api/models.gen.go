@@ -838,6 +838,7 @@ type NodeConditions struct {
 	Pending                     Condition  `json:"pending"`
 	Provisioned                 Condition  `json:"provisioned"`
 	Provisioning                Condition  `json:"provisioning"`
+	ProvisioningClaimed         Condition  `json:"provisioningClaimed"`
 	ReadyToJoin                 Condition  `json:"readyToJoin"`
 	Rebooting                   Condition  `json:"rebooting"`
 	TeleportRegistered          *Condition `json:"teleportRegistered,omitempty"`

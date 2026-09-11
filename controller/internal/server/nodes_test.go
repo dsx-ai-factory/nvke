@@ -773,6 +773,11 @@ func mockDBNodeConditions(now time.Time) db.NodeConditions {
 			Message:            "",
 			LastTransitionTime: now,
 		},
+		ProvisioningClaimed: db.Condition{
+			Status:             db.ConditionStatusTrue,
+			Message:            "Provisioning workflow claimed node",
+			LastTransitionTime: now,
+		},
 		Provisioning: db.Condition{
 			Status:             db.ConditionStatusFalse,
 			Message:            "Finished provisioning",
@@ -841,6 +846,11 @@ func mockAPINodeConditions(now time.Time) api.NodeConditions {
 		Pending: api.Condition{
 			Status:             api.ConditionStatusFalse,
 			Message:            "",
+			LastTransitionTime: now,
+		},
+		ProvisioningClaimed: api.Condition{
+			Status:             api.ConditionStatusTrue,
+			Message:            "Provisioning workflow claimed node",
 			LastTransitionTime: now,
 		},
 		Provisioning: api.Condition{

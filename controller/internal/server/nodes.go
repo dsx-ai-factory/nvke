@@ -120,6 +120,7 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 func apiNodeFromDB(dbNode *db.Node) api.Node {
 	nodeConditions := api.NodeConditions{
 		Pending:                 apiConditionFromDB(dbNode.Conditions.Pending),
+		ProvisioningClaimed:     apiConditionFromDB(dbNode.Conditions.ProvisioningClaimed),
 		Provisioning:            apiConditionFromDB(dbNode.Conditions.Provisioning),
 		ReadyToJoin:             apiConditionFromDB(dbNode.Conditions.ReadyToJoin),
 		Joined:                  apiConditionFromDB(dbNode.Conditions.Joined),

@@ -39,10 +39,11 @@ type Node struct {
 	// Condition filters use asymmetric matching:
 	//   - true: exact match (status = 'True')
 	//   - false: not definitely true (includes 'False', 'Unknown', and missing/zero)
-	Pending      *bool
-	Provisioning *bool
-	Deleting     *bool
-	Joined       *bool
+	Pending             *bool
+	ProvisioningClaimed *bool
+	Provisioning        *bool
+	Deleting            *bool
+	Joined              *bool
 }
 
 func (f Node) Matches(node db.Node) bool {
@@ -53,6 +54,9 @@ func (f Node) Matches(node db.Node) bool {
 		return false
 	}
 	if !conditionMatches(node.Conditions.Pending, f.Pending) {
+		return false
+	}
+	if !conditionMatches(node.Conditions.ProvisioningClaimed, f.ProvisioningClaimed) {
 		return false
 	}
 	if !conditionMatches(node.Conditions.Provisioning, f.Provisioning) {

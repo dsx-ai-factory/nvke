@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -232,6 +233,21 @@ func TestActivities_WaitForCAPIMachineReady_RetryBehavior(t *testing.T) {
 	}
 	cluster.ControlPlaneConfig.ControlPlaneConfigSpec.SetNico(db.NicoControlPlaneProvider{
 		VpcPrefixIDs: []uuid.UUID{firstVpcPrefixID, secondVpcPrefixID},
+	})
+
+	t.Run("missing node is non-retryable", func(t *testing.T) {
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{}, db.ErrNotFound).Once()
+
+		a := &Activities{db: mockDB}
+
+		ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+		require.Error(t, err)
+		assert.Empty(t, ipAddress)
+		var applicationErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &applicationErr)
+		assert.True(t, applicationErr.NonRetryable())
+		mockDB.AssertExpectations(t)
 	})
 
 	t.Run("persists existing machine IP without rotating stale NicoMachine exhaustion", func(t *testing.T) {
@@ -527,6 +543,9 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 	baseNode := db.Node{
 		ID:   nodeID,
 		Name: "worker-0",
+		Conditions: db.NodeConditions{
+			ProvisioningClaimed: db.NewCondition(true, "Provisioning workflow claimed node"),
+		},
 	}
 
 	tests := map[string]struct {
@@ -574,10 +593,12 @@ func TestActivities_UpdateCAPIMachineWaitNodeCondition(t *testing.T) {
 				case "pending":
 					return updated.Conditions.Pending.Status == tt.expectedStatus &&
 						updated.Conditions.Pending.Message == tt.expectedMsg &&
+						updated.Conditions.ProvisioningClaimed.Status == db.ConditionStatusTrue &&
 						updated.Conditions.Provisioning.Status == db.ConditionStatusFalse
 				case "provisioning":
 					return updated.Conditions.Provisioning.Status == tt.expectedStatus &&
 						updated.Conditions.Provisioning.Message == tt.expectedMsg &&
+						updated.Conditions.ProvisioningClaimed.Status == db.ConditionStatusTrue &&
 						updated.Conditions.Pending.Status == db.ConditionStatusFalse
 				default:
 					return false

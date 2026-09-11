@@ -160,7 +160,11 @@ func (c *Controller) reconcileNodeSet(ctx context.Context, tx db.Tx, nodeSet db.
 		// For these reasons, we only delete pending node records if there is a surplus.
 		// So that the node pool node scheduler does not provision nodes into a node pool, and thus consume forge resources, that would be above the desired count.
 
-		pendingNodes, err := tx.ListNodes(ctx, db.NodeFilters{NodeSetID: &nodeSet.ID, Pending: ptr.To(true)})
+		pendingNodes, err := tx.ListNodes(ctx, db.NodeFilters{
+			NodeSetID:           &nodeSet.ID,
+			Pending:             ptr.To(true),
+			ProvisioningClaimed: ptr.To(false),
+		})
 		if err != nil {
 			return fmt.Errorf("failed to list nodes: %w", err)
 		}
@@ -177,8 +181,12 @@ func (c *Controller) reconcileNodeSet(ctx context.Context, tx db.Tx, nodeSet db.
 				break
 			}
 
-			if err := c.deletePendingNode(ctx, tx, pendingNode, nsLogger); err != nil {
+			deleted, err := c.deletePendingNode(ctx, tx, pendingNode, nsLogger)
+			if err != nil {
 				return fmt.Errorf("failed to delete pending node: %w", err)
+			}
+			if !deleted {
+				continue
 			}
 
 			deletedCount++
@@ -231,6 +239,7 @@ func (c *Controller) createPendingNode(ctx context.Context, tx db.Tx, cluster db
 		SpiffeEnabled: c.cfg.SpiffeEnabled,
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending node provisioning"),
+			ProvisioningClaimed:     db.NewCondition(false, "Provisioning workflow has not claimed node"),
 			Provisioning:            db.NewCondition(false, "Not yet provisioning"),
 			ReadyToJoin:             db.NewCondition(false, "Not yet ready to join"),
 			Joined:                  db.NewCondition(false, "Not yet joined"),
@@ -259,22 +268,39 @@ func (c *Controller) createPendingNode(ctx context.Context, tx db.Tx, cluster db
 	return createdNode, nil
 }
 
-func (c *Controller) deletePendingNode(ctx context.Context, tx db.Tx, pendingNode db.Node, nsLogger *slog.Logger) error {
+func (c *Controller) deletePendingNode(ctx context.Context, tx db.Tx, pendingNode db.Node, nsLogger *slog.Logger) (bool, error) {
 	// Try to acquire lock - fail/continue fast if already held
 	acquired, err := tx.TryAcquireNodeProvisioningLock(ctx, pendingNode.ID)
 	if err != nil {
-		return fmt.Errorf("failed to try to acquire lock for pending node %s: %w", pendingNode.ID, err)
+		return false, fmt.Errorf("failed to try to acquire lock for pending node %s: %w", pendingNode.ID, err)
 	}
 	if !acquired {
 		nsLogger.Debug("Pending Node is being provisioned, skipping deletion", "nodeID", pendingNode.ID)
-		return nil
+		return false, nil
 	}
 
-	// We have the lock, safe to delete
+	nodeForUpdate, err := tx.GetNodeForUpdate(ctx, pendingNode.ID)
+	if err != nil {
+		if errors.Is(err, db.ErrNotFound) {
+			nsLogger.Debug("Pending node disappeared before deletion", "nodeID", pendingNode.ID)
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to get node for update: %w", err)
+	}
+	if nodeForUpdate.Conditions.Pending.Status != db.ConditionStatusTrue ||
+		nodeForUpdate.Conditions.ProvisioningClaimed.Status == db.ConditionStatusTrue {
+		nsLogger.Debug("Pending node is no longer eligible for deletion",
+			"nodeID", pendingNode.ID,
+			"pending", nodeForUpdate.Conditions.Pending.Status,
+			"provisioningClaimed", nodeForUpdate.Conditions.ProvisioningClaimed.Status,
+		)
+		return false, nil
+	}
+
 	err = tx.DeleteNode(ctx, pendingNode.ID)
 	if err != nil {
-		return fmt.Errorf("failed to delete node: %w", err)
+		return false, fmt.Errorf("failed to delete node: %w", err)
 	}
 
-	return nil
+	return true, nil
 }

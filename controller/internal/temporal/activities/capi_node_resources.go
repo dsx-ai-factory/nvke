@@ -360,7 +360,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 
 	node, err := a.db.GetNode(ctx, input.NodeID)
 	if err != nil {
-		return "", fmt.Errorf("failed to get node: %w", err)
+		return "", nonRetryableIfNotFound("failed to get node", err)
 	}
 	nodeSet, nodePool, err := nodes.GetNodeContext(ctx, a.db, node)
 	if err != nil {
@@ -437,7 +437,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 	if err := a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		nodeForUpdate, err := tx.GetNodeForUpdate(ctx, input.NodeID)
 		if err != nil {
-			return fmt.Errorf("failed to get node: %w", err)
+			return nonRetryableIfNotFound("failed to get node", err)
 		}
 		nodeForUpdate.IP = ipAddress
 		// Sticky: only stamp when the node has no type yet, so we never clobber

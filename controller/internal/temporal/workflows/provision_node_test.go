@@ -33,6 +33,10 @@ func cleanBeforeControlPlaneRejoinTestWorkflow(ctx workflow.Context, nodeID uuid
 	return nil
 }
 
+func provisionCAPINodeTestWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
+	return provisionCAPINode(ctx, nodeID)
+}
+
 // setupLabelNodeEnv builds a focused test env that registers the real DB
 // activities labelNode needs and a capturing mock for LabelNode.
 func setupLabelNodeEnv(t *testing.T, database db.DB, profilesDir string) (
@@ -200,6 +204,35 @@ func TestCleanBeforeControlPlaneRejoinUsesTypedEtcdRemoval(t *testing.T) {
 	})).Return(activities.KubeadmResetResult{}, nil).Once()
 
 	env.ExecuteWorkflow(cleanBeforeControlPlaneRejoinTestWorkflow, nodeID)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
+func TestProvisionCAPINodeClaimsNodeBeforeCreatingInfraMachine(t *testing.T) {
+	nodeID := uuid.MustParse("50000000-0000-0000-0000-000000000021")
+
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(worker.Options{DeadlockDetectionTimeout: 5 * time.Second})
+	env.RegisterWorkflow(provisionCAPINodeTestWorkflow)
+
+	var a *activities.Activities
+	env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.MatchedBy(func(update activities.NodeConditionsUpdate) bool {
+		return update.NodeID == nodeID &&
+			update.Conditions.Pending != nil &&
+			update.Conditions.Pending.Status == db.ConditionStatusTrue &&
+			update.Conditions.ProvisioningClaimed != nil &&
+			update.Conditions.ProvisioningClaimed.Status == db.ConditionStatusTrue &&
+			update.Conditions.Provisioning != nil &&
+			update.Conditions.Provisioning.Status == db.ConditionStatusFalse
+	})).Return(nil).Once()
+	env.OnActivity(a.CreateCAPIInfraMachineForNode, mock.Anything, activities.CreateCAPIInfraMachineForNodeInput{
+		NodeID: nodeID,
+	}).Return(nil).Once()
+
+	env.ExecuteWorkflow(provisionCAPINodeTestWorkflow, nodeID)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())

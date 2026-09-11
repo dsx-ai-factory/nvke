@@ -2076,6 +2076,7 @@ components:
       type: object
       required:
         - pending
+        - provisioningClaimed
         - provisioning
         - readyToJoin
         - joined
@@ -2093,54 +2094,58 @@ components:
           description: The condition indicating whether the node is pending.
           $ref: "#/components/schemas/Condition"
           x-order: 1
+        provisioningClaimed:
+          description: The condition indicating whether a provisioning workflow has claimed the node.
+          $ref: "#/components/schemas/Condition"
+          x-order: 2
         provisioning:
           description: The condition indicating whether the node is currently provisioning.
           $ref: "#/components/schemas/Condition"
-          x-order: 2
+          x-order: 3
         readyToJoin:
           description: The condition indicating whether the node is ready to join the cluster.
           $ref: "#/components/schemas/Condition"
-          x-order: 3
+          x-order: 4
         joined:
           description: The condition indicating whether the node has joined the cluster.
           $ref: "#/components/schemas/Condition"
-          x-order: 4
+          x-order: 5
         provisioned:
           description: The condition indicating whether the node is provisioned.
           $ref: "#/components/schemas/Condition"
-          x-order: 5
+          x-order: 6
         deleting:
           description: The condition indicating whether the node is currently being deleted.
           $ref: "#/components/schemas/Condition"
-          x-order: 6
+          x-order: 7
         kubernetesReady:
           description: The condition indicating whether the Kubelet is reporting Ready status.
           $ref: "#/components/schemas/Condition"
-          x-order: 7
+          x-order: 8
         kubernetesUnschedulable:
           description: The condition indicating whether the node is schedulable by Kubernetes.
           $ref: "#/components/schemas/Condition"
-          x-order: 8
+          x-order: 9
         nodeAgentReady:
           description: The condition indicating whether the Node Agent is healthy on the node.
           $ref: "#/components/schemas/Condition"
-          x-order: 9
+          x-order: 10
         rebooting:
           description: The condition indicating whether the node is currently rebooting.
           $ref: "#/components/schemas/Condition"
-          x-order: 10
+          x-order: 11
         markedForRecycling:
           description: The condition indicating whether the node is marked for recycling.
           $ref: "#/components/schemas/Condition"
-          x-order: 11
+          x-order: 12
         markedForRepair:
           description: The condition indicating whether the node is marked for repair.
           $ref: "#/components/schemas/Condition"
-          x-order: 12
+          x-order: 13
         teleportRegistered:
           description: The condition indicating whether the node is registered with Teleport for SSH. True when confirmed registered; includes lastTransitionTime and message.
           $ref: "#/components/schemas/Condition"
-          x-order: 13
+          x-order: 14
         controlPlaneRolloutRequired:
           description: >-
             For control-plane-controller-managed nodes, whether the node's pinned
@@ -2150,7 +2155,7 @@ components:
             node has needed a roll. Absent for nodes not managed by the
             control-plane controller.
           $ref: "#/components/schemas/Condition"
-          x-order: 14
+          x-order: 15
 
     GenericError:
       type: object

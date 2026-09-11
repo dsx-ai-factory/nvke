@@ -64,6 +64,7 @@ func (n *Node) GetSpiffeID(trustDomain string) string {
 
 type NodeConditions struct {
 	Pending                 Condition `json:"pending"`
+	ProvisioningClaimed     Condition `json:"provisioningClaimed"`
 	Provisioning            Condition `json:"provisioning"`
 	ReadyToJoin             Condition `json:"readyToJoin"`
 	Joined                  Condition `json:"joined"`
@@ -149,6 +150,7 @@ type NodeFilters struct {
 	//   - true:  exact match (status = 'True')
 	//   - false: not definitely true (includes 'False', 'Unknown', and missing/NULL)
 	Pending                 *bool
+	ProvisioningClaimed     *bool
 	Provisioning            *bool
 	Joined                  *bool
 	Deleting                *bool
@@ -232,6 +234,9 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 	}
 	if filters.Pending != nil {
 		query = whereNodeConditionStatus(query, "pending", *filters.Pending)
+	}
+	if filters.ProvisioningClaimed != nil {
+		query = whereNodeConditionStatus(query, "provisioningClaimed", *filters.ProvisioningClaimed)
 	}
 	if filters.Provisioning != nil {
 		query = whereNodeConditionStatus(query, "provisioning", *filters.Provisioning)
