@@ -136,7 +136,8 @@ jobs:
       # either would mean this job is secretly still riding on Docker's
       # daemon, which is exactly what the separate socket exists to rule out).
       # Docker is stopped and masked in the "Remove Docker" step below, so
-      # nothing here can reach it even by accident.
+      # nothing here can reach it even by accident; the runner is single-use,
+      # so nothing has to put it back.
       CONTAINERD_ADDRESS: /run/containerd-nerdctl/containerd.sock
       # buildkitd's own socket, named to match the containerd it builds into.
       # BUILDKIT_HOST is the variable `nerdctl build` itself reads to find a
@@ -443,36 +444,20 @@ jobs:
       # could then put the shim back as the permanent /usr/bin/docker. Nothing
       # here is worth that.
       #
-      # Expected to be safe because linux-amd64-cpu16 is a container-based
-      # pool -- os-image-artifact.yml records it as one when explaining why it
-      # never exposed /dev/kvm -- so nothing done here should outlive the job.
-      # That is an inference from one comment, though, and actionlint.yaml
-      # registers the label only as self-hosted. image.yml and thirteen other
-      # workflows run on the same pool, so the "Restore Docker" step at the
-      # end of this job puts everything back regardless; if the premise is
-      # right it costs a second, and if it is wrong it is the difference
-      # between one red job and fourteen. The standalone
-      # containerd-nerdctl.service installed above is a separate unit on a
-      # separate socket and is untouched by this step.
+      # Nothing here needs undoing. linux-amd64-cpu16 is an ephemeral,
+      # single-use runner scale set (confirmed with the pool owner; the runner
+      # names are ARC's per-job `...-runner-<random>` and never repeat), and
+      # the GitHub-hosted runners are single-use too. A job's runner, with its
+      # own systemd and dockerd, is destroyed when the job ends, so the masks
+      # cannot reach a sibling job on the same node or the next job anywhere.
+      # An earlier version restored Docker at the end as insurance against a
+      # persistent pool; it protected nothing and was the one step that
+      # failed spuriously. The standalone containerd-nerdctl.service installed
+      # above is a separate unit on a separate socket and is untouched here.
       - name: Remove Docker
         shell: bash
         run: |
           set -Eeuo pipefail
-          # Pre-state first, before anything is mutated, so Restore Docker
-          # puts things back as they were rather than as it guesses: which
-          # units were enabled (survives a reboot on a persistent runner) and
-          # which were active (what the assertions on the way back check).
-          : > "${RUNNER_TEMP}/docker-enabled.list"
-          : > "${RUNNER_TEMP}/docker-active.list"
-          for unit in docker.socket docker.service containerd.service; do
-            if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" = "enabled" ]; then
-              echo "${unit}" >> "${RUNNER_TEMP}/docker-enabled.list"
-            fi
-            if systemctl is-active --quiet "${unit}" 2>/dev/null; then
-              echo "${unit}" >> "${RUNNER_TEMP}/docker-active.list"
-            fi
-          done
-
           # containerd.service here is Docker's (the containerd.io package),
           # on /run/containerd/containerd.sock -- the socket nerdctl defaults
           # to without CONTAINERD_ADDRESS. Masked so that fallback fails
@@ -590,123 +575,3 @@ jobs:
           path: cli/cluster-diagnostics/
           if-no-files-found: ignore
           retention-days: 7
-
-      # Insurance against the pool being persistent after all -- see the
-      # "Remove Docker" comment. Puts back what that step took -- the masks,
-      # the enable state, the active state -- asserts that it did at the same
-      # level removal asserted (daemon and socket, not a client property), and
-      # tears down everything this job's own runtime created: containers,
-      # shims, mounts, the image store, the units. always(), so a failed run
-      # is not the one that leaves the runner without Docker.
-      #
-      # Every mutation feeds `failed` instead of aborting. The teardown at the
-      # bottom must not be skipped by exactly the kind of failure this step
-      # exists to insure against, so nothing here exits early; the step fails
-      # at the end if anything did.
-      - name: Restore Docker
-        if: always()
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          failed=false
-          fail() { echo "::error::$*"; failed=true; }
-          enabled_list="${RUNNER_TEMP}/docker-enabled.list"
-          active_list="${RUNNER_TEMP}/docker-active.list"
-
-          # Docker back as it was.
-          sudo systemctl unmask docker.socket docker.service containerd.service || fail "could not unmask the Docker units"
-          if [ -s "${enabled_list}" ]; then
-            xargs -a "${enabled_list}" sudo systemctl enable || fail "could not re-enable the Docker units"
-          fi
-          if [ -s "${active_list}" ]; then
-            xargs -a "${active_list}" sudo systemctl start || fail "could not restart the Docker units"
-          fi
-
-          # Asserted, the way removal was. A restore that half-worked would
-          # otherwise surface as some other workflow failing on a runner
-          # nobody expected to be Docker-less.
-          for unit in docker.socket docker.service containerd.service; do
-            if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" = "masked" ]; then
-              fail "${unit} is still masked after restore"
-            fi
-          done
-          if [ -f "${enabled_list}" ]; then
-            while read -r unit; do
-              if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" != "enabled" ]; then
-                fail "${unit} was enabled before this job and is not now"
-              fi
-            done < "${enabled_list}"
-          fi
-          if [ -f "${active_list}" ]; then
-            while read -r unit; do
-              for _ in $(seq 1 15); do
-                systemctl is-active --quiet "${unit}" && break
-                sleep 1
-              done
-              if ! systemctl is-active --quiet "${unit}"; then
-                fail "${unit} was active before this job and is not now"
-              fi
-            done < "${active_list}"
-            if grep -qx docker.service "${active_list}"; then
-              for _ in $(seq 1 15); do
-                [ -S /var/run/docker.sock ] && break
-                sleep 1
-              done
-              if [ ! -S /var/run/docker.sock ]; then
-                fail "docker.service is back but /var/run/docker.sock is not"
-              fi
-              # Through the real binary, not the shim still first on PATH.
-              real="$(type -aP docker | grep -vx "${RUNNER_TEMP}/no-docker/docker" | head -1 || true)"
-              if [ -n "${real}" ] && ! "${real}" version >/dev/null 2>&1; then
-                fail "the Docker daemon does not answer through ${real} after restore"
-              fi
-            fi
-          fi
-          rm -rf "${RUNNER_TEMP}/no-docker"
-
-          # The job's own runtime goes too, all of it. Both units are
-          # KillMode=process, deliberately -- restarting containerd must not
-          # kill its containers -- so stopping the units alone would leave
-          # every container and shim running with the unit files gone and
-          # nothing left to stop them. And every image this job built landed
-          # in /var/lib/containerd-nerdctl, which nothing else reclaims.
-          # Containers first, through the daemon, while it is still up.
-          if sudo test -S "${CONTAINERD_ADDRESS}"; then
-            ids="$(sudo -E env "PATH=$PATH" nerdctl ps -aq 2>/dev/null || true)"
-            if [ -n "${ids}" ]; then
-              echo "${ids}" | xargs sudo -E env "PATH=$PATH" nerdctl rm -f >/dev/null || fail "could not remove this job's containers"
-            fi
-            for net in kind "${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"; do
-              sudo -E env "PATH=$PATH" nerdctl network rm "${net}" >/dev/null 2>&1 || true
-            done
-          fi
-          sudo systemctl disable --now buildkit-nerdctl containerd-nerdctl 2>/dev/null || true
-          # Shims started by this containerd carry its socket path in their
-          # command line; Docker's, now restored, carry the default one.
-          sudo pkill -f "containerd-shim.*containerd-nerdctl" 2>/dev/null || true
-          # A container rootfs still mounted under the data root has to go
-          # before the directory can; deepest first. Process substitution, not
-          # a pipeline: when nothing is mounted -- the normal case, run.sh
-          # having cleaned up -- grep exits 1, and under pipefail that would
-          # take `set -e` with it, aborting the teardown with no message. That
-          # is exactly what the first run of this step did.
-          while read -r m; do
-            [ -n "${m}" ] || continue
-            sudo umount "${m}" 2>/dev/null || true
-          done < <(sudo findmnt -rno TARGET 2>/dev/null | grep -F /var/lib/containerd-nerdctl | sort -r || true)
-          sudo rm -rf /var/lib/containerd-nerdctl /run/containerd-nerdctl /run/buildkit-nerdctl /etc/containerd-nerdctl || fail "could not remove this job's containerd state"
-          sudo rm -f /etc/systemd/system/buildkit-nerdctl.service /etc/systemd/system/containerd-nerdctl.service || fail "could not remove this job's unit files"
-          sudo systemctl daemon-reload || fail "daemon-reload failed"
-          if pgrep -f "containerd-shim.*containerd-nerdctl" >/dev/null 2>&1; then
-            fail "shims from this job's containerd are still running"
-          fi
-          if pgrep -f "containerd --config /etc/containerd-nerdctl" >/dev/null 2>&1; then
-            fail "this job's containerd is still running"
-          fi
-          if [ -d /var/lib/containerd-nerdctl ]; then
-            fail "/var/lib/containerd-nerdctl still exists"
-          fi
-
-          if [ "${failed}" = true ]; then
-            exit 1
-          fi
