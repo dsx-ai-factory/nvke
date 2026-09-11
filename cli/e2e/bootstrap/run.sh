@@ -157,6 +157,7 @@ kind_lists_bootstrap_cluster() {
 nodes_up=false
 bootstrap_cluster_cleanup_pending=false
 spire_vip_device=""
+node_bridge=""
 nerdctl_bridge=""
 nerdctl_node_access=false
 
@@ -224,8 +225,8 @@ cleanup() {
   if [ "${nodes_up}" = true ]; then
     if [ "${nerdctl_node_access}" = true ]; then
       log "removing the cross-bridge forwarding rules"
-      iptables -D FORWARD -i "${nerdctl_bridge}" -o "${spire_vip_device}" -j ACCEPT 2>/dev/null || true
-      iptables -D FORWARD -i "${spire_vip_device}" -o "${nerdctl_bridge}" -j ACCEPT 2>/dev/null || true
+      iptables -D FORWARD -i "${nerdctl_bridge}" -o "${node_bridge}" -j ACCEPT 2>/dev/null || true
+      iptables -D FORWARD -i "${node_bridge}" -o "${nerdctl_bridge}" -j ACCEPT 2>/dev/null || true
     fi
     if [ -n "${spire_vip_device}" ]; then
       log "removing ${SPIRE_VIP} from ${spire_vip_device}"
@@ -486,11 +487,15 @@ attach_bootstrap_to_node_network() {
   # attests. Permit exactly this pair of bridges, both directions, inserted
   # at position 1 so it precedes STAGE-1. Nothing else on the host is
   # reachable through these rules.
-  iptables -I FORWARD 1 -i "${nerdctl_bridge}" -o "${bridge}" -j ACCEPT || return 1
-  iptables -I FORWARD 1 -i "${bridge}" -o "${nerdctl_bridge}" -j ACCEPT || return 1
+  # Recorded before anything is installed, so cleanup removes whatever did
+  # get installed: a failure between the two inserts, or after them, must
+  # not leave a FORWARD ACCEPT behind on the host.
+  node_bridge="${bridge}"
   nerdctl_node_access=true
-  ip address replace "${SPIRE_VIP}/32" dev "${bridge}" || return 1
-  spire_vip_device="${bridge}"
+  iptables -I FORWARD 1 -i "${nerdctl_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
+  iptables -I FORWARD 1 -i "${node_bridge}" -o "${nerdctl_bridge}" -j ACCEPT || return 1
+  ip address replace "${SPIRE_VIP}/32" dev "${node_bridge}" || return 1
+  spire_vip_device="${node_bridge}"
 }
 
 # Attach as soon as Kind reports the bootstrap cluster ready. This is before CWE
@@ -509,7 +514,15 @@ while kill -0 "${bootstrap_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${attach_dea
   if grep -q "bootstrap kind cluster ready" "${BOOTSTRAP_LOG}" 2>/dev/null; then
     if attach_bootstrap_to_node_network; then
       log "attached the bootstrap cluster at ${SPIRE_VIP}"
-  probe_cross_bridge_connectivity || exit 1
+      # Stop the bootstrap before exiting: the EXIT trap deletes the cluster
+      # it is still driving, and a live `nkectl bootstrap site` would
+      # otherwise outlive this script. Same shape as the unattached path.
+      if ! probe_cross_bridge_connectivity; then
+        kill "${bootstrap_pid}" 2>/dev/null || true
+        wait "${bootstrap_pid}" 2>/dev/null || true
+        cat "${BOOTSTRAP_LOG}" || true
+        exit 1
+      fi
       attached=true
     else
       log "WARN: could not attach the bootstrap cluster to the node network"
