@@ -187,6 +187,50 @@ func TestPatchClusterSendsThePatchAndReportsSuccess(t *testing.T) {
 	}
 }
 
+// TestPatchClusterMultipleFieldsInOnePatch verifies that a single --patch
+// document combining a top-level scalar, a top-level bool, and nested
+// object fields sends all of them together, and that the ones the fake
+// tracks are actually applied to the stored cluster.
+func TestPatchClusterMultipleFieldsInOnePatch(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	patch := `
+controlPlaneKubernetesVersion: "1.31.0"
+teleportEnabled: true
+controlPlaneConfig:
+  desiredCount: 3
+  maxSurge: 1
+`
+	_, err := run(t, NewPatchCmd(clientFn), "my-cluster", "--patch", patch)
+	if err != nil {
+		t.Fatalf("patch cluster: %v", err)
+	}
+
+	body := fake.lastRequestBody()
+	for _, want := range []string{
+		`"controlPlaneKubernetesVersion":"1.31.0"`,
+		`"teleportEnabled":true`,
+		`"desiredCount":3`,
+		`"maxSurge":1`,
+	} {
+		if !bytes.Contains(body, []byte(want)) {
+			t.Errorf("PATCH body = %s, want it to contain %s", body, want)
+		}
+	}
+
+	stored := fake.stored()
+	if len(stored) != 1 {
+		t.Fatalf("fake holds %d clusters, want 1", len(stored))
+	}
+	if stored[0].ControlPlaneKubernetesVersion != "1.31.0" {
+		t.Errorf("stored controlPlaneKubernetesVersion = %q, want 1.31.0", stored[0].ControlPlaneKubernetesVersion)
+	}
+	if stored[0].TeleportEnabled == nil || !*stored[0].TeleportEnabled {
+		t.Errorf("stored teleportEnabled = %v, want true", stored[0].TeleportEnabled)
+	}
+}
+
 // TestPatchClusterFileLoadsThePatch verifies --patch-file reads a real file
 // path (not just stdin) and its fields reach the wire.
 func TestPatchClusterFileLoadsThePatch(t *testing.T) {
