@@ -89,10 +89,10 @@ jobs:
       matrix:
         include:
           - arch: amd64
-            timeout_minutes: 120
+            timeout_minutes: 180
             build_fde: true
           - arch: arm64
-            timeout_minutes: 240
+            timeout_minutes: 300
             build_fde: false
     # Packer QEMU needs /dev/kvm for the amd64 leg. linux-amd64-cpu16 (a
     # container-based pool) never exposed it, forcing every bake onto QEMU's
@@ -109,9 +109,15 @@ jobs:
     # amd64: sized for real KVM (FDE bake + demo-fde.sh + non-FDE bake +
     # boot-smoke, each a few minutes, with real headroom); the KVM gate below
     # fails fast instead of burning the timeout if that ever regresses to
-    # tcg. arm64: non-FDE bake + boot-smoke only, but under tcg cross-arch
-    # emulation, which has no local measurement yet to size against -- 240m
-    # is a starting guess, expect to revisit once real runs land.
+    # tcg. Bumped from 120m to 180m after a real run's amd64 leg still timed
+    # out (https://github.com/NVIDIA/nke/actions/runs/34525233526) for a
+    # cause not yet root-caused -- see #695 for one confirmed contributor
+    # (a bloated golden image) and the self-timeout + console-log dump on
+    # the build steps below for diagnosing the next one. arm64: non-FDE
+    # bake + boot-smoke only, but under tcg cross-arch emulation, which has
+    # no local measurement yet to size against -- bumped from 240m to 300m
+    # alongside amd64 for the same reason; still a starting guess, expect to
+    # revisit once real runs land.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
       contents: write
