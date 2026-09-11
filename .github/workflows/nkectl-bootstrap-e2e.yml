@@ -29,8 +29,8 @@
 # package runs, because reusing that daemon would mean the containerd-driven
 # path is secretly riding on Docker. Nothing here invokes `docker`, and two
 # steps below keep that true: "Assert the suite invokes no docker" greps for
-# an invocation before the run, and "Remove Docker" stops the daemon and
-# replaces the binary so anything the grep misses fails at runtime.
+# an invocation before the run, and "Remove Docker" masks the daemon and puts
+# a failing shim first on PATH so anything the grep misses fails at runtime.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -428,10 +428,20 @@ jobs:
       # to its Docker default if KIND_EXPERIMENTAL_PROVIDER were ever dropped,
       # nerdctl reaching Docker's containerd if CONTAINERD_ADDRESS were. So
       # Docker is removed, and its absence asserted, before the first image is
-      # built. The daemon, its socket and Docker's own containerd are stopped
-      # and masked; every `docker` binary on PATH is replaced in place by a
-      # shim that fails with a pointer here, so an absolute-path invocation
-      # fails the same way a bare one does.
+      # built.
+      #
+      # Removed means: the daemon, its socket and Docker's own containerd are
+      # stopped and masked, and a shim that fails with a pointer here is put
+      # first on PATH. The binaries themselves are not touched. The masking is
+      # what makes an absolute-path `/usr/bin/docker build` fail as well --
+      # with Docker's own "cannot connect to the daemon" rather than the
+      # shim's message, a worse error but the same outcome, and the assertions
+      # below prove it against every real binary on PATH. An earlier version
+      # replaced the binaries in place for the nicer message; that mutated
+      # files a run cancelled mid-job (routine under cancel-in-progress) could
+      # leave half-done for the next job on the runner, and the restore step
+      # could then put the shim back as the permanent /usr/bin/docker. Nothing
+      # here is worth that.
       #
       # Expected to be safe because linux-amd64-cpu16 is a container-based
       # pool -- os-image-artifact.yml records it as one when explaining why it
@@ -443,61 +453,71 @@ jobs:
       # right it costs a second, and if it is wrong it is the difference
       # between one red job and fourteen. The standalone
       # containerd-nerdctl.service installed above is a separate unit on a
-      # separate socket and is untouched by either step.
+      # separate socket and is untouched by this step.
       - name: Remove Docker
         shell: bash
         run: |
           set -Eeuo pipefail
-          # containerd.service here is Docker's (the containerd.io package),
-          # on /run/containerd/containerd.sock -- the socket nerdctl defaults
-          # to without CONTAINERD_ADDRESS. Masked so that fallback fails
-          # loudly instead of quietly riding on Docker's daemon.
-          # Which units were enabled is recorded first, so the restore step can
-          # put them back as they were rather than leaving them unmasked but
-          # disabled -- on a persistent runner that would survive a reboot.
+          # Pre-state first, before anything is mutated, so Restore Docker
+          # puts things back as they were rather than as it guesses: which
+          # units were enabled (survives a reboot on a persistent runner) and
+          # which were active (what the assertions on the way back check).
           : > "${RUNNER_TEMP}/docker-enabled.list"
+          : > "${RUNNER_TEMP}/docker-active.list"
           for unit in docker.socket docker.service containerd.service; do
             if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" = "enabled" ]; then
               echo "${unit}" >> "${RUNNER_TEMP}/docker-enabled.list"
             fi
+            if systemctl is-active --quiet "${unit}" 2>/dev/null; then
+              echo "${unit}" >> "${RUNNER_TEMP}/docker-active.list"
+            fi
           done
-          # disable --now may fail for a unit that is not loaded; mask must not,
-          # because the assertions below rely on it having taken.
+
+          # containerd.service here is Docker's (the containerd.io package),
+          # on /run/containerd/containerd.sock -- the socket nerdctl defaults
+          # to without CONTAINERD_ADDRESS. Masked so that fallback fails
+          # loudly instead of quietly riding on Docker's daemon. disable --now
+          # may fail for a unit that is not loaded; mask must not, because the
+          # assertions below rely on it having taken.
           sudo systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
           sudo systemctl mask docker.socket docker.service containerd.service
           sudo rm -f /var/run/docker.sock /run/docker.sock
 
-          shim="$(mktemp)"
-          cat >"${shim}" <<'SHIM'
+          # The shim lives under RUNNER_TEMP and is prepended through
+          # GITHUB_PATH: both are per-job, so nothing about it can outlive the
+          # job or need restoring.
+          shim_dir="${RUNNER_TEMP}/no-docker"
+          mkdir -p "${shim_dir}"
+          cat >"${shim_dir}/docker" <<'SHIM'
           #!/bin/sh
           echo "docker was invoked by the bootstrap e2e suite: docker $*" >&2
           echo "this job removes Docker so a reintroduced dependency fails here rather than passing unnoticed." >&2
           echo "The suite runs on nerdctl/containerd. See cli/Makefile's check-no-docker and the 'Remove Docker' step in nkectl-bootstrap-e2e.yml." >&2
           exit 1
           SHIM
-          # Every copy on PATH, replaced where it lives, plus one first on
-          # PATH in case none was installed at all. Originals are kept beside
-          # their path and listed for the restore step.
-          # Resolved and deduplicated first. On a usrmerge system /bin is a
-          # symlink to usr/bin, so `type -aP` reports the same file twice; a
-          # second pass would move the freshly installed shim over the saved
-          # original, and the restore step would then put the shim back.
-          : > "${RUNNER_TEMP}/docker-removed.list"
-          while read -r path; do
-            sudo mv "${path}" "${path}.nke-removed"
-            echo "${path}" >> "${RUNNER_TEMP}/docker-removed.list"
-            sudo install -m 0755 "${shim}" "${path}"
-          done < <( { type -aP docker || true; } | while read -r p; do readlink -f "${p}"; done | sort -u)
-          if [ ! -e /usr/local/bin/docker ]; then
-            sudo install -m 0755 "${shim}" /usr/local/bin/docker
-            echo "/usr/local/bin/docker:shim-only" >> "${RUNNER_TEMP}/docker-removed.list"
-          fi
+          chmod 0755 "${shim_dir}/docker"
+          echo "${shim_dir}" >> "${GITHUB_PATH}"
+          export PATH="${shim_dir}:${PATH}"
 
           # Prove it. A removal that did not take is worse than none: it
           # would read as a guarantee while providing nothing.
+          resolved="$(command -v docker || true)"
+          if [ "${resolved}" != "${shim_dir}/docker" ]; then
+            echo "::error::docker resolves to '${resolved:-nothing}', not the shim"; exit 1
+          fi
           if docker version >/dev/null 2>&1; then
             echo "::error::docker still runs after removal"; exit 1
           fi
+          # Every real binary too, by its own path. Nothing on PATH shadows
+          # these, so this is the masking being proven, not the shim.
+          while read -r real; do
+            if [ "${real}" = "${shim_dir}/docker" ]; then
+              continue
+            fi
+            if "${real}" version >/dev/null 2>&1; then
+              echo "::error::${real} still reaches a daemon after removal"; exit 1
+            fi
+          done < <(type -aP docker || true)
           if systemctl is-active --quiet docker.service; then
             echo "::error::docker.service is still active after removal"; exit 1
           fi
@@ -572,77 +592,115 @@ jobs:
           retention-days: 7
 
       # Insurance against the pool being persistent after all -- see the
-      # "Remove Docker" comment. Puts back what that step took -- the masked
-      # units, re-enabled if they were enabled before, and the moved-aside
-      # binaries -- asserts that it did, and stops the daemons this job
-      # started. always(), so a failed run is not the one that leaves the
-      # runner without Docker.
+      # "Remove Docker" comment. Puts back what that step took -- the masks,
+      # the enable state, the active state -- asserts that it did at the same
+      # level removal asserted (daemon and socket, not a client property), and
+      # tears down everything this job's own runtime created: containers,
+      # shims, mounts, the image store, the units. always(), so a failed run
+      # is not the one that leaves the runner without Docker.
+      #
+      # Every mutation feeds `failed` instead of aborting. The teardown at the
+      # bottom must not be skipped by exactly the kind of failure this step
+      # exists to insure against, so nothing here exits early; the step fails
+      # at the end if anything did.
       - name: Restore Docker
         if: always()
         shell: bash
         run: |
           set -Eeuo pipefail
           failed=false
-          sudo systemctl unmask docker.socket docker.service containerd.service 2>/dev/null || true
+          fail() { echo "::error::$*"; failed=true; }
+          enabled_list="${RUNNER_TEMP}/docker-enabled.list"
+          active_list="${RUNNER_TEMP}/docker-active.list"
 
-          restored_real=false
-          if [ -f "${RUNNER_TEMP}/docker-removed.list" ]; then
-            while IFS=: read -r path mode; do
-              if [ "${mode}" = "shim-only" ]; then
-                sudo rm -f "${path}"
-              elif [ -e "${path}.nke-removed" ]; then
-                sudo mv -f "${path}.nke-removed" "${path}"
-                restored_real=true
-              else
-                echo "::error::nothing to restore at ${path}: ${path}.nke-removed is missing"
-                failed=true
-              fi
-            done < "${RUNNER_TEMP}/docker-removed.list"
+          # Docker back as it was.
+          sudo systemctl unmask docker.socket docker.service containerd.service || fail "could not unmask the Docker units"
+          if [ -s "${enabled_list}" ]; then
+            xargs -a "${enabled_list}" sudo systemctl enable || fail "could not re-enable the Docker units"
           fi
-          if [ -s "${RUNNER_TEMP}/docker-enabled.list" ]; then
-            xargs -a "${RUNNER_TEMP}/docker-enabled.list" sudo systemctl enable 2>/dev/null || true
+          if [ -s "${active_list}" ]; then
+            xargs -a "${active_list}" sudo systemctl start || fail "could not restart the Docker units"
           fi
-          sudo systemctl start containerd.service docker.socket docker.service 2>/dev/null || true
 
-          # Asserted, the way removal is. A restore that half-worked -- the
-          # shim left in place of the binary, a unit still masked -- would
-          # otherwise be invisible here and surface as some other workflow
-          # failing on a runner nobody expected to be Docker-less.
-          if [ "${restored_real}" = true ]; then
-            version="$(docker version --format '{{.Client.Version}}' 2>/dev/null || true)"
-            if [ -z "${version}" ]; then
-              echo "::error::docker client does not answer after restore; the shim may have been restored in place of the binary"
-              failed=true
-            else
-              echo "docker restored: ${version}"
-            fi
-            while IFS=: read -r path _; do
-              if [ -e "${path}.nke-removed" ]; then
-                echo "::error::${path}.nke-removed still exists after restore"; failed=true
-              fi
-            done < "${RUNNER_TEMP}/docker-removed.list"
-          else
-            echo "docker was not installed here; nothing to restore"
-          fi
+          # Asserted, the way removal was. A restore that half-worked would
+          # otherwise surface as some other workflow failing on a runner
+          # nobody expected to be Docker-less.
           for unit in docker.socket docker.service containerd.service; do
             if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" = "masked" ]; then
-              echo "::error::${unit} is still masked after restore"; failed=true
+              fail "${unit} is still masked after restore"
             fi
           done
-          if [ -s "${RUNNER_TEMP}/docker-enabled.list" ]; then
+          if [ -f "${enabled_list}" ]; then
             while read -r unit; do
               if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" != "enabled" ]; then
-                echo "::error::${unit} was enabled before this job and is not now"; failed=true
+                fail "${unit} was enabled before this job and is not now"
               fi
-            done < "${RUNNER_TEMP}/docker-enabled.list"
+            done < "${enabled_list}"
           fi
+          if [ -f "${active_list}" ]; then
+            while read -r unit; do
+              for _ in $(seq 1 15); do
+                systemctl is-active --quiet "${unit}" && break
+                sleep 1
+              done
+              if ! systemctl is-active --quiet "${unit}"; then
+                fail "${unit} was active before this job and is not now"
+              fi
+            done < "${active_list}"
+            if grep -qx docker.service "${active_list}"; then
+              for _ in $(seq 1 15); do
+                [ -S /var/run/docker.sock ] && break
+                sleep 1
+              done
+              if [ ! -S /var/run/docker.sock ]; then
+                fail "docker.service is back but /var/run/docker.sock is not"
+              fi
+              # Through the real binary, not the shim still first on PATH.
+              real="$(type -aP docker | grep -vx "${RUNNER_TEMP}/no-docker/docker" | head -1 || true)"
+              if [ -n "${real}" ] && ! "${real}" version >/dev/null 2>&1; then
+                fail "the Docker daemon does not answer through ${real} after restore"
+              fi
+            fi
+          fi
+          rm -rf "${RUNNER_TEMP}/no-docker"
 
-          # The job's own daemons go too. Two root services left running would
-          # be the same hazard on a persistent runner as a missing Docker; the
-          # binaries under /usr/local are inert files and are left alone.
+          # The job's own runtime goes too, all of it. Both units are
+          # KillMode=process, deliberately -- restarting containerd must not
+          # kill its containers -- so stopping the units alone would leave
+          # every container and shim running with the unit files gone and
+          # nothing left to stop them. And every image this job built landed
+          # in /var/lib/containerd-nerdctl, which nothing else reclaims.
+          # Containers first, through the daemon, while it is still up.
+          if sudo test -S "${CONTAINERD_ADDRESS}"; then
+            ids="$(sudo -E env "PATH=$PATH" nerdctl ps -aq 2>/dev/null || true)"
+            if [ -n "${ids}" ]; then
+              echo "${ids}" | xargs sudo -E env "PATH=$PATH" nerdctl rm -f >/dev/null || fail "could not remove this job's containers"
+            fi
+            for net in kind "${NKECTL_E2E_NETWORK:-nkectl-e2e-nodes}"; do
+              sudo -E env "PATH=$PATH" nerdctl network rm "${net}" >/dev/null 2>&1 || true
+            done
+          fi
           sudo systemctl disable --now buildkit-nerdctl containerd-nerdctl 2>/dev/null || true
-          sudo rm -f /etc/systemd/system/buildkit-nerdctl.service /etc/systemd/system/containerd-nerdctl.service
-          sudo systemctl daemon-reload || true
+          # Shims started by this containerd carry its socket path in their
+          # command line; Docker's, now restored, carry the default one.
+          sudo pkill -f "containerd-shim.*containerd-nerdctl" 2>/dev/null || true
+          # A container rootfs still mounted under the data root has to go
+          # before the directory can; deepest first.
+          sudo findmnt -rno TARGET 2>/dev/null | grep -F /var/lib/containerd-nerdctl | sort -r | while read -r m; do
+            sudo umount "${m}" 2>/dev/null || true
+          done
+          sudo rm -rf /var/lib/containerd-nerdctl /run/containerd-nerdctl /run/buildkit-nerdctl /etc/containerd-nerdctl || fail "could not remove this job's containerd state"
+          sudo rm -f /etc/systemd/system/buildkit-nerdctl.service /etc/systemd/system/containerd-nerdctl.service || fail "could not remove this job's unit files"
+          sudo systemctl daemon-reload || fail "daemon-reload failed"
+          if pgrep -f "containerd-shim.*containerd-nerdctl" >/dev/null 2>&1; then
+            fail "shims from this job's containerd are still running"
+          fi
+          if pgrep -f "containerd --config /etc/containerd-nerdctl" >/dev/null 2>&1; then
+            fail "this job's containerd is still running"
+          fi
+          if [ -d /var/lib/containerd-nerdctl ]; then
+            fail "/var/lib/containerd-nerdctl still exists"
+          fi
 
           if [ "${failed}" = true ]; then
             exit 1
