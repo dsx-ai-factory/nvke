@@ -207,6 +207,7 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 	apiServer := kubeadmv1beta3.APIServer{
 		ControlPlaneComponent: kubeadmv1beta3.ControlPlaneComponent{
 			ExtraArgs: map[string]string{
+				"enable-admission-plugins":                defaultEnabledAdmissionPlugins,
 				"audit-policy-file":                       defaultAuditPolicyFile,
 				"audit-log-path":                          defaultAuditLogPath,
 				"audit-log-maxage":                        defaultAuditLogMaxAge,

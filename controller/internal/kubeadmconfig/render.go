@@ -51,6 +51,14 @@ const (
 	defaultSystemReservedMemory      = "16Gi"
 	defaultKubeReservedMemory        = "2Gi"
 	defaultAPIServerTerminationGrace = 45
+	// defaultEnabledAdmissionPlugins is additive to kubeadm's own default
+	// admission-plugin list (which already includes NodeRestriction). Each of
+	// these is safe to enable unconditionally: DenyServiceExternalIPs and
+	// OwnerReferencesPermissionEnforcement are self-contained; PodNodeSelector
+	// and PodTolerationRestriction only activate for namespaces carrying
+	// annotations NKE does not set today, so they are no-ops until paired with
+	// that follow-up work.
+	defaultEnabledAdmissionPlugins = "DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction"
 )
 
 const (
