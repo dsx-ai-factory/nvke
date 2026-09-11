@@ -11,6 +11,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
@@ -30,6 +32,19 @@ func (c *Controller) upsertSecret(ctx context.Context, cluster db.Cluster, desir
 	live, skip, err := c.refreshCluster(ctx, cluster)
 	if err != nil || skip {
 		return err
+	}
+
+	capiCluster := &clusterv1.Cluster{}
+	key := types.NamespacedName{Namespace: SecretsNamespace, Name: live.Name}
+	if err := c.k8sClient.Get(ctx, key, capiCluster); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.logger.Debug("CAPI cluster no longer exists; skipping tenant-access publish", "clusterID", live.ID, "clusterName", live.Name)
+			return nil
+		}
+		return fmt.Errorf("getting CAPI cluster %s before publish: %w", key, err)
+	}
+	if err := controllerutil.SetControllerReference(capiCluster, desired, c.scheme); err != nil {
+		return fmt.Errorf("setting owner reference on secret %s/%s: %w", desired.Namespace, desired.Name, err)
 	}
 
 	return upsertOwnedSecret(ctx, c.k8sClient, c.logger, live, desired)
@@ -80,6 +95,7 @@ func upsertOwnedSecret(
 			secret.Labels[key] = value
 		}
 		secret.Type = desired.Type
+		secret.OwnerReferences = desired.OwnerReferences
 		if secret.Data == nil {
 			secret.Data = map[string][]byte{}
 		}

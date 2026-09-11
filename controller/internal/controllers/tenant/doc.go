@@ -165,6 +165,7 @@
 // pending CSRs from its watch.
 //
 // When the durable cluster row enters Deleting, the same cluster source stops
-// the tenant manager immediately. Temporal retains the access Secrets until its
-// final teardown step, then removes them after deleting the cluster row.
+// the tenant manager immediately. The access Secrets carry an owner reference
+// to the CAPI Cluster, so Kubernetes garbage collection removes them once the
+// CAPI Cluster itself finishes deleting; no teardown workflow step deletes them.
 package tenant
