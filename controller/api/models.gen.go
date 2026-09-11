@@ -35,12 +35,6 @@ const (
 	DiskSelectionStrategyCreateSmallest DiskSelectionStrategyCreate = "smallest"
 )
 
-// Defines values for InfraProvider.
-const (
-	InfraProviderInfra InfraProvider = "infra"
-	InfraProviderNico  InfraProvider = "nico"
-)
-
 // Defines values for SpireAttestationMethod.
 const (
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
@@ -484,9 +478,6 @@ type InfraNodeSetProvider struct {
 	SpireAttestationMethod SpireAttestationMethodCreate `json:"spireAttestationMethod,omitempty"`
 }
 
-// InfraProvider A top-level provider payload key advertised for CreateClusterRequest cluster specs.
-type InfraProvider string
-
 // ListCNIPluginsResponse defines model for ListCNIPluginsResponse.
 type ListCNIPluginsResponse struct {
 	// CniPlugins A list of CNI plugins
@@ -503,12 +494,6 @@ type ListClustersResponse struct {
 type ListConfigProfilesResponse struct {
 	// ConfigProfiles The list of config profiles
 	ConfigProfiles []ConfigProfile `json:"configProfiles"`
-}
-
-// ListInfraProvidersResponse defines model for ListInfraProvidersResponse.
-type ListInfraProvidersResponse struct {
-	// Providers The provider payload keys advertised for CreateClusterRequest cluster specs.
-	Providers []InfraProvider `json:"providers"`
 }
 
 // ListNodePoolsResponse defines model for ListNodePoolsResponse.

@@ -198,7 +198,6 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 		osProfileService:      *NewOSProfileService(cfg, logger),
 		configProfileService:  *NewConfigProfileService(cfg, logger),
 		cniPluginsService:     *NewCNIPluginsService(),
-		infraProvidersService: *NewInfraProvidersService(cfg.SupportedInfraProviders),
 	}
 }
 
@@ -210,7 +209,6 @@ type serverImpl struct {
 	osProfileService
 	configProfileService
 	cniPluginsService
-	infraProvidersService
 }
 
 // temporalUIURL returns the Temporal Web UI base URL to surface in the version
