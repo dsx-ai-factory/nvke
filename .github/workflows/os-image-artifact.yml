@@ -123,6 +123,16 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      # GitHub's own timeout-minutes has no grace period: it kills the whole
+      # job process tree at once, so nothing started beforehand (a
+      # background "sleep, then cat" included) gets a chance to run once it
+      # fires. The build steps below self-impose a shorter timeout, computed
+      # from this recorded start time, so they can dump the serial console
+      # log and exit cleanly before GitHub's hard kill ever lands.
+      - name: Record job start time
+        id: start_time
+        run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
@@ -266,11 +276,38 @@ jobs:
           echo "${GHCR_TOKEN}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
+      # Self-timeout, 30s inside the job's real timeout-minutes deadline (see
+      # "Record job start time" above), so a hang here dumps the serial
+      # console log -- the same file "Upload FDE/non-FDE install console
+      # logs" archives -- straight into this step's own output before
+      # exiting, instead of relying on GitHub's hard kill to leave anything
+      # legible behind.
       - name: Build the FDE node image
         if: matrix.build_fde
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make -C os-image/packer os-image-fde ARCH=${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          deadline=$(( ${{ steps.start_time.outputs.epoch }} + ${{ matrix.timeout_minutes }} * 60 - 30 ))
+          remaining=$(( deadline - $(date +%s) ))
+          if (( remaining <= 0 )); then
+            echo "::error::no time left before the job's ${{ matrix.timeout_minutes }}m timeout; skipping the FDE build"
+            exit 1
+          fi
+          status=0
+          timeout --signal=TERM "${remaining}s" \
+            make -C os-image/packer os-image-fde ARCH=${{ matrix.arch }} || status=$?
+          if [[ "${status}" -eq 124 ]]; then
+            echo "::error::FDE build did not finish within ${remaining}s (job timeout minus a 30s buffer)"
+            echo "::group::os-image/packer/build-logs (dumped before exiting on self-timeout)"
+            for f in os-image/packer/build-logs/*.log; do
+              [[ -f "${f}" ]] || continue
+              echo "--- ${f} ---"
+              cat "${f}"
+            done
+            echo "::endgroup::"
+          fi
+          exit "${status}"
 
       # Full acceptance run: LUKS2+TPM-sealed, wrong-TPM-fails,
       # reboot-auto-unlocks. No manual/scripted console interaction needed —
@@ -282,10 +319,32 @@ jobs:
         working-directory: os-image
         run: ./demo-fde.sh
 
+      # Same self-timeout pattern as "Build the FDE node image" above.
       - name: Build the non-FDE node image
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make -C os-image/packer os-image-non-fde ARCH=${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          deadline=$(( ${{ steps.start_time.outputs.epoch }} + ${{ matrix.timeout_minutes }} * 60 - 30 ))
+          remaining=$(( deadline - $(date +%s) ))
+          if (( remaining <= 0 )); then
+            echo "::error::no time left before the job's ${{ matrix.timeout_minutes }}m timeout; skipping the non-FDE build"
+            exit 1
+          fi
+          status=0
+          timeout --signal=TERM "${remaining}s" \
+            make -C os-image/packer os-image-non-fde ARCH=${{ matrix.arch }} || status=$?
+          if [[ "${status}" -eq 124 ]]; then
+            echo "::error::non-FDE build did not finish within ${remaining}s (job timeout minus a 30s buffer)"
+            echo "::group::os-image/packer/build-logs (dumped before exiting on self-timeout)"
+            for f in os-image/packer/build-logs/*.log; do
+              [[ -f "${f}" ]] || continue
+              echo "--- ${f} ---"
+              cat "${f}"
+            done
+            echo "::endgroup::"
+          fi
+          exit "${status}"
 
       - name: Boot-smoke the non-FDE qcow2
         run: |
