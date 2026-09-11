@@ -672,7 +672,7 @@ func validateTenantAccessSecretGCPostDelete(test *tenantTest) {
 		Eventually(func() error {
 			return tenantauth.AssertAdminKubeconfigDeleted(ctx, test.k8sClient, test.cluster.Name)
 		}).WithTimeout(5 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-	}, Label("tenant-access", "cleanup"), NodeTimeout(6*time.Minute))
+	}, Label("lifecycle", "tenant-access", "cleanup"), NodeTimeout(6*time.Minute))
 }
 
 // deleteClusterAndWait deletes the tenant cluster and blocks until CWE reports
