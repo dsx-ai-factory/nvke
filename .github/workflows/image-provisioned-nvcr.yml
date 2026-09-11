@@ -418,7 +418,10 @@ jobs:
               return
             fi
 
-            crane push --index "${layout}" "${target}"
+            # No --index: it wraps the pulled layout in a fresh index, which
+            # changes the digest and fails the equality check below. Pushing the
+            # layout as-is preserves the source multi-arch index digest.
+            crane push "${layout}" "${target}"
             target_digest="$(crane digest "${target}")"
             if [[ "${target_digest}" != "${source_digest}" ]]; then
               echo "::error::${target} pushed with digest ${target_digest}, expected ${source_digest}"
