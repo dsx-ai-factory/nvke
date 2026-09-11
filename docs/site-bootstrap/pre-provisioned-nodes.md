@@ -162,9 +162,21 @@ curl -fsSL "https://github.com/containernetworking/plugins/releases/download/${C
 
 ### Install Node-Agent
 
-`nke-agent` installs from the NKE apt repository. The commands below are for Ubuntu 24.04 (Noble); on 26.04 (Resolute) use the `nke-apt-resolute` prefix and `nke-resolute` suite.
+`nke-agent` will install from the NKE apt repository. The commands below are for Ubuntu 24.04 (Noble); on 26.04 (Resolute) use the `nke-apt-resolute` prefix and `nke-resolute` suite.
 
-> **TODO:** Confirm public apt repo URL and GPG key location before publishing.
+> **Not published yet — the commands below do not work.**
+> `packages.nvidia.com/nke` serves neither the key nor the suite: the `curl`
+> returns HTTP 404 (`NoSuchKey`), so `apt-get install nke-agent` fails after it.
+> Until the repository exists there is no package install. To prepare a node in
+> the meantime, build the agent from this repository: `make -C agent package`
+> cross-compiles it to `agent/bin/linux_<arch>/nke-agent` and bundles it with
+> `agent/scripts/agent-installer.sh`, which lays down the binary, the systemd
+> unit and `/etc/default/nke-agent`.
+> [`controller/hack/capd-kindest-node/`](https://github.com/dsx-ai-factory/nke/tree/main/controller/hack/capd-kindest-node)
+> installs the agent that way for the bootstrap e2e's nodes and is the closest
+> worked example.
+> **TODO:** replace this note with the repository URL and GPG key location once
+> they exist, and drop the workaround.
 
 ```bash
 # Configure the NKE apt repository
