@@ -316,6 +316,48 @@ func TestUpdateClusterFileEmptyValueReachesTheWireAsALiteralEmptyObject(t *testi
 	}
 }
 
+// TestUpdateClusterSetStringBypassesYAMLCoercion verifies --set-string's
+// motivating case: --set controlPlaneKubernetesVersion=1.31 fails, because
+// bare 1.31 parses as a YAML float and controlPlaneKubernetesVersion is a
+// string field. --set-string keeps it a literal string, so the same value
+// succeeds and reaches the wire as "1.31", not the number 1.31.
+func TestUpdateClusterSetStringBypassesYAMLCoercion(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	_, clientFn := newFakeCWE(t, seed)
+	if _, err := run(t, NewUpdateCmd(clientFn), "my-cluster", "--set", "controlPlaneKubernetesVersion=1.31"); err == nil {
+		t.Fatal("update cluster --set controlPlaneKubernetesVersion=1.31 unexpectedly succeeded")
+	}
+
+	fake, clientFn := newFakeCWE(t, seed)
+	_, err := run(t, NewUpdateCmd(clientFn), "my-cluster", "--set-string", "controlPlaneKubernetesVersion=1.31")
+	if err != nil {
+		t.Fatalf("update cluster --set-string controlPlaneKubernetesVersion=1.31: %v", err)
+	}
+	body := fake.lastRequestBody()
+	if !strings.Contains(string(body), `"controlPlaneKubernetesVersion":"1.31"`) {
+		t.Errorf("PATCH body = %s, want a literal string \"1.31\"", body)
+	}
+}
+
+// TestUpdateClusterSetStringWinsOverSet verifies --set-string's precedence
+// over --set on the same key, regardless of flag order.
+func TestUpdateClusterSetStringWinsOverSet(t *testing.T) {
+	seed := seedCluster("my-cluster")
+	fake, clientFn := newFakeCWE(t, seed)
+
+	_, err := run(t, NewUpdateCmd(clientFn), "my-cluster",
+		"--set-string", "controlPlaneKubernetesVersion=1.31",
+		"--set", "controlPlaneKubernetesVersion=1.32.0",
+	)
+	if err != nil {
+		t.Fatalf("update cluster: %v", err)
+	}
+	body := fake.lastRequestBody()
+	if !strings.Contains(string(body), `"controlPlaneKubernetesVersion":"1.31"`) {
+		t.Errorf("PATCH body = %s, want --set-string's value to win", body)
+	}
+}
+
 // The name resolves successfully; only the PATCH is rejected. GET/list
 // aren't blocked by an in-progress mutation on CWE, only a new PATCH racing
 // it is. A 409 here also covers 400, since the client's error path doesn't

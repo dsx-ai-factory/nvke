@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	jsonpatch "gopkg.in/evanphx/json-patch.v4"
 
 	api "github.com/NVIDIA/nke/controller/api"
 )
@@ -437,11 +438,124 @@ func TestApplySetFlagsRejectsScalarThenNestedConflict(t *testing.T) {
 	}
 }
 
-// TestMergeMapRecursesIntoSharedNestedObjects verifies MergeMap's headline
-// case: two documents that each set a different field under the same
-// nested object both survive in the result, instead of the second
-// document's object replacing the first's wholesale.
-func TestMergeMapRecursesIntoSharedNestedObjects(t *testing.T) {
+// TestApplySetFlagsRejectsNestedThenScalarConflict verifies the reverse
+// order of TestApplySetFlagsRejectsScalarThenNestedConflict: a nested field
+// set first, then a later entry overwriting that same path with a scalar,
+// also errors instead of silently discarding the nested values.
+func TestApplySetFlagsRejectsNestedThenScalarConflict(t *testing.T) {
+	var req api.UpdateClusterRequest
+	err := applyPatch(&req, []string{
+		"controlPlaneConfig.nico.osProfile=y",
+		"controlPlaneConfig=x",
+	})
+	if err == nil {
+		t.Fatal("applyPatch accepted a scalar entry conflicting with an earlier nested entry")
+	}
+}
+
+// TestParseSetValueRejectsEmptyCommaElement verifies that a leading,
+// trailing, or doubled comma in a comma-separated list value errors instead
+// of silently becoming a null list entry.
+func TestParseSetValueRejectsEmptyCommaElement(t *testing.T) {
+	tests := []string{
+		"a,",
+		",a",
+		"a,,b",
+	}
+	for _, raw := range tests {
+		if _, err := parseSetValue(raw, true); err == nil {
+			t.Errorf("parseSetValue(%q, true) accepted an empty element", raw)
+		}
+	}
+}
+
+// TestApplySetFlagsRejectsYAMLNull verifies that a --set value which itself
+// parses as YAML null (the literal "null" or "~") is rejected rather than
+// silently becoming a no-op indistinguishable from an omitted field. Use
+// --set key= (nothing after =) to clear a field instead.
+func TestApplySetFlagsRejectsYAMLNull(t *testing.T) {
+	for _, raw := range []string{"null", "~"} {
+		var req api.UpdateClusterRequest
+		if err := applyPatch(&req, []string{"controlPlaneConfig.nico.osProfile=" + raw}); err == nil {
+			t.Errorf("applyPatch accepted %q as a --set value", raw)
+		}
+	}
+}
+
+// TestApplySetFlagsRejectsEmptyValueOnNonClearableField verifies that
+// --set key= on a bool/numeric/struct field — which has no JSON-empty
+// representation — errors instead of sending a value of the wrong type.
+func TestApplySetFlagsRejectsEmptyValueOnNonClearableField(t *testing.T) {
+	var req api.UpdateClusterRequest
+	if err := applyPatch(&req, []string{"teleportEnabled="}); err == nil {
+		t.Fatal("applyPatch accepted an empty value on a bool field")
+	}
+	if err := applyPatch(&req, []string{"controlPlaneConfig.desiredCount="}); err == nil {
+		t.Fatal("applyPatch accepted an empty value on an int field")
+	}
+}
+
+// TestBuildPatchKeyCaseInsensitiveAndCanonicalized verifies that a --set key
+// typed in the wrong case still resolves to the right field (so array
+// detection and empty-clear semantics apply), and that the wire body uses
+// the schema's canonical casing rather than the user's typed casing.
+func TestBuildPatchKeyCaseInsensitiveAndCanonicalized(t *testing.T) {
+	patch, err := BuildPatch[api.UpdateClusterRequest]([]string{"ControlPlaneKubernetesVersion=1.31.0"})
+	if err != nil {
+		t.Fatalf("BuildPatch: %v", err)
+	}
+	data, err := json.Marshal(patch)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"controlPlaneKubernetesVersion":"1.31.0"`)) {
+		t.Errorf("wire body = %s, want the canonical key casing", data)
+	}
+
+	// Array detection also needs case-insensitive resolution: a wrongly
+	// cased array field must still be parsed as a list, not a scalar.
+	patch, err = BuildPatch[api.UpdateClusterRequest]([]string{"controlPlaneConfig.nico.SubnetIDs=" + uuid.NewString()})
+	if err != nil {
+		t.Fatalf("BuildPatch: %v", err)
+	}
+	data, err = json.Marshal(patch)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"subnetIDs":[`)) {
+		t.Errorf("wire body = %s, want subnetIDs sent as an array under its canonical key", data)
+	}
+}
+
+// mergeMergePatches is a small test helper matching loadUpdateClusterRequest's
+// own usage of jsonpatch.MergeMergePatches: marshal two patch documents to
+// JSON, combine them, and decode the result back to a map for assertions.
+func mergeMergePatches(t *testing.T, dst, src map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	dstData, err := json.Marshal(dst)
+	if err != nil {
+		t.Fatalf("json.Marshal(dst): %v", err)
+	}
+	srcData, err := json.Marshal(src)
+	if err != nil {
+		t.Fatalf("json.Marshal(src): %v", err)
+	}
+	merged, err := jsonpatch.MergeMergePatches(dstData, srcData)
+	if err != nil {
+		t.Fatalf("MergeMergePatches: %v", err)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(merged, &out); err != nil {
+		t.Fatalf("json.Unmarshal(merged): %v", err)
+	}
+	return out
+}
+
+// TestMergePatchesRecursesIntoSharedNestedObjects verifies the headline case
+// loadUpdateClusterRequest relies on: two documents that each set a
+// different field under the same nested object both survive in the result,
+// instead of the second document's object replacing the first's wholesale.
+func TestMergePatchesRecursesIntoSharedNestedObjects(t *testing.T) {
 	dst := map[string]interface{}{
 		"controlPlaneConfig": map[string]interface{}{
 			"nico": map[string]interface{}{
@@ -456,9 +570,9 @@ func TestMergeMapRecursesIntoSharedNestedObjects(t *testing.T) {
 			},
 		},
 	}
-	MergeMap(dst, src)
+	merged := mergeMergePatches(t, dst, src)
 
-	nico := dst["controlPlaneConfig"].(map[string]interface{})["nico"].(map[string]interface{})
+	nico := merged["controlPlaneConfig"].(map[string]interface{})["nico"].(map[string]interface{})
 	if nico["osProfile"] != "from-file" {
 		t.Errorf("osProfile = %v, want from-file (dst's sibling field) to survive the merge", nico["osProfile"])
 	}
@@ -467,29 +581,79 @@ func TestMergeMapRecursesIntoSharedNestedObjects(t *testing.T) {
 	}
 }
 
-// TestMergeMapReplacesSharedScalarKey verifies the non-recursive branch:
+// TestMergePatchesReplacesSharedScalarKey verifies the non-recursive branch:
 // when a key is not a nested object on both sides, src replaces dst
 // entirely rather than merging.
-func TestMergeMapReplacesSharedScalarKey(t *testing.T) {
+func TestMergePatchesReplacesSharedScalarKey(t *testing.T) {
 	dst := map[string]interface{}{"controlPlaneKubernetesVersion": "1.30.0"}
 	src := map[string]interface{}{"controlPlaneKubernetesVersion": "1.31.0"}
-	MergeMap(dst, src)
+	merged := mergeMergePatches(t, dst, src)
 
-	if dst["controlPlaneKubernetesVersion"] != "1.31.0" {
-		t.Errorf("controlPlaneKubernetesVersion = %v, want 1.31.0", dst["controlPlaneKubernetesVersion"])
+	if merged["controlPlaneKubernetesVersion"] != "1.31.0" {
+		t.Errorf("controlPlaneKubernetesVersion = %v, want 1.31.0", merged["controlPlaneKubernetesVersion"])
 	}
 }
 
-// TestMergeMapReplacesArraysWhole verifies that an array value is never
+// TestMergePatchesReplacesArraysWhole verifies that an array value is never
 // merged element-wise: src's array fully replaces dst's.
-func TestMergeMapReplacesArraysWhole(t *testing.T) {
+func TestMergePatchesReplacesArraysWhole(t *testing.T) {
 	dst := map[string]interface{}{"subnetIDs": []interface{}{"a", "b"}}
 	src := map[string]interface{}{"subnetIDs": []interface{}{"c"}}
-	MergeMap(dst, src)
+	merged := mergeMergePatches(t, dst, src)
 
-	got, ok := dst["subnetIDs"].([]interface{})
+	got, ok := merged["subnetIDs"].([]interface{})
 	if !ok || len(got) != 1 || got[0] != "c" {
-		t.Errorf("subnetIDs = %v, want [c]", dst["subnetIDs"])
+		t.Errorf("subnetIDs = %v, want [c]", merged["subnetIDs"])
+	}
+}
+
+// TestParseSetValueEscapedCommaStaysOneElement verifies that \, keeps a
+// literal comma inside one list element instead of splitting there, as an
+// alternative to the YAML sequence escape hatch.
+func TestParseSetValueEscapedCommaStaysOneElement(t *testing.T) {
+	got, err := parseSetValue(`mount -o rw\,noatime /x,second`, true)
+	if err != nil {
+		t.Fatalf("parseSetValue: %v", err)
+	}
+	list, ok := got.([]interface{})
+	if !ok || len(list) != 2 {
+		t.Fatalf("parseSetValue = %v, want a 2-element list", got)
+	}
+	if list[0] != "mount -o rw,noatime /x" {
+		t.Errorf("list[0] = %v, want the unescaped literal comma preserved", list[0])
+	}
+	if list[1] != "second" {
+		t.Errorf("list[1] = %v, want \"second\"", list[1])
+	}
+}
+
+// TestBuildPatchStringsBypassesYAMLCoercion verifies --set-string's headline
+// behavior: a value that --set would YAML-coerce (a number, a bool) stays a
+// literal string, for both scalar and array fields.
+func TestBuildPatchStringsBypassesYAMLCoercion(t *testing.T) {
+	patch, err := BuildPatchStrings[api.UpdateClusterRequest]([]string{"controlPlaneKubernetesVersion=1.31"})
+	if err != nil {
+		t.Fatalf("BuildPatchStrings: %v", err)
+	}
+	if patch["controlPlaneKubernetesVersion"] != "1.31" {
+		t.Errorf("controlPlaneKubernetesVersion = %v (%T), want the string \"1.31\"", patch["controlPlaneKubernetesVersion"], patch["controlPlaneKubernetesVersion"])
+	}
+
+	patch, err = BuildPatchStrings[api.UpdateClusterRequest]([]string{"controlPlaneConfig.nodeLabels=true,3"})
+	if err != nil {
+		t.Fatalf("BuildPatchStrings: %v", err)
+	}
+	labels := patch["controlPlaneConfig"].(map[string]interface{})["nodeLabels"].([]interface{})
+	if labels[0] != "true" || labels[1] != "3" {
+		t.Errorf("nodeLabels = %v, want the literal strings [true 3]", labels)
+	}
+}
+
+// TestBuildPatchStringsRejectsEmptyElement mirrors
+// TestParseSetValueRejectsEmptyCommaElement for the --set-string path.
+func TestBuildPatchStringsRejectsEmptyElement(t *testing.T) {
+	if _, err := BuildPatchStrings[api.UpdateClusterRequest]([]string{"controlPlaneConfig.nodeLabels=a,,b"}); err == nil {
+		t.Fatal("BuildPatchStrings accepted an empty element")
 	}
 }
 

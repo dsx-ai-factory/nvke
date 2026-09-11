@@ -163,6 +163,22 @@ func TestUpdateCmdMalformedYAMLRejected(t *testing.T) {
 	}
 }
 
+// TestUpdateCmdEmptyMergedPatchRejected verifies that a -f document which
+// parses but contributes no fields (e.g. "{}") is rejected before the API is
+// called, rather than issuing a no-op PATCH reported as a success.
+func TestUpdateCmdEmptyMergedPatchRejected(t *testing.T) {
+	path := writeSpec(t, "{}")
+	cmd := NewUpdateCmd(clientFnErr)
+	cmd.SetArgs([]string{"my-cluster", "-f", path})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for an empty merged patch, got nil")
+	}
+	if isNotConfigured(err) {
+		t.Errorf("an empty merged patch should fail before reaching the API, got: %v", err)
+	}
+}
+
 // TestDeleteCmdRequiresName verifies that delete cluster requires exactly one arg.
 func TestDeleteCmdRequiresName(t *testing.T) {
 	cmd := NewDeleteCmd(clientFnErr)

@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
+	jsonpatch "gopkg.in/evanphx/json-patch.v4"
 
 	"github.com/NVIDIA/nke/cli/internal/clients"
 	"github.com/NVIDIA/nke/cli/internal/clusterstate"
@@ -141,8 +142,9 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 // NewUpdateCmd returns the "nkectl update cluster <name>" subcommand.
 func NewUpdateCmd(clientFn ClientFn) *cobra.Command {
 	var (
-		filename string
-		sets     []string
+		filename   string
+		sets       []string
+		setStrings []string
 	)
 
 	cmd := &cobra.Command{
@@ -153,24 +155,36 @@ func NewUpdateCmd(clientFn ClientFn) *cobra.Command {
 
 PATCH semantics apply: only the fields you supply are changed. Use --set for
 one or two fields, -f for a full patch document, or both together (--set
-wins on any key present in both). A -f patch document's fields must match
-the CWE UpdateClusterRequest schema exactly. See /api/docs on your site
-controller.
+wins on any leaf key present in both; sibling fields under a shared object
+are merged rather than replaced). Clear a field with --set key= (empty
+value). A -f patch document's fields must match the CWE UpdateClusterRequest
+schema exactly. See /api/docs on your site controller.
 
 Example — bump the Kubernetes version:
   nkectl update cluster my-cluster --set controlPlaneKubernetesVersion=1.31.0
+
+Example — clear a field:
+  nkectl update cluster my-cluster --set controlPlaneConfig.infra.preKubeadmCommands=
 
 Example — patch file:
   nkectl update cluster my-cluster -f patch.yaml
 
 Example — file plus an inline override:
-  nkectl update cluster my-cluster -f patch.yaml --set controlPlaneConfig.desiredCount=5`,
+  nkectl update cluster my-cluster -f patch.yaml --set controlPlaneConfig.desiredCount=5
+
+A --set value is parsed as YAML, so under a free-form field (e.g.
+controlPlaneConfig.*.machineTemplate) a bare number or true/false is
+coerced to that type; use --set-string for that key instead to keep it a
+literal string. A list value splits on commas; escape a literal comma inside
+one element as \, (--set ...preKubeadmCommands='mount -o rw\,noatime /x').
+--set-string always wins over --set for the same key, regardless of flag
+order.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if filename == "" && len(sets) == 0 {
-				return fmt.Errorf("nothing to update: pass --set or -f")
+			if filename == "" && len(sets) == 0 && len(setStrings) == 0 {
+				return fmt.Errorf("nothing to update: pass --set, --set-string, or -f")
 			}
-			req, err := loadUpdateClusterRequest(cmd, filename, sets)
+			req, err := loadUpdateClusterRequest(cmd, filename, sets, setStrings)
 			if err != nil {
 				return err
 			}
@@ -194,17 +208,19 @@ Example — file plus an inline override:
 
 	cmd.Flags().StringVarP(&filename, "filename", "f", "", "Path to YAML patch file, or '-' to read from stdin")
 	cmd.Flags().StringArrayVar(&sets, "set", nil, "Set a field: key=value (repeatable); dot notation for nested fields, comma-separated for lists")
+	cmd.Flags().StringArrayVar(&setStrings, "set-string", nil, "Like --set, but the value is always kept as a literal string instead of YAML-coerced")
 	return cmd
 }
 
 // loadUpdateClusterRequest builds the raw JSON PATCH body from an optional
-// YAML patch file and a list of --set entries, merging the two at the
-// document level (--set overrides path on a shared key). The merged
-// document is validated by decoding it into UpdateClusterRequest with
-// unknown fields disallowed; the decoded value is discarded, and the raw
-// bytes are returned.
-func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) ([]byte, error) {
-	patch := map[string]interface{}{}
+// YAML patch file, --set entries, and --set-string entries, combining the
+// three as JSON merge patches (RFC 7386: shared keys merge for nested
+// objects, replace wholesale otherwise) in that precedence order, file
+// lowest and --set-string highest. The combined document is validated by
+// decoding it into UpdateClusterRequest with unknown fields disallowed; the
+// decoded value is discarded, and the raw bytes are returned.
+func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets, setStrings []string) ([]byte, error) {
+	data := []byte("{}")
 	if path != "" {
 		var r io.Reader
 		if path == "-" {
@@ -217,32 +233,56 @@ func loadUpdateClusterRequest(cmd *cobra.Command, path string, sets []string) ([
 			defer f.Close()
 			r = f
 		}
-		data, err := io.ReadAll(r)
+		fileData, err := io.ReadAll(r)
 		if err != nil {
 			return nil, fmt.Errorf("reading patch: %w", err)
 		}
-		fileMap, err := util.YAMLToGenericMap(data)
+		fileMap, err := util.YAMLToGenericMap(fileData)
 		if err != nil {
 			return nil, err
 		}
-		patch = fileMap
+		if data, err = json.Marshal(fileMap); err != nil {
+			return nil, fmt.Errorf("encoding patch: %w", err)
+		}
 	}
 
 	setPatch, err := util.BuildPatch[api.UpdateClusterRequest](sets)
 	if err != nil {
 		return nil, err
 	}
-	util.MergeMap(patch, setPatch)
-
-	data, err := json.Marshal(patch)
+	setData, err := json.Marshal(setPatch)
 	if err != nil {
 		return nil, fmt.Errorf("encoding patch: %w", err)
 	}
+	if data, err = jsonpatch.MergeMergePatches(data, setData); err != nil {
+		return nil, fmt.Errorf("merging patch: %w", err)
+	}
+
+	setStringPatch, err := util.BuildPatchStrings[api.UpdateClusterRequest](setStrings)
+	if err != nil {
+		return nil, err
+	}
+	setStringData, err := json.Marshal(setStringPatch)
+	if err != nil {
+		return nil, fmt.Errorf("encoding patch: %w", err)
+	}
+	if data, err = jsonpatch.MergeMergePatches(data, setStringData); err != nil {
+		return nil, fmt.Errorf("merging patch: %w", err)
+	}
+
+	var merged map[string]interface{}
+	if err := json.Unmarshal(data, &merged); err != nil {
+		return nil, fmt.Errorf("merging patch: %w", err)
+	}
+	if len(merged) == 0 {
+		return nil, fmt.Errorf("nothing to update: the merged patch is empty")
+	}
+
 	var validate api.UpdateClusterRequest
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&validate); err != nil {
-		return nil, fmt.Errorf("applying patch: %w", err)
+		return nil, fmt.Errorf("validating patch: %w", err)
 	}
 	return data, nil
 }
