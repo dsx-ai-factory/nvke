@@ -210,15 +210,24 @@ jobs:
       # out to `helm` directly, so the binary is installed here.
       # Version pins come from make/versions.mk, so `make show-versions` and CI
       # cannot disagree.
+      # Each version is read into a variable and checked before it is written:
+      # `set -e` does not fire on a failed $(...) inside `echo "k=$(...)"`, so
+      # a broken make/versions.mk would have written empty values, and the
+      # setup actions below resolve an empty version to "latest" rather than
+      # failing. Pinned means pinned.
       - name: Read pinned tool versions
         id: versions
+        shell: bash
         run: |
-          {
-            echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
-            echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
-            echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
-            echo "capi_version=$(make --no-print-directory print-CAPI_VERSION)"
-          } >> "$GITHUB_OUTPUT"
+          set -Eeuo pipefail
+          for var in HELM_VERSION KIND_VERSION KUBECTL_VERSION CAPI_VERSION; do
+            value="$(make --no-print-directory "print-${var}")"
+            if [ -z "${value}" ]; then
+              echo "::error::make print-${var} returned nothing; make/versions.mk is broken"
+              exit 1
+            fi
+            echo "$(echo "${var}" | tr '[:upper:]' '[:lower:]')=${value}" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
@@ -563,22 +572,30 @@ jobs:
           retention-days: 7
 
       # Insurance against the pool being persistent after all -- see the
-      # "Remove Docker" comment. Puts back what that step took: the masked
-      # units (re-enabled if they were enabled before), and the moved-aside
-      # binaries. always(), so a failed run is not the one that leaves the
+      # "Remove Docker" comment. Puts back what that step took -- the masked
+      # units, re-enabled if they were enabled before, and the moved-aside
+      # binaries -- asserts that it did, and stops the daemons this job
+      # started. always(), so a failed run is not the one that leaves the
       # runner without Docker.
       - name: Restore Docker
         if: always()
         shell: bash
         run: |
           set -Eeuo pipefail
+          failed=false
           sudo systemctl unmask docker.socket docker.service containerd.service 2>/dev/null || true
+
+          restored_real=false
           if [ -f "${RUNNER_TEMP}/docker-removed.list" ]; then
             while IFS=: read -r path mode; do
               if [ "${mode}" = "shim-only" ]; then
                 sudo rm -f "${path}"
               elif [ -e "${path}.nke-removed" ]; then
                 sudo mv -f "${path}.nke-removed" "${path}"
+                restored_real=true
+              else
+                echo "::error::nothing to restore at ${path}: ${path}.nke-removed is missing"
+                failed=true
               fi
             done < "${RUNNER_TEMP}/docker-removed.list"
           fi
@@ -586,4 +603,47 @@ jobs:
             xargs -a "${RUNNER_TEMP}/docker-enabled.list" sudo systemctl enable 2>/dev/null || true
           fi
           sudo systemctl start containerd.service docker.socket docker.service 2>/dev/null || true
-          echo "docker restored: $(docker version --format '{{.Client.Version}}' 2>/dev/null || echo 'client unavailable')"
+
+          # Asserted, the way removal is. A restore that half-worked -- the
+          # shim left in place of the binary, a unit still masked -- would
+          # otherwise be invisible here and surface as some other workflow
+          # failing on a runner nobody expected to be Docker-less.
+          if [ "${restored_real}" = true ]; then
+            version="$(docker version --format '{{.Client.Version}}' 2>/dev/null || true)"
+            if [ -z "${version}" ]; then
+              echo "::error::docker client does not answer after restore; the shim may have been restored in place of the binary"
+              failed=true
+            else
+              echo "docker restored: ${version}"
+            fi
+            while IFS=: read -r path _; do
+              if [ -e "${path}.nke-removed" ]; then
+                echo "::error::${path}.nke-removed still exists after restore"; failed=true
+              fi
+            done < "${RUNNER_TEMP}/docker-removed.list"
+          else
+            echo "docker was not installed here; nothing to restore"
+          fi
+          for unit in docker.socket docker.service containerd.service; do
+            if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" = "masked" ]; then
+              echo "::error::${unit} is still masked after restore"; failed=true
+            fi
+          done
+          if [ -s "${RUNNER_TEMP}/docker-enabled.list" ]; then
+            while read -r unit; do
+              if [ "$(systemctl is-enabled "${unit}" 2>/dev/null || true)" != "enabled" ]; then
+                echo "::error::${unit} was enabled before this job and is not now"; failed=true
+              fi
+            done < "${RUNNER_TEMP}/docker-enabled.list"
+          fi
+
+          # The job's own daemons go too. Two root services left running would
+          # be the same hazard on a persistent runner as a missing Docker; the
+          # binaries under /usr/local are inert files and are left alone.
+          sudo systemctl disable --now buildkit-nerdctl containerd-nerdctl 2>/dev/null || true
+          sudo rm -f /etc/systemd/system/buildkit-nerdctl.service /etc/systemd/system/containerd-nerdctl.service
+          sudo systemctl daemon-reload || true
+
+          if [ "${failed}" = true ]; then
+            exit 1
+          fi
