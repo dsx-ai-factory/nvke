@@ -1,3 +1,4 @@
 {
-  "providers": ["capi_core", "bgp-containers", "nico"]
+  "providers": ["capi_core", "bgp-containers", "nico"],
+  "nico_sim_backends": ["container"]
 }
