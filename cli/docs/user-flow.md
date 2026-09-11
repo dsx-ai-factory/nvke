@@ -22,10 +22,11 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
 | `nkectl get nodepools` | Lists node pools. `--cluster <name>` filters by cluster. | Planned |
 | `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |
-| `nkectl patch nodepool <name> --cluster <name>` | PATCHes a mutable node pool property (desired count, instance type). | Planned |
+| `nkectl patch nodepool <name> --cluster <name>` | PATCHes a node pool. `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). `desiredNodeCount` is the only field supported so far. | Available |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
-`cluster` and `clusters` are aliases on `create`, `get`, `patch` and `delete`.
+`cluster` and `clusters` are aliases on `create`, `get`, `patch` and `delete`,
+as are `nodepool` and `nodepools` on `patch`.
 Global flags: `--site <name>` overrides the active site for one invocation,
 `-v` enables debug logging, `--json-logs` emits logs as JSON.
 
@@ -170,7 +171,28 @@ nkectl patch cluster <cluster-name> --patch-file patch.yaml
 Only the fields in the patch document are changed. `nkectl patch cluster
 --help` covers `--patch`, `--patch-file`, and field clearing in full.
 
-### 10. Delete the tenant cluster
+### 10. Scale a node pool
+
+```bash
+nkectl patch nodepool <nodepool-name> --cluster <cluster-name> --patch 'desiredNodeCount: 8'
+
+# From a file ('-' reads stdin)
+nkectl patch nodepool <nodepool-name> --cluster <cluster-name> --patch-file patch.yaml
+```
+
+Node pool names are unique within a cluster, so `--cluster` is what decides
+which pool is scaled. `desiredNodeCount` is the only field this command
+supports today; the API accepts more, but anything else is rejected before the
+request is sent.
+
+Scaling is asynchronous: the command returns once CWE has recorded the change,
+and the site controller provisions or tears down nodes to match it. A rejected
+scale-up, such as one the cluster's pod CIDR has no room for, is reported with
+CWE's own message. There is no confirmation prompt, so a lower count starts
+removing nodes straight away.
+
+
+### 11. Delete the tenant cluster
 
 ```bash
 nkectl delete cluster <cluster-name>

@@ -62,6 +62,10 @@ nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create clust
 nkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: 1.31.0'
 nkectl patch cluster <name> --patch-file patch.yaml
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
+
+# Node pool scaling
+nkectl patch nodepool <name> --cluster <name> --patch 'desiredNodeCount: 8'
+nkectl patch nodepool <name> --cluster <name> --patch-file patch.yaml
 ```
 
 ## Authenticating to CWE

@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
+	"github.com/NVIDIA/nke/cli/internal/cwe/nodepools"
 )
 
 func newPatchCmd() *cobra.Command {
@@ -15,5 +16,6 @@ func newPatchCmd() *cobra.Command {
 		Short: "Patch a resource",
 	}
 	cmd.AddCommand(clusters.NewPatchCmd(loadClient))
+	cmd.AddCommand(nodepools.NewPatchCmd(loadClient))
 	return cmd
 }
