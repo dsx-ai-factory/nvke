@@ -9,7 +9,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | Command | What it does | Status |
 |---|---|---|
 | `nkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
-| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
+| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down on success. `--dry-run` validates the spec only. | Available |
 | `nkectl get bootstrap-manifest` | Prints the charts and images `bootstrap site` fetches, with version and digest. | Available |
 | Install an infrastructure provider on the new cluster | Install Cluster API and CAPNICo, before the site controller. See [Infrastructure Providers](../../docs/site-bootstrap/infrastructure-providers.md). No `nkectl` command. | Not in the CLI |
 | Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nkectl` command yet. | Not in the CLI |
@@ -68,15 +68,18 @@ nkectl bootstrap site -f sitespec.yaml --dry-run
 REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml
 ```
 
-The command needs nerdctl and containerd on the host, and network reach to
-the hosts' `nke-agent` ports. On success it
+The command needs nerdctl and containerd on the host — plus `kind`, `helm`,
+`kubectl` and `clusterctl` on `PATH` — and network reach to the hosts'
+`nke-agent` ports. The [README](../README.md#bootstrap-cluster-and-cwe) lists
+every `NKECTL_*` variable the command reads. On success it
 writes `my-tier0-site.kubeconfig` and `my-tier0-site-etcd-encryption-key.json`
 in the working directory (`--kubeconfig-out` and `--encryption-key-out` change
 the paths) and removes the Kind cluster. Every control-plane node holds the
 etcd encryption key; the key file is a convenience for installing a controller
 later and the copy a disaster recovery needs. Move it off the host. On failure it writes cluster
-diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
-the Kind cluster for debugging.
+diagnostics to `cluster-diagnostics/` first, and keeps the Kind cluster when
+the failure came after the site cluster was created, or when
+`--keep-bootstrap-cluster` is set; the error says how to clean up.
 
 The Kind cluster runs Postgres, Temporal, SPIRE, Cluster API and CWE.
 `nkectl get bootstrap-manifest` lists the charts and images the bootstrap
