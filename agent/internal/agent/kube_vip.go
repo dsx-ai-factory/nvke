@@ -405,6 +405,16 @@ func (s *NodeAgentServer) writeKubeVipFile(path string, desired []byte) (bool, e
 	return true, nil
 }
 
+// hostHasAppArmor reports whether the AppArmor LSM is active on this node.
+// securityfs exposes it at this path only when the kernel has AppArmor
+// compiled in and enabled; it's absent on hosts without the LSM (e.g. most
+// Docker-in-Docker nodes), where kubelet would otherwise deny admission of
+// any pod requesting appArmorProfile.
+func hostHasAppArmor() bool {
+	_, err := os.Stat("/sys/kernel/security/apparmor")
+	return err == nil
+}
+
 func validateKubeVipFileDestination(path string) error {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
@@ -426,6 +436,19 @@ func renderKubeVipManifest(
 ) ([]byte, error) {
 	falseValue := false
 	fileType := corev1.HostPathFile
+	securityContext := &corev1.SecurityContext{
+		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		Capabilities: &corev1.Capabilities{
+			Add: []corev1.Capability{"NET_ADMIN", "NET_RAW"},
+		},
+	}
+	// Unlike seccomp, the structured AppArmor field makes kubelet refuse to
+	// admit the pod outright when the host has no AppArmor LSM (e.g. the
+	// Docker-in-Docker nodes CAPD/nico-vms e2e run kube-vip on) rather than
+	// degrading gracefully, so only set it where the LSM is actually present.
+	if hostHasAppArmor() {
+		securityContext.AppArmorProfile = &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeRuntimeDefault}
+	}
 	pod := corev1.Pod{
 		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Pod"},
 		ObjectMeta: metav1.ObjectMeta{
@@ -463,12 +486,7 @@ func renderKubeVipManifest(
 						corev1.ResourceMemory: resource.MustParse("128Mi"),
 					},
 				},
-				SecurityContext: &corev1.SecurityContext{
-					SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
-					Capabilities: &corev1.Capabilities{
-						Add: []corev1.Capability{"NET_ADMIN", "NET_RAW"},
-					},
-				},
+				SecurityContext: securityContext,
 				VolumeMounts: []corev1.VolumeMount{
 					{Name: "kubeconfig", MountPath: kubeVipContainerKubeconfig, ReadOnly: true},
 					{Name: "health-check-ca", MountPath: kubeVipCACertPath, ReadOnly: true},

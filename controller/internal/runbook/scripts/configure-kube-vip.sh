@@ -332,16 +332,30 @@ render_health_check_volume() {
 EOF
 }
 
+# render_apparmor_profile emits the AppArmor security context field only when
+# the host actually has the AppArmor LSM active. Unlike seccomp, kubelet
+# refuses to admit a pod requesting appArmorProfile at all when the host has
+# no AppArmor support (e.g. most Docker-in-Docker nodes), rather than
+# degrading gracefully, so this must not be emitted unconditionally.
+render_apparmor_profile() {
+    [[ -d /sys/kernel/security/apparmor ]] || return 0
+    cat <<EOF
+      appArmorProfile:
+        type: RuntimeDefault
+EOF
+}
+
 # Create kube-vip manifest
 create_kube_vip_manifest() {
     local bgp_iface="$1"
     local vip_iface="${VIP_INTERFACE:-lo}"
     local manifest_path="/etc/kubernetes/manifests/kube-vip.yaml"
-    local bgp_peer_env health_check_env health_check_vmount health_check_volume
+    local bgp_peer_env health_check_env health_check_vmount health_check_volume apparmor_profile
     bgp_peer_env="$(render_bgp_peer_env)"
     health_check_env="$(render_health_check_env)"
     health_check_vmount="$(render_health_check_volume_mount)"
     health_check_volume="$(render_health_check_volume)"
+    apparmor_profile="$(render_apparmor_profile)"
 
     # Render the full desired manifest into a temp file first, then compare.
     # Reconciling on the entire desired state (not just VIP_ADDRESS) catches
@@ -416,6 +430,7 @@ ${health_check_env}
       limits:
         memory: 128Mi
     securityContext:
+${apparmor_profile}
       seccompProfile:
         type: RuntimeDefault
       capabilities:

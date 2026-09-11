@@ -41,7 +41,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: NicoMachine is the Schema for the nicomachines API.
+        description: |-
+          NicoMachine is the Schema for the nicomachines API. Once ProviderID is
+          assigned, the spec is immutable because the controller does not reconcile
+          these create-time settings onto an existing instance.
         properties:
           apiVersion:
             description: |-
@@ -153,15 +156,19 @@ spec:
                         SubnetID is the subnet ID for this attachment.
                         Use SubnetID for Ethernet network virtualization.
                         Exactly one of SubnetID or VPCPrefixID must be set.
+                      minLength: 1
                       type: string
                     vpcPrefixID:
                       description: |-
                         VPCPrefixID is the VPC prefix ID for this attachment.
                         Use VPCPrefixID for next-generation networking.
                         Exactly one of SubnetID or VPCPrefixID must be set.
+                      minLength: 1
                       type: string
                   type: object
                   x-kubernetes-validations:
+                  - message: exactly one of subnetID or vpcPrefixID must be set
+                    rule: has(self.subnetID) != has(self.vpcPrefixID)
                   - message: ipAddress is only supported with vpcPrefixID interfaces
                     rule: '!(has(self.ipAddress) && has(self.subnetID))'
                 minItems: 1
@@ -226,6 +233,7 @@ spec:
               vpcID:
                 description: VPCID is the VPC where this provider should create the
                   instance.
+                minLength: 1
                 type: string
             required:
             - interfaces
@@ -374,6 +382,56 @@ spec:
                 type: string
             type: object
         type: object
+        x-kubernetes-validations:
+        - message: spec.vpcID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || self.spec.vpcID == oldSelf.spec.vpcID'
+        - message: spec.instanceTypeID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.instanceTypeID) ==
+            has(oldSelf.spec.instanceTypeID) && (!has(self.spec.instanceTypeID) ||
+            self.spec.instanceTypeID == oldSelf.spec.instanceTypeID))'
+        - message: spec.interfaces is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || self.spec.interfaces == oldSelf.spec.interfaces'
+        - message: spec.infinibandInterfaces is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.infinibandInterfaces)
+            == has(oldSelf.spec.infinibandInterfaces) && (!has(self.spec.infinibandInterfaces)
+            || self.spec.infinibandInterfaces == oldSelf.spec.infinibandInterfaces))'
+        - message: spec.infinibandPartitionID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.infinibandPartitionID)
+            == has(oldSelf.spec.infinibandPartitionID) && (!has(self.spec.infinibandPartitionID)
+            || self.spec.infinibandPartitionID == oldSelf.spec.infinibandPartitionID))'
+        - message: spec.nvLinkInterfaces is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.nvLinkInterfaces)
+            == has(oldSelf.spec.nvLinkInterfaces) && (!has(self.spec.nvLinkInterfaces)
+            || self.spec.nvLinkInterfaces == oldSelf.spec.nvLinkInterfaces))'
+        - message: spec.nvLinkLogicalPartitionID is immutable after providerID is
+            set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.nvLinkLogicalPartitionID)
+            == has(oldSelf.spec.nvLinkLogicalPartitionID) && (!has(self.spec.nvLinkLogicalPartitionID)
+            || self.spec.nvLinkLogicalPartitionID == oldSelf.spec.nvLinkLogicalPartitionID))'
+        - message: spec.sshKeyGroupIDs is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.sshKeyGroupIDs) ==
+            has(oldSelf.spec.sshKeyGroupIDs) && (!has(self.spec.sshKeyGroupIDs) ||
+            self.spec.sshKeyGroupIDs == oldSelf.spec.sshKeyGroupIDs))'
+        - message: spec.ipxeScript is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.ipxeScript) == has(oldSelf.spec.ipxeScript)
+            && (!has(self.spec.ipxeScript) || self.spec.ipxeScript == oldSelf.spec.ipxeScript))'
+        - message: spec.cloudInitInjectHostname is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.cloudInitInjectHostname)
+            == has(oldSelf.spec.cloudInitInjectHostname) && (!has(self.spec.cloudInitInjectHostname)
+            || self.spec.cloudInitInjectHostname == oldSelf.spec.cloudInitInjectHostname))'
+        - message: spec.labels is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.labels) == has(oldSelf.spec.labels)
+            && (!has(self.spec.labels) || self.spec.labels == oldSelf.spec.labels))'
+        - message: spec.machineID is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.machineID) == has(oldSelf.spec.machineID)
+            && (!has(self.spec.machineID) || self.spec.machineID == oldSelf.spec.machineID))'
+        - message: spec.allowUnhealthyMachine is immutable after providerID is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.allowUnhealthyMachine)
+            == has(oldSelf.spec.allowUnhealthyMachine) && (!has(self.spec.allowUnhealthyMachine)
+            || self.spec.allowUnhealthyMachine == oldSelf.spec.allowUnhealthyMachine))'
+        - message: spec.providerID is immutable after it is set
+          rule: '!has(oldSelf.spec.providerID) || (has(self.spec.providerID) && self.spec.providerID
+            == oldSelf.spec.providerID)'
     served: true
     storage: true
     subresources:

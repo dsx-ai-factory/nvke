@@ -3,7 +3,7 @@
 The four `NicoCluster`, `NicoClusterTemplate`, `NicoMachine` and
 `NicoMachineTemplate` CustomResourceDefinitions, copied verbatim from
 `NVIDIA/cluster-api-provider-nico` at the version this repository pins in
-`controller/go.mod` (currently **`v0.0.44-rc.1`**).
+`controller/go.mod` (currently **`v0.0.44-rc.2`**).
 
 ## Why they live here
 
