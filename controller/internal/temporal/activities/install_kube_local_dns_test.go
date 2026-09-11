@@ -78,7 +78,7 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	require.False(t, daemonSet.Spec.Template.Spec.HostNetwork)
 	require.Equal(t, []string{
 		"-localip", "0.0.0.0",
-		"-conf", "/etc/Corefile",
+		"-conf", "/config/Corefile",
 		"-upstreamsvc", "kube-dns-upstream",
 		"-setupinterface=false",
 		"-setupiptables=false",

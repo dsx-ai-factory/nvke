@@ -115,7 +115,7 @@ spec:
             - -localip
             - 0.0.0.0
             - -conf
-            - /etc/Corefile
+            - /config/Corefile
             - -upstreamsvc
             - kube-dns-upstream
             - -setupinterface=false
@@ -172,6 +172,12 @@ spec:
               name: config-volume
             - mountPath: /etc/kube-dns
               name: kube-dns-config
+            # node-cache renders Corefile.base (config-volume, read-only) into
+            # -conf at startup. UID 65532 can't write into the image's own
+            # /etc, so -conf now points here instead: kubelet creates emptyDir
+            # volumes world-writable regardless of the container's UID.
+            - mountPath: /config
+              name: rendered-config
       dnsPolicy: Default
       priorityClassName: system-node-critical
       restartPolicy: Always
@@ -194,6 +200,8 @@ spec:
             path: /run/xtables.lock
             type: FileOrCreate
           name: xtables-lock
+        - emptyDir: {}
+          name: rendered-config
         - configMap:
             defaultMode: 420
             name: kube-dns
