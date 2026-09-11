@@ -196,8 +196,8 @@ exactly. See /api/docs on your site controller.`,
 		},
 	}
 
-	cmd.Flags().StringVarP(&patch, "patch", "p", "", "Inline YAML patch document")
-	cmd.Flags().StringVar(&patchFile, "patch-file", "", "Path to a YAML patch file, or '-' to read from stdin")
+	cmd.Flags().StringVarP(&patch, "patch", "p", "", "Inline patch document. Accepts YAML or JSON")
+	cmd.Flags().StringVar(&patchFile, "patch-file", "", "Path to a YAML or JSON patch file, or '-' to read from stdin")
 	return cmd
 }
 
