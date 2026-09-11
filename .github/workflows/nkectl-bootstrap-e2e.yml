@@ -685,10 +685,15 @@ jobs:
           # command line; Docker's, now restored, carry the default one.
           sudo pkill -f "containerd-shim.*containerd-nerdctl" 2>/dev/null || true
           # A container rootfs still mounted under the data root has to go
-          # before the directory can; deepest first.
-          sudo findmnt -rno TARGET 2>/dev/null | grep -F /var/lib/containerd-nerdctl | sort -r | while read -r m; do
+          # before the directory can; deepest first. Process substitution, not
+          # a pipeline: when nothing is mounted -- the normal case, run.sh
+          # having cleaned up -- grep exits 1, and under pipefail that would
+          # take `set -e` with it, aborting the teardown with no message. That
+          # is exactly what the first run of this step did.
+          while read -r m; do
+            [ -n "${m}" ] || continue
             sudo umount "${m}" 2>/dev/null || true
-          done
+          done < <(sudo findmnt -rno TARGET 2>/dev/null | grep -F /var/lib/containerd-nerdctl | sort -r || true)
           sudo rm -rf /var/lib/containerd-nerdctl /run/containerd-nerdctl /run/buildkit-nerdctl /etc/containerd-nerdctl || fail "could not remove this job's containerd state"
           sudo rm -f /etc/systemd/system/buildkit-nerdctl.service /etc/systemd/system/containerd-nerdctl.service || fail "could not remove this job's unit files"
           sudo systemctl daemon-reload || fail "daemon-reload failed"
