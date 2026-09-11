@@ -156,8 +156,8 @@ jobs:
 
       # The standard runner guarantees little free space and includes large
       # toolchains that this Go and container test does not use. Remove only
-      # those fixed paths before any build writes more data. Keep the Go cache
-      # and Docker images; later steps use them.
+      # those fixed paths before any build writes more data; the Go toolchain
+      # cache stays, because Set up Go reads it.
       - name: Free disk space
         shell: bash
         run: |
