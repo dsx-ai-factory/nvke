@@ -166,15 +166,20 @@ spec:
                                 SubnetID is the subnet ID for this attachment.
                                 Use SubnetID for Ethernet network virtualization.
                                 Exactly one of SubnetID or VPCPrefixID must be set.
+                              minLength: 1
                               type: string
                             vpcPrefixID:
                               description: |-
                                 VPCPrefixID is the VPC prefix ID for this attachment.
                                 Use VPCPrefixID for next-generation networking.
                                 Exactly one of SubnetID or VPCPrefixID must be set.
+                              minLength: 1
                               type: string
                           type: object
                           x-kubernetes-validations:
+                          - message: exactly one of subnetID or vpcPrefixID must be
+                              set
+                            rule: has(self.subnetID) != has(self.vpcPrefixID)
                           - message: ipAddress is only supported with vpcPrefixID
                               interfaces
                             rule: '!(has(self.ipAddress) && has(self.subnetID))'
@@ -242,12 +247,15 @@ spec:
                       vpcID:
                         description: VPCID is the VPC where this provider should create
                           the instance.
+                        minLength: 1
                         type: string
                     required:
                     - interfaces
                     - vpcID
                     type: object
                     x-kubernetes-validations:
+                    - message: spec.template.spec is immutable
+                      rule: self == oldSelf
                     - message: exactly one of instanceTypeID or machineID must be
                         set
                       rule: has(self.instanceTypeID) != has(self.machineID)

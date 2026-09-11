@@ -119,8 +119,11 @@ if "nico" in _provider_names and "nico-vm" in _provider_names:
          "from NGC) are mutually exclusive: both install a CAPNICo controller into " +
          "capnico-system and own the 'nico-credentials' secret. Enable only one.")
 
+# CWE accepts only the API provider blocks in SUPPORTED_INFRA_PROVIDERS. The
+# 'nico' provider (nico-sim) serves the container and the nico-vms backends;
+# the e2e suite submits Infra blocks to the first and Nico blocks to the second.
 _supported_infra_providers = []
-if "nico-vms" in _provider_names:
+if "nico" in _provider_names or "nico-vms" in _provider_names:
     _supported_infra_providers.append("nico")
 if "capd" in _provider_names or "nico" in _provider_names or "nico-vm" in _provider_names:
     _supported_infra_providers.append("infra")
@@ -1016,7 +1019,8 @@ _cwe_chart_flags = [
     "--set-string", "nkeOIDCAuth.caBundleSecret.key=ca.crt",
     "--set-string", "spiffe.trustDomain=%s" % SPIRE_TRUST_DOMAIN,
     "--set-string", "spiffe.spire.serverAddress=%s" % _tilt_env.get("SPIRE_SERVER_ADDRESS", _kind_site_controller_vip),
-    "--set-string", "supportedInfraProviders=%s" % ",".join(_supported_infra_providers),
+    # helm splits --set-string on commas; escape the one inside the value.
+    "--set-string", "supportedInfraProviders=%s" % "\\,".join(_supported_infra_providers),
     "--set-json", "env=%s" % encode_json(_cwe_chart_extra_env),
     "--wait",
     "--timeout", "10m",

@@ -22,6 +22,8 @@ on:
       - "controller/hack/nico-provider/**"
       - "controller/hack/ci/nico-vms-e2e.sh"
       - "controller/test/kubeadm/scripts/**"
+      # The Tiltfile is the lane's CWE deployment recipe (#683).
+      - controller/Tiltfile
       # Without these, a change to the lane's own definition or its gate does
       # not run it.
       - .github/workflows/nico-vms-e2e.yml
@@ -61,7 +63,7 @@ jobs:
       pull-requests: read
     with:
       # Keep in step with the push paths above.
-      relevant_paths: '^controller/(nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
+      relevant_paths: '^controller/(Tiltfile$|nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
 
   nico-vms-e2e:
     name: nico-vms-e2e (amd64, KVM)

@@ -327,6 +327,18 @@ func assertKubeVipPod(t *testing.T, manifest []byte, peerASN uint32) {
 	assert.Equal(t, corev1.HostPathFile, *pod.Spec.Volumes[0].HostPath.Type)
 	require.NotNil(t, pod.Spec.Volumes[1].HostPath)
 	assert.Equal(t, kubeVipCACertPath, pod.Spec.Volumes[1].HostPath.Path)
+	require.NotNil(t, container.SecurityContext)
+	require.NotNil(t, container.SecurityContext.SeccompProfile)
+	assert.Equal(t, corev1.SeccompProfileTypeRuntimeDefault, container.SecurityContext.SeccompProfile.Type)
+	// Test hosts (and most CI runners) have no AppArmor LSM, so the field
+	// must be left unset rather than causing kubelet to deny admission.
+	assert.Equal(t, hostHasAppArmor(), container.SecurityContext.AppArmorProfile != nil)
+}
+
+func TestHostHasAppArmor(t *testing.T) {
+	t.Parallel()
+	_, err := os.Stat("/sys/kernel/security/apparmor")
+	assert.Equal(t, err == nil, hostHasAppArmor())
 }
 
 func requireFile(t *testing.T, path string) []byte {
