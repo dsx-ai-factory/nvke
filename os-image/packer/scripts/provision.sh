@@ -89,7 +89,13 @@ done
 # linux-tools-*-generic and its zfs modules all installed. Purge that whole
 # family by exact name instead, the same way an explicit `apt-get purge
 # <version>` from the command line bypasses the same protection.
-generic_image_pkg="$(dpkg-query -W -f='${Package}\n' 'linux-image-*-generic' 2>/dev/null | head -1)"
+# dpkg-query -W lists a package regardless of its current state, so an
+# already-purged package still known to dpkg (e.g. the old
+# linux-image-unsigned-7.0.0-14-generic rc-state leftover the "Cleaning up"
+# autoremove below sweeps up) can match this glob and win `head -1` over the
+# actually-installed kernel -- filter to installed packages explicitly.
+generic_image_pkg="$(dpkg-query -W -f='${Package}\t${Status}\n' 'linux-image-*-generic' 2>/dev/null |
+  awk -F'\t' '$2 == "install ok installed" { print $1; exit }')"
 if [[ -n "${generic_image_pkg}" ]]; then
   ver="${generic_image_pkg#linux-image-}"      # e.g. 7.0.0-31-generic
   ver_noflavor="${ver%-generic}"                # e.g. 7.0.0-31
