@@ -1,92 +1,183 @@
-# The NKE API
+# The NKE tenant API
 
-This directory is the API of NKE: the kinds a tenant sees through `kubectl`, the kinds an operator
-publishes, and the shape the management cluster stores. Everything else in NKE — the API server,
-the controllers, the code generator — is downstream of the nine hand-written files here.
+This directory is the tenant API of NKE: the three kinds a tenant sees through `kubectl`, and
+the shape the management cluster stores behind them. Everything else in NKE, the API server, the
+controllers and the code generator, is downstream of the five hand-written files here.
 
-This PR contains those nine files and the annotated examples under [`examples/`](../../examples/).
-It contains no generated code and no behaviour. Nothing here is served directly; what serves it
-arrives in later PRs (see the end).
+This branch contains those five files and nothing else: no generated code, no behaviour, no
+examples. Every field is one of two things, and the type files say which:
 
-## One hand-written package, three served shapes
+- **A live field.** The SRD calls for it and NKE implements it today, or the Kubernetes API
+  convention requires it. It is on the tenant API in this PoC.
+- **A placeholder.** The SRD calls for it and NKE does not implement it. It is a commented-out
+  field carrying the SRD identifier (`UC-nnn`, `NKE-DS9-nnn`) and a one-line reason. Placeholders
+  record a loosely held shape so the name is not designed twice. They are revisited with their
+  implementation and need no discussion before then.
+
+Anything in neither category is not in the API: no autoscaling, no kubelet tuning, no tenant
+taints, no provider identifiers.
+
+## One package, one access matrix
 
 ```
-internal/apis/nke/           the hub: one Go struct per kind, EVERY field, +nke:external marking the tenant-visible ones
+internal/apis/nke/           the hub: one Go struct per kind, EVERY field, per-role access markers on each
         │
-        │  cmd/nke-gen (next PR)
-        ├──► nke/v1  <Kind>            public shape: only +nke:external fields, nine-field ObjectMeta   ← what tenants see
-        └──► nke/v1  <Kind>Internal    full shape: every field, real metav1.ObjectMeta                   ← what is stored
-                        │
-                        │  controller-gen crd (next PR)
-                        └──► internal.nke.nvidia.com/v1  CRDs on the management cluster, same resource names (nkeclusters, nodepools, …)
+        ├──► tenant projection     fields with +nke:tenant=rw|r,   nine-field ObjectMeta   ← the tenant API
+        ├──► operator projection   fields with +nke:operator=rw|r, nine-field ObjectMeta   ← the operator API
+        └──► internal              every field, real metav1.ObjectMeta                     ← what is stored; controllers only
 ```
 
-The hub is the single source of truth. A field exists on the tenant surface if and only if it
-carries `+nke:external`; an unmarked field is controller-only and hidden. The two served shapes are
-projections of the same struct, so there is one place to review and one place to change.
-
-`internal/apis/nke/management/v1/` mirrors the hub under the CRD group: the `<Kind>Internal` types
-are field-for-field the hub types, defined as separate structs only because `controller-gen crd`
-needs a declaration. `Org` lives there too; it is never tenant-facing and has no hub/external split.
-This PR includes `org.go` from that package and nothing else of it.
+The hub is the single source of truth. Each field says, per role, whether that role can read it,
+read and write it, or not see it at all; an unmarked field is controller-only. The two projections
+are not nested: operators see all tenant fields but write none of them, and operator-owned fields
+are invisible or read-only to tenants. The generator that emits the projections is a separate
+change; this package is the contract it consumes.
 
 ## The allowlist rule, once
 
 Hub (`cluster.go`, trimmed):
 
 ```go
-type NKEClusterStatus struct {
-	// KubernetesVersion is the version the control plane is running.
-	// +nke:external
-	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
+type NKENodeStatus struct {
+	// NodePoolName is the metadata.name of the owning NodePool.
+	// +nke:tenant=r
+	// +nke:operator=r
+	NodePoolName string `json:"nodePoolName,omitempty"`
 
-	// Conditions are Ready, Progressing, ReleaseCurrent and the validation conditions.
-	// +nke:external
+	// Conditions are Ready, Healthy and Retiring.
+	// +nke:tenant=r
+	// +nke:operator=r
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
-	// Internal is controller-only state the tenant never sees.
-	Internal NKEClusterInternalState `json:"internal,omitempty"`
+	// Internal is the break-fix replacement chain; operator-readable.
+	Internal NKENodeInternalState `json:"internal,omitempty"`
 }
 ```
 
-What `nke-gen` emits into `nke/v1` for tenants — the marked fields, the doc comments, and nothing
-else:
+What the tenant sees: the tenant-marked fields, their doc comments, and nothing else.
 
 ```go
-type NKEClusterStatus struct {
-	// KubernetesVersion is the version the control plane is running.
-	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
+type NKENodeStatus struct {
+	// NodePoolName is the metadata.name of the owning NodePool.
+	NodePoolName string `json:"nodePoolName,omitempty"`
 
-	// Conditions are Ready, Progressing, ReleaseCurrent and the validation conditions.
+	// Conditions are Ready, Healthy and Retiring.
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 ```
 
-`status.internal` is absent from the public type, not masked out of it: a tenant body carrying it
+`status.internal` is absent from the tenant type, not masked out of it: a tenant body carrying it
 fails strict decoding with a 400, and a `kubectl get` can never return it. The same rule gives the
-public kinds a generated nine-field `ObjectMeta` (`name`, `namespace`, `uid`, `resourceVersion`,
+tenant kinds a nine-field `ObjectMeta` (`name`, `namespace`, `uid`, `resourceVersion`,
 `generation`, `creationTimestamp`, `deletionTimestamp`, `labels`, `annotations`): finalizers,
-ownerReferences and managedFields do not exist on the tenant surface. That excerpt is the only
-generated code in this PR; it is an illustration, not a file.
+ownerReferences and managedFields do not exist on the tenant surface.
 
-There is no `spec.internal`. Operator intent that is not tenant-facing goes on the stored object
-through the operator's own access (the `nkenodes/status` repair request, the
-`internal.nke.nvidia.com/paused` and `operation` annotations), never into a hidden slice of spec.
+There is no `spec.internal`, and operators do not write `status`: status is the controller's
+account of the world. Operator intent (repair requests, validation re-runs, control-plane
+operations) lives outside these three kinds; the suggestion in the air is an imperative verb on
+the operator API backed by an operator-owned record, with the controller mirroring outcomes into
+status here. See "Operator intent" in `doc.go`. No field in this package carries
+`+nke:operator=rw`.
 
-## Who touches which shape
+## What is live and what is a placeholder
 
-| Actor | Reads / writes | Through |
+The type files are authoritative; this table is the index.
+
+### NKECluster
+
+| Field | Status | Basis |
 |---|---|---|
-| Tenant (`kubectl`, `org-<id>` namespace) | `nke/v1` public kinds: `NKECluster`, `NodePool`, `NKENode`; reads `Release`, `ReleaseChannel` | `nke-apiserver` |
-| `nke-apiserver` | decodes tenant bodies strictly as the public shape, converts to the hub, stores as `internal.nke.nvidia.com/v1`; projects the reverse on read | — |
-| Controllers, machine-provider adapter | `internal.nke.nvidia.com/v1` whole, including `status.internal` | the management cluster directly |
-| Operator | `internal.nke.nvidia.com/v1` whole; publishes `Release`/`ReleaseChannel`, writes `Org`, writes repair requests and annotations | the management cluster directly |
+| `spec.networking{podCIDR,serviceCIDR}` | live, create-only | NKE `network.*` |
+| `spec.release{channel,name}` | placeholder | UC-002, UC-005, UC-016. No release concept in NKE; version is a bare string today |
+| `spec.apiServerAccess.authorizedNetworks` | placeholder | NKE-DS9-014 |
+| `spec.acceleratedRuntime{name,version}` | placeholder | UC-018, NKE-DS9-011 (P1 via API) |
+| `status.kubernetesVersion` | live | `ControlPlaneStatus.kubernetesVersion` |
+| `status.endpoint` | live | the control-plane VIP |
+| `status.certificateAuthorityData` | live | UC-014; the EKS/GKE shape, credential from OIDC |
+| `status.oidc{issuerURL,clientID}` | placeholder | UC-014, NKE-DS9-003 |
+| `status.release` | placeholder | with `spec.release` |
+| `status.acceleratedRuntime` | placeholder | with `spec.acceleratedRuntime` |
+| conditions `Ready`, `Progressing` | live | NKE cluster conditions |
+| condition `ReleaseCurrent` | placeholder | UC-016 |
+| conditions `Validated`, `NetworkValidated`, `AcceleratorValidated` | placeholder | NKE-DS9-012 |
+
+### NodePool
+
+| Field | Status | Basis |
+|---|---|---|
+| `spec.clusterName` | live, immutable | `clusterID` |
+| `spec.instanceType` | live, immutable | `instanceTypeID` |
+| `spec.machineImage.name` | live | `osProfile` |
+| `spec.machineImage.version` | placeholder | UC-017 (P1) |
+| `spec.replicas` | live; `/scale` | `desiredNodeCount` |
+| `spec.kubernetesVersion` | placeholder | UC-016 (P1 skew). NKE has a per-pool version; here it arrives with the Release |
+| `spec.template.metadata.labels` | live | `nodeLabels` |
+| `spec.rollout.strategy.rollingUpdate.maxSurge` | live | `maxSurge`, `recycleBudget` |
+| `…rollingUpdate.maxUnavailable` | placeholder | UC-016, UC-017 |
+| `spec.repairAcceptance` | placeholder | UC-010 |
+| `status.replicas`, `readyReplicas`, `upToDateReplicas` | live | node conditions, `currentNodeSetID` |
+| `status.kubernetesVersion`, `status.machineImage` | live | observed |
+| conditions `Ready`, `AtDesiredSize`, `RollingOut` | live | |
+| conditions `VersionSkewWithinTolerance`, `RepairsPending`, validation | placeholder | UC-016, UC-010, NKE-DS9-012 |
+
+### NKENode
+
+| Field | Status | Basis |
+|---|---|---|
+| `spec.retire{reason}` | live, immutable once set | `DELETE /nodes/{id}` + `machineHealthIssue.summary` |
+| `spec.acceptRepair` | placeholder | UC-010; names `status.repairRequest.id` |
+| `status.clusterName`, `status.nodePoolName` | live, selectable | |
+| `status.repairRequest{…}` | placeholder | UC-010; operator-written |
+| conditions `Ready`, `Healthy`, `Retiring` | live | `kubernetesReady`, `nodeAgentReady`, `deleting` |
+| condition `RepairRequested`, validation | placeholder | UC-010, NKE-DS9-012 |
+
+`doc.go` records how each live field is actuated against NKE today, and lists the NKE inputs that
+are deliberately not fields (CNI, etcd encryption, control-plane sizing, provider ids) with the
+reason each belongs to the release, a mandate, the operator plane or the provider.
+
+## Who touches which view
+
+`rw` is read and write, `r` read only, `–` not present in that role's projection. Controllers
+have `rw` on everything and are omitted. Placeholders are marked (ph).
+
+| Field | Tenant | Operator |
+|---|---|---|
+| `metadata.name`, `namespace`, `labels`, `annotations` | rw | r |
+| platform annotations (`internal.nke.nvidia.com/*`) | – | r |
+| **NKECluster** `spec.networking` | rw, create-only | r |
+| `spec.release`, `spec.apiServerAccess`, `spec.acceleratedRuntime` (ph) | rw | r |
+| `status.kubernetesVersion`, `endpoint`, `certificateAuthorityData`, `conditions` | r | r |
+| `status.oidc`, `status.release`, `status.acceleratedRuntime` (ph) | r | r |
+| **NodePool** `spec.*` (all live fields) | rw | r |
+| `spec.kubernetesVersion`, `spec.repairAcceptance` (ph) | rw | r |
+| `status.replicas`, `readyReplicas`, `upToDateReplicas`, `kubernetesVersion`, `machineImage`, `conditions` | r | r |
+| **NKENode** `spec.retire` | rw, immutable once set | r |
+| `spec.acceptRepair` (ph) | rw | r |
+| `status.clusterName`, `nodePoolName`, `conditions` | r | r |
+| `status.repairRequest` (ph) | r | r; raised outside this kind |
+| `status.internal.replaces`, `replacedBy` | – | r |
+
+Two rules hold across the table: every tenant-owned spec field is operator read-only, and no
+field is writable by both roles. Access is enforced twice: a field absent from a role's projection
+is refused by strict decoding with a 400, and a field present but read-only for that role is
+refused by admission when a write from that role would change it.
+
+A hidden field (`status.internal.*` or unmarked) exists only when the controller cannot recompute
+it from spec, status, owner references and one read of the backend. Which cluster a pool is bound
+to is the owner reference the controller sets, uid included, so a recreated cluster under the same
+name is never adopted; which revision the nodes are at is read each reconcile and reported as
+`upToDateReplicas`. The NKENode replacement chain is the only hidden state left.
+
+Operators acting on a tenant's behalf (the SRD's "admin level access") impersonate the tenant
+through the tenant API, so the write is validated by tenant rules and audited as
+operator-on-behalf-of-tenant. Operator intent in its own right (repair requests, validation
+re-runs, control-plane operations) is outside these kinds; see "Operator intent" in `doc.go`.
 
 ## On the wire
 
 The tenant surface is plain Kubernetes REST: standard paths, standard verbs, JSON bodies, a bearer
 token from the operator's OIDC issuer, and the org's namespace in the URL. Anything that speaks to
-a kube-apiserver — `kubectl`, client-go, `curl` — works unchanged.
+a kube-apiserver, `kubectl`, client-go, `curl`, works unchanged.
 
 A write body carries intent and a name, nothing else. The URL supplies the group, version, kind and
 namespace, so `apiVersion`, `kind` and `metadata.namespace` may be omitted (a body naming a
@@ -99,67 +190,53 @@ H=(-H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
 API=https://127.0.0.1:8443/apis/nke/v1
 ```
 
-**Discovery and the catalog.** The group is discoverable; the operator's catalog is readable by
-every tenant, hidden entries omitted from `list` but still fetchable by name.
+**Discovery.**
 
 ```sh
 curl -sk "${H[@]}" $API                              # APIResourceList: the kinds, verbs, short names
-curl -sk "${H[@]}" $API/releasechannels/stable | jq .spec.releaseName
-curl -sk "${H[@]}" $API/releases | jq '.items[] | {name: .metadata.name, k8s: .spec.kubernetes.version, deprecated: .spec.deprecated}'
 ```
 
 **Create a cluster.** Only `spec` is writable; `status` in a body is a 400. `networking` is
-create-only.
+create-only. There is no version field: the cluster runs the release the operator has current
+until `spec.release` lands.
 
 ```sh
 curl -sk "${H[@]}" -X POST $API/namespaces/org-demo/nkeclusters -d @- <<'EOF'
 {
   "metadata": {"name": "demo"},
   "spec": {
-    "release": {"channel": "stable"},
     "networking": {"podCIDR": "192.168.0.0/16", "serviceCIDR": "10.96.0.0/12"}
   }
 }
 EOF
 ```
 
-**Read it back.** The response carries the nine-field `metadata`, `spec` as written, and the
-controller's `status`; nothing else exists on the wire.
+**Read it back, and build a kubeconfig from it.** The response carries the nine-field
+`metadata`, `spec` as written, and the controller's `status`; nothing else exists on the wire.
 
 ```sh
 curl -sk "${H[@]}" $API/namespaces/org-demo/nkeclusters/demo | jq '{
-  version:   .status.kubernetesVersion,
-  release:   .status.release,
-  endpoint:  .status.endpoint,
-  ready:     (.status.conditions[] | select(.type=="Ready")),
-  validated: (.status.conditions[] | select(.type=="Validated"))
+  version:  .status.kubernetesVersion,
+  endpoint: .status.endpoint,
+  ca:       .status.certificateAuthorityData,
+  ready:    (.status.conditions[] | select(.type=="Ready"))
 }'
 ```
 
 ```json
 {
   "version": "v1.34.1",
-  "release": {
-    "channel": "stable",
-    "current": "v1.34.1-cr2.1.0",
-    "offered": "v1.34.2-cr2.1.0",
-    "available": ["v1.34.2-cr2.1.0", "v1.34.1-cr2.1.0"]
-  },
   "endpoint": "https://demo.org-demo.nke.example:6443",
-  "ready":     {"type": "Ready",     "status": "True", "reason": "Serving", "lastTransitionTime": "2026-09-10T08:01:00Z"},
-  "validated": {"type": "Validated", "status": "True", "reason": "Passed",  "lastTransitionTime": "2026-09-10T08:09:52Z"}
+  "ca": "LS0tLS1CRUdJTi…",
+  "ready": {"type": "Ready", "status": "True", "reason": "Serving", "lastTransitionTime": "2026-09-10T08:01:00Z"}
 }
 ```
 
-**Hold or upgrade** by selecting a Release within the channel (`spec.release.name` must be in
-`status.release.available`, else 422). A merge patch is the natural verb for one field.
+`endpoint` and `certificateAuthorityData` are the cluster half of a kubeconfig; the user half is
+an OIDC token from the operator's issuer (UC-014). This API never mints a credential.
 
-```sh
-curl -sk "${H[@]}" -X PATCH $API/namespaces/org-demo/nkeclusters/demo \
-  -d '{"spec":{"release":{"name":"v1.34.2-cr2.1.0"}}}'
-```
-
-**Create a node pool.** `replicas` xor `autoscaling`; the `template` follows `PodTemplate` naming.
+**Create a node pool.** `replicas` is the count; `/scale` changes it. The `template` follows
+`PodTemplate` naming and carries labels only.
 
 ```sh
 curl -sk "${H[@]}" -X POST $API/namespaces/org-demo/nodepools -d @- <<'EOF'
@@ -168,108 +245,75 @@ curl -sk "${H[@]}" -X POST $API/namespaces/org-demo/nodepools -d @- <<'EOF'
   "spec": {
     "clusterName": "demo",
     "instanceType": "gb200-nvl72",
-    "autoscaling": {"minReplicas": 2, "maxReplicas": 4},
-    "template": {
-      "metadata": {"labels": {"nvidia.com/gpu.product": "gb200"}},
-      "spec": {
-        "taints": [{"key": "nvidia.com/gpu", "value": "present", "effect": "NoSchedule"}],
-        "kubelet": {"maxPods": 110}
-      }
-    },
-    "rollout": {"strategy": {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0}}},
-    "repairAcceptance": "Manual"
+    "machineImage": {"name": "gb200-ubuntu-24.04"},
+    "replicas": 2,
+    "template": {"metadata": {"labels": {"nvidia.com/gpu.product": "gb200"}}},
+    "rollout": {"strategy": {"type": "RollingUpdate", "rollingUpdate": {"maxSurge": 1}}}
   }
 }
 EOF
+
+# scale
+curl -sk "${H[@]}" -X PATCH $API/namespaces/org-demo/nodepools/gpu-a/scale -d '{"spec":{"replicas":4}}'
 ```
 
-**Nodes and break-fix.** `NKENode` objects are controller-created; tenants list them (the two
-`status` fields are server-side selectable), and write exactly two things: `retire` and
-`acceptRepair`.
+**Nodes.** `NKENode` objects are controller-created; tenants list them (the two `status` fields
+are server-side selectable) and write exactly one thing today: `retire`.
 
 ```sh
 curl -sk "${H[@]}" "$API/namespaces/org-demo/nkenodes?fieldSelector=status.nodePoolName%3Dgpu-a" \
-  | jq '.items[] | {node: .metadata.name, repair: .status.repairRequest, conditions: [.status.conditions[] | select(.type=="Healthy" or .type=="RepairRequested") | {type, status, reason}]}'
+  | jq '.items[] | {node: .metadata.name, conditions: [.status.conditions[] | {type, status, reason}]}'
 
-# accept the operator's open repair request on one node
-curl -sk "${H[@]}" -X PATCH $API/namespaces/org-demo/nkenodes/gpu-a-0003 \
-  -d '{"spec":{"acceptRepair":true}}'
-
-# return a node yourself (immutable once set; the pool provisions a replacement)
+# return a node (immutable once set; the pool provisions a replacement)
 curl -sk "${H[@]}" -X PATCH $API/namespaces/org-demo/nkenodes/gpu-a-0004 \
   -d '{"spec":{"retire":{"reason":"GPU 3 Xid 79 recurring"}}}'
 ```
 
 **Refusals are Kubernetes `Status` objects**, so every client already knows how to render them.
-The `invalid/` examples each produce one; a pin outside `available` looks like this (message text
-illustrative — the shape is the point):
+An immutable field changed after creation looks like this (message text illustrative):
 
 ```json
 {
   "kind": "Status", "apiVersion": "v1", "status": "Failure",
   "code": 422, "reason": "Invalid",
-  "message": "NKECluster.nke \"demo\" is invalid: spec.release.name: Invalid value: \"v1.33.0-cr2.0.1\": not in status.release.available [v1.34.2-cr2.1.0 v1.34.1-cr2.1.0]",
-  "details": {"name": "demo", "group": "nke", "kind": "NKECluster",
-              "causes": [{"reason": "FieldValueInvalid", "field": "spec.release.name",
-                          "message": "not in status.release.available [v1.34.2-cr2.1.0 v1.34.1-cr2.1.0]"}]}
+  "message": "NodePool.nke \"gpu-a\" is invalid: spec.instanceType: Invalid value: \"gb300-nvl72\": instanceType is immutable",
+  "details": {"name": "gpu-a", "group": "nke", "kind": "NodePool",
+              "causes": [{"reason": "FieldValueInvalid", "field": "spec.instanceType",
+                          "message": "instanceType is immutable"}]}
 }
 ```
 
-Unknown or hidden fields in a body (`status`, `metadata.finalizers`, `status.internal`) are a
-400 from the strict decoder, not silently dropped. Patches are merge (`application/json` or
-`application/merge-patch+json`) or JSON patch (`application/json-patch+json`); server-side apply
-and strategic merge are 415.
+Unknown or hidden fields in a body (`status`, `metadata.finalizers`, `status.internal`, any
+placeholder) are a 400 from the strict decoder, not silently dropped. Patches are merge
+(`application/json` or `application/merge-patch+json`) or JSON patch (`application/json-patch+json`);
+server-side apply and strategic merge are 415.
 
-Responses are full Kubernetes objects — `apiVersion`, `kind`, the nine-field `metadata`, `spec`,
-`status`, and `List` envelopes with `items` — because `kubectl`, client-go, informers and
+Responses are full Kubernetes objects, with `apiVersion`, `kind`, the nine-field `metadata`,
+`spec`, `status`, and `List` envelopes with `items`, because `kubectl`, client-go, informers and
 Terraform's Kubernetes provider decode by them. The request side is lenient; the response side is
 exact.
 
 ## Reading order
 
-1. [`nke/doc.go`](nke/doc.go) — the rule above, in two paragraphs.
-2. [`nke/cluster.go`](nke/cluster.go) → [`nke/nodepool.go`](nke/nodepool.go) → [`nke/nkenode.go`](nke/nkenode.go) — the tenant kinds.
-3. [`nke/release.go`](nke/release.go) → [`nke/releasechannel.go`](nke/releasechannel.go) — the operator catalog.
-4. [`nke/clusterrelease.go`](nke/clusterrelease.go) — controller-owned; the per-cluster release position.
-5. [`nke/validation.go`](nke/validation.go) — the validation condition names and the hidden
-   `ObservedValidation` shape the adapter reports.
-6. [`nke/management/v1/org.go`](nke/management/v1/org.go) — the org, its members and their roles.
-7. [`examples/`](../../examples/) — every field of every kind in YAML, with the happy path, the
-   promotion story, and one refused write per validation rule under `examples/invalid/`.
+1. [`nke/doc.go`](nke/doc.go): the three views, the placeholder rule, and how each live field is
+   actuated against NKE today.
+2. [`nke/cluster.go`](nke/cluster.go), then [`nke/nodepool.go`](nke/nodepool.go), then
+   [`nke/nkenode.go`](nke/nkenode.go): the three kinds. Placeholders sit where the field would go.
+3. [`nke/validation.go`](nke/validation.go): readiness validation, entirely a placeholder.
 
 Markers are the spec. `+kubebuilder:validation:*` and `XValidation` rules are what admission
 enforces; `+kubebuilder:printcolumn` is what `kubectl get` shows; `+kubebuilder:default` is what an
 omitted field becomes. Read them as part of the field.
 
-## Legend
+## Not in this branch
 
-The examples and the proposal mark each field one of three ways:
-
-- **now** — populated and acted on in the PoC.
-- **shape** — in the API, validated and round-tripped, but nothing populates or acts on it yet.
-  Tenant kinds only, P0 requirements only. Its doc comment names who will write it. The tenant
-  API is frozen at its P0 end state so it does not grow field-by-field as components arrive.
-- **later** — recorded in the proposal so it is not designed twice; not in the API, and refused
-  by the strict decoder if sent.
-
-The type files themselves carry no delivery status; they read as the contract.
-
-## What is not in this PR
-
-| Next PRs | Contents |
-|---|---|
-| Codegen | `cmd/nke-gen`, `internal/gen`, `codegen.sh`, the generated `nke/v1` package, `management/v1/types.go`, `manifests/crds/` — mechanical; review the golden fixture |
-| API server | `nke-apiserver`: authn, impersonation, strict decoding, projection, admission (`skew.go` and `available.go` from this package ship with it), discovery, OpenAPI, watch |
-| Controllers | the reconcilers, `cmd/nke-sim-adapter` (the PoC machine-provider adapter), RBAC manifests, `verify.sh` |
-
-Nothing in this PR runs. `go build ./internal/apis/...` type-checks the structs; that is the whole
-build story here.
+The Release, ReleaseChannel and MachineImage catalog kinds, the Org kind, the generator and its
+output, the API server, and the controllers. Nothing here runs; `go build ./internal/apis/...`
+type-checks the structs, and that is the whole build story.
 
 ## Where the reasoning lives
 
-The type comments and example headers cite two documents by section: `docs/PROPOSAL-API-FIELDS.md`
-(the per-field rationale, with the SRD requirement and CSP precedent for each field) and
-`docs/DECISIONS.md` (the decision record; §32, §33, §35, §36, §38, §39 and §49–§59 fix this
-shape). Both live on `feat/bread` with the rest of NKE and are deliberately not in this PR: this
-one is the shape, and the shape should stand on the types and the examples alone. Ask for either
-if a "why" is not answered by a field's own comment.
+The fuller rationale, with the SRD requirement and CSP precedent behind each field and the
+decision record that fixed this shape, lives on `feat/bread` with the rest of the PoC. It is
+deliberately not here: this branch is the shape, and the shape should stand on the types alone.
+Ask if a "why" is not answered by a field's own comment.
