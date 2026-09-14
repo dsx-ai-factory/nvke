@@ -39,7 +39,6 @@ After bootstrap completes:
 - NGC API key (required for pulling NKE container images)
 - On the **init node**: `kind` binary and `nerdctl` with containerd installed — `nkectl` uses these to create the ephemeral bootstrap Kind cluster. Docker is not supported. kind states 1.7.0 as the minimum for its nerdctl provider; 2.3.5 is the version CI exercises
 - `NKECTL_CWE_IMAGE` — full image reference for the CWE controller (e.g. `nvcr.io/<org>/controller:edge`)
-- `NKECTL_CWE_PROFILES_IMAGE` — image holding the OS profiles tree at `/profiles`
 - `NKECTL_CAPI_PROVISIONED_IMAGE` — full image reference for the provisioned Cluster API infrastructure provider (e.g. `nvcr.io/<org>/cluster-api-provider-provisioned:edge`)
 
 If you are targeting a self-managed cluster, prepare your environment SBOM and [deploy repository](deploy-repository.md) ahead of time.
@@ -135,7 +134,6 @@ nkectl bootstrap site -f sitespec.yaml --dry-run
 # Run bootstrap
 REGISTRY_API_KEY="<your-registry-api-key>" \
 NKECTL_CWE_IMAGE="nvcr.io/<org>/controller:edge" \
-NKECTL_CWE_PROFILES_IMAGE="nvcr.io/<org>/profiles:edge" \
 NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:edge" \
   nkectl bootstrap site -f sitespec.yaml
 ```

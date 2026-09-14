@@ -79,7 +79,7 @@ NKECTL_LDFLAGS := \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
-	ensure-capd-image ensure-profiles-image ensure-provisioned-provider-image \
+	ensure-capd-image ensure-provisioned-provider-image \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
 # The platforms shipped on a release. nkectl is the one binary here a human
@@ -172,16 +172,6 @@ ensure-capd-image:
 	  CAPD_CNI_MANIFESTS_DEB_PATH="$(CAPD_CNI_MANIFESTS_DEB_PATH)" \
 	  CAPD_KINDEST_NODE_IMAGE=$(CAPD_KINDEST_NODE_IMAGE) \
 	  bash ../controller/hack/capd-kindest-node/build-image.sh
-
-# OS profiles for the CWE deployment, without which CWE fails its schema
-# migration. controller/test/fixtures is the sanitized tree the Tiltfile and
-# capd-e2e already use. A no-op once the image exists locally.
-CWE_PROFILES_IMAGE ?= cwe-profiles:local
-
-ensure-profiles-image:
-	@nerdctl image inspect $(CWE_PROFILES_IMAGE) >/dev/null 2>&1 || \
-	  nerdctl build -t $(CWE_PROFILES_IMAGE) \
-	    -f ../controller/test/fixtures/Dockerfile ../controller/test/fixtures
 
 # The Cluster API infrastructure provider for hosts that already exist, which is
 # what makes a site cluster reconcile: `nkectl bootstrap site` installs it onto

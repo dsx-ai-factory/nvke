@@ -166,8 +166,11 @@ const (
 	readyzPath = "/readyz"
 	cweSvcPort = "http"
 
-	// profilesPath is where the init container lands the profiles tree and
-	// where CWE reads it from (PROFILES_DIR).
+	// profilesPath is where CWE reads OS and config profiles from
+	// (PROFILES_DIR). Set explicitly rather than left to the chart's empty
+	// default, so PROFILES_DIR names the empty /profiles the controller image
+	// ships rather than resolving somewhere else. nkectl deploys no profiles
+	// into it; a site gets them from its deploy repository.
 	profilesPath = "/profiles"
 )
 
@@ -191,13 +194,6 @@ type Config struct {
 	// default it; a registry org identifier does not belong hardcoded in a
 	// tracked file of a repository being prepared to go public.
 	CWEImage string
-
-	// ProfilesImage holds the OS/config profiles tree at /profiles, which the
-	// chart's materialize-profiles init container copies into CWE. Required:
-	// a schema migration reads osProfiles/metadata.yaml, so CWE crash-loops
-	// without it. Fleet profiles come from nke-site-deploy;
-	// controller/test/fixtures is the sanitized stand-in.
-	ProfilesImage string
 
 	// SPIFFEClusterName identifies the ephemeral Kind cluster to SPIRE. It is
 	// the Kind cluster's own name, which is the only name this cluster has.
@@ -305,8 +301,7 @@ type Config struct {
 // bootstrapengine.DefaultConfig's env-driven shape.
 func DefaultConfig() Config {
 	return Config{
-		CWEImage:      os.Getenv("NKECTL_CWE_IMAGE"),
-		ProfilesImage: os.Getenv("NKECTL_CWE_PROFILES_IMAGE"),
+		CWEImage: os.Getenv("NKECTL_CWE_IMAGE"),
 		// No cluster-name variable of its own: the bootstrap cluster has one
 		// name, NKECTL_BOOTSTRAP_CLUSTER_NAME, and SPIRE is told that one.
 		// Callers set SPIFFEClusterName; an empty trust domain is derived from
@@ -380,10 +375,6 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	if cfg.CWEImage == "" {
 		return errors.New("cwedeploy: Config.CWEImage is required " +
 			"(e.g. nvcr.io/<org>/controller:edge -- see .github/workflows/image-nvcr.yml)")
-	}
-	if cfg.ProfilesImage == "" {
-		return errors.New("cwedeploy: Config.ProfilesImage is required; CWE fails " +
-			"its schema migration without an OS profiles tree (see Config.ProfilesImage)")
 	}
 	if cfg.ProvisionedProviderImage == "" {
 		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +
@@ -525,9 +516,8 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	// tag and digest are always set, empty when unused: the chart reads an
 	// empty tag as "use appVersion" and an empty digest as "pull by tag".
 	imageRepo, imageTag, imageDigest := splitImageRef(cfg.CWEImage)
-	profRepo, profTag, profDigest := splitImageRef(cfg.ProfilesImage)
 	e.log.Info("installing cwe", "namespace", cweNamespace, "image", cfg.CWEImage,
-		"profilesImage", cfg.ProfilesImage, "chart", chartPath)
+		"chart", chartPath)
 	cweArgs := []string{
 		"upgrade", "--install", cweReleaseName, chartPath,
 		"--namespace", cweNamespace, "--create-namespace",
@@ -537,11 +527,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "image.tag=" + imageTag,
 		"--set-string", "image.digest=" + imageDigest,
 		"--set-string", "image.pullPolicy=IfNotPresent",
-		"--set", "profiles.image.enabled=true",
 		"--set-string", "profiles.path=" + profilesPath,
-		"--set-string", "profiles.image.repository=" + profRepo,
-		"--set-string", "profiles.image.tag=" + profTag,
-		"--set-string", "profiles.image.digest=" + profDigest,
 		"--set", "cni.installAfterInit=true",
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,

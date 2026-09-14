@@ -317,7 +317,6 @@ func runtimeOnPath(name string) (string, error) { return "/usr/local/bin/" + nam
 func setBootstrapEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
-	t.Setenv("NKECTL_CWE_PROFILES_IMAGE", "nvcr.io/org/cwe-profiles:v1")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:local")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_PATH", t.TempDir())
 	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
