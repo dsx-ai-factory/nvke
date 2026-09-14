@@ -1,8 +1,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# NICo containers integration test. The body lives in backend-e2e.yml, shared
-# with capd-e2e.yml; this file is the NICo trigger and configuration.
+# NICo containers integration test. Pull-request mirror branches run a bounded
+# core lifecycle. Main, scheduled, and manual runs retain the comprehensive
+# two-mode suite. The body lives in backend-e2e.yml, shared with capd-e2e.yml;
+# this file is the NICo trigger and configuration.
 #
 # The nico-containers spec was one of 60 Ginkgo specs no workflow selected. It
 # needs CAPNICo, which lives in dsx-ai-factory/cluster-api-provider-nico, an internal
@@ -13,10 +15,9 @@
 # this needs no real infrastructure and reuses the CAPD kindest node image the
 # CAPD lane already builds.
 #
-# NOT in merge-gate.yml, and deliberately so. The nico entry allows 15 minutes to
-# provision and 10 to delete, so this lane's cost is unknown until it has run a
-# few times. The gofail lane taught that lesson: it was added to the gate on an
-# estimate and turned out to set the wall clock. Measure first, gate later.
+# NOT in merge-gate.yml, and deliberately so. This lane needs an NVIDIA runner
+# and the internal CAPNICo source token, so it remains behind the vetted mirror
+# branch trust boundary even though the pull-request workload is now bounded.
 #
 # Self-hosted runners do not receive pull_request events, so this triggers on the
 # copy-pr-bot mirror branch like the CAPD lane. That also puts the run on a push
@@ -85,7 +86,9 @@ jobs:
       backend: nico
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.runner }}
-      # Same expression the CAPD lane runs. health and authn hit the
+      # Mirror branches select only the bounded core entry and health probes.
+      # Comprehensive runs use the same expression as the CAPD lane. Health and
+      # authn hit the
       # management-cluster CWE, not the tenant backend, so this lane already
       # pays for them. authn-spire is out because the NICo provider does not
       # set SPIFFE_ENABLED. The label filter keeps this job focused on the
@@ -93,16 +96,16 @@ jobs:
       # Ignored under single-runner-control-plane-modes below, which derives a
       # filter per leg. Kept to satisfy the required input and to record what the
       # node-pool leg runs.
-      label-filter: nico-containers || health || (authn && !authn-spire) || authn-permissive
+      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-nico || health' || 'nico-containers || health || (authn && !authn-spire) || authn-permissive' }}
       # The nico provider installs CAPNICo, starts nico-sim by default, and
       # brings its own node image step. capi_core is required.
       providers: '["capi_core", "bgp-containers", "nico"]'
-      # Two control-plane legs over five clusters, on two arches. The one-leg
-      # 55-spec run took 60 minutes, so this is sized for roughly double.
-      timeout-minutes: 240
+      # Keep diagnostic headroom above the 15-minute pull-request target. Full
+      # runs retain their existing allowance for both modes and extended rows.
+      timeout-minutes: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 20 || 240 }}
       # Without this, a broken auth deployment turns the authn specs into
       # skips and the lane stays green having tested nothing new.
-      require-authn: true
+      require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       # Same CWE and the same REST API as CAPD, so this asserts nothing new about
       # nkectl. It is on because it costs a minute on a lane that already runs,
       # and it catches a CWE deployment difference the CAPD lane would not see.
@@ -110,5 +113,5 @@ jobs:
       # cp-controller specs skip unless CWE is deployed flag-on, and the flag is
       # deployment-wide, so it needs its own leg. Without this the lane is the
       # only one in CI not covering controller-managed control planes.
-      single-runner-control-plane-modes: true
+      single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       needs-capnico-source: true

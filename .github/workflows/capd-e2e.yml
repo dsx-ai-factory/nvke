@@ -1,7 +1,9 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Full CAPD integration test using controller and agent source from this commit.
+# CAPD integration test using controller and agent source from this commit.
+# Pull-request mirror branches run a bounded core lifecycle. Main, scheduled,
+# and manual runs retain the comprehensive two-mode suite.
 #
 # The body lives in backend-e2e.yml, shared with nico-e2e.yml. This file is the
 # CAPD trigger and configuration, nothing more.
@@ -74,7 +76,13 @@ jobs:
     permissions:
       pull-requests: read
 
-  # Both control-plane provisioning modes on one runner/cluster, in sequence: the
+  # Pull requests use the dedicated one-control-plane/one-worker core row and
+  # the ordinary node-pool path. The measured setup plus create/readiness/delete
+  # path leaves enough room for a sub-15-minute target without weakening the
+  # comprehensive main and scheduled coverage below.
+  #
+  # Non-PR runs use both control-plane provisioning modes on one runner and
+  # cluster, in sequence. The
   # flag (PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER) is deployment-wide
   # and each mode rejects the other's config, so a single CWE can't serve both at
   # once. The script runs cp-controller flag-on first, then flips the flag off with
@@ -105,24 +113,26 @@ jobs:
       backend: capd
       arch: ${{ matrix.arch }}
       runner: ${{ matrix.runner }}
-      # Ignored under single-runner-control-plane-modes: the CI script drives
+      # Mirror branches select only the bounded core entry and health probes.
+      # Ignored under single-runner-control-plane-modes on comprehensive runs:
+      # the CI script drives
       # each leg's label filter itself (cp-controller+health first, then
       # node-pool+health+authn). This value mirrors the node-pool leg's filter to
       # satisfy the required input and document what that leg runs. `health` and
       # the authn specs ride along there -- both need a deployed, enforcing NKE.
       # authn-spire is excluded (needs SPIRE pod attestation not wired in CAPD).
-      label-filter: ((capd || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive
+      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '((capd || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive' }}
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
-      # Two full CAPD lifecycles plus a redeploy on one runner; 150m covers both
-      # in sequence with headroom.
-      timeout-minutes: 150
+      # Keep diagnostic headroom above the 15-minute pull-request target. Full
+      # runs still need room for two modes and every extended CAPD scenario.
+      timeout-minutes: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 20 || 150 }}
       # Turn "authentication is not deployed" from a per-spec skip into a failure:
       # the authn specs run on the node-pool leg, and without this a broken auth
       # deployment would leave them silently skipped and the job green.
-      require-authn: true
+      require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       nkectl-smoke: true
       needs-capnico-source: true
-      single-runner-control-plane-modes: true
+      single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       # Only ever set by a manual dispatch: `inputs` is empty on push and
       # schedule, so those runs keep the Tilt deploy.
       use-nke-stack: ${{ inputs.use-nke-stack || false }}

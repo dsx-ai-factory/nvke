@@ -207,6 +207,20 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 		}, NodeTimeout(1*time.Hour))
 	},
+	// The pull-request smoke lane uses a separate, minimal topology instead of
+	// filtering the full CAPD row below. The full row needs three control-plane
+	// nodes for its scale, rotation, and certificate checks; the core lane only
+	// proves that the ordinary node-pool path can create a usable cluster and
+	// delete it again.
+	Entry("CAPD core", Ordered, ContinueOnFailure, Label("core", "core-docker"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		options:  nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{provisioningOnly: true},
+	}),
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
@@ -279,6 +293,18 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		},
 		options:  nke.Options{Provision: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		validate: validations{controlPlaneController: true, controlPlaneControllerUpdate: true, controlPlaneControllerRollingUpdate: true},
+	}),
+	// NICo gets the same bounded pull-request contract as CAPD. Keep this entry
+	// off the broad nico-containers label so scheduled full runs do not repeat
+	// the same lifecycle with a smaller topology.
+	Entry("nico-containers core", Ordered, ContinueOnFailure, Label("core", "core-nico"), testSpec{
+		buildSpec: nicoSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+			workerPools:       []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		options:  nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{provisioningOnly: true},
 	}),
 	Entry("nico-containers", Ordered, ContinueOnFailure, Label("nico-containers", "happy-path"), testSpec{
 		buildSpec: nicoSpec,
@@ -460,7 +486,8 @@ type clusterShape struct {
 }
 
 type validations struct {
-	// provisioningOnly limits the lifecycle to create, node readiness, and delete.
+	// provisioningOnly limits the lifecycle to create, node readiness, delete,
+	// and the shared tenant-access cleanup check.
 	provisioningOnly bool
 	// postReadyChecks verifies intended cluster state after the initial CAPD
 	// cluster and all desired nodes are Ready.

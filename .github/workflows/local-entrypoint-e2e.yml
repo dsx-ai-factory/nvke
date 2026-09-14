@@ -79,6 +79,10 @@ jobs:
         install_cni_after_init: [false, true]
     env:
       INSTALL_CNI_AFTER_INIT: ${{ matrix.install_cni_after_init }}
+      # Pull-request mirrors run the same bounded lifecycle as the CAPD lane.
+      # Main, scheduled, and manual runs keep both comprehensive CAPD modes.
+      LOCAL_NKE_E2E_LABEL_FILTER: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '' }}
+      LOCAL_NKE_E2E_SINGLE_RUNNER_CAPD_CONTROL_PLANE_MODES: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'false' || 'true' }}
       # These runners reach Docker Hub through an NVIDIA mirror. backend-e2e.yml
       # sets the same value; helm needs the shim below to honour it for OCI
       # charts, which is how the CI entrypoint does it too.
