@@ -659,29 +659,57 @@ func (r missingKubeconfigRunner) Run(ctx context.Context, name string, args ...s
 // that run in the bootstrap cluster this command deletes on its way out.
 // Deleting it on the cluster condition alone strands whichever nodes had not
 // finished, and a full re-bootstrap is the only way back.
+//
+// Both ends of the range are covered. One node joined is the reported bug: the
+// command called a three-node cluster ready on the strength of the first node.
+// Two joined is the straggler that is hardest to notice — the cluster is one
+// node short of what was asked for, which is a quorum that works today and a
+// control plane that cannot lose a node tomorrow.
 func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
-	setBootstrapEnv(t)
-	startFakeCWEAPIWithNodes(t, true, 3, 1)
+	for _, tc := range []struct {
+		name     string
+		joined   int
+		stranded []string
+	}{
+		{name: "only the initial node joined", joined: 1, stranded: []string{"node2", "node3"}},
+		{name: "one node never joins", joined: 2, stranded: []string{"node3"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setBootstrapEnv(t)
+			startFakeCWEAPIWithNodes(t, true, 3, tc.joined)
 
-	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
-		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
-		clusterTimeout:  5 * time.Millisecond,
-		kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
-		lookPath:        runtimeOnPath,
-	})
-	if err == nil {
-		t.Fatal("bootstrap reported success with only 1 of 3 control plane nodes joined")
-	}
-	if runner.sawArgs("delete", "cluster") {
-		t.Error("bootstrap kind cluster was torn down while 2 control plane nodes were still joining")
-	}
-	for _, want := range []string{"1 of 3", "node2", "node3", "retained for recovery"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("error %q does not contain %q", err, want)
-		}
+			runner := &recordingRunner{next: fakeBootstrapRunner{}}
+			err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+				siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
+				bootstrapRunner: runner,
+				cweRunner:       fakeCWERunner{},
+				clusterTimeout:  5 * time.Millisecond,
+				kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
+				lookPath:        runtimeOnPath,
+			})
+			if err == nil {
+				t.Fatalf("bootstrap reported success with %d of 3 control plane nodes joined", tc.joined)
+			}
+			if runner.sawArgs("delete", "cluster") {
+				t.Error("bootstrap kind cluster was torn down while a control plane node was still joining")
+			}
+			want := append([]string{
+				fmt.Sprintf("%d of 3", tc.joined),
+				"retained for recovery",
+			}, tc.stranded...)
+			for _, w := range want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("error %q does not contain %q", err, w)
+				}
+			}
+			// The nodes that did finish are not stragglers, and naming them
+			// would send the operator after the wrong host.
+			for i := 1; i <= tc.joined; i++ {
+				if node := fmt.Sprintf("node%d", i); strings.Contains(err.Error(), node) {
+					t.Errorf("error %q lists %s, which had finished", err, node)
+				}
+			}
+		})
 	}
 }
 
