@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/google/uuid"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -22,8 +23,23 @@ import (
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/config"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/kube"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
+	"github.com/NVIDIA/nke/controller/test/e2e/internal/nkectl"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/tenantauth"
 )
+
+// clusterCreator is the three calls initCluster makes to bring a cluster into
+// being. *nke.Client satisfies it and is the default for every entry; the
+// nkectl entry substitutes a CLI-backed implementation so one row proves the
+// command line provisions a cluster too.
+//
+// Deliberately narrow. The suite's ~20 post-create validations keep talking to
+// t.nke directly, because nkectl has no node-level commands to validate with
+// and widening this would mean an implementation that panics on most of it.
+type clusterCreator interface {
+	CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.Cluster, error)
+	GetByName(ctx context.Context, name string) (*api.Cluster, error)
+	WaitForClusterReady(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error)
+}
 
 // tenantTest carries everything a backend's specs share: the wiring built once
 // in the create spec, plus the cluster created there.
@@ -33,10 +49,15 @@ type tenantTest struct {
 	k8sClient     client.Client
 	tenantClients *kube.TenantClientFactory
 	nke           *nke.Client
-	timeouts      nke.Options
-	trustDomain   string
-	spec          nke.ClusterSpec
-	cluster       *api.Cluster
+	// creator brings the cluster up. Defaults to nke; the nkectl entry swaps it.
+	creator clusterCreator
+	// nkectlRunner is set only by the nkectl entry, for the CLI-only
+	// validations that follow the create. Nil everywhere else.
+	nkectlRunner *nkectl.Runner
+	timeouts     nke.Options
+	trustDomain  string
+	spec         nke.ClusterSpec
+	cluster      *api.Cluster
 	// cascadePoolID is set by the node-pool cascade post-create spec and read by
 	// its post-delete counterpart to prove cluster deletion removed the pool.
 	cascadePoolID uuid.UUID
@@ -65,6 +86,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 				Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
 			}
 			test = expectSucceed(setupTenantTest(ctx, spec.options))
+			if spec.createVia == clientNkectl {
+				test.useNkectl(ctx, spec.options)
+				DeferCleanup(test.closeNkectl)
+			}
 			if spec.validate.brownfieldOIDC {
 				// A cluster on an OIDC-enabled site is always born OIDC-on, but
 				// brownfield enablement needs an OIDC-off cluster to act on. Turn the
@@ -153,6 +178,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			if spec.validate.nodePoolCascade {
 				validateNodePoolCascadePostCreate(&test)
 			}
+			if spec.createVia == clientNkectl {
+				validateNkectlPostCreate(&test)
+			}
 		})
 
 		It("deletes the cluster", func(ctx context.Context) {
@@ -238,6 +266,32 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			manualScaleDown: true, clusterConfig: true,
 			kubeVipRouteWithdrawal: true,
 		},
+	}),
+	// The CLI row. Everything above creates its cluster through the generated
+	// API client; this one drives the nkectl binary instead, so CI has one run
+	// proving an operator can get from a spec file to a provisioned CAPD
+	// cluster through the command line. Until it existed, nkectl was covered
+	// only by hack/ci/nkectl-smoke.sh, whose cluster sets
+	// autoProvisionDisabled and so never provisions at all -- which also left
+	// `get kubeconfig` with no success path anywhere, since the Secret it
+	// reads is published only once nodes are up.
+	//
+	// Kept deliberately small: one control-plane node, no workers, and
+	// provisioningOnly so the heavy post-create validations stay on the rows
+	// that already own them. What this row adds over them is the transport,
+	// not the assertions.
+	//
+	// It carries the "capd" label, so the node-pool leg's filter
+	// ((capd || health) && !cp-controller) picks it up and it runs on the
+	// substrate that lane already built. "nkectl" selects it alone.
+	Entry("CAPD via nkectl", Ordered, ContinueOnFailure, Label("capd", "nkectl"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		options:   nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		createVia: clientNkectl,
+		validate:  validations{provisioningOnly: true},
 	}),
 	// This row is selected only by the dedicated identity-exchange lane. Keeping
 	// it off the broad "capd" label prevents the direct-SPIRE control lane from
@@ -469,7 +523,24 @@ type testSpec struct {
 	shape     clusterShape
 	options   nke.Options
 	validate  validations
+	// createVia selects the client initCluster drives. The zero value is the
+	// REST API client every other entry uses; clientNkectl drives the CLI
+	// binary instead, so one entry proves the command line can take an
+	// operator from a spec file to a provisioned cluster.
+	createVia clusterClient
 }
+
+// clusterClient names the transport an entry creates its cluster through. The
+// zero value is the generated REST client, which every entry but the nkectl row
+// uses and which setupTenantTest wires by default, so only the alternative
+// needs a name.
+type clusterClient int
+
+const (
+	// clientNkectl shells out to the nkectl binary instead of using the REST
+	// client.
+	clientNkectl clusterClient = iota + 1
+)
 
 type clusterShape struct {
 	kubernetesVersion string
@@ -618,6 +689,7 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 		k8sClient:     k8sClient,
 		tenantClients: tenantClients,
 		nke:           cweClient,
+		creator:       cweClient,
 		timeouts:      timeouts,
 		trustDomain:   trustDomain,
 	}, nil
@@ -632,7 +704,7 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	t.spec.Name = fmt.Sprintf("%s-%s", t.spec.Name, t.spec.Backend) // CreateCluster appends a timestamp
 
 	if t.cfg.Lifecycle.ReuseCluster != "" {
-		t.cluster = expectSucceed(t.nke.GetByName(ctx, t.cfg.Lifecycle.ReuseCluster))
+		t.cluster = expectSucceed(t.creator.GetByName(ctx, t.cfg.Lifecycle.ReuseCluster))
 		return
 	}
 
@@ -644,18 +716,18 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	t.log.Info("Using control-plane VIP (empty means none configured)", "controlPlaneVIP", t.spec.ControlPlane.ControlPlaneVIP)
 
 	By(fmt.Sprintf("Creating the %s tenant cluster", t.spec.Backend))
-	cluster, err := t.nke.CreateCluster(ctx, t.spec)
+	cluster, err := t.creator.CreateCluster(ctx, t.spec)
 	Expect(err).NotTo(HaveOccurred(), "should create the cluster")
 	t.log.Info("Created cluster", "name", cluster.Name, "id", cluster.ID)
 
 	By("Verifying the tenant cluster appears in the cluster list")
-	listedCluster, err := t.nke.GetByName(ctx, cluster.Name)
+	listedCluster, err := t.creator.GetByName(ctx, cluster.Name)
 	Expect(err).NotTo(HaveOccurred(), "should list the created cluster by name")
 	Expect(listedCluster.ID).To(Equal(cluster.ID), "listed cluster should match the created cluster")
 
 	By("Waiting for the tenant cluster to be provisioned")
 	start := time.Now()
-	cluster, err = t.nke.WaitForClusterReady(ctx, cluster.ID)
+	cluster, err = t.creator.WaitForClusterReady(ctx, cluster.ID)
 	Expect(err).NotTo(HaveOccurred(), "should provision the cluster")
 	t.log.Info("Cluster provisioned", "name", cluster.Name, "duration", time.Since(start).Round(time.Second).String())
 

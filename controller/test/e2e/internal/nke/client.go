@@ -221,7 +221,7 @@ func (c *Client) ProvisionedNodeCount(ctx context.Context, nodePoolID openapi_ty
 
 // CreateCluster builds and submits a cluster request.
 func (c *Client) CreateCluster(ctx context.Context, spec ClusterSpec) (*api.Cluster, error) {
-	req, err := buildCreateRequest(spec)
+	req, err := BuildCreateRequest(spec)
 	if err != nil {
 		return nil, err
 	}

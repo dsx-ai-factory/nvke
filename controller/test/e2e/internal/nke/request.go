@@ -125,8 +125,12 @@ func containerCAPIReadyCommands() []string {
 	}
 }
 
-// buildCreateRequest dispatches to the backend-specific request builder.
-func buildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+// BuildCreateRequest dispatches to the backend-specific request builder.
+//
+// Exported for internal/nkectl, which writes the same request to a file and
+// creates it through the CLI. Sharing the builder is what keeps the CLI-driven
+// table entry differing from its REST counterpart in transport alone.
+func BuildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	switch spec.Backend {
 	case BackendCAPD:
 		return buildCAPDRequest(spec)
