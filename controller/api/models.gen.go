@@ -218,6 +218,96 @@ type ControlPlaneConfig struct {
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 }
 
+// ControlPlaneConfigChange defines model for ControlPlaneConfigChange.
+type ControlPlaneConfigChange struct {
+	// ChangeReason A human-readable reason the snapshot was created, when recorded.
+	ChangeReason string `json:"changeReason,omitempty"`
+
+	// ChangedFields Fields that changed relative to the previous snapshot. Empty for the initial snapshot.
+	ChangedFields []ControlPlaneConfigField `json:"changedFields"`
+
+	// ConfigurationID The ID of the control-plane configuration snapshot representing this config.
+	ConfigurationID openapi_types.UUID `json:"configurationID"`
+
+	// CreatedAt When this config snapshot was created (i.e. when the config change took effect).
+	CreatedAt time.Time `json:"createdAt"`
+
+	// CreatedBy Who created the snapshot, when recorded.
+	CreatedBy string `json:"createdBy,omitempty"`
+
+	// IsCurrent Whether this snapshot is the cluster's current desired control-plane configuration.
+	IsCurrent bool `json:"isCurrent"`
+}
+
+// ControlPlaneConfigField defines model for ControlPlaneConfigField.
+type ControlPlaneConfigField struct {
+	// Field The name of the config field that changed.
+	Field string `json:"field"`
+
+	// From The previous value, JSON-encoded. Omitted for the initial snapshot.
+	From *string `json:"from,omitempty"`
+
+	// To The new value, JSON-encoded.
+	To string `json:"to"`
+}
+
+// ControlPlaneConfigHistory defines model for ControlPlaneConfigHistory.
+type ControlPlaneConfigHistory struct {
+	// Changes Control-plane configuration snapshots ordered from oldest to newest. Each entry after the first shows which rollout-relevant fields changed relative to the previous snapshot. A node's pinnedConfigurationID and the cluster's desired configurationID both refer to entries here.
+	Changes []ControlPlaneConfigChange `json:"changes"`
+}
+
+// ControlPlaneRolloutChange A single rollout-relevant field whose pinned value differs from desired.
+type ControlPlaneRolloutChange struct {
+	// Field The rollout-relevant field that changed (e.g. kubernetesVersion, osProfile, configProfile).
+	Field string `json:"field"`
+
+	// From The value the node is currently pinned to.
+	From string `json:"from"`
+
+	// To The cluster's desired value.
+	To string `json:"to"`
+}
+
+// ControlPlaneRolloutStatus Read-only, derived rollout state for a control-plane-controller-managed node. pending is computed exactly as the control-plane controller computes it: the node needs rollout when its pinned snapshot differs from the cluster's desired snapshot in the OS profile, config profile, or Kubernetes version. The pinned and desired snapshots themselves are resolvable in full (change reason, author, timestamp) from pinnedConfigurationID and desiredConfigurationID via GET /clusters/{clusterID}/control-plane/configHistory.
+type ControlPlaneRolloutStatus struct {
+	// Pending True when the node's pinned configuration differs from the cluster's desired configuration in a field that requires recycling the node.
+	Pending bool `json:"pending"`
+
+	// Actionable True when the drift is pending and the control-plane controller will currently act on it (the cluster has control-plane node recycling enabled). False means either there is no drift, or the drift is detected but gated — recycling is disabled, so an operator must act.
+	Actionable bool `json:"actionable"`
+
+	// Changes The rollout-relevant fields whose pinned value differs from desired, each as field/from/to. Empty when the node is up to date. Lets clients render the drift generically without enumerating fields.
+	Changes []ControlPlaneRolloutChange `json:"changes,omitempty"`
+
+	// PinnedConfigurationID The ID of the control-plane configuration snapshot the node is pinned to. Use GET /clusters/{clusterID}/control-plane/configHistory to resolve the full snapshot (change reason, author, timestamp).
+	PinnedConfigurationID openapi_types.UUID `json:"pinnedConfigurationID,omitempty"`
+
+	// DesiredConfigurationID The ID of the cluster's current desired control-plane configuration snapshot.
+	DesiredConfigurationID openapi_types.UUID `json:"desiredConfigurationID,omitempty"`
+}
+
+// ControlPlaneRolloutSummary Cluster-level rollout rollup for a control-plane-controller-managed control plane: how many managed control-plane nodes are up to date, still pending, and currently rolling out, whether a rollout is in progress, and whether pending drift will be reconciled automatically. The three node counts are mutually exclusive and sum to managedNodeCount. Present only for clusters whose control plane is managed by the control-plane controller.
+type ControlPlaneRolloutSummary struct {
+	// ManagedNodeCount Number of control-plane nodes managed by the control-plane controller.
+	ManagedNodeCount int `json:"managedNodeCount"`
+
+	// UpToDateNodeCount Number of managed control-plane nodes that have converged to the cluster's desired configuration and are Ready (pinned configuration matches desired and kubernetesReady is True).
+	UpToDateNodeCount int `json:"upToDateNodeCount"`
+
+	// PendingNodeCount Number of managed control-plane nodes whose pinned configuration has drifted and need recycling.
+	PendingNodeCount int `json:"pendingNodeCount"`
+
+	// InProgressNodeCount Number of managed control-plane nodes that already carry the desired configuration but are not yet Ready (a recycle in flight). These are neither pending nor up to date until they become Ready.
+	InProgressNodeCount int `json:"inProgressNodeCount"`
+
+	// InProgress True when a control-plane node recycle is currently underway.
+	InProgress bool `json:"inProgress"`
+
+	// RecyclingEnabled True when control-plane node recycling is enabled for the cluster, so the control-plane controller reconciles pending drift automatically. When false, pending nodes are detected but gated and require an operator.
+	RecyclingEnabled bool `json:"recyclingEnabled"`
+}
+
 // ControlPlaneStatus Aggregate runtime status of a cluster's control plane.
 type ControlPlaneStatus struct {
 	// NodeCount Total number of control-plane nodes for the cluster.
@@ -230,6 +320,9 @@ type ControlPlaneStatus struct {
 	KubernetesVersion     string    `json:"kubernetesVersion"`
 	ControlPlaneUpgrading Condition `json:"controlPlaneUpgrading"`
 	CpNodesRecycling      Condition `json:"cpNodesRecycling"`
+
+	// Rollout Cluster-level rollout rollup for a control-plane-controller-managed control plane: how many managed control-plane nodes are up to date, still pending, and currently rolling out, whether a rollout is in progress, and whether pending drift will be reconciled automatically. The three node counts are mutually exclusive and sum to managedNodeCount. Present only for clusters whose control plane is managed by the control-plane controller.
+	Rollout *ControlPlaneRolloutSummary `json:"rollout,omitempty"`
 }
 
 // CreateClusterControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
@@ -722,28 +815,32 @@ type Node struct {
 	// Conditions Conditions representing various aspects of the node's state
 	Conditions NodeConditions `json:"conditions"`
 
-	// Nico Nico runtime fields for a provisioned node.
-	Nico *NicoNodeProvider `json:"nico,omitempty"`
-
 	// ControlPlane True if this is a control-plane node (managed by a control-plane node pool or the control-plane controller)
 	ControlPlane bool `json:"controlPlane"`
+
+	// ControlPlaneRollout Read-only, derived rollout state for a control-plane-controller-managed node. pending is computed exactly as the control-plane controller computes it: the node needs rollout when its pinned snapshot differs from the cluster's desired snapshot in the OS profile, config profile, or Kubernetes version. The pinned and desired snapshots themselves are resolvable in full (change reason, author, timestamp) from pinnedConfigurationID and desiredConfigurationID via GET /clusters/{clusterID}/control-plane/configHistory.
+	ControlPlaneRollout *ControlPlaneRolloutStatus `json:"controlPlaneRollout,omitempty"`
+
+	// Nico Nico runtime fields for a provisioned node.
+	Nico *NicoNodeProvider `json:"nico,omitempty"`
 }
 
 // NodeConditions Conditions representing various aspects of the node's state
 type NodeConditions struct {
-	Deleting                Condition  `json:"deleting"`
-	Joined                  Condition  `json:"joined"`
-	KubernetesReady         Condition  `json:"kubernetesReady"`
-	KubernetesUnschedulable Condition  `json:"kubernetesUnschedulable"`
-	MarkedForRecycling      Condition  `json:"markedForRecycling"`
-	MarkedForRepair         Condition  `json:"markedForRepair"`
-	NodeAgentReady          Condition  `json:"nodeAgentReady"`
-	Pending                 Condition  `json:"pending"`
-	Provisioned             Condition  `json:"provisioned"`
-	Provisioning            Condition  `json:"provisioning"`
-	ReadyToJoin             Condition  `json:"readyToJoin"`
-	Rebooting               Condition  `json:"rebooting"`
-	TeleportRegistered      *Condition `json:"teleportRegistered,omitempty"`
+	ControlPlaneRolloutRequired *Condition `json:"controlPlaneRolloutRequired,omitempty"`
+	Deleting                    Condition  `json:"deleting"`
+	Joined                      Condition  `json:"joined"`
+	KubernetesReady             Condition  `json:"kubernetesReady"`
+	KubernetesUnschedulable     Condition  `json:"kubernetesUnschedulable"`
+	MarkedForRecycling          Condition  `json:"markedForRecycling"`
+	MarkedForRepair             Condition  `json:"markedForRepair"`
+	NodeAgentReady              Condition  `json:"nodeAgentReady"`
+	Pending                     Condition  `json:"pending"`
+	Provisioned                 Condition  `json:"provisioned"`
+	Provisioning                Condition  `json:"provisioning"`
+	ReadyToJoin                 Condition  `json:"readyToJoin"`
+	Rebooting                   Condition  `json:"rebooting"`
+	TeleportRegistered          *Condition `json:"teleportRegistered,omitempty"`
 }
 
 // NodeHistory defines model for NodeHistory.

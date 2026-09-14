@@ -148,6 +148,144 @@ func TestCreateControlPlaneConfigRowIfChanged_SyncsProviderPayload(t *testing.T)
 	assert.Equal(t, []uuid.UUID{subnetID}, row.Config.SubnetIDs)
 }
 
+func TestIsControlPlaneRolloutRequired(t *testing.T) {
+	base := db.ControlPlaneConfigSpec{
+		OSProfile:         "os-v1",
+		ConfigProfile:     "cfg-v1",
+		KubernetesVersion: "1.34.2",
+	}
+
+	tests := []struct {
+		name string
+		mut  func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec
+		want bool
+	}{
+		{
+			name: "identical",
+			mut:  func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec { return s },
+			want: false,
+		},
+		{
+			name: "kubernetes version differs",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.KubernetesVersion = "1.34.3"
+				return s
+			},
+			want: true,
+		},
+		{
+			name: "os profile differs",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.OSProfile = "os-v2"
+				return s
+			},
+			want: true,
+		},
+		{
+			name: "config profile differs",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.ConfigProfile = "cfg-v2"
+				return s
+			},
+			want: true,
+		},
+		{
+			name: "non-rollout field differs is ignored",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.SystemReservedMemory = "32Gi"
+				s.TeleportEnabled = true
+				return s
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := db.IsControlPlaneRolloutRequired(base, tt.mut(base))
+			assert.Equal(t, tt.want, got)
+			// The predicate is symmetric.
+			assert.Equal(t, tt.want, db.IsControlPlaneRolloutRequired(tt.mut(base), base))
+		})
+	}
+}
+
+func TestComputeControlPlaneRolloutChanges(t *testing.T) {
+	base := db.ControlPlaneConfigSpec{
+		OSProfile:         "os-v1",
+		ConfigProfile:     "cfg-v1",
+		KubernetesVersion: "1.34.2",
+	}
+
+	tests := []struct {
+		name string
+		mut  func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec
+		want []db.ControlPlaneRolloutChange
+	}{
+		{
+			name: "identical returns nil",
+			mut:  func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec { return s },
+			want: nil,
+		},
+		{
+			name: "kubernetes version differs",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.KubernetesVersion = "1.34.3"
+				return s
+			},
+			want: []db.ControlPlaneRolloutChange{{Field: "kubernetesVersion", From: "1.34.2", To: "1.34.3"}},
+		},
+		{
+			name: "os profile differs",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.OSProfile = "os-v2"
+				return s
+			},
+			want: []db.ControlPlaneRolloutChange{{Field: "osProfile", From: "os-v1", To: "os-v2"}},
+		},
+		{
+			name: "config profile differs",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.ConfigProfile = "cfg-v2"
+				return s
+			},
+			want: []db.ControlPlaneRolloutChange{{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"}},
+		},
+		{
+			name: "all rollout fields differ, in stable order",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.KubernetesVersion = "1.34.3"
+				s.OSProfile = "os-v2"
+				s.ConfigProfile = "cfg-v2"
+				return s
+			},
+			want: []db.ControlPlaneRolloutChange{
+				{Field: "kubernetesVersion", From: "1.34.2", To: "1.34.3"},
+				{Field: "osProfile", From: "os-v1", To: "os-v2"},
+				{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"},
+			},
+		},
+		{
+			name: "non-rollout field differs is ignored",
+			mut: func(s db.ControlPlaneConfigSpec) db.ControlPlaneConfigSpec {
+				s.SystemReservedMemory = "32Gi"
+				s.TeleportEnabled = true
+				return s
+			},
+			want: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := db.ComputeControlPlaneRolloutChanges(base, tt.mut(base))
+			assert.Equal(t, tt.want, got)
+			// IsControlPlaneRolloutRequired is a thin predicate over the diff and must agree.
+			assert.Equal(t, len(tt.want) > 0, db.IsControlPlaneRolloutRequired(base, tt.mut(base)))
+		})
+	}
+}
+
 func newControlPlaneConfigTestCluster() db.Cluster {
 	now := time.Now()
 	return db.Cluster{

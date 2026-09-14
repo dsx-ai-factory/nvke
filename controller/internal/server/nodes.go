@@ -45,9 +45,14 @@ func (s *nodeService) ListNodes(ctx context.Context, req api.ListNodesRequestObj
 	if err != nil {
 		return nil, fmt.Errorf("failed to list nodes: %w", err)
 	}
+	rollout, err := controlPlaneRolloutByNode(ctx, s.db, dbNodes)
+	if err != nil {
+		return nil, err
+	}
 	apiNodes := make([]api.Node, len(dbNodes))
 	for i := range dbNodes {
 		apiNodes[i] = apiNodeFromDB(&dbNodes[i])
+		apiNodes[i].ControlPlaneRollout = rollout[dbNodes[i].ID]
 	}
 	return api.ListNodes200JSONResponse{Nodes: apiNodes}, nil
 }
@@ -61,7 +66,13 @@ func (s *nodeService) GetNode(ctx context.Context, req api.GetNodeRequestObject)
 		return nil, fmt.Errorf("failed to get node: %w", err)
 	}
 
-	return api.GetNode200JSONResponse(apiNodeFromDB(&dbNode)), nil
+	rollout, err := controlPlaneRolloutByNode(ctx, s.db, []db.Node{dbNode})
+	if err != nil {
+		return nil, err
+	}
+	apiNode := apiNodeFromDB(&dbNode)
+	apiNode.ControlPlaneRollout = rollout[dbNode.ID]
+	return api.GetNode200JSONResponse(apiNode), nil
 }
 
 func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestObject) (api.DeleteNodeResponseObject, error) {
@@ -130,6 +141,14 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		nodeConditions.TeleportRegistered = &cond
 	}
 
+	// ControlPlaneRolloutRequired is optional — only include when the node has a
+	// meaningful state (control-plane-controller-managed nodes).
+	if dbNode.Conditions.ControlPlaneRolloutRequired.Status != "" &&
+		dbNode.Conditions.ControlPlaneRolloutRequired.Status != db.ConditionStatusUnknown {
+		cond := apiConditionFromDB(dbNode.Conditions.ControlPlaneRolloutRequired)
+		nodeConditions.ControlPlaneRolloutRequired = &cond
+	}
+
 	return api.Node{
 		ID:           dbNode.ID,
 		NodePoolID:   dbNode.NodePoolID,
@@ -155,6 +174,108 @@ func apiNicoNodeProviderFromDB(nicoNodeProvider *db.NicoNodeProvider) *api.NicoN
 		MachineID:      nicoNodeProvider.ForgeMachineID,
 		InstanceTypeID: nicoNodeProvider.InstanceTypeID,
 	}
+}
+
+// controlPlaneRolloutByNode derives, for each control-plane-controller-managed
+// node in dbNodes, whether it needs rollout: it compares the node's pinned
+// control-plane snapshot against the cluster's current desired snapshot. Nodes
+// that are not managed by the control-plane controller (node-pool-managed
+// control-plane nodes and workers) are omitted from the returned map, so callers
+// leave their controlPlaneRollout field nil.
+//
+// The pending decision uses db.IsControlPlaneRolloutRequired, the same predicate
+// the control-plane controller's rollout loop uses, so the reported state and what
+// the controller acts on cannot drift apart. actionable additionally reflects the
+// cluster's recycling gate (EnableCPNodeRecycling): drift is only reconciled
+// automatically when recycling is enabled.
+func controlPlaneRolloutByNode(ctx context.Context, database db.DB, dbNodes []db.Node) (map[uuid.UUID]*api.ControlPlaneRolloutStatus, error) {
+	clusterIDs := make(map[uuid.UUID]struct{})
+	pinnedIDs := make(map[uuid.UUID]struct{})
+	for i := range dbNodes {
+		n := &dbNodes[i]
+		if !n.IsManagedByControlPlaneController() {
+			continue
+		}
+		clusterIDs[n.ClusterID] = struct{}{}
+		if n.ControlPlaneConfigurationID != uuid.Nil {
+			pinnedIDs[n.ControlPlaneConfigurationID] = struct{}{}
+		}
+	}
+	result := make(map[uuid.UUID]*api.ControlPlaneRolloutStatus)
+	if len(clusterIDs) == 0 {
+		return result, nil
+	}
+
+	// The cluster's desired snapshot and recycling gate are loaded with the row.
+	desiredByCluster := make(map[uuid.UUID]db.ControlPlaneConfigSpec, len(clusterIDs))
+	desiredIDByCluster := make(map[uuid.UUID]uuid.UUID, len(clusterIDs))
+	recyclingByCluster := make(map[uuid.UUID]bool, len(clusterIDs))
+	for id := range clusterIDs {
+		cluster, err := database.GetCluster(ctx, id)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				continue
+			}
+			return nil, fmt.Errorf("failed to load cluster %s for rollout status: %w", id, err)
+		}
+		recyclingByCluster[id] = cluster.EnableCPNodeRecycling
+		if cluster.ControlPlaneConfig.ConfigurationID != uuid.Nil {
+			desiredByCluster[id] = cluster.ControlPlaneConfig.ControlPlaneConfigSpec
+			desiredIDByCluster[id] = cluster.ControlPlaneConfig.ConfigurationID
+		}
+	}
+
+	pinnedByID := make(map[uuid.UUID]db.ControlPlaneConfigSpec, len(pinnedIDs))
+	if len(pinnedIDs) > 0 {
+		ids := make([]uuid.UUID, 0, len(pinnedIDs))
+		for id := range pinnedIDs {
+			ids = append(ids, id)
+		}
+		configs, err := database.ListControlPlaneConfigurationsByIDs(ctx, ids)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load pinned control-plane configurations for rollout status: %w", err)
+		}
+		for i := range configs {
+			pinnedByID[configs[i].ID] = configs[i].Config
+		}
+	}
+
+	for i := range dbNodes {
+		n := &dbNodes[i]
+		if !n.IsManagedByControlPlaneController() {
+			continue
+		}
+		desired, ok := desiredByCluster[n.ClusterID]
+		if !ok {
+			continue
+		}
+		pinned, ok := pinnedByID[n.ControlPlaneConfigurationID]
+		if !ok {
+			continue
+		}
+		changes := db.ComputeControlPlaneRolloutChanges(pinned, desired)
+		pending := len(changes) > 0
+		result[n.ID] = &api.ControlPlaneRolloutStatus{
+			Pending:                pending,
+			Actionable:             pending && recyclingByCluster[n.ClusterID],
+			Changes:                apiRolloutChangesFromDiff(changes),
+			PinnedConfigurationID:  n.ControlPlaneConfigurationID,
+			DesiredConfigurationID: desiredIDByCluster[n.ClusterID],
+		}
+	}
+	return result, nil
+}
+
+// apiRolloutChangesFromDiff maps the db-layer diff to the API change list.
+func apiRolloutChangesFromDiff(changes []db.ControlPlaneRolloutChange) []api.ControlPlaneRolloutChange {
+	if len(changes) == 0 {
+		return nil
+	}
+	out := make([]api.ControlPlaneRolloutChange, len(changes))
+	for i, c := range changes {
+		out[i] = api.ControlPlaneRolloutChange{Field: c.Field, From: c.From, To: c.To}
+	}
+	return out
 }
 
 // apiMachineHealthIssueToWorkflow converts an API MachineHealthIssue to a workflow MachineHealthIssue.

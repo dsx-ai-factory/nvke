@@ -45,18 +45,80 @@ func (s *clusterService) GetClusterControlPlane(
 		}
 	}
 
+	rolloutByNode, err := controlPlaneRolloutByNode(ctx, s.db, cpNodes)
+	if err != nil {
+		return nil, err
+	}
+
 	status := api.ControlPlaneStatus{
 		NodeCount:             len(cpNodes),
 		ReadyNodeCount:        readyNodeCount,
 		KubernetesVersion:     dbCluster.KubernetesVersion,
 		ControlPlaneUpgrading: apiConditionFromDB(dbCluster.Conditions.ControlPlaneUpgrading),
 		CpNodesRecycling:      apiConditionFromDB(dbCluster.Conditions.CPNodesRecycling),
+		Rollout:               controlPlaneRolloutSummary(dbCluster, cpNodes, rolloutByNode),
 	}
 
 	return api.GetClusterControlPlane200JSONResponse(api.ClusterControlPlane{
 		Config: *apiControlPlaneConfigFromDB(dbCluster.ControlPlaneConfig),
 		Status: status,
 	}), nil
+}
+
+// controlPlaneRolloutSummary rolls the per-node rollout state up to the cluster
+// level. It is nil for node-pool-managed control planes (no control-plane
+// controller-managed nodes), matching the per-node behavior where those nodes
+// carry no rollout status.
+//
+// Each managed node lands in exactly one of three mutually exclusive buckets, so
+// the counts always sum to managedNodeCount:
+//   - pending: the node's pinned configuration has drifted from desired and it
+//     still needs recycling (db.IsControlPlaneRolloutRequired is true).
+//   - upToDate: the node has converged to the desired configuration and is Ready
+//     (kubernetesReady is True). Only these nodes are actually running the
+//     desired software.
+//   - inProgress: the node already carries the desired configuration but is not
+//     yet Ready — a freshly recycled node still coming up. Counting these as up
+//     to date would overstate converged capacity mid-rollout.
+//
+// The inProgress boolean reflects the cluster's CPNodesRecycling condition;
+// recyclingEnabled reflects the recycling gate that decides whether pending
+// drift is reconciled automatically.
+func controlPlaneRolloutSummary(
+	cluster db.Cluster,
+	cpNodes []db.Node,
+	rolloutByNode map[uuid.UUID]*api.ControlPlaneRolloutStatus,
+) *api.ControlPlaneRolloutSummary {
+	var managed, upToDate, pending, inProgress int
+	for i := range cpNodes {
+		if !cpNodes[i].IsManagedByControlPlaneController() {
+			continue
+		}
+		managed++
+		status, ok := rolloutByNode[cpNodes[i].ID]
+		if !ok {
+			continue
+		}
+		switch {
+		case status.Pending:
+			pending++
+		case db.BoolFromConditionStatus(cpNodes[i].Conditions.KubernetesReady.Status):
+			upToDate++
+		default:
+			inProgress++
+		}
+	}
+	if managed == 0 {
+		return nil
+	}
+	return &api.ControlPlaneRolloutSummary{
+		ManagedNodeCount:    managed,
+		UpToDateNodeCount:   upToDate,
+		PendingNodeCount:    pending,
+		InProgressNodeCount: inProgress,
+		InProgress:          db.BoolFromConditionStatus(cluster.Conditions.CPNodesRecycling.Status),
+		RecyclingEnabled:    cluster.EnableCPNodeRecycling,
+	}
 }
 
 // validateCreateClusterLevelControlPlane validates the cluster-level control

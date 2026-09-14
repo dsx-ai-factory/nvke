@@ -5,6 +5,7 @@ package controlplane
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -49,6 +50,12 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reading control plane: %w", err)
 	}
 
+	// Refresh each managed node's rollout-required condition before acting, so the
+	// reported state reflects current drift regardless of which branch runs below.
+	if err := r.reconcileControlPlaneRolloutRequiredCondition(ctx, controlPlane); err != nil {
+		return fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
+	}
+
 	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane); err != nil {
 		return fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
@@ -76,6 +83,45 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
 	}
 
+	return nil
+}
+
+// reconcileControlPlaneRolloutRequiredCondition refreshes each
+// control-plane-controller node's ControlPlaneRolloutRequired condition to reflect
+// current drift from the cluster's desired configuration. It maintains the
+// condition on every managed node (True when drifted, False when converged)
+// independent of the recycling gate, so the "drifted but recycling disabled" case
+// is still surfaced.
+//
+// The drift is computed against the in-memory node first, so the steady state
+// (no change) takes no row locks and issues no writes. Only when the condition
+// would actually flip is the node locked and recomputed before the write, so a
+// concurrent condition writer is not clobbered (same pattern as the
+// node-agent-readiness controller).
+func (r *reconciler) reconcileControlPlaneRolloutRequiredCondition(ctx context.Context, cp *controlPlane) error {
+	for i := range cp.nodes {
+		if !cp.nodes[i].IsManagedByControlPlaneController() {
+			continue
+		}
+		// Cheap check against the in-memory copy; skip untouched nodes lock-free.
+		probe := cp.nodes[i]
+		if !cp.refreshControlPlaneRolloutRequiredCondition(&probe) {
+			continue
+		}
+		lockedNode, err := r.db.GetNodeForUpdate(ctx, cp.nodes[i].ID)
+		if err != nil {
+			if errors.Is(err, db.ErrNotFound) {
+				continue
+			}
+			return fmt.Errorf("locking node %s: %w", cp.nodes[i].ID, err)
+		}
+		if !cp.refreshControlPlaneRolloutRequiredCondition(&lockedNode) {
+			continue
+		}
+		if _, err := r.db.UpdateNode(ctx, &lockedNode); err != nil {
+			return fmt.Errorf("persisting control plane rollout-required condition for node %s: %w", lockedNode.ID, err)
+		}
+	}
 	return nil
 }
 

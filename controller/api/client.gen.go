@@ -115,6 +115,9 @@ type ClientInterface interface {
 	// GetClusterControlPlane request
 	GetClusterControlPlane(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetClusterControlPlaneConfigHistory request
+	GetClusterControlPlaneConfigHistory(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListCNIPlugins request
 	ListCNIPlugins(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -253,6 +256,18 @@ func (c *Client) UpdateCluster(ctx context.Context, clusterID openapi_types.UUID
 
 func (c *Client) GetClusterControlPlane(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetClusterControlPlaneRequest(c.Server, clusterID)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetClusterControlPlaneConfigHistory(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetClusterControlPlaneConfigHistoryRequest(c.Server, clusterID)
 	if err != nil {
 		return nil, err
 	}
@@ -698,6 +713,40 @@ func NewGetClusterControlPlaneRequest(server string, clusterID openapi_types.UUI
 	}
 
 	operationPath := fmt.Sprintf("/clusters/%s/control-plane", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetClusterControlPlaneConfigHistoryRequest generates requests for GetClusterControlPlaneConfigHistory
+func NewGetClusterControlPlaneConfigHistoryRequest(server string, clusterID openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "clusterID", runtime.ParamLocationPath, clusterID)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/clusters/%s/control-plane/configHistory", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1424,6 +1473,9 @@ type ClientWithResponsesInterface interface {
 	// GetClusterControlPlaneWithResponse request
 	GetClusterControlPlaneWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterControlPlaneClientResponse, error)
 
+	// GetClusterControlPlaneConfigHistoryWithResponse request
+	GetClusterControlPlaneConfigHistoryWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterControlPlaneConfigHistoryClientResponse, error)
+
 	// ListCNIPluginsWithResponse request
 	ListCNIPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCNIPluginsClientResponse, error)
 
@@ -1614,6 +1666,30 @@ func (r GetClusterControlPlaneClientResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetClusterControlPlaneClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetClusterControlPlaneConfigHistoryClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ControlPlaneConfigHistory
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
+}
+
+// Status returns HTTPResponse.Status
+func (r GetClusterControlPlaneConfigHistoryClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetClusterControlPlaneConfigHistoryClientResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2053,6 +2129,15 @@ func (c *ClientWithResponses) GetClusterControlPlaneWithResponse(ctx context.Con
 	return ParseGetClusterControlPlaneClientResponse(rsp)
 }
 
+// GetClusterControlPlaneConfigHistoryWithResponse request returning *GetClusterControlPlaneConfigHistoryClientResponse
+func (c *ClientWithResponses) GetClusterControlPlaneConfigHistoryWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetClusterControlPlaneConfigHistoryClientResponse, error) {
+	rsp, err := c.GetClusterControlPlaneConfigHistory(ctx, clusterID, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetClusterControlPlaneConfigHistoryClientResponse(rsp)
+}
+
 // ListCNIPluginsWithResponse request returning *ListCNIPluginsClientResponse
 func (c *ClientWithResponses) ListCNIPluginsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListCNIPluginsClientResponse, error) {
 	rsp, err := c.ListCNIPlugins(ctx, reqEditors...)
@@ -2446,6 +2531,46 @@ func ParseGetClusterControlPlaneClientResponse(rsp *http.Response) (*GetClusterC
 			return nil, err
 		}
 		response.JSON200 = &dest
+	}
+
+	return response, nil
+}
+
+// ParseGetClusterControlPlaneConfigHistoryClientResponse parses an HTTP response from a GetClusterControlPlaneConfigHistoryWithResponse call
+func ParseGetClusterControlPlaneConfigHistoryClientResponse(rsp *http.Response) (*GetClusterControlPlaneConfigHistoryClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetClusterControlPlaneConfigHistoryClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ControlPlaneConfigHistory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
 	}
 
 	return response, nil

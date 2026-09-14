@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -288,13 +289,49 @@ func (c *controlPlane) nodesNeedingRollout(current db.ControlPlaneConfigSpec) []
 		if !ok {
 			continue
 		}
-		if pinned.KubernetesVersion != current.KubernetesVersion ||
-			pinned.OSProfile != current.OSProfile ||
-			pinned.ConfigProfile != current.ConfigProfile {
+		if db.IsControlPlaneRolloutRequired(pinned, current) {
 			toReplace = append(toReplace, node)
 		}
 	}
 	return toReplace
+}
+
+// controlPlaneRolloutRequiredMessage renders the condition message from the diff,
+// so it never re-enumerates fields (db.Condition has no Reason field).
+func controlPlaneRolloutRequiredMessage(changes []db.ControlPlaneRolloutChange) string {
+	if len(changes) == 0 {
+		return "Pinned control-plane configuration matches the cluster's desired configuration"
+	}
+	parts := make([]string, len(changes))
+	for i, c := range changes {
+		parts[i] = fmt.Sprintf("%s %s->%s", c.Field, c.From, c.To)
+	}
+	return "Pinned control-plane configuration differs from desired: " + strings.Join(parts, ", ")
+}
+
+// refreshControlPlaneRolloutRequiredCondition recomputes the node's
+// ControlPlaneRolloutRequired condition from its pinned snapshot versus the
+// cluster's desired snapshot, transitioning LastTransitionTime only on a status
+// flip (via db.SetCondition). The condition is True when the node has drifted and
+// needs a roll, False when up to date. It returns true when the condition changed
+// and the node must be persisted. Nodes not managed by the control-plane
+// controller, or whose pinned snapshot was not preloaded, are left untouched.
+func (c *controlPlane) refreshControlPlaneRolloutRequiredCondition(node *db.Node) bool {
+	if !node.IsManagedByControlPlaneController() {
+		return false
+	}
+	pinned, ok := c.nodePinnedControlPlaneConfigs[node.ControlPlaneConfigurationID]
+	if !ok {
+		return false
+	}
+	changes := db.ComputeControlPlaneRolloutChanges(pinned, c.clusterControlPlaneConfig.ControlPlaneConfigSpec)
+
+	previous := node.Conditions.ControlPlaneRolloutRequired
+	db.SetCondition(&node.Conditions.ControlPlaneRolloutRequired, db.Condition{
+		Status:  db.ConditionStatusFromBool(len(changes) > 0),
+		Message: controlPlaneRolloutRequiredMessage(changes),
+	})
+	return node.Conditions.ControlPlaneRolloutRequired != previous
 }
 
 // controlPlaneControllerNeedsK8sUpgrade reports whether any CP-controller node's

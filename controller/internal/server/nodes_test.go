@@ -913,3 +913,156 @@ func newMachineHealthIssue(category, summary string) *workflows.MachineHealthIss
 	}
 	return &mhi
 }
+
+func TestNodeService_ListNodes_ControlPlaneRollout(t *testing.T) {
+	clusterID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	nodePoolID := uuid.MustParse("44444444-4444-4444-4444-444444444444")
+	desiredCfgID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	driftedCfgID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+
+	driftedNodeID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000001")
+	inSyncNodeID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000002")
+	poolNodeID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000003")
+
+	desiredSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
+	driftedSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v1", KubernetesVersion: "1.33.6"}
+
+	now := time.Now()
+	dbNodes := []db.Node{
+		// Control-plane-controller-managed (no node pool), pinned to an older
+		// snapshot than the cluster desires -> rollout pending.
+		{
+			ID:                          driftedNodeID,
+			ClusterID:                   clusterID,
+			ControlPlane:                true,
+			ControlPlaneConfigurationID: driftedCfgID,
+			Conditions:                  mockDBNodeConditions(now),
+		},
+		// Control-plane-controller-managed, pinned to the cluster's desired
+		// snapshot -> present but not pending.
+		{
+			ID:                          inSyncNodeID,
+			ClusterID:                   clusterID,
+			ControlPlane:                true,
+			ControlPlaneConfigurationID: desiredCfgID,
+			Conditions:                  mockDBNodeConditions(now),
+		},
+		// Node-pool-managed control-plane node -> no rollout status at all.
+		{
+			ID:                          poolNodeID,
+			ClusterID:                   clusterID,
+			NodePoolID:                  nodePoolID,
+			ControlPlane:                true,
+			ControlPlaneConfigurationID: driftedCfgID,
+			Conditions:                  mockDBNodeConditions(now),
+		},
+	}
+
+	mockDB := &mockDB{}
+	mockDB.On("ListNodes", mock.Anything, mock.Anything).Return(dbNodes, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+		ID:                    clusterID,
+		EnableCPNodeRecycling: true,
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID:        desiredCfgID,
+			ControlPlaneConfigSpec: desiredSpec,
+		},
+	}, nil)
+	mockDB.On("ListControlPlaneConfigurationsByIDs", mock.Anything, mock.Anything).Return(
+		[]db.ControlPlaneConfiguration{
+			{ID: driftedCfgID, Config: driftedSpec},
+			{ID: desiredCfgID, Config: desiredSpec},
+		}, nil,
+	)
+
+	service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
+
+	resp, err := service.ListNodes(context.Background(), api.ListNodesRequestObject{})
+	require.NoError(t, err)
+
+	byID := map[uuid.UUID]api.Node{}
+	for _, n := range resp.(api.ListNodes200JSONResponse).Nodes {
+		byID[n.ID] = n
+	}
+
+	drifted := byID[driftedNodeID]
+	require.NotNil(t, drifted.ControlPlaneRollout)
+	assert.True(t, drifted.ControlPlaneRollout.Pending)
+	// Recycling is enabled, so the pending drift is actionable.
+	assert.True(t, drifted.ControlPlaneRollout.Actionable)
+	// The status carries the snapshot IDs so a caller can resolve the pinned and
+	// desired configs via the config-history endpoint.
+	assert.Equal(t, driftedCfgID, drifted.ControlPlaneRollout.PinnedConfigurationID)
+	assert.Equal(t, desiredCfgID, drifted.ControlPlaneRollout.DesiredConfigurationID)
+	// changes enumerates each drifted rollout-relevant field so a client can render
+	// the drift without enumerating fields itself.
+	assert.ElementsMatch(t, []api.ControlPlaneRolloutChange{
+		{Field: "kubernetesVersion", From: "1.33.6", To: "1.34.2"},
+		{Field: "osProfile", From: "os-v1", To: "os-v2"},
+		{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"},
+	}, drifted.ControlPlaneRollout.Changes)
+
+	inSync := byID[inSyncNodeID]
+	require.NotNil(t, inSync.ControlPlaneRollout)
+	assert.False(t, inSync.ControlPlaneRollout.Pending)
+	// Nothing to do, so not actionable even though recycling is enabled.
+	assert.False(t, inSync.ControlPlaneRollout.Actionable)
+	assert.Empty(t, inSync.ControlPlaneRollout.Changes)
+
+	assert.Nil(t, byID[poolNodeID].ControlPlaneRollout, "node-pool-managed CP node carries no rollout status")
+
+	mockDB.AssertExpectations(t)
+	// Both controller-managed nodes share one cluster, so it is loaded once.
+	mockDB.AssertNumberOfCalls(t, "GetCluster", 1)
+}
+
+func TestNodeService_GetNode_ControlPlaneRollout(t *testing.T) {
+	clusterID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	nodeID := uuid.MustParse("aaaaaaaa-0000-0000-0000-000000000001")
+	desiredCfgID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	driftedCfgID := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+
+	desiredSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
+	driftedSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v1", KubernetesVersion: "1.34.2"}
+
+	now := time.Now()
+	dbNode := db.Node{
+		ID:                          nodeID,
+		ClusterID:                   clusterID,
+		ControlPlane:                true,
+		ControlPlaneConfigurationID: driftedCfgID,
+		Conditions:                  mockDBNodeConditions(now),
+	}
+
+	mockDB := &mockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(dbNode, nil)
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
+		ID: clusterID,
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID:        desiredCfgID,
+			ControlPlaneConfigSpec: desiredSpec,
+		},
+	}, nil)
+	mockDB.On("ListControlPlaneConfigurationsByIDs", mock.Anything, mock.Anything).Return(
+		[]db.ControlPlaneConfiguration{{ID: driftedCfgID, Config: driftedSpec}}, nil,
+	)
+
+	service := server.NewNodeService(&slog.Logger{}, mockDB, nil)
+
+	resp, err := service.GetNode(context.Background(), api.GetNodeRequestObject{NodeID: nodeID})
+	require.NoError(t, err)
+
+	node := api.Node(resp.(api.GetNode200JSONResponse))
+	require.NotNil(t, node.ControlPlaneRollout)
+	// Only the config profile drifted, which still requires a rollout.
+	assert.True(t, node.ControlPlaneRollout.Pending)
+	// Recycling is disabled on this cluster, so the drift is gated, not actionable.
+	assert.False(t, node.ControlPlaneRollout.Actionable)
+	// Only the config profile drifted, so changes carries exactly that field.
+	assert.Equal(t, []api.ControlPlaneRolloutChange{
+		{Field: "configProfile", From: "cfg-v1", To: "cfg-v2"},
+	}, node.ControlPlaneRollout.Changes)
+	assert.Equal(t, driftedCfgID, node.ControlPlaneRollout.PinnedConfigurationID)
+	assert.Equal(t, desiredCfgID, node.ControlPlaneRollout.DesiredConfigurationID)
+	mockDB.AssertExpectations(t)
+}

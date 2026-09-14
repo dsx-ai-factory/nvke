@@ -342,6 +342,96 @@ func TestGetClusterControlPlane(t *testing.T) {
 		mockDB.AssertExpectations(t)
 	})
 
+	t.Run("controller-managed control plane surfaces a rollout summary", func(t *testing.T) {
+		desiredCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d1")
+		driftedCfgID := uuid.MustParse("aaaaaaaa-0000-0000-0000-0000000000d2")
+		desiredSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v2", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
+		driftedSpec := db.ControlPlaneConfigSpec{OSProfile: "os-v1", ConfigProfile: "cfg-v2", KubernetesVersion: "1.34.2"}
+
+		cluster := newCluster()
+		cluster.EnableCPNodeRecycling = true
+		cluster.ControlPlaneConfig.ConfigurationID = desiredCfgID
+		cluster.ControlPlaneConfig.ControlPlaneConfigSpec = desiredSpec
+
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil)
+		mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(cpFilter)).Return([]db.Node{
+			// Pinned to the desired snapshot and Ready -> up to date.
+			{
+				ID:                          uuid.New(),
+				ClusterID:                   clusterID,
+				NodePoolID:                  uuid.Nil,
+				ControlPlane:                true,
+				ControlPlaneConfigurationID: desiredCfgID,
+				Conditions:                  db.NodeConditions{KubernetesReady: db.NewCondition(true, "ready")},
+			},
+			// Pinned to an older snapshot -> pending.
+			{
+				ID:                          uuid.New(),
+				ClusterID:                   clusterID,
+				NodePoolID:                  uuid.Nil,
+				ControlPlane:                true,
+				ControlPlaneConfigurationID: driftedCfgID,
+				Conditions:                  db.NodeConditions{KubernetesReady: db.NewCondition(true, "ready")},
+			},
+			// Pinned to the desired snapshot but not yet Ready -> in flight, so
+			// neither up to date nor pending.
+			{
+				ID:                          uuid.New(),
+				ClusterID:                   clusterID,
+				NodePoolID:                  uuid.Nil,
+				ControlPlane:                true,
+				ControlPlaneConfigurationID: desiredCfgID,
+				Conditions:                  db.NodeConditions{KubernetesReady: db.NewCondition(false, "coming up")},
+			},
+		}, nil)
+		mockDB.On("ListControlPlaneConfigurationsByIDs", mock.Anything, mock.Anything).Return(
+			[]db.ControlPlaneConfiguration{
+				{ID: desiredCfgID, Config: desiredSpec},
+				{ID: driftedCfgID, Config: driftedSpec},
+			}, nil,
+		)
+
+		svc := clusterService{db: mockDB}
+		resp, err := svc.GetClusterControlPlane(ctx, api.GetClusterControlPlaneRequestObject{ClusterID: clusterID})
+		require.NoError(t, err)
+
+		out := resp.(api.GetClusterControlPlane200JSONResponse)
+		require.NotNil(t, out.Status.Rollout)
+		assert.Equal(t, 3, out.Status.Rollout.ManagedNodeCount)
+		assert.Equal(t, 1, out.Status.Rollout.UpToDateNodeCount)   // converged and Ready
+		assert.Equal(t, 1, out.Status.Rollout.PendingNodeCount)    // drifted
+		assert.Equal(t, 1, out.Status.Rollout.InProgressNodeCount) // converged but not yet Ready
+		// The three buckets partition the managed nodes.
+		assert.Equal(t, out.Status.Rollout.ManagedNodeCount,
+			out.Status.Rollout.UpToDateNodeCount+out.Status.Rollout.PendingNodeCount+out.Status.Rollout.InProgressNodeCount)
+		assert.False(t, out.Status.Rollout.InProgress)      // CPNodesRecycling condition is false.
+		assert.True(t, out.Status.Rollout.RecyclingEnabled) // recycling enabled -> drift reconciled automatically.
+		mockDB.AssertExpectations(t)
+	})
+
+	t.Run("node-pool-managed control plane has no rollout summary", func(t *testing.T) {
+		mockDB := &testutil.MockDB{}
+		mockDB.On("GetCluster", mock.Anything, clusterID).Return(newCluster(), nil)
+		mockDB.On("ListNodes", mock.Anything, mock.MatchedBy(cpFilter)).Return([]db.Node{
+			{
+				ID:           uuid.New(),
+				ClusterID:    clusterID,
+				NodePoolID:   nodePoolID,
+				ControlPlane: true,
+				Conditions:   db.NodeConditions{KubernetesReady: db.NewCondition(true, "ready")},
+			},
+		}, nil)
+
+		svc := clusterService{db: mockDB}
+		resp, err := svc.GetClusterControlPlane(ctx, api.GetClusterControlPlaneRequestObject{ClusterID: clusterID})
+		require.NoError(t, err)
+
+		out := resp.(api.GetClusterControlPlane200JSONResponse)
+		assert.Nil(t, out.Status.Rollout)
+		mockDB.AssertExpectations(t)
+	})
+
 	t.Run("404 when cluster not found", func(t *testing.T) {
 		mockDB := &testutil.MockDB{}
 		mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{}, db.ErrNotFound)

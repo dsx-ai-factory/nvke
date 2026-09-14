@@ -154,6 +154,7 @@ type ControlPlaneConfigurationQueries interface {
 	CreateControlPlaneConfiguration(ctx context.Context, row *ControlPlaneConfiguration) (ControlPlaneConfiguration, error)
 	GetControlPlaneConfiguration(ctx context.Context, id uuid.UUID) (ControlPlaneConfiguration, error)
 	ListControlPlaneConfigurationsByIDs(ctx context.Context, ids []uuid.UUID) ([]ControlPlaneConfiguration, error)
+	ListControlPlaneConfigurationsByCluster(ctx context.Context, clusterID uuid.UUID) ([]ControlPlaneConfiguration, error)
 }
 
 func ConfigSpecFromFull(cfg ControlPlaneConfig) ControlPlaneConfigSpec {
@@ -227,18 +228,43 @@ func cloneRawMessages(in []json.RawMessage) []json.RawMessage {
 	return out
 }
 
-type controlPlaneReplaceTemplate struct {
-	OSProfile         string `json:"os_profile"`
-	ConfigProfile     string `json:"config_profile"`
-	KubernetesVersion string `json:"kubernetes_version"`
+// ControlPlaneRolloutChange is a single rollout-relevant field that differs
+// between two control-plane config snapshots.
+type ControlPlaneRolloutChange struct {
+	Field string // "kubernetesVersion", "osProfile", or "configProfile"
+	From  string
+	To    string
 }
 
-func ReplaceTemplate(cfg ControlPlaneConfigSpec) controlPlaneReplaceTemplate {
-	return controlPlaneReplaceTemplate{
-		OSProfile:         cfg.OSProfile,
-		ConfigProfile:     cfg.ConfigProfile,
-		KubernetesVersion: cfg.KubernetesVersion,
+// ComputeControlPlaneRolloutChanges returns the rollout-triggering fields that
+// differ between a node's pinned snapshot and the cluster's desired snapshot (nil
+// when none differ). It is the single source of truth for both "does this node
+// need rollout" and "what changed" — add a new rollout-relevant field here and
+// the rollout loop, the control-plane rollout-required condition, and the API all
+// pick it up.
+func ComputeControlPlaneRolloutChanges(pinned, desired ControlPlaneConfigSpec) []ControlPlaneRolloutChange {
+	var changes []ControlPlaneRolloutChange
+	if pinned.KubernetesVersion != desired.KubernetesVersion {
+		changes = append(changes, ControlPlaneRolloutChange{Field: "kubernetesVersion", From: pinned.KubernetesVersion, To: desired.KubernetesVersion})
 	}
+	if pinned.OSProfile != desired.OSProfile {
+		changes = append(changes, ControlPlaneRolloutChange{Field: "osProfile", From: pinned.OSProfile, To: desired.OSProfile})
+	}
+	if pinned.ConfigProfile != desired.ConfigProfile {
+		changes = append(changes, ControlPlaneRolloutChange{Field: "configProfile", From: pinned.ConfigProfile, To: desired.ConfigProfile})
+	}
+	return changes
+}
+
+// IsControlPlaneRolloutRequired reports whether two control-plane config snapshots
+// differ in a field that requires replacing (recycling) a control-plane node: the
+// Kubernetes version, the OS profile, or the config profile. It is a thin
+// predicate over ComputeControlPlaneRolloutChanges, so the boolean and the
+// reported diff can never disagree. The common (unchanged) case allocates nothing,
+// since ComputeControlPlaneRolloutChanges returns a nil slice when the snapshots
+// match.
+func IsControlPlaneRolloutRequired(a, b ControlPlaneConfigSpec) bool {
+	return len(ComputeControlPlaneRolloutChanges(a, b)) > 0
 }
 
 func (q *queriesImpl) CreateControlPlaneConfiguration(ctx context.Context, row *ControlPlaneConfiguration) (ControlPlaneConfiguration, error) {
@@ -288,6 +314,22 @@ func (q *queriesImpl) ListControlPlaneConfigurationsByIDs(ctx context.Context, i
 	err := q.db.NewSelect().
 		Model(&rows).
 		Where("id IN (?)", bun.List(unique)).
+		Scan(ctx)
+	return rows, err
+}
+
+// ListControlPlaneConfigurationsByCluster returns every control-plane
+// configuration snapshot for a cluster, ordered oldest to newest, so callers can
+// build a config-change history.
+func (q *queriesImpl) ListControlPlaneConfigurationsByCluster(ctx context.Context, clusterID uuid.UUID) ([]ControlPlaneConfiguration, error) {
+	if clusterID == uuid.Nil {
+		return nil, nil
+	}
+	var rows []ControlPlaneConfiguration
+	err := q.db.NewSelect().
+		Model(&rows).
+		Where("cluster_id = ?", clusterID).
+		Order("created_at ASC").
 		Scan(ctx)
 	return rows, err
 }

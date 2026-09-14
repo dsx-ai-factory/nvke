@@ -76,6 +76,12 @@ type NodeConditions struct {
 	MarkedForRecycling      Condition `json:"markedForRecycling"`
 	MarkedForRepair         Condition `json:"markedForRepair"`
 	TeleportRegistered      Condition `json:"teleportRegistered"`
+	// ControlPlaneRolloutRequired reports whether a control-plane-controller-managed
+	// node's pinned control-plane configuration has drifted from the cluster's
+	// desired configuration and the node therefore needs to be rolled (True), or is
+	// up to date (False). Zero value (empty status) for nodes not managed by the
+	// control-plane controller.
+	ControlPlaneRolloutRequired Condition `json:"controlPlaneRolloutRequired"`
 }
 
 type NodeConditionStatus struct {
