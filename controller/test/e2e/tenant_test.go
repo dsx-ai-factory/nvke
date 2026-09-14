@@ -27,14 +27,13 @@ import (
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/tenantauth"
 )
 
-// clusterLifecycle is the calls that bring a cluster into being and take it
-// away again. *nke.Client satisfies it and is the default for every entry; the
-// nkectl entry substitutes a CLI-backed implementation so one row proves the
-// command line drives the whole lifecycle.
+// clusterLifecycle creates a cluster, reads it back, and deletes it again.
+// *nke.Client satisfies it and is every entry's default; the nkectl entry
+// substitutes a CLI-backed implementation.
 //
-// Deliberately narrow. The suite's post-create validations keep talking to
-// t.nke directly, because nkectl has no node-level commands to validate with
-// and widening this would mean an implementation that panics on most of it.
+// It stays narrow because nkectl has no node-level commands: the post-create
+// validations keep using t.nke directly rather than widening this into
+// something the CLI cannot implement.
 type clusterLifecycle interface {
 	CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.Cluster, error)
 	GetByName(ctx context.Context, name string) (*api.Cluster, error)
@@ -90,9 +89,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 			test = expectSucceed(setupTenantTest(ctx, spec.options))
 			if spec.createVia == clientNkectl {
-				// Torn down in AfterAll, not through DeferCleanup: registered
-				// here that would run when this spec ends, taking the
-				// port-forward away from every spec that follows it.
+				// Torn down in AfterAll. A DeferCleanup registered here would run
+				// when this spec ends, taking the port-forward away from every
+				// spec that follows.
 				test.useNkectl(ctx, spec.options)
 			}
 			if spec.validate.brownfieldOIDC {
@@ -231,9 +230,8 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			// Use AfterAll so the cluster is removed even if a spec before the
 			// delete spec fails (or the delete spec is skipped). It is a no-op
 			// once the delete spec has run.
-			// The lifecycle config, or a failure it says to preserve, can ask for
-			// the cluster to outlive the run. Named once so the delete below and
-			// the nkectl sweep after it cannot disagree about when that applies.
+			// Named once so the delete below and the nkectl sweep after it cannot
+			// disagree about when the cluster should outlive the run.
 			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
 				test.cfg.Lifecycle.SkipDelete ||
 				(test.cfg.Lifecycle.PreserveOnFailure && failed)
@@ -244,10 +242,9 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			default:
 				test.deleteClusterAndWait(ctx)
 			}
-			// Only the CLI entry has anything here: a cluster nkectl created
-			// whose follow-up lookup failed left test.cluster nil, so the switch
-			// above skipped it. Runs before the runner closes, since it needs
-			// the port-forward.
+			// Catches what the switch above cannot see: a cluster nkectl created
+			// whose lookup then failed, leaving test.cluster nil. Must precede
+			// closeNkectl, which takes the port-forward away.
 			if !keepCluster {
 				test.cleanupNkectlCreated(ctx)
 			}
@@ -286,23 +283,17 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			kubeVipRouteWithdrawal: true,
 		},
 	}),
-	// The CLI row. Everything above creates its cluster through the generated
-	// API client; this one drives the nkectl binary instead, so CI has one run
-	// proving an operator can get from a spec file to a provisioned CAPD
-	// cluster through the command line. Until it existed, nkectl was covered
-	// only by hack/ci/nkectl-smoke.sh, whose cluster sets
-	// autoProvisionDisabled and so never provisions at all -- which also left
-	// `get kubeconfig` with no success path anywhere, since the Secret it
-	// reads is published only once nodes are up.
+	// The CLI row: the same CAPD lifecycle as the rows above, driven through the
+	// nkectl binary instead of the generated API client. It is the only coverage
+	// of provisioning through the command line, and so of `get kubeconfig`
+	// succeeding -- hack/ci/nkectl-smoke.sh sets autoProvisionDisabled, so its
+	// cluster never provisions and the Secret that command reads never appears.
 	//
-	// Kept deliberately small: one control-plane node, no workers, and
-	// provisioningOnly so the heavy post-create validations stay on the rows
-	// that already own them. What this row adds over them is the transport,
-	// not the assertions.
+	// One control-plane node, no workers, and provisioningOnly: what this row
+	// adds over the others is the transport, not the assertions.
 	//
-	// It carries the "capd" label, so the node-pool leg's filter
-	// ((capd || health) && !cp-controller) picks it up and it runs on the
-	// substrate that lane already built. "nkectl" selects it alone.
+	// The "capd" label puts it in the node-pool leg, on the substrate that lane
+	// already builds; "nkectl" selects it alone.
 	Entry("CAPD via nkectl", Ordered, ContinueOnFailure, Label("capd", "nkectl"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
@@ -542,17 +533,13 @@ type testSpec struct {
 	shape     clusterShape
 	options   nke.Options
 	validate  validations
-	// createVia selects the client initCluster drives. The zero value is the
-	// REST API client every other entry uses; clientNkectl drives the CLI
-	// binary instead, so one entry proves the command line can take an
-	// operator from a spec file to a provisioned cluster.
+	// createVia selects the client that drives this entry's cluster lifecycle.
 	createVia clusterClient
 }
 
-// clusterClient names the transport an entry creates its cluster through. The
-// zero value is the generated REST client, which every entry but the nkectl row
-// uses and which setupTenantTest wires by default, so only the alternative
-// needs a name.
+// clusterClient names the transport an entry drives its cluster lifecycle
+// through. The zero value is the generated REST client that setupTenantTest
+// wires by default, so only the alternative needs a name.
 type clusterClient int
 
 const (

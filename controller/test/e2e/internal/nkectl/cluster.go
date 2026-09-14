@@ -25,26 +25,17 @@ var (
 	// createdRe matches the line `nkectl create cluster` prints on success:
 	//
 	//	Cluster "my-cluster" created (id: 0f8f...)
-	//
-	// Parsed rather than ignored so a create whose follow-up lookup fails still
-	// yields an identity for cleanup to act on.
 	createdRe = regexp.MustCompile(`Cluster "([^"]+)" created \(id: ([^)]+)\)`)
 
 	// errClusterNotFound reports that the CLI resolved no cluster of that name.
 	errClusterNotFound = errors.New("cluster not found")
 )
 
-// CreateCluster writes the spec to a file and creates it with
-// `nkectl create cluster -f`, then reads the result back by name.
+// CreateCluster writes spec to a file, creates it with
+// `nkectl create cluster -f`, and returns the cluster read back by name.
 //
-// The body is the same api.CreateClusterRequest the REST client posts, built by
-// the same nke.BuildCreateRequest, so the two paths cannot drift apart in what
-// they ask for. It is marshaled as JSON, which is valid YAML and keeps a YAML
-// dependency out of this package.
-//
-// The identity is recorded from the success line before the lookup runs. A
-// cluster that CWE created but whose lookup then failed is still a cluster that
-// exists, and CleanupCreated is what removes it.
+// The new cluster's identity is recorded before that read, so a cluster CWE
+// created but this could not then look up is still removable by CleanupCreated.
 func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.Cluster, error) {
 	req, err := nke.BuildCreateRequest(spec)
 	if err != nil {
@@ -81,17 +72,16 @@ func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.
 	r.logf("nkectl e2e: %s", strings.TrimSpace(out))
 
 	name := match[1]
-	if id, perr := uuid.Parse(match[2]); perr == nil {
-		r.names[id] = name
-		r.created = append(r.created, createdCluster{name: name, id: id})
+	if id, parseErr := uuid.Parse(match[2]); parseErr == nil {
+		r.clusterNames[id] = name
+		r.createdClusters = append(r.createdClusters, createdCluster{name: name, id: id})
 	}
 
 	return r.GetClusterByName(ctx, name)
 }
 
-// GetClusterByName reads one cluster with `nkectl get clusters -c <name> -o json`.
-// That form filters server-side through CWE's ?name= lookup and returns an
-// array, which this requires to hold exactly the cluster asked for.
+// GetClusterByName returns the named cluster, or an error wrapping
+// errClusterNotFound when the CLI resolves none.
 func (r *Runner) GetClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
 	out, err := r.Run(ctx, "get", "clusters", "-c", name, "-o", "json")
 	if err != nil {
@@ -111,23 +101,22 @@ func (r *Runner) GetClusterByName(ctx context.Context, name string) (*api.Cluste
 	if clusters[0].Name != name {
 		return nil, fmt.Errorf("`get clusters -c %s -o json` returned cluster %q", name, clusters[0].Name)
 	}
-	r.names[clusters[0].ID] = clusters[0].Name
+	r.clusterNames[clusters[0].ID] = clusters[0].Name
 	return &clusters[0], nil
 }
 
-// GetByName satisfies the suite's lifecycle seam. CWE resolves names, so the id
-// is not needed to look one up.
+// GetByName returns the named cluster. It is GetClusterByName under the name
+// the suite's lifecycle seam expects.
 func (r *Runner) GetByName(ctx context.Context, name string) (*api.Cluster, error) {
 	return r.GetClusterByName(ctx, name)
 }
 
-// WaitForClusterReady polls through the CLI until the cluster's Provisioned
-// condition is True, erroring if Provisioning flips to False, the deadline
-// passes, or ctx is done.
+// WaitForClusterReady blocks until the cluster's Provisioned condition is True,
+// erroring if Provisioning flips to False, Timeouts.Provision passes, or ctx is
+// done.
 //
-// It takes an id to match the REST client's signature, but polls by name:
-// nkectl has no get-by-id form, and exercising the one it does have is the
-// point of driving it here.
+// It takes an id to match the REST client's signature but polls by name, which
+// is the only lookup nkectl has.
 func (r *Runner) WaitForClusterReady(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error) {
 	name, err := r.nameForID(ctx, id)
 	if err != nil {
@@ -164,14 +153,11 @@ func (r *Runner) WaitForClusterReady(ctx context.Context, id openapi_types.UUID)
 }
 
 // GetKubeconfig returns the tenant admin kubeconfig `nkectl get kubeconfig`
-// prints.
+// prints for the named cluster.
 //
-// This is the one tenant command that never touches the CWE API: it reads the
-// nke-system/<cluster>-admin-kubeconfig Secret the tenantaccess controller
-// publishes, through the site's own kubeconfig. That Secret exists only once
-// the cluster has provisioned, which is why the smoke lane -- whose cluster is
-// deliberately configured never to provision -- can cover only its not-found
-// path.
+// The command reads the nke-system/<cluster>-admin-kubeconfig Secret through the
+// site's own kubeconfig rather than the CWE API. That Secret is published only
+// once the cluster has provisioned, so this fails against one that has not.
 func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error) {
 	out, err := r.Run(ctx, "get", "kubeconfig", name)
 	if err != nil {
@@ -180,8 +166,8 @@ func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error)
 	return []byte(out), nil
 }
 
-// DeleteCluster deletes by name and requires the CLI to say so. It takes an id
-// to match the REST client's signature.
+// DeleteCluster requests deletion of the cluster and requires the CLI to report
+// it started. It takes an id to match the REST client's signature.
 func (r *Runner) DeleteCluster(ctx context.Context, id openapi_types.UUID) error {
 	name, err := r.nameForID(ctx, id)
 	if err != nil {
@@ -190,12 +176,11 @@ func (r *Runner) DeleteCluster(ctx context.Context, id openapi_types.UUID) error
 	return r.deleteClusterByName(ctx, name)
 }
 
-// WaitForClusterDeleted polls until the cluster no longer resolves by name.
-//
-// The name is read from the cache rather than by listing: the cluster is on its
-// way out, so a lookup would start failing partway through the wait.
+// WaitForClusterDeleted blocks until the cluster no longer resolves by name,
+// erroring if Timeouts.Delete passes or ctx is done. The cluster must already
+// be known to this Runner: a listing would stop finding it partway through.
 func (r *Runner) WaitForClusterDeleted(ctx context.Context, id openapi_types.UUID) error {
-	name, ok := r.names[id]
+	name, ok := r.clusterNames[id]
 	if !ok {
 		return fmt.Errorf("no cached name for cluster %s, so its deletion cannot be awaited", id)
 	}
@@ -213,7 +198,7 @@ func (r *Runner) WaitForClusterDeleted(ctx context.Context, id openapi_types.UUI
 		case <-ticker.C:
 			_, err := r.GetClusterByName(ctx, name)
 			if errors.Is(err, errClusterNotFound) {
-				delete(r.names, id)
+				delete(r.clusterNames, id)
 				return nil
 			}
 			if err != nil {
@@ -223,26 +208,21 @@ func (r *Runner) WaitForClusterDeleted(ctx context.Context, id openapi_types.UUI
 	}
 }
 
-// CleanupCreated removes any cluster this Runner created that is still there.
+// CleanupCreated removes any cluster this Runner created that still exists.
 //
-// The normal path never needs it: the suite's delete spec removes the cluster
-// and this finds nothing. It exists for the case the suite cannot see -- a
-// create that succeeded but whose follow-up lookup failed, leaving the suite
-// with no cluster recorded and nothing to clean up.
-//
-// Best-effort by design. It is called from cleanup, where returning an error
-// would replace a real failure with this one.
+// Best-effort: it reports nothing, because it runs from test cleanup where a
+// returned error would displace whatever really failed.
 func (r *Runner) CleanupCreated(ctx context.Context) {
-	for _, c := range r.created {
-		if _, err := r.GetClusterByName(ctx, c.name); err != nil {
+	for _, created := range r.createdClusters {
+		if _, err := r.GetClusterByName(ctx, created.name); err != nil {
 			continue // already gone, or unreachable; nothing useful to do either way
 		}
-		r.logf("nkectl e2e: removing leftover cluster %s", c.name)
-		if err := r.deleteClusterByName(ctx, c.name); err != nil {
-			r.logf("nkectl e2e: could not remove leftover cluster %s: %v", c.name, err)
+		r.logf("nkectl e2e: removing leftover cluster %s", created.name)
+		if err := r.deleteClusterByName(ctx, created.name); err != nil {
+			r.logf("nkectl e2e: could not remove leftover cluster %s: %v", created.name, err)
 		}
 	}
-	r.created = nil
+	r.createdClusters = nil
 }
 
 // deleteClusterByName issues the delete and requires the CLI to report it.
@@ -257,12 +237,10 @@ func (r *Runner) deleteClusterByName(ctx context.Context, name string) error {
 	return nil
 }
 
-// nameForID resolves an id to the name the CLI addresses clusters by, from the
-// cache when it can and by listing when it cannot. The suite's seam passes ids
-// because the REST client is addressed that way; nkectl is not, so this is
-// where the two meet.
+// nameForID resolves an id to the name nkectl addresses clusters by, from
+// clusterNames when it can and by listing when it cannot.
 func (r *Runner) nameForID(ctx context.Context, id openapi_types.UUID) (string, error) {
-	if name, ok := r.names[id]; ok {
+	if name, ok := r.clusterNames[id]; ok {
 		return name, nil
 	}
 
@@ -274,10 +252,10 @@ func (r *Runner) nameForID(ctx context.Context, id openapi_types.UUID) (string, 
 	if err := json.Unmarshal([]byte(out), &clusters); err != nil {
 		return "", fmt.Errorf("parsing `get clusters -o json`: %w: %s", err, strings.TrimSpace(out))
 	}
-	for _, c := range clusters {
-		r.names[c.ID] = c.Name
-		if c.ID == id {
-			return c.Name, nil
+	for _, cluster := range clusters {
+		r.clusterNames[cluster.ID] = cluster.Name
+		if cluster.ID == id {
+			return cluster.Name, nil
 		}
 	}
 	return "", fmt.Errorf("no cluster with id %s in `get clusters -o json`", id)
