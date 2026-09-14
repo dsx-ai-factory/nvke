@@ -223,34 +223,42 @@ func (r *Runner) stopForward() {
 		return
 	}
 	r.forwardCancel()
+	if r.forwardDone != nil {
+		<-r.forwardDone // the drain goroutine has let go of the pipe
+	}
 	if r.forward != nil {
 		_ = r.forward.Wait()
 		r.forward = nil
 	}
 	r.forwardCancel = nil
 	r.forwardDone = nil
+	// Cleared so a command issued against a stopped Runner fails on an empty
+	// URL rather than quietly reaching for a port that is no longer bound.
+	r.baseURL = ""
 }
 
-// ensureForward restarts the port-forward if kubectl has exited, which it does
-// whenever the pod behind the Service is replaced. The replacement binds a
-// fresh ephemeral port, so the site is re-registered to match.
+// ensureForward starts a port-forward unless a live one is already running.
+//
+// It covers two cases: kubectl exiting because the pod behind the Service was
+// replaced, and a previous start that failed and so left the Runner with no
+// forward at all. Either way the replacement binds a fresh ephemeral port, so
+// the site is re-registered to match.
 func (r *Runner) ensureForward(ctx context.Context) error {
-	if r.forwardDone == nil {
-		return nil
-	}
-	select {
-	case <-r.forwardDone:
-	default:
-		return nil // still up
+	if r.forwardDone != nil {
+		select {
+		case <-r.forwardDone:
+			r.logf("nkectl e2e: the port-forward exited; restarting it")
+		default:
+			return nil // still up
+		}
 	}
 
-	r.logf("nkectl e2e: the port-forward exited; restarting it")
 	r.stopForward()
 	if err := r.startForward(ctx); err != nil {
-		return fmt.Errorf("restarting the port-forward: %w", err)
+		return fmt.Errorf("starting the port-forward: %w", err)
 	}
 	if err := r.setSite(ctx); err != nil {
-		return fmt.Errorf("re-registering the site after restarting the port-forward: %w", err)
+		return fmt.Errorf("re-registering the site after starting the port-forward: %w", err)
 	}
 	return nil
 }
@@ -289,7 +297,6 @@ func (r *Runner) Run(ctx context.Context, args ...string) (string, error) {
 // context keeps ctx's values but drops its cancellation. stopForward ends it.
 func (r *Runner) startForward(ctx context.Context) error {
 	fwdCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
-	r.forwardCancel = cancel
 
 	// The port is kubectl's to choose, so nothing can claim it between a probe
 	// here and the bind there. No --context: r.kubeconfig already names the one
@@ -316,13 +323,24 @@ func (r *Runner) startForward(ctx context.Context) error {
 		cancel()
 		return fmt.Errorf("starting kubectl port-forward: %w", startErr)
 	}
-	r.forward = cmd
-	r.forwardDone = make(chan struct{})
 
-	port, err := awaitForwardPort(stdout, r.forwardDone)
+	done := make(chan struct{})
+	port, err := awaitForwardPort(stdout, done)
 	if err != nil {
+		// Kill the process and wait for the drain goroutine to let go of the
+		// pipe before reaping it. Nothing is assigned to the Runner on this
+		// path: a half-built forward recorded here would read as a live one to
+		// ensureForward, which would then send every later command to a port
+		// that was never opened.
+		cancel()
+		<-done
+		_ = cmd.Wait()
 		return err
 	}
+
+	r.forwardCancel = cancel
+	r.forward = cmd
+	r.forwardDone = done
 	r.baseURL = fmt.Sprintf("http://127.0.0.1:%s", port)
 	r.logf("nkectl e2e: port-forward to %s/%s ready at %s", cwe.Namespace(), cwe.Service(), r.baseURL)
 	return nil
