@@ -124,9 +124,8 @@ type Config struct {
 	// NodeRebootSoftRebootEnabled selects a CAPI node reboot's strategy: true tries the in-guest
 	// soft reboot RPC first, falling back to a hard reboot only on RPC error - matching behavior
 	// from before this flag existed. false skips straight to the hard CAPI Machine reboot
-	// annotation. Disabled for CI backends where a container restart can never produce a
-	// detectable boot change (CAPD, and the NICo containers lane, which share the host kernel),
-	// so attempting soft there would only add latency with no chance of success.
+	// annotation, for any backend where the in-guest reboot path can never produce a real,
+	// detectable boot change.
 	NodeRebootSoftRebootEnabled bool `env:"NODE_REBOOT_SOFT_REBOOT_ENABLED" default:"true"`
 
 	// NodeProvisioningTimeout is the maximum time a worker node may remain provisioning

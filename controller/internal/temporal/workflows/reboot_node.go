@@ -29,10 +29,8 @@ type RebootNodeInput struct {
 	PollingInterval  time.Duration
 
 	// SoftRebootEnabled selects between the in-guest soft reboot RPC (falling back to hard only
-	// on RPC error) and going straight to the hard CAPI Machine reboot annotation. Disabled for
-	// CI backends where a container restart can never produce a detectable boot change (CAPD,
-	// and the NICo containers lane, which share the host kernel), so attempting soft there would
-	// only add latency with no chance of success.
+	// on RPC error) and going straight to the hard CAPI Machine reboot annotation, for any
+	// backend where the in-guest reboot path can never produce a real, detectable boot change.
 	SoftRebootEnabled bool
 }
 
