@@ -126,7 +126,6 @@ func testConfig(t *testing.T) Config {
 	t.Helper()
 	return Config{
 		CWEImage:                 "nvcr.io/org/controller:edge",
-		ProfilesImage:            "nvcr.io/org/cwe-profiles:v1",
 		ProvisionedProviderImage: "cluster-api-provider-provisioned:local",
 		ProvisionedProviderPath:  t.TempDir(),
 		ChartPath:                t.TempDir(), // any existing dir stands in for the chart
@@ -143,15 +142,8 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 	if err := e.Deploy(context.Background(), "/tmp/kubeconfig", Config{}); err == nil {
 		t.Fatal("expected an error for a missing Config.CWEImage")
 	}
-	// Without profiles CWE fails its schema migration, so say so up front
-	// rather than after a five-minute wait on a pod that will never be ready.
-	if err := e.Deploy(context.Background(), "/tmp/kubeconfig",
-		Config{CWEImage: "nvcr.io/org/controller:edge"}); err == nil {
-		t.Fatal("expected an error for a missing Config.ProfilesImage")
-	}
 	if err := e.Deploy(context.Background(), "/tmp/kubeconfig", Config{
-		CWEImage:      "nvcr.io/org/controller:edge",
-		ProfilesImage: "nvcr.io/org/cwe-profiles:v1",
+		CWEImage: "nvcr.io/org/controller:edge",
 	}); err == nil {
 		t.Fatal("expected an error for a missing Config.ProvisionedProviderImage")
 	}
@@ -362,10 +354,13 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(cwe, "image.repository=nvcr.io/org/controller") || !strings.Contains(cwe, "image.tag=edge") {
 		t.Errorf("cwe call = %q, want the image split into repository/tag", cwe)
 	}
-	if !strings.Contains(cwe, "profiles.image.enabled=true") ||
-		!strings.Contains(cwe, "profiles.image.repository=nvcr.io/org/cwe-profiles") ||
-		!strings.Contains(cwe, "profiles.path="+profilesPath) {
-		t.Errorf("cwe call = %q, want the profiles init container enabled and pointed at the image", cwe)
+	// PROFILES_DIR only. nkectl deploys no profiles content, so the chart's
+	// profiles.image stays disabled and nothing should turn it on.
+	if !strings.Contains(cwe, "profiles.path="+profilesPath) {
+		t.Errorf("cwe call = %q, want PROFILES_DIR pointed at %s", cwe, profilesPath)
+	}
+	if strings.Contains(cwe, "profiles.image") {
+		t.Errorf("cwe call = %q, want no profiles.image setting", cwe)
 	}
 	if !strings.Contains(cwe, "spiffe.enabled=true") ||
 		!strings.Contains(cwe, "spiffe.trustDomain=test-kind.nke.local") ||

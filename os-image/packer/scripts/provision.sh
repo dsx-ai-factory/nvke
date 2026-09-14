@@ -82,6 +82,115 @@ fi
 sudo rm -f /var/lib/dbus/machine-id
 sudo rm -f /home/ubuntu/.ssh/authorized_keys
 
+# cidata/autoinstall-lvm.pkrtpl sets kernel.package to the NVIDIA-tuned
+# flavor specifically so, per its own comment, "there's no generic kernel to
+# reboot into or purge afterward" -- but curtin installs it alongside the
+# live ISO's default linux-generic rather than replacing it, leaving a
+# second, never-booted kernel (image + modules + headers, ~450MB) on the
+# golden image. Guard on the running kernel so this can never remove what's
+# actually booted, in case that assumption ever stops holding.
+running_kernel="$(uname -r)"
+if [[ "${running_kernel}" == *generic* ]]; then
+  echo "refusing to purge the generic kernel: the running kernel (${running_kernel}) looks like a generic flavor" >&2
+  exit 1
+fi
+
+for pkg in linux-generic linux-headers-generic linux-image-generic; do
+  if dpkg-query -W -f='${Status}' "${pkg}" 2>/dev/null | grep -q "^install ok installed$"; then
+    sudo apt-get -y purge "${pkg}"
+  fi
+done
+
+# Purging the meta-packages above does not cascade to their versioned
+# dependents: `apt-get autoremove` (below) deliberately never fully removes
+# a kernel family -- /etc/apt/apt.conf.d/01autoremove's
+# VersionedKernelPackages groups every "linux-.*" package and keeps at least
+# one full kernel per flavor installed as a safety net against an
+# unbootable system, regardless of its auto-install mark. Confirmed on a
+# real build: autoremove left linux-image-*-generic, linux-modules-*-generic,
+# linux-headers-*-generic/*-generic's arch-independent linux-headers-<ver>,
+# linux-tools-*-generic and its zfs modules all installed. Purge that whole
+# family by exact name instead, the same way an explicit `apt-get purge
+# <version>` from the command line bypasses the same protection.
+# dpkg-query -W lists a package regardless of its current state, so an
+# already-purged package still known to dpkg (e.g. the old
+# linux-image-unsigned-7.0.0-14-generic rc-state leftover the "Cleaning up"
+# autoremove below sweeps up) can match this glob and win `head -1` over the
+# actually-installed kernel -- filter to installed packages explicitly.
+# Querying with no pattern (filtering in awk instead) also avoids dpkg-query
+# exiting 1 -- which set -euo pipefail would treat as fatal here -- on a
+# system where dpkg has no record at all matching the glob.
+generic_image_pkg="$(dpkg-query -W -f='${Package}\t${Status}\n' 2>/dev/null |
+  awk -F'\t' '$1 ~ /^linux-image-.*-generic$/ && $2 == "install ok installed" { print $1; exit }')"
+if [[ -n "${generic_image_pkg}" ]]; then
+  ver="${generic_image_pkg#linux-image-}"      # e.g. 7.0.0-31-generic
+  ver_noflavor="${ver%-generic}"                # e.g. 7.0.0-31
+  generic_kernel_candidates=(
+    "linux-image-${ver}"
+    "linux-modules-${ver}"
+    "linux-modules-extra-${ver}"
+    "linux-headers-${ver}"
+    "linux-headers-${ver_noflavor}"
+    "linux-tools-${ver}"
+    "linux-tools-${ver_noflavor}"
+    "linux-main-modules-zfs-${ver}"
+  )
+  generic_kernel_pkgs=()
+  for pkg in "${generic_kernel_candidates[@]}"; do
+    if dpkg-query -W -f='${Status}' "${pkg}" 2>/dev/null | grep -q "^install ok installed$"; then
+      generic_kernel_pkgs+=("${pkg}")
+    fi
+  done
+  if [[ "${#generic_kernel_pkgs[@]}" -gt 0 ]]; then
+    sudo apt-get -y purge "${generic_kernel_pkgs[@]}"
+  fi
+fi
+
+# Ubuntu splits linux-firmware into one binary package per hardware vendor,
+# but the linux-firmware meta-package hard-Depends on all of them, and
+# linux-image-nvidia (the kernel this image actually boots) hard-Depends on
+# that meta -- `apt-get purge` on an unwanted vendor split would therefore
+# either be refused or cascade into removing the booted kernel's own
+# package. There is no clean `apt purge` here, so delete the files each
+# unwanted package owns directly and leave dpkg's database (and every
+# Depends chain through it) untouched.
+#
+# This image only ever runs on bare-metal NVIDIA GPU nodes with Mellanox
+# ConnectX NICs -- ConnectX firmware lives on-card (flashed via MFT), not in
+# this package, and linux-firmware-mellanox-spectrum is for Mellanox
+# Spectrum *switch* ASICs, not NICs. None of the phone/laptop wifi+BT,
+# integrated graphics, or switch-ASIC vendors below apply. Kept:
+# linux-firmware-misc (carries the intel-ucode CPU microcode, vendor-
+# independent), linux-firmware-nvidia-graphics, and linux-firmware-intel-misc
+# (unclear which Intel NIC/adapter firmware it bundles; small enough to
+# leave alone rather than guess).
+unwanted_firmware_pkgs=(
+  linux-firmware-qualcomm-misc
+  linux-firmware-qualcomm-wireless
+  linux-firmware-qualcomm-graphics
+  linux-firmware-intel-wireless
+  linux-firmware-intel-graphics
+  linux-firmware-mellanox-spectrum
+  linux-firmware-marvell-prestera
+  linux-firmware-marvell-wireless
+  linux-firmware-amd-graphics
+  linux-firmware-amd-misc
+  linux-firmware-mediatek
+  linux-firmware-broadcom-wireless
+  linux-firmware-realtek
+  linux-firmware-qlogic
+  linux-firmware-netronome
+)
+for pkg in "${unwanted_firmware_pkgs[@]}"; do
+  if dpkg-query -W -f='${Status}' "${pkg}" 2>/dev/null | grep -q "^install ok installed$"; then
+    dpkg -L "${pkg}" | while IFS= read -r f; do
+      if [[ -f "${f}" ]]; then
+        sudo rm -f "${f}"
+      fi
+    done
+  fi
+done
+
 # Smaller qcow2: apt's package cache and now-unreferenced blocks (deleted
 # files, old package versions) don't shrink the disk image on their own --
 # fstrim tells the guest kernel to discard them, which the disk_discard =
@@ -90,7 +199,7 @@ sudo rm -f /home/ubuntu/.ssh/authorized_keys
 # ("Converting hard drive...") actually has free space to reclaim. Must run
 # last: any write after this leaves blocks un-trimmed again.
 echo "Cleaning up package cache and trimming filesystem..."
-sudo apt-get -y autoremove
+sudo apt-get -y --purge autoremove
 sudo apt-get clean
 
 # apt's downloaded package indexes and installed man/doc/translation files

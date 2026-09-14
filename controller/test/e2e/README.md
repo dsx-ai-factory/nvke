@@ -184,12 +184,20 @@ default). Pass ginkgo flags through `ARGS`:
 
 ```bash
 make test-e2e
+make test-e2e-core-capd
+make test-e2e-core-nico-containers
 make test-e2e-happy-path
 make test-e2e-capd
 make test-e2e-nico-vms
 make test-e2e-nico-vms-os-profiles
 make test-e2e E2E_TIMEOUT=3h ARGS='--label-filter=capd'
 ```
+
+The two `core` targets run one control-plane node and one worker through create,
+tenant-node readiness, delete, and tenant-access cleanup. Pull-request mirror
+branches use these rows for bounded feedback. Runs on `main`, scheduled runs,
+and manual runs keep the comprehensive backend rows, including both
+control-plane provisioning modes and the extended lifecycle validations.
 
 ### Local CAPD e2e (`make test-e2e-capd-local`)
 

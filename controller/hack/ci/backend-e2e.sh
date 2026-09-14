@@ -1218,6 +1218,15 @@ if ((e2e_rc != 0)); then
   exit "${e2e_rc}"
 fi
 
+# A focused pull-request run takes the single-mode path, so it does not pass
+# through the cleanup gate between sequential legs above. Assert the same
+# invariant before reporting success: a green core run must not leave a tenant
+# behind on its management cluster.
+log "E2E specs passed; confirming the cluster is clean"
+if ! wait_for_zero_tenant_clusters; then
+  exit 1
+fi
+
 if [[ "${NKECTL_SMOKE}" == "true" ]]; then
   nkectl_smoke
 fi

@@ -96,7 +96,7 @@ jobs:
         include:
           - arch: amd64
             runner: linux-amd64-gpu-l4-latest-1
-            timeout_minutes: 120
+            timeout_minutes: 180
             build_fde: true
           - arch: arm64
             runner: linux-arm64-cpu16
@@ -121,14 +121,33 @@ jobs:
     # amd64: sized for real KVM (FDE bake + demo-fde.sh + non-FDE bake +
     # boot-smoke, each a few minutes, with real headroom); the KVM gate below
     # fails fast instead of burning the timeout if that ever regresses to
-    # tcg. arm64: the pool has no /dev/kvm, so the non-FDE bake runs under
-    # same-arch tcg at roughly 10x the KVM pace: ~140 min install, ~15 min
-    # provisioning, up to 40 min boot-smoke, plus compress. 300m leaves ~1 h.
+    # tcg. Bumped from 120m to 180m after a real run's amd64 leg still timed
+    # out (https://github.com/NVIDIA/nke/actions/runs/34525233526) for a
+    # cause not yet root-caused -- see #695 for one confirmed contributor
+    # (a bloated golden image) and the self-timeout + console-log dump on
+    # the build steps below for diagnosing the next one. arm64: the pool has
+    # no /dev/kvm, so the non-FDE bake runs under same-arch tcg at roughly
+    # 10x the KVM pace: ~140 min install, ~15 min provisioning, up to 40 min
+    # boot-smoke, plus compress -- bumped from 240m to 300m alongside amd64
+    # for the same reason; 300m leaves ~1 h of headroom.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
       contents: write
       packages: write
     steps:
+      # GitHub's own timeout-minutes has no grace period: it kills the whole
+      # job process tree at once, so nothing started beforehand (a
+      # background "sleep, then cat" included) gets a chance to run once it
+      # fires. The build steps below self-impose a shorter timeout, computed
+      # from this recorded start time, so they can dump the serial console
+      # log and exit cleanly before GitHub's hard kill ever lands. Recorded
+      # before Checkout, not after: Checkout does a full-history fetch on
+      # this repo, and every second it takes would otherwise silently eat
+      # into the 30s diagnostic buffer those self-timeouts leave themselves.
+      - name: Record job start time
+        id: start_time
+        run: echo "epoch=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -279,11 +298,38 @@ jobs:
           echo "${GHCR_TOKEN}" | oras login ghcr.io \
             --username "${{ github.actor }}" --password-stdin
 
+      # Self-timeout, 30s inside the job's real timeout-minutes deadline (see
+      # "Record job start time" above), so a hang here dumps the serial
+      # console log -- the same file "Upload FDE/non-FDE install console
+      # logs" archives -- straight into this step's own output before
+      # exiting, instead of relying on GitHub's hard kill to leave anything
+      # legible behind.
       - name: Build the FDE node image
         if: matrix.build_fde
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make -C os-image/packer os-image-fde ARCH=${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          deadline=$(( ${{ steps.start_time.outputs.epoch }} + ${{ matrix.timeout_minutes }} * 60 - 30 ))
+          remaining=$(( deadline - $(date +%s) ))
+          if (( remaining <= 0 )); then
+            echo "::error::no time left before the job's ${{ matrix.timeout_minutes }}m timeout; skipping the FDE build"
+            exit 1
+          fi
+          status=0
+          timeout --signal=TERM "${remaining}s" \
+            make -C os-image/packer os-image-fde ARCH=${{ matrix.arch }} || status=$?
+          if [[ "${status}" -eq 124 ]]; then
+            echo "::error::FDE build did not finish within ${remaining}s (job timeout minus a 30s buffer)"
+            echo "::group::os-image/packer/build-logs (dumped before exiting on self-timeout)"
+            for f in os-image/packer/build-logs/*.log; do
+              [[ -f "${f}" ]] || continue
+              echo "--- ${f} ---"
+              cat "${f}"
+            done
+            echo "::endgroup::"
+          fi
+          exit "${status}"
 
       # Full acceptance run: LUKS2+TPM-sealed, wrong-TPM-fails,
       # reboot-auto-unlocks. No manual/scripted console interaction needed —
@@ -295,10 +341,32 @@ jobs:
         working-directory: os-image
         run: ./demo-fde.sh
 
+      # Same self-timeout pattern as "Build the FDE node image" above.
       - name: Build the non-FDE node image
         env:
           PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make -C os-image/packer os-image-non-fde ARCH=${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          deadline=$(( ${{ steps.start_time.outputs.epoch }} + ${{ matrix.timeout_minutes }} * 60 - 30 ))
+          remaining=$(( deadline - $(date +%s) ))
+          if (( remaining <= 0 )); then
+            echo "::error::no time left before the job's ${{ matrix.timeout_minutes }}m timeout; skipping the non-FDE build"
+            exit 1
+          fi
+          status=0
+          timeout --signal=TERM "${remaining}s" \
+            make -C os-image/packer os-image-non-fde ARCH=${{ matrix.arch }} || status=$?
+          if [[ "${status}" -eq 124 ]]; then
+            echo "::error::non-FDE build did not finish within ${remaining}s (job timeout minus a 30s buffer)"
+            echo "::group::os-image/packer/build-logs (dumped before exiting on self-timeout)"
+            for f in os-image/packer/build-logs/*.log; do
+              [[ -f "${f}" ]] || continue
+              echo "--- ${f} ---"
+              cat "${f}"
+            done
+            echo "::endgroup::"
+          fi
+          exit "${status}"
 
       - name: Boot-smoke the non-FDE qcow2
         run: |
