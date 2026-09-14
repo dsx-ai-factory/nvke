@@ -305,9 +305,9 @@ func rebootCAPINode(ctx workflow.Context, input RebootNodeInput, rebootAttempt i
 	return applyCAPIMachineRebootAnnotation(ctx, nodeID)
 }
 
-// waitForNodeReboot bounds the wait for the soft reboot to take effect, then falls back to a hard
-// reboot within the same attempt if nothing was detected - covering a soft reboot that acked but
-// had no effect, not just an RPC error.
+// waitForNodeReboot waits, with a linearly increasing timeout, for the reboot to take effect. A
+// timeout does not fall back to a hard reboot; it returns an error, and the caller's attempt loop
+// retries from the top.
 func waitForNodeReboot(ctx workflow.Context, input RebootNodeInput, rebootAttempt int, previousBootID string, rebootStartedTime time.Time) error {
 	// Linear timeout increase based on reboot attempt
 	// e.g. 30m, 45m, 60m, ...
@@ -316,7 +316,7 @@ func waitForNodeReboot(ctx workflow.Context, input RebootNodeInput, rebootAttemp
 	return waitForBootChange(ctx, input, previousBootID, rebootStartedTime, timeout)
 }
 
-// waitForBootChange waits, bounded by timeout, for a bootID change or the reboot-complete-timestamp
+// waitForBootChange waits, bounded by timeout, for a bootID change or the reboot-complete
 // annotation applied after annotationAfterTime.
 func waitForBootChange(ctx workflow.Context, input RebootNodeInput, previousBootID string, annotationAfterTime time.Time, timeout time.Duration) error {
 	var a *activities.Activities
