@@ -222,6 +222,25 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 		})
 
 		AfterAll(func(ctx context.Context) {
+			// Named once so the delete below and the nkectl sweep cannot disagree
+			// about when the cluster should outlive the run.
+			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
+				test.cfg.Lifecycle.SkipDelete ||
+				(test.cfg.Lifecycle.PreserveOnFailure && failed)
+
+			// Deferred: everything below reports through Gomega, which fails by
+			// panicking, and a delete that does not complete would otherwise leave
+			// the forward and its credential directory behind and skip the sweep.
+			// Ordered so the sweep, which needs the forward, runs first.
+			defer test.closeNkectl()
+			defer func() {
+				if !keepCluster {
+					// Catches what the switch below cannot see: a cluster nkectl
+					// created that never reached test.cluster.
+					test.cleanupNkectlCreated(ctx)
+				}
+			}()
+
 			if spec.validate.brownfieldOIDC && test.k8sClient != nil {
 				// Restore the CWE OIDC create-default the create spec turned off, so
 				// it does not leak to other table entries (the suite runs serially).
@@ -230,25 +249,12 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			// Use AfterAll so the cluster is removed even if a spec before the
 			// delete spec fails (or the delete spec is skipped). It is a no-op
 			// once the delete spec has run.
-			// Named once so the delete below and the nkectl sweep after it cannot
-			// disagree about when the cluster should outlive the run.
-			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
-				test.cfg.Lifecycle.SkipDelete ||
-				(test.cfg.Lifecycle.PreserveOnFailure && failed)
-
 			switch {
 			case deleted, test.cluster == nil:
 			case keepCluster:
 			default:
 				test.deleteClusterAndWait(ctx)
 			}
-			// Catches what the switch above cannot see: a cluster nkectl created
-			// whose lookup then failed, leaving test.cluster nil. Must precede
-			// closeNkectl, which takes the port-forward away.
-			if !keepCluster {
-				test.cleanupNkectlCreated(ctx)
-			}
-			test.closeNkectl()
 		}, NodeTimeout(1*time.Hour))
 	},
 	// The pull-request smoke lane uses a separate, minimal topology instead of

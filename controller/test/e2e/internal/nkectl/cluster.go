@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,6 +60,11 @@ func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.
 		return nil, fmt.Errorf("writing the spec for %q: %w", req.Name, writeErr)
 	}
 
+	// Tracked before the command runs: a create CWE accepts but fails to report
+	// -- a dropped connection, a timeout -- leaves a cluster under this name
+	// and no other trace of it.
+	r.trackCreated(req.Name)
+
 	out, err := r.Run(ctx, "create", "cluster", "-f", path)
 	if err != nil {
 		return nil, err
@@ -71,17 +77,13 @@ func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.
 	}
 	r.logf("nkectl e2e: %s", strings.TrimSpace(out))
 
-	// Recorded by name whatever the id does: the name is all CleanupCreated
-	// needs to remove it.
 	name := match[1]
-	created := createdCluster{name: name}
+	r.trackCreated(name) // a no-op unless CWE named it something else
 	if id, parseErr := uuid.Parse(match[2]); parseErr == nil {
-		created.id = id
 		r.clusterNames[id] = name
 	} else {
 		r.logf("nkectl e2e: cluster %s reported an unparsable id %q: %v", name, match[2], parseErr)
 	}
-	r.createdClusters = append(r.createdClusters, created)
 
 	return r.GetClusterByName(ctx, name)
 }
@@ -253,22 +255,31 @@ func (r *Runner) WaitForClusterDeleted(ctx context.Context, id openapi_types.UUI
 // Best-effort: it reports nothing, because it runs from test cleanup where a
 // returned error would displace whatever really failed.
 func (r *Runner) CleanupCreated(ctx context.Context) {
-	for _, created := range r.createdClusters {
-		switch _, err := r.GetClusterByName(ctx, created.name); {
+	for _, name := range r.createdClusters {
+		switch _, err := r.GetClusterByName(ctx, name); {
 		case errors.Is(err, errClusterNotFound):
 			continue // the expected case: the delete spec already removed it
 		case err != nil:
 			// Not knowing is not the same as gone: say so, rather than leave a
 			// cluster running with nothing in the log to explain it.
-			r.logf("nkectl e2e: could not tell whether cluster %s is still there: %v", created.name, err)
+			r.logf("nkectl e2e: could not tell whether cluster %s is still there: %v", name, err)
 			continue
 		}
-		r.logf("nkectl e2e: removing leftover cluster %s", created.name)
-		if err := r.deleteClusterByName(ctx, created.name); err != nil {
-			r.logf("nkectl e2e: could not remove leftover cluster %s: %v", created.name, err)
+		r.logf("nkectl e2e: removing leftover cluster %s", name)
+		if err := r.deleteClusterByName(ctx, name); err != nil {
+			r.logf("nkectl e2e: could not remove leftover cluster %s: %v", name, err)
 		}
 	}
 	r.createdClusters = nil
+}
+
+// trackCreated records a cluster name for CleanupCreated to sweep, ignoring a
+// name already held.
+func (r *Runner) trackCreated(name string) {
+	if slices.Contains(r.createdClusters, name) {
+		return
+	}
+	r.createdClusters = append(r.createdClusters, name)
 }
 
 // deleteClusterByName issues the delete and requires the CLI to report it.

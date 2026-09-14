@@ -110,16 +110,10 @@ type Runner struct {
 	// clusterNames maps id to name. nkectl addresses clusters by name and the
 	// suite's seam passes ids, so the two have to be reconciled somewhere.
 	clusterNames map[openapi_types.UUID]string
-	// createdClusters records what CreateCluster brought into being, including
-	// a cluster whose post-create lookup failed and which the caller therefore
-	// never learned about.
-	createdClusters []createdCluster
-}
-
-// createdCluster is the identity read from the create command's own output.
-type createdCluster struct {
-	name string
-	id   openapi_types.UUID
+	// createdClusters names every cluster CreateCluster may have brought into
+	// being, including one whose create response was lost. Names, because that
+	// is all CleanupCreated needs and all that is known before the reply.
+	createdClusters []string
 }
 
 // New resolves the binary, starts a port-forward to the NKE Service and
@@ -273,6 +267,10 @@ func (r *Runner) ensureForward(ctx context.Context) error {
 		return fmt.Errorf("starting the port-forward: %w", err)
 	}
 	if err := r.setSite(ctx); err != nil {
+		// Drop it: nkectl reads its URL from the site config on disk, so a live
+		// forward that config does not name would pass the check above while
+		// every command went to the previous URL. The next call starts over.
+		r.stopForward()
 		return fmt.Errorf("re-registering the site after starting the port-forward: %w", err)
 	}
 	return nil

@@ -152,6 +152,21 @@ func TestClusterNotFoundIn(t *testing.T) {
 	}
 }
 
+// CleanupCreated sweeps what trackCreated recorded, so a name missing from it
+// is a cluster nothing will remove.
+func TestTrackCreated(t *testing.T) {
+	r := &Runner{}
+
+	r.trackCreated("capd-one")
+	r.trackCreated("capd-two")
+	require.Equal(t, []string{"capd-one", "capd-two"}, r.createdClusters)
+
+	// CreateCluster records the name it asked for and again the name CWE
+	// reported, which are normally the same. The second must not duplicate.
+	r.trackCreated("capd-one")
+	require.Equal(t, []string{"capd-one", "capd-two"}, r.createdClusters)
+}
+
 func TestResolveBinary(t *testing.T) {
 	t.Run("rejects a path that does not exist", func(t *testing.T) {
 		_, err := resolveBinary(t.TempDir() + "/absent-nkectl")
