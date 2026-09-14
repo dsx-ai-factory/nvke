@@ -148,7 +148,7 @@ notices-check` verifies it is up to date.
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | Unknown |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260807164820-c8921c73eeea` | Unknown |
 | `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260807164820-c8921c73eeea` | Unknown |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.0` | Unknown |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.1` | Unknown |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | Unknown |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | Unknown |
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | Unknown |
@@ -165,8 +165,8 @@ notices-check` verifies it is up to date.
 | `k8s.io/kube-openapi/pkg` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
 | `k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json` | BSD-3-Clause | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
 | `k8s.io/kube-openapi/pkg/validation/spec` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
-| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.35.3` | Unknown |
-| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.35.3` | Unknown |
+| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.37.0` | Unknown |
+| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.37.0` | Unknown |
 | `k8s.io/utils` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `k8s.io/utils/internal/third_party/forked/golang` | BSD-3-Clause | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `k8s.io/utils/third_party/forked/golang/btree` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
@@ -15216,7 +15216,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260807164820-
 
 ### google.golang.org/grpc
 
-_Apache-2.0 — google.golang.org/grpc@v1.83.0_
+_Apache-2.0 — google.golang.org/grpc@v1.83.1_
 
 #### LICENSE
 
@@ -17837,7 +17837,7 @@ _Apache-2.0 — k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad_
 
 ### k8s.io/kube-proxy/config/v1alpha1
 
-_Apache-2.0 — k8s.io/kube-proxy@v0.35.3_
+_Apache-2.0 — k8s.io/kube-proxy@v0.37.0_
 
 #### LICENSE
 
@@ -18049,7 +18049,7 @@ _Apache-2.0 — k8s.io/kube-proxy@v0.35.3_
 
 ### k8s.io/kubelet/config/v1beta1
 
-_Apache-2.0 — k8s.io/kubelet@v0.35.3_
+_Apache-2.0 — k8s.io/kubelet@v0.37.0_
 
 #### LICENSE
 
