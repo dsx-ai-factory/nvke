@@ -59,7 +59,7 @@ check enforced it.
 
 It was open for a long time with the reason *"`controller/go.mod` requires two
 modules that are not public"*. That stopped being true when
-[#76](https://github.com/NVIDIA/nke/pull/76) removed them, leaving one INTERNAL
+[#76](https://github.com/dsx-ai-factory/nke/pull/76) removed them, leaving one INTERNAL
 module, `cluster-api-provider-nico`. Two mechanical problems kept it open after
 that, and both are worth writing down because neither is obvious:
 

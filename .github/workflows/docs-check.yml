@@ -45,7 +45,7 @@ jobs:
   docs-check:
     name: docs-check
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 10
     permissions:
       contents: read

@@ -27,7 +27,7 @@
 #
 # This runs on a public runner, and go.work now lists every module in the
 # repository -- #76 removed the carbide SDK, so there is nothing left to leave
-# out. The one internal dependency, github.com/NVIDIA/cluster-api-provider-nico,
+# out. The one internal dependency, github.com/dsx-ai-factory/cluster-api-provider-nico,
 # is carried in the committed vendor/ tree, so builds and the static checks here
 # need no credentials.
 #
@@ -91,7 +91,7 @@ jobs:
   work-check:
     name: Check go.work and go.work.sum are current
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     # Raised from 10: step 5 now runs, and it downloads the whole module graph
     # and re-vendors 191 modules. 36s locally with a warm cache.
     timeout-minutes: 20
@@ -125,7 +125,7 @@ jobs:
       # Same three variables as dependabot-fixup.yml, for the same reasons.
       # GOPRIVATE keeps the internal path off proxy.golang.org and sum.golang.org,
       # which cannot serve it. The rewrite gets git past the username prompt, and
-      # is scoped to github.com/NVIDIA/ so the token is not sent to public hosts.
+      # is scoped to github.com/dsx-ai-factory/ so the token is not sent to public hosts.
       # GIT_CONFIG_COUNT keeps it to this step and out of ~/.gitconfig.
       #
       # A pull request from a fork gets no secrets, so the rewrite is empty
@@ -134,8 +134,8 @@ jobs:
       # module either, and the four static assertions still run for them.
       - name: Verify the workspace is current
         env:
-          GOPRIVATE: github.com/NVIDIA/*
+          GOPRIVATE: github.com/dsx-ai-factory/*
           GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.NKE_INTERNAL_RO_TOKEN }}@github.com/NVIDIA/.insteadOf
-          GIT_CONFIG_VALUE_0: https://github.com/NVIDIA/
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.NKE_INTERNAL_RO_TOKEN }}@github.com/dsx-ai-factory/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/dsx-ai-factory/
         run: make work-check

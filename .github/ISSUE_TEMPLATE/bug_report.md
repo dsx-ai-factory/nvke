@@ -25,4 +25,4 @@ A clear and concise description of what you expected to happen.
 Add any other context about the problem here.
 
 -----
-By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/NVIDIA/nke/blob/main/CODE_OF_CONDUCT.md) and our [Contributing Guidelines](https://github.com/NVIDIA/nke/blob/main/CONTRIBUTING.md).
+By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/dsx-ai-factory/nke/blob/main/CODE_OF_CONDUCT.md) and our [Contributing Guidelines](https://github.com/dsx-ai-factory/nke/blob/main/CONTRIBUTING.md).

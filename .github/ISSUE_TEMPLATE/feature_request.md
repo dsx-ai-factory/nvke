@@ -20,4 +20,4 @@ A clear and concise description of any alternative solutions or features you've 
 Add any other context, code examples, or references to existing implementations about the feature request here.
 
 -----
-By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/NVIDIA/nke/blob/main/CODE_OF_CONDUCT.md) and our [Contributing Guidelines](https://github.com/NVIDIA/nke/blob/main/CONTRIBUTING.md).
+By submitting this issue, you agree to follow our [Code of Conduct](https://github.com/dsx-ai-factory/nke/blob/main/CODE_OF_CONDUCT.md) and our [Contributing Guidelines](https://github.com/dsx-ai-factory/nke/blob/main/CONTRIBUTING.md).

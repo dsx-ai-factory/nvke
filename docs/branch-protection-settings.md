@@ -49,8 +49,8 @@ changelog entry.
 ## Checking
 
 ```bash
-gh pr checks <number> --repo NVIDIA/nke --json name,workflow,state,bucket
-gh api repos/NVIDIA/nke/rules/branches/main --jq '[.[].type]'
+gh pr checks <number> --repo dsx-ai-factory/nke --json name,workflow,state,bucket
+gh api repos/dsx-ai-factory/nke/rules/branches/main --jq '[.[].type]'
 ```
 
 If this page and the API disagree, the API is right.

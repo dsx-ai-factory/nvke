@@ -101,7 +101,7 @@ Flox is offered, not required. Every target runs from whatever is on your `PATH`
 ## Getting started
 
 ```bash
-git clone https://github.com/NVIDIA/nke.git
+git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
 ```
 
@@ -177,7 +177,7 @@ be agreed before you write code.
 Development quickstart:
 
 ```bash
-git clone https://github.com/NVIDIA/nke.git && cd nke
+git clone https://github.com/dsx-ai-factory/nke.git && cd nke
 (cd agent && make build test)
 (cd controller && make build test)
 ```
@@ -198,9 +198,9 @@ a public issue for a security report.**
 See [SUPPORT.md](SUPPORT.md) for support channels and expectations.
 
 Questions and discussion:
-[GitHub Discussions](https://github.com/NVIDIA/nke/discussions/categories/q-a).
+[GitHub Discussions](https://github.com/dsx-ai-factory/nke/discussions/categories/q-a).
 Bugs, feature requests and documentation gaps:
-[GitHub Issues](https://github.com/NVIDIA/nke/issues).
+[GitHub Issues](https://github.com/dsx-ai-factory/nke/issues).
 
 ## License
 

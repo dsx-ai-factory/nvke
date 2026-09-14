@@ -383,7 +383,9 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 	if cfg.ProvisionedProviderImage == "" {
 		return cfg, errors.New("NKECTL_CAPI_PROVISIONED_IMAGE is not set; it must name the " +
 			"cluster-api-provider-provisioned image, which is the Cluster API infrastructure " +
-			"provider for hosts that already exist (build it with " +
+			"provider for hosts that already exist (e.g. " +
+			"nvcr.io/<org>/cluster-api-provider-provisioned:edge — see " +
+			".github/workflows/image-provisioned-nvcr.yml, or build it with " +
 			"`docker build -f cluster-api-provider-provisioned/Dockerfile .`)")
 	}
 

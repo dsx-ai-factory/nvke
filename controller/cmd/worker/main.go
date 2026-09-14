@@ -20,7 +20,7 @@ import (
 	"go.uber.org/automaxprocs/maxprocs"
 	"golang.org/x/sync/errgroup"
 
-	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/NVIDIA/nke/controller/internal/agent"
 	"github.com/NVIDIA/nke/controller/internal/auth"
@@ -191,7 +191,10 @@ func main() {
 	controllerRuntimeLogger := logger.With("logger", "controller-runtime")
 	k8sControllerManager, err := kube.NewRuntimeManager(
 		controllerRuntimeLogger,
-		cfg.SpireServerNamespace,
+		kube.RuntimeManagerOptions{
+			ConfigMapCacheNamespace: cfg.SpireServerNamespace,
+			LeaderElectionNamespace: cfg.PodNamespace,
+		},
 		spirev1alpha1.AddToScheme,
 		nicov1.AddToScheme,
 	)

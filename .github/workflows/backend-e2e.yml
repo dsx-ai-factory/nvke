@@ -80,7 +80,7 @@ on:
         default: false
       needs-capnico-source:
         description: >-
-          Check out NVIDIA/cluster-api-provider-nico next to the monorepo. It is
+          Check out dsx-ai-factory/cluster-api-provider-nico next to the monorepo. It is
           an internal repository, so this needs NKE_INTERNAL_RO_TOKEN.
         required: false
         type: boolean
@@ -142,7 +142,7 @@ jobs:
   e2e:
     name: ${{ inputs.backend }}-e2e (${{ inputs.arch }})
     runs-on: ${{ inputs.runner }}
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -195,7 +195,7 @@ jobs:
         id: capnico_version
         run: |
           set -euo pipefail
-          capnico_ref="$(awk '$1 == "github.com/NVIDIA/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
+          capnico_ref="$(awk '$1 == "github.com/dsx-ai-factory/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
           if [[ -z "${capnico_ref}" ]]; then
             echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
             exit 1
@@ -206,7 +206,7 @@ jobs:
         if: inputs.needs-capnico-source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: NVIDIA/cluster-api-provider-nico
+          repository: dsx-ai-factory/cluster-api-provider-nico
           ref: ${{ steps.capnico_version.outputs.ref }}
           token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico

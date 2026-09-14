@@ -60,7 +60,7 @@ This changed in #76, which replaced the internal carbide SDK
 only `agent/` built from public dependencies.
 
 **One internal dependency remains**, and it does not block you:
-`github.com/NVIDIA/cluster-api-provider-nico` is an internal GitHub repository,
+`github.com/dsx-ai-factory/cluster-api-provider-nico` is an internal GitHub repository,
 and it is carried in the committed `vendor/` tree. Building, testing and linting
 all read the vendor tree, so they work without access to it. **Only `go work
 vendor` resolves it for real** — so re-vendoring after a dependency bump needs
@@ -202,7 +202,7 @@ func (s *NodeAgentServer) reset(ctx context.Context) error {
 
 ```go
 // Preferred: FIXME with a tracking link. TODO: fails the linter in controller/.
-// FIXME: https://github.com/NVIDIA/nke/issues/<N> — drop once the provider interface lands.
+// FIXME: https://github.com/dsx-ai-factory/nke/issues/<N> — drop once the provider interface lands.
 
 // Deprecated: an unbounded TODO with no owner and no ticket.
 // TODO: clean this up later
@@ -297,7 +297,7 @@ of green ticks with the other checks simply missing. If you are reviewing, check
 that the checks you care about are *present*, not just passing:
 
 ```bash
-gh pr checks <number> --repo NVIDIA/nke --json name,workflow
+gh pr checks <number> --repo dsx-ai-factory/nke --json name,workflow
 ```
 
 See [docs/branch-protection-settings.md](docs/branch-protection-settings.md) for

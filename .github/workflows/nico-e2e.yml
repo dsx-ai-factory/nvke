@@ -5,7 +5,7 @@
 # with capd-e2e.yml; this file is the NICo trigger and configuration.
 #
 # The nico-containers spec was one of 60 Ginkgo specs no workflow selected. It
-# needs CAPNICo, which lives in NVIDIA/cluster-api-provider-nico, an internal
+# needs CAPNICo, which lives in dsx-ai-factory/cluster-api-provider-nico, an internal
 # repository. NKE_INTERNAL_RO_TOKEN reads it, the same secret go-work-check.yml
 # already uses for the internal module in controller/go.mod.
 #

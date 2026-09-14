@@ -26,6 +26,19 @@ import (
 func SetupDB(ctx context.Context, t *testing.T, models ...interface{}) *bun.DB {
 	t.Helper()
 
+	bunDB, err := NewDB(ctx, models...)
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		bunDB.Close()
+	})
+
+	return bunDB
+}
+
+// NewDB creates an in-memory SQLite database and registers the provided
+// models. The caller must close the returned database.
+func NewDB(ctx context.Context, models ...interface{}) (*bun.DB, error) {
 	registerDriverOnce.Do(registerDriver)
 
 	// Each test gets a unique in-memory database by using a UUID in the filename.
@@ -34,7 +47,9 @@ func SetupDB(ctx context.Context, t *testing.T, models ...interface{}) *bun.DB {
 	sqldb, err := sql.Open(sqliteDriverName,
 		fmt.Sprintf("file:%s?mode=memory&cache=shared", uuid.NewString()),
 	)
-	require.NoError(t, err)
+	if err != nil {
+		return nil, fmt.Errorf("opening in-memory SQLite database: %w", err)
+	}
 
 	// One connection at a time. Two connections sharing a cache can return
 	// SQLITE_LOCKED_SHAREDCACHE, which no busy handler retries, and go-sqlite3
@@ -44,14 +59,15 @@ func SetupDB(ctx context.Context, t *testing.T, models ...interface{}) *bun.DB {
 	bunDB := bun.NewDB(sqldb, sqlitedialect.New())
 
 	for _, model := range models {
-		require.NoError(t, createTableForSQLite(ctx, bunDB, model))
+		if err := createTableForSQLite(ctx, bunDB, model); err != nil {
+			if closeErr := bunDB.Close(); closeErr != nil {
+				return nil, fmt.Errorf("creating SQLite table: %w; closing database: %w", err, closeErr)
+			}
+			return nil, fmt.Errorf("creating SQLite table: %w", err)
+		}
 	}
 
-	t.Cleanup(func() {
-		bunDB.Close()
-	})
-
-	return bunDB
+	return bunDB, nil
 }
 
 //nolint:gochecknoglobals // sync.Once must be at package level to ensure single initialization

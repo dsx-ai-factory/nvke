@@ -21,7 +21,7 @@ logo:
 
 navbar-links:
   - type: github
-    value: https://github.com/NVIDIA/nke
+    value: https://github.com/dsx-ai-factory/nke
 
 experimental:
   mdx-components:

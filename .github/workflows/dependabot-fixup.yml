@@ -91,7 +91,7 @@ jobs:
     # All four conditions matter. See the header for why the third-from-last is
     # load-bearing for security rather than for correctness.
     if: >
-      github.repository == 'NVIDIA/nke' &&
+      github.repository == 'dsx-ai-factory/nke' &&
       github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       startsWith(github.event.pull_request.head.ref, 'dependabot/go_modules/')
@@ -170,7 +170,7 @@ jobs:
           # repair can happen, which is the whole point of this job.
           GOTOOLCHAIN: auto
 
-          # controller/go.mod requires github.com/NVIDIA/cluster-api-provider-nico,
+          # controller/go.mod requires github.com/dsx-ai-factory/cluster-api-provider-nico,
           # which is an internal repository. Every other job in this repository is
           # offline -- a committed vendor/ tree means they never resolve a module --
           # so this is the only job that reaches the network for the module graph,
@@ -183,7 +183,7 @@ jobs:
           # GOPRIVATE keeps the internal path off proxy.golang.org and
           # sum.golang.org, which cannot serve it in any case; the rewrite below is
           # what gets git past the prompt.
-          GOPRIVATE: github.com/NVIDIA/*
+          GOPRIVATE: github.com/dsx-ai-factory/*
 
           # GIT_CONFIG_COUNT rather than `git config --global`. A global write
           # would leave the token in ~/.gitconfig for every LATER step of this
@@ -191,14 +191,14 @@ jobs:
           # checkout credentials in .git/config. These variables are scoped to
           # this step and touch no file on disk.
           #
-          # The rewrite is scoped to github.com/NVIDIA/ rather than github.com/ so
+          # The rewrite is scoped to github.com/dsx-ai-factory/ rather than github.com/ so
           # the token is not attached to requests for public modules. It also
           # cannot capture the push in the final step: that URL carries its own
-          # userinfo, so it does not have the `https://github.com/NVIDIA/` prefix
+          # userinfo, so it does not have the `https://github.com/dsx-ai-factory/` prefix
           # this matches on.
           GIT_CONFIG_COUNT: 1
-          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.NKE_INTERNAL_RO_TOKEN }}@github.com/NVIDIA/.insteadOf
-          GIT_CONFIG_VALUE_0: https://github.com/NVIDIA/
+          GIT_CONFIG_KEY_0: url.https://x-access-token:${{ secrets.NKE_INTERNAL_RO_TOKEN }}@github.com/dsx-ai-factory/.insteadOf
+          GIT_CONFIG_VALUE_0: https://github.com/dsx-ai-factory/
         run: |
           set -euo pipefail
           # Regenerates go.work, go.work.sum, every module's go.mod and go.sum,

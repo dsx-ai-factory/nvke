@@ -186,7 +186,9 @@ ensure-profiles-image:
 # The Cluster API infrastructure provider for hosts that already exist, which is
 # what makes a site cluster reconcile: `nkectl bootstrap site` installs it onto
 # the ephemeral bootstrap cluster (cli/internal/cwedeploy) and loads this image
-# into it. Nothing publishes the image yet, so it is built here.
+# into it. image-provisioned-nvcr.yml publishes the image, but this target
+# builds it from the checkout regardless: the e2e lane has to exercise the
+# provider the pull request changed, not the last one published.
 #
 # A plain `nerdctl build`, not `make -C ../cluster-api-provider-provisioned
 # docker-build`: that target is a multi-arch buildx build into an OCI archive,
@@ -290,13 +292,22 @@ file-license-check: license ## Verify all files have license headers.
 # Shell and Makefile only. Go sources are covered by TestNoDockerInvocations
 # in the substrate package, which understands Go string literals; a text
 # grep over Go would match that test's own error message, among other prose.
+# GNU grep applies --include to command-line file names as well as to files
+# found while recursing, so the Makefile has to be included by name or the
+# explicit argument is silently skipped.
+#
+# The second alternation is the assignment-then-expand form -- `CLI=docker`,
+# `CLI:=docker`, `CLI='/usr/bin/docker'`, then `$CLI build` -- and the third
+# is the parameter-expansion default, `${CLI:-docker}`; the first alternation
+# sees neither. A grep is a heuristic either way; the runtime removal in the
+# workflow is the backstop for whatever shape this does not anticipate.
 #
 # Also a dependency of `lint`, which the merge gate runs for this module: a
 # reintroduction then blocks a merge rather than only reddening the advisory
 # e2e lane.
 check-no-docker: ## Fail if the bootstrap e2e suite invokes docker.
-	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)' \
-	    --include='*.sh' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
+	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)|(^|[[:space:]])[A-Za-z_][A-Za-z0-9_]*[:?+]?=['\''"]?(/[A-Za-z0-9_./-]*/)?docker(['\''"]|[[:space:];]|$$)|\$$\{[A-Za-z_][A-Za-z0-9_]*:?[-=+]['\''"]?(/[A-Za-z0-9_./-]*/)?docker['\''"]?\}' \
+	    --include='*.sh' --include='Makefile' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
 	if [ -n "$$matches" ]; then \
 	  echo "The bootstrap e2e suite must not invoke docker; it runs on nerdctl/containerd."; \
 	  echo "$$matches"; \

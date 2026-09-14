@@ -120,65 +120,6 @@ func TestCreateCmdEmptySpecRejected(t *testing.T) {
 	}
 }
 
-// TestUpdateCmdRequiresSetOrFile verifies that omitting both --set and -f
-// fails before the API is called.
-func TestUpdateCmdRequiresSetOrFile(t *testing.T) {
-	cmd := NewUpdateCmd(clientFnErr)
-	cmd.SetArgs([]string{"my-cluster"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error when neither --set nor -f is given, got nil")
-	}
-	if isNotConfigured(err) {
-		t.Errorf("missing --set/-f should fail before reaching the API, got: %v", err)
-	}
-}
-
-// TestUpdateCmdBadSetEntryRejected verifies that an unknown --set key fails
-// before the API is called.
-func TestUpdateCmdBadSetEntryRejected(t *testing.T) {
-	cmd := NewUpdateCmd(clientFnErr)
-	cmd.SetArgs([]string{"my-cluster", "--set", "notAField=x"})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error for an unknown --set key, got nil")
-	}
-	if isNotConfigured(err) {
-		t.Errorf("unknown --set key should fail before reaching the API, got: %v", err)
-	}
-}
-
-// TestUpdateCmdMalformedYAMLRejected verifies that invalid YAML in a -f
-// patch file fails before the API is called.
-func TestUpdateCmdMalformedYAMLRejected(t *testing.T) {
-	path := writeSpec(t, ":\t:")
-	cmd := NewUpdateCmd(clientFnErr)
-	cmd.SetArgs([]string{"my-cluster", "-f", path})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error for malformed YAML, got nil")
-	}
-	if isNotConfigured(err) {
-		t.Errorf("malformed YAML should fail before reaching the API, got: %v", err)
-	}
-}
-
-// TestUpdateCmdEmptyMergedPatchRejected verifies that a -f document which
-// parses but contributes no fields (e.g. "{}") is rejected before the API is
-// called, rather than issuing a no-op PATCH reported as a success.
-func TestUpdateCmdEmptyMergedPatchRejected(t *testing.T) {
-	path := writeSpec(t, "{}")
-	cmd := NewUpdateCmd(clientFnErr)
-	cmd.SetArgs([]string{"my-cluster", "-f", path})
-	err := cmd.Execute()
-	if err == nil {
-		t.Fatal("expected error for an empty merged patch, got nil")
-	}
-	if isNotConfigured(err) {
-		t.Errorf("an empty merged patch should fail before reaching the API, got: %v", err)
-	}
-}
-
 // TestDeleteCmdRequiresName verifies that delete cluster requires exactly one arg.
 func TestDeleteCmdRequiresName(t *testing.T) {
 	cmd := NewDeleteCmd(clientFnErr)
@@ -207,7 +148,7 @@ func withParent(cmd *cobra.Command, args []string) error {
 }
 
 // TestCmdAliases verifies that "cluster" and "clusters" are interchangeable
-// for get, create, update, and delete.
+// for get, create, and delete.
 func TestCmdAliases(t *testing.T) {
 	validSpec := writeSpec(t, `
 name: my-cluster
@@ -225,8 +166,6 @@ etcdEncrypted: false
 		{"get cluster", func() *cobra.Command { return NewGetCmd(clientFnErr) }, []string{"cluster"}},
 		{"create clusters", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"clusters", "-f", validSpec}},
 		{"create cluster", func() *cobra.Command { return NewCreateCmd(clientFnErr) }, []string{"cluster", "-f", validSpec}},
-		{"update clusters", func() *cobra.Command { return NewUpdateCmd(clientFnErr) }, []string{"clusters", "my-cluster", "--set", "teleportEnabled=true"}},
-		{"update cluster", func() *cobra.Command { return NewUpdateCmd(clientFnErr) }, []string{"cluster", "my-cluster", "--set", "teleportEnabled=true"}},
 		{"delete clusters", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"clusters", "my-cluster"}},
 		{"delete cluster", func() *cobra.Command { return NewDeleteCmd(clientFnErr) }, []string{"cluster", "my-cluster"}},
 	}

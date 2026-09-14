@@ -20,7 +20,7 @@ notices-check` verifies it is up to date.
 | `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.4` | Unknown |
 | `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.4` | Unknown |
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | Unknown |
-| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.57.0` | Unknown |
+| `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.58.0` | Unknown |
 | `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.47.0` | Unknown |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.41.0` | Unknown |
 | `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260807164820-c8921c73eeea` | Unknown |
@@ -491,7 +491,7 @@ _Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.8.1_
 
 ### golang.org/x/net
 
-_BSD-3-Clause — golang.org/x/net@v0.57.0_
+_BSD-3-Clause — golang.org/x/net@v0.58.0_
 
 #### LICENSE
 

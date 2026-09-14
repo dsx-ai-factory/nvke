@@ -23,7 +23,7 @@ run:
   # This module resolves its dependencies through the repository's committed
   # workspace vendor/ tree (see docs/go-workspace.md); without this golangci
   # falls back to network module resolution, which fails on the INTERNAL
-  # github.com/NVIDIA/cluster-api-provider-nico dependency.
+  # github.com/dsx-ai-factory/cluster-api-provider-nico dependency.
   modules-download-mode: vendor
 
 output:

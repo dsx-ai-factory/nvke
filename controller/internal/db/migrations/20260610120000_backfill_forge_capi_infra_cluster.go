@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
 
-	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 )
 
 func init() {

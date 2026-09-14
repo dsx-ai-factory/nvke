@@ -60,7 +60,7 @@ jobs:
   local-entrypoint:
     needs: changes
     name: local-backend-e2e.sh on Linux (post-init CNI ${{ matrix.install_cni_after_init }})
-    if: github.repository == 'NVIDIA/nke' && needs.changes.outputs.run_e2e == 'true'
+    if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
     # The L4 pool is one machine, and this lane runs on pull requests, on main,
     # and twice a day. A run on main waited 87 minutes for a runner, longer than
     # the 84 minutes it then took. cpu16 has capacity, and the L4 was never

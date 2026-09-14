@@ -10,7 +10,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
-	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 )
 
 // NicoMachineCRDInstalled reports whether the management cluster serves the

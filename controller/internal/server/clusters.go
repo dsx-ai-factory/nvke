@@ -18,7 +18,7 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/internal/capi"

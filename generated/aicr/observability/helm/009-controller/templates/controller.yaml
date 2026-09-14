@@ -37,8 +37,8 @@ spec:
       serviceAccountName: controller
       containers:
         - name: controller
-          # ghcr.io/nvidia/nke/controller:v0.1.1-rc.2
-          image: "ghcr.io/nvidia/nke/controller@sha256:8090c7c4538af8e717d52f5edcf26eaf4a4afae2d3e9a25c8208b0704934954e"
+          # ghcr.io/dsx-ai-factory/nke/controller:v0.1.1-rc.5
+          image: "ghcr.io/dsx-ai-factory/nke/controller@sha256:5102494f8e3d2daf74074600a9ea6121ead777151c8393128cc239a3dcb7275a"
           imagePullPolicy: IfNotPresent
           env:
             - name: DB_CONNECTION_STRING

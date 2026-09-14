@@ -2,7 +2,7 @@
 
 The four `NicoCluster`, `NicoClusterTemplate`, `NicoMachine` and
 `NicoMachineTemplate` CustomResourceDefinitions, copied verbatim from
-`NVIDIA/cluster-api-provider-nico` at the version this repository pins in
+`dsx-ai-factory/cluster-api-provider-nico` at the version this repository pins in
 `controller/go.mod` (currently **`v0.0.44-rc.2`**).
 
 ## Why they live here
@@ -29,9 +29,9 @@ the fixture as-is.
 To refresh after a `cluster-api-provider-nico` bump in `go.mod`:
 
 ```sh
-ver="$(cd controller && go list -m -f '{{.Version}}' github.com/NVIDIA/cluster-api-provider-nico)"
+ver="$(cd controller && go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)"
 for f in nicoclusters nicoclustertemplates nicomachines nicomachinetemplates; do
-  gh api "repos/NVIDIA/cluster-api-provider-nico/contents/config/crd/bases/infrastructure.cluster.x-k8s.io_${f}.yaml?ref=${ver}" \
+  gh api "repos/dsx-ai-factory/cluster-api-provider-nico/contents/config/crd/bases/infrastructure.cluster.x-k8s.io_${f}.yaml?ref=${ver}" \
     --jq '.content' | base64 -d \
     > "controller/test/fixtures/capnico-crds/infrastructure.cluster.x-k8s.io_${f}.yaml"
 done

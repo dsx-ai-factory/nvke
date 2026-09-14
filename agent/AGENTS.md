@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-The **NKE agent** lives at `agent/` in the [NVIDIA/nke](https://github.com/NVIDIA/nke) monorepo.
+The **NKE agent** lives at `agent/` in the [dsx-ai-factory/nke](https://github.com/dsx-ai-factory/nke) monorepo.
 It is a Go-based gRPC server (systemd service) that runs on Kubernetes nodes and provides remote management for Kubeadm and software package/bundle installation.
 
 **Primary use cases:**
@@ -33,7 +33,7 @@ Pushing the tag publishes:
 
 - OCI binaries to GHCR / NVCR (`.github/workflows/agent-artifact*.yml`)
 - `.deb`s to the apt-publisher S3 intake, as assets on the GitHub Release
-  for that tag, and to GHCR as `ghcr.io/nvidia/nke/agent-deb`
+  for that tag, and to GHCR as `ghcr.io/dsx-ai-factory/nke/agent-deb`
   (`.github/workflows/agent-deb-publish.yml`)
 
 `make` / `./build/agent.sh` derive `VERSION` from:

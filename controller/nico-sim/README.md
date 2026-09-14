@@ -11,7 +11,7 @@ development. One server and one API support two lifecycle backends:
 Both backends can run at the same time. They share the catalog, API, and common
 instance records while keeping backend-specific runtime behavior separate.
 
-This service was called `forge-vms` until [#279](https://github.com/NVIDIA/nke/pull/279). The rename is a hard cut with
+This service was called `forge-vms` until [#279](https://github.com/dsx-ai-factory/nke/pull/279). The rename is a hard cut with
 no compatibility shims, so a host that ran the old build needs a one-time migration.
 
 ## Selecting a backend
@@ -111,7 +111,7 @@ and TPM behavior.
 ### Migrating from `forge-vms`
 
 This service was called `forge-vms` until
-[#279](https://github.com/NVIDIA/nke/pull/279). The rename is a hard cut with no
+[#279](https://github.com/dsx-ai-factory/nke/pull/279). The rename is a hard cut with no
 compatibility shims, so a host that ran the old build needs a one-time migration.
 
 First destroy any VMs the old build left behind. They are named `forge-vm-*`,

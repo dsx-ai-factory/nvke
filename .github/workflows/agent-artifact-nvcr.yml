@@ -50,7 +50,7 @@ concurrency:
 
 jobs:
   publish:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Publish binaries
     runs-on: ubuntu-latest
     environment: nvcr

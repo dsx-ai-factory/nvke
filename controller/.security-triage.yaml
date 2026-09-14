@@ -7,7 +7,7 @@ last_updated: "2026-09-01T00:00:00Z"
 
 repository_exposure_classification:
   visibility: "Public"
-  basis: "repository is published at github.com/NVIDIA/nke under the Apache-2.0 license"
+  basis: "repository is published at github.com/dsx-ai-factory/nke under the Apache-2.0 license"
   confirmed_by: "nke maintainers (see MAINTAINERS.md)"
   date: "2026-09-01"
 

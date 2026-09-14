@@ -74,6 +74,17 @@ spec:
                   spec:
                     description: NicoClusterSpec defines the desired state of NicoCluster.
                     properties:
+                      failureDomainLabelKey:
+                        description: |-
+                          FailureDomainLabelKey is the NICo Machine label key that carries the failure
+                          domain name. It is read to publish status.failureDomains and sent as the
+                          machine label selector key when placing an instance. Leaving it unset
+                          disables failure domain support for this cluster: no domains are published,
+                          and a Machine that requests one fails rather than being placed anywhere.
+                          Sites that follow the NICo convention set it to "failure_domain".
+                        maxLength: 255
+                        minLength: 1
+                        type: string
                       identityRef:
                         description: |-
                           IdentityRef points to the Secret with NICo endpoint and authentication settings.

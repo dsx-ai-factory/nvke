@@ -85,7 +85,7 @@ themselves, after they have built and verified the real artifacts:
 | Tag | Workflow | What ships |
 |---|---|---|
 | `agent/vX.Y.Z` | `agent-deb-publish.yml` (+ `agent-artifact.yml`) | `.deb`s, GitHub Release assets, GHCR binary |
-| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on GHCR (`ghcr.io/nvidia/nke/os-image`), `nke-os-image-check` on the GitHub Release |
+| `os-image/vX.Y.Z` | `os-image-artifact.yml` | qcow2 on GHCR (`ghcr.io/dsx-ai-factory/nke/os-image`), `nke-os-image-check` on the GitHub Release |
 
 An `os-image/` tag that fails Packer or the boot-smoke test never publishes the
 OCI artifact and never promotes the GitHub Release out of draft.
@@ -95,15 +95,17 @@ additionally publishes the controller image and Helm chart:
 
 | Workflow | What it publishes |
 |---|---|
-| `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/controller`, and promotes release tags to `ghcr.io/nvidia/nke/controller` |
-| `chart-publish.yml` | chart to `ghcr.io/nvidia/nke/charts/controller` |
+| `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nke/controller` |
+| `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nke/charts/controller` |
 | `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/controller-chart` and `nvcr.io/<dsx-org-team>/controller-chart` |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
-`ghcr.io/nvidia/nke/controller:<version>` while a chart built from `main` could not.
-Releases from `controller/v0.1.1-rc.1` onward are present on GHCR; `controller/v0.1.0`
-predates the promotion job and was never copied there.
+`ghcr.io/dsx-ai-factory/nke/controller:<version>` while a chart built from `main` could not.
+Releases before the repository moved to `dsx-ai-factory` on 2026-09-12 were promoted to
+`ghcr.io/nvidia/nke/controller` instead: `controller/v0.1.1-rc.1` to `rc.3` are there,
+`controller/v0.1.0` predates the promotion job, and the `rc.4` promotion failed, so that
+image exists nowhere. Later releases land under `ghcr.io/dsx-ai-factory/nke`.
 
 DSX receives the controller image from `image-nvcr.yml`, after the NKE multi-arch
 manifest exists. It receives the controller chart from `chart-publish-nvcr.yml`.
@@ -145,9 +147,9 @@ body from `CHANGELOG.md`. Nothing is created by hand.
 After the tag push, confirm that any CI release pipelines complete
 successfully (node OS-image bake, chart publish, etc.). For `os-image/v*`, that is
 the **OS Image Artifact** check: Packer, boot-smoke, then `oras` to
-`ghcr.io/nvidia/nke/os-image`. For `controller/v*`, confirm the **Image
+`ghcr.io/dsx-ai-factory/nke/os-image`. For `controller/v*`, confirm the **Image
 NVCR** and **Chart Publish** checks, then that the promoted image is present at
-`ghcr.io/nvidia/nke/controller:<version>`.
+`ghcr.io/dsx-ai-factory/nke/controller:<version>`.
 
 ## Hotfix releases
 

@@ -40,7 +40,7 @@ permissions: {}
 jobs:
   clear-on-push:
     name: Clear the label on a new head
-    if: github.repository == 'NVIDIA/nke' && github.event_name == 'pull_request_target'
+    if: github.repository == 'dsx-ai-factory/nke' && github.event_name == 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
@@ -63,7 +63,7 @@ jobs:
 
   ci-failures:
     name: Check open PRs for failed checks
-    if: github.repository == 'NVIDIA/nke' && github.event_name != 'pull_request_target'
+    if: github.repository == 'dsx-ai-factory/nke' && github.event_name != 'pull_request_target'
     runs-on: ubuntu-latest
     permissions:
       actions: read

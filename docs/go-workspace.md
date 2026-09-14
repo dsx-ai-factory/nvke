@@ -23,7 +23,7 @@ when the first two go stale.
 
 ### The vendored dependency
 
-`controller` depends on `github.com/NVIDIA/cluster-api-provider-nico`, which is
+`controller` depends on `github.com/dsx-ai-factory/cluster-api-provider-nico`, which is
 INTERNAL visibility until it is open-sourced, so public CI runners and outside
 contributors cannot fetch it. The committed `vendor/` tree (from
 `go work vendor`) carries it — and every other dependency — so **building,

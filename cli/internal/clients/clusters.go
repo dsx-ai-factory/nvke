@@ -4,7 +4,6 @@
 package clients
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 
@@ -55,23 +54,6 @@ func (c *CWEClient) GetCluster(ctx context.Context, id openapi_types.UUID) (*api
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("getting cluster: empty response body")
-	}
-	return resp.JSON200, nil
-}
-
-// UpdateCluster PATCHes a cluster identified by UUID with body, a JSON
-// document matching UpdateClusterRequest, sent as-is, and returns the
-// cluster as it now stands.
-func (c *CWEClient) UpdateCluster(ctx context.Context, id openapi_types.UUID, body []byte) (*api.Cluster, error) {
-	resp, err := c.raw.UpdateClusterWithBodyWithResponse(ctx, id, "application/json", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("updating cluster: %w", err)
-	}
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("updating cluster: %w", apiError(resp.Status(), resp.Body))
-	}
-	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("updating cluster: empty response body")
 	}
 	return resp.JSON200, nil
 }

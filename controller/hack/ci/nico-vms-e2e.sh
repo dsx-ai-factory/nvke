@@ -11,7 +11,7 @@
 # Requires test/kubeadm/scripts/setup-ci-host.sh with NKE_CI_HOST_FDE=true.
 #
 # Environment:
-#   CAPNICO_SOURCE_DIR       checkout of NVIDIA/cluster-api-provider-nico (required)
+#   CAPNICO_SOURCE_DIR       checkout of dsx-ai-factory/cluster-api-provider-nico (required)
 #   NKE_E2E_LABEL_FILTER     Ginkgo label filter        (default: nico-vms && happy-path)
 #   NKE_E2E_GINKGO_TIMEOUT   -ginkgo.timeout            (default: 240m)
 #   NKE_E2E_TILT_TIMEOUT     wait for Tilt readiness    (default: 30m)
@@ -307,7 +307,7 @@ docker info >/dev/null 2>&1 || fail "cannot reach the Docker daemon"
 docker buildx version >/dev/null 2>&1 || fail "docker buildx is required to build CAPNICo from source"
 
 CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_DIR:-}"
-[[ -n "${CAPNICO_SOURCE_DIR}" ]] || fail "CAPNICO_SOURCE_DIR must point at a checkout of NVIDIA/cluster-api-provider-nico"
+[[ -n "${CAPNICO_SOURCE_DIR}" ]] || fail "CAPNICO_SOURCE_DIR must point at a checkout of dsx-ai-factory/cluster-api-provider-nico"
 [[ -d "${CAPNICO_SOURCE_DIR}/config/default" ]] || fail "${CAPNICO_SOURCE_DIR} is not a cluster-api-provider-nico checkout (config/default is missing)"
 export CAPNICO_SOURCE_DIR
 
@@ -356,13 +356,13 @@ export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
 # it from this checkout and stage it at the path the template names. The file
 # root is set explicitly: the default sits beside the database in .dev/, which
 # this script wipes.
-export NICO_VMS_FILES_DIR="${NICO_SIM_DIR}/var/files"
+export NICO_SIM_FILES_DIR="${NICO_SIM_DIR}/var/files"
 AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nke-agent' "${CWE_PROFILES_DIR}/osProfiles/nke-nico-vms-24.04-amd64-fde/userData.tmpl" | head -1)"
 [[ -n "${AGENT_URL_PATH}" ]] || fail "the nico-vms OS profile no longer downloads nke-agent from /files/"
 log "building nke-agent from ${WORKSPACE_ROOT}/agent"
 make -C "${WORKSPACE_ROOT}/agent" build-amd64 >"${STATE_DIR}/agent-build.log" 2>&1 ||
   { tail -n 50 "${STATE_DIR}/agent-build.log" >&2; fail "building nke-agent failed"; }
-install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_amd64/nke-agent" "${NICO_VMS_FILES_DIR}/${AGENT_URL_PATH#files/}"
+install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_amd64/nke-agent" "${NICO_SIM_FILES_DIR}/${AGENT_URL_PATH#files/}"
 log "staged nke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always 2>/dev/null || echo unknown)"
 
 # A previous run's database, instances and logs would confuse this one.
@@ -500,6 +500,8 @@ for env_name in TENANT_ACCESS_ENABLED NKE_OIDC_AUTH_ENABLED; do
 done
 kubectl -n capnico-system rollout status deployment/controller-manager --timeout=5m
 curl -fsS --max-time 5 http://localhost:18080/healthz >/dev/null || fail "nico-vms does not answer on localhost:18080"
+curl -fsS --max-time 5 "http://localhost:18080/${AGENT_URL_PATH}" >/dev/null ||
+  fail "nico-vms does not serve the branch-built nke-agent at /${AGENT_URL_PATH}"
 log "management plane is up: CWE, CAPNICo and nico-vms all answer"
 
 # ── The suite ───────────────────────────────────────────────────────────────

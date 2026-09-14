@@ -36,7 +36,7 @@ The repository also contains the `api` Go module used by other components and th
 CWE operates as a privileged infrastructure service. Its primary security responsibilities are preserving authorization and integrity for cluster lifecycle actions and protecting infrastructure credentials, tenant kubeconfigs, bootstrap data, encryption keys, and machine identity material.
 
 **Repository Exposure Classification:** Public (open source).
-Basis: the repository is published at [github.com/NVIDIA/nke](https://github.com/NVIDIA/nke) under the Apache-2.0 license.
+Basis: the repository is published at [github.com/dsx-ai-factory/nke](https://github.com/dsx-ai-factory/nke) under the Apache-2.0 license.
 
 **Service Exposure Classification:** Sensitive — intended for management-plane deployment, not public exposure.
 Basis: the service handles credentials, privileged cluster and node lifecycle operations, and security identity material. Operators should treat any deployment as security-sensitive and restrict it to trusted management networks (see [Deployment Assumptions and Hardening](#deployment-assumptions-and-hardening)).

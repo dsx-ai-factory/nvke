@@ -16,7 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	nicov1 "github.com/NVIDIA/cluster-api-provider-nico/api/v1alpha1"
+	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/NVIDIA/nke/controller/internal/constants"
 )

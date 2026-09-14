@@ -483,23 +483,27 @@ func configureCNIPrerequisites(ctx workflow.Context, nodeID uuid.UUID) error {
 	}
 
 	if cluster.CniPlugin == db.CNIOvnKubernetes {
+		workflowInfo := workflow.GetInfo(ctx)
+		operationID := fmt.Sprintf(
+			"open-vswitch/%s/%s/%s",
+			workflowInfo.WorkflowExecution.ID,
+			workflowInfo.WorkflowExecution.RunID,
+			nodeID,
+		)
 		activityOptions := workflow.ActivityOptions{
 			StartToCloseTimeout: 1 * time.Minute,
 			RetryPolicy: &temporal.RetryPolicy{
-				InitialInterval: 1 * time.Minute,
+				InitialInterval: 5 * time.Second,
 				MaximumInterval: 5 * time.Minute,
 				MaximumAttempts: 0, // Retry indefinitely
 			},
 		}
 		if err := workflow.ExecuteActivity(
 			workflow.WithActivityOptions(ctx, activityOptions),
-			a.ExecuteHostRunbook,
-			activities.ExecuteHostRunbookInput{
-				HostID:      nodeID,
-				RunbookName: "configure-openvswitch",
-			},
+			a.ConfigureOpenVSwitch,
+			activities.ConfigureOpenVSwitchInput{NodeID: nodeID, OperationID: operationID},
 		).Get(ctx, nil); err != nil {
-			return fmt.Errorf("failed to run configure-openvswitch runbook: %w", err)
+			return fmt.Errorf("failed to configure Open vSwitch: %w", err)
 		}
 	}
 

@@ -29,15 +29,16 @@ name: OS Image Artifact
 # entirely, at the cost of `--platform` being informational (for the layer's
 # declared platform metadata) rather than required to disambiguate a pull:
 #
-#   ghcr.io/nvidia/nke/os-image-fde:v0.1.0-amd64
-#   ghcr.io/nvidia/nke/os-image-non-fde:v0.1.0-amd64
-#   ghcr.io/nvidia/nke/os-image-non-fde:v0.1.0-arm64
+#   ghcr.io/dsx-ai-factory/nke/os-image-fde:v0.1.0-amd64
+#   ghcr.io/dsx-ai-factory/nke/os-image-non-fde:v0.1.0-amd64
+#   ghcr.io/dsx-ai-factory/nke/os-image-non-fde:v0.1.0-arm64
 #     `-- platform linux/{amd64,arm64}   layer: nke-node-{fde,non-fde}.qcow2
 #
-#   oras pull ghcr.io/nvidia/nke/os-image-fde:v0.1.0-amd64 --platform linux/amd64
+#   oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:v0.1.0-amd64 --platform linux/amd64
 #
 # arm64 only builds the non-FDE variant for now (see the matrix below) --
-# there is no os-image-fde-arm64 tag yet. It also only publishes to GHCR, not
+# there is no os-image-fde-arm64 tag yet. The arm64 leg runs natively on the
+# org's arm64 runner pool (linux-arm64-cpu16), not under cross-arch emulation. It also only publishes to GHCR, not
 # the GitHub Release: the release step runs on the amd64 leg only, unchanged
 # from before this matrix existed, since restructuring release-asset
 # attachment to fan in across matrix legs is its own separate piece of work.
@@ -70,28 +71,35 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # packer_<version>_linux_{amd64,arm64}.zip from the HashiCorp SHA256SUMS file.
   PACKER_SHA256: "cfefdea4ac580eba7b254ef34d25b756d4961741004e3e701a1476594d13e64a"
-  REPO_FDE: ghcr.io/nvidia/nke/os-image-fde
-  REPO_NON_FDE: ghcr.io/nvidia/nke/os-image-non-fde
+  PACKER_SHA256_ARM64: "370002d15b07c0dc47dd0d188cdea8e6746606f6fcc3b4de48d02496d71d74ee"
+  REPO_FDE: ghcr.io/dsx-ai-factory/nke/os-image-fde
+  REPO_NON_FDE: ghcr.io/dsx-ai-factory/nke/os-image-non-fde
 
 jobs:
   publish:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Build, verify, and release (${{ matrix.arch }})
-    # No arm64-labeled runner exists in this org's pool, so the arm64 leg
-    # cross-builds on this same amd64 runner under QEMU's tcg software
-    # emulation -- there is no way to KVM-accelerate an arm64 guest on x86
-    # hardware regardless of runner choice. build_fde is false for arm64:
-    # this is a first pass at arm64 support, not full parity -- see the
-    # header comment above.
+    # Each leg runs on its own architecture. The arm64 leg used to cross-build
+    # on the amd64 runner under QEMU tcg and never finished: both attempts for
+    # os-image/v0.1.0-rc.1 spent 2 h reaching 82 min of guest uptime with the
+    # live installer still starting snapd and subiquity. On the arm64 pool
+    # (linux-arm64-cpu16, where NICo E2E's arm64 leg already runs) the host
+    # arch matches the guest, so packer/Makefile picks KVM when /dev/kvm is
+    # present and same-arch tcg otherwise -- either is far faster than
+    # cross-arch emulation. build_fde is false for arm64: this is a first pass
+    # at arm64 support, not full parity -- see the header comment above.
     strategy:
       fail-fast: false
       matrix:
         include:
           - arch: amd64
+            runner: linux-amd64-gpu-l4-latest-1
             timeout_minutes: 180
             build_fde: true
           - arch: arm64
+            runner: linux-arm64-cpu16
             timeout_minutes: 300
             build_fde: false
     # Packer QEMU needs /dev/kvm for the amd64 leg. linux-amd64-cpu16 (a
@@ -103,9 +111,10 @@ jobs:
     # curtin's install). This label is expected to expose /dev/kvm; "Enable
     # KVM access" below fails the amd64 leg immediately if that assumption
     # turns out wrong, rather than silently falling back to the
-    # ~10x-slower emulated path the way this job used to. The arm64 leg
-    # always runs under tcg by design (see above) and skips that gate.
-    runs-on: linux-amd64-gpu-l4-latest-1
+    # ~10x-slower emulated path the way this job used to. On the arm64 leg the
+    # same step only probes: whether that pool exposes /dev/kvm is not known
+    # yet, and same-arch tcg still finishes.
+    runs-on: ${{ matrix.runner }}
     # amd64: sized for real KVM (FDE bake + demo-fde.sh + non-FDE bake +
     # boot-smoke, each a few minutes, with real headroom); the KVM gate below
     # fails fast instead of burning the timeout if that ever regresses to
@@ -113,11 +122,11 @@ jobs:
     # out (https://github.com/NVIDIA/nke/actions/runs/34525233526) for a
     # cause not yet root-caused -- see #695 for one confirmed contributor
     # (a bloated golden image) and the self-timeout + console-log dump on
-    # the build steps below for diagnosing the next one. arm64: non-FDE
-    # bake + boot-smoke only, but under tcg cross-arch emulation, which has
-    # no local measurement yet to size against -- bumped from 240m to 300m
-    # alongside amd64 for the same reason; still a starting guess, expect to
-    # revisit once real runs land.
+    # the build steps below for diagnosing the next one. arm64: the pool has
+    # no /dev/kvm, so the non-FDE bake runs under same-arch tcg at roughly
+    # 10x the KVM pace: ~140 min install, ~15 min provisioning, up to 40 min
+    # boot-smoke, plus compress -- bumped from 240m to 300m alongside amd64
+    # for the same reason; 300m leaves ~1 h of headroom.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
       contents: write
@@ -221,27 +230,28 @@ jobs:
           qemu-img --version | head -1
           swtpm --version
 
-      # A gate, deliberately, on the amd64 leg only: this runner label is
-      # chosen specifically for /dev/kvm (see the comment on runs-on above).
-      # A missing device on the amd64 leg means something about the runner
-      # pool changed and every subsequent step would silently fall back to
-      # tcg (packer/Makefile and boot-smoke.sh both probe and fall back on
-      # their own) -- better to fail here in seconds than rediscover it 1-2
-      # hours into a tcg bake. Same pattern NVIDIA/OpenShell uses for its own
-      # KVM-backed e2e VM tests. The arm64 leg always runs under tcg by
-      # design (no arm64-capable runner exists, and /dev/kvm on this x86
-      # runner can't accelerate an arm64 guest regardless) so there is
-      # nothing to gate there.
+      # A gate on the amd64 leg: that runner label is chosen specifically for
+      # /dev/kvm (see the comment on runs-on above). A missing device there
+      # means something about the runner pool changed and every subsequent
+      # step would silently fall back to tcg (packer/Makefile and
+      # boot-smoke.sh both probe and fall back on their own) -- better to fail
+      # here in seconds than rediscover it 1-2 hours into a tcg bake. Same
+      # pattern NVIDIA/OpenShell uses for its own KVM-backed e2e VM tests. On
+      # the arm64 leg a missing device is a warning, not a failure: same-arch
+      # tcg completes there, just slower.
       - name: Enable KVM access
-        if: matrix.arch == 'amd64'
         run: |
           set -euo pipefail
           if [[ ! -c /dev/kvm ]]; then
-            echo "::error::This runner did not expose /dev/kvm (expected on linux-amd64-gpu-l4-latest-1)"
-            lscpu
-            grep -m1 -E '^(flags|Features)' /proc/cpuinfo || true
-            ls -la /dev
-            exit 1
+            if [[ "${{ matrix.arch }}" == "amd64" ]]; then
+              echo "::error::This runner did not expose /dev/kvm (expected on linux-amd64-gpu-l4-latest-1)"
+              lscpu
+              grep -m1 -E '^(flags|Features)' /proc/cpuinfo || true
+              ls -la /dev
+              exit 1
+            fi
+            echo "::warning::/dev/kvm is missing on this ${{ matrix.arch }} runner; the bake falls back to same-arch tcg"
+            exit 0
           fi
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -252,23 +262,23 @@ jobs:
           exec 3>&-
           echo "::notice::/dev/kvm present and writable; building with hardware acceleration"
 
-      - name: Note tcg emulation for arm64
-        if: matrix.arch == 'arm64'
-        run: echo "::notice::arm64 leg cross-builds under QEMU tcg software emulation by design; see the header comment in this workflow"
-
       - name: Install Packer
         env:
           PACKER_VERSION: ${{ steps.versions.outputs.packer_version }}
           PACKER_SHA256: ${{ env.PACKER_SHA256 }}
+          PACKER_SHA256_ARM64: ${{ env.PACKER_SHA256_ARM64 }}
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          zip="packer_${PACKER_VERSION}_linux_amd64.zip"
+          expected="${PACKER_SHA256}"
+          [[ "${ARCH}" == "arm64" ]] && expected="${PACKER_SHA256_ARM64}"
+          zip="packer_${PACKER_VERSION}_linux_${ARCH}.zip"
           tmp="$(mktemp -d)"
           curl -fsSL -o "${tmp}/${zip}" \
             "https://releases.hashicorp.com/packer/${PACKER_VERSION}/${zip}"
           actual="$(sha256sum "${tmp}/${zip}" | awk '{print $1}')"
-          if [[ "${actual}" != "${PACKER_SHA256}" ]]; then
-            echo "::error::checksum mismatch for ${zip}: got ${actual}, expected ${PACKER_SHA256}"
+          if [[ "${actual}" != "${expected}" ]]; then
+            echo "::error::checksum mismatch for ${zip}: got ${actual}, expected ${expected}"
             exit 1
           fi
           unzip -d "${tmp}" "${tmp}/${zip}" packer
@@ -475,9 +485,9 @@ jobs:
             Pull the qcow2s with oras (not docker):
 
             ```
-            oras pull ghcr.io/nvidia/nke/os-image-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
-            oras pull ghcr.io/nvidia/nke/os-image-non-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
-            oras pull ghcr.io/nvidia/nke/os-image-non-fde:${{ steps.meta.outputs.version }}-arm64 --platform linux/arm64
+            oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
+            oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:${{ steps.meta.outputs.version }}-amd64 --platform linux/amd64
+            oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:${{ steps.meta.outputs.version }}-arm64 --platform linux/arm64
             ```
 
             **FDE security note**: this image's `LUKS_PASSPHRASE` is the shared,

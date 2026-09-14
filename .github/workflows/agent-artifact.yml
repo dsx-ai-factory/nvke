@@ -3,17 +3,17 @@
 
 name: Agent Artifact
 
-# Publishes the nke-agent binaries to ghcr.io/nvidia/nke/agent as OCI
+# Publishes the nke-agent binaries to ghcr.io/dsx-ai-factory/nke/agent as OCI
 # artifacts, joined by a multi-arch index:
 #
-#   ghcr.io/nvidia/nke/agent:v0.3.0            <- OCI image index
+#   ghcr.io/dsx-ai-factory/nke/agent:v0.3.0            <- OCI image index
 #     |-- ...:v0.3.0-amd64   platform linux/amd64   layer: nke-agent
 #     `-- ...:v0.3.0-arm64   platform linux/arm64   layer: nke-agent
 #
-#   oras pull ghcr.io/nvidia/nke/agent:v0.3.0 --platform linux/arm64
+#   oras pull ghcr.io/dsx-ai-factory/nke/agent:v0.3.0 --platform linux/arm64
 #
-# Charts live under ghcr.io/nvidia/nke/charts; everything else directly under
-# ghcr.io/nvidia/nke is a payload you pull by name, whether that is a container
+# Charts live under ghcr.io/dsx-ai-factory/nke/charts; everything else directly under
+# ghcr.io/dsx-ai-factory/nke is a payload you pull by name, whether that is a container
 # image or, as here, a binary artifact. The artifactType annotation below is
 # what tells the two apart, not the path.
 #
@@ -62,11 +62,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  REPO: ghcr.io/nvidia/nke/agent
+  REPO: ghcr.io/dsx-ai-factory/nke/agent
 
 jobs:
   publish:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Publish binaries
     # Both architectures are produced by cross-compilation from one runner:
     # the agent is pure Go with CGO disabled, so this needs no arm64 runner and

@@ -4,3 +4,70 @@
 enabled: true
 auto_sync_draft: true
 auto_sync_ready: true
+
+# Contributors whose pull requests the bot mirrors without a vetter's
+# `/ok to test`: the nke-admin, nke-maintainer and nke-write rosters as of
+# 2026-09-12, including members whose dsx-ai-factory invitation is pending.
+additional_trustees:
+  - abhay-krishna
+  - abhinavmpandey08
+  - adityavenneti
+  - aks02hay
+  - anisha-nv
+  - avasilevskii
+  - awgreene
+  - bmcadams1
+  - carldanley
+  - chaochn47
+  - cullenmcdermott
+  - danbudris
+  - depohmel
+  - dims
+  - erstaples
+  - g-gaston
+  - Ganiredi
+  - glaguteta
+  - harish-sampath
+  - hulquest
+  - iamkhaledh
+  - j-griffith
+  - jaxesn
+  - Jay-Madden
+  - jdubs
+  - jedimt
+  - jmmclean
+  - johnshults
+  - jonathanmeier5
+  - junshun
+  - justinhopper
+  - jyotimahapatra
+  - Lazzer64
+  - lia-campbell
+  - mark-larter
+  - mchmarny
+  - mdaverde
+  - miancheng7
+  - mjlshen
+  - mmeha
+  - mmoore71
+  - naut-brian
+  - newtonkishore-nv
+  - nhammernik
+  - njhensley
+  - nvidiajeff
+  - pbikki
+  - pdmack
+  - rbever-nvidia
+  - rcompos
+  - sithape2025
+  - smalleni
+  - srao-nv
+  - srekhi93
+  - stephliu-nv
+  - suket22
+  - TerryHowe
+  - tjrasche
+  - vignesh-goutham
+  - vwilson-nvidia
+  - xdu31
+  - zmadell523

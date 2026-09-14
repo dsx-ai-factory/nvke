@@ -69,8 +69,13 @@ if [[ "$(uname -m)" == "${ARCH_UNAME}" && -c /dev/kvm && -w /dev/kvm ]]; then
   BOOT_TIMEOUT="${BOOT_TIMEOUT:-180}"
 else
   echo "boot-smoke: no usable same-arch /dev/kvm, booting under software emulation (slower)" >&2
-  ACCEL_ARGS=(-accel tcg -cpu max)
-  BOOT_TIMEOUT="${BOOT_TIMEOUT:-1200}"
+  # Same knob as packer/Makefile: on an arm64 host "max" turns on pointer auth
+  # with QARMA5, which tcg emulates far too slowly; impdef keeps it cheap.
+  CPU_MODEL=max
+  [[ "${ARCH}" == "arm64" ]] && CPU_MODEL="max,pauth-impdef=on"
+  ACCEL_ARGS=(-accel tcg -cpu "${CPU_MODEL}")
+  # About 2 min under KVM; tcg runs at roughly 10x that.
+  BOOT_TIMEOUT="${BOOT_TIMEOUT:-2400}"
 fi
 
 if [[ ! -f "${QCOW}" ]]; then

@@ -4,47 +4,36 @@
 package util
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
-	k8syaml "sigs.k8s.io/yaml"
+	"gopkg.in/yaml.v3"
 )
 
 // YAMLToRequest reads a YAML document and deserialises it into a CWE API
-// request type T, rejecting unknown fields. Field names in the YAML must
-// match the json tags of T.
+// request type T. Field names in the YAML must match the json tags of T.
+//
+// The conversion goes YAML → interface{} → JSON → T so that json tags on
+// generated API types are honoured. Direct yaml.Unmarshal is avoided because
+// generated structs only carry json tags, not yaml tags.
 func YAMLToRequest[T any](data []byte) (T, error) {
-	// Guard the document's shape first: k8syaml.UnmarshalStrict silently
-	// decodes an empty document as a zero-value T instead of erroring.
-	if _, err := YAMLToGenericMap(data); err != nil {
-		return *new(T), err
+	var raw interface{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return *new(T), fmt.Errorf("unmarshal yaml: %w", err)
+	}
+	if raw == nil {
+		return *new(T), fmt.Errorf("spec file is empty")
+	}
+	j, err := json.Marshal(raw)
+	if err != nil {
+		return *new(T), fmt.Errorf("marshal json: %w", err)
 	}
 	var req T
-	if err := k8syaml.UnmarshalStrict(data, &req); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(j))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
 		return *new(T), fmt.Errorf("unmarshal request: %w", err)
 	}
 	return req, nil
-}
-
-// YAMLToGenericMap parses a YAML document into a map[string]interface{},
-// keyed the same way json.Marshal would read it back out. Combine the
-// result with another such map via jsonpatch.MergeMergePatches (RFC 7386,
-// gopkg.in/evanphx/json-patch.v4), or marshal it directly to JSON.
-func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
-	j, err := k8syaml.YAMLToJSON(data)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal yaml: %w", err)
-	}
-	var raw interface{}
-	if err := json.Unmarshal(j, &raw); err != nil {
-		return nil, fmt.Errorf("unmarshal yaml: %w", err)
-	}
-	if raw == nil {
-		return nil, fmt.Errorf("empty document")
-	}
-	m, ok := raw.(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("yaml document is not a mapping")
-	}
-	return m, nil
 }

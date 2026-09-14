@@ -1,7 +1,7 @@
 # CODEOWNERS — the last rule that matches wins. A ruleset on `main` sets
 # `require_code_owner_review`. See docs/branch-protection-settings.md.
 #
-# Every rule keeps @NVIDIA/nke-write, so any team member can still approve and no
+# Every rule keeps @dsx-ai-factory/nke-write, so any team member can still approve and no
 # rule here blocks a pull request. Remove the team from a line to make it a gate.
 #
 # Sections mirror the areas in .github/labeler.yml. Order matters: labeler gives
@@ -9,61 +9,61 @@
 # so chart, docs and the second deps block win by coming later.
 
 # Default owner
-* @NVIDIA/nke-write
+* @dsx-ai-factory/nke-write
 
 # area/deps
 # First, so a module rule wins for its own go.mod. vendor/ repeats at the end.
-go.mod @NVIDIA/nke-write @TerryHowe @rbever-nvidia
-go.sum @NVIDIA/nke-write @TerryHowe @rbever-nvidia
-/go.work @NVIDIA/nke-write @TerryHowe @rbever-nvidia
-/go.work.sum @NVIDIA/nke-write @TerryHowe @rbever-nvidia
+go.mod @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
+go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
+/go.work @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
+/go.work.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
 # area/controller — Cloud Workflow Engine
-/controller/ @NVIDIA/nke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris
-/cluster-api-provider-provisioned/ @NVIDIA/nke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
+/controller/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris
+/cluster-api-provider-provisioned/ @dsx-ai-factory/nke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
 
 # area/agent — renamed from node-agent in #36
-/agent/ @NVIDIA/nke-write @TerryHowe @j-griffith @chaochn47
+/agent/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @chaochn47
 
 # area/cli
-/cli/ @NVIDIA/nke-write @lia-campbell @jonathanmeier5 @TerryHowe
+/cli/ @dsx-ai-factory/nke-write @lia-campbell @jonathanmeier5 @TerryHowe
 
 # area/os-image
-/os-image/ @NVIDIA/nke-write @j-griffith @jdubs @pdmack
-/node-images/ @NVIDIA/nke-write @j-griffith @jdubs @pdmack
+/os-image/ @dsx-ai-factory/nke-write @j-griffith @jdubs @pdmack
+/node-images/ @dsx-ai-factory/nke-write @j-griffith @jdubs @pdmack
 
 # area/generated — vendored AICR charts
-/generated/ @NVIDIA/nke-write @nhammernik @TerryHowe
+/generated/ @dsx-ai-factory/nke-write @nhammernik @TerryHowe
 
 # area/chart
-/controller/deploy/ @NVIDIA/nke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
-/controller/hack/chart-*-assertions.* @NVIDIA/nke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
+/controller/deploy/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
+/controller/hack/chart-*-assertions.* @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @danbudris @rbever-nvidia
 
 # area/docs
 # `docs/` has no leading slash, so it matches any depth, like labeler's
 # `**/docs/**`. `/*.md` does not cross a `/`, so a module README stays put.
-docs/ @NVIDIA/nke-write @TerryHowe @j-griffith @danbudris
-/docs/ @NVIDIA/nke-write @TerryHowe @j-griffith @danbudris
-/fern/ @NVIDIA/nke-write @TerryHowe @j-griffith @danbudris
-/*.md @NVIDIA/nke-write @TerryHowe @j-griffith @danbudris
-/LICENSE @NVIDIA/nke-write @TerryHowe @j-griffith @danbudris
-/NOTICE @NVIDIA/nke-write @TerryHowe @j-griffith @danbudris
+docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
+/docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
+/fern/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
+/*.md @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
+/LICENSE @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
+/NOTICE @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
 
 # area/ci-build
-/.github/ @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/Makefile @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/make/ @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/hack/ @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/build/ @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/.flox/ @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/.* @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/*.toml @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
-/*.yaml @NVIDIA/nke-write @TerryHowe @j-griffith @junshun
+/.github/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/Makefile @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/make/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/hack/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/build/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/.flox/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/.* @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/*.toml @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
+/*.yaml @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
 
 # area/deps again: vendor/ beats the bare `docs/` rule, dependabot.yml
 # beats /.github/.
-/vendor/ @NVIDIA/nke-write @TerryHowe @rbever-nvidia
-/.github/dependabot.yml @NVIDIA/nke-write @TerryHowe @rbever-nvidia
+/vendor/ @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
+/.github/dependabot.yml @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
 # SECURITY.md, GOVERNANCE.md, MAINTAINERS.md, CODE_OF_CONDUCT.md and LICENSE are
 # area/docs, covered by `/*.md` and `/LICENSE` above.

@@ -19,7 +19,7 @@ ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
 # Kubernetes version for the envtest kube-apiserver and etcd binaries.
 ENVTEST_K8S_VERSION		?= 1.34.1
 CWE_GOFAIL_E2E_CLUSTER_CRDS	?= $(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases
-CWE_GOFAIL_E2E_CAPNICO_CRDS	?= $(shell go env GOMODCACHE)/github.com/!n!v!i!d!i!a/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/NVIDIA/cluster-api-provider-nico)/config/crd/bases
+CWE_GOFAIL_E2E_CAPNICO_CRDS	?= $(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases
 
 # The licence header template lives once, at the repository root.
 REPO_ROOT ?= $(shell git rev-parse --show-toplevel)
@@ -404,7 +404,7 @@ license-policy-check: $(GO_LICENSES) ## Verify every third-party dependency uses
 	@# that genuinely need ignoring are named explicitly.
 	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO_LICENSES) check ./cmd/worker \
 		--allowed_licenses=$(ALLOWED_LICENSES) \
-		--ignore="$$(GOWORK=off go list -m),github.com/NVIDIA/nke/agent,github.com/NVIDIA/cluster-api-provider-nico"
+		--ignore="$$(GOWORK=off go list -m),github.com/NVIDIA/nke/agent,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 .PHONY: notices
 notices: $(GO_LICENSES) ## Regenerate THIRD_PARTY_NOTICES.md for the released worker binary.

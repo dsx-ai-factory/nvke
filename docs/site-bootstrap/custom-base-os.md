@@ -91,7 +91,7 @@ autoinstall:
 
       # TODO: Replace with real release URL once the repo is public.
       # Download and install nkectl (bootstrap host only)
-      - [sh, -c, "curl -fsSL -o /usr/local/bin/nkectl https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-amd64 && chmod +x /usr/local/bin/nkectl"]
+      - [sh, -c, "curl -fsSL -o /usr/local/bin/nkectl https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-linux-amd64 && chmod +x /usr/local/bin/nkectl"]
 
       # Run bootstrap (bootstrap host only)
       - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nkectl bootstrap site -f /etc/nkectl/sitespec.yaml >> /var/log/nkectl-bootstrap.log 2>&1"]

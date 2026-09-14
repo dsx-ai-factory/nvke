@@ -34,7 +34,7 @@ concurrency:
 jobs:
   pr-title:
     name: pr-title
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -51,7 +51,7 @@ jobs:
   generate-check:
     name: Check generated API code is up to date
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 20
     permissions:
       contents: read
@@ -98,7 +98,7 @@ jobs:
   provisioned-generate-check:
     name: Check generated provisioned provider code, CRDs, and RBAC
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 20
     permissions:
       contents: read

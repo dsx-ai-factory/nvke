@@ -4,40 +4,43 @@
 package dbreconcile
 
 import (
-	"fmt"
+	"context"
+	"time"
 
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	crsource "sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-func SetupController(
-	mgr manager.Manager,
-	name string,
-	reconciler reconcile.TypedReconciler[Key],
-	sources ...crsource.TypedSource[Key],
-) error {
-	if len(sources) == 0 {
-		return fmt.Errorf("must specify Source for DB reconciler")
-	}
-	for _, source := range sources {
-		if source == nil {
-			return fmt.Errorf("must specify Source for DB reconciler")
-		}
-	}
+// Reconciler reconciles DB record keys.
+type Reconciler = reconcile.TypedReconciler[Key]
 
-	ctrl, err := controller.NewTyped[Key](name, mgr, controller.TypedOptions[Key]{
-		Reconciler: reconciler,
-	})
-	if err != nil {
-		return err
-	}
+// Source is a source of events for DB record keys.
+type Source = crsource.TypedSource[Key]
 
-	for _, source := range sources {
-		if err := ctrl.Watch(source); err != nil {
-			return err
-		}
-	}
-	return nil
+// Controller defines a DB reconciler and the sources that feed its work queue.
+type Controller struct {
+	// Name identifies the controller in logs and metrics.
+	Name string
+	// Reconciler processes keys produced by Sources and Watches.
+	Reconciler Reconciler
+	// Watches triggers reconciliation from Kubernetes object changes.
+	Watches []KubeWatch
+	// Sources triggers reconciliation from external events such as DB changes.
+	Sources []Source
+	// Workers is the maximum number of concurrent reconciles. Zero uses the default of one worker.
+	Workers int
+	// ReconcileTimeout limits each reconcile duration. Zero disables the timeout.
+	ReconcileTimeout time.Duration
+}
+
+// KubeWatch maps selected Kubernetes object events to DB reconcile keys. When
+// registered through AddController, Map receives a context containing a logger
+// tagged with the controller name and object key.
+type KubeWatch struct {
+	Object        client.Object
+	Namespace     string
+	LabelSelector *metav1.LabelSelector
+	Map           func(context.Context, client.Object) []Key
 }

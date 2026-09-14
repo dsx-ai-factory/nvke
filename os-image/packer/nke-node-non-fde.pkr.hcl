@@ -57,6 +57,12 @@ variable "cpu_model" {
   description = "QEMU CPU model. Use 'host' with KVM, 'max' with TCG emulation."
 }
 
+variable "cpus" {
+  type        = number
+  default     = 4
+  description = "Guest vCPUs. packer/Makefile raises it under TCG emulation."
+}
+
 variable "ssh_timeout" {
   type        = string
   default     = "60m"
@@ -142,6 +148,10 @@ source "qemu" "nke-non-fde" {
   # See the same setting in nke-node-fde.pkr.hcl: required for provision.sh's
   # fstrim to actually shrink the output qcow2.
   disk_discard = "unmap"
+  # Build VMs are throwaway: skip the guest's flushes (dpkg fsyncs every file)
+  # instead of paying for each one on the runner disk. Packer halts the guest
+  # cleanly, so the exported qcow2 is complete.
+  disk_cache = "unsafe"
 
   efi_firmware_code = local.efi_firmware_code
   efi_firmware_vars = local.efi_firmware_vars
@@ -197,14 +207,18 @@ source "qemu" "nke-non-fde" {
   ssh_username           = "ubuntu"
   ssh_private_key_file   = "${local.ssh_dir}/id_ed25519"
   ssh_timeout            = var.ssh_timeout
-  ssh_handshake_attempts = 1000
+  # The live installer runs its own sshd, so every attempt at ubuntu@ before
+  # the reboot is an authentication failure and each one counts here. Under
+  # tcg the install outlasts 1000 of them (~8 s apiece); ssh_timeout is the
+  # wall clock, this must not be.
+  ssh_handshake_attempts = 10000
 
   shutdown_command = "sudo shutdown -P now"
   vm_name          = "nke-node-non-fde-ubuntu-${local.ubuntu_version}-${local.arch}.qcow2"
   output_directory = "${path.root}/output-non-fde"
   headless         = true
   memory           = 8192
-  cpus             = 4
+  cpus             = var.cpus
   net_device       = "virtio-net"
 }
 

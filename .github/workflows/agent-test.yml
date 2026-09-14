@@ -64,7 +64,7 @@ jobs:
     # so an unqualified name is one workflow away from being ambiguous.
     name: Unit tests (agent)
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 15
     permissions:
       contents: read

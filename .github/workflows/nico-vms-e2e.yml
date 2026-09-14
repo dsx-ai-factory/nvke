@@ -24,6 +24,13 @@ on:
       - "controller/test/kubeadm/scripts/**"
       # The Tiltfile is the lane's CWE deployment recipe (#683).
       - controller/Tiltfile
+      # The default OVN topology is the behavioral gate for the typed
+      # Open vSwitch provisioning path.
+      - "agent/internal/agent/open_vswitch*.go"
+      - "agent/pkg/agent/proto/node_agent.proto"
+      - "controller/internal/temporal/activities/configure_open_vswitch.go"
+      - "controller/internal/temporal/workflows/provision_node.go"
+      - "controller/test/e2e/open_vswitch_test.go"
       # Without these, a change to the lane's own definition or its gate does
       # not run it.
       - .github/workflows/nico-vms-e2e.yml
@@ -63,14 +70,14 @@ jobs:
       pull-requests: read
     with:
       # Keep in step with the push paths above.
-      relevant_paths: '^controller/(Tiltfile$|nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
+      relevant_paths: '^agent/(internal/agent/open_vswitch.*\.go$|pkg/agent/proto/node_agent\.proto$)|^controller/(Tiltfile$|internal/temporal/activities/configure_open_vswitch\.go$|internal/temporal/workflows/provision_node\.go$|nico-sim/|hack/nico-provider/|hack/ci/nico-vms-e2e\.sh$|test/e2e/open_vswitch_test\.go$|test/kubeadm/scripts/)|^\.github/workflows/(nico-vms-e2e|e2e-pr-path-filter)\.yml$'
 
   nico-vms-e2e:
     name: nico-vms-e2e (amd64, KVM)
     # The one label with /dev/kvm; see kubeadm-bringup-e2e.yml for why.
     runs-on: linux-amd64-gpu-l4-latest-1
     needs: changes
-    if: github.repository == 'NVIDIA/nke' && needs.changes.outputs.run_e2e == 'true'
+    if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
     # Unmeasured. Two tenant clusters of three to six VMs, one of them upgraded
     # through two Kubernetes versions. Generous until there is data.
     timeout-minutes: 330
@@ -115,7 +122,7 @@ jobs:
         id: capnico_version
         run: |
           set -euo pipefail
-          capnico_ref="$(awk '$1 == "github.com/NVIDIA/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
+          capnico_ref="$(awk '$1 == "github.com/dsx-ai-factory/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
           if [[ -z "${capnico_ref}" ]]; then
             echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
             exit 1
@@ -125,7 +132,7 @@ jobs:
       - name: Checkout the CAPNICo provider
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: NVIDIA/cluster-api-provider-nico
+          repository: dsx-ai-factory/cluster-api-provider-nico
           ref: ${{ steps.capnico_version.outputs.ref }}
           token: ${{ secrets.NKE_INTERNAL_RO_TOKEN }}
           path: .capnico/cluster-api-provider-nico
