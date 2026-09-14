@@ -138,8 +138,8 @@ site spec file format.`,
 		"Leave the ephemeral bootstrap Kind cluster running after the command exits, for debugging")
 	cmd.Flags().DurationVar(&opts.clusterTimeout, "timeout",
 		envDurationOrDefault("NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT", 30*time.Minute),
-		"How long to wait for the cluster to finish provisioning. "+
-			"Overrides NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT.")
+		"How long to wait for the cluster to finish provisioning, which includes "+
+			"every control plane node joining. Overrides NKECTL_BOOTSTRAP_CLUSTER_TIMEOUT.")
 	cmd.Flags().StringVar(&opts.kubeconfigOut, "kubeconfig-out", "",
 		"Where to write the finished cluster's admin kubeconfig "+
 			"(default: <clusterName>.kubeconfig in the working directory)")
@@ -297,10 +297,29 @@ func createSiteCluster(
 
 	logger.Info("waiting for the cluster to finish provisioning",
 		"cluster", created.Name, "timeout", opts.clusterTimeout)
-	if _, err := sitecluster.WaitProvisioned(ctx, client, created.ID, opts.clusterTimeout, logger); err != nil {
+
+	// One budget spans both waits, because --timeout bounds the whole
+	// provision: from the create call to every node having joined.
+	timeout := opts.clusterTimeout
+	if timeout <= 0 {
+		timeout = sitecluster.DefaultWaitTimeout
+	}
+	deadline := time.Now().Add(timeout)
+
+	if _, err := sitecluster.WaitProvisioned(ctx, client, created.ID, time.Until(deadline), logger); err != nil {
 		return true, err
 	}
 	logger.Info("cluster provisioned", "cluster", created.Name, "id", created.ID)
+
+	// The cluster reports Provisioned once its initial control-plane node is
+	// up; the rest join afterwards, through workflows that live in the
+	// bootstrap cluster this command is about to delete. Returning here would
+	// tear that engine down underneath them.
+	if err := sitecluster.WaitControlPlaneJoined(
+		ctx, client, created.ID, len(inv.Cluster.Nodes), time.Until(deadline), logger); err != nil {
+		return true, err
+	}
+	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", len(inv.Cluster.Nodes))
 
 	return true, writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger)
 }

@@ -6,6 +6,7 @@ package sitecluster
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"strings"
@@ -32,6 +33,12 @@ type fakeClusterAPI struct {
 	states  []api.Cluster
 	getErrs []error
 	gets    int
+
+	// nodeStates is replayed the same way states is: one control-plane node
+	// list per poll, the last entry repeating once the script runs out.
+	nodeStates [][]api.Node
+	listErrs   []error
+	lists      int
 }
 
 func (f *fakeClusterAPI) CreateCluster(
@@ -56,6 +63,24 @@ func (f *fakeClusterAPI) GetCluster(_ context.Context, _ openapi_types.UUID) (*a
 	}
 	cluster := f.states[idx]
 	return &cluster, nil
+}
+
+func (f *fakeClusterAPI) ListControlPlaneNodes(
+	_ context.Context,
+	_ openapi_types.UUID,
+) ([]api.Node, error) {
+	idx := f.lists
+	f.lists++
+	if idx < len(f.listErrs) && f.listErrs[idx] != nil {
+		return nil, f.listErrs[idx]
+	}
+	if len(f.nodeStates) == 0 {
+		return nil, nil
+	}
+	if idx >= len(f.nodeStates) {
+		idx = len(f.nodeStates) - 1
+	}
+	return f.nodeStates[idx], nil
 }
 
 func condition(status api.ConditionStatus) api.Condition {
@@ -195,5 +220,132 @@ func TestWaitProvisioned_TimesOutSayingWhereItGotTo(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "Provisioning") {
 		t.Errorf("error %q does not say what the cluster was last doing", err)
+	}
+}
+
+// nodesProvisioned renders a control-plane node list in which the first
+// provisioned nodes are done and the rest are still being worked on, which is
+// exactly the shape of a serialized join in progress.
+func nodesProvisioned(total, provisioned int) []api.Node {
+	nodes := make([]api.Node, 0, total)
+	for i := range total {
+		status, message := api.ConditionStatusFalse, "Joining node"
+		if i < provisioned {
+			status, message = api.ConditionStatusTrue, "Provisioned node"
+		}
+		nodes = append(nodes, api.Node{
+			Name:         fmt.Sprintf("node%d", i+1),
+			ControlPlane: true,
+			Conditions: api.NodeConditions{
+				Provisioned: api.Condition{Status: status, Message: message},
+			},
+		})
+	}
+	return nodes
+}
+
+// TestWaitControlPlaneJoined_ReturnsWhenEveryNodeIsProvisioned: the nodes join
+// one at a time, so a three-node control plane is reached a node per poll.
+func TestWaitControlPlaneJoined_ReturnsWhenEveryNodeIsProvisioned(t *testing.T) {
+	shortPollInterval(t)
+	client := &fakeClusterAPI{nodeStates: [][]api.Node{
+		nodesProvisioned(3, 1),
+		nodesProvisioned(3, 2),
+		nodesProvisioned(3, 3),
+	}}
+
+	if err := WaitControlPlaneJoined(
+		context.Background(), client, uuid.New(), 3, time.Minute, quietLogger()); err != nil {
+		t.Fatalf("WaitControlPlaneJoined returned error: %v", err)
+	}
+	if client.lists != 3 {
+		t.Errorf("polled %d times, want 3", client.lists)
+	}
+}
+
+// TestWaitControlPlaneJoined_DoesNotReturnOnTheFirstNodeAlone is the regression
+// test for the bug this wait exists to close: the cluster reports Provisioned
+// once its initial node is up, and returning there tore down the workflow
+// engine the other two nodes were still joining through.
+func TestWaitControlPlaneJoined_DoesNotReturnOnTheFirstNodeAlone(t *testing.T) {
+	shortPollInterval(t)
+	client := &fakeClusterAPI{nodeStates: [][]api.Node{nodesProvisioned(3, 1)}}
+
+	err := WaitControlPlaneJoined(
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+	if err == nil {
+		t.Fatal("returned with only 1 of 3 control plane nodes provisioned")
+	}
+	for _, want := range []string{"1 of 3", "node2", "node3", "Joining node"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not say %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "node1") {
+		t.Errorf("error %q lists the node that did finish as outstanding", err)
+	}
+}
+
+// TestWaitControlPlaneJoined_WaitsForNodesCWEHasNotCreatedYet: a node CWE has
+// no record of yet is outstanding too. Counting only the records that exist
+// would let a one-node list satisfy a three-node control plane.
+func TestWaitControlPlaneJoined_WaitsForNodesCWEHasNotCreatedYet(t *testing.T) {
+	shortPollInterval(t)
+	client := &fakeClusterAPI{nodeStates: [][]api.Node{nodesProvisioned(1, 1)}}
+
+	err := WaitControlPlaneJoined(
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+	if err == nil {
+		t.Fatal("returned with 2 of 3 control plane nodes not yet created")
+	}
+	if !strings.Contains(err.Error(), "2 node(s) not yet created") {
+		t.Errorf("error %q does not say how many nodes are missing", err)
+	}
+}
+
+// TestWaitControlPlaneJoined_SurvivesAFailedRead: as in WaitProvisioned, CWE
+// being briefly unreachable is not a cluster that failed to come up.
+func TestWaitControlPlaneJoined_SurvivesAFailedRead(t *testing.T) {
+	shortPollInterval(t)
+	client := &fakeClusterAPI{
+		listErrs:   []error{errors.New("connection refused"), nil},
+		nodeStates: [][]api.Node{nodesProvisioned(1, 0), nodesProvisioned(1, 1)},
+	}
+
+	if err := WaitControlPlaneJoined(
+		context.Background(), client, uuid.New(), 1, time.Minute, quietLogger()); err != nil {
+		t.Fatalf("WaitControlPlaneJoined gave up on a transient read failure: %v", err)
+	}
+}
+
+// TestWaitControlPlaneJoined_TimeoutReportsTheReadFailure: a wait that ran out
+// because CWE was never reachable must not look like a wait that ran out
+// because the nodes were slow.
+func TestWaitControlPlaneJoined_TimeoutReportsTheReadFailure(t *testing.T) {
+	shortPollInterval(t)
+	client := &fakeClusterAPI{listErrs: []error{errors.New("connection refused")}}
+
+	err := WaitControlPlaneJoined(
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+	if err == nil {
+		t.Fatal("expected WaitControlPlaneJoined to time out")
+	}
+	if !strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("error %q does not carry the read failure", err)
+	}
+}
+
+// TestWaitControlPlaneJoined_NothingToWaitFor: a site spec with no nodes is
+// rejected long before this point, so the wait must not turn a zero into a
+// wait that can never be satisfied.
+func TestWaitControlPlaneJoined_NothingToWaitFor(t *testing.T) {
+	client := &fakeClusterAPI{}
+
+	if err := WaitControlPlaneJoined(
+		context.Background(), client, uuid.New(), 0, time.Minute, quietLogger()); err != nil {
+		t.Fatalf("WaitControlPlaneJoined returned error: %v", err)
+	}
+	if client.lists != 0 {
+		t.Errorf("polled %d times for zero nodes, want 0", client.lists)
 	}
 }

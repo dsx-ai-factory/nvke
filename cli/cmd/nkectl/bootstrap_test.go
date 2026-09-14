@@ -66,6 +66,20 @@ func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string
 // mapped to, and a client handed in by a test would prove nothing about that.
 func startFakeCWEAPI(t *testing.T, provisioned bool) {
 	t.Helper()
+	joined := 0
+	if provisioned {
+		joined = 1
+	}
+	startFakeCWEAPIWithNodes(t, provisioned, 1, joined)
+}
+
+// startFakeCWEAPIWithNodes is startFakeCWEAPI with the control-plane node list
+// spelled out: total nodes, of which the first joined have finished
+// provisioning. It is how a test holds a control plane short of the count the
+// site spec asked for, which is the state the cluster's own Provisioned
+// condition cannot distinguish from a finished one.
+func startFakeCWEAPIWithNodes(t *testing.T, provisioned bool, total, joined int) {
+	t.Helper()
 
 	id := uuid.New()
 	status := api.ConditionStatusTrue
@@ -94,6 +108,24 @@ func startFakeCWEAPI(t *testing.T, provisioned bool) {
 	mux.HandleFunc("GET /api/clusters/{id}", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(cluster)
+	})
+	mux.HandleFunc("GET /api/nodes", func(w http.ResponseWriter, _ *http.Request) {
+		nodes := make([]api.Node, 0, total)
+		for i := range total {
+			status, message := api.ConditionStatusFalse, "Joining node"
+			if i < joined {
+				status, message = api.ConditionStatusTrue, "Provisioned node"
+			}
+			nodes = append(nodes, api.Node{
+				Name:         fmt.Sprintf("node%d", i+1),
+				ControlPlane: true,
+				Conditions: api.NodeConditions{
+					Provisioned: api.Condition{Status: status, Message: message},
+				},
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(api.ListNodesResponse{Nodes: nodes})
 	})
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -142,6 +174,25 @@ cluster:
   nodes:
     - name: node1
       ip: 10.0.0.1
+  k8sVersion: "1.32.0"
+  cniName: calico
+  podCidr: "10.100.0.0/16"
+  serviceCidr: "10.200.0.0/16"
+registry:
+  bootstrapRepo: "nvcr.io/org/cloud-workflow-engine"
+  bootstrapChart: "cloud-workflow-engine"
+`
+
+const threeNodeSiteSpec = `
+clusterName: nke-site
+cluster:
+  nodes:
+    - name: node1
+      ip: 10.0.0.1
+    - name: node2
+      ip: 10.0.0.2
+    - name: node3
+      ip: 10.0.0.3
   k8sVersion: "1.32.0"
   cniName: calico
   podCidr: "10.100.0.0/16"
@@ -600,4 +651,58 @@ func (r missingKubeconfigRunner) Run(ctx context.Context, name string, args ...s
 		return "Error from server (NotFound): secret not found", errors.New("exit status 1")
 	}
 	return r.fakeCWERunner.Run(ctx, name, args...)
+}
+
+// TestRunBootstrapSiteWaitsForEveryControlPlaneNode: a cluster reports
+// Provisioned as soon as the one node it chose as the initial control-plane
+// node has run kubeadm init. The other two join afterwards, through workflows
+// that run in the bootstrap cluster this command deletes on its way out.
+// Deleting it on the cluster condition alone strands whichever nodes had not
+// finished, and a full re-bootstrap is the only way back.
+func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 1)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		clusterTimeout:  5 * time.Millisecond,
+		kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:        runtimeOnPath,
+	})
+	if err == nil {
+		t.Fatal("bootstrap reported success with only 1 of 3 control plane nodes joined")
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap kind cluster was torn down while 2 control plane nodes were still joining")
+	}
+	for _, want := range []string{"1 of 3", "node2", "node3", "retained for recovery"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+}
+
+// TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined is the other half: the
+// wait must end, and the ephemeral cluster must still be cleaned up.
+func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPIWithNodes(t, true, 3, 3)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:        runtimeOnPath,
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite returned error: %v", err)
+	}
+	if !runner.sawArgs("delete", "cluster") {
+		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster; calls: %v", runner.calls)
+	}
 }
