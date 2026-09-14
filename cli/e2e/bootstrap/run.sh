@@ -105,15 +105,10 @@ TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
 : "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already pulled locally (see comment above)}"
 export NKECTL_CWE_IMAGE
 
-# OS profiles, without which CWE fails its schema migration. Built from
-# controller/test/fixtures rather than pulled: the fleet image lives in
-# nke-site-deploy, which this suite does not depend on.
-export NKECTL_CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE:-cwe-profiles:local}"
-
 # The Cluster API infrastructure provider for hosts that already exist, built
 # below from this checkout. Without it the CAPI objects CWE writes have no
 # controller and the cluster never leaves provisioning. nkectl loads it into the
-# bootstrap cluster the same way it loads the CWE and profiles images, and finds
+# bootstrap cluster the same way it loads the CWE image, and finds
 # the kustomize base to render by walking up to go.work — so only the image has
 # to be named here.
 export NKECTL_CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE:-cluster-api-provider-provisioned:local}"
@@ -322,9 +317,6 @@ if [ ! -c /dev/vtpmx ]; then
   exit 1
 fi
 
-log "building the profiles image (${NKECTL_CWE_PROFILES_IMAGE})"
-make -C "${CLI_DIR}" ensure-profiles-image CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE}"
-
 log "building the provisioned CAPI provider image (${NKECTL_CAPI_PROVISIONED_IMAGE})"
 make -C "${CLI_DIR}" ensure-provisioned-provider-image \
   CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE}"
@@ -385,7 +377,6 @@ log "allowlisting $(grep -cE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPE
 # public hardened charts, needing no registry credential of their own.
 log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
   "(NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
-  "NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE}," \
   "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
 
 # In the background, because the run has to be joined while it is still going.

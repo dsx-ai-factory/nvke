@@ -41,7 +41,7 @@ nkectl version
 ```bash
 # Bootstrap a new site controller
 NKECTL_CWE_IMAGE=nvcr.io/<org>/controller:edge \
-NKECTL_CWE_PROFILES_IMAGE=nvcr.io/<org>/profiles:edge \
+NKECTL_CAPI_PROVISIONED_IMAGE=nvcr.io/<org>/cluster-api-provider-provisioned:edge \
   nkectl bootstrap site -f sitespec.yaml
 nkectl bootstrap site -f sitespec.yaml --dry-run              # validate only
 nkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster     # leave Kind cluster for debugging
@@ -164,7 +164,6 @@ ever disagree.
 |---|---|---|
 | `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
 | `NKECTL_CWE_IMAGE` | required | CWE image to deploy. Side-loaded from the local image store, so it must already be pulled. |
-| `NKECTL_CWE_PROFILES_IMAGE` | required | Image holding the OS profiles tree at `/profiles` |
 | `NKECTL_CWE_CHART_PATH` | discovered | Path to the CWE chart |
 | `NKECTL_CWE_POSTGRES_CHART` | `oci://registry-1.docker.io/bitnamicharts/postgresql` | Postgres chart, as an OCI reference or a local path. Point it at a mirror or a downloaded tarball. |
 | `NKECTL_CWE_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |

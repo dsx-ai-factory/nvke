@@ -376,10 +376,6 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 		return cfg, errors.New("NKECTL_CWE_IMAGE is not set; it must name the CWE image to deploy " +
 			"(e.g. nvcr.io/<org>/controller:edge — see .github/workflows/image-nvcr.yml)")
 	}
-	if cfg.ProfilesImage == "" {
-		return cfg, errors.New("NKECTL_CWE_PROFILES_IMAGE is not set; it must name an image " +
-			"holding the OS profiles tree at /profiles")
-	}
 	if cfg.ProvisionedProviderImage == "" {
 		return cfg, errors.New("NKECTL_CAPI_PROVISIONED_IMAGE is not set; it must name the " +
 			"cluster-api-provider-provisioned image, which is the Cluster API infrastructure " +
@@ -427,7 +423,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 // elapses. What to install is decided by cweDeployConfig; this only carries it
 // out.
 //
-// The CWE and profiles images are loaded into the kind cluster directly
+// The CWE and provisioned-provider images are loaded into the kind cluster directly
 // (bootstrapengine's existing Engine.LoadImage, via `kind load docker-image`)
 // rather than pulled from inside the cluster: the cluster is ephemeral and has
 // no image pull secret configured, and this way authenticating to whatever
@@ -435,9 +431,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 // once on the host, same as any other pull, before running this command.
 //
 // SPIRE needs no such handling: its chart and images are public.
-//
-// CWE reads osProfiles/metadata.yaml during schema migration, so it
-// crash-loops without a profiles tree.
+
 func deployAndWaitForCWE(
 	ctx context.Context,
 	engine *bootstrapengine.Engine,
@@ -446,7 +440,7 @@ func deployAndWaitForCWE(
 	cweRunner cwedeploy.CommandRunner,
 	logger *slog.Logger,
 ) error {
-	for _, image := range []string{cweCfg.CWEImage, cweCfg.ProfilesImage, cweCfg.ProvisionedProviderImage} {
+	for _, image := range []string{cweCfg.CWEImage, cweCfg.ProvisionedProviderImage} {
 		if err := ensureImageAvailable(ctx, engine, cluster, image, logger); err != nil {
 			return fmt.Errorf("loading %s into bootstrap kind cluster: %w", image, err)
 		}

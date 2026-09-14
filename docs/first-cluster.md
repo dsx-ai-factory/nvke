@@ -266,14 +266,12 @@ leaves nothing schedulable and the node never reaches `Ready`.
 
 ### 3. Point at your images
 
-All three are required and the bootstrap fails without them. Outside a checkout
-you also need `NKECTL_CWE_CHART_PATH` and `NKECTL_CAPI_PROVISIONED_PATH`, and
-those two are not checked up front — a mistake surfaces after the seed cluster
-exists.
+Both are required and the bootstrap fails without them. Outside a checkout you
+also need `NKECTL_CWE_CHART_PATH` and `NKECTL_CAPI_PROVISIONED_PATH`, and those
+two are not checked up front — a mistake surfaces after the seed cluster exists.
 
 ```bash
 export NKECTL_CWE_IMAGE=<cwe-controller image>
-export NKECTL_CWE_PROFILES_IMAGE=<profiles image>
 export NKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
