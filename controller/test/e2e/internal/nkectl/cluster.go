@@ -180,6 +180,32 @@ func (r *Runner) GetKubeconfig(ctx context.Context, name string) ([]byte, error)
 	return []byte(out), nil
 }
 
+// PatchCluster applies patch to the named cluster, passing it as --patch-file,
+// and returns the cluster as the CLI reports it afterwards.
+func (r *Runner) PatchCluster(ctx context.Context, name string, patch []byte) (*api.Cluster, error) {
+	dir, err := os.MkdirTemp("", "nkectl-e2e-patch-")
+	if err != nil {
+		return nil, fmt.Errorf("creating a patch directory: %w", err)
+	}
+	defer os.RemoveAll(dir)
+
+	path := filepath.Join(dir, "patch.yaml")
+	if writeErr := os.WriteFile(path, patch, 0o600); writeErr != nil {
+		return nil, fmt.Errorf("writing the patch for %q: %w", name, writeErr)
+	}
+
+	out, err := r.Run(ctx, "patch", "cluster", name, "--patch-file", path)
+	if err != nil {
+		return nil, err
+	}
+	if !strings.Contains(out, "patched (id: ") {
+		return nil, fmt.Errorf("nkectl patch cluster %q did not report the patch: %s", name, strings.TrimSpace(out))
+	}
+	r.logf("nkectl e2e: %s", strings.TrimSpace(out))
+
+	return r.GetClusterByName(ctx, name)
+}
+
 // DeleteCluster requests deletion of the cluster and requires the CLI to report
 // it started. It takes an id to match the REST client's signature.
 func (r *Runner) DeleteCluster(ctx context.Context, id openapi_types.UUID) error {

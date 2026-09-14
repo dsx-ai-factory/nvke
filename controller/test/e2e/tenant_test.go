@@ -285,15 +285,18 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 	}),
 	// The CLI row: the same CAPD lifecycle as the rows above, driven through the
 	// nkectl binary instead of the generated API client. It is the only coverage
-	// of provisioning through the command line, and so of `get kubeconfig`
-	// succeeding -- hack/ci/nkectl-smoke.sh sets autoProvisionDisabled, so its
-	// cluster never provisions and the Secret that command reads never appears.
+	// of provisioning through the command line, and so the only place
+	// `get kubeconfig` succeeds and a patch lands on a cluster that came up --
+	// hack/ci/nkectl-smoke.sh sets autoProvisionDisabled, so its cluster never
+	// provisions and the Secret that command reads never appears.
 	//
 	// One control-plane node, no workers, and provisioningOnly: what this row
 	// adds over the others is the transport, not the assertions.
 	//
 	// The "capd" label puts it in the node-pool leg, on the substrate that lane
-	// already builds; "nkectl" selects it alone.
+	// already builds, on main, scheduled and manual runs. The bounded
+	// pull-request lane selects only "core-docker" and has no room for a second
+	// cluster. "nkectl" selects this row alone.
 	Entry("CAPD via nkectl", Ordered, ContinueOnFailure, Label("capd", "nkectl"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{

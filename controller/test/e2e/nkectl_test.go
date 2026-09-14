@@ -6,8 +6,7 @@
 // cluster to have provisioned first.
 //
 // Driving the binary lives in internal/nkectl; this is the seam between that
-// package and the suite. `patch cluster` and the node pool commands belong
-// here as they ship.
+// package and the suite. The node pool commands belong here as they ship.
 
 package e2e
 
@@ -119,6 +118,22 @@ func validateNkectlPostCreate(test *tenantTest) {
 			nodes, err := clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 			Expect(err).NotTo(HaveOccurred(), "the printed kubeconfig should authenticate to the tenant cluster")
 			Expect(nodes.Items).NotTo(BeEmpty(), "the tenant cluster should report at least one node")
+		}, SpecTimeout(5*time.Minute))
+
+		// The CLI's unit tests cover the flag surface; what is left to e2e is a
+		// patch reaching CWE and sticking to a cluster that provisioned.
+		//
+		// enableCPNodeRecycling only changes what a later upgrade would do, so it
+		// starts nothing that could collide with the delete below. The one-way
+		// fields each hold the update lock for a workflow, and a version bump
+		// recycles nodes.
+		It("applies a patch to the provisioned cluster", func(ctx context.Context) {
+			patched, err := test.nkectlRunner.PatchCluster(ctx, test.cluster.Name,
+				[]byte("enableCPNodeRecycling: true\n"))
+			Expect(err).NotTo(HaveOccurred(), "should patch the cluster")
+
+			Expect(patched.EnableCPNodeRecycling).NotTo(BeNil(), "the patched field should be reported")
+			Expect(*patched.EnableCPNodeRecycling).To(BeTrue(), "the patch should have been applied")
 		}, SpecTimeout(5*time.Minute))
 
 		// The smoke asserts this too, but against a CWE holding no clusters. A
