@@ -133,13 +133,7 @@ source "qemu" "nke-non-fde" {
   # See the comment on this in nke-node-fde.pkr.hcl.
   iso_checksum = "none"
 
-  # See the comment on this block in nke-node-fde.pkr.hcl: machine_type is
-  # the QEMU chipset, not a CPU setting. q35 avoids the legacy "pc" (i440fx)
-  # + OVMF/UEFI pairing that's known-fragile regardless; the intermittent
-  # guest-kernel crashes seen while developing these variants were the 26.04
-  # GA installer kernel, fixed by the 26.04.1 ISO (see packer/Makefile), not
-  # the chipset. "virt" is its arm64 equivalent -- see local.machine_type's
-  # comment.
+  # Use q35 for amd64 UEFI and virt for arm64; cpu_model selects the CPU.
   qemu_binary    = local.qemu_binary
   machine_type   = local.machine_type
   cpu_model      = var.cpu_model

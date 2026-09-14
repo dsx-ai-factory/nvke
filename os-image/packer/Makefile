@@ -44,15 +44,8 @@ ARCH ?= amd64
 # is published under cdimage.ubuntu.com/releases/<version>/release/
 # instead, with its own separate SHA256SUMS there.
 #
-# 26.04.1, not the 26.04 GA image. The GA installer's kernel (7.0.0-14-generic)
-# faults in overlayfs during curtin's rootfs extract -- `Internal error: Oops`
-# in ovl_iterate_merged, reached through getdents64 from rsync -- which kills
-# the install; Packer then just waits for SSH until ssh_timeout, so it looks
-# like a slow bake. Reproduced twice on arm64 `virt` under KVM (an FDE bake
-# died there while a non-FDE bake started at the same moment survived, so it
-# is not deterministic), and the same bake completes end to end on 26.04.1.
-# amd64 moves to the point release too, so both architectures install the
-# same kernel.
+# Use 26.04.1 to avoid the GA installer's intermittent overlayfs crash
+# during curtin extraction. Reproduction details: PR #737.
 ifeq ($(ARCH),arm64)
   ISO_URL      ?= https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-live-server-arm64.iso
   ISO_CHECKSUM ?= file:https://cdimage.ubuntu.com/releases/26.04/release/SHA256SUMS

@@ -102,21 +102,8 @@ jobs:
             runner: linux-arm64-cpu16
             timeout_minutes: 300
             build_fde: false
-    # Packer QEMU needs /dev/kvm for the amd64 leg. linux-amd64-cpu16 (a
-    # container-based pool) never exposed it, forcing every bake onto QEMU's
-    # tcg software emulation — confirmed directly: a full FDE bake took
-    # 1h39m under tcg vs a few minutes locally under real KVM, and tcg's much
-    # slower, less predictable timing was implicated in at least one failure
-    # (a GRUB boot-menu race). A separate intermittent overlayfs kernel oops
-    # under curtin's install is a 26.04 GA installer-kernel bug
-    # (7.0.0-14-generic, ovl_iterate_merged), reproduced under KVM too and
-    # fixed by installing from the 26.04.1 ISO (see packer/Makefile). This
-    # label is expected to expose /dev/kvm; "Enable
-    # KVM access" below fails the amd64 leg immediately if that assumption
-    # turns out wrong, rather than silently falling back to the
-    # ~10x-slower emulated path the way this job used to. On the arm64 leg the
-    # same step only probes: whether that pool exposes /dev/kvm is not known
-    # yet, and same-arch tcg still finishes.
+    # amd64 requires KVM; the arm64 pool falls back to same-arch TCG.
+    # The "Enable KVM access" step below enforces this per architecture.
     runs-on: ${{ matrix.runner }}
     # amd64: sized for real KVM (FDE bake + demo-fde.sh + non-FDE bake +
     # boot-smoke, each a few minutes, with real headroom); the KVM gate below

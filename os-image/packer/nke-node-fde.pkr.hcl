@@ -173,16 +173,7 @@ source "qemu" "nke-fde" {
   # the original download against var.iso_checksum before patching it.
   iso_checksum = "none"
 
-  # machine_type is the QEMU virtual chipset, not a CPU setting — cpu_model
-  # (below) is the actual CPU. This matters here because this variant boots
-  # via OVMF/UEFI (efi_boot below), and the legacy "pc" (i440fx) machine type
-  # QEMU falls back to when machine_type is left unset predates PCIe/UEFI as
-  # first-class targets — a known-fragile pairing with OVMF, so q35 (a modern
-  # PCIe-based chipset) is the right choice here regardless. The intermittent
-  # overlayfs crash seen during curtin's install-time rsync while developing
-  # this variant was the 26.04 GA installer kernel, not the chipset; it's
-  # fixed by the 26.04.1 ISO (see packer/Makefile). "virt" is arm64's
-  # equivalent -- see local.machine_type's comment.
+  # Use q35 for amd64 UEFI and virt for arm64; cpu_model selects the CPU.
   qemu_binary    = local.qemu_binary
   machine_type   = local.machine_type
   cpu_model      = var.cpu_model
