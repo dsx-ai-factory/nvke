@@ -104,6 +104,54 @@ func TestAwaitForwardPortClosesDoneAfterTimeout(t *testing.T) {
 	require.Error(t, <-errCh)
 }
 
+// WaitForClusterDeleted reads not-found as the cluster having gone, so anything
+// this matches by mistake reads as a completed deletion.
+func TestClusterNotFoundIn(t *testing.T) {
+	const name = "capd-cluster-20260914"
+
+	tests := []struct {
+		name string
+		out  string
+		want bool
+	}{
+		{
+			name: "the cluster is absent",
+			out:  `Error: cluster "capd-cluster-20260914" not found`,
+			want: true,
+		},
+		{
+			// The CLI says "not found" for a site missing from its config too.
+			// Reading that as a deletion would pass the wait against a Runner
+			// whose site registration had broken.
+			name: "the site is missing from the config",
+			out:  `Error: site "e2e-nkectl" not found in config`,
+			want: false,
+		},
+		{
+			// And for the Secret behind `get kubeconfig`.
+			name: "the admin kubeconfig secret is absent",
+			out:  `Error: admin kubeconfig secret nke-system/capd-cluster-20260914-admin-kubeconfig not found -- check the cluster name`,
+			want: false,
+		},
+		{
+			name: "a different cluster is absent",
+			out:  `Error: cluster "some-other-cluster" not found`,
+			want: false,
+		},
+		{
+			name: "an unrelated failure",
+			out:  `Error: Get "http://127.0.0.1:1234/api/clusters": dial tcp: connection refused`,
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, clusterNotFoundIn(tt.out, name))
+		})
+	}
+}
+
 func TestResolveBinary(t *testing.T) {
 	t.Run("rejects a path that does not exist", func(t *testing.T) {
 		_, err := resolveBinary(t.TempDir() + "/absent-nkectl")

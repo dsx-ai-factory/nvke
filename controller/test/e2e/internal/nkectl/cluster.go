@@ -71,13 +71,27 @@ func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.
 	}
 	r.logf("nkectl e2e: %s", strings.TrimSpace(out))
 
+	// Recorded by name whatever the id does: the name is all CleanupCreated
+	// needs to remove it.
 	name := match[1]
+	created := createdCluster{name: name}
 	if id, parseErr := uuid.Parse(match[2]); parseErr == nil {
+		created.id = id
 		r.clusterNames[id] = name
-		r.createdClusters = append(r.createdClusters, createdCluster{name: name, id: id})
+	} else {
+		r.logf("nkectl e2e: cluster %s reported an unparsable id %q: %v", name, match[2], parseErr)
 	}
+	r.createdClusters = append(r.createdClusters, created)
 
 	return r.GetClusterByName(ctx, name)
+}
+
+// clusterNotFoundIn reports whether out carries the CLI's not-found error for
+// this exact cluster. The whole sentence has to match: the CLI also says "not
+// found" for a missing site and for an absent kubeconfig Secret, and
+// WaitForClusterDeleted reads not-found as success.
+func clusterNotFoundIn(out, name string) bool {
+	return strings.Contains(out, fmt.Sprintf("cluster %q not found", name))
 }
 
 // GetClusterByName returns the named cluster, or an error wrapping
@@ -85,7 +99,7 @@ func (r *Runner) CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.
 func (r *Runner) GetClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
 	out, err := r.Run(ctx, "get", "clusters", "-c", name, "-o", "json")
 	if err != nil {
-		if strings.Contains(strings.ToLower(out), "not found") {
+		if clusterNotFoundIn(out, name) {
 			return nil, fmt.Errorf("%q: %w", name, errClusterNotFound)
 		}
 		return nil, err
@@ -214,8 +228,14 @@ func (r *Runner) WaitForClusterDeleted(ctx context.Context, id openapi_types.UUI
 // returned error would displace whatever really failed.
 func (r *Runner) CleanupCreated(ctx context.Context) {
 	for _, created := range r.createdClusters {
-		if _, err := r.GetClusterByName(ctx, created.name); err != nil {
-			continue // already gone, or unreachable; nothing useful to do either way
+		switch _, err := r.GetClusterByName(ctx, created.name); {
+		case errors.Is(err, errClusterNotFound):
+			continue // the expected case: the delete spec already removed it
+		case err != nil:
+			// Not knowing is not the same as gone: say so, rather than leave a
+			// cluster running with nothing in the log to explain it.
+			r.logf("nkectl e2e: could not tell whether cluster %s is still there: %v", created.name, err)
+			continue
 		}
 		r.logf("nkectl e2e: removing leftover cluster %s", created.name)
 		if err := r.deleteClusterByName(ctx, created.name); err != nil {

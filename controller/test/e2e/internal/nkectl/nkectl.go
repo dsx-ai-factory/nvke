@@ -37,6 +37,10 @@ const (
 	// staged into the runner rather than installed.
 	BinaryEnv = "NKECTL_BIN"
 
+	// kubectlBinary carries the port-forward, and is the only command besides
+	// nkectl that a Runner needs.
+	kubectlBinary = "kubectl"
+
 	// siteName is the site this package registers. Its own name, in its own
 	// config home, so nothing here can disturb a developer's real sites.
 	siteName = "e2e-nkectl"
@@ -57,10 +61,11 @@ var (
 	//	Forwarding from 127.0.0.1:54321 -> 8080
 	forwardingRe = regexp.MustCompile(`Forwarding from 127\.0\.0\.1:(\d+)`)
 
-	// ErrBinaryNotFound reports that no nkectl could be located. New wraps it,
-	// so a caller that tolerates a missing CLI should test for it with
+	// ErrBinaryNotFound reports that a binary a Runner needs -- nkectl, or the
+	// kubectl carrying its port-forward -- is not installed. New wraps it, so a
+	// caller that tolerates an environment without them should test for it with
 	// errors.Is and treat every other error from New as a failure.
-	ErrBinaryNotFound = errors.New("no nkectl binary")
+	ErrBinaryNotFound = errors.New("required binary not found")
 )
 
 // Options configures a Runner.
@@ -127,6 +132,11 @@ func New(ctx context.Context, opts Options) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Checked up front so a host without kubectl reports ErrBinaryNotFound like
+	// one without nkectl. Neither is a regression in the CLI under test.
+	if _, lookErr := exec.LookPath(kubectlBinary); lookErr != nil {
+		return nil, fmt.Errorf("%w: %s carries the port-forward: %w", ErrBinaryNotFound, kubectlBinary, lookErr)
+	}
 	kubeconfig, err := resolveKubeconfig(opts.Kubeconfig)
 	if err != nil {
 		return nil, err
@@ -185,14 +195,19 @@ func (r *Runner) flattenToContext(ctx context.Context, kubeContext string) (stri
 
 	// #nosec G204 -- the kubeconfig path and context name come from the
 	// suite's own config file, not from input.
-	cmd := exec.CommandContext(ctx, "kubectl",
+	cmd := exec.CommandContext(ctx, kubectlBinary,
 		"--kubeconfig", r.kubeconfig,
 		"--context", kubeContext,
 		"config", "view", "--minify", "--flatten", "--raw", "-o", "yaml",
 	)
+	// Stderr captured separately: kubectl explains a bad context name there, and
+	// Output alone would reduce that to a bare exit status.
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("flattening kubeconfig %q to context %q: %w", r.kubeconfig, kubeContext, err)
+		return "", fmt.Errorf("flattening kubeconfig %q to context %q: %w: %s",
+			r.kubeconfig, kubeContext, err, strings.TrimSpace(stderr.String()))
 	}
 
 	path := filepath.Join(r.configHome, "kubeconfig.yaml")
@@ -311,7 +326,7 @@ func (r *Runner) startForward(ctx context.Context) error {
 
 	// #nosec G204 -- the kubeconfig path is the suite's and the rest is built
 	// from this package's own constants.
-	cmd := exec.CommandContext(fwdCtx, "kubectl", args...)
+	cmd := exec.CommandContext(fwdCtx, kubectlBinary, args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
