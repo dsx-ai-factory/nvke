@@ -373,6 +373,16 @@ local_e2e_exec() {
 
 run_local_leg() {
   local label_filter="$1" cp_flag="$2" suffix="$3" rc=0
+  # The nkectl row drives the CLI, so it needs nkectl and kubectl inside the
+  # runner. ci/backend-e2e.sh builds and stages both; this script stages only
+  # the test binary, the kubeconfig and the config, and its runner image
+  # carries neither. Without this the row would skip, and the skip audit in
+  # e2e_run_ginkgo_leg fails the leg on a skip reported from an It.
+  #
+  # Excluded here rather than in the shared filters, so CI -- where both
+  # binaries are present -- still runs it. Stage nkectl and a linux kubectl
+  # into the runner to drop this.
+  label_filter="(${label_filter}) && !nkectl"
   e2e_run_ginkgo_leg local_e2e_exec log "${state_dir}" \
     "${label_filter}" "${cp_flag}" "${suffix}" || rc=$?
   docker cp "${runner_name}:/state/junit${suffix}.xml" "${state_dir}/junit${suffix}.xml" >/dev/null 2>&1 || true

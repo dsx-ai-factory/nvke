@@ -21,6 +21,7 @@ package nkectl
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/cwe"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
@@ -53,10 +56,18 @@ const (
 	commandTimeout = 2 * time.Minute
 )
 
-// forwardingRe matches the line kubectl prints once the local listener is up:
-//
-//	Forwarding from 127.0.0.1:54321 -> 8080
-var forwardingRe = regexp.MustCompile(`Forwarding from 127\.0\.0\.1:(\d+)`)
+var (
+	// forwardingRe matches the line kubectl prints once the local listener is up:
+	//
+	//	Forwarding from 127.0.0.1:54321 -> 8080
+	forwardingRe = regexp.MustCompile(`Forwarding from 127\.0\.0\.1:(\d+)`)
+
+	// ErrBinaryNotFound reports that no nkectl could be located. It is the one
+	// failure a caller may reasonably treat as "this environment cannot run the
+	// CLI specs"; every other error from New means something that was supposed
+	// to work did not, and should fail rather than skip.
+	ErrBinaryNotFound = errors.New("no nkectl binary")
+)
 
 // Options configures a Runner.
 type Options struct {
@@ -82,6 +93,9 @@ type Options struct {
 
 // Runner drives nkectl against a site it registers itself, over a port-forward
 // it owns. Close releases both.
+//
+// Not safe for concurrent use. The suite drives one Runner from one Ordered
+// container, whose specs run serially.
 type Runner struct {
 	binary     string
 	kubeconfig string
@@ -92,6 +106,27 @@ type Runner struct {
 
 	forward       *exec.Cmd
 	forwardCancel context.CancelFunc
+	// forwardDone closes when kubectl's stdout reaches EOF, which is how a
+	// forward that has exited becomes visible. `kubectl port-forward` does not
+	// re-resolve its pod: it exits when that pod goes away, so without this
+	// every later call would fail until a waiter's deadline expired.
+	forwardDone chan struct{}
+
+	// names caches the id-to-name mapping the CLI has no lookup for. nkectl
+	// addresses clusters by name and the suite's seam passes ids, so this is
+	// where the two meet without a list call per poll.
+	names map[openapi_types.UUID]string
+	// created records every cluster CreateCluster brought into being, so
+	// CleanupCreated can still remove one whose post-create lookup failed and
+	// which therefore never reached the suite's own bookkeeping.
+	created []createdCluster
+}
+
+// createdCluster is the identity read back from the create command's own
+// output, which is all that is known before the follow-up lookup runs.
+type createdCluster struct {
+	name string
+	id   openapi_types.UUID
 }
 
 // New resolves the binary, starts a port-forward to the NKE Service and
@@ -123,11 +158,25 @@ func New(ctx context.Context, opts Options) (*Runner, error) {
 		binary:     binary,
 		kubeconfig: kubeconfig,
 		configHome: configHome,
-		timeouts:   withDefaults(opts.Timeouts),
+		timeouts:   nke.WithDefaults(opts.Timeouts),
 		logf:       logf,
+		names:      map[openapi_types.UUID]string{},
 	}
 
-	if err := r.startForward(ctx, opts.Context); err != nil {
+	// A requested context has to be baked into the file, not passed per
+	// command: nkectl takes a kubeconfig path and no context flag, so it would
+	// otherwise mint tokens and read tenant Secrets through the file's
+	// current-context while the forward pointed at the requested one.
+	if opts.Context != "" {
+		flattened, ferr := r.flattenToContext(ctx, opts.Context)
+		if ferr != nil {
+			r.Close()
+			return nil, ferr
+		}
+		r.kubeconfig = flattened
+	}
+
+	if err := r.startForward(ctx); err != nil {
 		r.Close()
 		return nil, err
 	}
@@ -138,20 +187,84 @@ func New(ctx context.Context, opts Options) (*Runner, error) {
 	return r, nil
 }
 
+// flattenToContext writes a kubeconfig holding only the requested context, with
+// its credentials embedded, and returns its path. Everything downstream then
+// agrees on one cluster without needing to thread a context flag that nkectl
+// does not accept.
+func (r *Runner) flattenToContext(ctx context.Context, kubeContext string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+
+	// #nosec G204 -- the kubeconfig path and context name come from the
+	// suite's own config file, not from input.
+	cmd := exec.CommandContext(ctx, "kubectl",
+		"--kubeconfig", r.kubeconfig,
+		"--context", kubeContext,
+		"config", "view", "--minify", "--flatten", "--raw", "-o", "yaml",
+	)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("flattening kubeconfig %q to context %q: %w", r.kubeconfig, kubeContext, err)
+	}
+
+	path := filepath.Join(r.configHome, "kubeconfig.yaml")
+	// 0600: this holds the embedded client credential --minify --raw emitted.
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		return "", fmt.Errorf("writing the flattened kubeconfig: %w", err)
+	}
+	r.logf("nkectl e2e: flattened kubeconfig to context %q", kubeContext)
+	return path, nil
+}
+
 // Close stops the port-forward and removes the throwaway config. Safe on a
 // partially built Runner, so New can defer to it on any failure.
 func (r *Runner) Close() error {
-	if r.forwardCancel != nil {
-		r.forwardCancel()
-		if r.forward != nil {
-			_ = r.forward.Wait()
-		}
-		r.forwardCancel = nil
-	}
+	r.stopForward()
 	if r.configHome != "" {
 		err := os.RemoveAll(r.configHome)
 		r.configHome = ""
 		return err
+	}
+	return nil
+}
+
+// stopForward ends the kubectl process and waits for it, leaving the Runner
+// ready for startForward to be called again.
+func (r *Runner) stopForward() {
+	if r.forwardCancel == nil {
+		return
+	}
+	r.forwardCancel()
+	if r.forward != nil {
+		_ = r.forward.Wait()
+		r.forward = nil
+	}
+	r.forwardCancel = nil
+	r.forwardDone = nil
+}
+
+// ensureForward restarts the port-forward when kubectl has exited, which is
+// what it does whenever the pod behind the Service is replaced.
+//
+// The replacement listens on a fresh ephemeral port, so the site has to be
+// re-registered to point at it.
+func (r *Runner) ensureForward(ctx context.Context) error {
+	if r.forwardDone == nil {
+		return nil
+	}
+	select {
+	case <-r.forwardDone:
+	default:
+		return nil // still up
+	}
+
+	r.logf("nkectl e2e: the port-forward exited; restarting it")
+	r.stopForward()
+	if err := r.startForward(ctx); err != nil {
+		return fmt.Errorf("restarting the port-forward: %w", err)
+	}
+	if err := r.setSite(ctx); err != nil {
+		return fmt.Errorf("re-registering the site after restarting the port-forward: %w", err)
 	}
 	return nil
 }
@@ -163,6 +276,10 @@ func (r *Runner) BaseURL() string { return r.baseURL }
 // returned on failure too: nkectl reports the reason there, and an error naming
 // only the exit status is not worth reading.
 func (r *Runner) Run(ctx context.Context, args ...string) (string, error) {
+	if err := r.ensureForward(ctx); err != nil {
+		return "", err
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, commandTimeout)
 	defer cancel()
 
@@ -187,7 +304,11 @@ func (r *Runner) Run(ctx context.Context, args ...string) (string, error) {
 // The forward deliberately outlives ctx, which bounds only New's setup, so its
 // own context keeps ctx's values but drops its cancellation. Close is what
 // stops it.
-func (r *Runner) startForward(ctx context.Context, kubeContext string) error {
+//
+// No --context flag: r.kubeconfig already names exactly the context to use,
+// either because the caller asked for none or because flattenToContext reduced
+// the file to the one they did.
+func (r *Runner) startForward(ctx context.Context) error {
 	fwdCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	r.forwardCancel = cancel
 
@@ -198,10 +319,9 @@ func (r *Runner) startForward(ctx context.Context, kubeContext string) error {
 		"--address", "127.0.0.1",
 		":" + cwe.Port(),
 	}
-	if kubeContext != "" {
-		args = append([]string{"--context", kubeContext}, args...)
-	}
 
+	// #nosec G204 -- the kubeconfig path is the suite's and the rest is built
+	// from this package's own constants.
 	cmd := exec.CommandContext(fwdCtx, "kubectl", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -215,8 +335,9 @@ func (r *Runner) startForward(ctx context.Context, kubeContext string) error {
 		return fmt.Errorf("starting kubectl port-forward: %w", startErr)
 	}
 	r.forward = cmd
+	r.forwardDone = make(chan struct{})
 
-	port, err := awaitForwardPort(stdout)
+	port, err := awaitForwardPort(stdout, r.forwardDone)
 	if err != nil {
 		return err
 	}
@@ -227,8 +348,9 @@ func (r *Runner) startForward(ctx context.Context, kubeContext string) error {
 
 // awaitForwardPort reads kubectl's stdout until it announces the local port,
 // then drains the rest in the background so the pipe never fills and blocks the
-// forward.
-func awaitForwardPort(stdout io.ReadCloser) (string, error) {
+// forward. done closes when that stdout reaches EOF, which is ensureForward's
+// signal that the process is gone.
+func awaitForwardPort(stdout io.ReadCloser, done chan struct{}) (string, error) {
 	type result struct {
 		port string
 		err  error
@@ -236,6 +358,7 @@ func awaitForwardPort(stdout io.ReadCloser) (string, error) {
 	found := make(chan result, 1)
 
 	go func() {
+		defer close(done)
 		scanner := bufio.NewScanner(stdout)
 		reported := false
 		for scanner.Scan() {
@@ -248,7 +371,7 @@ func awaitForwardPort(stdout io.ReadCloser) (string, error) {
 			}
 		}
 		if !reported {
-			found <- result{err: fmt.Errorf("kubectl port-forward exited before reporting a local port")}
+			found <- result{err: errors.New("kubectl port-forward exited before reporting a local port")}
 		}
 	}()
 
@@ -299,7 +422,7 @@ func resolveBinary(explicit string) (string, error) {
 	}
 	path, err := exec.LookPath("nkectl")
 	if err != nil {
-		return "", fmt.Errorf("no nkectl binary: pass Options.Binary, set %s, or put nkectl on PATH: %w", BinaryEnv, err)
+		return "", fmt.Errorf("%w: pass Options.Binary, set %s, or put nkectl on PATH: %w", ErrBinaryNotFound, BinaryEnv, err)
 	}
 	return path, nil
 }
@@ -322,19 +445,4 @@ func resolveKubeconfig(explicit string) (string, error) {
 		return "", fmt.Errorf("locating home directory for the default kubeconfig: %w", err)
 	}
 	return filepath.Join(home, ".kube", "config"), nil
-}
-
-// withDefaults fills the timeouts a caller left zero. Kept in step with the
-// REST client's own defaults so the two paths wait the same.
-func withDefaults(o nke.Options) nke.Options {
-	if o.Provision == 0 {
-		o.Provision = 30 * time.Minute
-	}
-	if o.Delete == 0 {
-		o.Delete = 15 * time.Minute
-	}
-	if o.Poll == 0 {
-		o.Poll = 10 * time.Second
-	}
-	return o
 }

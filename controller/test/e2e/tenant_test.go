@@ -27,18 +27,20 @@ import (
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/tenantauth"
 )
 
-// clusterCreator is the three calls initCluster makes to bring a cluster into
-// being. *nke.Client satisfies it and is the default for every entry; the
+// clusterLifecycle is the calls that bring a cluster into being and take it
+// away again. *nke.Client satisfies it and is the default for every entry; the
 // nkectl entry substitutes a CLI-backed implementation so one row proves the
-// command line provisions a cluster too.
+// command line drives the whole lifecycle.
 //
-// Deliberately narrow. The suite's ~20 post-create validations keep talking to
+// Deliberately narrow. The suite's post-create validations keep talking to
 // t.nke directly, because nkectl has no node-level commands to validate with
 // and widening this would mean an implementation that panics on most of it.
-type clusterCreator interface {
+type clusterLifecycle interface {
 	CreateCluster(ctx context.Context, spec nke.ClusterSpec) (*api.Cluster, error)
 	GetByName(ctx context.Context, name string) (*api.Cluster, error)
 	WaitForClusterReady(ctx context.Context, id openapi_types.UUID) (*api.Cluster, error)
+	DeleteCluster(ctx context.Context, id openapi_types.UUID) error
+	WaitForClusterDeleted(ctx context.Context, id openapi_types.UUID) error
 }
 
 // tenantTest carries everything a backend's specs share: the wiring built once
@@ -49,8 +51,9 @@ type tenantTest struct {
 	k8sClient     client.Client
 	tenantClients *kube.TenantClientFactory
 	nke           *nke.Client
-	// creator brings the cluster up. Defaults to nke; the nkectl entry swaps it.
-	creator clusterCreator
+	// lifecycle creates and deletes the cluster. Defaults to nke; the nkectl
+	// entry swaps it so that row drives both ends through the CLI.
+	lifecycle clusterLifecycle
 	// nkectlRunner is set only by the nkectl entry, for the CLI-only
 	// validations that follow the create. Nil everywhere else.
 	nkectlRunner *nkectl.Runner
@@ -87,8 +90,10 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 			test = expectSucceed(setupTenantTest(ctx, spec.options))
 			if spec.createVia == clientNkectl {
+				// Torn down in AfterAll, not through DeferCleanup: registered
+				// here that would run when this spec ends, taking the
+				// port-forward away from every spec that follows it.
 				test.useNkectl(ctx, spec.options)
-				DeferCleanup(test.closeNkectl)
 			}
 			if spec.validate.brownfieldOIDC {
 				// A cluster on an OIDC-enabled site is always born OIDC-on, but
@@ -226,13 +231,27 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			// Use AfterAll so the cluster is removed even if a spec before the
 			// delete spec fails (or the delete spec is skipped). It is a no-op
 			// once the delete spec has run.
+			// The lifecycle config, or a failure it says to preserve, can ask for
+			// the cluster to outlive the run. Named once so the delete below and
+			// the nkectl sweep after it cannot disagree about when that applies.
+			keepCluster := test.cfg.Lifecycle.ReuseCluster != "" ||
+				test.cfg.Lifecycle.SkipDelete ||
+				(test.cfg.Lifecycle.PreserveOnFailure && failed)
+
 			switch {
 			case deleted, test.cluster == nil:
-			case test.cfg.Lifecycle.ReuseCluster != "", test.cfg.Lifecycle.SkipDelete:
-			case test.cfg.Lifecycle.PreserveOnFailure && failed:
+			case keepCluster:
 			default:
 				test.deleteClusterAndWait(ctx)
 			}
+			// Only the CLI entry has anything here: a cluster nkectl created
+			// whose follow-up lookup failed left test.cluster nil, so the switch
+			// above skipped it. Runs before the runner closes, since it needs
+			// the port-forward.
+			if !keepCluster {
+				test.cleanupNkectlCreated(ctx)
+			}
+			test.closeNkectl()
 		}, NodeTimeout(1*time.Hour))
 	},
 	// The pull-request smoke lane uses a separate, minimal topology instead of
@@ -689,7 +708,7 @@ func setupTenantTest(ctx context.Context, timeouts nke.Options) (tenantTest, err
 		k8sClient:     k8sClient,
 		tenantClients: tenantClients,
 		nke:           cweClient,
-		creator:       cweClient,
+		lifecycle:     cweClient,
 		timeouts:      timeouts,
 		trustDomain:   trustDomain,
 	}, nil
@@ -704,7 +723,7 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	t.spec.Name = fmt.Sprintf("%s-%s", t.spec.Name, t.spec.Backend) // CreateCluster appends a timestamp
 
 	if t.cfg.Lifecycle.ReuseCluster != "" {
-		t.cluster = expectSucceed(t.creator.GetByName(ctx, t.cfg.Lifecycle.ReuseCluster))
+		t.cluster = expectSucceed(t.lifecycle.GetByName(ctx, t.cfg.Lifecycle.ReuseCluster))
 		return
 	}
 
@@ -716,18 +735,18 @@ func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	t.log.Info("Using control-plane VIP (empty means none configured)", "controlPlaneVIP", t.spec.ControlPlane.ControlPlaneVIP)
 
 	By(fmt.Sprintf("Creating the %s tenant cluster", t.spec.Backend))
-	cluster, err := t.creator.CreateCluster(ctx, t.spec)
+	cluster, err := t.lifecycle.CreateCluster(ctx, t.spec)
 	Expect(err).NotTo(HaveOccurred(), "should create the cluster")
 	t.log.Info("Created cluster", "name", cluster.Name, "id", cluster.ID)
 
 	By("Verifying the tenant cluster appears in the cluster list")
-	listedCluster, err := t.creator.GetByName(ctx, cluster.Name)
+	listedCluster, err := t.lifecycle.GetByName(ctx, cluster.Name)
 	Expect(err).NotTo(HaveOccurred(), "should list the created cluster by name")
 	Expect(listedCluster.ID).To(Equal(cluster.ID), "listed cluster should match the created cluster")
 
 	By("Waiting for the tenant cluster to be provisioned")
 	start := time.Now()
-	cluster, err = t.creator.WaitForClusterReady(ctx, cluster.ID)
+	cluster, err = t.lifecycle.WaitForClusterReady(ctx, cluster.ID)
 	Expect(err).NotTo(HaveOccurred(), "should provision the cluster")
 	t.log.Info("Cluster provisioned", "name", cluster.Name, "duration", time.Since(start).Round(time.Second).String())
 
@@ -752,9 +771,9 @@ func validateTenantAccessSecretGCPostDelete(test *tenantTest) {
 func (t *tenantTest) deleteClusterAndWait(ctx context.Context) {
 	GinkgoHelper()
 	By("Deleting the tenant cluster")
-	Expect(t.nke.DeleteCluster(ctx, t.cluster.ID)).To(Succeed())
+	Expect(t.lifecycle.DeleteCluster(ctx, t.cluster.ID)).To(Succeed())
 	By("Waiting for the tenant cluster to be deleted")
-	Expect(t.nke.WaitForClusterDeleted(ctx, t.cluster.ID)).To(Succeed())
+	Expect(t.lifecycle.WaitForClusterDeleted(ctx, t.cluster.ID)).To(Succeed())
 }
 
 // Cluster shape is a property of the test, not the environment, so it lives in

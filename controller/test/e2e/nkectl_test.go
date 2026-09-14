@@ -15,6 +15,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,13 +33,18 @@ import (
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/nkectl"
 )
 
-// useNkectl points the test's cluster creation at the nkectl binary.
+// useNkectl points the test's cluster lifecycle at the nkectl binary.
 //
-// A missing binary skips the entry rather than failing it. Locally that is the
-// common case and there is nothing to learn from a red run; CI stages nkectl
-// into the runner before the Ginkgo legs start (hack/ci/nkectl-smoke.sh's
-// build and stage steps run first), so a skip there means the staging broke and
-// the skip reason says so.
+// Only a missing binary skips. That is the one condition that says "this
+// environment does not run CLI specs" -- a developer's checkout without nkectl
+// built. Everything else nkectl.New can return (the port-forward not starting,
+// `config set-site` failing) is a real failure, and skipping on it would hide a
+// CLI regression behind a green run.
+//
+// The distinction matters in CI both ways: a skip here is reported from an It,
+// so e2e_assert_no_new_skips turns the leg red with a "not usable" reason
+// rather than the failure itself, while a genuine regression that skipped would
+// never be reported at all.
 func (t *tenantTest) useNkectl(ctx context.Context, timeouts nke.Options) {
 	GinkgoHelper()
 
@@ -48,16 +54,30 @@ func (t *tenantTest) useNkectl(ctx context.Context, timeouts nke.Options) {
 		Timeouts:   timeouts,
 		Logf:       func(format string, args ...any) { t.log.Info(fmt.Sprintf(format, args...)) },
 	})
-	if err != nil {
-		Skip("nkectl is not usable here, so the CLI entry cannot run: " + err.Error())
+	if errors.Is(err, nkectl.ErrBinaryNotFound) {
+		Skip("no nkectl binary, so the CLI entry cannot run: " + err.Error())
 	}
+	Expect(err).NotTo(HaveOccurred(), "should start the nkectl runner")
 
 	t.nkectlRunner = runner
-	t.creator = runner
-	t.log.Info("Driving cluster creation through nkectl", "endpoint", runner.BaseURL())
+	t.lifecycle = runner
+	t.log.Info("Driving the cluster lifecycle through nkectl", "endpoint", runner.BaseURL())
 }
 
-// closeNkectl releases the runner's port-forward and throwaway config.
+// cleanupNkectlCreated removes any cluster nkectl created that is still there.
+//
+// The suite's own AfterAll covers the cluster it knows about. This covers the
+// one it cannot: a create that succeeded but whose follow-up lookup failed,
+// which leaves test.cluster nil and the cluster itself running.
+func (t *tenantTest) cleanupNkectlCreated(ctx context.Context) {
+	if t.nkectlRunner == nil {
+		return
+	}
+	t.nkectlRunner.CleanupCreated(ctx)
+}
+
+// closeNkectl releases the runner's port-forward and throwaway config. Called
+// from AfterAll, after any cleanup that still needs the forward.
 func (t *tenantTest) closeNkectl() {
 	if t.nkectlRunner == nil {
 		return
@@ -75,9 +95,14 @@ func (t *tenantTest) closeNkectl() {
 func validateNkectlPostCreate(test *tenantTest) {
 	Describe("nkectl against the provisioned cluster", Label("nkectl"), func() {
 		BeforeEach(func() {
-			if test.nkectlRunner == nil {
-				Skip("the nkectl runner was not started")
-			}
+			// Fail, not Skip. Reaching here without a runner means the create
+			// spec built one and something took it away again -- a bug in this
+			// file, not a property of the environment. A Skip would also be
+			// invisible to e2e_assert_no_new_skips, which only matches skips
+			// reported from an It, so the lane would stay green with neither
+			// spec below ever running.
+			Expect(test.nkectlRunner).NotTo(BeNil(),
+				"the nkectl runner should still be open; it is closed in AfterAll, after these specs")
 		})
 
 		// The headline gap this entry closes. `get kubeconfig` is the one tenant

@@ -94,7 +94,7 @@ func NewClientWithTokenSource(restConfig *rest.Config, opts Options, tokens Toke
 	if err != nil {
 		return nil, fmt.Errorf("building API client: %w", err)
 	}
-	return &Client{api: apiClient, opts: withDefaults(opts)}, nil
+	return &Client{api: apiClient, opts: WithDefaults(opts)}, nil
 }
 
 // bearerToken sets Authorization on every request. The token is fetched per
@@ -346,7 +346,10 @@ func (c *Client) GetByName(ctx context.Context, name string) (*api.Cluster, erro
 	return nil, fmt.Errorf("cluster %q not found", name)
 }
 
-func withDefaults(opts Options) Options {
+// WithDefaults fills in the timeouts a caller left unset. Exported so
+// internal/nkectl, which waits on the same operations through the CLI, waits
+// exactly as long as this client would rather than keeping its own copy.
+func WithDefaults(opts Options) Options {
 	if opts.Provision <= 0 {
 		opts.Provision = defaultProvision
 	}
