@@ -303,6 +303,13 @@ jobs:
             echo "::error::no time left before the job's ${{ matrix.timeout_minutes }}m timeout; skipping the FDE build"
             exit 1
           fi
+          # Stream guest progress while Packer waits for SSH.
+          mkdir -p os-image/packer/build-logs
+          console_log=os-image/packer/build-logs/fde-install-console.log
+          touch "${console_log}"
+          tail -n +1 -F "${console_log}" &
+          console_pid=$!
+          trap 'kill "${console_pid}"; wait "${console_pid}" || true' EXIT
           status=0
           timeout --signal=TERM "${remaining}s" \
             make -C os-image/packer os-image-fde ARCH=${{ matrix.arch }} || status=$?
@@ -340,6 +347,13 @@ jobs:
             echo "::error::no time left before the job's ${{ matrix.timeout_minutes }}m timeout; skipping the non-FDE build"
             exit 1
           fi
+          # Stream guest progress while Packer waits for SSH.
+          mkdir -p os-image/packer/build-logs
+          console_log=os-image/packer/build-logs/non-fde-install-console.log
+          touch "${console_log}"
+          tail -n +1 -F "${console_log}" &
+          console_pid=$!
+          trap 'kill "${console_pid}"; wait "${console_pid}" || true' EXIT
           status=0
           timeout --signal=TERM "${remaining}s" \
             make -C os-image/packer os-image-non-fde ARCH=${{ matrix.arch }} || status=$?
