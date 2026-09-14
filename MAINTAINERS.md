@@ -11,7 +11,7 @@ including how maintainers are added and removed.
 
 | GitHub handle | Affiliation | Area of focus |
 |---|---|---|
-| @NVIDIA/nke-maintainer | NVIDIA | All modules |
+| @dsx-ai-factory/nke-maintainer | NVIDIA | All modules |
 
 ## Project lead
 
@@ -20,7 +20,7 @@ strategic direction. Contact via a GitHub issue or discussion.
 
 | GitHub handle | Affiliation |
 |---|---|
-| @NVIDIA/nke-maintainer | NVIDIA |
+| @dsx-ai-factory/nke-maintainer | NVIDIA |
 
 ## Emeritus maintainers
 

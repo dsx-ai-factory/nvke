@@ -63,6 +63,17 @@ spec:
           spec:
             description: NicoClusterSpec defines the desired state of NicoCluster.
             properties:
+              failureDomainLabelKey:
+                description: |-
+                  FailureDomainLabelKey is the NICo Machine label key that carries the failure
+                  domain name. It is read to publish status.failureDomains and sent as the
+                  machine label selector key when placing an instance. Leaving it unset
+                  disables failure domain support for this cluster: no domains are published,
+                  and a Machine that requests one fails rather than being placed anywhere.
+                  Sites that follow the NICo convention set it to "failure_domain".
+                maxLength: 255
+                minLength: 1
+                type: string
               identityRef:
                 description: |-
                   IdentityRef points to the Secret with NICo endpoint and authentication settings.
@@ -150,6 +161,38 @@ spec:
                 type: array
                 x-kubernetes-list-map-keys:
                 - type
+                x-kubernetes-list-type: map
+              failureDomains:
+                description: FailureDomains are the placement domains NICo exposes
+                  for this cluster's site.
+                items:
+                  description: |-
+                    FailureDomain is the Schema for Cluster API failure domains.
+                    It allows controllers to understand how many failure domains a cluster can optionally span across.
+                  properties:
+                    attributes:
+                      additionalProperties:
+                        type: string
+                      description: attributes is a free form map of attributes an
+                        infrastructure provider might use or require.
+                      type: object
+                    controlPlane:
+                      description: controlPlane determines if this failure domain
+                        is suitable for use by control plane machines.
+                      type: boolean
+                    name:
+                      description: name is the name of the failure domain.
+                      maxLength: 256
+                      minLength: 1
+                      type: string
+                  required:
+                  - name
+                  type: object
+                maxItems: 100
+                minItems: 1
+                type: array
+                x-kubernetes-list-map-keys:
+                - name
                 x-kubernetes-list-type: map
               initialization:
                 description: Initialization provides provisioning observations for

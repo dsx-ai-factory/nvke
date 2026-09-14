@@ -16,10 +16,10 @@ contact_links:
     url: https://www.nvidia.com/object/submit-security-vulnerability.html
     about: Do not open a public issue. Report through NVIDIA PSIRT, as described in SECURITY.md.
   - name: Ask a question
-    url: https://github.com/NVIDIA/nke/discussions/categories/q-a
+    url: https://github.com/dsx-ai-factory/nke/discussions/categories/q-a
     about: For usage questions and anything that is not a bug or a feature request.
   - name: Getting help
-    url: https://github.com/NVIDIA/nke/blob/main/SUPPORT.md
+    url: https://github.com/dsx-ai-factory/nke/blob/main/SUPPORT.md
     about: Where to ask questions and what to check before opening an issue.
   - name: Cluster API documentation
     url: https://cluster-api.sigs.k8s.io/

@@ -16,6 +16,6 @@ make preflight
 ```
 
 ## Checklist
-- [ ] I am familiar with the [Contributing Guidelines](https://github.com/NVIDIA/nke/blob/main/CONTRIBUTING.md).
+- [ ] I am familiar with the [Contributing Guidelines](https://github.com/dsx-ai-factory/nke/blob/main/CONTRIBUTING.md).
 - [ ] New or existing tests cover these changes.
 - [ ] The documentation is up to date with these changes.

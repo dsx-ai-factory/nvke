@@ -60,7 +60,7 @@ jobs:
   gofail:
     name: Gofail E2E
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     # The two scenarios took 158s and 188s when measured, and both wait on real
     # heartbeat timeouts, so the budget is deliberately loose.
     timeout-minutes: 25
@@ -163,7 +163,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ -n "${GH_TOKEN}" ]] || { echo "::notice::no internal token on this run; skipping the CAPNICo CRD drift check"; exit 0; }
-          ver="$(cd controller && go list -m -f '{{.Version}}' github.com/NVIDIA/cluster-api-provider-nico)"
+          ver="$(cd controller && go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)"
           echo "checking controller/test/fixtures/capnico-crds against cluster-api-provider-nico ${ver}"
           drift=0
           for f in nicoclusters nicoclustertemplates nicomachines nicomachinetemplates; do

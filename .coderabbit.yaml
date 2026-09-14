@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+#
+# CodeRabbit writes its summary into the pull request description by default.
+# That edit is a pull_request `edited` event with the bot as actor. On a fork
+# pull request the bot gets a read-only token, so the merge gate re-runs and its
+# SARIF upload fails, and the required `gate` check turns red on an unchanged
+# head. Keep the summary in the walkthrough comment instead.
+reviews:
+  high_level_summary_in_walkthrough: true

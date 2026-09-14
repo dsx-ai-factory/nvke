@@ -142,7 +142,7 @@ jobs:
   e2e:
     name: ${{ inputs.backend }}-e2e (${{ inputs.arch }})
     runs-on: ${{ inputs.runner }}
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: ${{ inputs.timeout-minutes }}
     permissions:
       contents: read
@@ -195,7 +195,7 @@ jobs:
         id: capnico_version
         run: |
           set -euo pipefail
-          capnico_ref="$(awk '$1 == "github.com/NVIDIA/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
+          capnico_ref="$(awk '$1 == "github.com/dsx-ai-factory/cluster-api-provider-nico" { print $2; exit }' controller/go.mod)"
           if [[ -z "${capnico_ref}" ]]; then
             echo "::error::controller/go.mod does not pin cluster-api-provider-nico"
             exit 1

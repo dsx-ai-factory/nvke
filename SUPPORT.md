@@ -4,12 +4,12 @@
 
 | Channel | When to use |
 |---|---|
-| [GitHub Issues](https://github.com/NVIDIA/nke/issues) | Bug reports, feature requests, and documentation gaps |
-| [GitHub Discussions](https://github.com/NVIDIA/nke/discussions/categories/q-a) | Questions, design proposals, and general Q&A |
+| [GitHub Issues](https://github.com/dsx-ai-factory/nke/issues) | Bug reports, feature requests, and documentation gaps |
+| [GitHub Discussions](https://github.com/dsx-ai-factory/nke/discussions/categories/q-a) | Questions, design proposals, and general Q&A |
 
 ## Before opening an issue
 
-1. Search [existing issues](https://github.com/NVIDIA/nke/issues) to avoid duplicates.
+1. Search [existing issues](https://github.com/dsx-ai-factory/nke/issues) to avoid duplicates.
 2. Check the [documentation](docs/) and the module-level `README.md` files under `controller/` and `agent/`.
 3. Reproduce the problem on the latest commit of `main`.
 

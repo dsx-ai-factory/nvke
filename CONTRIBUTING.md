@@ -3,7 +3,7 @@
 If you are interested in contributing to nke, your contributions will fall
 into three categories:
 1. You want to report a bug, feature request, or documentation issue
-    - File an [issue](https://github.com/NVIDIA/nke/issues/new/choose)
+    - File an [issue](https://github.com/dsx-ai-factory/nke/issues/new/choose)
     describing what you encountered or what you want to see changed.
     - The maintainers will evaluate issues and triage them, scheduling
     them for a release. If you believe the issue needs priority attention,
@@ -39,7 +39,7 @@ into three categories:
 ### Clone and build
 
 ```bash
-git clone https://github.com/NVIDIA/nke.git
+git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
 ```
 
@@ -126,13 +126,13 @@ For small bug fixes and documentation improvements, a PR without a prior issue i
 
 ### Your first issue
 
-1. Read the project's [README.md](https://github.com/NVIDIA/nke/blob/main/README.md)
+1. Read the project's [README.md](https://github.com/dsx-ai-factory/nke/blob/main/README.md)
     to learn how to set up the development environment.
-2. Find an issue to work on. The best way is to look for the [good first issue](https://github.com/NVIDIA/nke/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
-    or [help wanted](https://github.com/NVIDIA/nke/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) labels.
+2. Find an issue to work on. The best way is to look for the [good first issue](https://github.com/dsx-ai-factory/nke/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+    or [help wanted](https://github.com/dsx-ai-factory/nke/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22) labels.
 3. Comment on the issue saying you are going to work on it.
 4. Code! Make sure to update unit tests and documentation.
-5. When done, [create your pull request](https://github.com/NVIDIA/nke/compare)
+5. When done, [create your pull request](https://github.com/dsx-ai-factory/nke/compare)
     referencing the issue with `Closes #<N>` in the description.
 6. Verify that CI passes all [status checks](https://help.github.com/articles/about-status-checks/), or fix if needed.
 7. Wait for maintainer review and address any feedback.
@@ -160,7 +160,7 @@ Labels to apply:
 ### Seasoned developers
 
 Once you have gotten your feet wet and are more comfortable with the code, you
-can look at the prioritized issues for the next release in our [project board](https://github.com/orgs/NVIDIA/projects).
+can look at the prioritized issues for the next release in our [project board](https://github.com/orgs/dsx-ai-factory/projects).
 
 Look at the unassigned issues, and find an issue you are comfortable with
 contributing to. Start with _Step 3_ from above, commenting on the issue to let

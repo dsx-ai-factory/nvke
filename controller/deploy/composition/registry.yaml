@@ -100,7 +100,7 @@ components:
   - name: spire
     displayName: SPIRE
     helm:
-      defaultRepository: oci://ghcr.io/nvidia/nke/charts
+      defaultRepository: oci://ghcr.io/dsx-ai-factory/nke/charts
       defaultChart: spire
       defaultVersion: "0.29.0"
       defaultNamespace: spire-server
@@ -114,7 +114,7 @@ components:
   - name: controller
     displayName: NKE controller (cloud-workflow-engine)
     helm:
-      defaultRepository: oci://ghcr.io/nvidia/nke/charts
+      defaultRepository: oci://ghcr.io/dsx-ai-factory/nke/charts
       defaultChart: controller
       # Version is derived from `git describe --match controller/v*`, never
       # authored: the pin does not exist until the tag does.

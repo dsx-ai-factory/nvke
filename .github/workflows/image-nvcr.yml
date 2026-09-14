@@ -63,7 +63,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Build (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     environment: nvcr
@@ -155,7 +155,7 @@ jobs:
             BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
 
   manifest:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Manifest
     runs-on: linux-amd64-cpu8
     needs: [build]
@@ -241,8 +241,8 @@ jobs:
   # Tags only. `main` keeps publishing to NVCR alone, so GHCR carries released
   # versions rather than every commit.
   #
-  # The destination is ghcr.io/nvidia/nke/controller. Charts live under
-  # ghcr.io/nvidia/nke/charts, which is what keeps a chart and an image from
+  # The destination is ghcr.io/dsx-ai-factory/nke/controller. Charts live under
+  # ghcr.io/dsx-ai-factory/nke/charts, which is what keeps a chart and an image from
   # sharing one OCI repository -- on two of the CAPI repos they did, told apart
   # only by whether the tag carried a "v".
   promote-ghcr:
@@ -319,7 +319,7 @@ jobs:
 
   promote-dsx:
     name: Promote to DSX
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     runs-on: linux-amd64-cpu8
     needs: [manifest]
     environment: nvcr
@@ -412,9 +412,13 @@ jobs:
           }
 
           ensure_immutable_tag "${image_version}"
-          ensure_immutable_tag "sha-${GITHUB_SHA}"
 
+          # sha-<commit> and edge record what main built. A tag run rebuilds the
+          # same commit with the release version stamped in, so its digest
+          # differs, and asserting the sha tag here would fail on every release
+          # cut from a commit main already promoted.
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            ensure_immutable_tag "sha-${GITHUB_SHA}"
             crane tag "${dst}:${image_version}" edge
           fi
 
@@ -426,8 +430,8 @@ jobs:
 
           {
             echo "- \`${dst}:${image_version}\` is \`${source_digest}\`"
-            echo "- \`${dst}:sha-${GITHUB_SHA}\` is \`${source_digest}\`"
             if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+              echo "- \`${dst}:sha-${GITHUB_SHA}\` is \`${source_digest}\`"
               echo "- \`${dst}:edge\` now points at \`${source_digest}\`"
             fi
             echo "- promoted from \`${src}\`, not rebuilt"
@@ -438,7 +442,7 @@ jobs:
   # into an OCI index, which breaks the imagetools create in docker-manifest --
   # the same reason --provenance=false is already on docker-push-arch.
   sbom:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: SBOM (${{ matrix.arch }})
     runs-on: linux-amd64-cpu8
     needs: [manifest]

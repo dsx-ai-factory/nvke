@@ -41,7 +41,7 @@ jobs:
   test:
     name: make test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 40
     permissions:
       contents: read

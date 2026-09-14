@@ -6,7 +6,7 @@ A deploy repository contains the ArgoCD Application manifests, secrets, and Kube
 
 ## Reference Repository
 
-A complete, ready-to-fork reference repository is available at `github.com/NVIDIA/nke` under `deploy/reference/`. It includes the `nke-base-config` templates for secrets and namespaces, storage manifests, and ArgoCD Application manifests for all required NKE components.
+A complete, ready-to-fork reference repository is available at `github.com/dsx-ai-factory/nke` under `deploy/reference/`. It includes the `nke-base-config` templates for secrets and namespaces, storage manifests, and ArgoCD Application manifests for all required NKE components.
 
 > **Important:** The deploy repository must be accessible from the machine running the post-bootstrap deployment tooling. Ensure the repository is hosted on a git service reachable from your provisioned nodes (public GitHub, GitLab.com, or another externally accessible host).
 

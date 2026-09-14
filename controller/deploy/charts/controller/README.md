@@ -25,7 +25,7 @@ A Helm chart to deploy the cloud-workflow-engine service
 | env | list | `[]` | Additional environment variables to inject into the CWE container. |
 | fullnameOverride | string | `""` |  |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
-| image.repository | string | `"ghcr.io/nvidia/nke/controller"` |  |
+| image.repository | string | `"ghcr.io/dsx-ai-factory/nke/controller"` |  |
 | image.tag | string | `""` | Overrides the image tag whose default is the chart appVersion. |
 | imagePullSecrets | list | `[]` | Must match image.repository, which defaults to ghcr.io. The NVCR-published chart gets the NGC secret put back at package time. Supply your own for a private GHCR package. |
 | ingress.annotations | object | `{}` |  |

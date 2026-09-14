@@ -79,7 +79,7 @@ NKECTL_LDFLAGS := \
 	$(RELEASE_LDFLAGS)
 
 .PHONY: build build-cross test test-e2e-bootstrap fmt lint license file-license-check check-no-docker \
-	ensure-capd-image ensure-profiles-image ensure-provisioned-provider-image \
+	ensure-capd-image ensure-provisioned-provider-image \
 	nodes-up nodes-down nodes-status nodes-hosts nodes-attested
 
 # The platforms shipped on a release. nkectl is the one binary here a human
@@ -172,16 +172,6 @@ ensure-capd-image:
 	  CAPD_CNI_MANIFESTS_DEB_PATH="$(CAPD_CNI_MANIFESTS_DEB_PATH)" \
 	  CAPD_KINDEST_NODE_IMAGE=$(CAPD_KINDEST_NODE_IMAGE) \
 	  bash ../controller/hack/capd-kindest-node/build-image.sh
-
-# OS profiles for the CWE deployment, without which CWE fails its schema
-# migration. controller/test/fixtures is the sanitized tree the Tiltfile and
-# capd-e2e already use. A no-op once the image exists locally.
-CWE_PROFILES_IMAGE ?= cwe-profiles:local
-
-ensure-profiles-image:
-	@nerdctl image inspect $(CWE_PROFILES_IMAGE) >/dev/null 2>&1 || \
-	  nerdctl build -t $(CWE_PROFILES_IMAGE) \
-	    -f ../controller/test/fixtures/Dockerfile ../controller/test/fixtures
 
 # The Cluster API infrastructure provider for hosts that already exist, which is
 # what makes a site cluster reconcile: `nkectl bootstrap site` installs it onto
@@ -292,13 +282,22 @@ file-license-check: license ## Verify all files have license headers.
 # Shell and Makefile only. Go sources are covered by TestNoDockerInvocations
 # in the substrate package, which understands Go string literals; a text
 # grep over Go would match that test's own error message, among other prose.
+# GNU grep applies --include to command-line file names as well as to files
+# found while recursing, so the Makefile has to be included by name or the
+# explicit argument is silently skipped.
+#
+# The second alternation is the assignment-then-expand form -- `CLI=docker`,
+# `CLI:=docker`, `CLI='/usr/bin/docker'`, then `$CLI build` -- and the third
+# is the parameter-expansion default, `${CLI:-docker}`; the first alternation
+# sees neither. A grep is a heuristic either way; the runtime removal in the
+# workflow is the backstop for whatever shape this does not anticipate.
 #
 # Also a dependency of `lint`, which the merge gate runs for this module: a
 # reintroduction then blocks a merge rather than only reddening the advisory
 # e2e lane.
 check-no-docker: ## Fail if the bootstrap e2e suite invokes docker.
-	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)' \
-	    --include='*.sh' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
+	@matches=$$(grep -rnE '(^|[;&|(]|[[:space:]])(sudo[[:space:]]+)?(/[A-Za-z0-9_./-]*/)?docker([[:space:]]|\\$$|$$)|(^|[[:space:]])[A-Za-z_][A-Za-z0-9_]*[:?+]?=['\''"]?(/[A-Za-z0-9_./-]*/)?docker(['\''"]|[[:space:];]|$$)|\$$\{[A-Za-z_][A-Za-z0-9_]*:?[-=+]['\''"]?(/[A-Za-z0-9_./-]*/)?docker['\''"]?\}' \
+	    --include='*.sh' --include='Makefile' e2e/ Makefile 2>/dev/null | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true); \
 	if [ -n "$$matches" ]; then \
 	  echo "The bootstrap e2e suite must not invoke docker; it runs on nerdctl/containerd."; \
 	  echo "$$matches"; \

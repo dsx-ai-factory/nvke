@@ -29,8 +29,8 @@
 # package runs, because reusing that daemon would mean the containerd-driven
 # path is secretly riding on Docker. Nothing here invokes `docker`, and two
 # steps below keep that true: "Assert the suite invokes no docker" greps for
-# an invocation before the run, and "Remove Docker" stops the daemon and
-# replaces the binary so anything the grep misses fails at runtime.
+# an invocation before the run, and "Remove Docker" masks the daemon and puts
+# a failing shim first on PATH so anything the grep misses fails at runtime.
 #
 # The fixture's node image is a thin derivation of
 # controller/hack/capd-kindest-node's CAPD node image (see
@@ -97,7 +97,7 @@ jobs:
     # fallback: there, image pulls go to docker.io at rates that have taken
     # traefik's 55 MB past the smoke install's helm wait.
     runs-on: linux-amd64-cpu16
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     # Generous margin: building the CAPD base node image (TPM tooling, SPIRE
     # bundle fetch, local agent compile) plus the thin derivation on top has
     # not yet been timed end to end in this CI lane, and the standalone
@@ -136,7 +136,8 @@ jobs:
       # either would mean this job is secretly still riding on Docker's
       # daemon, which is exactly what the separate socket exists to rule out).
       # Docker is stopped and masked in the "Remove Docker" step below, so
-      # nothing here can reach it even by accident.
+      # nothing here can reach it even by accident; the runner is single-use,
+      # so nothing has to put it back.
       CONTAINERD_ADDRESS: /run/containerd-nerdctl/containerd.sock
       # buildkitd's own socket, named to match the containerd it builds into.
       # BUILDKIT_HOST is the variable `nerdctl build` itself reads to find a
@@ -155,8 +156,8 @@ jobs:
 
       # The standard runner guarantees little free space and includes large
       # toolchains that this Go and container test does not use. Remove only
-      # those fixed paths before any build writes more data. Keep the Go cache
-      # and Docker images; later steps use them.
+      # those fixed paths before any build writes more data; the Go toolchain
+      # cache stays, because Set up Go reads it.
       - name: Free disk space
         shell: bash
         run: |
@@ -210,15 +211,23 @@ jobs:
       # out to `helm` directly, so the binary is installed here.
       # Version pins come from make/versions.mk, so `make show-versions` and CI
       # cannot disagree.
+      # Each version is read into a variable and checked before it is written:
+      # `set -e` does not fire on a failed $(...) inside `echo "k=$(...)"`, and
+      # the setup actions below resolve an empty version to "latest" rather
+      # than failing, so an empty value has to be caught here.
       - name: Read pinned tool versions
         id: versions
+        shell: bash
         run: |
-          {
-            echo "helm_version=$(make --no-print-directory print-HELM_VERSION)"
-            echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
-            echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
-            echo "capi_version=$(make --no-print-directory print-CAPI_VERSION)"
-          } >> "$GITHUB_OUTPUT"
+          set -Eeuo pipefail
+          for var in HELM_VERSION KIND_VERSION KUBECTL_VERSION CAPI_VERSION; do
+            value="$(make --no-print-directory "print-${var}")"
+            if [ -z "${value}" ]; then
+              echo "::error::make print-${var} returned nothing; make/versions.mk is broken"
+              exit 1
+            fi
+            echo "$(echo "${var}" | tr '[:upper:]' '[:lower:]')=${value}" >> "$GITHUB_OUTPUT"
+          done
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
@@ -419,22 +428,24 @@ jobs:
       # to its Docker default if KIND_EXPERIMENTAL_PROVIDER were ever dropped,
       # nerdctl reaching Docker's containerd if CONTAINERD_ADDRESS were. So
       # Docker is removed, and its absence asserted, before the first image is
-      # built. The daemon, its socket and Docker's own containerd are stopped
-      # and masked; every `docker` binary on PATH is replaced in place by a
-      # shim that fails with a pointer here, so an absolute-path invocation
-      # fails the same way a bare one does.
+      # built.
       #
-      # Expected to be safe because linux-amd64-cpu16 is a container-based
-      # pool -- os-image-artifact.yml records it as one when explaining why it
-      # never exposed /dev/kvm -- so nothing done here should outlive the job.
-      # That is an inference from one comment, though, and actionlint.yaml
-      # registers the label only as self-hosted. image.yml and thirteen other
-      # workflows run on the same pool, so the "Restore Docker" step at the
-      # end of this job puts everything back regardless; if the premise is
-      # right it costs a second, and if it is wrong it is the difference
-      # between one red job and fourteen. The standalone
-      # containerd-nerdctl.service installed above is a separate unit on a
-      # separate socket and is untouched by either step.
+      # Removed means: the daemon, its socket and Docker's own containerd are
+      # stopped and masked, and a shim that fails with a pointer here is put
+      # first on PATH. The binaries themselves are not touched: the masking is
+      # what makes an absolute-path `/usr/bin/docker build` fail as well --
+      # with Docker's own "cannot connect to the daemon" rather than the
+      # shim's message, a worse error but the same outcome -- and the
+      # assertions below prove it against every real binary on PATH.
+      # Replacing the binaries would buy only the nicer message, at the cost
+      # of modifying system files.
+      #
+      # Nothing here needs undoing. linux-amd64-cpu16 is a single-use runner
+      # scale set, and the GitHub-hosted runners are single-use too: a job's
+      # runner, with its own systemd and dockerd, is destroyed when the job
+      # ends, so the masks cannot reach any other job and there is no restore
+      # step. The standalone containerd-nerdctl.service installed above is a
+      # separate unit on a separate socket and is untouched here.
       - name: Remove Docker
         shell: bash
         run: |
@@ -442,40 +453,48 @@ jobs:
           # containerd.service here is Docker's (the containerd.io package),
           # on /run/containerd/containerd.sock -- the socket nerdctl defaults
           # to without CONTAINERD_ADDRESS. Masked so that fallback fails
-          # loudly instead of quietly riding on Docker's daemon.
-          # disable --now may fail for a unit that is not loaded; mask must not,
-          # because the assertions below rely on it having taken.
+          # loudly instead of quietly riding on Docker's daemon. disable --now
+          # may fail for a unit that is not loaded; mask must not, because the
+          # assertions below rely on it having taken.
           sudo systemctl disable --now docker.socket docker.service containerd.service 2>/dev/null || true
           sudo systemctl mask docker.socket docker.service containerd.service
           sudo rm -f /var/run/docker.sock /run/docker.sock
 
-          shim="$(mktemp)"
-          cat >"${shim}" <<'SHIM'
+          # The shim lives under RUNNER_TEMP and is prepended through
+          # GITHUB_PATH: both are per-job, so nothing about it can outlive the
+          # job or need restoring.
+          shim_dir="${RUNNER_TEMP}/no-docker"
+          mkdir -p "${shim_dir}"
+          cat >"${shim_dir}/docker" <<'SHIM'
           #!/bin/sh
           echo "docker was invoked by the bootstrap e2e suite: docker $*" >&2
           echo "this job removes Docker so a reintroduced dependency fails here rather than passing unnoticed." >&2
           echo "The suite runs on nerdctl/containerd. See cli/Makefile's check-no-docker and the 'Remove Docker' step in nkectl-bootstrap-e2e.yml." >&2
           exit 1
           SHIM
-          # Every copy on PATH, replaced where it lives, plus one first on
-          # PATH in case none was installed at all. Originals are kept beside
-          # their path and listed for the restore step.
-          : > "${RUNNER_TEMP}/docker-removed.list"
-          while read -r path; do
-            sudo mv "${path}" "${path}.nke-removed"
-            echo "${path}" >> "${RUNNER_TEMP}/docker-removed.list"
-            sudo install -m 0755 "${shim}" "${path}"
-          done < <(type -aP docker || true)
-          if [ ! -e /usr/local/bin/docker ]; then
-            sudo install -m 0755 "${shim}" /usr/local/bin/docker
-            echo "/usr/local/bin/docker:shim-only" >> "${RUNNER_TEMP}/docker-removed.list"
-          fi
+          chmod 0755 "${shim_dir}/docker"
+          echo "${shim_dir}" >> "${GITHUB_PATH}"
+          export PATH="${shim_dir}:${PATH}"
 
           # Prove it. A removal that did not take is worse than none: it
           # would read as a guarantee while providing nothing.
+          resolved="$(command -v docker || true)"
+          if [ "${resolved}" != "${shim_dir}/docker" ]; then
+            echo "::error::docker resolves to '${resolved:-nothing}', not the shim"; exit 1
+          fi
           if docker version >/dev/null 2>&1; then
             echo "::error::docker still runs after removal"; exit 1
           fi
+          # Every real binary too, by its own path. Nothing on PATH shadows
+          # these, so this is the masking being proven, not the shim.
+          while read -r real; do
+            if [ "${real}" = "${shim_dir}/docker" ]; then
+              continue
+            fi
+            if "${real}" version >/dev/null 2>&1; then
+              echo "::error::${real} still reaches a daemon after removal"; exit 1
+            fi
+          done < <(type -aP docker || true)
           if systemctl is-active --quiet docker.service; then
             echo "::error::docker.service is still active after removal"; exit 1
           fi
@@ -548,25 +567,3 @@ jobs:
           path: cli/cluster-diagnostics/
           if-no-files-found: ignore
           retention-days: 7
-
-      # Insurance against the pool being persistent after all -- see the
-      # "Remove Docker" comment. Puts back what that step took: the masked
-      # units and the moved-aside binaries. always(), so a failed run is not
-      # the one that leaves the runner without Docker.
-      - name: Restore Docker
-        if: always()
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          sudo systemctl unmask docker.socket docker.service containerd.service 2>/dev/null || true
-          if [ -f "${RUNNER_TEMP}/docker-removed.list" ]; then
-            while IFS=: read -r path mode; do
-              if [ "${mode}" = "shim-only" ]; then
-                sudo rm -f "${path}"
-              elif [ -e "${path}.nke-removed" ]; then
-                sudo mv -f "${path}.nke-removed" "${path}"
-              fi
-            done < "${RUNNER_TEMP}/docker-removed.list"
-          fi
-          sudo systemctl start containerd.service docker.socket docker.service 2>/dev/null || true
-          echo "docker restored: $(docker version --format '{{.Client.Version}}' 2>/dev/null || echo 'client unavailable')"

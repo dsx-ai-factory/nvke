@@ -71,7 +71,7 @@ jobs:
   gate:
     name: Check the repository is public
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 5
     permissions:
       contents: read

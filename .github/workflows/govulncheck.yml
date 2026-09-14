@@ -97,7 +97,7 @@ jobs:
   discover-modules:
     name: Discover workspace modules
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     outputs:
       modules: ${{ steps.find.outputs.modules }}
     steps:

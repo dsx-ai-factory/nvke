@@ -58,7 +58,7 @@ jobs:
   lint:
     name: golangci-lint (${{ matrix.name }})
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: ${{ matrix.timeout }}
     permissions:
       contents: read

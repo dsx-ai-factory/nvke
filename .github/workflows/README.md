@@ -258,7 +258,7 @@ git diff --check
 After pushing, inspect the PR rather than assuming green means complete:
 
 ```bash
-gh pr checks <number> --repo NVIDIA/nke --json name,workflow,state,bucket
+gh pr checks <number> --repo dsx-ai-factory/nke --json name,workflow,state,bucket
 ```
 
 For a required member, confirm it appears inside `Merge gate`, no standalone

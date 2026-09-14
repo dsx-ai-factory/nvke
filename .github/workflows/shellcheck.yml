@@ -52,7 +52,7 @@ jobs:
   shellcheck:
     name: shellcheck
     runs-on: ubuntu-latest
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 10
     permissions:
       contents: read

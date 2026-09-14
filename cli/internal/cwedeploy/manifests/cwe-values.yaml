@@ -8,10 +8,10 @@
 # umbrella chart installs its server, agent, CSI driver, and controller
 # manager. OIDC and ServiceMonitor stay disabled on the vanilla Kind cluster.
 #
-# image.* and profiles.* are NOT set here -- Engine.Deploy passes them via
-# --set-string from Config.CWEImage and Config.ProfilesImage, since an image
-# reference (and whether it needs `kind load`'d in first) is a runtime
-# decision, not a static value.
+# image.* is NOT set here -- Engine.Deploy passes it via --set-string from
+# Config.CWEImage, since an image reference (and whether it needs `kind load`'d
+# in first) is a runtime decision, not a static value. profiles.path is set the
+# same way.
 #
 # appDb.postgresPassword is supplied on the `helm upgrade --install` command
 # line, not hardcoded here, matching postgres-values.yaml/temporal-values.yaml.

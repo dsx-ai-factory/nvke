@@ -31,7 +31,7 @@ permissions:
 jobs:
   label:
     name: Apply component labels
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     runs-on: ubuntu-latest
     permissions:
       contents: read

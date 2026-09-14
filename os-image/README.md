@@ -164,9 +164,9 @@ checker binary; the arm64 qcow2 isn't attached to the release yet, only
 GHCR).
 
 ```bash
-oras pull ghcr.io/nvidia/nke/os-image-fde:vX.Y.Z-amd64 --platform linux/amd64
-oras pull ghcr.io/nvidia/nke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
-oras pull ghcr.io/nvidia/nke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
+oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:vX.Y.Z-amd64 --platform linux/amd64
+oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
+oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
 ```
 
 **FDE security note**: the published image's `LUKS_PASSPHRASE` is the

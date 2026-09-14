@@ -24,7 +24,7 @@ concurrency:
 jobs:
   publish-controller-api-tag:
     name: Publish controller/api version tag
-    if: github.repository == 'NVIDIA/nke' && github.ref == 'refs/heads/main'
+    if: github.repository == 'dsx-ai-factory/nke' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

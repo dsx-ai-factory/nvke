@@ -105,15 +105,10 @@ TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
 : "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already pulled locally (see comment above)}"
 export NKECTL_CWE_IMAGE
 
-# OS profiles, without which CWE fails its schema migration. Built from
-# controller/test/fixtures rather than pulled: the fleet image lives in
-# nke-site-deploy, which this suite does not depend on.
-export NKECTL_CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE:-cwe-profiles:local}"
-
 # The Cluster API infrastructure provider for hosts that already exist, built
 # below from this checkout. Without it the CAPI objects CWE writes have no
 # controller and the cluster never leaves provisioning. nkectl loads it into the
-# bootstrap cluster the same way it loads the CWE and profiles images, and finds
+# bootstrap cluster the same way it loads the CWE image, and finds
 # the kustomize base to render by walking up to go.work — so only the image has
 # to be named here.
 export NKECTL_CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE:-cluster-api-provider-provisioned:local}"
@@ -157,6 +152,7 @@ kind_lists_bootstrap_cluster() {
 nodes_up=false
 bootstrap_cluster_cleanup_pending=false
 spire_vip_device=""
+node_bridge=""
 nerdctl_bridge=""
 nerdctl_node_access=false
 
@@ -213,7 +209,7 @@ cleanup() {
     collect_node_diagnostics
   fi
 
-  # --keep-bootstrap-cluster means the command no longer cleans up after
+  # --keep-bootstrap-cluster means the command does not clean up after
   # itself, so a failure between it and the explicit teardown below would
   # otherwise leak a cluster that the next run's stage 3 then trips over.
   if [ "${bootstrap_cluster_cleanup_pending}" = true ]; then
@@ -224,8 +220,8 @@ cleanup() {
   if [ "${nodes_up}" = true ]; then
     if [ "${nerdctl_node_access}" = true ]; then
       log "removing the cross-bridge forwarding rules"
-      iptables -D FORWARD -i "${nerdctl_bridge}" -o "${spire_vip_device}" -j ACCEPT 2>/dev/null || true
-      iptables -D FORWARD -i "${spire_vip_device}" -o "${nerdctl_bridge}" -j ACCEPT 2>/dev/null || true
+      iptables -D FORWARD -i "${nerdctl_bridge}" -o "${node_bridge}" -j ACCEPT 2>/dev/null || true
+      iptables -D FORWARD -i "${node_bridge}" -o "${nerdctl_bridge}" -j ACCEPT 2>/dev/null || true
     fi
     if [ -n "${spire_vip_device}" ]; then
       log "removing ${SPIRE_VIP} from ${spire_vip_device}"
@@ -321,17 +317,12 @@ if [ ! -c /dev/vtpmx ]; then
   exit 1
 fi
 
-log "building the profiles image (${NKECTL_CWE_PROFILES_IMAGE})"
-make -C "${CLI_DIR}" ensure-profiles-image CWE_PROFILES_IMAGE="${NKECTL_CWE_PROFILES_IMAGE}"
-
 log "building the provisioned CAPI provider image (${NKECTL_CAPI_PROVISIONED_IMAGE})"
 make -C "${CLI_DIR}" ensure-provisioned-provider-image \
   CAPI_PROVISIONED_IMAGE="${NKECTL_CAPI_PROVISIONED_IMAGE}"
 
 # No cross-runtime image bridge here: every image above is built by `nerdctl
-# build`, so it already lives in the containerd store nkectl loads from. This
-# used to be a `docker save | nerdctl load` of all three, because the builds
-# went through Docker and a Docker image is invisible to containerd.
+# build`, so it already lives in the containerd store nkectl loads from.
 
 # The completed images are sufficient from this point. On GitHub's 14 GB
 # runner, retaining their BuildKit intermediates competes with the container
@@ -386,12 +377,11 @@ log "allowlisting $(grep -cE '^[[:space:]]+tpmEkThumbprint:' "${RENDERED_SITESPE
 # public hardened charts, needing no registry credential of their own.
 log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
   "(NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
-  "NKECTL_CWE_PROFILES_IMAGE=${NKECTL_CWE_PROFILES_IMAGE}," \
   "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
 
 # In the background, because the run has to be joined while it is still going.
 #
-# The command no longer stops after deploying CWE: it creates the cluster and
+# The command does not stop after deploying CWE: it creates the cluster and
 # waits for CWE to build it on the fake nodes. CWE reaches those nodes, and
 # their spire-agents reach SPIRE, over the node network — which the bootstrap
 # cluster is not on, because the nodes came up before it existed. So the attach
@@ -402,12 +392,25 @@ log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-clu
 # cluster it was told to keep, and cleanup has to already know to remove it.
 bootstrap_cluster_cleanup_pending=true
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
-"${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
+# setsid makes nkectl a process-group leader, so stop_bootstrap can signal it
+# and everything it spawns -- the kind, nerdctl and helm it drives -- as one
+# group. nkectl does not forward signals to its children.
+setsid "${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
   --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
+# stop_bootstrap ends the background `bootstrap site` before this script exits,
+# children included: the whole process group is signalled, then reaped, and
+# the log printed. Without it the EXIT trap would delete the cluster the
+# command is still driving, and the command would outlive the script.
+stop_bootstrap() {
+  kill -- "-${bootstrap_pid}" 2>/dev/null || kill "${bootstrap_pid}" 2>/dev/null || true
+  wait "${bootstrap_pid}" 2>/dev/null || true
+  cat "${BOOTSTRAP_LOG}" || true
+}
+
 # Both directions across the two bridges, checked the moment the cluster is
-# attached. A break here used to surface fifteen minutes later as "did not
+# attached. Unchecked, a break here surfaces fifteen minutes later as "did not
 # report provisioned", with the cause buried in CWE's pod log; this names it
 # in seconds.
 #
@@ -486,11 +489,16 @@ attach_bootstrap_to_node_network() {
   # attests. Permit exactly this pair of bridges, both directions, inserted
   # at position 1 so it precedes STAGE-1. Nothing else on the host is
   # reachable through these rules.
-  iptables -I FORWARD 1 -i "${nerdctl_bridge}" -o "${bridge}" -j ACCEPT || return 1
-  iptables -I FORWARD 1 -i "${bridge}" -o "${nerdctl_bridge}" -j ACCEPT || return 1
+  # Recorded before anything is installed, so cleanup removes whatever did
+  # get installed: a failure between the two inserts, or after them, must
+  # not leave a FORWARD ACCEPT behind on the host. The VIP's device likewise,
+  # before the address goes onto it.
+  node_bridge="${bridge}"
   nerdctl_node_access=true
-  ip address replace "${SPIRE_VIP}/32" dev "${bridge}" || return 1
-  spire_vip_device="${bridge}"
+  iptables -I FORWARD 1 -i "${nerdctl_bridge}" -o "${node_bridge}" -j ACCEPT || return 1
+  iptables -I FORWARD 1 -i "${node_bridge}" -o "${nerdctl_bridge}" -j ACCEPT || return 1
+  spire_vip_device="${node_bridge}"
+  ip address replace "${SPIRE_VIP}/32" dev "${node_bridge}" || return 1
 }
 
 # Attach as soon as Kind reports the bootstrap cluster ready. This is before CWE
@@ -509,7 +517,10 @@ while kill -0 "${bootstrap_pid}" 2>/dev/null && [ "${SECONDS}" -lt "${attach_dea
   if grep -q "bootstrap kind cluster ready" "${BOOTSTRAP_LOG}" 2>/dev/null; then
     if attach_bootstrap_to_node_network; then
       log "attached the bootstrap cluster at ${SPIRE_VIP}"
-  probe_cross_bridge_connectivity || exit 1
+      if ! probe_cross_bridge_connectivity; then
+        stop_bootstrap
+        exit 1
+      fi
       attached=true
     else
       log "WARN: could not attach the bootstrap cluster to the node network"
@@ -523,9 +534,7 @@ if [ "${attached}" != true ]; then
   log "FAIL: the bootstrap cluster was never attached to the node network, so CWE"
   log "  cannot reach the nodes and their agents cannot reach SPIRE. Not waiting"
   log "  for a bootstrap that has no route to the hosts it is building on."
-  kill "${bootstrap_pid}" 2>/dev/null || true
-  wait "${bootstrap_pid}" 2>/dev/null || true
-  cat "${BOOTSTRAP_LOG}" || true
+  stop_bootstrap
   exit 1
 fi
 set +e

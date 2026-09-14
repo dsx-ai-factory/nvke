@@ -70,7 +70,8 @@ const (
 	// temporalChartRepo/temporalChartName are passed via `helm ... --repo`
 	// rather than a `helm repo add`, so this package does not mutate the
 	// caller's global Helm repo list. Version pin matches controller/
-	// Tiltfile's CHART_VERSION_TEMPORAL.
+	// Tiltfile's CHART_VERSION_TEMPORAL. Config.TemporalChartRef replaces
+	// the repo lookup with a chart reference of the operator's choosing.
 	temporalChartRepo    = "https://go.temporal.io/helm-charts"
 	temporalChartName    = "temporal"
 	temporalChartVersion = "0.74.0"
@@ -81,7 +82,8 @@ const (
 	// bootstrap needs no registry credential to install it.
 	//
 	// The CRDs are their own release because a chart cannot depend on its own
-	// CRDs being applied first.
+	// CRDs being applied first. Config.SPIREChartRef and
+	// Config.SPIRECRDsChartRef replace the repo lookup for each.
 	spireChartRepo        = "https://spiffe.github.io/helm-charts-hardened/"
 	spireChartName        = "spire"
 	spireChartVersion     = "0.30.1"
@@ -164,8 +166,11 @@ const (
 	readyzPath = "/readyz"
 	cweSvcPort = "http"
 
-	// profilesPath is where the init container lands the profiles tree and
-	// where CWE reads it from (PROFILES_DIR).
+	// profilesPath is where CWE reads OS and config profiles from
+	// (PROFILES_DIR). Set explicitly rather than left to the chart's empty
+	// default, so PROFILES_DIR names the empty /profiles the controller image
+	// ships rather than resolving somewhere else. nkectl deploys no profiles
+	// into it; a site gets them from its deploy repository.
 	profilesPath = "/profiles"
 )
 
@@ -189,13 +194,6 @@ type Config struct {
 	// default it; a registry org identifier does not belong hardcoded in a
 	// tracked file of a repository being prepared to go public.
 	CWEImage string
-
-	// ProfilesImage holds the OS/config profiles tree at /profiles, which the
-	// chart's materialize-profiles init container copies into CWE. Required:
-	// a schema migration reads osProfiles/metadata.yaml, so CWE crash-loops
-	// without it. Fleet profiles come from nke-site-deploy;
-	// controller/test/fixtures is the sanitized stand-in.
-	ProfilesImage string
 
 	// SPIFFEClusterName identifies the ephemeral Kind cluster to SPIRE. It is
 	// the Kind cluster's own name, which is the only name this cluster has.
@@ -283,14 +281,27 @@ type Config struct {
 	// PostgresChartRef is where helm pulls the Bitnami postgresql chart from,
 	// as an OCI reference or a local path. Empty uses Docker Hub's OCI registry.
 	PostgresChartRef string
+
+	// TemporalChartRef is where helm pulls the Temporal chart from, as an OCI
+	// reference or a local path. Empty uses the go.temporal.io chart repo.
+	TemporalChartRef string
+
+	// SPIREChartRef is where helm pulls the SPIRE chart from, as an OCI
+	// reference or a local path. Empty uses the spiffe.github.io hardened
+	// chart repo.
+	SPIREChartRef string
+
+	// SPIRECRDsChartRef is where helm pulls the SPIRE CRDs chart from, as an
+	// OCI reference or a local path. Empty uses the spiffe.github.io hardened
+	// chart repo.
+	SPIRECRDsChartRef string
 }
 
 // DefaultConfig reads the package's knobs from the environment, mirroring
 // bootstrapengine.DefaultConfig's env-driven shape.
 func DefaultConfig() Config {
 	return Config{
-		CWEImage:      os.Getenv("NKECTL_CWE_IMAGE"),
-		ProfilesImage: os.Getenv("NKECTL_CWE_PROFILES_IMAGE"),
+		CWEImage: os.Getenv("NKECTL_CWE_IMAGE"),
 		// No cluster-name variable of its own: the bootstrap cluster has one
 		// name, NKECTL_BOOTSTRAP_CLUSTER_NAME, and SPIRE is told that one.
 		// Callers set SPIFFEClusterName; an empty trust domain is derived from
@@ -305,7 +316,10 @@ func DefaultConfig() Config {
 		HelmTimeout:  envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
 
-		PostgresChartRef: os.Getenv("NKECTL_CWE_POSTGRES_CHART"),
+		PostgresChartRef:  os.Getenv("NKECTL_CWE_POSTGRES_CHART"),
+		TemporalChartRef:  os.Getenv("NKECTL_CWE_TEMPORAL_CHART"),
+		SPIREChartRef:     os.Getenv("NKECTL_CWE_SPIRE_CHART"),
+		SPIRECRDsChartRef: os.Getenv("NKECTL_CWE_SPIRE_CRDS_CHART"),
 	}
 }
 
@@ -361,10 +375,6 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	if cfg.CWEImage == "" {
 		return errors.New("cwedeploy: Config.CWEImage is required " +
 			"(e.g. nvcr.io/<org>/controller:edge -- see .github/workflows/image-nvcr.yml)")
-	}
-	if cfg.ProfilesImage == "" {
-		return errors.New("cwedeploy: Config.ProfilesImage is required; CWE fails " +
-			"its schema migration without an OS profiles tree (see Config.ProfilesImage)")
 	}
 	if cfg.ProvisionedProviderImage == "" {
 		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +
@@ -432,17 +442,18 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	defer cleanup()
 
-	e.log.Info("installing temporal", "namespace", temporalNamespace, "version", temporalChartVersion)
-	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", temporalReleaseName, temporalChartName,
-		"--repo", temporalChartRepo,
+	temporalChart := chartArgs(cfg.TemporalChartRef, temporalChartName, temporalChartRepo)
+	e.log.Info("installing temporal", "namespace", temporalNamespace, "version", temporalChartVersion, "chart", temporalChart[0])
+	temporalArgs := append([]string{"upgrade", "--install", temporalReleaseName}, temporalChart...)
+	temporalArgs = append(temporalArgs,
 		"--namespace", temporalNamespace, "--create-namespace",
 		"--values", temporalValues,
 		"--set-string", "server.config.persistence.default.sql.password="+password,
 		"--set-string", "server.config.persistence.visibility.sql.password="+password,
 		"--version", temporalChartVersion,
 		"--wait", "--timeout", helmTimeout.String(),
-	); err != nil {
+	)
+	if _, err := e.helm(ctx, kubeconfigPath, temporalArgs...); err != nil {
 		return fmt.Errorf("cwedeploy: installing temporal: %w", err)
 	}
 
@@ -451,14 +462,15 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	if cfg.DisableMTLS {
 		e.log.Warn("SPIFFE is disabled: skipping SPIRE, and CWE will dial node agents in plaintext")
 	} else {
-		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion)
-		if _, err := e.helm(ctx, kubeconfigPath,
-			"upgrade", "--install", spireCRDsReleaseName, spireCRDsChartName,
-			"--repo", spireChartRepo,
+		spireCRDsChart := chartArgs(cfg.SPIRECRDsChartRef, spireCRDsChartName, spireChartRepo)
+		e.log.Info("installing SPIRE CRDs", "namespace", spireNamespace, "version", spireCRDsChartVersion, "chart", spireCRDsChart[0])
+		spireCRDsArgs := append([]string{"upgrade", "--install", spireCRDsReleaseName}, spireCRDsChart...)
+		spireCRDsArgs = append(spireCRDsArgs,
 			"--namespace", spireNamespace, "--create-namespace",
 			"--version", spireCRDsChartVersion,
 			"--wait", "--timeout", helmTimeout.String(),
-		); err != nil {
+		)
+		if _, err := e.helm(ctx, kubeconfigPath, spireCRDsArgs...); err != nil {
 			return fmt.Errorf("cwedeploy: installing SPIRE CRDs: %w", err)
 		}
 
@@ -504,9 +516,8 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	// tag and digest are always set, empty when unused: the chart reads an
 	// empty tag as "use appVersion" and an empty digest as "pull by tag".
 	imageRepo, imageTag, imageDigest := splitImageRef(cfg.CWEImage)
-	profRepo, profTag, profDigest := splitImageRef(cfg.ProfilesImage)
 	e.log.Info("installing cwe", "namespace", cweNamespace, "image", cfg.CWEImage,
-		"profilesImage", cfg.ProfilesImage, "chart", chartPath)
+		"chart", chartPath)
 	cweArgs := []string{
 		"upgrade", "--install", cweReleaseName, chartPath,
 		"--namespace", cweNamespace, "--create-namespace",
@@ -516,11 +527,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "image.tag=" + imageTag,
 		"--set-string", "image.digest=" + imageDigest,
 		"--set-string", "image.pullPolicy=IfNotPresent",
-		"--set", "profiles.image.enabled=true",
 		"--set-string", "profiles.path=" + profilesPath,
-		"--set-string", "profiles.image.repository=" + profRepo,
-		"--set-string", "profiles.image.tag=" + profTag,
-		"--set-string", "profiles.image.digest=" + profDigest,
 		"--set", "cni.installAfterInit=true",
 		"--set", fmt.Sprintf("spiffe.enabled=%t", !cfg.DisableMTLS),
 		"--set-string", "spiffe.trustDomain=" + spireTrustDomain,
@@ -794,6 +801,19 @@ func spireServiceHost() string {
 	return spireReleaseName + "-server." + spireNamespace + ".svc.cluster.local"
 }
 
+// chartArgs returns the chart half of a `helm upgrade --install`: the override
+// verbatim when set, otherwise the upstream chart name and its --repo. The
+// first element is always the chart. An override carries no --repo because
+// helm resolves whatever it is given as a name in that repo when one is
+// present, so an OCI reference would be looked up in the repo's index rather
+// than pulled.
+func chartArgs(override, name, repo string) []string {
+	if override != "" {
+		return []string{override}
+	}
+	return []string{name, "--repo", repo}
+}
+
 // spireInstallArgs builds the `helm upgrade --install` for the SPIRE chart.
 //
 // Everything static about the deployment is in spire-values.yaml. Only what
@@ -802,23 +822,23 @@ func spireServiceHost() string {
 // allowed to attest.
 func spireInstallArgs(cfg Config, valuesPath, clusterName, trustDomain string, timeout time.Duration) []string {
 	prefix := spireServerValuesPrefix
-	args := []string{
-		"upgrade", "--install", spireReleaseName, spireChartName,
-		"--repo", spireChartRepo,
+	args := append([]string{"upgrade", "--install", spireReleaseName},
+		chartArgs(cfg.SPIREChartRef, spireChartName, spireChartRepo)...)
+	args = append(args,
 		"--namespace", spireNamespace, "--create-namespace",
 		"--version", spireChartVersion,
 		"--values", valuesPath,
-		"--set-string", "global.spire.clusterName=" + clusterName,
-		"--set-string", "global.spire.trustDomain=" + trustDomain,
-		"--set-string", prefix + ".adminIDs[0]=spiffe://" + trustDomain + "/nke-service/cloud-workflow-engine",
+		"--set-string", "global.spire.clusterName="+clusterName,
+		"--set-string", "global.spire.trustDomain="+trustDomain,
+		"--set-string", prefix+".adminIDs[0]=spiffe://"+trustDomain+"/nke-service/cloud-workflow-engine",
 		// Both halves of the two agreements CWE depends on. See the constants.
-		"--set-string", prefix + ".controllerManager.className=" + spireControllerManagerClass,
+		"--set-string", prefix+".controllerManager.className="+spireControllerManagerClass,
 		// --set, not --set-string: the chart's schema types these as integers.
-		"--set", prefix + ".service.port=" + spireServerPort,
+		"--set", prefix+".service.port="+spireServerPort,
 		// The agent's port is a separate value that does not follow the
 		// Service. Both or neither; see the constant.
-		"--set", spireAgentValuesPrefix + ".server.port=" + spireServerPort,
-	}
+		"--set", spireAgentValuesPrefix+".server.port="+spireServerPort,
+	)
 	args = append(args, upstreamCAArgs(cfg, prefix)...)
 	args = append(args, tpmAttestorArgs(cfg, prefix)...)
 	return append(args, "--wait", "--timeout", timeout.String())

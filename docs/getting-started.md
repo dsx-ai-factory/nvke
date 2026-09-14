@@ -22,7 +22,7 @@ than the declared one panics at startup with a `strcase.UnicodeVersion` mismatch
 ## Clone the repository
 
 ```bash
-git clone https://github.com/NVIDIA/nke.git
+git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
 ```
 

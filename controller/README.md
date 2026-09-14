@@ -53,13 +53,13 @@ Then edit `.env.local` to add your personal settings for host-local CWE runs. Th
 
 ### Go Private Module Configuration
 
-Not needed for an ordinary build. This module has no `gitlab-master.nvidia.com` dependency since #76, and its one internal dependency — `github.com/NVIDIA/cluster-api-provider-nico` — is carried in the repository's committed `vendor/` tree. `GOPROXY=off make build` from the repository root compiles every module with no credentials at all.
+Not needed for an ordinary build. This module has no `gitlab-master.nvidia.com` dependency since #76, and its one internal dependency — `github.com/dsx-ai-factory/cluster-api-provider-nico` — is carried in the repository's committed `vendor/` tree. `GOPROXY=off make build` from the repository root compiles every module with no credentials at all.
 
 You need this only to **re-resolve** that module rather than read the vendor tree, which in practice means running `go work vendor` or `make work-sync` after a dependency bump:
 
 ```bash
 # Tell Go not to use a public proxy for internal NVIDIA repos
-go env -w GOPRIVATE=github.com/NVIDIA/cluster-api-provider-nico
+go env -w GOPRIVATE=github.com/dsx-ai-factory/cluster-api-provider-nico
 ```
 
 Go then uses your SSH keys to authenticate. This goes away when that repository is public.
@@ -349,7 +349,7 @@ The helper script lives at `./hack/create-forge-nico-cluster.sh`. It assumes:
 `cluster-api-provider-nico` reads NICo credentials from a Secret in its own
 manager namespace; one Secret is shared by every `NicoCluster` the provider
 manages. See the [cluster-api-provider-nico
-README](https://github.com/NVIDIA/cluster-api-provider-nico#install)
+README](https://github.com/dsx-ai-factory/cluster-api-provider-nico#install)
 for the full set of keys.
 
 Pull the Forge tenant token from Vault and apply it as a Secret in the

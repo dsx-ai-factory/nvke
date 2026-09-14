@@ -79,7 +79,7 @@ COPY ./controller/THIRD_PARTY_NOTICES.md /licenses/THIRD_PARTY_NOTICES.md
 ## https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="controller" \
-      org.opencontainers.image.source="https://github.com/NVIDIA/nke" \
+      org.opencontainers.image.source="https://github.com/dsx-ai-factory/nke" \
       org.opencontainers.image.description="NKE Cloud Workflow Engine"
 
 EXPOSE 8080

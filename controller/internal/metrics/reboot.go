@@ -34,7 +34,7 @@ var (
 			Name: "cwe_node_reboot_current_attempt",
 			Help: "Current reboot attempt number for a node",
 		},
-		[]string{"node_name"},
+		[]string{nodeNameLabel},
 	)
 )
 

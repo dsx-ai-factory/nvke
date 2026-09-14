@@ -18,17 +18,17 @@ NKE control-plane CLI. Bootstraps site controllers and manages tenant cluster li
 ```bash
 # linux/amd64
 curl -fsSL -o nkectl \
-  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-amd64
+  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-linux-amd64
 chmod +x nkectl && sudo mv nkectl /usr/local/bin/
 
 # linux/arm64
 curl -fsSL -o nkectl \
-  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-linux-arm64
+  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-linux-arm64
 chmod +x nkectl && sudo mv nkectl /usr/local/bin/
 
 # macOS (amd64 / arm64)
 curl -fsSL -o nkectl \
-  https://github.com/NVIDIA/nke/releases/latest/download/nkectl-darwin-arm64
+  https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-darwin-arm64
 chmod +x nkectl && sudo mv nkectl /usr/local/bin/
 ```
 
@@ -41,7 +41,7 @@ nkectl version
 ```bash
 # Bootstrap a new site controller
 NKECTL_CWE_IMAGE=nvcr.io/<org>/controller:edge \
-NKECTL_CWE_PROFILES_IMAGE=nvcr.io/<org>/profiles:edge \
+NKECTL_CAPI_PROVISIONED_IMAGE=nvcr.io/<org>/cluster-api-provider-provisioned:edge \
   nkectl bootstrap site -f sitespec.yaml
 nkectl bootstrap site -f sitespec.yaml --dry-run              # validate only
 nkectl bootstrap site -f sitespec.yaml --keep-bootstrap-cluster     # leave Kind cluster for debugging
@@ -166,11 +166,21 @@ ever disagree.
 |---|---|---|
 | `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
 | `NKECTL_CWE_IMAGE` | required | CWE image to deploy. Side-loaded from the local image store, so it must already be pulled. |
-| `NKECTL_CWE_PROFILES_IMAGE` | required | Image holding the OS profiles tree at `/profiles` |
 | `NKECTL_CWE_CHART_PATH` | discovered | Path to the CWE chart |
+| `NKECTL_CWE_POSTGRES_CHART` | `oci://registry-1.docker.io/bitnamicharts/postgresql` | Postgres chart, as an OCI reference or a local path. Point it at a mirror or a downloaded tarball. |
+| `NKECTL_CWE_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
+| `NKECTL_CWE_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
+| `NKECTL_CWE_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
 | `NKECTL_CWE_HELM_TIMEOUT` | `5m` | Bounds each `helm upgrade --install --wait` |
 | `NKECTL_CWE_READY_TIMEOUT` | `5m` | Bounds the wait for CWE's `/readyz` |
 | `NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
+
+The chart versions stay pinned in `nkectl` whichever source a chart comes
+from. Helm does not check a local path against the pin, so a tarball has to be
+the pinned version. With the four chart variables set, no Helm chart is
+pulled from the internet. The images those charts run still come from their
+registries (`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` covers Docker Hub), and
+`clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
 
 ## When a bootstrap fails
 

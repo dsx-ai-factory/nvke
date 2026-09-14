@@ -1,6 +1,6 @@
 ---
 name: open-pr
-description: Open or update a pull request on NVIDIA/nke following the repository's squash-merge, DCO, labeling, and CI-presence rules. Use when asked to open a PR, push a branch for review, or check why PR checks look wrong.
+description: Open or update a pull request on dsx-ai-factory/nke following the repository's squash-merge, DCO, labeling, and CI-presence rules. Use when asked to open a PR, push a branch for review, or check why PR checks look wrong.
 disable-model-invocation: true
 ---
 
@@ -43,7 +43,7 @@ checks are never created, and **their absence looks identical to success**: a
 column of green ticks with checks simply missing.
 
 ```bash
-gh pr checks <number> --repo NVIDIA/nke --json name,workflow
+gh pr checks <number> --repo dsx-ai-factory/nke --json name,workflow
 ```
 
 Compare against [docs/branch-protection-settings.md](../../../docs/branch-protection-settings.md)

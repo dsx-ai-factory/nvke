@@ -2,7 +2,7 @@
 //
 // `go work sync` and `go build` here need no NVIDIA credentials for module
 // downloads: all nine modules build from public dependencies, except
-// github.com/NVIDIA/cluster-api-provider-nico, which is still INTERNAL
+// github.com/dsx-ai-factory/cluster-api-provider-nico, which is still INTERNAL
 // visibility and is carried in the committed vendor/ tree until it goes
 // public. Re-running `go work vendor` (dependency bumps) needs access to that
 // repository; everything else an outside contributor can do gets the same

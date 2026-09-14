@@ -47,7 +47,7 @@ jobs:
     # A GPU label only because it is the one kind exposing /dev/kvm, as
     # os-image-artifact.yml does. Trades 16 cores for 12, and TCG for KVM.
     runs-on: linux-amd64-gpu-l4-latest-1
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     # Still sized for the emulated path, so a fall back to TCG cannot time out.
     timeout-minutes: 240
     permissions:

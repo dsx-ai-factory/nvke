@@ -68,7 +68,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Build (${{ matrix.arch }})
     runs-on: ${{ matrix.runner }}
     environment: nvcr
@@ -169,7 +169,7 @@ jobs:
             BUILDX_EXTRA_ARGS="--label org.opencontainers.image.revision=${GITHUB_SHA}"
 
   manifest:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Manifest
     runs-on: linux-amd64-cpu8
     needs: [build]
@@ -257,9 +257,9 @@ jobs:
   # Tags only. `main` keeps publishing to NVCR alone, so GHCR carries released
   # versions rather than every commit.
   #
-  # The destination is ghcr.io/nvidia/nke/cluster-api-provider-provisioned,
-  # alongside ghcr.io/nvidia/nke/controller and separate from
-  # ghcr.io/nvidia/nke/charts, which is what keeps a chart and an image from
+  # The destination is ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned,
+  # alongside ghcr.io/dsx-ai-factory/nke/controller and separate from
+  # ghcr.io/dsx-ai-factory/nke/charts, which is what keeps a chart and an image from
   # sharing one OCI repository.
   promote-ghcr:
     name: Promote to GHCR
@@ -334,7 +334,7 @@ jobs:
 
   promote-dsx:
     name: Promote to DSX
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     runs-on: linux-amd64-cpu8
     needs: [manifest]
     environment: nvcr
@@ -456,7 +456,7 @@ jobs:
   # into an OCI index, which breaks the imagetools create in docker-manifest --
   # the same reason --provenance=false is already on docker-push-arch.
   sbom:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: SBOM (${{ matrix.arch }})
     runs-on: linux-amd64-cpu8
     needs: [manifest]

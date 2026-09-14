@@ -51,7 +51,7 @@ $(info $$DEB_VERSION is [${DEB_VERSION}])
 RELEASE_LDFLAGS ?= -s -w -buildid=
 
 # -trimpath removes the build machine's filesystem paths from the binary. These
-# binaries are published to ghcr.io/nvidia/nke-agent, so without it every
+# binaries are published to ghcr.io/dsx-ai-factory/nke/agent, so without it every
 # release carries the layout of whatever machine built it, and two builds of the
 # same commit from different directories differ.
 LDFLAGS += -trimpath -ldflags="-X main.VERSION=$(VERSION) $(RELEASE_LDFLAGS)"

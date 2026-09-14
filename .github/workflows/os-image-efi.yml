@@ -47,7 +47,7 @@ concurrency:
 
 jobs:
   build-efi:
-    if: github.repository == 'NVIDIA/nke'
+    if: github.repository == 'dsx-ai-factory/nke'
     name: Build qcow-imager.efi (x86_64)
     # Not for /dev/kvm -- mkosi builds a Unified Kernel Image and boots
     # nothing. It is for the host shape: mkosi needs unprivileged user

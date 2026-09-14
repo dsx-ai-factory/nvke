@@ -388,7 +388,7 @@ jobs:
 
             os-image/v*)
               echo "OS-image tag ${GITHUB_REF_NAME}:"
-              echo "  - qcow2  → OS Image Artifact (Packer + boot-smoke, then ghcr.io/nvidia/nke/os-image)"
+              echo "  - qcow2  → OS Image Artifact (Packer + boot-smoke, then ghcr.io/dsx-ai-factory/nke/os-image)"
               echo "  - check  → nke-os-image-check attached to the GitHub Release"
               ;;
 

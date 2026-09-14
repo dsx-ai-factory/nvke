@@ -15,7 +15,7 @@ Three paths. Start with A.
 ## Before you start
 
 ```bash
-git clone https://github.com/NVIDIA/nke.git
+git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
 ```
 
@@ -45,7 +45,7 @@ make -C controller colima-up      # 6 CPU, 12 GiB
 ```
 
 Path A needs nothing internal and no NGC account. Path B needs a checkout of
-`NVIDIA/cluster-api-provider-nico`.
+`dsx-ai-factory/cluster-api-provider-nico`.
 
 ## Path A — the API alone
 
@@ -231,7 +231,7 @@ pulled with nerdctl.
 **On the NICo side:** a site, a VPC, a subnet or VPC prefix, instance types, and
 an **allocation** against each instance type. An instance type with no allocation
 looks healthy and provisions nothing. See
-[CAPNICo's getting started guide](https://github.com/NVIDIA/cluster-api-provider-nico/blob/main/docs/getting-started.md).
+[CAPNICo's getting started guide](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md).
 
 ### 1. Build nkectl
 
@@ -268,14 +268,12 @@ leaves nothing schedulable and the node never reaches `Ready`.
 
 ### 3. Point at your images
 
-All three are required and the bootstrap fails without them. Outside a checkout
-you also need `NKECTL_CWE_CHART_PATH` and `NKECTL_CAPI_PROVISIONED_PATH`, and
-those two are not checked up front — a mistake surfaces after the seed cluster
-exists.
+Both are required and the bootstrap fails without them. Outside a checkout you
+also need `NKECTL_CWE_CHART_PATH` and `NKECTL_CAPI_PROVISIONED_PATH`, and those
+two are not checked up front — a mistake surfaces after the seed cluster exists.
 
 ```bash
 export NKECTL_CWE_IMAGE=<cwe-controller image>
-export NKECTL_CWE_PROFILES_IMAGE=<profiles image>
 export NKECTL_CAPI_PROVISIONED_IMAGE=<provisioned provider image>
 ```
 
@@ -290,7 +288,12 @@ The key can come from the environment, from `--registry-api-key`, or from
 
 Where Docker Hub is slow or blocked, point the seed cluster at a mirror:
 `NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` and `NKECTL_CWE_POSTGRES_CHART`. The Postgres
-chart pull is the step that times out. For the full set of third-party images
+chart pull is the step that times out. The Temporal and SPIRE charts have the
+same knob — `NKECTL_CWE_TEMPORAL_CHART`, `NKECTL_CWE_SPIRE_CHART` and
+`NKECTL_CWE_SPIRE_CRDS_CHART`, each an OCI reference or a local path — so every
+Helm chart the bootstrap installs can come from a mirror or from disk.
+`clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
+For the full set of third-party images
 the bootstrap pulls — Postgres, Temporal, and the SPIRE stack — and to mirror
 them into a local or private registry,
 see [`hack/mirror-bootstrap-images.sh`](../hack/mirror-bootstrap-images.sh).
@@ -354,7 +357,7 @@ Tenant clusters need it. Install the provider onto the site cluster with a
 `nico-credentials` Secret in `capnico-system` holding the endpoint, org and
 **one** authentication mode. Prefer client credentials: a password-grant token
 stops provisioning when it expires.
-[CAPNICo's guide](https://github.com/NVIDIA/cluster-api-provider-nico/blob/main/docs/getting-started.md)
+[CAPNICo's guide](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md)
 is the reference.
 
 ```bash
@@ -386,5 +389,5 @@ repository.
 - [architecture.md](architecture.md) — how CWE, the agent and CAPI fit together
 - [../cli/docs/sitespec.md](../cli/docs/sitespec.md) — every site spec field
 - [../cli/docs/user-flow.md](../cli/docs/user-flow.md) — the command reference
-- [CAPNICo getting started](https://github.com/NVIDIA/cluster-api-provider-nico/blob/main/docs/getting-started.md)
+- [CAPNICo getting started](https://github.com/dsx-ai-factory/cluster-api-provider-nico/blob/main/docs/getting-started.md)
   — the infrastructure provider every real site runs

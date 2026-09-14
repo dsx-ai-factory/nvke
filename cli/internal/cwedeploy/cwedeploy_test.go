@@ -126,7 +126,6 @@ func testConfig(t *testing.T) Config {
 	t.Helper()
 	return Config{
 		CWEImage:                 "nvcr.io/org/controller:edge",
-		ProfilesImage:            "nvcr.io/org/cwe-profiles:v1",
 		ProvisionedProviderImage: "cluster-api-provider-provisioned:local",
 		ProvisionedProviderPath:  t.TempDir(),
 		ChartPath:                t.TempDir(), // any existing dir stands in for the chart
@@ -143,15 +142,8 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 	if err := e.Deploy(context.Background(), "/tmp/kubeconfig", Config{}); err == nil {
 		t.Fatal("expected an error for a missing Config.CWEImage")
 	}
-	// Without profiles CWE fails its schema migration, so say so up front
-	// rather than after a five-minute wait on a pod that will never be ready.
-	if err := e.Deploy(context.Background(), "/tmp/kubeconfig",
-		Config{CWEImage: "nvcr.io/org/controller:edge"}); err == nil {
-		t.Fatal("expected an error for a missing Config.ProfilesImage")
-	}
 	if err := e.Deploy(context.Background(), "/tmp/kubeconfig", Config{
-		CWEImage:      "nvcr.io/org/controller:edge",
-		ProfilesImage: "nvcr.io/org/cwe-profiles:v1",
+		CWEImage: "nvcr.io/org/controller:edge",
 	}); err == nil {
 		t.Fatal("expected an error for a missing Config.ProvisionedProviderImage")
 	}
@@ -362,10 +354,13 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 	if !strings.Contains(cwe, "image.repository=nvcr.io/org/controller") || !strings.Contains(cwe, "image.tag=edge") {
 		t.Errorf("cwe call = %q, want the image split into repository/tag", cwe)
 	}
-	if !strings.Contains(cwe, "profiles.image.enabled=true") ||
-		!strings.Contains(cwe, "profiles.image.repository=nvcr.io/org/cwe-profiles") ||
-		!strings.Contains(cwe, "profiles.path="+profilesPath) {
-		t.Errorf("cwe call = %q, want the profiles init container enabled and pointed at the image", cwe)
+	// PROFILES_DIR only. nkectl deploys no profiles content, so the chart's
+	// profiles.image stays disabled and nothing should turn it on.
+	if !strings.Contains(cwe, "profiles.path="+profilesPath) {
+		t.Errorf("cwe call = %q, want PROFILES_DIR pointed at %s", cwe, profilesPath)
+	}
+	if strings.Contains(cwe, "profiles.image") {
+		t.Errorf("cwe call = %q, want no profiles.image setting", cwe)
 	}
 	if !strings.Contains(cwe, "spiffe.enabled=true") ||
 		!strings.Contains(cwe, "spiffe.trustDomain=test-kind.nke.local") ||
@@ -788,5 +783,105 @@ func TestDeploy_DisableMTLSSkipsSpire(t *testing.T) {
 	}
 	if !strings.Contains(all, "spiffe.enabled=false") {
 		t.Errorf("calls = %q, want CWE installed with spiffe.enabled=false", all)
+	}
+}
+
+// An override replaces the chart half of the install outright: the chart
+// argument is used verbatim and --repo goes with it, since helm resolves a
+// name through --repo and would send an OCI reference to the repo's index
+// instead of pulling it. The version pin stays either way.
+func TestSpireInstallArgs_PullsTheChartFromTheConfiguredRef(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		ref       string
+		wantChart string
+		wantRepo  bool
+	}{
+		{name: "default is the hardened chart repo", ref: "", wantChart: spireChartName, wantRepo: true},
+		{name: "OCI reference is used verbatim without --repo", ref: "oci://mirror.example.com/spiffe/spire", wantChart: "oci://mirror.example.com/spiffe/spire"},
+		{name: "local tarball is used verbatim without --repo", ref: "/srv/charts/spire-0.30.1.tgz", wantChart: "/srv/charts/spire-0.30.1.tgz"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := joinArgs(spireInstallArgs(Config{SPIREChartRef: tt.ref}, "/tmp/values.yaml", "kind", "kind.nke.local", time.Minute))
+			if !strings.HasPrefix(got, "upgrade --install spire "+tt.wantChart+" ") {
+				t.Errorf("install = %q, want chart %q", got, tt.wantChart)
+			}
+			if gotRepo := strings.Contains(got, "--repo "); gotRepo != tt.wantRepo {
+				t.Errorf("install = %q, has --repo = %v, want %v", got, gotRepo, tt.wantRepo)
+			}
+			if !strings.Contains(got, "--version "+spireChartVersion) {
+				t.Errorf("install = %q, want the version pin kept", got)
+			}
+		})
+	}
+}
+
+// Deploy builds the Temporal and SPIRE CRDs installs inline rather than
+// through a helper, so those two are asserted on the recorded helm calls.
+// SPIRE is included so one table pins all three chart overrides side by side.
+func TestDeploy_PullsTemporalAndSPIREChartsFromTheConfiguredRef(t *testing.T) {
+	const mirror = "oci://mirror.example.com/charts/"
+	for _, tt := range []struct {
+		name  string
+		set   func(*Config, string)
+		call  int // index into helmCalls: postgres, temporal, SPIRE CRDs, SPIRE, cwe
+		chart string
+		repo  string
+	}{
+		{name: temporalReleaseName, set: func(c *Config, ref string) { c.TemporalChartRef = ref }, call: 1, chart: temporalChartName, repo: temporalChartRepo},
+		{name: spireCRDsReleaseName, set: func(c *Config, ref string) { c.SPIRECRDsChartRef = ref }, call: 2, chart: spireCRDsChartName, repo: spireChartRepo},
+		{name: spireReleaseName, set: func(c *Config, ref string) { c.SPIREChartRef = ref }, call: 3, chart: spireChartName, repo: spireChartRepo},
+	} {
+		t.Run(tt.name+" defaults to the upstream repo", func(t *testing.T) {
+			runner := &fakeRunner{}
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+				t.Fatalf("Deploy returned error: %v", err)
+			}
+			got := helmCalls(runner)[tt.call]
+			want := "upgrade --install " + tt.name + " " + tt.chart + " --repo " + tt.repo + " "
+			if !strings.Contains(got, want) {
+				t.Errorf("%s helm call = %q, want it to contain %q", tt.name, got, want)
+			}
+		})
+		t.Run(tt.name+" override is used verbatim without --repo", func(t *testing.T) {
+			runner := &fakeRunner{}
+			cfg := testConfig(t)
+			ref := mirror + tt.chart
+			tt.set(&cfg, ref)
+			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+				t.Fatalf("Deploy returned error: %v", err)
+			}
+			calls := helmCalls(runner)
+			got := calls[tt.call]
+			if !strings.Contains(got, "upgrade --install "+tt.name+" "+ref+" ") {
+				t.Errorf("%s helm call = %q, want chart %q", tt.name, got, ref)
+			}
+			if strings.Contains(got, "--repo") {
+				t.Errorf("%s helm call = %q, want no --repo alongside an override", tt.name, got)
+			}
+			// One override moves one chart; the other releases keep their source.
+			for i, other := range calls {
+				if i != tt.call && strings.Contains(other, ref) {
+					t.Errorf("helm call[%d] = %q, carries the %s override", i, other, tt.name)
+				}
+			}
+		})
+	}
+}
+
+func TestDefaultConfig_ChartRefs(t *testing.T) {
+	t.Setenv("NKECTL_CWE_TEMPORAL_CHART", "/srv/charts/temporal-0.74.0.tgz")
+	t.Setenv("NKECTL_CWE_SPIRE_CHART", "oci://mirror.example.com/spiffe/spire")
+	t.Setenv("NKECTL_CWE_SPIRE_CRDS_CHART", "oci://mirror.example.com/spiffe/spire-crds")
+
+	cfg := DefaultConfig()
+	for _, tt := range []struct{ field, got, want string }{
+		{"TemporalChartRef", cfg.TemporalChartRef, "/srv/charts/temporal-0.74.0.tgz"},
+		{"SPIREChartRef", cfg.SPIREChartRef, "oci://mirror.example.com/spiffe/spire"},
+		{"SPIRECRDsChartRef", cfg.SPIRECRDsChartRef, "oci://mirror.example.com/spiffe/spire-crds"},
+	} {
+		if tt.got != tt.want {
+			t.Errorf("DefaultConfig %s = %q, want %q", tt.field, tt.got, tt.want)
+		}
 	}
 }

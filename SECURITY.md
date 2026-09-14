@@ -75,15 +75,15 @@ advisory is published.
 
 ## Supported versions
 
-nke has not yet published a release. Until it does, `main` is the only branch
-that receives security fixes.
+nke has published pre-releases only (`*-rc.N` tags), no stable release. Until a
+stable release exists, `main` is the only branch that receives security fixes.
 
 | Version | Supported |
 |---|---|
 | `main` | ✅ Receives security fixes |
 | Pre-release commits and forks | ❌ Not supported |
 
-Once releases begin, this table will name the release lines that receive
+Once stable releases begin, this table will name the release lines that receive
 backports, and the policy will be to support the latest minor release only
 until the project reaches 1.0.
 
@@ -98,15 +98,14 @@ issues resolved under our coordinated vulnerability disclosure policy.
 
 ## Artifact integrity
 
-**nke has published no releases, so there is no signed artifact to verify
-today. Treat any binary, image, or package claiming to come from this project
-as unverified.**
+**nke has published pre-releases only, and none of their artifacts is signed
+yet. Each release attaches a SHA-256 `checksums.txt`; verify against it, and
+treat any artifact that does not match as unverified.**
 
-When releases begin, every release artifact will be published with a SHA-256
-checksum file, and container images and binaries will be signed with
-[cosign](https://docs.sigstore.dev/) keyless signing. Verification instructions
-will be published in [RELEASE.md](RELEASE.md) alongside the first signed
-release. Third-party dependency licenses for the `agent` module are recorded in
+Every release artifact is published with a SHA-256 checksum file. Container
+images and binaries will be signed with [cosign](https://docs.sigstore.dev/)
+keyless signing, and verification instructions will be published in
+[RELEASE.md](RELEASE.md) alongside the first signed release. Third-party dependency licenses for the `agent` module are recorded in
 [agent/THIRD_PARTY_NOTICES.md](agent/THIRD_PARTY_NOTICES.md), regenerated and
 verified in CI on every push.
 

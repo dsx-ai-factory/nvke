@@ -77,8 +77,12 @@ HOST_ARCH := $(shell uname -m)
 # and less legibly than falling back here.
 ACCELERATOR ?= $(shell if [ "$(HOST_ARCH)" = "$(ARCH_UNAME)" ] && [ -c /dev/kvm ] && [ -w /dev/kvm ]; then echo kvm; else echo tcg; fi)
 
-# "host" needs KVM to be meaningful; "max" is the safe choice under TCG.
-CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)
+# "host" needs KVM to be meaningful; "max" is the safe choice under TCG. On an
+# arm64 host "max" also turns on pointer authentication, which tcg emulates so
+# slowly that the live installer's userspace stalls (2 h of wall time bought
+# 20 min of guest uptime); pauth-impdef=on keeps the feature and makes it cheap.
+comma := ,
+CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,$(if $(filter arm64,$(ARCH)),max$(comma)pauth-impdef=on,max))
 
 # Emulated boot is minutes, not seconds. Overridable, so a slow runner can
 # raise it without editing this file. 60m wasn't enough under tcg: a real CI
@@ -90,8 +94,17 @@ CPU_MODEL ?= $(if $(filter kvm,$(ACCELERATOR)),host,max)
 # genuine /dev/kvm was still mid-autoinstall/second-boot (confirmed clean via
 # the serial console log, no crash) when it hit that wall at 15m48s — FDE's
 # LUKS/LVM/package-install work is heavier than the boot times this value was
-# originally set from.
-SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),30m,120m)
+# originally set from. 120m wasn't enough for same-arch tcg on the arm64 pool
+# either: with pauth-impdef=on the install runs at roughly 10x the KVM pace
+# (14 min under KVM, so ~140 min), and run 34771011057 was six packages into
+# postinstall when it hit that wall.
+SSH_TIMEOUT ?= $(if $(filter kvm,$(ACCELERATOR)),30m,180m)
+
+# Guest vCPUs. More is not faster under tcg: every broadcast TLB invalidate
+# has to synchronise all vCPU threads, and run 34791670173 with 8 was still
+# copying the squashfs at 2 h 15 m where run 34771011057 with 4 had reached
+# the postinstall packages at 2 h.
+CPUS ?= 4
 
 # FDE/non-FDE only: how long boot_command waits before typing into GRUB.
 # prepare-installer-iso.sh patches the ISO's own GRUB timeout to 300s, so
@@ -142,6 +155,7 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 	$(PACKER) build \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
+		-var cpus=$(CPUS) \
 		-var ssh_timeout=$(SSH_TIMEOUT) \
 		-var boot_wait=$(BOOT_WAIT) \
 		-var iso_url=$(ISO_URL) \
@@ -159,6 +173,7 @@ os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 	$(PACKER) build \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
+		-var cpus=$(CPUS) \
 		-var ssh_timeout=$(SSH_TIMEOUT) \
 		-var boot_wait=$(BOOT_WAIT) \
 		-var iso_url=$(ISO_URL) \
