@@ -106,9 +106,12 @@ jobs:
     # container-based pool) never exposed it, forcing every bake onto QEMU's
     # tcg software emulation — confirmed directly: a full FDE bake took
     # 1h39m under tcg vs a few minutes locally under real KVM, and tcg's much
-    # slower, less predictable timing was implicated in several failures (a
-    # GRUB boot-menu race, an intermittent overlayfs kernel oops under
-    # curtin's install). This label is expected to expose /dev/kvm; "Enable
+    # slower, less predictable timing was implicated in at least one failure
+    # (a GRUB boot-menu race). A separate intermittent overlayfs kernel oops
+    # under curtin's install is a 26.04 GA installer-kernel bug
+    # (7.0.0-14-generic, ovl_iterate_merged), reproduced under KVM too and
+    # fixed by installing from the 26.04.1 ISO (see packer/Makefile). This
+    # label is expected to expose /dev/kvm; "Enable
     # KVM access" below fails the amd64 leg immediately if that assumption
     # turns out wrong, rather than silently falling back to the
     # ~10x-slower emulated path the way this job used to. On the arm64 leg the

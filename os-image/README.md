@@ -85,7 +85,7 @@ make os-image-fde
 ```
 
 Output: `packer/output-fde/nke-node-fde-ubuntu-<version>-<arch>.qcow2` (e.g.
-`nke-node-fde-ubuntu-26.04-amd64.qcow2`). `LUKS_PASSPHRASE` (default
+`nke-node-fde-ubuntu-26.04.1-amd64.qcow2`). `LUKS_PASSPHRASE` (default
 `changeit` — **set this to a real value for any build that will run on real
 hardware**; see [docs/full-disk-encryption.md](docs/full-disk-encryption.md))
 sets the build-time-only passphrase, which the shipped image never retains
@@ -111,7 +111,7 @@ make os-image-non-fde
 ```
 
 Output: `packer/output-non-fde/nke-node-non-fde-ubuntu-<version>-<arch>.qcow2`
-(e.g. `nke-node-non-fde-ubuntu-26.04-amd64.qcow2`). Boot it with
+(e.g. `nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2`). Boot it with
 `boot-smoke.sh` (it needs `OVMF_CODE` set, since this variant boots UEFI —
 see the comment at the top of that script; `QCOW` defaults to the single
 qcow2 under `output-non-fde/`, so it usually doesn't need to be passed):
@@ -145,9 +145,9 @@ repo builds is UEFI-only; `TPM=1` attaches a TPM for the FDE image).
 Examples:
 
 ```bash
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-amd64.qcow2
-make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04-amd64.qcow2 TPM=1
-make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04-arm64.qcow2 ARCH=arm64
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
+make run-vm QCOW=packer/output-fde/nke-node-fde-ubuntu-26.04.1-amd64.qcow2 TPM=1
+make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2 ARCH=arm64
 ```
 
 ## Release

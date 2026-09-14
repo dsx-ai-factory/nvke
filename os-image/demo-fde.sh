@@ -14,7 +14,7 @@
 #
 # Env overrides:
 #   QCOW          path to the FDE qcow2 (default: the single *.qcow2 under
-#                 packer/output-fde/, e.g. nke-node-fde-ubuntu-26.04-amd64.qcow2)
+#                 packer/output-fde/, e.g. nke-node-fde-ubuntu-26.04.1-amd64.qcow2)
 #   SSH_KEY       ssh key used for the build (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
 #   BOOT_TIMEOUT  seconds to wait for SSH per boot (default: 360 kvm / 1800 tcg)

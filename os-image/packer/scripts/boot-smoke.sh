@@ -8,7 +8,7 @@
 # server -- just proves the image boots on its own.
 #
 # QCOW defaults to the single *.qcow2 under output-non-fde/ (its filename
-# encodes the Ubuntu version/arch, e.g. nke-node-non-fde-ubuntu-26.04-amd64.qcow2
+# encodes the Ubuntu version/arch, e.g. nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2
 # -- see vm_name in nke-node-non-fde.pkr.hcl). This variant is UEFI-installed,
 # so OVMF_CODE (and optionally OVMF_VARS_TEMPLATE) is required:
 #   OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd ./boot-smoke.sh
