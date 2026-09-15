@@ -30,10 +30,8 @@ import (
 // operators-may-write alone. Each entry is an argument, and adding one is the
 // point at which somebody has to make it.
 var writesLeftToTheGroup = map[string]string{
-	"createCluster":       "additive: it brings an object into existence, and destroying it is deleteCluster, which is named",
-	"createNodePool":      "additive, as above; the pool's destructive edge is deleteNodePool and updateNodePool, both named",
-	"createVIPAllocation": "additive, and an allocation holds no workload",
-	"registerSite":        "additive: registering a site does not change anything already running in it",
+	"createCluster":  "additive: it brings an object into existence, and destroying it is deleteCluster, which is named",
+	"createNodePool": "additive, as above; the pool's destructive edge is deleteNodePool and updateNodePool, both named",
 
 	// The honest limit of a gate outside the mux, and the reason AZ-8 is scoped
 	// rather than absolute. One PATCH carries a cosmetic rename and
