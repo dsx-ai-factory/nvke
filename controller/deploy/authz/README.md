@@ -81,9 +81,14 @@ diff a reviewer needs and would not otherwise get.
 
 There is a limit worth knowing. One `operationId` is one Cedar action, and this
 gate decides before the request body is parsed — so `updateCluster`, which
-carries both a cosmetic `PATCH` and the one-way `enableEtcdEncryption` and
-`enableOidc`, cannot be split by any rule here. Separating those is an API
-change.
+carries every cluster-level PATCH field (control-plane node recycling, a
+Kubernetes version upgrade, Teleport enrollment, nested control-plane config,
+and the one-way `enableEtcdEncryption`/`enableOidc`) in one request, cannot be
+split by any rule here. Separating those is an API change.
+
+See `writesLeftToTheGroup` and the `exception` type in `policy_fences_test.go`
+for the full argument, blast radius, owner, and re-evaluation trigger behind
+each operation left to the coarse grant.
 
 ## Testing a change
 
