@@ -37,8 +37,7 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 
 // YAMLToGenericMap parses a single YAML document into a
 // map[string]interface{}, keyed the same way json.Marshal would read it
-// back out. Rejects a second "---"-separated document in data, and a
-// mapping with a non-string key at any depth.
+// back out.
 func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var doc yaml.Node
@@ -52,6 +51,7 @@ func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("empty document")
 	}
 
+	// Try to decode a second document, to reject one if present.
 	var extra interface{}
 	switch err := dec.Decode(&extra); {
 	case errors.Is(err, io.EOF):
