@@ -94,6 +94,15 @@ cp controller/.env.tilt.example controller/.env.tilt
 # inside the repository.
 export CAPNICO_SOURCE_DIR="$PWD/../cluster-api-provider-nico"
 
+# Match the node image's SPIRE attestation mode to the Docker host. On macOS,
+# Docker runs in the Colima VM created by `colima-up`, which provides the vTPM
+# proxy even though macOS itself has no `/sys/class/misc/vtpmx` path.
+if [[ "$(uname -s)" == Darwin || -e /sys/class/misc/vtpmx ]]; then
+  export CAPD_SPIRE_ATTESTATION_METHOD=tpm
+else
+  export CAPD_SPIRE_ATTESTATION_METHOD=joinToken
+fi
+
 # kind cluster, Cluster API, and the bundle mirror the node image build reads.
 # Tilt checks for all three and refuses to start without them.
 make -C controller capd-up

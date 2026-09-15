@@ -89,6 +89,7 @@ type Config struct {
 	ContainerNodeImage     string
 	ContainerDockerBinary  string
 	ContainerRequireHealth bool
+	ContainerRequireTPMEK  bool
 }
 
 // UseLibvirtNetwork reports whether VMs should attach to a pre-existing
@@ -201,6 +202,7 @@ func Parse(logger *slog.Logger) (Config, error) {
 		ContainerNodeImage:     envOrDefault("NICO_CONTAINERS_NODE_IMAGE", "cwe-capd-kindest-node:local"),
 		ContainerDockerBinary:  envOrDefault("NICO_CONTAINERS_DOCKER_BINARY", "docker"),
 		ContainerRequireHealth: strings.EqualFold(envOrDefault("NICO_CONTAINERS_REQUIRE_HEALTHY", "false"), "true"),
+		ContainerRequireTPMEK:  strings.EqualFold(envOrDefault("NICO_CONTAINERS_REQUIRE_TPM_EK", "true"), "true"),
 	}
 
 	if err := cfg.normalize(logger); err != nil {

@@ -292,8 +292,10 @@ def register(ctx):
             "NICO_VMS_PROMTAIL_LOG_PATH_PREFIX": "/var/log/vm-instances",
         })
     if _container_backend_enabled and "nico" in ctx.cfg.get("providers", []):
+        _require_tpm_ek = "true" if os.getenv("CAPD_SPIRE_ATTESTATION_METHOD", "tpm") == "tpm" else "false"
         nico_sim_env.update({
             "NICO_CONTAINERS_REQUIRE_HEALTHY": "true",
+            "NICO_CONTAINERS_REQUIRE_TPM_EK": os.getenv("NICO_CONTAINERS_REQUIRE_TPM_EK", _require_tpm_ek),
             "NICO_CONTAINERS_NODE_IMAGE": os.getenv("CAPD_KINDEST_NODE_IMAGE", "cwe-capd-kindest-node:local"),
         })
     _image_cache = ctx.cfg.get("nico_sim_image_cache_dir", "")

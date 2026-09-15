@@ -60,16 +60,17 @@ exec /usr/local/bin/entrypoint /sbin/init`
 )
 
 type Config struct {
-	OrgID          string
-	TenantID       string
-	SiteID         string
-	VPCID          string
-	SubnetID       string
-	SSHKeyGroupID  string
-	InstanceTypeID string
-	NodeNetwork    string
-	NodeImage      string
-	DockerBinary   string
+	OrgID                   string
+	TenantID                string
+	SiteID                  string
+	VPCID                   string
+	SubnetID                string
+	SSHKeyGroupID           string
+	InstanceTypeID          string
+	NodeNetwork             string
+	NodeImage               string
+	DockerBinary            string
+	RequireTPMEKCertificate bool
 }
 
 func (c Config) withDefaults() Config {
