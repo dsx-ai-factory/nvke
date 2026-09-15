@@ -288,9 +288,10 @@ func TestPatchClusterEmptyValueReachesTheWireAsALiteralEmptyArray(t *testing.T) 
 	}
 }
 
-// The name resolves successfully; only the PATCH is rejected. GET/list
-// aren't blocked by an in-progress mutation on CWE, only a new PATCH racing
-// it is.
+// TestPatchClusterSurfacesServerRejection verifies that a PATCH the server
+// rejects surfaces the server's error, after the name resolves successfully
+// — GET/list aren't blocked by an in-progress mutation on CWE, only a new
+// PATCH racing it is.
 func TestPatchClusterSurfacesServerRejection(t *testing.T) {
 	seed := seedCluster("my-cluster")
 	fake, clientFn := newFakeCWE(t, seed)
@@ -305,6 +306,8 @@ func TestPatchClusterSurfacesServerRejection(t *testing.T) {
 	}
 }
 
+// TestPatchUnknownClusterReportsNotFound verifies that patching a cluster
+// name that does not exist fails with a not-found error.
 func TestPatchUnknownClusterReportsNotFound(t *testing.T) {
 	_, clientFn := newFakeCWE(t)
 

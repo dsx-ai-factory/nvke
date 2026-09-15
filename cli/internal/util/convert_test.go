@@ -64,3 +64,27 @@ func TestYAMLToRequest_EmptyDocument(t *testing.T) {
 		t.Error("expected error for empty spec, got nil")
 	}
 }
+
+// TestYAMLToGenericMap_SecondDocumentRejected verifies that a "---"-separated
+// second YAML document is rejected rather than silently discarded, which
+// would otherwise let requested fields vanish with no error.
+func TestYAMLToGenericMap_SecondDocumentRejected(t *testing.T) {
+	data := []byte("teleportEnabled: true\n---\nenableCPNodeRecycling: true\n")
+	_, err := YAMLToGenericMap(data)
+	if err == nil {
+		t.Fatal("expected an error for a second YAML document, got nil")
+	}
+}
+
+// TestYAMLToGenericMap_NonStringKeyRejected verifies that a mapping with a
+// non-string key is rejected with a clear error, both at the top level and
+// nested, instead of "yaml document is not a mapping" (top level) or a raw
+// json.Marshal "unsupported type" error (nested).
+func TestYAMLToGenericMap_NonStringKeyRejected(t *testing.T) {
+	if _, err := YAMLToGenericMap([]byte("1: x\n")); err == nil {
+		t.Error("expected an error for a non-string top-level key, got nil")
+	}
+	if _, err := YAMLToGenericMap([]byte("controlPlaneConfig:\n  1: x\n")); err == nil {
+		t.Error("expected an error for a non-string nested key, got nil")
+	}
+}

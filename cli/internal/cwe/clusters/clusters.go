@@ -21,13 +21,13 @@ import (
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-// ClientFn is a factory that returns an authenticated CWE clients.
+// CWEClientFn is a factory that returns an authenticated CWE client.
 // Commands receive this rather than a constructed client so that the
 // client is only built when a command actually runs (not at startup).
-type ClientFn func() (*clients.CWEClient, error)
+type CWEClientFn func() (*clients.CWEClient, error)
 
 // NewGetCmd returns the "nkectl get clusters" subcommand.
-func NewGetCmd(clientFn ClientFn) *cobra.Command {
+func NewGetCmd(clientFn CWEClientFn) *cobra.Command {
 	var (
 		outputFormat  string
 		clusterFilter string
@@ -43,19 +43,19 @@ func NewGetCmd(clientFn ClientFn) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c, err := clientFn()
+			client, err := clientFn()
 			if err != nil {
 				return err
 			}
 			var cls []api.Cluster
 			if clusterFilter != "" {
-				cl, err := c.FindClusterByName(cmd.Context(), clusterFilter)
+				cluster, err := client.FindClusterByName(cmd.Context(), clusterFilter)
 				if err != nil {
 					return err
 				}
-				cls = []api.Cluster{*cl}
+				cls = []api.Cluster{*cluster}
 			} else {
-				if cls, err = c.ListClusters(cmd.Context()); err != nil {
+				if cls, err = client.ListClusters(cmd.Context()); err != nil {
 					return err
 				}
 			}
@@ -73,7 +73,7 @@ func NewGetCmd(clientFn ClientFn) *cobra.Command {
 }
 
 // NewCreateCmd returns the "nkectl create cluster" subcommand.
-func NewCreateCmd(clientFn ClientFn) *cobra.Command {
+func NewCreateCmd(clientFn CWEClientFn) *cobra.Command {
 	var filename string
 
 	cmd := &cobra.Command{
@@ -98,11 +98,11 @@ Example — stdin via pipe:
 			if err != nil {
 				return err
 			}
-			c, err := clientFn()
+			client, err := clientFn()
 			if err != nil {
 				return err
 			}
-			cluster, err := c.CreateCluster(cmd.Context(), req)
+			cluster, err := client.CreateCluster(cmd.Context(), req)
 			if err != nil {
 				return err
 			}
@@ -139,7 +139,7 @@ func loadCreateClusterRequest(cmd *cobra.Command, path string) (api.CreateCluste
 }
 
 // NewPatchCmd returns the "nkectl patch cluster <name>" subcommand.
-func NewPatchCmd(clientFn ClientFn) *cobra.Command {
+func NewPatchCmd(clientFn CWEClientFn) *cobra.Command {
 	var (
 		patch     string
 		patchFile string
@@ -162,7 +162,7 @@ Example — patch file:
   nkectl patch cluster my-cluster --patch-file patch.yaml
 
 Example — clear a field back to its default:
-  nkectl patch cluster my-cluster --patch 'controlPlaneConfig: {infra: {preKubeadmCommands: []}}'
+  nkectl patch cluster my-cluster --patch 'controlPlaneConfig: {nodeLabels: []}'
 
 The patch document's fields must match the CWE UpdateClusterRequest schema
 exactly. See /api/docs on your site controller.`,
@@ -178,15 +178,15 @@ exactly. See /api/docs on your site controller.`,
 			if err != nil {
 				return err
 			}
-			c, err := clientFn()
+			client, err := clientFn()
 			if err != nil {
 				return err
 			}
-			cl, err := c.FindClusterByName(cmd.Context(), args[0])
+			cluster, err := client.FindClusterByName(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
-			updated, err := c.PatchCluster(cmd.Context(), cl.ID, req)
+			updated, err := client.PatchCluster(cmd.Context(), cluster.ID, req)
 			if err != nil {
 				return err
 			}
@@ -248,7 +248,7 @@ func loadPatchClusterRequest(cmd *cobra.Command, patch, patchFile string) ([]byt
 }
 
 // NewDeleteCmd returns the "nkectl delete cluster <name>" subcommand.
-func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
+func NewDeleteCmd(clientFn CWEClientFn) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "cluster <name>",
 		Aliases: []string{"clusters"},
@@ -256,18 +256,18 @@ func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			c, err := clientFn()
+			client, err := clientFn()
 			if err != nil {
 				return err
 			}
-			cl, err := c.FindClusterByName(cmd.Context(), name)
+			cluster, err := client.FindClusterByName(cmd.Context(), name)
 			if err != nil {
 				return err
 			}
-			if err := c.DeleteCluster(cmd.Context(), cl.ID); err != nil {
+			if err := client.DeleteCluster(cmd.Context(), cluster.ID); err != nil {
 				return err
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "Cluster %q deletion started (id: %s)\n", cl.Name, cl.ID)
+			fmt.Fprintf(cmd.OutOrStdout(), "Cluster %q deletion started (id: %s)\n", cluster.Name, cluster.ID)
 			fmt.Fprintf(cmd.OutOrStdout(), "Deletion is async — run 'nkectl get clusters' to check status.\n")
 			return nil
 		},

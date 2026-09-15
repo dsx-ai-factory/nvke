@@ -6,7 +6,9 @@ package util
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 
 	"gopkg.in/yaml.v3"
 )
@@ -35,19 +37,84 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 	return req, nil
 }
 
-// YAMLToGenericMap parses a YAML document into a map[string]interface{},
-// keyed the same way json.Marshal would read it back out.
+// YAMLToGenericMap parses a single YAML document into a
+// map[string]interface{}, keyed the same way json.Marshal would read it
+// back out. Rejects a second "---"-separated document in data, and a
+// mapping with a non-string key at any depth.
 func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var raw interface{}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	if err := dec.Decode(&raw); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, fmt.Errorf("empty document")
+		}
 		return nil, fmt.Errorf("unmarshal yaml: %w", err)
 	}
 	if raw == nil {
 		return nil, fmt.Errorf("empty document")
 	}
-	m, ok := raw.(map[string]interface{})
+
+	var extra interface{}
+	switch err := dec.Decode(&extra); {
+	case errors.Is(err, io.EOF):
+		// Only one document — expected.
+	case err == nil:
+		return nil, fmt.Errorf("multiple YAML documents; only one is accepted")
+	default:
+		return nil, fmt.Errorf("unmarshal yaml: %w", err)
+	}
+
+	normalized, err := stringKeyed(raw)
+	if err != nil {
+		return nil, err
+	}
+	m, ok := normalized.(map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("yaml document is not a mapping")
 	}
 	return m, nil
+}
+
+// stringKeyed recursively converts every map[interface{}]interface{} under
+// v (gopkg.in/yaml.v3's representation of a mapping with any non-string
+// key) to map[string]interface{}, since generated API types decode only
+// from string-keyed JSON objects. Returns an error naming the first
+// non-string key found, at any depth.
+func stringKeyed(v interface{}) (interface{}, error) {
+	switch t := v.(type) {
+	case map[string]interface{}:
+		for k, val := range t {
+			converted, err := stringKeyed(val)
+			if err != nil {
+				return nil, err
+			}
+			t[k] = converted
+		}
+		return t, nil
+	case map[interface{}]interface{}:
+		out := make(map[string]interface{}, len(t))
+		for k, val := range t {
+			key, ok := k.(string)
+			if !ok {
+				return nil, fmt.Errorf("yaml document keys must be strings, found %v (%T)", k, k)
+			}
+			converted, err := stringKeyed(val)
+			if err != nil {
+				return nil, err
+			}
+			out[key] = converted
+		}
+		return out, nil
+	case []interface{}:
+		for i, val := range t {
+			converted, err := stringKeyed(val)
+			if err != nil {
+				return nil, err
+			}
+			t[i] = converted
+		}
+		return t, nil
+	default:
+		return v, nil
+	}
 }

@@ -137,8 +137,8 @@ bin/nkectl get providers      # wait for nico: CONFIGURED
 bin/nkectl create cluster -f cli/examples/nico-mock-cluster.yaml
 bin/nkectl get clusters
 bin/nkectl get clusters --cluster <name>
-bin/nkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: <new-version>'
-bin/nkectl patch cluster <name> --patch-file patch.yaml
+bin/nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: "1.31.0"'
+bin/nkectl patch cluster my-cluster --patch-file patch.yaml
 bin/nkectl delete cluster <name>
 ```
 

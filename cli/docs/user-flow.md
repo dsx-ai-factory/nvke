@@ -161,10 +161,10 @@ kubeconfig from step 4.
 
 ```bash
 # Bump the Kubernetes version
-nkectl patch cluster <cluster-name> --patch 'controlPlaneKubernetesVersion: 1.31.0'
+nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 
 # From a patch file
-nkectl patch cluster <cluster-name> --patch-file patch.yaml
+nkectl patch cluster my-cluster --patch-file patch.yaml
 ```
 
 Only the fields in the patch document are changed. `nkectl patch cluster
