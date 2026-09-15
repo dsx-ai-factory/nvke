@@ -510,7 +510,8 @@ func (s *NodeAgentServer) ExecuteKubeadmJoin(
 		Phase:  JoinPhase,
 	}
 
-	slog.Info("issuing kubeadm join call", "request", req)
+	slog.Info("issuing kubeadm join call", "request", loggableJoinRequest(req),
+		"api_encryption_key_sha256", encryptionKeyDigest(req.GetApiEncryptionKey()))
 
 	alreadyJoining := (s.NodeStatus.Phase == JoinPhase) &&
 		(s.NodeStatus.Status == ReadyStatus || s.NodeStatus.Status == PendingStatus)
@@ -630,7 +631,8 @@ func (s *NodeAgentServer) ExecuteKubeadmInit(
 	req *pb.KubeadmInitRequest,
 ) (*pb.KubeadmInitStatusResponse, error) {
 	defer logRPCSpan(ctx, "ExecuteKubeadmInit")()
-	slog.Info("issuing kubeadm init call", "request", req)
+	slog.Info("issuing kubeadm init call", "request", loggableInitRequest(req),
+		"api_encryption_key_sha256", encryptionKeyDigest(req.GetApiEncryptionKey()))
 	response := &pb.KubeadmInitStatusResponse{}
 
 	s.mu.Lock()
