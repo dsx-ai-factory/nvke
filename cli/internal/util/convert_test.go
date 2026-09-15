@@ -77,14 +77,52 @@ func TestYAMLToGenericMap_SecondDocumentRejected(t *testing.T) {
 }
 
 // TestYAMLToGenericMap_NonStringKeyRejected verifies that a mapping with a
-// non-string key is rejected with a clear error, both at the top level and
-// nested, instead of "yaml document is not a mapping" (top level) or a raw
-// json.Marshal "unsupported type" error (nested).
+// non-string key is rejected with a clear error at the top level or nested in
+// another mapping or sequence, instead of "yaml document is not a mapping"
+// (top level) or a raw json.Marshal "unsupported type" error (nested).
 func TestYAMLToGenericMap_NonStringKeyRejected(t *testing.T) {
 	if _, err := YAMLToGenericMap([]byte("1: x\n")); err == nil {
 		t.Error("expected an error for a non-string top-level key, got nil")
 	}
 	if _, err := YAMLToGenericMap([]byte("controlPlaneConfig:\n  1: x\n")); err == nil {
 		t.Error("expected an error for a non-string nested key, got nil")
+	}
+	if _, err := YAMLToGenericMap([]byte("items:\n  - 1: x\n")); err == nil {
+		t.Error("expected an error for a non-string key in a sequence, got nil")
+	}
+}
+
+// TestYAMLToGenericMap_MergeKeyAccepted verifies that a YAML merge key
+// (<<: *anchor) is accepted rather than rejected as a non-string key, and
+// that the merged fields land in the result alongside the mapping's own.
+func TestYAMLToGenericMap_MergeKeyAccepted(t *testing.T) {
+	data := []byte("defaults: &defaults\n  teleportEnabled: true\ncontrolPlaneConfig:\n  <<: *defaults\n  desiredCount: 3\n")
+	m, err := YAMLToGenericMap(data)
+	if err != nil {
+		t.Fatalf("unexpected error for a merge key: %v", err)
+	}
+	cpConfig, ok := m["controlPlaneConfig"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("controlPlaneConfig = %v, want a map", m["controlPlaneConfig"])
+	}
+	if cpConfig["teleportEnabled"] != true {
+		t.Errorf("teleportEnabled = %v, want true (merged from defaults)", cpConfig["teleportEnabled"])
+	}
+	if cpConfig["desiredCount"] != 3 {
+		t.Errorf("desiredCount = %v, want 3", cpConfig["desiredCount"])
+	}
+}
+
+// TestYAMLToGenericMap_NullDocumentVariants verifies that every YAML
+// spelling of "no document" (fully empty input, a bare "---" separator with
+// nothing after it, and an explicit null) all report the same "empty
+// document" error, not the generic "not a mapping" error a null scalar
+// would otherwise fall into.
+func TestYAMLToGenericMap_NullDocumentVariants(t *testing.T) {
+	for _, data := range []string{"", "---\n", "null\n", "~\n"} {
+		_, err := YAMLToGenericMap([]byte(data))
+		if err == nil || err.Error() != "empty document" {
+			t.Errorf("YAMLToGenericMap(%q) = %v, want \"empty document\"", data, err)
+		}
 	}
 }

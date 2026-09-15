@@ -41,14 +41,14 @@ func YAMLToRequest[T any](data []byte) (T, error) {
 // mapping with a non-string key at any depth.
 func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
-	var raw interface{}
-	if err := dec.Decode(&raw); err != nil {
+	var doc yaml.Node
+	if err := dec.Decode(&doc); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, fmt.Errorf("empty document")
 		}
 		return nil, fmt.Errorf("unmarshal yaml: %w", err)
 	}
-	if raw == nil {
+	if len(doc.Content) == 0 {
 		return nil, fmt.Errorf("empty document")
 	}
 
@@ -62,56 +62,39 @@ func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
 		return nil, fmt.Errorf("unmarshal yaml: %w", err)
 	}
 
-	normalized, err := stringKeyed(raw)
-	if err != nil {
-		return nil, err
+	root := doc.Content[0]
+	if root.Tag == "!!null" {
+		return nil, fmt.Errorf("empty document")
 	}
-	m, ok := normalized.(map[string]interface{})
-	if !ok {
+	if root.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("yaml document is not a mapping")
 	}
-	return m, nil
+	if err := validateStringKeys(root); err != nil {
+		return nil, err
+	}
+
+	var result map[string]interface{}
+	if err := root.Decode(&result); err != nil {
+		return nil, fmt.Errorf("unmarshal yaml: %w", err)
+	}
+	return result, nil
 }
 
-// stringKeyed recursively converts every map[interface{}]interface{} under
-// v (gopkg.in/yaml.v3's representation of a mapping with any non-string
-// key) to map[string]interface{}. Returns an error naming the first
-// non-string key found, at any depth.
-func stringKeyed(v interface{}) (interface{}, error) {
-	switch t := v.(type) {
-	case map[string]interface{}:
-		for k, val := range t {
-			converted, err := stringKeyed(val)
-			if err != nil {
-				return nil, err
+// validateStringKeys checks the YAML syntax tree before decoding it into Go
+// values, avoiding recursive inspection and rewriting of decoded maps.
+func validateStringKeys(node *yaml.Node) error {
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i < len(node.Content); i += 2 {
+			key := node.Content[i]
+			if key.ShortTag() != "!!str" && key.ShortTag() != "!!merge" {
+				return fmt.Errorf("yaml document keys must be strings, found %s (%s)", key.Value, key.ShortTag())
 			}
-			t[k] = converted
 		}
-		return t, nil
-	case map[interface{}]interface{}:
-		out := make(map[string]interface{}, len(t))
-		for k, val := range t {
-			key, ok := k.(string)
-			if !ok {
-				return nil, fmt.Errorf("yaml document keys must be strings, found %v (%T)", k, k)
-			}
-			converted, err := stringKeyed(val)
-			if err != nil {
-				return nil, err
-			}
-			out[key] = converted
-		}
-		return out, nil
-	case []interface{}:
-		for i, val := range t {
-			converted, err := stringKeyed(val)
-			if err != nil {
-				return nil, err
-			}
-			t[i] = converted
-		}
-		return t, nil
-	default:
-		return v, nil
 	}
+	for _, child := range node.Content {
+		if err := validateStringKeys(child); err != nil {
+			return err
+		}
+	}
+	return nil
 }
