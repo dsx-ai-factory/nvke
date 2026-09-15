@@ -95,6 +95,7 @@ func WaitProvisioned(
 			// if the wait runs out.
 			lastErr = err
 		} else {
+			lastErr = nil
 			status := clusterstate.Status(cluster)
 			if status != lastStatus {
 				log.Info("cluster state", "cluster", cluster.Name, "status", status)
@@ -149,8 +150,13 @@ func WaitControlPlaneJoined(
 	if want <= 0 {
 		return nil
 	}
+	// No DefaultWaitTimeout fallback here, unlike WaitProvisioned: this wait is
+	// handed what is left of a deadline it shares with that one, so a
+	// non-positive value means the budget is spent, not that the caller wants a
+	// default. Starting a fresh 30 minutes on it would overrun --timeout.
 	if timeout <= 0 {
-		timeout = DefaultWaitTimeout
+		return fmt.Errorf("sitecluster: no time left to wait for the %d control plane nodes "+
+			"of cluster %s to join", want, id)
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -166,6 +172,10 @@ func WaitControlPlaneJoined(
 			// As in WaitProvisioned: a failed read is not a failed cluster.
 			lastErr = err
 		} else {
+			// The read recovered, so it is no longer what went wrong. Left set,
+			// it would be reported as the reason a node never joined and send
+			// the operator after CWE instead of the node.
+			lastErr = nil
 			provisioned, pending := controlPlaneProgress(nodes, want)
 			outstanding = pending
 			if provisioned != lastProvisioned {

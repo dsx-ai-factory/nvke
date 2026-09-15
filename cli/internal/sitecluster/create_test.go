@@ -71,8 +71,8 @@ func (f *fakeClusterAPI) ListControlPlaneNodes(
 ) ([]api.Node, error) {
 	idx := f.lists
 	f.lists++
-	if idx < len(f.listErrs) && f.listErrs[idx] != nil {
-		return nil, f.listErrs[idx]
+	if errIdx := min(idx, len(f.listErrs)-1); errIdx >= 0 && f.listErrs[errIdx] != nil {
+		return nil, f.listErrs[errIdx]
 	}
 	if len(f.nodeStates) == 0 {
 		return nil, nil
@@ -347,5 +347,72 @@ func TestWaitControlPlaneJoined_NothingToWaitFor(t *testing.T) {
 	}
 	if client.lists != 0 {
 		t.Errorf("polled %d times for zero nodes, want 0", client.lists)
+	}
+}
+
+// TestWaitControlPlaneJoined_TimeoutForgetsARecoveredReadFailure: the last
+// error is there to say why a wait ran out. A read that failed once and
+// recovered is not that reason, and reporting it sends the operator after CWE
+// while the node that never joined goes unlooked-at.
+func TestWaitControlPlaneJoined_TimeoutForgetsARecoveredReadFailure(t *testing.T) {
+	shortPollInterval(t)
+	client := &fakeClusterAPI{
+		listErrs:   []error{errors.New("connection refused"), nil},
+		nodeStates: [][]api.Node{nodesProvisioned(3, 2)},
+	}
+
+	err := WaitControlPlaneJoined(
+		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger())
+	if err == nil {
+		t.Fatal("expected WaitControlPlaneJoined to time out")
+	}
+	if strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("error %q blames a read failure that recovered", err)
+	}
+	if !strings.Contains(err.Error(), "node3") {
+		t.Errorf("error %q does not name the node that never joined", err)
+	}
+}
+
+// TestWaitControlPlaneJoined_SpentBudgetDoesNotStartAFreshWait: this wait is
+// given what is left of a deadline it shares with WaitProvisioned. Reading a
+// non-positive remainder as "no budget supplied" would grant it a new default
+// timeout and overrun --timeout by that much.
+func TestWaitControlPlaneJoined_SpentBudgetDoesNotStartAFreshWait(t *testing.T) {
+	for _, timeout := range []time.Duration{0, -time.Second} {
+		client := &fakeClusterAPI{nodeStates: [][]api.Node{nodesProvisioned(3, 3)}}
+
+		start := time.Now()
+		err := WaitControlPlaneJoined(
+			context.Background(), client, uuid.New(), 3, timeout, quietLogger())
+		if err == nil {
+			t.Fatalf("timeout %s: waited on a spent budget instead of failing", timeout)
+		}
+		if elapsed := time.Since(start); elapsed > time.Second {
+			t.Errorf("timeout %s: took %s, so a fresh wait was started", timeout, elapsed)
+		}
+		if client.lists != 0 {
+			t.Errorf("timeout %s: polled %d times on a spent budget", timeout, client.lists)
+		}
+	}
+}
+
+// TestWaitProvisioned_TimeoutForgetsARecoveredReadFailure: the same rule for
+// the wait next door, which carries the same lastErr into its own message.
+func TestWaitProvisioned_TimeoutForgetsARecoveredReadFailure(t *testing.T) {
+	shortPollInterval(t)
+	client := &fakeClusterAPI{
+		getErrs: []error{errors.New("connection refused")},
+		states: []api.Cluster{
+			clusterWith(api.ConditionStatusFalse, api.ConditionStatusTrue),
+		},
+	}
+
+	_, err := WaitProvisioned(context.Background(), client, uuid.New(), 5*time.Millisecond, quietLogger())
+	if err == nil {
+		t.Fatal("expected WaitProvisioned to time out")
+	}
+	if strings.Contains(err.Error(), "connection refused") {
+		t.Errorf("error %q blames a read failure that recovered", err)
 	}
 }
