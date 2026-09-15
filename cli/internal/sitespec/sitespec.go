@@ -269,6 +269,14 @@ func Load(path string) (*SiteSpec, error) {
 		v.Set(pathNodes, nodes)
 	}
 
+	// The decoder reads "" as false for a bool. Here that would disable
+	// encryption silently and for the life of the cluster, and "" is what an
+	// unset template variable produces. Refuse it before decoding loses it.
+	if raw, ok := v.Get(pathEtcdEncryption).(string); ok && raw == "" {
+		return nil, fmt.Errorf("site spec file %s: %s: %q is not a boolean (true or false)",
+			path, pathEtcdEncryption, raw)
+	}
+
 	var inv SiteSpec
 	if err := v.Unmarshal(&inv, useYAMLTags, rejectUnknownFields); err != nil {
 		return nil, fmt.Errorf("site spec file %s: %w", path, err)

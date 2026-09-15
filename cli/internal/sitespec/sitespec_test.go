@@ -607,3 +607,15 @@ func TestEtcdEncryptionEnabled(t *testing.T) {
 		}
 	}
 }
+
+// TestLoadRejectsEmptyEtcdEncryption: the decoder would read "" as false,
+// which for this field is a permanent, silent opt-out. It is refused instead.
+func TestLoadRejectsEmptyEtcdEncryption(t *testing.T) {
+	for _, value := range []string{`""`, `''`} {
+		spec := strings.Replace(validYAML, "cluster:\n", "cluster:\n  etcdEncryption: "+value+"\n", 1)
+		_, err := Load(writeTemp(t, spec))
+		if err == nil || !strings.Contains(err.Error(), pathEtcdEncryption) || !strings.Contains(err.Error(), "not a boolean") {
+			t.Errorf("etcdEncryption: %s: err = %v, want one naming %s as not a boolean", value, err, pathEtcdEncryption)
+		}
+	}
+}
