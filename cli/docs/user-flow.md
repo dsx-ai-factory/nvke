@@ -9,7 +9,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | Command | What it does | Status |
 |---|---|---|
 | `nkectl generate sitespec <name> --nodes hosts.csv` | Writes a site spec for `bootstrap site` from a node CSV. `--set path=value` fills in what the CSV does not carry. | Available |
-| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
+| `nkectl bootstrap site -f sitespec.yaml` | Stands up an ephemeral Kind cluster running CWE, has CWE create the site cluster on the spec's hosts through `nke-agent`, writes `<name>.kubeconfig` and `<name>-etcd-encryption-key.json`, tears the Kind cluster down. `--dry-run` validates the spec only. | Available |
 | Install the site controller on the new cluster | Deploy the controller Helm chart (`controller/deploy/charts/controller`). No `nkectl` command yet. | Not in the CLI |
 | `nkectl config set-site --url <cwe-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
@@ -68,8 +68,10 @@ REGISTRY_API_KEY=... nkectl bootstrap site -f sitespec.yaml
 
 The command needs nerdctl and containerd on the host, and network reach to
 the hosts' `nke-agent` ports. On success it
-writes `my-tier0-site.kubeconfig` in the working directory (`--kubeconfig-out`
-changes the path) and removes the Kind cluster. On failure it writes cluster
+writes `my-tier0-site.kubeconfig` and `my-tier0-site-etcd-encryption-key.json`
+in the working directory (`--kubeconfig-out` and `--encryption-key-out` change
+the paths) and removes the Kind cluster. The key file is the only copy of the
+cluster's etcd encryption key outside the cluster; move it off the host. On failure it writes cluster
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
 the Kind cluster for debugging.
 

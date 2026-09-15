@@ -94,8 +94,14 @@ autoinstall:
       - [sh, -c, "curl -fsSL -o /usr/local/bin/nkectl https://github.com/dsx-ai-factory/nke/releases/latest/download/nkectl-linux-amd64 && chmod +x /usr/local/bin/nkectl"]
 
       # Run bootstrap (bootstrap host only)
-      - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nkectl bootstrap site -f /etc/nkectl/sitespec.yaml >> /var/log/nkectl-bootstrap.log 2>&1"]
+      - [sh, -c, "REGISTRY_API_KEY=<your-registry-api-key> nkectl bootstrap site -f /etc/nkectl/sitespec.yaml --encryption-key-out /root/nke-site-etcd-encryption-key.json >> /var/log/nkectl-bootstrap.log 2>&1"]
 ```
+
+The bootstrap writes the cluster's etcd encryption key to the path given by
+`--encryption-key-out`. The bootstrap host is one of the cluster's nodes, so
+that file is on a disk the key protects: retrieve it once the run has
+finished and delete it from the host. See
+[Pre-Provisioned Nodes](pre-provisioned-nodes.md#step-2-run-bootstrap-on-init-node).
 
 ## Key Components
 

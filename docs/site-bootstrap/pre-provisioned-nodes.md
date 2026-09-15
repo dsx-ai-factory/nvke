@@ -187,10 +187,10 @@ sudo systemctl restart nke-agent
 
 **Bootstrap failed with "its encryption key was not saved":**
 
-The cluster is built and encrypted; only the last step, writing its key to disk, failed. The bootstrap Kind cluster is kept because it holds the key. Do not delete it and do not re-run bootstrap. Run the `kubectl ... get secret` command the error prints to save the key, then delete the Kind cluster:
+The cluster is built and encrypted, and its kubeconfig is written; only the last step, saving the key to disk, failed. The bootstrap Kind cluster is kept because it holds the key. Do not delete it and do not re-run bootstrap. Run the command the error prints: it saves the Secret exactly as the bootstrap cluster holds it, owner-readable only, to the same path a successful run would have used. That file carries a `metadata.namespace` of `cloud-workflow-engine`; remove that line before applying it anywhere else. Then delete the Kind cluster:
 
 ```bash
-KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nke-bootstrap
+KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nkectl-bootstrap
 ```
 
 **A control-plane node added by hand never starts its API server:**
@@ -205,7 +205,13 @@ sudo chmod 0600 /etc/kubernetes/kube-api-encryption/encryption-config.yaml
 
 **Restoring etcd onto new hosts:**
 
-The etcd data is encrypted, so a snapshot restored onto fresh control-plane nodes needs the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml` on each of them before kube-apiserver starts. The key is the `active` field of the saved `<clusterName>-etcd-encryption-key.json`. Without that file, and without a surviving control-plane node to copy from, the data cannot be read.
+The etcd data is encrypted, so a snapshot restored onto fresh control-plane nodes needs the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml` on each of them before kube-apiserver starts. The value that goes after `secret:` in that file is the saved manifest's `data.active`, base64-decoded **once** — the manifest encodes the key a second time, as every Kubernetes Secret does:
+
+```bash
+jq -r .data.active <clusterName>-etcd-encryption-key.json | base64 -d
+```
+
+Without that file, and without a surviving control-plane node to copy from, the data cannot be read.
 
 **Bootstrap stalled waiting for a node to join:**
 
