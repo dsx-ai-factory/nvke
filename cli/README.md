@@ -63,7 +63,10 @@ nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 nkectl patch cluster my-cluster --patch-file patch.yaml
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
 
-# Node pool scaling
+# Node pools
+nkectl get nodepools                   # every pool on the site
+nkectl get nodepools --cluster <name>  # pools of one cluster
+nkectl get nodepools <name>... --cluster <name> -o yaml  # full detail for named pools
 nkectl patch nodepool <name> --cluster <name> --patch 'desiredNodeCount: 8'
 nkectl patch nodepool <name> --cluster <name> --patch-file patch.yaml
 ```

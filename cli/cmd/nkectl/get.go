@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
+	"github.com/NVIDIA/nke/cli/internal/cwe/nodepools"
 	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
 	"github.com/NVIDIA/nke/cli/internal/mgmtcluster"
 	mgmtcommand "github.com/NVIDIA/nke/cli/internal/mgmtcluster/command"
@@ -19,6 +20,7 @@ func newGetCmd() *cobra.Command {
 		Short: "Display one or more resources",
 	}
 	cmd.AddCommand(clusters.NewGetCmd(loadClient))
+	cmd.AddCommand(nodepools.NewGetCmd(loadClient))
 	cmd.AddCommand(providercmd.NewGetCmd(loadSite, cwedeploy.ExecCommandRunner{}))
 	cmd.AddCommand(mgmtcommand.NewGetKubeconfigCmd(loadSite, newMgmtClient))
 	return cmd

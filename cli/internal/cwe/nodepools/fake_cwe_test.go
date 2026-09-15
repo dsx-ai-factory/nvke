@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -37,6 +38,16 @@ type fakeCWE struct {
 	// The list lookup keeps working, so a test can reach the update call.
 	patchStatus int
 	patchBody   string
+	// clusterStatus and clusterBody, when set, fail GET /clusters only.
+	clusterStatus int
+	clusterBody   string
+}
+
+// failClustersWith fails GET /clusters while still listing node pools.
+func (f *fakeCWE) failClustersWith(status int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.clusterStatus, f.clusterBody = status, body
 }
 
 // failPatchWith makes the fake reject every PATCH with status and body while
@@ -54,6 +65,9 @@ type seed struct {
 	clusterName      string
 	name             string
 	desiredNodeCount int
+	controlPlane     bool
+	// conditions overrides the default, which marks the pool provisioned.
+	conditions *api.NodePoolConditions
 }
 
 // newFakeCWE starts a fake CWE holding a node pool per seed, and returns it
@@ -77,14 +91,21 @@ func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ClientFn) {
 			KubernetesVersion: "1.30.0",
 			DesiredNodeCount:  s.desiredNodeCount,
 			NodeLabels:        []string{},
-			Conditions: api.NodePoolConditions{
-				Provisioned: api.Condition{Status: api.ConditionStatusTrue},
-			},
+			ControlPlane:      s.controlPlane,
+			Conditions:        conditionsFor(s),
 		})
 	}
 	f.server = httptest.NewServer(f)
 	t.Cleanup(f.server.Close)
 	return f, clientFnFor(f.server.URL)
+}
+
+// conditionsFor defaults an unset seed to a provisioned pool.
+func conditionsFor(s seed) api.NodePoolConditions {
+	if s.conditions != nil {
+		return *s.conditions
+	}
+	return api.NodePoolConditions{Provisioned: api.Condition{Status: api.ConditionStatusTrue}}
 }
 
 // newBrokenCWE returns a ClientFn for a server that answers every request with
@@ -151,6 +172,8 @@ func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch id, isItem := strings.CutPrefix(path, "/nodePools/"); {
 	case path == "/nodePools" && r.Method == http.MethodGet:
 		f.list(w, r.URL.Query().Get("clusterName"), r.URL.Query().Get("name"))
+	case path == "/clusters" && r.Method == http.MethodGet:
+		f.listClusters(w, r.URL.Query().Get("name"))
 	case isItem && r.Method == http.MethodPatch:
 		f.update(w, r, id)
 	default:
@@ -173,6 +196,25 @@ func (f *fakeCWE) list(w http.ResponseWriter, clusterName, name string) {
 		out = append(out, p)
 	}
 	writeJSON(w, http.StatusOK, api.ListNodePoolsResponse{NodePools: out})
+}
+
+// listClusters answers GET /clusters. The name filter is honoured because
+// --cluster resolves through here; ignoring it makes every name ambiguous.
+func (f *fakeCWE) listClusters(w http.ResponseWriter, name string) {
+	if f.clusterStatus != 0 {
+		writeJSON(w, f.clusterStatus, json.RawMessage(f.clusterBody))
+		return
+	}
+	out := []api.Cluster{}
+	for id, clusterName := range f.clusterNames {
+		if name != "" && clusterName != name {
+			continue
+		}
+		out = append(out, api.Cluster{ID: id, Name: clusterName})
+	}
+	// Map iteration order is random, so sort to keep the response stable.
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	writeJSON(w, http.StatusOK, api.ListClustersResponse{Clusters: out})
 }
 
 // update answers PATCH /nodePools/{id}, applying desiredNodeCount and echoing
