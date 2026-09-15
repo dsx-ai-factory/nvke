@@ -88,10 +88,10 @@ func TestFindOSProfiles(t *testing.T) {
 				Variant:           "ovn",
 				UbuntuVersion:     "22.04",
 			},
-			"nke-1.31.9-251029-osmo": {
+			"nke-1.31.9-251029-customer": {
 				KubernetesVersion: "1.31.9",
 				Architecture:      "amd64",
-				Variant:           "osmo",
+				Variant:           "customer",
 				UbuntuVersion:     "22.04",
 			},
 			"nke-1.31.9-251029-24.04": {
@@ -120,7 +120,7 @@ func TestFindOSProfiles(t *testing.T) {
 	assert.Len(t, noVariantProfiles, 1)
 	assert.Contains(t, noVariantProfiles, "nke-1.31.9-251029")
 	assert.NotContains(t, noVariantProfiles, "nke-1.31.9-251029-ovn")
-	assert.NotContains(t, noVariantProfiles, "nke-1.31.9-251029-osmo")
+	assert.NotContains(t, noVariantProfiles, "nke-1.31.9-251029-customer")
 	assert.NotContains(t, noVariantProfiles, "nke-1.31.9-251029-24.04") // Different ubuntuVersion
 
 	// Test explicit 24.04 ubuntuVersion
