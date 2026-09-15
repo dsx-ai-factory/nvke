@@ -185,6 +185,16 @@ sudo cat /var/log/nke-agent.log
 sudo systemctl restart nke-agent
 ```
 
+**Bootstrap refuses to start: "a Kubernetes API server is already listening on port 6443":**
+
+A host in the site spec already runs a control plane, usually one left behind by an earlier attempt. Bootstrap does not provision over it: encryption is configured during `kubeadm init`, so a second run cannot pick up the key that host already holds. Reset every node that has kubeadm state, then re-run:
+
+```bash
+sudo kubeadm reset -f
+```
+
+If the host is not left over from an earlier attempt, check the node list in the site spec.
+
 **Bootstrap failed with "its encryption key was not saved":**
 
 The cluster is built and encrypted, and its kubeconfig is written; only the last step, saving the key to disk, failed. The bootstrap Kind cluster is kept because it holds the key. Do not delete it and do not re-run bootstrap. Run the command the error prints: it saves the Secret exactly as the bootstrap cluster holds it, owner-readable only, to the same path a successful run would have used. That file carries a `metadata.namespace` of `cloud-workflow-engine`; remove that line before applying it anywhere else. Then delete the Kind cluster:

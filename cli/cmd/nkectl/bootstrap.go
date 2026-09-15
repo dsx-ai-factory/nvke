@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -103,7 +104,21 @@ type bootstrapSiteOptions struct {
 	// tests substitute it so they do not require a real nerdctl installation,
 	// the same seam bootstrapRunner and cweRunner provide for the commands.
 	lookPath func(string) (string, error)
+
+	// dialContext is how the pre-create probe reaches each site spec host.
+	// Nil uses a net.Dialer; tests substitute it so no real host is dialled.
+	dialContext func(ctx context.Context, network, address string) (net.Conn, error)
 }
+
+const (
+	// kubeAPIServerPort is where a control plane answers. A site spec host that
+	// accepts a connection there already runs one.
+	kubeAPIServerPort = "6443"
+
+	// hostProbeTimeout bounds each dial. A host with nothing listening refuses
+	// at once; the timeout is for one that drops the packet instead.
+	hostProbeTimeout = 3 * time.Second
+)
 
 func newBootstrapSiteCmd() *cobra.Command {
 	opts := &bootstrapSiteOptions{}
@@ -234,6 +249,12 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		if err := requireNoKeyFile(etcdKeyPath(opts, inv.ClusterName)); err != nil {
 			return err
 		}
+	}
+	// A host that already serves a control plane is either a retry over a
+	// half-built site or a site spec pointed at a live cluster; provisioning
+	// over either ends badly.
+	if err := requireNoControlPlane(ctx, inv.Cluster.Nodes, opts.dialContext); err != nil {
+		return err
 	}
 
 	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
@@ -540,6 +561,45 @@ func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
 		return opts.kubeconfigOut
 	}
 	return clusterName + ".kubeconfig"
+}
+
+// requireNoControlPlane refuses to bootstrap over a host that already accepts
+// connections on the Kubernetes API port.
+//
+// It is a TCP connect, nothing more: enough to catch a control plane left by
+// an earlier attempt, which is the case a bootstrap cannot recover from on
+// its own. Encryption is configured at kubeadm init, so a second attempt over
+// an initialised node cannot pick up the key the node already holds, and the
+// only way forward is to reset the node and start again. Saying so here, with
+// the node named, beats a workflow error twenty minutes in.
+func requireNoControlPlane(
+	ctx context.Context,
+	nodes []sitespec.Node,
+	dial func(ctx context.Context, network, address string) (net.Conn, error),
+) error {
+	if dial == nil {
+		dial = (&net.Dialer{}).DialContext
+	}
+
+	var serving []string
+	for _, node := range nodes {
+		probeCtx, cancel := context.WithTimeout(ctx, hostProbeTimeout)
+		conn, err := dial(probeCtx, "tcp", net.JoinHostPort(node.IP, kubeAPIServerPort))
+		cancel()
+		if err != nil {
+			continue
+		}
+		_ = conn.Close()
+		serving = append(serving, fmt.Sprintf("%s (%s)", node.Name, node.IP))
+	}
+	if len(serving) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf("a Kubernetes API server is already listening on port %s on: %s. "+
+		"If this is a retry of a failed bootstrap, run `kubeadm reset -f` on every node that "+
+		"has kubeadm state and re-run. If it is not, check the node list in the site spec",
+		kubeAPIServerPort, strings.Join(serving, ", "))
 }
 
 // envDurationOrDefault reads a duration from the environment, falling back to a
