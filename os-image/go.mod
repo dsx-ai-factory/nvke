@@ -6,7 +6,7 @@ require (
 	github.com/NVIDIA/nke/agent v0.0.0-00010101000000-000000000000
 	github.com/spiffe/go-spiffe/v2 v2.8.1
 	github.com/stretchr/testify v1.12.1
-	google.golang.org/grpc v1.83.0
+	google.golang.org/grpc v1.83.2
 )
 
 require (
