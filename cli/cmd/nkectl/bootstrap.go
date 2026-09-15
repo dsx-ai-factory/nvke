@@ -295,9 +295,6 @@ func createSiteCluster(
 		return false, err
 	}
 
-	logger.Info("waiting for the cluster to finish provisioning",
-		"cluster", created.Name, "timeout", opts.clusterTimeout)
-
 	// One budget spans both waits, because --timeout bounds the whole
 	// provision: from the create call to every node having joined.
 	timeout := opts.clusterTimeout
@@ -305,6 +302,11 @@ func createSiteCluster(
 		timeout = sitecluster.DefaultWaitTimeout
 	}
 	deadline := time.Now().Add(timeout)
+
+	// Logged after the default is applied, so the line states the budget the
+	// command will actually keep to rather than the bare flag value.
+	logger.Info("waiting for the cluster to finish provisioning",
+		"cluster", created.Name, "timeout", timeout)
 
 	if _, err := sitecluster.WaitProvisioned(ctx, client, created.ID, time.Until(deadline), logger); err != nil {
 		return true, err
