@@ -266,20 +266,20 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 
 	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
-	spireEntriesCopied := false
+	spireEntriesDumped := false
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   kubeconfigOut,
 		lookPath:        runtimeOnPath,
-		copySpireEntries: func(_ context.Context, source, target string) (int, error) {
-			spireEntriesCopied = true
+		dumpSpireEntries: func(_ context.Context, source, outputDir string) (int, error) {
+			spireEntriesDumped = true
 			if source == "" {
 				t.Error("source kubeconfig path is empty")
 			}
-			if target != kubeconfigOut {
-				t.Errorf("target kubeconfig = %q, want %q", target, kubeconfigOut)
+			if outputDir != filepath.Dir(kubeconfigOut) {
+				t.Errorf("output directory = %q, want %q", outputDir, filepath.Dir(kubeconfigOut))
 			}
 			return 1, nil
 		},
@@ -294,8 +294,8 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	if !runner.sawArgs("delete", "cluster") {
 		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster; calls: %v", runner.calls)
 	}
-	if !spireEntriesCopied {
-		t.Error("runBootstrapSite did not copy SPIRE bootstrap entries")
+	if !spireEntriesDumped {
+		t.Error("runBootstrapSite did not dump SPIRE bootstrap entries")
 	}
 	body, readErr := os.ReadFile(kubeconfigOut)
 	if readErr != nil {
@@ -306,7 +306,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	}
 }
 
-func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryCopyFails(t *testing.T) {
+func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
 
@@ -317,23 +317,23 @@ func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryCopyFails(t *testi
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 		lookPath:        runtimeOnPath,
-		copySpireEntries: func(context.Context, string, string) (int, error) {
-			return 0, errors.New("copy failed")
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, errors.New("dump failed")
 		},
 	})
-	if err == nil || !strings.Contains(err.Error(), "copying SPIRE bootstrap resources") {
-		t.Fatalf("error = %v, want SPIRE copy failure", err)
+	if err == nil || !strings.Contains(err.Error(), "writing SPIRE bootstrap resources") {
+		t.Fatalf("error = %v, want SPIRE dump failure", err)
 	}
 	if runner.sawArgs("delete", "cluster") {
 		t.Error("bootstrap cluster was deleted after the SPIRE copy failed")
 	}
 }
 
-func TestRunBootstrapSiteSkipsSpireEntryCopyWhenMTLSDisabled(t *testing.T) {
+func TestRunBootstrapSiteSkipsSpireEntryDumpWhenMTLSDisabled(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
 
-	copyCalled := false
+	dumpCalled := false
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		disableMTLS:     true,
@@ -341,16 +341,16 @@ func TestRunBootstrapSiteSkipsSpireEntryCopyWhenMTLSDisabled(t *testing.T) {
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 		lookPath:        runtimeOnPath,
-		copySpireEntries: func(context.Context, string, string) (int, error) {
-			copyCalled = true
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			dumpCalled = true
 			return 0, nil
 		},
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
 	}
-	if copyCalled {
-		t.Error("SPIRE entries were copied with mTLS disabled")
+	if dumpCalled {
+		t.Error("SPIRE entries were dumped with mTLS disabled")
 	}
 }
 
@@ -664,7 +664,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			cweRunner:       fakeCWERunner{},
 			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 			lookPath:        runtimeOnPath,
-			copySpireEntries: func(context.Context, string, string) (int, error) {
+			dumpSpireEntries: func(context.Context, string, string) (int, error) {
 				return 0, nil
 			},
 		})

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,7 +25,7 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
 	"github.com/NVIDIA/nke/cli/internal/sitecluster"
 	"github.com/NVIDIA/nke/cli/internal/sitespec"
-	"github.com/NVIDIA/nke/cli/internal/spireentrycopy"
+	"github.com/NVIDIA/nke/cli/internal/spireentrydump"
 )
 
 const (
@@ -85,10 +86,10 @@ type bootstrapSiteOptions struct {
 	// bootstrapRunner above.
 	cweRunner cwedeploy.CommandRunner
 
-	// copySpireEntries overrides the SPIRE bootstrap-resource handoff. Nil uses
-	// Kubernetes clients built from the bootstrap and site kubeconfigs; tests
-	// replace it to avoid contacting real clusters.
-	copySpireEntries func(context.Context, string, string) (int, error)
+	// dumpSpireEntries overrides the SPIRE bootstrap-resource export. Nil uses
+	// a Kubernetes client built from the bootstrap kubeconfig; tests replace it
+	// to avoid contacting a real cluster.
+	dumpSpireEntries func(context.Context, string, string) (int, error)
 
 	// lookPath resolves the container runtime binary. Nil uses exec.LookPath;
 	// tests substitute it so they do not require a real nerdctl installation,
@@ -273,31 +274,31 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)
 	}
 	if err == nil && !cweCfg.DisableMTLS {
-		count, copyErr := copySpireBootstrapEntries(
-			ctx, opts, cluster.KubeconfigPath, siteKubeconfigPath(inv.ClusterName, opts),
+		count, dumpErr := dumpSpireBootstrapEntries(
+			ctx, opts, cluster.KubeconfigPath, filepath.Dir(siteKubeconfigPath(inv.ClusterName, opts)),
 		)
-		if copyErr != nil {
-			return fmt.Errorf("copying SPIRE bootstrap resources to the site cluster: %w", copyErr)
+		if dumpErr != nil {
+			return fmt.Errorf("writing SPIRE bootstrap resources: %w", dumpErr)
 		}
-		logger.Info("copied SPIRE bootstrap resources to site cluster", "clusterStaticEntries", count)
+		logger.Info("wrote SPIRE bootstrap resources", "clusterStaticEntries", count)
 	}
 	return err
 }
 
-func copySpireBootstrapEntries(
+func dumpSpireBootstrapEntries(
 	ctx context.Context,
 	opts *bootstrapSiteOptions,
 	sourceKubeconfig string,
-	targetKubeconfig string,
+	outputDir string,
 ) (int, error) {
-	if opts.copySpireEntries != nil {
-		return opts.copySpireEntries(ctx, sourceKubeconfig, targetKubeconfig)
+	if opts.dumpSpireEntries != nil {
+		return opts.dumpSpireEntries(ctx, sourceKubeconfig, outputDir)
 	}
-	copier, err := spireentrycopy.New(sourceKubeconfig, targetKubeconfig)
+	dumper, err := spireentrydump.New(sourceKubeconfig)
 	if err != nil {
 		return 0, err
 	}
-	return copier.Copy(ctx)
+	return dumper.Dump(ctx, outputDir)
 }
 
 // createSiteCluster posts the cluster to CWE, waits for it to come up, and
