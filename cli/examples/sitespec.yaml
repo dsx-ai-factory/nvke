@@ -46,6 +46,11 @@ cluster:
   # Service network CIDR.
   serviceCidr: "10.96.0.0/12"
 
+  # Encryption at rest for the Kubernetes API's etcd data. On by default. It can
+  # only be chosen at bootstrap: a cluster built with it off cannot be encrypted
+  # afterwards. Set to false to opt out.
+  # etcdEncryption: true
+
   # Optional: gRPC port nke-agent listens on. Defaults to "15005".
   # nodeAgentPort: "15005"
 

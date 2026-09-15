@@ -72,6 +72,7 @@ is a file `bootstrap site` accepts.
 | `cluster.podCidr` | string | yes | Valid CIDR. A comma-separated list of CIDRs is allowed. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | Port number 1–65535. Defaults to `15005`. |
+| `cluster.etcdEncryption` | bool | no | Encrypt the Kubernetes API's etcd data at rest. Defaults to `true`. Decided at bootstrap only: a cluster built with it `false` cannot be encrypted afterwards. See below. |
 | `cluster.kubeletConfig.systemReservedMemory` | string | no | e.g. `16Gi`. |
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
@@ -111,6 +112,7 @@ A set variable takes precedence over the file value.
 | `CLUSTER_SERVICE_CIDR` | `cluster.serviceCidr` |
 | `CLUSTER_SYSTEM_RESERVED_MEMORY` | `cluster.kubeletConfig.systemReservedMemory` |
 | `CLUSTER_NODE_AGENT_PORT` | `cluster.nodeAgentPort` |
+| `CLUSTER_ETCD_ENCRYPTION` | `cluster.etcdEncryption` |
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
@@ -171,6 +173,20 @@ nothing outside the cluster has to verify it — and means nodes cannot be given
 trust anchor in advance. Both files are checked for existence at load, while
 nothing has been touched yet: otherwise a wrong path surfaces minutes later as a
 helm failure naming a temporary file rather than the field that was wrong.
+
+## etcd encryption at rest
+
+`cluster.etcdEncryption` defaults to `true`. The first control-plane node's
+kube-apiserver starts with an `EncryptionConfiguration` that encrypts these
+resource kinds in etcd with a secretbox key generated for the cluster:
+`secrets`, `configmaps`, `persistentvolumeclaims`, `persistentvolumes`,
+`serviceaccounts`, `events`, `services`. An `identity` provider stays in the
+configuration as a read fallback; it does not make writes plaintext.
+
+The decision is final at bootstrap. Encryption is configured during
+`kubeadm init`, and there is no controller on the cluster afterwards to turn it
+on, so a cluster built with `etcdEncryption: false` stays unencrypted. Set it
+to `false` only when that is the intent.
 
 ## Relationship to the tier-0 bootstrap template
 

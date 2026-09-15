@@ -563,3 +563,47 @@ func TestLoad_AggregatesDataAndReferenceErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadDefaultsEtcdEncryptionOn(t *testing.T) {
+	// validYAML says nothing about encryption; the loaded spec must resolve
+	// that to on, so every reader downstream sees a decided value.
+	inv, err := Load(writeTemp(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if inv.Cluster.EtcdEncryption == nil || !*inv.Cluster.EtcdEncryption {
+		t.Errorf("EtcdEncryption = %v, want &true after Load", inv.Cluster.EtcdEncryption)
+	}
+	if !inv.Cluster.EtcdEncryptionEnabled() {
+		t.Error("EtcdEncryptionEnabled() = false for an unset field, want true")
+	}
+}
+
+func TestLoadEnvDisablesEtcdEncryption(t *testing.T) {
+	t.Setenv("CLUSTER_ETCD_ENCRYPTION", "false")
+
+	inv, err := Load(writeTemp(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if inv.Cluster.EtcdEncryptionEnabled() {
+		t.Error("CLUSTER_ETCD_ENCRYPTION=false did not disable encryption")
+	}
+}
+
+func TestEtcdEncryptionEnabled(t *testing.T) {
+	on, off := true, false
+	for _, tc := range []struct {
+		name  string
+		field *bool
+		want  bool
+	}{
+		{"unset", nil, true},
+		{"true", &on, true},
+		{"false", &off, false},
+	} {
+		if got := (Cluster{EtcdEncryption: tc.field}).EtcdEncryptionEnabled(); got != tc.want {
+			t.Errorf("%s: EtcdEncryptionEnabled() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}

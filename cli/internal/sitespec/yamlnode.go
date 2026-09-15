@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -47,26 +48,71 @@ func checkSettable(path string) error {
 		path, strings.Join(SettablePaths(), ", "))
 }
 
+// boolPaths are the fields that hold a YAML bool rather than a string. A
+// value written to one of these has to be emitted as a bare `true`/`false`:
+// a quoted string does not decode into a bool, so the rendered file would not
+// load.
+func boolPaths() map[string]bool {
+	return map[string]bool{pathEtcdEncryption: true}
+}
+
+// setValue writes an operator-supplied string at a dotted path, as the field's
+// type: bool fields are parsed and emitted as YAML bools, everything else is a
+// string.
+func setValue(root *yaml.Node, path, value string) error {
+	if !boolPaths()[path] {
+		return setScalar(root, path, value)
+	}
+	b, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("--set %s: %q is not a boolean (true or false)", path, value)
+	}
+	return setBool(root, path, b)
+}
+
 // setScalar writes value at a dotted path, creating the key and any missing
 // parent when the template carries it only as a commented-out example.
 func setScalar(root *yaml.Node, path, value string) error {
-	keys := strings.Split(path, ".")
-	node := root
-	for _, key := range keys[:len(keys)-1] {
-		child, err := childMapping(node, key)
-		if err != nil {
-			return fmt.Errorf("set %s: %w", path, err)
-		}
-		node = child
+	node, leaf, err := leafMapping(root, path)
+	if err != nil {
+		return err
 	}
-
-	leaf := keys[len(keys)-1]
 	if valueNode := mappingValue(node, leaf); valueNode != nil {
 		valueNode.SetString(value)
 		return nil
 	}
 	putMapping(node, leaf, scalar(value))
 	return nil
+}
+
+// setBool is setScalar for a YAML bool.
+func setBool(root *yaml.Node, path string, value bool) error {
+	node, leaf, err := leafMapping(root, path)
+	if err != nil {
+		return err
+	}
+	want := boolScalar(value)
+	if valueNode := mappingValue(node, leaf); valueNode != nil {
+		valueNode.Kind, valueNode.Tag, valueNode.Value, valueNode.Style = want.Kind, want.Tag, want.Value, want.Style
+		return nil
+	}
+	putMapping(node, leaf, want)
+	return nil
+}
+
+// leafMapping walks a dotted path to the mapping that holds its last key,
+// creating any parent the template carries only as a commented-out example.
+func leafMapping(root *yaml.Node, path string) (*yaml.Node, string, error) {
+	keys := strings.Split(path, ".")
+	node := root
+	for _, key := range keys[:len(keys)-1] {
+		child, err := childMapping(node, key)
+		if err != nil {
+			return nil, "", fmt.Errorf("set %s: %w", path, err)
+		}
+		node = child
+	}
+	return node, keys[len(keys)-1], nil
 }
 
 // setNodes replaces cluster.nodes with the CSV rows, in file order.
@@ -140,6 +186,13 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 			return err
 		}
 	}
+	// Same reasoning as nodeAgentPort: on is the default, so only an explicit
+	// off is worth writing down.
+	if !spec.Cluster.EtcdEncryptionEnabled() {
+		if err := setBool(root, pathEtcdEncryption, false); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -176,6 +229,10 @@ func specDiff(got, want *SiteSpec) string {
 
 func scalar(value string) *yaml.Node {
 	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: value, Style: yaml.DoubleQuotedStyle}
+}
+
+func boolScalar(value bool) *yaml.Node {
+	return &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: strconv.FormatBool(value)}
 }
 
 // mappingValue returns the value node for key, or nil.

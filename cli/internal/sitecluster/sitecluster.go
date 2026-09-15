@@ -63,7 +63,7 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		Name:                          inv.ClusterName,
 		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
 		CniPlugin:                     inv.Cluster.CniName,
-		EtcdEncrypted:                 false,
+		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
 		NodePools: &[]api.NodePoolCreateConfig{{
 			Name:                 controlPlanePoolName,
 			NodeNamePrefix:       controlPlaneNodeNamePrefix,

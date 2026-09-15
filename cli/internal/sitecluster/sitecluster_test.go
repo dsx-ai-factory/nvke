@@ -216,3 +216,29 @@ func TestClusterRequest_RejectsNoNodes(t *testing.T) {
 		t.Error("expected an error for a site spec with no nodes")
 	}
 }
+
+// TestClusterRequest_EtcdEncryption: the request carries the site spec's
+// decision and nothing else decides it here. Unset resolves to on so a spec
+// that skipped SetDefaults still cannot produce an unencrypted cluster.
+func TestClusterRequest_EtcdEncryption(t *testing.T) {
+	on, off := true, false
+	for _, tc := range []struct {
+		name  string
+		field *bool
+		want  bool
+	}{
+		{"unset", nil, true},
+		{"true", &on, true},
+		{"false", &off, false},
+	} {
+		inv := testSiteSpec()
+		inv.Cluster.EtcdEncryption = tc.field
+		req, err := ClusterRequest(inv)
+		if err != nil {
+			t.Fatalf("%s: ClusterRequest: %v", tc.name, err)
+		}
+		if req.EtcdEncrypted != tc.want {
+			t.Errorf("%s: etcdEncrypted = %v, want %v", tc.name, req.EtcdEncrypted, tc.want)
+		}
+	}
+}
