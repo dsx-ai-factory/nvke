@@ -76,7 +76,7 @@ commands are not listed, because they are not distributed.
 | [golang.org/x/time/rate](https://cs.opensource.google/go/x/time/+/v0.15.0:LICENSE) | BSD-3-Clause | golang.org/x/time@v0.15.0 |
 | [google.golang.org/genproto/googleapis/api](https://github.com/googleapis/go-genproto/blob/c8921c73eeea/googleapis/api/LICENSE) | Apache-2.0 | google.golang.org/genproto/googleapis/api@v0.0.0-20260807164820-c8921c73eeea |
 | [google.golang.org/genproto/googleapis/rpc/status](https://github.com/googleapis/go-genproto/blob/c8921c73eeea/googleapis/rpc/LICENSE) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20260807164820-c8921c73eeea |
-| [google.golang.org/grpc](https://github.com/grpc/grpc-go/blob/v1.83.0/LICENSE) | Apache-2.0 | google.golang.org/grpc@v1.83.0 |
+| [google.golang.org/grpc](https://github.com/grpc/grpc-go/blob/v1.83.2/LICENSE) | Apache-2.0 | google.golang.org/grpc@v1.83.2 |
 | [google.golang.org/protobuf](https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE) | BSD-3-Clause | — |
 | [gopkg.in/evanphx/json-patch.v4](https://github.com/evanphx/json-patch/blob/v4.13.0/LICENSE) | BSD-3-Clause | gopkg.in/evanphx/json-patch.v4@v4.13.0 |
 | [gopkg.in/inf.v0](https://github.com/go-inf/inf/blob/v0.9.1/LICENSE) | BSD-3-Clause | gopkg.in/inf.v0@v0.9.1 |
