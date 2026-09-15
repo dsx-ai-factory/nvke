@@ -47,3 +47,11 @@ os-image/efi/output/
 # workspace local applies to a workspace that papers over module boundaries
 # during development; this one is the build definition for every module that
 # releases, and CI verifies it is current (`make work-check`).
+
+# The etcd encryption key `nkectl bootstrap site` writes, and the temporary
+# file it is assembled in: into the working directory by default, so the rule
+# lives at the root. Both patterns are needed; the first cannot match a
+# leading-dot name.
+*-etcd-encryption-key.json
+.*-etcd-encryption-key.json.*
+cli/e2e/bootstrap/.etcd-encryption-key.json
