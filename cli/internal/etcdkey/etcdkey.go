@@ -22,12 +22,16 @@ import (
 	"path/filepath"
 
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
 	// secretPrefix and FieldActive name the Secret and the field CWE reads a
-	// cluster's active key from. CWE's own constants are internal to the
-	// controller module, so these are kept in step with them by hand.
+	// cluster's active key from. They must match EtcdEncryptionKeySecretPrefix
+	// and the active field name in controller/internal/constants/constants.go,
+	// which this module cannot import. The bootstrap e2e reads the real Secret
+	// by this name and fails if they drift.
 	secretPrefix = "etcd-encryption-key-"
 	FieldActive  = "active"
 
@@ -55,32 +59,20 @@ func Manifest(clusterID uuid.UUID, clusterName string, data map[string][]byte) (
 	if len(data[FieldActive]) == 0 {
 		return nil, fmt.Errorf("etcdkey: key data for %s has no %q field", SecretName(clusterID), FieldActive)
 	}
-	secret := struct {
-		APIVersion string            `json:"apiVersion"`
-		Kind       string            `json:"kind"`
-		Metadata   metadata          `json:"metadata"`
-		Type       string            `json:"type"`
-		Data       map[string][]byte `json:"data"`
-	}{
-		APIVersion: "v1",
-		Kind:       "Secret",
-		Metadata: metadata{
+	secret := corev1.Secret{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Secret"},
+		ObjectMeta: metav1.ObjectMeta{
 			Name:        SecretName(clusterID),
 			Annotations: map[string]string{ClusterNameAnnotation: clusterName},
 		},
-		Type: "Opaque",
+		Type: corev1.SecretTypeOpaque,
 		Data: data,
 	}
 	out, err := json.MarshalIndent(secret, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("etcdkey: encoding %s: %w", secret.Metadata.Name, err)
+		return nil, fmt.Errorf("etcdkey: encoding %s: %w", secret.Name, err)
 	}
 	return append(out, '\n'), nil
-}
-
-type metadata struct {
-	Name        string            `json:"name"`
-	Annotations map[string]string `json:"annotations"`
 }
 
 // Write persists manifest at path and confirms what landed on disk is what

@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
 )
 
 const sentinelKey = "sentinel-key-material-that-must-not-leak"
@@ -34,31 +35,28 @@ func TestManifest(t *testing.T) {
 		t.Fatalf("Manifest: %v", err)
 	}
 
-	var got struct {
-		APIVersion string `json:"apiVersion"`
-		Kind       string `json:"kind"`
-		Metadata   struct {
-			Name        string            `json:"name"`
-			Namespace   *string           `json:"namespace"`
-			Annotations map[string]string `json:"annotations"`
-		} `json:"metadata"`
-		Type string            `json:"type"`
-		Data map[string][]byte `json:"data"`
-	}
+	var got corev1.Secret
 	if err := json.Unmarshal(manifest, &got); err != nil {
-		t.Fatalf("manifest is not JSON: %v\n%s", err, manifest)
+		t.Fatalf("manifest is not a Secret: %v\n%s", err, manifest)
 	}
-	if got.APIVersion != "v1" || got.Kind != "Secret" || got.Type != "Opaque" {
+	if got.APIVersion != "v1" || got.Kind != "Secret" || got.Type != corev1.SecretTypeOpaque {
 		t.Errorf("apiVersion/kind/type = %q/%q/%q, want v1/Secret/Opaque", got.APIVersion, got.Kind, got.Type)
 	}
-	if want := "etcd-encryption-key-" + id.String(); got.Metadata.Name != want {
-		t.Errorf("metadata.name = %q, want %q", got.Metadata.Name, want)
+	if want := "etcd-encryption-key-" + id.String(); got.Name != want {
+		t.Errorf("metadata.name = %q, want %q", got.Name, want)
 	}
-	if got.Metadata.Namespace != nil {
-		t.Errorf("metadata.namespace = %q, want none: the target namespace is chosen at apply time", *got.Metadata.Namespace)
+	if got.Namespace != "" {
+		t.Errorf("metadata.namespace = %q, want none: the target namespace is chosen at apply time", got.Namespace)
 	}
-	if got.Metadata.Annotations[ClusterNameAnnotation] != "my-site" {
-		t.Errorf("annotation %s = %q, want %q", ClusterNameAnnotation, got.Metadata.Annotations[ClusterNameAnnotation], "my-site")
+	if got.Annotations[ClusterNameAnnotation] != "my-site" {
+		t.Errorf("annotation %s = %q, want %q", ClusterNameAnnotation, got.Annotations[ClusterNameAnnotation], "my-site")
+	}
+	// The zero-valued parts of ObjectMeta must not print: an operator reads
+	// this file, and a "creationTimestamp: null" reads as a defect.
+	for _, unwanted := range []string{"creationTimestamp", "\"namespace\"", "\"status\""} {
+		if strings.Contains(string(manifest), unwanted) {
+			t.Errorf("manifest carries %s:\n%s", unwanted, manifest)
+		}
 	}
 	if string(got.Data[FieldActive]) != sentinelKey {
 		t.Errorf("data.active did not round-trip")
