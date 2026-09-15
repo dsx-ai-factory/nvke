@@ -78,8 +78,10 @@ INIT_NODE_IP="${NKECTL_E2E_INIT_NODE_IP:-172.26.0.10}"
 # Where Traefik is published on the new cluster, and where stage 5 asks for the
 # page. In the NodePort range, and clear of the SPIRE server's 30081.
 TRAEFIK_NODE_PORT="${NKECTL_E2E_TRAEFIK_NODE_PORT:-30082}"
-# Where `bootstrap site` writes the finished cluster's kubeconfig.
+# Where `bootstrap site` writes the finished cluster's kubeconfig, and the key
+# that encrypts its etcd data.
 TENANT_KUBECONFIG="${SCRIPT_DIR}/.tenant.kubeconfig"
+ETCD_KEY_FILE="${SCRIPT_DIR}/.etcd-encryption-key.json"
 BOOTSTRAP_LOG="${SCRIPT_DIR}/.bootstrap.log"
 : "${NKECTL_CWE_IMAGE:?NKECTL_CWE_IMAGE must name the CWE image to deploy, already present in containerd (see comment above)}"
 export NKECTL_CWE_IMAGE
@@ -149,7 +151,7 @@ cleanup() {
     chown -R "${SUDO_UID}:${SUDO_GID:-${SUDO_UID}}" "${DIAGNOSTICS_DIR}" || true
   fi
 
-  rm -f "${TENANT_KUBECONFIG}" "${BOOTSTRAP_LOG}"
+  rm -f "${TENANT_KUBECONFIG}" "${ETCD_KEY_FILE}" "${BOOTSTRAP_LOG}"
   rm -rf "${KUBECONFIG_DIR}" "${CNI_BUNDLE_DIR}"
 }
 nodes_started=false
@@ -372,6 +374,10 @@ log "allowlisting ${expected_nodes} EK thumbprint(s)"
 # No chart is named here. What gets installed is pinned in
 # cli/internal/cwedeploy, which is the thing under test: the SPIFFE project's
 # public hardened charts, needing no registry credential of their own.
+# The command never overwrites a key file and refuses to start over one, so a
+# leftover from an interrupted run has to go first.
+rm -f "${ETCD_KEY_FILE}"
+
 log "running: nkectl bootstrap site -f ${RENDERED_SITESPEC} --keep-bootstrap-cluster --timeout 15m" \
   "(NKECTL_CWE_IMAGE=${NKECTL_CWE_IMAGE}," \
   "NKECTL_CAPI_PROVISIONED_IMAGE=${NKECTL_CAPI_PROVISIONED_IMAGE})"
@@ -387,7 +393,8 @@ defer teardown_bootstrap_cluster
 # kind, nerdctl and helm it drives as one group; nkectl does not forward
 # signals to its children.
 setsid "${NKECTL}" bootstrap site -f "${RENDERED_SITESPEC}" --keep-bootstrap-cluster \
-  --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" >"${BOOTSTRAP_LOG}" 2>&1 &
+  --timeout 15m --kubeconfig-out "${TENANT_KUBECONFIG}" \
+  --encryption-key-out "${ETCD_KEY_FILE}" >"${BOOTSTRAP_LOG}" 2>&1 &
 bootstrap_pid=$!
 
 # abort_bootstrap stops the background `bootstrap site` and its children before
@@ -560,6 +567,64 @@ if ! wait_until "${NKECTL_E2E_NODE_READY_TIMEOUT_SECONDS:-1200}" 5 all_nodes_rea
   fail "${ready_nodes} of ${expected_nodes} site spec nodes became Ready (${total_nodes} exist)"
 fi
 log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
+
+# ── Stage 4b: etcd data is encrypted, and the saved key is the nodes' key ──
+#
+# Two checks. The first reads a Secret straight out of etcd and looks at the
+# bytes: secretbox envelope present, plaintext absent. It is the only way to
+# tell "encryption configured" from "data encrypted". The second compares the
+# key `bootstrap site` saved with the one each control-plane node runs on, by
+# digest: the file is what an operator keeps, and it has to be the right key.
+# Neither check prints key material or ciphertext.
+log "checking that etcd data is encrypted at rest"
+[ -f "${ETCD_KEY_FILE}" ] || fail "bootstrap site did not write ${ETCD_KEY_FILE}"
+key_mode=$(stat -c '%a' "${ETCD_KEY_FILE}")
+[ "${key_mode}" = "600" ] || fail "${ETCD_KEY_FILE} has mode ${key_mode}, want 600"
+
+probe_name="nkectl-e2e-encryption-probe"
+plaintext_marker="nkectl-e2e-plaintext-marker-$(date +%s)"
+kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default create secret generic "${probe_name}" \
+  --from-literal=probe="${plaintext_marker}" >/dev/null
+etcd_pod=$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system get pods -l component=etcd \
+  -o jsonpath='{.items[0].metadata.name}')
+[ -n "${etcd_pod}" ] || fail "no etcd pod found in kube-system"
+# The raw value goes to a file, not a variable, so its bytes never reach the
+# log. Removed on exit like everything else this suite creates.
+raw_value=$(mktemp)
+defer rm -f "${raw_value}"
+kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n kube-system exec "${etcd_pod}" -c etcd -- \
+  etcdctl --endpoints=https://127.0.0.1:2379 \
+    --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+    --cert=/etc/kubernetes/pki/etcd/healthcheck-client.crt \
+    --key=/etc/kubernetes/pki/etcd/healthcheck-client.key \
+    get "/registry/secrets/default/${probe_name}" --print-value-only >"${raw_value}" 2>/dev/null ||
+  fail "could not read the probe Secret out of etcd"
+# Positive control first: an empty read would pass the plaintext check for the
+# wrong reason.
+[ -s "${raw_value}" ] || fail "the probe Secret's etcd value is empty"
+! grep -a -F -q "${plaintext_marker}" "${raw_value}" ||
+  fail "the probe Secret is stored in etcd as plaintext"
+grep -a -q 'k8s:enc:secretbox:v1:' "${raw_value}" ||
+  fail "the probe Secret's etcd value does not carry the secretbox envelope"
+rm -f "${raw_value}"
+kubectl --kubeconfig "${TENANT_KUBECONFIG}" -n default delete secret "${probe_name}" >/dev/null
+log "PASS: Secrets are stored in etcd under the secretbox envelope"
+
+log "checking that the saved key is the key every control-plane node runs on"
+# The manifest is what `bootstrap site` wrote, so its shape is known: the key
+# is the base64 "active" field. Digests are compared, never values.
+saved_active=$(sed -n 's/.*"active": "\([^"]*\)".*/\1/p' "${ETCD_KEY_FILE}" | head -1)
+[ -n "${saved_active}" ] || fail "${ETCD_KEY_FILE} carries no active key"
+saved_digest=$(printf '%s' "${saved_active}" | base64 -d | sha256sum | cut -d' ' -f1)
+for ((i = 1; i <= NODE_COUNT; i++)); do
+  node="nkectl-e2e-${NODE_PREFIX}${i}"
+  node_digest=$(nerdctl exec "${node}" \
+    awk '/secret:/ {printf "%s", $2; exit}' /etc/kubernetes/kube-api-encryption/encryption-config.yaml \
+    | sha256sum | cut -d' ' -f1)
+  [ "${node_digest}" = "${saved_digest}" ] ||
+    fail "${node} runs a different etcd encryption key than ${ETCD_KEY_FILE} holds"
+done
+log "PASS: the saved etcd encryption key matches all ${NODE_COUNT} control-plane nodes"
 
 # hello_world_served is the stage 5 condition. whoami answers with the request
 # it received, so "Hostname:" in the body is the pod talking, not Traefik's own
