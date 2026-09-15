@@ -49,6 +49,10 @@ const (
 	spireNamespace    = "spire-server"
 	cweNamespace      = "cloud-workflow-engine"
 
+	// CWENamespace is cweNamespace for callers that have to name it — the
+	// recovery command a failed key capture prints, for one.
+	CWENamespace = cweNamespace
+
 	// tenantSecretsNamespace is where CWE publishes each cluster's kubeconfig
 	// and where it puts the cluster's CAPI objects. It matches
 	// controller/internal/constants.NamespaceNKESystem, which the chart creates

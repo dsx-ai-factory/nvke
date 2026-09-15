@@ -188,6 +188,11 @@ The decision is final at bootstrap. Encryption is configured during
 on, so a cluster built with `etcdEncryption: false` stays unencrypted. Set it
 to `false` only when that is the intent.
 
+`nkectl bootstrap site` writes the key beside the kubeconfig, as a Secret
+manifest named `<clusterName>-etcd-encryption-key.json` (`--encryption-key-out`
+to choose the path). It is never overwritten, and the run refuses to start if
+it already exists.
+
 ## Relationship to the tier-0 bootstrap template
 
 The field names mirror the tier-0 bootstrap template

@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/NVIDIA/nke/cli/internal/bootstrapengine"
+	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
 	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	api "github.com/NVIDIA/nke/controller/api"
 )
@@ -41,6 +42,11 @@ func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string
 	if name == "kubectl" && strings.Contains(joined, "jsonpath={.data.value}") {
 		// The Secret CWE publishes the finished cluster's kubeconfig in.
 		return base64.StdEncoding.EncodeToString([]byte("apiVersion: v1\nkind: Config\n")), nil
+	}
+	if name == "kubectl" && strings.Contains(joined, "get secret etcd-encryption-key-") {
+		// The Secret CWE keeps the cluster's etcd encryption key in.
+		return `{"apiVersion":"v1","kind":"Secret","data":{"active":"` +
+			base64.StdEncoding.EncodeToString([]byte(fakeEtcdKey)) + `","active-since":"MQ=="}}`, nil
 	}
 	if name == "kubectl" && strings.Contains(joined, "kustomize") {
 		// The provisioned provider's rendered manifest, carrying the
@@ -283,6 +289,7 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 			}
 			return 1, nil
 		},
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -312,11 +319,12 @@ func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testi
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
-		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		lookPath:        runtimeOnPath,
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:         runtimeOnPath,
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			return 0, errors.New("dump failed")
 		},
@@ -335,12 +343,13 @@ func TestRunBootstrapSiteSkipsSpireEntryDumpWhenMTLSDisabled(t *testing.T) {
 
 	dumpCalled := false
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, validSiteSpec),
-		disableMTLS:     true,
-		bootstrapRunner: fakeBootstrapRunner{},
-		cweRunner:       fakeCWERunner{},
-		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		lookPath:        runtimeOnPath,
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		disableMTLS:      true,
+		bootstrapRunner:  fakeBootstrapRunner{},
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:         runtimeOnPath,
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			dumpCalled = true
 			return 0, nil
@@ -365,12 +374,13 @@ func TestRunBootstrapSiteFailsWhenTheClusterNeverComesUp(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
-		clusterTimeout:  5 * time.Millisecond,
-		kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
-		lookPath:        runtimeOnPath,
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		clusterTimeout:   5 * time.Millisecond,
+		kubeconfigOut:    filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		lookPath:         runtimeOnPath,
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err == nil {
 		t.Fatal("expected an error when the cluster never reports provisioned")
@@ -398,6 +408,7 @@ func TestRunBootstrapSiteRetainsClusterWhenKubeconfigIsNotPublished(t *testing.T
 		kubeconfigTimeout: 5 * time.Millisecond,
 		kubeconfigOut:     filepath.Join(t.TempDir(), "unused.kubeconfig"),
 		lookPath:          runtimeOnPath,
+		encryptionKeyOut:  filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err == nil {
 		t.Fatal("expected an error when the kubeconfig Secret is not published")
@@ -473,11 +484,12 @@ func TestRunBootstrapSiteUsesNerdctl(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	_ = runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
-		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
-		lookPath:        runtimeOnPath,
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:         runtimeOnPath,
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 	})
 
 	if !slices.Contains(runner.names, bootstrapengine.RuntimeCLI) {
@@ -580,10 +592,11 @@ func TestRunBootstrapSiteMissingCWEImage(t *testing.T) {
 
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-		siteSpec:        writeSiteSpec(t, validSiteSpec),
-		bootstrapRunner: runner,
-		cweRunner:       fakeCWERunner{},
-		lookPath:        runtimeOnPath,
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		lookPath:         runtimeOnPath,
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err == nil {
 		t.Fatal("expected an error for a missing NKECTL_CWE_IMAGE")
@@ -695,6 +708,7 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			dumpSpireEntries: func(context.Context, string, string) (int, error) {
 				return 0, nil
 			},
+			encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 		})
 		if err != nil {
 			t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -711,11 +725,12 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "cluster-diagnostics")
 		// CWE never reports healthy: the failure this exists for.
 		err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-			siteSpec:        writeSiteSpec(t, validSiteSpec),
-			diagnosticsDir:  dir,
-			bootstrapRunner: fakeBootstrapRunner{},
-			cweRunner:       unhealthyCWERunner{},
-			lookPath:        runtimeOnPath,
+			siteSpec:         writeSiteSpec(t, validSiteSpec),
+			diagnosticsDir:   dir,
+			bootstrapRunner:  fakeBootstrapRunner{},
+			cweRunner:        unhealthyCWERunner{},
+			lookPath:         runtimeOnPath,
+			encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 		})
 		if err == nil {
 			t.Fatal("expected a real failure")
@@ -773,12 +788,13 @@ func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
 
 			runner := &recordingRunner{next: fakeBootstrapRunner{}}
 			err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-				siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
-				bootstrapRunner: runner,
-				cweRunner:       fakeCWERunner{},
-				clusterTimeout:  5 * time.Millisecond,
-				kubeconfigOut:   filepath.Join(t.TempDir(), "unused.kubeconfig"),
-				lookPath:        runtimeOnPath,
+				siteSpec:         writeSiteSpec(t, threeNodeSiteSpec),
+				bootstrapRunner:  runner,
+				cweRunner:        fakeCWERunner{},
+				clusterTimeout:   5 * time.Millisecond,
+				kubeconfigOut:    filepath.Join(t.TempDir(), "unused.kubeconfig"),
+				lookPath:         runtimeOnPath,
+				encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 			})
 			if err == nil {
 				t.Fatalf("bootstrap reported success with %d of 3 control plane nodes joined", tc.joined)
@@ -822,11 +838,215 @@ func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
 		dumpSpireEntries: func(context.Context, string, string) (int, error) {
 			return 0, nil
 		},
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
 	}
 	if !runner.sawArgs("delete", "cluster") {
 		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster; calls: %v", runner.calls)
+	}
+}
+
+// fakeEtcdKey is the key material fakeCWERunner serves. Tests assert it
+// reaches the file on disk and nothing else.
+const fakeEtcdKey = "fake-etcd-key-material"
+
+// missingEtcdKeyRunner fails the key Secret read with output that a leaking
+// error would carry.
+type missingEtcdKeyRunner struct{ fakeCWERunner }
+
+const leakedEtcdKeyOutput = "OUTPUT-THAT-MUST-NOT-APPEAR"
+
+func (r missingEtcdKeyRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	if name == "kubectl" && strings.Contains(strings.Join(args, " "), "get secret etcd-encryption-key-") {
+		return leakedEtcdKeyOutput, errors.New("exit status 1")
+	}
+	return r.fakeCWERunner.Run(ctx, name, args...)
+}
+
+// recordingCWERunner records every cwedeploy command so a test can assert one
+// was never issued.
+type recordingCWERunner struct {
+	next  cwedeploy.CommandRunner
+	calls []string
+}
+
+func (r *recordingCWERunner) Run(ctx context.Context, name string, args ...string) (string, error) {
+	r.calls = append(r.calls, name+" "+strings.Join(args, " "))
+	return r.next.Run(ctx, name, args...)
+}
+
+func (r *recordingCWERunner) saw(fragment string) bool {
+	for _, call := range r.calls {
+		if strings.Contains(call, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRunBootstrapSiteSavesTheEtcdEncryptionKey: the key CWE generated ends
+// up on disk, as a Secret the operator can hand to a later controller, before
+// the bootstrap cluster holding CWE's copy is deleted.
+func TestRunBootstrapSiteSavesTheEtcdEncryptionKey(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	keyOut := filepath.Join(t.TempDir(), "site-key.json")
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "site.kubeconfig"),
+		encryptionKeyOut: keyOut,
+		lookPath:         runtimeOnPath,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite: %v", err)
+	}
+
+	info, err := os.Stat(keyOut)
+	if err != nil {
+		t.Fatalf("the key file was not written: %v", err)
+	}
+	if mode := info.Mode().Perm(); mode != 0o600 {
+		t.Errorf("key file mode = %o, want 0600", mode)
+	}
+	body, err := os.ReadFile(keyOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secret struct {
+		Metadata struct {
+			Name        string            `json:"name"`
+			Namespace   *string           `json:"namespace"`
+			Annotations map[string]string `json:"annotations"`
+		} `json:"metadata"`
+		Data map[string][]byte `json:"data"`
+	}
+	if err := json.Unmarshal(body, &secret); err != nil {
+		t.Fatalf("key file is not a Secret manifest: %v", err)
+	}
+	if !strings.HasPrefix(secret.Metadata.Name, "etcd-encryption-key-") {
+		t.Errorf("metadata.name = %q, want CWE's etcd-encryption-key-<uuid>", secret.Metadata.Name)
+	}
+	if secret.Metadata.Namespace != nil {
+		t.Errorf("metadata.namespace = %q, want none", *secret.Metadata.Namespace)
+	}
+	if secret.Metadata.Annotations["nke.nvidia.com/cluster-name"] != "nke-site" {
+		t.Errorf("cluster-name annotation = %q, want %q", secret.Metadata.Annotations["nke.nvidia.com/cluster-name"], "nke-site")
+	}
+	if string(secret.Data["active"]) != fakeEtcdKey {
+		t.Errorf("data.active is not the key CWE served")
+	}
+	if !runner.sawArgs("delete", "cluster") {
+		t.Errorf("a successful bootstrap should still tear down the bootstrap kind cluster; calls: %v", runner.calls)
+	}
+}
+
+// TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails: the cluster is up
+// and encrypted, and the only copy of its key the operator does not have is in
+// the bootstrap cluster. That cluster is kept, the message says how to get the
+// key out, and it does not end — as the generic message does — by telling the
+// operator to delete it.
+func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        missingEtcdKeyRunner{},
+		kubeconfigOut:    filepath.Join(t.TempDir(), "unused.kubeconfig"),
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		lookPath:         runtimeOnPath,
+	})
+	if err == nil {
+		t.Fatal("expected an error when the key Secret cannot be read")
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted while it held the only reachable copy of the key")
+	}
+	for _, want := range []string{
+		"was not saved",
+		"do not delete it",
+		"get secret etcd-encryption-key-",
+		"-n cloud-workflow-engine",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	for _, unwanted := range []string{leakedEtcdKeyOutput, "kind delete cluster"} {
+		if strings.Contains(err.Error(), unwanted) {
+			t.Errorf("error %q contains %q", err, unwanted)
+		}
+	}
+}
+
+// TestRunBootstrapSiteSkipsKeyCaptureWhenEncryptionIsOff: with encryption
+// off there is no Secret to read, and a read that waited for one would fail a
+// healthy bootstrap.
+func TestRunBootstrapSiteSkipsKeyCaptureWhenEncryptionIsOff(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	keyOut := filepath.Join(t.TempDir(), "key.json")
+	cwe := &recordingCWERunner{next: fakeCWERunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, strings.Replace(validSiteSpec, "  k8sVersion:", "  etcdEncryption: false\n  k8sVersion:", 1)),
+		bootstrapRunner:  &recordingRunner{next: fakeBootstrapRunner{}},
+		cweRunner:        cwe,
+		kubeconfigOut:    filepath.Join(t.TempDir(), "site.kubeconfig"),
+		encryptionKeyOut: keyOut,
+		lookPath:         runtimeOnPath,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite: %v", err)
+	}
+	if cwe.saw("etcd-encryption-key-") {
+		t.Errorf("the key Secret was read for an unencrypted cluster; calls: %v", cwe.calls)
+	}
+	if _, statErr := os.Stat(keyOut); statErr == nil {
+		t.Error("a key file was written for an unencrypted cluster")
+	}
+}
+
+// TestRunBootstrapSiteRefusesAnExistingKeyFile: the file is never overwritten,
+// and a run that would fail on that at the very end is refused at the start.
+func TestRunBootstrapSiteRefusesAnExistingKeyFile(t *testing.T) {
+	setBootstrapEnv(t)
+
+	keyOut := filepath.Join(t.TempDir(), "key.json")
+	if err := os.WriteFile(keyOut, []byte("earlier"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		encryptionKeyOut: keyOut,
+		lookPath:         runtimeOnPath,
+	})
+	if err == nil {
+		t.Fatal("expected an error when the key file already exists")
+	}
+	for _, want := range []string{keyOut, "already exists", "delete the file and re-run"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not contain %q", err, want)
+		}
+	}
+	if runner.sawArgs("create", "cluster") {
+		t.Errorf("the bootstrap kind cluster was created despite an existing key file; calls: %v", runner.calls)
 	}
 }

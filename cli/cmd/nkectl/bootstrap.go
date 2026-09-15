@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/clients"
 	"github.com/NVIDIA/nke/cli/internal/config"
 	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
+	"github.com/NVIDIA/nke/cli/internal/etcdkey"
 	"github.com/NVIDIA/nke/cli/internal/sitecluster"
 	"github.com/NVIDIA/nke/cli/internal/sitespec"
 	"github.com/NVIDIA/nke/cli/internal/spireentrydump"
@@ -74,6 +76,11 @@ type bootstrapSiteOptions struct {
 	// kubeconfigTimeout bounds the wait for tenant-access to publish the
 	// finished cluster's kubeconfig Secret. Zero uses cwedeploy's default.
 	kubeconfigTimeout time.Duration
+
+	// encryptionKeyOut is where the finished cluster's etcd encryption key is
+	// written, as a Secret manifest. Empty defaults to
+	// <clusterName>-etcd-encryption-key.json in the working directory.
+	encryptionKeyOut string
 
 	// bootstrapRunner overrides the CommandRunner the bootstrap engine uses.
 	// Nil in production (bootstrapengine.New defaults to the real exec-backed
@@ -150,6 +157,9 @@ site spec file format.`,
 	cmd.Flags().StringVar(&opts.kubeconfigOut, "kubeconfig-out", "",
 		"Where to write the finished cluster's admin kubeconfig "+
 			"(default: <clusterName>.kubeconfig in the working directory)")
+	cmd.Flags().StringVar(&opts.encryptionKeyOut, "encryption-key-out", "",
+		"Where to write the finished cluster's etcd encryption key, as a Secret manifest "+
+			"(default: <clusterName>-etcd-encryption-key.json in the working directory)")
 
 	return cmd
 }
@@ -215,6 +225,16 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		})
 	}
 
+	// Last check before anything is built. A key file already at the output
+	// path belongs to an earlier bootstrap of this cluster name. It is never
+	// overwritten, so the run would fail at the very end; better to say so now,
+	// where it costs a message rather than a Kind cluster and half an hour.
+	if inv.Cluster.EtcdEncryptionEnabled() {
+		if err := requireNoKeyFile(etcdKeyPath(opts, inv.ClusterName)); err != nil {
+			return err
+		}
+	}
+
 	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
 	logger.Info("creating ephemeral bootstrap kind cluster", "cluster", cfg.ClusterName)
 	cluster, err := engine.Create(ctx, cfg)
@@ -264,6 +284,14 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 	// site spec's hosts.
 	siteClusterCreated, err = createSiteCluster(ctx, cluster, inv, opts, cweCfg.CWEPort, logger)
 	if err != nil && siteClusterCreated {
+		// The advice below ends with the command that deletes the bootstrap
+		// cluster. When the key was not saved, that cluster holds the only copy
+		// the operator does not have, and the error says so instead.
+		var capture *keyCaptureError
+		if errors.As(err, &capture) {
+			return fmt.Errorf("%w (bootstrap cluster %q kept; its kubeconfig is %s)",
+				err, cluster.Name, cluster.KubeconfigPath)
+		}
 		// The env prefix is not optional: kind resolves a cluster through the
 		// provider that created it, so without it the command reports the
 		// cluster as missing rather than deleting it.
@@ -355,8 +383,110 @@ func createSiteCluster(
 	}
 	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", len(inv.Cluster.Nodes))
 
-	return true, writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger)
+	// Every control-plane node holds the key now, and this is the last moment
+	// the copy CWE keeps is reachable: it lives in the bootstrap cluster, which
+	// goes when the command does.
+	if inv.Cluster.EtcdEncryptionEnabled() {
+		if err := saveEtcdEncryptionKey(ctx, bootstrapCluster, created.ID, inv.ClusterName, opts, logger); err != nil {
+			return true, err
+		}
+	}
+
+	if err := writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger); err != nil {
+		return true, err
+	}
+	if inv.Cluster.EtcdEncryptionEnabled() {
+		fmt.Fprintf(os.Stdout, "Its etcd encryption key is at %s. Move that file off this host "+
+			"and keep it with the cluster's other credentials.\n", etcdKeyPath(opts, inv.ClusterName))
+	}
+	return true, nil
 }
+
+// etcdKeyPath is where the cluster's etcd encryption key is written.
+func etcdKeyPath(opts *bootstrapSiteOptions, clusterName string) string {
+	if opts.encryptionKeyOut != "" {
+		return opts.encryptionKeyOut
+	}
+	return clusterName + "-etcd-encryption-key.json"
+}
+
+// requireNoKeyFile refuses to start a bootstrap whose key file already exists.
+func requireNoKeyFile(path string) error {
+	if _, err := os.Lstat(path); err == nil {
+		return fmt.Errorf("%s already exists and holds the etcd encryption key of an earlier bootstrap of "+
+			"this cluster name. If that cluster's nodes were reset, delete the file and re-run; "+
+			"otherwise pass --encryption-key-out to write the new key elsewhere", path)
+	}
+	return nil
+}
+
+// saveEtcdEncryptionKey copies the key Secret CWE holds for the cluster out of
+// the bootstrap cluster and onto disk, as a manifest a controller installed
+// later can be given.
+//
+// Any failure is a keyCaptureError: the cluster is built and encrypted by
+// this point, and what has gone wrong is that its key is about to become
+// unreachable — which is a different situation, with different advice, from
+// a bootstrap that failed to build anything.
+func saveEtcdEncryptionKey(
+	ctx context.Context,
+	bootstrapCluster *bootstrapengine.Cluster,
+	clusterID uuid.UUID,
+	clusterName string,
+	opts *bootstrapSiteOptions,
+	logger *slog.Logger,
+) error {
+	fail := func(err error) error {
+		return &keyCaptureError{
+			clusterName: clusterName,
+			secretName:  etcdkey.SecretName(clusterID),
+			kubeconfig:  bootstrapCluster.KubeconfigPath,
+			err:         err,
+		}
+	}
+
+	readCtx, cancel := context.WithTimeout(ctx, etcdKeyReadTimeout)
+	defer cancel()
+	data, err := cwedeploy.New(opts.cweRunner, logger).
+		EtcdEncryptionKey(readCtx, bootstrapCluster.KubeconfigPath, clusterID)
+	if err != nil {
+		return fail(err)
+	}
+
+	manifest, err := etcdkey.Manifest(clusterID, clusterName, data)
+	if err != nil {
+		return fail(err)
+	}
+	path := etcdKeyPath(opts, clusterName)
+	if err := etcdkey.Write(path, manifest); err != nil {
+		return fail(err)
+	}
+
+	logger.Info("wrote the etcd encryption key", "path", path, "sha256", etcdkey.Fingerprint(data))
+	return nil
+}
+
+// etcdKeyReadTimeout bounds the read of the key Secret. It exists by the time
+// this runs, so this is a bound on a wedged kubectl, not a wait.
+const etcdKeyReadTimeout = 2 * time.Minute
+
+// keyCaptureError is a bootstrap that built and encrypted its cluster and then
+// failed to save the key.
+type keyCaptureError struct {
+	clusterName string
+	secretName  string
+	kubeconfig  string
+	err         error
+}
+
+func (e *keyCaptureError) Error() string {
+	return fmt.Sprintf("cluster %q is up and its etcd data is encrypted, but its encryption key was not saved: %v. "+
+		"The bootstrap cluster still holds the key: do not delete it, and do not re-run bootstrap, until the key is saved. "+
+		"Save it with: kubectl --kubeconfig %s -n %s get secret %s -o json > %s-etcd-encryption-key.json",
+		e.clusterName, e.err, e.kubeconfig, cwedeploy.CWENamespace, e.secretName, e.clusterName)
+}
+
+func (e *keyCaptureError) Unwrap() error { return e.err }
 
 // writeTenantKubeconfig saves the finished cluster's admin kubeconfig beside
 // the operator, so the first thing they can do is look at what was built.

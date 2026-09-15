@@ -142,6 +142,8 @@ NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:ed
 
 Use `--keep-bootstrap-cluster` to leave the Kind cluster running after bootstrap for debugging.
 
+When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, the cluster's admin credential, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. **Move the key file off this host.** It is the only copy outside the cluster, and this host is one of the machines it protects; a key stored on the disk it decrypts protects nothing. Use `--kubeconfig-out` and `--encryption-key-out` to write them elsewhere.
+
 **Duration**: Approximately **30–45 minutes**
 
 > **Do NOT run bootstrap on join nodes** — they are joined automatically via gRPC from the init node.
@@ -160,8 +162,8 @@ All nodes should show `Ready` status.
 
 1. Install your environment SBOM so NKE can drive day-2 operations through NICo.
 2. Wait until the SBOM is fully deployed and healthy.
-3. Complete NKE and NICo ingestion with the NKE team. Keep the ephemeral Kind cluster until this step succeeds. **TODO:** Publish ingestion runbook here once it exists.
-4. Delete the Kind cluster, then operate the site through NKE day-2 workflows.
+3. Complete NKE and NICo ingestion with the NKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish ingestion runbook here once it exists.
+4. Operate the site through NKE day-2 workflows.
 
 **Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NKE site-controller installation is required.
 
@@ -182,6 +184,28 @@ sudo systemctl status nke-agent
 sudo cat /var/log/nke-agent.log
 sudo systemctl restart nke-agent
 ```
+
+**Bootstrap failed with "its encryption key was not saved":**
+
+The cluster is built and encrypted; only the last step, writing its key to disk, failed. The bootstrap Kind cluster is kept because it holds the key. Do not delete it and do not re-run bootstrap. Run the `kubectl ... get secret` command the error prints to save the key, then delete the Kind cluster:
+
+```bash
+KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name nke-bootstrap
+```
+
+**A control-plane node added by hand never starts its API server:**
+
+`kubeadm join --control-plane` times out with "waiting for the kubelet to boot up the control plane", and the kubelet log shows kube-apiserver failing on a missing `/etc/kubernetes/kube-api-encryption/encryption-config.yaml`. The cluster's kubeadm configuration points every API server at that file, and a node joined outside NKE has not been given it. Copy it from a working control-plane node before running `kubeadm join`:
+
+```bash
+sudo install -d -m 0755 /etc/kubernetes/kube-api-encryption
+sudo scp <working-node>:/etc/kubernetes/kube-api-encryption/encryption-config.yaml /etc/kubernetes/kube-api-encryption/
+sudo chmod 0600 /etc/kubernetes/kube-api-encryption/encryption-config.yaml
+```
+
+**Restoring etcd onto new hosts:**
+
+The etcd data is encrypted, so a snapshot restored onto fresh control-plane nodes needs the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml` on each of them before kube-apiserver starts. The key is the `active` field of the saved `<clusterName>-etcd-encryption-key.json`. Without that file, and without a surviving control-plane node to copy from, the data cannot be read.
 
 **Bootstrap stalled waiting for a node to join:**
 

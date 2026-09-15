@@ -11,6 +11,11 @@ bin/
 e2e/bootstrap/.hosts.csv
 e2e/bootstrap/.sitespec.rendered.yaml
 
+# The etcd encryption key `nkectl bootstrap site` writes beside the kubeconfig:
+# by default into the working directory, and in the E2E next to the site spec.
+*-etcd-encryption-key.json
+e2e/bootstrap/.etcd-encryption-key.json
+
 # E2E scratch: the cluster dump `nkectl bootstrap site` collects when a
 # bootstrap fails, and CI uploads as an artifact. Regenerated on every
 # failing run.
