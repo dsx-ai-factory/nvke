@@ -79,8 +79,10 @@ func bundleMatrix() []bundleCase {
 		// additive; see writesLeftToTheGroup.
 		{"operator creates a node pool, still", subjectOperator, http.MethodPost, "/api/nodePools", http.StatusOK},
 
-		// A forbid beats every permit, so nobody deletes a cluster.
-		{"operator cannot delete a cluster", subjectOperator, http.MethodDelete, "/api/clusters/" + someClusterID, http.StatusForbidden},
+		// Destructive, and named explicitly rather than left to the coarse
+		// write grant — see operators-may-delete-clusters. nodeOperator does
+		// not nest operator, so it still can't.
+		{"operator deletes a cluster", subjectOperator, http.MethodDelete, "/api/clusters/" + someClusterID, http.StatusOK},
 		{"node operator cannot delete a cluster", subjectNodeOperator, http.MethodDelete, "/api/clusters/" + someClusterID, http.StatusForbidden},
 
 		// A subject the bundle does not mention holds no role.

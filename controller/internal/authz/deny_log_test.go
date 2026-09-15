@@ -26,7 +26,7 @@ import (
 // identifies who was refused.
 //
 // The two ordinary outcomes also have to be distinguishable. The shipped bundle
-// carries two forbids, so "a rule refused this" and "nothing permitted it" are
+// carries a forbid, so "a rule refused this" and "nothing permitted it" are
 // both routine, they call for different fixes, and they used to produce the same
 // line.
 
@@ -69,18 +69,18 @@ func denyLine(t *testing.T, subject, method, path string) map[string]any {
 }
 
 func TestARefusalNamesWhoWasRefused(t *testing.T) {
-	line := denyLine(t, subjectOperator, http.MethodDelete, api.BasePath+"/clusters/"+someClusterID)
+	line := denyLine(t, subjectOperator, http.MethodDelete, api.BasePath+"/nodes/"+someNodeID)
 
 	assert.Equal(t, subjectOperator, line["subject"], "a refusal with no subject is not attributable to anyone")
 	assert.Equal(t, "site-apiserver", line["issuer"],
 		"the subject is only unique within its issuer, so the issuer belongs beside it")
-	assert.Equal(t, "deleteCluster", line["action"])
-	assert.Equal(t, "NKE::Cluster/"+someClusterID, line["resource"])
+	assert.Equal(t, "deleteNode", line["action"])
+	assert.Equal(t, "NKE::Node/"+someNodeID, line["resource"])
 }
 
 func TestARefusalNamesTheRuleThatRefused(t *testing.T) {
-	forbidden := denyLine(t, subjectOperator, http.MethodDelete, api.BasePath+"/clusters/"+someClusterID)
-	assert.Equal(t, "nobody-deletes-clusters", forbidden["policies"],
+	forbidden := denyLine(t, subjectOperator, http.MethodDelete, api.BasePath+"/nodes/"+someNodeID)
+	assert.Equal(t, "only-node-operators-change-node-lifecycle", forbidden["policies"],
 		"a forbid fired, and which one is the whole of what the operator needs to know")
 
 	unmatched := denyLine(t, subjectStranger, http.MethodGet, api.BasePath+"/clusters")

@@ -72,11 +72,15 @@ forbid(
 )
 unless { principal in NKE::Role::"nodeOperator" };
 
-// Cluster deletion is granted to nobody by this bundle. Removing the account
-// that could do it is not the same as there being no rule; there is no rule.
-@id("nobody-deletes-clusters")
-forbid(
-  principal,
+// Cluster deletion is destructive and named explicitly, the same reasoning
+// node lifecycle gets a named rule for: operators-may-write's coarse "write"
+// grant already reaches deleteCluster (it is a DELETE, so it is in the
+// group), but leaving it implicit there is the shape AZ-8 exists to close.
+// Naming it here does not change who can do it — it makes the grant a line a
+// reviewer can find, instead of an inference from the group.
+@id("operators-may-delete-clusters")
+permit(
+  principal in NKE::Role::"operator",
   action == NKE::Action::"deleteCluster",
   resource
 );
