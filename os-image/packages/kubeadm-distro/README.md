@@ -118,4 +118,4 @@ at build time, `Depends` adds `conntrack`, `socat` and `ethtool`, `Conflicts`
 adds `containerd` and `containerd.io`, and `/etc/default/kubelet` is a
 conffile. Package names, `Provides`, peer `Conflicts`, binaries, paths, the
 image archive and the systemd units are unchanged. Dropped: S3 delivery, the
-manual tarball and the Osmo flavor.
+manual tarball and the internal customer flavors.
