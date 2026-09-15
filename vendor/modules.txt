@@ -1744,7 +1744,6 @@ sigs.k8s.io/cluster-api/util/certs
 sigs.k8s.io/cluster-api/util/conditions
 sigs.k8s.io/cluster-api/util/contract
 sigs.k8s.io/cluster-api/util/conversion
-sigs.k8s.io/cluster-api/util/kubeconfig
 sigs.k8s.io/cluster-api/util/labels
 sigs.k8s.io/cluster-api/util/labels/format
 sigs.k8s.io/cluster-api/util/predicates
