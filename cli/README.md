@@ -164,6 +164,11 @@ The cluster name SPIRE is told is the ephemeral cluster's own name, from
 because the bootstrap cluster has one name and two ways to say it could only
 ever disagree.
 
+When SPIRE is enabled, `bootstrap site` copies the live `ClusterStaticEntry`
+CRD definition from the bootstrap cluster into the site cluster. It waits for
+the CRD to become available and then copies CWE's cluster-scoped workload
+registration policy before it removes the bootstrap cluster.
+
 ### Bootstrap cluster and CWE
 
 | Variable | Default | Purpose |
