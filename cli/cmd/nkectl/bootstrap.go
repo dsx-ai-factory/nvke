@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -383,21 +384,30 @@ func createSiteCluster(
 	}
 	logger.Info("all control plane nodes joined", "cluster", created.Name, "nodes", len(inv.Cluster.Nodes))
 
+	// The kubeconfig first, so a failure in the key capture below still leaves
+	// the operator holding the admin credential of the cluster that was built.
+	kubeconfigPath, err := writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger)
+	if err != nil {
+		return true, err
+	}
+
 	// Every control-plane node holds the key now, and this is the last moment
 	// the copy CWE keeps is reachable: it lives in the bootstrap cluster, which
 	// goes when the command does.
+	keyPath := ""
 	if inv.Cluster.EtcdEncryptionEnabled() {
-		if err := saveEtcdEncryptionKey(ctx, bootstrapCluster, created.ID, inv.ClusterName, opts, logger); err != nil {
+		keyPath = etcdKeyPath(opts, inv.ClusterName)
+		if err := saveEtcdEncryptionKey(ctx, bootstrapCluster, created.ID, inv.ClusterName,
+			keyPath, kubeconfigPath, opts, logger); err != nil {
 			return true, err
 		}
 	}
 
-	if err := writeTenantKubeconfig(ctx, bootstrapCluster, created.Name, opts, logger); err != nil {
-		return true, err
-	}
-	if inv.Cluster.EtcdEncryptionEnabled() {
+	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
+		created.Name, kubeconfigPath)
+	if keyPath != "" {
 		fmt.Fprintf(os.Stdout, "Its etcd encryption key is at %s. Move that file off this host "+
-			"and keep it with the cluster's other credentials.\n", etcdKeyPath(opts, inv.ClusterName))
+			"and keep it with the cluster's other credentials.\n", keyPath)
 	}
 	return true, nil
 }
@@ -410,14 +420,22 @@ func etcdKeyPath(opts *bootstrapSiteOptions, clusterName string) string {
 	return clusterName + "-etcd-encryption-key.json"
 }
 
-// requireNoKeyFile refuses to start a bootstrap whose key file already exists.
+// requireNoKeyFile refuses to start a bootstrap whose key file already exists,
+// or whose key file cannot be checked for.
 func requireNoKeyFile(path string) error {
-	if _, err := os.Lstat(path); err == nil {
+	_, err := os.Lstat(path)
+	switch {
+	case err == nil:
 		return fmt.Errorf("%s already exists and holds the etcd encryption key of an earlier bootstrap of "+
 			"this cluster name. If that cluster's nodes were reset, delete the file and re-run; "+
 			"otherwise pass --encryption-key-out to write the new key elsewhere", path)
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	default:
+		// Anything else — a parent that is not a directory, a path that cannot
+		// be read — would fail the write at the very end; fail here instead.
+		return fmt.Errorf("checking the etcd encryption key path %s: %w", path, err)
 	}
-	return nil
 }
 
 // saveEtcdEncryptionKey copies the key Secret CWE holds for the cluster out of
@@ -432,16 +450,17 @@ func saveEtcdEncryptionKey(
 	ctx context.Context,
 	bootstrapCluster *bootstrapengine.Cluster,
 	clusterID uuid.UUID,
-	clusterName string,
+	clusterName, path, kubeconfigPath string,
 	opts *bootstrapSiteOptions,
 	logger *slog.Logger,
 ) error {
 	fail := func(err error) error {
 		return &keyCaptureError{
-			clusterName: clusterName,
-			secretName:  etcdkey.SecretName(clusterID),
-			kubeconfig:  bootstrapCluster.KubeconfigPath,
-			err:         err,
+			clusterName:    clusterName,
+			keyPath:        path,
+			kubeconfigPath: kubeconfigPath,
+			recover:        cwedeploy.EtcdEncryptionKeyCommand(bootstrapCluster.KubeconfigPath, clusterID, path),
+			err:            err,
 		}
 	}
 
@@ -457,7 +476,6 @@ func saveEtcdEncryptionKey(
 	if err != nil {
 		return fail(err)
 	}
-	path := etcdKeyPath(opts, clusterName)
 	if err := etcdkey.Write(path, manifest); err != nil {
 		return fail(err)
 	}
@@ -473,47 +491,48 @@ const etcdKeyReadTimeout = 2 * time.Minute
 // keyCaptureError is a bootstrap that built and encrypted its cluster and then
 // failed to save the key.
 type keyCaptureError struct {
-	clusterName string
-	secretName  string
-	kubeconfig  string
-	err         error
+	clusterName    string
+	keyPath        string
+	kubeconfigPath string
+	recover        string
+	err            error
 }
 
 func (e *keyCaptureError) Error() string {
-	return fmt.Sprintf("cluster %q is up and its etcd data is encrypted, but its encryption key was not saved: %v. "+
-		"The bootstrap cluster still holds the key: do not delete it, and do not re-run bootstrap, until the key is saved. "+
-		"Save it with: kubectl --kubeconfig %s -n %s get secret %s -o json > %s-etcd-encryption-key.json",
-		e.clusterName, e.err, e.kubeconfig, cwedeploy.CWENamespace, e.secretName, e.clusterName)
+	return fmt.Sprintf("cluster %q is up and its etcd data is encrypted, but its encryption key was not saved to %s: %v. "+
+		"Its kubeconfig is at %s. The bootstrap cluster still holds the key: do not delete it, and do not re-run "+
+		"bootstrap, until the key is saved. Save it, as the Secret the bootstrap cluster holds, with: %s",
+		e.clusterName, e.keyPath, e.err, e.kubeconfigPath, e.recover)
 }
 
 func (e *keyCaptureError) Unwrap() error { return e.err }
 
 // writeTenantKubeconfig saves the finished cluster's admin kubeconfig beside
-// the operator, so the first thing they can do is look at what was built.
+// the operator and returns its path.
 //
-// 0o600: it is an admin credential for the cluster that was just created.
+// 0o600: it is an admin credential for the cluster that was just created. A
+// plain write, unlike the etcd key's: a kubeconfig can be issued again from
+// the cluster, so losing or overwriting this file is recoverable.
 func writeTenantKubeconfig(
 	ctx context.Context,
 	bootstrapCluster *bootstrapengine.Cluster,
 	clusterName string,
 	opts *bootstrapSiteOptions,
 	logger *slog.Logger,
-) error {
+) (string, error) {
 	path := siteKubeconfigPath(clusterName, opts)
 
 	kubeconfig, err := cwedeploy.New(opts.cweRunner, logger).
 		TenantKubeconfig(ctx, bootstrapCluster.KubeconfigPath, clusterName, opts.kubeconfigTimeout)
 	if err != nil {
-		return fmt.Errorf("reading the kubeconfig of cluster %q: %w", clusterName, err)
+		return "", fmt.Errorf("reading the kubeconfig of cluster %q: %w", clusterName, err)
 	}
 	if err := os.WriteFile(path, kubeconfig, 0o600); err != nil {
-		return fmt.Errorf("writing %s: %w", path, err)
+		return "", fmt.Errorf("writing %s: %w", path, err)
 	}
 
 	logger.Info("wrote the cluster kubeconfig", "path", path)
-	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
-		clusterName, path)
-	return nil
+	return path, nil
 }
 
 func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {

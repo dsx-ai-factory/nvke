@@ -41,3 +41,12 @@ func (e *Engine) EtcdEncryptionKey(
 	}
 	return secret.Data, nil
 }
+
+// EtcdEncryptionKeyCommand is a shell command that saves the key Secret of
+// clusterID to outPath, as the bootstrap cluster holds it. It names the same
+// Secret EtcdEncryptionKey reads, so what is printed cannot drift from what
+// the command does; umask keeps the file readable by its owner only.
+func EtcdEncryptionKeyCommand(kubeconfigPath string, clusterID uuid.UUID, outPath string) string {
+	return fmt.Sprintf("umask 077 && kubectl --kubeconfig %s -n %s get secret %s -o json > %s",
+		kubeconfigPath, cweNamespace, etcdkey.SecretName(clusterID), outPath)
+}

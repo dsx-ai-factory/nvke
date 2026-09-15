@@ -958,13 +958,15 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 	setBootstrapEnv(t)
 	startFakeCWEAPI(t, true)
 
+	keyOut := filepath.Join(t.TempDir(), "key.json")
+	kubeconfigOut := filepath.Join(t.TempDir(), "site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:         writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner:  runner,
 		cweRunner:        missingEtcdKeyRunner{},
-		kubeconfigOut:    filepath.Join(t.TempDir(), "unused.kubeconfig"),
-		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		kubeconfigOut:    kubeconfigOut,
+		encryptionKeyOut: keyOut,
 		lookPath:         runtimeOnPath,
 	})
 	if err == nil {
@@ -973,11 +975,15 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 	if runner.sawArgs("delete", "cluster") {
 		t.Error("bootstrap cluster was deleted while it held the only reachable copy of the key")
 	}
+	// The recovery command writes what the tool would have: to the path the
+	// operator chose, owner-readable only, the Secret CWE holds.
 	for _, want := range []string{
-		"was not saved",
+		"was not saved to " + keyOut,
+		"kubeconfig is at " + kubeconfigOut,
 		"do not delete it",
-		"get secret etcd-encryption-key-",
-		"-n cloud-workflow-engine",
+		"umask 077 && kubectl --kubeconfig",
+		"-n cloud-workflow-engine get secret etcd-encryption-key-",
+		"-o json > " + keyOut,
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not contain %q", err, want)
@@ -987,6 +993,32 @@ func TestRunBootstrapSiteRetainsClusterWhenKeyCaptureFails(t *testing.T) {
 		if strings.Contains(err.Error(), unwanted) {
 			t.Errorf("error %q contains %q", err, unwanted)
 		}
+	}
+	if _, statErr := os.Stat(kubeconfigOut); statErr != nil {
+		t.Errorf("the kubeconfig was not written before the key capture failed: %v", statErr)
+	}
+}
+
+// TestRequireNoKeyFile: only a path that does not exist is free. Anything that
+// cannot be checked would fail the write at the very end of a bootstrap.
+func TestRequireNoKeyFile(t *testing.T) {
+	dir := t.TempDir()
+	if err := requireNoKeyFile(filepath.Join(dir, "absent.json")); err != nil {
+		t.Errorf("absent path: err = %v, want nil", err)
+	}
+
+	existing := filepath.Join(dir, "existing.json")
+	if err := os.WriteFile(existing, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := requireNoKeyFile(existing); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("existing path: err = %v, want \"already exists\"", err)
+	}
+
+	// A regular file where a directory is needed: Lstat fails with ENOTDIR,
+	// which is not "free".
+	if err := requireNoKeyFile(filepath.Join(existing, "key.json")); err == nil || !strings.Contains(err.Error(), "checking") {
+		t.Errorf("unwritable path: err = %v, want a check failure", err)
 	}
 }
 
