@@ -15,15 +15,13 @@ import (
 
 // YAMLToRequest reads a YAML document and deserialises it into a CWE API
 // request type T. Field names in the YAML must match the json tags of T.
-//
-// The conversion goes YAML → interface{} → JSON → T so that json tags on
-// generated API types are honoured. Direct yaml.Unmarshal is avoided because
-// generated structs only carry json tags, not yaml tags.
 func YAMLToRequest[T any](data []byte) (T, error) {
 	m, err := YAMLToGenericMap(data)
 	if err != nil {
 		return *new(T), err
 	}
+	// Round-tripped through JSON rather than yaml.Unmarshal(data, &req)
+	// directly: generated API types carry only json tags, not yaml tags.
 	j, err := json.Marshal(m)
 	if err != nil {
 		return *new(T), fmt.Errorf("marshal json: %w", err)
@@ -77,8 +75,7 @@ func YAMLToGenericMap(data []byte) (map[string]interface{}, error) {
 
 // stringKeyed recursively converts every map[interface{}]interface{} under
 // v (gopkg.in/yaml.v3's representation of a mapping with any non-string
-// key) to map[string]interface{}, since generated API types decode only
-// from string-keyed JSON objects. Returns an error naming the first
+// key) to map[string]interface{}. Returns an error naming the first
 // non-string key found, at any depth.
 func stringKeyed(v interface{}) (interface{}, error) {
 	switch t := v.(type) {

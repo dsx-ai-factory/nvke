@@ -22,8 +22,6 @@ import (
 )
 
 // CWEClientFn is a factory that returns an authenticated CWE client.
-// Commands receive this rather than a constructed client so that the
-// client is only built when a command actually runs (not at startup).
 type CWEClientFn func() (*clients.CWEClient, error)
 
 // NewGetCmd returns the "nkectl get clusters" subcommand.
