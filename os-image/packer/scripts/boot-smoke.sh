@@ -188,6 +188,19 @@ test -x /usr/lib/nke/spire-configure.sh
 test -x /usr/lib/nke/wait-spiffe-socket.sh
 dpkg-query -W -f='${Status}\n' 'nke-cni-calico-manifests-*' | grep -Fxq 'install ok installed'
 
+# The local apt repo has to offer what a node installs at cluster create.
+# These are staged rather than installed, so nothing above would notice them
+# missing: the arm64 image shipped with no kubeadm at all, and the failure
+# only showed up inside a tenant guest, mid-provision.
+# Not `| grep -q`: grep exits at the first match and SIGPIPEs apt-cache, which
+# set -o pipefail above then reports as a failure.
+have_in_local_repo() {
+    [[ -n "$(apt-cache search --names-only "^$1-[0-9]")" ]] ||
+        { echo "the image's local apt repo offers no $1-* package" >&2; return 1; }
+}
+have_in_local_repo nke-kubeadm-distro
+have_in_local_repo nke-cni-calico-images
+
 EOF
 
 echo "boot-smoke: image contract and root-filesystem growth are satisfied"
