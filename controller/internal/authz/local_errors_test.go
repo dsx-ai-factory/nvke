@@ -84,8 +84,14 @@ forbid(principal, action, resource) when { context.issuer < 1 };
 // bundle with one erroring policy would report engine_error and an operator
 // watching a permissive rollout would see a fault that is not there.
 func TestLocalKeepsADenyThatErrored(t *testing.T) {
+	// NKE::Role::"reader", not an undeclared role: loadBundle now enforces
+	// checkRoleVocabulary (validate.go) inside NewLocal itself, so a policy
+	// naming a role that oneReader does not declare would refuse to load at
+	// all, before Authorize is ever reached -- and that is not what this test
+	// is checking. Which role is named here is otherwise incidental: the guard
+	// always errors regardless of who it would have matched.
 	local := bundleWith(t, `
-permit(principal in NKE::Role::"nobody", action, resource) when { context.issuer < 1 };
+permit(principal in NKE::Role::"reader", action, resource) when { context.issuer < 1 };
 `)
 
 	decision, err := local.Authorize(context.Background(), Query{
@@ -102,8 +108,12 @@ permit(principal in NKE::Role::"nobody", action, resource) when { context.issuer
 // matrix cannot see it: replacing the record with an empty one left every test
 // green.
 func TestLocalSendsTheContextRecord(t *testing.T) {
+	// Scoped to NKE::Role::"reader", which subjectReader holds either way, so
+	// checkRoleReachability (validate.go) does not refuse oneReader's
+	// declared-and-held "reader" role as unnamed by any policy. The scoping
+	// changes nothing about what this test checks: the context record.
 	local := bundleWith(t, `
-permit(principal, action, resource)
+permit(principal in NKE::Role::"reader", action, resource)
 when { context.issuer == "kube-apiserver" && context.method == "GET" };
 `)
 

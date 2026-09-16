@@ -36,7 +36,7 @@ import (
 // The bundle's generated half — the Cedar schema and the action entities — comes
 // out of the same pass, because both describe the same set of operations.
 //
-//go:generate go run ../../hack/gen-authz-actions -spec ../../api/openapi.yaml -out actions.gen.go -bundle ../../deploy/authz
+//go:generate go run ../../hack/gen-authz-actions -spec ../../api/openapi.yaml -out actions.gen.go -bundle ../../deploy/authz -chart-bundle ../../deploy/charts/controller/files/authz
 
 // Operation is one row of the generated table in actions.gen.go: what a route
 // pattern authorizes.

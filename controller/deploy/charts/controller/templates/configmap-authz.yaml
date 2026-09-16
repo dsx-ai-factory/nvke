@@ -1,0 +1,30 @@
+{{- if and .Values.apiAuthz.enabled .Values.apiAuthz.configMap.create }}
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The Cedar policy bundle NKE reads at AUTHZ_BUNDLE_PATH.
+#
+# Assembled by controller.apiAuthz.effectiveBundle (_helpers.tpl), the one
+# place that resolves apiAuthz.bundle.*/apiAuthz.policyMode into content --
+# controller.apiAuthz.validate (deployment.yaml) checks the same resolved
+# content, so the two cannot drift into disagreeing about what gets mounted.
+#
+# schema.json is deliberately not a key here: it is read at build time only
+# (internal/authz/bundle.go), and the mount only needs to carry the three keys
+# NewLocal actually opens (deploy/authz/README.md).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ required "apiAuthz.configMap.name is required when apiAuthz.enabled=true" .Values.apiAuthz.configMap.name }}
+  namespace: {{ include "controller.namespace" . }}
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+data:
+  {{- $bundle := include "controller.apiAuthz.effectiveBundle" . | fromJson }}
+  policies.cedar: |
+    {{- $bundle.policies | nindent 4 }}
+  roles.json: |
+    {{- toJson $bundle.roles | nindent 4 }}
+  actions.json: |
+    {{- toJson $bundle.actions | nindent 4 }}
+{{- end }}

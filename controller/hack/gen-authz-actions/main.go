@@ -53,6 +53,15 @@ var (
 	outPath    = flag.String("out", "internal/authz/actions.gen.go", "the Go source file to write")
 	bundlePath = flag.String("bundle", "deploy/authz", "directory to write the generated bundle half to")
 
+	// chartBundlePath is a second copy of the generated bundle half, packaged
+	// into the chart so `helm template` can render it without reaching outside
+	// its own directory tree (design-authz-chart-validation.md §4's "populated
+	// by the same go:generate step"). Optional and empty by default so a caller
+	// building only the Go half (or a repo without this chart) does not have to
+	// pass it.
+	chartBundlePath = flag.String("chart-bundle", "",
+		"optional second directory to also write actions.json/schema.json to, kept in sync with -bundle")
+
 	// safeMethods are the HTTP methods that do not change state. They decide the
 	// coarse action group, because the method is a fact about the request where
 	// an operationId prefix is a naming convention a future operation can break.
@@ -147,7 +156,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(*outPath, src, 0o644); err != nil { //nolint:gosec // generated source, not a secret
+	if err := writeFileAtomic(*outPath, src, 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", *outPath, err)
 	}
 	fmt.Fprintf(os.Stdout, "gen-authz-actions: wrote %s (%d operations)\n", *outPath, len(ops))
@@ -155,20 +164,32 @@ func run() error {
 	// The bundle's generated half. The schema is what lets a Cedar validator
 	// reject a policy naming an action or attribute that does not exist; without
 	// it, such a policy loads clean and silently never matches.
-	bundleDir := *bundlePath
-	if err := os.MkdirAll(bundleDir, 0o755); err != nil {
-		return fmt.Errorf("creating %s: %w", bundleDir, err)
+	//
+	// Written to -bundle and, if set, also to -chart-bundle -- the chart's own
+	// files/authz/ copy (design-authz-chart-validation.md §4) -- so both stay
+	// byte-identical outputs of this one generation pass rather than a second,
+	// hand-maintained copy someone has to remember to update.
+	bundleDirs := []string{*bundlePath}
+	if *chartBundlePath != "" {
+		bundleDirs = append(bundleDirs, *chartBundlePath)
 	}
-	if err := writeJSON(filepath.Join(bundleDir, "schema.json"), renderSchema(ops)); err != nil {
-		return err
-	}
-	fmt.Fprintf(os.Stdout, "gen-authz-actions: wrote %s\n", filepath.Join(bundleDir, "schema.json"))
+	schema := renderSchema(ops)
+	actions := renderActionEntities(ops)
+	for _, bundleDir := range bundleDirs {
+		if err := os.MkdirAll(bundleDir, 0o755); err != nil {
+			return fmt.Errorf("creating %s: %w", bundleDir, err)
+		}
+		if err := writeJSON(filepath.Join(bundleDir, "schema.json"), schema); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stdout, "gen-authz-actions: wrote %s\n", filepath.Join(bundleDir, "schema.json"))
 
-	if err := writeJSON(filepath.Join(bundleDir, "actions.json"), renderActionEntities(ops)); err != nil {
-		return err
+		if err := writeJSON(filepath.Join(bundleDir, "actions.json"), actions); err != nil {
+			return err
+		}
+		fmt.Fprintf(os.Stdout, "gen-authz-actions: wrote %s (%d action entities + 2 groups)\n",
+			filepath.Join(bundleDir, "actions.json"), len(ops))
 	}
-	fmt.Fprintf(os.Stdout, "gen-authz-actions: wrote %s (%d action entities + 2 groups)\n",
-		filepath.Join(bundleDir, "actions.json"), len(ops))
 	return nil
 }
 
@@ -177,10 +198,68 @@ func writeJSON(path string, v any) error {
 	if err != nil {
 		return fmt.Errorf("encoding %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil { //nolint:gosec // public policy, not a secret
+	if err := writeFileAtomic(path, append(encoded, '\n'), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", path, err)
 	}
 	return nil
+}
+
+// writeFileAtomic writes data to path without ever leaving a half-written
+// file at path itself: it writes to a temp file in the same directory (same
+// directory so the final os.Rename is same-filesystem and therefore atomic
+// on POSIX, unlike a cross-filesystem rename) and renames it over path only
+// after the write and an explicit Sync/Close succeed.
+//
+// run() writes several output files in sequence (actions.gen.go, then each
+// bundleDir's schema.json and actions.json) and is not transactional across
+// that sequence -- a failure partway through can still leave some files
+// updated and others not, the same drift this generator exists to prevent.
+// This only closes the narrower, concrete risk within a single file: with
+// plain os.WriteFile, a disk-full or interrupted write truncates the
+// existing file in place, corrupting it; with rename-based replacement, a
+// failed write only ever leaves behind an orphaned temp file, never a
+// corrupted target.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, createErr := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-*")
+	if createErr != nil {
+		return fmt.Errorf("creating temp file in %s: %w", dir, createErr)
+	}
+	tmpName := tmp.Name()
+
+	if writeErr := writeAndCloseAtomicTemp(tmp, data, perm); writeErr != nil {
+		// Best-effort cleanup: the write/chmod/sync/close sequence below
+		// failed before any rename happened, so tmpName is the only copy of
+		// this failed attempt and would otherwise be left orphaned in dir.
+		os.Remove(tmpName)
+		return fmt.Errorf("writing %s: %w", tmpName, writeErr)
+	}
+
+	if err := os.Rename(tmpName, path); err != nil {
+		return fmt.Errorf("renaming %s to %s: %w", tmpName, path, err)
+	}
+	return nil
+}
+
+// writeAndCloseAtomicTemp writes data to tmp, sets its final permissions,
+// and syncs and closes it -- everything writeFileAtomic needs done to tmp
+// before the rename that makes the write visible at its real path. Split out
+// so writeFileAtomic's own error handling (remove the orphaned temp file on
+// any failure here) has one call to wrap, rather than repeating the same
+// "close tmp, then return this error" shape after every step.
+func writeAndCloseAtomicTemp(tmp *os.File, data []byte, perm os.FileMode) error {
+	defer tmp.Close() // closed again deliberately below to observe its error; this is only the fallback for an earlier-returning error path
+
+	if _, err := tmp.Write(data); err != nil {
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		return err
+	}
+	return tmp.Close()
 }
 
 // renderSchema emits the Cedar schema for the NKE namespace: every entity type

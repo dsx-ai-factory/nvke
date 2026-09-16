@@ -47,47 +47,20 @@ func (l *Local) Name() string { return "cedar-go" }
 // of the readiness story: the bundle is loaded on CWE's own startup path, so
 // "it did not load" is an ordinary Go error rather than a state that has to be
 // interrogated out of another process afterwards.
+//
+// Delegates the actual loading and checking to loadBundle -- the single
+// implementation this shares with ValidateBundle (validate.go), so the two
+// cannot drift into agreeing a bundle is fine when the other would refuse it.
+// loadBundle always runs the entity-instance checks too, which is what closes
+// the gap where a bundle applied outside CI (a hand-edited ConfigMap, a
+// kustomize apply) used to never go through them.
 func NewLocal(dir string) (*Local, error) {
-	if dir == "" {
-		return nil, errors.New("local authorizer requires a bundle directory")
+	b, errs := loadBundle(dir)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 
-	source, err := os.ReadFile(filepath.Join(dir, policiesFile))
-	if err != nil {
-		return nil, fmt.Errorf("reading %s: %w", policiesFile, err)
-	}
-	policies, err := cedar.NewPolicySetFromBytes(policiesFile, source)
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", policiesFile, err)
-	}
-	if !hasAny(policies) {
-		// An empty policy set refuses every request, which is indistinguishable
-		// at request time from a policy nobody wrote.
-		return nil, fmt.Errorf("%s declares no policies", policiesFile)
-	}
-	if err := checkPolicyShape(policies); err != nil {
-		return nil, fmt.Errorf("%s: %w", policiesFile, err)
-	}
-
-	entities := types.EntityMap{}
-	declaredIn := map[types.EntityUID]string{}
-	for _, name := range entityFiles {
-		if err := loadEntities(filepath.Join(dir, name), entities, declaredIn); err != nil {
-			return nil, err
-		}
-	}
-	if err := checkEntityStore(entities); err != nil {
-		return nil, err
-	}
-
-	names := map[cedar.PolicyID]string{}
-	for id, policy := range policies.All() {
-		if annotated, ok := policy.Annotations()["id"]; ok && annotated != "" {
-			names[id] = string(annotated)
-		}
-	}
-
-	return &Local{policies: policies, entities: entities, names: names}, nil
+	return &Local{policies: b.policies, entities: b.entities, names: b.names}, nil
 }
 
 // loadEntities merges one entity file into dst, refusing a duplicate: the later
@@ -282,6 +255,13 @@ func checkEntityStore(entities types.EntityMap) error {
 		}
 	}
 
+	// This loop is also the action/operations-table skew check that used to be
+	// documented only in policy_vocabulary_test.go's old TestEveryActionAPolicyNamesExists
+	// ("the action check overlaps the validator deliberately, because it also
+	// asserts the generated actions.json agrees with the generated operations
+	// table"): it runs unconditionally here, not gated behind the vocabulary
+	// checks, so that comment's overlap claim moved with the code rather than
+	// being lost when that test became a thin wrapper.
 	for pattern, op := range operations {
 		if _, ok := entities.Get(types.NewEntityUID(ActionType, types.String(op.Action))); !ok {
 			return fmt.Errorf(

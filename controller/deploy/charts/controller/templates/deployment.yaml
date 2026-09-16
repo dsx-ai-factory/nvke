@@ -2,6 +2,7 @@
 {{- if and .Values.apiAuthz.enabled (not .Values.apiAuth.enabled) }}
 {{- fail "apiAuthz.enabled requires apiAuth.enabled: authorizing a caller nobody authenticated is not a meaningful state" }}
 {{- end }}
+{{- include "controller.apiAuthz.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:

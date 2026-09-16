@@ -1,0 +1,77 @@
+{{- if and .Values.apiAuthz.enabled .Values.apiAuthz.configMap.create .Values.apiAuthz.validationHook.enabled }}
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Gated behind apiAuthz.validationHook.enabled (values.yaml), which defaults
+# false and MUST stay false until the `authz validate` CLI subcommand this
+# Pod's command line calls actually exists (see the command's own comment
+# below). apiAuthz.configMap.create=true alone must never be enough to
+# render this Pod live: that is exactly the "on" path this feature exists
+# to support, and today it would render a guaranteed-to-fail Helm hook that
+# blocks the whole install/upgrade, not just skip optional validation.
+#
+# The render-time checks in controller.apiAuthz.validate (_helpers.tpl) can
+# only see values-plumbing coherence and a couple of trivial structural
+# checks -- design-authz-chart-validation.md §5/§6 argues at length for why
+# everything with real semantic content (vocabulary, role reachability,
+# duplicate UIDs, entity presence, the static-parent referential-integrity
+# check) belongs in authz.ValidateBundle (internal/authz) instead of a second,
+# separately-maintained implementation in Helm's templating language.
+#
+# This Pod is what actually calls that Go code against the bundle Helm is
+# about to mount, the same one templates/configmap-authz.yaml renders
+# (controller.apiAuthz.effectiveBundle, resolved once and shared by both).
+#
+# post-install,post-upgrade, not helm.sh/hook: test (design §7): nothing in
+# this repo's release-gating CI ever issues a `helm test`, so a test hook
+# would only fire when an operator remembers to run one by hand -- no real
+# improvement over running `go test ./internal/authz/` against a copied-out
+# bundle today. post-install,post-upgrade fires automatically as part of
+# `helm install`/`helm upgrade` itself, which is the property that actually
+# holds everywhere in this repo a bundle reaches a live cluster. This is an
+# install-time backstop for real installs, not a release gate this repo's CI
+# enforces -- see design §7's "Where this sits relative to release-gating CI"
+# for the full audit of why no CI path stands up a live cluster today.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "controller.fullname" . }}-validate-authz-bundle"
+  namespace: {{ include "controller.namespace" . }}
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: validate-bundle
+      image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}{{ with .Values.image.digest }}@{{ . }}{{ end }}"
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      # "authz validate <dir>" does not exist yet: cmd/worker/main.go is a
+      # plain flag.Parse() ahead of one mode, with no subcommand dispatch at
+      # all (design §7/§10's own open item). Wiring this needs a real,
+      # separate decision -- (1) subcommand dispatch added to the existing
+      # binary's flag handling, (2) a second entrypoint under cmd/ built and
+      # copied into the image next to /usr/local/bin/controller, or (3) a
+      # third, smaller binary built solely for this check -- which the design
+      # deliberately leaves open rather than resolving with a few bolted-on
+      # lines. This template is otherwise complete and ready for whichever of
+      # those lands; the command line below is what it should call once one
+      # does, and it must call authz.ValidateBundle (§6), not reimplement
+      # NewLocal's checks a third time.
+      command: ["/usr/local/bin/controller", "authz", "validate", "/etc/nke/authz"]
+      volumeMounts:
+        - name: nke-authz-policy
+          mountPath: /etc/nke/authz
+          readOnly: true
+  volumes:
+    - name: nke-authz-policy
+      configMap:
+        name: {{ .Values.apiAuthz.configMap.name }}
+  restartPolicy: Never
+{{- end }}
