@@ -95,15 +95,15 @@ func TestGetClustersJSONRoundTrips(t *testing.T) {
 	}
 }
 
-// The old clientFnErr double could show that --cluster reached the client. It
-// could not show what the client then put on the wire, which is the part that
-// decides whether filtering works at all.
+// The clientFnErr double can show that a name reached the client. It cannot
+// show what the client then put on the wire, which is the part that decides
+// whether filtering works at all.
 func TestGetClustersFilterSendsTheNameQuery(t *testing.T) {
 	fake, clientFn := newFakeCWE(t, seedCluster("alpha"), seedCluster("beta"))
 
-	out, err := run(t, NewGetCmd(clientFn), "--cluster", "beta")
+	out, err := run(t, NewGetCmd(clientFn), "beta")
 	if err != nil {
-		t.Fatalf("get clusters --cluster beta: %v", err)
+		t.Fatalf("get clusters beta: %v", err)
 	}
 
 	if seen := fake.seen(); len(seen) != 1 || seen[0] != "GET /api/clusters?name=beta" {
@@ -362,5 +362,55 @@ func TestServerErrorSurfacesTheAPIMessage(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "database is on fire") {
 		t.Errorf("error = %v, want it to carry the server's message", err)
+	}
+}
+
+func TestGetClustersAcceptsSeveralNames(t *testing.T) {
+	fake, clientFn := newFakeCWE(t, seedCluster("alpha"), seedCluster("beta"), seedCluster("gamma"))
+
+	out, err := run(t, NewGetCmd(clientFn), "gamma", "alpha")
+	if err != nil {
+		t.Fatalf("get clusters gamma alpha: %v", err)
+	}
+
+	got := rows(out)
+	if len(got) != 3 {
+		t.Fatalf("rows = %d, want a header and two clusters:\n%s", len(got), out)
+	}
+	// Argument order, not the order CWE returns them in.
+	for i, want := range []string{"gamma", "alpha"} {
+		if got[i+1][0] != want {
+			t.Errorf("row %d = %q, want %q", i, got[i+1][0], want)
+		}
+	}
+	if seen := fake.seen(); len(seen) != 2 {
+		t.Errorf("requests = %v, want one per name", seen)
+	}
+}
+
+// TestGetClustersPrintsWhatItFound mirrors kubectl: the clusters that matched
+// are printed, and the names that did not are reported as an error.
+func TestGetClustersPrintsWhatItFound(t *testing.T) {
+	_, clientFn := newFakeCWE(t, seedCluster("alpha"))
+
+	out, err := run(t, NewGetCmd(clientFn), "alpha", "nope")
+	if err == nil {
+		t.Fatal("want an error for the missing cluster")
+	}
+	if !strings.Contains(err.Error(), `cluster "nope" not found`) {
+		t.Errorf("error = %q, want it to name the missing cluster", err)
+	}
+	table, _, _ := strings.Cut(out, "Error:")
+	if got := rows(table); len(got) != 2 || got[1][0] != "alpha" {
+		t.Errorf("output = %q, want the cluster that was found to still be printed", out)
+	}
+}
+
+func TestGetClustersRejectsNamesThatMatchNothing(t *testing.T) {
+	_, clientFn := newFakeCWE(t, seedCluster("alpha"))
+
+	if _, err := run(t, NewGetCmd(clientFn), "one", "two"); err == nil ||
+		!strings.Contains(err.Error(), `clusters "one", "two" not found`) {
+		t.Errorf("error = %v, want both missing names reported", err)
 	}
 }

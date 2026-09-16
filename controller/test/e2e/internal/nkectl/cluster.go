@@ -99,7 +99,7 @@ func clusterNotFoundIn(out, name string) bool {
 // GetClusterByName returns the named cluster, or an error wrapping
 // errClusterNotFound when the CLI resolves none.
 func (r *Runner) GetClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
-	out, err := r.Run(ctx, "get", "clusters", "-c", name, "-o", "json")
+	out, err := r.Run(ctx, "get", "clusters", name, "-o", "json")
 	if err != nil {
 		if clusterNotFoundIn(out, name) {
 			return nil, fmt.Errorf("%q: %w", name, errClusterNotFound)
@@ -109,13 +109,13 @@ func (r *Runner) GetClusterByName(ctx context.Context, name string) (*api.Cluste
 
 	var clusters []api.Cluster
 	if err := json.Unmarshal([]byte(out), &clusters); err != nil {
-		return nil, fmt.Errorf("parsing `get clusters -c %s -o json`: %w: %s", name, err, strings.TrimSpace(out))
+		return nil, fmt.Errorf("parsing `get clusters %s -o json`: %w: %s", name, err, strings.TrimSpace(out))
 	}
 	if len(clusters) != 1 {
-		return nil, fmt.Errorf("`get clusters -c %s -o json` returned %d clusters, want exactly 1", name, len(clusters))
+		return nil, fmt.Errorf("`get clusters %s -o json` returned %d clusters, want exactly 1", name, len(clusters))
 	}
 	if clusters[0].Name != name {
-		return nil, fmt.Errorf("`get clusters -c %s -o json` returned cluster %q", name, clusters[0].Name)
+		return nil, fmt.Errorf("`get clusters %s -o json` returned cluster %q", name, clusters[0].Name)
 	}
 	r.clusterNames[clusters[0].ID] = clusters[0].Name
 	return &clusters[0], nil

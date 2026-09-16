@@ -30,11 +30,11 @@ func isNotConfigured(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "no site configured")
 }
 
-// TestGetCmdClusterFilterReachesClient verifies that --cluster routes through
-// the filtering path to the client call.
-func TestGetCmdClusterFilterReachesClient(t *testing.T) {
+// TestGetCmdNameFilterReachesClient verifies that a named cluster routes
+// through the filtering path to the client call.
+func TestGetCmdNameFilterReachesClient(t *testing.T) {
 	cmd := NewGetCmd(clientFnErr)
-	cmd.SetArgs([]string{"--cluster", "foo"})
+	cmd.SetArgs([]string{"foo"})
 	if err := cmd.Execute(); !isNotConfigured(err) {
 		t.Errorf("expected no-site error, got: %v", err)
 	}

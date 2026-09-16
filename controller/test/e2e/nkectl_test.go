@@ -140,7 +140,7 @@ func validateNkectlPostCreate(test *tenantTest) {
 		// real cluster exists alongside here, so this also shows the lookup
 		// filters rather than simply finding nothing.
 		It("reports a missing cluster as not found", func(ctx context.Context) {
-			out, err := test.nkectlRunner.Run(ctx, "get", "clusters", "-c", test.cluster.Name+"-absent")
+			out, err := test.nkectlRunner.Run(ctx, "get", "clusters", test.cluster.Name+"-absent")
 			Expect(err).To(HaveOccurred(), "a cluster that does not exist should not resolve")
 			Expect(strings.ToLower(out)).To(ContainSubstring("not found"))
 		}, SpecTimeout(2*time.Minute))

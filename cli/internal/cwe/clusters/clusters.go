@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -26,17 +27,23 @@ type CWEClientFn func() (*clients.CWEClient, error)
 
 // NewGetCmd returns the "nkectl get clusters" subcommand.
 func NewGetCmd(clientFn CWEClientFn) *cobra.Command {
-	var (
-		outputFormat  string
-		clusterFilter string
-	)
+	var outputFormat string
 
 	cmd := &cobra.Command{
-		Use:     "clusters",
+		Use:     "clusters [name ...]",
 		Aliases: []string{"cluster"},
 		Short:   "List tenant clusters on the site controller",
-		Args:    cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Long: `List tenant clusters on the site controller.
+
+Naming clusters narrows the listing to them, in the order given.
+
+Example — every cluster:
+  nkectl get clusters
+
+Example — two clusters, as YAML:
+  nkectl get clusters prod staging -o yaml`,
+		Args: cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
 			f, err := util.ParseFormat(outputFormat)
 			if err != nil {
 				return err
@@ -45,29 +52,63 @@ func NewGetCmd(clientFn CWEClientFn) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var cls []api.Cluster
-			if clusterFilter != "" {
-				cluster, err := client.FindClusterByName(cmd.Context(), clusterFilter)
-				if err != nil {
-					return err
-				}
-				cls = []api.Cluster{*cluster}
-			} else {
-				if cls, err = client.ListClusters(cmd.Context()); err != nil {
-					return err
-				}
+			cls, missing, err := listClusters(cmd, client, args)
+			if err != nil {
+				return err
 			}
 			if f != util.FormatTable {
-				return util.Print(cmd.OutOrStdout(), f, cls)
+				if err := util.Print(cmd.OutOrStdout(), f, cls); err != nil {
+					return err
+				}
+				return notFoundError(missing)
 			}
 			printClusters(cmd.OutOrStdout(), cls)
-			return nil
+			return notFoundError(missing)
 		},
 	}
 
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "", "Output format: json or yaml (default: table)")
-	cmd.Flags().StringVarP(&clusterFilter, "cluster", "c", "", "Filter output to the named cluster")
 	return cmd
+}
+
+// listClusters returns the clusters matching names, in the order given, plus
+// the names that matched nothing. No names lists every cluster.
+func listClusters(
+	cmd *cobra.Command,
+	client *clients.CWEClient,
+	names []string,
+) (cls []api.Cluster, missing []string, err error) {
+	if len(names) == 0 {
+		cls, err = client.ListClusters(cmd.Context(), nil)
+		return cls, nil, err
+	}
+	for _, name := range names {
+		found, err := client.ListClusters(cmd.Context(), &api.ListClustersParams{Name: &name})
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(found) == 0 {
+			missing = append(missing, name)
+			continue
+		}
+		cls = append(cls, found...)
+	}
+	return cls, missing, nil
+}
+
+// notFoundError reports the names that matched nothing, or nil if all did.
+func notFoundError(missing []string) error {
+	if len(missing) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(missing))
+	for i, name := range missing {
+		quoted[i] = fmt.Sprintf("%q", name)
+	}
+	if len(quoted) > 1 {
+		return fmt.Errorf("clusters %s not found", strings.Join(quoted, ", "))
+	}
+	return fmt.Errorf("cluster %s not found", quoted[0])
 }
 
 // NewCreateCmd returns the "nkectl create cluster" subcommand.

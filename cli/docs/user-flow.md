@@ -14,8 +14,7 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl config set-site --url <cwe-url> --kubeconfig <path>` | Points the CLI at a site controller. `use-site` switches between entries, `view` prints the config. | Available |
 | `nkectl get providers` | Lists the Cluster API infrastructure providers the site controller can use, with their state. Alpha. | Available |
 | `nkectl create cluster -f spec.yaml` | Creates a tenant cluster from a `CreateClusterRequest` YAML. `-f -` reads stdin. | Available |
-| `nkectl get clusters` | Lists tenant clusters. `-c <name>` filters, `-o json\|yaml` changes the format. | Available |
-| `nkectl get clusters --cluster <name>` | Shows one tenant cluster. `-o json\|yaml` changes the format. | Available |
+| `nkectl get clusters [name ...]` | Lists tenant clusters. Names narrow to those clusters. `-o json\|yaml` changes the format. | Available |
 | `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
 | `nkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |
@@ -144,8 +143,8 @@ is a starting point.
 
 ```bash
 nkectl get clusters
-nkectl get clusters --cluster <cluster-name>
-nkectl get clusters --cluster <cluster-name> -o yaml
+nkectl get clusters <cluster-name>
+nkectl get clusters <cluster-name> -o yaml
 ```
 
 ### 8. Get the tenant cluster's kubeconfig

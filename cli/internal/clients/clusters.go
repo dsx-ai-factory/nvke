@@ -13,9 +13,10 @@ import (
 	api "github.com/NVIDIA/nke/controller/api"
 )
 
-// ListClusters returns all clusters on the site controller.
-func (c *CWEClient) ListClusters(ctx context.Context) ([]api.Cluster, error) {
-	resp, err := c.raw.ListClustersWithResponse(ctx, nil)
+// ListClusters returns the clusters matching params. A nil params lists every
+// cluster on the site controller.
+func (c *CWEClient) ListClusters(ctx context.Context, params *api.ListClustersParams) ([]api.Cluster, error) {
+	resp, err := c.raw.ListClustersWithResponse(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("listing clusters: %w", err)
 	}
@@ -95,17 +96,10 @@ func (c *CWEClient) DeleteCluster(ctx context.Context, id openapi_types.UUID) er
 // index on cluster name (migration 20250407125309_name_uniqueness.go, index
 // clusters_name_unique), so the API rejects duplicate names at creation time.
 func (c *CWEClient) FindClusterByName(ctx context.Context, name string) (*api.Cluster, error) {
-	resp, err := c.raw.ListClustersWithResponse(ctx, &api.ListClustersParams{Name: &name})
+	clusters, err := c.ListClusters(ctx, &api.ListClustersParams{Name: &name})
 	if err != nil {
 		return nil, fmt.Errorf("finding cluster: %w", err)
 	}
-	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("finding cluster: %w", apiError(resp.Status(), resp.Body))
-	}
-	if resp.JSON200 == nil {
-		return nil, fmt.Errorf("finding cluster: empty response body")
-	}
-	clusters := resp.JSON200.Clusters
 	switch len(clusters) {
 	case 0:
 		return nil, fmt.Errorf("cluster %q not found", name)

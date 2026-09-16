@@ -153,7 +153,7 @@ func clusterNamesFor(
 		}
 		return names, nil
 	}
-	clusters, err := c.ListClusters(cmd.Context())
+	clusters, err := c.ListClusters(cmd.Context(), nil)
 	if err != nil {
 		return nil, err
 	}

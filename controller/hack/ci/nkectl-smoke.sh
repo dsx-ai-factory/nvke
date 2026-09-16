@@ -129,13 +129,13 @@ EOF
   # exit code alone cannot tell "the lookup ran and found nothing" apart from
   # "the request never left the client".
 
-  # Exercises FindClusterByName's ?name= filter, which the calls above never hit.
-  if out="$(nkectl_exec get clusters -c "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
-    log "nkectl smoke: 'get clusters -c ${NKECTL_SMOKE_ABSENT}' succeeded against a name that does not exist" >&2
+  # Exercises the ?name= filter, which the calls above never hit.
+  if out="$(nkectl_exec get clusters "${NKECTL_SMOKE_ABSENT}" 2>&1)"; then
+    log "nkectl smoke: 'get clusters ${NKECTL_SMOKE_ABSENT}' succeeded against a name that does not exist" >&2
     return 1
   fi
   if ! grep -q 'not found' <<<"${out}"; then
-    log "nkectl smoke: 'get clusters -c' failed without a not-found message" >&2
+    log "nkectl smoke: 'get clusters <name>' failed without a not-found message" >&2
     return 1
   fi
 
@@ -277,7 +277,7 @@ EOF
   nkectl_smoke_expect_create_rejected reject-provider "neither nico nor infra" || return 1
 
   # Zero state: a rejected create must leave nothing to find by name.
-  if out="$(nkectl_exec get clusters -c "${NKECTL_SMOKE_REJECT_CLUSTER}" 2>&1)"; then
+  if out="$(nkectl_exec get clusters "${NKECTL_SMOKE_REJECT_CLUSTER}" 2>&1)"; then
     log "nkectl smoke: a rejected create left cluster ${NKECTL_SMOKE_REJECT_CLUSTER} behind: ${out}" >&2
     return 1
   fi
@@ -385,12 +385,12 @@ nkectl_smoke_write_assertions() {
   fi
 
   # Exactly one element, ours.
-  if ! out="$(nkectl_exec get clusters -c "${name}" -o json 2>&1)"; then
-    log "nkectl smoke: 'get clusters -c ${name} -o json' failed: ${out}" >&2
+  if ! out="$(nkectl_exec get clusters "${name}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get clusters ${name} -o json' failed: ${out}" >&2
     return 1
   fi
   if ! jq -e --arg n "${name}" 'length == 1 and .[0].name == $n' <<<"${out}" >/dev/null; then
-    log "nkectl smoke: 'get clusters -c ${name} -o json' did not return exactly our cluster: ${out}" >&2
+    log "nkectl smoke: 'get clusters ${name} -o json' did not return exactly our cluster: ${out}" >&2
     return 1
   fi
 
@@ -406,8 +406,8 @@ nkectl_smoke_write_assertions() {
     return 1
   fi
 
-  if ! out="$(nkectl_exec get clusters -c "${name}" -o json 2>&1)"; then
-    log "nkectl smoke: 'get clusters -c ${name} -o json' failed after patch: ${out}" >&2
+  if ! out="$(nkectl_exec get clusters "${name}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get clusters ${name} -o json' failed after patch: ${out}" >&2
     return 1
   fi
   if ! jq -e '.[0].teleportEnabled == true' <<<"${out}" >/dev/null; then
@@ -446,7 +446,7 @@ nkectl_smoke_write_assertions() {
   # Teardown is asynchronous.
   local attempt
   for ((attempt = 1; attempt <= NKECTL_SMOKE_DELETE_POLLS; attempt++)); do
-    if out="$(nkectl_exec get clusters -c "${name}" 2>&1)"; then
+    if out="$(nkectl_exec get clusters "${name}" 2>&1)"; then
       sleep "${NKECTL_SMOKE_DELETE_POLL_SECONDS}"
       continue
     fi

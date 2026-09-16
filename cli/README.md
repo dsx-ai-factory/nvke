@@ -57,7 +57,7 @@ nkectl get providers -o json
 # Tenant cluster lifecycle
 nkectl get clusters                    # table with AGE and status
 nkectl get clusters -o json            # JSON output
-nkectl get clusters --cluster <name> -o yaml  # full detail for one cluster
+nkectl get clusters <name>... -o yaml  # full detail for named clusters
 nkectl create cluster -f <spec-file>   # or: cat spec.yaml | nkectl create cluster -f -
 nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 nkectl patch cluster my-cluster --patch-file patch.yaml
