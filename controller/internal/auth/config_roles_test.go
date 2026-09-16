@@ -97,6 +97,30 @@ func TestLoadValidationRolesShape(t *testing.T) {
 			wantErr: "expression is required",
 		},
 		{
+			name:    "spiffe expression with a syntax error",
+			yaml:    rolesConfigSPIFFEAdmit(`{spiffe: [{expression: "path..."}]}`),
+			wantErr: "spiffe[0]",
+		},
+		{
+			name:    "spiffe expression referencing an undeclared variable",
+			yaml:    rolesConfigSPIFFEAdmit(`{spiffe: [{expression: "notPath"}]}`),
+			wantErr: "spiffe[0]",
+		},
+		{
+			// A bare bool: valid CEL, wrong output type. Refused by the
+			// ast.OutputType() check (design §3.1), not a compile failure --
+			// its own case since it exercises a different check.
+			name:    "spiffe expression that type-checks to bool, not string",
+			yaml:    rolesConfigSPIFFEAdmit(`{spiffe: [{expression: "true"}]}`),
+			wantErr: "must evaluate to string",
+		},
+		{
+			// An int: same OutputType() check, a different wrong type.
+			name:    "spiffe expression that type-checks to int, not string",
+			yaml:    rolesConfigSPIFFEAdmit(`{spiffe: [{expression: "path.size()"}]}`),
+			wantErr: "must evaluate to string",
+		},
+		{
 			name: "spiffe set without admit.spiffe on the same issuer",
 			// rolesConfig's issuer admits by serviceAccounts, not spiffe.
 			yaml:    rolesConfig(`{spiffe: [{expression: "path"}]}`),
@@ -121,6 +145,24 @@ func TestLoadValidationRolesShape(t *testing.T) {
 			name:    "serviceAccounts rule with no role",
 			yaml:    rolesConfig(`{serviceAccounts: [{namespace: ci}]}`),
 			wantErr: "role is required",
+		},
+		{
+			// design §3.4's deployment A worked example: a well-formed
+			// Expression that compiles, type-checks to string, and programs
+			// cleanly must load without error.
+			name: "spiffe expression: deployment A's leading /role/<name> segment",
+			yaml: rolesConfigSPIFFEAdmit(
+				`{spiffe: [{expression: "path.startsWith(\"/role/\") ? path.split(\"/\")[2] : \"\""}]}`,
+			),
+		},
+		{
+			// design §3.4's deployment B worked example -- proves the trailing-
+			// segment convention loads too, with no code change, only a
+			// different Expression string.
+			name: "spiffe expression: deployment B's trailing .../role/<name> segment",
+			yaml: rolesConfigSPIFFEAdmit(`{spiffe: [{expression: ` +
+				`"path.split(\"/\").size() >= 2 && path.split(\"/\")[path.split(\"/\").size() - 2] == \"role\" ` +
+				`? path.split(\"/\")[path.split(\"/\").size() - 1] : \"\""}]}`),
 		},
 	})
 }

@@ -102,19 +102,16 @@ type RoleMapping struct {
 	Claim *ClaimRoleMapping `json:"claim,omitempty"`
 
 	// SPIFFE derives a Cedar role from the verified SPIFFE ID via CEL, for
-	// SPIRE-issued subjects with no usable claim.
+	// SPIRE-issued subjects with no usable claim (design §3.4).
 	//
-	// The CEL evaluation engine (google/cel-go, design §3.4) is a deliberate
-	// follow-on slice, not built here (design §8, and the implementation task
-	// that built this package). This field and SPIFFERoleRule exist now only
-	// because RoleMapping's three-way exclusivity check needs somewhere to
-	// point; nothing compiles or evaluates an Expression yet.
-	// RoleMapping.validate accepts the field structurally (non-empty list,
-	// non-empty Expression text, Admit.SPIFFE required on the same issuer) but
-	// does not compile it, and roles.go's rolesFor SPIFFE branch always
-	// contributes zero roles at request time -- functionally inert, so an
-	// operator who configures this today gets a startup that succeeds and a
-	// mechanism that grants nothing, never a silent grant of the wrong thing.
+	// Each rule's Expression is compiled, type-checked to string, and
+	// programmed against cel.dev/cel-go (the CEL evaluation environment
+	// spiffeCELEnv builds, roles.go) -- once at Config.Validate time,
+	// discarding the program, and again at RoleMapping.resolve time, keeping
+	// the program roles.go's rolesFor SPIFFE branch runs per request. An
+	// expression that fails to compile, references an undeclared function or
+	// variable, or type-checks to anything other than string refuses startup
+	// (validateSPIFFERoleRules, below).
 	SPIFFE []SPIFFERoleRule `json:"spiffe,omitempty"`
 
 	// ServiceAccount derives a Cedar role from a bound Kubernetes service
@@ -141,12 +138,15 @@ type ClaimRoleMapping struct {
 }
 
 // SPIFFERoleRule derives a Cedar role from the verified SPIFFE ID's path via a
-// CEL expression (design §3.4). Structurally present, functionally inert in
-// this build -- see RoleMapping.SPIFFE's doc comment.
+// CEL expression (design §3.4). See RoleMapping.SPIFFE's doc comment for the
+// compile/type-check/program lifecycle.
 type SPIFFERoleRule struct {
-	// Expression is a CEL expression evaluated against the verified SPIFFE ID's
-	// path. Not yet compiled or evaluated anywhere in this build; see
-	// RoleMapping.SPIFFE.
+	// Expression is a CEL expression evaluated against the verified SPIFFE
+	// ID's path -- never the raw subject, never the trust domain (design
+	// §3.4). It must evaluate to a string: a non-empty result is the Cedar
+	// role name this rule contributes; an empty string, a non-string result,
+	// or an evaluation error all mean this rule contributes nothing -- never
+	// a panic, never a denied request, never a grant (design §3.4, §5).
 	Expression string `json:"expression"`
 }
 
@@ -640,11 +640,14 @@ func (c *ClaimRoleMapping) validate(knownRoles map[string]struct{}) error {
 	return nil
 }
 
-// validateSPIFFERoleRules checks the parts of SPIFFE role validation that
-// don't require google/cel-go: presence, and that Expression is non-empty
-// text. The compile/type-check/program pass design §3.1 specifies is a
-// deliberate follow-on (see RoleMapping.SPIFFE's doc comment) -- an
-// Expression accepted here is never compiled or evaluated by this build.
+// validateSPIFFERoleRules checks presence, that every Expression is non-empty
+// text, and -- design §3.1's three checks, in order -- that each Expression
+// compiles against the SPIFFE role CEL environment (spiffeCELEnv, roles.go),
+// type-checks to string (ast.OutputType() != cel.StringType is refused), and
+// programs cleanly. The compiled cel.Program built here is discarded:
+// RoleMapping.resolve compiles the same, by-now-proven-well-formed Expression
+// a second time, for real, when NewVerifier builds the roleRules it actually
+// runs at request time (design §3.1's "compilation lifecycle" split).
 func validateSPIFFERoleRules(rules []SPIFFERoleRule) error {
 	if len(rules) == 0 {
 		return errors.New(
@@ -652,9 +655,16 @@ func validateSPIFFERoleRules(rules []SPIFFERoleRule) error {
 				"very likely a mistake -- omit roles entirely for a deliberate no-op",
 		)
 	}
+	env, err := spiffeCELEnv()
+	if err != nil {
+		return fmt.Errorf("building the SPIFFE role CEL environment: %w", err)
+	}
 	for i, r := range rules {
 		if strings.TrimSpace(r.Expression) == "" {
 			return fmt.Errorf("spiffe[%d]: expression is required and must not be empty", i)
+		}
+		if _, err := compileSPIFFEExpression(env, r.Expression); err != nil {
+			return fmt.Errorf("spiffe[%d]: expression %q: %w", i, r.Expression, err)
 		}
 	}
 	return nil

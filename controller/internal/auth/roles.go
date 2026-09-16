@@ -6,6 +6,8 @@ package auth
 import (
 	"fmt"
 
+	"cel.dev/cel-go/cel"
+	"cel.dev/cel-go/ext"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
@@ -29,17 +31,74 @@ type claimRoleRules struct {
 
 // spiffeRoleRules carries the issuer's trust domain, borrowed from
 // admitRules.spiffe rather than parsed a second time -- RoleMapping.validate
-// already refuses Roles.SPIFFE without Admit.SPIFFE on the same issuer.
+// already refuses Roles.SPIFFE without Admit.SPIFFE on the same issuer -- plus
+// one compiled cel.Program per configured SPIFFERoleRule, same order as
+// RoleMapping.SPIFFE (design §3.2, §3.4).
 //
-// It carries no compiled CEL programs. The CEL evaluation engine
-// (google/cel-go, design §3.4) is a deliberate follow-on slice, not built
-// here (design §8) -- see RoleMapping.SPIFFE's doc comment (config.go).
-// rolesFor, below, never derives a role from this: a configured
-// Roles.SPIFFE is accepted at startup and contributes nothing at request
-// time, which is the fail-safe direction for a mechanism that isn't built
-// yet -- an operator gets an inert config, never a silent wrong grant.
+// programs is resolve's own compile output, not Config.Validate's discarded
+// one -- Validate proves every Expression is well-formed enough that this
+// compile cannot itself fail; it never threads a program forward for resolve
+// to reuse (design §3.1's "compilation lifecycle" split).
 type spiffeRoleRules struct {
 	trustDomain spiffeid.TrustDomain
+	programs    []cel.Program
+}
+
+const (
+	// spiffeCELPathVar is the one variable a SPIFFERoleRule.Expression sees:
+	// the verified SPIFFE ID's path, never the raw subject and never the
+	// trust domain (design §3.4's "why trust-domain matching stays outside
+	// CEL").
+	spiffeCELPathVar = "path"
+
+	// spiffeCELCostLimit bounds one evaluation of a SPIFFERoleRule.Expression
+	// (design §3.4: "bound worst-case cost of something an operator wrote,
+	// don't just trust it," the same instinct behind the compile-time checks
+	// in §3.1). Both worked examples in §3.4 -- a handful of .split() calls
+	// plus indexing and equality checks -- cost on the order of a few dozen
+	// cel-go cost units. 10,000 leaves generous headroom for a deployment's
+	// own, more elaborate path convention while still refusing an expression
+	// that tries to do unbounded work (an oversized comprehension, for
+	// instance) on every SPIFFE-issuer request. It is not tuned against a
+	// specific pathological expression -- there isn't one this design names
+	// -- it is deliberately far above the expected cost of a reasonable rule
+	// and far below "no limit at all."
+	spiffeCELCostLimit = 10_000
+)
+
+// spiffeCELEnv builds the CEL evaluation environment every SPIFFERoleRule.
+// Expression compiles and runs against: the path variable above, plus
+// ext.Strings() for .split(...), which both of design §3.4's worked examples
+// call and which is not part of CEL's core/default environment. Built fresh
+// by each caller -- Config.Validate (config.go) and RoleMapping.resolve,
+// below -- each need their own *cel.Env for their own compile-and-program
+// pass; a *cel.Env is not carried between them (design §3.1's "compilation
+// lifecycle" split).
+func spiffeCELEnv() (*cel.Env, error) {
+	return cel.NewEnv(
+		cel.Variable(spiffeCELPathVar, cel.StringType),
+		ext.Strings(),
+	)
+}
+
+// compileSPIFFEExpression compiles expression against env, refuses anything
+// that doesn't type-check to string (design §3.1's ast.OutputType() check),
+// and builds the runnable, cost-bounded cel.Program -- the same
+// compile-check-program sequence Config.Validate needs (discarding the
+// program) and RoleMapping.resolve needs (keeping it).
+func compileSPIFFEExpression(env *cel.Env, expression string) (cel.Program, error) {
+	ast, issues := env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		return nil, issues.Err()
+	}
+	if ast.OutputType() != cel.StringType {
+		return nil, fmt.Errorf("must evaluate to string, got %s", ast.OutputType())
+	}
+	program, err := env.Program(ast, cel.CostLimit(spiffeCELCostLimit))
+	if err != nil {
+		return nil, err
+	}
+	return program, nil
 }
 
 type serviceAccountRoleRules struct {
@@ -73,7 +132,22 @@ func (m *RoleMapping) resolve(admit *admitRules) (*roleRules, error) {
 			// time; reached only if a Config bypassed Validate entirely.
 			return nil, fmt.Errorf("roles.spiffe requires admit.spiffe on the same issuer")
 		}
-		return &roleRules{spiffe: &spiffeRoleRules{trustDomain: admit.spiffe.trustDomain}}, nil
+		env, err := spiffeCELEnv()
+		if err != nil {
+			return nil, fmt.Errorf("building the SPIFFE role CEL environment: %w", err)
+		}
+		programs := make([]cel.Program, 0, len(m.SPIFFE))
+		for i, rule := range m.SPIFFE {
+			program, err := compileSPIFFEExpression(env, rule.Expression)
+			if err != nil {
+				// Config.Validate already refused an uncompilable/mistyped
+				// expression; reached only if a Config bypassed Validate
+				// entirely (design §3.1's "compilation lifecycle" split).
+				return nil, fmt.Errorf("spiffe[%d]: expression %q: %w", i, rule.Expression, err)
+			}
+			programs = append(programs, program)
+		}
+		return &roleRules{spiffe: &spiffeRoleRules{trustDomain: admit.spiffe.trustDomain, programs: programs}}, nil
 	default:
 		rules := make([]serviceAccountRoleRules, 0, len(m.ServiceAccount))
 		for _, r := range m.ServiceAccount {
@@ -103,9 +177,9 @@ func (r *roleRules) rolesFor(claims jwt.MapClaims, subject string) []string {
 	if r.claim != nil {
 		roles = append(roles, claimRolesFor(r.claim, claims)...)
 	}
-	// r.spiffe's branch is deliberately absent here: see spiffeRoleRules' doc
-	// comment above. A configured Roles.SPIFFE contributes zero roles in this
-	// build.
+	if r.spiffe != nil {
+		roles = append(roles, spiffeRolesFor(r.spiffe, subject)...)
+	}
 	if len(r.serviceAccount) > 0 {
 		roles = append(roles, serviceAccountRolesFor(r.serviceAccount, claims, subject)...)
 	}
@@ -148,6 +222,63 @@ func claimRolesFor(rules *claimRoleRules, claims jwt.MapClaims) []string {
 	default:
 		return nil
 	}
+}
+
+// spiffeRolesFor evaluates each of rules' compiled CEL programs against the
+// verified SPIFFE ID's path (design §3.4). Trust domain is checked
+// structurally, before any program runs, against rules.trustDomain -- real,
+// parsed spiffeid.TrustDomain carried from setup, the same
+// parsed-not-string-matched discipline spiffeRules.admits already applies
+// (admit.go) -- never folded into the CEL expression itself (design §3.4's
+// "why trust-domain matching stays outside CEL"). This has to happen before
+// and separately from CEL because id.Path(), the only thing a program ever
+// sees, has already had the trust domain stripped out of it by the time it is
+// computed below: a rule expression structurally cannot scope on the trust
+// domain, correctly or incorrectly, because path never carries it. Checking
+// here first is what actually rejects a suffix-matching domain like
+// "spiffe://example.org.attacker.test/..." before any program runs; if this
+// check were ever dropped in favor of trusting an expression to scope itself,
+// there would be nothing in path for it to check against and every trust
+// domain would be admitted. subject is parsed a second time here,
+// independently of Admit's own parse of the same string: the bounded,
+// structural duplication design §3.2 accounts for explicitly rather than
+// threading a parsed spiffeid.ID through from admission.
+func spiffeRolesFor(rules *spiffeRoleRules, subject string) []string {
+	id, err := spiffeid.FromString(subject)
+	if err != nil {
+		return nil
+	}
+	if !id.MemberOf(rules.trustDomain) {
+		return nil
+	}
+	path := id.Path()
+	var roles []string
+	for _, program := range rules.programs {
+		if role, ok := evalSPIFFERoleExpression(program, path); ok {
+			roles = append(roles, role)
+		}
+	}
+	return roles
+}
+
+// evalSPIFFERoleExpression runs one compiled SPIFFERoleRule.Expression
+// program against path. Every failure mode -- an evaluation error (a
+// cost-limit trip, an out-of-range split index, any other runtime fault), a
+// non-string result, or an empty string -- returns ("", false): this rule
+// contributes nothing, never a panic and never a denied request (design
+// §3.4, §5). Config.Validate's ast.OutputType() check already guarantees the
+// static result type is string, so the type assertion here is defense in
+// depth, not the primary enforcement of that contract.
+func evalSPIFFERoleExpression(program cel.Program, path string) (string, bool) {
+	out, _, err := program.Eval(map[string]any{spiffeCELPathVar: path})
+	if err != nil {
+		return "", false
+	}
+	role, ok := out.Value().(string)
+	if !ok || role == "" {
+		return "", false
+	}
+	return role, true
 }
 
 // serviceAccountRolesFor derives roles from a PSAT's nested "kubernetes.io"
