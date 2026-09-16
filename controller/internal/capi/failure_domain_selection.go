@@ -8,7 +8,7 @@ import (
 )
 
 // FailureDomainSelectionAlgorithm selects a failure domain from the eligible
-// domains using the assignments of existing Machines.
+// domains using existing and reserved assignments.
 type FailureDomainSelectionAlgorithm func(eligibleDomains, assignments []string) (string, error)
 
 // LeastUsedFailureDomainSelection returns the eligible domain with the fewest

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -124,6 +125,7 @@ func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
 		context.Background(),
 		cluster,
 		nil,
+		ptr.To(""),
 	)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing control plane configuration ID")
@@ -155,7 +157,7 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil)
+	_, err := r.createPendingNode(context.Background(), cluster, nil, ptr.To(""))
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
 }
@@ -201,7 +203,7 @@ func TestCreatePendingNode_ProviderPayload(t *testing.T) {
 				},
 			}
 
-			_, err := r.createPendingNode(context.Background(), cluster, nil)
+			_, err := r.createPendingNode(context.Background(), cluster, nil, ptr.To(""))
 			require.NoError(t, err)
 			mockTx.AssertExpectations(t)
 		})

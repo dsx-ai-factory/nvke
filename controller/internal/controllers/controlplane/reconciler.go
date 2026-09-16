@@ -18,10 +18,14 @@ import (
 // reconciler reconciles control planes.
 // It is responsible for ensuring the control plane is healthy and that the control plane nodes are up to date.
 type reconciler struct {
-	cfg               config.Config
-	logger            *slog.Logger
-	db                db.Tx
-	cweTemporalClient client.Client
+	cfg                   config.Config
+	logger                *slog.Logger
+	db                    db.Tx
+	cweTemporalClient     client.Client
+	failureDomainSnapshot failureDomainSnapshot
+	domainAssignments     []string
+	unknownDomains        []string
+	retryFailureDomains   bool
 }
 
 func newReconciler(
@@ -29,12 +33,14 @@ func newReconciler(
 	logger *slog.Logger,
 	db db.Tx,
 	cweTemporalClient client.Client,
+	fdSnapshot failureDomainSnapshot,
 ) *reconciler {
 	return &reconciler{
-		cfg:               cfg,
-		logger:            logger,
-		db:                db,
-		cweTemporalClient: cweTemporalClient,
+		cfg:                   cfg,
+		logger:                logger,
+		db:                    db,
+		cweTemporalClient:     cweTemporalClient,
+		failureDomainSnapshot: fdSnapshot,
 	}
 }
 
@@ -48,6 +54,9 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	controlPlane, err := readControlPlane(ctx, r.db, cluster, r.cfg.UseControlPlaneControllerForControlPlane())
 	if err != nil {
 		return fmt.Errorf("reading control plane: %w", err)
+	}
+	if err := r.prepareFailureDomainAssignments(ctx, controlPlane); err != nil {
+		return fmt.Errorf("preparing control-plane failure-domain assignments: %w", err)
 	}
 
 	// The order below is deliberate: everything that does not change etcd

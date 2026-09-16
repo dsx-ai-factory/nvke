@@ -43,15 +43,23 @@ func (r *reconciler) scaleUp(
 
 	created := 0
 	for range count {
+		failureDomain, err := r.selectFailureDomain()
+		if err != nil {
+			return created, err
+		}
 		createdNode, err := r.createPendingNode(
 			ctx,
 			cluster,
 			existingNodeNames,
+			failureDomain,
 		)
 		if err != nil {
 			return created, err
 		}
 		existingNodeNames = append(existingNodeNames, createdNode.Name)
+		if *failureDomain != "" {
+			r.domainAssignments = append(r.domainAssignments, *failureDomain)
+		}
 		created++
 
 		r.logger.Info(
@@ -70,6 +78,7 @@ func (r *reconciler) createPendingNode(
 	ctx context.Context,
 	cluster db.Cluster,
 	existingNodeNames []string,
+	failureDomain *string,
 ) (db.Node, error) {
 	if cluster.ControlPlaneConfig.ConfigurationID == uuid.Nil {
 		return db.Node{}, fmt.Errorf("missing control plane configuration ID for pending control-plane node")
@@ -79,6 +88,7 @@ func (r *reconciler) createPendingNode(
 		ClusterID:                   cluster.ID,
 		ControlPlane:                true,
 		ControlPlaneConfigurationID: cluster.ControlPlaneConfig.ConfigurationID,
+		FailureDomain:               failureDomain,
 		Name:                        generateControlPlaneNodeName(existingNodeNames, cluster.Name, defaultControlPlaneNodePrefix),
 		Conditions: db.NodeConditions{
 			Pending:                 db.NewCondition(true, "Pending control-plane node provisioning"),

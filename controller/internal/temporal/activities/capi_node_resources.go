@@ -156,7 +156,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 	if spireJoinToken != "" {
 		machine.Annotations[constants.MachineAnnotationKeySpireAgentSpiffeIDPath] = spireAgentAlternateIDPath
 	}
-	if err := a.applyCAPIMachine(ctx, createCtx, machine); err != nil {
+	if err := a.applyCAPIMachine(ctx, machine); err != nil {
 		return err
 	}
 
@@ -221,7 +221,7 @@ func (a *Activities) createTemplateLessForgeCAPIMachineForNode(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	if err := a.applyCAPIMachine(ctx, createCtx, machine); err != nil {
+	if err := a.applyCAPIMachine(ctx, machine); err != nil {
 		return err
 	}
 

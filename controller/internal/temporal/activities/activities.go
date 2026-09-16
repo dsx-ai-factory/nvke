@@ -13,7 +13,6 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/agent"
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/spiffe"
@@ -30,7 +29,6 @@ type Activities struct {
 	trustDomain              string
 	controllerClientCABundle string
 	getTrustDomainBundle     trustDomainAndBundleGetter
-	failureDomainSelection   capi.FailureDomainSelectionAlgorithm
 }
 
 func NewActivities(
@@ -51,7 +49,6 @@ func NewActivities(
 		trustDomain:              trustDomain,
 		controllerClientCABundle: controllerClientCABundle,
 		getTrustDomainBundle:     spiffe.GetTrustDomainAndBundle,
-		failureDomainSelection:   capi.LeastUsedFailureDomainSelection,
 	}
 }
 
