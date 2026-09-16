@@ -266,12 +266,23 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 
 	kubeconfigOut := filepath.Join(t.TempDir(), "nke-site.kubeconfig")
 	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	spireEntriesDumped := false
 	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
 		siteSpec:        writeSiteSpec(t, validSiteSpec),
 		bootstrapRunner: runner,
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   kubeconfigOut,
 		lookPath:        runtimeOnPath,
+		dumpSpireEntries: func(_ context.Context, source, outputDir string) (int, error) {
+			spireEntriesDumped = true
+			if source == "" {
+				t.Error("source kubeconfig path is empty")
+			}
+			if outputDir != filepath.Dir(kubeconfigOut) {
+				t.Errorf("output directory = %q, want %q", outputDir, filepath.Dir(kubeconfigOut))
+			}
+			return 1, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -283,12 +294,63 @@ func TestRunBootstrapSiteCreatesTheCluster(t *testing.T) {
 	if !runner.sawArgs("delete", "cluster") {
 		t.Errorf("runBootstrapSite did not tear down the bootstrap kind cluster; calls: %v", runner.calls)
 	}
+	if !spireEntriesDumped {
+		t.Error("runBootstrapSite did not dump SPIRE bootstrap entries")
+	}
 	body, readErr := os.ReadFile(kubeconfigOut)
 	if readErr != nil {
 		t.Fatalf("no kubeconfig written for the finished cluster: %v", readErr)
 	}
 	if !strings.Contains(string(body), "kind: Config") {
 		t.Errorf("the written kubeconfig is not one: %q", body)
+	}
+}
+
+func TestRunBootstrapSiteRetainsBootstrapClusterWhenSpireEntryDumpFails(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	runner := &recordingRunner{next: fakeBootstrapRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner: runner,
+		cweRunner:       fakeCWERunner{},
+		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:        runtimeOnPath,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, errors.New("dump failed")
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "writing SPIRE bootstrap resources") {
+		t.Fatalf("error = %v, want SPIRE dump failure", err)
+	}
+	if runner.sawArgs("delete", "cluster") {
+		t.Error("bootstrap cluster was deleted after the SPIRE copy failed")
+	}
+}
+
+func TestRunBootstrapSiteSkipsSpireEntryDumpWhenMTLSDisabled(t *testing.T) {
+	setBootstrapEnv(t)
+	startFakeCWEAPI(t, true)
+
+	dumpCalled := false
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:        writeSiteSpec(t, validSiteSpec),
+		disableMTLS:     true,
+		bootstrapRunner: fakeBootstrapRunner{},
+		cweRunner:       fakeCWERunner{},
+		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
+		lookPath:        runtimeOnPath,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			dumpCalled = true
+			return 0, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("runBootstrapSite returned error: %v", err)
+	}
+	if dumpCalled {
+		t.Error("SPIRE entries were dumped with mTLS disabled")
 	}
 }
 
@@ -602,6 +664,9 @@ func TestRunBootstrapSite_DiagnosticsOnlyOnRealFailures(t *testing.T) {
 			cweRunner:       fakeCWERunner{},
 			kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 			lookPath:        runtimeOnPath,
+			dumpSpireEntries: func(context.Context, string, string) (int, error) {
+				return 0, nil
+			},
 		})
 		if err != nil {
 			t.Fatalf("runBootstrapSite returned error: %v", err)
@@ -726,6 +791,9 @@ func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 		lookPath:        runtimeOnPath,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)

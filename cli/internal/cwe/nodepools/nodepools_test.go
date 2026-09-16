@@ -51,10 +51,13 @@ func TestPatchNodePoolScales(t *testing.T) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
-	// The hint must not name a command that cannot show the result: the
-	// cluster table has no node pool columns and get nodepools does not exist.
-	if strings.Contains(out, "get clusters") || strings.Contains(out, "get nodepools") {
+	// The hint must point at the command that shows the result. The cluster
+	// table has no node pool columns, so it must not name that one.
+	if strings.Contains(out, "get clusters") {
 		t.Errorf("output points at a command that cannot show the change:\n%s", out)
+	}
+	if !strings.Contains(out, "get nodepools --cluster alpha") {
+		t.Errorf("output does not point at the command that shows the change:\n%s", out)
 	}
 
 	seen := fake.seen()

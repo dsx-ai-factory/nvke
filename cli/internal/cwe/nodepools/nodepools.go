@@ -78,10 +78,8 @@ exactly. See /api/docs on your site controller.`,
 				return err
 			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Node pool %q patched (id: %s)\n", updated.Name, updated.ID)
-			// No command to point at: the cluster table carries no node pool
-			// columns, api.Cluster carries no node pools to print with -o yaml,
-			// and get nodepools does not exist yet.
-			fmt.Fprintf(cmd.OutOrStdout(), "Update is async — CWE reconciles the pool towards it.\n")
+			fmt.Fprintf(cmd.OutOrStdout(),
+				"Update is async — run 'nkectl get nodepools --cluster %s' to check status.\n", clusterName)
 			return nil
 		},
 	}

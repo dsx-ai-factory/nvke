@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -1571,4 +1572,116 @@ To see the stack trace of this error execute with --v=5 or higher
 			t.Errorf("message is %d bytes; status fields should stay bounded", len(got))
 		}
 	})
+}
+
+func TestUpdateAndFetchKubeAdmJoinStrings(t *testing.T) {
+	const key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	const joinCmd = "kubeadm join 172.31.255.200:6443 --token abcdef.0123456789abcdef --discovery-token-ca-cert-hash sha256:deadbeef"
+	uploaded := "[upload-certs] Storing the certificates in Secret \"kubeadm-certs\" in the \"kube-system\" Namespace\n" +
+		"[upload-certs] Using certificate key:\n" + key + "\n"
+	// What kubeadm 1.36 prints when the phase runs without --config on a node
+	// whose default-route address is not in the apiserver certificate.
+	refused := "I0915 02:06:22.985721   10297 version.go:260] remote version is much newer: v1.37.0; falling back to: stable-1.36\n" +
+		"error: error execution phase upload-certs: could not bootstrap the admin user in file admin.conf: " +
+		"tls: failed to verify certificate: x509: certificate is valid for 172.31.1.11, not 192.168.200.3\n"
+
+	t.Log("Doing: pointing the agent at an init config on disk, as ExecuteKubeadmInit leaves it")
+	configPath := filepath.Join(t.TempDir(), "kubeadm-init-config.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte("apiVersion: kubeadm.k8s.io/v1beta4\nkind: InitConfiguration\n"), 0o600))
+	uploadArgs := []string{kubeadmCmdInit, kubeadmCmdPhase, "upload-certs", "--upload-certs", "--config", configPath}
+	tokenArgs := []string{"token", "create", "--print-join-command"}
+	reply := func(out string, err error) runFunc {
+		return func(string, []string, *nkeutils.CommandOptions) ([]byte, error) { return []byte(out), err }
+	}
+
+	tests := []struct {
+		name    string
+		runners []runner
+		wantErr string
+	}{
+		{
+			name: "passes the init config to upload-certs and returns the printed key",
+			runners: []runner{
+				runForCommand("kubeadm", uploadArgs, reply(uploaded, nil)),
+				runForCommand("kubeadm", tokenArgs, reply(joinCmd+"\n", nil)),
+			},
+		},
+		{
+			name:    "a failed upload-certs is an error, never a join string",
+			runners: []runner{runForCommand("kubeadm", uploadArgs, reply(refused, errors.New("exit status 1")))},
+			wantErr: "exit status 1",
+		},
+		{
+			name:    "output without a certificate key is an error",
+			runners: []runner{runForCommand("kubeadm", uploadArgs, reply(refused, nil))},
+			wantErr: "no certificate key",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := &NodeAgentServer{
+				Runner:         &MockRunner{Runners: tt.runners, Err: errors.New("unexpected command")},
+				FileWriter:     &MockFileWriter{},
+				Persister:      &MockPersister{},
+				NodeStatus:     &NodeStatus{Role: ControlPlaneRole},
+				initConfigPath: configPath,
+			}
+
+			t.Log("Doing: asking for fresh join strings")
+			resp, err := server.UpdateAndFetchKubeAdmJoinStrings(context.Background(), &pb.KubeadmJoinStringRequest{})
+
+			if tt.wantErr != "" {
+				t.Log("Testing: the RPC fails and no join string is recorded")
+				require.ErrorContains(t, err, tt.wantErr)
+				require.Nil(t, resp)
+				require.Empty(t, server.NodeStatus.JoinInfo.ControlPlaneJoinString)
+				return
+			}
+
+			t.Log("Testing: the control-plane join string carries the real key and the worker string the plain command")
+			require.NoError(t, err)
+			require.Equal(t, joinCmd+" --control-plane --certificate-key "+key, resp.GetControlplaneJoinString())
+			require.Equal(t, joinCmd, resp.GetWorkerJoinString())
+			require.Equal(t, resp.GetControlplaneJoinString(), server.NodeStatus.JoinInfo.ControlPlaneJoinString)
+		})
+	}
+}
+
+func TestExecuteKubeadmInitWithoutConfigRemovesStaleInitConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		staleFile bool
+	}{
+		{name: "a config left by an earlier custom init is removed", staleFile: true},
+		{name: "no config on disk is not an error", staleFile: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Log("Doing: pointing the agent at a config path that may hold a stale file")
+			configPath := filepath.Join(t.TempDir(), "kubeadm-init-config.yaml")
+			if tt.staleFile {
+				require.NoError(t, os.WriteFile(configPath, []byte("kind: InitConfiguration\n"), 0o600))
+			}
+
+			server := &NodeAgentServer{
+				Runner:         &MockRunner{Output: []byte(initOutput)},
+				FileWriter:     &MockFileWriter{},
+				Persister:      &MockPersister{},
+				NodeStatus:     &NodeStatus{Status: NotReadyStatus},
+				initConfigPath: configPath,
+			}
+
+			t.Log("Doing: running an argument-based init")
+			server.processKubeadmInit([]string{kubeadmCmdInit, "--upload-certs"}, &pb.KubeadmInitRequest{
+				PodNetworkCidr:       "10.244.0.0/16",
+				ControlPlaneEndpoint: "192.168.0.1:6443",
+				NoCniInstall:         true,
+			})
+
+			t.Log("Testing: no config is on disk for upload-certs to pick up, and the init succeeded")
+			_, err := os.Stat(configPath)
+			require.ErrorIs(t, err, fs.ErrNotExist)
+			require.Equal(t, ReadyStatus, server.NodeStatus.Status)
+		})
+	}
 }

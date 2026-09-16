@@ -63,7 +63,10 @@ nkectl patch cluster my-cluster --patch 'controlPlaneKubernetesVersion: 1.31.0'
 nkectl patch cluster my-cluster --patch-file patch.yaml
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
 
-# Node pool scaling
+# Node pools
+nkectl get nodepools                   # every pool on the site
+nkectl get nodepools --cluster <name>  # pools of one cluster
+nkectl get nodepools <name>... --cluster <name> -o yaml  # full detail for named pools
 nkectl patch nodepool <name> --cluster <name> --patch 'desiredNodeCount: 8'
 nkectl patch nodepool <name> --cluster <name> --patch-file patch.yaml
 ```
@@ -163,6 +166,13 @@ The cluster name SPIRE is told is the ephemeral cluster's own name, from
 `NKECTL_BOOTSTRAP_CLUSTER_NAME` — there is no separate SPIFFE variable for it,
 because the bootstrap cluster has one name and two ways to say it could only
 ever disagree.
+
+When SPIRE is enabled, `bootstrap site` exports the live `ClusterStaticEntry`
+CRD definition and CWE's cluster-scoped workload registration policy before it
+removes the bootstrap cluster. It writes `clusterstaticentry-crd.yaml` and
+`clusterstaticentries.yaml` in the same directory as the site kubeconfig. The
+files contain no source UIDs, resource versions, status, or other server-owned
+metadata.
 
 ### Bootstrap cluster and CWE
 

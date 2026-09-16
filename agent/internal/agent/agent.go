@@ -10,6 +10,7 @@ import (
 	"compress/gzip"
 	"context"
 	_ "embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -44,6 +45,8 @@ import (
 
 var (
 	KubeConfig = "/etc/kubernetes/admin.conf"
+	// kubeadmInitConfigPath is the InitConfiguration kubeadm init ran with; upload-certs must use the same one.
+	kubeadmInitConfigPath = "/tmp/kubeadm-init-config.yaml"
 	//go:embed rescan_mlx5.sh
 	mlx5RescanScript string
 )
@@ -76,8 +79,9 @@ const (
 	kubeSystemNamespace  = "kube-system"
 	kubeadmConfigMapName = "kubeadm-config"
 
-	kubeadmCmdInit = "init"
-	kubeadmCmdJoin = "join"
+	kubeadmCmdInit  = "init"
+	kubeadmCmdJoin  = "join"
+	kubeadmCmdPhase = "phase"
 
 	scriptStatusSuccess = "Success"
 
@@ -132,6 +136,7 @@ type NodeAgentServer struct {
 	drainKubeVipSocketQuietWindow  time.Duration       // overrides kube-vip socket quiet window in tests
 	staticPodStartTimeout          time.Duration       // overrides static-pod restore timeout in tests
 	certificateRenewalStopTimeout  time.Duration       // overrides certificate-renewal stop timeout in tests
+	initConfigPath                 string              // overrides kubeadmInitConfigPath in tests
 	certificateRenewalStartTimeout time.Duration       // overrides certificate-renewal start timeout in tests
 	certificateRenewalPollInterval time.Duration       // overrides certificate-renewal polling in tests
 	rebootLockPollInterval         time.Duration       // overrides the package-lock poll interval in tests
@@ -746,6 +751,7 @@ func kubeadmFailureMessage(err error, output []byte) string {
 	return "kubeadm init failed: " + best
 }
 
+// processKubeadmInit runs kubeadm init with args and records the outcome in the node status.
 func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitRequest) {
 	s.mu.Lock()
 	ns := *s.NodeStatus
@@ -761,7 +767,7 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 
 	if req.GetInitConfig() != "" {
 		slog.Info("using custom kubeadm init config")
-		configPath := "/tmp/kubeadm-init-config.yaml"
+		configPath := s.initConfigFile()
 		if err := s.FileWriter.WriteFile(configPath, []byte(req.GetInitConfig()), 0o644); err != nil {
 			ns.Status = ErrorStatus
 			ns.ErrorMessage = "failed to write init config file"
@@ -777,6 +783,11 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 			// are confirmed by the other preflight checks (CGROUPS_*, etc.) that do pass.
 			args = append(args, "--ignore-preflight-errors=SystemVerification")
 		}
+	} else if err := os.Remove(s.initConfigFile()); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		// A config left by an earlier custom init would otherwise be handed to upload-certs.
+		ns.Status = ErrorStatus
+		ns.ErrorMessage = "failed to remove stale init config file: " + err.Error()
+		return
 	}
 
 	// Before we run init, check to see if encryption is requested and set up the encryption-config file
@@ -1405,25 +1416,17 @@ func (s *NodeAgentServer) UpdateAndFetchKubeAdmJoinStrings(
 		)
 	}
 
-	output, err := s.Runner.Run(
-		"kubeadm",
-		[]string{"init", "phase", "upload-certs", "--upload-certs"},
-		&nkeutils.CommandOptions{},
-	)
+	newCert, err := s.uploadControlPlaneCerts()
 	if err != nil {
-		slog.Error("failed to upload new controlplane certs", "err", err, "output", string(output))
+		slog.Error("failed to upload new controlplane certs", "err", err)
+		return nil, err
 	}
 
-	splitStrings := strings.Split(string(output), "Using certificate key:\n")
-	newCert := strings.ReplaceAll(splitStrings[len(splitStrings)-1], "\n", "")
-
-	output, err = s.Runner.Run(
-		"kubeadm",
-		[]string{"token", "create", "--print-join-command"},
-		&nkeutils.CommandOptions{},
-	)
+	tokenArgs := []string{"token", "create", "--print-join-command"}
+	output, err := s.Runner.Run("kubeadm", tokenArgs, &nkeutils.CommandOptions{})
 	if err != nil {
 		slog.Error("failed to create new join string", "err", err, "output", string(output))
+		return nil, fmt.Errorf("kubeadm token create: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	newJoinString := strings.TrimSpace(string(output))
 
@@ -1441,6 +1444,40 @@ func (s *NodeAgentServer) UpdateAndFetchKubeAdmJoinStrings(
 		WorkerJoinString:       workerJoin,
 	}
 	return response, nil
+}
+
+// uploadControlPlaneCerts runs the kubeadm upload-certs phase and returns the certificate key it prints.
+func (s *NodeAgentServer) uploadControlPlaneCerts() (string, error) {
+	args := []string{kubeadmCmdInit, kubeadmCmdPhase, "upload-certs", "--upload-certs"}
+	configPath := s.initConfigFile()
+	if _, err := os.Stat(configPath); err == nil {
+		args = append(args, "--config", configPath)
+	}
+	cmd := "kubeadm " + strings.Join(args, " ")
+	output, err := s.Runner.Run("kubeadm", args, &nkeutils.CommandOptions{})
+	out := strings.TrimSpace(string(output))
+	if err != nil {
+		return "", fmt.Errorf("%s: %w: %s", cmd, err, out)
+	}
+	_, after, found := strings.Cut(out, "Using certificate key:")
+	fields := strings.Fields(after)
+	if !found || len(fields) == 0 {
+		return "", fmt.Errorf("%s: no certificate key in output: %s", cmd, out)
+	}
+	// kubeadm join applies the same check: the key is the hex encoding of a 32-byte AES key.
+	key, err := hex.DecodeString(fields[0])
+	if err != nil || len(key) != 32 {
+		return "", fmt.Errorf("%s: %q is not a 32-byte hex certificate key", cmd, fields[0])
+	}
+	return fields[0], nil
+}
+
+// initConfigFile returns the InitConfiguration file kubeadm init ran with.
+func (s *NodeAgentServer) initConfigFile() string {
+	if s.initConfigPath != "" {
+		return s.initConfigPath
+	}
+	return kubeadmInitConfigPath
 }
 
 func (s *NodeAgentServer) ExecuteScript(

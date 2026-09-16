@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,6 +25,7 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/cwedeploy"
 	"github.com/NVIDIA/nke/cli/internal/sitecluster"
 	"github.com/NVIDIA/nke/cli/internal/sitespec"
+	"github.com/NVIDIA/nke/cli/internal/spireentrydump"
 )
 
 const (
@@ -83,6 +85,11 @@ type bootstrapSiteOptions struct {
 	// Nil in production; tests set it to a fake for the same reason as
 	// bootstrapRunner above.
 	cweRunner cwedeploy.CommandRunner
+
+	// dumpSpireEntries overrides the SPIRE bootstrap-resource export. Nil uses
+	// a Kubernetes client built from the bootstrap kubeconfig; tests replace it
+	// to avoid contacting a real cluster.
+	dumpSpireEntries func(context.Context, string, string) (int, error)
 
 	// lookPath resolves the container runtime binary. Nil uses exec.LookPath;
 	// tests substitute it so they do not require a real nerdctl installation,
@@ -266,7 +273,32 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 			"(kubeconfig: %s); delete it after recovery with `%s`",
 			err, cluster.Name, cluster.KubeconfigPath, deleteCommand)
 	}
+	if err == nil && !cweCfg.DisableMTLS {
+		count, dumpErr := dumpSpireBootstrapEntries(
+			ctx, opts, cluster.KubeconfigPath, filepath.Dir(siteKubeconfigPath(inv.ClusterName, opts)),
+		)
+		if dumpErr != nil {
+			return fmt.Errorf("writing SPIRE bootstrap resources: %w", dumpErr)
+		}
+		logger.Info("wrote SPIRE bootstrap resources", "clusterStaticEntries", count)
+	}
 	return err
+}
+
+func dumpSpireBootstrapEntries(
+	ctx context.Context,
+	opts *bootstrapSiteOptions,
+	sourceKubeconfig string,
+	outputDir string,
+) (int, error) {
+	if opts.dumpSpireEntries != nil {
+		return opts.dumpSpireEntries(ctx, sourceKubeconfig, outputDir)
+	}
+	dumper, err := spireentrydump.New(sourceKubeconfig)
+	if err != nil {
+		return 0, err
+	}
+	return dumper.Dump(ctx, outputDir)
 }
 
 // createSiteCluster posts the cluster to CWE, waits for it to come up, and
@@ -337,10 +369,7 @@ func writeTenantKubeconfig(
 	opts *bootstrapSiteOptions,
 	logger *slog.Logger,
 ) error {
-	path := opts.kubeconfigOut
-	if path == "" {
-		path = clusterName + ".kubeconfig"
-	}
+	path := siteKubeconfigPath(clusterName, opts)
 
 	kubeconfig, err := cwedeploy.New(opts.cweRunner, logger).
 		TenantKubeconfig(ctx, bootstrapCluster.KubeconfigPath, clusterName, opts.kubeconfigTimeout)
@@ -355,6 +384,13 @@ func writeTenantKubeconfig(
 	fmt.Fprintf(os.Stdout, "\nCluster %q is ready. Talk to it with:\n  kubectl --kubeconfig %s get nodes\n",
 		clusterName, path)
 	return nil
+}
+
+func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
+	if opts.kubeconfigOut != "" {
+		return opts.kubeconfigOut
+	}
+	return clusterName + ".kubeconfig"
 }
 
 // envDurationOrDefault reads a duration from the environment, falling back to a
