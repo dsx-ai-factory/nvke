@@ -31,8 +31,8 @@ import (
 // without the release binary depending on it. The trade is that a bundle
 // hand-edited in a cluster is not re-checked — see the design's open questions.
 //
-// Both engines are covered, because what is validated is the bundle, not the
-// engine that will read it.
+// What is validated is the bundle's shared artifacts — the schema, the
+// policies, the entities — not the engine that will read them.
 
 func validator(t *testing.T) *validate.Validator {
 	t.Helper()
@@ -122,7 +122,7 @@ func TestEveryEntityConformsToTheSchema(t *testing.T) {
 // This is the join between three generated things: the action table drives the
 // query, the schema declares what an action applies to, and both come out of the
 // same pass over api/openapi.yaml. A resource type derived one way and declared
-// another shows up here and nowhere else — the engines would simply deny.
+// another shows up here and nowhere else — the engine would simply deny.
 func TestEveryOperationProducesAValidRequest(t *testing.T) {
 	v := validator(t)
 

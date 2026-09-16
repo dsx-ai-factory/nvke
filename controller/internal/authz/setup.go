@@ -38,12 +38,11 @@ func (o Options) engine() (Authorizer, error) {
 // Provider is a validated authorization configuration waiting for the mux.
 //
 // It exists because the two halves of setting this up happen at different
-// times. Validating the endpoint and gating on the policy engine holding a
-// bundle should happen early — before the database migrations, so a bad
-// configuration costs a restart rather than a migrated schema — but the
-// middleware cannot be built until internal/server has constructed the mux it
-// resolves routes against. Setup does the first half; Middleware does the
-// second.
+// times. Building the policy engine and gating on it holding a bundle should
+// happen early — before the database migrations, so a bad configuration costs
+// a restart rather than a migrated schema — but the middleware cannot be built
+// until internal/server has constructed the mux it resolves routes against.
+// Setup does the first half; Middleware does the second.
 type Provider struct {
 	authorizer Authorizer
 	mode       Mode
@@ -75,7 +74,6 @@ func Setup(ctx context.Context, opts Options, logger *slog.Logger) (*Provider, e
 	if opts.Permissive {
 		mode = ModePermissive
 	}
-	authzLogger := logger.With("logger", "authz")
 
 	// A belt-and-braces check on an invariant NewLocal already enforces. It
 	// costs nothing and it is the one place that would notice if a future engine
@@ -96,7 +94,7 @@ func Setup(ctx context.Context, opts Options, logger *slog.Logger) (*Provider, e
 	return &Provider{
 		authorizer: engine,
 		mode:       mode,
-		logger:     authzLogger,
+		logger:     logger.With("logger", "authz"),
 		record:     opts.Recorder,
 	}, nil
 }

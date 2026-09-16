@@ -47,13 +47,11 @@ type recorded struct {
 func harness(t *testing.T, authorizer Authorizer, mode Mode) (http.Handler, *bool, *[]recorded) {
 	t.Helper()
 
+	// mux exists only so NewResolver has routes to match against; the
+	// middleware wraps a separate handler below, so these bodies never run.
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/clusters/{clusterID}", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	mux.HandleFunc("GET /api/clusters", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
+	mux.HandleFunc("GET /api/clusters/{clusterID}", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("GET /api/clusters", func(http.ResponseWriter, *http.Request) {})
 
 	resolver, err := NewResolver(mux)
 	require.NoError(t, err)

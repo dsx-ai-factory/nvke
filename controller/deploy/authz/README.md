@@ -27,7 +27,7 @@ type-check the bundle: `policy_validation_test.go` feeds it to cedar-go's
 validator and rejects a policy that names an action or entity type that does not
 exist, reads an undeclared attribute, applies an action to the wrong resource
 type, or compares a value against the wrong type. It also checks that every one
-of the 26 operations produces a request the schema accepts.
+of the 22 operations produces a request the schema accepts.
 
 That runs in tests only, deliberately: the validator lives under `x/exp` and a
 build-time check gets the benefit without the release binary depending on

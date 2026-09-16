@@ -73,10 +73,10 @@ const (
 	CollectionType = "NKE::Collection"
 
 	// ContextKeyIssuer and ContextKeyMethod are the keys of the Cedar context
-	// record. Shared because three things have to agree on them: both engines
-	// build the record, and hack/gen-authz-actions declares them in the schema.
-	// A policy reading a key nobody sets is caught by validation, but only if
-	// the spellings match here first.
+	// record. Shared because two things have to agree on them: Local builds the
+	// record, and hack/gen-authz-actions declares them in the schema. A policy
+	// reading a key nobody sets is caught by validation, but only if the
+	// spellings match here first.
 	ContextKeyIssuer = "issuer"
 	ContextKeyMethod = "method"
 )
