@@ -37,11 +37,12 @@ name: OS Image Artifact
 #   oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:v0.1.0-amd64 --platform linux/amd64
 #
 # arm64 only builds the non-FDE variant for now (see the matrix below) --
-# there is no os-image-fde-arm64 tag yet. The arm64 leg runs natively on the
-# org's arm64 runner pool (linux-arm64-cpu16), not under cross-arch emulation. It also only publishes to GHCR, not
-# the GitHub Release: the release step runs on the amd64 leg only, unchanged
-# from before this matrix existed, since restructuring release-asset
-# attachment to fan in across matrix legs is its own separate piece of work.
+# there is no os-image-fde-arm64 tag yet. The arm64 leg runs on the self-hosted
+# fleet from NVIDIA-dev/nke-gha-runners, which has /dev/kvm. It also only
+# publishes to GHCR, not the GitHub Release: the release step runs on the amd64
+# leg only, unchanged from before this matrix existed, since restructuring
+# release-asset attachment to fan in across matrix legs is its own separate
+# piece of work.
 #
 # Distinct from image.yml, which compiles controller Dockerfiles and pushes
 # nothing. Distinct from image-nvcr.yml, which publishes the controller
@@ -51,6 +52,13 @@ on:
     tags:
       - "os-image/v[0-9]+.[0-9]+.[0-9]+"
       - "os-image/v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+    # The mirror branch, not pull_request: self-hosted runners get no
+    # pull_request events. Path-filtered, because a full bake is not cheap.
+    branches:
+      - "pull-request/[0-9]+"
+    paths:
+      - "os-image/**"
+      - .github/workflows/os-image-artifact.yml
   workflow_dispatch:
     inputs:
       dry_run:
@@ -58,6 +66,15 @@ on:
         required: false
         default: false
         type: boolean
+      arch:
+        description: "Which legs to build. A tag always builds both; this only applies to a manual run."
+        required: false
+        default: both
+        type: choice
+        options:
+          - both
+          - amd64
+          - arm64
 
 permissions: {}
 
@@ -78,30 +95,44 @@ env:
   REPO_NON_FDE: ghcr.io/dsx-ai-factory/nke/os-image-non-fde
 
 jobs:
+  matrix:
+    if: github.repository == 'dsx-ai-factory/nke'
+    name: Pick the legs to build
+    runs-on: ubuntu-latest
+    outputs:
+      legs: ${{ steps.pick.outputs.legs }}
+    steps:
+      - name: Pick
+        id: pick
+        env:
+          # Empty on a tag push, so a tag builds both.
+          WANT: ${{ github.event.inputs.arch }}
+        run: |
+          set -euo pipefail
+          amd64='{"arch":"amd64","runner":"linux-amd64-gpu-l4-latest-1","timeout_minutes":180,"build_fde":true}'
+          # Scale set on the self-hosted fleet; the name is the size,
+          # 8 vCPU and 16 GiB. linux-arm64-cpu16 has no /dev/kvm.
+          arm64='{"arch":"arm64","runner":"nke-arm64-8c16g","timeout_minutes":180,"build_fde":false}'
+          case "${WANT:-both}" in
+            amd64) legs="[${amd64}]" ;;
+            arm64) legs="[${arm64}]" ;;
+            *)     legs="[${amd64},${arm64}]" ;;
+          esac
+          echo "legs=${legs}" >> "$GITHUB_OUTPUT"
+          echo "building: ${legs}"
+
   publish:
+    needs: matrix
     if: github.repository == 'dsx-ai-factory/nke'
     name: Build, verify, and release (${{ matrix.arch }})
-    # Each leg runs on its own architecture. The arm64 leg used to cross-build
-    # on the amd64 runner under QEMU tcg and never finished: both attempts for
-    # os-image/v0.1.0-rc.1 spent 2 h reaching 82 min of guest uptime with the
-    # live installer still starting snapd and subiquity. On the arm64 pool
-    # (linux-arm64-cpu16, where NICo E2E's arm64 leg already runs) the host
-    # arch matches the guest, so packer/Makefile picks KVM when /dev/kvm is
-    # present and same-arch tcg otherwise -- either is far faster than
-    # cross-arch emulation. build_fde is false for arm64: this is a first pass
-    # at arm64 support, not full parity -- see the header comment above.
+    # Both legs need /dev/kvm; the "matrix" job picks them. The arm64 leg
+    # never finished under tcg, on the amd64 runner or on linux-arm64-cpu16,
+    # which has no /dev/kvm either (#730, #731, #733, #734). build_fde stays
+    # false for arm64 -- see the header comment above.
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: amd64
-            runner: linux-amd64-gpu-l4-latest-1
-            timeout_minutes: 180
-            build_fde: true
-          - arch: arm64
-            runner: linux-arm64-cpu16
-            timeout_minutes: 300
-            build_fde: false
+        include: ${{ fromJSON(needs.matrix.outputs.legs) }}
     # amd64 requires KVM; the arm64 pool falls back to same-arch TCG.
     # The "Enable KVM access" step below enforces this per architecture.
     runs-on: ${{ matrix.runner }}
@@ -112,11 +143,8 @@ jobs:
     # out (https://github.com/NVIDIA/nke/actions/runs/34525233526) for a
     # cause not yet root-caused -- see #695 for one confirmed contributor
     # (a bloated golden image) and the self-timeout + console-log dump on
-    # the build steps below for diagnosing the next one. arm64: the pool has
-    # no /dev/kvm, so the non-FDE bake runs under same-arch tcg at roughly
-    # 10x the KVM pace: ~140 min install, ~15 min provisioning, up to 40 min
-    # boot-smoke, plus compress -- bumped from 240m to 300m alongside amd64
-    # for the same reason; 300m leaves ~1 h of headroom.
+    # the build steps below for diagnosing the next one. arm64: 180m now it
+    # runs under KVM, down from 300m when it was emulated.
     timeout-minutes: ${{ matrix.timeout_minutes }}
     permissions:
       contents: write
@@ -220,28 +248,20 @@ jobs:
           qemu-img --version | head -1
           swtpm --version
 
-      # A gate on the amd64 leg: that runner label is chosen specifically for
-      # /dev/kvm (see the comment on runs-on above). A missing device there
-      # means something about the runner pool changed and every subsequent
-      # step would silently fall back to tcg (packer/Makefile and
-      # boot-smoke.sh both probe and fall back on their own) -- better to fail
-      # here in seconds than rediscover it 1-2 hours into a tcg bake. Same
-      # pattern NVIDIA/OpenShell uses for its own KVM-backed e2e VM tests. On
-      # the arm64 leg a missing device is a warning, not a failure: same-arch
-      # tcg completes there, just slower.
+      # Both legs are on labels chosen for /dev/kvm. Without it every later
+      # step falls back to tcg on its own, so fail here in seconds rather
+      # than hours into a bake. arm64 used to warn instead, which is how it
+      # burned 2 to 5 hours per run and never finished.
       - name: Enable KVM access
         run: |
           set -euo pipefail
           if [[ ! -c /dev/kvm ]]; then
-            if [[ "${{ matrix.arch }}" == "amd64" ]]; then
-              echo "::error::This runner did not expose /dev/kvm (expected on linux-amd64-gpu-l4-latest-1)"
-              lscpu
-              grep -m1 -E '^(flags|Features)' /proc/cpuinfo || true
-              ls -la /dev
-              exit 1
-            fi
-            echo "::warning::/dev/kvm is missing on this ${{ matrix.arch }} runner; the bake falls back to same-arch tcg"
-            exit 0
+            echo "::error::This runner did not expose /dev/kvm (${{ matrix.arch }} leg)"
+            echo "::error::Without it the bake falls back to tcg, which has never finished for arm64."
+            lscpu
+            grep -m1 -E '^(flags|Features)' /proc/cpuinfo || true
+            ls -la /dev
+            exit 1
           fi
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -414,8 +434,13 @@ jobs:
       # `oras pull --platform linux/${{ matrix.arch }}` cannot select this disk.
       # Tags are arch-suffixed (see this workflow's header comment) rather
       # than one multi-platform manifest shared across matrix legs.
+      # A pull-request branch must never publish. Its inputs are empty, so
+      # dry_run alone would read as "not a dry run" and push.
       - name: Push the qcow2s to GHCR
-        if: github.event.inputs.dry_run != 'true'
+        if: >-
+          github.event.inputs.dry_run != 'true' &&
+          (startsWith(github.ref, 'refs/tags/os-image/') ||
+           github.event_name == 'workflow_dispatch')
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           ALIASES: ${{ steps.meta.outputs.aliases }}
@@ -450,7 +475,10 @@ jobs:
           done
 
       - name: Show published manifests
-        if: github.event.inputs.dry_run != 'true'
+        if: >-
+          github.event.inputs.dry_run != 'true' &&
+          (startsWith(github.ref, 'refs/tags/os-image/') ||
+           github.event_name == 'workflow_dispatch')
         run: |
           set -euo pipefail
           oras manifest fetch --pretty "${REPO_NON_FDE}:sha-${GITHUB_SHA}-${{ matrix.arch }}"
