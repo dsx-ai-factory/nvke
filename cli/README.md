@@ -70,7 +70,7 @@ nkectl get nodepools --cluster <name>  # pools of one cluster
 nkectl get nodepools <name>... --cluster <name> -o yaml  # full detail for named pools
 nkectl patch nodepool <name> --cluster <name> --patch 'desiredNodeCount: 8'
 nkectl patch nodepool <name> --cluster <name> --patch-file patch.yaml
-nkectl delete nodepool <name> --cluster <name>  # deletes immediately; there is no prompt
+nkectl delete nodepool <name> --cluster <name>
 ```
 
 ## Authenticating to CWE

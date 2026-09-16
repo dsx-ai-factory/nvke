@@ -219,11 +219,10 @@ nkectl delete nodepool <nodepool-name> --cluster <cluster-name>
 ```
 
 Node pool names are unique within a cluster, so `--cluster` is what decides
-which pool is resolved, the same as `patch nodepool`. Deletion is asynchronous
-and the nodes are drained before removal; run `nkectl get nodepools --cluster
-<cluster-name>` to check on it. There is no confirmation prompt. Deleting the
-last joined control-plane node pool of a cluster is rejected with CWE's own
-message — delete the cluster instead.
+which pool is resolved. Deletion is asynchronous and the nodes are drained
+before removal; run `nkectl get nodepools --cluster <cluster-name>` to check
+on it. Deleting the last joined control-plane node pool of a cluster is
+rejected with CWE's own message — delete the cluster instead.
 
 ### 13. Delete the tenant cluster
 
