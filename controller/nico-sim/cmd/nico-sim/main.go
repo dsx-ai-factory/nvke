@@ -32,7 +32,7 @@ func main() {
 	var logHandler slog.Handler
 	switch nvmconfig.ParseLogFormat() {
 	case nvmconfig.LogFormatText:
-		logHandler = tint.NewHandler(os.Stdout, &tint.Options{
+		logHandler = tint.NewTextHandler(os.Stdout, &tint.Options{
 			Level:      slog.LevelInfo,
 			TimeFormat: time.TimeOnly,
 			NoColor:    os.Getenv("NO_COLOR") != "",

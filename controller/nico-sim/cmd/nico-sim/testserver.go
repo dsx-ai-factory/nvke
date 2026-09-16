@@ -44,7 +44,7 @@ func runTestServer() {
 	var logHandler slog.Handler
 	switch nvmconfig.ParseLogFormat() {
 	case nvmconfig.LogFormatText:
-		logHandler = tint.NewHandler(os.Stderr, &tint.Options{
+		logHandler = tint.NewTextHandler(os.Stderr, &tint.Options{
 			Level:      slog.LevelInfo,
 			TimeFormat: time.TimeOnly,
 			NoColor:    os.Getenv("NO_COLOR") != "",
