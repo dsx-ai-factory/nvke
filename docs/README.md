@@ -34,7 +34,6 @@ indexes both.
 | [site-bootstrap/pre-provisioned-nodes.md](site-bootstrap/pre-provisioned-nodes.md) | Using hosts that are already provisioned |
 | [site-bootstrap/custom-base-os.md](site-bootstrap/custom-base-os.md) | Running on a base OS other than the reference image |
 | [site-bootstrap/deploy-repository.md](site-bootstrap/deploy-repository.md) | The deploy repository and what it holds |
-| [site-bootstrap/dsx-identity-spire.md](site-bootstrap/dsx-identity-spire.md) | Replacing bootstrap SPIRE with the DSX Identity server |
 | [../cli/docs/sitespec.md](../cli/docs/sitespec.md) | Every field of the site spec file, with its type |
 
 ## Running tenant clusters

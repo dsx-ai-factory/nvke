@@ -31,6 +31,7 @@ site kubeconfig:
 | File | Purpose |
 |---|---|
 | `<cluster>.kubeconfig` | Administrator access to the site controller cluster |
+| `clusterstaticentry-crd.yaml` | The CRD definition from the bootstrap cluster |
 | `clusterstaticentries.yaml` | Sanitized workload registration resources |
 
 The exported resources do not contain Kubernetes UIDs, resource versions,
@@ -39,7 +40,7 @@ status, SPIRE agent records, the SPIRE datastore, or CA private keys.
 You also need:
 
 - the `dsx-identity` Helm chart and its locked dependencies;
-- the SPIRE VIP and port already configured on every host agent;
+- a SPIRE server address and port that every host can reach;
 - the TPM endorsement-key hash for each host;
 - the site spec used for bootstrap;
 - the CA certificate and private key named by `spire.caCertFile` and
@@ -52,16 +53,6 @@ identity migration and is outside this runbook.
 
 Use a supported Kubernetes version for the selected `dsx-identity` chart
 release. The current chart requirements are in the chart README.
-
-The DSX Identity chart must install a compatible `ClusterStaticEntry` CRD. Do
-not use the CRD exported from the bootstrap Kind cluster as an installation
-step. If the selected chart does not include the CRD, fix or replace the chart
-before you continue.
-
-The bootstrap Kind cluster normally exists only for the bootstrap. For the
-first cutover at a site, run bootstrap with `--keep-bootstrap-cluster`. Keep
-that cluster intact until the DSX Identity server, agent attestation, workload
-SVIDs, and authenticated CWE calls are validated.
 
 ## Set command variables
 
@@ -78,15 +69,13 @@ export SITE_SPEC=/secure/path/inventory.yaml
 export SPIRE_TRUST_DOMAIN=<value-of-spire.trustDomain>
 export SPIRE_CA_CERT_FILE=<value-of-spire.caCertFile>
 export SPIRE_CA_KEY_FILE=<value-of-spire.caKeyFile>
-export SPIRE_VIP=<same-vip-already-configured-on-host-agents>
-export SPIRE_PORT=<same-port-already-configured-on-host-agents>
-export BOOTSTRAP_KIND_CLUSTER=<bootstrap-kind-cluster-name>
 ```
 
 Confirm that the command context and exported files are correct:
 
 ```bash
 kubectl --kubeconfig "${SITE_KUBECONFIG}" get nodes
+test -s "${BOOTSTRAP_ARTIFACT_DIR}/clusterstaticentry-crd.yaml"
 test -s "${BOOTSTRAP_ARTIFACT_DIR}/clusterstaticentries.yaml"
 test -s "${SITE_SPEC}"
 test -s "${SPIRE_CA_CERT_FILE}"
@@ -225,12 +214,44 @@ kataSupport:
 ```
 
 This profile is for the SPIRE replacement exercise. Enable the other DSX
-Identity components only after you provide their required secrets, services,
-and values.
+Identity components only after you provide their required secrets, CRDs,
+services, and values.
 
 For a disposable test cluster without a default storage class, the verified
 exercise used `persistence.type: emptyDir`. Do not use `emptyDir` for a
 production server because a Pod replacement removes the SPIRE datastore.
+
+## Install the CRD
+
+Apply the CRD that bootstrap exported. Do this before Helm starts the SPIRE
+controller manager.
+
+```bash
+kubectl --kubeconfig "${SITE_KUBECONFIG}" apply \
+  -f "${BOOTSTRAP_ARTIFACT_DIR}/clusterstaticentry-crd.yaml"
+
+kubectl --kubeconfig "${SITE_KUBECONFIG}" wait \
+  --for=condition=Established \
+  crd/clusterstaticentries.spire.spiffe.io \
+  --timeout=60s
+```
+
+If the cluster already has this CRD, compare the served and storage versions
+before you apply the exported definition. Do not replace a newer incompatible
+CRD with an older definition.
+
+## Stop an old in-cluster SPIRE controller
+
+Skip this section when the site cluster does not run another SPIRE server or
+controller manager.
+
+Do not let two SPIRE controller managers process the same
+`spire-mgmt-spire` class. Stop the old controller before the new controller
+starts. Keep the old server, datastore, CA, and release available for rollback.
+
+The exact scale command depends on the old release. Record its current replica
+count and scale its server workload to zero. Do not delete the
+`ClusterStaticEntry` CRD or the exported files.
 
 ## Install DSX Identity
 
@@ -270,35 +291,14 @@ kubectl --kubeconfig "${SITE_KUBECONFIG}" \
   get pods -l app.kubernetes.io/component=server
 ```
 
-Confirm that the chart installed its `ClusterStaticEntry` CRD. Stop if the CRD
-is absent. Do not apply the copy exported from the bootstrap cluster.
-
-```bash
-kubectl --kubeconfig "${SITE_KUBECONFIG}" wait \
-  --for=condition=Established \
-  crd/clusterstaticentries.spire.spiffe.io \
-  --timeout=60s
-```
-
 ## Publish a host-reachable SPIRE endpoint
 
-Host agents must continue to use the SPIRE VIP and port that they received
-before bootstrap. Do not change their configuration during the cutover.
+The chart's default SPIRE Service is a `ClusterIP`. Host agents cannot use that
+address. Publish the service through the site load balancer or another approved
+host-reachable method.
 
-Deploy kube-vip, or the site's equivalent VIP manager, on the site cluster.
-Configure it to manage `${SPIRE_VIP}` in service mode and to advertise that
-address with the site's supported L2 or BGP method. Use a pinned, approved
-kube-vip manifest. The address must be reserved for SPIRE and must not be
-allocated to another Service.
-
-Only one cluster can advertise the VIP. If the bootstrap Kind cluster was
-retained, withdraw its VIP advertisement immediately before the site cluster
-starts to advertise the address. Keep the Kind cluster and its SPIRE state
-intact so you can restore its advertisement for rollback.
-
-Create a `LoadBalancer` Service that requests the existing SPIRE VIP. If the
-selected VIP manager uses an annotation instead of `loadBalancerIP`, use its
-documented equivalent.
+The following NodePort service matches the verified test environment. Replace
+the port when the site reserves another value.
 
 ```yaml
 apiVersion: v1
@@ -307,48 +307,38 @@ metadata:
   name: dsx-identity-server-external
   namespace: dsx-identity
 spec:
-  type: LoadBalancer
-  loadBalancerIP: <same-spire-vip>
+  type: NodePort
   selector:
     app.kubernetes.io/name: server
     app.kubernetes.io/instance: dsx-identity
   ports:
     - name: grpc
       protocol: TCP
-      port: <same-spire-port>
+      port: 8081
       targetPort: grpc
+      nodePort: 30082
 ```
 
-Substitute the configured VIP and port, apply the Service, and confirm that the
-VIP manager assigned the exact requested address:
+Apply the service and confirm that it has an endpoint:
 
 ```bash
-sed -e "s/<same-spire-vip>/${SPIRE_VIP}/" \
-  -e "s/<same-spire-port>/${SPIRE_PORT}/" \
-  spire-endpoint.yaml | \
-  kubectl --kubeconfig "${SITE_KUBECONFIG}" apply -f -
+kubectl --kubeconfig "${SITE_KUBECONFIG}" apply -f spire-endpoint.yaml
 kubectl --kubeconfig "${SITE_KUBECONFIG}" \
   --namespace "${DSX_IDENTITY_NAMESPACE}" \
-  get service dsx-identity-server-external \
-  -o wide
+  get service dsx-identity-server-external
 kubectl --kubeconfig "${SITE_KUBECONFIG}" \
   --namespace "${DSX_IDENTITY_NAMESPACE}" \
   get endpointslice \
   -l kubernetes.io/service-name=dsx-identity-server-external
-test "$(kubectl --kubeconfig "${SITE_KUBECONFIG}" \
-  --namespace "${DSX_IDENTITY_NAMESPACE}" \
-  get service dsx-identity-server-external \
-  -o jsonpath='{.status.loadBalancer.ingress[0].ip}')" = "${SPIRE_VIP}"
 ```
 
-The Service `EXTERNAL-IP` must equal `${SPIRE_VIP}`. From a host network, test
-TCP connectivity to `${SPIRE_VIP}:${SPIRE_PORT}`. The VIP manager must move or
-re-advertise the address after a control-plane node failure.
+In the verified Colossus exercise, agents used a control-plane node address and
+NodePort `30082`. Production sites must use an address whose ownership and
+routing survive a control-plane node failure.
 
 ## Restore the workload registrations
 
-Apply the exported entries after the chart-provided CRD and controller manager
-are ready:
+Apply the exported entries after the CRD and controller manager are ready:
 
 ```bash
 kubectl --kubeconfig "${SITE_KUBECONFIG}" apply \
@@ -372,6 +362,52 @@ kubectl --kubeconfig "${SITE_KUBECONFIG}" \
 Do not copy `status`, Kubernetes UIDs, resource versions, or SPIRE entry IDs
 from the old cluster. The exported file intentionally omits them.
 
+## Point each existing host agent at the new server
+
+Perform this step on every site host. Use the site's normal configuration
+management system when one is available.
+
+1. Back up the current agent configuration and public trust bundle.
+2. Confirm that the configured trust bundle contains the CA certificate used
+   for bootstrap. Do not replace it.
+3. Set `server_address` to the published address.
+4. Set `server_port` to the published port.
+5. Keep the site-spec trust domain unchanged.
+6. Set `rebootstrap_mode = "always"` so the agent can attest to the fresh
+   server.
+7. Restart the existing SPIRE agent service.
+
+The relevant configuration must have this shape:
+
+```hcl
+agent {
+  server_address = "<host-reachable-spire-address>"
+  server_port = "<host-reachable-spire-port>"
+  trust_domain = "<value-of-spire.trustDomain>"
+  rebootstrap_mode = "always"
+  trust_bundle_path = "/etc/spire-agent/trust-bundle.pem"
+}
+```
+
+Do not change the TPM node-attestor plugin or its state during this procedure.
+
+Restart and inspect the agent:
+
+```bash
+sudo systemctl restart spire-agent
+sudo systemctl status spire-agent --no-pager
+sudo journalctl --unit spire-agent --since -5m --no-pager
+```
+
+Use the actual unit name if the image uses another name. Restart `nke-agent`
+after the SPIRE agent is healthy if `nke-agent` does not refresh its Workload
+API connection:
+
+```bash
+sudo systemctl restart nke-agent
+sudo journalctl --unit nke-agent --since -5m --no-pager
+```
+
 ## Verify attestation and workload SVIDs
 
 List the newly attested agents from the server Pod:
@@ -385,9 +421,7 @@ kubectl --kubeconfig "${SITE_KUBECONFIG}" \
 ```
 
 The list must contain one active agent for each expected TPM hash. The agent
-SPIFFE IDs must use `spire.trustDomain` from the site spec. The agents must
-reconnect and re-attest without a configuration change because the VIP, port,
-trust domain, and public trust bundle did not change.
+SPIFFE IDs must use `spire.trustDomain` from the site spec.
 
 On each host, ask the local Workload API for the root-owned workload SVID:
 
@@ -407,40 +441,30 @@ Confirm all of these conditions:
 
 ## Complete or roll back the cutover
 
-For the first bootstrap at a site, preserve the bootstrap Kind cluster with
-`--keep-bootstrap-cluster`. Do not delete it merely because the DSX Identity
-server started. Delete it only after every host has attested, every required
-workload has obtained its SVID, and CWE has completed authenticated calls to
-all `nke-agent` instances.
-
-After successful validation, delete the retained cluster with the same runtime
-provider used to create it:
-
-```bash
-KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster \
-  --name "${BOOTSTRAP_KIND_CLUSTER}"
-```
+Remove the old SPIRE release only after every host has attested and obtained its
+workload SVID from the DSX Identity server. Do not delete the shared CRD when
+you remove the old release.
 
 For rollback:
 
-1. Withdraw `${SPIRE_VIP}` from the site cluster. Stop its kube-vip Service
-   advertisement before the old environment advertises it.
-2. Restore the bootstrap Kind cluster's advertisement of the same VIP.
-3. Confirm that the VIP resolves to the bootstrap SPIRE server.
-4. Confirm that agents and workloads reconnect without configuration changes.
-5. Keep the exported entry file for the next cutover attempt.
+1. Stop the DSX Identity SPIRE controller manager if it conflicts with the old
+   class owner.
+2. Restore the old agent server address, port, and trusted CA bundle.
+3. Restart the existing host SPIRE agents.
+4. Confirm that agents and workloads reconnect to the old server.
+5. Keep the exported CRD and entry files for the next cutover attempt.
 
-After the bootstrap Kind cluster is deleted, rollback requires a tested backup
-of its SPIRE state and the ability to restore its VIP advertisement.
+Rollback is not possible after the old server state and CA have been removed
+unless the site has a tested backup of both.
 
 ## Common failures
 
 | Symptom | Check |
 |---|---|
 | Agent reports an unknown authority | The new server is not chaining to the CA bundle used for bootstrap, or the host bundle changed. Stop and compare the CA certificate digest. |
-| Agent cannot connect | Confirm the VIP and port, firewall, Service endpoints, host-to-cluster routing, and kube-vip advertisement. |
-| VIP moves between old and new servers | Both clusters advertise the address. Withdraw one advertisement before enabling the other. |
+| Agent cannot connect | Confirm the published address, port, firewall, Service endpoints, and host-to-cluster routing. |
 | TPM attestation is rejected | Confirm that the host TPM EK hash is in `nodeAttestor.tpmDirect.hashes`. |
 | Entry exists but no workload SVID is issued | Confirm `spec.className`, `spec.parentID`, selectors, controller-manager logs, and agent attestation. |
 | Controller ignores every exported entry | Set `controllerManager.className` to `spire-mgmt-spire`, or to the exact class in the exported objects. |
 | Server loses registrations after a restart | Do not use `emptyDir`. Use a PVC or an external supported datastore. |
+| `nke-agent` still uses an old certificate | Confirm the local agent is healthy, then restart `nke-agent` and inspect its journal. |
