@@ -165,6 +165,12 @@ func TestEveryDeclaredRoleIsNamedByAPolicy(t *testing.T) {
 	source, err := os.ReadFile(filepath.Join(dir, policiesFile))
 	require.NoError(t, err)
 
+	// Regex over the raw policy source, like roleRef everywhere else in this
+	// file — which means a role name that only appears in a *comment* counts as
+	// "named" too. That is a known, accepted limitation of a CI-only test: it
+	// can be fooled by a comment that happens to spell a role, and it is not
+	// worth a real Cedar parse to close a gap this narrow. Do not be surprised
+	// that it is not caught here.
 	named := map[string]bool{}
 	for _, m := range roleRef.FindAllStringSubmatch(string(source), -1) {
 		named[m[1]] = true
@@ -174,24 +180,74 @@ func TestEveryDeclaredRoleIsNamedByAPolicy(t *testing.T) {
 	declared := entityIDs(t, filepath.Join(dir, rolesFile), "NKE::Role")
 	require.NotEmpty(t, declared, "no roles are declared")
 
-	// A role reachable only as a parent of another role is named through that
-	// one, so membership counts as being named.
+	// A role nested under a role a policy names is named through that one: a
+	// principal assigned the nested role is, through the entity hierarchy, also
+	// "in" every ancestor of it, so a policy naming an ancestor matches them
+	// too.
 	parents := roleParents(t, filepath.Join(dir, rolesFile))
 	for role := range declared {
-		if named[role] {
-			continue
-		}
-		var reaches bool
-		for child, holds := range parents {
-			if holds[role] && named[child] {
-				reaches = true
-				break
-			}
-		}
-		assert.Truef(t, reaches,
+		assert.Truef(t, roleIsNamed(role, named, parents),
 			"NKE::Role::%q is declared and held, and no policy names it or any role that nests it, so it grants nothing",
 			role)
 	}
+}
+
+// roleIsNamed reports whether role is used: named directly by a policy, or
+// nested (through one or more levels of roleParents) under a role that is.
+//
+// Reachability flows *up* the parent chain, starting from role itself: role is
+// a member of everything in parents[role], and transitively of everything
+// those roles are members of, so role is used if any ancestor in that chain is
+// named — not if some other role nested *under* role happens to be named,
+// which says nothing about whether role itself grants anything.
+func roleIsNamed(role string, named map[string]bool, parents map[string]map[string]bool) bool {
+	return roleIsNamedFrom(role, named, parents, map[string]bool{})
+}
+
+func roleIsNamedFrom(role string, named map[string]bool, parents map[string]map[string]bool, seen map[string]bool) bool {
+	if named[role] {
+		return true
+	}
+	if seen[role] {
+		// A cycle in the role hierarchy is a different bug; do not spin on it.
+		return false
+	}
+	seen[role] = true
+	for parent := range parents[role] {
+		if roleIsNamedFrom(parent, named, parents, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+// The mutation-style proof that roleIsNamed's direction is the right one: a
+// role planted with no policy naming it, and no ancestor a policy names,
+// against a hierarchy that does contain nesting — so a reachability check that
+// (wrongly) looked at descendants instead of ancestors would pass this role by
+// mistake, the way it passed the real bundle by accident: every role the
+// shipped bundle declares is also named directly, so the buggy direction was
+// never exercised there.
+func TestRoleIsNamedReachesThroughAncestorsNotDescendants(t *testing.T) {
+	// reader <- operator <- superOperator (superOperator is nested under
+	// operator, operator is nested under reader).
+	parents := map[string]map[string]bool{
+		"operator":      {"reader": true},
+		"superOperator": {"operator": true},
+		"orphan":        {},
+	}
+
+	// Only "operator" is named directly.
+	named := map[string]bool{"operator": true}
+
+	assert.True(t, roleIsNamed("operator", named, parents), "operator is named directly")
+	assert.Truef(t, roleIsNamed("superOperator", named, parents),
+		"superOperator is nested under operator, which is named, so a principal holding superOperator is also \"in\" operator")
+	assert.Falsef(t, roleIsNamed("reader", named, parents),
+		"reader is an ancestor of the named role, not a descendant of it — naming operator does not name reader, "+
+			"and a check that thinks it does would miss a genuinely unused role")
+	assert.Falsef(t, roleIsNamed("orphan", named, parents),
+		"orphan has no ancestor a policy names, so it grants nothing and the check must reject it")
 }
 
 // roleParents maps each NKE::Role to the roles it is a member of.

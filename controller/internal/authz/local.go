@@ -214,6 +214,21 @@ func (l *Local) Ready(context.Context) error {
 // is refused for everyone while the pod reports itself ready — the mirror of the
 // case above, and the reason the two are checked together here rather than left
 // to whoever notices first.
+//
+// What this does not catch, by design — it is a shape check, not a semantic
+// one, and the scope is deliberately narrower than exhaustive: a role and a
+// principal can each be individually non-empty while no principal actually
+// holds any role (a roles.json where every principal's parents list names a
+// role that itself exists, but the two sets never intersect); a policy set that
+// is present and non-empty per hasAny but is all-forbid, or is shaped so no
+// request can ever match a permit, so Ready passes and every call is still
+// refused; and an action entity whose UID is present, satisfying this loop, but
+// whose "read"/"write" action-group parent was stripped, so the entity exists
+// and the coarse-role grant that depends on that parent link does not fire.
+// None of these are bugs in this gate — they are outside what a startup-time
+// shape check can see without evaluating policies against sample requests —
+// but they are worth naming so a future reader does not read "Ready" as a
+// stronger guarantee than it is.
 func checkEntityStore(entities types.EntityMap) error {
 	var roles, principals int
 	for uid := range entities {
