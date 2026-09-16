@@ -76,7 +76,15 @@ unless { principal in NKE::Role::"nodeOperator" };
 // node lifecycle gets a named rule for: operators-may-write's coarse "write"
 // grant already reaches deleteCluster (it is a DELETE, so it is in the
 // group), but leaving it implicit there is the shape AZ-8 exists to close.
-// Naming it here does not change who can do it — it makes the grant a line a
+//
+// Two separate facts, worth not collapsing into one: this permit is redundant
+// with operators-may-write — it names nothing that grant does not already
+// cover — so by itself it changes nothing about who can do what. But the
+// change this permit shipped as part of did change who could delete clusters:
+// it replaced a standing nobody-deletes-clusters forbid, which had made
+// deleteCluster unreachable for everyone regardless of the coarse write grant.
+// Removing that forbid, not adding this permit, is what let operators start
+// deleting clusters; this permit only makes the resulting grant a line a
 // reviewer can find, instead of an inference from the group.
 @id("operators-may-delete-clusters")
 permit(

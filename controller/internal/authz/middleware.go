@@ -197,7 +197,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 // remote address is a proxy, so before this the only identifying field in either
 // the response or the log was a path — while the allow path logged the subject
 // and the policies that matched, and internal/auth logged the issuer on
-// rejection. And the shipped bundle carries two forbids, so a rule firing and
+// rejection. And the shipped bundle carries a forbid, so a rule firing and
 // nothing matching at all are the ordinary pair of outcomes; they produced a
 // byte-identical line.
 //

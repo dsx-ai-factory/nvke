@@ -25,7 +25,8 @@ import (
 // for a reviewer to look at.
 //
 // This is that missing diff. Every write operation must be named by a policy or
-// listed below with a reason a person wrote.
+// listed below with all four fields of an exception — reason, blast radius,
+// owner, and what would make it stop being true — a person wrote out.
 
 // exception records one write operation AZ-8 does not reach: a case where
 // operators-may-write, not a named Cedar policy, is what actually grants it.
@@ -116,7 +117,7 @@ func TestEveryWriteIsNamedOrAcknowledged(t *testing.T) {
 		_, acknowledged := writesLeftToTheGroup[op.Action]
 		assert.Truef(t, acknowledged,
 			"%s is a write that no policy names, so operators-may-write grants it: name it in %s, "+
-				"or add it to writesLeftToTheGroup with the reason that is acceptable",
+				"or add it to writesLeftToTheGroup with all four exception fields filled in",
 			op.Action, policiesFile)
 		// Field completeness for an acknowledged entry is checked directly
 		// against the map, not from inside this loop — see
