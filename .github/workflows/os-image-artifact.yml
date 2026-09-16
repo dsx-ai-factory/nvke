@@ -84,9 +84,10 @@ concurrency:
   # expression is the CALLER's name, so any workflow merge-gate.yml calls would
   # share a group with its siblings and cancel them.
   group: OS Image Artifact-${{ github.ref }}
-  # Never cancel a publish midway: a half-pushed qcow2 would leave a tag
-  # pointing at a truncated layer.
-  cancel-in-progress: false
+  # Supersede a mirror-branch build, which cannot publish: the push step needs
+  # a tag or a dispatch. Everything that can publish stays uncancellable, or a
+  # half-pushed qcow2 would leave a tag on a truncated layer.
+  cancel-in-progress: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/pull-request/') }}
 
 env:
   # packer_<version>_linux_{amd64,arm64}.zip from the HashiCorp SHA256SUMS file.
