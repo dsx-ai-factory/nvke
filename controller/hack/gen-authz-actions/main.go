@@ -15,11 +15,15 @@
 // The pattern is built the same way HandlerWithOptions builds it: the method,
 // api.BasePath, and the path, verbatim including the {param} spelling.
 //
-// The document is read with kin-openapi, which is what oapi-codegen reads it
+// The document is read with kin-openapi, the same library (though not the same
+// pinned version — see go.mod and api/oapi-codegen.mod) oapi-codegen reads it
 // with. That is the point rather than a convenience: a hand-written method list
 // is a way for this table to be missing a route the router registers, and
-// PathItem.Operations() is the same enumeration the router is generated from, so
-// the two cannot disagree about what an operation is.
+// PathItem.Operations() is the same enumeration the router is generated from. It
+// does not make the two incapable of disagreeing — a version skew between the
+// two kin-openapi pins could parse the same document differently — it is
+// router_test.go's parity tests that catch a disagreement in the committed
+// output, not identity between the libraries.
 package main
 
 import (

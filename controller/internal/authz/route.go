@@ -118,6 +118,15 @@ func (rv *Resolver) Resolve(r *http.Request) (Query, error) {
 		// an action that is a GET, which is one question describing two
 		// different requests. The request's own method is still logged, so a
 		// HEAD is not indistinguishable from a GET in the audit record.
+		//
+		// This is also, deliberately, what an implicit HEAD's Cedar context.method
+		// reads as inside a policy: "GET", not "HEAD" — Query.Method is what
+		// authorizer.go puts under ContextKeyMethod. Worth naming explicitly
+		// rather than leaving a future reader to discover it: a custom policy
+		// that inspects context.method directly would see the matched route's
+		// method, not the literal request method. The shipped bundle does not
+		// inspect context.method in any policy today, so this does not change
+		// current behavior — it documents a contract, not a bug.
 		Action: op.Action,
 		Method: method,
 	}

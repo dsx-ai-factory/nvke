@@ -32,6 +32,16 @@ import (
 // So this reads what the router registered. api/server.gen.go is generated, so
 // its registrations are a list of literals, and parsing them is the closest a
 // test can get to asking http.ServeMux what is on it — which it has no API for.
+//
+// Its scope is exactly that one file: registeredPatterns only walks the
+// HandleFunc calls api/server.gen.go itself contains. A route registered some
+// other way — directly on the mux in internal/server/server.go, say — would not
+// appear here and this test would not catch it. That is a coverage gap in this
+// test, not a live security hole: an unmatched route is denied by Resolve
+// (ErrNoRoute), not silently allowed, so the failure mode for a route this test
+// missed is fail-closed. Worth a future reader knowing, rather than assuming
+// these three tests are a complete guarantee that every registered route is
+// authorized.
 func registeredPatterns(t *testing.T) map[string]string {
 	t.Helper()
 
