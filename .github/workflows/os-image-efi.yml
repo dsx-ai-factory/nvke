@@ -101,14 +101,20 @@ jobs:
           [ -s "${efi}" ] || { echo "::error::${efi} is missing or empty"; exit 1; }
           described=$(file -b "${efi}")
           echo "${described}"
+          # Match loosely: the two runners carry different file(1) versions and
+          # word this differently. "PE32+ executable (EFI application) x86-64"
+          # on one, "PE32+ executable for EFI (application), ARM64" on the
+          # other. Pin the two facts that matter and let the prose vary.
           case "${{ matrix.arch }}" in
-            x86_64)  want='x86-64'  ;;
-            aarch64) want='Aarch64' ;;
+            x86_64)  want='x86[-_]64'     ;;
+            aarch64) want='ARM64|Aarch64' ;;
           esac
-          case "${described}" in
-            *"PE32+ executable (EFI application)"*"${want}"*) ;;
-            *) echo "::error::${efi} is not a ${{ matrix.arch }} EFI application: ${described}"; exit 1 ;;
-          esac
+          if ! grep -qi 'PE32+ executable' <<<"${described}" ||
+             ! grep -qi 'EFI' <<<"${described}" ||
+             ! grep -qiE "${want}" <<<"${described}"; then
+            echo "::error::${efi} is not a ${{ matrix.arch }} EFI application: ${described}"
+            exit 1
+          fi
           sha256sum "${efi}"
 
       - name: Upload qcow-imager.efi
