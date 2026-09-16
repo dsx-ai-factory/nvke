@@ -94,29 +94,27 @@ if [[ -n "${K8S_VERSIONS:-}" ]]; then
 fi
 make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
 
-if [[ "${ARCH}" == amd64 ]]; then
-  echo "building nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
-  cni_calico_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
-  if [[ -n "${CALICO_VERSIONS:-}" ]]; then
-    cni_calico_args+=(CALICO_VERSIONS="${CALICO_VERSIONS}")
-  fi
-  make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
+echo "building nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
+cni_calico_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+if [[ -n "${CALICO_VERSIONS:-}" ]]; then
+  cni_calico_args+=(CALICO_VERSIONS="${CALICO_VERSIONS}")
+fi
+make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
 
-  # OVN's chart and images need an NGC key for nv-ngn; CI has none, so opt-in.
-  if [[ -n "${NGC_API_KEY:-}" ]]; then
-    echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
-    cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
-    if [[ -n "${OVN_STREAMS:-}" ]]; then
-      cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")
-    fi
-    make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
-  else
-    echo "NGC_API_KEY is unset; skipping the nke-cni-ovn debs (this image cannot install OVN offline)"
+# OVN's chart and images need an NGC key for nv-ngn; CI has none, so opt-in.
+# amd64 only: nothing has locked the arm64 image set, which differs in
+# membership rather than just in digests.
+if [[ "${ARCH}" == amd64 && -n "${NGC_API_KEY:-}" ]]; then
+  echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
+  cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+  if [[ -n "${OVN_STREAMS:-}" ]]; then
+    cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")
   fi
+  make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
+elif [[ "${ARCH}" == amd64 ]]; then
+  echo "NGC_API_KEY is unset; skipping the nke-cni-ovn debs (this image cannot install OVN offline)"
 else
-  # Manifests only: the Calico images deb has no arm64 lock yet.
-  echo "building ARM64 nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
-  bash "${repo_root}/os-image/packages/cni-calico/build-arm64.sh" "${ARTIFACTS_DIR}/debs"
+  echo "skipping the nke-cni-ovn debs: no arm64 lock (this image cannot install OVN offline)"
 fi
 
 spire_tar="${ARTIFACTS_DIR}/${SPIRE_TARBALL}"

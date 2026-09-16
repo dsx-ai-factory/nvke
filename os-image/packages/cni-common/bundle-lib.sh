@@ -16,7 +16,7 @@ die() {
 }
 
 parse_bundle_args() {
-  VERSION="" DIST="" LOCK_DIR="" CRANE="" ARCH="amd64" WRITE_LOCK=false CONTENT_ONLY=false
+  VERSION="" DIST="" LOCK_DIR="" CRANE="" ARCH="amd64" WRITE_LOCK=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --version) VERSION="${2:-}"; shift 2 ;;
@@ -24,7 +24,6 @@ parse_bundle_args() {
       --lock-dir) LOCK_DIR="${2:-}"; shift 2 ;;
       --crane) CRANE="${2:-}"; shift 2 ;;
       --arch) ARCH="${2:-}"; shift 2 ;;
-      --content-only) CONTENT_ONLY=true; shift ;;
       --write-lock) WRITE_LOCK=true; shift ;;
       *) die "unknown argument: $1" ;;
     esac
@@ -32,25 +31,14 @@ parse_bundle_args() {
   [[ -n "$VERSION" ]] || die "--version is required"
   [[ -n "$DIST" ]] || die "--dist is required"
   [[ -n "$LOCK_DIR" ]] || die "--lock-dir is required"
-  if [[ "$CONTENT_ONLY" == false ]]; then
-    [[ -n "$CRANE" && -x "$CRANE" ]] || die "--crane must point at an executable crane"
-  fi
-  # The lock holds one architecture's image digests, and they are amd64's.
-  # Only the content deb is Architecture: all and so arch-independent, which is
-  # what build-arm64.sh builds. Without these two checks, --arch arm64
-  # --write-lock would overwrite the amd64 lock in place.
+  [[ -n "$CRANE" && -x "$CRANE" ]] || die "--crane must point at an executable crane"
   case "$ARCH" in
-    amd64) ;;
-    arm64)
-      [[ "$WRITE_LOCK" == false ]] ||
-        die "--arch arm64 --write-lock would overwrite the amd64 lock; arm64 images are not packaged yet"
-      [[ "$CONTENT_ONLY" == true ]] ||
-        die "--arch arm64 needs --content-only: ${VERSION}.lock pins amd64 image digests"
-      ;;
+    amd64|arm64) ;;
     *) die "--arch ${ARCH}: expected amd64 or arm64" ;;
   esac
 
-  LOCK="${LOCK_DIR}/${VERSION}.lock"
+  # Per arch: the digests below are resolved for one platform.
+  LOCK="${LOCK_DIR}/${ARCH}/${VERSION}.lock"
   STAGE="${DIST}/${VERSION}"
   WORK="${STAGE}/.work"
   ARTIFACT_LINES=()
@@ -106,10 +94,18 @@ tar_paths_safe() {
 # are byte-identical, plus a sha256sum sidecar naming the installed file.
 stage_images() {
   local -a refs pinned=()
-  local ref digest want repo placeholder manifest leftover
+  local ref digest want repo placeholder manifest leftover ref_src
   IMAGE_LINES=()
-  mapfile -t refs < <(awk '$1 == "image" { print $2 }' "$LOCK" 2>/dev/null || true)
-  [[ ${#refs[@]} -gt 0 ]] || die "${LOCK} lists no images; seed it with 'image <ref>' lines"
+  # amd64's lock decides which images ship; other arches pin their own digests
+  # for the same refs. Reading refs from amd64 keeps the sets in step.
+  ref_src="$LOCK"
+  if [[ "$WRITE_LOCK" == true && "$ARCH" != amd64 ]]; then
+    ref_src="${LOCK_DIR}/amd64/${VERSION}.lock"
+    [[ -f "$ref_src" ]] ||
+      die "no amd64 lock at ${ref_src}; lock amd64 first, it is the source of truth for the image list"
+  fi
+  mapfile -t refs < <(awk '$1 == "image" { print $2 }' "$ref_src" 2>/dev/null || true)
+  [[ ${#refs[@]} -gt 0 ]] || die "${ref_src} lists no images; seed it with 'image <ref>' lines"
 
   for ref in "${refs[@]}"; do
     digest="$("$CRANE" digest --platform "linux/${ARCH}" "$ref")" ||
@@ -162,7 +158,7 @@ stage_images() {
 finish_bundle() {
   rm -rf "$WORK"
   if [[ "$WRITE_LOCK" == true ]]; then
-    mkdir -p "$LOCK_DIR"
+    mkdir -p "$(dirname "$LOCK")"
     {
       echo "# nke-${CNI} lock for ${VERSION} (${ARCH}). Regenerate with \`make lock\`; review the diff before committing."
       echo "${CNI#cni-} ${VERSION}"

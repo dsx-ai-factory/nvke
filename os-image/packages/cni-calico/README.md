@@ -40,7 +40,7 @@ make debs OUT_DIR=/absolute/path
 ```
 
 Linux only. `debs` runs `bundle` first, which verifies every artifact against
-`lock/<version>.lock` before anything is unpacked, and reindexes `OUT_DIR` with
+`lock/<arch>/<version>.lock` before anything is unpacked, and reindexes `OUT_DIR` with
 `dpkg-scanpackages` when it finishes. `make repro-check` builds twice and
 compares every `.deb` byte-for-byte.
 

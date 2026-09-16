@@ -6,7 +6,7 @@
 # nke-cni-calico-<stream> debs.
 #
 # Usage: bundle.sh --version v3.30.1 --dist DIR --lock-dir DIR --crane PATH
-#                  [--arch amd64] [--content-only] [--write-lock]
+#                  [--arch amd64] [--write-lock]
 #
 # The lock and image handling is ../cni-common/bundle-lib.sh.
 
@@ -34,11 +34,5 @@ done
 
 # The image list is the lock's, seeded by hand: the manifests name only the
 # operator, which resolves the rest at runtime.
-if [[ "$CONTENT_ONLY" == true ]]; then
-  rm -rf "$WORK"
-  echo "${CNI}: staged ${VERSION} manifests into ${STAGE}"
-  exit 0
-fi
-
 stage_images
 finish_bundle

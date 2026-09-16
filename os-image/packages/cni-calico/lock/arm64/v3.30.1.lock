@@ -1,0 +1,17 @@
+# nke-cni-calico lock for v3.30.1 (arm64). Regenerate with `make lock`; review the diff before committing.
+calico v3.30.1
+artifact operator-crds.yaml 5969b2393d9cab1212480ad08dd989023106373c23163441474e65ceb2bb734f https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/operator-crds.yaml
+artifact tigera-operator.yaml 65fc29459f236af44b31bd409640534db20ff940192f6b9023c972a69041977f https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/tigera-operator.yaml
+artifact custom-resources.yaml f7cd142773609fc7f830b96d8f29bd1b5f05cdc5293324992d8524b54c09c717 https://raw.githubusercontent.com/projectcalico/calico/v3.30.1/manifests/custom-resources.yaml
+image quay.io/tigera/operator:v1.38.1 sha256:f3f0d50f7847435f969e285ab479e35ecf2ca874724a294a87c2dd00c7cee49e
+image docker.io/calico/apiserver:v3.30.1 sha256:ab442319b2d92259cb7dbf42d0649e37add1507c65d71d8512606329c0acb3c7
+image docker.io/calico/cni:v3.30.1 sha256:dc6ce1b4f77bff1c2b831383246927575a49945111a09b13860678cedcb81889
+image docker.io/calico/csi:v3.30.1 sha256:9bd6cb4bb42132ada494e59ec9fa9296a1e82d815a6dffdbf4b4f84c5c802c7a
+image docker.io/calico/goldmane:v3.30.1 sha256:2d3ecc779ea8ed0018493b43462ed5f53211fc85aacfd5a76b98bd95c01722cc
+image docker.io/calico/kube-controllers:v3.30.1 sha256:5dabc3695e054709e49c898b12d1ae5da7cbdaffff643b9ef5879813a2e9e059
+image docker.io/calico/node:v3.30.1 sha256:989d32ca07f18602dfdbc2441de972b6ac01d119579f988afc25297a806aedc5
+image docker.io/calico/node-driver-registrar:v3.30.1 sha256:aceb7bbebc2349fe0089023c779b28896e8c24b9d0a4509c3eb83ab6d1a90720
+image docker.io/calico/pod2daemon-flexvol:v3.30.1 sha256:5b502944695a87efb749f6c961693a294cb0f23d4c4fe03b568028caee1ea6fd
+image docker.io/calico/typha:v3.30.1 sha256:ccbc046cf77f5618d50f1fd355b6a132e08c32e4ba51d1b9c94c5c48a61cf8b5
+image docker.io/calico/whisker:v3.30.1 sha256:67ac0326c2df695488c3a2db667d38622f6da0648dc5a240bae44b4693f474ea
+image docker.io/calico/whisker-backend:v3.30.1 sha256:fe8190fb2856ea3adb7b451b4ba01e2881283f695c822621b1c7fcb9181321d6

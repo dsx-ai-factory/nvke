@@ -43,7 +43,7 @@ NGC_API_KEY=... make debs OUT_DIR=/absolute/path
 ```
 
 Linux only. `debs` runs `bundle` first, which verifies the chart and every
-image against `lock/<stream>.lock` before anything is unpacked, and reindexes
+image against `lock/<arch>/<stream>.lock` before anything is unpacked, and reindexes
 `OUT_DIR` with `dpkg-scanpackages` when it finishes. `make repro-check` builds
 twice and compares every `.deb` byte-for-byte.
 
