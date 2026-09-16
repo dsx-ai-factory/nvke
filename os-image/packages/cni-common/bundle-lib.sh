@@ -52,7 +52,7 @@ fetch() {
   local url="$1" out="$2"
   curl --fail --silent --show-error --location \
     --connect-timeout 10 --max-time 300 \
-    --retry 3 --retry-delay 5 --retry-connrefused \
+    --retry 3 --retry-all-errors --retry-delay 5 --retry-connrefused \
     --config - -o "$out" "$url" <<<"${CURL_CONFIG:-}" ||
     die "fetch ${url} failed"
 }
