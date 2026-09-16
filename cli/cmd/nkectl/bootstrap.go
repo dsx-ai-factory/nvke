@@ -442,12 +442,13 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 			"`docker build -f cluster-api-provider-provisioned/Dockerfile .`)")
 	}
 
-	// SPIRE is told the Kind cluster's own name. There is no separate variable
-	// for it: the bootstrap cluster has one name, and two ways to say it could
-	// only ever disagree. NKECTL_SPIFFE_TRUST_DOMAIN still overrides the domain
-	// derived from it, which is a genuinely different thing to want.
+	// SPIRE is told the Kind cluster's own name. The identity trust domain comes
+	// from the site spec, including its environment override, or is derived from
+	// the bootstrap cluster name when the operator did not set one.
 	cfg.SPIFFEClusterName = clusterName
-	if cfg.SPIFFETrustDomain == "" {
+	if inv.Spire.TrustDomain != "" {
+		cfg.SPIFFETrustDomain = inv.Spire.TrustDomain
+	} else if cfg.SPIFFETrustDomain == "" {
 		cfg.SPIFFETrustDomain = clusterName + ".nke.local"
 	}
 

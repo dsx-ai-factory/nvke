@@ -76,6 +76,7 @@ is a file `bootstrap site` accepts.
 | `registry.bootstrapRepo` | string | yes | OCI repository holding the bootstrap engine chart. The controller image is published separately, to `<registry>/<org>/controller`. |
 | `registry.bootstrapChart` | string | yes | Bootstrap engine chart name within `bootstrapRepo`. |
 | `registry.apiKey` | string | no | Registry credential. Never defaulted — see below. |
+| `spire.trustDomain` | string | no | SPIFFE trust domain. Defaults to `<bootstrap-cluster>.nke.local`. Use the same value for the permanent site SPIRE server. |
 | `spire.caCertFile` | string | no | Path to a CA certificate for SPIRE to chain its own CA to. See below. |
 | `spire.caKeyFile` | string | no | Path to that CA's private key. Required with `caCertFile`. |
 
@@ -113,6 +114,7 @@ A set variable takes precedence over the file value.
 | `REGISTRY_BOOTSTRAP_REPO` | `registry.bootstrapRepo` |
 | `REGISTRY_BOOTSTRAP_CHART` | `registry.bootstrapChart` |
 | `REGISTRY_API_KEY` | `registry.apiKey` |
+| `NKECTL_SPIFFE_TRUST_DOMAIN` | `spire.trustDomain` |
 | `SPIRE_CA_CERT_FILE` | `spire.caCertFile` |
 | `SPIRE_CA_KEY_FILE` | `spire.caKeyFile` |
 | `NKECTL_CLUSTER_NODES` | `cluster.nodes` — format `name:ip,name:ip`, applied only when the file lists no nodes |
@@ -148,6 +150,11 @@ match nothing and surface much later as that one node failing attestation for no
 visible reason.
 
 ## The SPIRE CA
+
+`spire.trustDomain` sets the SPIFFE trust domain for the bootstrap server. It
+must be a lowercase DNS name. If it is absent, `nkectl` uses
+`<bootstrap-cluster>.nke.local`. A permanent site SPIRE server that replaces
+the bootstrap server must use the same value.
 
 `spire.caCertFile` and `spire.caKeyFile` name a CA the operator brings to the
 bootstrap. `nkectl` configures SPIRE to chain its own CA to it, so a node that

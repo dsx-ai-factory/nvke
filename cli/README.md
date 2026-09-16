@@ -117,6 +117,7 @@ site spec file rather than from flags or the environment. See
 | Field | |
 |---|---|
 | `cluster.*.tpmEkThumbprint` | Which nodes may attest to SPIRE. No node listed, no node admitted; a site spec with none deploys no TPM attestor at all. |
+| `spire.trustDomain` | SPIFFE trust domain used by bootstrap and the permanent site SPIRE server. Defaults to `<bootstrap-cluster>.nke.local`. |
 | `spire.caCertFile` / `caKeyFile` | A CA for SPIRE to chain its own to, so a node given that certificate when it was provisioned verifies the server on first contact. Without it SPIRE is self-signed. |
 
 ### What gets installed
@@ -155,9 +156,8 @@ both sides, so both halves are set from one constant in
 
 Note that the spire server is not yet accessible outside the kind cluster. We will wire that in as the final PR.
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `NKECTL_SPIFFE_TRUST_DOMAIN` | `<cluster>.nke.local` | Trust domain for the identities issued |
+`NKECTL_SPIFFE_TRUST_DOMAIN` overrides `spire.trustDomain` for compatibility
+with existing automation.
 
 The cluster name SPIRE is told is the ephemeral cluster's own name, from
 `NKECTL_BOOTSTRAP_CLUSTER_NAME` — there is no separate SPIFFE variable for it,
@@ -169,7 +169,9 @@ CRD definition and CWE's cluster-scoped workload registration policy before it
 removes the bootstrap cluster. It writes `clusterstaticentry-crd.yaml` and
 `clusterstaticentries.yaml` in the same directory as the site kubeconfig. The
 files contain no source UIDs, resource versions, status, or other server-owned
-metadata.
+metadata. Follow the [DSX Identity SPIRE post-bootstrap
+runbook](../docs/site-bootstrap/dsx-identity-spire.md) to install the new server,
+restore these resources, and re-attest the existing host agents.
 
 ### Bootstrap cluster and CWE
 

@@ -302,6 +302,18 @@ func TestLoadEnvFillsField(t *testing.T) {
 	}
 }
 
+func TestLoadTrustDomainFromEnvironment(t *testing.T) {
+	t.Setenv("NKECTL_SPIFFE_TRUST_DOMAIN", "site.example.com")
+
+	inv, err := Load(writeTemp(t, validYAML))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if inv.Spire.TrustDomain != "site.example.com" {
+		t.Errorf("Spire.TrustDomain = %q, want environment value %q", inv.Spire.TrustDomain, "site.example.com")
+	}
+}
+
 func TestLoadNodesFromEnv(t *testing.T) {
 	t.Setenv("NKECTL_CLUSTER_NODES", "node1:10.0.0.1,node2:10.0.0.2,node3:10.0.0.3")
 
@@ -441,6 +453,29 @@ func TestValidate_SpireCA(t *testing.T) {
 			v.checkSpire(tc.spire)
 			if gotErr := v.err() != nil; gotErr != tc.wantErr {
 				t.Errorf("checkSpire(%+v) error = %v, want error: %v", tc.spire, v.err(), tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestValidate_SpireTrustDomain(t *testing.T) {
+	for name, tc := range map[string]struct {
+		domain  string
+		wantErr bool
+	}{
+		"unset uses bootstrap default": {"", false},
+		"dns name":                     {"site.example.com", false},
+		"single label":                 {"site", false},
+		"scheme":                       {"spiffe://site.example.com", true},
+		"port":                         {"site.example.com:8081", true},
+		"uppercase":                    {"Site.example.com", true},
+		"empty label":                  {"site..example.com", true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := &validator{}
+			v.checkSpire(Spire{TrustDomain: tc.domain})
+			if gotErr := v.err() != nil; gotErr != tc.wantErr {
+				t.Errorf("checkSpire(%q) error = %v, want error: %v", tc.domain, v.err(), tc.wantErr)
 			}
 		})
 	}

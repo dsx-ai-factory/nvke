@@ -435,6 +435,34 @@ func setBootstrapEnv(t *testing.T) {
 	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
 }
 
+func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {
+	setBootstrapEnv(t)
+	t.Setenv("NKECTL_SPIFFE_TRUST_DOMAIN", "stale.example.com")
+
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{
+		Spire: sitespec.Spire{TrustDomain: "site.example.com"},
+	}, "bootstrap-cluster", false)
+	if err != nil {
+		t.Fatalf("cweDeployConfig: %v", err)
+	}
+	if cfg.SPIFFETrustDomain != "site.example.com" {
+		t.Errorf("SPIFFETrustDomain = %q, want site-spec value %q", cfg.SPIFFETrustDomain, "site.example.com")
+	}
+}
+
+func TestCWEDeployConfigDefaultsTrustDomain(t *testing.T) {
+	setBootstrapEnv(t)
+	t.Setenv("NKECTL_SPIFFE_TRUST_DOMAIN", "")
+
+	cfg, err := cweDeployConfig(&sitespec.SiteSpec{}, "bootstrap-cluster", false)
+	if err != nil {
+		t.Fatalf("cweDeployConfig: %v", err)
+	}
+	if cfg.SPIFFETrustDomain != "bootstrap-cluster.nke.local" {
+		t.Errorf("SPIFFETrustDomain = %q, want derived value %q", cfg.SPIFFETrustDomain, "bootstrap-cluster.nke.local")
+	}
+}
+
 // The image lookup must run against the runtime kind loads from, and a
 // stale NKECTL_BOOTSTRAP_PROVIDER export must not steer it back to a Docker
 // daemon a host is no longer required to have.
