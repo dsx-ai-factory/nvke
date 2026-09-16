@@ -63,7 +63,11 @@ if verify_iso; then
   echo "prepare-installer-iso: ${ISO_PATH} already present and checksum-valid"
 else
   echo "prepare-installer-iso: downloading ${ISO_URL}"
-  curl -fL --retry 3 -o "${ISO_PATH}.tmp" "${ISO_URL}"
+  # --retry alone skips transfer errors, and arm64 pulls 2.9 GB from
+  # cdimage.ubuntu.com at a couple of MB/s, so a reset part way through is
+  # normal. -C - resumes into the same .tmp instead of starting again.
+  curl -fL --retry 5 --retry-all-errors --retry-delay 5 -C - \
+    -o "${ISO_PATH}.tmp" "${ISO_URL}"
   mv "${ISO_PATH}.tmp" "${ISO_PATH}"
   verify_iso || { echo "prepare-installer-iso: checksum mismatch for ${ISO_PATH}" >&2; exit 1; }
 fi
