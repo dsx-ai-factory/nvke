@@ -161,6 +161,11 @@ build pass. Removing those dependencies is tracked work with its own design.
   using `github.com/stretchr/testify`.
 - **Imports** are grouped stdlib, third-party, then this module, separated by
   blank lines.
+- **Line wrapping:** prefer single-line Go function declarations, using 150
+  characters as a guideline rather than a hard limit. Keep one or two parameters
+  inline unless the resulting line is exceptionally long; use multiline
+  parameter blocks when they materially improve readability. When wrapping, put
+  every parameter on its own line.
 - Exported types and functions carry doc comments starting with the identifier
   name.
 
