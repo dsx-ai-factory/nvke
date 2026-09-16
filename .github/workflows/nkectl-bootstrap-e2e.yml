@@ -75,6 +75,10 @@ jobs:
       # the temporal, postgres, SPIRE and Cluster API images itself. Concurrent
       # runs hit Docker Hub's anonymous rate limit without it.
       NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      # Deliberately differs from nkectl's derived bootstrap-cluster default.
+      # run.sh writes it into the site inventory and uses it for every fixture
+      # host's pre-provisioned SPIRE agent configuration.
+      NKECTL_E2E_SPIRE_TRUST_DOMAIN: nkectl-e2e.example.test
       # The postgres chart is an OCI artifact on Docker Hub too, and helm's
       # pull of it counts against the same limit.
       NKECTL_CWE_POSTGRES_CHART: oci://dc.local.gha-runners.nvidia.com/bitnamicharts/postgresql

@@ -64,6 +64,12 @@ NODE_AGENT_PORT=15005
 export NKECTL_E2E_ATTESTATION_BASELINE="${CLI_DIR}/.local/attestation-baseline.json"
 # Where the node images' spire-agents were built to look for the SPIRE server.
 SPIRE_VIP="${NKECTL_E2E_SPIRE_SERVER_ADDRESS:-172.26.0.2}"
+# Use a value that differs from bootstrap's derived
+# "<bootstrap-cluster>.nke.local" default. The generated site spec and the
+# pre-provisioned agents must receive this same explicit trust domain, or node
+# attestation fails.
+SPIRE_TRUST_DOMAIN="${NKECTL_E2E_SPIRE_TRUST_DOMAIN:-nkectl-e2e.example.test}"
+export NKECTL_E2E_SPIRE_TRUST_DOMAIN="${SPIRE_TRUST_DOMAIN}"
 # The init node, which is also where the finished cluster's API server ends up:
 # no controlPlaneVIP is set, so kubeadm uses the first control-plane node's IP.
 # It matches the first row of the generated node CSV, and it is the address
@@ -345,6 +351,7 @@ RENDERED_SITESPEC="${SCRIPT_DIR}/.sitespec.rendered.yaml"
   --set cluster.podCidr=192.168.0.0/16 \
   --set cluster.serviceCidr=10.96.0.0/12 \
   --set cluster.kubeletConfig.systemReservedMemory=512Mi \
+  --set "spire.trustDomain=${SPIRE_TRUST_DOMAIN}" \
   "${spire_set[@]}" \
   > "${RENDERED_SITESPEC}"
 
@@ -357,6 +364,9 @@ if [[ ${#spire_set[@]} -gt 0 ]]; then
   grep -qE '^[[:space:]]*caCertFile:' "${RENDERED_SITESPEC}" ||
     fail "a bootstrap CA was supplied but did not reach ${RENDERED_SITESPEC}"
 fi
+grep -qE "^[[:space:]]*trustDomain:[[:space:]]*['\"]?${SPIRE_TRUST_DOMAIN}['\"]?[[:space:]]*$" \
+  "${RENDERED_SITESPEC}" ||
+  fail "SPIRE trust domain ${SPIRE_TRUST_DOMAIN} did not reach ${RENDERED_SITESPEC}"
 log "allowlisting ${expected_nodes} EK thumbprint(s)"
 
 # No chart is named here. What gets installed is pinned in
