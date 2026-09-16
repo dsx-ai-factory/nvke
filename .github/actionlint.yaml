@@ -12,3 +12,6 @@ self-hosted-runner:
     - linux-amd64-cpu16
     - linux-arm64-cpu16
     - linux-amd64-gpu-l4-latest-1
+    # Scale sets on the self-hosted fleet; the name is the size.
+    - nke-arm64-8c16g
+    - nke-arm64-4c32g

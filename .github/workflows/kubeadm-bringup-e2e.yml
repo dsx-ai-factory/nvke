@@ -8,7 +8,9 @@
 # then installing upstream Calico so every node reaches Ready. The lane needs no
 # NVIDIA-internal network.
 # Advisory, deliberately NOT in merge-gate.yml: it needs NVIDIA runners and root.
-# Only amd64 GPU runners expose /dev/kvm; CPU labels fall back to TCG. See #219.
+# Only the amd64 GPU runners expose /dev/kvm; CPU labels fall back to TCG. See
+# #219. The org's arm64 pool has none either, so that leg uses the self-hosted
+# fleet.
 # Self-hosted runners get no pull_request events, so copy-pr-bot mirror branches
 # are the trigger.
 
@@ -41,12 +43,21 @@ concurrency:
 
 jobs:
   bringup:
-    name: kubeadm bringup (2 VMs)
-    # Already allowlisted in .github/actionlint.yaml; any other label needs an
-    # edit there, and actionlint is a required gate member.
-    # A GPU label only because it is the one kind exposing /dev/kvm, as
-    # os-image-artifact.yml does. Trades 16 cores for 12, and TCG for KVM.
-    runs-on: linux-amd64-gpu-l4-latest-1
+    name: kubeadm bringup (2 VMs, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Labels are allowlisted in .github/actionlint.yaml, a required
+          # gate. A GPU label only because it is the one amd64 kind with
+          # /dev/kvm: trades 16 cores for 12, and TCG for KVM.
+          - arch: amd64
+            runner: linux-amd64-gpu-l4-latest-1
+          # Scale set on the self-hosted fleet; the name is the size,
+          # 8 vCPU and 16 GiB. linux-arm64-cpu16 has no /dev/kvm.
+          - arch: arm64
+            runner: nke-arm64-8c16g
+    runs-on: ${{ matrix.runner }}
     if: github.repository == 'dsx-ai-factory/nke'
     # Still sized for the emulated path, so a fall back to TCG cannot time out.
     timeout-minutes: 240
@@ -134,18 +145,21 @@ jobs:
       # pull request instead of a published one.
       - name: Build the nke-agent package the VMs install
         id: agent_deb
+        env:
+          ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          make -C agent deb-amd64
+          # The guests run this runner's architecture.
+          make -C agent "deb-${ARCH}"
           # The Makefile versions the file from the commit, so glob for it
           # rather than restating the naming rule here. find, not ls: actionlint
           # runs shellcheck and SC2012 fails the required gate.
           deb=$(find "${GITHUB_WORKSPACE}/agent/bin" -maxdepth 1 \
-                  -name 'nke-agent_*_amd64.deb' -printf '%T@ %p\n' \
+                  -name "nke-agent_*_${ARCH}.deb" -printf '%T@ %p\n' \
                 | sort -rn | head -1 | cut -d' ' -f2-)
           # Empty means the build produced nothing; without this the failure
           # surfaces much later as a confusing "file not found" in the guest.
-          [ -n "${deb}" ] || { echo "::error::make deb-amd64 produced no .deb"; exit 1; }
+          [ -n "${deb}" ] || { echo "::error::make deb-${ARCH} produced no .deb"; exit 1; }
           echo "path=${deb}" >> "$GITHUB_OUTPUT"
           echo "built ${deb}"
 
