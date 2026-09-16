@@ -63,6 +63,14 @@ var (
 	//
 	// These groups are what let a policy say "readers may read" and stay correct
 	// as endpoints are added, instead of naming every operation and going stale.
+	//
+	// It shares this var block with the flag targets above only because grouper
+	// requires one var block per file; it is not itself a flag target. It is a
+	// global for a different reason: it is a fixed table computed once at
+	// package init and read by every operation this generator processes, not a
+	// value flag.Parse fills in.
+	//
+	//nolint:gochecknoglobals // a fixed table, computed once and read by every generator invocation — not a flag target
 	safeMethods = map[string]bool{
 		http.MethodGet:     true,
 		http.MethodHead:    true,
