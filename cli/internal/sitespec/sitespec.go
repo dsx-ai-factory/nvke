@@ -51,6 +51,7 @@ const (
 	pathBootstrapRepo        = "registry.bootstrapRepo"
 	pathBootstrapChart       = "registry.bootstrapChart"
 	pathAPIKey               = "registry.apiKey"
+	pathSpireTrustDomain     = "spire.trustDomain"
 	pathSpireCACertFile      = "spire.caCertFile"
 	pathSpireCAKeyFile       = "spire.caKeyFile"
 )
@@ -90,6 +91,11 @@ type SiteSpec struct {
 
 // Spire describes the identity plane `nkectl bootstrap site` stands up.
 type Spire struct {
+	// TrustDomain is the SPIFFE trust domain used for all identities that the
+	// bootstrap SPIRE server issues. It must also be used by the permanent
+	// site SPIRE server that replaces it.
+	TrustDomain string `yaml:"trustDomain,omitempty"`
+
 	// CACertFile and CAKeyFile point at a CA the operator brings to the
 	// bootstrap. SPIRE chains its own CA to it, so a node that was given the
 	// certificate ahead of time can verify the server the first time it speaks
@@ -205,6 +211,7 @@ func envBindings() map[string]string {
 		"REGISTRY_BOOTSTRAP_REPO":        pathBootstrapRepo,
 		"REGISTRY_BOOTSTRAP_CHART":       pathBootstrapChart,
 		"REGISTRY_API_KEY":               pathAPIKey,
+		"NKECTL_SPIFFE_TRUST_DOMAIN":     pathSpireTrustDomain,
 		"SPIRE_CA_CERT_FILE":             pathSpireCACertFile,
 		"SPIRE_CA_KEY_FILE":              pathSpireCAKeyFile,
 	}
@@ -494,6 +501,10 @@ func (v *validator) checkRegistry(r Registry) {
 // checkSpire validates the shape of the bootstrap CA, if one was given: both
 // files or neither. Whether the files exist is checkSpireFiles' concern.
 func (v *validator) checkSpire(s Spire) {
+	if s.TrustDomain != "" {
+		v.checkTrustDomain(s.TrustDomain)
+	}
+
 	switch {
 	case s.CACertFile == "" && s.CAKeyFile == "":
 		return
@@ -502,6 +513,22 @@ func (v *validator) checkSpire(s Spire) {
 	case s.CAKeyFile == "":
 		v.addf("%s is required when %s is set: SPIRE needs the key to sign with, "+
 			"not just the certificate to chain to", pathSpireCAKeyFile, pathSpireCACertFile)
+	}
+}
+
+// checkTrustDomain validates the DNS-name form required for a SPIFFE trust
+// domain. Schemes, paths, ports, empty labels, and uppercase characters are
+// rejected by the same label rules used for the other DNS-shaped fields.
+func (v *validator) checkTrustDomain(domain string) {
+	if len(domain) > 253 {
+		v.addf("%s %q must not exceed 253 characters", pathSpireTrustDomain, domain)
+		return
+	}
+	for _, label := range strings.Split(domain, ".") {
+		if len(label) == 0 || len(label) > 63 || !dnsLabelRE.MatchString(label) {
+			v.addf("%s %q must be a lowercase DNS name", pathSpireTrustDomain, domain)
+			return
+		}
 	}
 }
 

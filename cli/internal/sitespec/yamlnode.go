@@ -127,10 +127,11 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 		nodeAgentPort = ""
 	}
 	for path, value := range map[string]string{
-		pathCniVersion:      spec.Cluster.CniVersion,
-		pathNodeAgentPort:   nodeAgentPort,
-		pathSpireCACertFile: spec.Spire.CACertFile,
-		pathSpireCAKeyFile:  spec.Spire.CAKeyFile,
+		pathCniVersion:       spec.Cluster.CniVersion,
+		pathNodeAgentPort:    nodeAgentPort,
+		pathSpireTrustDomain: spec.Spire.TrustDomain,
+		pathSpireCACertFile:  spec.Spire.CACertFile,
+		pathSpireCAKeyFile:   spec.Spire.CAKeyFile,
 	} {
 		if value == "" {
 			continue
