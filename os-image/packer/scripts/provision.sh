@@ -109,8 +109,9 @@ done
 # Querying with no pattern (filtering in awk instead) also avoids dpkg-query
 # exiting 1 -- which set -euo pipefail would treat as fatal here -- on a
 # system where dpkg has no record at all matching the glob.
+# Consume all input: exiting awk early can give dpkg-query SIGPIPE under pipefail.
 generic_image_pkg="$(dpkg-query -W -f='${Package}\t${Status}\n' 2>/dev/null |
-  awk -F'\t' '$1 ~ /^linux-image-.*-generic$/ && $2 == "install ok installed" { print $1; exit }')"
+  awk -F'\t' '!found && $1 ~ /^linux-image-.*-generic$/ && $2 == "install ok installed" { print $1; found=1 }')"
 if [[ -n "${generic_image_pkg}" ]]; then
   ver="${generic_image_pkg#linux-image-}"      # e.g. 7.0.0-31-generic
   ver_noflavor="${ver%-generic}"                # e.g. 7.0.0-31
