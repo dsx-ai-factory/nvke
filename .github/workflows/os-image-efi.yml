@@ -14,10 +14,11 @@ name: OS Image EFI
 # Advisory, not a merge-gate member: it needs an NVIDIA self-hosted runner and
 # takes about twenty minutes. Do not add it to merge-gate.yml.
 #
-# x86_64 only. build-efi-arm64 works under qemu-user emulation, but that would
-# roughly double an already twenty-minute job for an artifact nothing consumes
-# yet, and the only arm64 label this repo may use is a container-based pool
-# that cannot host mkosi at all.
+# Both architectures. Each builds natively: the arm64 leg runs on the
+# self-hosted fleet, which is a VM with passwordless sudo, so mkosi can turn
+# off the AppArmor sysctls it needs. It used to be x86_64 only because the
+# only arm64 label available was a container-based pool with a read-only
+# /proc/sys, where arm64 could only be cross-built under qemu-user.
 on:
   push:
     branches:
@@ -48,14 +49,23 @@ concurrency:
 jobs:
   build-efi:
     if: github.repository == 'dsx-ai-factory/nke'
-    name: Build qcow-imager.efi (x86_64)
-    # Not for /dev/kvm -- mkosi builds a Unified Kernel Image and boots
-    # nothing. It is for the host shape: mkosi needs unprivileged user
-    # namespaces, and on Ubuntu 24.04 that means turning off two AppArmor
-    # sysctls. This pool is an ephemeral single-tenant VM with passwordless
-    # sudo, so `sysctl -w` works. linux-amd64-cpu16 is container-based with a
-    # read-only /proc/sys, where the setup step cannot work at all.
-    runs-on: linux-amd64-gpu-l4-latest-1
+    name: Build qcow-imager.efi (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: linux-amd64-gpu-l4-latest-1
+            target: build-efi-x86
+          - arch: aarch64
+            runner: nke-arm64-8c16g
+            target: build-efi-arm64
+    # Neither leg needs /dev/kvm -- mkosi builds a Unified Kernel Image and
+    # boots nothing. Both need the host shape: mkosi wants unprivileged user
+    # namespaces, which on Ubuntu means turning off two AppArmor sysctls, so
+    # the runner has to be a VM with passwordless sudo rather than a
+    # container. linux-amd64-cpu16 has a read-only /proc/sys and cannot.
+    runs-on: ${{ matrix.runner }}
     # A cold build is about twenty minutes, half of it mkosi's own tools image.
     # Nothing is cached between runs, so every run is cold.
     timeout-minutes: 60
@@ -77,7 +87,7 @@ jobs:
 
       - name: Build qcow-imager.efi
         run: |
-          make -C os-image/efi build-efi-x86 \
+          make -C os-image/efi ${{ matrix.target }} \
             ${IC_COMMIT_OVERRIDE:+IC_COMMIT="${IC_COMMIT_OVERRIDE}"}
         env:
           IC_COMMIT_OVERRIDE: ${{ github.event.inputs.infra_controller_commit }}
@@ -87,20 +97,24 @@ jobs:
       - name: Verify the output is a bootable EFI binary
         run: |
           set -euo pipefail
-          efi=os-image/efi/output/x86_64/qcow-imager.efi
+          efi=os-image/efi/output/${{ matrix.arch }}/qcow-imager.efi
           [ -s "${efi}" ] || { echo "::error::${efi} is missing or empty"; exit 1; }
           described=$(file -b "${efi}")
           echo "${described}"
+          case "${{ matrix.arch }}" in
+            x86_64)  want='x86-64'  ;;
+            aarch64) want='Aarch64' ;;
+          esac
           case "${described}" in
-            *"PE32+ executable (EFI application)"*x86-64*) ;;
-            *) echo "::error::${efi} is not an x86-64 EFI application: ${described}"; exit 1 ;;
+            *"PE32+ executable (EFI application)"*"${want}"*) ;;
+            *) echo "::error::${efi} is not a ${{ matrix.arch }} EFI application: ${described}"; exit 1 ;;
           esac
           sha256sum "${efi}"
 
       - name: Upload qcow-imager.efi
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: qcow-imager-efi-x86_64
-          path: os-image/efi/output/x86_64/qcow-imager.efi
+          name: qcow-imager-efi-${{ matrix.arch }}
+          path: os-image/efi/output/${{ matrix.arch }}/qcow-imager.efi
           if-no-files-found: error
           retention-days: 7
