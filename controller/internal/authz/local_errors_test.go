@@ -54,16 +54,18 @@ const oneReader = `[
 // wins — so Cedar answers Allow with the error alongside. Serving that is
 // serving a request the policy meant to block.
 //
-// The guard here reads a context key nothing sets, so the attribute is always
-// absent and the guard always errors. Not the ownership idiom that used to stand
-// here — NewLocal refuses a policy reading an entity attribute now, see
-// checkPolicyShape — but the same evaluation failure, which is what this is
-// about: an engine that answers Allow beside an error must not be believed,
-// whatever produced the error.
+// The guard here compares context.issuer, a populated String, with `<` against
+// a Long, which is a type error at evaluation rather than at load. It used to
+// read a context key nothing sets instead — context.nothingSetsThis — but
+// checkPolicyShape now refuses that at NewLocal, before Authorize ever runs
+// (see TestABundleWhosePolicyReadsAnUnpopulatedContextKeyIsRefused in
+// policy_shape_test.go), so it no longer reaches this guard. This is the same
+// evaluation failure by another route: an engine that answers Allow beside an
+// error must not be believed, whatever produced the error.
 func TestLocalRefusesAnAllowReachedWhileAPolicyErrored(t *testing.T) {
 	local := bundleWith(t, `
 permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource);
-forbid(principal, action, resource) when { context.nothingSetsThis == "forbidden" };
+forbid(principal, action, resource) when { context.issuer < 1 };
 `)
 
 	decision, err := local.Authorize(context.Background(), Query{
@@ -83,7 +85,7 @@ forbid(principal, action, resource) when { context.nothingSetsThis == "forbidden
 // watching a permissive rollout would see a fault that is not there.
 func TestLocalKeepsADenyThatErrored(t *testing.T) {
 	local := bundleWith(t, `
-permit(principal in NKE::Role::"nobody", action, resource) when { context.nothingSetsThis == "x" };
+permit(principal in NKE::Role::"nobody", action, resource) when { context.issuer < 1 };
 `)
 
 	decision, err := local.Authorize(context.Background(), Query{

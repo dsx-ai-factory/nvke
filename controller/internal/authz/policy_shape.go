@@ -55,11 +55,14 @@ func checkPolicyShape(set *cedar.PolicySet) error {
 		}
 		for _, condition := range policy.AST().Conditions {
 			if read, found := attributeReadOutsideContext(condition.Body); found {
+				reason := "context is the only thing whose attributes are populated"
+				if read.receiver == VariableContext {
+					reason = fmt.Sprintf("context only has %s and %s populated", ContextKeyIssuer, ContextKeyMethod)
+				}
 				return fmt.Errorf(
-					"policy %s reads %s.%s, and context is the only thing whose attributes are "+
-						"populated: the rule would never apply, and a forbid written this way "+
-						"silently grants what it was written to refuse",
-					name, read.receiver, read.attribute)
+					"policy %s reads %s.%s, and %s: the rule would never apply, and a forbid "+
+						"written this way silently grants what it was written to refuse",
+					name, read.receiver, read.attribute, reason)
 			}
 		}
 	}
@@ -128,12 +131,56 @@ const (
 	tagAttribute = "<tag>"
 )
 
-// readOf reports the read unless its receiver is the context record.
+// readOf reports the read unless its receiver is the context record and the
+// attribute is one Local actually populates.
+//
+// Being rooted at context is necessary but not sufficient: the record has two
+// keys, issuer and method, and nothing else. A policy reading a third one —
+// `context has neverSet` — is rooted at context by rootedAtContext's own test,
+// loads, and is false at every evaluation for the same reason a principal or
+// resource attribute read is: nothing sets it. That is the same failure this
+// file exists to catch, one level further in.
+//
+// The check runs here, at the point where target is the bare context variable
+// and attribute is the name immediately off it, rather than inside
+// rootedAtContext. rootedAtContext still answers "is this context or a chain
+// through it" for every other caller; this is the one place that additionally
+// knows which attribute is being asked for.
 func readOf(target ast.IsNode, attribute string) (attributeRead, bool) {
+	if variable, ok := target.(ast.NodeTypeVariable); ok && string(variable.Name) == VariableContext {
+		if isPopulatedContextKey(attribute) {
+			return attributeRead{}, false
+		}
+		return attributeRead{receiver: VariableContext, attribute: attribute}, true
+	}
 	if rootedAtContext(target) {
 		return attributeRead{}, false
 	}
 	return attributeRead{receiver: describeReceiver(target), attribute: attribute}, true
+}
+
+// isPopulatedContextKey reports whether key is one of the context record's
+// attributes Local actually sets.
+//
+// It names ContextKeyIssuer and ContextKeyMethod rather than restating
+// "issuer" and "method" as string literals, because those are the same
+// constants local.go's Authorize uses to build the record — the package's
+// existing single source of truth for the record's shape, not a new one
+// invented here. That keeps this switch from drifting on a rename, but it does
+// not, by itself, keep it in sync with a *new* key: adding a third ContextKeyX
+// constant and setting it in local.go's Context: types.NewRecord(...) still
+// needs a case added here by hand. TestPopulatedContextKeysMatchesLocal in
+// policy_shape_test.go is the backstop for that — it reads local.go's own
+// source and fails if a key it sets in the context record isn't accepted here,
+// so the divergence is a test failure rather than a silent reintroduction of
+// this bug class.
+func isPopulatedContextKey(key string) bool {
+	switch key {
+	case ContextKeyIssuer, ContextKeyMethod:
+		return true
+	default:
+		return false
+	}
 }
 
 // rootedAtContext reports whether an expression is the context record or an

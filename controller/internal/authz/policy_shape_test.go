@@ -4,6 +4,9 @@
 package authz
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"testing"
 
@@ -165,6 +168,108 @@ permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.want)
 		})
+	}
+}
+
+// A second fail-open shape, one level inside the first: rootedAtContext alone
+// only asks whether an expression reaches the context variable, not whether
+// the specific key is one Local sets. `context` is rooted at context and reads
+// clean by that test alone, but nothing populates a key nobody wrote to the
+// record in local.go, so `context has neverSet` is false at every evaluation
+// for the same reason a bare `resource has site` is: the shape this file
+// exists to catch, relocated.
+func TestABundleWhosePolicyReadsAnUnpopulatedContextKeyIsRefused(t *testing.T) {
+	dir := writeBundle(t, `@id("readers-may-read")
+permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource);
+forbid(principal, action in NKE::Action::"write", resource)
+ when { context has neverSet && context.neverSet == "prod" };`,
+		shippedActions(t), `[
+ {"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]},
+ {"uid":{"type":"NKE::Principal","id":"system:serviceaccount:nke-system:nke-cli"},
+  "attrs":{},"parents":[{"type":"NKE::Role","id":"reader"}]}
+]`)
+
+	_, err := NewLocal(dir)
+	require.Error(t, err, "a forbid keyed off a context attribute nothing sets must not load as though it were enforced")
+	assert.Contains(t, err.Error(), "context.neverSet")
+	assert.Contains(t, err.Error(), "context only has issuer and method populated")
+}
+
+// The two keys Local does set stay readable — this is the case the fix must
+// not break.
+func TestAPolicyMayReadThePopulatedContextKeys(t *testing.T) {
+	for _, key := range []string{ContextKeyIssuer, ContextKeyMethod} {
+		t.Run(key, func(t *testing.T) {
+			dir := writeBundle(t, `@id("readers-may-read")
+permit(principal in NKE::Role::"reader", action in NKE::Action::"read", resource)
+ when { context has `+key+` };`,
+				shippedActions(t), `[
+ {"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]},
+ {"uid":{"type":"NKE::Principal","id":"system:serviceaccount:nke-system:nke-cli"},
+  "attrs":{},"parents":[{"type":"NKE::Role","id":"reader"}]}
+]`)
+			_, err := NewLocal(dir)
+			require.NoError(t, err)
+		})
+	}
+}
+
+// The allowlist in policy_shape.go and the record local.go's Authorize builds
+// have to name the same keys, or this bug comes back one level deeper: a third
+// ContextKeyX added and populated in local.go but not added to
+// isPopulatedContextKey's switch would make checkPolicyShape refuse a policy
+// that reads a key that actually is safe now — the false-positive direction —
+// or, if the switch is edited independently of local.go, accept a key nothing
+// sets — this bug, again. Neither list is generated from the other, so this
+// test reads local.go's own source and fails if the keys it puts in the
+// context record and the keys isPopulatedContextKey accepts ever diverge,
+// rather than trusting that a future editor remembers to touch both.
+func TestPopulatedContextKeysMatchesLocal(t *testing.T) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "local.go", nil, 0)
+	require.NoError(t, err, "local.go must parse for this test to assert anything about it")
+
+	var recordKeys []string
+	ast.Inspect(file, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "NewRecord" {
+			return true
+		}
+		for _, arg := range call.Args {
+			lit, ok := arg.(*ast.CompositeLit)
+			if !ok {
+				continue
+			}
+			for _, elt := range lit.Elts {
+				kv, ok := elt.(*ast.KeyValueExpr)
+				if !ok {
+					continue
+				}
+				ident, ok := kv.Key.(*ast.Ident)
+				if !ok {
+					continue
+				}
+				recordKeys = append(recordKeys, ident.Name)
+			}
+		}
+		return true
+	})
+
+	require.NotEmpty(t, recordKeys, "expected to find the RecordMap literal Authorize builds in local.go")
+
+	byName := map[string]string{"ContextKeyIssuer": ContextKeyIssuer, "ContextKeyMethod": ContextKeyMethod}
+	for _, identName := range recordKeys {
+		value, known := byName[identName]
+		require.Truef(t, known,
+			"local.go's context record sets %s, which this test does not know the value of yet — "+
+				"add it to byName above so it can be checked against isPopulatedContextKey", identName)
+		assert.Truef(t, isPopulatedContextKey(value),
+			"local.go populates context key %q (%s) but isPopulatedContextKey refuses it — "+
+				"a policy reading it would be wrongly rejected as fail-open", value, identName)
 	}
 }
 
