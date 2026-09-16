@@ -58,15 +58,15 @@ the first place — no post-install kernel swap or reboot.
 
 ```bash
 make os-image-non-fde ARCH=arm64
+make os-image-fde ARCH=arm64
 ```
 
-This is a first pass, not full arm64 parity with amd64: only the non-FDE
-variant builds for arm64 today (no `os-image-fde ARCH=arm64` yet), and on an
-x86_64 host it always cross-builds under QEMU's `tcg` software emulation —
-there is no way to KVM-accelerate an arm64 guest on x86 hardware regardless
-of `/dev/kvm`. `ARCH` picks the right ISO URL, QEMU binary
-(`qemu-system-aarch64`), machine type (`virt`), and UEFI firmware (AAVMF
-instead of OVMF) automatically; nothing else needs to change per-arch.
+Both variants build for arm64. On an x86_64 host either one cross-builds under
+QEMU's `tcg` software emulation — there is no way to KVM-accelerate an arm64
+guest on x86 hardware regardless of `/dev/kvm`. `ARCH` picks the right ISO URL,
+QEMU binary (`qemu-system-aarch64`), machine type (`virt`), and UEFI firmware
+(AAVMF instead of OVMF) automatically; nothing else needs to change per-arch.
+`demo-fde.sh` and `boot-smoke.sh` take the same `ARCH`.
 
 The build-time cloud-init seed is only for Packer's SSH. The provisioner runs
 `cloud-init clean` and drops the build key, so each qcow2 is a golden image.
@@ -153,20 +153,22 @@ make run-vm QCOW=packer/output-non-fde/nke-node-non-fde-ubuntu-26.04.1-arm64.qco
 ## Release
 
 An `os-image/vX.Y.Z` tag (or `os-image/vX.Y.Z-rc.N`) runs
-`.github/workflows/os-image-artifact.yml`, which builds and validates the
-FDE and non-FDE amd64 images plus the non-FDE arm64 image (see "Build the OS
-image" above for arm64's current limitations) and, only if that succeeds,
-pushes the qcow2s to GHCR as OCI artifacts under arch-suffixed tags — not
-one multi-platform manifest shared across arches, see the workflow's header
-comment for why — and cuts a GitHub Release for the amd64 build attaching
-`nke-os-image-check` and `checksums.txt` (covering the amd64 qcow2s and the
-checker binary; the arm64 qcow2 isn't attached to the release yet, only
-GHCR).
+`.github/workflows/os-image-artifact.yml`, which builds and validates the FDE
+and non-FDE images for both architectures and, only if that succeeds, pushes
+the qcow2s to GHCR as OCI artifacts under arch-suffixed tags — not one
+multi-platform manifest shared across arches, see the workflow's header
+comment for why — then cuts a GitHub Release attaching `nke-os-image-check`
+and a `checksums.txt` covering all four qcow2s and the checker binary.
+
+The pulled file keeps the name Packer gave it, so it carries the Ubuntu point
+release and the architecture and two arches can share a directory:
 
 ```bash
 oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:vX.Y.Z-amd64 --platform linux/amd64
+oras pull ghcr.io/dsx-ai-factory/nke/os-image-fde:vX.Y.Z-arm64 --platform linux/arm64
 oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:vX.Y.Z-amd64 --platform linux/amd64
 oras pull ghcr.io/dsx-ai-factory/nke/os-image-non-fde:vX.Y.Z-arm64 --platform linux/arm64
+# -> nke-node-{fde,non-fde}-ubuntu-26.04.1-{amd64,arm64}.qcow2
 ```
 
 **FDE security note**: the published image's `LUKS_PASSPHRASE` is the

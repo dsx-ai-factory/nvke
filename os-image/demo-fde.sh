@@ -15,6 +15,7 @@
 # Env overrides:
 #   QCOW          path to the FDE qcow2 (default: the single *.qcow2 under
 #                 packer/output-fde/, e.g. nke-node-fde-ubuntu-26.04.1-amd64.qcow2)
+#   ARCH          amd64 or arm64; must match the qcow2 (default: amd64)
 #   SSH_KEY       ssh key used for the build (default: packer/.ssh/id_ed25519)
 #   SSH_PORT      host port to forward to guest :22 (default: 2222)
 #   BOOT_TIMEOUT  seconds to wait for SSH per boot (default: 360 kvm / 1800 tcg)
@@ -31,7 +32,7 @@
 set -euo pipefail
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-  sed -n '2,29p' "${BASH_SOURCE[0]}"
+  sed -n '2,30p' "${BASH_SOURCE[0]}"
   exit 0
 fi
 
@@ -52,13 +53,45 @@ if [[ -z "${QCOW}" ]]; then
 fi
 SSH_KEY="${SSH_KEY:-${ROOT}/packer/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
+# amd64 or arm64. Must match the qcow2 under test -- see the same
+# ARCH-vs-host-arch reasoning in packer/Makefile's ACCELERATOR probe.
+ARCH="${ARCH:-amd64}"
 
 # machine_type/cpu_model matter here for the same reason they do in
-# nke-node-fde.pkr.hcl: this image boots via OVMF/UEFI, and QEMU's default
+# nke-node-fde.pkr.hcl: this image boots via UEFI, and on amd64 QEMU's default
 # "pc" (i440fx) machine type is a known-fragile pairing with OVMF that
 # produced intermittent guest-kernel instability while developing this
-# variant. q35 + an explicit cpu_model avoids it.
-if [[ -c /dev/kvm && -w /dev/kvm ]]; then
+# variant. q35 + an explicit cpu_model avoids it. aarch64 has no default
+# machine at all and must be told "virt".
+#
+# The TPM device differs too: "tpm-tis" is the x86 ISA device, arm64's virt
+# needs the MMIO one, "tpm-tis-device".
+case "${ARCH}" in
+  amd64)
+    QEMU_BIN=qemu-system-x86_64
+    ARCH_UNAME=x86_64
+    MACHINE_ARGS=(-machine type=q35)
+    TPM_DEVICE=tpm-tis
+    DEFAULT_OVMF_CODE=/usr/share/OVMF/OVMF_CODE_4M.fd
+    DEFAULT_OVMF_VARS=/usr/share/OVMF/OVMF_VARS_4M.fd
+    ;;
+  arm64)
+    QEMU_BIN=qemu-system-aarch64
+    ARCH_UNAME=aarch64
+    MACHINE_ARGS=(-machine virt)
+    TPM_DEVICE=tpm-tis-device
+    # AAVMF is arm64's UEFI firmware, the equivalent of amd64's OVMF.
+    DEFAULT_OVMF_CODE=/usr/share/AAVMF/AAVMF_CODE.fd
+    DEFAULT_OVMF_VARS=/usr/share/AAVMF/AAVMF_VARS.fd
+    ;;
+  *)
+    echo "demo: unsupported ARCH=${ARCH} (expected amd64 or arm64)" >&2
+    exit 1
+    ;;
+esac
+
+# Host arch too, not just /dev/kvm: KVM only accelerates a same-arch guest.
+if [[ "$(uname -m)" == "${ARCH_UNAME}" && -c /dev/kvm && -w /dev/kvm ]]; then
   ACCEL_ARGS=(-enable-kvm)
   CPU_MODEL="${CPU_MODEL:-host}"
   # The first real boot does partition/LUKS/PV/LV growth, a TPM bind+verify,
@@ -67,13 +100,19 @@ if [[ -c /dev/kvm && -w /dev/kvm ]]; then
   # rather than tuned to the fast-path boots.
   BOOT_TIMEOUT="${BOOT_TIMEOUT:-360}"
 else
-  echo "demo: no usable /dev/kvm, booting under software emulation (slower)" >&2
+  echo "demo: no usable same-arch /dev/kvm, booting under software emulation (slower)" >&2
   ACCEL_ARGS=(-accel tcg)
-  CPU_MODEL="${CPU_MODEL:-max}"
+  # Same knob as packer/Makefile: on arm64 a bare "max" turns on pointer auth
+  # with QARMA5, which tcg emulates far too slowly; impdef keeps it cheap.
+  if [[ "${ARCH}" == "arm64" ]]; then
+    CPU_MODEL="${CPU_MODEL:-max,pauth-impdef=on}"
+  else
+    CPU_MODEL="${CPU_MODEL:-max}"
+  fi
   BOOT_TIMEOUT="${BOOT_TIMEOUT:-1800}"
 fi
 
-for tool in qemu-system-x86_64 qemu-img swtpm cloud-localds ssh; do
+for tool in "${QEMU_BIN}" qemu-img swtpm cloud-localds ssh; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "demo: required tool '${tool}' not found" >&2; exit 3; }
 done
 if [[ ! -f "${QCOW}" ]]; then
@@ -85,8 +124,8 @@ if [[ ! -f "${SSH_KEY}" ]]; then
   exit 1
 fi
 
-OVMF_CODE="${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}"
-OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
+OVMF_CODE="${OVMF_CODE:-${DEFAULT_OVMF_CODE}}"
+OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-${DEFAULT_OVMF_VARS}}"
 
 WORKDIR="$(mktemp -d)"
 DISK="${WORKDIR}/nke-node-fde-demo.qcow2"
@@ -146,7 +185,7 @@ local-hostname: nke-fde-demo" >"${runwork}/meta-data"
     --tpm2 --daemon --pid "file=${tpmdir}/swtpm.pid"
 
   local qemu_args=(
-    -machine type=q35
+    "${MACHINE_ARGS[@]}"
     -cpu "${CPU_MODEL}"
     -m 4096 -smp 2
     "${ACCEL_ARGS[@]}"
@@ -157,12 +196,12 @@ local-hostname: nke-fde-demo" >"${runwork}/meta-data"
     -drive if=virtio,file="${runwork}/seed.iso",format=raw
     -chardev "socket,id=chrtpm,path=${tpmdir}/swtpm-sock"
     -tpmdev emulator,id=tpm0,chardev=chrtpm
-    -device tpm-tis,tpmdev=tpm0
+    -device "${TPM_DEVICE},tpmdev=tpm0"
     -netdev "user,id=net0,hostfwd=tcp::${SSH_PORT}-:22"
     -device virtio-net,netdev=net0
   )
 
-  qemu-system-x86_64 "${qemu_args[@]}" >"${runwork}/qemu.log" 2>&1 &
+  "${QEMU_BIN}" "${qemu_args[@]}" >"${runwork}/qemu.log" 2>&1 &
   VM_QPID=$!
   echo "${VM_QPID}" > "${runwork}/qemu.pid"
 }
@@ -185,7 +224,7 @@ stop_vm() {
   kill "${VM_QPID}" 2>/dev/null || true
   # Fallback by disk path in case $VM_QPID somehow isn't qemu's own pid (e.g.
   # a future refactor backgrounds it indirectly again).
-  pkill -f "qemu-system-x86_64.*${DISK}" 2>/dev/null || true
+  pkill -f "${QEMU_BIN}.*${DISK}" 2>/dev/null || true
   local swtpm_pid
   swtpm_pid="$(cat "${VM_TPMDIR}/swtpm.pid" 2>/dev/null)" || true
   if [[ -n "${swtpm_pid}" ]] && kill -0 "${swtpm_pid}" 2>/dev/null; then
