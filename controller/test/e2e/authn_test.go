@@ -309,22 +309,25 @@ const authnRequireEnv = "NKE_E2E_REQUIRE_AUTHN"
 
 func authnRequired() bool {
 	GinkgoHelper()
-	required, err := parseAuthnRequired(os.Getenv(authnRequireEnv))
+	required, err := parseRequireFlag(authnRequireEnv, os.Getenv(authnRequireEnv))
 	Expect(err).NotTo(HaveOccurred())
 	return required
 }
 
-// parseAuthnRequired reads the variable; unset or empty is false. Anything
-// ParseBool refuses is an error, because a variable whose job is to fail a run
-// must not decline to.
-func parseAuthnRequired(raw string) (bool, error) {
+// parseRequireFlag reads a "require" environment variable's raw value; unset
+// or empty is false. Anything ParseBool refuses is an error, because a
+// variable whose job is to fail a run must not decline to. name is the
+// variable's own name, used only to name it in the error. Shared by authn and
+// authz's own require-env checks (authnRequired, authzRequired): the parsing
+// rule is the same for both, only the variable differs.
+func parseRequireFlag(name, raw string) (bool, error) {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
 		return false, nil
 	}
 	required, err := strconv.ParseBool(trimmed)
 	if err != nil {
-		return false, fmt.Errorf("parsing %s=%q: %w (it takes a boolean: 1, t, T, TRUE, true, True, or their false counterparts)", authnRequireEnv, raw, err)
+		return false, fmt.Errorf("parsing %s=%q: %w (it takes a boolean: 1, t, T, TRUE, true, True, or their false counterparts)", name, raw, err)
 	}
 	return required, nil
 }
@@ -494,7 +497,7 @@ func TestDetectAuthnEnforcement(t *testing.T) {
 }
 
 // A parse reading CI's "true" as false would take the assertion away silently.
-func TestParseAuthnRequired(t *testing.T) {
+func TestParseRequireFlag(t *testing.T) {
 	for _, tc := range []struct {
 		raw     string
 		want    bool
@@ -509,18 +512,18 @@ func TestParseAuthnRequired(t *testing.T) {
 		{raw: "please", wantErr: true},
 	} {
 		t.Run(strconv.Quote(tc.raw), func(t *testing.T) {
-			got, err := parseAuthnRequired(tc.raw)
+			got, err := parseRequireFlag(authnRequireEnv, tc.raw)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("parseAuthnRequired(%q) = %v, want an error", tc.raw, got)
+					t.Fatalf("parseRequireFlag(%q, %q) = %v, want an error", authnRequireEnv, tc.raw, got)
 				}
 				return
 			}
 			if err != nil {
-				t.Fatalf("parseAuthnRequired(%q): %v", tc.raw, err)
+				t.Fatalf("parseRequireFlag(%q, %q): %v", authnRequireEnv, tc.raw, err)
 			}
 			if got != tc.want {
-				t.Fatalf("parseAuthnRequired(%q) = %v, want %v", tc.raw, got, tc.want)
+				t.Fatalf("parseRequireFlag(%q, %q) = %v, want %v", authnRequireEnv, tc.raw, got, tc.want)
 			}
 		})
 	}

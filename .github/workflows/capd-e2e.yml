@@ -121,7 +121,14 @@ jobs:
       # satisfy the required input and document what that leg runs. `health` and
       # the authn specs ride along there -- both need a deployed, enforcing NKE.
       # authn-spire is excluded (needs SPIRE pod attestation not wired in CAPD).
-      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '((capd || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive' }}
+      # authz rides the same non-PR leg, matching precedent (nothing like this
+      # runs pre-merge today, authn included) -- see plan-authz-e2e-tests.md §4
+      # (project docs, cwe-api-oidc-auth).
+      # authz-spiffe is excluded for the same reason authn-spire is: it needs a
+      # SPIFFE-shaped role grant plus SPIRE pod attestation, neither wired into
+      # CAPD (test/e2e/authz_test.go's "the operator and nodeOperator roles"
+      # doc comment).
+      label-filter: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'pull-request/') && 'core-docker || health' || '((capd || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive || (authz && !authz-spiffe)' }}
       providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
       # Keep diagnostic headroom above the 15-minute pull-request target. Full
       # runs still need room for two modes and every extended CAPD scenario.
@@ -130,6 +137,8 @@ jobs:
       # the authn specs run on the node-pool leg, and without this a broken auth
       # deployment would leave them silently skipped and the job green.
       require-authn: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
+      # Same reasoning as require-authn, for the authz specs riding the same leg.
+      require-authz: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       nkectl-smoke: true
       needs-capnico-source: true
       single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}

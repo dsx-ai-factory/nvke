@@ -215,11 +215,11 @@ E2E_CAPD_PROVIDERS='["capi_core", "bgp-containers", "capd", "capd-reboot-control
 # ginkgo label. Derived here so the two entrypoints cannot drift into testing
 # different things, which they had: the local one ran
 # `(capd || health) && !cp-controller` and so never ran the authentication specs
-# that CI runs. authn-spire stays out because it needs SPIRE pod attestation
-# that neither container-backed backend wires up.
+# that CI runs. authn-spire and authz-spiffe stay out because they need SPIRE
+# pod attestation that neither container-backed backend wires up.
 e2e_cp_controller_filter() { printf '(%s && cp-controller) || health' "$1"; }
 e2e_node_pool_filter() {
-  printf '((%s || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive' "$1"
+  printf '((%s || health) && !cp-controller) || (authn && !authn-spire) || authn-permissive || (authz && !authz-spiffe)' "$1"
 }
 
 # Kept for callers that still name CAPD directly.

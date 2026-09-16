@@ -13,6 +13,15 @@
 #   kubectl create token nke-client -n nke-clients \
 #     --audience=https://nke.tilt.local --duration=10m
 #
+# A third identity, nke-system/nke-cli, exists only because deploy/authz/
+# roles.json (the production policy bundle this environment also deploys,
+# see nke-authz-dev) grants Cedar role "reader" to
+# NKE::Principal "system:serviceaccount:nke-system:nke-cli" by name -- the
+# authz e2e suite's "the reader role" spec (test/e2e/authz_test.go) needs a
+# real, mintable ServiceAccount for that exact principal to exercise a real
+# allow decision in this environment. It is admitted below the same as
+# nke-client.
+#
 # nkectl mints that same admitted identity from a management-cluster kubeconfig
 # (nkectl config set-site --kubeconfig). The token-minter RoleBindings below
 # are for the nke-e2e ServiceAccount the e2e suite uses, not for a human
@@ -157,6 +166,57 @@ subjects:
     name: nke-e2e
     namespace: nke-clients
 ---
+# The reader-role principal deploy/authz/roles.json names by identity:
+# system:serviceaccount:nke-system:nke-cli. Lives in nke-system rather than
+# nke-clients because that is the namespace the shipped bundle actually
+# grants -- Tilt's nke-system-namespace resource owns creating this
+# namespace, hence nke-auth-dev's added resource_deps on it (Tiltfile).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nke-cli
+  namespace: nke-system
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nke-cli-token-minter
+  namespace: nke-system
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["nke-cli"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nke-cli-token-minter
+  namespace: nke-system
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nke-cli-token-minter
+subjects:
+  - kind: ServiceAccount
+    name: nke-e2e
+    namespace: nke-clients
+---
 # The authentication configuration, mounted at /etc/nke/auth/auth.yaml by the
 # chart. See internal/auth and the README for the schema. Only
 # auth.nke.nvidia.com/v1alpha1 is accepted: the apiserver's own
@@ -193,6 +253,24 @@ data:
             # the namespace, nke-e2e above included.
             - namespace: nke-clients
               name: nke-client
+            - namespace: nke-system
+              name: nke-cli
+        # Grants nke-clients/nke-client the reader role by (namespace, service
+        # account) match rather than by roles.json naming it individually --
+        # so authz_claims_test.go's "grants a role by (namespace, service
+        # account) match" spec has a real claim-based rule to exercise in this
+        # environment instead of unconditionally skipping. This is the only
+        # dev-fixture ServiceAccount this suite can mint a token for that
+        # roles.json does not also grant a static role to (nke-cli is the
+        # static reader principal, see above), which is what makes the two
+        # role paths distinguishable. authz_test.go's own "no role" negative
+        # case (nke-client, same identity) accounts for this rule when it
+        # decides whether that subject still holds no role.
+        roles:
+          serviceAccounts:
+            - namespace: nke-clients
+              name: nke-client
+              role: reader
       # SPIRE is omitted because it is not reachable yet, and an unreachable
       # issuer is a startup failure in enforcing mode. Two things are missing: the
       # discovery provider's serving certificate does not carry the in-cluster

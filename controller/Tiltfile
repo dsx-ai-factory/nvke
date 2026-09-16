@@ -827,13 +827,73 @@ k8s_resource(
         "nke-client:serviceaccount:nke-clients",
         "nke-outsider:serviceaccount:nke-outsiders",
         "nke-e2e:serviceaccount:nke-clients",
+        "nke-cli:serviceaccount:nke-system",
         "nke-client-token-minter:role:nke-clients",
         "nke-client-token-minter:rolebinding:nke-clients",
         "nke-outsider-token-minter:role:nke-outsiders",
         "nke-outsider-token-minter:rolebinding:nke-outsiders",
+        "nke-cli-token-minter:role:nke-system",
+        "nke-cli-token-minter:rolebinding:nke-system",
         "nke-auth-config:configmap:cloud-workflow-engine",
     ],
-    resource_deps=["check-management-cluster"],
+    # nke-cli:serviceaccount:nke-system (and its Role/RoleBinding) are applied
+    # into the nke-system namespace, which nke-system-namespace (below) owns
+    # creating -- without this dep both become eligible right after
+    # check-management-cluster and the apply can race namespace creation, the
+    # same hazard nke-authz-dev's own dep on this resource guards against.
+    resource_deps=["check-management-cluster", "nke-system-namespace"],
+    pod_readiness="ignore",
+)
+
+# NKE API authorization scaffolding: the policy bundle ConfigMap the chart
+# mounts at AUTHZ_BUNDLE_PATH. Generated from deploy/authz's own source files
+# (read verbatim, not retyped) so this ConfigMap can never drift from the
+# bundle internal/authz actually embeds for production -- the same "read
+# whichever bundle is actually deployed" discipline test/e2e/authz_test.go
+# documents for itself.
+def _configmap_yaml(name, namespace, labels, data):
+    lines = [
+        "apiVersion: v1",
+        "kind: ConfigMap",
+        "metadata:",
+        "  name: %s" % name,
+        "  namespace: %s" % namespace,
+        "  labels:",
+    ]
+    for key in labels:
+        lines.append("    %s: %s" % (key, labels[key]))
+    lines.append("data:")
+    for key in data:
+        lines.append("  %s: |" % key)
+        for content_line in str(data[key]).splitlines():
+            lines.append(("    " + content_line) if content_line else "")
+    return "\n".join(lines) + "\n"
+
+_nke_authz_bundle_yaml = _configmap_yaml(
+    "nke-authz-policy",
+    "cloud-workflow-engine",
+    {
+        "app.kubernetes.io/name": "cloud-workflow-engine",
+        "app.kubernetes.io/component": "api-authz-dev",
+        "app.kubernetes.io/part-of": "cloud-workflow-engine",
+        "nke.nvidia.com/purpose": "nke-authz-dev",
+    },
+    {
+        "policies.cedar": read_file("deploy/authz/policies.cedar"),
+        "actions.json": read_file("deploy/authz/actions.json"),
+        "roles.json": read_file("deploy/authz/roles.json"),
+    },
+)
+k8s_yaml(blob(_nke_authz_bundle_yaml))
+
+k8s_resource(
+    new_name="nke-authz-dev",
+    labels=["1-infra"],
+    objects=["nke-authz-policy:configmap:cloud-workflow-engine"],
+    # nke-auth-dev creates the cloud-workflow-engine namespace this ConfigMap
+    # is applied into; without this dep both resources become eligible right
+    # after check-management-cluster and the apply can race namespace creation.
+    resource_deps=["check-management-cluster", "nke-auth-dev"],
     pod_readiness="ignore",
 )
 
@@ -965,6 +1025,19 @@ _cwe_auth_enabled = os.getenv(
 _cwe_permissive_mode = os.getenv(
     "NKE_PERMISSIVE_MODE", _tilt_env.get("NKE_PERMISSIVE_MODE", "false")) == "true"
 
+# NKE API authorization. Enforcing by default alongside authn now that a real
+# bundle is deployed (nke-authz-dev, above): the chart refuses
+# apiAuthz.enabled without apiAuth.enabled (deployment.yaml), so this can only
+# ever be on when authn is.
+#
+#   NKE_AUTHZ_ENABLED=false tilt up        -> AUTHZ_BUNDLE_PATH unset, authz off
+#   NKE_AUTHZ_PERMISSIVE_MODE=true tilt up -> evaluate and count, never reject
+#
+_cwe_authz_enabled = os.getenv(
+    "NKE_AUTHZ_ENABLED", _tilt_env.get("NKE_AUTHZ_ENABLED", "true")) == "true"
+_cwe_authz_permissive_mode = os.getenv(
+    "NKE_AUTHZ_PERMISSIVE_MODE", _tilt_env.get("NKE_AUTHZ_PERMISSIVE_MODE", "false")) == "true"
+
 _cwe_chart_extra_env_names = [
     "TEMPORAL_UI_URL",
     "NODE_HEALTH_CHECK_POLLING_INTERVAL",
@@ -1019,6 +1092,8 @@ _cwe_chart_flags = [
     "--set-string", "appDb.postgresPassword=%s" % _postgres_superuser_password,
     "--set", "apiAuth.enabled=%s" % ("true" if _cwe_auth_enabled else "false"),
     "--set", "apiAuth.permissive=%s" % ("true" if _cwe_permissive_mode else "false"),
+    "--set", "apiAuthz.enabled=%s" % ("true" if _cwe_authz_enabled else "false"),
+    "--set", "apiAuthz.permissive=%s" % ("true" if _cwe_authz_permissive_mode else "false"),
     "--set", "capi.rbac.create=true",
     "--set", "tenantAccess.enabled=%s" % ("true" if _cwe_tenant_access_enabled else "false"),
     "--set", "nkeOIDCAuth.enabled=%s" % ("true" if _cwe_oidc_enabled else "false"),
@@ -1051,7 +1126,7 @@ if CWE_IMAGE:
 
 _cwe_local_debug_active = os.path.exists(CWE_LOCAL_DEBUG_MARKER)
 _cwe_tilt_goarch = local_arch()
-_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev"] + _all_cwe_resource_deps
+_cwe_resource_deps = ["postgres", "temporal", "spire-nke-services-spiffe-id", "spire-tpm-pubhashes", "nke-system-namespace", "nke-auth-dev", "nke-authz-dev"] + _all_cwe_resource_deps
 if _cwe_oidc_enabled:
     _cwe_resource_deps += ["spire-oidc-provider-nodeport", "oidc-upstream-ca-ready"]
 

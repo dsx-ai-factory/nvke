@@ -197,6 +197,7 @@ runner_exec() {
     -e DOCKER_HOST="${RUNNER_DOCKER_HOST}" \
     -e NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
     -e NKE_E2E_REQUIRE_AUTHN="${NKE_E2E_REQUIRE_AUTHN:-}" \
+    -e NKE_E2E_REQUIRE_AUTHZ="${NKE_E2E_REQUIRE_AUTHZ:-}" \
     "${RUNNER_NAME}" "$@"
 }
 
@@ -206,6 +207,7 @@ runner_exec_detached() {
     -e DOCKER_HOST="${RUNNER_DOCKER_HOST}" \
     -e NKE_E2E_DOCKERHUB_MIRROR="${DOCKERHUB_MIRROR}" \
     -e NKE_E2E_REQUIRE_AUTHN="${NKE_E2E_REQUIRE_AUTHN:-}" \
+    -e NKE_E2E_REQUIRE_AUTHZ="${NKE_E2E_REQUIRE_AUTHZ:-}" \
     "${RUNNER_NAME}" "$@"
 }
 
@@ -1181,9 +1183,10 @@ if [[ "${SINGLE_RUNNER_CONTROL_PLANE_MODES}" == "true" ]]; then
   fi
   redeploy_cwe false
   # Node-pool control plane (flag off): the long-standing CAPD lane. `!cp-controller`
-  # keeps the flag-on spec out of this flag-off CWE. `health` and the authn specs
-  # ride along here -- both need a deployed, enforcing NKE, which this leg has;
-  # authn-spire is excluded (needs SPIRE pod attestation not yet wired in CAPD).
+  # keeps the flag-on spec out of this flag-off CWE. `health` and the authn/authz
+  # specs ride along here -- all need a deployed, enforcing NKE, which this leg
+  # has; authn-spire and authz-spiffe are excluded (need SPIRE pod attestation
+  # not yet wired in CAPD).
   leg_rc=0
   run_ginkgo_leg "$(e2e_node_pool_filter "${BACKEND_LABEL}")" "false" "-nodepool" || leg_rc=$?
   stop_state_monitor
