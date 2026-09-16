@@ -1,0 +1,16 @@
+#!ipxe
+set boot-loader https://d1veq6e8nuk2fy.cloudfront.net/nke-isos/qcow/efi/aarch64/2026-06-25/1782410719/qcow-imager.efi
+set image-url https://d1veq6e8nuk2fy.cloudfront.net/nke-isos/qcow/images/24.04/aarch64/lvm/2026-06-25/1035/nke-24.04-aarch64-lvm-2026-06-25-1035.qcow2
+set disk-strategy {{ .DiskSelectionStrategy }}
+
+# You probably don't need to change these
+set console-config console=tty0 console=ttyS1,115200
+# Not a copy of the amd64 line. pci=realloc and reboot=pci are x86-only, and
+# intel_iommu=on names a controller no ARM machine has. iommu.passthrough=1 is
+# the architecture-neutral spelling of iommu=pt.
+set kernel-params loglevel=1 iommu.passthrough=1
+set luks-key luks.key=changeit
+set cloud-init-ds ds=nocloud-net;s=${cloudinit-url}
+
+chain ${boot-loader} ${console-config} ${kernel-params} ${luks-key} image_url=${image-url} disk_strategy=${disk-strategy} ${cloud-init-ds} update_grub_template=yes update_grub_cfg=yes
+boot

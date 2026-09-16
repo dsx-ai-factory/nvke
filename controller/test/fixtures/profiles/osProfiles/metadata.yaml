@@ -24,3 +24,12 @@ profiles:
     architecture: amd64
     build_date: "2026-03-23"
     ubuntu_version: "24.04"
+  # The arm64 twin. Same userData; its ipxeScript differs only in the two
+  # artifact URLs and the kernel parameters, which are x86-only on the amd64
+  # entry. No arm64 lane requests it yet.
+  nke-nico-vms-24.04-arm64-fde:
+    kubernetes_version: ""
+    kubernetes_version_injected: true
+    architecture: arm64
+    build_date: "2026-03-23"
+    ubuntu_version: "24.04"

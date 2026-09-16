@@ -9,7 +9,7 @@ Two kinds of entry live here, and the difference matters:
 | Profile | URLs | Boots |
 |---|---|---|
 | `test-fixture-amd64`, `nke-local-dev-kindest-arm64` | `example.test`, synthetic | nothing; they exercise CWE's rendering and the CAPD and gofail lanes |
-| `nke-nico-vms-24.04-amd64-fde` | real, public CloudFront hosts | the NKE FDE node image on the `nico-vms` backend |
+| `nke-nico-vms-24.04-amd64-fde`, `nke-nico-vms-24.04-arm64-fde` | real, public CloudFront hosts | the NKE FDE node image on the `nico-vms` backend |
 
 `nke-nico-vms-24.04-amd64-fde` is a copy of the fleet profile of the same name.
 It is the OS profile every `nico-vms` E2E spec requests, and CWE reads its
