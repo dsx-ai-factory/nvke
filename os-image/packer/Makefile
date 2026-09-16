@@ -139,12 +139,10 @@ prepare-installer-iso:
 	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
 
 check-deps:
-	@for tool in go dpkg-deb; do \
-		command -v "$$tool" >/dev/null 2>&1 || { \
-			echo "$$tool is required to build the nke-agent Debian package" >&2; \
-			exit 1; \
-		}; \
-	done
+	@command -v go >/dev/null 2>&1 || { \
+		echo "go is required to build nke-agent and the pinned nfpm" >&2; \
+		exit 1; \
+	}
 
 .PHONY: test
 test: ## Check artifact staging without downloading or building bundles.

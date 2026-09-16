@@ -24,7 +24,6 @@ Prereqs, on a Linux host:
 |---|---|---|
 | [Packer](https://developer.hashicorp.com/packer) | >= 1.10.0 | https://developer.hashicorp.com/packer/install |
 | [Go](https://go.dev/) | per `go.work` | https://go.dev/dl/ |
-| `dpkg-deb` | >= 1.19.0 | via your package manager |
 | `curl` | any | via your package manager |
 | `qemu-system-x86_64`, `cloud-localds`, `swtpm`, OVMF | any | via your package manager |
 | `xorriso`, `p7zip-full` (`7z`) | any | via your package manager |
@@ -40,8 +39,8 @@ ISO patching (see its header comment for why).
 correct but roughly an order of magnitude slower. Force either mode with
 `make os-image-fde ACCELERATOR=tcg`. `boot-smoke.sh` does the same probe.
 
-`make os-image-fde`/`make os-image-non-fde` check for `go` and `dpkg-deb` on
-`PATH` before they boot the build VM and fail fast if either is missing.
+`make os-image-fde`/`make os-image-non-fde` check for `go` on
+`PATH` before they boot the build VM and fail fast if it is missing. The agent package uses nfpm, pinned in `make/tool-versions.mk`.
 
 `nke-agent` is built as a Debian package from this checkout's `agent/` source
 using `make -C agent deb-<arch>` and installed with dpkg during provisioning.

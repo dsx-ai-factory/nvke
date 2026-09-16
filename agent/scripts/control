@@ -1,8 +1,0 @@
-Package: nke-agent
-Version: {{VERSION}}
-Section: base
-Priority: optional
-Architecture: amd64
-Depends: libc6
-Maintainer: Nvidia NKE
-Description: NKE Node Agent and Attestation Service

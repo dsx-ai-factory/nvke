@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: nke-agent
+arch: "${ARCH}"
+platform: linux
+version: "${DEB_VERSION}"
+version_schema: none
+section: base
+priority: optional
+maintainer: Nvidia NKE
+description: NKE Node Agent and Attestation Service
+mtime: "2026-01-01T00:00:00Z"
+depends:
+  - libc6
+
+scripts:
+  postinstall: postinst
+  preremove: prerm
+  postremove: postrm
+
+contents:
+  - src: "${AGENT_DIR}/bin/linux_${ARCH}/nke-agent"
+    dst: /usr/local/bin/nke-agent
+    expand: true
+    file_info: { mode: 0755 }
+  - src: "${AGENT_DIR}/bin/linux_${ARCH}/nke-agent-updater"
+    dst: /usr/local/bin/nke-agent-updater
+    expand: true
+    file_info: { mode: 0755 }
+  - src: "${AGENT_DIR}/scripts/nke-agent.service"
+    dst: /etc/systemd/system/nke-agent.service
+    expand: true
+    file_info: { mode: 0644 }
+  - src: "${AGENT_DIR}/scripts/nke-agent-updater@.service"
+    dst: /etc/systemd/system/nke-agent-updater@.service
+    expand: true
+    file_info: { mode: 0644 }
+
+deb:
+  compression: gzip

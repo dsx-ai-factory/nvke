@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Installing NKE Agent   version {{VERSION}}..."
+echo "Installing NKE Agent..."
 systemctl daemon-reload
 
 systemctl enable nke-agent

@@ -190,8 +190,10 @@ oras pull ghcr.io/dsx-ai-factory/nke/agent-deb:v0.3.0 --platform linux/amd64
 ```
 
 Apt remains the node install path; the OCI binary above is the same executable
-without the packaging/systemd unit. The reference OS image (`os-image/`) prefers the
-`.deb` and falls back to the binary.
+without the packaging/systemd unit. The reference OS image (`os-image/`) installs the
+`.deb` built from this checkout. The package spec and maintainer scripts live in
+`os-image/packages/nke-agent/packaging/`; `make -C agent deb-amd64` or
+`deb-arm64` builds it with the shared pinned nfpm.
 
 The intake destination comes from the GitHub `apt-intake` environment
 (`APT_INTAKE_S3_URI`, `APT_INTAKE_AWS_ROLE_ARN`, …) — nothing bucket-specific
