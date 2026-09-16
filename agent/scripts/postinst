@@ -8,6 +8,9 @@ systemctl enable nke-agent
 if [ ! -f /etc/default/nke-agent ]; then
   echo 'AGENT_ARGS=""' >/etc/default/nke-agent
 fi
-systemctl restart nke-agent
+# Image builds enable the service but defer startup until instance identity exists.
+if [ "${NKE_AGENT_SKIP_START:-0}" != 1 ]; then
+  systemctl restart nke-agent
+fi
 
-echo "NKE Services installed and started."
+echo "NKE Services installed."

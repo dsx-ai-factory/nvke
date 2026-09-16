@@ -24,6 +24,7 @@ Prereqs, on a Linux host:
 |---|---|---|
 | [Packer](https://developer.hashicorp.com/packer) | >= 1.10.0 | https://developer.hashicorp.com/packer/install |
 | [Go](https://go.dev/) | per `go.work` | https://go.dev/dl/ |
+| `dpkg-deb` | >= 1.19.0 | via your package manager |
 | `curl` | any | via your package manager |
 | `qemu-system-x86_64`, `cloud-localds`, `swtpm`, OVMF | any | via your package manager |
 | `xorriso`, `p7zip-full` (`7z`) | any | via your package manager |
@@ -39,14 +40,19 @@ ISO patching (see its header comment for why).
 correct but roughly an order of magnitude slower. Force either mode with
 `make os-image-fde ACCELERATOR=tcg`. `boot-smoke.sh` does the same probe.
 
-`make os-image-fde`/`make os-image-non-fde` check for `go` on `PATH` before
-they boot the build VM and fail fast with the install link above if it's
-missing.
+`make os-image-fde`/`make os-image-non-fde` check for `go` and `dpkg-deb` on
+`PATH` before they boot the build VM and fail fast if either is missing.
 
-`nke-agent` is built from this checkout's `agent/` source (cross-compiled to
-the target architecture when the host differs), so the baked agent is whatever your
-checkout says — no prebuilt artifact is pulled. To bake a released agent,
-check out its `agent/vX.Y.Z` tag first. The SPIRE agent and TPM tools come from
+`nke-agent` is built as a Debian package from this checkout's `agent/` source
+using `make -C agent deb-<arch>` and installed with dpkg during provisioning.
+Build on Linux for the target architecture with cgo enabled, as required by
+the agent package's libc linkage check. The package owns the agent, updater,
+and both systemd units. Startup is deferred during the bake with
+`NKE_AGENT_SKIP_START=1`; a systemd drop-in preserves the image's SPIRE ordering
+and socket wait across package upgrades.
+The baked agent is whatever your checkout says — no prebuilt artifact is
+pulled. To bake a released agent, check out its `agent/vX.Y.Z` tag first.
+The SPIRE agent and TPM tools come from
 the `spire-agent` .deb built at bake time out of
 [`packages/spire-agent/`](packages/spire-agent/), pinned by version and
 SHA-256 in its lock; the build installs that package into the image rather than
@@ -65,9 +71,10 @@ make os-image-non-fde ARCH=arm64
 make os-image-fde ARCH=arm64
 ```
 
-Both variants build for arm64. On an x86_64 host either one cross-builds under
-QEMU's `tcg` software emulation — there is no way to KVM-accelerate an arm64
-guest on x86 hardware regardless of `/dev/kvm`. `ARCH` picks the right ISO URL,
+Both variants build for arm64. Use an arm64 Linux build host for the arm64
+agent package. QEMU can emulate a guest of another architecture with `tcg`,
+but that does not supply the cgo cross-toolchain needed to build its agent
+package. `ARCH` picks the right ISO URL,
 QEMU binary (`qemu-system-aarch64`), machine type (`virt`), and UEFI firmware
 (AAVMF instead of OVMF) automatically; nothing else needs to change per-arch.
 `demo-fde.sh` and `boot-smoke.sh` take the same `ARCH`.

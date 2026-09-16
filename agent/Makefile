@@ -67,6 +67,8 @@ BUF_VERSION := v1.65.0
 GIT_HOOKS_DIR := $(shell git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)
 
 BUILD_DIR=build/deb
+# Optional exact output path for consumers such as the Packer image build.
+DEB_OUTPUT ?=
 
 ##@ Help
 .PHONY: help
@@ -314,7 +316,7 @@ define build_deb
 	chmod 755 $(ARCH_BUILD_DIR)/DEBIAN/postinst
 	chmod 755 $(ARCH_BUILD_DIR)/DEBIAN/prerm
 	chmod 755 $(ARCH_BUILD_DIR)/DEBIAN/postrm
-	fakeroot dpkg-deb --build $(ARCH_BUILD_DIR) bin/nke-agent_$(DEB_VERSION)_$(1).deb
+	dpkg-deb --root-owner-group --build $(ARCH_BUILD_DIR) $(or $(DEB_OUTPUT),bin/nke-agent_$(DEB_VERSION)_$(1).deb)
 endef
 
 ##@ Debian Packaging

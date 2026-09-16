@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Run on the Packer host. Builds the nke-agent binary from this checkout's
+# Run on the Packer host. Builds the nke-agent Debian package from this checkout's
 # source (agent/) and builds the node .deb packages (os-image/packages/,
 # staged into the image by provision.sh as a local apt repo) into
 # ARTIFACTS_DIR.
@@ -16,14 +16,7 @@ ARTIFACTS_DIR="${ARTIFACTS_DIR:?ARTIFACTS_DIR is required}"
 ARCH="${ARCH:-amd64}"
 
 case "${ARCH}" in
-  amd64)
-    AGENT_BUILD_TARGET=build-amd64
-    AGENT_BIN_DIR=linux_amd64
-    ;;
-  arm64)
-    AGENT_BUILD_TARGET=build-arm64
-    AGENT_BIN_DIR=linux_arm64
-    ;;
+  amd64|arm64) ;;
   *)
     echo "unsupported ARCH=${ARCH} (expected amd64 or arm64)" >&2
     exit 1
@@ -40,12 +33,10 @@ fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
-# build-amd64/build-arm64 cross-compile (CGO off) regardless of host arch and
-# stamp main.VERSION from `git describe --match 'agent/v*'`, same as a
-# release build.
-echo "building nke-agent from source (${repo_root}/agent, ${ARCH})"
-make -C "${repo_root}/agent" "${AGENT_BUILD_TARGET}"
-install -m 0755 "${repo_root}/agent/bin/${AGENT_BIN_DIR}/nke-agent" "${ARTIFACTS_DIR}/nke-agent"
+# Use the package target so dpkg owns the agent, updater, and their units.
+# An exact output path avoids selecting a stale version from agent/bin.
+echo "building nke-agent deb from source (${repo_root}/agent, ${ARCH})"
+make -C "${repo_root}/agent" "deb-${ARCH}" DEB_OUTPUT="${ARTIFACTS_DIR}/nke-agent.deb"
 
 # The debs a node installs at cluster create, plus a flat apt index that
 # provision.sh stages as a local repo. Without the kubeadm one a node built
@@ -98,5 +89,5 @@ fi
 make -C "${repo_root}/os-image/packages/spire-agent" debs "${spire_args[@]}"
 
 files_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../files" && pwd)"
-install -m 0644 "${files_dir}/nke-agent.service" "${ARTIFACTS_DIR}/nke-agent.service"
+install -m 0644 "${files_dir}/nke-agent-spire.conf" "${ARTIFACTS_DIR}/nke-agent-spire.conf"
 install -m 0755 "${files_dir}/wait-spiffe-socket.sh" "${ARTIFACTS_DIR}/wait-spiffe-socket.sh"

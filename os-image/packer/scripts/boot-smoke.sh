@@ -180,7 +180,14 @@ test "${root_bytes}" -ge "${minimum_root_bytes}"
 systemctl is-enabled nke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nke-spire-configure.service
-test -x /usr/local/bin/nke-agent || test -x /usr/bin/nke-agent
+test -x /usr/local/bin/nke-agent
+test -x /usr/local/bin/nke-agent-updater
+dpkg-query -W -f='${Status}\n' nke-agent | grep -Fxq 'install ok installed'
+for path in /usr/local/bin/nke-agent /usr/local/bin/nke-agent-updater \
+  /etc/systemd/system/nke-agent.service /etc/systemd/system/nke-agent-updater@.service; do
+  test "$(dpkg-query -S "${path}" | cut -d: -f1)" = nke-agent
+done
+systemctl cat nke-agent.service | grep -Fx 'ExecStartPre=/usr/lib/nke/wait-spiffe-socket.sh'
 test -x /usr/local/bin/spire-agent
 test -x /usr/local/lib/spire-agent/tpm_attestor_agent
 test -x /usr/local/bin/get_tpm_pubhash

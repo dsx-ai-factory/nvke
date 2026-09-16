@@ -139,11 +139,16 @@ prepare-installer-iso:
 	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
 
 check-deps:
-	@command -v go >/dev/null 2>&1 || { \
-		echo "go is required to build nke-agent from source (agent/)" >&2; \
-		echo "https://go.dev/dl/" >&2; \
-		exit 1; \
-	}
+	@for tool in go dpkg-deb; do \
+		command -v "$$tool" >/dev/null 2>&1 || { \
+			echo "$$tool is required to build the nke-agent Debian package" >&2; \
+			exit 1; \
+		}; \
+	done
+
+.PHONY: test
+test: ## Check artifact staging without downloading or building bundles.
+	python3 scripts/test_fetch_artifacts.py
 
 # Full-disk-encryption variant: boots the Ubuntu Server installer to lay down
 # an LVM-on-LUKS layout via autoinstall, then provisions nke-agent/spire-agent,

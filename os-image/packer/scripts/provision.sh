@@ -12,15 +12,12 @@ ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
 sudo install -d -m 0755 /usr/lib/nke /etc/nke /var/lib/nke /usr/local/bin
 sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nke/wait-spiffe-socket.sh
 
-sudo install -m 0755 "${SRC}/nke-agent" /usr/local/bin/nke-agent
-sudo install -m 0644 "${SRC}/nke-agent.service" /etc/systemd/system/nke-agent.service
-
-if [[ ! -f /etc/default/nke-agent ]]; then
-  echo 'AGENT_ARGS=""' | sudo tee /etc/default/nke-agent >/dev/null
-fi
-
-sudo systemctl daemon-reload
-sudo systemctl enable nke-agent.service
+# Keep image-specific identity ordering in a drop-in so agent upgrades retain it.
+sudo install -d -m 0755 /etc/systemd/system/nke-agent.service.d
+sudo install -m 0644 "${SRC}/nke-agent-spire.conf" /etc/systemd/system/nke-agent.service.d/10-spire.conf
+# The package enables the agent and creates the default environment file, but
+# the golden image has no instance identity yet: start only on first boot.
+sudo env NKE_AGENT_SKIP_START=1 dpkg -i "${SRC}/nke-agent.deb"
 
 # Stage the CNI debs as a local flat apt repo, so cluster create's `apt-get
 # install nke-cni-...` resolves offline with apt's dependency handling intact.
