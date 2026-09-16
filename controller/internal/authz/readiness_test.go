@@ -91,6 +91,24 @@ func TestABundleOlderThanTheBinaryIsRefused(t *testing.T) {
 	require.Contains(t, err.Error(), missing)
 }
 
+// A principal's static parent naming a role nothing declares: roles has at
+// least one entry, principals has at least one entry, so the two counts above
+// stay green, and cedar-go's ancestry walk would still treat this principal as
+// a member of the undeclared role at request time (local.go's checkEntityStore
+// doc comment, and overlayPrincipal's -- this is the static half of the same
+// gap the claim-derived filter closes for Query.ClaimRoles).
+func TestABundleWhereAStaticParentIsUndeclaredIsRefused(t *testing.T) {
+	_, err := NewLocal(writeBundle(t, aPolicy, shippedActions(t), `[
+ {"uid":{"type":"NKE::Role","id":"reader"},"attrs":{},"parents":[]},
+ {"uid":{"type":"NKE::Principal","id":"system:serviceaccount:nke-system:nke-cli"},
+  "attrs":{},"parents":[{"type":"NKE::Role","id":"operator"}]}
+]`))
+	require.Error(t, err, "a static parent naming an undeclared role must refuse the bundle at load, "+
+		"not silently grant membership in a role that was never loaded")
+	require.Contains(t, err.Error(), `NKE::Role::"operator"`)
+	require.Contains(t, err.Error(), `system:serviceaccount:nke-system:nke-cli`)
+}
+
 // Ready applies the same rules as the loader, from the same function, so the
 // gate cannot come to mean something the loader does not.
 func TestReadyHoldsTheShippedBundleToTheSameRules(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/cedar-policy/cedar-go"
 	"github.com/cedar-policy/cedar-go/types"
@@ -234,6 +235,23 @@ func (l *Local) Ready(context.Context) error {
 // shape check can see without evaluating policies against sample requests —
 // but they are worth naming so a future reader does not read "Ready" as a
 // stronger guarantee than it is.
+//
+// One thing this loop does check, deliberately, is every entity's static
+// Parents set: every UID an entity names as a parent must itself be a key in
+// entities. cedar-go's ancestry walk (vendor cedar-go
+// internal/eval/evalers.go, entityInOne/entityInSet) checks
+// fe.Parents.Contains directly against an entity's own stored parent set and
+// never calls Get to confirm a parent is itself loaded — overlayPrincipal's
+// own doc comment already explains this for the claim-derived half of the
+// principal overlay, and filters on it there. The static half never went
+// through that filter: roles.json's parents are copied onto the synthesized
+// principal untouched, so a principal whose static parent names a role
+// nothing declares would be treated as a member of a role that was never
+// loaded, with nothing at request time to catch it. Catching that here, once,
+// at load, is this project's own standing convention for anything that is a
+// property of the static bundle rather than of one request -- the same
+// reason the role/principal counts and the action-vs-route check above run in
+// this same function rather than being re-derived per call.
 func checkEntityStore(entities types.EntityMap) error {
 	var roles, principals int
 	for uid := range entities {
@@ -249,6 +267,19 @@ func checkEntityStore(entities types.EntityMap) error {
 	}
 	if principals == 0 {
 		return fmt.Errorf("%s declares no %s: no caller would hold a role", rolesFile, PrincipalType)
+	}
+
+	for uid, entity := range entities {
+		for parent := range entity.Parents.All() {
+			if _, declared := entities.Get(parent); !declared {
+				return fmt.Errorf(
+					"%s names parent %s, which no entity file (%s) declares: cedar-go's ancestry walk "+
+						"checks an entity's stored Parents directly and never confirms a parent is itself "+
+						"loaded, so this would silently grant membership in a role that does not exist",
+					uid, parent, strings.Join(entityFiles, ", "),
+				)
+			}
+		}
 	}
 
 	for pattern, op := range operations {
