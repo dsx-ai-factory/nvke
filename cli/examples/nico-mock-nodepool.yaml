@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Example CreateNodePoolRequest for the local nico-mock backend, adding a pool
+# to a cluster created from nico-mock-cluster.yaml.
+#
+# Usage: nkectl create nodepool -f examples/nico-mock-nodepool.yaml
+#
+# clusterID is the one field you must fill in. Read it from the cluster:
+#
+#   nkectl get clusters my-cluster -o json | jq -r '.[0].id'
+#
+# The other UUIDs are nico-mock's seeded identifiers and work as-is.
+
+clusterID: 00000000-0000-0000-0000-000000000000
+
+name: extra-workers
+nodeNamePrefix: xw
+desiredNodeCount: 1
+controlPlane: false
+systemReservedMemory: "1Gi"
+
+# Applied to the nodes at kubeadm join.
+nodeLabels:
+  - tier=compute
+
+# A pool carries either infra or nico, never both. This path supplies CAPI
+# manifests directly, matching nico-mock-cluster.yaml; a real site uses nico.
+infra:
+  spireAttestationMethod: joinToken
+  preKubeadmCommands:
+    - "mkdir -p /run/cluster-api"
+    - "echo success > /run/cluster-api/bootstrap-success.complete"
+  machineTemplate:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1alpha1
+    kind: NicoMachineTemplate
+    metadata:
+      name: my-cluster-extra-workers-template
+    spec:
+      template:
+        spec:
+          vpcID: 00000000-0000-0000-0000-000000000002
+          instanceTypeID: 00000000-0000-0000-0000-000000000005
+          cloudInitInjectHostname: true
+          ipxeScript: |
+            #!ipxe
+            echo local-nico-worker
+          sshKeyGroupIDs:
+            - 00000000-0000-0000-0000-000000000004
+          interfaces:
+            - subnetID: 00000000-0000-0000-0000-000000000003

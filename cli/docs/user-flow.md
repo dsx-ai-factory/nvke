@@ -18,14 +18,14 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl get kubeconfig <name>` | Fetches a tenant cluster's admin kubeconfig. `--output-file` writes it to a file instead of stdout. | Available |
 | `nkectl delete cluster <name>` | Deletes a tenant cluster. | Available |
 | `nkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |
-| `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Planned |
+| `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get nodepools [name ...]` | Lists node pools. Names narrow to those pools, `--cluster <name>` to one cluster. `-o json\|yaml` changes the format. | Available |
 | `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |
 | `nkectl patch nodepool <name> --cluster <name>` | PATCHes a node pool. `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). `desiredNodeCount` is the only field supported so far. | Available |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
 `cluster` and `clusters` are aliases on `create`, `get`, `patch` and `delete`,
-as are `nodepool` and `nodepools` on `patch`.
+as are `nodepool` and `nodepools` on `create`, `get` and `patch`.
 Global flags: `--site <name>` overrides the active site for one invocation,
 `-v` enables debug logging, `--json-logs` emits logs as JSON.
 
@@ -170,7 +170,28 @@ nkectl patch cluster my-cluster --patch-file patch.yaml
 Only the fields in the patch document are changed. `nkectl patch cluster
 --help` covers `--patch`, `--patch-file`, and field clearing in full.
 
-### 10. Scale a node pool
+### 10. Add a node pool
+
+```bash
+nkectl create nodepool -f pool.yaml
+
+# or from stdin
+cat pool.yaml | nkectl create nodepool -f -
+```
+
+The spec is a `CreateNodePoolRequest`; the schema is served at `/api/docs` on
+the site controller. A file holding several documents is rejected; create one
+pool per invocation.
+
+`name`, `nodeNamePrefix`, `desiredNodeCount` and `clusterID` are required;
+`nkectl get clusters <name>` reports the cluster's ID. A pool carries either a
+`nico` or an `infra` payload, never both, and that is where the node type is
+chosen.
+
+[examples/nico-mock-nodepool.yaml](../examples/nico-mock-nodepool.yaml) is a
+starting point. Provisioning is asynchronous, the same as cluster creation.
+
+### 11. Scale a node pool
 
 ```bash
 nkectl patch nodepool <nodepool-name> --cluster <cluster-name> --patch 'desiredNodeCount: 8'
@@ -191,7 +212,7 @@ CWE's own message. There is no confirmation prompt, so a lower count starts
 removing nodes straight away.
 
 
-### 11. Delete the tenant cluster
+### 12. Delete the tenant cluster
 
 ```bash
 nkectl delete cluster <cluster-name>

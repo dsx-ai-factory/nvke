@@ -33,6 +33,7 @@ type fakeCWE struct {
 	clusterNames map[uuid.UUID]string
 	requests     []string
 	patches      []map[string]any
+	creates      []map[string]any
 	server       *httptest.Server
 	// patchStatus and patchBody, when set, make every PATCH fail with them.
 	// The list lookup keeps working, so a test can reach the update call.
@@ -41,6 +42,17 @@ type fakeCWE struct {
 	// clusterStatus and clusterBody, when set, fail GET /clusters only.
 	clusterStatus int
 	clusterBody   string
+	// createStatus and createBody, when set, make every POST fail with them.
+	createStatus int
+	createBody   string
+}
+
+// failCreateWith makes the fake reject every POST /nodePools with status and
+// body, leaving the other routes answering normally.
+func (f *fakeCWE) failCreateWith(status int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.createStatus, f.createBody = status, body
 }
 
 // failClustersWith fails GET /clusters while still listing node pools.
@@ -137,6 +149,14 @@ func (f *fakeCWE) seen() []string {
 	return append([]string(nil), f.requests...)
 }
 
+// createBodies returns the POST bodies the CLI sent, decoded as raw maps so a
+// test can assert on exactly which fields went over the wire.
+func (f *fakeCWE) createBodies() []map[string]any {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]map[string]any(nil), f.creates...)
+}
+
 // patchBodies returns the PATCH bodies the CLI sent, decoded as raw maps so a
 // test can assert on exactly which fields went over the wire rather than on
 // what the typed struct would have filled in.
@@ -144,6 +164,20 @@ func (f *fakeCWE) patchBodies() []map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]map[string]any(nil), f.patches...)
+}
+
+// clusterIDFor returns the ID the fake serves the named cluster under.
+func (f *fakeCWE) clusterIDFor(t *testing.T, name string) uuid.UUID {
+	t.Helper()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for id, clusterName := range f.clusterNames {
+		if clusterName == name {
+			return id
+		}
+	}
+	t.Fatalf("cluster %q not seeded", name)
+	return uuid.Nil
 }
 
 // stored returns the node pools the fake currently holds.
@@ -172,6 +206,8 @@ func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch id, isItem := strings.CutPrefix(path, "/nodePools/"); {
 	case path == "/nodePools" && r.Method == http.MethodGet:
 		f.list(w, r.URL.Query().Get("clusterName"), r.URL.Query().Get("name"))
+	case path == "/nodePools" && r.Method == http.MethodPost:
+		f.create(w, r)
 	case path == "/clusters" && r.Method == http.MethodGet:
 		f.listClusters(w, r.URL.Query().Get("name"))
 	case isItem && r.Method == http.MethodPatch:
@@ -244,6 +280,52 @@ func (f *fakeCWE) update(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "node pool " + id + " not found"})
+}
+
+// create answers POST /nodePools, enforcing the required fields the way CWE
+// does and storing the pool so a later list returns it.
+func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
+	var raw map[string]any
+	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "malformed body: " + err.Error()})
+		return
+	}
+	f.creates = append(f.creates, raw)
+
+	// Recorded before failing, so a test can still assert what was sent.
+	if f.createStatus != 0 {
+		writeJSON(w, f.createStatus, json.RawMessage(f.createBody))
+		return
+	}
+	// The generated request type has no omitempty on the required fields, so
+	// an omitted one arrives as its zero value rather than absent.
+	for _, field := range []string{"clusterID", "name", "nodeNamePrefix"} {
+		if v, _ := raw[field].(string); v == "" || v == uuid.Nil.String() {
+			writeJSON(w, http.StatusBadRequest,
+				api.GenericError{Message: "missing required field: " + field})
+			return
+		}
+	}
+
+	id, _ := raw["clusterID"].(string)
+	clusterID, err := uuid.Parse(id)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, api.GenericError{Message: "clusterID is not a uuid"})
+		return
+	}
+	name, _ := raw["name"].(string)
+	prefix, _ := raw["nodeNamePrefix"].(string)
+	count, _ := raw["desiredNodeCount"].(float64)
+	pool := api.NodePool{
+		ID:               uuid.New(),
+		ClusterID:        clusterID,
+		Name:             name,
+		NodeNamePrefix:   prefix,
+		DesiredNodeCount: int(count),
+		NodeLabels:       []string{},
+	}
+	f.nodePools = append(f.nodePools, pool)
+	writeJSON(w, http.StatusCreated, pool)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

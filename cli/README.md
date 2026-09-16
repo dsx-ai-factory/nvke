@@ -64,6 +64,7 @@ nkectl patch cluster my-cluster --patch-file patch.yaml
 nkectl delete cluster <name>           # deletes immediately; there is no prompt
 
 # Node pools
+nkectl create nodepool -f <spec-file>  # or: cat pool.yaml | nkectl create nodepool -f -
 nkectl get nodepools                   # every pool on the site
 nkectl get nodepools --cluster <name>  # pools of one cluster
 nkectl get nodepools <name>... --cluster <name> -o yaml  # full detail for named pools

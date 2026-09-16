@@ -29,6 +29,30 @@ func (c *CWEClient) ListNodePools(ctx context.Context, params *api.ListNodePools
 	return resp.JSON200.NodePools, nil
 }
 
+// CreateNodePool creates a node pool on the cluster the request's clusterID
+// names and returns the created pool. Provisioning the nodes happens
+// asynchronously.
+func (c *CWEClient) CreateNodePool(
+	ctx context.Context,
+	req api.CreateNodePoolJSONRequestBody,
+) (*api.NodePool, error) {
+	resp, err := c.raw.CreateNodePoolWithResponse(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("creating node pool: %w", err)
+	}
+	// 409 is reserved for a parent cluster that is being deleted.
+	if resp.StatusCode() == 409 {
+		return nil, fmt.Errorf("creating node pool: cluster is being deleted: %w", apiError(resp.Status(), resp.Body))
+	}
+	if resp.StatusCode() != 201 {
+		return nil, fmt.Errorf("creating node pool: %w", apiError(resp.Status(), resp.Body))
+	}
+	if resp.JSON201 == nil {
+		return nil, fmt.Errorf("creating node pool: empty response body")
+	}
+	return resp.JSON201, nil
+}
+
 // PatchNodePool applies a JSON merge patch to the node pool with the given
 // UUID and returns the updated node pool. Only the fields the body carries are
 // changed; the rest keep their stored values. The work the update implies,

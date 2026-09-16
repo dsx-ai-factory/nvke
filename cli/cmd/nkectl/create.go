@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
+	"github.com/NVIDIA/nke/cli/internal/cwe/nodepools"
 )
 
 func newCreateCmd() *cobra.Command {
@@ -15,5 +16,6 @@ func newCreateCmd() *cobra.Command {
 		Short: "Create a resource",
 	}
 	cmd.AddCommand(clusters.NewCreateCmd(loadClient))
+	cmd.AddCommand(nodepools.NewCreateCmd(loadClient))
 	return cmd
 }
