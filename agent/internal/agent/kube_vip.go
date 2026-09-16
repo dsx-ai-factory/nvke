@@ -435,14 +435,17 @@ func renderKubeVipManifest(
 	peerASN uint32,
 ) ([]byte, error) {
 	falseValue := false
-	trueValue := true
-	nonRootUID := int64(65532)
 	fileType := corev1.HostPathFile
+	// kube-vip does not set RunAsNonRoot/RunAsUser here: its upstream image has
+	// no USER directive, and pinning it to a non-root UID leaves the BGP peer
+	// session established but silently stops it announcing the VIP route (see
+	// kube-vip/kube-vip#1010 — UID 0 is an implicit requirement for its
+	// networking machinery, NET_ADMIN/NET_RAW notwithstanding). Verified against
+	// a live cluster: with a non-root UID, cluster provisioning times out
+	// because the control-plane VIP is never reachable.
 	securityContext := &corev1.SecurityContext{
 		AllowPrivilegeEscalation: &falseValue,
 		SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
-		RunAsNonRoot:             &trueValue,
-		RunAsUser:                &nonRootUID,
 		Capabilities: &corev1.Capabilities{
 			Add: []corev1.Capability{"NET_ADMIN", "NET_RAW"},
 		},

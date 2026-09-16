@@ -368,6 +368,11 @@ create_kube_vip_manifest() {
     local rendered
     rendered=$(mktemp "$(dirname "$manifest_path")/.kube-vip.tmp.XXXXXX")
 
+    # No runAsNonRoot/runAsUser: kube-vip's upstream image has no USER
+    # directive, and pinning it to a non-root UID leaves the BGP peer session
+    # established but silently stops it announcing the VIP route (see
+    # kube-vip/kube-vip#1010 — UID 0 is an implicit requirement for its
+    # networking machinery, NET_ADMIN/NET_RAW notwithstanding).
     cat > "$rendered" <<EOF
 apiVersion: v1
 kind: Pod
@@ -434,8 +439,6 @@ ${health_check_env}
 ${apparmor_profile}
       seccompProfile:
         type: RuntimeDefault
-      runAsNonRoot: true
-      runAsUser: 65532
       capabilities:
         add:
         - NET_ADMIN
