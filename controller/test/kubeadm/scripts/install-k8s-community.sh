@@ -42,7 +42,13 @@ trap 'rm -rf "${tmp}"' EXIT
 # A run lost 7 downloads to "curl: (92) HTTP/2 stream 1 was not closed cleanly:
 # PROTOCOL_ERROR", which it did not retry, and the guest then failed at kubeadm
 # init with no mention of the download. --retry-all-errors covers it.
-CURL=(curl -fsSL --retry 3 --retry-all-errors --retry-delay 2)
+#
+# No --retry-delay: setting it replaces curl's exponential backoff with a flat
+# wait. At `--retry 3 --retry-delay 2` the two guests download the same
+# binaries at the same moment from one egress address, and dl.k8s.io answered
+# vm-2 with four 403s two seconds apart -- the whole retry window was six
+# seconds. Exponential backoff bounded by --retry-max-time rides that out.
+CURL=(curl -fsSL --retry 5 --retry-all-errors --retry-max-time 120)
 
 # dl.k8s.io serves <binary>.sha256 beside each binary. Fetch both and compare,
 # so a truncated or substituted download fails here rather than at kubeadm init.
