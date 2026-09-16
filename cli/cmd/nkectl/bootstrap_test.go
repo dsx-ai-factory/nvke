@@ -791,6 +791,9 @@ func TestRunBootstrapSiteTearsDownOnceEveryNodeHasJoined(t *testing.T) {
 		cweRunner:       fakeCWERunner{},
 		kubeconfigOut:   filepath.Join(t.TempDir(), "nke-site.kubeconfig"),
 		lookPath:        runtimeOnPath,
+		dumpSpireEntries: func(context.Context, string, string) (int, error) {
+			return 0, nil
+		},
 	})
 	if err != nil {
 		t.Fatalf("runBootstrapSite returned error: %v", err)
