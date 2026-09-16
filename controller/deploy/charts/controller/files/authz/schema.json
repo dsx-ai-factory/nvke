@@ -546,6 +546,32 @@
           ]
         }
       },
+      "reloadAuthzBundle": {
+        "appliesTo": {
+          "context": {
+            "attributes": {
+              "issuer": {
+                "type": "String"
+              },
+              "method": {
+                "type": "String"
+              }
+            },
+            "type": "Record"
+          },
+          "principalTypes": [
+            "Principal"
+          ],
+          "resourceTypes": [
+            "Collection"
+          ]
+        },
+        "memberOf": [
+          {
+            "id": "write"
+          }
+        ]
+      },
       "updateCluster": {
         "appliesTo": {
           "context": {

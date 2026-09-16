@@ -5,6 +5,7 @@ package authz
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,6 +36,13 @@ type Local struct {
 	// inserted above it — so the refusal log would point at a different rule
 	// after an unrelated edit.
 	names map[cedar.PolicyID]string
+
+	// hash is sha256(policies.cedar || actions.json || roles.json) over the
+	// raw bytes this Local was built from. Used only by the hot-reload path
+	// (reload.go) to decide whether a successful reload's content actually
+	// changed from what was live before it -- see loadedBundle.hash's doc
+	// comment for why it exists and what it does not claim to be.
+	hash [sha256.Size]byte
 }
 
 var _ Authorizer = (*Local)(nil)
@@ -60,7 +68,7 @@ func NewLocal(dir string) (*Local, error) {
 		return nil, errors.Join(errs...)
 	}
 
-	return &Local{policies: b.policies, entities: b.entities, names: b.names}, nil
+	return &Local{policies: b.policies, entities: b.entities, names: b.names, hash: b.hash}, nil
 }
 
 // loadEntities merges one entity file into dst, refusing a duplicate: the later
@@ -75,39 +83,43 @@ func NewLocal(dir string) (*Local, error) {
 // wider set of parents therefore loaded clean and silently granted the wider
 // set — the entity count gate, the schema validator and the conformance matrix
 // all stayed green, because by then there was only one entity.
-func loadEntities(path string, dst types.EntityMap, declaredIn map[types.EntityUID]string) error {
+// Returns the raw bytes read, alongside the usual error, so a caller
+// accumulating a content hash over every file this load touched (the
+// hot-reload path's change-detection gauge, design-authz-hot-reload.md §5)
+// does not have to re-open the file a second time.
+func loadEntities(path string, dst types.EntityMap, declaredIn map[types.EntityUID]string) ([]byte, error) {
 	name := filepath.Base(path)
 
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("reading %s: %w", name, err)
+		return nil, fmt.Errorf("reading %s: %w", name, err)
 	}
 
 	var declarations []json.RawMessage
 	if err := json.Unmarshal(raw, &declarations); err != nil {
-		return fmt.Errorf("parsing %s: %w", name, err)
+		return nil, fmt.Errorf("parsing %s: %w", name, err)
 	}
 	for i, declaration := range declarations {
 		var head struct {
 			UID types.EntityUID `json:"uid"`
 		}
 		if err := json.Unmarshal(declaration, &head); err != nil {
-			return fmt.Errorf("parsing %s[%d]: %w", name, i, err)
+			return nil, fmt.Errorf("parsing %s[%d]: %w", name, i, err)
 		}
 		if where, duplicate := declaredIn[head.UID]; duplicate {
-			return fmt.Errorf("%s[%d] redeclares %s, already declared in %s", name, i, head.UID, where)
+			return nil, fmt.Errorf("%s[%d] redeclares %s, already declared in %s", name, i, head.UID, where)
 		}
 		declaredIn[head.UID] = name
 	}
 
 	var loaded types.EntityMap
 	if err := json.Unmarshal(raw, &loaded); err != nil {
-		return fmt.Errorf("parsing %s: %w", name, err)
+		return nil, fmt.Errorf("parsing %s: %w", name, err)
 	}
 	for uid, entity := range loaded {
 		dst[uid] = entity
 	}
-	return nil
+	return raw, nil
 }
 
 // Authorize evaluates one query.

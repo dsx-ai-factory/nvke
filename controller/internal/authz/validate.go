@@ -4,9 +4,11 @@
 package authz
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -79,6 +81,47 @@ type loadedBundle struct {
 	policies *cedar.PolicySet
 	entities types.EntityMap
 	names    map[cedar.PolicyID]string
+
+	// hash is sha256(policies.cedar || actions.json || roles.json), in that
+	// fixed order, over the raw bytes read for this one load -- change
+	// detection for the hot-reload path's nke_authz_bundle_loaded_timestamp_
+	// seconds gauge (design-authz-hot-reload.md §5), not tamper-proofing. Set
+	// only when every file that contributes to it was read successfully;
+	// left zero-valued on any load that returned an error, where nothing
+	// downstream reads it.
+	hash [sha256.Size]byte
+}
+
+// resolvedBundleDir pins the directory one load attempt reads all three
+// bundle files through, so a ConfigMap volume's atomic "..data" rename cannot
+// land between two of the three reads and produce a bundle that mixes two
+// generations (design-authz-hot-reload.md §3). kubelet's atomic writer
+// publishes an update by writing a full new generation into a fresh,
+// timestamped directory and then atomically re-pointing "..data" at it;
+// resolving "..data" once, up front, and reading through that resolved
+// directory for the rest of this load pins every read to one generation
+// regardless of a rename landing mid-load.
+//
+// Falls back to dir itself only when dir is positively not a ConfigMap mount
+// -- os.Readlink on "<dir>/..data" reporting fs.ErrNotExist, the case for a
+// plain directory (tests, or a deployment that mounts one directly). Any
+// other Readlink error (permission, I/O, ...) is returned as-is and treated
+// as a load failure by the caller: silently downgrading to the unpinned path
+// on any error would reopen exactly the torn-read race this function exists
+// to close, on every reload attempt that happened to hit it.
+func resolvedBundleDir(dir string) (string, error) {
+	target, err := os.Readlink(filepath.Join(dir, "..data"))
+	switch {
+	case err == nil:
+		if filepath.IsAbs(target) {
+			return target, nil
+		}
+		return filepath.Join(dir, target), nil
+	case errors.Is(err, fs.ErrNotExist):
+		return dir, nil
+	default:
+		return "", fmt.Errorf("resolving the ConfigMap generation for %s: %w", dir, err)
+	}
 }
 
 // loadBundle is the single implementation behind both NewLocal and
@@ -101,7 +144,16 @@ func loadBundle(dir string) (*loadedBundle, []error) {
 		return nil, []error{errors.New("local authorizer requires a bundle directory")}
 	}
 
-	source, err := os.ReadFile(filepath.Join(dir, policiesFile))
+	// Pinned once, up front, for this one load attempt -- see
+	// resolvedBundleDir's doc comment. Every read below goes through readDir,
+	// never dir directly, so all three files come from the same generation
+	// even on a mount whose ConfigMap is being updated concurrently.
+	readDir, err := resolvedBundleDir(dir)
+	if err != nil {
+		return nil, []error{err}
+	}
+
+	source, err := os.ReadFile(filepath.Join(readDir, policiesFile))
 	if err != nil {
 		return nil, []error{fmt.Errorf("reading %s: %w", policiesFile, err)}
 	}
@@ -123,11 +175,16 @@ func loadBundle(dir string) (*loadedBundle, []error) {
 	entities := types.EntityMap{}
 	declaredIn := map[types.EntityUID]string{}
 	entitiesLoaded := true
+	hasher := sha256.New()
+	hasher.Write(source)
 	for _, name := range entityFiles {
-		if err := loadEntities(filepath.Join(dir, name), entities, declaredIn); err != nil {
+		raw, err := loadEntities(filepath.Join(readDir, name), entities, declaredIn)
+		if err != nil {
 			errs = append(errs, err)
 			entitiesLoaded = false
+			continue
 		}
+		hasher.Write(raw)
 	}
 	// checkEntityStore and the vocabulary checks both read the entity files (or
 	// the merged map) on the assumption that loading them succeeded; a file that
@@ -145,9 +202,9 @@ func loadBundle(dir string) (*loadedBundle, []error) {
 		// checkActionVocabulary/checkRoleVocabulary, reject an otherwise
 		// valid bundle over dead comment text. See stripCedarComments.
 		uncommented := stripCedarComments(source)
-		errs = append(errs, checkActionVocabulary(dir, uncommented)...)
-		errs = append(errs, checkRoleVocabulary(dir, uncommented)...)
-		errs = append(errs, checkRoleReachability(dir, uncommented)...)
+		errs = append(errs, checkActionVocabulary(readDir, uncommented)...)
+		errs = append(errs, checkRoleVocabulary(readDir, uncommented)...)
+		errs = append(errs, checkRoleReachability(readDir, uncommented)...)
 	}
 
 	names := map[cedar.PolicyID]string{}
@@ -157,7 +214,15 @@ func loadBundle(dir string) (*loadedBundle, []error) {
 		}
 	}
 
-	return &loadedBundle{policies: policies, entities: entities, names: names}, errs
+	b := &loadedBundle{policies: policies, entities: entities, names: names}
+	// Only meaningful, and only computed, once every contributing file was
+	// actually read -- a hash over a partial set of files would compare
+	// unequal to itself across two failed loads of the identical bundle for
+	// no reason a caller could act on.
+	if entitiesLoaded {
+		copy(b.hash[:], hasher.Sum(nil))
+	}
+	return b, errs
 }
 
 // Entity-instance checks, ported from policy_vocabulary_test.go, which ran

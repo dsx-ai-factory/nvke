@@ -5,6 +5,8 @@
 package metrics
 
 import (
+	"time"
+
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/NVIDIA/nke/controller/internal/authz"
@@ -49,11 +51,52 @@ var (
 		[]string{"mode"},
 	)
 
-	_ authz.Recorder = RecordAuthzRequest
+	// authzReloadTotal counts hot-reload attempts, mirroring authzRequestsTotal's
+	// shape: outcome and source are both closed sets (authz.ReloadOutcome*,
+	// authz.ReloadSource*), so a caller cannot widen this metric's cardinality
+	// by triggering more reloads or by any bundle content.
+	authzReloadTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "nke_authz_reload_total",
+			Help: "Total authorization bundle reload attempts, by outcome (succeeded|failed|throttled) and " +
+				"source (poll|endpoint). See design-authz-hot-reload.md.",
+		},
+		[]string{"outcome", "source"},
+	)
+
+	// authzBundleLoadedTimestamp advances only when a successful reload's
+	// content actually differs from what was live before it -- never on every
+	// successful poll, which would only ever answer "was the last poll
+	// successful," not "has the bundle actually changed recently."
+	authzBundleLoadedTimestamp = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "nke_authz_bundle_loaded_timestamp_seconds",
+			Help: "Unix timestamp of the last authorization bundle reload whose content actually changed. " +
+				"Does not advance on a reload that succeeds but reproduces byte-identical content, or on one " +
+				"that fails.",
+		},
+		[]string{},
+	)
+
+	_ authz.Recorder       = RecordAuthzRequest
+	_ authz.ReloadRecorder = RecordAuthzReload
 )
 
 func init() {
-	prometheus.MustRegister(authzRequestsTotal, authzEnabled)
+	prometheus.MustRegister(authzRequestsTotal, authzEnabled, authzReloadTotal, authzBundleLoadedTimestamp)
+}
+
+// RecordAuthzReload counts one reload attempt outcome. Its signature is
+// internal/authz.ReloadRecorder, so authz.Setup/Options can pass it directly.
+func RecordAuthzReload(outcome authz.ReloadOutcomeLabel, source string) {
+	authzReloadTotal.WithLabelValues(string(outcome), source).Inc()
+}
+
+// RecordAuthzBundleChanged advances the bundle-changed gauge to now. Its
+// signature is internal/authz.BundleChangeRecorder -- called only when a
+// reload's content hash actually differs from what was previously live.
+func RecordAuthzBundleChanged() {
+	authzBundleLoadedTimestamp.WithLabelValues().Set(float64(time.Now().Unix()))
 }
 
 // RecordAuthzRequest counts one authorization decision. Its signature is

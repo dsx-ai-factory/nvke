@@ -28,6 +28,7 @@ var operations = map[string]Operation{
 	"GET /api/osProfiles":                                       {Action: "listOSProfiles", ResourceType: "", IDParam: "", IDFormat: "", Collection: "osProfiles"},
 	"PATCH /api/clusters/{clusterID}":                           {Action: "updateCluster", ResourceType: "NKE::Cluster", IDParam: "clusterID", IDFormat: "uuid", Collection: ""},
 	"PATCH /api/nodePools/{nodePoolID}":                         {Action: "updateNodePool", ResourceType: "NKE::NodePool", IDParam: "nodePoolID", IDFormat: "uuid", Collection: ""},
+	"POST /api/authz/reload":                                    {Action: "reloadAuthzBundle", ResourceType: "", IDParam: "", IDFormat: "", Collection: "authz"},
 	"POST /api/clusters":                                        {Action: "createCluster", ResourceType: "", IDParam: "", IDFormat: "", Collection: "clusters"},
 	"POST /api/nodePools":                                       {Action: "createNodePool", ResourceType: "", IDParam: "", IDFormat: "", Collection: "nodePools"},
 }

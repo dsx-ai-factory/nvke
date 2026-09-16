@@ -53,7 +53,7 @@ func NewServer(
 	if err != nil {
 		return nil, fmt.Errorf("failed to load OpenAPI spec: %w", err)
 	}
-	serverImpl := NewServerImpl(cfg, logger, database, temporalClient)
+	serverImpl := NewServerImpl(cfg, logger, database, temporalClient, authn, authzProvider)
 	strictHandler := api.NewStrictHandlerWithOptions(serverImpl, nil, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
 			logger.Error("OpenAPI StrictServer request error", "error", err)
@@ -209,7 +209,14 @@ func handleError(w http.ResponseWriter, logger *slog.Logger, message string, sta
 	}
 }
 
-func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, temporalClient client.Client) *serverImpl {
+func NewServerImpl(
+	cfg config.Config,
+	logger *slog.Logger,
+	database db.DB,
+	temporalClient client.Client,
+	authn *auth.Authenticator,
+	authzProvider *authz.Provider,
+) *serverImpl {
 	nodePoolService := NewNodePoolService(
 		logger,
 		database,
@@ -234,6 +241,7 @@ func NewServerImpl(cfg config.Config, logger *slog.Logger, database db.DB, tempo
 		osProfileService:     *NewOSProfileService(cfg, logger),
 		configProfileService: *NewConfigProfileService(cfg, logger),
 		cniPluginsService:    *NewCNIPluginsService(),
+		authzReloadService:   *NewAuthzReloadService(authn, authzProvider),
 	}
 }
 
@@ -245,6 +253,7 @@ type serverImpl struct {
 	osProfileService
 	configProfileService
 	cniPluginsService
+	authzReloadService
 }
 
 // temporalUIURL returns the Temporal Web UI base URL to surface in the version

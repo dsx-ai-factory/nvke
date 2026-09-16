@@ -86,6 +86,15 @@ func NewAuthenticator(verifier *Verifier, mode Mode, logger *slog.Logger, record
 	}, nil
 }
 
+// Mode reports which mode this Authenticator was built with. mode is a
+// startup-time Options field, never changed after construction — nothing
+// hot-reloads it — so a caller may read it as many times as it likes without
+// synchronization. Exists for internal/authz's on-demand reload route, which
+// hard-gates on authentication actually being enforcing rather than relying on
+// ModePermissive's ordinary "log and let through" behavior
+// (design-authz-hot-reload.md §2).
+func (a *Authenticator) Mode() Mode { return a.mode }
+
 // Wrap returns next with authentication in front of it, carrying the *Principal
 // on the request context on success. It sits outside the mux rather than in the
 // generated router's per-operation middleware list, which runs after routing

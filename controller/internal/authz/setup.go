@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 )
 
 // Options is what a deployment configures. BundleDir decides whether
@@ -24,6 +25,23 @@ type Options struct {
 
 	// Recorder counts decisions. Optional: nil records nothing.
 	Recorder Recorder
+
+	// ReloadInterval is how often a background goroutine re-reads and
+	// re-validates BundleDir, publishing a new bundle without a restart when
+	// it changes (design-authz-hot-reload.md). Zero or negative disables the
+	// reload path entirely: Provider.authorizer stays the bare engine Setup
+	// built once, exactly like today. No effect when BundleDir is empty, or
+	// when newEngine is set (a test-injected engine has no NewLocal-shaped
+	// directory to reload from).
+	ReloadInterval time.Duration
+
+	// ReloadRecorder counts reload attempt outcomes. Optional: nil records
+	// nothing.
+	ReloadRecorder ReloadRecorder
+
+	// BundleChangeRecorder is called when a successful reload's content
+	// differs from what was live before it. Optional: nil records nothing.
+	BundleChangeRecorder BundleChangeRecorder
 
 	// newEngine builds the Authorizer for BundleDir. Nil means NewLocal, which
 	// is every deployment.
@@ -105,12 +123,69 @@ func Setup(ctx context.Context, opts Options, logger *slog.Logger) (*Provider, e
 		"operations", len(operations),
 	)
 
+	authorizer := engine
+	// Reload only wraps a real, NewLocal-built engine: opts.newEngine is a
+	// test seam for injecting a fake Authorizer entirely, which has no
+	// NewLocal-shaped directory for a background poll to re-read. Every
+	// production deployment goes through NewLocal (opts.newEngine is nil), so
+	// this is not a gap in what gets hot-reload, only in what a unit test
+	// testing something else has to additionally stand up.
+	if opts.ReloadInterval > 0 && opts.newEngine == nil {
+		if local, ok := engine.(*Local); ok {
+			// The exact, already-validated *Local Setup just built above is
+			// the first thing Stored into reloadable.current — synchronously,
+			// here, before Setup returns and before the poll goroutine
+			// starts. The poll goroutine's first tick is a second load of
+			// this directory, not the first: it notices a subsequent edit,
+			// it does not populate current for the first time
+			// (design-authz-hot-reload.md §3's bootstrap-sequencing
+			// requirement).
+			r := newReloadable(opts.BundleDir, local, logger.With("logger", "authz-reload"),
+				opts.ReloadRecorder, opts.BundleChangeRecorder)
+			go r.pollLoop(ctx, opts.ReloadInterval)
+			authorizer = r
+		}
+	}
+
 	return &Provider{
-		authorizer: engine,
+		authorizer: authorizer,
 		mode:       mode,
 		logger:     logger.With("logger", "authz"),
 		record:     opts.Recorder,
 	}, nil
+}
+
+// Mode reports which mode this Provider was built with. mode is a startup-time
+// Options field, never changed after construction — nothing hot-reloads it —
+// so a caller may read it as many times as it likes without synchronization.
+// Exists for the on-demand reload route, which hard-gates on authorization
+// actually being enforcing rather than relying on ModePermissive's ordinary
+// "log and let through" behavior (design-authz-hot-reload.md §2). A nil
+// Provider (authorization disabled) reports ModePermissive: there is no
+// enforcing decision to force through, so the gate this exists to close
+// simply refuses, the same outcome as an explicit permissive deployment.
+func (p *Provider) Mode() Mode {
+	if p == nil {
+		return ModePermissive
+	}
+	return p.mode
+}
+
+// TriggerReload forces one reload attempt (or joins one already running) of
+// this replica's in-memory bundle, via the same mechanism the poll goroutine
+// drives (design-authz-hot-reload.md §3). ok is false when this deployment was
+// not built with reload enabled (AUTHZ_RELOAD_INTERVAL<=0, or a nil Provider)
+// — there is nothing to trigger, so the caller should treat that as "reload is
+// not available here" rather than attempt a reload that cannot run.
+func (p *Provider) TriggerReload(ctx context.Context, source string) (ReloadOutcome, bool) {
+	if p == nil {
+		return ReloadOutcome{}, false
+	}
+	r, ok := p.authorizer.(*reloadable)
+	if !ok {
+		return ReloadOutcome{}, false
+	}
+	return r.reload(ctx, source), true
 }
 
 // Middleware builds the middleware over the server's mux. A nil Provider

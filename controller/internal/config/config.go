@@ -295,6 +295,13 @@ type Config struct {
 	// while it is still learning what its policy should say.
 	AuthzPermissive bool `env:"AUTHZ_PERMISSIVE" default:"false"`
 
+	// AuthzReloadInterval is how often a running pod re-reads and re-validates
+	// the mounted bundle, so a role revocation takes effect without a restart
+	// (design-authz-hot-reload.md §2). Zero or negative disables the reload
+	// path entirely, degrading to today's load-once-at-startup behavior. No
+	// effect when AuthzBundlePath is unset.
+	AuthzReloadInterval time.Duration `env:"AUTHZ_RELOAD_INTERVAL" default:"30s"`
+
 	// Tracing configures OpenTelemetry distributed tracing. When Enabled and
 	// Endpoint are set, CWE exports OTLP gRPC spans. Endpoint and related OTEL_*
 	// vars may be injected by the OpenTelemetry Operator (inject-sdk + sidecar);

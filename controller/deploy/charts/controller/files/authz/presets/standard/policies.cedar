@@ -92,3 +92,26 @@ permit(
   action == NKE::Action::"deleteCluster",
   resource
 );
+
+// Reload has no destructive blast radius on cluster or node state, so it gets
+// no narrower grant than the rest of write: every operator may trigger it.
+// This permit is deliberately redundant with operators-may-write — Cedar's
+// semantics mean an additive permit changes nothing an existing coarser
+// permit already covers, and operators-may-write already reaches every POST,
+// this one included. Its purpose is the same one operators-may-delete-
+// clusters documents for itself, above: making this specific grant a line
+// AZ-8's policy_fences_test.go and a reviewer can find, instead of an
+// inference from the write group. If reload ever needs to be narrower than
+// "every operator" — e.g. once there's a dedicated policy-administrator role
+// — that is a forbid-unless carve-out shaped like only-node-operators-
+// change-node-lifecycle, not a change to this permit. The route's own
+// authorization is not this permit alone: see reload.go and server.go's
+// ReloadAuthzBundle, which additionally hard-gate on both authentication and
+// authorization actually running in enforcing mode
+// (design-authz-hot-reload.md §2).
+@id("operators-may-reload-authz-bundle")
+permit(
+  principal in NKE::Role::"operator",
+  action == NKE::Action::"reloadAuthzBundle",
+  resource
+);

@@ -278,6 +278,19 @@
   {
     "uid": {
       "type": "NKE::Action",
+      "id": "reloadAuthzBundle"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NKE::Action",
+        "id": "write"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NKE::Action",
       "id": "createCluster"
     },
     "attrs": {},

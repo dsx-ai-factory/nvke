@@ -593,6 +593,41 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /authz/reload:
+    post:
+      summary: Reload the authorization policy bundle on this replica
+      description: >
+        Forces this replica to re-read and re-validate the mounted Cedar
+        policy bundle now, instead of waiting for the next poll interval. It
+        affects only the replica that answers the call, never the fleet — an
+        operator who needs every replica current still waits out, or budgets
+        for, the poll interval. Refused unconditionally, independent of the
+        ordinary Cedar decision, unless authentication and authorization are
+        both running in enforcing mode.
+      operationId: reloadAuthzBundle
+      responses:
+        "200":
+          description: >
+            A reload was attempted (or its cached outcome from within the
+            throttle window was returned) on this replica; the body reports
+            what happened.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthzReloadResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          description: >
+            The reload attempt failed; the bundle already live before this
+            call is untouched and still answering every request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+
 components:
   responses:
     # Both come from the authentication middleware, which runs before routing, so
@@ -2166,6 +2201,32 @@ components:
           type: string
           description: The error message
           x-order: 1
+
+    AuthzReloadResult:
+      type: object
+      required:
+        - changed
+        - throttled
+        - source
+      properties:
+        changed:
+          type: boolean
+          description: >
+            Whether the bundle's content actually differs from what was live
+            before this call. False on a reload that succeeded but reproduced
+            byte-identical content, and false on a throttled call.
+          x-order: 1
+        throttled:
+          type: boolean
+          description: >
+            True when this call landed within the reload throttle window and
+            no new load was attempted; the rest of the body reports the
+            previous attempt's outcome instead.
+          x-order: 2
+        source:
+          type: string
+          description: Always "endpoint" for this route; distinguishes this trigger from the background poll in logs and metrics.
+          x-order: 3
 
     OSProfile:
       type: object

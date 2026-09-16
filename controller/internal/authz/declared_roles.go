@@ -31,7 +31,7 @@ func DeclaredRoleNames(dir string) (map[string]struct{}, error) {
 	entities := types.EntityMap{}
 	declaredIn := map[types.EntityUID]string{}
 	for _, name := range entityFiles {
-		if err := loadEntities(filepath.Join(dir, name), entities, declaredIn); err != nil {
+		if _, err := loadEntities(filepath.Join(dir, name), entities, declaredIn); err != nil {
 			return nil, err
 		}
 	}

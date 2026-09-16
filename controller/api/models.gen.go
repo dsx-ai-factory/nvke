@@ -55,6 +55,18 @@ const (
 	UpdateInProgressTypeOidcEnable       UpdateInProgressType = "oidc_enable"
 )
 
+// AuthzReloadResult defines model for AuthzReloadResult.
+type AuthzReloadResult struct {
+	// Changed Whether the bundle's content actually differs from what was live before this call. False on a reload that succeeded but reproduced byte-identical content, and false on a throttled call.
+	Changed bool `json:"changed"`
+
+	// Throttled True when this call landed within the reload throttle window and no new load was attempted; the rest of the body reports the previous attempt's outcome instead.
+	Throttled bool `json:"throttled"`
+
+	// Source Always "endpoint" for this route; distinguishes this trigger from the background poll in logs and metrics.
+	Source string `json:"source"`
+}
+
 // CloudInitFile defines model for CloudInitFile.
 type CloudInitFile struct {
 	// Content File contents written by cloud-init.
