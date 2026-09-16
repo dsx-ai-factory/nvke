@@ -11,6 +11,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 
 	pb "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 )
@@ -18,38 +20,65 @@ import (
 const testEncryptionKey = "KEY-MATERIAL-THAT-MUST-NOT-BE-LOGGED"
 
 func TestLoggableRequestsDropTheEncryptionKey(t *testing.T) {
-	t.Run("init", func(t *testing.T) {
-		req := &pb.KubeadmInitRequest{
-			InitConfig:           "config",
-			ApiEncryptionEnabled: true,
-			ApiEncryptionKey:     testEncryptionKey,
-		}
-		logged := loggableInitRequest(req)
+	cases := []struct {
+		name string
+		// build returns a request carrying key, and the copy that would be
+		// logged for it.
+		build func(key string) (request, logged proto.Message)
+	}{
+		{
+			name: "init",
+			build: func(key string) (proto.Message, proto.Message) {
+				req := &pb.KubeadmInitRequest{InitConfig: "config", ApiEncryptionEnabled: true, ApiEncryptionKey: key}
+				return req, loggableInitRequest(req)
+			},
+		},
+		{
+			name: "join",
+			build: func(key string) (proto.Message, proto.Message) {
+				req := &pb.KubeadmJoinRequest{KubeadmJoinString: "join-string", ApiEncryptionKey: key}
+				return req, loggableJoinRequest(req)
+			},
+		},
+	}
 
-		assert.Empty(t, logged.ApiEncryptionKey)
-		assert.Equal(t, "config", logged.InitConfig)
-		assert.True(t, logged.ApiEncryptionEnabled)
-		assert.Equal(t, testEncryptionKey, req.ApiEncryptionKey, "the request itself must be untouched")
-		assertNotLogged(t, "issuing kubeadm init call", logged)
-	})
+	for _, tc := range cases {
+		t.Run(tc.name+" drops the key and nothing else", func(t *testing.T) {
+			req, logged := tc.build(testEncryptionKey)
 
-	t.Run("join", func(t *testing.T) {
-		req := &pb.KubeadmJoinRequest{
-			KubeadmJoinString: "join-string",
-			ApiEncryptionKey:  testEncryptionKey,
-		}
-		logged := loggableJoinRequest(req)
+			assert.Equal(t, testEncryptionKey, encryptionKeyField(req), "the request itself must be untouched")
+			assert.Empty(t, encryptionKeyField(logged))
 
-		assert.Empty(t, logged.ApiEncryptionKey)
-		assert.Equal(t, "join-string", logged.KubeadmJoinString)
-		assert.Equal(t, testEncryptionKey, req.ApiEncryptionKey, "the request itself must be untouched")
-		assertNotLogged(t, "issuing kubeadm join call", logged)
-	})
+			want := proto.Clone(req)
+			clearEncryptionKeyField(want)
+			assert.True(t, proto.Equal(want, logged), "logged copy differs from the request in more than the key")
 
-	t.Run("no key is a no-op", func(t *testing.T) {
-		req := &pb.KubeadmInitRequest{InitConfig: "config"}
-		assert.Same(t, req, loggableInitRequest(req))
-	})
+			assertNotLogged(t, "issuing kubeadm "+tc.name+" call", logged)
+		})
+
+		t.Run(tc.name+" without a key is returned as is", func(t *testing.T) {
+			req, logged := tc.build("")
+			assert.Same(t, req, logged)
+		})
+	}
+}
+
+func TestEncryptionKeyDigest(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+		want func(t *testing.T, digest string)
+	}{
+		{"no key, no digest", "", func(t *testing.T, digest string) { assert.Empty(t, digest) }},
+		{"a key digests to 64 hex digits", testEncryptionKey, func(t *testing.T, digest string) {
+			assert.Len(t, digest, 64)
+			assert.NotContains(t, digest, testEncryptionKey)
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) { tc.want(t, encryptionKeyDigest(tc.key)) })
+	}
+	assert.Equal(t, encryptionKeyDigest(testEncryptionKey), encryptionKeyDigest(testEncryptionKey), "stable")
 }
 
 // assertNotLogged renders request the way the agent's JSON slog handler does
@@ -57,19 +86,21 @@ func TestLoggableRequestsDropTheEncryptionKey(t *testing.T) {
 func assertNotLogged(t *testing.T, msg string, request any) {
 	t.Helper()
 	var buf bytes.Buffer
-	logger := slog.New(slog.NewJSONHandler(&buf, nil))
-	logger.Info(msg, "request", request)
+	slog.New(slog.NewJSONHandler(&buf, nil)).Info(msg, "request", request)
 
 	require.True(t, json.Valid(buf.Bytes()), "log line is not JSON: %s", buf.String())
 	assert.NotContains(t, buf.String(), testEncryptionKey)
-	assert.NotContains(t, buf.String(), "api_encryption_key\"", "the field should be absent, not empty")
+	assert.NotContains(t, buf.String(), `"api_encryption_key"`, "the field should be absent, not empty")
 }
 
-func TestEncryptionKeyDigest(t *testing.T) {
-	assert.Empty(t, encryptionKeyDigest(""))
+const encryptionKeyFieldName protoreflect.Name = "api_encryption_key"
 
-	digest := encryptionKeyDigest(testEncryptionKey)
-	assert.Len(t, digest, 64)
-	assert.Equal(t, digest, encryptionKeyDigest(testEncryptionKey), "stable")
-	assert.NotContains(t, digest, testEncryptionKey)
+func encryptionKeyField(m proto.Message) string {
+	r := m.ProtoReflect()
+	return r.Get(r.Descriptor().Fields().ByName(encryptionKeyFieldName)).String()
+}
+
+func clearEncryptionKeyField(m proto.Message) {
+	r := m.ProtoReflect()
+	r.Clear(r.Descriptor().Fields().ByName(encryptionKeyFieldName))
 }
