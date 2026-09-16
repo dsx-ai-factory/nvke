@@ -205,14 +205,9 @@ if [[ "${FDE}" == true ]]; then
 fi
 
 # GRO merges inbound segments into super-frames the tap cannot take, so guest
-# downloads crawl on retransmits: 1.6-5 MB/s, against 62 with it off. Worse
-# where the uplink's MTU is larger than the bridge's, which is the default on
-# EC2: the super-frame cannot be re-segmented at all and is dropped, so a large
-# download stalls and times out while small ones are fine.
-#
-# Every lane here bridges KVM guests through the uplink, so this is not part of
-# the FDE image's requirements and is not gated on it. It was, and the kubeadm
-# lane went without it.
+# downloads crawl or stall: 1.6-5 MB/s against 62 with it off, and outright
+# timeouts where the uplink's MTU exceeds the bridge's. Every lane here bridges
+# guests through the uplink, so this is not FDE-specific.
 uplink="$(ip -4 route show default | awk '/default/ {print $5; exit}')"
 if [[ -n "${uplink}" ]]; then
   sudo ethtool -K "${uplink}" gro off lro off 2>/dev/null || warn "could not change receive offloads on ${uplink}"
