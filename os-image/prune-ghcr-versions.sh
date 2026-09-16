@@ -7,23 +7,18 @@
 #   os-image/prune-ghcr-versions.sh            # say what it would delete
 #   os-image/prune-ghcr-versions.sh --delete   # actually delete
 #
-# Every build publishes a sha-<commit>-<arch> tag, so a nightly would grow the
-# registry without limit. A qcow2 is gigabytes: the amd64 FDE image alone is
-# 5.07 GiB compressed.
+# Every build publishes a sha-<commit>-<arch> tag and a qcow2 is gigabytes, so
+# without this the registry grows without limit.
 #
-# A version is deleted only when all three hold:
+# A version goes only when all three hold:
 #
-#   1. Every tag on it starts with "sha-", or it has no tags at all. A version
-#      carrying any other tag is kept, whatever its age. That is what protects
-#      a release: GHCR puts v0.1.0-rc.1-amd64 and its sha- tag on the SAME
-#      version, so "has a sha tag" would have deleted the release. It also
-#      protects a moving tag such as main-arm64 without naming it here.
-#   2. It is not among the newest KEEP_MIN of its package, so a broken build
-#      cannot empty a package.
+#   1. Every tag on it starts with "sha-", or it has none. GHCR puts a release
+#      tag and its sha- tag on the SAME version, so requiring EVERY tag to be a
+#      sha- tag is what keeps a release, and any moving tag, alive.
+#   2. It is not among the newest KEEP_MIN of its package.
 #   3. It is older than KEEP_DAYS.
 #
-# Needs gh authenticated with delete:packages, or GITHUB_TOKEN with
-# packages: write in a workflow.
+# Needs gh with delete:packages, or GITHUB_TOKEN with packages: write.
 set -euo pipefail
 
 ORG="${ORG:-dsx-ai-factory}"

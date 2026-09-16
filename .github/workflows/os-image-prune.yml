@@ -5,15 +5,8 @@ name: OS Image Prune
 
 # Delete os-image container versions older than a week from GHCR.
 #
-# Every build publishes a sha-<commit>-<arch> tag, so the registry grows without
-# limit. A qcow2 is gigabytes: the amd64 FDE image alone is 5.07 GiB compressed,
-# and a build produces one per variant per architecture.
-#
-# The rules live in os-image/prune-ghcr-versions.sh, which a maintainer can run
-# by hand to see what would go before any of this deletes anything. It refuses
-# to touch a version carrying any tag that is not a sha- tag, which is what
-# protects both a release and a moving tag: GHCR puts the release tag and the
-# sha tag on the SAME version.
+# The rules, and what they protect, are in os-image/prune-ghcr-versions.sh.
+# Run it by hand to see what would go; it reports unless given --delete.
 on:
   schedule:
     # 05:40 UTC. Clear of the E2E block (02:00-03:15, 14:00-15:15) and of
