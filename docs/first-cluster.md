@@ -203,12 +203,12 @@ Skip this and the bootstrap runs its full 30 minutes before failing on
 certificate also reaches each node through cloud-init. Without it SPIRE mints a
 new CA on every run that no node trusts.
 
-**A SPIFFE trust domain.** Set `spire.trustDomain` in the site spec. It must
-match the `trust_domain` already configured on every host's SPIRE agent and the
-trust domain that the permanent site SPIRE server will use. Do not rely on the
-bootstrap cluster name to select this value: changing it after bootstrap
-changes every SPIFFE ID and prevents the existing agents and workload entries
-from moving to the permanent server.
+**A SPIFFE trust domain, when bootstrapping with SPIRE/SPIFFE enabled.** Set
+`spire.trustDomain` in the site spec. It must match the `trust_domain` already
+configured on every host's SPIRE agent and the trust domain that the permanent
+site SPIRE server will use. Do not rely on the bootstrap cluster name to select
+this value: changing it after bootstrap changes every SPIFFE ID and prevents
+the existing agents and workload entries from moving to the permanent server.
 
 **A SPIRE VIP pointed at the bootstrap node.** During the bootstrap the SPIRE
 server runs on the machine you run `nkectl bootstrap site` from, published on
