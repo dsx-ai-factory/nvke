@@ -183,7 +183,8 @@ sudo apt-get install -y -qq -o Dpkg::Options::="--force-confold" \
   cloud-image-utils \
   genisoimage \
   dnsmasq-base \
-  iptables
+  iptables \
+  ethtool
 
 # The FDE node image, opt-in. It boots UEFI (ovmf), binds LUKS to a TPM on its
 # first boot (swtpm; nico-vms provisions a vTPM only when swtpm_setup is on
@@ -200,16 +201,22 @@ if [[ "${FDE}" == true ]]; then
     swtpm \
     swtpm-tools \
     e2fsprogs \
-    sshpass \
-    ethtool
+    sshpass
+fi
 
-  # GRO merges inbound segments into super-frames the tap cannot take, so guest
-  # downloads crawl on retransmits: 1.6-5 MB/s, against 62 with it off.
-  uplink="$(ip -4 route show default | awk '/default/ {print $5; exit}')"
-  if [[ -n "${uplink}" ]]; then
-    sudo ethtool -K "${uplink}" gro off lro off 2>/dev/null || warn "could not change receive offloads on ${uplink}"
-    log "offloads on ${uplink}: $(ethtool -k "${uplink}" 2>/dev/null | grep -E '^(generic-receive-offload|large-receive-offload):' | tr -s ' ' | tr '\n' ' ')"
-  fi
+# GRO merges inbound segments into super-frames the tap cannot take, so guest
+# downloads crawl on retransmits: 1.6-5 MB/s, against 62 with it off. Worse
+# where the uplink's MTU is larger than the bridge's, which is the default on
+# EC2: the super-frame cannot be re-segmented at all and is dropped, so a large
+# download stalls and times out while small ones are fine.
+#
+# Every lane here bridges KVM guests through the uplink, so this is not part of
+# the FDE image's requirements and is not gated on it. It was, and the kubeadm
+# lane went without it.
+uplink="$(ip -4 route show default | awk '/default/ {print $5; exit}')"
+if [[ -n "${uplink}" ]]; then
+  sudo ethtool -K "${uplink}" gro off lro off 2>/dev/null || warn "could not change receive offloads on ${uplink}"
+  log "offloads on ${uplink}: $(ethtool -k "${uplink}" 2>/dev/null | grep -E '^(generic-receive-offload|large-receive-offload):' | tr -s ' ' | tr '\n' ' ')"
 fi
 
 # libvirtd is only needed for the system daemon's helpers; nico-vms itself talks
