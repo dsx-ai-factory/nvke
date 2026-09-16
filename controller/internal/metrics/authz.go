@@ -34,15 +34,38 @@ var (
 		[]string{authzOutcomeLabel, authzReasonLabel, actionLabel},
 	)
 
+	// authzEnabled is a config-state gauge, not a traffic counter, mirroring
+	// authEnabled: it is set once at startup from cfg.AuthzBundlePath/
+	// AuthzPermissive, so a site with zero callers still reports its real mode.
+	// nke_authz_requests_total cannot answer "is this on" on its own -- its
+	// series only exist once a request has been evaluated, so a quiet site is
+	// indistinguishable from a disabled one.
+	authzEnabled = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "nke_authz_enabled",
+			Help: "1 for the deployment's configured API authorization mode (off, permissive, or enforcing). " +
+				"Set once at startup from config, independent of traffic -- see nke_authz_requests_total for activity.",
+		},
+		[]string{"mode"},
+	)
+
 	_ authz.Recorder = RecordAuthzRequest
 )
 
 func init() {
-	prometheus.MustRegister(authzRequestsTotal)
+	prometheus.MustRegister(authzRequestsTotal, authzEnabled)
 }
 
 // RecordAuthzRequest counts one authorization decision. Its signature is
 // internal/authz.Recorder, so main passes it to authz.Setup directly.
 func RecordAuthzRequest(outcome authz.Outcome, reason authz.DenyReason, action string) {
 	authzRequestsTotal.WithLabelValues(string(outcome), string(reason), action).Inc()
+}
+
+// SetAuthzMode records the deployment's authorization mode once at startup:
+// "off", "permissive", or "enforcing". Call exactly once; it is not meant to
+// track changes at runtime, since the config is only ever read once at
+// startup (see internal/authz.Setup).
+func SetAuthzMode(mode string) {
+	authzEnabled.WithLabelValues(mode).Set(1)
 }

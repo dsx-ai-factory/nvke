@@ -167,6 +167,14 @@ func main() {
 		logger.Error("Failed to set up API authorization", "error", err)
 		os.Exit(1)
 	}
+	switch {
+	case cfg.AuthzBundlePath == "":
+		metrics.SetAuthzMode("off")
+	case cfg.AuthzPermissive:
+		metrics.SetAuthzMode("permissive")
+	default:
+		metrics.SetAuthzMode("enforcing")
+	}
 
 	// Get cloud-workflow-engine workload trust domain and bundle
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)
