@@ -39,7 +39,9 @@ class BundleTest(unittest.TestCase):
                         info.size = len(payload)
                         tar.addfile(info, io.BytesIO(payload))
                     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-                    (release / f"{name}_sha256sum.txt").write_text(f"{digest}  {name}\n")
+                    if component == "spire-agent":
+                        checksum_name = f"spire-1.14.1-linux-{arch}-musl_sha256sum.txt"
+                        (release / checksum_name).write_text(f"{digest}  {name}\n")
                     rows.append(f"artifact {component} {arch} {digest} {archive.as_uri()}\n")
             (locks / "1.14.1+tpm1.9.0.lock").write_text("".join(rows))
             for arch in ("amd64", "arm64"):

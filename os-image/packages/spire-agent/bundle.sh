@@ -91,9 +91,10 @@ file_sha() { sha256sum "$1" | cut -d' ' -f1; }
 # artifacts the committed lock is the only pin -- see README.md.
 publisher_sha() {
   local url="$1" doc="${WORK}/checksum-doc" sum
-  fetch "${url}_sha256sum.txt" "$doc"
+  local checksum_url="${url%.tar.gz}_sha256sum.txt"
+  fetch "$checksum_url" "$doc"
   sum="$(awk -v want="${url##*/}" '$1 ~ /^[0-9a-f]{64}$/ && $2 == want { print $1; found++ } END { exit found != 1 }' "$doc")" ||
-    die "no unambiguous SHA-256 digest for ${url##*/} in ${url}_sha256sum.txt"
+    die "no unambiguous SHA-256 digest for ${url##*/} in ${checksum_url}"
   echo "$sum"
 }
 
