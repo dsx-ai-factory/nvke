@@ -10,6 +10,8 @@ import (
 
 // A Reader is a container for a [Header] and an [io.Reader].
 // It is used to stream inputs and outputs in the various client and server APIs.
+//
+// NOTE: Experimental
 type Reader struct {
 	// ReaderCloser contains request or response data. May be nil for empty data.
 	io.ReadCloser
@@ -21,6 +23,8 @@ type Reader struct {
 
 // A Content is a container for a [Header] and a byte slice.
 // It is used by the SDK's [Serializer] interface implementations.
+//
+// NOTE: Experimental
 type Content struct {
 	// Header that should include information on how to deserialize this content.
 	// Headers constructed by the framework always have lower case keys.
@@ -37,12 +41,16 @@ type Content struct {
 // called.
 //
 // ⚠️ When a LazyValue is passed to a server handler, it must not be used after the returning from the handler method.
+//
+// NOTE: Experimental
 type LazyValue struct {
 	serializer Serializer
 	Reader     *Reader
 }
 
 // Create a new [LazyValue] from a given serializer and reader.
+//
+// NOTE: Experimental
 func NewLazyValue(serializer Serializer, reader *Reader) *LazyValue {
 	return &LazyValue{
 		serializer: serializer,
@@ -57,8 +65,11 @@ func NewLazyValue(serializer Serializer, reader *Reader) *LazyValue {
 //	err := lazyValue.Consume(&v)
 func (l *LazyValue) Consume(v any) (err error) {
 	defer func() {
-		closeErr := l.Reader.Close()
-		err = errors.Join(err, closeErr)
+		// Only join on failure to close, joining a nil error still wraps err and would hide its concrete type from
+		// callers that type assert on the serializer's error.
+		if closeErr := l.Reader.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
 	}()
 	data, err := io.ReadAll(l.Reader)
 	if err != nil {
@@ -92,6 +103,8 @@ var anyType = reflect.TypeOf((*any)(nil)).Elem()
 
 // ErrSerializerIncompatible is a sentinel error emitted by [Serializer] implementations to signal that a serializer is
 // incompatible with a given value or [Content].
+//
+// NOTE: Experimental
 var ErrSerializerIncompatible = errors.New("incompatible serializer")
 
 // CompositeSerializer is a [Serializer] that composes multiple serializers together.

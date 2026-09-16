@@ -97,6 +97,13 @@ const (
 	WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE WorkflowTaskFailedCause = 36
 	// A workflow task failed because payloads were too large.
 	WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE WorkflowTaskFailedCause = 37
+	// A workflow task failed because an external storage operation failed.
+	// Check the workflow task failure message for more information.
+	WORKFLOW_TASK_FAILED_CAUSE_EXTERNAL_STORAGE_FAILURE WorkflowTaskFailedCause = 38
+	// A workflow task is failed because the workflow is paused before the task is started.
+	WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_PAUSE_REQUESTED_BEFORE_TASK_STARTED WorkflowTaskFailedCause = 39
+	// A workflow task failed because the request exceeded a size limit.
+	WORKFLOW_TASK_FAILED_CAUSE_REQUEST_TOO_LARGE WorkflowTaskFailedCause = 40
 )
 
 // Enum value maps for WorkflowTaskFailedCause.
@@ -140,6 +147,9 @@ var (
 		35: "WORKFLOW_TASK_FAILED_CAUSE_FEATURE_DISABLED",
 		36: "WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE",
 		37: "WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE",
+		38: "WORKFLOW_TASK_FAILED_CAUSE_EXTERNAL_STORAGE_FAILURE",
+		39: "WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_PAUSE_REQUESTED_BEFORE_TASK_STARTED",
+		40: "WORKFLOW_TASK_FAILED_CAUSE_REQUEST_TOO_LARGE",
 	}
 	WorkflowTaskFailedCause_value = map[string]int32{
 		"WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED":                                               0,
@@ -180,6 +190,9 @@ var (
 		"WORKFLOW_TASK_FAILED_CAUSE_FEATURE_DISABLED":                                          35,
 		"WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE":                                    36,
 		"WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE":                                        37,
+		"WORKFLOW_TASK_FAILED_CAUSE_EXTERNAL_STORAGE_FAILURE":                                  38,
+		"WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_PAUSE_REQUESTED_BEFORE_TASK_STARTED":              39,
+		"WORKFLOW_TASK_FAILED_CAUSE_REQUEST_TOO_LARGE":                                         40,
 	}
 )
 
@@ -217,12 +230,12 @@ func (x WorkflowTaskFailedCause) String() string {
 		return "BadRequestCancelExternalWorkflowExecutionAttributes"
 	case WORKFLOW_TASK_FAILED_CAUSE_BAD_CONTINUE_AS_NEW_ATTRIBUTES:
 		return "BadContinueAsNewAttributes"
-
-		// Enum value maps for StartChildWorkflowExecutionFailedCause.
 	case WORKFLOW_TASK_FAILED_CAUSE_START_TIMER_DUPLICATE_ID:
 		return "StartTimerDuplicateId"
 	case WORKFLOW_TASK_FAILED_CAUSE_RESET_STICKY_TASK_QUEUE:
 		return "ResetStickyTaskQueue"
+
+		// Enum value maps for StartChildWorkflowExecutionFailedCause.
 	case WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE:
 		return "WorkflowWorkerUnhandledFailure"
 	case WORKFLOW_TASK_FAILED_CAUSE_BAD_SIGNAL_WORKFLOW_EXECUTION_ATTRIBUTES:
@@ -250,14 +263,14 @@ func (x WorkflowTaskFailedCause) String() string {
 	case WORKFLOW_TASK_FAILED_CAUSE_PENDING_CHILD_WORKFLOWS_LIMIT_EXCEEDED:
 		return "PendingChildWorkflowsLimitExceeded"
 	case WORKFLOW_TASK_FAILED_CAUSE_PENDING_ACTIVITIES_LIMIT_EXCEEDED:
-
-		// Deprecated: Use StartChildWorkflowExecutionFailedCause.Descriptor instead.
 		return "PendingActivitiesLimitExceeded"
 	case WORKFLOW_TASK_FAILED_CAUSE_PENDING_SIGNALS_LIMIT_EXCEEDED:
 		return "PendingSignalsLimitExceeded"
 	case WORKFLOW_TASK_FAILED_CAUSE_PENDING_REQUEST_CANCEL_LIMIT_EXCEEDED:
 		return "PendingRequestCancelLimitExceeded"
 	case WORKFLOW_TASK_FAILED_CAUSE_BAD_UPDATE_WORKFLOW_EXECUTION_MESSAGE:
+
+		// Deprecated: Use StartChildWorkflowExecutionFailedCause.Descriptor instead.
 		return "BadUpdateWorkflowExecutionMessage"
 	case WORKFLOW_TASK_FAILED_CAUSE_UNHANDLED_UPDATE:
 		return "UnhandledUpdate"
@@ -268,13 +281,19 @@ func (x WorkflowTaskFailedCause) String() string {
 	case WORKFLOW_TASK_FAILED_CAUSE_BAD_REQUEST_CANCEL_NEXUS_OPERATION_ATTRIBUTES:
 		return "BadRequestCancelNexusOperationAttributes"
 	case WORKFLOW_TASK_FAILED_CAUSE_FEATURE_DISABLED:
-
-		// Enum value maps for CancelExternalWorkflowExecutionFailedCause.
 		return "FeatureDisabled"
 	case WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE:
 		return "GrpcMessageTooLarge"
 	case WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE:
 		return "PayloadsTooLarge"
+	case WORKFLOW_TASK_FAILED_CAUSE_EXTERNAL_STORAGE_FAILURE:
+		return "ExternalStorageFailure"
+	case WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_PAUSE_REQUESTED_BEFORE_TASK_STARTED:
+
+		// Enum value maps for CancelExternalWorkflowExecutionFailedCause.
+		return "WorkflowPauseRequestedBeforeTaskStarted"
+	case WORKFLOW_TASK_FAILED_CAUSE_REQUEST_TOO_LARGE:
+		return "RequestTooLarge"
 	default:
 		return strconv.Itoa(int(x))
 	}
@@ -300,9 +319,10 @@ func (WorkflowTaskFailedCause) EnumDescriptor() ([]byte, []int) {
 type StartChildWorkflowExecutionFailedCause int32
 
 const (
-	START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_UNSPECIFIED             StartChildWorkflowExecutionFailedCause = 0
-	START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS StartChildWorkflowExecutionFailedCause = 1
-	START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND     StartChildWorkflowExecutionFailedCause = 2
+	START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_UNSPECIFIED                 StartChildWorkflowExecutionFailedCause = 0
+	START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS     StartChildWorkflowExecutionFailedCause = 1
+	START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND         StartChildWorkflowExecutionFailedCause = 2
+	START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_INVALID_VERSIONING_OVERRIDE StartChildWorkflowExecutionFailedCause = 3
 )
 
 var (
@@ -310,11 +330,13 @@ var (
 		0: "START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_UNSPECIFIED",
 		1: "START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS",
 		2: "START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND",
+		3: "START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_INVALID_VERSIONING_OVERRIDE",
 	}
 	StartChildWorkflowExecutionFailedCause_value = map[string]int32{
-		"START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_UNSPECIFIED":             0,
-		"START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS": 1,
-		"START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND":     2,
+		"START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_UNSPECIFIED":                 0,
+		"START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS":     1,
+		"START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND":         2,
+		"START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_INVALID_VERSIONING_OVERRIDE": 3,
 	}
 )
 
@@ -332,6 +354,8 @@ func (x StartChildWorkflowExecutionFailedCause) String() string {
 		return "WorkflowAlreadyExists"
 	case START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND:
 		return "NamespaceNotFound"
+	case START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_INVALID_VERSIONING_OVERRIDE:
+		return "InvalidVersioningOverride"
 	default:
 		return strconv.Itoa(int(x))
 	}
@@ -652,7 +676,7 @@ var File_temporal_api_enums_v1_failed_cause_proto protoreflect.FileDescriptor
 
 const file_temporal_api_enums_v1_failed_cause_proto_rawDesc = "" +
 	"\n" +
-	"(temporal/api/enums/v1/failed_cause.proto\x12\x15temporal.api.enums.v1*\xd8\x12\n" +
+	"(temporal/api/enums/v1/failed_cause.proto\x12\x15temporal.api.enums.v1*\x90\x14\n" +
 	"\x17WorkflowTaskFailedCause\x12*\n" +
 	"&WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED\x10\x00\x120\n" +
 	",WORKFLOW_TASK_FAILED_CAUSE_UNHANDLED_COMMAND\x10\x01\x12?\n" +
@@ -692,11 +716,15 @@ const file_temporal_api_enums_v1_failed_cause_proto_rawDesc = "" +
 	"HWORKFLOW_TASK_FAILED_CAUSE_BAD_REQUEST_CANCEL_NEXUS_OPERATION_ATTRIBUTES\x10\"\x12/\n" +
 	"+WORKFLOW_TASK_FAILED_CAUSE_FEATURE_DISABLED\x10#\x125\n" +
 	"1WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE\x10$\x121\n" +
-	"-WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE\x10%*\xf3\x01\n" +
+	"-WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE\x10%\x127\n" +
+	"3WORKFLOW_TASK_FAILED_CAUSE_EXTERNAL_STORAGE_FAILURE\x10&\x12K\n" +
+	"GWORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_PAUSE_REQUESTED_BEFORE_TASK_STARTED\x10'\x120\n" +
+	",WORKFLOW_TASK_FAILED_CAUSE_REQUEST_TOO_LARGE\x10(*\xc0\x02\n" +
 	"&StartChildWorkflowExecutionFailedCause\x12;\n" +
 	"7START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_UNSPECIFIED\x10\x00\x12G\n" +
 	"CSTART_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_WORKFLOW_ALREADY_EXISTS\x10\x01\x12C\n" +
-	"?START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND\x10\x02*\x91\x02\n" +
+	"?START_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_NAMESPACE_NOT_FOUND\x10\x02\x12K\n" +
+	"GSTART_CHILD_WORKFLOW_EXECUTION_FAILED_CAUSE_INVALID_VERSIONING_OVERRIDE\x10\x03*\x91\x02\n" +
 	"*CancelExternalWorkflowExecutionFailedCause\x12?\n" +
 	";CANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_UNSPECIFIED\x10\x00\x12Y\n" +
 	"UCANCEL_EXTERNAL_WORKFLOW_EXECUTION_FAILED_CAUSE_EXTERNAL_WORKFLOW_EXECUTION_NOT_FOUND\x10\x01\x12G\n" +

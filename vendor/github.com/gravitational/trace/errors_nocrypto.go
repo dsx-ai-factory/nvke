@@ -1,0 +1,35 @@
+//go:build gravitational_trace.nocrypto
+
+// Copyright 2026 Gravitational, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package trace
+
+// these unexported error types are never constructed but they are referenced by
+// [ConvertSystemError]; in builds without the nocrypto tag they are aliases of
+// errors in [crypto/x509]
+type (
+	x509SystemRootsError      struct{}
+	x509UnknownAuthorityError struct{}
+)
+
+// Error implements [error].
+func (x509SystemRootsError) Error() string {
+	return "trace.x509SystemRootsError (this is a bug)"
+}
+
+// Error implements [error].
+func (x509UnknownAuthorityError) Error() string {
+	return "trace.x509UnknownAuthorityError (this is a bug)"
+}

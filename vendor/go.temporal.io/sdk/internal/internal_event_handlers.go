@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	queryResultSizeLimit             = 2000000 // 2MB
 	changeVersionSearchAttrSizeLimit = 2048
 )
 
@@ -141,6 +140,9 @@ type (
 
 		sideEffectCounterID int64
 
+		// randoms holds deterministic PRNGs keyed by name and scoped to a run.
+		randoms map[string]*workflowRandomStream
+
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
@@ -160,6 +162,7 @@ type (
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
+		preferredVersionProvider PreferredVersionProvider
 		sdkFlags                 *sdkFlags
 		sdkVersionUpdated        bool
 		sdkVersion               string
@@ -223,6 +226,7 @@ func newWorkflowExecutionEventHandler(
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities,
+	preferredVersionProvider PreferredVersionProvider,
 ) workflowExecutionEventHandler {
 	wfCtx := converter.WorkflowSerializationContext{
 		Namespace:  workflowInfo.Namespace,
@@ -247,8 +251,10 @@ func newWorkflowExecutionEventHandler(
 		failureConverter:             failureConverter,
 		contextPropagators:           contextPropagators,
 		deadlockDetectionTimeout:     deadlockDetectionTimeout,
+		preferredVersionProvider:     preferredVersionProvider,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
+		randoms:                      make(map[string]*workflowRandomStream),
 		sdkFlags:                     newSDKFlagSet(capabilities),
 		bufferedUpdateRequests:       make(map[string][]func()),
 	}
@@ -696,6 +702,20 @@ func (wc *workflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 	)
 }
 
+func (wc *workflowEnvironmentImpl) AbandonNexusOperation(seq int64) {
+	command := wc.commandsHelper.getNexusOperationCommand(seq)
+	data := command.getData().(*scheduledNexusOperation)
+
+	data.startedCallback = nil
+	data.completedCallback = nil
+
+	wc.logger.Debug("AbandonNexusOperation",
+		tagNexusEndpoint, data.endpoint,
+		tagNexusService, data.service,
+		tagNexusOperation, data.operation,
+	)
+}
+
 func (wc *workflowEnvironmentImpl) RegisterSignalHandler(
 	handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
 ) {
@@ -744,6 +764,10 @@ func (wc *workflowEnvironmentImpl) GenerateSequenceID() string {
 
 func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
 	return wc.commandsHelper.getNextID()
+}
+
+func (wc *workflowEnvironmentImpl) GetRandomStream(name string) WorkflowRandomStream {
+	return getRandomStream(wc.randoms, wc.workflowInfo.currentRunID, name)
 }
 
 func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandType) *commandpb.Command {
@@ -931,7 +955,12 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 	} else {
 		// GetVersion for changeID is called first time (non-replay mode), generate a marker command for it.
 		// Also upsert search attributes to enable ability to search by changeVersion.
-		version = maxSupported
+		version = resolvePreferredVersion(wc.preferredVersionProvider, PreferredVersionProviderInput{
+			WorkflowInfo: wc.workflowInfo,
+			ChangeID:     changeID,
+			MinSupported: minSupported,
+			MaxSupported: maxSupported,
+		})
 		changeVersionSA := createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions)
 		attr, err := validateAndSerializeSearchAttributes(changeVersionSA)
 		if err != nil {
@@ -957,6 +986,38 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 	validateVersion(changeID, version, minSupported, maxSupported)
 	wc.changeVersions[changeID] = version
 	return version
+}
+
+func resolvePreferredVersion(
+	preferredVersionProvider PreferredVersionProvider,
+	input PreferredVersionProviderInput,
+) Version {
+	if preferredVersionProvider == nil {
+		return input.MaxSupported
+	}
+
+	preference := preferredVersionProvider(input)
+	if preference == nil {
+		return input.MaxSupported
+	}
+	if preference.Version >= input.MinSupported && preference.Version <= input.MaxSupported {
+		return preference.Version
+	}
+	if preference.ClampToSupportedRange {
+		if preference.Version < input.MinSupported {
+			return input.MinSupported
+		}
+		return input.MaxSupported
+	}
+
+	panicIllegalState(fmt.Sprintf(
+		"[TMPRL1100] Preferred version %v for %q change ID is not supported. Supported versions are between %v and %v.",
+		preference.Version,
+		input.ChangeID,
+		input.MinSupported,
+		input.MaxSupported,
+	))
+	return input.MaxSupported
 }
 
 func createSearchAttributesForChangeVersion(changeID string, version Version, existingChangeVersions map[string]Version) map[string]interface{} {
@@ -1111,13 +1172,24 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 }
 
 func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
+	return isEqualMutableSideEffectValue(wc.GetDataConverter(), newValue, encodedOldValue, equals)
+}
+
+// isEqualMutableSideEffectValue reports whether newValue is equal to the
+// previously recorded (encoded) value for a MutableSideEffect, using the
+// user-supplied equals function. It is shared by the real worker and the test
+// environment so both honor equals identically. A nil newValue is compared by
+// its encoded form to avoid invoking equals with a nil.
+func isEqualMutableSideEffectValue(dc converter.DataConverter, newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
 	if newValue == nil {
-		// new value is nil
-		newEncodedValue := wc.encodeValue(nil)
+		newEncodedValue, err := dc.ToPayloads(nil)
+		if err != nil {
+			panic(err)
+		}
 		return proto.Equal(newEncodedValue, encodedOldValue)
 	}
 
-	oldValue := decodeValue(newEncodedValue(encodedOldValue, wc.GetDataConverter()), newValue)
+	oldValue := decodeValue(newEncodedValue(encodedOldValue, dc), newValue)
 	return equals(newValue, oldValue)
 }
 
@@ -1264,6 +1336,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		attr := event.GetWorkflowTaskFailedEventAttributes()
 		if attr.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW {
 			weh.workflowInfo.currentRunID = attr.GetNewRunId()
+			reseedRandoms(weh.randoms, weh.workflowInfo.currentRunID)
 		}
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
 		// No Operation
@@ -1465,14 +1538,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 		result, err := weh.queryHandler(queryType, queryArgs, header)
 		if err != nil {
 			return nil, err
-		}
-
-		if result.Size() > queryResultSizeLimit {
-			weh.logger.Error("Query result size exceeds limit.",
-				tagQueryType, queryType,
-				tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
-				tagRunID, weh.workflowInfo.WorkflowExecution.RunID)
-			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", result.Size(), queryResultSizeLimit)
 		}
 
 		return result, nil

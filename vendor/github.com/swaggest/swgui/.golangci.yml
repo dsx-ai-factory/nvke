@@ -1,74 +1,87 @@
-# See https://github.com/golangci/golangci-lint/blob/master/.golangci.example.yml
+# See https://golangci-lint.run/docs/linters/configuration/
+version: "2"
 run:
   tests: true
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: true
-  gocyclo:
-    min-complexity: 20
-  dupl:
-    threshold: 100
-  misspell:
-    locale: US
-  unused:
-    check-exported: false
-  unparam:
-    check-exported: true
-
 linters:
-  enable-all: true
+  default: all
   disable:
-    - lll
-    - maligned
-    - gochecknoglobals
-    - gomnd
-    - wrapcheck
-    - paralleltest
-    - forbidigo
-    - exhaustivestruct
-    - interfacer # deprecated
-    - forcetypeassert
-    - scopelint # deprecated
-    - ifshort # too many false positives
-    - golint # deprecated
-    - varnamelen
-    - tagliatelle
-    - errname
-    - ireturn
-    - exhaustruct
-    - nonamedreturns
-    - nosnakecase
-    - structcheck
-    - varcheck
-    - deadcode
-    - testableexamples
+    - modernize
+    - prealloc
+    - errcheck
+    - funlen
+    - noctx
+    - revive
+    - cyclop
+    - err113
+    - noinlineerr
+    - wsl_v5
+    - funcorder
+    - copyloopvar
+    - depguard
     - dupword
-
-issues:
-  exclude-use-default: false
-  exclude-rules:
-    - linters:
-        - revive
-      text: var-naming
-    - linters:
-        - stylecheck
-      text: ST1003
-    - linters:
-        - gomnd
-        - goconst
-        - goerr113
-        - noctx
-        - funlen
-        - dupl
-        - structcheck
-        - unused
-        - unparam
-        - nosnakecase
-      path: "_test.go"
-    - linters:
-        - errcheck # Error checking omitted for brevity.
-        - gosec
-      path: "example_"
-
+    - errname
+    - exhaustruct
+    - forbidigo
+    - forcetypeassert
+    - gochecknoglobals
+    - intrange
+    - ireturn
+    - lll
+    - mnd
+    - nonamedreturns
+    - paralleltest
+    - recvcheck
+    - tagalign
+    - tagliatelle
+    - testableexamples
+    - testifylint
+    - varnamelen
+    - wrapcheck
+  settings:
+    dupl:
+      threshold: 100
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    gocyclo:
+      min-complexity: 20
+    misspell:
+      locale: US
+    unparam:
+      check-exported: true
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - gosec
+          - dupl
+          - funlen
+          - goconst
+          - mnd
+          - noctx
+          - unparam
+          - unused
+        path: _test.go
+      - linters:
+          - errcheck
+          - gosec
+        path: example_
+      - linters:
+          - revive
+        text: 'unused-parameter: parameter'
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

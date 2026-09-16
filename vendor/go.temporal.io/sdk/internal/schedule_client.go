@@ -295,8 +295,6 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticSummary string
 
 		// Details - General fixed details for this child workflow execution that will appear in UI/CLI. This can be in
@@ -304,8 +302,6 @@ type (
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 
 		// Priority - Optional priority settings that control relative ordering of
@@ -335,11 +331,11 @@ type (
 
 		// CatchupWindow - The Temporal Server might be down or unavailable at the time when a Schedule should take an Action.
 		// When the Server comes back up, CatchupWindow controls which missed Actions should be taken at that point. The default is one
-		// minute, which means that the Schedule attempts to take any Actions that wouldn't be more than one minute late. It
+		// year, which means that the Schedule attempts to take any Actions that wouldn't be more than one year late. It
 		// takes those Actions according to the Overlap. An outage that lasts longer than the Catchup
 		// Window could lead to missed Actions.
 		//
-		// Optional: defaulted to 1 minute
+		// Optional: zero leaves this unset so the Temporal Server applies its default (currently one year).
 		CatchupWindow time.Duration
 
 		// PauseOnFailure - When an Action times out or reaches the end of its Retry Policy the Schedule will pause.

@@ -26,26 +26,26 @@ notices-check` verifies it is up to date.
 | `github.com/go-logr/logr` | Apache-2.0 | `github.com/go-logr/logr@v1.4.4` | Unknown |
 | `github.com/go-openapi/jsonpointer` | Apache-2.0 | `github.com/go-openapi/jsonpointer@v1.0.0` | Unknown |
 | `github.com/go-openapi/jsonreference` | Apache-2.0 | `github.com/go-openapi/jsonreference@v1.0.0` | Unknown |
-| `github.com/go-openapi/swag` | Apache-2.0 | `github.com/go-openapi/swag@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/cmdutils` | Apache-2.0 | `github.com/go-openapi/swag/cmdutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/conv` | Apache-2.0 | `github.com/go-openapi/swag/conv@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/fileutils` | Apache-2.0 | `github.com/go-openapi/swag/fileutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/jsonutils` | Apache-2.0 | `github.com/go-openapi/swag/jsonutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/loading` | Apache-2.0 | `github.com/go-openapi/swag/loading@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/mangling` | Apache-2.0 | `github.com/go-openapi/swag/mangling@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/netutils` | Apache-2.0 | `github.com/go-openapi/swag/netutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/pools` | Apache-2.0 | `github.com/go-openapi/swag/pools@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/stringutils` | Apache-2.0 | `github.com/go-openapi/swag/stringutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/typeutils` | Apache-2.0 | `github.com/go-openapi/swag/typeutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/yamlutils` | Apache-2.0 | `github.com/go-openapi/swag/yamlutils@v0.27.1` | Unknown |
-| `github.com/go-viper/mapstructure/v2` | MIT | `github.com/go-viper/mapstructure/v2@v2.4.0` | Unknown |
+| `github.com/go-openapi/swag` | Apache-2.0 | `github.com/go-openapi/swag@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/cmdutils` | Apache-2.0 | `github.com/go-openapi/swag/cmdutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/conv` | Apache-2.0 | `github.com/go-openapi/swag/conv@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/fileutils` | Apache-2.0 | `github.com/go-openapi/swag/fileutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/jsonutils` | Apache-2.0 | `github.com/go-openapi/swag/jsonutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/loading` | Apache-2.0 | `github.com/go-openapi/swag/loading@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/mangling` | Apache-2.0 | `github.com/go-openapi/swag/mangling@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/netutils` | Apache-2.0 | `github.com/go-openapi/swag/netutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/pools` | Apache-2.0 | `github.com/go-openapi/swag/pools@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/stringutils` | Apache-2.0 | `github.com/go-openapi/swag/stringutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/typeutils` | Apache-2.0 | `github.com/go-openapi/swag/typeutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/yamlutils` | Apache-2.0 | `github.com/go-openapi/swag/yamlutils@v0.28.0` | Unknown |
+| `github.com/go-viper/mapstructure/v2` | MIT | `github.com/go-viper/mapstructure/v2@v2.5.0` | Unknown |
 | `github.com/google/gnostic-models` | Apache-2.0 | `github.com/google/gnostic-models@v0.7.0` | Unknown |
 | `github.com/google/uuid` | BSD-3-Clause | `github.com/google/uuid@v1.6.0` | Unknown |
 | `github.com/json-iterator/go` | MIT | `github.com/json-iterator/go@v1.1.12` | Unknown |
 | `github.com/modern-go/concurrent` | Apache-2.0 | `github.com/modern-go/concurrent@v0.0.0-20180306012644-bacd9c7ef1dd` | Unknown |
 | `github.com/modern-go/reflect2` | Apache-2.0 | `github.com/modern-go/reflect2@v1.0.3-0.20250322232337-35a7c28c31ee` | Unknown |
 | `github.com/munnerz/goautoneg` | BSD-3-Clause | `github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822` | Unknown |
-| `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.6.0` | Unknown |
+| `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.7.0` | Unknown |
 | `github.com/oasdiff/yaml` | BSD-3-Clause / MIT | `github.com/oasdiff/yaml@v0.1.1` | Unknown |
 | `github.com/oasdiff/yaml3` | MIT | `github.com/oasdiff/yaml3@v0.0.14` | Unknown |
 | `github.com/pelletier/go-toml/v2` | MIT | `github.com/pelletier/go-toml/v2@v2.2.4` | Unknown |
@@ -63,9 +63,9 @@ notices-check` verifies it is up to date.
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | Unknown |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.58.0` | Unknown |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | Unknown |
-| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.47.0` | Unknown |
-| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.45.0` | Unknown |
-| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.41.0` | Unknown |
+| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | Unknown |
+| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.46.0` | Unknown |
+| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | Unknown |
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.15.0` | Unknown |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | Unknown |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | Unknown |
@@ -997,7 +997,7 @@ limitations under the License.
 
 ### github.com/go-openapi/swag
 
-_Apache-2.0 — github.com/go-openapi/swag@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag@v0.28.0_
 
 #### LICENSE
 
@@ -1209,7 +1209,7 @@ _Apache-2.0 — github.com/go-openapi/swag@v0.27.1_
 
 ### github.com/go-openapi/swag/cmdutils
 
-_Apache-2.0 — github.com/go-openapi/swag/cmdutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/cmdutils@v0.28.0_
 
 #### LICENSE
 
@@ -1421,7 +1421,7 @@ _Apache-2.0 — github.com/go-openapi/swag/cmdutils@v0.27.1_
 
 ### github.com/go-openapi/swag/conv
 
-_Apache-2.0 — github.com/go-openapi/swag/conv@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/conv@v0.28.0_
 
 #### LICENSE
 
@@ -1633,7 +1633,7 @@ _Apache-2.0 — github.com/go-openapi/swag/conv@v0.27.1_
 
 ### github.com/go-openapi/swag/fileutils
 
-_Apache-2.0 — github.com/go-openapi/swag/fileutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/fileutils@v0.28.0_
 
 #### LICENSE
 
@@ -1845,7 +1845,7 @@ _Apache-2.0 — github.com/go-openapi/swag/fileutils@v0.27.1_
 
 ### github.com/go-openapi/swag/jsonutils
 
-_Apache-2.0 — github.com/go-openapi/swag/jsonutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/jsonutils@v0.28.0_
 
 #### LICENSE
 
@@ -2057,7 +2057,7 @@ _Apache-2.0 — github.com/go-openapi/swag/jsonutils@v0.27.1_
 
 ### github.com/go-openapi/swag/loading
 
-_Apache-2.0 — github.com/go-openapi/swag/loading@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/loading@v0.28.0_
 
 #### LICENSE
 
@@ -2269,7 +2269,7 @@ _Apache-2.0 — github.com/go-openapi/swag/loading@v0.27.1_
 
 ### github.com/go-openapi/swag/mangling
 
-_Apache-2.0 — github.com/go-openapi/swag/mangling@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/mangling@v0.28.0_
 
 #### LICENSE
 
@@ -2481,7 +2481,7 @@ _Apache-2.0 — github.com/go-openapi/swag/mangling@v0.27.1_
 
 ### github.com/go-openapi/swag/netutils
 
-_Apache-2.0 — github.com/go-openapi/swag/netutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/netutils@v0.28.0_
 
 #### LICENSE
 
@@ -2693,7 +2693,7 @@ _Apache-2.0 — github.com/go-openapi/swag/netutils@v0.27.1_
 
 ### github.com/go-openapi/swag/pools
 
-_Apache-2.0 — github.com/go-openapi/swag/pools@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/pools@v0.28.0_
 
 #### LICENSE
 
@@ -2905,7 +2905,7 @@ _Apache-2.0 — github.com/go-openapi/swag/pools@v0.27.1_
 
 ### github.com/go-openapi/swag/stringutils
 
-_Apache-2.0 — github.com/go-openapi/swag/stringutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/stringutils@v0.28.0_
 
 #### LICENSE
 
@@ -3117,7 +3117,7 @@ _Apache-2.0 — github.com/go-openapi/swag/stringutils@v0.27.1_
 
 ### github.com/go-openapi/swag/typeutils
 
-_Apache-2.0 — github.com/go-openapi/swag/typeutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/typeutils@v0.28.0_
 
 #### LICENSE
 
@@ -3329,7 +3329,7 @@ _Apache-2.0 — github.com/go-openapi/swag/typeutils@v0.27.1_
 
 ### github.com/go-openapi/swag/yamlutils
 
-_Apache-2.0 — github.com/go-openapi/swag/yamlutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/yamlutils@v0.28.0_
 
 #### LICENSE
 
@@ -3541,7 +3541,7 @@ _Apache-2.0 — github.com/go-openapi/swag/yamlutils@v0.27.1_
 
 ### github.com/go-viper/mapstructure/v2
 
-_MIT — github.com/go-viper/mapstructure/v2@v2.4.0_
+_MIT — github.com/go-viper/mapstructure/v2@v2.5.0_
 
 #### LICENSE
 
@@ -4316,7 +4316,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/oapi-codegen/runtime
 
-_Apache-2.0 — github.com/oapi-codegen/runtime@v1.6.0_
+_Apache-2.0 — github.com/oapi-codegen/runtime@v1.7.0_
 
 #### LICENSE
 
@@ -5854,7 +5854,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sys/unix
 
-_BSD-3-Clause — golang.org/x/sys@v0.47.0_
+_BSD-3-Clause — golang.org/x/sys@v0.48.0_
 
 #### LICENSE
 
@@ -5891,7 +5891,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/term
 
-_BSD-3-Clause — golang.org/x/term@v0.45.0_
+_BSD-3-Clause — golang.org/x/term@v0.46.0_
 
 #### LICENSE
 
@@ -5928,7 +5928,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/text
 
-_BSD-3-Clause — golang.org/x/text@v0.41.0_
+_BSD-3-Clause — golang.org/x/text@v0.42.0_
 
 #### LICENSE
 

@@ -45,6 +45,9 @@ var (
 		"FeatureDisabled":                                     35,
 		"GrpcMessageTooLarge":                                 36,
 		"PayloadsTooLarge":                                    37,
+		"ExternalStorageFailure":                              38,
+		"WorkflowPauseRequestedBeforeTaskStarted":             39,
+		"RequestTooLarge":                                     40,
 	}
 )
 
@@ -61,9 +64,10 @@ func WorkflowTaskFailedCauseFromString(s string) (WorkflowTaskFailedCause, error
 
 var (
 	StartChildWorkflowExecutionFailedCause_shorthandValue = map[string]int32{
-		"Unspecified":           0,
-		"WorkflowAlreadyExists": 1,
-		"NamespaceNotFound":     2,
+		"Unspecified":               0,
+		"WorkflowAlreadyExists":     1,
+		"NamespaceNotFound":         2,
+		"InvalidVersioningOverride": 3,
 	}
 )
 

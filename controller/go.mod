@@ -91,6 +91,7 @@ require (
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.1-0.20260629224650-76486e7cc189 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
+	github.com/onsi/ginkgo/v2 v2.32.2 // indirect
 	github.com/onsi/gomega v1.43.0 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/russellhaering/gosaml2 v0.11.0 // indirect

@@ -97,9 +97,10 @@ type (
 		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 		// subjected to change in the future.
 		//
-		// WorkflowRun has three methods:
+		// WorkflowRun provides:
 		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which returns the first execution run ID in the workflow chain
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -118,9 +119,10 @@ type (
 		//  - workflow ID of the workflow.
 		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
-		// WorkflowRun has three methods:
+		// WorkflowRun provides:
 		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which is empty for handles returned by GetWorkflow
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -169,6 +171,11 @@ type (
 		//  - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
+		// CancelWorkflowWithOptions requests cancellation of a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error
+
 		// TerminateWorkflow terminates a workflow execution.
 		// workflowID is required, other parameters are optional.
 		//  - workflow ID of the workflow.
@@ -179,6 +186,11 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
+
+		// TerminateWorkflowWithOptions terminates a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		//  - workflow ID of the workflow.
@@ -970,6 +982,20 @@ type (
 		// NOTE: Experimental
 		WorkerHeartbeatInterval time.Duration
 
+		// SdkName overrides the SDK name reported in worker heartbeats. When empty,
+		// the built-in SDKName ("temporal-go") is used. This is intended for SDKs that
+		// embed the Go SDK to run another language (e.g. roadrunner-temporal for PHP),
+		// so heartbeats report the wrapping SDK instead of temporal-go.
+		//
+		// NOTE: Experimental
+		SdkName string
+
+		// SdkVersion overrides the SDK version reported in worker heartbeats. When empty,
+		// the built-in SDKVersion is used. See SdkName.
+		//
+		// NOTE: Experimental
+		SdkVersion string
+
 		// ExternalStorage configures external payload storage for this client.
 		// When set, payloads that exceed ExternalStorage.PayloadSizeThreshold
 		// are offloaded to an external store (e.g. S3, GCS) by the configured
@@ -1072,6 +1098,53 @@ type (
 		// be created as false. This is set to true when server capabilities are
 		// fetched.
 		excludeInternalFromRetry *atomic.Bool
+	}
+
+	// CancelWorkflowOptions contains parameters for cancelling a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CancelWorkflowOptions]
+	CancelWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to cancel.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to cancel. If empty, the
+		// currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for requesting cancellation of the workflow execution.
+		Reason string
+	}
+
+	// TerminateWorkflowOptions contains parameters for terminating a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.TerminateWorkflowOptions]
+	TerminateWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to terminate.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to terminate. If empty,
+		// the currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for terminating the workflow execution.
+		Reason string
+
+		// Details are additional values attached to the termination event.
+		Details []interface{}
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -1206,8 +1279,6 @@ type (
 		// in single-line Temporal markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticSummary string
 
 		// Details - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
@@ -1215,8 +1286,6 @@ type (
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 
 		// VersioningOverride - Sets the versioning configuration of a specific workflow execution, ignoring current
@@ -1627,6 +1696,16 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		panic(fmt.Sprintf("invalid PayloadLimits options: %v", err))
 	}
 
+	// Fall back to the built-in SDK name/version when not overridden.
+	sdkName := options.SdkName
+	if sdkName == "" {
+		sdkName = SDKName
+	}
+	sdkVersion := options.SdkVersion
+	if sdkVersion == "" {
+		sdkVersion = SDKVersion
+	}
+
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,
 		conn:                     conn,
@@ -1648,6 +1727,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
+		sdkName:                 sdkName,
+		sdkVersion:              sdkVersion,
 		storageParams:           storageParams,
 		storageDriverTypes:      storageDriverTypes,
 		payloadWarningLimits:    payloadWarningLimits,
@@ -1841,22 +1922,46 @@ func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Error() string {
 
 func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Unwrap() error { return e.cause }
 
-// SetRequestIDOnStartWorkflowOptions is an internal only method for setting a requestID on StartWorkflowOptions.
-// RequestID is purposefully not exposed to users for the time being.
-func SetRequestIDOnStartWorkflowOptions(opts *StartWorkflowOptions, requestID string) {
-	opts.requestID = requestID
+// interface utility wrapper to allow setting links and callbacks
+// on temporal primitive operation options (UpdateWorkflowOptions, StartWorkflowOptions)
+type nexusTemporalOperationOptions interface {
+	setRequestID(requestID string)
+	setLinks(links []*commonpb.Link)
+	setCallbacks(callbacks []*commonpb.Callback)
 }
 
-// SetCallbacksOnStartWorkflowOptions is an internal only method for setting callbacks on StartWorkflowOptions.
-// Callbacks are purposefully not exposed to users for the time being.
-func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*commonpb.Callback) {
-	opts.callbacks = callbacks
+// nexusTemporalOperationOptions conforming interfaces
+var (
+	_ nexusTemporalOperationOptions = (*UpdateWorkflowOptions)(nil)
+	_ nexusTemporalOperationOptions = (*StartWorkflowOptions)(nil)
+)
+
+// Set links on any [nexusTemporalOperationOptions] interface via the setLinks API.
+//
+// Intended to be used only internally as a consistent way of setting
+// links on all Nexus Operations
+func SetLinksOnNexusOperation(opts nexusTemporalOperationOptions, links []*commonpb.Link) {
+	opts.setLinks(links)
 }
 
-// SetLinksOnStartWorkflowOptions is an internal only method for setting links on StartWorkflowOptions.
-// Links are purposefully not exposed to users for the time being.
-func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonpb.Link) {
-	opts.links = links
+// Set callbacks on any [nexusTemporalOperationOptions] interface via the setCallbacks API.
+//
+// Intended to be used only internally as a consistent way of setting
+// callbacks on all Nexus Operations
+func SetCallbacksOnNexusOperation(opts nexusTemporalOperationOptions, callbacks []*commonpb.Callback) {
+	opts.setCallbacks(callbacks)
+}
+
+// Set non-empty requestID on any [nexusTemporalOperationOptions] interface via the setRequestID API.
+// Used for deduping requests server-side
+//
+// Intended to be used only internally as a consistent way of setting
+// requestIDs on all Nexus Operations
+func SetRequestIDOnNexusOperation(opts nexusTemporalOperationOptions, requestID string) {
+	if requestID == "" {
+		return
+	}
+	opts.setRequestID(requestID)
 }
 
 // SetOnConflictOptionsOnStartWorkflowOptions is an internal only method for setting conflict
@@ -1876,6 +1981,16 @@ func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
 func SetResponseInfoOnStartWorkflowOptions(opts *StartWorkflowOptions) *startWorkflowResponseInfo {
 	if opts.responseInfo == nil {
 		opts.responseInfo = &startWorkflowResponseInfo{}
+	}
+	return opts.responseInfo
+}
+
+// SetResponseInfoOnUpdateWorkflowOptions is an internal only method to set and return a
+// responseInfo pointer. This is done to capture links from the response RPC to be used
+// for nexus forward links on UpdateWorkflow Nexus Operations
+func SetResponseInfoOnUpdateWorkflowOptions(opts *UpdateWorkflowOptions) *updateWorkflowResponseInfo {
+	if opts.responseInfo == nil {
+		opts.responseInfo = &updateWorkflowResponseInfo{}
 	}
 	return opts.responseInfo
 }

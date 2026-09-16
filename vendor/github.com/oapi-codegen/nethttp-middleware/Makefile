@@ -10,23 +10,26 @@ help:
 	@echo "    tidy         tidy go mod"
 
 $(GOBIN)/golangci-lint:
-	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(GOBIN) v1.59.0
+	curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b $(GOBIN) v2.12.2
 
 .PHONY: tools
 tools: $(GOBIN)/golangci-lint
 
 lint: tools
-	git ls-files go.mod '**/*go.mod' -z | xargs -0 -I{} bash -xc 'cd $$(dirname {}) && $(GOBIN)/golangci-lint run ./...'
+	$(GOBIN)/golangci-lint run ./...
 
 lint-ci: tools
-	git ls-files go.mod '**/*go.mod' -z | xargs -0 -I{} bash -xc 'cd $$(dirname {}) && $(GOBIN)/golangci-lint run ./... --out-format=github-actions --timeout=5m'
+	$(GOBIN)/golangci-lint run ./... --output.text.path=stdout --timeout=5m
 
 generate:
-	git ls-files go.mod '**/*go.mod' -z | xargs -0 -I{} bash -xc 'cd $$(dirname {}) && go generate ./...'
+	go generate ./...
 
 test:
-	git ls-files go.mod '**/*go.mod' -z | xargs -0 -I{} bash -xc 'cd $$(dirname {}) && go test -cover ./...'
+	go test -cover ./...
 
 tidy:
 	@echo "tidy..."
-	git ls-files go.mod '**/*go.mod' -z | xargs -0 -I{} bash -xc 'cd $$(dirname {}) && go mod tidy'
+	go mod tidy
+
+# the CI scripts require a rule by this name
+tidy-ci: tidy

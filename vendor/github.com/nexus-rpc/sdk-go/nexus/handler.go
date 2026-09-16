@@ -131,6 +131,8 @@ func (*HandlerStartOperationResultAsync) mustImplementHandlerStartOperationResul
 // All Handler methods can return a [HandlerError] to fail requests with a custom [HandlerErrorType] and structured [Failure].
 // Arbitrary errors from handler methods are turned into [HandlerErrorTypeInternal], their details are logged and hidden
 // from the caller.
+//
+// NOTE: Experimental
 type Handler interface {
 	// StartOperation handles requests for starting an operation. Return [HandlerStartOperationResultSync] to
 	// respond successfully - inline, or [HandlerStartOperationResultAsync] to indicate that an asynchronous

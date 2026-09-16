@@ -313,8 +313,7 @@ func (r *registryHandler) StartOperation(ctx context.Context, service, operation
 	inputType := m.Type.In(2)
 	iptr := reflect.New(inputType).Interface()
 	if err := input.Consume(iptr); err != nil {
-		// TODO: log the error? Do we need to accept a logger for this single line?
-		return nil, NewHandlerErrorf(HandlerErrorTypeBadRequest, "invalid input")
+		return nil, err
 	}
 	return h.Start(ctx, reflect.ValueOf(iptr).Elem().Interface(), options)
 }

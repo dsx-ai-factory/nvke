@@ -22,7 +22,7 @@ notices-check` verifies it is up to date.
 | `github.com/beevik/etree` | BSD-2-Clause | `github.com/beevik/etree@v1.6.0` | Unknown |
 | `github.com/beorn7/perks/quantile` | MIT | `github.com/beorn7/perks@v1.0.1` | Unknown |
 | `github.com/blang/semver/v4` | MIT | `github.com/blang/semver/v4@v4.0.0` | Unknown |
-| `github.com/caarlos0/env/v11` | MIT | `github.com/caarlos0/env/v11@v11.3.1` | Unknown |
+| `github.com/caarlos0/env/v11` | MIT | `github.com/caarlos0/env/v11@v11.4.1` | Unknown |
 | `github.com/cenkalti/backoff/v5` | MIT | `github.com/cenkalti/backoff/v5@v5.0.3` | Unknown |
 | `github.com/cespare/xxhash/v2` | MIT | `github.com/cespare/xxhash/v2@v2.3.0` | Unknown |
 | `github.com/charlievieth/strcase` | MIT | `github.com/charlievieth/strcase@v0.0.5` | Unknown |
@@ -31,43 +31,43 @@ notices-check` verifies it is up to date.
 | `github.com/emicklei/go-restful/v3` | MIT | `github.com/emicklei/go-restful/v3@v3.13.0` | Unknown |
 | `github.com/evanphx/json-patch/v5` | BSD-3-Clause | `github.com/evanphx/json-patch/v5@v5.9.11` | Unknown |
 | `github.com/facebookgo/clock` | MIT | `github.com/facebookgo/clock@v0.0.0-20150410010913-600d898af40a` | Unknown |
-| `github.com/felixge/httpsnoop` | MIT | `github.com/felixge/httpsnoop@v1.0.4` | Unknown |
+| `github.com/felixge/httpsnoop` | MIT | `github.com/felixge/httpsnoop@v1.1.0` | Unknown |
 | `github.com/fsnotify/fsnotify` | BSD-3-Clause | `github.com/fsnotify/fsnotify@v1.9.0` | Unknown |
 | `github.com/fxamacker/cbor/v2` | MIT | `github.com/fxamacker/cbor/v2@v2.9.1` | Unknown |
 | `github.com/getkin/kin-openapi` | MIT | `github.com/getkin/kin-openapi@v0.149.0` | Unknown |
-| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.4` | Unknown |
-| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.4` | Unknown |
+| `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.5` | Unknown |
+| `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.5` | Unknown |
 | `github.com/go-logr/logr` | Apache-2.0 | `github.com/go-logr/logr@v1.4.4` | Unknown |
 | `github.com/go-logr/stdr` | Apache-2.0 | `github.com/go-logr/stdr@v1.2.2` | Unknown |
 | `github.com/go-openapi/jsonpointer` | Apache-2.0 | `github.com/go-openapi/jsonpointer@v1.0.0` | Unknown |
 | `github.com/go-openapi/jsonreference` | Apache-2.0 | `github.com/go-openapi/jsonreference@v1.0.0` | Unknown |
-| `github.com/go-openapi/swag` | Apache-2.0 | `github.com/go-openapi/swag@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/cmdutils` | Apache-2.0 | `github.com/go-openapi/swag/cmdutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/conv` | Apache-2.0 | `github.com/go-openapi/swag/conv@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/fileutils` | Apache-2.0 | `github.com/go-openapi/swag/fileutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/jsonutils` | Apache-2.0 | `github.com/go-openapi/swag/jsonutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/loading` | Apache-2.0 | `github.com/go-openapi/swag/loading@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/mangling` | Apache-2.0 | `github.com/go-openapi/swag/mangling@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/netutils` | Apache-2.0 | `github.com/go-openapi/swag/netutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/pools` | Apache-2.0 | `github.com/go-openapi/swag/pools@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/stringutils` | Apache-2.0 | `github.com/go-openapi/swag/stringutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/typeutils` | Apache-2.0 | `github.com/go-openapi/swag/typeutils@v0.27.1` | Unknown |
-| `github.com/go-openapi/swag/yamlutils` | Apache-2.0 | `github.com/go-openapi/swag/yamlutils@v0.27.1` | Unknown |
+| `github.com/go-openapi/swag` | Apache-2.0 | `github.com/go-openapi/swag@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/cmdutils` | Apache-2.0 | `github.com/go-openapi/swag/cmdutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/conv` | Apache-2.0 | `github.com/go-openapi/swag/conv@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/fileutils` | Apache-2.0 | `github.com/go-openapi/swag/fileutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/jsonutils` | Apache-2.0 | `github.com/go-openapi/swag/jsonutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/loading` | Apache-2.0 | `github.com/go-openapi/swag/loading@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/mangling` | Apache-2.0 | `github.com/go-openapi/swag/mangling@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/netutils` | Apache-2.0 | `github.com/go-openapi/swag/netutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/pools` | Apache-2.0 | `github.com/go-openapi/swag/pools@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/stringutils` | Apache-2.0 | `github.com/go-openapi/swag/stringutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/typeutils` | Apache-2.0 | `github.com/go-openapi/swag/typeutils@v0.28.0` | Unknown |
+| `github.com/go-openapi/swag/yamlutils` | Apache-2.0 | `github.com/go-openapi/swag/yamlutils@v0.28.0` | Unknown |
 | `github.com/gobuffalo/flect` | MIT | `github.com/gobuffalo/flect@v1.0.3` | Unknown |
 | `github.com/gobwas/httphead` | MIT | `github.com/gobwas/httphead@v0.1.0` | Unknown |
 | `github.com/gobwas/pool` | MIT | `github.com/gobwas/pool@v0.2.1` | Unknown |
 | `github.com/gobwas/ws` | MIT | `github.com/gobwas/ws@v1.4.0` | Unknown |
 | `github.com/gogo/protobuf` | BSD-3-Clause | `github.com/gogo/protobuf@v1.3.2` | Unknown |
 | `github.com/golang-jwt/jwt/v5` | MIT | `github.com/golang-jwt/jwt/v5@v5.3.1` | Unknown |
-| `github.com/golang/mock/gomock` | Apache-2.0 | `github.com/golang/mock@v1.7.0-rc.1` | Unknown |
+| `github.com/golang/mock` | Apache-2.0 | `github.com/golang/mock@v1.7.0-rc.1` | Unknown |
 | `github.com/google/gnostic-models` | Apache-2.0 | `github.com/google/gnostic-models@v0.7.0` | Unknown |
 | `github.com/google/go-cmp/cmp` | BSD-3-Clause | `github.com/google/go-cmp@v0.7.0` | Unknown |
 | `github.com/google/uuid` | BSD-3-Clause | `github.com/google/uuid@v1.6.0` | Unknown |
 | `github.com/gorilla/mux` | BSD-3-Clause | `github.com/gorilla/mux@v1.8.1` | Unknown |
 | `github.com/gravitational/teleport/api` | Apache-2.0 | `github.com/gravitational/teleport/api@v0.0.0-20251224210154-05b9362bd4d6` | Unknown |
-| `github.com/gravitational/trace` | Apache-2.0 | `github.com/gravitational/trace@v1.5.1` | Unknown |
+| `github.com/gravitational/trace` | Apache-2.0 | `github.com/gravitational/trace@v1.5.4` | Unknown |
 | `github.com/grpc-ecosystem/go-grpc-middleware/v2` | Apache-2.0 | `github.com/grpc-ecosystem/go-grpc-middleware/v2@v2.3.3` | Unknown |
-| `github.com/grpc-ecosystem/grpc-gateway/v2` | BSD-3-Clause | `github.com/grpc-ecosystem/grpc-gateway/v2@v2.29.0` | Unknown |
+| `github.com/grpc-ecosystem/grpc-gateway/v2` | BSD-3-Clause | `github.com/grpc-ecosystem/grpc-gateway/v2@v2.30.0` | Unknown |
 | `github.com/jinzhu/inflection` | MIT | `github.com/jinzhu/inflection@v1.0.0` | Unknown |
 | `github.com/jonboulle/clockwork` | Apache-2.0 | `github.com/jonboulle/clockwork@v0.5.0` | Unknown |
 | `github.com/json-iterator/go` | MIT | `github.com/json-iterator/go@v1.1.12` | Unknown |
@@ -76,9 +76,9 @@ notices-check` verifies it is up to date.
 | `github.com/modern-go/reflect2` | Apache-2.0 | `github.com/modern-go/reflect2@v1.0.3-0.20250322232337-35a7c28c31ee` | Unknown |
 | `github.com/munnerz/goautoneg` | BSD-3-Clause | `github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822` | Unknown |
 | `github.com/nexus-rpc/nexus-proto-annotations/go/nexusannotations/v1` | MIT | `github.com/nexus-rpc/nexus-proto-annotations@v0.1.1-0.20260629224650-76486e7cc189` | Unknown |
-| `github.com/nexus-rpc/sdk-go/nexus` | MIT | `github.com/nexus-rpc/sdk-go@v0.6.0` | Unknown |
-| `github.com/oapi-codegen/nethttp-middleware` | Apache-2.0 | `github.com/oapi-codegen/nethttp-middleware@v1.0.2` | Unknown |
-| `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.6.0` | Unknown |
+| `github.com/nexus-rpc/sdk-go/nexus` | MIT | `github.com/nexus-rpc/sdk-go@v0.7.0` | Unknown |
+| `github.com/oapi-codegen/nethttp-middleware` | Apache-2.0 | `github.com/oapi-codegen/nethttp-middleware@v1.2.0` | Unknown |
+| `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.7.0` | Unknown |
 | `github.com/oasdiff/yaml` | BSD-3-Clause / MIT | `github.com/oasdiff/yaml@v0.1.1` | Unknown |
 | `github.com/oasdiff/yaml3` | MIT | `github.com/oasdiff/yaml3@v0.0.14` | Unknown |
 | `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.43.0` | Unknown |
@@ -97,16 +97,16 @@ notices-check` verifies it is up to date.
 | `github.com/spf13/cobra` | Apache-2.0 | `github.com/spf13/cobra@v1.10.2` | Unknown |
 | `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.0.10` | Unknown |
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | Unknown |
-| `github.com/spiffe/spire-api-sdk/proto/spire/api` | Apache-2.0 | `github.com/spiffe/spire-api-sdk@v1.15.1` | Unknown |
-| `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.6.6` | Unknown |
+| `github.com/spiffe/spire-api-sdk/proto/spire/api` | Apache-2.0 | `github.com/spiffe/spire-api-sdk@v1.15.3` | Unknown |
+| `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.7.0` | Unknown |
 | `github.com/stretchr/objx` | MIT | `github.com/stretchr/objx@v0.5.3` | Unknown |
 | `github.com/stretchr/testify` | MIT | `github.com/stretchr/testify@v1.12.1` | Unknown |
 | `github.com/stretchr/testify/internal/difflib` | BSD-3-Clause | `github.com/stretchr/testify@v1.12.1` | Unknown |
 | `github.com/stretchr/testify/internal/spew` | ISC | `github.com/stretchr/testify@v1.12.1` | Unknown |
-| `github.com/swaggest/swgui` | Apache-2.0 | `github.com/swaggest/swgui@v1.8.2` | Unknown |
+| `github.com/swaggest/swgui` | Apache-2.0 | `github.com/swaggest/swgui@v1.8.9` | Unknown |
 | `github.com/tmthrgd/go-hex` | BSD-2-Clause / BSD-3-Clause | `github.com/tmthrgd/go-hex@v0.0.0-20190904060850-447a3041c3bc` | Unknown |
-| `github.com/twmb/murmur3` | BSD-3-Clause | `github.com/twmb/murmur3@v1.1.5` | Unknown |
-| `github.com/uber-go/tally/v4` | MIT | `github.com/uber-go/tally/v4@v4.1.1` | Unknown |
+| `github.com/twmb/murmur3` | BSD-3-Clause | `github.com/twmb/murmur3@v1.1.8` | Unknown |
+| `github.com/uber-go/tally/v4` | MIT | `github.com/uber-go/tally/v4@v4.1.17` | Unknown |
 | `github.com/uptrace/bun` | BSD-2-Clause | `github.com/uptrace/bun@v1.2.18` | Unknown |
 | `github.com/uptrace/bun/dialect/pgdialect` | BSD-2-Clause | `github.com/uptrace/bun/dialect/pgdialect@v1.2.18` | Unknown |
 | `github.com/uptrace/bun/driver/pgdriver` | BSD-2-Clause | `github.com/uptrace/bun/driver/pgdriver@v1.2.18` | Unknown |
@@ -118,18 +118,18 @@ notices-check` verifies it is up to date.
 | `github.com/vmihailenco/tagparser/v2` | BSD-2-Clause | `github.com/vmihailenco/tagparser/v2@v2.0.0` | Unknown |
 | `github.com/x448/float16` | MIT | `github.com/x448/float16@v0.8.4` | Unknown |
 | `go.opentelemetry.io/auto/sdk` | Apache-2.0 | `go.opentelemetry.io/auto/sdk@v1.2.1` | Unknown |
-| `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.68.0` | Unknown |
-| `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.69.0` | Unknown |
-| `go.opentelemetry.io/otel` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel@v1.44.0` | Unknown |
-| `go.opentelemetry.io/otel/exporters/otlp/otlptrace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.44.0` | Unknown |
-| `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.44.0` | Unknown |
-| `go.opentelemetry.io/otel/metric` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/metric@v1.44.0` | Unknown |
-| `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.44.0` | Unknown |
-| `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.44.0` | Unknown |
-| `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.10.0` | Unknown |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.0` | Unknown |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.0` | Unknown |
-| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.46.0` | Unknown |
+| `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.70.0` | Unknown |
+| `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.71.0` | Unknown |
+| `go.opentelemetry.io/otel` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel@v1.46.0` | Unknown |
+| `go.opentelemetry.io/otel/exporters/otlp/otlptrace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.46.0` | Unknown |
+| `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.46.0` | Unknown |
+| `go.opentelemetry.io/otel/metric` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/metric@v1.46.0` | Unknown |
+| `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.46.0` | Unknown |
+| `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.46.0` | Unknown |
+| `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.0` | Unknown |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.5` | Unknown |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.5` | Unknown |
+| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.48.0` | Unknown |
 | `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | Unknown |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | Unknown |
 | `go.uber.org/atomic` | MIT | `go.uber.org/atomic@v1.11.0` | Unknown |
@@ -137,17 +137,17 @@ notices-check` verifies it is up to date.
 | `go.yaml.in/yaml/v2` | Apache-2.0 | `go.yaml.in/yaml/v2@v2.4.4` | Unknown |
 | `go.yaml.in/yaml/v3` | MIT | `go.yaml.in/yaml/v3@v3.0.5` | Unknown |
 | `go.yaml.in/yaml/v4` | Apache-2.0 | `go.yaml.in/yaml/v4@v4.0.0-rc.6` | Unknown |
-| `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.56.0` | Unknown |
+| `golang.org/x/crypto` | BSD-3-Clause | `golang.org/x/crypto@v0.57.0` | Unknown |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.58.0` | Unknown |
 | `golang.org/x/oauth2` | BSD-3-Clause | `golang.org/x/oauth2@v0.37.0` | Unknown |
 | `golang.org/x/sync` | BSD-3-Clause | `golang.org/x/sync@v0.23.0` | Unknown |
-| `golang.org/x/sys` | BSD-3-Clause | `golang.org/x/sys@v0.47.0` | Unknown |
-| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.45.0` | Unknown |
-| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.41.0` | Unknown |
+| `golang.org/x/sys` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | Unknown |
+| `golang.org/x/term` | BSD-3-Clause | `golang.org/x/term@v0.46.0` | Unknown |
+| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | Unknown |
 | `golang.org/x/time/rate` | BSD-3-Clause | `golang.org/x/time@v0.15.0` | Unknown |
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | Unknown |
-| `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260807164820-c8921c73eeea` | Unknown |
-| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260807164820-c8921c73eeea` | Unknown |
+| `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260819154853-08b0e4226688` | Unknown |
+| `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688` | Unknown |
 | `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | Unknown |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | Unknown |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | Unknown |
@@ -345,7 +345,7 @@ THE SOFTWARE.
 
 ### github.com/caarlos0/env/v11
 
-_MIT — github.com/caarlos0/env/v11@v11.3.1_
+_MIT — github.com/caarlos0/env/v11@v11.4.1_
 
 #### LICENSE.md
 
@@ -814,7 +814,7 @@ SOFTWARE.
 
 ### github.com/felixge/httpsnoop
 
-_MIT — github.com/felixge/httpsnoop@v1.0.4_
+_MIT — github.com/felixge/httpsnoop@v1.1.0_
 
 #### LICENSE.txt
 
@@ -939,7 +939,7 @@ SOFTWARE.
 
 ### github.com/go-jose/go-jose/v4
 
-_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.4_
+_Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.5_
 
 #### LICENSE
 
@@ -1151,7 +1151,7 @@ _Apache-2.0 — github.com/go-jose/go-jose/v4@v4.1.4_
 
 ### github.com/go-jose/go-jose/v4/json
 
-_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.4_
+_BSD-3-Clause — github.com/go-jose/go-jose/v4@v4.1.5_
 
 #### LICENSE
 
@@ -2123,7 +2123,7 @@ limitations under the License.
 
 ### github.com/go-openapi/swag
 
-_Apache-2.0 — github.com/go-openapi/swag@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag@v0.28.0_
 
 #### LICENSE
 
@@ -2335,7 +2335,7 @@ _Apache-2.0 — github.com/go-openapi/swag@v0.27.1_
 
 ### github.com/go-openapi/swag/cmdutils
 
-_Apache-2.0 — github.com/go-openapi/swag/cmdutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/cmdutils@v0.28.0_
 
 #### LICENSE
 
@@ -2547,7 +2547,7 @@ _Apache-2.0 — github.com/go-openapi/swag/cmdutils@v0.27.1_
 
 ### github.com/go-openapi/swag/conv
 
-_Apache-2.0 — github.com/go-openapi/swag/conv@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/conv@v0.28.0_
 
 #### LICENSE
 
@@ -2759,7 +2759,7 @@ _Apache-2.0 — github.com/go-openapi/swag/conv@v0.27.1_
 
 ### github.com/go-openapi/swag/fileutils
 
-_Apache-2.0 — github.com/go-openapi/swag/fileutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/fileutils@v0.28.0_
 
 #### LICENSE
 
@@ -2971,7 +2971,7 @@ _Apache-2.0 — github.com/go-openapi/swag/fileutils@v0.27.1_
 
 ### github.com/go-openapi/swag/jsonutils
 
-_Apache-2.0 — github.com/go-openapi/swag/jsonutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/jsonutils@v0.28.0_
 
 #### LICENSE
 
@@ -3183,7 +3183,7 @@ _Apache-2.0 — github.com/go-openapi/swag/jsonutils@v0.27.1_
 
 ### github.com/go-openapi/swag/loading
 
-_Apache-2.0 — github.com/go-openapi/swag/loading@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/loading@v0.28.0_
 
 #### LICENSE
 
@@ -3395,7 +3395,7 @@ _Apache-2.0 — github.com/go-openapi/swag/loading@v0.27.1_
 
 ### github.com/go-openapi/swag/mangling
 
-_Apache-2.0 — github.com/go-openapi/swag/mangling@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/mangling@v0.28.0_
 
 #### LICENSE
 
@@ -3607,7 +3607,7 @@ _Apache-2.0 — github.com/go-openapi/swag/mangling@v0.27.1_
 
 ### github.com/go-openapi/swag/netutils
 
-_Apache-2.0 — github.com/go-openapi/swag/netutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/netutils@v0.28.0_
 
 #### LICENSE
 
@@ -3819,7 +3819,7 @@ _Apache-2.0 — github.com/go-openapi/swag/netutils@v0.27.1_
 
 ### github.com/go-openapi/swag/pools
 
-_Apache-2.0 — github.com/go-openapi/swag/pools@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/pools@v0.28.0_
 
 #### LICENSE
 
@@ -4031,7 +4031,7 @@ _Apache-2.0 — github.com/go-openapi/swag/pools@v0.27.1_
 
 ### github.com/go-openapi/swag/stringutils
 
-_Apache-2.0 — github.com/go-openapi/swag/stringutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/stringutils@v0.28.0_
 
 #### LICENSE
 
@@ -4243,7 +4243,7 @@ _Apache-2.0 — github.com/go-openapi/swag/stringutils@v0.27.1_
 
 ### github.com/go-openapi/swag/typeutils
 
-_Apache-2.0 — github.com/go-openapi/swag/typeutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/typeutils@v0.28.0_
 
 #### LICENSE
 
@@ -4455,7 +4455,7 @@ _Apache-2.0 — github.com/go-openapi/swag/typeutils@v0.27.1_
 
 ### github.com/go-openapi/swag/yamlutils
 
-_Apache-2.0 — github.com/go-openapi/swag/yamlutils@v0.27.1_
+_Apache-2.0 — github.com/go-openapi/swag/yamlutils@v0.28.0_
 
 #### LICENSE
 
@@ -4853,7 +4853,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ```
 
-### github.com/golang/mock/gomock
+### github.com/golang/mock
 
 _Apache-2.0 — github.com/golang/mock@v1.7.0-rc.1_
 
@@ -5602,7 +5602,7 @@ Apache License
 
 ### github.com/gravitational/trace
 
-_Apache-2.0 — github.com/gravitational/trace@v1.5.1_
+_Apache-2.0 — github.com/gravitational/trace@v1.5.4_
 
 #### LICENSE
 
@@ -6022,7 +6022,7 @@ _Apache-2.0 — github.com/grpc-ecosystem/go-grpc-middleware/v2@v2.3.3_
 
 ### github.com/grpc-ecosystem/grpc-gateway/v2
 
-_BSD-3-Clause — github.com/grpc-ecosystem/grpc-gateway/v2@v2.29.0_
+_BSD-3-Clause — github.com/grpc-ecosystem/grpc-gateway/v2@v2.30.0_
 
 #### LICENSE
 
@@ -7037,7 +7037,7 @@ SOFTWARE.
 
 ### github.com/nexus-rpc/sdk-go/nexus
 
-_MIT — github.com/nexus-rpc/sdk-go@v0.6.0_
+_MIT — github.com/nexus-rpc/sdk-go@v0.7.0_
 
 #### LICENSE
 
@@ -7068,7 +7068,7 @@ SOFTWARE.
 
 ### github.com/oapi-codegen/nethttp-middleware
 
-_Apache-2.0 — github.com/oapi-codegen/nethttp-middleware@v1.0.2_
+_Apache-2.0 — github.com/oapi-codegen/nethttp-middleware@v1.2.0_
 
 #### LICENSE
 
@@ -7279,7 +7279,7 @@ _Apache-2.0 — github.com/oapi-codegen/nethttp-middleware@v1.0.2_
 
 ### github.com/oapi-codegen/runtime
 
-_Apache-2.0 — github.com/oapi-codegen/runtime@v1.6.0_
+_Apache-2.0 — github.com/oapi-codegen/runtime@v1.7.0_
 
 #### LICENSE
 
@@ -9898,7 +9898,7 @@ _Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.8.1_
 
 ### github.com/spiffe/spire-api-sdk/proto/spire/api
 
-_Apache-2.0 — github.com/spiffe/spire-api-sdk@v1.15.1_
+_Apache-2.0 — github.com/spiffe/spire-api-sdk@v1.15.3_
 
 #### LICENSE
 
@@ -10109,7 +10109,7 @@ _Apache-2.0 — github.com/spiffe/spire-api-sdk@v1.15.1_
 
 ### github.com/spiffe/spire-controller-manager
 
-_Apache-2.0 — github.com/spiffe/spire-controller-manager@v0.6.6_
+_Apache-2.0 — github.com/spiffe/spire-controller-manager@v0.7.0_
 
 #### LICENSE
 
@@ -10444,7 +10444,7 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ### github.com/swaggest/swgui
 
-_Apache-2.0 — github.com/swaggest/swgui@v1.8.2_
+_Apache-2.0 — github.com/swaggest/swgui@v1.8.9_
 
 #### LICENSE
 
@@ -10747,7 +10747,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/twmb/murmur3
 
-_BSD-3-Clause — github.com/twmb/murmur3@v1.1.5_
+_BSD-3-Clause — github.com/twmb/murmur3@v1.1.8_
 
 #### LICENSE
 
@@ -10806,7 +10806,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/uber-go/tally/v4
 
-_MIT — github.com/uber-go/tally/v4@v4.1.1_
+_MIT — github.com/uber-go/tally/v4@v4.1.17_
 
 #### LICENSE
 
@@ -11385,7 +11385,7 @@ _Apache-2.0 — go.opentelemetry.io/auto/sdk@v1.2.1_
 
 ### go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.68.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.70.0_
 
 #### LICENSE
 
@@ -11625,7 +11625,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.69.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp@v0.71.0_
 
 #### LICENSE
 
@@ -11865,7 +11865,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/otel
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel@v1.44.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel@v1.46.0_
 
 #### LICENSE
 
@@ -12105,7 +12105,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/otel/exporters/otlp/otlptrace
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.44.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/exporters/otlp/otlptrace@v1.46.0_
 
 #### LICENSE
 
@@ -12345,7 +12345,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.44.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc@v1.46.0_
 
 #### LICENSE
 
@@ -12585,7 +12585,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/otel/metric
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/metric@v1.44.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/metric@v1.46.0_
 
 #### LICENSE
 
@@ -12825,7 +12825,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/otel/sdk
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/sdk@v1.44.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/sdk@v1.46.0_
 
 #### LICENSE
 
@@ -13065,7 +13065,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/otel/trace
 
-_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/trace@v1.44.0_
+_Apache-2.0 / BSD-3-Clause — go.opentelemetry.io/otel/trace@v1.46.0_
 
 #### LICENSE
 
@@ -13305,7 +13305,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.opentelemetry.io/proto/otlp
 
-_Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.10.0_
+_Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.0_
 
 #### LICENSE
 
@@ -13516,7 +13516,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.10.0_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.63.0_
+_MIT — go.temporal.io/api@v1.63.5_
 
 #### LICENSE
 
@@ -13546,7 +13546,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.63.0_
+_BSD-3-Clause — go.temporal.io/api@v1.63.5_
 
 #### LICENSE
 
@@ -13583,7 +13583,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.temporal.io/sdk
 
-_MIT — go.temporal.io/sdk@v1.46.0_
+_MIT — go.temporal.io/sdk@v1.48.0_
 
 #### LICENSE
 
@@ -14284,7 +14284,7 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 ### golang.org/x/crypto
 
-_BSD-3-Clause — golang.org/x/crypto@v0.56.0_
+_BSD-3-Clause — golang.org/x/crypto@v0.57.0_
 
 #### LICENSE
 
@@ -14432,7 +14432,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sys
 
-_BSD-3-Clause — golang.org/x/sys@v0.47.0_
+_BSD-3-Clause — golang.org/x/sys@v0.48.0_
 
 #### LICENSE
 
@@ -14469,7 +14469,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/term
 
-_BSD-3-Clause — golang.org/x/term@v0.45.0_
+_BSD-3-Clause — golang.org/x/term@v0.46.0_
 
 #### LICENSE
 
@@ -14506,7 +14506,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/text
 
-_BSD-3-Clause — golang.org/x/text@v0.41.0_
+_BSD-3-Clause — golang.org/x/text@v0.42.0_
 
 #### LICENSE
 
@@ -14792,7 +14792,7 @@ _Apache-2.0 — gomodules.xyz/jsonpatch/v2@v2.5.0_
 
 ### google.golang.org/genproto/googleapis/api
 
-_Apache-2.0 — google.golang.org/genproto/googleapis/api@v0.0.0-20260807164820-c8921c73eeea_
+_Apache-2.0 — google.golang.org/genproto/googleapis/api@v0.0.0-20260819154853-08b0e4226688_
 
 #### LICENSE
 
@@ -15004,7 +15004,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/api@v0.0.0-20260807164820-
 
 ### google.golang.org/genproto/googleapis/rpc
 
-_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260807164820-c8921c73eeea_
+_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688_
 
 #### LICENSE
 

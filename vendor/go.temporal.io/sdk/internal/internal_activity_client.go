@@ -112,6 +112,13 @@ type (
 		Priority Priority
 		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
 		StartDelay time.Duration
+
+		// requestID is the request ID used to dedup retried starts.
+		// Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
+		requestID string
+		// callbacks is the set of completion callbacks the server should invoke when the activity
+		// reaches a terminal state. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
+		callbacks []*commonpb.Callback
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
@@ -583,6 +590,23 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if err = in.Options.validateAndSetInRequest(request, dataConverter); err != nil {
 		return nil, err
 	}
+	// When invoked from inside a Nexus operation handler, attach the operation's inbound caller
+	// links to the start request so the backing activity links back to the caller. Async
+	// Nexus-backed activities carry these on the completion callback instead, so skip when a
+	// callback is already present to avoid duplicating them.
+	if len(request.CompletionCallbacks) == 0 {
+		if links, ok := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link); ok {
+			request.Links = links
+		}
+	}
+	if _, ok := NexusOperationContextFromGoContext(ctx); ok &&
+		(len(request.GetCompletionCallbacks()) > 0 || len(request.GetLinks()) > 0) {
+		request.OnConflictOptions = &commonpb.OnConflictOptions{
+			AttachRequestId:           request.GetRequestId() != "",
+			AttachCompletionCallbacks: len(request.GetCompletionCallbacks()) > 0,
+			AttachLinks:               len(request.GetLinks()) > 0,
+		}
+	}
 	if request.Input, err = encodeArgs(dataConverter, in.Args); err != nil {
 		return nil, err
 	}
@@ -609,6 +633,9 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		return nil, err
 	} else {
 		runID = resp.RunId
+	}
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(resp.GetLink())
 	}
 
 	return &clientActivityHandleImpl{
@@ -656,7 +683,23 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	request.UserMetadata = userMetadata
 	request.Priority = convertToPBPriority(options.Priority)
 	request.StartDelay = durationpb.New(options.StartDelay)
+	if options.requestID != "" {
+		request.RequestId = options.requestID
+	}
+	request.CompletionCallbacks = options.callbacks
 	return nil
+}
+
+// SetRequestIDOnStartActivityOptions is an internal-only method for setting the request ID on
+// ClientStartActivityOptions. Used by [temporalnexus.temporalOperation] for retry idempotency.
+func SetRequestIDOnStartActivityOptions(opts *ClientStartActivityOptions, requestID string) {
+	opts.requestID = requestID
+}
+
+// SetCallbacksOnStartActivityOptions is an internal-only method for setting completion callbacks on
+// ClientStartActivityOptions. Callbacks are purposefully not exposed to users for the time being.
+func SetCallbacksOnStartActivityOptions(opts *ClientStartActivityOptions, callbacks []*commonpb.Callback) {
+	opts.callbacks = callbacks
 }
 
 func (w *workflowClientInterceptor) GetActivityHandle(
