@@ -797,10 +797,15 @@ func TestRunBootstrapSiteWaitsForEveryControlPlaneNode(t *testing.T) {
 
 			runner := &recordingRunner{next: fakeBootstrapRunner{}}
 			err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
-				siteSpec:         writeSiteSpec(t, threeNodeSiteSpec),
-				bootstrapRunner:  runner,
-				cweRunner:        fakeCWERunner{},
-				clusterTimeout:   5 * time.Millisecond,
+				siteSpec:        writeSiteSpec(t, threeNodeSiteSpec),
+				bootstrapRunner: runner,
+				cweRunner:       fakeCWERunner{},
+				// Longer than the 5ms the timeout-only tests above use. This
+				// one asserts the error names how many nodes joined, so the
+				// first read of the fake API has to land before the deadline.
+				// At 5ms it did on Linux and did not on the macOS runner,
+				// which reported "0 of 3". The deadline still ends the test.
+				clusterTimeout:   500 * time.Millisecond,
 				kubeconfigOut:    filepath.Join(t.TempDir(), "unused.kubeconfig"),
 				lookPath:         runtimeOnPath,
 				dialContext:      refuseDial,
