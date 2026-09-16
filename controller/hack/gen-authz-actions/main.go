@@ -289,13 +289,21 @@ func collect(paths map[string]map[string]yaml.Node) ([]operation, error) {
 			if err != nil {
 				return nil, fmt.Errorf("%s %s: %w", method, path, err)
 			}
+			// Collection only matters to Resolver.Resolve when there is no object
+			// identifier — that is what it names the NKE::Collection resource as.
+			// An object route never reads it, so it is left unset there rather
+			// than populated with a value nothing looks at.
+			collection := ""
+			if idParam == "" {
+				collection = collectionOf(path)
+			}
 			ops = append(ops, operation{
 				Pattern:      strings.ToUpper(method) + " " + baseURL + path,
 				Method:       strings.ToUpper(method),
 				Action:       op.OperationID,
 				ResourceType: resourceType,
 				IDParam:      idParam,
-				Collection:   collectionOf(path),
+				Collection:   collection,
 			})
 		}
 	}
@@ -307,11 +315,9 @@ func collect(paths map[string]map[string]yaml.Node) ([]operation, error) {
 // gives "nodePools". It names the NKE::Collection entity a collection operation
 // is authorized against.
 func collectionOf(path string) string {
-	segments := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segments) == 0 {
-		return ""
-	}
-	return segments[0]
+	// strings.Split always returns at least one element, even for "" (a lone
+	// [""]), so segments[0] is always defined; there is no empty case to guard.
+	return strings.Split(strings.Trim(path, "/"), "/")[0]
 }
 
 // resourceOf derives the Cedar entity type and the path parameter carrying its
