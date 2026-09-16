@@ -21,7 +21,17 @@ CONTAINERD_VERSION="${CONTAINERD_VERSION:-2.3.0}"
 RUNC_VERSION="${RUNC_VERSION:-v1.2.5}"
 CNI_VERSION="${CNI_VERSION:-v1.6.0}"
 CRICTL_VERSION="${CRICTL_VERSION:-v1.36.0}"
-ARCH="${ARCH:-amd64}"
+# Ask the guest rather than thread an arch through cloud-init. Defaulting to
+# amd64 put amd64 binaries in an arm64 guest, which only failed once kubeadm
+# ran. dpkg's names are the ones the downloads below expect.
+ARCH="${ARCH:-$(dpkg --print-architecture 2>/dev/null || true)}"
+if [[ -z "${ARCH}" ]]; then
+	case "$(uname -m)" in
+		x86_64) ARCH=amd64 ;;
+		aarch64|arm64) ARCH=arm64 ;;
+		*) echo "install-k8s-community: unsupported architecture $(uname -m)" >&2; exit 1 ;;
+	esac
+fi
 
 log() { echo "install-k8s-community: $*"; }
 
