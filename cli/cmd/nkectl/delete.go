@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/cwe/clusters"
+	"github.com/NVIDIA/nke/cli/internal/cwe/nodepools"
 )
 
 func newDeleteCmd() *cobra.Command {
@@ -15,5 +16,6 @@ func newDeleteCmd() *cobra.Command {
 		Short: "Delete a resource",
 	}
 	cmd.AddCommand(clusters.NewDeleteCmd(loadClient))
+	cmd.AddCommand(nodepools.NewDeleteCmd(loadClient))
 	return cmd
 }

@@ -20,12 +20,12 @@ below is on `main`; the steps the CLI does not cover are marked.
 | `nkectl patch cluster <name>` | PATCHes a mutable cluster property (Kubernetes version, etcd encryption, remote access, control plane config). `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). | Available |
 | `nkectl create nodepool -f spec.yaml` | Adds a node pool to an existing cluster from a `CreateNodePoolRequest` YAML. `-f -` reads stdin. | Available |
 | `nkectl get nodepools [name ...]` | Lists node pools. Names narrow to those pools, `--cluster <name>` to one cluster. `-o json\|yaml` changes the format. | Available |
-| `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. | Planned |
+| `nkectl delete nodepool <name> --cluster <name>` | Removes a node pool from a cluster. Deleting the last joined control-plane pool is rejected; delete the cluster instead. | Available |
 | `nkectl patch nodepool <name> --cluster <name>` | PATCHes a node pool. `--patch` takes an inline YAML document, `--patch-file` a file (or stdin via `-`). `desiredNodeCount` is the only field supported so far. | Available |
 | `nkectl version` | Prints version, commit and build date. `-o short\|yaml\|json`. | Available |
 
 `cluster` and `clusters` are aliases on `create`, `get`, `patch` and `delete`,
-as are `nodepool` and `nodepools` on `create`, `get` and `patch`.
+as are `nodepool` and `nodepools` on `create`, `get`, `patch` and `delete`.
 Global flags: `--site <name>` overrides the active site for one invocation,
 `-v` enables debug logging, `--json-logs` emits logs as JSON.
 
@@ -212,7 +212,20 @@ CWE's own message. There is no confirmation prompt, so a lower count starts
 removing nodes straight away.
 
 
-### 12. Delete the tenant cluster
+### 12. Delete a node pool
+
+```bash
+nkectl delete nodepool <nodepool-name> --cluster <cluster-name>
+```
+
+Node pool names are unique within a cluster, so `--cluster` is what decides
+which pool is resolved, the same as `patch nodepool`. Deletion is asynchronous
+and the nodes are drained before removal; run `nkectl get nodepools --cluster
+<cluster-name>` to check on it. There is no confirmation prompt. Deleting the
+last joined control-plane node pool of a cluster is rejected with CWE's own
+message — delete the cluster instead.
+
+### 13. Delete the tenant cluster
 
 ```bash
 nkectl delete cluster <cluster-name>

@@ -76,6 +76,20 @@ func (c *CWEClient) PatchNodePool(
 	return resp.JSON200, nil
 }
 
+// DeleteNodePool deletes the node pool with the given UUID. The delete is
+// asynchronous: CWE queues teardown of the pool's nodes and returns before
+// they are drained.
+func (c *CWEClient) DeleteNodePool(ctx context.Context, id openapi_types.UUID) error {
+	resp, err := c.raw.DeleteNodePoolWithResponse(ctx, id)
+	if err != nil {
+		return fmt.Errorf("deleting node pool: %w", err)
+	}
+	if resp.StatusCode() != 202 {
+		return fmt.Errorf("deleting node pool: %w", apiError(resp.Status(), resp.Body))
+	}
+	return nil
+}
+
 // FindNodePoolByName resolves a node pool name within a cluster to its full
 // NodePool record. Returns an error if the cluster holds no node pool with
 // that name, or if several of them do, which would make name-based targeting

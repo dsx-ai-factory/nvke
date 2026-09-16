@@ -45,6 +45,11 @@ type fakeCWE struct {
 	// createStatus and createBody, when set, make every POST fail with them.
 	createStatus int
 	createBody   string
+	// deleteStatus and deleteBody, when set, make every DELETE fail with them
+	// instead of removing the pool. The list lookup keeps working, so a test
+	// can reach the delete call.
+	deleteStatus int
+	deleteBody   string
 }
 
 // failCreateWith makes the fake reject every POST /nodePools with status and
@@ -69,6 +74,16 @@ func (f *fakeCWE) failPatchWith(status int, body string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.patchStatus, f.patchBody = status, body
+}
+
+// failDeleteWith makes the fake reject every DELETE with status and body
+// instead of removing the pool, while still answering the list lookup
+// normally. Used to pin CWE rejections (e.g. last control-plane pool)
+// verbatim through the CLI.
+func (f *fakeCWE) failDeleteWith(status int, body string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleteStatus, f.deleteBody = status, body
 }
 
 // seed is a node pool to serve, together with the name of the cluster that
@@ -212,6 +227,8 @@ func (f *fakeCWE) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		f.listClusters(w, r.URL.Query().Get("name"))
 	case isItem && r.Method == http.MethodPatch:
 		f.update(w, r, id)
+	case isItem && r.Method == http.MethodDelete:
+		f.delete(w, id)
 	default:
 		writeJSON(w, http.StatusNotFound,
 			api.GenericError{Message: "no route for " + r.Method + " " + path})
@@ -326,6 +343,25 @@ func (f *fakeCWE) create(w http.ResponseWriter, r *http.Request) {
 	}
 	f.nodePools = append(f.nodePools, pool)
 	writeJSON(w, http.StatusCreated, pool)
+}
+
+// delete answers DELETE /nodePools/{id}, removing the pool from the store on
+// success. CWE's real response carries no body on 202.
+func (f *fakeCWE) delete(w http.ResponseWriter, id string) {
+	if f.deleteStatus != 0 {
+		writeJSON(w, f.deleteStatus, json.RawMessage(f.deleteBody))
+		return
+	}
+
+	for i, p := range f.nodePools {
+		if p.ID.String() != id {
+			continue
+		}
+		f.nodePools = append(f.nodePools[:i], f.nodePools[i+1:]...)
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+	writeJSON(w, http.StatusNotFound, api.GenericError{Message: "node pool " + id + " not found"})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
