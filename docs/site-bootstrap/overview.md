@@ -55,4 +55,3 @@ If you are running a self-managed site (with NICo as the infrastructure provider
 - [Pre-Provisioned Nodes](pre-provisioned-nodes.md) — prepare nodes and run the bootstrap
 - [Custom Base OS](custom-base-os.md) — cloud-init based node preparation
 - [Deploy Repository](deploy-repository.md) — post-bootstrap NKE services deployment
-- [DSX Identity SPIRE](dsx-identity-spire.md) — install site SPIRE and restore workload registrations

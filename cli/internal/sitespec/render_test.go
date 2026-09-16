@@ -56,7 +56,6 @@ func TestBuildRoundTrip(t *testing.T) {
 		"cluster.kubeletConfig.systemReservedMemory=8Gi",
 		"registry.bootstrapRepo=nvcr.io/example/cwe",
 		"registry.bootstrapChart=cloud-workflow-engine",
-		"spire.trustDomain=site.example.com",
 	}
 
 	built, err := Build("my-tier0-site", threeNodes(), sets)
@@ -322,7 +321,6 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	built, err := Build("my-tier0-site", threeNodes(), []string{
 		"cluster.cniVersion=3.30.1",
 		"cluster.nodeAgentPort=50051",
-		"spire.trustDomain=site.example.com",
 		"spire.caCertFile=/etc/nke/ca.crt",
 		"spire.caKeyFile=/etc/nke/ca.key",
 	})
@@ -363,7 +361,7 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	}
 
 	// The example is replaced, not duplicated.
-	for _, key := range []string{"cniVersion", "nodeAgentPort", "trustDomain", "caCertFile"} {
+	for _, key := range []string{"cniVersion", "nodeAgentPort", "caCertFile"} {
 		if strings.Contains(out, "# "+key+":") {
 			t.Errorf("the commented-out example of %s survived alongside the real value:\n%s", key, out)
 		}
