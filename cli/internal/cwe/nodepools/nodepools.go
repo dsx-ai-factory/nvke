@@ -14,15 +14,15 @@ import (
 	"github.com/NVIDIA/nke/cli/internal/clients"
 )
 
-// ClientFn is a factory that returns an authenticated CWE client.
+// CWEClientFn is a factory that returns an authenticated CWE client.
 // Commands receive this rather than a constructed client so that the
 // client is only built when a command actually runs (not at startup).
-type ClientFn func() (*clients.CWEClient, error)
+type CWEClientFn func() (*clients.CWEClient, error)
 
 // NewPatchCmd returns the "nkectl patch nodepool <name>" subcommand.
 // It sends the patch document to CWE, leaving every field the document does
 // not carry unchanged.
-func NewPatchCmd(clientFn ClientFn) *cobra.Command {
+func NewPatchCmd(clientFn CWEClientFn) *cobra.Command {
 	var (
 		clusterName string
 		patch       string

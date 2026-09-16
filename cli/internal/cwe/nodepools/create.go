@@ -15,7 +15,7 @@ import (
 )
 
 // NewCreateCmd returns the "nkectl create nodepool" subcommand.
-func NewCreateCmd(clientFn ClientFn) *cobra.Command {
+func NewCreateCmd(clientFn CWEClientFn) *cobra.Command {
 	var filename string
 
 	cmd := &cobra.Command{

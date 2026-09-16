@@ -161,7 +161,7 @@ func TestPatchNodePoolErrors(t *testing.T) {
 		name     string
 		seeds    []seed
 		args     []string
-		clientFn func(*testing.T) ClientFn
+		clientFn func(*testing.T) CWEClientFn
 		wantErr  string
 	}{
 		{
@@ -242,7 +242,7 @@ func TestPatchNodePoolErrors(t *testing.T) {
 			// no room for, must reach the operator with CWE's own explanation.
 			name: "server rejects the patch",
 			args: []string{"gpu-workers", "-c", "alpha", "--patch", "desiredNodeCount: 8"},
-			clientFn: func(t *testing.T) ClientFn {
+			clientFn: func(t *testing.T) CWEClientFn {
 				t.Helper()
 				fake, fn := newFakeCWE(t, seed{clusterName: "alpha", name: "gpu-workers", desiredNodeCount: 3})
 				fake.failPatchWith(400, `{"message":"pod CIDR has no room for 8 nodes"}`)
@@ -256,7 +256,7 @@ func TestPatchNodePoolErrors(t *testing.T) {
 		{
 			name: "server rejects the lookup",
 			args: []string{"gpu-workers", "-c", "alpha", "--patch", "desiredNodeCount: 8"},
-			clientFn: func(t *testing.T) ClientFn {
+			clientFn: func(t *testing.T) CWEClientFn {
 				t.Helper()
 				return newBrokenCWE(t, 503, `{"message":"upstream unavailable"}`)
 			},
@@ -268,7 +268,7 @@ func TestPatchNodePoolErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			clientFn := tt.clientFn
 			if clientFn == nil {
-				clientFn = func(t *testing.T) ClientFn {
+				clientFn = func(t *testing.T) CWEClientFn {
 					t.Helper()
 					_, fn := newFakeCWE(t, tt.seeds...)
 					return fn

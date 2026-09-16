@@ -98,8 +98,8 @@ type seed struct {
 }
 
 // newFakeCWE starts a fake CWE holding a node pool per seed, and returns it
-// together with a ClientFn wired to it.
-func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, ClientFn) {
+// together with a CWEClientFn wired to it.
+func newFakeCWE(t *testing.T, seeds ...seed) (*fakeCWE, CWEClientFn) {
 	t.Helper()
 	f := &fakeCWE{clusterNames: map[uuid.UUID]string{}}
 	clusterIDs := map[string]uuid.UUID{}
@@ -135,9 +135,9 @@ func conditionsFor(s seed) api.NodePoolConditions {
 	return api.NodePoolConditions{Provisioned: api.Condition{Status: api.ConditionStatusTrue}}
 }
 
-// newBrokenCWE returns a ClientFn for a server that answers every request with
+// newBrokenCWE returns a CWEClientFn for a server that answers every request with
 // status and body, for the error paths.
-func newBrokenCWE(t *testing.T, status int, body string) ClientFn {
+func newBrokenCWE(t *testing.T, status int, body string) CWEClientFn {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -151,7 +151,7 @@ func newBrokenCWE(t *testing.T, status int, body string) ClientFn {
 // clientFnFor builds a real CWEClient against url. Nothing here is a stub: the
 // client is the one the binary uses, so a change to its URL handling, status
 // checks or error parsing shows up in these tests.
-func clientFnFor(url string) ClientFn {
+func clientFnFor(url string) CWEClientFn {
 	return func() (*clients.CWEClient, error) {
 		return clients.New(config.SiteConfig{URL: url})
 	}

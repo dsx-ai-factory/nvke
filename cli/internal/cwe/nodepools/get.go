@@ -20,7 +20,7 @@ import (
 
 // NewGetCmd returns the "nkectl get nodepools" subcommand. Both filters are
 // applied by CWE, not locally.
-func NewGetCmd(clientFn ClientFn) *cobra.Command {
+func NewGetCmd(clientFn CWEClientFn) *cobra.Command {
 	var (
 		outputFormat string
 		clusterName  string

@@ -10,7 +10,7 @@ import (
 )
 
 // NewDeleteCmd returns the "nkectl delete nodepool <name>" subcommand.
-func NewDeleteCmd(clientFn ClientFn) *cobra.Command {
+func NewDeleteCmd(clientFn CWEClientFn) *cobra.Command {
 	var clusterName string
 
 	cmd := &cobra.Command{

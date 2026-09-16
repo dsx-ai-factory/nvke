@@ -61,7 +61,7 @@ func TestDeleteNodePoolErrors(t *testing.T) {
 		name     string
 		seeds    []seed
 		args     []string
-		clientFn func(*testing.T) ClientFn
+		clientFn func(*testing.T) CWEClientFn
 		wantErr  string
 	}{
 		{
@@ -102,7 +102,7 @@ func TestDeleteNodePoolErrors(t *testing.T) {
 			// surfaced verbatim rather than pre-checked client-side.
 			name: "server rejects deleting the last control-plane pool",
 			args: []string{"control-plane", "-c", "alpha"},
-			clientFn: func(t *testing.T) ClientFn {
+			clientFn: func(t *testing.T) CWEClientFn {
 				t.Helper()
 				fake, fn := newFakeCWE(t, seed{
 					clusterName: "alpha", name: "control-plane", desiredNodeCount: 1, controlPlane: true,
@@ -116,7 +116,7 @@ func TestDeleteNodePoolErrors(t *testing.T) {
 		{
 			name: "server rejects the lookup",
 			args: []string{"gpu-workers", "-c", "alpha"},
-			clientFn: func(t *testing.T) ClientFn {
+			clientFn: func(t *testing.T) CWEClientFn {
 				t.Helper()
 				return newBrokenCWE(t, 503, `{"message":"upstream unavailable"}`)
 			},
@@ -128,7 +128,7 @@ func TestDeleteNodePoolErrors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			clientFn := tt.clientFn
 			if clientFn == nil {
-				clientFn = func(t *testing.T) ClientFn {
+				clientFn = func(t *testing.T) CWEClientFn {
 					t.Helper()
 					_, fn := newFakeCWE(t, tt.seeds...)
 					return fn
