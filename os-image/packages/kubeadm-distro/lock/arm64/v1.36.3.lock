@@ -1,0 +1,17 @@
+# nke-kubeadm-distro lock for v1.36.3 (arm64). Regenerate with `make lock`; review the diff before committing.
+kubernetes v1.36.3
+artifact cni-plugins db09ab057ecf60b05ba05cbec38d55b95cc139c7f1078e2e4857cc13af158cee https://github.com/containernetworking/plugins/releases/download/v1.6.0/cni-plugins-linux-arm64-v1.6.0.tgz
+artifact containerd 06623dc8719b30d06303420f7eae91b0a9ade4e71243a4102f6375e585fb0a42 https://github.com/containerd/containerd/releases/download/v2.3.0/containerd-2.3.0-linux-arm64.tar.gz
+artifact crictl 68328594ccf780a80ae2b092d9f6ce484eec7cf540c275242e8fd954bfd95332 https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.36.0/crictl-v1.36.0-linux-arm64.tar.gz
+artifact helm 13d03672be289045d2ff00e4e345d61de1c6f21c1257a45955a30e8ae036d8f1 https://get.helm.sh/helm-v4.1.4-linux-arm64.tar.gz
+artifact kubeadm 276cfbdc43b10fef663288cc1ed76abf77b1b7f700e9f1c053cb5dc3115484de https://dl.k8s.io/release/v1.36.3/bin/linux/arm64/kubeadm
+artifact kubectl 3d86f24401c41ae5a46ac50eef8865fe891d3647d324a0836f6c63757a126e62 https://dl.k8s.io/release/v1.36.3/bin/linux/arm64/kubectl
+artifact kubelet 57205a5daf5883873d87b4914e1e00bdd7707acd075714788cfb0fc1f60bc414 https://dl.k8s.io/release/v1.36.3/bin/linux/arm64/kubelet
+artifact runc ea54032310588e115633aa2f4bba8bf9500257f657e1deca88df5778775138db https://github.com/opencontainers/runc/releases/download/v1.4.2/runc.arm64
+image registry.k8s.io/coredns/coredns:v1.14.2 sha256:3c5a66ca0d50fbd3ddb862857ce2a01a9d74dd409aea4b1fde83a9c68c598754
+image registry.k8s.io/etcd:3.6.8-0 sha256:82bf8bc50b9a953f8b477adb63f12637229d8044e85b21501a3c6a4be59afbb8
+image registry.k8s.io/kube-apiserver:v1.36.3 sha256:857f5957ca5afc26004fe1fa33c48b1bc21b6d5f60dac37c46e108351e0cdbf7
+image registry.k8s.io/kube-controller-manager:v1.36.3 sha256:6696bcc5cacafc2ae366b7aaa80cd84a80916f00fbcf5e5c7b9f6511ddf38483
+image registry.k8s.io/kube-proxy:v1.36.3 sha256:6fd0578875d1966ec98f59454101ae9c20c1d09763c9548fd5f48c0dbf7f7bce
+image registry.k8s.io/kube-scheduler:v1.36.3 sha256:44029c2b37249acf0cdb4f857f56ddc779d054ac63bf0b1049d6bf4dc2a33715
+image registry.k8s.io/pause:3.10.2 sha256:a433214620b407678934ebd69690a9ed6066247231eacfba181fab20dbc3dbf1

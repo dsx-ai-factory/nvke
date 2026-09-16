@@ -17,7 +17,7 @@ node installs the one it needs at cluster create without network access.
   maintainer script. `postinst` only sets OS state kubeadm's preflight needs
   (swap, sysctls, kernel modules), enables units, and imports the bundled
   images with `ctr`. It never calls a package manager.
-- **Every input is pinned and reviewed.** `lock/<version>.lock` holds the
+- **Every input is pinned and reviewed.** `lock/<arch>/<version>.lock` holds the
   sha256 of every upstream artifact and the manifest digest of every image.
   `make debs` refuses to build without a lock, checks each download against
   both the lock and the publisher's checksum, and pulls images by digest.
@@ -29,8 +29,9 @@ node installs the one it needs at cluster create without network access.
   of the package name; every package `Provides: nke-kubeadm-distro` and
   `Conflicts` with its peers, with `containerd`, and with the standalone
   `kubeadm`/`kubelet`/`kubectl` packages.
-- **Linux/amd64 build host only.** The build runs the downloaded `kubeadm`
-  binary for its image list and stages Linux tarballs.
+- **Linux build host, matching the target architecture.** The build runs the
+  downloaded `kubeadm` binary for its image list, so `ARCH=arm64` needs an
+  arm64 host. `amd64` and `arm64` are both locked.
 
 ## Layout
 
@@ -54,7 +55,7 @@ node installs the one it needs at cluster create without network access.
 | `/etc/crictl.yaml` | crictl pointed at the containerd socket. Also rewritten on every install |
 | `/etc/default/kubelet` | conffile for operator `KUBELET_EXTRA_ARGS` |
 | `/lib/systemd/system/kubelet.service{,.d/10-kubeadm.conf}`, `containerd.service` | vendor units plus the kubeadm drop-in |
-| `/usr/lib/nke/k8s-matrix/<version>/amd64/` | the control-plane image tarball and its `.sha256` sidecar |
+| `/usr/lib/nke/k8s-matrix/<version>/<arch>/` | the control-plane image tarball and its `.sha256` sidecar |
 
 `/etc/cni/net.d/` is shipped empty. CNI config is the OS image's job.
 
@@ -101,8 +102,9 @@ build-host metadata (a timestamp, a path, ownership) that nfpm is not pinning.
 2. If the bump crosses a minor, add a row to `pins_for` in `bundle.sh`. There
    is no fallback row, so check containerd's Kubernetes support matrix and
    Helm's version skew policy.
-3. `make lock` on a Linux host with network. It rewrites `lock/<version>.lock`
-   and prints what changed.
+3. `make lock` on a Linux host with network, once per architecture:
+   `make lock` on amd64 and `make lock ARCH=arm64` on arm64. Each rewrites
+   `lock/<arch>/<version>.lock` and prints what changed.
 4. Review the diff with `git diff -- lock/`, every URL and every digest.
 5. Commit `lock/` with the `K8S_VERSIONS` and `bundle.sh` changes.
 
@@ -115,5 +117,5 @@ every file (no `nke-k8s-installer`, no raw tarballs under
 at build time, `Depends` adds `conntrack`, `socat` and `ethtool`, `Conflicts`
 adds `containerd` and `containerd.io`, and `/etc/default/kubelet` is a
 conffile. Package names, `Provides`, peer `Conflicts`, binaries, paths, the
-image archive and the systemd units are unchanged. Dropped: arm64, S3 delivery,
-the manual tarball and the Osmo flavor.
+image archive and the systemd units are unchanged. Dropped: S3 delivery, the
+manual tarball and the Osmo flavor.

@@ -83,6 +83,17 @@ install -m 0755 "${repo_root}/agent/bin/${AGENT_BIN_DIR}/nke-agent" "${ARTIFACTS
 
 # The CNI debs nke-agent installs at cluster create, plus a flat apt index that
 # provision.sh stages as a local repo. amd64 only: the locks pin amd64 digests.
+# The kubeadm/kubelet/containerd debs the agent installs at cluster create.
+# Without them a node built here cannot obtain kubeadm at all: there is no
+# bundle server to fall back to. Both architectures have a lock; bundle.sh runs
+# the downloaded kubeadm, so the Packer host has to be the target arch.
+echo "building nke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
+kubeadm_distro_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+if [[ -n "${K8S_VERSIONS:-}" ]]; then
+  kubeadm_distro_args+=(K8S_VERSIONS="${K8S_VERSIONS}")
+fi
+make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
+
 if [[ "${ARCH}" == amd64 ]]; then
   echo "building nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
   cni_calico_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
@@ -90,16 +101,6 @@ if [[ "${ARCH}" == amd64 ]]; then
     cni_calico_args+=(CALICO_VERSIONS="${CALICO_VERSIONS}")
   fi
   make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
-
-  # The kubeadm/kubelet/containerd debs the agent installs at cluster create.
-  # Without them a node built here cannot obtain kubeadm at all: there is no
-  # bundle server to fall back to.
-  echo "building nke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
-  kubeadm_distro_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
-  if [[ -n "${K8S_VERSIONS:-}" ]]; then
-    kubeadm_distro_args+=(K8S_VERSIONS="${K8S_VERSIONS}")
-  fi
-  make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
 
   # OVN's chart and images need an NGC key for nv-ngn; CI has none, so opt-in.
   if [[ -n "${NGC_API_KEY:-}" ]]; then
@@ -113,6 +114,7 @@ if [[ "${ARCH}" == amd64 ]]; then
     echo "NGC_API_KEY is unset; skipping the nke-cni-ovn debs (this image cannot install OVN offline)"
   fi
 else
+  # Manifests only: the Calico images deb has no arm64 lock yet.
   echo "building ARM64 nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
   bash "${repo_root}/os-image/packages/cni-calico/build-arm64.sh" "${ARTIFACTS_DIR}/debs"
 fi

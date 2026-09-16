@@ -18,9 +18,14 @@
 #                  comma-separated. They become Conflicts entries so apt cannot
 #                  install two matrix rows at once.
 #   NFPM_BIN       Path to the nfpm binary (default: nfpm on PATH).
+#   ARCH           amd64 or arm64 (default amd64); must match the bundle dir.
 set -euo pipefail
 
-ARCH=amd64
+ARCH="${ARCH:-amd64}"
+case "${ARCH}" in
+  amd64|arm64) ;;
+  *) echo "ARCH=${ARCH}: expected amd64 or arm64" >&2; exit 2 ;;
+esac
 PACKAGE_PREFIX=nke-kubeadm-distro
 MATRIX_SUBDIR=k8s-matrix
 NFPM_BIN="${NFPM_BIN:-nfpm}"

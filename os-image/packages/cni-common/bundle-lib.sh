@@ -35,6 +35,20 @@ parse_bundle_args() {
   if [[ "$CONTENT_ONLY" == false ]]; then
     [[ -n "$CRANE" && -x "$CRANE" ]] || die "--crane must point at an executable crane"
   fi
+  # The lock holds one architecture's image digests, and they are amd64's.
+  # Only the content deb is Architecture: all and so arch-independent, which is
+  # what build-arm64.sh builds. Without these two checks, --arch arm64
+  # --write-lock would overwrite the amd64 lock in place.
+  case "$ARCH" in
+    amd64) ;;
+    arm64)
+      [[ "$WRITE_LOCK" == false ]] ||
+        die "--arch arm64 --write-lock would overwrite the amd64 lock; arm64 images are not packaged yet"
+      [[ "$CONTENT_ONLY" == true ]] ||
+        die "--arch arm64 needs --content-only: ${VERSION}.lock pins amd64 image digests"
+      ;;
+    *) die "--arch ${ARCH}: expected amd64 or arm64" ;;
+  esac
 
   LOCK="${LOCK_DIR}/${VERSION}.lock"
   STAGE="${DIST}/${VERSION}"

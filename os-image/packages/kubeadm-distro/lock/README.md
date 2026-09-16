@@ -5,9 +5,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # Lock files
 
-One `<version>.lock` per Kubernetes version in `K8S_VERSIONS`, for example
-`v1.36.3.lock`. Plain text, one sorted record per line, pinning by digest
-everything the bundle for that version is built from:
+One `<arch>/<version>.lock` per Kubernetes version in `K8S_VERSIONS` per
+architecture, for example `amd64/v1.36.3.lock`. Every artifact URL and every
+image digest is architecture-specific, so one file per version could hold only
+one of them. Plain text, one sorted record per line, pinning by digest
+everything the bundle for that version and architecture is built from:
 
 ```text
 # nke-kubeadm-distro lock for v1.36.3 (amd64). Regenerate with `make lock`; review the diff before committing.
@@ -22,8 +24,9 @@ is renamed or copied to the wrong filename is rejected rather than used.
 These files are **generated, reviewed and committed**, never hand-written:
 
 ```bash
-make lock          # Linux host with network access
-git diff -- lock/  # read every changed URL and digest
+make lock                 # amd64, on an amd64 Linux host with network
+make lock ARCH=arm64      # arm64, on an arm64 host: bundle.sh runs kubeadm
+git diff -- lock/         # read every changed URL and digest
 ```
 
 `make debs` refuses to build a version with no lock, checks every downloaded
@@ -33,4 +36,5 @@ rebuilt upstream release therefore cannot change what ships without showing up
 as a diff here first, and the `kubeadm` binary is verified against a reviewed
 digest *before* the build host executes it to list the images.
 
-A version listed in `K8S_VERSIONS` with no file here has not been locked yet.
+A version listed in `K8S_VERSIONS` with no file under an architecture has not
+been locked for it yet, and `make debs` for that architecture refuses to run.

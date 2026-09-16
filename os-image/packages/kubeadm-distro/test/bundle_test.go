@@ -378,7 +378,10 @@ func (b *bundleRun) exec(t *testing.T, args ...string) (string, error) {
 	return string(out), err
 }
 
-func (b *bundleRun) lockPath() string { return filepath.Join(b.lockDir, fixtureVersion+".lock") }
+// The lock is per architecture; these fixtures are amd64.
+func (b *bundleRun) lockPath() string {
+	return filepath.Join(b.lockDir, "amd64", fixtureVersion+".lock")
+}
 func (b *bundleRun) archDir() string  { return filepath.Join(b.dist, fixtureVersion, "amd64") }
 func (b *bundleRun) stageDir() string { return filepath.Join(b.dist, fixtureVersion, "stage") }
 
@@ -417,16 +420,41 @@ func requireLinux(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skipf("bundle.sh refuses to run on %s", runtime.GOOS)
 	}
+	// The fixture server serves amd64 artifact paths, and bundle.sh runs the
+	// downloaded kubeadm, so these cases need an amd64 host. The arm64 lock is
+	// covered by building it, not by these fixtures.
+	if runtime.GOARCH != "amd64" {
+		t.Skipf("the fixtures are amd64; this host is %s", runtime.GOARCH)
+	}
 }
 
-// TestBundleRejectsOtherArch runs everywhere: the arch check comes before the
-// Linux check, so it is the one refusal a developer laptop can exercise.
-func TestBundleRejectsOtherArch(t *testing.T) {
+// TestBundleRejectsUnknownArch runs everywhere: the arch check comes before
+// the Linux check, so it is the one refusal a developer laptop can exercise.
+func TestBundleRejectsUnknownArch(t *testing.T) {
 	requireBundleTools(t)
 	b := newBundleRun(t, newGPGKey(t, "runc test <runc@example.invalid>"), newGPGKey(t, "runc test <runc@example.invalid>"))
-	out, err := b.exec(t, "--arch", "arm64")
+	out, err := b.exec(t, "--arch", "riscv64")
 	require.Error(t, err)
-	assert.Contains(t, out, "amd64-only")
+	assert.Contains(t, out, "expected amd64 or arm64")
+}
+
+// TestBundleRejectsForeignArch pins the refusal to cross-build: resolve_images
+// runs the downloaded kubeadm, so the host must be the target architecture.
+func TestBundleRejectsForeignArch(t *testing.T) {
+	requireBundleTools(t)
+	// Not requireLinux: this case is valid on an arm64 Linux host too, which
+	// requireLinux skips because the fixtures are amd64.
+	if runtime.GOOS != "linux" {
+		t.Skipf("the Linux check fires first on %s", runtime.GOOS)
+	}
+	foreign := "arm64"
+	if runtime.GOARCH == "arm64" {
+		foreign = "amd64"
+	}
+	b := newBundleRun(t, newGPGKey(t, "runc test <runc@example.invalid>"), newGPGKey(t, "runc test <runc@example.invalid>"))
+	out, err := b.exec(t, "--arch", foreign)
+	require.Error(t, err)
+	assert.Contains(t, out, "this host is")
 }
 
 // TestBundleRefusesNonLinux pins the early, clear failure on a host that
