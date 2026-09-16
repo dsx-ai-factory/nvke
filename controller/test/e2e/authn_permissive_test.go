@@ -63,11 +63,42 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 		runtimeClient, err := kube.RuntimeClient(restConfig)
 		Expect(err).NotTo(HaveOccurred(), "build a controller-runtime client")
 
+		// authz sits after authn in the chain (internal/authz/middleware.go's
+		// Wrap) and hard-denies ReasonNoPrincipal whenever it is enforcing — a
+		// real, intentional invariant (see that constant's doc comment), not a
+		// bug: no Principal on the context means either the chain is
+		// misordered, or authentication admitted the request without one. The
+		// "no token" case this spec drives below is exactly that: putting
+		// authn into permissive mode is what makes authn admit it with no
+		// Principal in the first place. So if authz is deployed and enforcing
+		// while this spec's authn flip is in effect, authz's invariant fires
+		// on that same request and turns the 200 this spec expects into a
+		// 403 — the exact failure this fix resolves. The two permissive
+		// modes are independently configurable (PERMISSIVE_MODE vs
+		// AUTHZ_PERMISSIVE), but the promise behind authorization's own
+		// permissive mode -- adopt it gradually, without disrupting traffic
+		// you depend on -- only holds if the two are adopted together
+		// whenever both are in play, so this spec puts authz into permissive
+		// mode for the same window it puts authn into permissive mode, and
+		// restores both the same way.
+		authzInfo, authzErr := authzDeployment(ctx, clientset)
+		Expect(authzErr).NotTo(HaveOccurred(), "read the NKE deployment's authorization configuration")
+		authzNeedsFlip := authzInfo.mode == authzModeEnforcing
+
 		rolloutCtx, rolloutCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
 		defer rolloutCancel()
 		previous, err := nke.SetPermissiveMode(rolloutCtx, runtimeClient, "true")
 		Expect(err).NotTo(HaveOccurred(), "put Deployment %s/%s into permissive mode",
 			cwe.Namespace(), cwe.DeploymentName)
+
+		var previousAuthz string
+		if authzNeedsFlip {
+			authzRolloutCtx, authzRolloutCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
+			defer authzRolloutCancel()
+			previousAuthz, err = nke.SetAuthzPermissiveMode(authzRolloutCtx, runtimeClient, "true")
+			Expect(err).NotTo(HaveOccurred(), "put Deployment %s/%s's authorization into permissive mode",
+				cwe.Namespace(), cwe.DeploymentName)
+		}
 
 		DeferCleanup(func(ctx SpecContext) {
 			restoreCtx, restoreCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
@@ -76,6 +107,13 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 			_, restoreErr := nke.SetPermissiveMode(restoreCtx, runtimeClient, previous)
 			Expect(restoreErr).NotTo(HaveOccurred(), "restore %s=%q", authnPermissiveEnv, previous)
 
+			if authzNeedsFlip {
+				authzRestoreCtx, authzRestoreCancel := context.WithTimeout(ctx, permissiveRolloutTimeout)
+				defer authzRestoreCancel()
+				_, authzRestoreErr := nke.SetAuthzPermissiveMode(authzRestoreCtx, runtimeClient, previousAuthz)
+				Expect(authzRestoreErr).NotTo(HaveOccurred(), "restore %s=%q", authzPermissiveEnv, previousAuthz)
+			}
+
 			// Checked, not assumed. The enforcing specs skip themselves while the
 			// deployment is permissive, so a restore that quietly failed would turn
 			// the rest of the authn pass green without running any of it.
@@ -83,6 +121,18 @@ var _ = Describe("NKE API authentication in permissive mode", Ordered, Label("au
 			Expect(modeErr).NotTo(HaveOccurred(), "re-read the enforcement mode after restoring it")
 			Expect(mode).NotTo(Equal(authnModePermissive),
 				"the deployment was left permissive; every enforcing spec after this one would skip")
+
+			if authzNeedsFlip {
+				// Same reasoning, for authz's own enforcement specs
+				// (Label("authz")): requireAuthzEnforcing fails outright
+				// under NKE_E2E_REQUIRE_AUTHZ rather than skip, so a restore
+				// that quietly failed here would not go unnoticed quietly —
+				// it would fail the wrong spec, far from this one.
+				authzModeAfter, authzModeErr := authzDeployment(restoreCtx, clientset)
+				Expect(authzModeErr).NotTo(HaveOccurred(), "re-read the authorization mode after restoring it")
+				Expect(authzModeAfter.mode).NotTo(Equal(authzModePermissive),
+					"the deployment was left authz-permissive; every authz enforcement spec after this one would fail its denial assertions")
+			}
 		})
 
 		tctx, cancel := context.WithTimeout(ctx, authnTimeout)

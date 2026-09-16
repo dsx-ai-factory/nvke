@@ -26,6 +26,13 @@ const (
 	// permissiveModeEnvVar is what NKE reads to decide whether a failed check
 	// rejects the request or is only counted.
 	permissiveModeEnvVar = "PERMISSIVE_MODE"
+
+	// authzPermissiveModeEnvVar is authorization's own equivalent of
+	// permissiveModeEnvVar, read by internal/authz/middleware.go's deny(). A
+	// separate variable because authn and authz are independently
+	// configurable — but see SetAuthzPermissiveMode for why a caller that
+	// flips one during a live request stream usually needs to flip both.
+	authzPermissiveModeEnvVar = "AUTHZ_PERMISSIVE"
 )
 
 // OIDCEnabled reports whether the CWE deployment on the management cluster has
@@ -88,6 +95,25 @@ func SetOIDCEnabled(ctx context.Context, c client.Client, enabled bool) error {
 // string rather than removing it. NKE reads both as enforcing.
 func SetPermissiveMode(ctx context.Context, c client.Client, value string) (string, error) {
 	return setNKEContainerEnv(ctx, c, permissiveModeEnvVar, value)
+}
+
+// SetAuthzPermissiveMode sets AUTHZ_PERMISSIVE on the NKE container and waits
+// for the rollout, returning the value it replaced so a caller can put it
+// back. Same shape as SetPermissiveMode, for authorization instead of
+// authentication.
+//
+// internal/authz/middleware.go's Wrap runs after internal/auth's own Wrap and
+// hard-denies ReasonNoPrincipal (no Principal on the request context)
+// whenever it is enforcing — a real, intentional invariant, not a bug: no
+// Principal means either the chain is misordered, or authentication admitted
+// the request without one. Authentication's own permissive mode does exactly
+// that for an unauthenticated request. So a caller that puts authentication
+// into permissive mode while authorization is deployed and enforcing needs to
+// put authorization into permissive mode too, for the same window, or
+// authorization will hard-deny the very traffic authentication's permissive
+// mode promised not to disrupt.
+func SetAuthzPermissiveMode(ctx context.Context, c client.Client, value string) (string, error) {
+	return setNKEContainerEnv(ctx, c, authzPermissiveModeEnvVar, value)
 }
 
 // setNKEContainerEnv upserts an environment variable on the NKE container and
