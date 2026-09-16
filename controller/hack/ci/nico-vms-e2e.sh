@@ -349,6 +349,12 @@ export TILT_DISABLE_ANALYTICS=1
 # rather than fetching a bundle, as local-entrypoint-e2e already does.
 export INSTALL_CNI_AFTER_INIT="${INSTALL_CNI_AFTER_INIT:-true}"
 
+case "$(uname -m)" in
+  x86_64) host_arch=amd64 ;;
+  aarch64) host_arch=arm64 ;;
+  *) fail "unsupported architecture $(uname -m)" ;;
+esac
+
 # ── The agent the tenant nodes run ──────────────────────────────────────────
 # The OS profile's userData apt-installs nke-agent from the bundle server, then
 # replaces it with http://carbide-pxe.forge:18080/files/node-agent/nke-agent
@@ -360,10 +366,55 @@ export NICO_SIM_FILES_DIR="${NICO_SIM_DIR}/var/files"
 AGENT_URL_PATH="$(grep -oE 'files/[a-z-]+/nke-agent' "${CWE_PROFILES_DIR}/osProfiles/nke-nico-vms-24.04-amd64-fde/userData.tmpl" | head -1)"
 [[ -n "${AGENT_URL_PATH}" ]] || fail "the nico-vms OS profile no longer downloads nke-agent from /files/"
 log "building nke-agent from ${WORKSPACE_ROOT}/agent"
-make -C "${WORKSPACE_ROOT}/agent" build-amd64 >"${STATE_DIR}/agent-build.log" 2>&1 ||
+make -C "${WORKSPACE_ROOT}/agent" "build-${host_arch}" >"${STATE_DIR}/agent-build.log" 2>&1 ||
   { tail -n 50 "${STATE_DIR}/agent-build.log" >&2; fail "building nke-agent failed"; }
-install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_amd64/nke-agent" "${NICO_SIM_FILES_DIR}/${AGENT_URL_PATH#files/}"
+install -D -m 0755 "${WORKSPACE_ROOT}/agent/bin/linux_${host_arch}/nke-agent" "${NICO_SIM_FILES_DIR}/${AGENT_URL_PATH#files/}"
 log "staged nke-agent for the tenant nodes: $(git -C "${WORKSPACE_ROOT}" describe --match 'agent/v*' --tags --always 2>/dev/null || echo unknown)"
+
+# ── The node image the tenant VMs boot ──────────────────────────────────────
+# Opt in with NKE_E2E_OS_IMAGE_TAG. Unset, the profiles keep their pinned
+# CloudFront image and this lane behaves exactly as before.
+#
+# No server: nico-sim resolves image-url on the host, never in a guest, and
+# copies a local path straight into its image cache. See localImagePath and
+# copyLocal in nico-sim/internal/ipxe/imagecache.go, whose own comment gives
+# the reason -- an image built in the same job is already on disk.
+if [[ -n "${NKE_E2E_OS_IMAGE_TAG:-}" ]]; then
+  command -v oras >/dev/null 2>&1 ||
+    fail "NKE_E2E_OS_IMAGE_TAG is set but oras is not on PATH"
+  image_repo="${NKE_E2E_OS_IMAGE_REPO:-ghcr.io/dsx-ai-factory/nke/os-image-non-fde}"
+  image_ref="${image_repo}:${NKE_E2E_OS_IMAGE_TAG}-${host_arch}"
+  image_dir="${STATE_DIR}/os-image"
+  rm -rf "${image_dir}"
+  mkdir -p "${image_dir}"
+  log "pulling ${image_ref}"
+  oras pull "${image_ref}" --platform "linux/${host_arch}" -o "${image_dir}" \
+    >"${STATE_DIR}/os-image-pull.log" 2>&1 ||
+    { tail -n 20 "${STATE_DIR}/os-image-pull.log" >&2; fail "pulling ${image_ref} failed"; }
+
+  shopt -s nullglob
+  pulled=("${image_dir}"/*.qcow2)
+  shopt -u nullglob
+  (( ${#pulled[@]} == 1 )) ||
+    fail "${image_ref} carried ${#pulled[@]} qcow2 files, expected exactly 1"
+  qcow="${pulled[0]}"
+
+  # Repoint every profile that names a real image. Counted, because a profile
+  # that stopped carrying an image-url would otherwise leave the CloudFront pin
+  # in place and the lane would quietly test the wrong thing.
+  repointed=0
+  for script in "${CWE_PROFILES_DIR}"/osProfiles/*/ipxeScript; do
+    grep -q '^set image-url ' "${script}" || continue
+    # Not sed -i: it takes an argument on BSD and none on GNU, and this script
+    # is run by hand on both.
+    awk -v img="${qcow}" '/^set image-url / { print "set image-url " img; next } { print }' \
+      "${script}" >"${script}.new" && mv "${script}.new" "${script}"
+    repointed=$(( repointed + 1 ))
+  done
+  (( repointed > 0 )) ||
+    fail "no osProfile ipxeScript carries a 'set image-url' line to repoint"
+  log "tenant nodes boot ${qcow} (${repointed} profile(s) repointed)"
+fi
 
 # A previous run's database, instances and logs would confuse this one.
 rm -rf "${NICO_SIM_DIR}/.dev"
@@ -371,11 +422,6 @@ rm -rf "${NICO_SIM_DIR}/.dev"
 # ── Images Tilt must not build ──────────────────────────────────────────────
 # Tilt's own CWE build watches bin/ and rewrites bin/cloud-workflow-engine, so
 # it re-queues itself forever. Prebuild both images, as ci/backend-e2e.sh does.
-case "$(uname -m)" in
-  x86_64) host_arch=amd64 ;;
-  aarch64) host_arch=arm64 ;;
-  *) fail "unsupported architecture $(uname -m)" ;;
-esac
 git_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse HEAD)"
 git_short_sha="$(git -C "${WORKSPACE_ROOT}" rev-parse --short=12 HEAD)"
 CWE_IMAGE="cwe-e2e:${git_short_sha}"
