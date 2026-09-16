@@ -61,6 +61,16 @@ import (
 // unit-level property (internal/auth/roles_test.go), which is the right level
 // for it per the plan's own reasoning about checkPolicyShape (§3, "Validation
 // / fail-safe").
+
+// The claim-based-role test subject: a dev-fixture ServiceAccount minted only
+// for "grants a role by (namespace, service account) match" below, distinct
+// from authn's own default admitted identity (authtoken.DefaultNamespace/
+// DefaultServiceAccount). See deploy/k8s/nke-auth-dev.yaml.
+const (
+	authzClaimSubjectNamespace      = "nke-clients"
+	authzClaimSubjectServiceAccount = "nke-claim-subject"
+)
+
 var _ = Describe("NKE API authorization by claim", Label("authz", "authz-claims"), func() {
 	var (
 		restConfig *rest.Config
@@ -79,8 +89,15 @@ var _ = Describe("NKE API authorization by claim", Label("authz", "authz-claims"
 	// does. This suite can only mint for identities it already has
 	// TokenRequest RBAC for (deploy/k8s/nke-auth-dev.yaml), so the case only
 	// runs when the deployed auth config's serviceAccounts role rule actually
-	// matches one of them -- today that is authn's own default admitted
-	// identity, nke-clients/nke-client.
+	// matches one of them -- today that is nke-clients/nke-claim-subject, a
+	// dev-fixture identity minted for exactly this spec. It is deliberately
+	// not authn's own default admitted identity (authtoken.DefaultNamespace/
+	// DefaultServiceAccount): that identity is nke.NewClient's
+	// authtoken.Discover fallback, which essentially every non-authz e2e spec
+	// authenticates as, so it holds real (operator+nodeOperator) access via
+	// roles.json instead -- a claim-based rule granting it only "reader"
+	// would take write access away from the rest of the suite. See
+	// deploy/k8s/nke-auth-dev.yaml's roles.serviceAccounts comment.
 	It("grants a role by (namespace, service account) match", func(ctx SpecContext) {
 		tctx, cancel := context.WithTimeout(ctx, authnTimeout)
 		defer cancel()
@@ -91,7 +108,7 @@ var _ = Describe("NKE API authorization by claim", Label("authz", "authz-claims"
 			Skip("no issuer in this deployment's auth configuration declares a roles.serviceAccounts rule, so there is no claim-based service-account role grant to exercise")
 		}
 
-		namespace, name := authtoken.DefaultNamespace, authtoken.DefaultServiceAccount
+		namespace, name := authzClaimSubjectNamespace, authzClaimSubjectServiceAccount
 		rule, found := matchingServiceAccountRoleRule(rules, namespace, name)
 		if !found {
 			Skip(fmt.Sprintf(

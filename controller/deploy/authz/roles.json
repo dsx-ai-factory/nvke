@@ -21,6 +21,14 @@
     "parents": [{ "type": "NKE::Role", "id": "reader" }]
   },
   {
+    "uid": { "type": "NKE::Principal", "id": "system:serviceaccount:nke-clients:nke-client" },
+    "attrs": {},
+    "parents": [
+      { "type": "NKE::Role", "id": "operator" },
+      { "type": "NKE::Role", "id": "nodeOperator" }
+    ]
+  },
+  {
     "uid": { "type": "NKE::Principal", "id": "spiffe://nvidia.com/ns/nke-system/sa/nke-controller" },
     "attrs": {},
     "parents": [{ "type": "NKE::Role", "id": "operator" }]

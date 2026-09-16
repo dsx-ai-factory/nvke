@@ -22,6 +22,16 @@
 # allow decision in this environment. It is admitted below the same as
 # nke-client.
 #
+# roles.json also names nke-clients/nke-client itself, granting it
+# operator+nodeOperator: that is authn's own default admitted identity (see
+# above), the one essentially every e2e spec that isn't authz-specific
+# authenticates as, so it needs real write access now that authz actually
+# enforces here.
+#
+# A fourth identity, nke-clients/nke-claim-subject, exists only for
+# authz_claims_test.go's claim-based-role spec -- see its own comment below,
+# next to the roles.serviceAccounts rule that grants it "reader".
+#
 # nkectl mints that same admitted identity from a management-cluster kubeconfig
 # (nkectl config set-site --kubeconfig). The token-minter RoleBindings below
 # are for the nke-e2e ServiceAccount the e2e suite uses, not for a human
@@ -217,6 +227,65 @@ subjects:
     name: nke-e2e
     namespace: nke-clients
 ---
+# A fourth identity, dedicated to authz_claims_test.go's "grants a role by
+# (namespace, service account) match" spec. It exists so that spec has a
+# claim-based grant to exercise without sharing an identity with anything
+# else this environment admits: nke-client (below) is authn's own default
+# admitted identity -- nke.NewClient's authtoken.Discover fallback, which
+# essentially every non-authz e2e spec authenticates as, including core
+# cluster lifecycle -- and giving it a claim rule with a narrow role used to
+# make that collide (the shared identity got downgraded to whatever the
+# narrow rule granted). nke-cli already carries a *static* roles.json role,
+# which the spec explicitly excludes as "not proof of the claim path". This
+# identity carries neither: nothing else mints a token for it, and
+# roles.json names it not at all, so the only role it ever holds is the one
+# roles.serviceAccounts below grants it.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nke-claim-subject
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nke-claim-subject-token-minter
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+rules:
+  - apiGroups: [""]
+    resources: ["serviceaccounts/token"]
+    resourceNames: ["nke-claim-subject"]
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nke-claim-subject-token-minter
+  namespace: nke-clients
+  labels:
+    app.kubernetes.io/name: cloud-workflow-engine
+    app.kubernetes.io/component: api-auth-dev
+    app.kubernetes.io/part-of: cloud-workflow-engine
+    nke.nvidia.com/purpose: nke-auth-dev
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nke-claim-subject-token-minter
+subjects:
+  - kind: ServiceAccount
+    name: nke-e2e
+    namespace: nke-clients
+---
 # The authentication configuration, mounted at /etc/nke/auth/auth.yaml by the
 # chart. See internal/auth and the README for the schema. Only
 # auth.nke.nvidia.com/v1alpha1 is accepted: the apiserver's own
@@ -255,21 +324,31 @@ data:
               name: nke-client
             - namespace: nke-system
               name: nke-cli
-        # Grants nke-clients/nke-client the reader role by (namespace, service
-        # account) match rather than by roles.json naming it individually --
-        # so authz_claims_test.go's "grants a role by (namespace, service
-        # account) match" spec has a real claim-based rule to exercise in this
-        # environment instead of unconditionally skipping. This is the only
-        # dev-fixture ServiceAccount this suite can mint a token for that
-        # roles.json does not also grant a static role to (nke-cli is the
-        # static reader principal, see above), which is what makes the two
-        # role paths distinguishable. authz_test.go's own "no role" negative
-        # case (nke-client, same identity) accounts for this rule when it
-        # decides whether that subject still holds no role.
+            - namespace: nke-clients
+              name: nke-claim-subject
+        # nke-clients/nke-client's operator+nodeOperator grant lives in
+        # roles.json (deploy/authz), a static entry, not a rule here -- it is
+        # authn's own default admitted identity (authtoken.DefaultNamespace/
+        # DefaultServiceAccount), which essentially every non-authz e2e spec
+        # authenticates as via nke.NewClient's authtoken.Discover fallback,
+        # including core cluster lifecycle (create/delete cluster, scale node
+        # pools). It needs the same real write access the rest of the suite
+        # has always assumed it has, now that authz genuinely enforces in this
+        # environment; a claim-based rule here would only be exercising the
+        # same mechanism authz_claims_test.go already tests in isolation
+        # below, for no reason, on the suite's one load-bearing identity.
+        #
+        # Grants nke-clients/nke-claim-subject the reader role by (namespace,
+        # service account) match -- so authz_claims_test.go's "grants a role
+        # by (namespace, service account) match" spec has a real claim-based
+        # rule to exercise. This identity is minted only for that spec (see
+        # its ServiceAccount above): nothing else in this environment
+        # authenticates as it, so granting it a narrow, read-only role here
+        # can never take write access away from anything that depends on it.
         roles:
           serviceAccounts:
             - namespace: nke-clients
-              name: nke-client
+              name: nke-claim-subject
               role: reader
       # SPIRE is omitted because it is not reachable yet, and an unreachable
       # issuer is a startup failure in enforcing mode. Two things are missing: the
