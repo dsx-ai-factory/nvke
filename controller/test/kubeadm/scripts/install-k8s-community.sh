@@ -38,13 +38,19 @@ log() { echo "install-k8s-community: $*"; }
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
+# --retry alone covers HTTP responses and timeouts, not a stream-level error.
+# A run lost 7 downloads to "curl: (92) HTTP/2 stream 1 was not closed cleanly:
+# PROTOCOL_ERROR", which it did not retry, and the guest then failed at kubeadm
+# init with no mention of the download. --retry-all-errors covers it.
+CURL=(curl -fsSL --retry 3 --retry-all-errors --retry-delay 2)
+
 # dl.k8s.io serves <binary>.sha256 beside each binary. Fetch both and compare,
 # so a truncated or substituted download fails here rather than at kubeadm init.
 fetch_k8s_binary() {
 	local name="$1" dest="$2"
 	local base="https://dl.k8s.io/release/${K8S_VERSION}/bin/linux/${ARCH}"
-	curl -fsSL --retry 3 -o "${tmp}/${name}" "${base}/${name}"
-	curl -fsSL --retry 3 -o "${tmp}/${name}.sha256" "${base}/${name}.sha256"
+	"${CURL[@]}" -o "${tmp}/${name}" "${base}/${name}"
+	"${CURL[@]}" -o "${tmp}/${name}.sha256" "${base}/${name}.sha256"
 	echo "$(cat "${tmp}/${name}.sha256")  ${tmp}/${name}" | sha256sum -c - >/dev/null
 	install -m 0755 "${tmp}/${name}" "${dest}/${name}"
 	log "installed ${name} ${K8S_VERSION}"
@@ -52,7 +58,7 @@ fetch_k8s_binary() {
 
 fetch_verified() {
 	local url="$1" out="$2" want="$3"
-	curl -fsSL --retry 3 -o "${out}" "${url}"
+	"${CURL[@]}" -o "${out}" "${url}"
 	if [ -n "${want}" ]; then
 		echo "${want}  ${out}" | sha256sum -c - >/dev/null
 	fi
