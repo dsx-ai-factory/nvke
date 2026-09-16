@@ -61,8 +61,12 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
 
 - Do not bake SPIRE server address, trust domain, trust bundle, or join token.
 - Do not default `nke-agent` to `--disable-mtls`.
-- Pin SPIRE (version + sha256) in `packer/scripts/fetch-artifacts.sh`; do not
-  float `latest` for SPIRE.
+- Pin SPIRE and the TPM attestor plugin (version + sha256) in
+  `packages/spire-agent/` — `SPIRE_VERSION` / `TPM_PLUGIN_VERSION` in its
+  `Makefile`, digests in its committed `lock/`. Do not float `latest`, and
+  regenerate the lock with `make lock` rather than hand-editing it.
+  `TPM_PLUGIN_VERSION` also pins the server-side attestor in `controller/` and
+  `cli/`; move both halves together.
 - Do not hard-require `/dev/kvm`. `packer/Makefile` and `boot-smoke.sh` probe
   for it and fall back to `tcg`, because the CI runners are containers without
   it (https://github.com/dsx-ai-factory/nke/issues/219).

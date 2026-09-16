@@ -1,0 +1,84 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm package spec for spire-agent. build-deb.sh exports the environment this
+# file expands: DEB_VERSION, DEB_REVISION, ARCH, SPIRE_VERSION,
+# TPM_PLUGIN_VERSION and SRC (the bundle.sh output tree).
+#
+# nfpm expands ${VAR} in ordinary string fields on its own; content entries
+# additionally need `expand: true`. `scripts:` gets no expansion at all, so the
+# maintainer scripts are referenced by a fixed path relative to this file.
+#
+# The unit files, the config renderer and its template are read straight out of
+# ../../../files/, which is where the image's own copies have always lived --
+# the .deb takes ownership of them rather than forking a second copy.
+
+name: "spire-agent"
+arch: "${ARCH}"
+platform: "linux"
+version: "${DEB_VERSION}"
+# "1.14.1+tpm1.9.0-1" is a Debian version, not a semver one.
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NKE <nke-dev@exchange.nvidia.com>"
+# Fixed rather than the build time, so two builds of the same input produce a
+# byte-identical .deb.
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  SPIRE agent with the TPM node attestor (SPIRE ${SPIRE_VERSION}, spire-tpm-plugin ${TPM_PLUGIN_VERSION})
+  The upstream SPIRE agent release binary plus spire-tpm-plugin's
+  tpm_attestor_agent and get_tpm_pubhash, each pinned by sha256, together with
+  the NKE units that run them: spire-agent.service and the
+  nke-spire-configure.service that renders /etc/spire-agent/agent.conf from
+  cloud-init instance identity before it. postinst creates the system user the
+  agent runs as and adds it to the tss group so the TPM attestor can open
+  /dev/tpmrm0. Nothing here is unpacked or downloaded at install time.
+
+scripts:
+  postinstall: "../bin/.nfpm-scripts/postinst"
+  preremove: "../bin/.nfpm-scripts/prerm"
+  postremove: "../bin/.nfpm-scripts/postrm"
+
+contents:
+  - src: "${SRC}/spire-agent"
+    dst: "/usr/local/bin/spire-agent"
+    file_info: { mode: 0755 }
+    expand: true
+  # spire-configure.sh reads this exact path, and hashes the binary there into
+  # the agent config's plugin_checksum.
+  - src: "${SRC}/tpm_attestor_agent"
+    dst: "/usr/local/lib/spire-agent/tpm_attestor_agent"
+    file_info: { mode: 0755 }
+    expand: true
+  - src: "${SRC}/get_tpm_pubhash"
+    dst: "/usr/local/bin/get_tpm_pubhash"
+    file_info: { mode: 0755 }
+    expand: true
+
+  # /lib, not /etc: these are vendor units. spire-configure.sh's join-token
+  # drop-in still lands in /etc/systemd/system/spire-agent.service.d/, which
+  # applies on top of a vendor unit the same way.
+  - src: "../../../files/spire-agent.service"
+    dst: "/lib/systemd/system/spire-agent.service"
+    file_info: { mode: 0644 }
+  - src: "../../../files/nke-spire-configure.service"
+    dst: "/lib/systemd/system/nke-spire-configure.service"
+    file_info: { mode: 0644 }
+
+  # spire-agent.service Requires= nke-spire-configure.service, which runs this
+  # script against this template, so all four ship together or the unit is
+  # broken on any node that installs the package on its own.
+  - src: "../../../files/spire-configure.sh"
+    dst: "/usr/lib/nke/spire-configure.sh"
+    file_info: { mode: 0755 }
+  - src: "../../../files/spire-agent.conf.tmpl"
+    dst: "/usr/lib/nke/spire-agent.conf.tmpl"
+    file_info: { mode: 0644 }
+
+  - dst: "/etc/spire-agent"
+    type: dir
+    file_info: { mode: 0755 }
+
+deb:
+  compression: gzip

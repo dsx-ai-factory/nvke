@@ -1,0 +1,12 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Stop the units before their binaries go away. Not on upgrade: dpkg unpacks
+# the new files and runs postinst, which reloads systemd.
+set -e
+
+[ "$1" = "remove" ] || exit 0
+
+systemctl disable --now spire-agent.service >/dev/null 2>&1 || true
+systemctl disable --now nke-spire-configure.service >/dev/null 2>&1 || true

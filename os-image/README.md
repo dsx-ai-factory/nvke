@@ -46,9 +46,13 @@ missing.
 `nke-agent` is built from this checkout's `agent/` source (cross-compiled to
 the target architecture when the host differs), so the baked agent is whatever your
 checkout says — no prebuilt artifact is pulled. To bake a released agent,
-check out its `agent/vX.Y.Z` tag first. The SPIRE agent and TPM tools are
-pinned by version and SHA-256. The build also installs the Calico manifests
-package that the agent uses during offline bootstrap.
+check out its `agent/vX.Y.Z` tag first. The SPIRE agent and TPM tools come from
+the `spire-agent` .deb built at bake time out of
+[`packages/spire-agent/`](packages/spire-agent/), pinned by version and
+SHA-256 in its lock; the build installs that package into the image rather than
+dropping the upstream binaries in by hand, so a node ends up with the same
+artifact whichever path installed it. The build also installs the Calico
+manifests package that the agent uses during offline bootstrap.
 
 Both variants install Ubuntu's NVIDIA-tuned kernel (`kernel.package` in
 `cidata/autoinstall-lvm.pkrtpl`), so the generic kernel never lands on disk in

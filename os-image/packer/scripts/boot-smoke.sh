@@ -187,6 +187,13 @@ test -x /usr/local/bin/get_tpm_pubhash
 test -x /usr/lib/nke/spire-configure.sh
 test -x /usr/lib/nke/wait-spiffe-socket.sh
 dpkg-query -W -f='${Status}\n' 'nke-cni-calico-manifests-*' | grep -Fxq 'install ok installed'
+# The paths above would also pass against the raw-binary install this package
+# replaced, so assert dpkg actually owns them.
+dpkg-query -W -f='${Status}\n' spire-agent | grep -Fxq 'install ok installed'
+test "$(dpkg-query -S /usr/local/bin/spire-agent | cut -d: -f1)" = spire-agent
+# A unit left in /etc would mask the vendor unit the package ships in /lib.
+test ! -e /etc/systemd/system/spire-agent.service
+id -u spire >/dev/null
 
 EOF
 

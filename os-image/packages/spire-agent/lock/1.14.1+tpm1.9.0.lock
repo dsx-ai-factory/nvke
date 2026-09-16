@@ -1,0 +1,10 @@
+# spire-agent lock for SPIRE 1.14.1 with spire-tpm-plugin 1.9.0.
+# Regenerate with `make lock`; review the diff before committing.
+# spire-tpm-plugin publishes no upstream checksum document, so these two
+# rows are the only pin those artifacts have. See README.md.
+artifact spire-agent amd64 0278af1e083fda58a6dfd09f97d41b5c34b011dca2fd53dc79d0e418996ed0ba https://github.com/spiffe/spire/releases/download/v1.14.1/spire-1.14.1-linux-amd64-musl.tar.gz
+artifact spire-agent arm64 94ec569b697323b067db05565ff098eb3d8fa217dad40f367c961e239d54858d https://github.com/spiffe/spire/releases/download/v1.14.1/spire-1.14.1-linux-arm64-musl.tar.gz
+artifact tpm_attestor_agent amd64 64c9ed83857e802571f9e4c8377994bfb9d220708bcefe6b50674b2eee4bfbd2 https://github.com/spiffe/spire-tpm-plugin/releases/download/v1.9.0/spire_tpm_plugin_tpm_attestor_agent_linux_amd64_v1.9.0.tar.gz
+artifact tpm_attestor_agent arm64 b85502354358cd919691be022eb0f5678f5fdb9e84d86a2d1819362e18e796ae https://github.com/spiffe/spire-tpm-plugin/releases/download/v1.9.0/spire_tpm_plugin_tpm_attestor_agent_linux_arm64_v1.9.0.tar.gz
+artifact get_tpm_pubhash amd64 e70d183f48f6941c41525e690649f7003df69235d4eae6ab1a668dbb00948a47 https://github.com/spiffe/spire-tpm-plugin/releases/download/v1.9.0/spire_tpm_plugin_get_tpm_pubhash_linux_amd64_v1.9.0.tar.gz
+artifact get_tpm_pubhash arm64 c0145069cb87d9b57563de66004c2aa0d10d9e87869046caf0faefe677efa1a8 https://github.com/spiffe/spire-tpm-plugin/releases/download/v1.9.0/spire_tpm_plugin_get_tpm_pubhash_linux_arm64_v1.9.0.tar.gz

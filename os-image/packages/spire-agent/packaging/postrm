@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# On purge only, take back what postinst created outside dpkg's file list: the
+# agent's data directory (its SVIDs and private keys), the rendered config, and
+# the system user. A plain remove leaves them, so reinstalling keeps the node's
+# existing identity.
+set -e
+
+case "$1" in
+remove)
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  ;;
+purge)
+  rm -rf /var/lib/spire-agent /etc/spire-agent
+  rm -rf /etc/systemd/system/spire-agent.service.d
+  if id -u spire >/dev/null 2>&1; then
+    userdel spire >/dev/null 2>&1 || true
+  fi
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  ;;
+esac

@@ -10,15 +10,7 @@ SRC=/tmp/nke-image
 ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
 
 sudo install -d -m 0755 /usr/lib/nke /etc/nke /var/lib/nke /usr/local/bin
-sudo install -m 0755 "${SRC}/spire-agent" /usr/local/bin/spire-agent
-sudo install -d -m 0755 /usr/local/lib/spire-agent
-sudo install -m 0755 "${SRC}/tpm_attestor_agent" /usr/local/lib/spire-agent/tpm_attestor_agent
-sudo install -m 0755 "${SRC}/get_tpm_pubhash" /usr/local/bin/get_tpm_pubhash
-sudo install -m 0755 "${SRC}/spire-configure.sh" /usr/lib/nke/spire-configure.sh
 sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nke/wait-spiffe-socket.sh
-sudo install -m 0644 "${SRC}/spire-agent.conf.tmpl" /usr/lib/nke/spire-agent.conf.tmpl
-sudo install -m 0644 "${SRC}/spire-agent.service" /etc/systemd/system/spire-agent.service
-sudo install -m 0644 "${SRC}/nke-spire-configure.service" /etc/systemd/system/nke-spire-configure.service
 
 sudo install -m 0755 "${SRC}/nke-agent" /usr/local/bin/nke-agent
 sudo install -m 0644 "${SRC}/nke-agent.service" /etc/systemd/system/nke-agent.service
@@ -27,20 +19,7 @@ if [[ ! -f /etc/default/nke-agent ]]; then
   echo 'AGENT_ARGS=""' | sudo tee /etc/default/nke-agent >/dev/null
 fi
 
-if ! id -u spire >/dev/null 2>&1; then
-  sudo useradd -r -s /bin/false -d /var/lib/spire-agent spire
-fi
-# The TPM node attestor opens /dev/tpmrm0, which udev owns tss:tss. Without this
-# spire-agent crash-loops on "permission denied" and nke-agent never starts,
-# because it waits on a workload socket that never opens.
-if getent group tss >/dev/null 2>&1; then
-  sudo usermod -aG tss spire
-fi
-sudo install -d -m 0750 -o spire -g spire /var/lib/spire-agent
-
 sudo systemctl daemon-reload
-sudo systemctl enable nke-spire-configure.service
-sudo systemctl enable spire-agent.service
 sudo systemctl enable nke-agent.service
 
 # Stage the CNI debs as a local flat apt repo, so cluster create's `apt-get
@@ -59,6 +38,18 @@ calico_manifest_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nke-cni-cal
 if [[ -n "${calico_manifest_deb}" ]]; then
   sudo dpkg -i "${calico_manifest_deb}"
 fi
+
+# Install the spire-agent package. Unlike the CNI and kubeadm-distro debs --
+# which nke-agent installs by name at cluster create, choosing a variant and a
+# version then -- SPIRE is how a node gets an identity at all, so it is baked
+# in rather than staged for later. Its postinst creates the spire user, adds it
+# to tss and enables both units, so nothing here repeats that.
+spire_agent_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'spire-agent_*.deb' -print -quit 2>/dev/null || true)"
+if [[ -z "${spire_agent_deb}" ]]; then
+  echo "no spire-agent deb in ${SRC}/debs; the image would have no SPIRE agent and could not join a cluster" >&2
+  exit 1
+fi
+sudo dpkg -i "${spire_agent_deb}"
 
 # Give cloud-image importers a stable root-filesystem identifier. Do not rely
 # on a device path because it can change between the build VM and a target.
