@@ -4,6 +4,7 @@
 package nodepools
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,11 +14,23 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/clients"
 	"github.com/NVIDIA/nke/cli/internal/config"
 	api "github.com/NVIDIA/nke/controller/api"
 )
+
+// run executes cmd with args and returns everything it wrote.
+func run(t *testing.T, cmd *cobra.Command, args ...string) (string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
+}
 
 // fakeCWE is an httptest server answering the node pool endpoints nkectl
 // calls, backed by an in-memory slice.

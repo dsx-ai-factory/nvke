@@ -4,6 +4,7 @@
 package clusters
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -14,11 +15,38 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/spf13/cobra"
 
 	"github.com/NVIDIA/nke/cli/internal/clients"
 	"github.com/NVIDIA/nke/cli/internal/config"
 	api "github.com/NVIDIA/nke/controller/api"
 )
+
+// run executes cmd with args and returns everything it wrote.
+func run(t *testing.T, cmd *cobra.Command, args ...string) (string, error) {
+	t.Helper()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
+}
+
+// clientFnErr is a clientFn that always returns an error. Commands that pass
+// arg/flag validation will reach the API call and return this error — used to
+// confirm a command is wired correctly without a real CWE deployment.
+func clientFnErr() (*clients.CWEClient, error) {
+	return nil, &notConfiguredError{}
+}
+
+type notConfiguredError struct{}
+
+func (e *notConfiguredError) Error() string { return "no site configured" }
+
+func isNotConfigured(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "no site configured")
+}
 
 // fakeCWE is an httptest server answering the cluster endpoints nkectl calls,
 // backed by an in-memory slice.

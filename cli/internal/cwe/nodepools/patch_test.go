@@ -4,25 +4,11 @@
 package nodepools
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/spf13/cobra"
 )
-
-// run executes cmd with args and returns everything it wrote.
-func run(t *testing.T, cmd *cobra.Command, args ...string) (string, error) {
-	t.Helper()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return out.String(), err
-}
 
 // writePatch writes a patch file and returns its path.
 func writePatch(t *testing.T, body string) string {
