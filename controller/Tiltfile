@@ -828,12 +828,15 @@ k8s_resource(
         "nke-outsider:serviceaccount:nke-outsiders",
         "nke-e2e:serviceaccount:nke-clients",
         "nke-cli:serviceaccount:nke-system",
+        "nke-claim-subject:serviceaccount:nke-clients",
         "nke-client-token-minter:role:nke-clients",
         "nke-client-token-minter:rolebinding:nke-clients",
         "nke-outsider-token-minter:role:nke-outsiders",
         "nke-outsider-token-minter:rolebinding:nke-outsiders",
         "nke-cli-token-minter:role:nke-system",
         "nke-cli-token-minter:rolebinding:nke-system",
+        "nke-claim-subject-token-minter:role:nke-clients",
+        "nke-claim-subject-token-minter:rolebinding:nke-clients",
         "nke-auth-config:configmap:cloud-workflow-engine",
     ],
     # nke-cli:serviceaccount:nke-system (and its Role/RoleBinding) are applied
@@ -841,6 +844,14 @@ k8s_resource(
     # creating -- without this dep both become eligible right after
     # check-management-cluster and the apply can race namespace creation, the
     # same hazard nke-authz-dev's own dep on this resource guards against.
+    #
+    # nke-claim-subject and its Role/RoleBinding were left out of this list
+    # when added: unassigned to a resource, Tilt still applies them (they're
+    # loaded by the same k8s_yaml call), just without this resource's
+    # resource_deps -- so they raced nke-clients:namespace, created above in
+    # this same resource, and failed CI with "namespaces \"nke-clients\" not
+    # found". Listing them here puts them in the same apply batch as the
+    # namespace they live in, not a separate, ungoverned one.
     resource_deps=["check-management-cluster", "nke-system-namespace"],
     pod_readiness="ignore",
 )
