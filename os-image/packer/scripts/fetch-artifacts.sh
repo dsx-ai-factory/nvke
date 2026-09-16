@@ -47,46 +47,44 @@ echo "building nke-agent from source (${repo_root}/agent, ${ARCH})"
 make -C "${repo_root}/agent" "${AGENT_BUILD_TARGET}"
 install -m 0755 "${repo_root}/agent/bin/${AGENT_BIN_DIR}/nke-agent" "${ARTIFACTS_DIR}/nke-agent"
 
-# The CNI debs nke-agent installs at cluster create, plus a flat apt index that
-# provision.sh stages as a local repo. amd64 only: the locks pin amd64 digests.
-if [[ "${ARCH}" == amd64 ]]; then
-  echo "building nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
-  cni_calico_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
-  if [[ -n "${CALICO_VERSIONS:-}" ]]; then
-    cni_calico_args+=(CALICO_VERSIONS="${CALICO_VERSIONS}")
-  fi
-  make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
+# The debs a node installs at cluster create, plus a flat apt index that
+# provision.sh stages as a local repo. Without the kubeadm one a node built
+# here cannot obtain kubeadm at all: there is no bundle server to fall back to.
+# Both architectures have a lock. bundle.sh runs the downloaded kubeadm, so the
+# Packer host has to be the target architecture.
+echo "building nke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
+kubeadm_distro_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+if [[ -n "${K8S_VERSIONS:-}" ]]; then
+  kubeadm_distro_args+=(K8S_VERSIONS="${K8S_VERSIONS}")
+fi
+make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
 
-  # The kubeadm/kubelet/containerd debs the agent installs at cluster create.
-  # Without them a node built here cannot obtain kubeadm at all: there is no
-  # bundle server to fall back to.
-  echo "building nke-kubeadm-distro debs (${repo_root}/os-image/packages/kubeadm-distro)"
-  kubeadm_distro_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
-  if [[ -n "${K8S_VERSIONS:-}" ]]; then
-    kubeadm_distro_args+=(K8S_VERSIONS="${K8S_VERSIONS}")
-  fi
-  make -C "${repo_root}/os-image/packages/kubeadm-distro" debs "${kubeadm_distro_args[@]}"
+echo "building nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
+cni_calico_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+if [[ -n "${CALICO_VERSIONS:-}" ]]; then
+  cni_calico_args+=(CALICO_VERSIONS="${CALICO_VERSIONS}")
+fi
+make -C "${repo_root}/os-image/packages/cni-calico" debs "${cni_calico_args[@]}"
 
-  # OVN's chart and images need an NGC key for nv-ngn; CI has none, so opt-in.
-  if [[ -n "${NGC_API_KEY:-}" ]]; then
-    echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
-    cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs")
-    if [[ -n "${OVN_STREAMS:-}" ]]; then
-      cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")
-    fi
-    make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
-  else
-    echo "NGC_API_KEY is unset; skipping the nke-cni-ovn debs (this image cannot install OVN offline)"
+# OVN's chart and images need an NGC key for nv-ngn; CI has none, so opt-in.
+# amd64 only: nothing has locked the arm64 image set, which differs in
+# membership rather than just in digests.
+if [[ "${ARCH}" == amd64 && -n "${NGC_API_KEY:-}" ]]; then
+  echo "building nke-cni-ovn debs (${repo_root}/os-image/packages/cni-ovn)"
+  cni_ovn_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+  if [[ -n "${OVN_STREAMS:-}" ]]; then
+    cni_ovn_args+=(OVN_STREAMS="${OVN_STREAMS}")
   fi
+  make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
+elif [[ "${ARCH}" == amd64 ]]; then
+  echo "NGC_API_KEY is unset; skipping the nke-cni-ovn debs (this image cannot install OVN offline)"
 else
-  echo "building ARM64 nke-cni-calico debs (${repo_root}/os-image/packages/cni-calico)"
-  bash "${repo_root}/os-image/packages/cni-calico/build-arm64.sh" "${ARTIFACTS_DIR}/debs"
+  echo "skipping the nke-cni-ovn debs: no arm64 lock (this image cannot install OVN offline)"
 fi
 
 # The spire-agent deb: the upstream SPIRE agent and the TPM node attestor
-# plugin, plus the units that run them. Both architectures, unlike the CNI and
-# kubeadm-distro debs above -- every artifact it wraps is published for arm64
-# and its lock pins both. A site cluster attests its nodes by TPM, so the image
+# plugin, plus the units that run them. Its lock pins both architectures.
+# A site cluster attests its nodes by TPM, so the image
 # needs the plugin to join one; without it the agent can only use a join token,
 # which the site cluster never mints.
 echo "building spire-agent deb (${repo_root}/os-image/packages/spire-agent)"

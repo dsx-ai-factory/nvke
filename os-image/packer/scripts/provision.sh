@@ -24,16 +24,14 @@ sudo systemctl enable nke-agent.service
 
 # Stage the CNI debs as a local flat apt repo, so cluster create's `apt-get
 # install nke-cni-...` resolves offline with apt's dependency handling intact.
-# trusted=yes: the content is already on this root fs. amd64 artifacts only.
+# trusted=yes: the content is already on this root fs.
 if [[ -d "${SRC}/debs" ]]; then
   sudo install -d -m 0755 /usr/lib/nke/debs
   sudo install -m 0644 "${SRC}"/debs/*.deb "${SRC}/debs/Packages" /usr/lib/nke/debs/
   echo 'deb [trusted=yes] file:/usr/lib/nke/debs ./' | sudo tee /etc/apt/sources.list.d/nke-local.list >/dev/null
 fi
 
-# Install the Calico manifest package. The content-only ARM64 build writes an
-# `_all.deb` package, while the normal AMD64 build writes an `_amd64.deb`
-# package.
+# Install the Calico manifest package for this image architecture.
 calico_manifest_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nke-cni-calico-manifests-*.deb' -print -quit 2>/dev/null || true)"
 if [[ -n "${calico_manifest_deb}" ]]; then
   sudo dpkg -i "${calico_manifest_deb}"

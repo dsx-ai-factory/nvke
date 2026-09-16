@@ -10,7 +10,7 @@
 #   bundle.sh [--write-lock] --version vX.Y.Z --dist DIR --lock-dir DIR \
 #             --crane PATH [--arch amd64]
 #
-# Default mode builds DIR/vX.Y.Z/ and enforces lock-dir/vX.Y.Z.lock.
+# Default mode builds DIR/vX.Y.Z/ and enforces lock-dir/<arch>/vX.Y.Z.lock.
 # --write-lock resolves everything from upstream and rewrites that lock
 # instead; it never stages a tree.
 set -euo pipefail
@@ -390,10 +390,18 @@ while (($#)); do
 done
 [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "--version must be vX.Y.Z, got '${VERSION}'"
 [[ -n "$DIST" && -n "$LOCK_DIR" && -n "$CRANE" ]] || die "--dist, --lock-dir and --crane are required"
-# The lock is one file per Kubernetes version, with nowhere to record a second
-# architecture's digests.
-[[ "$ARCH" == amd64 ]] || die "--arch ${ARCH}: the lock and the .deb are amd64-only for now"
+case "$ARCH" in
+  amd64|arm64) ;;
+  *) die "--arch ${ARCH}: expected amd64 or arm64" ;;
+esac
 [[ "$(uname -s)" == Linux ]] || die "the container images are listed by the downloaded linux kubeadm binary, so this build host ($(uname -s)) cannot produce a bundle; run on Linux"
+# Both modes run the downloaded kubeadm (resolve_images), so the host has to be
+# the target architecture. There is no cross-build.
+HOST_ARCH="$(uname -m)"
+case "${ARCH}:${HOST_ARCH}" in
+  amd64:x86_64|arm64:aarch64) ;;
+  *) die "--arch ${ARCH} runs the ${ARCH} kubeadm to list its images; this host is ${HOST_ARCH}" ;;
+esac
 command -v "$CRANE" >/dev/null 2>&1 || die "crane not found at ${CRANE}"
 
 MINOR="${VERSION#v}"
@@ -404,7 +412,9 @@ pins_for "$MINOR"
 CRI_TOOLS="v1.${MINOR}.0"
 
 ARCH_DIR="${DIST}/${VERSION}/${ARCH}"
-LOCK_FILE="${LOCK_DIR}/${VERSION}.lock"
+# Per architecture: every artifact URL and every image digest in the lock is
+# arch-specific, so one file per version could only ever hold one of them.
+LOCK_FILE="${LOCK_DIR}/${ARCH}/${VERSION}.lock"
 
 # Before anything is created on disk, so a bad lock leaves no dist tree.
 if ((!WRITE_LOCK)); then
@@ -419,7 +429,7 @@ if ((!WRITE_LOCK)); then
   [[ "$locked_version" == "$VERSION" ]] || die "${LOCK_FILE} locks '${locked_version}', not ${VERSION}"
 fi
 
-mkdir -p "$ARCH_DIR" "$LOCK_DIR"
+mkdir -p "$ARCH_DIR" "$(dirname "$LOCK_FILE")"
 WORK="$(mktemp -d)"
 GPG_HOME=""
 LOCK_TMP=""

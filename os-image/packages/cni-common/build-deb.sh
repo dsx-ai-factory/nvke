@@ -16,7 +16,6 @@ set -euo pipefail
 : "${CNI:?}" "${PRODUCT:?}" "${CONTENT_SPEC:?}" "${CONTENT_KIND:?}"
 
 ARCH="${ARCH:-amd64}"
-CONTENT_ONLY="${CONTENT_ONLY:-false}"
 # Package names carry the stream without a leading v, matching what
 # agent/internal/agent/cni.go asks apt for.
 STREAM="${1#v}"
@@ -54,14 +53,7 @@ build_one() {
   echo "wrote ${OUT_DIR}/${package}_${DEB_REVISION}_${ARCH}.deb"
 }
 
-if [[ "$CONTENT_ONLY" == true ]]; then
-  ARCH=all
-fi
 build_one "$CONTENT_SPEC" "$CONTENT_PACKAGE" "$(dirname "$CONTENT_SPEC")"
-
-if [[ "$CONTENT_ONLY" == true ]]; then
-  exit 0
-fi
 
 sed -e "s|@PACKAGE_NAME@|${IMAGES_PACKAGE}|g" -e "s|@IMG_TGZ@|${IMG_TGZ}|g" \
   -e "s|@PRODUCT@|${PRODUCT}|g" -e "s|@CNI@|${CNI}|g" \

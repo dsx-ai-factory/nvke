@@ -1,0 +1,81 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Package reproducibility
+
+# `make repro-check` builds each package twice into throwaway directories and
+# compares every .deb byte for byte. The packaging pins mtimes and compression
+# so this passes; nothing ran it, so nothing would notice if it stopped.
+#
+# Not a merge gate: it downloads every upstream artifact and builds twice, so
+# it costs minutes rather than seconds. It runs when the packaging changes,
+# weekly otherwise, because the inputs it pins can move underneath us.
+#
+# cni-ovn is not covered: its charts and images need an NGC key CI does not
+# have.
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - "os-image/packages/**"
+      - make/tool-versions.mk
+      - .github/workflows/package-repro.yml
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: Package reproducibility-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  repro:
+    if: github.repository == 'dsx-ai-factory/nke'
+    name: repro-check (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [kubeadm-distro, cni-calico]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.work
+          cache: true
+          cache-dependency-path: |
+            go.work.sum
+            **/go.sum
+
+      # dpkg-scanpackages indexes the built debs; gnupg verifies runc's
+      # clearsigned checksum list.
+      - name: Install the packaging tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq dpkg-dev gnupg
+
+      # Both builds share DIST_DIR, so upstream is fetched once and the second
+      # build measures determinism rather than fetch flakiness. That staging
+      # plus two sets of debs is several GB.
+      - name: Show the disk before building
+        run: df -h /
+
+      - name: Build twice and compare
+        run: make -C os-image/packages/${{ matrix.package }} repro-check
+
+      - name: Show the disk after building
+        if: always()
+        run: df -h /

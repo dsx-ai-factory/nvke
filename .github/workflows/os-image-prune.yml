@@ -1,0 +1,62 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: OS Image Prune
+
+# Delete os-image container versions older than a week from GHCR.
+#
+# The rules, and what they protect, are in os-image/prune-ghcr-versions.sh.
+# Run it by hand to see what would go; it reports unless given --delete.
+on:
+  schedule:
+    # 05:40 UTC. Clear of the E2E block (02:00-03:15, 14:00-15:15) and of
+    # govulncheck at 06:30.
+    - cron: '40 5 * * *'
+  workflow_dispatch:
+    inputs:
+      delete:
+        description: "Actually delete. Off reports what would go and changes nothing."
+        required: false
+        default: false
+        type: boolean
+      keep_days:
+        description: "Keep everything newer than this many days."
+        required: false
+        default: "7"
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: OS Image Prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    if: github.repository == 'dsx-ai-factory/nke'
+    name: Prune old versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Deleting a version needs write on the package, which is linked to this
+      # repository.
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A dispatch reports by default and deletes only when asked. The schedule
+      # is the thing that actually prunes.
+      - name: Prune
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP_DAYS: ${{ github.event.inputs.keep_days || '7' }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event.inputs.delete }}" == "true" ]]; then
+            ./os-image/prune-ghcr-versions.sh --delete
+          else
+            ./os-image/prune-ghcr-versions.sh
+          fi

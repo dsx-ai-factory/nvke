@@ -27,6 +27,10 @@ OUT_DIR ?=
 # upstream version does not.
 DEB_REVISION ?= 1
 
+# Target architecture, amd64 or arm64. Nothing here runs a downloaded binary,
+# so an arm64 build works on an amd64 host.
+ARCH ?= amd64
+
 DIST_DIR ?= $(CURDIR)/dist
 BIN_DIR ?= $(CURDIR)/bin
 LOCK_DIR ?= $(CURDIR)/lock
@@ -34,29 +38,17 @@ BUNDLE_DEPS ?=
 
 ##@ Build
 
-.PHONY: debs content-debs
+.PHONY: debs
 debs: check-host check-deb-tools bundle ## Build the content and images debs into OUT_DIR, and reindex it.
 	@# A .deb left from a different VERSIONS would be indexed too.
 	rm -f "$(OUT_DIR)"/nke-$(CNI)-*.deb
 	@set -eu; \
 	for v in $(VERSIONS); do \
 		CNI="$(CNI)" PRODUCT="$(PRODUCT)" CONTENT_SPEC="$(CONTENT_SPEC)" CONTENT_KIND="$(CONTENT_KIND)" \
-		DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(BIN_DIR)/nfpm" \
+		DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(BIN_DIR)/nfpm" ARCH="$(ARCH)" \
 			$(COMMON_DIR)/build-deb.sh "$$v" "$(DIST_DIR)/$$v" "$(OUT_DIR)"; \
 	done
 	@# Index everything in OUT_DIR: the CNI packages share it.
-	@cd "$(OUT_DIR)" && dpkg-scanpackages . /dev/null >Packages
-	@echo "wrote $(OUT_DIR)/Packages"
-
-content-debs: check-host check-deb-tools ## Build only the architecture-independent content debs.
-	rm -f "$(OUT_DIR)"/nke-$(CNI)-$(CONTENT_KIND)-*.deb
-	@set -eu; \
-	for v in $(VERSIONS); do \
-		./bundle.sh --content-only --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane ""; \
-		CNI="$(CNI)" PRODUCT="$(PRODUCT)" CONTENT_SPEC="$(CONTENT_SPEC)" CONTENT_KIND="$(CONTENT_KIND)" \
-		DEB_REVISION="$(DEB_REVISION)" CONTENT_ONLY=true NFPM_BIN="$(BIN_DIR)/nfpm" \
-			$(COMMON_DIR)/build-deb.sh "$$v" "$(DIST_DIR)/$$v" "$(OUT_DIR)"; \
-	done
 	@cd "$(OUT_DIR)" && dpkg-scanpackages . /dev/null >Packages
 	@echo "wrote $(OUT_DIR)/Packages"
 
@@ -64,14 +56,14 @@ content-debs: check-host check-deb-tools ## Build only the architecture-independ
 bundle: check-host $(BUNDLE_DEPS) $(BIN_DIR)/crane ## Download, verify and stage the upstream artifacts into DIST_DIR.
 	@set -eu; \
 	for v in $(VERSIONS); do \
-		./bundle.sh --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane"; \
+		./bundle.sh --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane" --arch "$(ARCH)"; \
 	done
 
 .PHONY: lock
-lock: check-host $(BUNDLE_DEPS) $(BIN_DIR)/crane ## Regenerate lock/<version>.lock from upstream. Review the diff, then commit it.
+lock: check-host $(BUNDLE_DEPS) $(BIN_DIR)/crane ## Regenerate lock/$(ARCH)/<version>.lock from upstream. Review the diff, then commit it.
 	@set -eu; \
 	for v in $(VERSIONS); do \
-		./bundle.sh --write-lock --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane"; \
+		./bundle.sh --write-lock --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane" --arch "$(ARCH)"; \
 	done
 	@echo
 	@echo "Review the lock diff before committing it:"
@@ -82,8 +74,8 @@ repro-check: ## Build `debs` twice into throwaway OUT_DIRs and diff every .deb b
 	@set -eu; \
 	a="$$(mktemp -d)"; b="$$(mktemp -d)"; \
 	trap 'rm -rf "$$a" "$$b"' EXIT; \
-	$(MAKE) debs OUT_DIR="$$a" VERSIONS="$(VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)"; \
-	$(MAKE) debs OUT_DIR="$$b" VERSIONS="$(VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)"; \
+	$(MAKE) debs OUT_DIR="$$a" VERSIONS="$(VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)" ARCH="$(ARCH)"; \
+	$(MAKE) debs OUT_DIR="$$b" VERSIONS="$(VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)" ARCH="$(ARCH)"; \
 	diffs=""; \
 	for f in "$$a"/*.deb; do \
 		name="$$(basename "$$f")"; \
@@ -103,8 +95,10 @@ $(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release in
 	base="https://github.com/google/go-containerregistry/releases/download/v$(CRANE_VERSION)"; \
 	tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp"' EXIT; \
-	curl -fsSL -o "$$tmp/$$archive" "$$base/$$archive"; \
-	curl -fsSL -o "$$tmp/checksums.txt" "$$base/checksums.txt"; \
+	curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 \
+		-o "$$tmp/$$archive" "$$base/$$archive"; \
+	curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 \
+		-o "$$tmp/checksums.txt" "$$base/checksums.txt"; \
 	(cd "$$tmp" && grep " $$archive\$$" checksums.txt | sha256sum -c); \
 	tar -xzf "$$tmp/$$archive" -C "$$tmp" crane; \
 	chmod +x "$$tmp/crane"; \

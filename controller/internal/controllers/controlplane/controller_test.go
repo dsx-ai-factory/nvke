@@ -363,11 +363,14 @@ func createNodeSet(ctx context.Context, t *testing.T, database db.DB, nodePoolID
 
 // newNode creates a new Node struct with sensible defaults for testing.
 // By default, nodes are healthy (KubernetesReady=True, Provisioned=True, NodeAgentReady=True, Pending=False).
-func newNode(nodePoolID, nodeSetID uuid.UUID, name string, opts ...nodeOpt) db.Node {
+func newNode(nodePool db.NodePool, nodeSetID uuid.UUID, name string, opts ...nodeOpt) db.Node {
 	n := db.Node{
 		ID:              uuid.New(),
-		NodePoolID:      nodePoolID,
+		NodePoolID:      nodePool.ID,
 		NodeSetID:       nodeSetID,
+		ClusterID:       nodePool.ClusterID,
+		ControlPlane:    nodePool.ControlPlane,
+		InstanceTypeID:  nodePool.InstanceTypeID,
 		Name:            name,
 		ForgeInstanceID: "forge-instance-" + name,
 		ForgeMachineID:  "forge-machine-" + name,
@@ -388,7 +391,9 @@ func newNode(nodePoolID, nodeSetID uuid.UUID, name string, opts ...nodeOpt) db.N
 // createNode stores a Node in the database.
 func createNode(ctx context.Context, t *testing.T, database db.DB, nodePoolID, nodeSetID uuid.UUID, name string, opts ...nodeOpt) db.Node {
 	t.Helper()
-	node := newNode(nodePoolID, nodeSetID, name, opts...)
+	nodePool, err := database.GetNodePool(ctx, nodePoolID)
+	require.NoError(t, err)
+	node := newNode(nodePool, nodeSetID, name, opts...)
 	created, err := database.CreateNode(ctx, &node)
 	require.NoError(t, err)
 	return created
@@ -494,7 +499,7 @@ func newFakeNodePoolController(database db.DB, logger *slog.Logger) *controller 
 
 			// Create missing nodes in pending state
 			for i := actualCount; i < nodePool.DesiredCount; i++ {
-				node := newNode(nodePool.ID, *nodePool.CurrentNodeSetID, fmt.Sprintf("node-%d", nodeCounter),
+				node := newNode(nodePool, *nodePool.CurrentNodeSetID, fmt.Sprintf("node-%d", nodeCounter),
 					func(n *db.Node) {
 						n.Conditions.Pending = db.Condition{Status: db.ConditionStatusTrue}
 						n.Conditions.KubernetesReady = db.Condition{Status: db.ConditionStatusFalse}

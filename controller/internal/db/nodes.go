@@ -215,7 +215,7 @@ func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Nod
 		query = query.Where("node.node_set_id = ?", filters.NodeSetID)
 	}
 	if filters.ClusterID != nil {
-		query = query.Where("COALESCE(np.cluster_id, node.cluster_id) = ?", filters.ClusterID)
+		query = query.Where("node.cluster_id = ?", filters.ClusterID)
 	}
 	if filters.SiteID != nil {
 		query = query.Where("c.site_id = ?", filters.SiteID)

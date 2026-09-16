@@ -378,7 +378,18 @@ func (b *bundleRun) exec(t *testing.T, args ...string) (string, error) {
 	return string(out), err
 }
 
-func (b *bundleRun) lockPath() string { return filepath.Join(b.lockDir, fixtureVersion+".lock") }
+// The lock is per architecture; these fixtures are amd64.
+func (b *bundleRun) lockPath() string {
+	return filepath.Join(b.lockDir, "amd64", fixtureVersion+".lock")
+}
+
+// writeLock puts a lock where bundle.sh will look for it, creating the
+// architecture directory that os.WriteFile will not.
+func (b *bundleRun) writeLock(t *testing.T, body string) {
+	t.Helper()
+	require.NoError(t, os.MkdirAll(filepath.Dir(b.lockPath()), 0o755))
+	require.NoError(t, os.WriteFile(b.lockPath(), []byte(body), 0o644))
+}
 func (b *bundleRun) archDir() string  { return filepath.Join(b.dist, fixtureVersion, "amd64") }
 func (b *bundleRun) stageDir() string { return filepath.Join(b.dist, fixtureVersion, "stage") }
 
@@ -417,16 +428,41 @@ func requireLinux(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skipf("bundle.sh refuses to run on %s", runtime.GOOS)
 	}
+	// The fixture server serves amd64 artifact paths, and bundle.sh runs the
+	// downloaded kubeadm, so these cases need an amd64 host. The arm64 lock is
+	// covered by building it, not by these fixtures.
+	if runtime.GOARCH != "amd64" {
+		t.Skipf("the fixtures are amd64; this host is %s", runtime.GOARCH)
+	}
 }
 
-// TestBundleRejectsOtherArch runs everywhere: the arch check comes before the
-// Linux check, so it is the one refusal a developer laptop can exercise.
-func TestBundleRejectsOtherArch(t *testing.T) {
+// TestBundleRejectsUnknownArch runs everywhere: the arch check comes before
+// the Linux check, so it is the one refusal a developer laptop can exercise.
+func TestBundleRejectsUnknownArch(t *testing.T) {
 	requireBundleTools(t)
 	b := newBundleRun(t, newGPGKey(t, "runc test <runc@example.invalid>"), newGPGKey(t, "runc test <runc@example.invalid>"))
-	out, err := b.exec(t, "--arch", "arm64")
+	out, err := b.exec(t, "--arch", "riscv64")
 	require.Error(t, err)
-	assert.Contains(t, out, "amd64-only")
+	assert.Contains(t, out, "expected amd64 or arm64")
+}
+
+// TestBundleRejectsForeignArch pins the refusal to cross-build: resolve_images
+// runs the downloaded kubeadm, so the host must be the target architecture.
+func TestBundleRejectsForeignArch(t *testing.T) {
+	requireBundleTools(t)
+	// Not requireLinux: this case is valid on an arm64 Linux host too, which
+	// requireLinux skips because the fixtures are amd64.
+	if runtime.GOOS != "linux" {
+		t.Skipf("the Linux check fires first on %s", runtime.GOOS)
+	}
+	foreign := "arm64"
+	if runtime.GOARCH == "arm64" {
+		foreign = "amd64"
+	}
+	b := newBundleRun(t, newGPGKey(t, "runc test <runc@example.invalid>"), newGPGKey(t, "runc test <runc@example.invalid>"))
+	out, err := b.exec(t, "--arch", foreign)
+	require.Error(t, err)
+	assert.Contains(t, out, "this host is")
 }
 
 // TestBundleRefusesNonLinux pins the early, clear failure on a host that
@@ -468,7 +504,7 @@ func TestBundleBuild(t *testing.T) {
 	signer := newGPGKey(t, "runc test <runc@example.invalid>")
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(b.wantLock()), 0o644))
+	b.writeLock(t, b.wantLock())
 
 	out, err := b.exec(t)
 	require.NoErrorf(t, err, "bundle.sh: %s", out)
@@ -553,7 +589,7 @@ func TestBundleWarmCacheMakesNoRequests(t *testing.T) {
 	signer := newGPGKey(t, "runc test <runc@example.invalid>")
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(b.wantLock()), 0o644))
+	b.writeLock(t, b.wantLock())
 
 	out, err := b.exec(t)
 	require.NoErrorf(t, err, "first build: %s", out)
@@ -582,7 +618,7 @@ func TestBundleRebuildsCorruptedImageArchive(t *testing.T) {
 	signer := newGPGKey(t, "runc test <runc@example.invalid>")
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(b.wantLock()), 0o644))
+	b.writeLock(t, b.wantLock())
 
 	out, err := b.exec(t)
 	require.NoErrorf(t, err, "first build: %s", out)
@@ -615,7 +651,7 @@ func TestBundleRejectsArtifactDigestDrift(t *testing.T) {
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
 	lock := strings.Replace(b.wantLock(), b.server.digestOf(helmPath()), strings.Repeat("c", 64), 1)
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(lock), 0o644))
+	b.writeLock(t, lock)
 
 	out, err := b.exec(t)
 	require.Error(t, err, "a lock digest that does not match upstream must fail the build")
@@ -632,7 +668,7 @@ func TestBundleRejectsImageDrift(t *testing.T) {
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
 	lock := strings.Replace(b.wantLock(), fixtureImages[0].digest, "sha256:"+strings.Repeat("d", 64), 1)
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(lock), 0o644))
+	b.writeLock(t, lock)
 
 	out, err := b.exec(t)
 	require.Error(t, err, "an image digest that differs from the lock must fail the build")
@@ -701,7 +737,7 @@ func TestBundleRepackIsOrderIndependent(t *testing.T) {
 	signer := newGPGKey(t, "runc test <runc@example.invalid>")
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(b.wantLock()), 0o644))
+	b.writeLock(t, b.wantLock())
 
 	out, err := b.exec(t)
 	require.NoErrorf(t, err, "first build: %s", out)
@@ -734,7 +770,7 @@ func TestBundleRejectsSurvivingPlaceholder(t *testing.T) {
 	signer := newGPGKey(t, "runc test <runc@example.invalid>")
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(b.wantLock()), 0o644))
+	b.writeLock(t, b.wantLock())
 	b.env = []string{"FAKE_CRANE_STRAY_PLACEHOLDER=1"}
 
 	out, err := b.exec(t)
@@ -805,7 +841,7 @@ func TestBundleRejectsNestedCNIMember(t *testing.T) {
 		fixtureCNI, fixtureCNI)
 	b.server.replaceArtifact(cni, tarGz(t, map[string]string{"nested/dir/bridge": "fake bridge\n"}))
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(b.wantLock()), 0o644))
+	b.writeLock(t, b.wantLock())
 
 	out, err := b.exec(t)
 	require.Error(t, err, "a nested member in the CNI archive must be refused")
@@ -855,7 +891,7 @@ func TestBundleRejectsMismatchedLockVersion(t *testing.T) {
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
 	lock := strings.Replace(b.wantLock(), "kubernetes "+fixtureVersion, "kubernetes v1.35.3", 1)
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(lock), 0o644))
+	b.writeLock(t, lock)
 
 	out, err := b.exec(t)
 	require.Error(t, err, "a lock for another version must be refused")
@@ -873,7 +909,7 @@ func TestBundleRejectsExtraLockArtifact(t *testing.T) {
 	b := newBundleRun(t, signer, signer)
 	require.NoError(t, os.MkdirAll(b.lockDir, 0o755))
 	lock := b.wantLock() + "artifact zzz-extra " + strings.Repeat("e", 64) + " https://example.invalid/zzz\n"
-	require.NoError(t, os.WriteFile(b.lockPath(), []byte(lock), 0o644))
+	b.writeLock(t, lock)
 
 	out, err := b.exec(t)
 	require.Error(t, err, "an artifact row nothing downloaded must fail the build")

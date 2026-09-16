@@ -48,6 +48,11 @@ on:
         required: false
         default: nico-vms && happy-path
         type: string
+      os-image-tag:
+        description: "Boot the node image this repository built, e.g. v0.1.0-rc.1. Empty keeps the profile's pinned CloudFront image."
+        required: false
+        default: ""
+        type: string
 
 permissions: {}
 
@@ -98,6 +103,8 @@ jobs:
       KIND_CLUSTER_NAME: cwe-nico-vms
       NKE_E2E_RUN_ID: github-nico-vms-${{ github.run_id }}-${{ github.run_attempt }}
       NKE_E2E_LABEL_FILTER: ${{ github.event.inputs.label-filter || 'nico-vms && happy-path' }}
+      # Empty on a schedule or a push, so those keep the pinned image.
+      NKE_E2E_OS_IMAGE_TAG: ${{ github.event.inputs.os-image-tag }}
       NKE_E2E_GINKGO_TIMEOUT: 270m
       # One upgrade hop (1.34 -> 1.35); the second recycles all three control-plane nodes again, ~45 min.
       NKE_E2E_UPGRADE_HOPS: "1"
@@ -155,6 +162,11 @@ jobs:
             echo "kind_version=$(make --no-print-directory print-KIND_VERSION)"
             echo "kubectl_version=$(make --no-print-directory print-KUBECTL_VERSION)"
           } >> "$GITHUB_OUTPUT"
+
+      # Only used when os-image-tag is set; installing it always keeps the
+      # step list the same either way.
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d # v2.0.1
 
       - name: Set up Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1

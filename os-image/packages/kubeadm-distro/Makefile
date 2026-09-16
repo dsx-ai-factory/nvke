@@ -29,6 +29,10 @@ K8S_VERSIONS_V := $(foreach v,$(K8S_VERSIONS),v$(patsubst v%,%,$(v)))
 # Where the .deb files and the apt index are written. Required by `debs`.
 OUT_DIR ?=
 
+# Target architecture, amd64 or arm64. bundle.sh runs the downloaded kubeadm
+# to list its images, so this has to match the host: there is no cross-build.
+ARCH ?= amd64
+
 # Debian packaging revision. Bump when the package content changes but the
 # Kubernetes patch does not.
 DEB_REVISION ?= 1
@@ -37,8 +41,8 @@ DEB_REVISION ?= 1
 DIST_DIR ?= $(CURDIR)/dist
 BIN_DIR ?= $(CURDIR)/bin
 
-# The committed lock files, one per Kubernetes version. The build refuses to
-# run without them.
+# The committed lock files, one per Kubernetes version per architecture. The
+# build refuses to run without them.
 LOCK_DIR ?= $(CURDIR)/lock
 
 ##@ Build
@@ -50,7 +54,7 @@ debs: check-host check-deb-tools bundle ## Build one .deb per K8S_VERSIONS into 
 	rm -f "$(OUT_DIR)"/nke-kubeadm-distro-*.deb "$(OUT_DIR)/Packages"
 	@set -eu; \
 	for v in $(K8S_VERSIONS_V); do \
-		PEER_VERSIONS="$(K8S_VERSIONS_V)" DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(BIN_DIR)/nfpm" \
+		PEER_VERSIONS="$(K8S_VERSIONS_V)" DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(BIN_DIR)/nfpm" ARCH="$(ARCH)" \
 			./packaging/build-deb.sh "$$v" "$(DIST_DIR)/$$v" "$(OUT_DIR)"; \
 	done
 	@cd "$(OUT_DIR)" && dpkg-scanpackages . /dev/null >Packages
@@ -60,7 +64,7 @@ debs: check-host check-deb-tools bundle ## Build one .deb per K8S_VERSIONS into 
 bundle: check-host $(BIN_DIR)/crane ## Download, verify and stage the upstream artifacts into DIST_DIR.
 	@set -eu; \
 	for v in $(K8S_VERSIONS_V); do \
-		./bundle.sh --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane"; \
+		./bundle.sh --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane" --arch "$(ARCH)"; \
 	done
 
 .PHONY: repro-check
@@ -76,9 +80,9 @@ repro-check: ## Build `debs` twice into throwaway OUT_DIRs and diff every output
 	a="$$(mktemp -d)"; b="$$(mktemp -d)"; \
 	trap 'rm -rf "$$a" "$$b"' EXIT; \
 	echo "kubeadm-distro: first build -> $$a"; \
-	$(MAKE) debs OUT_DIR="$$a" K8S_VERSIONS="$(K8S_VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)"; \
+	$(MAKE) debs OUT_DIR="$$a" K8S_VERSIONS="$(K8S_VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)" ARCH="$(ARCH)"; \
 	echo "kubeadm-distro: second build -> $$b"; \
-	$(MAKE) debs OUT_DIR="$$b" K8S_VERSIONS="$(K8S_VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)"; \
+	$(MAKE) debs OUT_DIR="$$b" K8S_VERSIONS="$(K8S_VERSIONS)" DEB_REVISION="$(DEB_REVISION)" DIST_DIR="$(DIST_DIR)" ARCH="$(ARCH)"; \
 	sort "$$a/Packages" >"$$a/Packages.sorted"; \
 	sort "$$b/Packages" >"$$b/Packages.sorted"; \
 	diffs=""; \
@@ -101,12 +105,12 @@ repro-check: ## Build `debs` twice into throwaway OUT_DIRs and diff every output
 	echo "kubeadm-distro: reproducible: every .deb and the sorted Packages index matched byte-for-byte"
 
 .PHONY: lock
-lock: check-host $(BIN_DIR)/crane ## Regenerate lock/<version>.lock from upstream. Review the diff, then commit it.
+lock: check-host $(BIN_DIR)/crane ## Regenerate lock/$(ARCH)/<version>.lock from upstream. Review the diff, then commit it.
 	@# Needs Linux and network: it downloads every artifact, runs the verified
 	@# kubeadm for its image list, and resolves each tag to a digest.
 	@set -eu; \
 	for v in $(K8S_VERSIONS_V); do \
-		./bundle.sh --write-lock --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane"; \
+		./bundle.sh --write-lock --version "$$v" --dist "$(DIST_DIR)" --lock-dir "$(LOCK_DIR)" --crane "$(BIN_DIR)/crane" --arch "$(ARCH)"; \
 	done
 	@echo
 	@echo "Review the lock diff before committing it:"
@@ -121,8 +125,10 @@ $(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release in
 	base="https://github.com/google/go-containerregistry/releases/download/v$(CRANE_VERSION)"; \
 	tmp="$$(mktemp -d)"; \
 	trap 'rm -rf "$$tmp"' EXIT; \
-	curl -fsSL -o "$$tmp/$$archive" "$$base/$$archive"; \
-	curl -fsSL -o "$$tmp/checksums.txt" "$$base/checksums.txt"; \
+	curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 \
+		-o "$$tmp/$$archive" "$$base/$$archive"; \
+	curl -fsSL --retry 3 --retry-all-errors --retry-delay 2 \
+		-o "$$tmp/checksums.txt" "$$base/checksums.txt"; \
 	(cd "$$tmp" && grep " $$archive\$$" checksums.txt | sha256sum -c); \
 	tar -xzf "$$tmp/$$archive" -C "$$tmp" crane; \
 	chmod +x "$$tmp/crane"; \
