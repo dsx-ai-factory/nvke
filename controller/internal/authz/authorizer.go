@@ -131,6 +131,17 @@ type Query struct {
 	// schema all describe the GET, so a context saying "HEAD" would be the one
 	// field of the query disagreeing with the rest of it.
 	Method string
+
+	// ClaimRoles is auth.Principal.ClaimRoles, copied verbatim by the
+	// middleware -- Cedar role names ("operator", not NKE::Role::"operator")
+	// this principal's issuer derived from the verified token, on top of
+	// roles.json's static parents. Nil when the issuer has no Roles config, or
+	// nothing matched. An engine that reads it computes the extra ancestry
+	// edges per request (Local.Authorize's principalAndResourceOverlay,
+	// local.go); an engine that ignores it degrades to today's static-only
+	// role assignment, which is the correct default for one that hasn't
+	// implemented this yet (design-authz-claim-based-roles.md, §3.2, §3.3).
+	ClaimRoles []string
 }
 
 // Decision is one answer. Allow is the only value that lets a request through;

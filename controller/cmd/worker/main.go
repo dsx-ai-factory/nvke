@@ -119,12 +119,28 @@ func main() {
 		}
 	}()
 
+	// Read before auth.Setup, independent of and prior to authz.Setup: a cheap
+	// read of roles.json's declared NKE::Role ids, not a dependency on the
+	// policy engine having been built. Threaded into auth.Options.KnownRoles
+	// so a RoleMapping entry naming an undeclared role fails startup here
+	// rather than silently granting nothing forever
+	// (design-authz-claim-based-roles.md, §7).
+	var knownRoles map[string]struct{}
+	if cfg.AuthzBundlePath != "" {
+		knownRoles, err = authz.DeclaredRoleNames(cfg.AuthzBundlePath)
+		if err != nil {
+			logger.Error("Failed to read declared authz roles", "error", err)
+			os.Exit(1)
+		}
+	}
+
 	// Before the SPIFFE wait and the migrations: a bad configuration should cost a
 	// restart, not a migrated schema.
 	authenticator, err := auth.Setup(ctx, auth.Options{
 		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,
+		KnownRoles: knownRoles,
 	}, logger)
 	if err != nil {
 		logger.Error("Failed to set up API authentication", "error", err)
@@ -408,7 +424,8 @@ func main() {
 		csr.NewRegistrar(dbInstance, logger.With("logger", "tenant-csr-controller")),
 	}
 	if !cfg.NodeHealthCheckDisabled {
-		tenantRegistrars = append(tenantRegistrars,
+		tenantRegistrars = append(
+			tenantRegistrars,
 			tenantnodestatus.NewRegistrar(dbInstance, logger.With("logger", "tenant-node-health-controller")),
 			tenantnoderemediation.NewRegistrar(
 				cfg,

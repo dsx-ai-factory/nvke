@@ -125,8 +125,11 @@ type issuerEntry struct {
 	audiences  []string
 	algorithms []string
 	admit      *admitRules
-	keys       KeySource
-	parser     *jwt.Parser
+	// roles is nil when the issuer has no Roles config -- rolesFor is
+	// nil-safe against that, so Authenticate calls it unconditionally.
+	roles  *roleRules
+	keys   KeySource
+	parser *jwt.Parser
 }
 
 // failure attributes a failure to this entry. The two reasons meaning "no issuer
@@ -158,7 +161,14 @@ func NewVerifier(cfg *Config, sources map[string]KeySource) (*Verifier, error) {
 	if cfg == nil {
 		return nil, errors.New("authentication config is nil")
 	}
-	if err := cfg.Validate(); err != nil {
+	// nil: this is NewVerifier's own belt-and-braces re-validation of a config
+	// the caller should already have run through Load (and its real
+	// knownRoles), not the authoritative pass -- see Config.Validate and
+	// Load's doc comments. A Roles entry naming an undeclared role was already
+	// refused there; skipping that specific check again here just means a
+	// Config built directly (bypassing Load, as many tests do) isn't held to a
+	// bundle it never named.
+	if err := cfg.Validate(nil); err != nil {
 		return nil, fmt.Errorf("invalid authentication config: %w", err)
 	}
 
@@ -176,6 +186,11 @@ func NewVerifier(cfg *Config, sources map[string]KeySource) (*Verifier, error) {
 			return nil, fmt.Errorf("issuer %q (%s): admit: %w", iss.Name, iss.Issuer, err)
 		}
 
+		roles, err := iss.Roles.resolve(admit)
+		if err != nil {
+			return nil, fmt.Errorf("issuer %q (%s): roles: %w", iss.Name, iss.Issuer, err)
+		}
+
 		// Cloned because jwt.WithAudience keeps the slice rather than copying it.
 		audiences := slices.Clone(iss.EffectiveAudiences(cfg.Audiences))
 		algorithms := slices.Clone(iss.Algorithms)
@@ -185,6 +200,7 @@ func NewVerifier(cfg *Config, sources map[string]KeySource) (*Verifier, error) {
 			audiences:  audiences,
 			algorithms: algorithms,
 			admit:      admit,
+			roles:      roles,
 			keys:       src,
 			parser: jwt.NewParser(
 				// golang-jwt treats "exp" as optional by default, so without this
@@ -301,7 +317,13 @@ func (v *Verifier) Admit(p *Principal) error {
 	return nil
 }
 
-// Authenticate verifies a token and admits the principal behind it.
+// Authenticate verifies a token, admits the principal behind it, and only
+// then derives its claim-based roles.
+//
+// Role derivation runs after Admit succeeds, not inside Verify, deliberately
+// (design-authz-claim-based-roles.md, §3.2): a principal Admit refuses never
+// reaches role derivation at all, so a refused request never pays for
+// evaluating a Roles rule it was always going to be denied regardless of.
 func (v *Verifier) Authenticate(ctx context.Context, token string) (*Principal, error) {
 	p, err := v.Verify(ctx, token)
 	if err != nil {
@@ -310,6 +332,11 @@ func (v *Verifier) Authenticate(ctx context.Context, token string) (*Principal, 
 	if err := v.Admit(p); err != nil {
 		return nil, err
 	}
+	// Present: Admit already resolved this same entry via the identical
+	// v.entries[p.Issuer] lookup, and returned an error rather than reaching
+	// here if it were absent.
+	entry := v.entries[p.Issuer]
+	p.ClaimRoles = entry.roles.rolesFor(p.Claims, p.Subject)
 	return p, nil
 }
 

@@ -22,6 +22,13 @@ type Options struct {
 
 	// Recorder counts decisions. Optional: nil records nothing.
 	Recorder Recorder
+
+	// KnownRoles is the declared NKE::Role set authz.DeclaredRoleNames read
+	// from the policy bundle, threaded through to Config.Validate so a
+	// RoleMapping entry naming an undeclared role fails startup
+	// (design-authz-claim-based-roles.md, §7). nil means authorization is
+	// disabled for this deployment -- see Config.Validate for what that skips.
+	KnownRoles map[string]struct{}
 }
 
 // Setup builds the Authenticator for a deployment, or reports that
@@ -38,7 +45,7 @@ func Setup(ctx context.Context, opts Options, logger *slog.Logger) (*Authenticat
 		return nil, nil //nolint:nilnil // a nil Authenticator and a nil error is exactly "disabled"
 	}
 
-	cfg, err := Load(opts.ConfigPath)
+	cfg, err := Load(opts.ConfigPath, opts.KnownRoles)
 	if err != nil {
 		return nil, fmt.Errorf("loading authentication config %q: %w", opts.ConfigPath, err)
 	}

@@ -117,7 +117,7 @@ func writeConfig(t *testing.T, contents string) string {
 func TestLoadExampleConfig(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := auth.Load(writeConfig(t, exampleConfig))
+	cfg, err := auth.Load(writeConfig(t, exampleConfig), nil)
 	require.NoError(t, err)
 	require.NotNil(t, cfg)
 
@@ -156,14 +156,14 @@ func TestLoadPathContract(t *testing.T) {
 	t.Run("empty path returns ErrEmptyPath so the caller can disable", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load("")
+		_, err := auth.Load("", nil)
 		require.ErrorIs(t, err, auth.ErrEmptyPath)
 	})
 
 	t.Run("whitespace-only path returns ErrEmptyPath", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load("   ")
+		_, err := auth.Load("   ", nil)
 		require.ErrorIs(t, err, auth.ErrEmptyPath)
 	})
 
@@ -171,7 +171,7 @@ func TestLoadPathContract(t *testing.T) {
 		t.Parallel()
 
 		path := filepath.Join(t.TempDir(), "does-not-exist.yaml")
-		_, err := auth.Load(path)
+		_, err := auth.Load(path, nil)
 		require.Error(t, err)
 		require.NotErrorIs(t, err, auth.ErrEmptyPath,
 			"a typo'd mountPath must be fatal, not silently disabled")
@@ -186,7 +186,7 @@ func TestLoadPathContract(t *testing.T) {
 		}
 		path := writeConfig(t, exampleConfig)
 		require.NoError(t, os.Chmod(path, 0o000))
-		_, err := auth.Load(path)
+		_, err := auth.Load(path, nil)
 		require.Error(t, err)
 		require.NotErrorIs(t, err, auth.ErrEmptyPath)
 		require.ErrorIs(t, err, fs.ErrPermission)
@@ -195,7 +195,7 @@ func TestLoadPathContract(t *testing.T) {
 	t.Run("empty file errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load(writeConfig(t, ""))
+		_, err := auth.Load(writeConfig(t, ""), nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "is empty")
 	})
@@ -203,7 +203,7 @@ func TestLoadPathContract(t *testing.T) {
 	t.Run("malformed YAML errors", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := auth.Load(writeConfig(t, "audience: \"unterminated\nissuers: [\n"))
+		_, err := auth.Load(writeConfig(t, "audience: \"unterminated\nissuers: [\n"), nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "parse authentication config")
 	})
@@ -212,7 +212,7 @@ func TestLoadPathContract(t *testing.T) {
 		t.Parallel()
 
 		// A decoder would silently drop the second document.
-		_, err := auth.Load(writeConfig(t, exampleConfig+"\n---\naudience: \"https://elsewhere.example.com\"\n"))
+		_, err := auth.Load(writeConfig(t, exampleConfig+"\n---\naudience: \"https://elsewhere.example.com\"\n"), nil)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "more than one YAML document")
 	})
@@ -304,7 +304,7 @@ issuers:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := auth.Load(writeConfig(t, tt.yaml))
+			_, err := auth.Load(writeConfig(t, tt.yaml), nil)
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
 		})
@@ -344,7 +344,7 @@ func TestLoadRejectsCaseVariantKeys(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := auth.Load(writeConfig(t, tt.yaml))
+			_, err := auth.Load(writeConfig(t, tt.yaml), nil)
 			require.Error(t, err, "a case-variant key must not load")
 			assert.Contains(t, err.Error(), "unknown field",
 				"the error has to name the key so an operator can find the typo")
@@ -366,7 +366,7 @@ issuers:
     jwks: {uri: "https://kubernetes.default.svc/openid/v1/jwks"}
     algorithms: [RS256]
     admit: {serviceAccounts: [{namespace: nke-clients}]}
-`))
+`), nil)
 	require.Error(t, err, "a duplicate key must not resolve to last-wins")
 }
 
@@ -399,7 +399,7 @@ func TestLoadRejectsNamesKubernetesWouldRefuse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			_, err := auth.Load(writeConfig(t, tt.yaml))
+			_, err := auth.Load(writeConfig(t, tt.yaml), nil)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				return
@@ -447,7 +447,7 @@ issuers:
 				content = strings.ReplaceAll(content, token, value)
 			}
 
-			_, err := auth.Load(writeConfig(t, content))
+			_, err := auth.Load(writeConfig(t, content), nil)
 			require.Error(t, err, "a padded %s must not load", field)
 			assert.Contains(t, err.Error(), "whitespace",
 				"the error has to name the cause; a padded value is invisible in a diff")
@@ -511,7 +511,7 @@ issuers:
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg, err := auth.Load(writeConfig(t, tt.header+body))
+			cfg, err := auth.Load(writeConfig(t, tt.header+body), nil)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				assert.Equal(t, auth.ConfigAPIVersion, cfg.APIVersion)
@@ -545,7 +545,7 @@ func TestValidateDoesNotRequireTypeMeta(t *testing.T) {
 		}},
 	}
 
-	require.NoError(t, cfg.Validate())
+	require.NoError(t, cfg.Validate(nil))
 }
 
 // An empty wantErr means the configuration must load.
@@ -561,7 +561,7 @@ func runValidationCases(t *testing.T, tests []validationCase) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			cfg, err := auth.Load(writeConfig(t, tt.yaml))
+			cfg, err := auth.Load(writeConfig(t, tt.yaml), nil)
 			if tt.wantErr == "" {
 				require.NoError(t, err)
 				assert.NotNil(t, cfg)
@@ -1218,7 +1218,7 @@ issuers:
     jwks: {uri: "https://c.example.com/keys"}
     algorithms: [RS256]
     admit: {serviceAccounts: [{namespace: nke-a}]}
-`))
+`), nil)
 	require.Error(t, err)
 	assert.Nil(t, cfg)
 	assert.Contains(t, err.Error(), "issuers[2] (issuer-c)")
@@ -1280,11 +1280,11 @@ func TestIssuerEffectiveAudiences(t *testing.T) {
 func TestValidateDoesNotMutate(t *testing.T) {
 	t.Parallel()
 
-	cfg, err := auth.Load(writeConfig(t, exampleConfig))
+	cfg, err := auth.Load(writeConfig(t, exampleConfig), nil)
 	require.NoError(t, err)
 
 	before := *cfg.Issuers[1].Admit.SPIFFE
-	require.NoError(t, cfg.Validate())
+	require.NoError(t, cfg.Validate(nil))
 	assert.Equal(t, before, *cfg.Issuers[1].Admit.SPIFFE, "Validate rewrote the operator's rule")
 }
 
@@ -1292,5 +1292,5 @@ func TestValidateOnNilConfig(t *testing.T) {
 	t.Parallel()
 
 	var cfg *auth.Config
-	require.Error(t, cfg.Validate())
+	require.Error(t, cfg.Validate(nil))
 }

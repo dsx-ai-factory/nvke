@@ -150,9 +150,10 @@ func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
 	}
 
 	resource := types.NewEntityUID(types.EntityType(q.ResourceType), types.String(q.ResourceID))
+	principalUID := types.NewEntityUID(PrincipalType, types.String(q.Principal))
 
 	request := cedar.Request{
-		Principal: types.NewEntityUID(PrincipalType, types.String(q.Principal)),
+		Principal: principalUID,
 		Action:    types.NewEntityUID(ActionType, types.String(q.Action)),
 		Resource:  resource,
 		Context: types.NewRecord(types.RecordMap{
@@ -163,14 +164,17 @@ func (l *Local) Authorize(_ context.Context, q Query) (Decision, error) {
 
 	// The resource entity is supplied per request rather than stored, so the
 	// bundle holds roles and action groups and never has to mirror the database.
-	// An overlay rather than a copied map: the stored entities are shared across
-	// every concurrent request and must not be written to.
-	view := resourceOverlay{
+	// The principal entity is presented the same way, with q.ClaimRoles unioned
+	// into its ancestry (overlayPrincipal, below) -- an overlay rather than a
+	// copied map either way: the stored entities are shared across every
+	// concurrent request and must not be written to.
+	view := principalAndResourceOverlay{
 		base: l.entities,
 		resource: types.Entity{
 			UID:        resource,
 			Attributes: types.NewRecord(nil),
 		},
+		principal: overlayPrincipal(l.entities, principalUID, q.ClaimRoles),
 	}
 
 	decision, diagnostic := cedar.Authorize(l.policies, view, request)
@@ -252,7 +256,8 @@ func checkEntityStore(entities types.EntityMap) error {
 			return fmt.Errorf(
 				"%s declares no %s::%q, which this build authorizes %q with: the mounted bundle is older than "+
 					"the image, and every call to that endpoint would be refused",
-				actionsFile, ActionType, op.Action, pattern)
+				actionsFile, ActionType, op.Action, pattern,
+			)
 		}
 	}
 	return nil
@@ -270,6 +275,77 @@ func (o resourceOverlay) Get(uid types.EntityUID) (types.Entity, bool) {
 		return o.resource, true
 	}
 	return o.base.Get(uid)
+}
+
+// principalAndResourceOverlay extends resourceOverlay one field further: a
+// synthesized principal entity sits beside the synthesized resource one, both
+// presented over the shared, never-written-to base map
+// (design-authz-claim-based-roles.md, §3.3).
+type principalAndResourceOverlay struct {
+	base      types.EntityMap
+	resource  types.Entity
+	principal types.Entity
+}
+
+func (o principalAndResourceOverlay) Get(uid types.EntityUID) (types.Entity, bool) {
+	if uid == o.resource.UID {
+		return o.resource, true
+	}
+	if uid == o.principal.UID {
+		return o.principal, true
+	}
+	return o.base.Get(uid)
+}
+
+// overlayPrincipal builds the synthesized principal entity for one request:
+// roles.json's static parents for uid (if any) unioned with one
+// NKE::Role::<name> UID per claimRoles entry, so that a principal with both a
+// static role and a matched claim keeps both (§4's "union, not replace").
+//
+// Two invariants, both required rather than incidental:
+//
+//   - The parent set is a new, immutable types.EntityUIDSet, built fresh from
+//     base's own parents plus claimRoles -- never base's Parents reused or
+//     mutated. base is shared across every concurrent request, the same
+//     reason resourceOverlay never writes to it.
+//   - A claimRoles entry is included only if base actually contains the
+//     matching NKE::Role::<name>; anything else is dropped, not passed
+//     through. cedar-go's entityInOne/entityInSet ancestry walk
+//     (vendor cedar-go internal/eval/evalers.go) check fe.Parents.Contains
+//     directly against the synthesized entity's own parent set -- they never
+//     call Get on a parent to confirm it is itself a loaded entity. A
+//     dangling or misspelled role name placed straight into Parents would
+//     satisfy `principal in NKE::Role::"X"` for a role that was never loaded,
+//     with nothing in cedar-go's own evaluator to catch it. Config-time
+//     validation (auth.Config.Validate, checking against
+//     DeclaredRoleNames) is what should catch an unknown role name in
+//     config; this is what protects the case validation can't -- an issuer's
+//     config was valid when written and roles.json was later edited to drop
+//     the role.
+func overlayPrincipal(base types.EntityMap, uid types.EntityUID, claimRoles []string) types.Entity {
+	static, ok := base.Get(uid)
+
+	parents := make([]types.EntityUID, 0, len(claimRoles))
+	attrs := types.NewRecord(nil)
+	if ok {
+		attrs = static.Attributes
+		for p := range static.Parents.All() {
+			parents = append(parents, p)
+		}
+	}
+	for _, name := range claimRoles {
+		roleUID := types.NewEntityUID(RoleType, types.String(name))
+		if _, declared := base.Get(roleUID); !declared {
+			continue
+		}
+		parents = append(parents, roleUID)
+	}
+
+	return types.Entity{
+		UID:        uid,
+		Parents:    types.NewEntityUIDSet(parents...),
+		Attributes: attrs,
+	}
 }
 
 // hasAny reports whether the set holds at least one policy. It iterates rather

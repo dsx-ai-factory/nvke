@@ -4,10 +4,12 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
+	k8svalidation "k8s.io/apimachinery/pkg/api/validation"
 )
 
 // Claim keys of the nested object in a bound service account token.
@@ -90,14 +92,61 @@ func (r *admitRules) admitsServiceAccount(p *Principal) bool {
 		return false
 	}
 	for _, rule := range r.serviceAccounts {
-		if rule.Namespace != sa.namespace {
-			continue
-		}
-		if rule.AllowsAnyName() || *rule.Name == sa.name {
+		if matchesServiceAccount(rule.Namespace, rule.Name, sa) {
 			return true
 		}
 	}
 	return false
+}
+
+// validateServiceAccountSelector checks a (namespace, optional name) selector
+// the one way both an admission rule (ServiceAccountRule) and a role rule
+// (ServiceAccountRoleRule, config.go) need it checked: the same Kubernetes
+// naming rules, against the same shaped pair. Extracted so the two config
+// types that mirror ServiceAccountRule's shape (§3.1a of
+// design-authz-claim-based-roles.md) don't carry two hand-copies of the same
+// DNS-label/DNS-subdomain checks that inevitably drift.
+func validateServiceAccountSelector(namespace string, name *string) error {
+	if strings.TrimSpace(namespace) == "" {
+		return errors.New("namespace is required and must not be empty")
+	}
+	if err := requireUnpadded("namespace", namespace); err != nil {
+		return err
+	}
+	// NameIsDNSLabel is what upstream's ValidateNamespaceName resolves to, so a
+	// name that could never exist fails at startup rather than becoming a rule
+	// that matches nothing forever.
+	if msgs := k8svalidation.NameIsDNSLabel(namespace, false); len(msgs) > 0 {
+		return fmt.Errorf("namespace %q is not a valid namespace name: %s", namespace, strings.Join(msgs, "; "))
+	}
+
+	if name == nil {
+		return nil
+	}
+	if strings.TrimSpace(*name) == "" {
+		return fmt.Errorf("name is present but empty; remove the key to admit any service account in namespace %q", namespace)
+	}
+	if err := requireUnpadded("name", *name); err != nil {
+		return err
+	}
+	if msgs := k8svalidation.NameIsDNSSubdomain(*name, false); len(msgs) > 0 {
+		return fmt.Errorf("name %q is not a valid service account name: %s", *name, strings.Join(msgs, "; "))
+	}
+	return nil
+}
+
+// matchesServiceAccount reports whether sa is the one (namespace, optional
+// name) selector names -- an absent name means "any name in the namespace",
+// exactly like ServiceAccountRule.AllowsAnyName and
+// ServiceAccountRoleRule.AllowsAnyName (config.go). Shared by
+// admitsServiceAccount, above, and serviceAccountRolesFor (roles.go), which is
+// what keeps admission's and role derivation's pair-matching semantics from
+// disagreeing about what "the same service account" means.
+func matchesServiceAccount(namespace string, name *string, sa serviceAccountIdentity) bool {
+	if namespace != sa.namespace {
+		return false
+	}
+	return name == nil || *name == sa.name
 }
 
 type serviceAccountIdentity struct {

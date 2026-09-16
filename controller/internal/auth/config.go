@@ -16,7 +16,6 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/spiffe/go-spiffe/v2/spiffeid"
 	yamlv3 "gopkg.in/yaml.v3"
-	k8svalidation "k8s.io/apimachinery/pkg/api/validation"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	kjson "sigs.k8s.io/json"
 	"sigs.k8s.io/yaml"
@@ -85,7 +84,93 @@ type Issuer struct {
 	// Admit is the admission rule set. Required, and must carry at least one
 	// rule.
 	Admit *Admit `json:"admit"`
+
+	// Roles configures dynamic Cedar role assignment for this issuer, on top of
+	// roles.json's static list (design-authz-claim-based-roles.md, §3.1).
+	// Optional; an issuer with no Roles config grants no claim-derived role,
+	// matching today's behavior exactly.
+	Roles *RoleMapping `json:"roles,omitempty"`
 }
+
+// RoleMapping derives Cedar role names from an issuer's verified token, on top
+// of roles.json's static parents (§4). Exactly one of Claim, SPIFFE, or
+// ServiceAccount may be set -- three structurally distinct ways of reading a
+// role out of a token, mirroring Admit's own ServiceAccounts/SPIFFE
+// exclusivity one level up. See RoleMapping.validate.
+type RoleMapping struct {
+	// Claim maps one claim's value(s) to Cedar roles, for OIDC-shaped issuers.
+	Claim *ClaimRoleMapping `json:"claim,omitempty"`
+
+	// SPIFFE derives a Cedar role from the verified SPIFFE ID via CEL, for
+	// SPIRE-issued subjects with no usable claim.
+	//
+	// The CEL evaluation engine (google/cel-go, design §3.4) is a deliberate
+	// follow-on slice, not built here (design §8, and the implementation task
+	// that built this package). This field and SPIFFERoleRule exist now only
+	// because RoleMapping's three-way exclusivity check needs somewhere to
+	// point; nothing compiles or evaluates an Expression yet.
+	// RoleMapping.validate accepts the field structurally (non-empty list,
+	// non-empty Expression text, Admit.SPIFFE required on the same issuer) but
+	// does not compile it, and roles.go's rolesFor SPIFFE branch always
+	// contributes zero roles at request time -- functionally inert, so an
+	// operator who configures this today gets a startup that succeeds and a
+	// mechanism that grants nothing, never a silent grant of the wrong thing.
+	SPIFFE []SPIFFERoleRule `json:"spiffe,omitempty"`
+
+	// ServiceAccount derives a Cedar role from a bound Kubernetes service
+	// account token's nested "kubernetes.io" claim -- the same shape
+	// admit.go's serviceAccountFromClaims reads for admission (design §3.1a).
+	// Tagged "serviceAccounts" (plural), matching Admit.ServiceAccounts' own
+	// key: the whole rationale for this rule kind is that it mirrors
+	// admission's shape.
+	ServiceAccount []ServiceAccountRoleRule `json:"serviceAccounts,omitempty"`
+}
+
+// ClaimRoleMapping maps an OIDC-shaped claim's value(s) to Cedar roles.
+type ClaimRoleMapping struct {
+	// Name is the top-level claim key. Nested claims (the "kubernetes.io" shape
+	// admit.go's serviceAccountFromClaims reads) are out of scope here -- see
+	// ServiceAccountRoleRule -- so this is a flat key, not a path.
+	Name string `json:"name"`
+
+	// ValueToRole maps one claim value to one Cedar role. The claim may be a
+	// JSON string or a JSON array of strings (Entra's "groups" shape); every
+	// matching value contributes its role. A value with no entry contributes
+	// nothing -- not an error, see roles.go's rolesFor.
+	ValueToRole map[string]string `json:"valueToRole"`
+}
+
+// SPIFFERoleRule derives a Cedar role from the verified SPIFFE ID's path via a
+// CEL expression (design §3.4). Structurally present, functionally inert in
+// this build -- see RoleMapping.SPIFFE's doc comment.
+type SPIFFERoleRule struct {
+	// Expression is a CEL expression evaluated against the verified SPIFFE ID's
+	// path. Not yet compiled or evaluated anywhere in this build; see
+	// RoleMapping.SPIFFE.
+	Expression string `json:"expression"`
+}
+
+// ServiceAccountRoleRule derives a Cedar role from a PSAT's nested
+// "kubernetes.io" claim. Matching shape mirrors ServiceAccountRule exactly:
+// (Namespace, optional Name), because that pair -- not two independent flat
+// values -- is what a PSAT actually identifies (design §3.1a).
+type ServiceAccountRoleRule struct {
+	Namespace string `json:"namespace"`
+
+	// Name narrows the rule to one service account. A pointer so an absent key
+	// ("any name in this namespace") stays distinct from `name: ""`, exactly
+	// like ServiceAccountRule.Name.
+	Name *string `json:"name,omitempty"`
+
+	// Role is the Cedar role this rule contributes when it matches. One rule,
+	// one role -- unlike ClaimRoleMapping's ValueToRole table, a PSAT names
+	// exactly one namespace and one service account, not a set of them.
+	Role string `json:"role"`
+}
+
+// AllowsAnyName reports whether the rule matches every service account name in
+// its namespace. Mirrors ServiceAccountRule.AllowsAnyName exactly.
+func (r ServiceAccountRoleRule) AllowsAnyName() bool { return r.Name == nil }
 
 type JWKSKeys struct {
 	// URI is the JWKS endpoint. Required, https only. For the local cluster:
@@ -149,7 +234,11 @@ func (i Issuer) EffectiveAudiences(deploymentAudiences []string) []string {
 // error, never "authentication is disabled", or a typo'd mountPath would produce
 // a CWE that starts cleanly and authenticates nobody. Only an unset
 // AUTH_CONFIG_PATH disables authentication.
-func Load(path string) (*Config, error) {
+//
+// knownRoles is the declared NKE::Role set a Roles/RoleMapping entry's target
+// is checked against (design-authz-claim-based-roles.md, §7) -- see
+// Config.Validate for what nil means here.
+func Load(path string, knownRoles map[string]struct{}) (*Config, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, ErrEmptyPath
 	}
@@ -190,7 +279,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("invalid authentication config %q: %w", path, err)
 	}
 
-	if err := cfg.Validate(); err != nil {
+	if err := cfg.Validate(knownRoles); err != nil {
 		return nil, fmt.Errorf("invalid authentication config %q: %w", path, err)
 	}
 	return &cfg, nil
@@ -224,7 +313,17 @@ func requireSingleDocument(raw []byte, path string) error {
 
 // Validate checks every constraint. A failure is a startup failure; there is no
 // partially-valid state. It changes nothing.
-func (c *Config) Validate() error {
+//
+// knownRoles is the set of NKE::Role names the loaded authz bundle declares
+// (authz.DeclaredRoleNames), checked against every Roles/RoleMapping entry
+// that names a role literally (ClaimRoleMapping.ValueToRole's values,
+// ServiceAccountRoleRule.Role). nil means authz is disabled for this
+// deployment -- every other Roles constraint still runs and still fails
+// startup, but the declared-role membership check specifically is skipped, so
+// an unrelated AuthenticationConfiguration edit on a deployment that has never
+// turned authz on does not fail startup over a role name authz will never
+// check (design-authz-claim-based-roles.md, §7).
+func (c *Config) Validate(knownRoles map[string]struct{}) error {
 	if c == nil {
 		return errors.New("authentication config is nil")
 	}
@@ -273,7 +372,7 @@ func (c *Config) Validate() error {
 	}
 
 	for i, iss := range c.Issuers {
-		if err := iss.validate(issuerURLs); err != nil {
+		if err := iss.validate(issuerURLs, knownRoles); err != nil {
 			return fmt.Errorf("issuers[%d] (%s): %w", i, strings.TrimSpace(iss.Name), err)
 		}
 
@@ -433,7 +532,7 @@ func (c *Config) validateTypeMeta() error {
 	return nil
 }
 
-func (i Issuer) validate(issuerURLs map[string]struct{}) error {
+func (i Issuer) validate(issuerURLs, knownRoles map[string]struct{}) error {
 	// A present-but-empty override is caught by Config.Validate.
 	if err := validateAudiences(i.Audiences, issuerURLs); err != nil {
 		return err
@@ -455,6 +554,144 @@ func (i Issuer) validate(issuerURLs map[string]struct{}) error {
 	}
 	if err := i.Admit.validate(); err != nil {
 		return fmt.Errorf("admit: %w", err)
+	}
+
+	if i.Roles != nil {
+		if err := i.Roles.validate(knownRoles, i.Admit); err != nil {
+			return fmt.Errorf("roles: %w", err)
+		}
+	}
+	return nil
+}
+
+// validate checks every Roles constraint. See Config.Validate for what a nil
+// knownRoles means. admit is this issuer's own Admit, consulted only for the
+// SPIFFE branch's "requires Admit.SPIFFE on the same issuer" rule -- the Claim
+// and ServiceAccount branches borrow nothing from admission (design §3.1,
+// §3.1a).
+func (m *RoleMapping) validate(knownRoles map[string]struct{}, admit *Admit) error {
+	// Presence, not length, for all three fields -- including the two
+	// slice-typed ones. A length check would read an explicit `serviceAccounts:
+	// []` as "unset", which is exactly the shape the empty-list checks below
+	// exist to catch; using len(...) > 0 here would let that shape sail past
+	// this check and be silently misclassified as "only one mechanism is
+	// configured" (design §3.1a's "Shared validation and matching" bullet).
+	set := 0
+	if m.Claim != nil {
+		set++
+	}
+	if m.SPIFFE != nil {
+		set++
+	}
+	if m.ServiceAccount != nil {
+		set++
+	}
+	switch set {
+	case 0:
+		return errors.New("must set exactly one of claim, spiffe, or serviceAccounts")
+	case 1:
+	default:
+		return errors.New(
+			"must not set more than one of claim, spiffe, serviceAccounts: each names a different issuer " +
+				"shape, and an issuer mints one shape of token",
+		)
+	}
+
+	switch {
+	case m.Claim != nil:
+		return m.Claim.validate(knownRoles)
+	case m.SPIFFE != nil:
+		if admit == nil || admit.SPIFFE == nil {
+			return errors.New(
+				"spiffe requires admit.spiffe on the same issuer: a role rule with no trust domain to check " +
+					"paths against would have no structural check to protect it",
+			)
+		}
+		return validateSPIFFERoleRules(m.SPIFFE)
+	default:
+		return validateServiceAccountRoleRules(m.ServiceAccount, knownRoles)
+	}
+}
+
+func (c *ClaimRoleMapping) validate(knownRoles map[string]struct{}) error {
+	if strings.TrimSpace(c.Name) == "" {
+		return errors.New("claim.name is required and must not be empty")
+	}
+	if len(c.ValueToRole) == 0 {
+		return errors.New(
+			"claim.valueToRole must contain at least one entry; an issuer that declares roles and maps " +
+				"nothing is very likely a mistake -- omit roles entirely for a deliberate no-op",
+		)
+	}
+	for value, role := range c.ValueToRole {
+		// An empty-string claim value must never be able to grant a role through
+		// an accidentally-""-keyed entry -- refused here, the one place this
+		// needs enforcing, rather than also special-cased at lookup time.
+		if value == "" {
+			return errors.New("claim.valueToRole must not contain the empty string as a key")
+		}
+		if strings.TrimSpace(role) == "" {
+			return fmt.Errorf("claim.valueToRole[%q] is empty; every value must name a role", value)
+		}
+		if err := checkKnownRole(role, knownRoles); err != nil {
+			return fmt.Errorf("claim.valueToRole[%q]: %w", value, err)
+		}
+	}
+	return nil
+}
+
+// validateSPIFFERoleRules checks the parts of SPIFFE role validation that
+// don't require google/cel-go: presence, and that Expression is non-empty
+// text. The compile/type-check/program pass design §3.1 specifies is a
+// deliberate follow-on (see RoleMapping.SPIFFE's doc comment) -- an
+// Expression accepted here is never compiled or evaluated by this build.
+func validateSPIFFERoleRules(rules []SPIFFERoleRule) error {
+	if len(rules) == 0 {
+		return errors.New(
+			"spiffe must contain at least one rule; an issuer that declares roles and maps nothing is " +
+				"very likely a mistake -- omit roles entirely for a deliberate no-op",
+		)
+	}
+	for i, r := range rules {
+		if strings.TrimSpace(r.Expression) == "" {
+			return fmt.Errorf("spiffe[%d]: expression is required and must not be empty", i)
+		}
+	}
+	return nil
+}
+
+func validateServiceAccountRoleRules(rules []ServiceAccountRoleRule, knownRoles map[string]struct{}) error {
+	if len(rules) == 0 {
+		return errors.New(
+			"serviceAccounts must contain at least one rule; an issuer that declares roles and maps " +
+				"nothing is very likely a mistake -- omit roles entirely for a deliberate no-op",
+		)
+	}
+	for i, r := range rules {
+		if err := validateServiceAccountSelector(r.Namespace, r.Name); err != nil {
+			return fmt.Errorf("serviceAccounts[%d]: %w", i, err)
+		}
+		if strings.TrimSpace(r.Role) == "" {
+			return fmt.Errorf("serviceAccounts[%d]: role is required and must not be empty", i)
+		}
+		if err := checkKnownRole(r.Role, knownRoles); err != nil {
+			return fmt.Errorf("serviceAccounts[%d]: %w", i, err)
+		}
+	}
+	return nil
+}
+
+// checkKnownRole refuses a role name the loaded authz bundle doesn't declare
+// -- the same "fail loud at load" bar checkEntityStore already holds
+// roles.json to (design §3.1, §5). A nil knownRoles means authz is disabled
+// for this deployment, so there is nothing to check a role name against; see
+// Config.Validate.
+func checkKnownRole(role string, knownRoles map[string]struct{}) error {
+	if knownRoles == nil {
+		return nil
+	}
+	if _, ok := knownRoles[role]; !ok {
+		return fmt.Errorf("role %q is not declared by the loaded authz bundle", role)
 	}
 	return nil
 }
@@ -499,35 +736,8 @@ func (a *Admit) validate() error {
 		)
 	}
 	for i, r := range a.ServiceAccounts {
-		// Ordered so the most specific message wins: empty, then padded, then
-		// whether Kubernetes would accept the name at all.
-		if strings.TrimSpace(r.Namespace) == "" {
-			return fmt.Errorf("serviceAccounts[%d]: namespace is required and must not be empty", i)
-		}
-		if err := requireUnpadded(fmt.Sprintf("serviceAccounts[%d].namespace", i), r.Namespace); err != nil {
-			return err
-		}
-		// NameIsDNSLabel and NameIsDNSSubdomain are what upstream's
-		// ValidateNamespaceName and ValidateServiceAccountName resolve to, so a
-		// name that could never exist fails at startup rather than becoming a
-		// rule that matches nothing for ever.
-		if msgs := k8svalidation.NameIsDNSLabel(r.Namespace, false); len(msgs) > 0 {
-			return fmt.Errorf("serviceAccounts[%d]: namespace %q is not a valid namespace name: %s",
-				i, r.Namespace, strings.Join(msgs, "; "))
-		}
-
-		if r.Name == nil {
-			continue
-		}
-		if strings.TrimSpace(*r.Name) == "" {
-			return fmt.Errorf("serviceAccounts[%d]: name is present but empty; remove the key to admit any service account in namespace %q", i, r.Namespace)
-		}
-		if err := requireUnpadded(fmt.Sprintf("serviceAccounts[%d].name", i), *r.Name); err != nil {
-			return err
-		}
-		if msgs := k8svalidation.NameIsDNSSubdomain(*r.Name, false); len(msgs) > 0 {
-			return fmt.Errorf("serviceAccounts[%d]: name %q is not a valid service account name: %s",
-				i, *r.Name, strings.Join(msgs, "; "))
+		if err := validateServiceAccountSelector(r.Namespace, r.Name); err != nil {
+			return fmt.Errorf("serviceAccounts[%d]: %w", i, err)
 		}
 	}
 	if a.SPIFFE != nil {

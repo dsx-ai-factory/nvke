@@ -320,7 +320,7 @@ func TestUnparseableTrustDomainFailsAtStartupNotPerRequest(t *testing.T) {
 
 	_, err := auth.Load(writeConfig(t, spiffeConfig(
 		`{trustDomain: "`+td+`", pathPrefixes: ["/nke-service/"]}`,
-	)))
+	)), nil)
 	require.Error(t, err, "an unparseable trust domain must be a startup failure")
 	assert.Contains(t, err.Error(), td, "the message has to name the value to fix")
 
@@ -350,7 +350,7 @@ func TestSlashPrefixesAcrossValidationAndAdmission(t *testing.T) {
 
 			_, err := auth.Load(writeConfig(t, spiffeConfig(
 				`{trustDomain: example.org, pathPrefixes: ["`+prefix+`"]}`,
-			)))
+			)), nil)
 			require.Error(t, err, "an all-slash prefix must not survive startup")
 
 			// Built directly, because Load refuses to produce one. Only the

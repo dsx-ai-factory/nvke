@@ -142,7 +142,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 		// the operation is still attributable to someone. A request probing for
 		// endpoints that do not exist is precisely one an operator wants a
 		// subject for.
-		caller := Query{Principal: principal.Subject, Issuer: principal.IssuerName}
+		caller := Query{Principal: principal.Subject, Issuer: principal.IssuerName, ClaimRoles: principal.ClaimRoles}
 
 		query, err := m.resolver.Resolve(r)
 		if err != nil {
@@ -151,6 +151,7 @@ func (m *Middleware) Wrap(next http.Handler) http.Handler {
 		}
 		query.Principal = caller.Principal
 		query.Issuer = caller.Issuer
+		query.ClaimRoles = caller.ClaimRoles
 
 		// Validated here rather than inside an engine, so every engine is asked
 		// only questions it can answer and a bad one is reported the same way

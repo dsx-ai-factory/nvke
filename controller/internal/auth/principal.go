@@ -29,6 +29,15 @@ type Principal struct {
 
 	// Claims is the full verified set, for admission rules and logging.
 	Claims map[string]any
+
+	// ClaimRoles is the Cedar role names this principal's issuer derived from
+	// the verified token -- claim values for an OIDC issuer, a bound service
+	// account's namespace/name pair for a PSAT issuer. Nil when the issuer has
+	// no Roles config, or nothing matched. Computed once, in Authenticate,
+	// after Admit has already approved the principal -- see Authenticate and
+	// design-authz-claim-based-roles.md, §3.2. internal/authz reads this but
+	// never derives it.
+	ClaimRoles []string
 }
 
 // principalContextKey is unexported so no other package can collide with it.
