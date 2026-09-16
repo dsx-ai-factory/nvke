@@ -19,6 +19,7 @@ import (
 
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
+	"github.com/NVIDIA/nke/controller/internal/constants"
 	"github.com/NVIDIA/nke/controller/internal/db"
 	"github.com/NVIDIA/nke/controller/internal/kubeadmconfig"
 )
@@ -33,11 +34,7 @@ const (
 	cniStatusReady = "ready"
 	cniStatusError = "error"
 
-	etcdEncryptionSecretPrefix     = "etcd-encryption-key-"
-	etcdEncryptionFieldActive      = "active"
-	etcdEncryptionFieldActiveSince = "active-since"
-	etcdEncryptionFieldPending     = "pending"
-	joinStringCacheTTL             = 5 * time.Minute
+	joinStringCacheTTL = 5 * time.Minute
 )
 
 func (a *Activities) kubeadmContainerMode(ctx context.Context, cluster db.Cluster, node db.Node) (bool, error) {
@@ -99,7 +96,7 @@ func (a *Activities) ensureKubeAPIEncryptionKey(ctx context.Context, clusterID u
 	if err != nil {
 		return "", err
 	}
-	secretName := etcdEncryptionSecretName(clusterID)
+	secretName := constants.EtcdEncryptionKeySecretName(clusterID)
 	secret := &corev1.Secret{}
 	lookupErr := a.k8sClient.Get(ctx, client.ObjectKey{Namespace: a.cfg.PodNamespace, Name: secretName}, secret)
 	if apierrors.IsNotFound(lookupErr) {
@@ -109,8 +106,8 @@ func (a *Activities) ensureKubeAPIEncryptionKey(ctx context.Context, clusterID u
 				Name:      secretName,
 			},
 			Data: map[string][]byte{
-				etcdEncryptionFieldActive:      []byte(key),
-				etcdEncryptionFieldActiveSince: []byte(fmt.Sprintf("%d", time.Now().Unix())),
+				constants.EtcdEncryptionKeyFieldActive:      []byte(key),
+				constants.EtcdEncryptionKeyFieldActiveSince: []byte(fmt.Sprintf("%d", time.Now().Unix())),
 			},
 		}
 		if err := a.k8sClient.Create(ctx, secret); err != nil {
@@ -124,8 +121,8 @@ func (a *Activities) ensureKubeAPIEncryptionKey(ctx context.Context, clusterID u
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	secret.Data[etcdEncryptionFieldActive] = []byte(key)
-	secret.Data[etcdEncryptionFieldActiveSince] = []byte(fmt.Sprintf("%d", time.Now().Unix()))
+	secret.Data[constants.EtcdEncryptionKeyFieldActive] = []byte(key)
+	secret.Data[constants.EtcdEncryptionKeyFieldActiveSince] = []byte(fmt.Sprintf("%d", time.Now().Unix()))
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return "", fmt.Errorf("updating kube-api encryption key secret %s/%s: %w", a.cfg.PodNamespace, secretName, err)
 	}
@@ -136,20 +133,16 @@ func (a *Activities) requireKubeAPIEncryptionKey(ctx context.Context, clusterID 
 	if a.k8sClient == nil {
 		return "", fmt.Errorf("kubernetes client is required for kube-api encryption keys")
 	}
-	secretName := etcdEncryptionSecretName(clusterID)
+	secretName := constants.EtcdEncryptionKeySecretName(clusterID)
 	secret := &corev1.Secret{}
 	if err := a.k8sClient.Get(ctx, client.ObjectKey{Namespace: a.cfg.PodNamespace, Name: secretName}, secret); err != nil {
 		return "", err
 	}
-	key := string(secret.Data[etcdEncryptionFieldActive])
+	key := string(secret.Data[constants.EtcdEncryptionKeyFieldActive])
 	if key == "" {
-		return "", fmt.Errorf("kube-api encryption key secret %s/%s is missing %q", a.cfg.PodNamespace, secretName, etcdEncryptionFieldActive)
+		return "", fmt.Errorf("kube-api encryption key secret %s/%s is missing %q", a.cfg.PodNamespace, secretName, constants.EtcdEncryptionKeyFieldActive)
 	}
 	return key, nil
-}
-
-func etcdEncryptionSecretName(clusterID uuid.UUID) string {
-	return etcdEncryptionSecretPrefix + clusterID.String()
 }
 
 func generateEncryptionKey() (string, error) {

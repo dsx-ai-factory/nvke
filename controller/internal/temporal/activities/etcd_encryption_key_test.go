@@ -16,6 +16,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	"github.com/NVIDIA/nke/controller/internal/config"
+
+	"github.com/NVIDIA/nke/controller/internal/constants"
 )
 
 func TestPendingKubeAPIEncryptionKeyIsStableAcrossRetries(t *testing.T) {
@@ -44,11 +46,11 @@ func TestPendingKubeAPIEncryptionKeyIsStableAcrossRetries(t *testing.T) {
 	var secret corev1.Secret
 	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{
 		Namespace: "cloud-workflow-engine",
-		Name:      etcdEncryptionSecretName(clusterID),
+		Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 	}, &secret))
-	require.Equal(t, pending, string(secret.Data[etcdEncryptionFieldActive]))
-	require.NotEmpty(t, secret.Data[etcdEncryptionFieldActiveSince])
-	require.NotContains(t, secret.Data, etcdEncryptionFieldPending)
+	require.Equal(t, pending, string(secret.Data[constants.EtcdEncryptionKeyFieldActive]))
+	require.NotEmpty(t, secret.Data[constants.EtcdEncryptionKeyFieldActiveSince])
+	require.NotContains(t, secret.Data, constants.EtcdEncryptionKeyFieldPending)
 }
 
 func TestFinalizePendingKubeAPIEncryptionKeyRejectsSecretWithoutAKey(t *testing.T) {
@@ -58,7 +60,7 @@ func TestFinalizePendingKubeAPIEncryptionKeyRejectsSecretWithoutAKey(t *testing.
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      etcdEncryptionSecretName(clusterID),
+			Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 		},
 	}
 	k8sClient := fake.NewClientBuilder().WithObjects(secret).Build()
@@ -79,10 +81,10 @@ func TestPendingKubeAPIEncryptionRotationKeyIsFreshAndStableAcrossRetries(t *tes
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      etcdEncryptionSecretName(clusterID),
+			Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 		},
 		Data: map[string][]byte{
-			etcdEncryptionFieldActive: []byte("active-key"),
+			constants.EtcdEncryptionKeyFieldActive: []byte("active-key"),
 		},
 	}
 	k8sClient := fake.NewClientBuilder().WithObjects(secret).Build()
@@ -108,7 +110,7 @@ func TestPendingKubeAPIEncryptionRotationKeyRequiresActiveKey(t *testing.T) {
 	k8sClient := fake.NewClientBuilder().WithObjects(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      etcdEncryptionSecretName(clusterID),
+			Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 		},
 	}).Build()
 	a := &Activities{
@@ -130,11 +132,11 @@ func TestPendingKubeAPIEncryptionRotationKeyRejectsIdenticalActiveAndPendingKeys
 	k8sClient := fake.NewClientBuilder().WithObjects(&corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace: namespace,
-			Name:      etcdEncryptionSecretName(clusterID),
+			Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 		},
 		Data: map[string][]byte{
-			etcdEncryptionFieldActive:  []byte("same-key"),
-			etcdEncryptionFieldPending: []byte("same-key"),
+			constants.EtcdEncryptionKeyFieldActive:  []byte("same-key"),
+			constants.EtcdEncryptionKeyFieldPending: []byte("same-key"),
 		},
 	}).Build()
 	a := &Activities{

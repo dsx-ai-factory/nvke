@@ -14,6 +14,8 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+
+	"github.com/NVIDIA/nke/controller/internal/constants"
 )
 
 func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clusterID uuid.UUID) (string, error) {
@@ -22,7 +24,7 @@ func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clus
 		return "", lookupErr
 	}
 	if lookupErr == nil {
-		if pending := string(secret.Data[etcdEncryptionFieldPending]); pending != "" {
+		if pending := string(secret.Data[constants.EtcdEncryptionKeyFieldPending]); pending != "" {
 			return pending, nil
 		}
 		// Fall back to the already-active key when no pending key exists. This diverges
@@ -32,7 +34,7 @@ func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clus
 		// is correct for *enabling* encryption — every node already has it, so re-Init is
 		// a no-op and the run converges. WARNING: this is NOT safe for key rotation, which
 		// requires a fresh key distinct from active; do not reuse this helper there.
-		if active := string(secret.Data[etcdEncryptionFieldActive]); active != "" {
+		if active := string(secret.Data[constants.EtcdEncryptionKeyFieldActive]); active != "" {
 			return active, nil
 		}
 	}
@@ -46,9 +48,9 @@ func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clus
 		secret = &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Namespace: a.cfg.PodNamespace,
-				Name:      etcdEncryptionSecretName(clusterID),
+				Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 			},
-			Data: map[string][]byte{etcdEncryptionFieldPending: []byte(key)},
+			Data: map[string][]byte{constants.EtcdEncryptionKeyFieldPending: []byte(key)},
 		}
 		if err := a.k8sClient.Create(ctx, secret); err != nil {
 			return "", fmt.Errorf("creating pending kube-api encryption key secret %s/%s: %w", secret.Namespace, secret.Name, err)
@@ -59,7 +61,7 @@ func (a *Activities) ensurePendingKubeAPIEncryptionKey(ctx context.Context, clus
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	secret.Data[etcdEncryptionFieldPending] = []byte(key)
+	secret.Data[constants.EtcdEncryptionKeyFieldPending] = []byte(key)
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return "", fmt.Errorf("updating pending kube-api encryption key secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
@@ -71,13 +73,13 @@ func (a *Activities) ensurePendingKubeAPIEncryptionRotationKey(ctx context.Conte
 	if err != nil {
 		return "", fmt.Errorf("getting kube-api encryption key for rotation: %w", err)
 	}
-	active := string(secret.Data[etcdEncryptionFieldActive])
+	active := string(secret.Data[constants.EtcdEncryptionKeyFieldActive])
 	if active == "" {
 		return "", etcdEncryptionKeyRotationPreconditionError(
 			fmt.Sprintf("kube-api encryption key secret %s/%s has no active key; rotation requires encrypted cluster state", secret.Namespace, secret.Name),
 		)
 	}
-	if pending := string(secret.Data[etcdEncryptionFieldPending]); pending != "" {
+	if pending := string(secret.Data[constants.EtcdEncryptionKeyFieldPending]); pending != "" {
 		if pending == active {
 			return "", etcdEncryptionKeyRotationPreconditionError(
 				fmt.Sprintf("kube-api encryption key secret %s/%s has identical active and pending keys", secret.Namespace, secret.Name),
@@ -96,7 +98,7 @@ func (a *Activities) ensurePendingKubeAPIEncryptionRotationKey(ctx context.Conte
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	secret.Data[etcdEncryptionFieldPending] = []byte(key)
+	secret.Data[constants.EtcdEncryptionKeyFieldPending] = []byte(key)
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return "", fmt.Errorf("updating pending kube-api encryption rotation key secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
@@ -108,9 +110,9 @@ func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, cl
 	if err != nil {
 		return err
 	}
-	pending := secret.Data[etcdEncryptionFieldPending]
+	pending := secret.Data[constants.EtcdEncryptionKeyFieldPending]
 	if len(pending) == 0 {
-		if len(secret.Data[etcdEncryptionFieldActive]) == 0 {
+		if len(secret.Data[constants.EtcdEncryptionKeyFieldActive]) == 0 {
 			return fmt.Errorf("kube-api encryption key secret %s/%s has neither pending nor active key", secret.Namespace, secret.Name)
 		}
 		return nil
@@ -118,9 +120,9 @@ func (a *Activities) finalizePendingKubeAPIEncryptionKey(ctx context.Context, cl
 	if secret.Data == nil {
 		secret.Data = map[string][]byte{}
 	}
-	secret.Data[etcdEncryptionFieldActive] = pending
-	secret.Data[etcdEncryptionFieldActiveSince] = []byte(strconv.FormatInt(time.Now().Unix(), 10))
-	delete(secret.Data, etcdEncryptionFieldPending)
+	secret.Data[constants.EtcdEncryptionKeyFieldActive] = pending
+	secret.Data[constants.EtcdEncryptionKeyFieldActiveSince] = []byte(strconv.FormatInt(time.Now().Unix(), 10))
+	delete(secret.Data, constants.EtcdEncryptionKeyFieldPending)
 	if err := a.k8sClient.Update(ctx, secret); err != nil {
 		return fmt.Errorf("finalizing kube-api encryption key secret %s/%s: %w", secret.Namespace, secret.Name, err)
 	}
@@ -134,7 +136,7 @@ func (a *Activities) getKubeAPIEncryptionKeySecret(ctx context.Context, clusterI
 	secret := &corev1.Secret{}
 	if err := a.k8sClient.Get(ctx, client.ObjectKey{
 		Namespace: a.cfg.PodNamespace,
-		Name:      etcdEncryptionSecretName(clusterID),
+		Name:      constants.EtcdEncryptionKeySecretName(clusterID),
 	}, secret); err != nil {
 		return nil, err
 	}
