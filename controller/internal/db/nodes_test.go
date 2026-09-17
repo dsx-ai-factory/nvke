@@ -5,6 +5,7 @@ package db_test
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -121,4 +122,57 @@ func TestNodeProviderSetters(t *testing.T) {
 	require.Equal(t, "next-instance", node.Nico.ForgeInstanceID)
 	require.Equal(t, "next-machine", node.Nico.ForgeMachineID)
 	require.Equal(t, nextInstanceTypeID, node.Nico.InstanceTypeID)
+}
+
+// TestUnit_NodeConditionsEqualIgnoresTimeRepresentation guards against a
+// regression where the tenant node-health reconciler compared condition sets
+// with ==, which also compares each LastTransitionTime's monotonic reading and
+// *Location pointer. A condition read back from JSONB (UTC) and the same
+// instant taken from a metav1.Time (local, see its UnmarshalJSON) were never
+// == equal, so the reconciler wrote an identical row on every pass — a
+// self-retriggering UPDATE loop that produced tens of gigabytes of WAL a day
+// against a table of a few dozen rows.
+func TestUnit_NodeConditionsEqualIgnoresTimeRepresentation(t *testing.T) {
+	instant := time.Date(2026, 8, 17, 21, 21, 14, 0, time.UTC)
+	fromDB := db.NodeConditions{
+		KubernetesReady: db.Condition{
+			Status:             db.ConditionStatusTrue,
+			Message:            "kubelet is posting ready status",
+			LastTransitionTime: instant,
+		},
+	}
+	fromKube := fromDB
+	fromKube.KubernetesReady.LastTransitionTime = instant.In(time.FixedZone("MDT", -6*60*60))
+
+	// The test is only meaningful while the two representations really are
+	// structurally different — that difference is what == tripped over.
+	require.NotEqual(t, fromDB.KubernetesReady.LastTransitionTime, fromKube.KubernetesReady.LastTransitionTime)
+	require.True(t, fromDB.Equal(fromKube))
+
+	changed := fromDB
+	changed.KubernetesReady.Status = db.ConditionStatusFalse
+	require.False(t, fromDB.Equal(changed))
+}
+
+// TestUnit_NodeConditionsEqualCoversEveryField fails when a condition is added
+// to NodeConditions without being added to its Equal method, which would
+// otherwise silently drop real changes to that condition on the floor.
+func TestUnit_NodeConditionsEqualCoversEveryField(t *testing.T) {
+	conditionsType := reflect.TypeFor[db.NodeConditions]()
+	for i := range conditionsType.NumField() {
+		field := conditionsType.Field(i)
+		t.Run(field.Name, func(t *testing.T) {
+			require.Equal(t, reflect.TypeFor[db.Condition](), field.Type,
+				"NodeConditions.Equal assumes every field is a db.Condition")
+
+			var base, modified db.NodeConditions
+			reflect.ValueOf(&modified).Elem().Field(i).Set(reflect.ValueOf(db.Condition{
+				Status:             db.ConditionStatusTrue,
+				Message:            "changed",
+				LastTransitionTime: time.Date(2026, 8, 17, 21, 21, 14, 0, time.UTC),
+			}))
+
+			require.False(t, base.Equal(modified), "%s is not compared by NodeConditions.Equal", field.Name)
+		})
+	}
 }

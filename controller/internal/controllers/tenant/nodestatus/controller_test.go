@@ -7,6 +7,7 @@ import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/mock"
@@ -90,6 +91,80 @@ func TestUnit_ReconcileUpdatesKubernetesConditionsOnly(t *testing.T) {
 	result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: nodeName}})
 	require.NoError(t, err)
 	require.Empty(t, result)
+	database.AssertExpectations(t)
+	tx.AssertExpectations(t)
+}
+
+// TestUnit_ReconcileSkipsUpdateWhenHealthUnchanged guards against a
+// self-retriggering UPDATE loop. The reconciler is woken by a database source
+// watching the very rows it writes, so a change check that reports a
+// difference between two identical condition sets never settles. Comparing
+// conditions with == did exactly that: the tenant Kubernetes Node supplies
+// LastTransitionTime through metav1.Time, which decodes into the local zone,
+// while the stored condition comes back from JSONB in UTC, and == compares the
+// *Location pointer as well as the instant.
+func TestUnit_ReconcileSkipsUpdateWhenHealthUnchanged(t *testing.T) {
+	ctx := context.Background()
+	clusterID := uuid.New()
+	nodeID := uuid.New()
+	nodeName := "worker-1"
+	readySince := time.Date(2026, 8, 17, 21, 21, 14, 0, time.UTC)
+
+	existing := db.Node{
+		ID:        nodeID,
+		ClusterID: clusterID,
+		Name:      nodeName,
+		Conditions: db.NodeConditions{
+			KubernetesReady: db.Condition{
+				Status:             db.ConditionStatusTrue,
+				Message:            "kubelet is posting ready status",
+				LastTransitionTime: readySince,
+			},
+			KubernetesUnschedulable: db.Condition{
+				Status:             db.ConditionStatusFalse,
+				Message:            "Node is schedulable",
+				LastTransitionTime: readySince,
+			},
+		},
+	}
+	kubeNode := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: nodeName},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type:    corev1.NodeReady,
+			Status:  corev1.ConditionTrue,
+			Message: "kubelet is posting ready status",
+			// Same instant as the stored condition, in the representation an
+			// apimachinery decode produces.
+			LastTransitionTime: metav1.Time{Time: readySince.In(time.FixedZone("MDT", -6*60*60))},
+		}}},
+	}
+
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{existing}, nil).Once()
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+
+	tx := &testutil.MockTx{}
+	database.MockTx = tx
+	tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(existing, nil).Once()
+	tx.On("GetNode", mock.Anything, nodeID).Return(existing, nil).Maybe()
+	// Registered so that a regression fails the AssertNotCalled below rather
+	// than panicking inside the mock on an unexpected call.
+	tx.On("UpdateNode", mock.Anything, mock.Anything).Return(existing, nil).Maybe()
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(kubeNode).Build()
+	reconciler := &Reconciler{
+		clusterID: clusterID,
+		db:        dbwrapper.New(database, slog.New(slog.DiscardHandler)),
+		client:    k8sClient,
+		logger:    slog.New(slog.DiscardHandler),
+	}
+
+	result, err := reconciler.Reconcile(ctx, reconcile.Request{NamespacedName: types.NamespacedName{Name: nodeName}})
+	require.NoError(t, err)
+	require.Empty(t, result)
+	tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 	database.AssertExpectations(t)
 	tx.AssertExpectations(t)
 }

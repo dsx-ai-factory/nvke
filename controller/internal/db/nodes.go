@@ -82,6 +82,31 @@ type NodeConditions struct {
 	ControlPlaneRolloutRequired Condition `json:"controlPlaneRolloutRequired"`
 }
 
+// Equal reports whether two condition sets describe the same state. Use this
+// instead of ==, which compares the monotonic clock reading and the *Location
+// pointer of every LastTransitionTime and so reports a difference for two
+// identical instants that took different routes into memory.
+//
+// Every field must be listed here; TestUnit_NodeConditionsEqualCoversEveryField
+// fails if one is missed.
+func (c NodeConditions) Equal(other NodeConditions) bool {
+	return c.Pending.Equal(other.Pending) &&
+		c.ProvisioningClaimed.Equal(other.ProvisioningClaimed) &&
+		c.Provisioning.Equal(other.Provisioning) &&
+		c.ReadyToJoin.Equal(other.ReadyToJoin) &&
+		c.Joined.Equal(other.Joined) &&
+		c.Provisioned.Equal(other.Provisioned) &&
+		c.Deleting.Equal(other.Deleting) &&
+		c.KubernetesReady.Equal(other.KubernetesReady) &&
+		c.KubernetesUnschedulable.Equal(other.KubernetesUnschedulable) &&
+		c.NodeAgentReady.Equal(other.NodeAgentReady) &&
+		c.Rebooting.Equal(other.Rebooting) &&
+		c.MarkedForRecycling.Equal(other.MarkedForRecycling) &&
+		c.MarkedForRepair.Equal(other.MarkedForRepair) &&
+		c.TeleportRegistered.Equal(other.TeleportRegistered) &&
+		c.ControlPlaneRolloutRequired.Equal(other.ControlPlaneRolloutRequired)
+}
+
 type NodeConditionStatus struct {
 	ClusterName     string          `bun:"cluster_name"`
 	NodeName        string          `bun:"node_name"`

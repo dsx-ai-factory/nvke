@@ -117,7 +117,7 @@ func (r *Reconciler) updateKubernetesHealth(ctx context.Context, nodeID uuid.UUI
 
 		previousConditions := lockedNode.Conditions
 		applyKubernetesNodeHealth(&lockedNode, kubeNode)
-		if lockedNode.Conditions == previousConditions {
+		if lockedNode.Conditions.Equal(previousConditions) {
 			r.logger.Debug("Kubernetes node health unchanged, skipping update",
 				"nodeID", nodeID, "nodeName", lockedNode.Name)
 			return nil

@@ -34,9 +34,11 @@ func fromKubeCondition(existing db.Condition, kubeNode *corev1.Node, conditionTy
 	for _, condition := range kubeNode.Status.Conditions {
 		if string(condition.Type) == conditionType {
 			return db.Condition{
-				Status:             dbStatusFromKubeStatus(condition.Status),
-				Message:            condition.Message,
-				LastTransitionTime: condition.LastTransitionTime.Time,
+				Status:  dbStatusFromKubeStatus(condition.Status),
+				Message: condition.Message,
+				// metav1.Time decodes into the local zone, so normalize to keep
+				// what is persisted to JSONB in the same shape it is read back in.
+				LastTransitionTime: condition.LastTransitionTime.Time.UTC(),
 			}
 		}
 	}
