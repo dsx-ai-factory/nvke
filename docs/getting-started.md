@@ -33,7 +33,7 @@ cd nke
 > `github.com/NVIDIA/ncx-infra-controller-rest`. The one internal dependency
 > left, `cluster-api-provider-nico`, is carried in the committed `vendor/` tree,
 > so the commands in this section need no credentials. From the repository root,
-> `GOPROXY=off make build` compiles all nine modules and proves it. See
+> `GOPROXY=off make build` compiles all ten modules and proves it. See
 > [AGENTS.md](../AGENTS.md).
 
 The repository uses [Flox](https://flox.dev/) to pin its toolchain, in one

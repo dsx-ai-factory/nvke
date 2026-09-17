@@ -15,6 +15,7 @@ use (
 	./cluster-api-provider-provisioned
 	./controller
 	./controller/api
+	./controller/deploy/charts
 	./controller/hack/capd-reboot-controller
 	./controller/nico-sim
 	./controller/test/e2e
