@@ -117,6 +117,26 @@ class PackerMakefileTest(unittest.TestCase):
                     str(expected),
                 )
 
+    def test_test_target_does_not_write_python_bytecode_into_source(self):
+        result = subprocess.run(
+            [
+                self.make,
+                "--dry-run",
+                "--file",
+                "Makefile",
+                "test",
+                "PYTHON=/tmp/nkd-python",
+            ],
+            cwd=PACKER_DIR,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        self.assertIn(
+            "/tmp/nkd-python -B -m unittest discover -s scripts -p 'test_*.py'",
+            result.stdout,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

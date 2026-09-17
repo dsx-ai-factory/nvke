@@ -168,7 +168,7 @@ check-deps:
 
 .PHONY: test
 test: ## Check artifact staging, QCOW2 finalization, and workflow wiring.
-	$(PYTHON) -m unittest discover -s scripts -p 'test_*.py'
+	$(PYTHON) -B -m unittest discover -s scripts -p 'test_*.py'
 
 # Full-disk-encryption variant: boots the Ubuntu Server installer to lay down
 # an LVM-on-LUKS layout via autoinstall, then provisions nke-agent/spire-agent,
