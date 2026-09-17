@@ -22,6 +22,7 @@ Each dashboard has a **Requirements and scope** markdown panel. Keep that panel 
 - Datasource: `__inputs` entry `DS_PROMETHEUS` (Prometheus plugin). Operators pick a datasource at import. Do not pin `mimir-*`, Promxy, or a Grafana Cloud UID.
 - `id`: `null`. Stable `uid` and `title` prefixed `Reference - …`.
 - Filenames: `nke-<topic>-reference.json`.
+- `refresh`: `1m` or slower, and keep `timepicker.refresh_intervals` starting at `1m`. Grafana refuses anything below its `min_refresh_interval` with "Dashboard refresh interval is too low", so do not copy an upstream mixin's `10s`.
 
 Do not bump `controller/deploy/charts/controller/Chart.yaml` for dashboard-only edits. These JSON files are not chart templates.
 

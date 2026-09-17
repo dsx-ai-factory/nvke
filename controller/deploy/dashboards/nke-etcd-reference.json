@@ -44,7 +44,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### Scope\nReference etcd health dashboard derived from the upstream Prometheus mixin. It is not deployed by nke-stack. Import this JSON and select a Prometheus datasource. Empty panels mean etcd is not scraped.\n\n### Source\nQueries and panel set come from the [etcd mixin](https://github.com/etcd-io/etcd/tree/main/contrib/mixin) (`contrib/mixin/dashboards/targets.libsonnet` and `panels.libsonnet`). Default mixin config (`config.libsonnet`) uses `etcd_selector: job=~\".*etcd.*\"` and `clusterLabel: job`, so `$cluster` here is the Prometheus **job** label, not a Kubernetes cluster name.\n\n### Mixin panels included\n- Up \u2014 `sum(etcd_server_has_leader{...})` (members with a leader, not scrape `up{}`)\n- RPC rate \u2014 unary `grpc_server_started_total` vs failed unary `grpc_server_handled_total`\n- Active streams \u2014 Watch and Lease bidi (`started \u2212 handled`)\n- DB size \u2014 allocated vs in-use bytes (fragmentation / defrag)\n- Disk sync duration \u2014 p99 WAL fsync and p99 backend commit\n- Memory \u2014 `process_resident_memory_bytes`\n- Client/peer traffic in/out\n- Total leader elections per day \u2014 `changes(etcd_server_leader_changes_seen_total[1d])`\n- Peer round trip time \u2014 p99\n\n### Metric dependencies\netcd must be scraped (kube-prometheus-stack can scrape kube-etcd when enabled; nke-stack does not enable that by default)."
+        "content": "### Scope\nReference etcd health dashboard derived from the upstream Prometheus mixin. It is not deployed by nke-stack. Import this JSON and select a Prometheus datasource. Empty panels mean etcd is not scraped.\n\n### Source\nQueries and panel set come from the [etcd mixin](https://github.com/etcd-io/etcd/tree/main/contrib/mixin) (`contrib/mixin/dashboards/targets.libsonnet` and `panels.libsonnet`). Default mixin config (`config.libsonnet`) uses `etcd_selector: job=~\".*etcd.*\"` and `clusterLabel: job`, so `$cluster` here is the Prometheus **job** label, not a Kubernetes cluster name.\n\n### Mixin panels included\n- Up \u2014 `sum(etcd_server_has_leader{...})` (members with a leader, not scrape `up{}`)\n- RPC rate \u2014 unary `grpc_server_started_total` vs failed unary `grpc_server_handled_total`\n- Active streams \u2014 Watch and Lease bidi (`started \u2212 handled`)\n- DB size \u2014 allocated vs in-use bytes (fragmentation / defrag)\n- Disk sync duration \u2014 p99 WAL fsync and p99 backend commit\n- Memory \u2014 `process_resident_memory_bytes`\n- Client/peer traffic in/out\n- Total leader elections per day \u2014 `changes(etcd_server_leader_changes_seen_total[1d])`\n- Peer round trip time \u2014 p99\n\n### Metric dependencies\netcd must be scraped (kube-prometheus-stack can scrape kube-etcd when enabled; nke-stack does not enable that by default).\n\n### Refresh\nAuto-refresh is `1m`, not the mixin's `10s`. Grafana rejects a dashboard whose refresh is below the server's `min_refresh_interval` with \"Dashboard refresh interval is too low\". Raise it further if your Grafana sets a higher minimum."
       }
     },
     {
@@ -868,7 +868,7 @@
       "interval": "1m"
     }
   ],
-  "refresh": "10s",
+  "refresh": "1m",
   "schemaVersion": 39,
   "tags": [
     "nke",
@@ -904,7 +904,15 @@
     "from": "now-15m",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "refresh_intervals": [
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h"
+    ]
+  },
   "timezone": "browser",
   "title": "Reference - etcd",
   "uid": null,
