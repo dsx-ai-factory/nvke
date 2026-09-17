@@ -87,6 +87,61 @@ class PackerMakefileTest(unittest.TestCase):
             text=True,
         ).stdout
 
+    def run_make(self, target, *, cwd, variables=(), extra_env=None):
+        env = os.environ.copy()
+        for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"):
+            env.pop(name, None)
+        env.update(extra_env or {})
+        return subprocess.run(
+            [
+                self.make,
+                "--no-print-directory",
+                "--silent",
+                "--file",
+                str(PACKER_DIR / "Makefile"),
+                target,
+                *variables,
+            ],
+            cwd=cwd,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+    @staticmethod
+    def create_source_repo(path):
+        path.mkdir()
+        (path / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+        (path / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=path, check=True)
+        subprocess.run(
+            ["git", "add", "tracked.txt", ".gitignore"], cwd=path, check=True
+        )
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Packer Makefile Test",
+                "-c",
+                "user.email=packer-makefile@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+            cwd=path,
+            check=True,
+        )
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=path,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
     def test_default_packer_cache_is_exported_under_ignored_iso_cache(self):
         expected = PACKER_DIR / "iso-cache" / "packer-cache"
         self.assertEqual(self.exported_packer_cache_dir(), str(expected))
@@ -167,7 +222,7 @@ class PackerMakefileTest(unittest.TestCase):
         for target, template in cases:
             with self.subTest(target=target):
                 output = self.dry_run(target)
-                source_check = output.index("finalize-qcow2.py check-source")
+                source_check = output.index('git -C "$SOURCE_ROOT" rev-parse')
                 packer_init = output.index("/tmp/nkd-packer init ")
                 packer_build = output.index("/tmp/nkd-packer build")
 
@@ -177,19 +232,12 @@ class PackerMakefileTest(unittest.TestCase):
 
     def test_failed_source_preflight_blocks_parallel_packer_init(self):
         with tempfile.TemporaryDirectory() as tmp:
-            tools = Path(tmp)
-            python = tools / "python"
-            python.write_text(
-                "#!/bin/sh\n"
-                "if [ \"$1\" = \"-c\" ]; then exit 0; fi\n"
-                "echo 'source checkout is dirty' >&2\n"
-                "exit 42\n",
-                encoding="utf-8",
-            )
-            python.chmod(0o755)
-            qemu_img = tools / "qemu-img"
-            qemu_img.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            qemu_img.chmod(0o755)
+            root = Path(tmp)
+            source = root / "source"
+            self.create_source_repo(source)
+            (source / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+            tools = root / "tools"
+            tools.mkdir()
             packer_log = tools / "packer.log"
             packer = tools / "packer"
             packer.write_text(
@@ -212,7 +260,7 @@ class PackerMakefileTest(unittest.TestCase):
                             "Makefile",
                             target,
                             f"PACKER={packer}",
-                            f"PYTHON={python}",
+                            f"SOURCE_ROOT={source}",
                         ],
                         cwd=PACKER_DIR,
                         env=env,
@@ -224,6 +272,183 @@ class PackerMakefileTest(unittest.TestCase):
                     self.assertNotEqual(result.returncode, 0)
                     self.assertIn("source checkout is dirty", result.stderr)
                     self.assertFalse(packer_log.exists())
+
+    def test_source_preflight_accepts_only_the_expected_clean_commit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            workspace = root / "workspace"
+            workspace.mkdir()
+            commit = self.create_source_repo(source)
+            variables = (f"SOURCE_ROOT={source}", f"EXPECTED_SOURCE_COMMIT={commit}")
+
+            clean = self.run_make("check-source", cwd=workspace, variables=variables)
+            self.assertEqual(clean.returncode, 0, clean.stderr)
+            self.assertEqual(clean.stdout, "")
+
+            ignored = source / "ignored" / "cache-entry"
+            ignored.parent.mkdir()
+            ignored.write_text("ignored\n", encoding="utf-8")
+            still_clean = self.run_make(
+                "check-source", cwd=workspace, variables=variables
+            )
+            self.assertEqual(still_clean.returncode, 0, still_clean.stderr)
+
+            wrong_commit = self.run_make(
+                "check-source",
+                cwd=workspace,
+                variables=(f"SOURCE_ROOT={source}", "EXPECTED_SOURCE_COMMIT=wrong"),
+            )
+            self.assertNotEqual(wrong_commit.returncode, 0)
+            self.assertIn("does not match expected", wrong_commit.stderr)
+
+            (source / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+            dirty = self.run_make("check-source", cwd=workspace, variables=variables)
+            self.assertNotEqual(dirty.returncode, 0)
+            self.assertIn("source checkout is dirty", dirty.stderr)
+
+    def test_collection_copies_exact_bytes_and_prints_one_basename(self):
+        cases = (
+            ("fde", "amd64"),
+            ("non-fde", "arm64"),
+        )
+        for variant, arch in cases:
+            with self.subTest(variant=variant, arch=arch), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source"
+                workspace = root / "workspace"
+                workspace.mkdir()
+                commit = self.create_source_repo(source)
+                output = workspace / f"output-{variant}"
+                output.mkdir()
+                name = f"nke-node-{variant}-ubuntu-26.04.1-{arch}.qcow2"
+                payload = f"{variant}-{arch}-bytes".encode()
+                (output / name).write_bytes(payload)
+                dist = workspace / "dist"
+
+                result = self.run_make(
+                    f"collect-qcow2-{variant}",
+                    cwd=workspace,
+                    variables=(
+                        f"SOURCE_ROOT={source}",
+                        f"EXPECTED_SOURCE_COMMIT={commit}",
+                        f"DIST_DIR={dist}",
+                        f"ARCH={arch}",
+                    ),
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, name + "\n")
+                self.assertEqual((output / name).read_bytes(), payload)
+                self.assertEqual((dist / name).read_bytes(), payload)
+
+    def test_collection_rejects_ambiguous_wrong_or_non_regular_outputs(self):
+        cases = ("missing", "multiple", "wrong-name", "symlink")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                source = root / "source"
+                workspace = root / "workspace"
+                workspace.mkdir()
+                commit = self.create_source_repo(source)
+                output = workspace / "output-fde"
+                output.mkdir()
+                expected = output / "nke-node-fde-ubuntu-26.04.1-amd64.qcow2"
+                if case == "multiple":
+                    expected.write_bytes(b"one")
+                    (output / "extra.qcow2").write_bytes(b"two")
+                elif case == "wrong-name":
+                    (output / "nke-node-non-fde-ubuntu-26.04.1-amd64.qcow2").write_bytes(b"wrong")
+                elif case == "symlink":
+                    target = output / "image.data"
+                    target.write_bytes(b"target")
+                    expected.symlink_to(target.name)
+                dist = workspace / "dist"
+
+                result = self.run_make(
+                    "collect-qcow2-fde",
+                    cwd=workspace,
+                    variables=(
+                        f"SOURCE_ROOT={source}",
+                        f"EXPECTED_SOURCE_COMMIT={commit}",
+                        f"DIST_DIR={dist}",
+                    ),
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(dist.exists())
+
+    def test_collection_rechecks_source_and_requires_destination(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            workspace = root / "workspace"
+            workspace.mkdir()
+            commit = self.create_source_repo(source)
+            output = workspace / "output-fde"
+            output.mkdir()
+            name = "nke-node-fde-ubuntu-26.04.1-amd64.qcow2"
+            (output / name).write_bytes(b"bytes")
+
+            no_destination = self.run_make(
+                "collect-qcow2-fde",
+                cwd=workspace,
+                variables=(
+                    f"SOURCE_ROOT={source}",
+                    f"EXPECTED_SOURCE_COMMIT={commit}",
+                ),
+            )
+            self.assertNotEqual(no_destination.returncode, 0)
+            self.assertIn("DIST_DIR is required", no_destination.stderr)
+
+            (source / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+            dirty = self.run_make(
+                "collect-qcow2-fde",
+                cwd=workspace,
+                variables=(
+                    f"SOURCE_ROOT={source}",
+                    f"EXPECTED_SOURCE_COMMIT={commit}",
+                    f"DIST_DIR={workspace / 'dist'}",
+                ),
+            )
+            self.assertNotEqual(dirty.returncode, 0)
+            self.assertIn("source checkout is dirty", dirty.stderr)
+            self.assertFalse((workspace / "dist").exists())
+
+    def test_collection_removes_destination_when_byte_comparison_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            workspace = root / "workspace"
+            workspace.mkdir()
+            commit = self.create_source_repo(source)
+            output = workspace / "output-fde"
+            output.mkdir()
+            name = "nke-node-fde-ubuntu-26.04.1-amd64.qcow2"
+            (output / name).write_bytes(b"source-bytes")
+            dist = workspace / "dist"
+            tools = root / "tools"
+            tools.mkdir()
+            cmp = tools / "cmp"
+            cmp.write_text("#!/bin/sh\nexit 1\n", encoding="utf-8")
+            cmp.chmod(0o755)
+
+            result = self.run_make(
+                "collect-qcow2-fde",
+                cwd=workspace,
+                variables=(
+                    f"SOURCE_ROOT={source}",
+                    f"EXPECTED_SOURCE_COMMIT={commit}",
+                    f"DIST_DIR={dist}",
+                ),
+                extra_env={"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}"},
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, "")
+            self.assertIn("differs from source", result.stderr)
+            self.assertFalse((dist / name).exists())
+            self.assertEqual((output / name).read_bytes(), b"source-bytes")
 
 
 if __name__ == "__main__":

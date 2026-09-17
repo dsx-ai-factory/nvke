@@ -13,12 +13,14 @@ WORKFLOW = (
     / "workflows"
     / "os-image-artifact.yml"
 )
+README = Path(__file__).resolve().parents[2] / "README.md"
 
 
 class OSImageWorkflowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.workflow = WORKFLOW.read_text(encoding="utf-8")
+        cls.readme = README.read_text(encoding="utf-8")
 
     def step(self, start: str, end: str) -> str:
         return self.workflow.split(start, 1)[1].split(end, 1)[0]
@@ -26,25 +28,52 @@ class OSImageWorkflowTest(unittest.TestCase):
     def test_workflow_collects_make_finalized_bytes_without_reconversion(self):
         self.assertNotIn("qemu-img convert", self.workflow)
         collect = self.step(
-            "- name: Validate and collect the finalized qcow2s",
+            "- name: Collect the finalized qcow2s",
             "- name: Push the qcow2s to GHCR",
         )
-        self.assertIn("finalize-qcow2.py verify", collect)
+        lane_start = 'if [[ "${{ matrix.build_fde }}" == "true" ]]; then'
         self.assertIn("EXPECTED_SOURCE_COMMIT: ${{ github.sha }}", collect)
-        self.assertIn('actual_source_commit="$(git rev-parse HEAD)"', collect)
-        self.assertIn('"${actual_source_commit}" != \\', collect)
-        self.assertIn('"${EXPECTED_SOURCE_COMMIT}" ]]; then', collect)
-        self.assertIn("expected_source_tree=\"$(git rev-parse \\", collect)
-        self.assertIn('"${EXPECTED_SOURCE_COMMIT}^{tree}")"', collect)
-        self.assertIn('--expected-variant "${variant}"', collect)
-        self.assertIn('--expected-arch "${ARCH}"', collect)
-        self.assertIn('--expected-source-commit "${EXPECTED_SOURCE_COMMIT}"', collect)
-        self.assertIn('--expected-source-tree "${expected_source_tree}"', collect)
-        self.assertIn("--required-accelerator kvm", collect)
-        self.assertIn('cp -- "${src}" "dist/${name}"', collect)
-        self.assertIn('cmp --silent "${src}" "dist/${name}"', collect)
+        self.assertIn("mkdir -p dist", collect)
+        self.assertIn(lane_start, collect)
+        fde_lane, non_fde_lane = collect.split(lane_start, 1)[1].split("fi", 1)
+        self.assertIn("collect-qcow2-fde", fde_lane)
+        self.assertIn('echo "fde=${fde_name}" >> "$GITHUB_OUTPUT"', fde_lane)
+        self.assertNotIn("collect-qcow2-non-fde", fde_lane)
+        self.assertIn("collect-qcow2-non-fde", non_fde_lane)
+        self.assertIn(
+            'echo "non_fde=${non_fde_name}" >> "$GITHUB_OUTPUT"',
+            non_fde_lane,
+        )
+        self.assertEqual(
+            collect.count(
+                "make --no-print-directory --silent -C os-image/packer"
+            ),
+            2,
+        )
+        self.assertEqual(collect.count("ARCH=${{ matrix.arch }}"), 2)
+        self.assertEqual(collect.count('DIST_DIR="$PWD/dist"'), 2)
+        self.assertNotIn("cp --", collect)
+        self.assertNotIn("cmp --silent", collect)
 
-    def test_build_manifest_remains_an_unpublished_sidecar_in_b1(self):
+    def test_hosted_builds_pin_kvm_after_runner_admission(self):
+        fde = self.step(
+            "- name: Build the FDE node image",
+            "- name: Validate FDE TPM unlock (demo-fde.sh)",
+        )
+        non_fde = self.step(
+            "- name: Build the non-FDE node image",
+            "- name: Boot-smoke the non-FDE qcow2",
+        )
+        for build in (fde, non_fde):
+            self.assertIn("ARCH=${{ matrix.arch }} ACCELERATOR=kvm", build)
+
+    def test_no_build_manifest_contract_is_claimed_or_published(self):
+        for content in (self.workflow, self.readme):
+            self.assertNotIn("build-manifest", content)
+            self.assertNotIn("sidecar", content)
+        self.assertNotIn("finalize-qcow2.py", self.workflow)
+
+    def test_publication_and_release_payloads_remain_qcow2_only(self):
         publish = self.step(
             "- name: Push the qcow2s to GHCR",
             "- name: Show published manifests",
@@ -53,9 +82,9 @@ class OSImageWorkflowTest(unittest.TestCase):
             "- name: Prepare release assets",
             "- name: Upload release assets",
         )
-        self.assertNotIn("build-manifest", publish)
-        self.assertNotIn("build-manifest", release_assets)
         self.assertIn('"${disk}:application/vnd.qemu.qcow2"', publish)
+        self.assertIn('disks=("${DISK_NON_FDE}")', release_assets)
+        self.assertIn('disks+=("${DISK_FDE}")', release_assets)
 
 
 if __name__ == "__main__":

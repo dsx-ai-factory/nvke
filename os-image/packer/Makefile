@@ -3,6 +3,7 @@
 
 PACKER      ?= packer
 PYTHON      ?= python3
+PACKER_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 SSH_DIR     := $(CURDIR)/.ssh
 ARTIFACTS   := $(CURDIR)/artifacts
 # Deliberately separate from ARTIFACTS: the FDE/non-FDE "file" provisioner
@@ -14,8 +15,8 @@ ARTIFACTS   := $(CURDIR)/artifacts
 ISO_CACHE   := $(CURDIR)/iso-cache
 # Keep Packer's build/download cache in the existing ignored build cache
 # instead of its default ./.packer_cache, which would make the checkout dirty
-# before the finalizer records the source identity. Callers may still supply
-# their own cache directory.
+# and fail the source-cleanliness gates. Callers may still supply their own
+# cache directory.
 PACKER_CACHE_DIR ?= $(ISO_CACHE)/packer-cache
 ifeq ($(strip $(PACKER_CACHE_DIR)),)
   override PACKER_CACHE_DIR := $(ISO_CACHE)/packer-cache
@@ -27,6 +28,10 @@ export PACKER_CACHE_DIR
 BUILD_LOGS  := $(CURDIR)/build-logs
 PKR_FILE_FDE := $(CURDIR)/nke-node-fde.pkr.hcl
 PKR_FILE_NON_FDE := $(CURDIR)/nke-node-non-fde.pkr.hcl
+SOURCE_ROOT ?= $(abspath ../..)
+DIST_DIR ?=
+EXPECTED_SOURCE_COMMIT ?=
+export SOURCE_ROOT DIST_DIR EXPECTED_SOURCE_COMMIT PYTHON
 
 LUKS_PASSPHRASE ?= changeit
 # Label applied to the root filesystem. Cloud-image importers can use this
@@ -126,7 +131,7 @@ CPUS ?= 4
 # nke-node-fde.pkr.hcl.
 BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
-.PHONY: os-image-fde os-image-non-fde init-fde init-non-fde ssh-key prepare-installer-iso clean check-deps check-source
+.PHONY: os-image-fde os-image-non-fde init-fde init-non-fde ssh-key prepare-installer-iso clean check-deps check-source collect-qcow2-fde collect-qcow2-non-fde
 
 ssh-key: $(SSH_DIR)/id_ed25519
 
@@ -134,9 +139,20 @@ $(SSH_DIR)/id_ed25519:
 	mkdir -p $(SSH_DIR)
 	ssh-keygen -t ed25519 -N '' -f $(SSH_DIR)/id_ed25519
 
-check-source: check-deps
-	$(PYTHON) ./scripts/finalize-qcow2.py check-source \
-		--source-root "$(abspath ../..)"
+check-source:
+	@set -eu; \
+	actual_commit="$$(git -C "$$SOURCE_ROOT" rev-parse --verify HEAD)"; \
+	git -C "$$SOURCE_ROOT" rev-parse --verify 'HEAD^{tree}' >/dev/null; \
+	if [ -n "$$EXPECTED_SOURCE_COMMIT" ] && [ "$$actual_commit" != "$$EXPECTED_SOURCE_COMMIT" ]; then \
+		echo "source commit $$actual_commit does not match expected $$EXPECTED_SOURCE_COMMIT" >&2; \
+		exit 1; \
+	fi; \
+	status="$$(git -C "$$SOURCE_ROOT" status --porcelain=v1 --untracked-files=normal)"; \
+	if [ -n "$$status" ]; then \
+		echo "source checkout is dirty; build and collection require an exact clean Git tree" >&2; \
+		printf '%s\n' "$$status" >&2; \
+		exit 1; \
+	fi
 
 init-fde: check-source
 	$(PACKER) init $(PKR_FILE_FDE)
@@ -158,21 +174,89 @@ check-deps:
 		exit 1; \
 	}
 	@command -v $(PYTHON) >/dev/null 2>&1 || { \
-		echo "Python 3.10 or newer is required to finalize the QCOW2" >&2; \
+		echo "Python 3.10 or newer is required to validate the compressed QCOW2" >&2; \
 		exit 1; \
 	}
 	@$(PYTHON) -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' || { \
-		echo "Python 3.10 or newer is required to finalize the QCOW2" >&2; \
+		echo "Python 3.10 or newer is required to validate the compressed QCOW2" >&2; \
 		exit 1; \
 	}
 	@command -v qemu-img >/dev/null 2>&1 || { \
-		echo "qemu-img is required to build and finalize the QCOW2" >&2; \
+		echo "qemu-img is required to build and compress the QCOW2" >&2; \
 		exit 1; \
 	}
 
 .PHONY: test
-test: ## Check artifact staging, QCOW2 finalization, and workflow wiring.
+test: ## Check artifact staging, QCOW2 collection, and workflow wiring.
 	$(PYTHON) -B -m unittest discover -s scripts -p 'test_*.py'
+
+# Copy the one completed image without changing its bytes. Collection is a
+# separate target so local builds and CI use the same source-owned boundary.
+# Callers must supply DIST_DIR and capture the single basename printed on
+# stdout (use make --silent when stdout is machine-consumed).
+define collect_qcow2
+	@set -eu; \
+	if [ -z "$$DIST_DIR" ]; then \
+		echo "DIST_DIR is required for $(1) QCOW2 collection" >&2; \
+		exit 1; \
+	fi; \
+	source_dir="$(CURDIR)/output-$(1)"; \
+	set -- "$$source_dir"/*.qcow2; \
+	if [ "$$#" -eq 1 ] && [ ! -e "$$1" ] && [ ! -L "$$1" ]; then \
+		set --; \
+	fi; \
+	if [ "$$#" -ne 1 ]; then \
+		echo "expected exactly one QCOW2 in $$source_dir; found $$#" >&2; \
+		exit 1; \
+	fi; \
+	source="$$1"; \
+	if [ ! -f "$$source" ] || [ -L "$$source" ]; then \
+		echo "QCOW2 source is not a regular file: $$source" >&2; \
+		exit 1; \
+	fi; \
+	iso_name="$(notdir $(ISO_URL))"; \
+	case "$$iso_name" in \
+		ubuntu-*-live-server-"$(ARCH)".iso) ;; \
+		*) echo "ISO_URL does not identify an $(ARCH) Ubuntu installer: $(ISO_URL)" >&2; exit 1 ;; \
+	esac; \
+	version="$${iso_name#ubuntu-}"; \
+	version="$${version%-live-server-$(ARCH).iso}"; \
+	expected="nke-node-$(1)-ubuntu-$$version-$(ARCH).qcow2"; \
+	name="$${source##*/}"; \
+	if [ "$$name" != "$$expected" ]; then \
+		echo "expected $(1) $(ARCH) QCOW2 $$expected; found $$name" >&2; \
+		exit 1; \
+	fi; \
+	mkdir -p "$$DIST_DIR"; \
+	if [ ! -d "$$DIST_DIR" ] || [ -L "$$DIST_DIR" ]; then \
+		echo "DIST_DIR is not a regular directory: $$DIST_DIR" >&2; \
+		exit 1; \
+	fi; \
+	destination="$$DIST_DIR/$$name"; \
+	if [ -L "$$destination" ]; then \
+		echo "refusing to replace symlink destination: $$destination" >&2; \
+		exit 1; \
+	fi; \
+	cp "$$source" "$$destination"; \
+	if [ ! -f "$$destination" ] || [ -L "$$destination" ]; then \
+		echo "collected QCOW2 is not a regular file: $$destination" >&2; \
+		exit 1; \
+	fi; \
+	if ! cmp -s "$$source" "$$destination"; then \
+		rm -f "$$destination"; \
+		echo "collected QCOW2 differs from source: $$destination" >&2; \
+		exit 1; \
+	fi; \
+	printf '%s\n' "$$name"
+endef
+
+collect-qcow2-fde:
+	@$(MAKE) --no-print-directory --silent --file "$(PACKER_MAKEFILE)" check-source
+	$(call collect_qcow2,fde)
+
+collect-qcow2-non-fde:
+	@$(MAKE) --no-print-directory --silent --file "$(PACKER_MAKEFILE)" check-source
+	$(call collect_qcow2,non-fde)
 
 # Full-disk-encryption variant: boots the Ubuntu Server installer to lay down
 # an LVM-on-LUKS layout via autoinstall, then provisions nke-agent/spire-agent,
@@ -194,14 +278,6 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 		-var iso_checksum=$(ISO_CHECKSUM) \
 		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PKR_FILE_FDE)
-	$(PYTHON) ./scripts/finalize-qcow2.py finalize \
-		--variant fde \
-		--arch "$(ARCH)" \
-		--accelerator "$(ACCELERATOR)" \
-		--iso-url "$(ISO_URL)" \
-		--output-dir "$(CURDIR)/output-fde" \
-		--source-root "$(abspath ../..)" \
-		--packer "$(PACKER)"
 
 # Non-FDE variant: LVM-backed ext4 without LUKS. See
 # nke-node-non-fde.pkr.hcl.
@@ -220,14 +296,6 @@ os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 		-var iso_checksum=$(ISO_CHECKSUM) \
 		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PKR_FILE_NON_FDE)
-	$(PYTHON) ./scripts/finalize-qcow2.py finalize \
-		--variant non-fde \
-		--arch "$(ARCH)" \
-		--accelerator "$(ACCELERATOR)" \
-		--iso-url "$(ISO_URL)" \
-		--output-dir "$(CURDIR)/output-non-fde" \
-		--source-root "$(abspath ../..)" \
-		--packer "$(PACKER)"
 
 clean:
 	rm -rf $(CURDIR)/output-fde $(CURDIR)/output-non-fde $(ARTIFACTS) $(ISO_CACHE) $(BUILD_LOGS)

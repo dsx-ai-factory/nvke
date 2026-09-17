@@ -63,9 +63,8 @@ cloud-init, user-data, or the genesis medium. This design satisfies that:
 - The build-time keyfile used to survive the unattended post-install reboot
   lives only on the build VM's own disk and is deleted by `configure-fde.sh`
   before the qcow2 is published.
-- The adjacent versioned build manifest contains output identity and
-  non-secret build/source/tool observations only. The finalizer accepts no
-  passphrase argument and does not serialize the environment.
+- The host-side QCOW2 compression and collection paths only replace or copy
+  the verified disk bytes and do not serialize the process environment.
 - The TPM binding itself happens entirely on-node, driven by the local TPM;
   nothing about it is templated in from outside.
 

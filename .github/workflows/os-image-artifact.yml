@@ -353,7 +353,8 @@ jobs:
           trap 'kill "${console_pid}"; wait "${console_pid}" || true' EXIT
           status=0
           timeout --signal=TERM "${remaining}s" \
-            make -C os-image/packer os-image-fde ARCH=${{ matrix.arch }} || status=$?
+            make -C os-image/packer os-image-fde \
+              ARCH=${{ matrix.arch }} ACCELERATOR=kvm || status=$?
           if [[ "${status}" -eq 124 ]]; then
             echo "::error::FDE build did not finish within ${remaining}s (job timeout minus a 30s buffer)"
             echo "::group::os-image/packer/build-logs (dumped before exiting on self-timeout)"
@@ -400,7 +401,8 @@ jobs:
           trap 'kill "${console_pid}"; wait "${console_pid}" || true' EXIT
           status=0
           timeout --signal=TERM "${remaining}s" \
-            make -C os-image/packer os-image-non-fde ARCH=${{ matrix.arch }} || status=$?
+            make -C os-image/packer os-image-non-fde \
+              ARCH=${{ matrix.arch }} ACCELERATOR=kvm || status=$?
           if [[ "${status}" -eq 124 ]]; then
             echo "::error::non-FDE build did not finish within ${remaining}s (job timeout minus a 30s buffer)"
             echo "::group::os-image/packer/build-logs (dumped before exiting on self-timeout)"
@@ -440,58 +442,32 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      # Make owns the final QCOW2 conversion and adjacent build manifest. Keep
-      # Packer's filename (vm_name in the .pkr.hcl), e.g.
-      # nke-node-non-fde-ubuntu-26.04.1-arm64.qcow2. The v1 build manifest is
-      # validated here for source consumers such as NKD, but is intentionally
-      # not copied into dist or added to the existing OCI/release payload.
-      - name: Validate and collect the finalized qcow2s
+      # Make owns the final QCOW2 conversion and collection. Its collection
+      # targets require a clean source and exactly one regular image, preserve
+      # Packer's basename, and compare the copied bytes before returning it.
+      - name: Collect the finalized qcow2s
         id: disks
         env:
-          ARCH: ${{ matrix.arch }}
           EXPECTED_SOURCE_COMMIT: ${{ github.sha }}
         run: |
           set -euo pipefail
-          actual_source_commit="$(git rev-parse HEAD)"
-          if [[ "${actual_source_commit}" != \
-            "${EXPECTED_SOURCE_COMMIT}" ]]; then
-            echo "::error::checkout ${actual_source_commit} does not match" \
-              "workflow source ${EXPECTED_SOURCE_COMMIT}"
-            exit 1
-          fi
-          expected_source_tree="$(git rev-parse \
-            "${EXPECTED_SOURCE_COMMIT}^{tree}")"
           mkdir -p dist
-          collect() {
-            local dir="$1" key="$2" variant="$3" src name manifest
-            local -a images
-            shopt -s nullglob
-            images=("${dir}"/*.qcow2)
-            shopt -u nullglob
-            if [[ ${#images[@]} -ne 1 ]]; then
-              echo "::error::expected exactly one finalized QCOW2 in ${dir};" \
-                "found ${#images[@]}"
-              exit 1
-            fi
-            src="${images[0]}"
-            name="$(basename "${src}")"
-            manifest="${src}.build-manifest.v1.json"
-            python3 os-image/packer/scripts/finalize-qcow2.py verify \
-              --image "${src}" \
-              --manifest "${manifest}" \
-              --expected-variant "${variant}" \
-              --expected-arch "${ARCH}" \
-              --expected-source-commit "${EXPECTED_SOURCE_COMMIT}" \
-              --expected-source-tree "${expected_source_tree}" \
-              --required-accelerator kvm
-            cp -- "${src}" "dist/${name}"
-            cmp --silent "${src}" "dist/${name}"
-            echo "${key}=${name}" >> "$GITHUB_OUTPUT"
-          }
           if [[ "${{ matrix.build_fde }}" == "true" ]]; then
-            collect os-image/packer/output-fde fde fde
+            fde_name="$(
+              make --no-print-directory --silent -C os-image/packer \
+                collect-qcow2-fde \
+                ARCH=${{ matrix.arch }} \
+                DIST_DIR="$PWD/dist"
+            )"
+            echo "fde=${fde_name}" >> "$GITHUB_OUTPUT"
           fi
-          collect os-image/packer/output-non-fde non_fde non-fde
+          non_fde_name="$(
+            make --no-print-directory --silent -C os-image/packer \
+              collect-qcow2-non-fde \
+              ARCH=${{ matrix.arch }} \
+              DIST_DIR="$PWD/dist"
+          )"
+          echo "non_fde=${non_fde_name}" >> "$GITHUB_OUTPUT"
 
       # --artifact-platform is still marked experimental in the ORAS CLI. It is
       # load-bearing: without it the manifest has no platform in its config and

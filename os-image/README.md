@@ -83,19 +83,15 @@ The build-time cloud-init seed is only for Packer's SSH. The provisioner runs
 `cloud-init clean` and drops the build key, so each qcow2 is a golden image.
 
 Each Packer build applies the publication QCOW2 conversion once through its
-existing `compress-qcow2.sh` post-processor. The Make target then validates
-those unchanged bytes and writes an adjacent, deterministic
-`<image>.build-manifest.v1.json` sidecar. That manifest binds the exact final
-file name, SHA-256, size, virtual size, clean Git commit and tree, selected
-variant/architecture/accelerator, and observed Packer and `qemu-img` versions.
-The Make target checks that the checkout is clean before Packer starts and
-checks it again during finalization. Finalization also fails if the output
-directory is ambiguous or `qemu-img` reports a non-QCOW2 or backing file. This
-first manifest is an output/build record, not an exhaustive material ledger or
-SBOM. By default, the Makefile exports `PACKER_CACHE_DIR` under the ignored
+existing `compress-qcow2.sh` post-processor. Before replacing Packer's output,
+that path verifies the converted temporary file is a self-contained,
+unencrypted QCOW2 with a positive virtual size and no backing file. The
+source-owned Make targets check that the checkout is clean before Packer starts
+and again before collection. Collection requires exactly one finalized QCOW2,
+preserves its basename, and verifies that the copied publication bytes are
+identical. By default, the Makefile exports `PACKER_CACHE_DIR` under the ignored
 `packer/iso-cache/` tree so Packer's build/download cache does not dirty the
-recorded checkout; callers may override that directory without changing the
-recipe.
+checkout; callers may override that directory without changing the recipe.
 
 ## Full-disk-encryption (FDE) variant
 
@@ -186,11 +182,10 @@ multi-platform manifest shared across arches, see the workflow's header
 comment for why — then cuts a GitHub Release attaching `nke-os-image-check`
 and a `checksums.txt` covering all four qcow2s and the checker binary.
 
-The workflow verifies each adjacent build manifest against the matrix variant
-and architecture, checked-out commit and tree, and its required KVM lane before
-copying the exact Make-finalized bytes. The sidecar is a source-build contract
-for local and NKD consumers; it is not an OCI layer or GitHub Release asset in
-this initial contract, so existing `oras pull` output remains one qcow2.
+The workflow selects the source-owned Make collection target for each matrix
+variant. Make copies the final QCOW2 under its existing basename and verifies
+that the publication copy is byte-identical. Existing `oras pull` output
+remains one qcow2.
 
 The pulled file keeps the name Packer gave it, so it carries the Ubuntu point
 release and the architecture and two arches can share a directory:
