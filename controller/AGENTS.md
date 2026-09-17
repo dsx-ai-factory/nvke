@@ -115,6 +115,7 @@ All Go files must use the repository's Apache-2.0 SPDX header. Run `make license
 │   └── client.gen.go       # Generated client
 ├── cmd/
 │   └── worker/             # Main CWE worker entrypoint
+├── deploy/dashboards/      # Grafana reference JSON (import-only; see deploy/dashboards/AGENTS.md)
 ├── docs/                   # Developer guides (API authentication, BYO OS)
 ├── hack/
 │   └── remote-sync/        # Mutagen templates for Mac→Linux Tilt
@@ -276,6 +277,10 @@ Activities are in `internal/temporal/activities/`.
 Controller releases use signed `controller/vX.Y.Z` tags. GitHub Actions builds
 the release and publishes the controller image and Helm chart. Follow the root
 [`RELEASE.md`](../RELEASE.md); do not create releases by hand.
+
+## Reference Grafana dashboards
+
+JSON under `deploy/dashboards/` is imported by operators. It is not rendered by Helm. Before editing those files, read [deploy/dashboards/AGENTS.md](deploy/dashboards/AGENTS.md).
 
 ## PR Guidelines
 
