@@ -16,16 +16,20 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/NVIDIA/nke/controller/api"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/nke"
 	"github.com/NVIDIA/nke/controller/test/e2e/internal/nkectl"
 )
@@ -56,13 +60,16 @@ func (t *tenantTest) useNkectl(ctx context.Context, timeouts nke.Options) {
 	t.log.Info("Driving the cluster lifecycle through nkectl", "endpoint", runner.BaseURL())
 }
 
-// cleanupNkectlCreated removes any cluster nkectl created that still exists,
+// cleanupNkectlCreated removes any node pool and cluster nkectl created that
+// still exists,
 // including one the suite never recorded because its post-create lookup failed.
 // A no-op for entries that did not use the CLI.
 func (t *tenantTest) cleanupNkectlCreated(ctx context.Context) {
 	if t.nkectlRunner == nil {
 		return
 	}
+	// Pools first: CleanupCreated takes their clusters away.
+	t.nkectlRunner.CleanupCreatedNodePools(ctx)
 	t.nkectlRunner.CleanupCreated(ctx)
 }
 
@@ -145,4 +152,145 @@ func validateNkectlPostCreate(test *tenantTest) {
 			Expect(strings.ToLower(out)).To(ContainSubstring("not found"))
 		}, SpecTimeout(2*time.Minute))
 	})
+}
+
+const (
+	// nkectlPoolName is the node pool the CLI lifecycle below creates. Distinct
+	// from the names nodepool_lifecycle_test.go uses so a shared cluster could
+	// never have the two collide.
+	nkectlPoolName = "nkectl-workers"
+	// nkectlPoolNodeNamePrefix is the pool's node name prefix. Node names are
+	// <cluster>-<prefix>-<4 digits> (controller/internal/naming/node.go), which
+	// is how the tenant-side readiness assertion finds this pool's nodes: nkectl
+	// has no node-level command to list them with.
+	nkectlPoolNodeNamePrefix = "nkw"
+)
+
+// validateNkectlNodePoolLifecycle drives a node pool through create, scale up,
+// scale down and delete with nkectl alone, asserting the nodes it adds become
+// Ready in the tenant cluster.
+//
+// It runs on the CLI rows of both container-backed lanes, so the commands are
+// covered against CAPD and against NICo.
+func validateNkectlNodePoolLifecycle(test *tenantTest) {
+	Describe("nkectl node pool lifecycle", Label("nkectl", "nodepool", "scale"), func() {
+		It("creates, scales and deletes a node pool through the CLI", func(ctx context.Context) {
+			Expect(test.nkectlRunner).NotTo(BeNil(),
+				"the nkectl runner should still be open; it is closed in AfterAll, after these specs")
+			ref := nkectl.NodePoolRef{Cluster: test.cluster.Name, Pool: nkectlPoolName}
+
+			By("Creating a worker node pool with `nkectl create nodepool -f`")
+			req := expectSucceed(workerNodePoolRequest(test, nkectlPoolName, nkectlPoolNodeNamePrefix))
+			pool := expectSucceed(test.nkectlRunner.CreateNodePool(ctx, test.cluster.Name, req))
+			Expect(pool.Name).To(Equal(nkectlPoolName))
+			Expect(pool.ControlPlane).To(BeFalse(), "the created pool should be a worker pool")
+			Expect(pool.DesiredNodeCount).To(Equal(1))
+			Expect(pool.ClusterID).To(Equal(test.cluster.ID), "the pool should belong to this cluster")
+
+			By("Waiting for `nkectl get nodepools` to report the pool provisioned")
+			expectSucceed(test.nkectlRunner.WaitForNodePoolProvisioned(ctx, ref))
+
+			By("Verifying the pool appears in the cluster's node pool listing")
+			listed := expectSucceed(test.nkectlRunner.ListNodePools(ctx, test.cluster.Name))
+			Expect(nodePoolNames(listed)).To(ContainElement(nkectlPoolName))
+
+			tenantClient := nkectlTenantClient(ctx, test)
+			nodePrefix := fmt.Sprintf("%s-%s-", test.cluster.Name, req.NodeNamePrefix)
+
+			By("Waiting for the pool's node to be Ready in the tenant cluster")
+			eventuallyReadyPoolNodes(ctx, test, tenantClient, nodePrefix, 1)
+
+			By("Scaling the pool to two with `nkectl patch nodepool --patch`")
+			expectSucceed(test.nkectlRunner.ScaleNodePool(ctx, ref, 2))
+			expectSucceed(test.nkectlRunner.WaitForNodePoolDesiredCount(ctx, ref, 2))
+			scaledUpNodes := eventuallyReadyPoolNodes(ctx, test, tenantClient, nodePrefix, 2)
+
+			// Scaling down asserts desiredNodeCount, not the node count:
+			// controller/internal/controllers/nodeset/controller.go deletes only
+			// pending nodes on a surplus and deliberately skips auto-teardown of
+			// running ones, so both nodes stay up.
+			By("Scaling the pool back to one and verifying the running nodes are kept")
+			expectSucceed(test.nkectlRunner.ScaleNodePool(ctx, ref, 1))
+			scaledDown := expectSucceed(test.nkectlRunner.WaitForNodePoolDesiredCount(ctx, ref, 1))
+			Expect(scaledDown.DesiredNodeCount).To(Equal(1))
+			Expect(expectSucceed(readyPoolNodes(ctx, tenantClient, nodePrefix))).To(Equal(scaledUpNodes),
+				"scaling down must not tear down running nodes")
+
+			By("Deleting the pool with `nkectl delete nodepool`")
+			Expect(test.nkectlRunner.DeleteNodePool(ctx, ref)).To(Succeed())
+			Expect(test.nkectlRunner.WaitForNodePoolDeleted(ctx, ref)).To(Succeed())
+
+			By("Verifying the CLI reports the deleted pool as not found")
+			out, err := test.nkectlRunner.Run(ctx, "get", "nodepools", nkectlPoolName, "--cluster", test.cluster.Name)
+			Expect(err).To(HaveOccurred(), "a deleted node pool should not resolve")
+			Expect(strings.ToLower(out)).To(ContainSubstring("not found"))
+		}, SpecTimeout(2*time.Hour))
+	})
+}
+
+// nkectlTenantClient returns a client for the tenant cluster, retrying while
+// its credentials are still being published.
+func nkectlTenantClient(ctx context.Context, test *tenantTest) client.Client {
+	GinkgoHelper()
+	var tenantClient client.Client
+	Eventually(func(ctx context.Context) error {
+		var err error
+		tenantClient, err = test.tenantClients.GetClient(ctx, test.cluster.Name)
+		return err
+	}).WithContext(ctx).WithTimeout(1 * time.Minute).WithPolling(1 * time.Second).Should(Succeed())
+	return tenantClient
+}
+
+// eventuallyReadyPoolNodes blocks until the tenant cluster reports exactly want
+// Ready nodes named for this pool, and returns their names.
+func eventuallyReadyPoolNodes(
+	ctx context.Context,
+	test *tenantTest,
+	tenantClient client.Client,
+	nodePrefix string,
+	want int,
+) []string {
+	GinkgoHelper()
+	var ready []string
+	Eventually(func(ctx context.Context) error {
+		var err error
+		ready, err = readyPoolNodes(ctx, tenantClient, nodePrefix)
+		if err != nil {
+			return err
+		}
+		if len(ready) != want {
+			return fmt.Errorf("tenant cluster reports %d Ready nodes named %s*, want %d", len(ready), nodePrefix, want)
+		}
+		return nil
+	}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5 * time.Second).Should(Succeed())
+	test.log.Info("Node pool nodes are Ready in the tenant cluster", "prefix", nodePrefix, "nodes", ready)
+	return ready
+}
+
+// readyPoolNodes returns the sorted names of the tenant cluster's Ready nodes
+// whose name carries nodePrefix.
+func readyPoolNodes(ctx context.Context, tenantClient client.Client, nodePrefix string) ([]string, error) {
+	var nodes corev1.NodeList
+	if err := tenantClient.List(ctx, &nodes); err != nil {
+		return nil, fmt.Errorf("listing tenant Kubernetes nodes: %w", err)
+	}
+	var ready []string
+	for i := range nodes.Items {
+		if !strings.HasPrefix(nodes.Items[i].Name, nodePrefix) {
+			continue
+		}
+		if isReady, _ := kubernetesNodeReady(&nodes.Items[i]); isReady {
+			ready = append(ready, nodes.Items[i].Name)
+		}
+	}
+	sort.Strings(ready)
+	return ready, nil
+}
+
+func nodePoolNames(pools []api.NodePool) []string {
+	names := make([]string, 0, len(pools))
+	for _, pool := range pools {
+		names = append(names, pool.Name)
+	}
+	return names
 }

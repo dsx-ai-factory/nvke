@@ -114,6 +114,9 @@ type Runner struct {
 	// being, including one whose create response was lost. Names, because that
 	// is all CleanupCreated needs and all that is known before the reply.
 	createdClusters []string
+	// createdNodePools names every node pool CreateNodePool may have brought
+	// into being, keyed the way nkectl addresses one.
+	createdNodePools []NodePoolRef
 }
 
 // New resolves the binary, starts a port-forward to the NKE Service and

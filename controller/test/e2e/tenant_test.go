@@ -189,6 +189,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			}
 			if spec.createVia == clientNkectl {
 				validateNkectlPostCreate(&test)
+				validateNkectlNodePoolLifecycle(&test)
 			}
 		})
 
@@ -314,6 +315,17 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
 		},
 		options:   nke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		createVia: clientNkectl,
+		validate:  validations{provisioningOnly: true},
+	}),
+	// Mirrors the CAPD row above so the node pool lifecycle is covered on the
+	// NICo substrate too; the CLI creates the worker pool this row cares about.
+	Entry("nico-containers via nkectl", Ordered, ContinueOnFailure, Label("nico-containers", "nkectl"), testSpec{
+		buildSpec: nicoSpec,
+		shape: clusterShape{
+			controlPlanePools: []nke.NodePoolSpec{{DesiredNodeCount: 1}},
+		},
+		options:   nke.Options{Provision: 15 * time.Minute, Delete: 10 * time.Minute, Poll: 5 * time.Second},
 		createVia: clientNkectl,
 		validate:  validations{provisioningOnly: true},
 	}),

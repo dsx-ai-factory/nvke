@@ -7,7 +7,7 @@
 #
 # The Ginkgo suite proves the server. This proves the CLI can talk to it: read
 # commands and their negatives, provider inspection, rejected creates, and one
-# create, list, patch, delete round trip.
+# create, list, patch, delete round trip over a cluster and a node pool.
 #
 # Needs from the caller: log, runner_exec, RUNNER_NAME, NKECTL_BIN, TMP_DIR,
 # BACKEND, CAPD_NODE_IMAGE.
@@ -25,6 +25,8 @@ NKECTL_SMOKE_REJECT_CLUSTER=nkectl-smoke-reject
 NKECTL_SMOKE_KUBERNETES_VERSION="${NKECTL_SMOKE_KUBERNETES_VERSION:-1.34.2}"
 # Name the round trip creates and deletes.
 NKECTL_SMOKE_WRITE_CLUSTER=nkectl-smoke-write
+# The worker pool the round trip adds to that cluster, then removes.
+NKECTL_SMOKE_WRITE_NODEPOOL=nkectl-smoke-pool
 # Delete wait: this many polls, this many seconds apart.
 NKECTL_SMOKE_DELETE_POLLS="${NKECTL_SMOKE_DELETE_POLLS:-60}"
 NKECTL_SMOKE_DELETE_POLL_SECONDS="${NKECTL_SMOKE_DELETE_POLL_SECONDS:-5}"
@@ -159,11 +161,79 @@ EOF
     return 1
   fi
 
+  nkectl_smoke_nodepool_negatives || return 1
   nkectl_smoke_providers || return 1
   nkectl_smoke_create_rejections || return 1
   nkectl_smoke_write_round_trip || return 1
 
-  log "PASS: nkectl reached CWE, authenticated, listed clusters, read providers, and had malformed creates rejected"
+  log "PASS: nkectl reached CWE, authenticated, listed clusters and node pools, read providers, and had malformed creates rejected"
+}
+
+# Node pool read-path negatives, asserting the message like the cluster ones
+# above. A node pool command resolves a name through CWE before it acts, so an
+# exit code alone cannot tell a lookup that found nothing apart from a flag the
+# CLI rejected on its own.
+nkectl_smoke_nodepool_negatives() {
+  local out absent="${NKECTL_SMOKE_ABSENT}"
+
+  if out="$(nkectl_exec get nodepools "${absent}" 2>&1)"; then
+    log "nkectl smoke: 'get nodepools ${absent}' succeeded against a name that does not exist" >&2
+    return 1
+  fi
+  if ! grep -q 'not found' <<<"${out}"; then
+    log "nkectl smoke: 'get nodepools <name>' failed without a not-found message: ${out}" >&2
+    return 1
+  fi
+
+  # --cluster is resolved through FindClusterByName before any pool is listed.
+  if out="$(nkectl_exec get nodepools --cluster "${absent}" 2>&1)"; then
+    log "nkectl smoke: 'get nodepools --cluster ${absent}' succeeded against a cluster that does not exist" >&2
+    return 1
+  fi
+  if ! grep -q "cluster \"${absent}\" not found" <<<"${out}"; then
+    log "nkectl smoke: 'get nodepools --cluster <name>' failed without naming the missing cluster: ${out}" >&2
+    return 1
+  fi
+
+  # The FindNodePoolByName lookup patch and delete share.
+  if out="$(nkectl_exec patch nodepool "${absent}" --cluster "${absent}" --patch 'desiredNodeCount: 1' 2>&1)"; then
+    log "nkectl smoke: 'patch nodepool ${absent}' succeeded against a name that does not exist" >&2
+    return 1
+  fi
+  if ! grep -q "node pool \"${absent}\" not found in cluster \"${absent}\"" <<<"${out}"; then
+    log "nkectl smoke: 'patch nodepool' failed without a not-found message: ${out}" >&2
+    return 1
+  fi
+
+  if out="$(nkectl_exec delete nodepool "${absent}" --cluster "${absent}" 2>&1)"; then
+    log "nkectl smoke: 'delete nodepool ${absent}' succeeded against a name that does not exist" >&2
+    return 1
+  fi
+  if ! grep -q "node pool \"${absent}\" not found in cluster \"${absent}\"" <<<"${out}"; then
+    log "nkectl smoke: 'delete nodepool' failed without a not-found message: ${out}" >&2
+    return 1
+  fi
+
+  # Pool names are unique per cluster, not per site, so --cluster is required.
+  if out="$(nkectl_exec delete nodepool "${absent}" 2>&1)"; then
+    log "nkectl smoke: 'delete nodepool ${absent}' was accepted with no --cluster" >&2
+    return 1
+  fi
+  if ! grep -q 'required flag(s) "cluster" not set' <<<"${out}"; then
+    log "nkectl smoke: 'delete nodepool' with no --cluster failed for some other reason: ${out}" >&2
+    return 1
+  fi
+
+  # Rejected by the patch validator before any request is issued: teleportEnabled
+  # is a real UpdateNodePoolRequest field that nkectl does not expose.
+  if out="$(nkectl_exec patch nodepool "${absent}" --cluster "${absent}" --patch 'teleportEnabled: true' 2>&1)"; then
+    log "nkectl smoke: 'patch nodepool --patch teleportEnabled' was accepted" >&2
+    return 1
+  fi
+  if ! grep -q 'nkectl can set desiredNodeCount' <<<"${out}"; then
+    log "nkectl smoke: an unsupported patch field failed for some reason other than the field: ${out}" >&2
+    return 1
+  fi
 }
 
 # `get providers` reads the site kubeconfig through kubectl rather than the CWE
@@ -297,10 +367,11 @@ nkectl_smoke_expect_create_rejected() {
   fi
 }
 
-# Create, list, duplicate-reject, delete. One control-plane pool with
-# autoProvisionDisabled passes create validation and schedules no node, so CWE
-# writes only the CAPI Cluster and DockerCluster. Runs after the last leg: the
-# gate between legs counts tenant clusters.
+# Create, list, duplicate-reject, delete, with the node pool round trip nested
+# inside it. One control-plane pool with autoProvisionDisabled passes create
+# validation and schedules no node, so CWE writes only the CAPI Cluster and
+# DockerCluster. Runs after the last leg: the gate between legs counts tenant
+# clusters.
 nkectl_smoke_write_round_trip() {
   local out rc=0
 
@@ -415,6 +486,8 @@ nkectl_smoke_write_assertions() {
     return 1
   fi
 
+  nkectl_smoke_nodepool_round_trip || return 1
+
   # Only passes if the first create committed.
   if out="$(nkectl_exec create cluster -f "$(nkectl_smoke_spec_path write)" 2>&1)"; then
     log "nkectl smoke: a second 'create cluster' of ${name} was accepted: ${out}" >&2
@@ -459,4 +532,167 @@ nkectl_smoke_write_assertions() {
   done
   log "nkectl smoke: ${name} was still listed after ${NKECTL_SMOKE_DELETE_POLLS} polls" >&2
   return 1
+}
+
+# Create, list, filter, patch and delete one worker pool on the cluster the
+# write round trip just created. Called with that cluster alive, and its
+# failures unwind through the caller's cleanup.
+nkectl_smoke_nodepool_round_trip() {
+  local out cluster_id cluster="${NKECTL_SMOKE_WRITE_CLUSTER}" pool="${NKECTL_SMOKE_WRITE_NODEPOOL}"
+
+  # CreateNodePoolRequest carries clusterID, not a cluster name.
+  if ! out="$(nkectl_exec get clusters "${cluster}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get clusters ${cluster} -o json' failed before the node pool round trip: ${out}" >&2
+    return 1
+  fi
+  cluster_id="$(jq -r '.[0].id // empty' <<<"${out}")"
+  if [[ -z "${cluster_id}" ]]; then
+    log "nkectl smoke: no cluster id for ${cluster}: ${out}" >&2
+    return 1
+  fi
+
+  nkectl_smoke_stage_spec pool <<EOF || return 1
+clusterID: ${cluster_id}
+name: ${pool}
+nodeNamePrefix: pool
+desiredNodeCount: 1
+controlPlane: false
+systemReservedMemory: "1Gi"
+autoProvisionDisabled: true
+autoModeDisabled: false
+recycleBudget: 0
+infra:
+  spireAttestationMethod: joinToken
+  machineTemplate:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: DockerMachineTemplate
+    spec:
+      template:
+        spec:
+          customImage: ${CAPD_NODE_IMAGE}
+EOF
+
+  if ! out="$(nkectl_exec create nodepool -f "$(nkectl_smoke_spec_path pool)" 2>&1)"; then
+    log "nkectl smoke: 'create nodepool' failed: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'created (id: ' <<<"${out}"; then
+    log "nkectl smoke: 'create nodepool' succeeded without reporting the id: ${out}" >&2
+    return 1
+  fi
+
+  # A row, not just a header.
+  if ! out="$(nkectl_exec get nodepools 2>&1)"; then
+    log "nkectl smoke: 'get nodepools' failed after the create: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'K8S VERSION' <<<"${out}"; then
+    log "nkectl smoke: 'get nodepools' printed no table header: ${out}" >&2
+    return 1
+  fi
+  if ! grep -qE "^${pool}[[:space:]]" <<<"${out}"; then
+    log "nkectl smoke: 'get nodepools' printed no row for ${pool}: ${out}" >&2
+    return 1
+  fi
+
+  # Filter by cluster: the cluster's own control-plane pool and ours, and
+  # nothing belonging to another cluster.
+  if ! out="$(nkectl_exec get nodepools --cluster "${cluster}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get nodepools --cluster ${cluster} -o json' failed: ${out}" >&2
+    return 1
+  fi
+  if ! jq -e --arg p "${pool}" --arg id "${cluster_id}" \
+    'all(.clusterID == $id) and ([.[].name] | index($p) != null and index("control-plane") != null)' \
+    <<<"${out}" >/dev/null; then
+    log "nkectl smoke: 'get nodepools --cluster ${cluster}' did not return exactly that cluster's pools: ${out}" >&2
+    return 1
+  fi
+
+  # Filter by name within the cluster.
+  if ! out="$(nkectl_exec get nodepools "${pool}" --cluster "${cluster}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get nodepools ${pool} --cluster ${cluster} -o json' failed: ${out}" >&2
+    return 1
+  fi
+  if ! jq -e --arg p "${pool}" 'length == 1 and .[0].name == $p' <<<"${out}" >/dev/null; then
+    log "nkectl smoke: 'get nodepools ${pool} --cluster ${cluster}' did not return exactly our pool: ${out}" >&2
+    return 1
+  fi
+
+  # Filter by name alone: the ?name= query without ?clusterName=.
+  if ! out="$(nkectl_exec get nodepools "${pool}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get nodepools ${pool} -o json' failed: ${out}" >&2
+    return 1
+  fi
+  if ! jq -e --arg id "${cluster_id}" 'length == 1 and .[0].clusterID == $id' <<<"${out}" >/dev/null; then
+    log "nkectl smoke: 'get nodepools ${pool}' did not return exactly our pool: ${out}" >&2
+    return 1
+  fi
+
+  nkectl_smoke_nodepool_scale 2 || return 1
+  # Scaling down is a desiredNodeCount change and nothing more: the node set
+  # controller deletes surplus *pending* nodes and deliberately leaves running
+  # ones alone (internal/controllers/nodeset/controller.go), so the field is the
+  # only thing there is to assert.
+  nkectl_smoke_nodepool_scale 0 || return 1
+
+  # Only passes if the first create committed.
+  if out="$(nkectl_exec create nodepool -f "$(nkectl_smoke_spec_path pool)" 2>&1)"; then
+    log "nkectl smoke: a second 'create nodepool' of ${pool} was accepted: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'already exists' <<<"${out}"; then
+    log "nkectl smoke: the duplicate node pool create failed for a reason other than the name: ${out}" >&2
+    return 1
+  fi
+
+  if ! out="$(nkectl_exec delete nodepool "${pool}" --cluster "${cluster}" 2>&1)"; then
+    log "nkectl smoke: 'delete nodepool ${pool}' failed: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'deletion started (id: ' <<<"${out}"; then
+    log "nkectl smoke: 'delete nodepool ${pool}' succeeded without reporting it: ${out}" >&2
+    return 1
+  fi
+
+  # Teardown is asynchronous.
+  local attempt
+  for ((attempt = 1; attempt <= NKECTL_SMOKE_DELETE_POLLS; attempt++)); do
+    if out="$(nkectl_exec get nodepools "${pool}" --cluster "${cluster}" 2>&1)"; then
+      sleep "${NKECTL_SMOKE_DELETE_POLL_SECONDS}"
+      continue
+    fi
+    if grep -q 'not found' <<<"${out}"; then
+      log "nkectl smoke: node pool ${pool} was gone after ${attempt} polls"
+      log "PASS: nkectl created, listed, filtered, patched and deleted a node pool through CWE"
+      return 0
+    fi
+    log "nkectl smoke: polling for node pool ${pool} failed for a reason other than not-found: ${out}" >&2
+    return 1
+  done
+  log "nkectl smoke: node pool ${pool} was still listed after ${NKECTL_SMOKE_DELETE_POLLS} polls" >&2
+  return 1
+}
+
+# Patch desiredNodeCount to $1 and assert CWE stored it.
+nkectl_smoke_nodepool_scale() {
+  local want="$1" out cluster="${NKECTL_SMOKE_WRITE_CLUSTER}" pool="${NKECTL_SMOKE_WRITE_NODEPOOL}"
+
+  if ! out="$(nkectl_exec patch nodepool "${pool}" --cluster "${cluster}" \
+    --patch "desiredNodeCount: ${want}" 2>&1)"; then
+    log "nkectl smoke: 'patch nodepool ${pool}' to ${want} failed: ${out}" >&2
+    return 1
+  fi
+  if ! grep -q 'patched (id: ' <<<"${out}"; then
+    log "nkectl smoke: 'patch nodepool ${pool}' succeeded without reporting the id: ${out}" >&2
+    return 1
+  fi
+
+  if ! out="$(nkectl_exec get nodepools "${pool}" --cluster "${cluster}" -o json 2>&1)"; then
+    log "nkectl smoke: 'get nodepools ${pool} -o json' failed after the patch: ${out}" >&2
+    return 1
+  fi
+  if ! jq -e --argjson n "${want}" '.[0].desiredNodeCount == $n' <<<"${out}" >/dev/null; then
+    log "nkectl smoke: 'patch nodepool' did not apply desiredNodeCount=${want}: ${out}" >&2
+    return 1
+  fi
 }
