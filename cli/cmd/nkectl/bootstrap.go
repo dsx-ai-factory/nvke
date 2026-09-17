@@ -241,10 +241,22 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		})
 	}
 
-	// Last check before anything is built. A key file already at the output
-	// path belongs to an earlier bootstrap of this cluster name. It is never
-	// overwritten, so the run would fail at the very end; better to say so now,
-	// where it costs a message rather than a Kind cluster and half an hour.
+	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
+
+	// Last checks before anything is built. Each refuses a state a fresh
+	// bootstrap cannot run over, names it, and says what to do; each costs a
+	// message here and a Kind cluster plus half an hour anywhere later. None of
+	// them changes anything: what an earlier run left behind is left for the
+	// operator to deal with, and for a later resume to pick up.
+	//
+	// A bootstrap cluster still running is the strongest sign of an earlier
+	// attempt, and may hold that attempt's encryption key.
+	if err := requireNoBootstrapCluster(ctx, engine, cfg.ClusterName); err != nil {
+		return err
+	}
+	// A key file already at the output path belongs to an earlier bootstrap of
+	// this cluster name. It is never overwritten, so the run would fail at the
+	// very end.
 	if inv.Cluster.EtcdEncryptionEnabled() {
 		if err := requireNoKeyFile(etcdKeyPath(opts, inv.ClusterName)); err != nil {
 			return err
@@ -257,7 +269,6 @@ func runBootstrapSite(out io.Writer, opts *bootstrapSiteOptions) (err error) {
 		return err
 	}
 
-	engine := bootstrapengine.New(opts.bootstrapRunner, logger)
 	logger.Info("creating ephemeral bootstrap kind cluster", "cluster", cfg.ClusterName)
 	cluster, err := engine.Create(ctx, cfg)
 	if err != nil {
@@ -561,6 +572,29 @@ func siteKubeconfigPath(clusterName string, opts *bootstrapSiteOptions) string {
 		return opts.kubeconfigOut
 	}
 	return clusterName + ".kubeconfig"
+}
+
+// requireNoBootstrapCluster refuses to start while a bootstrap cluster from an
+// earlier run is still running.
+//
+// A leftover is kept on purpose — by --keep-bootstrap-cluster, or by a run that
+// failed after building its site cluster. In the second case it may hold the
+// only copy of that cluster's etcd encryption key that is not on a node, and
+// the natural response to "already exists" is the delete that loses it. The
+// message leads with saving the key. Nothing is deleted or reused here.
+func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engine, name string) error {
+	exists, err := engine.Exists(ctx, name)
+	if err != nil {
+		return fmt.Errorf("checking for a bootstrap cluster from an earlier run: %w", err)
+	}
+	if !exists {
+		return nil
+	}
+	return fmt.Errorf("bootstrap cluster %q from an earlier run is still running. If that run built an encrypted "+
+		"site cluster and did not save its key, the key is in this cluster: get its kubeconfig with "+
+		"`KIND_EXPERIMENTAL_PROVIDER=nerdctl kind get kubeconfig --name %s`, save any etcd-encryption-key-* Secret "+
+		"in namespace %s, then delete it with `KIND_EXPERIMENTAL_PROVIDER=nerdctl kind delete cluster --name %s` and re-run",
+		name, name, cwedeploy.Namespace, name)
 }
 
 // requireNoControlPlane refuses to bootstrap over a host that already accepts

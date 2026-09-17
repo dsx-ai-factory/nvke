@@ -1141,3 +1141,53 @@ func TestRunBootstrapSiteRefusesHostsServingAControlPlane(t *testing.T) {
 		t.Errorf("the bootstrap kind cluster was created despite a host already serving a control plane; calls: %v", runner.calls)
 	}
 }
+
+// leftoverKindRunner reports the bootstrap cluster as already present, as a
+// run that kept it — or failed and retained it — leaves things.
+type leftoverKindRunner struct{ fakeBootstrapRunner }
+
+func (r leftoverKindRunner) Run(ctx context.Context, env map[string]string, name string, args ...string) (string, error) {
+	if name == "kind" && len(args) >= 2 && args[0] == "get" && args[1] == "clusters" {
+		return "nkectl-bootstrap\n", nil
+	}
+	return r.fakeBootstrapRunner.Run(ctx, env, name, args...)
+}
+
+// TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns: the cluster
+// left by an earlier run may hold the key that run did not save. The refusal
+// says how to get it out before it says how to delete the cluster, and does
+// not delete or reuse anything itself.
+func TestRunBootstrapSiteRefusesWhileAnEarlierBootstrapClusterRuns(t *testing.T) {
+	setBootstrapEnv(t)
+
+	runner := &recordingRunner{next: leftoverKindRunner{}}
+	err := runBootstrapSite(io.Discard, &bootstrapSiteOptions{
+		siteSpec:         writeSiteSpec(t, validSiteSpec),
+		bootstrapRunner:  runner,
+		cweRunner:        fakeCWERunner{},
+		encryptionKeyOut: filepath.Join(t.TempDir(), "key.json"),
+		lookPath:         runtimeOnPath,
+		dialContext:      refuseDial,
+	})
+	if err == nil {
+		t.Fatal("expected an error while an earlier bootstrap cluster is still running")
+	}
+	msg := err.Error()
+	for _, want := range []string{
+		"still running",
+		"kind get kubeconfig --name nkectl-bootstrap",
+		"etcd-encryption-key-",
+		"namespace cloud-workflow-engine",
+		"kind delete cluster --name nkectl-bootstrap",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error %q does not contain %q", msg, want)
+		}
+	}
+	if strings.Index(msg, "get kubeconfig") > strings.Index(msg, "delete cluster") {
+		t.Errorf("error %q tells the operator to delete before it tells them to save the key", msg)
+	}
+	if runner.sawArgs("create", "cluster") || runner.sawArgs("delete", "cluster") {
+		t.Errorf("the check must neither create nor delete a bootstrap cluster; calls: %v", runner.calls)
+	}
+}

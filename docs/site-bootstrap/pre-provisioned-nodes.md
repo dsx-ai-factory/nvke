@@ -185,6 +185,20 @@ sudo cat /var/log/nke-agent.log
 sudo systemctl restart nke-agent
 ```
 
+**Bootstrap refuses to start: "bootstrap cluster … from an earlier run is still running":**
+
+The ephemeral Kind cluster from a previous bootstrap is still up — kept by `--keep-bootstrap-cluster`, or retained because that run failed after building the site cluster. In the second case it may hold the site cluster's etcd encryption key. Save the key before deleting it:
+
+```bash
+export KIND_EXPERIMENTAL_PROVIDER=nerdctl
+kind get kubeconfig --name nkectl-bootstrap > bootstrap.kubeconfig
+kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine get secrets | grep etcd-encryption-key-
+# save any that appear, with `umask 077 && kubectl ... get secret <name> -o json > <file>`, then:
+kind delete cluster --name nkectl-bootstrap
+```
+
+Bootstrap does not delete or reuse the cluster itself.
+
 **Bootstrap refuses to start: "a Kubernetes API server is already listening on port 6443":**
 
 A host in the site spec already runs a control plane, usually one left behind by an earlier attempt. Bootstrap does not provision over it: encryption is configured during `kubeadm init`, so a second run cannot pick up the key that host already holds. Reset every node that has kubeadm state, then re-run:
