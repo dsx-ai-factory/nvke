@@ -8,7 +8,7 @@
 # compile could merge and only fail later in a release or an image build.
 #
 # Runs on ubuntu-latest with `pull_request`, deliberately. Every module in
-# go.work — all nine, including controller, nico-sim, os-image, and nkectl — resolves
+# go.work — all ten, including controller, nico-sim, os-image, and nkectl — resolves
 # its dependencies from the committed vendor/ tree, so this needs no NVIDIA
 # runner and no credentials -- which means it also runs on fork pull requests
 # and on Dependabot's, where the repository currently has almost no coverage.

@@ -57,7 +57,7 @@ What distinguishes it from a generic CAPI distribution:
 | `docs/` | Architecture, getting started, and admin guides. |
 | `os-image/` | Reference Ubuntu node OS image (spec + Packer) and `nke-os-image-check`. |
 
-**Nine Go modules**, tied together by a workspace at the repository root, each
+**Ten Go modules**, tied together by a workspace at the repository root, each
 independently buildable. `make build` links six binaries: `agent`, `updater`,
 `controller`, `nkectl`, `capd-reboot-controller` and
 `nke-os-image-check`.
