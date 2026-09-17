@@ -203,6 +203,43 @@ func TestClusterRequest_SerialisesToTheAPIShape(t *testing.T) {
 	}
 }
 
+// TestClusterRequest_CarriesTheControlPlaneVIP checks VIP forwarding and omission.
+func TestClusterRequest_CarriesTheControlPlaneVIP(t *testing.T) {
+	inv := testSiteSpec()
+	inv.Cluster.ControlPlaneVIP = "10.0.0.100"
+
+	req, err := ClusterRequest(inv)
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+	if req.ControlPlaneVIP != "10.0.0.100" {
+		t.Errorf("ControlPlaneVIP = %q, want %q", req.ControlPlaneVIP, "10.0.0.100")
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshalling the request: %v", err)
+	}
+	if !strings.Contains(string(body), `"controlPlaneVIP":"10.0.0.100"`) {
+		t.Errorf("request JSON does not carry the VIP:\n%s", body)
+	}
+
+	empty := testSiteSpec() // no VIP
+	req, err = ClusterRequest(empty)
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+	if req.ControlPlaneVIP != "" {
+		t.Errorf("ControlPlaneVIP = %q, want empty", req.ControlPlaneVIP)
+	}
+	body, err = json.Marshal(req)
+	if err != nil {
+		t.Fatalf("marshalling the request: %v", err)
+	}
+	if strings.Contains(string(body), "controlPlaneVIP") {
+		t.Errorf("an empty VIP must be omitted from the JSON body, but it is present:\n%s", body)
+	}
+}
+
 func TestClusterRequest_RejectsANilSiteSpec(t *testing.T) {
 	if _, err := ClusterRequest(nil); err == nil {
 		t.Error("expected an error for a nil site spec")

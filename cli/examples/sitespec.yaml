@@ -51,6 +51,11 @@ cluster:
   # afterwards. Set to false to opt out.
   # etcdEncryption: true
 
+  # Optional IPv4 API endpoint, advertised by kube-vip. Requires BGP routing
+  # to the nodes and must not overlap node IPs, podCidr, or serviceCidr.
+  # Empty uses the IP of the node that initializes the cluster.
+  # controlPlaneVIP: "10.0.0.100"
+
   # Optional: gRPC port nke-agent listens on. Defaults to "15005".
   # nodeAgentPort: "15005"
 

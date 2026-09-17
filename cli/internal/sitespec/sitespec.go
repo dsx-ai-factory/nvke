@@ -23,6 +23,7 @@ package sitespec
 import (
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"regexp"
 	"strconv"
@@ -48,6 +49,7 @@ const (
 	pathK8sVersion           = "cluster.k8sVersion"
 	pathCniName              = "cluster.cniName"
 	pathCniVersion           = "cluster.cniVersion"
+	pathControlPlaneVIP      = "cluster.controlPlaneVIP"
 	pathPodCidr              = "cluster.podCidr"
 	pathServiceCidr          = "cluster.serviceCidr"
 	pathSystemReservedMemory = "cluster.kubeletConfig.systemReservedMemory"
@@ -130,6 +132,9 @@ type Cluster struct {
 	// CniVersion is an optional CNI plugin version (e.g. "3.31.4" for Calico).
 	// Empty lets the node-agent use its compiled-in default.
 	CniVersion string `yaml:"cniVersion"`
+	// ControlPlaneVIP is an optional IPv4 API endpoint advertised by kube-vip
+	// over BGP. Empty uses the IP of the node that initializes the cluster.
+	ControlPlaneVIP string `yaml:"controlPlaneVIP,omitempty"`
 	// PodCidr is the pod network CIDR. Multiple CIDRs may be given as a
 	// comma-separated string.
 	PodCidr string `yaml:"podCidr"`
@@ -220,6 +225,7 @@ func envBindings() map[string]string {
 		"CLUSTER_K8S_VERSION":            pathK8sVersion,
 		"CLUSTER_CNI_NAME":               pathCniName,
 		"CLUSTER_CNI_VERSION":            pathCniVersion,
+		"CLUSTER_CONTROL_PLANE_VIP":      pathControlPlaneVIP,
 		"CLUSTER_POD_CIDR":               pathPodCidr,
 		"CLUSTER_SERVICE_CIDR":           pathServiceCidr,
 		"CLUSTER_SYSTEM_RESERVED_MEMORY": pathSystemReservedMemory,
@@ -360,6 +366,7 @@ func (inv *SiteSpec) appendDataChecks(v *validator) {
 	v.checkCNI(inv.Cluster.CniName)
 	v.checkCIDR(pathPodCidr, inv.Cluster.PodCidr, true)
 	v.checkCIDR(pathServiceCidr, inv.Cluster.ServiceCidr, false)
+	v.checkControlPlaneVIP(inv.Cluster)
 	v.checkNodeAgentPort(inv.Cluster.NodeAgentPort)
 	v.checkRegistry(inv.Registry)
 	v.checkSpire(inv.Spire)
@@ -509,6 +516,57 @@ func (v *validator) checkCIDR(path, value string, allowList bool) {
 		if _, _, err := net.ParseCIDR(p); err != nil {
 			v.addf("%s %q is not a valid CIDR", path, p)
 		}
+	}
+}
+
+// checkControlPlaneVIP requires an optional IPv4 VIP to avoid node IPs and
+// pod and service CIDRs.
+func (v *validator) checkControlPlaneVIP(c Cluster) {
+	if c.ControlPlaneVIP == "" {
+		return
+	}
+
+	vip, err := netip.ParseAddr(c.ControlPlaneVIP)
+	if err != nil {
+		v.addf("%s %q is not a valid IP address", pathControlPlaneVIP, c.ControlPlaneVIP)
+		return
+	}
+	// Match CWE's rejection of IPv4-mapped IPv6 addresses.
+	if !vip.Is4() {
+		v.addf("%s %q must be an IPv4 address", pathControlPlaneVIP, c.ControlPlaneVIP)
+		return
+	}
+
+	// Compare equivalent address forms. checkNode reports malformed node IPs.
+	for _, n := range c.Nodes {
+		nodeAddr, err := netip.ParseAddr(n.IP)
+		if err != nil {
+			continue
+		}
+		if vip == nodeAddr.Unmap() {
+			v.addf("%s %q must not equal a node IP (%s.ip)", pathControlPlaneVIP, c.ControlPlaneVIP, pathNodes)
+		}
+	}
+
+	for _, cidr := range strings.Split(c.PodCidr, ",") {
+		v.checkVIPOutsideCIDR(vip, c.ControlPlaneVIP, pathPodCidr, cidr)
+	}
+	v.checkVIPOutsideCIDR(vip, c.ControlPlaneVIP, pathServiceCidr, c.ServiceCidr)
+}
+
+// checkVIPOutsideCIDR reports when the VIP falls inside cidr. A malformed or
+// empty cidr is left to checkCIDR; nothing is reported here for it.
+func (v *validator) checkVIPOutsideCIDR(vip netip.Addr, vipText, path, cidr string) {
+	cidr = strings.TrimSpace(cidr)
+	if cidr == "" {
+		return
+	}
+	prefix, err := netip.ParsePrefix(cidr)
+	if err != nil {
+		return
+	}
+	if prefix.Contains(vip) {
+		v.addf("%s %q is inside %s %q", pathControlPlaneVIP, vipText, path, cidr)
 	}
 }
 

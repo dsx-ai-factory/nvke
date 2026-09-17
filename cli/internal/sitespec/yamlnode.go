@@ -142,23 +142,32 @@ func setNodes(root *yaml.Node, nodes []Node) error {
 	return nil
 }
 
+// field is one dotted path and the value to write there. applySpec ranges over
+// slices of these rather than maps so the write order is fixed.
+type field struct {
+	path  string
+	value string
+}
+
 // applySpec writes every field of spec onto the template tree, so a rendered
 // file reflects the validated value rather than the template's example.
 func applySpec(root *yaml.Node, spec *SiteSpec) error {
 	if err := setNodes(root, spec.Cluster.Nodes); err != nil {
 		return err
 	}
-	for path, value := range map[string]string{
-		pathClusterName:          spec.ClusterName,
-		pathK8sVersion:           spec.Cluster.K8sVersion,
-		pathCniName:              spec.Cluster.CniName,
-		pathPodCidr:              spec.Cluster.PodCidr,
-		pathServiceCidr:          spec.Cluster.ServiceCidr,
-		pathSystemReservedMemory: spec.Cluster.KubeletConfig.SystemReservedMemory,
-		pathBootstrapRepo:        spec.Registry.BootstrapRepo,
-		pathBootstrapChart:       spec.Registry.BootstrapChart,
+	// Required fields, in the order template.yaml lists them, so the rendered
+	// file is byte-stable from run to run.
+	for _, f := range []field{
+		{pathClusterName, spec.ClusterName},
+		{pathK8sVersion, spec.Cluster.K8sVersion},
+		{pathCniName, spec.Cluster.CniName},
+		{pathPodCidr, spec.Cluster.PodCidr},
+		{pathServiceCidr, spec.Cluster.ServiceCidr},
+		{pathSystemReservedMemory, spec.Cluster.KubeletConfig.SystemReservedMemory},
+		{pathBootstrapRepo, spec.Registry.BootstrapRepo},
+		{pathBootstrapChart, spec.Registry.BootstrapChart},
 	} {
-		if err := setScalar(root, path, value); err != nil {
+		if err := setScalar(root, f.path, f.value); err != nil {
 			return err
 		}
 	}
@@ -172,17 +181,19 @@ func applySpec(root *yaml.Node, spec *SiteSpec) error {
 		// make every generated file pin a default it never chose.
 		nodeAgentPort = ""
 	}
-	for path, value := range map[string]string{
-		pathCniVersion:       spec.Cluster.CniVersion,
-		pathNodeAgentPort:    nodeAgentPort,
-		pathSpireTrustDomain: spec.Spire.TrustDomain,
-		pathSpireCACertFile:  spec.Spire.CACertFile,
-		pathSpireCAKeyFile:   spec.Spire.CAKeyFile,
+	// Optional fields, again in template.yaml order for a byte-stable render.
+	for _, f := range []field{
+		{pathCniVersion, spec.Cluster.CniVersion},
+		{pathControlPlaneVIP, spec.Cluster.ControlPlaneVIP},
+		{pathNodeAgentPort, nodeAgentPort},
+		{pathSpireTrustDomain, spec.Spire.TrustDomain},
+		{pathSpireCACertFile, spec.Spire.CACertFile},
+		{pathSpireCAKeyFile, spec.Spire.CAKeyFile},
 	} {
-		if value == "" {
+		if f.value == "" {
 			continue
 		}
-		if err := setScalar(root, path, value); err != nil {
+		if err := setScalar(root, f.path, f.value); err != nil {
 			return err
 		}
 	}
@@ -265,19 +276,19 @@ func childMapping(mapping *yaml.Node, key string) (*yaml.Node, error) {
 // putMapping adds key to mapping.
 //
 // Where the template carries key as a commented-out example, the real entry
-// takes that example's place and inherits the prose introducing it. Appending
+// takes that example's place and inherits the comment introducing it. Appending
 // instead would leave the explanation stranded above whatever followed it and
 // put the field at the end of the file, far from the section it belongs to.
 func putMapping(mapping *yaml.Node, key string, value *yaml.Node) {
 	keyNode := &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: key}
 
-	at, prose, found := takeCommentedExample(mapping, key)
+	at, head, found := takeCommentedExample(mapping, key)
 	if !found {
 		mapping.Content = append(mapping.Content, keyNode, value)
 		return
 	}
 
-	keyNode.HeadComment = prose
+	keyNode.HeadComment = head
 	rest := append([]*yaml.Node{}, mapping.Content[at:]...)
 	mapping.Content = append(append(mapping.Content[:at:at], keyNode, value), rest...)
 }
@@ -293,14 +304,14 @@ var commentedChildLine = regexp.MustCompile(`^\s*#\s{2,}\S`)
 
 // takeCommentedExample removes the commented-out example of key from the
 // comments of mapping's entries, and reports where the real key belongs along
-// with the prose that introduced the example.
+// with the head comment it should carry.
 //
 // An example may sit above an entry (its head comment) or below one (its foot
 // comment); the real key goes in the same place, so it lands where the template
-// showed it rather than at the end of the section. The prose moves to the new
-// key; anything after the example stays where it was, which is how the
+// showed it rather than at the end of the section. Everything before the example
+// moves to the new key; anything after it stays where it was, which is how the
 // following section keeps its own explanation.
-func takeCommentedExample(mapping *yaml.Node, key string) (at int, prose string, found bool) {
+func takeCommentedExample(mapping *yaml.Node, key string) (at int, head string, found bool) {
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		node := mapping.Content[i]
 
@@ -316,9 +327,18 @@ func takeCommentedExample(mapping *yaml.Node, key string) (at int, prose string,
 	return 0, "", false
 }
 
-// splitCommentedExample removes key's commented-out example from comment,
-// returning what is left and the prose that introduced it.
-func splitCommentedExample(comment, key string) (kept, prose string, found bool) {
+// splitCommentedExample removes key's commented-out example from comment. It
+// returns what stays on the anchor entry and the head comment the new key
+// carries away.
+//
+// Everything before the example line moves to the new key: the prose that
+// introduces the example, and any earlier section's comment that shared the
+// block. Only what follows the dropped example stays behind. Splitting it this
+// way makes placement independent of the order keys are written in: two keys
+// whose examples share one block each land before the anchor, and a later write
+// of the earlier key finds its example in the already-written key's head comment
+// and lands ahead of it, restoring template order.
+func splitCommentedExample(comment, key string) (kept, head string, found bool) {
 	if comment == "" {
 		return comment, "", false
 	}
@@ -336,16 +356,6 @@ func splitCommentedExample(comment, key string) (kept, prose string, found bool)
 		return comment, "", false
 	}
 
-	// The example's own block starts after the last blank line before it, so a
-	// preceding section's comment is not taken with it.
-	start := 0
-	for j := example - 1; j >= 0; j-- {
-		if strings.TrimSpace(lines[j]) == "" {
-			start = j + 1
-			break
-		}
-	}
-
 	end := example
 	for j := example + 1; j < len(lines) && commentedChildLine.MatchString(lines[j]); j++ {
 		end = j
@@ -355,6 +365,7 @@ func splitCommentedExample(comment, key string) (kept, prose string, found bool)
 		drop++
 	}
 
-	remaining := append(append([]string{}, lines[:start]...), lines[drop:]...)
-	return strings.Join(remaining, "\n"), strings.Join(lines[start:example], "\n"), true
+	// lines[:example] keeps the leading block and the prose together, separated
+	// by the blank line that was already between them in the template.
+	return strings.Join(lines[drop:], "\n"), strings.Join(lines[:example], "\n"), true
 }

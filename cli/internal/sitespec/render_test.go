@@ -50,6 +50,7 @@ func TestBuildRoundTrip(t *testing.T) {
 		"cluster.k8sVersion=1.33.1",
 		"cluster.cniName=calico",
 		"cluster.cniVersion=3.31.4",
+		"cluster.controlPlaneVIP=10.0.0.5",
 		"cluster.podCidr=10.100.0.0/16",
 		"cluster.serviceCidr=10.200.0.0/16",
 		"cluster.nodeAgentPort=50051",
@@ -125,7 +126,7 @@ func TestRenderOmitsUnsetOptionalFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Render: %v", err)
 	}
-	for _, unwanted := range []string{"cniVersion", "etcdEncryption", "caCertFile", "caKeyFile", "apiKey"} {
+	for _, unwanted := range []string{"cniVersion", "controlPlaneVIP", "etcdEncryption", "caCertFile", "caKeyFile", "apiKey"} {
 		if line := uncommentedLineFor(string(rendered), unwanted); line != "" {
 			t.Errorf("rendered site spec sets %s as %q; an unset optional field should stay a comment:\n%s",
 				unwanted, line, rendered)
@@ -322,6 +323,7 @@ func TestParseNodesCSV(t *testing.T) {
 func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	built, err := Build("my-tier0-site", threeNodes(), []string{
 		"cluster.cniVersion=3.30.1",
+		"cluster.controlPlaneVIP=10.0.0.5",
 		"cluster.nodeAgentPort=50051",
 		"spire.trustDomain=site.example.com",
 		"spire.caCertFile=/etc/nke/ca.crt",
@@ -340,7 +342,8 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	for _, order := range [][2]string{
 		{"cniName:", "cniVersion:"},
 		{"cniVersion:", "podCidr:"},
-		{"serviceCidr:", "nodeAgentPort:"},
+		{"serviceCidr:", "controlPlaneVIP:"},
+		{"controlPlaneVIP:", "nodeAgentPort:"},
 		{"nodeAgentPort:", "kubeletConfig:"},
 		{"cluster:", "spire:"},
 		{"spire:", "registry:"},
@@ -364,7 +367,7 @@ func TestRenderPlacesOptionalFieldsInPosition(t *testing.T) {
 	}
 
 	// The example is replaced, not duplicated.
-	for _, key := range []string{"cniVersion", "nodeAgentPort", "trustDomain", "caCertFile"} {
+	for _, key := range []string{"cniVersion", "controlPlaneVIP", "nodeAgentPort", "trustDomain", "caCertFile"} {
 		if strings.Contains(out, "# "+key+":") {
 			t.Errorf("the commented-out example of %s survived alongside the real value:\n%s", key, out)
 		}

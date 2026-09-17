@@ -64,6 +64,8 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
 		CniPlugin:                     inv.Cluster.CniName,
 		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
+		// omitempty avoids sending an empty VIP, which CWE rejects.
+		ControlPlaneVIP: inv.Cluster.ControlPlaneVIP,
 		NodePools: &[]api.NodePoolCreateConfig{{
 			Name:                 controlPlanePoolName,
 			NodeNamePrefix:       controlPlaneNodeNamePrefix,
@@ -127,9 +129,8 @@ func provisionedHosts(inv *sitespec.SiteSpec) ([]map[string]interface{}, error) 
 	return hosts, nil
 }
 
-// provisionedCluster is the infrastructure side of the CAPI Cluster: the
-// site spec, and nothing else. The provider owns no endpoint — CWE owns the
-// control-plane VIP through its own API.
+// provisionedCluster builds the infrastructure resource from the site hosts.
+// CWE receives the VIP separately in the create request.
 func provisionedCluster(name string, hosts []map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
 		"apiVersion": provisionedAPIVersion,
