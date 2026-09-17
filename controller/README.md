@@ -84,6 +84,9 @@ Use the latest tagged version or a specific semver (e.g. `@v0.0.5`) as needed.
 - `Manual local/remote worker run`: work on the CWE worker without the local CAPI management-cluster flow by using `make run-local` or `make run-remote`.
 - `UI-only development`: port-forward a live CWE deployment and run the local UI dev server against it.
 
+For the controller-to-node-agent TLS/JWT transport configuration, see
+[Configuring node-agent TLS/JWT authentication](docs/configuring-node-agent-tls-jwt.md).
+
 ## CAPI + Tilt Development (Recommended)
 
 This is the recommended local workflow for developing against a Kind management cluster with CAPD.

@@ -215,6 +215,18 @@ spec:
               value: {{ .Values.cni.installAfterInit | quote }}
             - name: TENANT_ACCESS_ENABLED
               value: {{ .Values.tenantAccess.enabled | quote }}
+            - name: NODE_AGENT_TLS_JWT_ENABLED
+              value: {{ .Values.nodeAgent.tlsJwt.enabled | quote }}
+            {{- if .Values.nodeAgent.tlsJwt.enabled }}
+            - name: NODE_AGENT_TLS_JWT_ISSUER
+              value: {{ required "nodeAgent.tlsJwt.issuer is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.issuer | quote }}
+            - name: NODE_AGENT_TLS_JWT_JWKS_URI
+              value: {{ required "nodeAgent.tlsJwt.jwksURI is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.jwksURI | quote }}
+            - name: NODE_AGENT_TLS_JWT_ALGORITHMS
+              value: {{ required "nodeAgent.tlsJwt.algorithms must contain at least one algorithm when TLS/JWT is enabled" (join "," .Values.nodeAgent.tlsJwt.algorithms) | quote }}
+            - name: NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN
+              value: {{ required "nodeAgent.tlsJwt.subjectTrustDomain is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.subjectTrustDomain | quote }}
+            {{- end }}
             - name: NKE_OIDC_AUTH_ENABLED
               value: {{ .Values.nkeOIDCAuth.enabled | quote }}
             {{- if .Values.nkeOIDCAuth.issuerURL }}

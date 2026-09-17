@@ -112,10 +112,12 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			},
 		)
 	}
+	runCommands := append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...)
+	runCommands = append(runCommands, a.nodeAgentTLSJWTBootstrapCommands()...)
 
 	userData := capiCloudInitConfig{
 		WriteFiles: files,
-		RunCmd:     append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
+		RunCmd:     runCommands,
 	}
 
 	yamlBytes, err := yaml.Marshal(userData)

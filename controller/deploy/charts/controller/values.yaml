@@ -71,6 +71,22 @@ controllers:
     # -- Run controllers that watch NICo infrastructure resources.
     enabled: true
 
+nodeAgent:
+  tlsJwt:
+    # -- Add JWT node authentication to the existing secure node-agent transport
+    # for every node agent managed by this controller. Requires spiffe.enabled
+    # until another TLS-capable base transport is available.
+    enabled: false
+    # -- Identity issuer expected in node-agent JWTs.
+    issuer: ""
+    # -- HTTPS endpoint serving the issuer's JSON Web Key Set.
+    jwksURI: ""
+    # -- Asymmetric JWT signing algorithms accepted from the issuer.
+    algorithms:
+      - RS256
+    # -- Exact SPIFFE trust domain accepted in node-agent JWT subjects.
+    subjectTrustDomain: ""
+
 nkeSystemNamespace:
   # -- Create the shared nke-system namespace. The object always carries
   # helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and

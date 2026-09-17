@@ -196,6 +196,23 @@ type Config struct {
 	// Note: This will only be used if SpiffeEnabled is true. Eventually this will be the only port used.
 	NodeAgentPort string `env:"NODE_AGENT_PORT" default:"15005"`
 
+	// NodeAgentTLSJWTEnabled selects the deployment-wide TLS/JWT transport for
+	// controller calls to every node agent managed by this controller.
+	NodeAgentTLSJWTEnabled bool `env:"NODE_AGENT_TLS_JWT_ENABLED" default:"false"`
+
+	// NodeAgentTLSJWTIssuer is the identity issuer expected in node-agent JWTs.
+	NodeAgentTLSJWTIssuer string `env:"NODE_AGENT_TLS_JWT_ISSUER"`
+
+	// NodeAgentTLSJWTJWKSURI is the HTTPS endpoint used to fetch node-agent JWT signing keys.
+	NodeAgentTLSJWTJWKSURI string `env:"NODE_AGENT_TLS_JWT_JWKS_URI"`
+
+	// NodeAgentTLSJWTAlgorithms is the asymmetric JWT algorithm allow-list.
+	NodeAgentTLSJWTAlgorithms []string `env:"NODE_AGENT_TLS_JWT_ALGORITHMS" envSeparator:","`
+
+	// NodeAgentTLSJWTSubjectTrustDomain is the exact SPIFFE trust domain accepted
+	// in the verified node-agent JWT subject.
+	NodeAgentTLSJWTSubjectTrustDomain string `env:"NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN"`
+
 	// DgxcTenantUser is the DGXC tenant SSH username injected into OS profile userData templates.
 	DgxcTenantUser string `env:"DGXC_TENANT_USER"`
 
@@ -418,6 +435,23 @@ func (c *Config) Validate() error {
 		return err
 	}
 	c.SupportedInfraProviders = supportedInfraProviders
+	if c.NodeAgentTLSJWTEnabled {
+		if !c.SpiffeEnabled {
+			return fmt.Errorf("SPIFFE_ENABLED must be true when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		if strings.TrimSpace(c.NodeAgentTLSJWTIssuer) == "" {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_ISSUER is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		if strings.TrimSpace(c.NodeAgentTLSJWTJWKSURI) == "" {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_JWKS_URI is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		if len(c.NodeAgentTLSJWTAlgorithms) == 0 {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_ALGORITHMS is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+		if strings.TrimSpace(c.NodeAgentTLSJWTSubjectTrustDomain) == "" {
+			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true")
+		}
+	}
 
 	return nil
 }

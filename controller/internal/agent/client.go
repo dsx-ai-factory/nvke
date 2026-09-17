@@ -6,6 +6,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 
 	"github.com/spiffe/go-spiffe/v2/spiffegrpc/grpccredentials"
@@ -14,11 +15,13 @@ import (
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 
 	nkeproto "github.com/NVIDIA/nke/agent/pkg/agent/proto"
 
+	"github.com/NVIDIA/nke/controller/internal/auth"
 	"github.com/NVIDIA/nke/controller/internal/config"
 	"github.com/NVIDIA/nke/controller/internal/db"
 )
@@ -59,15 +62,47 @@ type Client interface {
 }
 
 type NodeAgentClient struct {
-	cfg         config.Config
-	trustDomain string
+	cfg            config.Config
+	trustDomain    string
+	tlsJWTVerifier *auth.Verifier
+	logger         *slog.Logger
 }
 
-func NewClient(cfg config.Config, trustDomain string) *NodeAgentClient {
-	return &NodeAgentClient{
-		cfg:         cfg,
-		trustDomain: trustDomain,
+func NewClient(
+	ctx context.Context,
+	cfg config.Config,
+	trustDomain string,
+	logger *slog.Logger,
+) (*NodeAgentClient, error) {
+	if logger == nil {
+		logger = slog.Default()
 	}
+
+	var tlsJWTVerifier *auth.Verifier
+	var tlsJWTLogger *slog.Logger
+	if cfg.NodeAgentTLSJWTEnabled {
+		tlsJWTLogger = logger.With("logger", "node-agent-auth")
+		verifier, err := auth.SetupTokenVerifier(ctx, &auth.Config{
+			Audiences: []string{auth.NodeAgentAudience},
+			Issuers: []auth.Issuer{{
+				Name:       auth.NodeAgentIssuerName,
+				Issuer:     cfg.NodeAgentTLSJWTIssuer,
+				JWKS:       &auth.JWKSKeys{URI: cfg.NodeAgentTLSJWTJWKSURI},
+				Algorithms: cfg.NodeAgentTLSJWTAlgorithms,
+			}},
+		}, tlsJWTLogger)
+		if err != nil {
+			return nil, fmt.Errorf("setting up node-agent token verification: %w", err)
+		}
+		tlsJWTVerifier = verifier
+	}
+
+	return &NodeAgentClient{
+		cfg:            cfg,
+		trustDomain:    trustDomain,
+		tlsJWTVerifier: tlsJWTVerifier,
+		logger:         tlsJWTLogger,
+	}, nil
 }
 
 func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
@@ -79,62 +114,69 @@ func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (
 			_ = f()
 		}
 	}
-
-	// If SPIFFE is not enabled, assume insecure connection.
+	// Select the connection's base TLS independently from the optional pre-gRPC
+	// JWT exchange. A future external-client-certificate transport can provide
+	// credentials here, skip verification of the agent's self-signed server
+	// certificate, and rely on the JWT exchange for agent authentication.
+	var baseTransportCredentials credentials.TransportCredentials
+	baseSupportsTLSJWT := false
 	if !node.SpiffeEnabled {
-		conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(insecure.NewCredentials()))
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to connect to node agent via insecure connection: %w", err)
+		baseTransportCredentials = insecure.NewCredentials()
+	} else {
+		if c.trustDomain == "" {
+			return nil, nil, fmt.Errorf("trust domain is required for SPIFFE authentication")
 		}
-		closeFuncs = append(closeFuncs, conn.Close)
 
-		return conn, cleanup, nil
+		workloadClient, err := workloadapi.New(ctx, workloadapi.WithAddr(c.cfg.SpiffeEndpointSocket))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create SPIFFE workload API client: %w", err)
+		}
+		closeFuncs = append(closeFuncs, workloadClient.Close)
+
+		x509Source, err := workloadapi.NewX509Source(ctx, workloadapi.WithClient(workloadClient))
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("failed to create SPIFFE X509 source: %w", err)
+		}
+		closeFuncs = append(closeFuncs, x509Source.Close)
+
+		expectedID, err := spiffeid.FromString(node.GetSpiffeID(c.trustDomain))
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("failed to parse node SPIFFE ID: %w", err)
+		}
+		baseTransportCredentials = grpccredentials.MTLSClientCredentials(
+			x509Source,
+			x509Source,
+			tlsconfig.AuthorizeID(expectedID),
+		)
+		baseSupportsTLSJWT = true
 	}
 
-	// SPIFFE is enabled, using SPIFFE x509 mTLS.
-	if c.trustDomain == "" {
-		return nil, nil, fmt.Errorf("trust domain is required for SPIFFE authentication")
+	transportCredentials := baseTransportCredentials
+	if c.tlsJWTVerifier != nil {
+		if !baseSupportsTLSJWT {
+			cleanup()
+			return nil, nil, fmt.Errorf("node-agent base transport does not support TLS/JWT authentication")
+		}
+		var err error
+		transportCredentials, err = newTLSJWTTransportCredentials(
+			baseTransportCredentials,
+			c.tlsJWTVerifier,
+			c.cfg.NodeAgentTLSJWTSubjectTrustDomain,
+			node,
+			c.logger,
+		)
+		if err != nil {
+			cleanup()
+			return nil, nil, fmt.Errorf("setting up node-agent TLS/JWT transport: %w", err)
+		}
 	}
 
-	workloadClient, err := workloadapi.New(ctx, workloadapi.WithAddr(c.cfg.SpiffeEndpointSocket))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create SPIFFE workload API client: %w", err)
-	}
-	closeFuncs = append(closeFuncs, workloadClient.Close)
-
-	x509Source, err := workloadapi.NewX509Source(ctx, workloadapi.WithClient(workloadClient))
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(transportCredentials))
 	if err != nil {
 		cleanup()
-		return nil, nil, fmt.Errorf("failed to create SPIFFE X509 source: %w", err)
-	}
-	closeFuncs = append(closeFuncs, x509Source.Close)
-
-	bundleSource, err := workloadapi.NewBundleSource(ctx, workloadapi.WithClient(workloadClient))
-	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to create SPIFFE bundle source: %w", err)
-	}
-	closeFuncs = append(closeFuncs, bundleSource.Close)
-
-	expectedID, err := spiffeid.FromString(node.GetSpiffeID(c.trustDomain))
-	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to parse node SPIFFE ID: %w", err)
-	}
-
-	conn, err := grpc.NewClient(
-		endpoint,
-		grpc.WithTransportCredentials(
-			grpccredentials.MTLSClientCredentials(
-				x509Source,
-				bundleSource,
-				tlsconfig.AuthorizeID(expectedID),
-			),
-		),
-	)
-	if err != nil {
-		cleanup()
-		return nil, nil, fmt.Errorf("failed to connect to node agent via SPIFFE: %w", err)
+		return nil, nil, fmt.Errorf("failed to connect to node agent: %w", err)
 	}
 	closeFuncs = append(closeFuncs, conn.Close)
 

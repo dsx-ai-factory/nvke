@@ -341,99 +341,144 @@ teleportJoinMethod={{ .TeleportJoinMethod }}
 teleportLabels={{ .TeleportLabels }}
 `
 
-func TestNicoMachineBuilders_RenderUserData(t *testing.T) {
-	bundleLookupCalled := false
-	activities := &Activities{
-		cfg: config.Config{
-			DgxcTenantUser:     "test-admin",
-			DgxcTenantPassword: "test-password",
-			NodeAgentPort:      "15005",
-			SpireServerAddress: "spire.example.com",
-			SpireServerPort:    "9091",
-		},
-		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
-			bundleLookupCalled = true
-			return "example.com", "first certificate\nsecond certificate\n", nil
-		},
-	}
+func TestUnit_RenderUserData(t *testing.T) {
+	t.Parallel()
 
-	userData, err := activities.renderUserData(
-		context.Background(),
-		userDataTemplate,
-		db.Node{Name: "test-node", SpiffeEnabled: true},
-		db.DiskSelectionStrategyLargest,
-		"v1.33.0",
-		&TeleportUserDataConfig{
-			Enabled:      true,
-			TokenName:    "test-token",
-			ProxyAddress: "teleport.example.com:443",
-			JoinMethod:   "tpm",
-			Labels:       "environment: test",
-		},
-		db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
-	)
-	require.NoError(t, err)
-
-	assert.True(t, bundleLookupCalled)
-	assert.Contains(t, userData, "username=test-admin\n")
-	assert.Regexp(t, `(?m)^password=\$6\$[^\n]+$`, userData)
-	assert.NotContains(t, userData, "password=test-password")
-	assert.Contains(t, userData, "hostname=test-node\n")
-	assert.Contains(t, userData, "kubernetesVersion=1.33.0\n")
-	assert.Contains(t, userData, "nodeAgentPort=15005\n")
-	assert.Contains(t, userData, "diskSelectionStrategy=largest\n")
-	assert.Contains(t, userData, "calicoEnabled=true\n")
-	assert.Contains(t, userData, "ovnEnabled=false\n")
-	assert.Contains(t, userData, "cniImagePackage=nke-cni-calico-images-3.31.5\n")
-	assert.Contains(t, userData, "cniChartsPackage=nke-cni-calico-manifests-3.31.5\n")
-	assert.Contains(t, userData, "spiffeEnabled=true\n")
-	assert.Contains(t, userData, "spireServer=spire.example.com:9091\n")
-	assert.Contains(t, userData, "trustDomain=example.com\n")
-	assert.Contains(t, userData, "trustBundle:\n  first certificate\n  second certificate\n")
-	assert.Contains(t, userData, "teleportEnabled=true\n")
-	assert.Contains(t, userData, "teleportToken=test-token\n")
-	assert.Contains(t, userData, "teleportProxy=teleport.example.com:443\n")
-	assert.Contains(t, userData, "teleportJoinMethod=tpm\n")
-	assert.Contains(t, userData, "teleportLabels=environment: test\n")
-}
-
-func TestNicoMachineBuilders_RenderUserDataCNIPackages(t *testing.T) {
-	const userDataTemplate = "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n"
-	activities := &Activities{cfg: config.Config{
+	baseConfig := config.Config{
 		DgxcTenantUser:     "test-admin",
 		DgxcTenantPassword: "test-password",
-	}}
+		NodeAgentPort:      "15005",
+		SpireServerAddress: "spire.example.com",
+		SpireServerPort:    "9091",
+	}
+	tlsJWTConfig := baseConfig
+	tlsJWTConfig.NodeAgentTLSJWTEnabled = true
 
-	tests := map[string]struct {
-		cluster    db.Cluster
-		wantImages string
-		wantCharts string
-	}{
-		"Calico": {
-			cluster:    db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
-			wantImages: "nke-cni-calico-images-3.31.5",
-			wantCharts: "nke-cni-calico-manifests-3.31.5",
+	type parameters struct {
+		config                config.Config
+		template              string
+		node                  db.Node
+		diskSelectionStrategy db.DiskSelectionStrategy
+		kubernetesVersion     string
+		teleport              *TeleportUserDataConfig
+		cluster               db.Cluster
+		expectBundleLookup    bool
+		verify                func(*testing.T, string)
+	}
+	tests := map[string]parameters{
+		"renders profile fields": {
+			config:                baseConfig,
+			template:              userDataTemplate,
+			node:                  db.Node{Name: "test-node", SpiffeEnabled: true},
+			diskSelectionStrategy: db.DiskSelectionStrategyLargest,
+			kubernetesVersion:     "v1.33.0",
+			teleport: &TeleportUserDataConfig{
+				Enabled:      true,
+				TokenName:    "test-token",
+				ProxyAddress: "teleport.example.com:443",
+				JoinMethod:   "tpm",
+				Labels:       "environment: test",
+			},
+			cluster:            db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			expectBundleLookup: true,
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Contains(t, userData, "username=test-admin\n")
+				assert.Regexp(t, `(?m)^password=\$6\$[^\n]+$`, userData)
+				assert.NotContains(t, userData, "password=test-password")
+				assert.Contains(t, userData, "hostname=test-node\n")
+				assert.Contains(t, userData, "kubernetesVersion=1.33.0\n")
+				assert.Contains(t, userData, "nodeAgentPort=15005\n")
+				assert.Contains(t, userData, "diskSelectionStrategy=largest\n")
+				assert.Contains(t, userData, "calicoEnabled=true\n")
+				assert.Contains(t, userData, "ovnEnabled=false\n")
+				assert.Contains(t, userData, "cniImagePackage=nke-cni-calico-images-3.31.5\n")
+				assert.Contains(t, userData, "cniChartsPackage=nke-cni-calico-manifests-3.31.5\n")
+				assert.Contains(t, userData, "spiffeEnabled=true\n")
+				assert.Contains(t, userData, "spireServer=spire.example.com:9091\n")
+				assert.Contains(t, userData, "trustDomain=example.com\n")
+				assert.Contains(t, userData, "trustBundle:\n  first certificate\n  second certificate\n")
+				assert.Contains(t, userData, "teleportEnabled=true\n")
+				assert.Contains(t, userData, "teleportToken=test-token\n")
+				assert.Contains(t, userData, "teleportProxy=teleport.example.com:443\n")
+				assert.Contains(t, userData, "teleportJoinMethod=tpm\n")
+				assert.Contains(t, userData, "teleportLabels=environment: test\n")
+			},
 		},
-		"OVN-Kubernetes": {
-			cluster:    db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
-			wantImages: "nke-cni-ovn-images-1.4.1",
-			wantCharts: "nke-cni-ovn-charts-1.4.1",
+		"renders Calico package names": {
+			config:            baseConfig,
+			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "images=nke-cni-calico-images-3.31.5\ncharts=nke-cni-calico-manifests-3.31.5\n", userData)
+			},
+		},
+		"renders OVN package names": {
+			config:            baseConfig,
+			template:          "images={{ .CNIImagePackage }}\ncharts={{ .CNIChartsPackage }}\n",
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "images=nke-cni-ovn-images-1.4.1\ncharts=nke-cni-ovn-charts-1.4.1\n", userData)
+			},
+		},
+		"injects TLS JWT bootstrap into Nico user data": {
+			config: tlsJWTConfig,
+			template: `#cloud-config
+autoinstall:
+  version: 1
+  identity:
+    hostname: {{ .Hostname }}
+  user-data:
+    runcmd:
+      - |
+          install -d -m 0755 /etc/default
+          printf 'AGENT_ARGS="--disable-mtls --secure-server-port {{ .NodeAgentPort }}"\n' >/etc/default/nke-agent
+          systemctl restart nke-agent
+`,
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Contains(t, userData, "autoinstall:")
+				assert.Contains(t, userData, "hostname: test-node")
+				assert.Contains(t, userData, `AGENT_ARGS="--disable-mtls --secure-server-port 15005"`)
+				assert.Contains(t, userData, "--grpc-auth-mode=tls-jwt")
+				assert.Contains(t, userData, "s/--disable-mtls")
+				assert.Contains(t, userData, testRestartAgentCmd)
+			},
 		},
 	}
 
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			bundleLookupCalled := false
+			activities := &Activities{
+				cfg: params.config,
+				getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+					bundleLookupCalled = true
+					return "example.com", "first certificate\nsecond certificate\n", nil
+				},
+			}
 			userData, err := activities.renderUserData(
 				context.Background(),
-				userDataTemplate,
-				db.Node{Name: "test-node"},
-				"",
-				"1.33.0",
-				nil,
+				params.template,
+				params.node,
+				params.diskSelectionStrategy,
+				params.kubernetesVersion,
+				params.teleport,
 				params.cluster,
 			)
 			require.NoError(t, err)
-			assert.Equal(t, "images="+params.wantImages+"\ncharts="+params.wantCharts+"\n", userData)
+			assert.Equal(t, params.expectBundleLookup, bundleLookupCalled)
+			params.verify(t, userData)
 		})
 	}
 }

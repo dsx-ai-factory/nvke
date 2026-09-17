@@ -129,6 +129,7 @@ func main() {
 		logger.Error("Failed to set up API authentication", "error", err)
 		os.Exit(1)
 	}
+
 	switch {
 	case cfg.AuthConfigPath == "":
 		metrics.SetAuthMode("off")
@@ -142,6 +143,11 @@ func main() {
 	trustDomain, err := getSpiffeTrustDomain(ctx, cfg, logger)
 	if err != nil {
 		logger.Error("Failed to get SPIFFE trust domain and bundle", "error", err)
+		os.Exit(1)
+	}
+	nodeAgentClient, err := agent.NewClient(ctx, cfg, trustDomain, logger)
+	if err != nil {
+		logger.Error("Failed to create node-agent client", "error", err)
 		os.Exit(1)
 	}
 
@@ -202,8 +208,6 @@ func main() {
 		logger.Error("Failed to create Kubernetes controller manager", "error", err)
 		os.Exit(1)
 	}
-	nodeAgentClient := agent.NewClient(cfg, trustDomain)
-
 	tenantClientProvider := kube.NewDBClusterTenantClientProvider(
 		dbInstance,
 		managementK8sClient,

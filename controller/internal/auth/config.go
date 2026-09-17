@@ -193,6 +193,16 @@ func Load(path string) (*Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid authentication config %q: %w", path, err)
 	}
+	for index, issuer := range cfg.Issuers {
+		if issuer.Admit == nil {
+			return nil, fmt.Errorf(
+				"invalid authentication config %q: issuers[%d] (%s): admit is required; an issuer with no admission rules would authenticate callers and then reject all of them",
+				path,
+				index,
+				strings.TrimSpace(issuer.Name),
+			)
+		}
+	}
 	return &cfg, nil
 }
 
@@ -314,6 +324,20 @@ func (c *Config) validateTypeMeta() error {
 }
 
 func (i Issuer) validate(issuerURLs map[string]struct{}) error {
+	if err := i.validateTrust(issuerURLs); err != nil {
+		return err
+	}
+
+	if i.Admit == nil {
+		return nil
+	}
+	if err := i.Admit.validate(); err != nil {
+		return fmt.Errorf("admit: %w", err)
+	}
+	return nil
+}
+
+func (i Issuer) validateTrust(issuerURLs map[string]struct{}) error {
 	// A present-but-empty override is caught by Config.Validate.
 	if err := validateAudiences(i.Audiences, issuerURLs); err != nil {
 		return err
@@ -330,12 +354,6 @@ func (i Issuer) validate(issuerURLs map[string]struct{}) error {
 		return fmt.Errorf("algorithms: %w", err)
 	}
 
-	if i.Admit == nil {
-		return errors.New("admit is required; an issuer with no admission rules would authenticate callers and then reject all of them")
-	}
-	if err := i.Admit.validate(); err != nil {
-		return fmt.Errorf("admit: %w", err)
-	}
 	return nil
 }
 
