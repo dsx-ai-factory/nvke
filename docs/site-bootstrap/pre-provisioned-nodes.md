@@ -190,24 +190,26 @@ sudo systemctl restart nke-agent
 The ephemeral Kind cluster from a previous bootstrap is still up — kept by `--keep-bootstrap-cluster`, or retained because that run failed after building the site cluster. In the second case it may hold the site cluster's etcd encryption key. Save the key before deleting it:
 
 ```bash
+umask 077   # both files below are credentials; keep them owner-readable
 export KIND_EXPERIMENTAL_PROVIDER=nerdctl
 kind get kubeconfig --name nkectl-bootstrap > bootstrap.kubeconfig
 kubectl --kubeconfig bootstrap.kubeconfig -n cloud-workflow-engine get secrets | grep etcd-encryption-key-
-# save any that appear, with `umask 077 && kubectl ... get secret <name> -o json > <file>`, then:
+# save any that appear with `kubectl ... get secret <name> -o json > <file>`, then:
 kind delete cluster --name nkectl-bootstrap
 ```
 
 Bootstrap does not delete or reuse the cluster itself.
 
-**Bootstrap refuses to start: "a Kubernetes API server is already listening on port 6443":**
+**Bootstrap refuses to start: "port 6443, the Kubernetes API port, is accepting connections on …":**
 
-A host in the site spec already runs a control plane, usually one left behind by an earlier attempt. Bootstrap does not provision over it: encryption is configured during `kubeadm init`, so a second run cannot pick up the key that host already holds. Reset every node that has kubeadm state, then re-run:
+Something on a site spec host accepts connections on the Kubernetes API port. The check is a TCP connect, so it cannot tell a control plane from anything else listening there, but a control plane left behind by an earlier attempt is by far the usual cause. Bootstrap does not provision over one: encryption is configured during `kubeadm init`, so a second run cannot pick up the key that host already holds. Confirm the node's kubeadm state, reset every node that has it, then re-run:
 
 ```bash
+ls /etc/kubernetes/manifests   # kube-apiserver.yaml here means a control plane
 sudo kubeadm reset -f
 ```
 
-If the host is not left over from an earlier attempt, check the node list in the site spec.
+If nothing on the host is a Kubernetes control plane, check the node list in the site spec.
 
 **Bootstrap failed with "its encryption key was not saved":**
 

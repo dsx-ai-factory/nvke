@@ -606,6 +606,12 @@ func requireNoBootstrapCluster(ctx context.Context, engine *bootstrapengine.Engi
 // an initialised node cannot pick up the key the node already holds, and the
 // only way forward is to reset the node and start again. Saying so here, with
 // the node named, beats a workflow error twenty minutes in.
+//
+// Any dial error counts as nothing listening, a timeout included. A
+// pre-provisioned host commonly filters every port but the agent's, and
+// refusing on that would block bootstraps that are fine. kubeadm's own
+// preflight still rejects an initialised node; this check is the early,
+// legible form of that rejection, not the guard.
 func requireNoControlPlane(
 	ctx context.Context,
 	nodes []sitespec.Node,
@@ -630,9 +636,10 @@ func requireNoControlPlane(
 		return nil
 	}
 
-	return fmt.Errorf("a Kubernetes API server is already listening on port %s on: %s. "+
-		"If this is a retry of a failed bootstrap, run `kubeadm reset -f` on every node that "+
-		"has kubeadm state and re-run. If it is not, check the node list in the site spec",
+	return fmt.Errorf("port %s, the Kubernetes API port, is accepting connections on: %s. "+
+		"A control plane is most likely already running there. If this is a retry of a failed bootstrap, "+
+		"confirm the node has kubeadm state (/etc/kubernetes/manifests), run `kubeadm reset -f` on every node "+
+		"that does, and re-run. If something else is listening, check the node list in the site spec",
 		kubeAPIServerPort, strings.Join(serving, ", "))
 }
 
