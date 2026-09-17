@@ -262,13 +262,13 @@ func firstJoiningNode(candidates []joinCandidate) (joinCandidate, bool) {
 func controlPlaneJoinCandidates(nodes []db.Node) []db.Node {
 	candidates := make([]db.Node, 0, len(nodes))
 	for _, node := range nodes {
-		if isMarkedForDeletion(node) {
+		if node.IsMarkedForDeletion() {
 			continue
 		}
 		if node.Conditions.ReadyToJoin.Status != db.ConditionStatusTrue {
 			continue
 		}
-		if isProvisioned(node) {
+		if node.IsProvisioned() {
 			continue
 		}
 		candidates = append(candidates, node)

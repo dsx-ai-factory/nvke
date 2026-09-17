@@ -339,7 +339,7 @@ func TestIsKubernetesReady(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isKubernetesReady(tt.node))
+			assert.Equal(t, tt.want, tt.node.IsKubernetesReady())
 		})
 	}
 }
@@ -374,7 +374,7 @@ func TestIsPending(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isPending(tt.node))
+			assert.Equal(t, tt.want, tt.node.IsPending())
 		})
 	}
 }
@@ -409,7 +409,7 @@ func TestIsMarkedForRecycling(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isMarkedForRecycling(tt.node))
+			assert.Equal(t, tt.want, tt.node.IsMarkedForRecycling())
 		})
 	}
 }
@@ -444,7 +444,7 @@ func TestIsMarkedForDeletion(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isMarkedForDeletion(tt.node))
+			assert.Equal(t, tt.want, tt.node.IsMarkedForDeletion())
 		})
 	}
 }
@@ -479,7 +479,7 @@ func TestIsProvisioned(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, isProvisioned(tt.node))
+			assert.Equal(t, tt.want, tt.node.IsProvisioned())
 		})
 	}
 }

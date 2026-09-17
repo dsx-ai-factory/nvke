@@ -66,6 +66,7 @@ func TestReadFailureDomains(t *testing.T) {
 			},
 			failureDomainMachine(clusterName, "cp-status", "fd-spec", "fd-status", true, nil),
 			failureDomainMachine(clusterName, "cp-spec", "fd-spec", "", true, nil),
+			failureDomainMachine(clusterName, "cp-unobserved", "", "", true, nil),
 			failureDomainMachine(clusterName, "worker", "fd-worker", "", false, nil),
 			failureDomainMachine(clusterName, "deleting", "fd-deleting", "", true, &now),
 		}
@@ -264,29 +265,46 @@ func TestPrepareFailureDomainAssignmentsBackfillsAndSpreadsPendingNodes(t *testi
 	mockTx.AssertExpectations(t)
 }
 
-func TestPrepareFailureDomainAssignmentsWaitsForExistingPlacement(t *testing.T) {
+func TestPrepareFailureDomainAssignmentsWaitsForAndBackfillsExistingPlacement(t *testing.T) {
 	t.Parallel()
 
 	cp := &controlPlane{nodes: []db.Node{{
 		ID:           uuid.New(),
-		Name:         "cp-existing",
+		Name:         "cp-claimed",
 		ControlPlane: true,
 		Conditions: db.NodeConditions{
-			Provisioned: db.NewCondition(true, "provisioned"),
+			Pending:             db.NewCondition(true, "waiting for infrastructure allocation"),
+			ProvisioningClaimed: db.NewCondition(true, "provisioning workflow claimed node"),
 		},
 	}}}
+	mockTx := &testutil.MockTx{}
 	r := &reconciler{
 		cfg:                   config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:                    &testutil.MockTx{},
+		db:                    mockTx,
 		logger:                slog.Default(),
 		failureDomainSnapshot: failureDomainSnapshot{eligible: []string{"fd-a", "fd-b"}},
 	}
 
 	require.NoError(t, r.prepareFailureDomainAssignments(context.Background(), cp))
 	assert.True(t, r.retryFailureDomains)
-	assert.Equal(t, []string{"cp-existing"}, r.unknownDomains)
+	assert.Equal(t, []string{"cp-claimed"}, r.unknownDomains)
 	_, err := r.selectFailureDomain()
 	require.ErrorContains(t, err, "waiting for observed failure domains")
+	mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+		return node.Name == "cp-claimed" && ptr.Deref(node.FailureDomain, "") == "fd-a"
+	})).Return(db.Node{}, nil).Once()
+	r.failureDomainSnapshot.observedByNodeName = map[string]string{"cp-claimed": "fd-a"}
+
+	require.NoError(t, r.prepareFailureDomainAssignments(context.Background(), cp))
+	assert.Equal(t, "fd-a", ptr.Deref(cp.nodes[0].FailureDomain, ""))
+	assert.Empty(t, r.unknownDomains)
+	assert.False(t, r.retryFailureDomains)
+	nextDomain, err := r.selectFailureDomain()
+	require.NoError(t, err)
+	assert.Equal(t, "fd-b", ptr.Deref(nextDomain, ""))
+	mockTx.AssertExpectations(t)
 }
 
 func TestPrepareFailureDomainAssignmentsMarksUnsupportedProviderComplete(t *testing.T) {

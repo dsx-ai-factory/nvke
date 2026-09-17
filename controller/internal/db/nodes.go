@@ -91,6 +91,67 @@ func (n *Node) GetSpiffeID(trustDomain string) string {
 	return fmt.Sprintf("spiffe://%s/host/%s", trustDomain, n.ID.String())
 }
 
+// GetFailureDomain returns the persisted failure domain, or an empty string
+// when no non-empty domain is recorded.
+func (n Node) GetFailureDomain() string {
+	if n.FailureDomain != nil {
+		return *n.FailureDomain
+	}
+	return ""
+}
+
+// IsKubernetesReady reports whether Kubernetes currently considers the node ready.
+func (n Node) IsKubernetesReady() bool {
+	return n.Conditions.KubernetesReady.Status == ConditionStatusTrue
+}
+
+// IsPending reports whether the node is waiting for infrastructure allocation.
+func (n Node) IsPending() bool {
+	return n.Conditions.Pending.Status == ConditionStatusTrue
+}
+
+// IsProvisioningClaimed reports whether a provisioning workflow has claimed the node.
+func (n Node) IsProvisioningClaimed() bool {
+	return n.Conditions.ProvisioningClaimed.Status == ConditionStatusTrue
+}
+
+// IsMarkedForRecycling reports whether the node is marked for replacement.
+func (n Node) IsMarkedForRecycling() bool {
+	return n.Conditions.MarkedForRecycling.Status == ConditionStatusTrue
+}
+
+// IsMarkedForDeletion reports whether node deletion is in progress.
+func (n Node) IsMarkedForDeletion() bool {
+	return n.Conditions.Deleting.Status == ConditionStatusTrue
+}
+
+// IsProvisioned reports whether node provisioning completed successfully.
+func (n Node) IsProvisioned() bool {
+	return n.Conditions.Provisioned.Status == ConditionStatusTrue
+}
+
+// IsNodeAgentReady reports whether the node agent is ready.
+func (n Node) IsNodeAgentReady() bool {
+	return n.Conditions.NodeAgentReady.Status == ConditionStatusTrue
+}
+
+// HasFailureDomainDecision reports whether placement has been decided. A
+// decision with an empty domain means the provider does not support failure
+// domains, while nil means the controller has not made a decision yet.
+func (n Node) HasFailureDomainDecision() bool {
+	return n.FailureDomain != nil
+}
+
+// HasInfrastructureProvisioningStarted reports whether infrastructure creation
+// is underway or complete. A provisioning claim means the workflow has started.
+// Only explicitly pending nodes are safe for initial placement: a non-pending
+// node may already have backing infrastructure, particularly when an older or
+// backfilled record has no claim. Provisioned also guards against a stale
+// pending condition on a completed node.
+func (n Node) HasInfrastructureProvisioningStarted() bool {
+	return !n.IsPending() || n.IsProvisioningClaimed() || n.IsProvisioned()
+}
+
 type NodeConditions struct {
 	Pending             Condition `json:"pending"`
 	ProvisioningClaimed Condition `json:"provisioningClaimed"`

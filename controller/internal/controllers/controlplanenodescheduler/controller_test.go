@@ -53,6 +53,7 @@ func TestUnit_ControlPlaneNodeSchedulerReconcileCAPIStartsManagedPendingNodeWork
 	legacyNodePoolID := uuid.MustParse("cccccccc-cccc-cccc-cccc-cccccccccccc")
 	legacyNodeID := uuid.MustParse("dddddddd-dddd-dddd-dddd-dddddddddddd")
 	unassignedNodeID := uuid.MustParse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee")
+	unsupportedNodeID := uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff")
 	pending := true
 	deleting := false
 	controlPlane := true
@@ -69,12 +70,14 @@ func TestUnit_ControlPlaneNodeSchedulerReconcileCAPIStartsManagedPendingNodeWork
 		Deleting:     &deleting,
 	}).Return([]db.Node{
 		{ID: managedNodeID, ClusterID: clusterID, ControlPlane: true, FailureDomain: ptr.To("fd-a")},
+		{ID: unsupportedNodeID, ClusterID: clusterID, ControlPlane: true, FailureDomain: ptr.To("")},
 		{ID: unassignedNodeID, ClusterID: clusterID, ControlPlane: true},
 		{ID: legacyNodeID, ClusterID: clusterID, ControlPlane: true, NodePoolID: legacyNodePoolID},
 	}, nil).Once()
 
 	temporalClient := &mockWorkflowStarter{}
 	expectProvisionWorkflow(t, temporalClient, managedNodeID)
+	expectProvisionWorkflow(t, temporalClient, unsupportedNodeID)
 
 	scheduler := NewControlPlaneNodeScheduler(config.Config{
 		TemporalTaskQueue:    "test-task-queue",

@@ -127,9 +127,9 @@ func preloadControlPlaneConfigs(
 // remediation that is not kubernetes ready or not provisioned yet.
 func (c *controlPlane) hasHealthyNodesProvisioning() bool {
 	for _, node := range c.nodes {
-		if !isMarkedForRecycling(node) &&
-			!isMarkedForDeletion(node) &&
-			(!isKubernetesReady(node) || !isProvisioned(node)) {
+		if !node.IsMarkedForRecycling() &&
+			!node.IsMarkedForDeletion() &&
+			(!node.IsKubernetesReady() || !node.IsProvisioned()) {
 			return true
 		}
 	}
@@ -145,7 +145,7 @@ func (c *controlPlane) size() int {
 func (c *controlPlane) nodesForRemediation() []db.Node {
 	var nodes []db.Node
 	for _, node := range c.nodes {
-		if isMarkedForRecycling(node) {
+		if node.IsMarkedForRecycling() {
 			nodes = append(nodes, node)
 		}
 	}
@@ -347,36 +347,6 @@ func (c *controlPlane) controlPlaneControllerNeedsK8sUpgrade(targetK8sVersion st
 	return false
 }
 
-// isKubernetesReady returns true if the node has a KubernetesReady condition that is true.
-func isKubernetesReady(node db.Node) bool {
-	return node.Conditions.KubernetesReady.Status == db.ConditionStatusTrue
-}
-
-// isPending returns true if the node has a Pending condition that is true.
-func isPending(node db.Node) bool {
-	return node.Conditions.Pending.Status == db.ConditionStatusTrue
-}
-
-// isMarkedForRecycling returns true if the node has a MarkedForRecycling condition that is true.
-func isMarkedForRecycling(node db.Node) bool {
-	return node.Conditions.MarkedForRecycling.Status == db.ConditionStatusTrue
-}
-
-// isMarkedForDeletion returns true if the node has a Deleting condition that is true.
-func isMarkedForDeletion(node db.Node) bool {
-	return node.Conditions.Deleting.Status == db.ConditionStatusTrue
-}
-
-// isProvisioned returns true if the node has a Provisioned condition that is true.
-func isProvisioned(node db.Node) bool {
-	return node.Conditions.Provisioned.Status == db.ConditionStatusTrue
-}
-
-// isNodeAgentReady returns true if the node has a NodeAgentReady condition that is true.
-func isNodeAgentReady(node db.Node) bool {
-	return node.Conditions.NodeAgentReady.Status == db.ConditionStatusTrue
-}
-
 // nodesWithDeleteRequested returns the nodes whose delete has been accepted but
 // whose teardown has not started yet.
 func (c *controlPlane) nodesWithDeleteRequested() []db.Node {
@@ -392,7 +362,7 @@ func (c *controlPlane) nodesWithDeleteRequested() []db.Node {
 // nodeTearingDown returns the first node whose teardown is in flight, if any.
 func (c *controlPlane) nodeTearingDown() (db.Node, bool) {
 	for _, node := range c.nodes {
-		if isMarkedForDeletion(node) {
+		if node.IsMarkedForDeletion() {
 			return node, true
 		}
 	}

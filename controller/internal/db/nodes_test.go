@@ -110,6 +110,51 @@ func TestUnit_NodeValidateSecurityProfile(t *testing.T) {
 	}
 }
 
+func TestNode_HasInfrastructureProvisioningStarted(t *testing.T) {
+	tests := []struct {
+		name string
+		node db.Node
+		want bool
+	}{
+		{
+			name: "pending and unclaimed",
+			node: db.Node{Conditions: db.NodeConditions{
+				Pending: db.NewCondition(true, "waiting for infrastructure allocation"),
+			}},
+			want: false,
+		},
+		{
+			name: "claimed while pending",
+			node: db.Node{Conditions: db.NodeConditions{
+				Pending:             db.NewCondition(true, "waiting for infrastructure allocation"),
+				ProvisioningClaimed: db.NewCondition(true, "provisioning workflow claimed node"),
+			}},
+			want: true,
+		},
+		{
+			name: "non-pending older record without claim",
+			node: db.Node{Conditions: db.NodeConditions{
+				Pending: db.NewCondition(false, ""),
+			}},
+			want: true,
+		},
+		{
+			name: "provisioned with stale pending condition",
+			node: db.Node{Conditions: db.NodeConditions{
+				Pending:     db.NewCondition(true, "waiting for infrastructure allocation"),
+				Provisioned: db.NewCondition(true, "provisioned"),
+			}},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.node.HasInfrastructureProvisioningStarted())
+		})
+	}
+}
+
 func TestNode_NicoProvider(t *testing.T) {
 	instanceTypeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 

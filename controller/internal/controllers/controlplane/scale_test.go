@@ -132,11 +132,12 @@ func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
 }
 
-func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
+func TestCreatePendingNode_PersistsFailureDomainAndLeavesInstanceTypeUnset(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
 	controlPlaneConfigID := uuid.New()
+	failureDomain := "fd-a"
 
 	mockTx := &testutil.MockTx{}
 	mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
@@ -145,7 +146,8 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 			node.NodePoolID == uuid.Nil &&
 			node.NodeSetID == uuid.Nil &&
 			node.NicoInstanceTypeID() == uuid.Nil &&
-			node.ControlPlaneConfigurationID == controlPlaneConfigID
+			node.ControlPlaneConfigurationID == controlPlaneConfigID &&
+			ptr.Deref(node.FailureDomain, "") == failureDomain
 	})).Return(db.Node{}, nil).Once()
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
@@ -157,7 +159,7 @@ func TestCreatePendingNode_LeavesInstanceTypeUnset(t *testing.T) {
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil, ptr.To(""))
+	_, err := r.createPendingNode(context.Background(), cluster, nil, ptr.To(failureDomain))
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
 }
