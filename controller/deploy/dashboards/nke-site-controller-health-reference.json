@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Reference dashboard for the health of an NKE site controller. It is not deployed by the nke-stack composition; import this JSON and select a Prometheus datasource. Core rows cover NKE, SPIRE, Temporal, cert-manager, and node health. Control-plane, PostgreSQL/CNPG, Argo CD, Longhorn, and Teleport rows are optional and stay empty when those components are not installed or not scraped.",
+  "description": "Reference dashboard for the health of an NKE site controller. Requires a `k8s_cluster_name` label on the queried series. It is not deployed by the nke-stack composition; import this JSON and select a Prometheus datasource. Core rows cover NKE, SPIRE, Temporal, cert-manager, and node health. Control-plane, PostgreSQL/CNPG, Argo CD, Longhorn, and Teleport rows are optional and stay empty when those components are not installed or not scraped.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -18,7 +18,7 @@
       },
       "id": 0,
       "options": {
-        "content": "### Scope\nReference health dashboard for a single NKE site-controller cluster. It is not deployed by the nke-stack composition. Import this JSON and select a Prometheus datasource.\n\n### Assumptions\n- Every queried series carries a `cluster` label identifying the site controller.\n- kube-state-metrics is installed, which the nke-stack composition provides through kube-prometheus-stack.\n\n### Required metrics\n- **kube-state-metrics:** deployment, StatefulSet, DaemonSet, pod readiness, container restart, node condition, and node info series\n\n### Optional metrics\n- **Kubernetes control plane:** `up{job=\"apiserver\"}`, `apiserver_request_total`, and `etcd_*`. These need kube-apiserver and etcd scrape targets, which are not configured by default.\n- **PostgreSQL / CNPG:** PostgreSQL pod readiness, and `cnpg_*` when CloudNativePG is used\n- **Argo CD:** kube-state-metrics series for the `argocd` namespace\n- **Longhorn:** `longhorn_volume_*`\n- **Teleport:** kube-state-metrics series for `teleport*` namespaces\n\nOptional panels read **Not installed** or **No scrape** rather than failing. PostgreSQL and CNPG health are reported as ready-over-discovered ratios, so a single-instance PostgreSQL is healthy at 100%; no replica count is assumed.",
+        "content": "### Scope\nReference health dashboard for a single NKE site-controller cluster. It is not deployed by the nke-stack composition. Import this JSON and select a Prometheus datasource.\n\n### Assumptions\n- Every queried series carries a `k8s_cluster_name` label identifying the site controller (Prometheus label from the OpenTelemetry resource attribute `k8s.cluster.name`). On a plain kube-prometheus install that stamps `cluster` instead, rewrite the selector or relabel at ingest.\n- kube-state-metrics is installed, which the nke-stack composition provides through kube-prometheus-stack.\n\n### Required metrics\n- **kube-state-metrics:** deployment, StatefulSet, DaemonSet, pod readiness, container restart, node condition, and node info series\n\n### Optional metrics\n- **Kubernetes control plane:** `up{job=\"apiserver\"}`, `apiserver_request_total`, and `etcd_*`. These need kube-apiserver and etcd scrape targets, which are not configured by default.\n- **PostgreSQL / CNPG:** PostgreSQL pod readiness, and `cnpg_*` when CloudNativePG is used\n- **Argo CD:** kube-state-metrics series for the `argocd` namespace\n- **Longhorn:** `longhorn_volume_*`\n- **Teleport:** kube-state-metrics series for `teleport*` namespaces\n\nOptional panels read **Not installed** or **No scrape** rather than failing. PostgreSQL and CNPG health are reported as ready-over-discovered ratios, so a single-instance PostgreSQL is healthy at 100%; no replica count is assumed.",
         "mode": "markdown"
       },
       "title": "Requirements and scope",
@@ -107,7 +107,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(kube_deployment_status_replicas_ready{cluster=~\"$cluster\",namespace=\"cloud-workflow-engine\",deployment=\"cloud-workflow-engine\"} / clamp_min(kube_deployment_spec_replicas{cluster=~\"$cluster\",namespace=\"cloud-workflow-engine\",deployment=\"cloud-workflow-engine\"}, 1)) or vector(0)",
+          "expr": "(kube_deployment_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=\"cloud-workflow-engine\",deployment=\"cloud-workflow-engine\"} / clamp_min(kube_deployment_spec_replicas{k8s_cluster_name=~\"$cluster\",namespace=\"cloud-workflow-engine\",deployment=\"cloud-workflow-engine\"}, 1)) or vector(0)",
           "instant": true,
           "legendFormat": "NKE",
           "refId": "A"
@@ -157,7 +157,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "label_replace(group by (image) (kube_pod_container_info{cluster=~\"$cluster\",namespace=\"cloud-workflow-engine\",container=\"cloud-workflow-engine\"}), \"version\", \"$1\", \"image\", \".*:(.*)\")",
+          "expr": "label_replace(group by (image) (kube_pod_container_info{k8s_cluster_name=~\"$cluster\",namespace=\"cloud-workflow-engine\",container=\"cloud-workflow-engine\"}), \"version\", \"$1\", \"image\", \".*:(.*)\")",
           "instant": true,
           "legendFormat": "{{version}}",
           "refId": "A"
@@ -223,7 +223,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(increase(kube_pod_container_status_restarts_total{cluster=~\"$cluster\",namespace=\"cloud-workflow-engine\",container=\"cloud-workflow-engine\"}[$__range])) or vector(0)",
+          "expr": "sum(increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=\"cloud-workflow-engine\",container=\"cloud-workflow-engine\"}[$__range])) or vector(0)",
           "instant": true,
           "legendFormat": "Restarts",
           "refId": "A"
@@ -286,7 +286,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(kube_statefulset_status_replicas_ready{cluster=~\"$cluster\",namespace=\"spire-server\",statefulset=\"spire-server\"} / clamp_min(kube_statefulset_replicas{cluster=~\"$cluster\",namespace=\"spire-server\",statefulset=\"spire-server\"}, 1)) or vector(0)",
+          "expr": "(kube_statefulset_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=\"spire-server\",statefulset=\"spire-server\"} / clamp_min(kube_statefulset_replicas{k8s_cluster_name=~\"$cluster\",namespace=\"spire-server\",statefulset=\"spire-server\"}, 1)) or vector(0)",
           "instant": true,
           "legendFormat": "SPIRE server",
           "refId": "A"
@@ -349,7 +349,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(kube_daemonset_status_number_ready{cluster=~\"$cluster\",namespace=\"spire-system\",daemonset=\"spire-agent\"} / clamp_min(kube_daemonset_status_desired_number_scheduled{cluster=~\"$cluster\",namespace=\"spire-system\",daemonset=\"spire-agent\"}, 1)) or vector(0)",
+          "expr": "(kube_daemonset_status_number_ready{k8s_cluster_name=~\"$cluster\",namespace=\"spire-system\",daemonset=\"spire-agent\"} / clamp_min(kube_daemonset_status_desired_number_scheduled{k8s_cluster_name=~\"$cluster\",namespace=\"spire-system\",daemonset=\"spire-agent\"}, 1)) or vector(0)",
           "instant": true,
           "legendFormat": "SPIRE agent",
           "refId": "A"
@@ -412,7 +412,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(kube_deployment_status_replicas_ready{cluster=~\"$cluster\",namespace=\"temporal\"}) / clamp_min(sum(kube_deployment_spec_replicas{cluster=~\"$cluster\",namespace=\"temporal\"}), 1)) or vector(0)",
+          "expr": "(sum(kube_deployment_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=\"temporal\"}) / clamp_min(sum(kube_deployment_spec_replicas{k8s_cluster_name=~\"$cluster\",namespace=\"temporal\"}), 1)) or vector(0)",
           "instant": true,
           "legendFormat": "Temporal",
           "refId": "A"
@@ -475,7 +475,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(kube_deployment_status_replicas_ready{cluster=~\"$cluster\",namespace=\"cert-manager\"}) / clamp_min(sum(kube_deployment_spec_replicas{cluster=~\"$cluster\",namespace=\"cert-manager\"}), 1)) or vector(0)",
+          "expr": "(sum(kube_deployment_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=\"cert-manager\"}) / clamp_min(sum(kube_deployment_spec_replicas{k8s_cluster_name=~\"$cluster\",namespace=\"cert-manager\"}), 1)) or vector(0)",
           "instant": true,
           "legendFormat": "cert-manager",
           "refId": "A"
@@ -542,7 +542,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "count(kube_node_status_condition{cluster=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 1)",
+          "expr": "count(kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"} == 1)",
           "legendFormat": "Ready nodes",
           "refId": "A"
         }
@@ -585,7 +585,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "group by (node, kubelet_version) (kube_node_info{cluster=~\"$cluster\"})",
+          "expr": "group by (node, kubelet_version) (kube_node_info{k8s_cluster_name=~\"$cluster\"})",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -595,7 +595,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_node_status_condition{cluster=~\"$cluster\",condition=\"Ready\",status=\"true\"}",
+          "expr": "kube_node_status_condition{k8s_cluster_name=~\"$cluster\",condition=\"Ready\",status=\"true\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -677,7 +677,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "up{cluster=~\"$cluster\",job=\"apiserver\"}",
+          "expr": "up{k8s_cluster_name=~\"$cluster\",job=\"apiserver\"}",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
@@ -723,7 +723,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (instance) (rate(apiserver_request_total{cluster=~\"$cluster\",code=~\"5..\"}[5m]))",
+          "expr": "sum by (instance) (rate(apiserver_request_total{k8s_cluster_name=~\"$cluster\",code=~\"5..\"}[5m]))",
           "legendFormat": "{{instance}}",
           "refId": "A"
         }
@@ -768,7 +768,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "etcd_server_has_leader{cluster=~\"$cluster\"}",
+          "expr": "etcd_server_has_leader{k8s_cluster_name=~\"$cluster\"}",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -827,7 +827,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(kube_pod_status_ready{cluster=~\"$cluster\",condition=\"true\",pod=~\".*postgres.*\"}) / count(kube_pod_status_ready{cluster=~\"$cluster\",condition=\"true\",pod=~\".*postgres.*\"})",
+          "expr": "sum(kube_pod_status_ready{k8s_cluster_name=~\"$cluster\",condition=\"true\",pod=~\".*postgres.*\"}) / count(kube_pod_status_ready{k8s_cluster_name=~\"$cluster\",condition=\"true\",pod=~\".*postgres.*\"})",
           "instant": true,
           "legendFormat": "Ready ratio",
           "refId": "A"
@@ -875,7 +875,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(cnpg_collector_up{cluster=~\"$cluster\"}) / count(cnpg_collector_up{cluster=~\"$cluster\"})",
+          "expr": "sum(cnpg_collector_up{k8s_cluster_name=~\"$cluster\"}) / count(cnpg_collector_up{k8s_cluster_name=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "Collectors up",
           "refId": "A"
@@ -922,7 +922,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "max(cnpg_pg_replication_lag{cluster=~\"$cluster\"})",
+          "expr": "max(cnpg_pg_replication_lag{k8s_cluster_name=~\"$cluster\"})",
           "instant": true,
           "legendFormat": "Maximum lag",
           "refId": "A"
@@ -979,7 +979,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_deployment_status_replicas_ready{cluster=~\"$cluster\",namespace=\"argocd\"}",
+          "expr": "kube_deployment_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=\"argocd\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -989,7 +989,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_deployment_spec_replicas{cluster=~\"$cluster\",namespace=\"argocd\"}",
+          "expr": "kube_deployment_spec_replicas{k8s_cluster_name=~\"$cluster\",namespace=\"argocd\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -1054,7 +1054,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (pod) (rate(kube_pod_container_status_restarts_total{cluster=~\"$cluster\",namespace=\"argocd\"}[5m])) > 0",
+          "expr": "sum by (pod) (rate(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=\"argocd\"}[5m])) > 0",
           "legendFormat": "{{pod}}",
           "refId": "A"
         }
@@ -1128,7 +1128,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(longhorn_volume_robustness{cluster=~\"$cluster\"} >= bool 2)",
+          "expr": "sum(longhorn_volume_robustness{k8s_cluster_name=~\"$cluster\"} >= bool 2)",
           "instant": true,
           "legendFormat": "Unhealthy volumes",
           "refId": "A"
@@ -1173,7 +1173,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "longhorn_volume_state{cluster=~\"$cluster\"}",
+          "expr": "longhorn_volume_state{k8s_cluster_name=~\"$cluster\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1183,7 +1183,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "longhorn_volume_robustness{cluster=~\"$cluster\"}",
+          "expr": "longhorn_volume_robustness{k8s_cluster_name=~\"$cluster\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -1259,7 +1259,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_deployment_status_replicas_ready{cluster=~\"$cluster\",namespace=~\"teleport.*\"}",
+          "expr": "kube_deployment_status_replicas_ready{k8s_cluster_name=~\"$cluster\",namespace=~\"teleport.*\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -1269,7 +1269,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_deployment_spec_replicas{cluster=~\"$cluster\",namespace=~\"teleport.*\"}",
+          "expr": "kube_deployment_spec_replicas{k8s_cluster_name=~\"$cluster\",namespace=~\"teleport.*\"}",
           "format": "table",
           "instant": true,
           "refId": "B"
@@ -1335,7 +1335,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum by (namespace, pod) (rate(kube_pod_container_status_restarts_total{cluster=~\"$cluster\",namespace=~\"teleport.*\"}[5m])) > 0",
+          "expr": "sum by (namespace, pod) (rate(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",namespace=~\"teleport.*\"}[5m])) > 0",
           "legendFormat": "{{namespace}}/{{pod}}",
           "refId": "A"
         }
@@ -1361,17 +1361,14 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(kube_node_info, cluster)",
-        "query": {
-          "query": "label_values(kube_node_info, cluster)",
-          "refId": "StandardVariableQuery"
-        },
+        "definition": "label_values(kube_node_info, k8s_cluster_name)",
+        "query": "label_values(kube_node_info, k8s_cluster_name)",
         "current": {},
         "includeAll": false,
         "multi": false,
         "refresh": 2,
         "sort": 1,
-        "description": "Site-controller cluster, from the Prometheus cluster label."
+        "description": "Site-controller cluster, from the Prometheus label k8s_cluster_name (OTel resource k8s.cluster.name)."
       }
     ]
   },

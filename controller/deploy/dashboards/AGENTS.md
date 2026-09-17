@@ -9,7 +9,7 @@ These files are **operator-importable reference dashboards**. They are **not** i
 | File | Purpose | Primary scrape |
 |---|---|---|
 | `nke-site-controller-health-reference.json` | Site-controller workload and node health | kube-state-metrics; optional apiserver/etcd, CNPG, Argo CD, Longhorn, Teleport |
-| `nke-etcd-reference.json` | etcd member health | etcd mixin metrics (`job=~".*etcd.*"`) |
+| `nke-etcd-reference.json` | etcd member health | etcd mixin metrics, scoped by `$job` |
 | `nke-cnpg-per-cluster-reference.json` | CloudNativePG (optional HA Postgres) | `cnpg_*` |
 | `nke-ovn-kubernetes-controller-reference.json` | Tenant (or site) OVN-Kubernetes | kube-state-metrics; optional `ovnkube_controller_*` |
 | `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | CWE `/metrics` (`cwe_*`) |
@@ -23,6 +23,7 @@ Each dashboard has a **Requirements and scope** markdown panel. Keep that panel 
 - `id`: `null`. Stable `uid` and `title` prefixed `Reference - …`.
 - Filenames: `nke-<topic>-reference.json`.
 - `refresh`: `1m` or slower, and keep `timepicker.refresh_intervals` starting at `1m`. Grafana refuses anything below its `min_refresh_interval` with "Dashboard refresh interval is too low", so do not copy an upstream mixin's `10s`.
+- Query variables: write `query` as a **plain `label_values(...)` string**, matching `definition`. Grafana migrates a string into a Label-values query; an object without `qryType` falls back to **Label names**, so the dropdown lists label names (`namespace`, `pod`, `instance`) instead of values.
 
 Do not bump `controller/deploy/charts/controller/Chart.yaml` for dashboard-only edits. These JSON files are not chart templates.
 
@@ -53,12 +54,38 @@ Site bootstrap CNI may be `calico` or `ovn-kubernetes`. OVN chart path: `ovnkube
 
 ## Selectors and labels
 
+**Cluster identity is `k8s_cluster_name`.** It is the Prometheus label produced
+from the OpenTelemetry resource attribute `k8s.cluster.name`, and it is the same
+convention the NKTP reference dashboards use, so a single Grafana can hold both
+sets without two spellings of "which cluster". The variable is still *named*
+`$cluster`; only the label is `k8s_cluster_name`:
+
+```
+label_values(kube_node_info, k8s_cluster_name)   # variable
+kube_node_info{k8s_cluster_name=~"$cluster"}     # panel
+```
+
+Do not use a bare `cluster` label for Kubernetes cluster identity. Some
+exporters already define `cluster` as something else — CNPG's `cluster` is the
+**Postgres** Cluster resource name. Scope CNPG by `$namespace` (typically one
+Cluster CR per namespace); leave CNPG's `cluster` in joins and legends only.
+
 | Context | Do | Do not |
 |---|---|---|
-| Single-cluster Prometheus | Omit `cluster=`, or document that `$cluster` is optional | Require `$env` or a private fleet cluster-name regex |
-| etcd mixin dashboard | `$cluster` = Prometheus **job** (`clusterLabel: job` in etcd mixin `config.libsonnet`) | Treat `$cluster` as a Kubernetes cluster name |
+| Kubernetes cluster identity | `k8s_cluster_name=~"$cluster"` | A bare `cluster=` label, `$env`, or a hardcoded cluster-name regex |
+| etcd mixin dashboard | `$cluster` = `k8s_cluster_name`; expose the mixin's `clusterLabel: job` as a separate `$job` | Name a variable `$cluster` and bind it to the Prometheus `job` |
+| CNPG | `$cluster` = `k8s_cluster_name`; scope with `$namespace` | Treat CNPG's `cluster` label as a Kubernetes cluster, or add a Postgres-cluster variable |
 | CWE lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name` | Invent `env`; keep phase labels that are not in `lifecycle.go` |
 | Workloads | Match chart names: deployment/container `cloud-workflow-engine`, SPIRE as above | Query SWE, `tbot`, `job="process-exporter"` |
+
+CWE metrics carry `tenant_cluster`, not `k8s_cluster_name`. A pure-CWE board
+(the provisioning dashboard) should filter `tenant_cluster` directly. Only when
+joining CWE series against kube-state-metrics on the same panel do you rewrite
+the label:
+
+```
+label_replace(cwe_node_info{tenant_cluster=~"$cluster"}, "k8s_cluster_name", "$1", "tenant_cluster", "(.*)")
+```
 
 HA thresholds of **3** (etcd members, CNPG collectors, ready nodes) are colo-sized. Parameterize or document “typical HA”; nke-stack CWE is 1 replica and Kind can be 1 node.
 
@@ -76,7 +103,7 @@ HA thresholds of **3** (etcd members, CNPG collectors, ready nodes) are colo-siz
 
 **Site controller health.** Glance: CWE, SPIRE, Temporal, cert-manager, node Ready. Optional collapsed: apiserver/etcd (needs scrape), CNPG **or** postgres, Argo CD, Longhorn, Teleport. One etcd “members with leader” stat is enough; drill-down is the etcd reference dashboard. Empty optional ≠ red.
 
-**etcd.** Panel set from [etcd mixin](https://github.com/etcd-io/etcd/tree/main/contrib/mixin) (`etcd.libsonnet` / `targets.libsonnet`): Up (`etcd_server_has_leader`, not scrape `up{}`), RPC rate, active streams, DB size, disk sync, memory, client/peer traffic, raft/leader elections, peer RTT. Mixin `$cluster` is **job**. Empty until kube-prometheus `kubeEtcd` (or equivalent) scrapes kubeadm etcd. Do not add apiserver watch-cache or process-exporter CPU here.
+**etcd.** Panel set from [etcd mixin](https://github.com/etcd-io/etcd/tree/main/contrib/mixin) (`etcd.libsonnet` / `targets.libsonnet`): Up (`etcd_server_has_leader`, not scrape `up{}`), RPC rate, active streams, DB size, disk sync, memory, client/peer traffic, raft/leader elections, peer RTT. `$cluster` is `k8s_cluster_name`; the mixin's `clusterLabel: job` is a separate `$job` variable, which is single-select and also scopes the non-etcd-specific `grpc_server_*` and `process_resident_memory_bytes` series to the etcd process. Empty until kube-prometheus `kubeEtcd` (or equivalent) scrapes kubeadm etcd. Do not add apiserver watch-cache or process-exporter CPU here.
 
 **CNPG.** Only for sites that run CloudNativePG. Default nke-stack Postgres will leave this empty — that is expected.
 
@@ -99,6 +126,8 @@ Do not copy the same etcd WAL/leader or ovnkube workqueue graphs onto two refere
 There is no `make` target for Grafana JSON. Before finishing:
 
 - Every PromQL selector matches OSS names or is documented as optional
+- Kubernetes cluster identity is `k8s_cluster_name`, and every query variable's
+  `query` is a plain string (not an object)
 - Requirements panel matches the queries
 - No hosted-Mimir datasource pins, SWE selectors, or process-exporter leftovers
 - Optional missing scrape does not false-green via `or vector(0)` unless zero is meaningful

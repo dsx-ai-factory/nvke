@@ -12,7 +12,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Reference OVN-Kubernetes dashboard. Controller restarts and node-agent DaemonSet status use kube-state-metrics. NB\u2013SB e2e timestamps need ovnkube controller scrape.",
+  "description": "Reference OVN-Kubernetes dashboard. Requires a `k8s_cluster_name` label on the queried series. Controller restarts and node-agent DaemonSet status use kube-state-metrics. NB\u2013SB e2e timestamps need ovnkube controller scrape.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -68,7 +68,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "increase(kube_pod_container_status_restarts_total{cluster=~\"$cluster\",container=\"ovnkube-controller\",namespace=\"ovn-kubernetes\"}[5m])",
+          "expr": "increase(kube_pod_container_status_restarts_total{k8s_cluster_name=~\"$cluster\",container=\"ovnkube-controller\",namespace=\"ovn-kubernetes\"}[5m])",
           "legendFormat": "{{pod}}",
           "refId": "A",
           "interval": "120s"
@@ -132,7 +132,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ovnkube_controller_nb_e2e_timestamp{cluster=~\"$cluster\",instance=~\"$instance\"} - ovnkube_controller_sb_e2e_timestamp{cluster=~\"$cluster\",instance=~\"$instance\"}",
+          "expr": "ovnkube_controller_nb_e2e_timestamp{k8s_cluster_name=~\"$cluster\",instance=~\"$instance\"} - ovnkube_controller_sb_e2e_timestamp{k8s_cluster_name=~\"$cluster\",instance=~\"$instance\"}",
           "legendFormat": "nb-sb e2e timestamp diff on {{instance}}",
           "refId": "A",
           "interval": "120s"
@@ -196,7 +196,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_daemonset_status_number_ready{cluster=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
+          "expr": "kube_daemonset_status_number_ready{k8s_cluster_name=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
           "legendFormat": "READY",
           "refId": "A",
           "interval": "120s"
@@ -206,7 +206,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_daemonset_status_number_available{cluster=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"} + kube_daemonset_status_number_unavailable{cluster=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"} - kube_daemonset_status_number_ready{cluster=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
+          "expr": "kube_daemonset_status_number_available{k8s_cluster_name=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"} + kube_daemonset_status_number_unavailable{k8s_cluster_name=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"} - kube_daemonset_status_number_ready{k8s_cluster_name=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
           "legendFormat": "NOT READY",
           "refId": "B",
           "interval": "120s"
@@ -270,7 +270,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_daemonset_status_number_available{cluster=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
+          "expr": "kube_daemonset_status_number_available{k8s_cluster_name=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
           "legendFormat": "AVAILABLE",
           "refId": "A",
           "interval": "120s"
@@ -280,7 +280,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "kube_daemonset_status_number_unavailable{cluster=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
+          "expr": "kube_daemonset_status_number_unavailable{k8s_cluster_name=~\"$cluster\",daemonset=\"ovnkube-node\",namespace=\"ovn-kubernetes\"}",
           "legendFormat": "UNAVAILABLE",
           "refId": "B",
           "interval": "120s"
@@ -344,7 +344,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "ovnkube_controller_build_info{cluster=~\"$cluster\",namespace=\"ovn-kubernetes\"}",
+          "expr": "ovnkube_controller_build_info{k8s_cluster_name=~\"$cluster\",namespace=\"ovn-kubernetes\"}",
           "format": "table",
           "instant": true,
           "refId": "A"
@@ -386,7 +386,7 @@
       }
     }
   ],
-  "refresh": "",
+  "refresh": "1m",
   "schemaVersion": 39,
   "tags": [
     "nke",
@@ -403,17 +403,14 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(kube_node_info, cluster)",
-        "query": {
-          "query": "label_values(kube_node_info, cluster)",
-          "refId": "StandardVariableQuery"
-        },
+        "definition": "label_values(kube_node_info, k8s_cluster_name)",
+        "query": "label_values(kube_node_info, k8s_cluster_name)",
         "current": {},
         "includeAll": false,
         "multi": false,
         "refresh": 2,
         "sort": 1,
-        "description": "Kubernetes cluster label."
+        "description": "Kubernetes cluster, from the Prometheus label k8s_cluster_name (OTel resource k8s.cluster.name)."
       },
       {
         "name": "instance",
@@ -423,11 +420,8 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(ovnkube_controller_build_info{cluster=~\"$cluster\"}, instance)",
-        "query": {
-          "query": "label_values(ovnkube_controller_build_info{cluster=~\"$cluster\"}, instance)",
-          "refId": "StandardVariableQuery"
-        },
+        "definition": "label_values(ovnkube_controller_build_info{k8s_cluster_name=~\"$cluster\"}, instance)",
+        "query": "label_values(ovnkube_controller_build_info{k8s_cluster_name=~\"$cluster\"}, instance)",
         "current": {
           "selected": true,
           "text": "All",
