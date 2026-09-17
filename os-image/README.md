@@ -26,7 +26,7 @@ Prereqs, on a Linux host:
 | [Go](https://go.dev/) | per `go.work` | https://go.dev/dl/ |
 | Python | >= 3.10, standard library only | via your package manager |
 | `curl` | any | via your package manager |
-| `qemu-system-x86_64`, `qemu-img`, `cloud-localds`, `swtpm`, OVMF | any | via your package manager |
+| `qemu-system-x86_64`, `qemu-system-aarch64`, `qemu-img`, `cloud-localds`, `swtpm`, OVMF | any | via your package manager |
 | `xorriso`, `p7zip-full` (`7z`) | any | via your package manager |
 
 Both variants boot the Ubuntu Server installer (not a prebuilt cloud image),
