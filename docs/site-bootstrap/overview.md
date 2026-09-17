@@ -46,7 +46,7 @@ sequenceDiagram
 
 Once the cluster is up, deploy the NKE services (CWE, Temporal, CNPG) via your GitOps tooling. See [Deploy Repository](deploy-repository.md) for the ArgoCD application structure.
 
-The cluster's etcd data is encrypted at rest from its first `kubeadm init`, and bootstrap writes the key into the working directory as `<clusterName>-etcd-encryption-key.json` (`--encryption-key-out` to choose the path). Move that file off the host and keep it: it is what a controller installed later needs to join control-plane nodes and rotate the key, and what a restore onto new hosts needs to read the data. See [Pre-Provisioned Nodes](pre-provisioned-nodes.md#troubleshooting).
+The cluster's etcd data is encrypted at rest from its first `kubeadm init`, and every control-plane node holds the key. Bootstrap also saves it into the working directory as `<clusterName>-etcd-encryption-key.json` (`--encryption-key-out` to choose the path): a convenience, since a controller installed later can be given the file instead of having the key pulled off a node, and the disaster-recovery copy, since a restore onto new hosts has no node to pull it from. Move the file off the host and keep it. See [Pre-Provisioned Nodes](pre-provisioned-nodes.md#troubleshooting).
 
 If you are running a self-managed site (with NICo as the infrastructure provider), keep `nkectl` available for subsequent operations.
 

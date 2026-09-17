@@ -142,7 +142,7 @@ NKECTL_CAPI_PROVISIONED_IMAGE="nvcr.io/<org>/cluster-api-provider-provisioned:ed
 
 Use `--keep-bootstrap-cluster` to leave the Kind cluster running after bootstrap for debugging.
 
-When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, the cluster's admin credential, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. **Move the key file off this host.** It is the only copy outside the cluster, and this host is one of the machines it protects; a key stored on the disk it decrypts protects nothing. Use `--kubeconfig-out` and `--encryption-key-out` to write them elsewhere.
+When bootstrap finishes it writes two files into the working directory: `<clusterName>.kubeconfig`, the cluster's admin credential, and `<clusterName>-etcd-encryption-key.json`, the key that encrypts the cluster's etcd data. Both are secrets. The cluster does not depend on the key file: every control-plane node holds the key at `/etc/kubernetes/kube-api-encryption/encryption-config.yaml`, and that is what kube-apiserver reads. The file is for two things the nodes cannot do. It is what a controller installed later is given, so nobody has to pull the key off a node by hand, and it is the copy that restores etcd onto new hosts when no control-plane node survives. **Move it off this host** — this host is one of the nodes it protects — and keep it with the cluster's other credentials. Use `--kubeconfig-out` and `--encryption-key-out` to write the files elsewhere.
 
 **Duration**: Approximately **30–45 minutes**
 

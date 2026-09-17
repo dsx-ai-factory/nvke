@@ -190,8 +190,11 @@ to `false` only when that is the intent.
 
 `nkectl bootstrap site` writes the key into the working directory, as a Secret
 manifest named `<clusterName>-etcd-encryption-key.json` (`--encryption-key-out`
-to choose the path; it is resolved independently of `--kubeconfig-out`). It is never overwritten, and the run refuses to start if
-it already exists.
+to choose the path; it is resolved independently of `--kubeconfig-out`). Every
+control-plane node holds the key in its kube-apiserver configuration; the file
+is what a controller installed later is given, and the copy a restore onto new
+hosts needs. It is never overwritten, and the run refuses to start if it
+already exists.
 
 ## Relationship to the tier-0 bootstrap template
 

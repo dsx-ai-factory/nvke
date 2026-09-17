@@ -70,8 +70,9 @@ The command needs nerdctl and containerd on the host, and network reach to
 the hosts' `nke-agent` ports. On success it
 writes `my-tier0-site.kubeconfig` and `my-tier0-site-etcd-encryption-key.json`
 in the working directory (`--kubeconfig-out` and `--encryption-key-out` change
-the paths) and removes the Kind cluster. The key file is the only copy of the
-cluster's etcd encryption key outside the cluster; move it off the host. On failure it writes cluster
+the paths) and removes the Kind cluster. Every control-plane node holds the
+etcd encryption key; the key file is a convenience for installing a controller
+later and the copy a disaster recovery needs. Move it off the host. On failure it writes cluster
 diagnostics to `cluster-diagnostics/` first; `--keep-bootstrap-cluster` keeps
 the Kind cluster for debugging.
 
