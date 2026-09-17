@@ -136,8 +136,10 @@ e2e_run_ginkgo_leg() {
 # touches it: a label-filter exclusion prints nothing, only a spec that started
 # and skipped does.
 E2E_EXPECTED_RUNTIME_SKIPS=(
-  pod_cidr_test.go # multi-CIDR rollover, encoded only by the nico-vms specs
-  oidc_test.go     # OIDC is off in the deployments this runs against
+  pod_cidr_test.go      # multi-CIDR rollover, encoded only by the nico-vms specs
+  oidc_test.go          # OIDC is off in the deployments this runs against
+  authz_test.go         # "no role" self-checks for a claim rule granting its own subject a role first
+  authz_claims_test.go  # the OIDC-claim case has no e2e-reachable IdP to mint a controlled claim from
 )
 
 # Fails a leg on any runtime skip not listed above. Ginkgo reports these only
