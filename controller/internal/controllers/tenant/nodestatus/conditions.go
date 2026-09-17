@@ -28,7 +28,7 @@ func applyKubernetesNodeHealth(cweNode *db.Node, kubeNode *corev1.Node) {
 
 // describeConditionChanges summarizes what differs between two condition sets,
 // one short string per changed condition. This is what the update log line
-// carries: a node has fifteen conditions, and rendering both sets in full to
+// carries: a node has sixteen conditions, and rendering both sets in full to
 // report that one of them moved costs kilobytes per line and still leaves the
 // reader diffing two near-identical blobs by eye.
 func describeConditionChanges(previous, current db.NodeConditions) []string {

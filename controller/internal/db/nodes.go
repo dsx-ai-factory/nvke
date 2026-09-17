@@ -113,6 +113,7 @@ func (c NodeConditions) All() []NamedCondition {
 		{"readyToJoin", c.ReadyToJoin},
 		{"joined", c.Joined},
 		{"provisioned", c.Provisioned},
+		{"deleteRequested", c.DeleteRequested},
 		{"deleting", c.Deleting},
 		{"kubernetesReady", c.KubernetesReady},
 		{"kubernetesUnschedulable", c.KubernetesUnschedulable},
