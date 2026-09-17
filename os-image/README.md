@@ -82,15 +82,17 @@ QEMU binary (`qemu-system-aarch64`), machine type (`virt`), and UEFI firmware
 The build-time cloud-init seed is only for Packer's SSH. The provisioner runs
 `cloud-init clean` and drops the build key, so each qcow2 is a golden image.
 
-Both image Make targets finish by applying the publication QCOW2 conversion
-and atomically replacing Packer's output. They also write an adjacent,
-deterministic `<image>.build-manifest.v1.json` sidecar. That manifest binds the
-exact final file name, SHA-256, size, virtual size, clean Git commit and tree,
-selected variant/architecture/accelerator, and observed Packer and `qemu-img`
-versions. Finalization fails if the checkout is dirty, the output directory is
-ambiguous, or `qemu-img` reports a non-QCOW2 or backing file. This first
-manifest is an output/build record, not an exhaustive material ledger or SBOM.
-By default, the Makefile exports `PACKER_CACHE_DIR` under the ignored
+Each Packer build applies the publication QCOW2 conversion once through its
+existing `compress-qcow2.sh` post-processor. The Make target then validates
+those unchanged bytes and writes an adjacent, deterministic
+`<image>.build-manifest.v1.json` sidecar. That manifest binds the exact final
+file name, SHA-256, size, virtual size, clean Git commit and tree, selected
+variant/architecture/accelerator, and observed Packer and `qemu-img` versions.
+The Make target checks that the checkout is clean before Packer starts and
+checks it again during finalization. Finalization also fails if the output
+directory is ambiguous or `qemu-img` reports a non-QCOW2 or backing file. This
+first manifest is an output/build record, not an exhaustive material ledger or
+SBOM. By default, the Makefile exports `PACKER_CACHE_DIR` under the ignored
 `packer/iso-cache/` tree so Packer's build/download cache does not dirty the
 recorded checkout; callers may override that directory without changing the
 recipe.

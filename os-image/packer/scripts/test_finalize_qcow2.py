@@ -31,8 +31,9 @@ class FinalizerFixture:
         self.output.mkdir()
         self.tools.mkdir()
         (self.source / "tracked.txt").write_text("tracked\n", encoding="utf-8")
+        (self.source / ".gitignore").write_text("ignored/\n", encoding="utf-8")
         self.run(["git", "init", "-q"], cwd=self.source)
-        self.run(["git", "add", "tracked.txt"], cwd=self.source)
+        self.run(["git", "add", "tracked.txt", ".gitignore"], cwd=self.source)
         self.run(
             [
                 "git",
@@ -67,7 +68,6 @@ class FinalizerFixture:
                 import json
                 import os
                 from pathlib import Path
-                import shutil
                 import sys
 
                 log = os.environ.get("FAKE_QEMU_LOG")
@@ -76,12 +76,6 @@ class FinalizerFixture:
                         stream.write(json.dumps(sys.argv[1:]) + "\\n")
                 if sys.argv[1:] == ["--version"]:
                     print("qemu-img version 9.2.4 (fixture)")
-                    raise SystemExit(0)
-                if len(sys.argv) > 1 and sys.argv[1] == "convert":
-                    if os.environ.get("FAKE_CONVERT_FAIL"):
-                        print("fixture conversion failure", file=sys.stderr)
-                        raise SystemExit(8)
-                    shutil.copyfile(sys.argv[-2], sys.argv[-1])
                     raise SystemExit(0)
                 if sys.argv[1:3] == ["info", "--output=json"]:
                     info = {
@@ -188,6 +182,20 @@ class FinalizerFixture:
             text=True,
         )
 
+    def check_source(self):
+        return subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT),
+                "check-source",
+                "--source-root",
+                str(self.source),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
     def verify(
         self,
         image: Path,
@@ -239,6 +247,7 @@ class FinalizeQCOW2Test(unittest.TestCase):
                 fixture = FinalizerFixture(Path(tmp))
                 payload = f"fixture-{variant}-{arch}".encode()
                 image = fixture.image(variant, "26.04.1", arch, payload)
+                image_inode = image.stat().st_ino
 
                 result = fixture.invoke(
                     variant=variant, arch=arch, accelerator=accelerator
@@ -249,6 +258,7 @@ class FinalizeQCOW2Test(unittest.TestCase):
                 manifest_text = manifest_path.read_text(encoding="utf-8")
                 manifest = json.loads(manifest_text)
                 self.assertEqual(image.read_bytes(), payload)
+                self.assertEqual(image.stat().st_ino, image_inode)
                 self.assertEqual(
                     manifest["apiVersion"],
                     "nke.nvidia.com/os-image-build-manifest/v1",
@@ -291,10 +301,35 @@ class FinalizeQCOW2Test(unittest.TestCase):
                     json.loads(line)
                     for line in fixture.qemu_log.read_text(encoding="utf-8").splitlines()
                 ]
-                convert = next(call for call in qemu_calls if call[0] == "convert")
-                self.assertEqual(convert[1:5], ["-p", "-c", "-O", "qcow2"])
-                self.assertEqual(Path(convert[-2]), image.resolve())
-                self.assertEqual(Path(convert[-1]).parent, image.parent.resolve())
+                self.assertFalse(
+                    any(call[0] == "convert" for call in qemu_calls),
+                    "the manifest finalizer must not recompress Packer's output",
+                )
+
+    def test_source_preflight_accepts_clean_source_and_rejects_dirty_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = FinalizerFixture(Path(tmp))
+
+            clean = fixture.check_source()
+
+            self.assertEqual(clean.returncode, 0, clean.stderr)
+            self.assertIn(fixture.commit, clean.stdout)
+            self.assertIn(fixture.tree, clean.stdout)
+
+            ignored = fixture.source / "ignored" / "cache-entry"
+            ignored.parent.mkdir()
+            ignored.write_text("ignored\n", encoding="utf-8")
+            ignored_result = fixture.check_source()
+
+            self.assertEqual(ignored_result.returncode, 0, ignored_result.stderr)
+
+            (fixture.source / "untracked.txt").write_text(
+                "dirty\n", encoding="utf-8"
+            )
+            dirty = fixture.check_source()
+
+            self.assertNotEqual(dirty.returncode, 0)
+            self.assertIn("source checkout is dirty", dirty.stderr)
 
     def test_manifest_is_deterministic_for_identical_observations(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -331,7 +366,6 @@ class FinalizeQCOW2Test(unittest.TestCase):
 
     def test_validation_failures_preserve_original_image(self):
         cases = (
-            ("conversion", {"FAKE_CONVERT_FAIL": "1"}),
             ("wrong-format", {"FAKE_QEMU_FORMAT": "raw"}),
             ("backing-file", {"FAKE_QEMU_BACKING": "1"}),
             ("encrypted-container", {"FAKE_QEMU_ENCRYPTED": "1"}),
@@ -348,9 +382,8 @@ class FinalizeQCOW2Test(unittest.TestCase):
                 self.assertFalse(
                     image.with_name(image.name + MANIFEST_SUFFIX).exists()
                 )
-                self.assertFalse(list(fixture.output.glob(".*.final.*.qcow2")))
 
-    def test_dirty_source_fails_before_replacing_output(self):
+    def test_dirty_source_fails_before_writing_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             fixture = FinalizerFixture(Path(tmp))
             image = fixture.image("fde", "26.04.1", "amd64", b"original")

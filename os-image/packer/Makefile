@@ -126,7 +126,7 @@ CPUS ?= 4
 # nke-node-fde.pkr.hcl.
 BOOT_WAIT ?= $(if $(filter kvm,$(ACCELERATOR)),10s,30s)
 
-.PHONY: os-image-fde os-image-non-fde init-fde init-non-fde ssh-key prepare-installer-iso clean check-deps
+.PHONY: os-image-fde os-image-non-fde init-fde init-non-fde ssh-key prepare-installer-iso clean check-deps check-source
 
 ssh-key: $(SSH_DIR)/id_ed25519
 
@@ -134,10 +134,14 @@ $(SSH_DIR)/id_ed25519:
 	mkdir -p $(SSH_DIR)
 	ssh-keygen -t ed25519 -N '' -f $(SSH_DIR)/id_ed25519
 
-init-fde:
+check-source: check-deps
+	$(PYTHON) ./scripts/finalize-qcow2.py check-source \
+		--source-root "$(abspath ../..)"
+
+init-fde: check-source
 	$(PACKER) init $(PKR_FILE_FDE)
 
-init-non-fde:
+init-non-fde: check-source
 	$(PACKER) init $(PKR_FILE_NON_FDE)
 
 # FDE/non-FDE only. See prepare-installer-iso.sh's header for why this

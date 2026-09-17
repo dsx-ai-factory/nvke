@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 
@@ -64,6 +65,27 @@ class PackerMakefileTest(unittest.TestCase):
             text=True,
         )
         return result.stdout.strip()
+
+    def dry_run(self, target):
+        env = os.environ.copy()
+        for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"):
+            env.pop(name, None)
+        return subprocess.run(
+            [
+                self.make,
+                "--dry-run",
+                "--file",
+                "Makefile",
+                target,
+                "PACKER=/tmp/nkd-packer",
+                "PYTHON=/tmp/nkd-python",
+            ],
+            cwd=PACKER_DIR,
+            env=env,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
 
     def test_default_packer_cache_is_exported_under_ignored_iso_cache(self):
         expected = PACKER_DIR / "iso-cache" / "packer-cache"
@@ -136,6 +158,72 @@ class PackerMakefileTest(unittest.TestCase):
             "/tmp/nkd-python -B -m unittest discover -s scripts -p 'test_*.py'",
             result.stdout,
         )
+
+    def test_source_preflight_runs_before_any_packer_command(self):
+        cases = (
+            ("os-image-fde", "nke-node-fde.pkr.hcl"),
+            ("os-image-non-fde", "nke-node-non-fde.pkr.hcl"),
+        )
+        for target, template in cases:
+            with self.subTest(target=target):
+                output = self.dry_run(target)
+                source_check = output.index("finalize-qcow2.py check-source")
+                packer_init = output.index("/tmp/nkd-packer init ")
+                packer_build = output.index("/tmp/nkd-packer build")
+
+                self.assertIn(template, output[packer_init:].splitlines()[0])
+                self.assertLess(source_check, packer_init)
+                self.assertLess(source_check, packer_build)
+
+    def test_failed_source_preflight_blocks_parallel_packer_init(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tools = Path(tmp)
+            python = tools / "python"
+            python.write_text(
+                "#!/bin/sh\n"
+                "if [ \"$1\" = \"-c\" ]; then exit 0; fi\n"
+                "echo 'source checkout is dirty' >&2\n"
+                "exit 42\n",
+                encoding="utf-8",
+            )
+            python.chmod(0o755)
+            qemu_img = tools / "qemu-img"
+            qemu_img.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            qemu_img.chmod(0o755)
+            packer_log = tools / "packer.log"
+            packer = tools / "packer"
+            packer.write_text(
+                f"#!/bin/sh\nprintf '%s\\n' \"$*\" >> {packer_log}\n",
+                encoding="utf-8",
+            )
+            packer.chmod(0o755)
+            env = {
+                **os.environ,
+                "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
+            }
+            for target in ("init-fde", "init-non-fde"):
+                with self.subTest(target=target):
+                    packer_log.unlink(missing_ok=True)
+                    result = subprocess.run(
+                        [
+                            self.make,
+                            "--jobs=4",
+                            "--file",
+                            "Makefile",
+                            target,
+                            f"PACKER={packer}",
+                            f"PYTHON={python}",
+                        ],
+                        cwd=PACKER_DIR,
+                        env=env,
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("source checkout is dirty", result.stderr)
+                    self.assertFalse(packer_log.exists())
 
 
 if __name__ == "__main__":

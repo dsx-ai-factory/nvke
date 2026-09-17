@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Finalize one Packer QCOW2 and emit its deterministic build manifest."""
+"""Validate one Packer QCOW2 and emit its deterministic build manifest."""
 
 from __future__ import annotations
 
@@ -277,27 +277,6 @@ def fsync_directory(path: Path) -> None:
         raise FinalizerError(f"could not sync output directory: {exc}") from exc
 
 
-def qemu_temporary_path(image: Path) -> Path:
-    descriptor = -1
-    try:
-        descriptor, name = tempfile.mkstemp(
-            prefix=f".{image.name}.final.", suffix=".qcow2", dir=image.parent
-        )
-        os.close(descriptor)
-        descriptor = -1
-        temporary = Path(name)
-        temporary.unlink()
-        return temporary
-    except OSError as exc:
-        raise FinalizerError(f"could not reserve final QCOW2 path: {exc}") from exc
-    finally:
-        if descriptor >= 0:
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
-
-
 def replace_file(source: Path, destination: Path, description: str) -> None:
     try:
         os.replace(source, destination)
@@ -464,55 +443,37 @@ def finalize(args: argparse.Namespace) -> tuple[Path, Path]:
     source = source_observation(args.source_root.resolve())
     tools = tool_versions(args.packer, args.qemu_img)
 
-    temporary = qemu_temporary_path(image)
+    metadata = qemu_metadata(image, args.qemu_img)
+    digest, size = hash_file(image)
+    if size <= 0:
+        raise FinalizerError("final QCOW2 is empty")
+    fsync_file(image)
+
+    manifest = {
+        "apiVersion": API_VERSION,
+        "build": {
+            "accelerator": args.accelerator,
+            "architecture": args.arch,
+            "target": f"os-image-{args.variant}",
+            "variant": args.variant,
+        },
+        "kind": KIND,
+        "output": {
+            "fileName": image.name,
+            "format": metadata["format"],
+            "mediaType": MEDIA_TYPE,
+            "sha256": digest,
+            "sizeBytes": size,
+            "virtualSizeBytes": metadata["virtualSizeBytes"],
+        },
+        "source": source,
+        "tools": tools,
+    }
+    validate_manifest_shape(manifest)
+    manifest_path = image.with_name(image.name + MANIFEST_SUFFIX)
     manifest_temporary: Path | None = None
     try:
-        run_checked(
-            [
-                args.qemu_img,
-                "convert",
-                "-p",
-                "-c",
-                "-O",
-                "qcow2",
-                str(image),
-                str(temporary),
-            ]
-        )
-        try:
-            os.chmod(temporary, 0o644)
-        except OSError as exc:
-            raise FinalizerError(f"could not set final QCOW2 mode: {exc}") from exc
-        metadata = qemu_metadata(temporary, args.qemu_img)
-        digest, size = hash_file(temporary)
-        if size <= 0:
-            raise FinalizerError("final QCOW2 is empty")
-        fsync_file(temporary)
-
-        manifest = {
-            "apiVersion": API_VERSION,
-            "build": {
-                "accelerator": args.accelerator,
-                "architecture": args.arch,
-                "target": f"os-image-{args.variant}",
-                "variant": args.variant,
-            },
-            "kind": KIND,
-            "output": {
-                "fileName": image.name,
-                "format": metadata["format"],
-                "mediaType": MEDIA_TYPE,
-                "sha256": digest,
-                "sizeBytes": size,
-                "virtualSizeBytes": metadata["virtualSizeBytes"],
-            },
-            "source": source,
-            "tools": tools,
-        }
-        validate_manifest_shape(manifest)
-        manifest_path = image.with_name(image.name + MANIFEST_SUFFIX)
         manifest_temporary = stage_payload(manifest_path, manifest_bytes(manifest))
-        replace_file(temporary, image, "final QCOW2")
         replace_file(manifest_temporary, manifest_path, "build manifest")
         manifest_temporary = None
         fsync_directory(output_dir)
@@ -530,10 +491,6 @@ def finalize(args: argparse.Namespace) -> tuple[Path, Path]:
         )
         return image, manifest_path
     finally:
-        try:
-            temporary.unlink()
-        except OSError:
-            pass
         if manifest_temporary is not None:
             try:
                 manifest_temporary.unlink()
@@ -545,8 +502,13 @@ def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser(description=__doc__)
     subcommands = result.add_subparsers(dest="command", required=True)
 
+    source_parser = subcommands.add_parser(
+        "check-source", help="fail unless the source checkout is clean and identifiable"
+    )
+    source_parser.add_argument("--source-root", type=Path, required=True)
+
     finalize_parser = subcommands.add_parser(
-        "finalize", help="compress one exact Packer output and emit its manifest"
+        "finalize", help="validate one exact Packer output and emit its manifest"
     )
     finalize_parser.add_argument("--variant", choices=VARIANTS, required=True)
     finalize_parser.add_argument("--arch", choices=ARCHES, required=True)
@@ -576,7 +538,10 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parser().parse_args(argv)
     try:
-        if args.command == "finalize":
+        if args.command == "check-source":
+            source = source_observation(args.source_root.resolve())
+            print(f"source {source['commit']} tree {source['tree']}")
+        elif args.command == "finalize":
             image, manifest = finalize(args)
             print(f"finalized {image.name}")
             print(f"manifest {manifest.name}")
