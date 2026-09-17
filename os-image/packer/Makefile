@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 PACKER      ?= packer
+PYTHON      ?= python3
 SSH_DIR     := $(CURDIR)/.ssh
 ARTIFACTS   := $(CURDIR)/artifacts
 # Deliberately separate from ARTIFACTS: the FDE/non-FDE "file" provisioner
@@ -11,6 +12,15 @@ ARTIFACTS   := $(CURDIR)/artifacts
 # uploaded too -- this is exactly what caused an FDE build to try uploading
 # 5.8GB instead of ~120MB and fail with a misleading "Disk quota exceeded".
 ISO_CACHE   := $(CURDIR)/iso-cache
+# Keep Packer's build/download cache in the existing ignored build cache
+# instead of its default ./.packer_cache, which would make the checkout dirty
+# before the finalizer records the source identity. Callers may still supply
+# their own cache directory.
+PACKER_CACHE_DIR ?= $(ISO_CACHE)/packer-cache
+ifeq ($(strip $(PACKER_CACHE_DIR)),)
+  override PACKER_CACHE_DIR := $(ISO_CACHE)/packer-cache
+endif
+export PACKER_CACHE_DIR
 # FDE/non-FDE only: where the guest's serial console (boot + autoinstall
 # output) gets captured, for CI to upload as an artifact on failure -- no
 # VNC/monitor access there to inspect a stuck build interactively.
@@ -143,10 +153,22 @@ check-deps:
 		echo "go is required to build nke-agent and the pinned nfpm" >&2; \
 		exit 1; \
 	}
+	@command -v $(PYTHON) >/dev/null 2>&1 || { \
+		echo "Python 3.10 or newer is required to finalize the QCOW2" >&2; \
+		exit 1; \
+	}
+	@$(PYTHON) -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' || { \
+		echo "Python 3.10 or newer is required to finalize the QCOW2" >&2; \
+		exit 1; \
+	}
+	@command -v qemu-img >/dev/null 2>&1 || { \
+		echo "qemu-img is required to build and finalize the QCOW2" >&2; \
+		exit 1; \
+	}
 
 .PHONY: test
-test: ## Check artifact staging without downloading or building bundles.
-	python3 scripts/test_fetch_artifacts.py
+test: ## Check artifact staging, QCOW2 finalization, and workflow wiring.
+	$(PYTHON) -m unittest discover -s scripts -p 'test_*.py'
 
 # Full-disk-encryption variant: boots the Ubuntu Server installer to lay down
 # an LVM-on-LUKS layout via autoinstall, then provisions nke-agent/spire-agent,
@@ -168,6 +190,14 @@ os-image-fde: check-deps ssh-key init-fde prepare-installer-iso
 		-var iso_checksum=$(ISO_CHECKSUM) \
 		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PKR_FILE_FDE)
+	$(PYTHON) ./scripts/finalize-qcow2.py finalize \
+		--variant fde \
+		--arch "$(ARCH)" \
+		--accelerator "$(ACCELERATOR)" \
+		--iso-url "$(ISO_URL)" \
+		--output-dir "$(CURDIR)/output-fde" \
+		--source-root "$(abspath ../..)" \
+		--packer "$(PACKER)"
 
 # Non-FDE variant: LVM-backed ext4 without LUKS. See
 # nke-node-non-fde.pkr.hcl.
@@ -186,6 +216,14 @@ os-image-non-fde: check-deps ssh-key init-non-fde prepare-installer-iso
 		-var iso_checksum=$(ISO_CHECKSUM) \
 		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PKR_FILE_NON_FDE)
+	$(PYTHON) ./scripts/finalize-qcow2.py finalize \
+		--variant non-fde \
+		--arch "$(ARCH)" \
+		--accelerator "$(ACCELERATOR)" \
+		--iso-url "$(ISO_URL)" \
+		--output-dir "$(CURDIR)/output-non-fde" \
+		--source-root "$(abspath ../..)" \
+		--packer "$(PACKER)"
 
 clean:
 	rm -rf $(CURDIR)/output-fde $(CURDIR)/output-non-fde $(ARTIFACTS) $(ISO_CACHE) $(BUILD_LOGS)
