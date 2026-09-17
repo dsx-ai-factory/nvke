@@ -154,16 +154,20 @@ func TestUnit_NodeConditionsEqualIgnoresTimeRepresentation(t *testing.T) {
 	require.False(t, fromDB.Equal(changed))
 }
 
-// TestUnit_NodeConditionsEqualCoversEveryField fails when a condition is added
-// to NodeConditions without being added to its Equal method, which would
-// otherwise silently drop real changes to that condition on the floor.
-func TestUnit_NodeConditionsEqualCoversEveryField(t *testing.T) {
+// TestUnit_NodeConditionsAllCoversEveryField fails when a condition is added to
+// NodeConditions without being added to All. Everything that walks the set —
+// Equal, and the reconciler's report of which condition changed — reads All, so
+// a missing entry silently drops real changes to that condition on the floor.
+func TestUnit_NodeConditionsAllCoversEveryField(t *testing.T) {
 	conditionsType := reflect.TypeFor[db.NodeConditions]()
+	require.Len(t, db.NodeConditions{}.All(), conditionsType.NumField(),
+		"NodeConditions.All does not list every condition")
+
 	for i := range conditionsType.NumField() {
 		field := conditionsType.Field(i)
 		t.Run(field.Name, func(t *testing.T) {
 			require.Equal(t, reflect.TypeFor[db.Condition](), field.Type,
-				"NodeConditions.Equal assumes every field is a db.Condition")
+				"NodeConditions.All assumes every field is a db.Condition")
 
 			var base, modified db.NodeConditions
 			reflect.ValueOf(&modified).Elem().Field(i).Set(reflect.ValueOf(db.Condition{
@@ -173,6 +177,12 @@ func TestUnit_NodeConditionsEqualCoversEveryField(t *testing.T) {
 			}))
 
 			require.False(t, base.Equal(modified), "%s is not compared by NodeConditions.Equal", field.Name)
+
+			// The name All reports is the one that reaches logs, so a
+			// placeholder or a duplicated line is worth catching here.
+			require.NotEmpty(t, modified.All()[i].Name)
+			require.Equal(t, db.ConditionStatusTrue, modified.All()[i].Condition.Status,
+				"All entry %d does not correspond to struct field %s", i, field.Name)
 		})
 	}
 }

@@ -82,29 +82,51 @@ type NodeConditions struct {
 	ControlPlaneRolloutRequired Condition `json:"controlPlaneRolloutRequired"`
 }
 
+// NamedCondition pairs a condition with the name it carries in JSON.
+type NamedCondition struct {
+	Name      string
+	Condition Condition
+}
+
+// All returns every condition with its name, in declaration order. It is the
+// one list of the set's members: Equal compares against it, and callers that
+// need to report which condition changed read it rather than keeping a second
+// list that can drift out of step with this one.
+//
+// Every field must appear here; TestUnit_NodeConditionsAllCoversEveryField
+// fails if one is missed.
+func (c NodeConditions) All() []NamedCondition {
+	return []NamedCondition{
+		{"pending", c.Pending},
+		{"provisioningClaimed", c.ProvisioningClaimed},
+		{"provisioning", c.Provisioning},
+		{"readyToJoin", c.ReadyToJoin},
+		{"joined", c.Joined},
+		{"provisioned", c.Provisioned},
+		{"deleting", c.Deleting},
+		{"kubernetesReady", c.KubernetesReady},
+		{"kubernetesUnschedulable", c.KubernetesUnschedulable},
+		{"nodeAgentReady", c.NodeAgentReady},
+		{"rebooting", c.Rebooting},
+		{"markedForRecycling", c.MarkedForRecycling},
+		{"markedForRepair", c.MarkedForRepair},
+		{"teleportRegistered", c.TeleportRegistered},
+		{"controlPlaneRolloutRequired", c.ControlPlaneRolloutRequired},
+	}
+}
+
 // Equal reports whether two condition sets describe the same state. Use this
 // instead of ==, which compares the monotonic clock reading and the *Location
 // pointer of every LastTransitionTime and so reports a difference for two
 // identical instants that took different routes into memory.
-//
-// Every field must be listed here; TestUnit_NodeConditionsEqualCoversEveryField
-// fails if one is missed.
 func (c NodeConditions) Equal(other NodeConditions) bool {
-	return c.Pending.Equal(other.Pending) &&
-		c.ProvisioningClaimed.Equal(other.ProvisioningClaimed) &&
-		c.Provisioning.Equal(other.Provisioning) &&
-		c.ReadyToJoin.Equal(other.ReadyToJoin) &&
-		c.Joined.Equal(other.Joined) &&
-		c.Provisioned.Equal(other.Provisioned) &&
-		c.Deleting.Equal(other.Deleting) &&
-		c.KubernetesReady.Equal(other.KubernetesReady) &&
-		c.KubernetesUnschedulable.Equal(other.KubernetesUnschedulable) &&
-		c.NodeAgentReady.Equal(other.NodeAgentReady) &&
-		c.Rebooting.Equal(other.Rebooting) &&
-		c.MarkedForRecycling.Equal(other.MarkedForRecycling) &&
-		c.MarkedForRepair.Equal(other.MarkedForRepair) &&
-		c.TeleportRegistered.Equal(other.TeleportRegistered) &&
-		c.ControlPlaneRolloutRequired.Equal(other.ControlPlaneRolloutRequired)
+	mine, theirs := c.All(), other.All()
+	for i := range mine {
+		if !mine[i].Condition.Equal(theirs[i].Condition) {
+			return false
+		}
+	}
+	return true
 }
 
 type NodeConditionStatus struct {

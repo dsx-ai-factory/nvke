@@ -168,3 +168,29 @@ func TestUnit_ReconcileSkipsUpdateWhenHealthUnchanged(t *testing.T) {
 	database.AssertExpectations(t)
 	tx.AssertExpectations(t)
 }
+
+func TestUnit_DescribeConditionChanges(t *testing.T) {
+	transition := time.Date(2026, 8, 17, 21, 21, 14, 0, time.UTC)
+	previous := db.NodeConditions{
+		KubernetesReady:         db.Condition{Status: db.ConditionStatusTrue, Message: "kubelet is posting ready status", LastTransitionTime: transition},
+		KubernetesUnschedulable: db.Condition{Status: db.ConditionStatusFalse, Message: "Node is schedulable", LastTransitionTime: transition},
+		NodeAgentReady:          db.Condition{Status: db.ConditionStatusTrue, Message: "Node agent is reachable", LastTransitionTime: transition},
+	}
+
+	require.Empty(t, describeConditionChanges(previous, previous))
+
+	statusMoved := previous
+	statusMoved.KubernetesReady.Status = db.ConditionStatusUnknown
+	require.Equal(t, []string{"kubernetesReady: True -> Unknown"}, describeConditionChanges(previous, statusMoved))
+
+	messageMoved := previous
+	messageMoved.KubernetesUnschedulable.Message = "Node is unschedulable"
+	require.Equal(t,
+		[]string{"kubernetesUnschedulable: False unchanged, message or transition time updated"},
+		describeConditionChanges(previous, messageMoved),
+	)
+
+	// Untouched conditions stay out of the line — that is the whole point of
+	// reporting a delta rather than both condition sets.
+	require.NotContains(t, describeConditionChanges(previous, statusMoved), "nodeAgentReady")
+}

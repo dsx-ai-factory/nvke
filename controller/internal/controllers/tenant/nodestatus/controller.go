@@ -126,6 +126,11 @@ func (r *Reconciler) updateKubernetesHealth(ctx context.Context, nodeID uuid.UUI
 		r.logger.Info("Kubernetes node health changed, updating node",
 			"nodeID", nodeID,
 			"nodeName", lockedNode.Name,
+			"changes", describeConditionChanges(previousConditions, lockedNode.Conditions),
+		)
+		r.logger.Debug("Kubernetes node health change detail",
+			"nodeID", nodeID,
+			"nodeName", lockedNode.Name,
 			"previousConditions", previousConditions,
 			"newConditions", lockedNode.Conditions,
 		)
