@@ -9,7 +9,7 @@
 # the templates as they were when that artifact was cut. The image itself is
 # repointed with --set at install time.
 chart:
-  name: controller
+  name: nke-controller
   version: "0.0.0"
   path: ../../controller/deploy/charts/controller
 release:

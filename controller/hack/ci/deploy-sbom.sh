@@ -65,7 +65,7 @@ fi
 # which is a Linux-host entrypoint and refuses to run elsewhere.
 STACK_DIR="${STACK_DIR:-/workspace/nke-stack}"
 # The generated deploy path this lane installs. The overlay is inside it, copied
-# there by composition-gen, so it is no longer named separately here.
+# beside each item, so it is no longer named separately here.
 SBOM_DIR="${SBOM_DIR:-${STACK_DIR}/deploy}"
 SBOM_TARGET="${SBOM_TARGET:-capd-e2e}"
 
