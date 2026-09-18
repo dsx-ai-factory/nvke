@@ -27,9 +27,9 @@ spec:
   #                                  cloud-workflow-engine and the cnpg set;
   #                                  ArgoCD supplies the release namespace via
   #                                  CreateNamespace=true.
-  #   standalone / CAPD e2e          build/nke-stack.sh install pre-creates
-  #                                  every namespace in the registry before the
-  #                                  first phase.
+  #   a generated deploy path        the nke-base-config item carries a
+  #                                  00-namespaces.yaml emitted from the
+  #                                  registry, applied before any other item.
   #
   # Emitting Namespace objects here would collide with tier0 on the nested path
   # and hand ArgoCD ownership of resources tier0 also manages, so the chart
@@ -49,10 +49,10 @@ spec:
   #   spire-system    pod-security.kubernetes.io/enforce: privileged
   #   spire-server    pod-security.kubernetes.io/enforce: restricted
   #
-  # build/nke-stack.sh create_namespaces applies these on the standalone and
-  # CAPD e2e paths. Easy to miss because kind does not enforce Pod Security by
-  # default, so the DaemonSets come up unlabelled there and fail only on a
-  # cluster that does enforce.
+  # The generated 00-namespaces.yaml carries these labels, so a consumer
+  # installing from a deploy path gets them. Easy to miss because kind does not
+  # enforce Pod Security by default, so the DaemonSets come up unlabelled there
+  # and fail only on a cluster that does enforce.
   namespaces:
     providedBy: consumer
 

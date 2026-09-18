@@ -121,8 +121,9 @@ func (r *Recipe) writePhases(b *bytes.Buffer, phases []Phase) {
 # controller/Tiltfile gets from resource_deps. Components within a phase are
 # independent and install together.
 #
-# Descriptive metadata: no template reads this. build/nke-stack.sh install and
-# any other consumer drive the sequence from it.
+# Descriptive metadata: no template reads this. A consumer drives the sequence
+# from it -- build/use-nke-sbom.sh reads it back with "helm show values" and
+# installs one phase at a time.
 phases:
 `)
 	for _, p := range phases {

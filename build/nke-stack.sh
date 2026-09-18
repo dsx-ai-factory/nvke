@@ -210,117 +210,6 @@ package() {
   printf '%s\n' "${OUT_DIR}/nke-stack-${version}.tgz"
 }
 
-# Release namespace. Pinned to temporal: that chart's core templates have no
-# namespaceOverride path. See generated/nke-stack/values.yaml.
-NAMESPACE="${NAMESPACE:-temporal}"
-
-# Create the release namespace plus every namespace a component is relocated
-# into. Separate from install() because a caller may need namespaces to exist
-# before it applies its own prerequisites into them.
-# PodSecurity levels for the two spire namespaces.
-#
-# spire-agent and spiffe-csi-driver need hostNetwork, hostPID and privileged
-# containers, which the restricted level rejects outright, so they live in
-# spire-system while the server stays restricted. That split is the whole
-# reason for the two-namespace layout.
-#
-# The labels have to be applied here because nothing else applies them. The
-# upstream spire chart accepts global.spire.recommendations but its Namespace
-# templates live in spire-lib, which this composition does not render -- so the
-# levels it documents never actually arrive. It has gone unnoticed because kind
-# does not enforce Pod Security by default; on a cluster that does, the two
-# DaemonSets would be rejected. Matches the AICR bundle's spire-crds-post
-# component, which exists solely to create spire-system privileged.
-declare -a NS_POD_SECURITY=(
-  "spire-system:privileged"
-  "spire-server:restricted"
-)
-
-create_namespaces() {
-  log "creating namespaces"
-  local ns entry level
-  for ns in "${NAMESPACE}" $(python3 "${REPO_ROOT}/build/nke-stack-namespaces.py" "${CHART_SRC}/values.yaml"); do
-    kubectl create namespace "${ns}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-    level=""
-    for entry in "${NS_POD_SECURITY[@]}"; do
-      if [[ "${entry%%:*}" == "${ns}" ]]; then level="${entry#*:}"; fi
-    done
-    if [[ -n "${level}" ]]; then
-      kubectl label namespace "${ns}" \
-        "pod-security.kubernetes.io/enforce=${level}" --overwrite >/dev/null
-      printf '  %s (pod-security: %s)\n' "${ns}" "${level}" >&2
-    else
-      printf '  %s\n' "${ns}" >&2
-    fi
-  done
-}
-
-install() {
-  local chart
-  if [[ -n "${CHART:-}" ]]; then
-    chart="${CHART}"                       # a local .tgz or directory
-  else
-    require_registry
-    chart="oci://${REGISTRY#oci://}/nke-stack"
-  fi
-
-  # helm --create-namespace makes only the release namespace, so each namespace
-  # a component is relocated into has to exist first. Idempotent, so a re-run
-  # after the caller already created them is a no-op.
-  create_namespaces
-
-  # Install phase by phase. Helm never waits mid-release, so one pass races:
-  # spire's Certificate would hit cert-manager's webhook before it serves. Each
-  # phase enables everything up to it and waits, reproducing the ordering
-  # controller/Tiltfile gets from resource_deps. See phases: in values.yaml.
-  #
-  # Remaining arguments pass through: that is how the caller supplies what
-  # controller/Tiltfile sets per deployment -- the postgres password, spire's
-  # clusterName/trustDomain/jwtIssuer, the TPM attestor checksum and the OIDC
-  # leaf's IP SANs -- plus, for the CAPD e2e, the locally built controller image.
-  local phase flags reqs
-  while IFS=$'\t' read -r phase flags reqs; do
-    [[ -n "${phase}" ]] || continue
-    # PHASES_UNTIL stops after the named phase, so a caller can interleave work
-    # between phases -- applying manifests that need CRDs an earlier phase
-    # installed, for instance. Phases are cumulative, so resuming is just
-    # another install with a later (or no) stop point.
-    if [[ -n "${stop_after_seen:-}" ]]; then
-      break
-    fi
-    if [[ -n "${PHASES_UNTIL:-}" && "${phase}" == "${PHASES_UNTIL}" ]]; then
-      stop_after_seen=1
-    fi
-
-    # Preconditions the chart declares but does not own (see requires: in
-    # values.yaml). Checked before the phase so a missing prerequisite is a
-    # named error here, not a --wait timeout on some unrelated workload ten
-    # minutes later. helm --wait cannot do this: it only waits on workloads.
-    for req in ${reqs}; do
-      IFS=: read -r kind name ns cond <<<"${req}"
-      if ! kubectl -n "${ns}" get "${kind}" "${name}" >/dev/null 2>&1; then
-        echo "phase ${phase} requires ${kind}/${name} in namespace ${ns}, which does not exist." >&2
-        echo "It is not part of this chart. Apply it first -- in this repo that is" >&2
-        echo "controller/deploy/k8s/oidc-upstream-ca.yaml." >&2
-        exit 1
-      fi
-      log "waiting for ${kind}/${name} condition=${cond}"
-      kubectl -n "${ns}" wait --for="condition=${cond}" \
-        "${kind}/${name}" --timeout="${REQUIRE_TIMEOUT:-180s}"
-    done
-
-    log "phase ${phase}"
-    # shellcheck disable=SC2086  # flags is a deliberately word-split flag list
-    helm upgrade --install nke-stack "${chart}" \
-      ${VERSION:+--version "${VERSION#v}"} \
-      --namespace "${NAMESPACE}" \
-      --wait --timeout "${PHASE_TIMEOUT:-15m}" \
-      ${flags} \
-      "$@"
-  done < <(python3 "${REPO_ROOT}/build/nke-stack-phases.py" \
-             "${CHART_SRC}/Chart.yaml" "${CHART_SRC}/values.yaml")
-}
-
 case "${1:-package}" in
   publish-deps) publish_deps ;;
   package)      package ;;
@@ -328,7 +217,5 @@ case "${1:-package}" in
   push)         tgz="$(package | tail -1)"; log "pushing ${tgz} to ${REGISTRY}"; helm push "${tgz}" "${REGISTRY}" ;;
   all)          publish_deps; tgz="$(package | tail -1)"; log "pushing ${tgz}"; helm push "${tgz}" "${REGISTRY}" ;;
   build-local)  build_local ;;
-  namespaces)   create_namespaces ;;
-  install)      shift; install "$@" ;;
-  *) echo "usage: $0 [publish-deps|build-local|package|template|push|all|install|namespaces]" >&2; exit 2 ;;
+  *) echo "usage: $0 [publish-deps|build-local|package|template|push|all]" >&2; exit 2 ;;
 esac
