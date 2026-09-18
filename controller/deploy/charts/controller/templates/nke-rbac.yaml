@@ -77,7 +77,7 @@ metadata:
 {{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}
-{{- $tenantRbacName := printf "nke:%s" .Values.nkeOIDCAuth.tenantRbacName }}
+{{- $tenantRbacName := .Values.nkeOIDCAuth.tenantRbacName }}
 ---
 apiVersion: v1
 kind: ConfigMap

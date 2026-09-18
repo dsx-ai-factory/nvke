@@ -30,12 +30,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--chart", required=True)
     parser.add_argument(
-        "--tenant-rbac-suffix",
-        default="cwe",
-        help="Value of nkeOIDCAuth.tenantRbacName; the rendered objects are named nke:<suffix>.",
+        "--tenant-rbac-name",
+        default="nke:cwe",
+        help="Value of nkeOIDCAuth.tenantRbacName; the rendered ClusterRole/Role/Binding objects use this name.",
     )
     args = parser.parse_args()
-    tenant_rbac_name = f"nke:{args.tenant_rbac_suffix}"
+    tenant_rbac_name = args.tenant_rbac_name
 
     base_command = [
         "helm",
@@ -49,7 +49,7 @@ def main():
         "--set",
         "tenantAccess.enabled=true",
         "--set",
-        f"nkeOIDCAuth.tenantRbacName={args.tenant_rbac_suffix}",
+        f"nkeOIDCAuth.tenantRbacName={tenant_rbac_name}",
     ]
     command = [
         *base_command,
