@@ -1,7 +1,17 @@
 """Parse a generated deploy path into tab-separated lines a shell can read.
 
   items   <nke-deploy.yaml>  -> "<name>\t<type>" per item, in listed order
-  release <release.yaml>     -> "<chart>\t<version>\t<prefix>\t<namespace>\t<perPhase>\t<values>"
+  release <release.yaml>     -> one line, US-separated (\x1f), discriminated by
+                                its first field. Not tab: bash collapses runs of
+                                tab because it is an IFS whitespace character, so
+                                an empty field in the middle would shift every
+                                field after it.
+                                  "umbrella\t<chart>\t<version>\t<prefix>\t<namespace>\t<perPhase>\t<values>"
+                                  "single\t<chart>\t<version>\t<repository>\t<path>\t<release>\t<namespace>\t<values>\t<requires>"
+                                The umbrella form installs one chart of subcharts
+                                over several phases; the single form is one chart,
+                                one release, and the deploy path's item order does
+                                the sequencing instead.
   phases  <values.yaml>      -> "<name>\t<components>\t<requires>" per phase, where
                                 requires is a space-separated list of
                                 kind:name:namespace:condition tuples
@@ -24,12 +34,22 @@ ITEM = re.compile(r'^  - \{name: ([\w.-]+), type: ([\w-]+)\}$')
 TOP = re.compile(r'^([\w]+):$')
 KV = re.compile(r'^  ([\w]+): (\S+)$')
 SEQ = re.compile(r'^  - (\S+)$')
+FLOW_REQ = re.compile(r'^  - \{kind: ([\w.-]+), name: ([\w.-]+), '
+                      r'namespace: ([\w.-]+), condition: ([\w.-]+)\}$')
 
 PHASE_NAME = re.compile(r'^  - name: ([\w-]+)$')
 COMPONENTS = re.compile(r'^    components: \[([^\]]*)\]$')
 REQ_HDR = re.compile(r'^    requires:$')
 REQ_KIND = re.compile(r'^      - kind: (\S+)$')
 REQ_KV = re.compile(r'^        (name|namespace|condition): (\S+)$')
+
+
+def unquote(pair):
+    """Strip the surrounding quotes YAML uses to keep a version a string."""
+    key, value = pair
+    if len(value) > 1 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1]
+    return key, value
 
 
 def die(msg):
@@ -64,34 +84,55 @@ def items(path):
 
 
 def release(path):
-    chart, rel, values = {}, {}, []
+    chart, rel, values, requires = {}, {}, [], []
     section = None
     for num, line in significant(path):
         top = TOP.match(line)
         if top:
             section = top.group(1)
-            if section not in ("chart", "release", "values"):
+            if section not in ("chart", "release", "values", "requires"):
                 die("%s:%d: unknown section: %s" % (path, num, section))
             continue
         if section is None:
             die("%s:%d: value before any section: %s" % (path, num, line))
 
         if section == "chart" and KV.match(line):
-            chart.update([KV.match(line).groups()])
+            chart.update([unquote(KV.match(line).groups())])
         elif section == "release" and KV.match(line):
-            rel.update([KV.match(line).groups()])
+            rel.update([unquote(KV.match(line).groups())])
         elif section == "values" and SEQ.match(line):
             values.append(SEQ.match(line).group(1))
+        elif section == "requires" and FLOW_REQ.match(line):
+            requires.append(":".join(FLOW_REQ.match(line).groups()))
         else:
             die("%s:%d: unrecognised: %s" % (path, num, line))
 
-    for key, holder in (("name", chart), ("version", chart),
-                        ("prefix", rel), ("namespace", rel), ("perPhase", rel)):
-        if key not in holder:
-            die("%s: missing %s" % (path, key))
+    for key in ("name", "version"):
+        if key not in chart:
+            die("%s: missing chart.%s" % (path, key))
+    if "namespace" not in rel:
+        die("%s: missing release.namespace" % path)
 
-    return ["%s\t%s\t%s\t%s\t%s\t%s" % (chart["name"], chart["version"], rel["prefix"],
-                                        rel["namespace"], rel["perPhase"], ",".join(values))]
+    # prefix means the umbrella: one chart installed repeatedly, named by phase.
+    # name means one chart, one release, sequenced by the item list.
+    if "prefix" in rel:
+        if requires:
+            die("%s: requires belongs on a single-release item, not the umbrella "
+                "(the chart declares its own in phases:)" % path)
+        if "perPhase" not in rel:
+            die("%s: missing release.perPhase" % path)
+        return ["umbrella\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
+            chart["name"], chart["version"], rel["prefix"],
+            rel["namespace"], rel["perPhase"], ",".join(values))]
+
+    if "name" not in rel:
+        die("%s: release needs either name (one release) or prefix (the umbrella)" % path)
+    if "repository" in chart and "path" in chart:
+        die("%s: chart has both repository and path; name one source" % path)
+    return ["single\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
+        chart["name"], chart["version"], chart.get("repository", ""),
+        chart.get("path", ""), rel["name"], rel["namespace"],
+        ",".join(values), " ".join(requires))]
 
 
 def phases(path):

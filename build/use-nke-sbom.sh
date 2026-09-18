@@ -30,6 +30,8 @@ KUBECONFIG_PATH=""
 PHASE_TIMEOUT="${PHASE_TIMEOUT:-15m}"
 REQUIRE_TIMEOUT="${REQUIRE_TIMEOUT:-180s}"
 PASSTHROUGH=()
+CHART_OVERRIDES=()
+DEPLOY_PATH=""
 
 log() { printf '\n=== %s\n' "$*" >&2; }
 die() { printf 'use-nke-sbom: %s\n' "$*" >&2; exit 1; }
@@ -40,7 +42,11 @@ usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
 
   --sbom DIR          generated SBOM directory, e.g. ./generated/nke-sbom-e2e
   --target NAME       deploy path inside it, e.g. capd-e2e
-  --chart PATH        packaged .tgz or chart directory (required by a helm item)
+  --chart PATH        packaged .tgz or chart directory, for a deploy path whose
+                      helm item is an umbrella chart
+  --chart-override ITEM=PATH
+                      where to find one item's chart, for a component this
+                      repository does not publish. Repeatable.
   --until PHASE       stop after this phase, so a caller can interleave work
   --dry-run           print the argv each step would run, and exit
   --kubeconfig PATH   passed to every kubectl call
@@ -109,16 +115,85 @@ that is the nke-base-config item, from controller/deploy/k8s/oidc-upstream-ca.ya
   done
 }
 
-# install_helm_item installs the umbrella one release per phase, or one release
-# upgraded once per phase, according to release.yaml's perPhase.
+# chart_override prints the --chart-override value for an item, if one was given.
+chart_override() {
+  local entry
+  for entry in ${CHART_OVERRIDES[@]+"${CHART_OVERRIDES[@]}"}; do
+    if [[ "${entry%%=*}" == "$1" ]]; then
+      printf '%s' "${entry#*=}"
+      return
+    fi
+  done
+}
+
+# install_helm_item dispatches on the shape release.yaml declares: an umbrella
+# chart installed over several phases, or one chart as one release with the
+# deploy path's item order doing the sequencing.
 install_helm_item() {
-  local dir="$1"
-  [[ -n "${CHART}" ]] || die "item ${dir} is type helm, which needs --chart"
+  local dir="$1" item="$2"
   [[ -f "${dir}/release.yaml" ]] || die "helm item ${dir} has no release.yaml"
 
+  local line
+  line="$(python3 "${ITEMS_PY}" release "${dir}/release.yaml")"
+  case "${line%%$'\x1f'*}" in
+    umbrella) install_umbrella "${dir}" ;;
+    single)   install_single "${dir}" "${item}" "${line}" ;;
+    *)        die "${dir}/release.yaml declares an unknown release form" ;;
+  esac
+}
+
+# install_single installs one chart as one release. No enable flags and no phase
+# loop: a release contains only its own chart, so there is nothing to turn off.
+install_single() {
+  local dir="$1" item="$2" line="$3"
+  local form chart_name version repository path release namespace values requires
+  IFS=$'\x1f' read -r form chart_name version repository path release namespace values requires <<<"${line}"
+
+  # An override wins, because the caller had to build or fetch the chart. Then a
+  # path inside the deploy path, then a repository the chart is published to.
+  local ref=() override
+  override="$(chart_override "${item}")"
+  if [[ -n "${override}" ]]; then
+    ref=("${override}")
+  elif [[ -n "${path}" ]]; then
+    ref=("${DEPLOY_PATH}/${path}")
+  elif [[ "${repository}" == oci://* ]]; then
+    ref=("${repository%/}/${chart_name}" --version "${version}")
+  elif [[ -n "${repository}" ]]; then
+    # A classic index.yaml repository names the chart separately.
+    ref=("${chart_name}" --repo "${repository}" --version "${version}")
+  else
+    die "item ${item} names no chart source.
+Give release.yaml a chart.repository or chart.path, or pass
+--chart-override ${item}=<path> -- which is what a chart this repository does
+not publish needs."
+  fi
+
+  wait_for_requires "${item}" "${requires}"
+
+  local values_args=() file
+  for file in ${values//,/ }; do
+    values_args+=(--values "${dir}/${file}")
+  done
+
+  log "item ${item} -> release ${release} (${chart_name} ${version}) in ${namespace}"
+  run helm upgrade --install "${release}" "${ref[@]}" \
+    ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} \
+    --namespace "${namespace}" \
+    --wait --timeout "${PHASE_TIMEOUT}" \
+    ${values_args[@]+"${values_args[@]}"} \
+    ${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}
+}
+
+# install_umbrella installs one chart of subcharts over the phases the chart
+# itself declares.
+install_umbrella() {
+  local dir="$1"
+  [[ -n "${CHART}" ]] || die "item ${dir} is an umbrella, which needs --chart"
+
   local parsed
-  local chart_name chart_version prefix namespace per_phase values
-  IFS=$'\t' read -r chart_name chart_version prefix namespace per_phase values \
+  local form chart_name chart_version prefix namespace per_phase values
+  IFS=$'\x1f' read -r form chart_name chart_version prefix namespace per_phase values \
     < <(python3 "${ITEMS_PY}" release "${dir}/release.yaml")
 
   # The phase list comes from the CHART, where it is declared -- the phases:
@@ -204,20 +279,20 @@ install() {
   [[ -n "${SBOM}" ]] || die "--sbom is required"
   [[ -n "${TARGET}" ]] || die "--target is required"
 
-  local deploy_path="${SBOM}/${TARGET}"
-  [[ -f "${deploy_path}/nke-deploy.yaml" ]] \
-    || die "no nke-deploy.yaml in ${deploy_path}"
+  DEPLOY_PATH="${SBOM}/${TARGET}"
+  [[ -f "${DEPLOY_PATH}/nke-deploy.yaml" ]] \
+    || die "no nke-deploy.yaml in ${DEPLOY_PATH}"
 
   local name type
   while IFS=$'\t' read -r name type; do
     [[ -n "${name}" ]] || continue
-    local dir="${deploy_path}/${name}"
+    local dir="${DEPLOY_PATH}/${name}"
     [[ -d "${dir}" ]] || die "item ${name} has no directory at ${dir}"
     log "item ${name} (${type})"
     case "${type}" in
       manifest) apply_manifest_item "${dir}" ;;
       argocd)   apply_argocd_item "${dir}" ;;
-      helm)     install_helm_item "${dir}" ;;
+      helm)     install_helm_item "${dir}" "${name}" ;;
       template)
         die "item ${name} is type template, which needs the Go renderer.
 Targets whose base-config carries .yaml.tmpl files cannot be installed by this
@@ -225,7 +300,7 @@ script; the e2e targets pass their credentials as --set instead."
         ;;
       *) die "item ${name} has unknown type ${type}" ;;
     esac
-  done < <(python3 "${ITEMS_PY}" items "${deploy_path}/nke-deploy.yaml")
+  done < <(python3 "${ITEMS_PY}" items "${DEPLOY_PATH}/nke-deploy.yaml")
 }
 
 [[ $# -gt 0 ]] || usage
@@ -239,6 +314,7 @@ while [[ $# -gt 0 ]]; do
     --sbom) SBOM="$2"; shift 2 ;;
     --target) TARGET="$2"; shift 2 ;;
     --chart) CHART="$2"; shift 2 ;;
+    --chart-override) CHART_OVERRIDES+=("$2"); shift 2 ;;
     --until) UNTIL="$2"; shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
     --timeout) PHASE_TIMEOUT="$2"; shift 2 ;;

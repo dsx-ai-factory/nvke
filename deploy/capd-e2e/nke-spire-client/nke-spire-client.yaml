@@ -1,0 +1,102 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# nke-spire-client, copied from this repository per manifests/nke-spire-client.pin.yaml. Applied with kubectl apply --server-side.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-spire-clients
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-spire-client
+    namespace: nke-spire-clients
+---
+apiVersion: v1
+data:
+    probe.sh: |
+        #!/usr/bin/env bash
+        # Reports one line, to stdout and to the termination message:
+        #
+        #   spiffe_id=<sub of the SVID> admitted=<status> wrong_audience=<status>
+        #
+        # or, if no SVID could be fetched: error=<what failed>
+        set -uo pipefail
+
+        SOCKET="${SPIFFE_ENDPOINT_SOCKET:-unix:///spiffe-workload-api/spire-agent.sock}"
+        EXEC_AUTH="${SPIFFE_JWT_EXEC_AUTH:-/opt/spiffe/bin/k8s-spiffe-workload-jwt-exec-auth}"
+        NKE_URL="${NKE_URL:-http://cloud-workflow-engine.cloud-workflow-engine.svc:8080}"
+        PROBE_PATH="${PROBE_PATH:-/api/clusters}"
+        AUDIENCE="${NKE_AUDIENCE:-https://nke.tilt.local}"
+        WRONG_AUDIENCE="${NKE_WRONG_AUDIENCE:-https://nke.wrong.invalid}"
+        # Generous: neither attestation nor entry propagation has happened when the
+        # container starts.
+        SVID_TIMEOUT="${SVID_TIMEOUT:-90s}"
+        REPORT="${REPORT:-/dev/termination-log}"
+
+        report() { printf '%s\n' "$*"; printf '%s\n' "$*" >"${REPORT}"; }
+        fail() { report "error=$*"; exit 1; }
+
+        [[ -x "${EXEC_AUTH}" ]] || fail "no JWT-SVID fetcher at ${EXEC_AUTH}"
+
+        # One JWT-SVID for the requested audience, or the empty string.
+        svid() {
+          SPIFFE_ENDPOINT_SOCKET="${SOCKET}" SPIFFE_JWT_AUDIENCE="$1" \
+            "${EXEC_AUTH}" -timeout "${SVID_TIMEOUT}" 2>/dev/null \
+            | awk '$1 == "token:" { print $2; exit }'
+        }
+
+        # The "sub", which for an SVID is the full SPIFFE ID. Decoded rather than
+        # assumed, so the spec asserts on the identity actually presented. The token
+        # itself is a live credential and never leaves.
+        claim_sub() {
+          local payload="${1#*.}"
+          payload="${payload%%.*}"
+          payload="${payload//-/+}"
+          payload="${payload//_//}"
+          case $(( ${#payload} % 4 )) in
+            2) payload="${payload}==" ;;
+            3) payload="${payload}=" ;;
+          esac
+          printf '%s' "${payload}" | base64 -d 2>/dev/null \
+            | sed -n 's/.*"sub":"\([^"]*\)".*/\1/p'
+        }
+
+        probe() {
+          curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+            -H "Authorization: Bearer $1" "${NKE_URL}${PROBE_PATH}"
+        }
+
+        admitted_token="$(svid "${AUDIENCE}")"
+        [[ -n "${admitted_token}" ]] \
+          || fail "no JWT-SVID for audience ${AUDIENCE} from ${SOCKET} within ${SVID_TIMEOUT}"
+
+        wrong_token="$(svid "${WRONG_AUDIENCE}")"
+        [[ -n "${wrong_token}" ]] \
+          || fail "no JWT-SVID for audience ${WRONG_AUDIENCE} from ${SOCKET} within ${SVID_TIMEOUT}"
+
+        spiffe_id="$(claim_sub "${admitted_token}")"
+        [[ -n "${spiffe_id}" ]] || fail "the JWT-SVID carries no sub claim"
+
+        report "spiffe_id=${spiffe_id} admitted=$(probe "${admitted_token}") wrong_audience=$(probe "${wrong_token}")"
+kind: ConfigMap
+metadata:
+    labels:
+        app.kubernetes.io/component: api-auth-dev
+        app.kubernetes.io/name: cloud-workflow-engine
+        app.kubernetes.io/part-of: cloud-workflow-engine
+        nke.nvidia.com/purpose: nke-auth-dev
+    name: nke-spire-probe
+    namespace: nke-spire-clients
