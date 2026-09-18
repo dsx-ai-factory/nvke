@@ -77,6 +77,7 @@ metadata:
 {{- $capiManagerSubject := .Values.spiffe.capiManagerSubject | default (printf "spiffe://%s/nke-service/capi-manager" $td) }}
 {{- $capiKubeadmControlPlaneManagerSubject := .Values.spiffe.capiKubeadmControlPlaneManagerSubject | default (printf "spiffe://%s/nke-service/capi-kubeadm-control-plane-manager" $td) }}
 {{- $capdManagerSubject := .Values.spiffe.capdManagerSubject | default (printf "spiffe://%s/nke-service/capd-manager" $td) }}
+{{- $tenantRbacName := printf "nke:%s" .Values.nkeOIDCAuth.tenantRbacName }}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -90,7 +91,7 @@ data:
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRole
     metadata:
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
     rules:
       - apiGroups: [""]
         resources: ["nodes"]
@@ -121,7 +122,7 @@ data:
     apiVersion: rbac.authorization.k8s.io/v1
     kind: Role
     metadata:
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
       namespace: kube-system
     rules:
       - apiGroups: [""]
@@ -148,7 +149,7 @@ data:
     apiVersion: rbac.authorization.k8s.io/v1
     kind: Role
     metadata:
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
       namespace: kube-node-lease
     rules:
       - apiGroups: ["coordination.k8s.io"]
@@ -158,20 +159,20 @@ data:
     apiVersion: rbac.authorization.k8s.io/v1
     kind: ClusterRoleBinding
     metadata:
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
     subjects:
       - kind: User
         name: {{ $cweSubject | quote }}
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: ClusterRole
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
       apiGroup: rbac.authorization.k8s.io
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: RoleBinding
     metadata:
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
       namespace: kube-system
     subjects:
       - kind: User
@@ -179,13 +180,13 @@ data:
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
       apiGroup: rbac.authorization.k8s.io
     ---
     apiVersion: rbac.authorization.k8s.io/v1
     kind: RoleBinding
     metadata:
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
       namespace: kube-node-lease
     subjects:
       - kind: User
@@ -193,7 +194,7 @@ data:
         apiGroup: rbac.authorization.k8s.io
     roleRef:
       kind: Role
-      name: nke:cwe
+      name: {{ $tenantRbacName }}
       apiGroup: rbac.authorization.k8s.io
     ---
     apiVersion: rbac.authorization.k8s.io/v1

@@ -299,6 +299,11 @@ tenantAccess:
 nkeOIDCAuth:
   # -- Enable OIDC authentication from NKE management identities to tenant cluster kube-apiservers.
   enabled: false
+  # -- Name of the ClusterRole/Role/Binding objects the tenant-access controller
+  # applies into every tenant cluster (nke-rbac.yaml). The "nke:" prefix already
+  # carries the namespace, so this is just the suffix after the colon -- do not
+  # include it here.
+  tenantRbacName: "cwe"
   # -- OIDC issuer URL trusted by tenant kube-apiservers.
   issuerURL: ""
   # -- Optional discovery URL override used when issuerURL is not directly reachable by tenant kube-apiservers.
