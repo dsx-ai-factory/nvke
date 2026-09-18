@@ -840,7 +840,7 @@ kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}
 # CAPD "nodes" are containers, so a machine reboot has no analogue and this
 # restarts the container instead. The Tilt path gets it from its provider
 # module; the nke-stack path has no Tilt, so it is built here and applied by
-# deploy-nke-stack.sh. It stays out of the nke-stack chart deliberately -- no
+# deploy-sbom.sh. It stays out of the deploy path deliberately -- no
 # operator deploys it, and its image is a local ko.local reference.
 # The suite reads the SPIRE server's ConfigMap and lists its pods by label, and
 # both names derive from the helm release: <release>-server and
@@ -849,7 +849,7 @@ kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}
 # inherits the umbrella's release instead, so the defaults find nothing and
 # every spec needing the management trust domain fails with
 # `configmaps "spire-server" not found`. Must match STACK_RELEASE in
-# deploy-nke-stack.sh.
+# deploy-sbom.sh.
 NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-}"
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-nke-stack}"
@@ -968,8 +968,8 @@ runner_exec tar -xzf /state/cwe-source.tgz -C /workspace/cloud-workflow-engine
 # script derives REPO_ROOT from. Only when the stack path is selected.
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   docker cp "${WORKSPACE_ROOT}/build" "${RUNNER_NAME}:/workspace/nke-stack/build"
-  docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-nke-stack.sh" \
-    "${RUNNER_NAME}:/usr/local/bin/deploy-nke-stack.sh"
+  docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-sbom.sh" \
+    "${RUNNER_NAME}:/usr/local/bin/deploy-sbom.sh"
   # The deploy path itself. build/use-nke-sbom.sh reads nke-deploy.yaml from
   # here and installs every item in it, so without this the runner has the
   # executor but nothing describing what to install.
@@ -1106,7 +1106,7 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
     SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM="${SPIRE_TPM_ATTESTOR_SERVER_CHECKSUM:-}" \
     NKE_E2E_STACK_CHART="${NKE_E2E_STACK_CHART}" \
     NKE_E2E_STACK_VERSION="${NKE_E2E_STACK_VERSION:-}" \
-    bash /usr/local/bin/deploy-nke-stack.sh "${CWE_IMAGE}"
+    bash /usr/local/bin/deploy-sbom.sh "${CWE_IMAGE}"
 else
 log "deploying the management plane with Tilt"
 BGP_CONTAINER_OWNED=true

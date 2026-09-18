@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-# Deploy the management plane from the generated capd-e2e deploy path instead of
-# Tilt.
+# Deploy the management plane from the capd-e2e deploy path instead of Tilt.
 #
 # Runs INSIDE the e2e runner container, invoked by backend-e2e.sh when
 # NKE_E2E_USE_STACK is true. Everything after this point in backend-e2e.sh -- the
@@ -129,7 +128,7 @@ cwe_tag="${CWE_IMAGE##*:}"
 # does not exist. postgresql and controller are in this repository and have no
 # dependencies, so their release.yaml names a path and helm reads the directory.
 log "materialising the spire chart"
-SPIRE_CHART="$(bash "${STACK_DIR}/build/nke-stack.sh" spire-chart)"
+SPIRE_CHART="$(bash "${STACK_DIR}/build/spire-chart.sh")"
 log "spire chart at ${SPIRE_CHART}"
 
 # Values that genuinely vary per run. MANAGEMENT_VIP and KIND_CLUSTER_NAME come
