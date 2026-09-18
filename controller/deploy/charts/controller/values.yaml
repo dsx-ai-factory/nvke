@@ -182,9 +182,11 @@ serviceMonitor:
   name: cloud-workflow-engine-metrics
   # -- Additional labels for the ServiceMonitor
   labels: {}
-  # -- Selector labels to match the service
-  matchLabels:
-    app.kubernetes.io/name: cloud-workflow-engine
+  # -- Selector labels to match the service. Values here win over the
+  # selector labels the chart derives from `nameOverride`/`fullnameOverride`,
+  # so an unset value here (the default) lets the derived labels through
+  # instead of silently overriding them with a stale literal.
+  matchLabels: {}
 
 # This block is for setting up the ingress.
 # https://kubernetes.io/docs/concepts/services-networking/ingress/
