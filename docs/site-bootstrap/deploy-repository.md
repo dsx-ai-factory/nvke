@@ -229,6 +229,19 @@ Each node in `.Cluster.Nodes`:
 |------------|------|-------------|
 | `.Registry.NGCAPIKey` | string | NGC API key |
 
+### `.Nico`
+
+Credentials for the NICo instance API that the CAPNICo infrastructure provider
+calls. CAPNICo reads them from a `nico-credentials` Secret it does not create,
+so a deploy path that installs CAPNICo must template that Secret.
+
+| Expression | Type | Description |
+|------------|------|-------------|
+| `.Nico.Endpoint` | string | NICo API base URL |
+| `.Nico.OrgID` | string | Organization ID |
+| `.Nico.Token` | string | API token |
+| `.Nico.APIName` | string | API name (e.g. `forge`) |
+
 ### `.ArgoCD`
 
 | Expression | Type | Description |
