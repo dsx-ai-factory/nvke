@@ -967,23 +967,16 @@ runner_exec tar -xzf /state/cwe-source.tgz -C /workspace/cloud-workflow-engine
 # not in it. Stage them separately, preserving the build/ + generated/ layout the
 # script derives REPO_ROOT from. Only when the stack path is selected.
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  runner_exec mkdir -p /workspace/nke-stack/generated/nke-stack
   docker cp "${WORKSPACE_ROOT}/build" "${RUNNER_NAME}:/workspace/nke-stack/build"
-  # .helmignore included: without it the packaged chart differs from what a
-  # normal build produces, and helm falls back to its built-in default.
-  for f in Chart.yaml values.yaml .helmignore; do
-    docker cp "${WORKSPACE_ROOT}/generated/nke-stack/${f}" \
-      "${RUNNER_NAME}:/workspace/nke-stack/generated/nke-stack/${f}"
-  done
   docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-nke-stack.sh" \
     "${RUNNER_NAME}:/usr/local/bin/deploy-nke-stack.sh"
   # The deploy path itself. build/use-nke-sbom.sh reads nke-deploy.yaml from
-  # here and applies every item in it, so without this the runner has the
-  # executor and the chart but nothing describing what to install.
-  docker cp "${WORKSPACE_ROOT}/generated/nke-sbom-e2e" \
-    "${RUNNER_NAME}:/workspace/nke-stack/generated/nke-sbom-e2e"
-  # build-local packages the CWE chart from the working tree, so the build tree
-  # needs it at the path build/nke-stack.sh derives from REPO_ROOT.
+  # here and installs every item in it, so without this the runner has the
+  # executor but nothing describing what to install.
+  docker cp "${WORKSPACE_ROOT}/deploy" "${RUNNER_NAME}:/workspace/nke-stack/deploy"
+  # postgresql and controller are installed straight from their chart
+  # directories, which deploy/capd-e2e/*/release.yaml names relative to the
+  # deploy path -- so they have to sit at the same offset here as in the repo.
   runner_exec mkdir -p /workspace/nke-stack/controller/deploy
   docker cp "${WORKSPACE_ROOT}/controller/deploy/charts" \
     "${RUNNER_NAME}:/workspace/nke-stack/controller/deploy/charts"

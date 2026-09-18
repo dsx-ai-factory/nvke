@@ -35,8 +35,6 @@
 #   /workspace/nke-stack               build/ + generated/, copied in
 set -euo pipefail
 
-# CHART is optional. Given, it names a packaged chart to install; omitted,
-# nke-stack is built from this working tree.
 #
 # Build is the default because subcharts are BAKED INTO the package: installing
 # a published nke-stack would test the controller chart as it was
@@ -48,14 +46,18 @@ CWE_IMAGE="${1:?usage: $0 <cwe-image>}"
 : "${NODE_AGENT_SPIRE_ATTESTATION_METHOD:?NODE_AGENT_SPIRE_ATTESTATION_METHOD is required}"
 # Optional, from the workflow inputs of the same name. Set together to install a
 # published artifact; leave empty to build.
-CHART="${NKE_E2E_STACK_CHART:-}"
+if [[ -n "${NKE_E2E_STACK_CHART:-}" ]]; then
+  echo "NKE_E2E_STACK_CHART is set but no longer used: there is no umbrella chart." >&2
+  echo "Each component is its own release, named in deploy/${SBOM_TARGET:-capd-e2e}." >&2
+  exit 1
+fi
 # A published chart's version has nowhere to go now: use-nke-sbom.sh resolves a
 # chart from a path, so helm needs no --version, and the SBOM's own release.yaml
 # carries the version the artifact was cut with. Refuse rather than accept a
 # value and ignore it -- a silently dropped pin is how you end up testing a
 # different chart than the one you named.
 if [[ -n "${NKE_E2E_STACK_VERSION:-}" ]]; then
-  echo "NKE_E2E_STACK_VERSION is set but no longer used: pass a packaged chart path or an OCI ref in NKE_E2E_STACK_CHART." >&2
+  echo "NKE_E2E_STACK_VERSION is set but no longer used: component versions are pinned in each item's release.yaml." >&2
   exit 1
 fi
 
@@ -65,7 +67,7 @@ fi
 STACK_DIR="${STACK_DIR:-/workspace/nke-stack}"
 # The generated deploy path this lane installs. The overlay is inside it, copied
 # there by composition-gen, so it is no longer named separately here.
-SBOM_DIR="${SBOM_DIR:-${STACK_DIR}/generated/nke-sbom-e2e}"
+SBOM_DIR="${SBOM_DIR:-${STACK_DIR}/deploy}"
 SBOM_TARGET="${SBOM_TARGET:-capd-e2e}"
 
 log() { printf '\n=== %s\n' "$*" >&2; }
@@ -91,34 +93,10 @@ resolve_tpm_checksum() {
 }
 TPM_CHECKSUM="$(resolve_tpm_checksum)"
 
-# cert-manager may already be present: clusterctl init installs it as a CAPI
-# prerequisite, before this script runs. Helm refuses to adopt CRDs it does not
-# own, so installing ours on top fails the datastore phase outright with
-# "CustomResourceDefinition ... exists and cannot be imported".
-#
-# controller/Tiltfile solves this with detect_cert_manager(); the same check
-# applies here. Presence is tested via the CRD, which is namespace- and
-# installer-agnostic; ownership via `helm status`, which is what decides whether
-# our release could manage it.
-cert_manager_enabled() {
-  local owner
-  if ! kubectl get crd certificates.cert-manager.io >/dev/null 2>&1; then
-    echo true                       # absent: this composition installs it
-    return
-  fi
-  # Ownership by release name, not `helm status cert-manager`: here cert-manager
-  # is a SUBCHART of nke-stack, so no release of its own exists and that check
-  # would always say "someone else owns it".
-  owner="$(kubectl get crd certificates.cert-manager.io \
-    -o jsonpath='{.metadata.annotations.meta\.helm\.sh/release-name}' 2>/dev/null || true)"
-  if [[ "${owner}" == "nke-stack" ]]; then
-    echo true                       # ours already; an upgrade is fine
-  else
-    echo false                      # someone else owns it; leave it alone
-  fi
-}
-CERT_MANAGER_ENABLED="$(cert_manager_enabled)"
-log "cert-manager.enabled=${CERT_MANAGER_ENABLED}"
+# cert-manager is not installed here at all. clusterctl init brings it up before
+# this script runs, and the deploy path has no cert-manager item -- so there is
+# nothing to detect and nothing to switch off. That detection existed only
+# because the umbrella bundled cert-manager as a subchart.
 
 # The chart pins image.repository/tag to a published controller image. The e2e
 # builds the controller at HEAD and side-loads it into kind, so both are
@@ -145,56 +123,15 @@ cwe_tag="${CWE_IMAGE##*:}"
 # checksum, cert-manager ownership, the kind gateway address, the trust domain
 # derived from the cluster name, the built image, and the generated passwords.
 
-if [[ -z "${CHART}" ]]; then
-  log "building nke-stack from the working tree"
-  # Not piped: `| tail -1` would mask a build failure behind tail's exit status.
-  build_log="$(mktemp)"
-  if ! bash "${STACK_DIR}/build/nke-stack.sh" build-local >"${build_log}"; then
-    cat "${build_log}" >&2
-    exit 1
-  fi
-  CHART="$(tail -1 "${build_log}")"
-  rm -f "${build_log}"
-  log "built ${CHART}"
-fi
+# spire is the one component nothing can install by coordinates: it is pinned to
+# a commit of spiffe/helm-charts-hardened for global.spire.jwtIssuer, which has
+# no upstream release, and oci://ghcr.io/dsx-ai-factory/nke/charts/spire:0.29.0
+# does not exist. postgresql and controller are in this repository and have no
+# dependencies, so their release.yaml names a path and helm reads the directory.
+log "materialising the spire chart"
+SPIRE_CHART="$(bash "${STACK_DIR}/build/nke-stack.sh" spire-chart)"
+log "spire chart at ${SPIRE_CHART}"
 
-# Which release owns spire's Service, derived rather than assumed.
-#
-# CWE dials spire-server by name, and that name is <release>-server because the
-# upstream chart has no fullnameOverride. Under per-phase releases the owning
-# release is <prefix>-<the phase spire is in>, so hardcoding "nke-stack" would
-# dial a host that does not exist -- and the failure, "produced zero addresses"
-# when CWE tries to mint a join token, names neither the release nor the
-# Service. Both halves are read from the artifacts that decide them: the prefix
-# and release model from release.yaml, the phase membership from the chart.
-# The chart's own values, read once. Everything below that needs to know what
-# the chart declares -- the phase list, the static OIDC domains -- reads this
-# rather than restating it, so the composition stays the single source of truth.
-CHART_VALUES="$(mktemp)"
-trap 'rm -f "${CHART_VALUES}"' EXIT
-helm show values "${CHART}" >"${CHART_VALUES}"
-
-spire_release() {
-  local prefix per_phase phase
-  IFS=$'\t' read -r _ _ prefix _ per_phase _ \
-    < <(python3 "${STACK_DIR}/build/nke-sbom-items.py" release \
-          "${SBOM_DIR}/${SBOM_TARGET}/nke-stack/release.yaml")
-  if [[ "${per_phase}" != "true" ]]; then
-    printf '%s' "${prefix}"
-    return
-  fi
-  phase="$(python3 "${STACK_DIR}/build/nke-sbom-items.py" phases "${CHART_VALUES}" \
-    | awk -F'\t' '$2 ~ /(^|,)spire(,|$)/ { print $1; exit }')"
-  [[ -n "${phase}" ]] || { echo "no phase in ${CHART} contains spire" >&2; exit 1; }
-  printf '%s-%s' "${prefix}" "${phase}"
-}
-STACK_RELEASE="$(spire_release)"
-log "spire is installed by release ${STACK_RELEASE}"
-
-# Two passes, mirroring the order controller/Tiltfile gets from resource_deps:
-# spire's CRDs and namespace must exist before ClusterSPIFFEID can be applied,
-# and the controller blocks on "no identity issued" until it is. Phases
-# are cumulative, so the second pass just carries on.
 # Values that genuinely vary per run. MANAGEMENT_VIP and KIND_CLUSTER_NAME come
 # from backend-e2e.sh, which computes them; the trust domain follows the cluster
 # name exactly as SPIRE_TRUST_DOMAIN does in the Tiltfile, so the identities
@@ -214,7 +151,7 @@ TRUST_DOMAIN="${KIND_CLUSTER_NAME}.nke.local"
 # Passed as JSON for the same reason Tilt uses --set-json: a list of
 # name/value objects does not survive --set's index syntax legibly.
 cwe_env_json() {
-  SPIRE_SERVER_API_ADDRESS="${STACK_RELEASE}-server.spire-server.svc.cluster.local:443" \
+  SPIRE_SERVER_API_ADDRESS="spire-server.spire-server.svc.cluster.local:443" \
   MANAGEMENT_VIP="${MANAGEMENT_VIP}" python3 -c '
 import json, os
 # SPIRE_SERVER_ADDRESS is deliberately absent: the chart renders it from
@@ -258,22 +195,15 @@ KIND_GATEWAY_IP="$(docker network inspect kind \
   -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' 2>/dev/null \
   | grep -Eo '^[0-9]+(\.[0-9]+){3}$' | head -1 || true)"
 
-# Whole lists, not indexed elements. `--set list[3]=x` does NOT append to the
-# list the chart already has: helm builds a sparse array and merges it, which
-# dropped two static entries and left a null in their place. The provider then
-# refused to start with "unable to decode configuration: unexpected token while
-# parsing list: NULL".
-#
-# So the list has to be complete, which used to mean re-typing the chart's
-# static entries here -- and then the artifact said three domains while the
-# deployment had five. They are read out of the DEPLOY PATH's own values
-# instead, so the tree describes the deployment it produces and editing the
-# overlay reaches this.
+# A values file replaces this key outright, so the list it carries has to be
+# complete. Re-typing the static half here is what made the artifact say three
+# domains while the deployment had five, so they are read out of the deploy
+# path's own spire values instead and only the two per-run addresses are added.
 #
 # Required, not optional: if the overlay stops declaring them this silently
 # drops three hostnames and the provider starts rejecting tenants by Host
 # header, which surfaces far from here.
-OIDC_OVERLAY="${SBOM_DIR}/${SBOM_TARGET}/nke-stack/values.yaml"
+OIDC_OVERLAY="${SBOM_DIR}/${SBOM_TARGET}/spire/overlay.yaml"
 if ! grep -q 'additionalDomains' "${OIDC_OVERLAY}"; then
   echo "the ${SBOM_TARGET} overlay declares no additionalDomains." >&2
   echo "This script appends MANAGEMENT_VIP and the kind gateway to that list; without it" >&2
@@ -303,28 +233,77 @@ print(json.dumps([os.environ["MANAGEMENT_VIP"]]))
 # The overlay is NOT passed here any more: the executor supplies it from
 # <target>/nke-stack/values.yaml, which is the same file the generator copied in.
 # It lands before this passthrough, so these still win.
-log "installing ${SBOM_TARGET} from ${SBOM_DIR} with chart ${CHART}"
+# Per-run values, one file per release.
+#
+# These were --set flags when one umbrella release held every component, so each
+# key carried its subchart as a prefix. With one release per chart the prefixes
+# are gone and a value has to be aimed at a single item: controller.spiffe.X
+# becomes spiffe.X on the controller release and reaches nothing else.
+VALUES_DIR="$(mktemp -d)"
+trap 'rm -rf "${VALUES_DIR}"' EXIT
+
+cat >"${VALUES_DIR}/controller.yaml" <<EOF
+image:
+  repository: "${cwe_repository}"
+  tag: "${cwe_tag}"
+appDb:
+  postgresPassword: "${CNPG_SUPERUSER_PASSWORD:-example-password}"
+nkeOIDCAuth:
+  discoveryURL: "https://${MANAGEMENT_VIP}:30443/.well-known/openid-configuration"
+spiffe:
+  trustDomain: "${TRUST_DOMAIN}"
+  spire:
+    serverAddress: "${MANAGEMENT_VIP}"
+env: ${CWE_ENV_JSON}
+EOF
+
+cat >"${VALUES_DIR}/spire.yaml" <<EOF
+# global reaches spire's own subcharts -- spire-server, spire-agent, the OIDC
+# provider -- exactly as it did through the umbrella, because spire is itself a
+# chart of subcharts.
+global:
+  spire:
+    trustDomain: "${TRUST_DOMAIN}"
+    clusterName: "${KIND_CLUSTER_NAME}"
+spire-server:
+  adminIDs:
+    - "spiffe://${TRUST_DOMAIN}${SPIRE_CWE_ADMIN_PATH}"
+  nodeAttestor:
+    tpmDirect:
+      checksum: "${TPM_CHECKSUM}"
+spiffe-oidc-discovery-provider:
+  config:
+    jwksUri: "https://${MANAGEMENT_VIP}:30443/keys"
+    additionalDomains: ${OIDC_DOMAINS}
+  tls:
+    certManager:
+      certificate:
+        ipAddresses: ${OIDC_IP_SANS}
+EOF
+
+cat >"${VALUES_DIR}/postgresql.yaml" <<EOF
+auth:
+  password: "${CNPG_SUPERUSER_PASSWORD:-example-password}"
+EOF
+
+cat >"${VALUES_DIR}/temporal.yaml" <<EOF
+server:
+  config:
+    persistence:
+      default:
+        sql:
+          password: "${CNPG_SUPERUSER_PASSWORD:-example-password}"
+      visibility:
+        sql:
+          password: "${CNPG_SUPERUSER_PASSWORD:-example-password}"
+EOF
+
+log "installing ${SBOM_TARGET} from ${SBOM_DIR}"
 bash "${STACK_DIR}/build/use-nke-sbom.sh" install \
   --sbom "${SBOM_DIR}" \
   --target "${SBOM_TARGET}" \
-  --chart "${CHART}" \
-  -- \
-      --set-json "controller.env=${CWE_ENV_JSON}" \
-      --set-string "controller.nkeOIDCAuth.discoveryURL=https://${MANAGEMENT_VIP}:30443/.well-known/openid-configuration" \
-      --set-string "controller.spiffe.trustDomain=${TRUST_DOMAIN}" \
-      --set-string "controller.spiffe.spire.serverAddress=${MANAGEMENT_VIP}" \
-      --set-string "controller.nodeAgent.spireAttestationMethod=${NODE_AGENT_SPIRE_ATTESTATION_METHOD}" \
-      --set-string "global.spire.trustDomain=${TRUST_DOMAIN}" \
-      --set-string "global.spire.clusterName=${KIND_CLUSTER_NAME}" \
-      --set-string "spire.spiffe-oidc-discovery-provider.config.jwksUri=https://${MANAGEMENT_VIP}:30443/keys" \
-      --set-json "spire.spiffe-oidc-discovery-provider.tls.certManager.certificate.ipAddresses=${OIDC_IP_SANS}" \
-      --set-json "spire.spiffe-oidc-discovery-provider.config.additionalDomains=${OIDC_DOMAINS}" \
-      --set-string "spire.spire-server.adminIDs[0]=spiffe://${TRUST_DOMAIN}${SPIRE_CWE_ADMIN_PATH}" \
-      --set "cert-manager.enabled=${CERT_MANAGER_ENABLED}" \
-      --set-string "controller.image.repository=${cwe_repository}" \
-      --set-string "controller.image.tag=${cwe_tag}" \
-      --set-string postgresql.auth.password="${CNPG_SUPERUSER_PASSWORD:-example-password}" \
-      --set-string controller.appDb.postgresPassword="${CNPG_SUPERUSER_PASSWORD:-example-password}" \
-      --set-string temporal.server.config.persistence.default.sql.password="${CNPG_SUPERUSER_PASSWORD:-example-password}" \
-      --set-string temporal.server.config.persistence.visibility.sql.password="${CNPG_SUPERUSER_PASSWORD:-example-password}" \
-      --set-string "spire.spire-server.nodeAttestor.tpmDirect.checksum=${TPM_CHECKSUM}"
+  --chart-override "spire=${SPIRE_CHART}" \
+  --values-for "controller=${VALUES_DIR}/controller.yaml" \
+  --values-for "spire=${VALUES_DIR}/spire.yaml" \
+  --values-for "postgresql=${VALUES_DIR}/postgresql.yaml" \
+  --values-for "temporal=${VALUES_DIR}/temporal.yaml"
