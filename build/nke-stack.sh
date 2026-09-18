@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-# Build / publish the nke-stack umbrella chart.
+# Build the nke-stack umbrella chart from this working tree.
 #
 # nke-stack composes the NKE management plane: the same component set the CAPD
 # e2e deploys through controller/Tiltfile. It is a pure umbrella -- Chart.yaml
@@ -21,16 +21,17 @@
 #                          sparse checkout strips that. Same reason
 #                          controller/Tiltfile clones it.
 #
-# REGISTRY is a parameter, never baked into the committed chart: publish-deps
-# pushes there, and package rewrites the two first-party repository fields to
-# match before resolving.
-#
 # Usage:
-#   REGISTRY=oci://nvcr.io/j7sbcjl3qgta ./build/nke-stack.sh publish-deps
-#   REGISTRY=oci://nvcr.io/j7sbcjl3qgta ./build/nke-stack.sh package
-#   REGISTRY=oci://nvcr.io/j7sbcjl3qgta ./build/nke-stack.sh all
+#   ./build/nke-stack.sh build-local     package the umbrella from this tree
+#   ./build/nke-stack.sh spire-chart     print a materialised spire chart dir
 #
 # VERSION overrides the git-describe default.
+#
+# The registry half -- publish-deps, package, template, push, all -- is gone.
+# Nothing invoked it: no workflow published the umbrella, and the only caller of
+# this script is the CAPD e2e asking for build-local. spire-chart outlives the
+# umbrella, because spire is pinned to a commit and cannot be helm-installed by
+# coordinates whatever the rest of the stack looks like.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -86,9 +87,6 @@ resolve_version() {
   printf '%s' "${d#v}"
 }
 
-require_registry() {
-  : "${REGISTRY:?set REGISTRY, e.g. oci://nvcr.io/j7sbcjl3qgta}"
-}
 
 # Package and push the two charts the umbrella cannot resolve from anywhere else.
 # Materialise the upstream spire chart and print its directory.
@@ -113,24 +111,6 @@ spire_chart() {
   printf '%s\n' "${clone}/charts/spire"
 }
 
-publish_deps() {
-  require_registry
-  local version staging
-  version="$(resolve_version)"
-  staging="${WORK_DIR}/deps"
-  rm -rf "${staging}" && mkdir -p "${staging}"
-
-  # --app-version drives image.tag in the CWE chart, so the composition points
-  # at the controller image built from this same commit.
-  log "publishing controller ${version}"
-  helm package "${CWE_CHART}" --version "${version}" --app-version "v${version}" \
-    --destination "${staging}" >/dev/null
-  helm push "${staging}/nke-controller-${version}.tgz" "${REGISTRY}"
-
-  log "publishing spire from the pinned clone ${SPIRE_REPO_COMMIT:0:12}"
-  helm package "$(spire_chart)" --destination "${staging}" >/dev/null
-  helm push "${staging}"/spire-*.tgz "${REGISTRY}"
-}
 
 # Build the chart entirely from this working tree, with no registry writes.
 # The two first-party dependencies are vendored into charts/ directly; the four
@@ -181,44 +161,10 @@ build_local() {
   printf '%s\n' "${OUT_DIR}/nke-stack-${version}.tgz"
 }
 
-# Repoint the two first-party dependencies at REGISTRY, and pin
-# the controller chart to the version publish-deps just pushed. The committed
-# Chart.yaml names the canonical home and a released version; a dev build has
-# neither, because chart-publish.yml only fires on a tag.
-retarget() {
-  require_registry
-  python3 "${REPO_ROOT}/build/nke-stack-retarget.py" \
-    "${CHART_DIR}/Chart.yaml" "${REGISTRY}" "$(resolve_version)"
-}
 
-package() {
-  stage_chart
-  require_registry
-  local version
-  version="$(resolve_version)"
-  [[ -n "${version}" ]] || { echo "could not resolve a version; set VERSION=" >&2; exit 1; }
 
-  # The chart is generated from controller/deploy/composition, so a stale
-  # committed copy would silently build the wrong composition.
-  ( cd "${REPO_ROOT}/controller" && go run ./cmd/composition-gen -check >&2 )
-  retarget
-  log "resolving dependencies from registries"
-  helm dependency update "${CHART_DIR}" >/dev/null
-
-  mkdir -p "${OUT_DIR}"
-  log "packaging nke-stack ${version}"
-  helm package "${CHART_DIR}" --version "${version}" --app-version "v${version}" \
-    --destination "${OUT_DIR}" >/dev/null
-  printf '%s\n' "${OUT_DIR}/nke-stack-${version}.tgz"
-}
-
-case "${1:-package}" in
-  publish-deps) publish_deps ;;
-  package)      package ;;
-  template)     tgz="$(package | tail -1)"; helm template nke-stack "${tgz}" --namespace temporal ;;
-  push)         tgz="$(package | tail -1)"; log "pushing ${tgz} to ${REGISTRY}"; helm push "${tgz}" "${REGISTRY}" ;;
-  all)          publish_deps; tgz="$(package | tail -1)"; log "pushing ${tgz}"; helm push "${tgz}" "${REGISTRY}" ;;
+case "${1:-build-local}" in
   build-local)  build_local ;;
   spire-chart)  spire_chart ;;
-  *) echo "usage: $0 [publish-deps|build-local|spire-chart|package|template|push|all]" >&2; exit 2 ;;
+  *) echo "usage: $0 [build-local|spire-chart]" >&2; exit 2 ;;
 esac
