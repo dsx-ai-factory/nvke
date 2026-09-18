@@ -63,10 +63,11 @@ jobs:
     permissions:
       contents: read
     env:
-      # Workspace mode for controller, controller/api and controller/deploy/charts,
-      # which lint against the
-      # root vendor/ tree; module mode for the rest, which resolve their own
-      # go.mod. Empty means "use the default", overriding the workflow-level off.
+      # Workspace mode for the four modules that lint against the root vendor/
+      # tree -- controller, controller/api, controller/deploy/charts and
+      # capd-reboot-controller; module mode for the rest, which resolve their
+      # own go.mod. Empty means "use the default", overriding the
+      # workflow-level off.
       GOWORK: ${{ matrix.gowork }}
     strategy:
       fail-fast: false

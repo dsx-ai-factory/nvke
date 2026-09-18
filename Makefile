@@ -404,8 +404,9 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
 # change to the API has to build them to mean anything.
 API_DEPENDENTS := controller cli controller/test/e2e
 
-# controller/deploy/charts embeds the charts for nkectl, so a chart change has
-# to build the module that installs them.
+# The modules that import controller/deploy/charts, so a chart change builds
+# what ships it. nkectl is the consumer; until it imports the module, this only
+# costs the cli suite a run it cannot fail.
 CHARTS_DEPENDENTS := cli
 
 # The modules CI tests with -race. agent-test.yml races agent; the unit-test

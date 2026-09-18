@@ -92,6 +92,8 @@ jobs:
             run: make test
           - module: controller/nico-sim
             run: make test
+          - module: controller/deploy/charts
+            run: make test
           # Every module here has a Makefile with a `test` target, so all of
           # them go through `make test` and pick up -race from GO_TEST_FLAGS
           # below.

@@ -9,9 +9,118 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 )
+
+// TestNames_MatchesTheChartsOnDisk closes the gap between the embed directive
+// and the directory: a chart added beside charts.go without being named in
+// //go:embed is invisible to every caller and nothing else would say so.
+func TestNames_MatchesTheChartsOnDisk(t *testing.T) {
+	entries, err := os.ReadDir(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var onDisk []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(entry.Name(), "Chart.yaml")); err != nil {
+			continue
+		}
+		onDisk = append(onDisk, entry.Name())
+	}
+	sort.Strings(onDisk)
+	if got := Names(); !reflect.DeepEqual(got, onDisk) {
+		t.Errorf("embedded charts %v but the directory holds %v; name every chart in the //go:embed directive in charts.go", got, onDisk)
+	}
+}
+
+// TestHas_OnlyChartRoots: a path into a chart is not a chart, and neither is
+// the tree root. FS and Extract would otherwise hand back a directory with no
+// Chart.yaml for helm to reject.
+func TestHas_OnlyChartRoots(t *testing.T) {
+	for _, name := range []string{"", ".", "controller/templates", "./controller", "controller/"} {
+		if Has(name) {
+			t.Errorf("Has(%q) = true", name)
+		}
+		if _, err := FS(name); err == nil {
+			t.Errorf("FS(%q) returned a chart", name)
+		}
+	}
+	if !Has("controller") {
+		t.Error(`Has("controller") = false`)
+	}
+}
+
+// TestExtract_LeavesNothingBehindOnFailure: a write that fails partway must
+// not leave a subset of the chart, which the emptiness guard would then refuse
+// on every retry without saying the tree is incomplete.
+func TestExtract_LeavesNothingBehindOnFailure(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := filepath.Join(t.TempDir(), "chart")
+	if err := os.Mkdir(dir, 0o500); err != nil { // readable, not writable
+		t.Fatal(err)
+	}
+	if err := Extract("controller", dir); err == nil {
+		t.Fatal("Extract into an unwritable directory succeeded")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("a failed Extract left %d entries behind", len(entries))
+	}
+
+	// The retry, once the cause is gone, must work rather than report the
+	// directory as occupied.
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := Extract("controller", dir); err != nil {
+		t.Fatalf("retry after the failure: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "Chart.yaml")); err != nil {
+		t.Errorf("retry did not write the chart: %v", err)
+	}
+}
+
+// TestExtract_RejectsANonDirectory keeps the guard's message about the path it
+// was given rather than a mkdir error from halfway through the walk.
+func TestExtract_RejectsANonDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "afile")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := Extract("controller", path)
+	if err == nil || !strings.Contains(err.Error(), "is not a directory") {
+		t.Errorf("Extract into a regular file = %v", err)
+	}
+}
+
+// TestExtract_SecuresTheDirectoryItWasGiven: MkdirAll leaves an existing
+// directory's mode alone, so the 0700 the doc promises has to be applied.
+func TestExtract_SecuresTheDirectoryItWasGiven(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "chart")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Extract("postgresql", dir); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Errorf("extracted directory mode = %o, want 700", got)
+	}
+}
 
 func TestNames(t *testing.T) {
 	if got, want := Names(), []string{"controller", "postgresql"}; !reflect.DeepEqual(got, want) {
