@@ -17,8 +17,20 @@
 
 name: verify-arc-runners
 
+# Runs itself on any PR that touches this file, so a change to the check is
+# exercised by the check. Without that, workflow_dispatch alone cannot run
+# until the file is already on main, which is a chicken and egg.
+#
+# The mirror branch rather than pull_request, following
+# os-image-artifact.yml: self-hosted runners get no pull_request events in
+# this repo. Path-filtered so it only fires when this file changes.
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - "pull-request/[0-9]+"
+    paths:
+      - .github/workflows/verify-arc-runners.yml
 
 jobs:
   arm64:
