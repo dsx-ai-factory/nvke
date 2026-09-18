@@ -91,9 +91,31 @@ require_registry() {
 }
 
 # Package and push the two charts the umbrella cannot resolve from anywhere else.
+# Materialise the upstream spire chart and print its directory.
+#
+# spire is pinned to a COMMIT, not a release: global.spire.jwtIssuer has no
+# upstream release yet, and oci://ghcr.io/dsx-ai-factory/nke/charts/spire:0.29.0
+# does not exist. So nothing can `helm install` it by coordinates -- it has to be
+# cloned and have its file://../spire-lib siblings resolved first.
+#
+# Printed on stdout so a caller can hand it straight to
+# `use-nke-sbom.sh --chart-override spire=...`; all logging goes to stderr.
+spire_chart() {
+  local clone="${WORK_DIR}/helm-charts-hardened"
+  if [[ ! -d "${clone}/.git" ]]; then
+    log "cloning helm-charts-hardened"
+    mkdir -p "${WORK_DIR}"
+    git clone --quiet "${SPIRE_REPO_URL}" "${clone}"
+  fi
+  git -C "${clone}" fetch --quiet origin "${SPIRE_REPO_COMMIT}" 2>/dev/null || git -C "${clone}" fetch --quiet
+  git -C "${clone}" checkout --quiet "${SPIRE_REPO_COMMIT}"
+  helm dependency build "${clone}/charts/spire" >/dev/null
+  printf '%s\n' "${clone}/charts/spire"
+}
+
 publish_deps() {
   require_registry
-  local version staging clone
+  local version staging
   version="$(resolve_version)"
   staging="${WORK_DIR}/deps"
   rm -rf "${staging}" && mkdir -p "${staging}"
@@ -105,19 +127,8 @@ publish_deps() {
     --destination "${staging}" >/dev/null
   helm push "${staging}/nke-controller-${version}.tgz" "${REGISTRY}"
 
-  clone="${WORK_DIR}/helm-charts-hardened"
-  if [[ ! -d "${clone}/.git" ]]; then
-    log "cloning helm-charts-hardened"
-    mkdir -p "${WORK_DIR}"
-    git clone --quiet "${SPIRE_REPO_URL}" "${clone}"
-  fi
-  git -C "${clone}" fetch --quiet origin "${SPIRE_REPO_COMMIT}" 2>/dev/null || git -C "${clone}" fetch --quiet
-  git -C "${clone}" checkout --quiet "${SPIRE_REPO_COMMIT}"
-
   log "publishing spire from the pinned clone ${SPIRE_REPO_COMMIT:0:12}"
-  # Resolve the chart's own file://../spire-lib siblings before packaging.
-  helm dependency build "${clone}/charts/spire" >/dev/null
-  helm package "${clone}/charts/spire" --destination "${staging}" >/dev/null
+  helm package "$(spire_chart)" --destination "${staging}" >/dev/null
   helm push "${staging}"/spire-*.tgz "${REGISTRY}"
 }
 
@@ -131,7 +142,7 @@ publish_deps() {
 # green against the OLD templates -- the subcharts are baked into the package.
 build_local() {
   stage_chart
-  local version staging clone
+  local version staging
   version="$(resolve_version)"
   [[ -n "${version}" ]] || {
     echo "build-local: could not resolve a version." >&2
@@ -151,18 +162,9 @@ build_local() {
   tar xzf "${staging}/nke-controller-${version}.tgz" -C "${CHART_DIR}/charts"
 
 
-  clone="${WORK_DIR}/helm-charts-hardened"
-  if [[ ! -d "${clone}/.git" ]]; then
-    log "cloning helm-charts-hardened"
-    mkdir -p "${WORK_DIR}"
-    git clone --quiet "${SPIRE_REPO_URL}" "${clone}"
-  fi
-  git -C "${clone}" fetch --quiet origin "${SPIRE_REPO_COMMIT}" 2>/dev/null || git -C "${clone}" fetch --quiet
-  git -C "${clone}" checkout --quiet "${SPIRE_REPO_COMMIT}"
   log "vendoring spire from the pinned clone ${SPIRE_REPO_COMMIT:0:12}"
-  helm dependency build "${clone}/charts/spire" >/dev/null
   rm -rf "${CHART_DIR}/charts/spire"
-  cp -R "${clone}/charts/spire" "${CHART_DIR}/charts/spire"
+  cp -R "$(spire_chart)" "${CHART_DIR}/charts/spire"
 
   # Point the two first-party entries at the vendored copies. An empty
   # repository makes helm resolve them from charts/ rather than a registry.
@@ -217,5 +219,6 @@ case "${1:-package}" in
   push)         tgz="$(package | tail -1)"; log "pushing ${tgz} to ${REGISTRY}"; helm push "${tgz}" "${REGISTRY}" ;;
   all)          publish_deps; tgz="$(package | tail -1)"; log "pushing ${tgz}"; helm push "${tgz}" "${REGISTRY}" ;;
   build-local)  build_local ;;
-  *) echo "usage: $0 [publish-deps|build-local|package|template|push|all]" >&2; exit 2 ;;
+  spire-chart)  spire_chart ;;
+  *) echo "usage: $0 [publish-deps|build-local|spire-chart|package|template|push|all]" >&2; exit 2 ;;
 esac

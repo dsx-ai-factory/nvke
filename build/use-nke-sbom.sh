@@ -31,6 +31,7 @@ PHASE_TIMEOUT="${PHASE_TIMEOUT:-15m}"
 REQUIRE_TIMEOUT="${REQUIRE_TIMEOUT:-180s}"
 PASSTHROUGH=()
 CHART_OVERRIDES=()
+VALUES_FOR=()
 DEPLOY_PATH=""
 
 log() { printf '\n=== %s\n' "$*" >&2; }
@@ -47,6 +48,12 @@ usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
   --chart-override ITEM=PATH
                       where to find one item's chart, for a component this
                       repository does not publish. Repeatable.
+  --values-for ITEM=PATH
+                      an extra values file for one item, applied after the
+                      item's own values. This is how per-run values reach a
+                      single component: with one release per chart the keys are
+                      no longer prefixed, so a value meant for the controller
+                      cannot be broadcast to every item. Repeatable.
   --until PHASE       stop after this phase, so a caller can interleave work
   --dry-run           print the argv each step would run, and exit
   --kubeconfig PATH   passed to every kubectl call
@@ -126,6 +133,16 @@ chart_override() {
   done
 }
 
+# values_for prints the --values-for paths for an item, newline separated.
+values_for() {
+  local entry
+  for entry in ${VALUES_FOR[@]+"${VALUES_FOR[@]}"}; do
+    if [[ "${entry%%=*}" == "$1" ]]; then
+      printf '%s\n' "${entry#*=}"
+    fi
+  done
+}
+
 # install_helm_item dispatches on the shape release.yaml declares: an umbrella
 # chart installed over several phases, or one chart as one release with the
 # deploy path's item order doing the sequencing.
@@ -171,10 +188,17 @@ not publish needs."
 
   wait_for_requires "${item}" "${requires}"
 
+  # The item's own values first, then whatever the run supplies for it. Helm
+  # merges -f in order, so the caller's file wins on any key it names.
   local values_args=() file
   for file in ${values//,/ }; do
     values_args+=(--values "${dir}/${file}")
   done
+  while IFS= read -r file; do
+    [[ -n "${file}" ]] || continue
+    [[ -f "${file}" ]] || die "--values-for ${item}: no such file: ${file}"
+    values_args+=(--values "${file}")
+  done < <(values_for "${item}")
 
   log "item ${item} -> release ${release} (${chart_name} ${version}) in ${namespace}"
   run helm upgrade --install "${release}" "${ref[@]}" \
@@ -315,6 +339,7 @@ while [[ $# -gt 0 ]]; do
     --target) TARGET="$2"; shift 2 ;;
     --chart) CHART="$2"; shift 2 ;;
     --chart-override) CHART_OVERRIDES+=("$2"); shift 2 ;;
+    --values-for) VALUES_FOR+=("$2"); shift 2 ;;
     --until) UNTIL="$2"; shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
     --timeout) PHASE_TIMEOUT="$2"; shift 2 ;;
