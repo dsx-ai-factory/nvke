@@ -36,6 +36,7 @@ fi
                     ["bash", str(script)],
                     env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
                          "ARCH": arch, "ARTIFACTS_DIR": str(artifacts),
+                         "SOURCE_ROOT": str(script.parents[3]),
                          "NGC_API_KEY": ""},
                     capture_output=True, text=True, check=False,
                 )
@@ -44,6 +45,31 @@ fi
                 self.assertTrue((artifacts / "nke-agent-spire.conf").is_file())
                 self.assertFalse((artifacts / "nke-agent").exists())
                 self.assertFalse((artifacts / "nke-agent.service").exists())
+
+    def test_rejects_source_root_that_does_not_own_the_script(self):
+        script = Path(__file__).with_name("fetch-artifacts.sh")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source"
+            source.mkdir()
+            artifacts = root / "artifacts"
+
+            result = subprocess.run(
+                ["bash", str(script)],
+                env={
+                    **os.environ,
+                    "ARCH": "amd64",
+                    "ARTIFACTS_DIR": str(artifacts),
+                    "SOURCE_ROOT": str(source),
+                },
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("does not own", result.stderr)
+            self.assertFalse(artifacts.exists())
 
 
 if __name__ == "__main__":

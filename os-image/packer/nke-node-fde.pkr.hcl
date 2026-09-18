@@ -114,8 +114,8 @@ locals {
   ssh_dir   = "${path.root}/.ssh"
   # Deliberately NOT under local.artifacts: the "file" provisioner below
   # uploads local.artifacts/ to the guest wholesale, and this is a
-  # multi-gigabyte ISO, not one of fetch-artifacts.sh's nke-agent/spire-agent
-  # downloads. packer/scripts/prepare-installer-iso.sh downloads iso_url into
+  # multi-gigabyte ISO, not one of the nke-agent/spire-agent artifacts staged
+  # by Make. packer/scripts/prepare-installer-iso.sh downloads iso_url into
   # this directory and produces a GRUB-timeout-patched sibling next to it
   # (see the Makefile) before packer build runs; iso_url below points at
   # that patched copy.
@@ -250,15 +250,6 @@ source "qemu" "nke-fde" {
 build {
   name    = "nke-node-fde"
   sources = ["source.qemu.nke-fde"]
-
-  # Same artifact fetch + install as the base image.
-  provisioner "shell-local" {
-    environment_vars = [
-      "ARTIFACTS_DIR=${local.artifacts}",
-      "ARCH=${local.arch}",
-    ]
-    script = "${path.root}/scripts/fetch-artifacts.sh"
-  }
 
   provisioner "shell" {
     inline = ["mkdir -p /tmp/nke-image/luks"]

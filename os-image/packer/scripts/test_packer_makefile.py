@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -87,7 +88,16 @@ class PackerMakefileTest(unittest.TestCase):
             text=True,
         ).stdout
 
-    def run_make(self, target, *, cwd, variables=(), extra_env=None):
+    def run_make(
+        self,
+        target,
+        *,
+        cwd,
+        variables=(),
+        extra_env=None,
+        make_options=(),
+        makefile=None,
+    ):
         env = os.environ.copy()
         for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS"):
             env.pop(name, None)
@@ -98,7 +108,8 @@ class PackerMakefileTest(unittest.TestCase):
                 "--no-print-directory",
                 "--silent",
                 "--file",
-                str(PACKER_DIR / "Makefile"),
+                str(makefile or PACKER_DIR / "Makefile"),
+                *make_options,
                 target,
                 *variables,
             ],
@@ -108,6 +119,158 @@ class PackerMakefileTest(unittest.TestCase):
             capture_output=True,
             text=True,
         )
+
+    @staticmethod
+    def write_executable(path, contents):
+        path.write_text(contents, encoding="utf-8")
+        path.chmod(0o755)
+
+    def create_image_build_fixture(self, root, *, unsafe_artifacts=False):
+        root = root.resolve()
+        workspace = root / "workspace"
+        workspace.mkdir()
+        shutil.copy2(PACKER_DIR / "Makefile", workspace / "Makefile")
+        source = root / "source"
+        self.create_source_repo(source)
+
+        scripts = workspace / "scripts"
+        scripts.mkdir()
+        events = root / "events.log"
+        artifacts = workspace / "artifacts"
+        if unsafe_artifacts:
+            caller_artifacts = root / "caller-artifacts"
+            caller_artifacts.mkdir()
+            (caller_artifacts / "keep").write_text("caller data\n", encoding="utf-8")
+            artifacts.symlink_to(caller_artifacts, target_is_directory=True)
+        else:
+            artifacts.mkdir()
+            (artifacts / "stale").write_text("stale\n", encoding="utf-8")
+
+        self.write_executable(
+            scripts / "fetch-artifacts.sh",
+            """#!/bin/sh
+set -eu
+printf 'fetch|%s|%s|%s|%s|%s|%s|%s|%s\\n' \
+  "${SOURCE_ROOT-}" "${ARTIFACTS_DIR-}" "${ARCH-}" \
+  "${K8S_VERSIONS-}" "${CALICO_VERSIONS-}" "${OVN_STREAMS-}" \
+  "${SPIRE_VERSION-}" "${TPM_PLUGIN_VERSION-}" >> "${EVENT_LOG:?}"
+printf 'partial\n' > "${ARTIFACTS_DIR}/partial"
+if [ "${FETCH_FAIL:-0}" = "1" ]; then
+  exit 42
+fi
+touch "${ARTIFACTS_DIR}/ready"
+""",
+        )
+        self.write_executable(
+            scripts / "prepare-installer-iso.sh",
+            "#!/bin/sh\nset -eu\n",
+        )
+
+        tools = root / "tools"
+        tools.mkdir()
+        packer = tools / "packer"
+        self.write_executable(
+            packer,
+            """#!/bin/sh
+set -eu
+printf 'packer:%s\\n' "$1" >> "${EVENT_LOG:?}"
+if [ "$1" = "build" ]; then
+  test -f "${EXPECTED_ARTIFACTS_DIR:?}/ready"
+  test ! -e "${EXPECTED_ARTIFACTS_DIR}/stale"
+fi
+""",
+        )
+        self.write_executable(tools / "go", "#!/bin/sh\nexit 0\n")
+        self.write_executable(tools / "qemu-img", "#!/bin/sh\nexit 0\n")
+
+        ssh_dir = workspace / ".ssh"
+        ssh_dir.mkdir()
+        (ssh_dir / "id_ed25519").write_text("test key\n", encoding="utf-8")
+        for template in ("nke-node-fde.pkr.hcl", "nke-node-non-fde.pkr.hcl"):
+            (workspace / template).write_text("# test fixture\n", encoding="utf-8")
+
+        return workspace, source, tools, packer, events, artifacts
+
+    def run_image_build(
+        self,
+        target,
+        arch,
+        root,
+        *,
+        artifacts_override=None,
+        fetch_fails=False,
+        make_options=(),
+        python_path=None,
+        unsafe_artifacts=False,
+    ):
+        workspace, source, tools, packer, events, artifacts = (
+            self.create_image_build_fixture(
+                root, unsafe_artifacts=unsafe_artifacts
+            )
+        )
+        material_inputs = (
+            ("K8S_VERSIONS", "1.33.5 1.34.1"),
+            ("CALICO_VERSIONS", "3.30.3 3.31.0"),
+            ("OVN_STREAMS", "stable next"),
+            ("SPIRE_VERSION", "1.13.1"),
+            ("TPM_PLUGIN_VERSION", "0.13.1"),
+        )
+        variables = [
+            f"PACKER={packer}",
+            f"PYTHON={python_path or sys.executable}",
+            f"SOURCE_ROOT={source}",
+            f"ARCH={arch}",
+            *(f"{name}={value}" for name, value in material_inputs),
+        ]
+        if artifacts_override is not None:
+            variables.append(f"ARTIFACTS={artifacts_override}")
+
+        result = self.run_make(
+            target,
+            cwd=workspace,
+            variables=variables,
+            extra_env={
+                "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
+                "EVENT_LOG": str(events),
+                "EXPECTED_ARTIFACTS_DIR": str(artifacts),
+                "ARTIFACTS_DIR": str(root / "wrong-artifacts"),
+                "SOURCE_ROOT": str(root / "wrong-source"),
+                "ARCH": "wrong-arch",
+                **{name: f"wrong-{name}" for name, _ in material_inputs},
+                "FETCH_FAIL": "1" if fetch_fails else "0",
+            },
+            make_options=make_options,
+            makefile=workspace / "Makefile",
+        )
+        recorded_events = (
+            events.read_text(encoding="utf-8").splitlines()
+            if events.exists()
+            else []
+        )
+        expected_fetch_fields = (
+            "fetch",
+            str(source),
+            arch,
+            *(value for _, value in material_inputs),
+        )
+        return result, recorded_events, artifacts, expected_fetch_fields
+
+    def assert_single_staging_fetch(self, events, artifacts, expected_fields):
+        fetch_events = [event for event in events if event.startswith("fetch|")]
+        self.assertEqual(len(fetch_events), 1)
+        fields = fetch_events[0].split("|")
+        self.assertEqual(
+            (
+                fields[0],
+                fields[1],
+                *fields[3:],
+            ),
+            expected_fields,
+        )
+        stage = Path(fields[2])
+        self.assertEqual(stage.parent, artifacts.parent)
+        self.assertTrue(stage.name.startswith(".artifacts.tmp."))
+        return fetch_events[0], stage
 
     def test_generic_dist_dir_is_not_exported_to_build_subprocesses(self):
         env = os.environ.copy()
@@ -132,6 +295,45 @@ class PackerMakefileTest(unittest.TestCase):
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_artifact_staging_root_is_owned_by_the_loaded_makefile(self):
+        result = subprocess.run(
+            [
+                self.make,
+                "--no-print-directory",
+                "--silent",
+                "--file",
+                str(PACKER_DIR / "Makefile"),
+                "--eval=print-artifacts: ; @printf '%s\\n' '$(ARTIFACTS)'",
+                "print-artifacts",
+                "CURDIR=/caller",
+                "PACKER_MAKEFILE=/caller/Makefile",
+                "PACKER_ROOT=/caller",
+                "ARTIFACTS=/caller/data",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), str(PACKER_DIR / "artifacts"))
+
+        rejected = subprocess.run(
+            [
+                self.make,
+                "--file",
+                str(PACKER_DIR / "Makefile"),
+                "--dry-run",
+                "check-source",
+                "MAKEFILE_LIST=/caller/Makefile",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(rejected.returncode, 0)
+        self.assertIn("MAKEFILE_LIST is internal", rejected.stderr)
 
     @staticmethod
     def create_source_repo(path):
@@ -247,12 +449,129 @@ class PackerMakefileTest(unittest.TestCase):
             with self.subTest(target=target):
                 output = self.dry_run(target)
                 source_check = output.index('git -C "$SOURCE_ROOT" rev-parse')
+                dependency_check = output.index("command -v go")
                 packer_init = output.index("/tmp/nkd-packer init ")
+                fetch_command = str(PACKER_DIR / "scripts" / "fetch-artifacts.sh")
+                artifact_fetch = output.index(fetch_command)
                 packer_build = output.index("/tmp/nkd-packer build")
 
                 self.assertIn(template, output[packer_init:].splitlines()[0])
+                self.assertEqual(output.count(fetch_command), 1)
                 self.assertLess(source_check, packer_init)
-                self.assertLess(source_check, packer_build)
+                self.assertLess(dependency_check, packer_init)
+                self.assertLess(source_check, artifact_fetch)
+                self.assertLess(dependency_check, artifact_fetch)
+                self.assertLess(artifact_fetch, packer_build)
+
+    def test_each_image_build_stages_clean_artifacts_once_before_packer_build(self):
+        cases = (
+            ("os-image-fde", "amd64"),
+            ("os-image-fde", "arm64"),
+            ("os-image-non-fde", "amd64"),
+            ("os-image-non-fde", "arm64"),
+        )
+        for target, arch in cases:
+            with self.subTest(target=target, arch=arch), tempfile.TemporaryDirectory() as tmp:
+                result, events, artifacts, expected_fields = self.run_image_build(
+                    target, arch, Path(tmp)
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                fetch_event, stage = self.assert_single_staging_fetch(
+                    events, artifacts, expected_fields
+                )
+                self.assertLess(events.index(fetch_event), events.index("packer:build"))
+                self.assertTrue((artifacts / "ready").is_file())
+                self.assertFalse((artifacts / "stale").exists())
+                self.assertFalse(stage.exists())
+                self.assertEqual(list(artifacts.parent.glob(".artifacts.tmp.*")), [])
+
+    def test_failed_artifact_staging_prevents_packer_build(self):
+        cases = (
+            ("os-image-fde", "amd64"),
+            ("os-image-non-fde", "arm64"),
+        )
+        for target, arch in cases:
+            with self.subTest(target=target, arch=arch), tempfile.TemporaryDirectory() as tmp:
+                result, events, artifacts, expected_fields = self.run_image_build(
+                    target, arch, Path(tmp), fetch_fails=True
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                _, stage = self.assert_single_staging_fetch(
+                    events, artifacts, expected_fields
+                )
+                self.assertNotIn("packer:build", events)
+                self.assertEqual((artifacts / "stale").read_text(), "stale\n")
+                self.assertFalse((artifacts / "partial").exists())
+                self.assertFalse(stage.exists())
+                self.assertEqual(list(artifacts.parent.glob(".artifacts.tmp.*")), [])
+
+    def test_artifact_path_override_cannot_redirect_make_owned_staging(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            caller_artifacts = root / "caller-artifacts"
+            caller_artifacts.mkdir()
+            caller_file = caller_artifacts / "keep"
+            caller_file.write_text("caller data\n", encoding="utf-8")
+
+            result, events, artifacts, expected_fields = self.run_image_build(
+                "os-image-non-fde",
+                "amd64",
+                root,
+                artifacts_override=caller_artifacts,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assert_single_staging_fetch(events, artifacts, expected_fields)
+            self.assertEqual(caller_file.read_text(encoding="utf-8"), "caller data\n")
+            self.assertFalse((caller_artifacts / "ready").exists())
+            self.assertTrue((artifacts / "ready").is_file())
+
+    def test_unsafe_artifact_symlink_is_rejected_without_fetch_or_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result, events, artifacts, _ = self.run_image_build(
+                "os-image-fde",
+                "amd64",
+                root,
+                unsafe_artifacts=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("refusing unsafe artifact staging path", result.stderr)
+            self.assertFalse(any(event.startswith("fetch|") for event in events))
+            self.assertNotIn("packer:build", events)
+            self.assertTrue(artifacts.is_symlink())
+            self.assertEqual(
+                (artifacts / "keep").read_text(encoding="utf-8"), "caller data\n"
+            )
+            self.assertEqual(list(artifacts.parent.glob(".artifacts.tmp.*")), [])
+
+    def test_failed_dependency_preflight_blocks_parallel_fetch_and_packer(self):
+        for target in ("os-image-fde", "os-image-non-fde"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                result, events, artifacts, _ = self.run_image_build(
+                    target,
+                    "amd64",
+                    root,
+                    make_options=("--jobs=4",),
+                    python_path=root / "missing-python",
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("Python 3.10 or newer is required", result.stderr)
+                self.assertFalse(any(event.startswith("fetch|") for event in events))
+                self.assertFalse(any(event.startswith("packer:") for event in events))
+                self.assertEqual((artifacts / "stale").read_text(), "stale\n")
+
+    def test_packer_templates_do_not_fetch_host_artifacts(self):
+        for template in ("nke-node-fde.pkr.hcl", "nke-node-non-fde.pkr.hcl"):
+            with self.subTest(template=template):
+                contents = (PACKER_DIR / template).read_text(encoding="utf-8")
+                self.assertNotIn("fetch-artifacts.sh", contents)
+                self.assertNotIn('provisioner "shell-local"', contents)
 
     def test_failed_source_preflight_blocks_parallel_packer_init(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -269,6 +588,8 @@ class PackerMakefileTest(unittest.TestCase):
                 encoding="utf-8",
             )
             packer.chmod(0o755)
+            self.write_executable(tools / "go", "#!/bin/sh\nexit 0\n")
+            self.write_executable(tools / "qemu-img", "#!/bin/sh\nexit 0\n")
             env = {
                 **os.environ,
                 "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
@@ -284,6 +605,7 @@ class PackerMakefileTest(unittest.TestCase):
                             "Makefile",
                             target,
                             f"PACKER={packer}",
+                            f"PYTHON={sys.executable}",
                             f"SOURCE_ROOT={source}",
                         ],
                         cwd=PACKER_DIR,

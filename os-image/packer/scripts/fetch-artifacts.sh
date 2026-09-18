@@ -10,10 +10,10 @@
 set -euo pipefail
 
 ARTIFACTS_DIR="${ARTIFACTS_DIR:?ARTIFACTS_DIR is required}"
-# Set by the shell-local provisioner from local.arch (nke-node-fde.pkr.hcl /
-# nke-node-non-fde.pkr.hcl), which is itself derived from the ISO filename --
-# so this always matches the guest actually being built, not the host.
-ARCH="${ARCH:-amd64}"
+# Set explicitly by the Packer Makefile from the requested image architecture,
+# so this always matches the guest being built rather than the host.
+ARCH="${ARCH:?ARCH is required}"
+SOURCE_ROOT="${SOURCE_ROOT:?SOURCE_ROOT is required}"
 
 case "${ARCH}" in
   amd64|arm64) ;;
@@ -23,6 +23,13 @@ case "${ARCH}" in
     ;;
 esac
 
+repo_root="$(cd "${SOURCE_ROOT}" && pwd -P)"
+script_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
+if [[ "${repo_root}" != "${script_repo_root}" ]]; then
+  echo "SOURCE_ROOT ${repo_root} does not own ${BASH_SOURCE[0]}" >&2
+  exit 1
+fi
+
 mkdir -p "${ARTIFACTS_DIR}"
 
 if ! command -v go >/dev/null 2>&1; then
@@ -30,8 +37,6 @@ if ! command -v go >/dev/null 2>&1; then
   echo "https://go.dev/dl/" >&2
   exit 1
 fi
-
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 
 # Use the package target so dpkg owns the agent, updater, and their units.
 # An exact output path avoids selecting a stale version from agent/bin.

@@ -222,15 +222,6 @@ build {
   name    = "nke-node-non-fde"
   sources = ["source.qemu.nke-non-fde"]
 
-  # Same artifact fetch + install as the base image.
-  provisioner "shell-local" {
-    environment_vars = [
-      "ARTIFACTS_DIR=${local.artifacts}",
-      "ARCH=${local.arch}",
-    ]
-    script = "${path.root}/scripts/fetch-artifacts.sh"
-  }
-
   provisioner "shell" {
     inline = ["mkdir -p /tmp/nke-image/lvm"]
   }
