@@ -42,7 +42,7 @@ func TestBeginEtcdEncryptionKeyRotation_AcquiresClusterMutationLock(t *testing.T
 			cluster.Conditions.UpdateInProgress.Message == "rotating etcd encryption key"
 	})).Return(db.Cluster{}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 
 	_, err := a.BeginEtcdEncryptionKeyRotation(
 		context.Background(),
@@ -67,7 +67,7 @@ func TestBeginEtcdEncryptionKeyRotation_RejectsExistingClusterMutation(t *testin
 		},
 	}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 
 	_, err := a.BeginEtcdEncryptionKeyRotation(
 		context.Background(),
@@ -82,7 +82,7 @@ func TestPrepareEtcdEncryptionKeyRotation_RequiresEncryptedCluster(t *testing.T)
 	clusterID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	mockDB := &testutil.MockDB{}
 	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID}, nil).Once()
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 
 	_, err := a.PrepareEtcdEncryptionKeyRotation(
 		context.Background(),
@@ -112,7 +112,7 @@ func TestCompleteEtcdEncryptionKeyRotation_PreservesEncryptionAndClearsProgress(
 	})).Return(db.Cluster{}, nil).Once()
 	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nil, "", nil, "")
 	_, err := a.CompleteEtcdEncryptionKeyRotation(
 		context.Background(),
 		activities.CompleteEtcdEncryptionKeyRotationInput{ClusterID: clusterID},
@@ -137,7 +137,7 @@ func TestStartEtcdEncryptionRewrite_StartsFreshOperationAfterPriorSuccess(t *tes
 			}, nil
 		},
 	}
-	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil)
+	a := activities.NewActivities(config.Config{}, mockDB, nil, nodeAgent, "", nil, "")
 
 	operation, err := a.StartEtcdEncryptionRewrite(context.Background(), activities.EtcdEncryptionRewriteInput{
 		NodeID: node.ID, OperationID: "rotation-op",

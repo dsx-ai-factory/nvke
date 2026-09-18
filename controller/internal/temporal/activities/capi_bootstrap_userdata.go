@@ -29,6 +29,7 @@ type capiCloudInitFile struct {
 	Path        string `yaml:"path"`
 	Owner       string `yaml:"owner,omitempty"`
 	Permissions string `yaml:"permissions,omitempty"`
+	Encoding    string `yaml:"encoding,omitempty"`
 	Content     string `yaml:"content"`
 }
 
@@ -41,7 +42,14 @@ func (f capiCloudInitFile) MarshalYAML() (interface{}, error) {
 	if f.Permissions != "" {
 		appendMappingNode(node, "permissions", yaml.DoubleQuotedStyle, f.Permissions, "!!str")
 	}
-	appendMappingNode(node, "content", yaml.LiteralStyle, f.Content, "")
+	if f.Encoding != "" {
+		appendMappingNode(node, "encoding", 0, f.Encoding, "")
+	}
+	contentStyle := yaml.LiteralStyle
+	if f.Encoding != "" {
+		contentStyle = 0
+	}
+	appendMappingNode(node, "content", contentStyle, f.Content, "")
 	return node, nil
 }
 
@@ -65,13 +73,17 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	if err != nil {
 		return "", fmt.Errorf("failed to read node set capi provider: %w", err)
 	}
+	controllerFiles, err := a.nodeAgentBootstrapFiles()
+	if err != nil {
+		return "", err
+	}
 
 	if a.cfg.NodeAgentSpireAttestationMethod == config.SpireAttestationMethodJoinToken && spireJoinToken == "" {
 		return "", fmt.Errorf("spire join token is required when SPIRE attestation method is joinToken")
 	}
 
 	// A site stood up without SPIFFE has no SPIRE and no workload socket to
-	// read a bundle from, so a node gets neither the bundle nor an agent
+	// read a bundle from, so a node gets neither the bundle nor a SPIRE agent
 	// config. Asking anyway blocks provisioning: the dial fails, the activity
 	// retries forever, and the cluster never leaves Provisioning.
 	var trustDomain, trustBundle string
@@ -82,7 +94,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 		}
 	}
 
-	files := make([]capiCloudInitFile, 0, len(capiNodeSetProvider.BootstrapFiles)+2)
+	files := make([]capiCloudInitFile, 0, len(capiNodeSetProvider.BootstrapFiles)+len(controllerFiles)+2)
 	for _, file := range capiNodeSetProvider.BootstrapFiles {
 		files = append(files, capiCloudInitFile{
 			Path:        file.Path,
@@ -113,6 +125,17 @@ func (a *Activities) renderCAPIBootstrapUserData(
 			},
 		)
 	}
+
+	for _, file := range controllerFiles {
+		files = append(files, capiCloudInitFile{
+			Path:        file.Path,
+			Owner:       file.Owner,
+			Permissions: file.Permissions,
+			Encoding:    file.Encoding,
+			Content:     file.Content,
+		})
+	}
+
 	runCommands := append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...)
 	runCommands = append(runCommands, a.nodeAgentTLSJWTBootstrapCommands()...)
 

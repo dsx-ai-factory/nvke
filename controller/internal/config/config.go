@@ -22,6 +22,12 @@ const (
 
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
+
+	NodeAgentExternalTLSCertPath = "/etc/nke/node-agent-client-tls/tls.crt"
+	NodeAgentExternalTLSKeyPath  = "/etc/nke/node-agent-client-tls/tls.key"
+	NodeAgentExternalTLSCAPath   = "/etc/nke/node-agent-client-tls/ca.crt"
+	NodeAgentConfigPath          = "/etc/default/nke-agent"
+	NodeAgentControllerCAPath    = "/etc/nke/controller-ca.crt"
 )
 
 // SpireAttestationMethod selects the deployment-wide SPIRE node attestation method.
@@ -222,6 +228,11 @@ type Config struct {
 	// NodeAgentSpireAttestationMethod selects the SPIRE attestation method used by
 	// every cluster managed by this controller deployment.
 	NodeAgentSpireAttestationMethod SpireAttestationMethod `env:"NODE_AGENT_SPIRE_ATTESTATION_METHOD" default:"tpm"`
+
+	// NodeAgentExternalMTLSEnabled selects an externally issued client
+	// certificate as the deployment-wide node-agent base transport instead of
+	// selecting transport from each node's SPIFFE setting.
+	NodeAgentExternalMTLSEnabled bool `env:"NODE_AGENT_EXTERNAL_MTLS_ENABLED" default:"false"`
 
 	// DgxcTenantUser is the DGXC tenant SSH username injected into OS profile userData templates.
 	DgxcTenantUser string `env:"DGXC_TENANT_USER"`
@@ -454,8 +465,8 @@ func (c *Config) Validate() error {
 	}
 	c.SupportedInfraProviders = supportedInfraProviders
 	if c.NodeAgentTLSJWTEnabled {
-		if !c.SpiffeEnabled {
-			return fmt.Errorf("SPIFFE_ENABLED must be true when NODE_AGENT_TLS_JWT_ENABLED=true")
+		if !c.SpiffeEnabled && !c.NodeAgentExternalMTLSEnabled {
+			return fmt.Errorf("SPIFFE_ENABLED or NODE_AGENT_EXTERNAL_MTLS_ENABLED must be true when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
 		if strings.TrimSpace(c.NodeAgentTLSJWTIssuer) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_ISSUER is required when NODE_AGENT_TLS_JWT_ENABLED=true")

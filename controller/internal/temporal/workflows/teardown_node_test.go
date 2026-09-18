@@ -891,7 +891,7 @@ func setupWorkflowEnv(t *testing.T, database db.DB, profilesDir string, opts wor
 		DeadlockDetectionTimeout: 5 * time.Second,
 	})
 
-	a := activities.NewActivities(config.Config{ProfilesDir: profilesDir}, database, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{ProfilesDir: profilesDir}, database, nil, nil, "", nil, "")
 
 	// Register real DB activities
 	env.RegisterActivity(a.GetNodePoolForNode)

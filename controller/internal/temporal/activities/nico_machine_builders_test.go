@@ -4,15 +4,23 @@
 package activities
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
+	"github.com/dsx-ai-factory/nke/controller/internal/utils"
 )
 
 func TestNicoMachineBuilders_ResolveTemplateLessForgeCAPINodeConfig(t *testing.T) {
@@ -318,6 +326,8 @@ func TestNicoMachineBuilders_RenderIpxeScript(t *testing.T) {
 	assert.Equal(t, "set disk-strategy largest\n", script)
 }
 
+const testControllerClientCA = "-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----\n"
+
 const userDataTemplate = `
 username={{ .Username }}
 password={{ .HashedPassword }}
@@ -329,6 +339,7 @@ calicoEnabled={{ .CalicoEnabled }}
 ovnEnabled={{ .OvnEnabled }}
 cniImagePackage={{ .CNIImagePackage }}
 cniChartsPackage={{ .CNIChartsPackage }}
+files={{ len .Files }}
 spiffeEnabled={{ .SpiffeEnabled }}
 spireServer={{ .SpireServerAddress }}:{{ .SpireServerPort }}
 trustDomain={{ .TrustDomain }}
@@ -353,6 +364,10 @@ func TestUnit_RenderUserData(t *testing.T) {
 	}
 	tlsJWTConfig := baseConfig
 	tlsJWTConfig.NodeAgentTLSJWTEnabled = true
+	externalMTLSConfig := baseConfig
+	externalMTLSConfig.NodeAgentExternalMTLSEnabled = true
+	combinedConfig := externalMTLSConfig
+	combinedConfig.NodeAgentTLSJWTEnabled = true
 
 	type parameters struct {
 		config                config.Config
@@ -363,6 +378,8 @@ func TestUnit_RenderUserData(t *testing.T) {
 		teleport              *TeleportUserDataConfig
 		cluster               db.Cluster
 		expectBundleLookup    bool
+		emptyControllerCA     bool
+		wantErr               string
 		verify                func(*testing.T, string)
 	}
 	tests := map[string]parameters{
@@ -394,6 +411,7 @@ func TestUnit_RenderUserData(t *testing.T) {
 				assert.Contains(t, userData, "ovnEnabled=false\n")
 				assert.Contains(t, userData, "cniImagePackage=nke-cni-calico-images-3.31.5\n")
 				assert.Contains(t, userData, "cniChartsPackage=nke-cni-calico-manifests-3.31.5\n")
+				assert.Contains(t, userData, "files=1\n")
 				assert.Contains(t, userData, "spiffeEnabled=true\n")
 				assert.Contains(t, userData, "spireServer=spire.example.com:9091\n")
 				assert.Contains(t, userData, "trustDomain=example.com\n")
@@ -435,11 +453,15 @@ autoinstall:
   identity:
     hostname: {{ .Hostname }}
   user-data:
+    write_files:
+{{- range .Files }}
+      - path: {{ quote .Path }}
+        owner: {{ quote .Owner }}
+        permissions: {{ quote .Permissions }}
+        content: {{ quote .Content }}
+{{- end }}
     runcmd:
-      - |
-          install -d -m 0755 /etc/default
-          printf 'AGENT_ARGS="--disable-mtls --secure-server-port {{ .NodeAgentPort }}"\n' >/etc/default/nke-agent
-          systemctl restart nke-agent
+      - systemctl restart nke-agent
 `,
 			node:              db.Node{Name: "test-node"},
 			kubernetesVersion: "1.33.0",
@@ -448,11 +470,104 @@ autoinstall:
 				t.Helper()
 				assert.Contains(t, userData, "autoinstall:")
 				assert.Contains(t, userData, "hostname: test-node")
-				assert.Contains(t, userData, `AGENT_ARGS="--disable-mtls --secure-server-port 15005"`)
+				var rendered struct {
+					Autoinstall struct {
+						UserData capiCloudInitConfig `yaml:"user-data"`
+					} `yaml:"autoinstall"`
+				}
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				require.Len(t, rendered.Autoinstall.UserData.WriteFiles, 1)
+				assert.Equal(t, "AGENT_ARGS=\"--secure-server-port 15005\"\n", rendered.Autoinstall.UserData.WriteFiles[0].Content)
 				assert.Contains(t, userData, "--grpc-auth-mode=tls-jwt")
 				assert.Contains(t, userData, "s/--disable-mtls")
 				assert.Contains(t, userData, testRestartAgentCmd)
 			},
+		},
+		"renders external mTLS CA through generic files": {
+			config: externalMTLSConfig,
+			template: `#cloud-config
+autoinstall:
+  version: 1
+  identity:
+    hostname: {{ .Hostname }}
+  user-data:
+    write_files:
+{{- range .Files }}
+      - path: {{ quote .Path }}
+        owner: {{ quote .Owner }}
+        permissions: {{ quote .Permissions }}
+{{- if .Encoding }}
+        encoding: {{ quote .Encoding }}
+{{- end }}
+        content: {{ quote .Content }}
+{{- end }}
+`,
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Contains(t, userData, "autoinstall:")
+				assert.Contains(t, userData, "hostname: test-node")
+
+				var rendered struct {
+					Autoinstall struct {
+						UserData capiCloudInitConfig `yaml:"user-data"`
+					} `yaml:"autoinstall"`
+				}
+				require.NoError(t, yaml.Unmarshal([]byte(userData), &rendered))
+				require.Len(t, rendered.Autoinstall.UserData.WriteFiles, 2)
+				controllerCAFile := rendered.Autoinstall.UserData.WriteFiles[0]
+				assert.Equal(t, config.NodeAgentControllerCAPath, controllerCAFile.Path)
+				assert.Equal(t, "root:root", controllerCAFile.Owner)
+				assert.Equal(t, "0644", controllerCAFile.Permissions)
+				assert.Equal(t, "b64", controllerCAFile.Encoding)
+				decodedCA, err := base64.StdEncoding.DecodeString(controllerCAFile.Content)
+				require.NoError(t, err)
+				assert.Equal(t, testControllerClientCA, string(decodedCA))
+				agentConfigFile := rendered.Autoinstall.UserData.WriteFiles[1]
+				assert.Equal(t, config.NodeAgentConfigPath, agentConfigFile.Path)
+				assert.Empty(t, agentConfigFile.Encoding)
+				assert.Contains(t, agentConfigFile.Content, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+				assert.NotContains(t, userData, "systemctl restart nke-agent.service")
+			},
+		},
+		"combines TLS JWT and external mTLS bootstrap": {
+			config: combinedConfig,
+			template: `#cloud-config
+autoinstall:
+  version: 1
+  identity:
+    hostname: {{ .Hostname }}
+  user-data:
+    write_files:
+{{- range .Files }}
+      - path: {{ quote .Path }}
+{{- if .Encoding }}
+        encoding: {{ quote .Encoding }}
+{{- end }}
+        content: {{ quote .Content }}
+{{- end }}
+`,
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Contains(t, userData, "--grpc-auth-mode=tls-jwt")
+				assert.Contains(t, userData, config.NodeAgentControllerCAPath)
+				assert.Contains(t, userData, base64.StdEncoding.EncodeToString([]byte(testControllerClientCA)))
+				assert.Contains(t, userData, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+			},
+		},
+		"external mTLS requires a controller CA": {
+			config:            externalMTLSConfig,
+			template:          "files={{ len .Files }}\n",
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			emptyControllerCA: true,
+			wantErr:           "controller client CA bundle is required when external node-agent mTLS is enabled",
 		},
 	}
 
@@ -460,8 +575,13 @@ autoinstall:
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			bundleLookupCalled := false
+			controllerCA := testControllerClientCA
+			if params.emptyControllerCA {
+				controllerCA = ""
+			}
 			activities := &Activities{
-				cfg: params.config,
+				cfg:                      params.config,
+				controllerClientCABundle: controllerCA,
 				getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
 					bundleLookupCalled = true
 					return "example.com", "first certificate\nsecond certificate\n", nil
@@ -476,9 +596,187 @@ autoinstall:
 				params.teleport,
 				params.cluster,
 			)
+			if params.wantErr != "" {
+				require.ErrorContains(t, err, params.wantErr)
+				return
+			}
 			require.NoError(t, err)
 			assert.Equal(t, params.expectBundleLookup, bundleLookupCalled)
 			params.verify(t, userData)
+		})
+	}
+}
+
+func TestUnit_RenderGenericCloudInitFilesTemplate(t *testing.T) {
+	t.Parallel()
+
+	const fileTemplate = `write_files:
+{{- range .Files }}
+  - path: {{ quote .Path }}
+    owner: {{ quote .Owner }}
+    permissions: {{ quote .Permissions }}
+{{- if .Encoding }}
+    encoding: {{ quote .Encoding }}
+{{- end }}
+    content: {{ quote .Content }}
+{{- end }}
+`
+	tmpl := template.Must(template.New("files").Funcs(template.FuncMap{
+		"quote": utils.Quote,
+	}).Parse(fileTemplate))
+
+	type parameters struct {
+		files []db.CloudInitFile
+	}
+	tests := map[string]parameters{
+		"multiple files with YAML-sensitive metadata": {
+			files: []db.CloudInitFile{
+				{Path: "/etc/example #1", Owner: "root:root", Permissions: "0600", Encoding: "b64", Content: base64.StdEncoding.EncodeToString([]byte("first\nfile\n"))},
+				{Path: "/etc/example:2", Owner: "user:group", Permissions: "0644", Content: "second\x00file"},
+			},
+		},
+		"empty files": {},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			var rendered bytes.Buffer
+			require.NoError(t, tmpl.Execute(&rendered, struct{ Files []db.CloudInitFile }{Files: params.files}))
+			assert.Equal(t, 1, strings.Count(rendered.String(), "write_files:"))
+
+			var cloudConfig struct {
+				WriteFiles []capiCloudInitFile `yaml:"write_files"`
+			}
+			require.NoError(t, yaml.Unmarshal(rendered.Bytes(), &cloudConfig))
+			require.Len(t, cloudConfig.WriteFiles, len(params.files))
+			for index, want := range params.files {
+				got := cloudConfig.WriteFiles[index]
+				assert.Equal(t, want.Path, got.Path)
+				assert.Equal(t, want.Owner, got.Owner)
+				assert.Equal(t, want.Permissions, got.Permissions)
+				assert.Equal(t, want.Encoding, got.Encoding)
+				assert.Equal(t, want.Content, got.Content)
+			}
+		})
+	}
+}
+
+func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
+	t.Parallel()
+	parseWriteFiles := func(t *testing.T, userData string) []capiCloudInitFile {
+		t.Helper()
+		var cloudConfig struct {
+			WriteFiles  []capiCloudInitFile `yaml:"write_files"`
+			Autoinstall struct {
+				UserData struct {
+					WriteFiles []capiCloudInitFile `yaml:"write_files"`
+				} `yaml:"user-data"`
+			} `yaml:"autoinstall"`
+		}
+		require.NoError(t, yaml.Unmarshal([]byte(userData), &cloudConfig))
+		if len(cloudConfig.WriteFiles) > 0 {
+			return cloudConfig.WriteFiles
+		}
+		return cloudConfig.Autoinstall.UserData.WriteFiles
+	}
+
+	fixturePaths := []string{
+		filepath.Join("..", "..", "..", "profiles", "example", "profiles", "osProfiles", "example-ubuntu-24.04-amd64", "userData.tmpl"),
+		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "nke-local-dev-kindest-arm64", "userData.tmpl"),
+		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "nke-nico-vms-24.04-amd64-fde", "userData.tmpl"),
+		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "nke-nico-vms-24.04-arm64-fde", "userData.tmpl"),
+		filepath.Join("..", "..", "..", "test", "fixtures", "profiles", "osProfiles", "test-fixture-amd64", "userData.tmpl"),
+		filepath.Join("..", "..", "..", "nico-sim", "test", "integration", "testutil", "testdata", "prod-userdata.tmpl"),
+	}
+
+	for _, fixturePath := range fixturePaths {
+		t.Run(fixturePath, func(t *testing.T) {
+			t.Parallel()
+
+			templateBytes, err := os.ReadFile(fixturePath)
+			require.NoError(t, err)
+			activities := &Activities{
+				cfg: config.Config{
+					DgxcTenantUser:                  "test-admin",
+					DgxcTenantPassword:              "test-password",
+					NodeAgentExternalMTLSEnabled:    true,
+					NodeAgentPort:                   "15005",
+					NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
+				},
+				controllerClientCABundle: testControllerClientCA,
+				getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+					return "example.com", "first certificate\nsecond certificate\n", nil
+				},
+			}
+			userData, err := activities.renderUserData(
+				context.Background(),
+				string(templateBytes),
+				db.Node{Name: "test-node", SpiffeEnabled: true},
+				db.DiskSelectionStrategyLargest,
+				"1.33.0",
+				&TeleportUserDataConfig{},
+				db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			)
+			require.NoError(t, err)
+			assert.Equal(t, 1, strings.Count(userData, "write_files:"))
+			assert.Equal(t, 1, strings.Count(userData, "path: \""+config.NodeAgentConfigPath+"\""))
+			assert.NotContains(t, userData, "printf 'AGENT_ARGS=")
+			assert.Contains(t, userData, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+
+			writeFiles := parseWriteFiles(t, userData)
+			var controllerCAFile *capiCloudInitFile
+			var agentConfigFile *capiCloudInitFile
+			for index := range writeFiles {
+				if writeFiles[index].Path == config.NodeAgentControllerCAPath {
+					controllerCAFile = &writeFiles[index]
+				}
+				if writeFiles[index].Path == config.NodeAgentConfigPath {
+					agentConfigFile = &writeFiles[index]
+				}
+			}
+			require.NotNil(t, controllerCAFile)
+			assert.Equal(t, "root:root", controllerCAFile.Owner)
+			assert.Equal(t, "0644", controllerCAFile.Permissions)
+			assert.Equal(t, "b64", controllerCAFile.Encoding)
+			decodedCA, err := base64.StdEncoding.DecodeString(controllerCAFile.Content)
+			require.NoError(t, err)
+			assert.Equal(t, testControllerClientCA, string(decodedCA))
+			require.NotNil(t, agentConfigFile)
+			assert.Equal(t, "root:root", agentConfigFile.Owner)
+			assert.Equal(t, "0644", agentConfigFile.Permissions)
+			assert.Empty(t, agentConfigFile.Encoding)
+			assert.Contains(t, agentConfigFile.Content, "--secure-server-port 15005")
+			assert.Contains(t, agentConfigFile.Content, "--controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
+
+			activities.cfg.NodeAgentExternalMTLSEnabled = false
+			activities.controllerClientCABundle = ""
+			userData, err = activities.renderUserData(
+				context.Background(),
+				string(templateBytes),
+				db.Node{Name: "test-node", SpiffeEnabled: true},
+				db.DiskSelectionStrategyLargest,
+				"1.33.0",
+				&TeleportUserDataConfig{},
+				db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			)
+			require.NoError(t, err)
+			assert.Equal(t, 1, strings.Count(userData, "write_files:"))
+			assert.Equal(t, 1, strings.Count(userData, "path: \""+config.NodeAgentConfigPath+"\""))
+			assert.NotContains(t, userData, "printf 'AGENT_ARGS=")
+			assert.NotContains(t, userData, "--controller-client-ca-bundle")
+			var defaultAgentConfigFile *capiCloudInitFile
+			writeFiles = parseWriteFiles(t, userData)
+			for index := range writeFiles {
+				assert.NotEqual(t, config.NodeAgentControllerCAPath, writeFiles[index].Path)
+				if writeFiles[index].Path == config.NodeAgentConfigPath {
+					defaultAgentConfigFile = &writeFiles[index]
+					assert.NotContains(t, writeFiles[index].Content, "--controller-client-ca-bundle")
+				}
+			}
+			require.NotNil(t, defaultAgentConfigFile)
+			assert.Equal(t, `AGENT_ARGS="--secure-server-port 15005"`+"\n", defaultAgentConfigFile.Content)
 		})
 	}
 }

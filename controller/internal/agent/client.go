@@ -5,6 +5,7 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log/slog"
 	"net"
@@ -62,10 +63,11 @@ type Client interface {
 }
 
 type NodeAgentClient struct {
-	cfg            config.Config
-	trustDomain    string
-	tlsJWTVerifier *auth.Verifier
-	logger         *slog.Logger
+	cfg                       config.Config
+	trustDomain               string
+	tlsJWTVerifier            *auth.Verifier
+	logger                    *slog.Logger
+	externalClientCertificate *tls.Certificate
 }
 
 func NewClient(
@@ -97,11 +99,24 @@ func NewClient(
 		tlsJWTVerifier = verifier
 	}
 
+	var externalClientCertificate *tls.Certificate
+	if cfg.NodeAgentExternalMTLSEnabled {
+		certificate, err := tls.LoadX509KeyPair(
+			config.NodeAgentExternalTLSCertPath,
+			config.NodeAgentExternalTLSKeyPath,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("loading external node-agent client identity: %w", err)
+		}
+		externalClientCertificate = &certificate
+	}
+
 	return &NodeAgentClient{
-		cfg:            cfg,
-		trustDomain:    trustDomain,
-		tlsJWTVerifier: tlsJWTVerifier,
-		logger:         tlsJWTLogger,
+		cfg:                       cfg,
+		trustDomain:               trustDomain,
+		tlsJWTVerifier:            tlsJWTVerifier,
+		logger:                    tlsJWTLogger,
+		externalClientCertificate: externalClientCertificate,
 	}, nil
 }
 
@@ -114,42 +129,25 @@ func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (
 			_ = f()
 		}
 	}
+
 	// Select the connection's base TLS independently from the optional pre-gRPC
-	// JWT exchange. A future external-client-certificate transport can provide
-	// credentials here, skip verification of the agent's self-signed server
-	// certificate, and rely on the JWT exchange for agent authentication.
+	// JWT exchange. External mTLS is deployment-wide and takes precedence over
+	// the node's legacy SPIFFE bit.
 	var baseTransportCredentials credentials.TransportCredentials
 	baseSupportsTLSJWT := false
-	if !node.SpiffeEnabled {
+	switch {
+	case c.externalClientCertificate != nil:
+		baseTransportCredentials = credentials.NewTLS(c.externalTLSConfig())
+		baseSupportsTLSJWT = true
+	case !node.SpiffeEnabled:
 		baseTransportCredentials = insecure.NewCredentials()
-	} else {
-		if c.trustDomain == "" {
-			return nil, nil, fmt.Errorf("trust domain is required for SPIFFE authentication")
-		}
-
-		workloadClient, err := workloadapi.New(ctx, workloadapi.WithAddr(c.cfg.SpiffeEndpointSocket))
+	default:
+		spiffeCredentials, spiffeCloseFuncs, err := c.spiffeTransportCredentials(ctx, node)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create SPIFFE workload API client: %w", err)
+			return nil, nil, err
 		}
-		closeFuncs = append(closeFuncs, workloadClient.Close)
-
-		x509Source, err := workloadapi.NewX509Source(ctx, workloadapi.WithClient(workloadClient))
-		if err != nil {
-			cleanup()
-			return nil, nil, fmt.Errorf("failed to create SPIFFE X509 source: %w", err)
-		}
-		closeFuncs = append(closeFuncs, x509Source.Close)
-
-		expectedID, err := spiffeid.FromString(node.GetSpiffeID(c.trustDomain))
-		if err != nil {
-			cleanup()
-			return nil, nil, fmt.Errorf("failed to parse node SPIFFE ID: %w", err)
-		}
-		baseTransportCredentials = grpccredentials.MTLSClientCredentials(
-			x509Source,
-			x509Source,
-			tlsconfig.AuthorizeID(expectedID),
-		)
+		closeFuncs = append(closeFuncs, spiffeCloseFuncs...)
+		baseTransportCredentials = spiffeCredentials
 		baseSupportsTLSJWT = true
 	}
 
@@ -181,6 +179,48 @@ func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (
 	closeFuncs = append(closeFuncs, conn.Close)
 
 	return conn, cleanup, nil
+}
+
+func (c *NodeAgentClient) externalTLSConfig() *tls.Config {
+	return &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		Certificates:       []tls.Certificate{*c.externalClientCertificate},
+		InsecureSkipVerify: true, //nolint:gosec // The agent presents an intentionally unverified self-signed server certificate.
+	}
+}
+
+func (c *NodeAgentClient) spiffeTransportCredentials(
+	ctx context.Context,
+	node db.Node,
+) (credentials.TransportCredentials, []func() error, error) {
+	if c.trustDomain == "" {
+		return nil, nil, fmt.Errorf("trust domain is required for SPIFFE authentication")
+	}
+
+	expectedID, err := spiffeid.FromString(node.GetSpiffeID(c.trustDomain))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse node SPIFFE ID: %w", err)
+	}
+
+	workloadClient, err := workloadapi.New(ctx, workloadapi.WithAddr(c.cfg.SpiffeEndpointSocket))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create SPIFFE workload API client: %w", err)
+	}
+	closeFuncs := make([]func() error, 0, 2)
+	closeFuncs = append(closeFuncs, workloadClient.Close)
+
+	x509Source, err := workloadapi.NewX509Source(ctx, workloadapi.WithClient(workloadClient))
+	if err != nil {
+		_ = workloadClient.Close()
+		return nil, nil, fmt.Errorf("failed to create SPIFFE X509 source: %w", err)
+	}
+	closeFuncs = append(closeFuncs, x509Source.Close)
+
+	return grpccredentials.MTLSClientCredentials(
+		x509Source,
+		x509Source,
+		tlsconfig.AuthorizeID(expectedID),
+	), closeFuncs, nil
 }
 
 func (c *NodeAgentClient) GetKubeconfig(ctx context.Context, node db.Node) (string, error) {

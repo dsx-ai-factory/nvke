@@ -7,5 +7,6 @@ type CloudInitFile struct {
 	Path        string `json:"path"`
 	Owner       string `json:"owner,omitempty"`
 	Permissions string `json:"permissions,omitempty"`
+	Encoding    string `json:"encoding,omitempty"`
 	Content     string `json:"content"`
 }

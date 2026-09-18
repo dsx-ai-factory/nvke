@@ -62,9 +62,14 @@ A Helm chart to deploy the NKE controller service
 | nkeOIDCAuth.tenantRbacName | string | `"nke:cwe"` | Name of the ClusterRole/Role/Binding objects the tenant-access controller applies into every tenant cluster (nke-rbac.yaml). |
 | nkeSystemNamespace.annotations | object | `{}` | Extra annotations merged onto nke-system. This is useful for adding additional annotations to the namespace to protect it from being deleted. Listing annotations that template already defaults here duplicates the key in the rendered Namespace. |
 | nkeSystemNamespace.create | bool | `true` | Create the shared nke-system namespace. The object always carries helm.sh/resource-policy: keep so a Helm uninstall does not delete it, and argocd.argoproj.io/sync-options: Prune=false,Delete=false so an Argo prune or Application delete does not either. Both are set by the template for default delete protection. |
+| nodeAgent.externalMTLS.enabled | bool | `false` | Present an externally managed client certificate instead of the controller SPIRE X509-SVID. |
+| nodeAgent.externalMTLS.secret.caBundleKey | string | `"ca.crt"` | Secret key containing the PEM-encoded issuing CA bundle. |
+| nodeAgent.externalMTLS.secret.certificateKey | string | `"tls.crt"` | Secret key containing the PEM-encoded client certificate chain. |
+| nodeAgent.externalMTLS.secret.name | string | `""` | Name of the externally managed Secret containing the client identity. |
+| nodeAgent.externalMTLS.secret.privateKeyKey | string | `"tls.key"` | Secret key containing the PEM-encoded client private key. |
 | nodeAgent.spireAttestationMethod | string | `"tpm"` | SPIRE node attestation method used by every cluster managed by this controller deployment. Set this value once when the environment is first deployed. Changing it in an existing environment is unsupported and requires a separately coordinated migration. |
 | nodeAgent.tlsJwt.algorithms | list | `["RS256"]` | Asymmetric JWT signing algorithms accepted from the issuer. |
-| nodeAgent.tlsJwt.enabled | bool | `false` | Add JWT node authentication to the existing secure node-agent transport for every node agent managed by this controller. Requires spiffe.enabled until another TLS-capable base transport is available. |
+| nodeAgent.tlsJwt.enabled | bool | `false` | Add JWT node authentication to the existing secure node-agent transport for every node agent managed by this controller. Requires either spiffe.enabled or nodeAgent.externalMTLS.enabled. |
 | nodeAgent.tlsJwt.issuer | string | `""` | Identity issuer expected in node-agent JWTs. |
 | nodeAgent.tlsJwt.jwksURI | string | `""` | HTTPS endpoint serving the issuer's JSON Web Key Set. |
 | nodeAgent.tlsJwt.subjectTrustDomain | string | `""` | Exact SPIFFE trust domain accepted in node-agent JWT subjects. |
@@ -147,4 +152,3 @@ A Helm chart to deploy the NKE controller service
 | tracing.serviceName | string | `"cloud-workflow-engine"` | Resource attribute service.name written when tracing.endpoint is set. With operatorInject, prefer operator-injected OTEL_SERVICE_NAME instead. |
 | volumeMounts | list | `[]` |  |
 | volumes | list | `[]` |  |
-

@@ -54,7 +54,7 @@ func TestTeardownClusterDeletesCAPIClusterBeforeClusterRow(t *testing.T) {
 	env := testSuite.NewTestWorkflowEnvironment()
 	env.SetWorkerOptions(worker.Options{DeadlockDetectionTimeout: 5 * time.Second})
 
-	a := activities.NewActivities(config.Config{}, nil, nil, nil, "", nil)
+	a := activities.NewActivities(config.Config{}, nil, nil, nil, "", nil, "")
 
 	env.OnActivity(a.UpdateClusterConditions, mock.Anything, mock.Anything).Return(nil).Maybe()
 	env.OnActivity(a.TriggerClusterTeardownNodePools, mock.Anything, mock.Anything).

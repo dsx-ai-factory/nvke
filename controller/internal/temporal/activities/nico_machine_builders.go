@@ -336,6 +336,7 @@ func (a *Activities) renderUserData(
 	userDataTemplate, err := template.New("userData").Funcs(
 		template.FuncMap{
 			"indent":     utils.Indent,
+			"quote":      utils.Quote,
 			"trimPrefix": utils.TrimPrefix,
 		},
 	).Parse(userDataTemplateText)
@@ -379,6 +380,7 @@ func (a *Activities) renderUserData(
 		CNIChartsPackage      string
 		CNIImagePackage       string
 		DiskSelectionStrategy string
+		Files                 []db.CloudInitFile
 		HashedPassword        string
 		Hostname              string
 		KubernetesVersion     string
@@ -397,6 +399,11 @@ func (a *Activities) renderUserData(
 		Username              string
 	}
 
+	files, err := a.nodeAgentBootstrapFiles()
+	if err != nil {
+		return "", err
+	}
+
 	if err := a.validateDgxcTenantCredentials(); err != nil {
 		return "", err
 	}
@@ -412,6 +419,7 @@ func (a *Activities) renderUserData(
 		CNIChartsPackage:      cniChartsPackage,
 		CNIImagePackage:       cniImagePackage,
 		DiskSelectionStrategy: string(diskSelectionStrategy),
+		Files:                 files,
 		HashedPassword:        hashedPassword,
 		Hostname:              node.Name,
 		KubernetesVersion:     kubernetesVersion,
@@ -438,10 +446,15 @@ func (a *Activities) renderUserData(
 		return "", fmt.Errorf("failed to execute userData template: %w", err)
 	}
 
-	return injectNodeAgentTLSJWTBootstrap(
+	userData, err := injectNodeAgentTLSJWTBootstrap(
 		userDataByteBuffer.String(),
 		a.nodeAgentTLSJWTBootstrapCommands(),
 	)
+	if err != nil {
+		return "", err
+	}
+
+	return userData, nil
 }
 
 func (a *Activities) validateDgxcTenantCredentials() error {

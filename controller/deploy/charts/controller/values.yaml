@@ -90,8 +90,8 @@ nodeAgent:
   spireAttestationMethod: "tpm"
   tlsJwt:
     # -- Add JWT node authentication to the existing secure node-agent transport
-    # for every node agent managed by this controller. Requires spiffe.enabled
-    # until another TLS-capable base transport is available.
+    # for every node agent managed by this controller. Requires either
+    # spiffe.enabled or nodeAgent.externalMTLS.enabled.
     enabled: false
     # -- Identity issuer expected in node-agent JWTs.
     issuer: ""
@@ -102,6 +102,19 @@ nodeAgent:
       - RS256
     # -- Exact SPIFFE trust domain accepted in node-agent JWT subjects.
     subjectTrustDomain: ""
+  externalMTLS:
+    # -- Present an externally managed client certificate instead of the
+    # controller SPIRE X509-SVID.
+    enabled: false
+    secret:
+      # -- Name of the externally managed Secret containing the client identity.
+      name: ""
+      # -- Secret key containing the PEM-encoded client certificate chain.
+      certificateKey: tls.crt
+      # -- Secret key containing the PEM-encoded client private key.
+      privateKeyKey: tls.key
+      # -- Secret key containing the PEM-encoded issuing CA bundle.
+      caBundleKey: ca.crt
 
 nkeSystemNamespace:
   # -- Create the shared nke-system namespace. The object always carries

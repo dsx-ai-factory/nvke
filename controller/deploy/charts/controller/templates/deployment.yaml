@@ -21,6 +21,9 @@ metadata:
   {{- if and .Values.secrets.cnpgDbPasswordsSecretName (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
   {{- $reloadSecrets = append $reloadSecrets .Values.secrets.cnpgDbPasswordsSecretName }}
   {{- end }}
+  {{- if and .Values.nodeAgent.externalMTLS.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "secret.reloader.stakater.com/reload")) }}
+  {{- $reloadSecrets = append $reloadSecrets (required "nodeAgent.externalMTLS.secret.name is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.name) }}
+  {{- end }}
   {{- if and .Values.apiAuth.enabled (not (hasKey (default dict .Values.deploymentAnnotations) "configmap.reloader.stakater.com/reload")) }}
   {{- $reloadConfigMaps = append $reloadConfigMaps .Values.apiAuth.configMap.name }}
   {{- end }}
@@ -153,6 +156,11 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
+            {{- if .Values.nodeAgent.externalMTLS.enabled }}
+            - name: node-agent-client-tls
+              mountPath: /etc/nke/node-agent-client-tls
+              readOnly: true
+            {{- end }}
             {{- if .Values.apiAuth.enabled }}
             - name: nke-auth-config
               mountPath: {{ include "controller.apiAuth.mountPath" . | quote }}
@@ -234,6 +242,8 @@ spec:
             - name: NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN
               value: {{ required "nodeAgent.tlsJwt.subjectTrustDomain is required when TLS/JWT is enabled" .Values.nodeAgent.tlsJwt.subjectTrustDomain | quote }}
             {{- end }}
+            - name: NODE_AGENT_EXTERNAL_MTLS_ENABLED
+              value: {{ .Values.nodeAgent.externalMTLS.enabled | quote }}
             - name: NKE_OIDC_AUTH_ENABLED
               value: {{ .Values.nkeOIDCAuth.enabled | quote }}
             {{- if .Values.nkeOIDCAuth.issuerURL }}
@@ -385,6 +395,18 @@ spec:
               value: {{ .value | quote }}
             {{- end }}
       volumes:
+        {{- if .Values.nodeAgent.externalMTLS.enabled }}
+        - name: node-agent-client-tls
+          secret:
+            secretName: {{ required "nodeAgent.externalMTLS.secret.name is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.name }}
+            items:
+              - key: {{ required "nodeAgent.externalMTLS.secret.certificateKey is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.certificateKey }}
+                path: tls.crt
+              - key: {{ required "nodeAgent.externalMTLS.secret.privateKeyKey is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.privateKeyKey }}
+                path: tls.key
+              - key: {{ required "nodeAgent.externalMTLS.secret.caBundleKey is required when external mTLS is enabled" .Values.nodeAgent.externalMTLS.secret.caBundleKey }}
+                path: ca.crt
+        {{- end }}
         {{- if .Values.profiles.image.enabled }}
         - name: profiles
           emptyDir: {}
