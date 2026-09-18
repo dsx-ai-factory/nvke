@@ -12,7 +12,7 @@ These files are **operator-importable reference dashboards**. They are **not** i
 | `nke-etcd-reference.json` | etcd member health | etcd mixin metrics, scoped by `$job` |
 | `nke-cnpg-per-cluster-reference.json` | CloudNativePG (optional HA Postgres) | `cnpg_*` |
 | `nke-ovn-kubernetes-controller-reference.json` | Tenant (or site) OVN-Kubernetes | kube-state-metrics; optional `ovnkube_controller_*` |
-| `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | CWE `/metrics` (`cwe_*`) |
+| `nke-provisioning-duration-reference.json` | Node provision/teardown duration and outcomes | controller `/metrics` (`cwe_*` or `nke_controller_*`) |
 
 Each dashboard has a **Requirements and scope** markdown panel. Keep that panel truthful when you change queries.
 
@@ -75,16 +75,17 @@ Cluster CR per namespace); leave CNPG's `cluster` in joins and legends only.
 | Kubernetes cluster identity | `k8s_cluster_name=~"$cluster"` | A bare `cluster=` label, `$env`, or a hardcoded cluster-name regex |
 | etcd mixin dashboard | `$cluster` = `k8s_cluster_name`; expose the mixin's `clusterLabel: job` as a separate `$job` | Name a variable `$cluster` and bind it to the Prometheus `job` |
 | CNPG | `$cluster` = `k8s_cluster_name`; scope with `$namespace` | Treat CNPG's `cluster` label as a Kubernetes cluster, or add a Postgres-cluster variable |
-| CWE lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name` | Invent `env`; keep phase labels that are not in `lifecycle.go` |
-| Workloads | Match chart names: deployment/container `cloud-workflow-engine`, SPIRE as above | Query SWE, `tbot`, `job="process-exporter"` |
+| CWE / nke-controller lifecycle | Filter `tenant_cluster`, `node_type`; give-ups use `cluster_name`. Match both metric prefixes: `{__name__=~"(cwe\|nke_controller)_…"}` | Invent `env`; keep phase labels that are not in `lifecycle.go`; hard-code only `cwe_*` |
+| Workloads | Match `cloud-workflow-engine\|nke-controller` for the controller Deployment/container; SPIRE as above | Query SWE, `tbot`, `job="process-exporter"` |
 
-CWE metrics carry `tenant_cluster`, not `k8s_cluster_name`. A pure-CWE board
-(the provisioning dashboard) should filter `tenant_cluster` directly. Only when
-joining CWE series against kube-state-metrics on the same panel do you rewrite
-the label:
+Controller metrics carry `tenant_cluster`, not `k8s_cluster_name`. A pure-controller board
+(the provisioning dashboard) should filter `tenant_cluster` directly. Existing sites
+emit `cwe_*`; greenfield compiled-in prefix is `nke_controller_*`. Match both in PromQL
+rather than a dropdown the operator has to set. Only when joining those series against
+kube-state-metrics on the same panel do you rewrite the label:
 
 ```
-label_replace(cwe_node_info{tenant_cluster=~"$cluster"}, "k8s_cluster_name", "$1", "tenant_cluster", "(.*)")
+label_replace({__name__=~"(cwe|nke_controller)_node_info",tenant_cluster=~"$cluster"}, "k8s_cluster_name", "$1", "tenant_cluster", "(.*)")
 ```
 
 HA thresholds of **3** (etcd members, CNPG collectors, ready nodes) are colo-sized. Parameterize or document “typical HA”; nke-stack CWE is 1 replica and Kind can be 1 node.
@@ -111,7 +112,7 @@ HA thresholds of **3** (etcd members, CNPG collectors, ready nodes) are colo-siz
 
 **Provisioning duration.** Source of truth: `controller/internal/metrics/lifecycle.go` and `node_provisioning.go`.
 
-- `cwe_node_provision_total{result="failure"}` is **Temporal attempts**, not failed nodes. Terminal failure is `cwe_node_provisioning_giveups_total`.
+- `{__name__=~"(cwe|nke_controller)_node_provision_total",result="failure"}` is **Temporal attempts**, not failed nodes. Terminal failure is the matching `*_node_provisioning_giveups_total`.
 - Success rate = successes ÷ (successes + give-ups), not success/(success+failure).
 - Provision phases: `capi_create`, `capi_ready`, `host_preparation`, `reboot` (optional), `join`, `post_join`.
 - Teardown phases: `cluster_remove`, `capi_delete`.
