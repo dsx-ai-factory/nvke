@@ -226,9 +226,12 @@ else
     || fail "could not start the bundle mirror"
   export BUNDLE_SERVER_URL="http://${mirror_ip}/"
   export INDEX_FILE_URL="http://${mirror_ip}/index.json"
-  # Prove it serves before building an image that bakes the URL in.
-  docker run --rm --network kind alpine:3.22 \
-    wget -q -O /dev/null "${INDEX_FILE_URL}" \
+  # Prove it serves before building an image that bakes the URL in. Poll rather
+  # than probe once: nginx has only just been started, and a single wget raced
+  # its first socket bind and failed a run with "Connection refused".
+  docker run --rm --network kind alpine:3.22 sh -c \
+    'for _ in $(seq 30); do wget -q -O /dev/null "$1" && exit 0; sleep 1; done; exit 1' \
+    _ "${INDEX_FILE_URL}" \
     || fail "bundle mirror is not serving ${INDEX_FILE_URL}"
   log "bundle mirror at ${BUNDLE_SERVER_URL}"
 fi
