@@ -29,9 +29,9 @@ BUILD_LOGS  := $(CURDIR)/build-logs
 PKR_FILE_FDE := $(CURDIR)/nke-node-fde.pkr.hcl
 PKR_FILE_NON_FDE := $(CURDIR)/nke-node-non-fde.pkr.hcl
 SOURCE_ROOT ?= $(abspath ../..)
-DIST_DIR ?=
+QCOW2_DIST_DIR ?=
 EXPECTED_SOURCE_COMMIT ?=
-export SOURCE_ROOT DIST_DIR EXPECTED_SOURCE_COMMIT PYTHON
+export SOURCE_ROOT EXPECTED_SOURCE_COMMIT PYTHON
 
 LUKS_PASSPHRASE ?= changeit
 # Label applied to the root filesystem. Cloud-image importers can use this
@@ -192,12 +192,12 @@ test: ## Check artifact staging, QCOW2 collection, and workflow wiring.
 
 # Copy the one completed image without changing its bytes. Collection is a
 # separate target so local builds and CI use the same source-owned boundary.
-# Callers must supply DIST_DIR and capture the single basename printed on
+# Callers must supply QCOW2_DIST_DIR and capture the single basename printed on
 # stdout (use make --silent when stdout is machine-consumed).
 define collect_qcow2
 	@set -eu; \
-	if [ -z "$$DIST_DIR" ]; then \
-		echo "DIST_DIR is required for $(1) QCOW2 collection" >&2; \
+	if [ -z "$$QCOW2_DIST_DIR" ]; then \
+		echo "QCOW2_DIST_DIR is required for $(1) QCOW2 collection" >&2; \
 		exit 1; \
 	fi; \
 	source_dir="$(CURDIR)/output-$(1)"; \
@@ -227,12 +227,12 @@ define collect_qcow2
 		echo "expected $(1) $(ARCH) QCOW2 $$expected; found $$name" >&2; \
 		exit 1; \
 	fi; \
-	mkdir -p "$$DIST_DIR"; \
-	if [ ! -d "$$DIST_DIR" ] || [ -L "$$DIST_DIR" ]; then \
-		echo "DIST_DIR is not a regular directory: $$DIST_DIR" >&2; \
+	mkdir -p "$$QCOW2_DIST_DIR"; \
+	if [ ! -d "$$QCOW2_DIST_DIR" ] || [ -L "$$QCOW2_DIST_DIR" ]; then \
+		echo "QCOW2_DIST_DIR is not a regular directory: $$QCOW2_DIST_DIR" >&2; \
 		exit 1; \
 	fi; \
-	destination="$$DIST_DIR/$$name"; \
+	destination="$$QCOW2_DIST_DIR/$$name"; \
 	if [ -L "$$destination" ]; then \
 		echo "refusing to replace symlink destination: $$destination" >&2; \
 		exit 1; \
@@ -249,6 +249,8 @@ define collect_qcow2
 	fi; \
 	printf '%s\n' "$$name"
 endef
+
+collect-qcow2-fde collect-qcow2-non-fde: export QCOW2_DIST_DIR := $(QCOW2_DIST_DIR)
 
 collect-qcow2-fde:
 	@$(MAKE) --no-print-directory --silent --file "$(PACKER_MAKEFILE)" check-source

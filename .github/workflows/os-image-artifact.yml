@@ -457,7 +457,7 @@ jobs:
               make --no-print-directory --silent -C os-image/packer \
                 collect-qcow2-fde \
                 ARCH=${{ matrix.arch }} \
-                DIST_DIR="$PWD/dist"
+                QCOW2_DIST_DIR="$PWD/dist"
             )"
             echo "fde=${fde_name}" >> "$GITHUB_OUTPUT"
           fi
@@ -465,7 +465,7 @@ jobs:
             make --no-print-directory --silent -C os-image/packer \
               collect-qcow2-non-fde \
               ARCH=${{ matrix.arch }} \
-              DIST_DIR="$PWD/dist"
+              QCOW2_DIST_DIR="$PWD/dist"
           )"
           echo "non_fde=${non_fde_name}" >> "$GITHUB_OUTPUT"
 

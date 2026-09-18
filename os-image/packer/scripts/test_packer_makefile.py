@@ -109,6 +109,30 @@ class PackerMakefileTest(unittest.TestCase):
             text=True,
         )
 
+    def test_generic_dist_dir_is_not_exported_to_build_subprocesses(self):
+        env = os.environ.copy()
+        for name in ("MAKEFLAGS", "MFLAGS", "GNUMAKEFLAGS", "DIST_DIR"):
+            env.pop(name, None)
+
+        result = subprocess.run(
+            [
+                self.make,
+                "--silent",
+                "--file",
+                "Makefile",
+                "--eval=probe-dist-env: ; @if printenv DIST_DIR >/dev/null 2>&1; "
+                "then echo 'DIST_DIR leaked into build subprocess' >&2; exit 1; fi",
+                "probe-dist-env",
+            ],
+            cwd=PACKER_DIR,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     @staticmethod
     def create_source_repo(path):
         path.mkdir()
@@ -332,7 +356,7 @@ class PackerMakefileTest(unittest.TestCase):
                     variables=(
                         f"SOURCE_ROOT={source}",
                         f"EXPECTED_SOURCE_COMMIT={commit}",
-                        f"DIST_DIR={dist}",
+                        f"QCOW2_DIST_DIR={dist}",
                         f"ARCH={arch}",
                     ),
                 )
@@ -371,7 +395,7 @@ class PackerMakefileTest(unittest.TestCase):
                     variables=(
                         f"SOURCE_ROOT={source}",
                         f"EXPECTED_SOURCE_COMMIT={commit}",
-                        f"DIST_DIR={dist}",
+                        f"QCOW2_DIST_DIR={dist}",
                     ),
                 )
 
@@ -399,7 +423,7 @@ class PackerMakefileTest(unittest.TestCase):
                 ),
             )
             self.assertNotEqual(no_destination.returncode, 0)
-            self.assertIn("DIST_DIR is required", no_destination.stderr)
+            self.assertIn("QCOW2_DIST_DIR is required", no_destination.stderr)
 
             (source / "untracked.txt").write_text("dirty\n", encoding="utf-8")
             dirty = self.run_make(
@@ -408,7 +432,7 @@ class PackerMakefileTest(unittest.TestCase):
                 variables=(
                     f"SOURCE_ROOT={source}",
                     f"EXPECTED_SOURCE_COMMIT={commit}",
-                    f"DIST_DIR={workspace / 'dist'}",
+                    f"QCOW2_DIST_DIR={workspace / 'dist'}",
                 ),
             )
             self.assertNotEqual(dirty.returncode, 0)
@@ -439,7 +463,7 @@ class PackerMakefileTest(unittest.TestCase):
                 variables=(
                     f"SOURCE_ROOT={source}",
                     f"EXPECTED_SOURCE_COMMIT={commit}",
-                    f"DIST_DIR={dist}",
+                    f"QCOW2_DIST_DIR={dist}",
                 ),
                 extra_env={"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}"},
             )

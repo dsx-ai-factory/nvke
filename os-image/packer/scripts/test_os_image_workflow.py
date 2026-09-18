@@ -51,7 +51,7 @@ class OSImageWorkflowTest(unittest.TestCase):
             2,
         )
         self.assertEqual(collect.count("ARCH=${{ matrix.arch }}"), 2)
-        self.assertEqual(collect.count('DIST_DIR="$PWD/dist"'), 2)
+        self.assertEqual(collect.count('QCOW2_DIST_DIR="$PWD/dist"'), 2)
         self.assertNotIn("cp --", collect)
         self.assertNotIn("cmp --silent", collect)
 
