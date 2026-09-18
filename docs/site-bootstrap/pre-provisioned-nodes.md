@@ -240,10 +240,10 @@ All nodes should show `Ready` status.
 
 **Self-managed sites:**
 
-1. Ensure your NICo site is set up and healthy before proceeding. See the [NICo Site Setup guide](https://nvidia.github.io/ncx-infra-controller-core/manuals/site-setup.html) and [Networking Requirements](https://nvidia.github.io/ncx-infra-controller-core/manuals/networking_requirements.html).
+1. Ensure your NICo site is set up and healthy before proceeding. See the [NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home) for site setup and networking requirements.
 2. Install your environment SBOM so NKE can drive day-2 operations through NICo.
 3. Wait until the SBOM is fully deployed and healthy.
-4. Complete NKE and NICo host ingestion with the NKE team. See [Ingesting Hosts](https://nvidia.github.io/ncx-infra-controller-core/manuals/ingesting_machines.html) in the NICo docs. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NKE-specific ingestion runbook here once it exists.
+4. Complete NKE and NICo host ingestion with the NKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NKE-specific ingestion runbook here once it exists.
 5. Operate the site through NKE day-2 workflows.
 
 **Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NKE site-controller installation is required. Note that without NICo, no NKE day-2 operations (tenant cluster creation, node add/remove, upgrades) are available.

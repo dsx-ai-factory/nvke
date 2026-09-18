@@ -79,7 +79,7 @@ NKE's only supported CAPI infrastructure provider is [`cluster-api-provider-nico
 
 **Learn more (CAPI):** https://cluster-api.sigs.k8s.io/introduction
 
-**NICo documentation:** https://nvidia.github.io/ncx-infra-controller-core/
+**NICo documentation:** https://docs.nvidia.com/infra-controller/documentation/home
 
 ---
 
