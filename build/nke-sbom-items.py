@@ -1,24 +1,15 @@
 """Parse a generated deploy path into tab-separated lines a shell can read.
 
   items   <nke-deploy.yaml>  -> "<name>\t<type>" per item, in listed order
-  release <release.yaml>     -> one line, US-separated (\x1f), discriminated by
-                                its first field. Not tab: bash collapses runs of
-                                tab because it is an IFS whitespace character, so
-                                an empty field in the middle would shift every
-                                field after it.
-                                  "umbrella\t<chart>\t<version>\t<prefix>\t<namespace>\t<perPhase>\t<values>"
-                                  "single\t<chart>\t<version>\t<repository>\t<path>\t<release>\t<namespace>\t<values>\t<requires>"
-                                The umbrella form installs one chart of subcharts
-                                over several phases; the single form is one chart,
-                                one release, and the deploy path's item order does
-                                the sequencing instead.
-  phases  <values.yaml>      -> "<name>\t<components>\t<requires>" per phase, where
-                                requires is a space-separated list of
-                                kind:name:namespace:condition tuples
+  release <release.yaml>     -> "single\x1f<chart>\x1f<version>\x1f<repository>
+                                \x1f<path>\x1f<release>\x1f<namespace>
+                                \x1f<values>\x1f<requires>", one line.
 
-The phase list is read from the CHART's values.yaml, not from the deploy path:
-the chart declares its own install order, and copying it into the SBOM would be
-a second place for it to be wrong.
+                                US-separated, not tab: bash collapses runs of tab
+                                because it is an IFS whitespace character, so an
+                                empty field in the middle would shift every field
+                                after it -- which once put a values path in
+                                --namespace.
 
 PyYAML is not guaranteed on the e2e runners, which is why this is a regex parser
 rather than a YAML load. items and release are strict -- any line they do not
@@ -113,20 +104,8 @@ def release(path):
     if "namespace" not in rel:
         die("%s: missing release.namespace" % path)
 
-    # prefix means the umbrella: one chart installed repeatedly, named by phase.
-    # name means one chart, one release, sequenced by the item list.
-    if "prefix" in rel:
-        if requires:
-            die("%s: requires belongs on a single-release item, not the umbrella "
-                "(the chart declares its own in phases:)" % path)
-        if "perPhase" not in rel:
-            die("%s: missing release.perPhase" % path)
-        return ["umbrella\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
-            chart["name"], chart["version"], rel["prefix"],
-            rel["namespace"], rel["perPhase"], ",".join(values))]
-
     if "name" not in rel:
-        die("%s: release needs either name (one release) or prefix (the umbrella)" % path)
+        die("%s: missing release.name" % path)
     if "repository" in chart and "path" in chart:
         die("%s: chart has both repository and path; name one source" % path)
     return ["single\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s\x1f%s" % (
@@ -135,48 +114,6 @@ def release(path):
         ",".join(values), " ".join(requires))]
 
 
-def phases(path):
-    """Parse the phases: block of the chart's values.yaml."""
-    try:
-        raw = open(path).read()
-    except OSError as err:
-        die(str(err))
-    # The block runs to the next line that starts in column 0.
-    block = re.search(r'^phases:\n((?:[ \t].*\n|\n)+?)(?=^\S)', raw, re.M)
-    if not block:
-        die("%s: no phases: block" % path)
-
-    found = []
-    for line in block.group(1).splitlines():
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        if PHASE_NAME.match(line):
-            found.append([PHASE_NAME.match(line).group(1), "", [], {}])
-        elif not found:
-            die("%s: %r appears before any phase name" % (path, line))
-        elif COMPONENTS.match(line):
-            found[-1][1] = ",".join(c.strip() for c in COMPONENTS.match(line).group(1).split(",") if c.strip())
-        elif REQ_HDR.match(line):
-            continue
-        elif REQ_KIND.match(line):
-            found[-1][3] = {"kind": REQ_KIND.match(line).group(1)}
-        elif REQ_KV.match(line):
-            key, value = REQ_KV.match(line).groups()
-            if not found[-1][3]:
-                die("%s: %r has no kind" % (path, line))
-            found[-1][3][key] = value
-            if key == "condition":
-                req = found[-1][3]
-                found[-1][2].append(":".join(req[k] for k in ("kind", "name", "namespace", "condition")))
-                found[-1][3] = {}
-        else:
-            die("%s: unrecognised line in phases: %r" % (path, line))
-
-    if not found:
-        die("%s: phases: block declares no phases" % path)
-    return ["%s\t%s\t%s" % (name, components, " ".join(reqs)) for name, components, reqs, _ in found]
-
-
-if len(sys.argv) != 3 or sys.argv[1] not in ("items", "release", "phases"):
-    sys.exit("usage: nke-sbom-items.py [items|release|phases] <file>")
-print("\n".join({"items": items, "release": release, "phases": phases}[sys.argv[1]](sys.argv[2])))
+if len(sys.argv) != 3 or sys.argv[1] not in ("items", "release"):
+    sys.exit("usage: nke-sbom-items.py [items|release] <file>")
+print("\n".join({"items": items, "release": release}[sys.argv[1]](sys.argv[2])))

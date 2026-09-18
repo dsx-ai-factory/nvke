@@ -6,16 +6,9 @@
 # order listed. The list IS the order -- see
 # docs/site-bootstrap/deploy-repository.md, which this format follows.
 #
-# A helm item takes one of two shapes, and release.yaml says which:
-#
-#   one chart, one release   the item order does the sequencing. Nothing can
-#                            override an overlay, because a release contains
-#                            only its own chart and there are no enable flags.
-#   an umbrella              one chart of subcharts installed over the phases
-#                            the chart itself declares, with only
-#                            `enabled=false` ever emitted -- build/nke-stack.sh
-#                            install asserted the positive, which beat the
-#                            overlay and turned disabled components back on.
+# A helm item is one chart installed as one release; the item order does the
+# sequencing. There are no enable flags and no phases, so nothing this script
+# emits can override what an item's values decided.
 #
 # Everything is a local path. These trees are consumed in place, so there is no
 # registry, no oras pull and no tarball to extract.
@@ -26,8 +19,6 @@ ITEMS_PY="${SCRIPT_DIR}/nke-sbom-items.py"
 
 SBOM=""
 TARGET=""
-CHART=""
-UNTIL=""
 DRY_RUN=""
 KUBECONFIG_PATH=""
 PHASE_TIMEOUT="${PHASE_TIMEOUT:-15m}"
@@ -46,8 +37,6 @@ usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
 
   --sbom DIR          directory holding deploy paths, e.g. ./deploy
   --target NAME       deploy path inside it, e.g. capd-e2e
-  --chart PATH        packaged .tgz or chart directory, for a deploy path whose
-                      helm item is an umbrella chart
   --chart-override ITEM=PATH
                       where to find one item's chart, for a component this
                       repository does not publish. Repeatable.
@@ -57,7 +46,6 @@ usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
                       single component: with one release per chart the keys are
                       no longer prefixed, so a value meant for the controller
                       cannot be broadcast to every item. Repeatable.
-  --until PHASE       stop after this phase, so a caller can interleave work
   --dry-run           print the argv each step would run, and exit
   --kubeconfig PATH   passed to every kubectl call
   --                  everything after is forwarded to helm verbatim
@@ -146,28 +134,15 @@ values_for() {
   done
 }
 
-# install_helm_item dispatches on the shape release.yaml declares: an umbrella
-# chart installed over several phases, or one chart as one release with the
-# deploy path's item order doing the sequencing.
+# install_single installs one chart as one release. No enable flags and no phase
+# loop: a release contains only its own chart, so there is nothing to turn off.
 install_helm_item() {
   local dir="$1" item="$2"
   [[ -f "${dir}/release.yaml" ]] || die "helm item ${dir} has no release.yaml"
 
-  local line
-  line="$(python3 "${ITEMS_PY}" release "${dir}/release.yaml")"
-  case "${line%%$'\x1f'*}" in
-    umbrella) install_umbrella "${dir}" ;;
-    single)   install_single "${dir}" "${item}" "${line}" ;;
-    *)        die "${dir}/release.yaml declares an unknown release form" ;;
-  esac
-}
-
-# install_single installs one chart as one release. No enable flags and no phase
-# loop: a release contains only its own chart, so there is nothing to turn off.
-install_single() {
-  local dir="$1" item="$2" line="$3"
   local form chart_name version repository path release namespace values requires
-  IFS=$'\x1f' read -r form chart_name version repository path release namespace values requires <<<"${line}"
+  IFS=$'\x1f' read -r form chart_name version repository path release namespace values requires \
+    < <(python3 "${ITEMS_PY}" release "${dir}/release.yaml")
 
   # An override wins, because the caller had to build or fetch the chart. Then a
   # path inside the deploy path, then a repository the chart is published to.
@@ -212,96 +187,6 @@ not publish needs."
     ${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}
 }
 
-# install_umbrella installs one chart of subcharts over the phases the chart
-# itself declares.
-install_umbrella() {
-  local dir="$1"
-  [[ -n "${CHART}" ]] || die "item ${dir} is an umbrella, which needs --chart"
-
-  local parsed
-  local form chart_name chart_version prefix namespace per_phase values
-  IFS=$'\x1f' read -r form chart_name chart_version prefix namespace per_phase values \
-    < <(python3 "${ITEMS_PY}" release "${dir}/release.yaml")
-
-  # The phase list comes from the CHART, where it is declared -- the phases:
-  # block of its values.yaml, whose own comment says consumers drive the sequence
-  # from it. Copying it into the deploy path would be a second place for it to be
-  # wrong. `helm show values` reads a packaged .tgz, an unpacked directory and an
-  # OCI ref alike, so this needs to know nothing about how the chart arrived.
-  local chart_values
-  chart_values="$(mktemp)"
-  helm show values "${CHART}" >"${chart_values}"
-
-  # A read loop rather than mapfile: macOS ships bash 3.2, and being able to
-  # --dry-run this on a laptop is most of its value.
-  local names=() enables=() requires=() i
-  local phase_name phase_enable phase_require
-  while IFS=$'\t' read -r phase_name phase_enable phase_require; do
-    names+=("${phase_name}")
-    enables+=("${phase_enable}")
-    requires+=("${phase_require}")
-  done < <(python3 "${ITEMS_PY}" phases "${chart_values}")
-  rm -f "${chart_values}"
-
-  [[ ${#names[@]} -gt 0 ]] || die "chart ${CHART} declares no phases"
-
-  local values_args=() file
-  for file in ${values//,/ }; do
-    values_args+=(--values "${dir}/${file}")
-  done
-
-  for i in "${!names[@]}"; do
-    local phase="${names[i]}"
-    if [[ -z "${enables[i]}" ]]; then
-      log "phase ${phase} enables nothing; skipping"
-      continue
-    fi
-
-    wait_for_requires "${phase}" "${requires[i]}"
-
-    # Only ever enabled=false, never enabled=true. Under perPhase a release owns
-    # exactly its own slice, so everything else is off; otherwise one release
-    # grows, so only the phases still ahead of it are off. Saying nothing about
-    # the rest is what leaves an overlay's own disables intact.
-    local disable="" j skip
-    for j in "${!names[@]}"; do
-      skip=""
-      if [[ "${per_phase}" == "true" ]]; then
-        if (( j == i )); then skip=1; fi
-      elif (( j <= i )); then
-        skip=1
-      fi
-      if [[ -z "${skip}" ]]; then
-        disable+="${enables[j]//,/ } "
-      fi
-    done
-
-    local flags=() component
-    for component in ${disable}; do
-      flags+=(--set "${component}.enabled=false")
-    done
-
-    local release="${prefix}"
-    if [[ "${per_phase}" == "true" ]]; then
-      release="${prefix}-${phase}"
-    fi
-
-    log "phase ${phase} -> release ${release}"
-    run helm upgrade --install "${release}" "${CHART}" \
-      ${KUBECONFIG_PATH:+--kubeconfig "${KUBECONFIG_PATH}"} \
-      --namespace "${namespace}" \
-      --wait --timeout "${PHASE_TIMEOUT}" \
-      ${flags[@]+"${flags[@]}"} \
-      ${values_args[@]+"${values_args[@]}"} \
-      ${PASSTHROUGH[@]+"${PASSTHROUGH[@]}"}
-
-    if [[ -n "${UNTIL}" && "${phase}" == "${UNTIL}" ]]; then
-      log "stopping after phase ${phase}"
-      return 0
-    fi
-  done
-}
-
 install() {
   [[ -n "${SBOM}" ]] || die "--sbom is required"
   [[ -n "${TARGET}" ]] || die "--target is required"
@@ -340,10 +225,8 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --sbom) SBOM="$2"; shift 2 ;;
     --target) TARGET="$2"; shift 2 ;;
-    --chart) CHART="$2"; shift 2 ;;
     --chart-override) CHART_OVERRIDES+=("$2"); shift 2 ;;
     --values-for) VALUES_FOR+=("$2"); shift 2 ;;
-    --until) UNTIL="$2"; shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;
     --timeout) PHASE_TIMEOUT="$2"; shift 2 ;;
     --dry-run) DRY_RUN=1; shift ;;
