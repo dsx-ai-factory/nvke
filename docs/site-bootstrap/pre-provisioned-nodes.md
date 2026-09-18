@@ -8,7 +8,7 @@ If you already have nodes provisioned and running, you can manually prepare them
 
 ## Self-Bootstrap Models: Managed vs Unmanaged
 
-What you get after bootstrap depends on whether your environment includes a [NVIDIA Infra Controller (NICo)](https://github.com/NVIDIA/infra-controller) infrastructure provider for NKE, integrated via [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico).
+What you get after bootstrap depends on whether your environment includes a [NVIDIA Infra Controller (NICo)](https://github.com/dsx-ai-factory/infra-controller) infrastructure provider for NKE, integrated via [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico).
 
 | | Self-bootstrapped, **self-managed** | Self-bootstrapped, **unmanaged** |
 |---|---|---|
