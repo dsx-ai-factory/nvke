@@ -121,6 +121,18 @@ else
   NICO_PROVIDER_ENABLED=false
 fi
 
+# Which deploy path use-nke-sbom.sh installs, one per backend. The trees are not
+# interchangeable: capd-e2e carries the reboot test double, CWE's RBAC over
+# dockerclusters and nke-spire-client, while capnico-e2e carries the
+# nico-credentials Secret instead. deploy-sbom.sh defaults to capd-e2e, so the
+# NICo lane has to name its own or it would install the wrong management plane
+# and fail somewhere far from the cause.
+if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+  SBOM_TARGET=capnico-e2e
+else
+  SBOM_TARGET=capd-e2e
+fi
+
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {
     log "$1 is required" >&2
@@ -522,7 +534,7 @@ collect_diagnostics() {
           clusters,machinedeployments,machinesets,machines,kubeadmcontrolplanes,kubeadmconfigs,dockerclusters,dockermachines \
           -A \
           >"${STATE_DIR}/capi-describe.txt" 2>&1
-        for artifact in tilt.log tilt-snapshot.json e2e.log junit.xml \
+        for artifact in tilt.log tilt-snapshot.json nico-sim.log e2e.log junit.xml \
           junit-cp-controller.xml junit-nodepool.xml; do
           docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done
@@ -1076,7 +1088,7 @@ docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 # pieces its providers deploy that the deploy path does not carry -- the BGP
 # container -- are handled explicitly here.
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  log "deploying the management plane from the capd-e2e deploy path"
+  log "deploying the management plane from the ${SBOM_TARGET} deploy path"
 
   # FRR, so kube-vip on container-based tenant nodes can peer through the kind
   # gateway. Tilt's bgp-containers provider runs this; without Tilt nothing did,
@@ -1087,6 +1099,51 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   log "starting the BGP container ${BGP_CONTAINER_NAME}"
   CONTAINER_NAME="${BGP_CONTAINER_NAME}" bash "${CONTROLLER_ROOT}/hack/bgp-containers/up.sh"
   BGP_CONTAINER_OWNED=true
+
+  # nico-sim. Tilt runs it as a serve_cmd, which is not available here -- see
+  # the script's header.
+  #
+  # Independent of the CAPNICo install below: neither reads anything the other
+  # writes, so the order between them is free. First because it is the cheap
+  # one -- a failure here surfaces in seconds rather than after a docker build.
+  # Nothing calls the endpoint until a NicoCluster exists, which is the suite,
+  # long after both.
+  #
+  # It listens inside the runner, so the address CAPNICo dials is the runner's
+  # own kind-network IP, passed as NICO_SIM_ENDPOINT_HOST below. deploy-sbom.sh
+  # falls back to KIND_GATEWAY_IP when that is unset, which is right for a
+  # developer running the simulator on the host and wrong here.
+  if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+    if [[ "${NICO_SIM_BINARY_PREBUILT}" != "true" ]]; then
+      log "the NICo backend needs a prebuilt nico-sim binary on the deploy path"
+      exit 1
+    fi
+    log "starting nico-sim in the runner"
+    runner_exec env \
+      NICO_SIM_DIR=/workspace/cloud-workflow-engine/nico-sim \
+      NICO_SIM_BINARY=/tmp/cwe-nico-sim \
+      CAPD_KINDEST_NODE_IMAGE="${CAPD_NODE_IMAGE}" \
+      bash /workspace/cloud-workflow-engine/hack/nico-provider/run-nico-sim.sh
+  fi
+
+  # CAPNICo is deliberately not a deploy-path item: the released chart and image
+  # sit in a private registry no secret in this repository reaches. It is built
+  # from the checkout controller/go.mod pins and installed by the same script
+  # Tilt's nico provider runs, so the two paths deploy the provider identically.
+  #
+  # Before the install, not after: CWE watches the NICo CRDs this chart brings,
+  # and the controller item is the last thing use-nke-sbom.sh installs.
+  # nico-credentials is the other way round -- the deploy path renders it as
+  # part of nke-base-config -- which is fine, because CAPNICo reads that Secret
+  # when it reconciles rather than at startup.
+  if [[ "${NICO_PROVIDER_ENABLED}" == true ]]; then
+    log "installing CAPNICo from ${CAPNICO_SOURCE_CONTAINER_DIR}"
+    runner_exec env \
+      CAPNICO_SOURCE_DIR="${CAPNICO_SOURCE_CONTAINER_DIR}" \
+      CAPNICO_STAGED_CHART_DIR=/state/capnico-chart \
+      KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \
+      bash /workspace/cloud-workflow-engine/hack/nico-provider/install-capnico.sh
+  fi
   # VERSION is passed in because the runner holds a tar of the working tree, not
   # a clone: `git describe` inside it finds no repository, so build-local cannot
   # derive one. It is NOT CWE_BUILD_VERSION -- that is an image tag
@@ -1094,6 +1151,8 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   # the prerelease field instead. The controller image tag is set separately
   # from CWE_IMAGE, so the two need not match.
   runner_exec env \
+    SBOM_TARGET="${SBOM_TARGET}" \
+    NICO_SIM_ENDPOINT_HOST="${runner_kind_ip}" \
     VERSION="0.0.0-e2e.${git_short_sha}" \
     MANAGEMENT_VIP="${management_vip}" \
     KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME}" \

@@ -299,22 +299,12 @@ EOF
 
 EXTRA=()
 
-# capnico-e2e installs the provider as an item, and renders a Secret for it.
-# Neither applies to CAPD: clusterctl init brings that provider, and CWE reaches
-# it with no credentials at all.
+# capnico-e2e renders the Secret CAPNICo reads. CAPD needs none of this:
+# clusterctl init brings that provider, and CWE reaches it with no credentials.
+#
+# The provider itself is not an item -- install-capnico.sh installs it before
+# this runs -- so nothing here names a chart for it.
 if [[ "${SBOM_TARGET}" == capnico-e2e ]]; then
-  : "${CAPNICO_SOURCE_DIR:?CAPNICO_SOURCE_DIR is required for ${SBOM_TARGET}}"
-  : "${CAPNICO_IMAGE:=cluster-api-provider-nico:local}"
-
-  # The chart is built from source, like the controller's, so the deploy path
-  # names the component and this says where it materialised.
-  cat >"${VALUES_DIR}/capnico.yaml" <<EOF
-manager:
-  image:
-    repository: "${CAPNICO_IMAGE%:*}"
-    tag: "${CAPNICO_IMAGE##*:}"
-EOF
-
   # Where CAPNICo reaches the NICo API. Empty NICO_ENDPOINT means the simulator,
   # matching controller/hack/nico-provider/Tiltfile: the host defaults to the
   # kind host address and the port is the simulator's. The other three are the
@@ -341,8 +331,6 @@ print(json.dumps({"Nico": {
 ' >"${BOOTSTRAP_CONFIG}"
 
   EXTRA+=(--config "${BOOTSTRAP_CONFIG}")
-  EXTRA+=(--chart-override "capnico=${CAPNICO_SOURCE_DIR}/chart")
-  EXTRA+=(--values-for "capnico=${VALUES_DIR}/capnico.yaml")
 fi
 
 log "installing ${SBOM_TARGET} from ${SBOM_DIR}"

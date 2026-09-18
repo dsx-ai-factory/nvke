@@ -46,10 +46,20 @@ kind: Namespace
 metadata:
   name: temporal
 ---
-# CAPNICo's controller. install-capnico.sh creates this itself when Tilt drives
-# the install; here the capnico item is an ordinary helm release, and the
-# executor does not pass --create-namespace.
+# CAPNICo's controller. The provider is installed outside this deploy path, by
+# install-capnico.sh, but the namespace is created here because
+# nico-credentials two files along lands in it and the executor does not pass
+# --create-namespace.
+#
+# No Helm ownership metadata: install-capnico.sh's adopt_namespace() applies its
+# own, for release capi-provider-nico, so that its chart can adopt the namespace
+# it templates. Claiming it for a different release here would fight that.
 apiVersion: v1
 kind: Namespace
 metadata:
   name: capnico-system
+  labels:
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    meta.helm.sh/release-name: capnico
+    meta.helm.sh/release-namespace: capnico-system

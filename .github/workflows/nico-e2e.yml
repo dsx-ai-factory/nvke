@@ -43,6 +43,18 @@ on:
   schedule:
     - cron: '15 2,14 * * *'
   workflow_dispatch:
+    inputs:
+      use-nke-stack:
+        description: >-
+          Deploy the management plane from deploy/capnico-e2e with
+          use-nke-sbom.sh instead of Tilt. OFF by default, unlike the CAPD lane,
+          for one reason: Tilt supervises nico-sim as a serve_cmd and the deploy
+          path has no equivalent yet, so the simulator never starts and every
+          NicoMachine hangs on a dead endpoint. Turn this on to exercise the
+          deploy path once that is supervised outside Tilt.
+        required: false
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -115,3 +127,8 @@ jobs:
       # only one in CI not covering controller-managed control planes.
       single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       needs-capnico-source: true
+      # Dispatch-only, and false on every other trigger. Written as
+      # "is a dispatch AND the input" -- the mirror image of the CAPD lane,
+      # which defaults on -- so a push or a schedule can never select a path
+      # nothing has run green yet.
+      use-nke-stack: ${{ github.event_name == 'workflow_dispatch' && inputs.use-nke-stack }}
