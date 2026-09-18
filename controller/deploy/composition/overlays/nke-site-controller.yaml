@@ -47,7 +47,7 @@ nke-stack:
     # values exist), but the IMAGE is a value -- so the nested deployment points
     # at the nvcr mirror and its pull secret without rebuilding nke-stack.
     image:
-      repository: nvcr.io/j7sbcjl3qgta/controller
+      repository: nvcr.io/j7sbcjl3qgta/nke-controller
     imagePullSecrets:
       - name: svc-nke-ngc-imagepull
     secrets:

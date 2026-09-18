@@ -40,7 +40,7 @@ nkectl version
 
 ```bash
 # Bootstrap a new site controller
-NKECTL_CWE_IMAGE=nvcr.io/<org>/controller:edge \
+NKECTL_CWE_IMAGE=nvcr.io/<org>/nke-controller:edge \
 NKECTL_CAPI_PROVISIONED_IMAGE=nvcr.io/<org>/cluster-api-provider-provisioned:edge \
   nkectl bootstrap site -f sitespec.yaml
 nkectl bootstrap site -f sitespec.yaml --dry-run              # validate only

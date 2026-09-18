@@ -170,7 +170,7 @@ jobs:
           docker buildx build \
             --file controller/Dockerfile \
             --platform linux/amd64,linux/arm64 \
-            --tag nke/controller:ci \
+            --tag nke/nke-controller:ci \
             .
 
       # --load does not support multi-platform images. Load the amd64 image
@@ -182,13 +182,13 @@ jobs:
           docker buildx build \
             --file controller/Dockerfile \
             --platform linux/amd64 \
-            --tag nke/controller:ci \
+            --tag nke/nke-controller:ci \
             --load \
             .
 
       - name: Show controller image
         shell: bash
-        run: docker image inspect nke/controller:ci --format 'built {{.RepoTags}} {{.Size}} bytes'
+        run: docker image inspect nke/nke-controller:ci --format 'built {{.RepoTags}} {{.Size}} bytes'
 
       # Scan the image, not the source tree. security-scan.yml runs Grype over
       # `path: "."`, which reads Go dependencies from the repository. It cannot
@@ -208,7 +208,7 @@ jobs:
         id: image-scan
         uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
         with:
-          image: nke/controller:ci
+          image: nke/nke-controller:ci
           severity-cutoff: ${{ env.GRYPE_SEVERITY_CUTOFF }}
           output-format: sarif
           config: .grype.yaml

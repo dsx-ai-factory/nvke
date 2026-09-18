@@ -122,7 +122,7 @@ jobs:
           describe="${describe#controller/}"
           version="${describe#v}"
           repo="nvcr.io/${ORG_TEAM}"
-          image="${repo}/controller"
+          image="${repo}/nke-controller"
 
           {
             echo "version=${version}"

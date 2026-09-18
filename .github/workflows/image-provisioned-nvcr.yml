@@ -258,7 +258,7 @@ jobs:
   # versions rather than every commit.
   #
   # The destination is ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned,
-  # alongside ghcr.io/dsx-ai-factory/nke/controller and separate from
+  # alongside ghcr.io/dsx-ai-factory/nke/nke-controller and separate from
   # ghcr.io/dsx-ai-factory/nke/charts, which is what keeps a chart and an image from
   # sharing one OCI repository.
   promote-ghcr:

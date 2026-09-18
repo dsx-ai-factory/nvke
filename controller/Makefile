@@ -40,7 +40,7 @@ include ../make/tool-versions.mk
 include ../make/golangci.mk
 
 # Image URL to use all building/pushing image targets
-IMG_NAME ?= nvcr.io/j7sbcjl3qgta/cloud-workflow-engine
+IMG_NAME ?= nvcr.io/j7sbcjl3qgta/nke-controller
 IMG_TAG ?= latest
 IMG ?= ${IMG_NAME}:${IMG_TAG}
 # Falls back to the commit before v0.0.0. A CI checkout is shallow and carries
@@ -313,7 +313,7 @@ docker-build-multiarch: ## Build the controller image for linux/amd64 and linux/
 # Publish targets for pushing to an explicit registry (used by CI's
 # image-nvcr.yml). These deliberately do NOT use IMG_NAME/IMG: this OSS repo
 # must never default-push to the internal production image
-# (nvcr.io/j7sbcjl3qgta/cloud-workflow-engine, IMG_NAME above). The destination
+# (nvcr.io/j7sbcjl3qgta/nke-controller, IMG_NAME above). The destination
 # has no default and must be passed explicitly via IMG_REPO, guarded by
 # check-img-repo below, so a bare invocation cannot clobber it.
 #

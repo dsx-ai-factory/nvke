@@ -23,7 +23,7 @@ deploymentAnnotations: {}
 # the package public in its own settings. So this removes the NGC dependency; it
 # does not by itself make the chart installable by the public.
 image:
-  repository: ghcr.io/dsx-ai-factory/nke/controller
+  repository: ghcr.io/dsx-ai-factory/nke/nke-controller
   # -- This sets the pull policy for images.
   pullPolicy: IfNotPresent
   # -- Overrides the image tag whose default is the chart appVersion.

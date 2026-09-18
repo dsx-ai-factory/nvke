@@ -191,7 +191,7 @@ const defaultTenantKubeconfigTimeout = 2 * time.Minute
 // Config describes a CWE deployment.
 type Config struct {
 	// CWEImage is the full image reference to deploy, e.g.
-	// "nvcr.io/<org>/controller:edge" (published by
+	// "nvcr.io/<org>/nke-controller:edge" (published by
 	// .github/workflows/image-nvcr.yml on every push to main -- see that
 	// workflow for how the tag is resolved). Required; this package does not
 	// default it; a registry org identifier does not belong hardcoded in a
@@ -377,7 +377,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	if cfg.CWEImage == "" {
 		return errors.New("cwedeploy: Config.CWEImage is required " +
-			"(e.g. nvcr.io/<org>/controller:edge -- see .github/workflows/image-nvcr.yml)")
+			"(e.g. nvcr.io/<org>/nke-controller:edge -- see .github/workflows/image-nvcr.yml)")
 	}
 	if cfg.ProvisionedProviderImage == "" {
 		return errors.New("cwedeploy: Config.ProvisionedProviderImage is required; the CAPI " +

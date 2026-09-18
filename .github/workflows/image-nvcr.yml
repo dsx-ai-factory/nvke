@@ -10,7 +10,7 @@ name: Image NVCR
 # The destination org is not written here. It comes from the `nvcr`
 # environment, so no registry identifier lands in a tracked file of a
 # repository that is released publicly. The image is pushed to
-# nvcr.io/<NKE_NGC_ORG>/controller:
+# nvcr.io/<NKE_NGC_ORG>/nke-controller:
 #
 #   NKE_NGC_ORG              variable  NGC org id
 #   NGC_REGISTRY_TOKEN_NKE   secret    NGC API key with write access on the org
@@ -123,7 +123,7 @@ jobs:
             echo "::error::NKE_NGC_ORG is not set in the nvcr environment"
             exit 1
           fi
-          IMAGE="nvcr.io/${NKE_NGC_ORG}/controller"
+          IMAGE="nvcr.io/${NKE_NGC_ORG}/nke-controller"
 
           # Nearest controller/v* tag, prefix stripped: v0.1.0 on a release
           # commit, v0.1.0-4-gabcdef between releases.
@@ -211,7 +211,7 @@ jobs:
             tags+=("edge")
           fi
 
-          echo "image=nvcr.io/${NKE_NGC_ORG}/controller" >> "${GITHUB_OUTPUT}"
+          echo "image=nvcr.io/${NKE_NGC_ORG}/nke-controller" >> "${GITHUB_OUTPUT}"
           echo "push_tags=${tags[*]}" >> "${GITHUB_OUTPUT}"
 
       - name: Create multi-arch manifests
@@ -241,7 +241,7 @@ jobs:
   # Tags only. `main` keeps publishing to NVCR alone, so GHCR carries released
   # versions rather than every commit.
   #
-  # The destination is ghcr.io/dsx-ai-factory/nke/controller. Charts live under
+  # The destination is ghcr.io/dsx-ai-factory/nke/nke-controller. Charts live under
   # ghcr.io/dsx-ai-factory/nke/charts, which is what keeps a chart and an image from
   # sharing one OCI repository -- on two of the CAPI repos they did, told apart
   # only by whether the tag carried a "v".
@@ -301,8 +301,8 @@ jobs:
           fi
 
           version="${GITHUB_REF_NAME#controller/}"
-          src="nvcr.io/${NKE_NGC_ORG}/controller:${version}"
-          dst="ghcr.io/${GITHUB_REPOSITORY,,}/controller"
+          src="nvcr.io/${NKE_NGC_ORG}/nke-controller:${version}"
+          dst="ghcr.io/${GITHUB_REPOSITORY,,}/nke-controller"
 
           if ! digest="$(crane digest "${src}")"; then
             echo "::error::${src} does not exist. The manifest job should have pushed it."
@@ -370,8 +370,8 @@ jobs:
 
           image_version="$(git describe --match 'controller/v*' --tags --always 2>/dev/null || git rev-parse --short HEAD)"
           image_version="${image_version#controller/}"
-          src="nvcr.io/${NKE_NGC_ORG}/controller:${image_version}"
-          dst="nvcr.io/${DSX_NGC_ORG_TEAM}/controller"
+          src="nvcr.io/${NKE_NGC_ORG}/nke-controller:${image_version}"
+          dst="nvcr.io/${DSX_NGC_ORG_TEAM}/nke-controller"
           layout="${RUNNER_TEMP}/controller-image.oci"
 
           # shellcheck disable=SC2016
@@ -469,7 +469,7 @@ jobs:
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
-          image: nvcr.io/${{ vars.NKE_NGC_ORG }}/controller:sha-${{ github.sha }}-${{ matrix.arch }}
+          image: nvcr.io/${{ vars.NKE_NGC_ORG }}/nke-controller:sha-${{ github.sha }}-${{ matrix.arch }}
           format: spdx-json
           artifact-name: controller-sbom-linux-${{ matrix.arch }}.spdx.json
           upload-artifact: true

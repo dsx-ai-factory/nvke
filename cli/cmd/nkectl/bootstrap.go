@@ -681,7 +681,7 @@ func cweDeployConfig(inv *sitespec.SiteSpec, clusterName string, disableMTLS boo
 
 	if cfg.CWEImage == "" {
 		return cfg, errors.New("NKECTL_CWE_IMAGE is not set; it must name the CWE image to deploy " +
-			"(e.g. nvcr.io/<org>/controller:edge — see .github/workflows/image-nvcr.yml)")
+			"(e.g. nvcr.io/<org>/nke-controller:edge — see .github/workflows/image-nvcr.yml)")
 	}
 	if cfg.ProvisionedProviderImage == "" {
 		return cfg, errors.New("NKECTL_CAPI_PROVISIONED_IMAGE is not set; it must name the " +
