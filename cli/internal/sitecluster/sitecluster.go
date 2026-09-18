@@ -25,15 +25,6 @@ const (
 
 	provisionedClusterKind         = "ProvisionedCluster"
 	provisionedMachineTemplateKind = "ProvisionedMachineTemplate"
-
-	// controlPlanePoolName/controlPlaneNodeNamePrefix name the single node pool
-	// a site cluster has. Every site spec node is a control-plane node, so there
-	// is one pool and it is the control plane.
-	//
-	// The prefix is short because CWE builds node names as
-	// <cluster>-<prefix>-<4 digits> and holds the result to 63 characters.
-	controlPlanePoolName       = "control-plane"
-	controlPlaneNodeNamePrefix = "cp"
 )
 
 // ClusterRequest builds the CWE CreateCluster request that turns inv's
@@ -46,7 +37,9 @@ const (
 //   - infra.cluster is a ProvisionedCluster whose site spec is the hosts
 //     from the file. The provider hands one host to each machine; it creates
 //     nothing.
-//   - the node pool's infra.machineTemplate is a ProvisionedMachineTemplate
+//   - the control plane is a cluster-level controlPlaneConfig, one node per
+//     host.
+//   - controlPlaneConfig.infra.machineTemplate is a ProvisionedMachineTemplate
 //     with an empty spec. Everything a machine needs is already in the
 //     ProvisionedCluster's site spec, so there is nothing to say per machine.
 func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, error) {
@@ -66,20 +59,17 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
 		// omitempty avoids sending an empty VIP, which CWE rejects.
 		ControlPlaneVIP: inv.Cluster.ControlPlaneVIP,
-		NodePools: &[]api.NodePoolCreateConfig{{
-			Name:                 controlPlanePoolName,
-			NodeNamePrefix:       controlPlaneNodeNamePrefix,
-			DesiredNodeCount:     len(hosts),
-			ControlPlane:         true,
+		ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
+			DesiredCount:         len(hosts),
 			SystemReservedMemory: inv.Cluster.KubeletConfig.SystemReservedMemory,
-			Infra: &api.InfraNodePoolProvider{
+			Infra: &api.InfraControlPlaneProvider{
 				// The provisioned provider copies the allocated host's TPM identity
 				// to the CAPI Machine. CWE uses it as the parent of the node-agent
 				// workload entry; no bootstrap join token is needed.
 				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
 				MachineTemplate:        provisionedMachineTemplate(),
 			},
-		}},
+		},
 		Infra: &api.InfraClusterProvider{
 			Cluster: provisionedCluster(inv.ClusterName, hosts),
 		},

@@ -540,7 +540,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		"--set-string", "supportedInfraProviders=infra",
 		"--set", fmt.Sprintf("service.port=%d", cwePort),
 	}
-	cweArgs = append(cweArgs, nodeAgentPortArgs(cfg)...)
+	cweArgs = append(cweArgs, cweEnvArgs(cfg)...)
 	cweArgs = append(cweArgs, "--wait", "--timeout", helmTimeout.String())
 	if _, err := e.helm(ctx, kubeconfigPath, cweArgs...); err != nil {
 		return fmt.Errorf("cwedeploy: installing cwe: %w", err)
@@ -551,19 +551,28 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	return e.publishCWEExternally(ctx, kubeconfigPath, cwePort)
 }
 
-// nodeAgentPortArgs passes the site spec's node-agent port through to CWE.
-//
-// The chart has no value of its own for it, so this rides the generic `env`
-// passthrough. Empty leaves CWE's own default in place rather than restating
-// it here, so there is one default and it lives in CWE.
-func nodeAgentPortArgs(cfg Config) []string {
-	if cfg.NodeAgentPort == "" {
-		return nil
+// cweEnvArgs renders the settings CWE reads from its own environment as helm
+// arguments over the chart's generic `env` list. A setting left at its zero
+// value is omitted, leaving CWE's own default in place.
+func cweEnvArgs(cfg Config) []string {
+	vars := [][2]string{
+		// Unconditional: sitecluster.ClusterRequest builds only the cluster-level
+		// control plane, which CWE rejects without this.
+		{"PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER", "true"},
 	}
-	return []string{
-		"--set-string", "env[0].name=NODE_AGENT_PORT",
-		"--set-string", "env[0].value=" + cfg.NodeAgentPort,
+	if cfg.NodeAgentPort != "" {
+		vars = append(vars, [2]string{"NODE_AGENT_PORT", cfg.NodeAgentPort})
 	}
+
+	// `env` is a list, so the settings share one numbering. Numbering each on its
+	// own would put every one of them at env[0], keeping only the last.
+	args := make([]string, 0, len(vars)*4)
+	for i, v := range vars {
+		args = append(args,
+			"--set-string", fmt.Sprintf("env[%d].name=%s", i, v[0]),
+			"--set-string", fmt.Sprintf("env[%d].value=%s", i, v[1]))
+	}
+	return args
 }
 
 // publishCWEExternally applies the NodePort Service the CLI reaches the CWE API

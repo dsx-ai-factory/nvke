@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -149,15 +150,35 @@ func TestDeploy_RequiresKubeconfigAndImage(t *testing.T) {
 	}
 }
 
-func TestNodeAgentPortArgs(t *testing.T) {
-	if got := nodeAgentPortArgs(Config{}); len(got) != 0 {
-		t.Errorf("nodeAgentPortArgs with no port = %v, want none", got)
-	}
-	got := joinArgs(nodeAgentPortArgs(Config{NodeAgentPort: "15005"}))
-	for _, want := range []string{"env[0].name=NODE_AGENT_PORT", "env[0].value=15005"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("nodeAgentPortArgs = %q, want it to contain %q", got, want)
-		}
+func TestCWEEnvArgs(t *testing.T) {
+	const cpControllerEnv = "PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER"
+
+	for _, tc := range []struct {
+		name string
+		cfg  Config
+		want []string
+	}{{
+		name: "the control-plane mode is sent with nothing else configured",
+		cfg:  Config{},
+		want: []string{
+			"--set-string", "env[0].name=" + cpControllerEnv,
+			"--set-string", "env[0].value=true",
+		},
+	}, {
+		name: "the node agent port is numbered after it",
+		cfg:  Config{NodeAgentPort: "15005"},
+		want: []string{
+			"--set-string", "env[0].name=" + cpControllerEnv,
+			"--set-string", "env[0].value=true",
+			"--set-string", "env[1].name=NODE_AGENT_PORT",
+			"--set-string", "env[1].value=15005",
+		},
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cweEnvArgs(tc.cfg); !slices.Equal(got, tc.want) {
+				t.Errorf("cweEnvArgs =\n\t%q\nwant\n\t%q", got, tc.want)
+			}
+		})
 	}
 }
 

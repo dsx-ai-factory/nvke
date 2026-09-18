@@ -102,37 +102,48 @@ func TestClusterRequest_CarriesTheSiteSpecAsProvisionedHosts(t *testing.T) {
 	}
 }
 
-// TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec: every site spec
-// node joins as a control-plane node, so a pool that does not count them all
+// TestClusterRequest_ControlPlaneSizedToTheSiteSpec: every site spec node joins
+// as a control-plane node, so a control plane that does not count them all
 // leaves hosts unused and the cluster smaller than the file asked for.
-func TestClusterRequest_OneControlPlanePoolSizedToTheSiteSpec(t *testing.T) {
+func TestClusterRequest_ControlPlaneSizedToTheSiteSpec(t *testing.T) {
 	req, err := ClusterRequest(testSiteSpec())
 	if err != nil {
 		t.Fatalf("ClusterRequest returned error: %v", err)
 	}
 
-	if req.NodePools == nil || len(*req.NodePools) != 1 {
-		t.Fatalf("want exactly one node pool, got %#v", req.NodePools)
+	cp := req.ControlPlaneConfig
+	if cp == nil {
+		t.Fatal("ClusterRequest sent no controlPlaneConfig")
 	}
-	pool := (*req.NodePools)[0]
-	if !pool.ControlPlane {
-		t.Error("the pool is not a control-plane pool")
+	if cp.DesiredCount != 3 {
+		t.Errorf("desiredCount = %d, want 3 site spec nodes", cp.DesiredCount)
 	}
-	if pool.DesiredNodeCount != 3 {
-		t.Errorf("desiredNodeCount = %d, want 3 site spec nodes", pool.DesiredNodeCount)
+	if cp.SystemReservedMemory != "512Mi" {
+		t.Errorf("systemReservedMemory = %q, want the site spec's kubelet reservation", cp.SystemReservedMemory)
 	}
-	if pool.SystemReservedMemory != "512Mi" {
-		t.Errorf("systemReservedMemory = %q, want the site spec's kubelet reservation", pool.SystemReservedMemory)
+	if cp.Infra == nil {
+		t.Fatal("controlPlaneConfig carries no infra payload")
 	}
-	if pool.Infra == nil {
-		t.Fatal("the pool carries no infra payload")
-	}
-	if got := pool.Infra.MachineTemplate["kind"]; got != provisionedMachineTemplateKind {
+	if got := cp.Infra.MachineTemplate["kind"]; got != provisionedMachineTemplateKind {
 		t.Errorf("infra.machineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
 	}
-	if pool.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
+	if cp.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
 		t.Errorf("infra.spireAttestationMethod = %q, want %q",
-			pool.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateTpm)
+			cp.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateTpm)
+	}
+}
+
+// TestClusterRequest_SendsNoControlPlaneNodePool: CWE rejects a control-plane
+// node pool once control-plane controller provisioning is enabled, and a site
+// cluster has no workers, so the request should carry no pools at all.
+func TestClusterRequest_SendsNoControlPlaneNodePool(t *testing.T) {
+	req, err := ClusterRequest(testSiteSpec())
+	if err != nil {
+		t.Fatalf("ClusterRequest returned error: %v", err)
+	}
+
+	if req.NodePools != nil && len(*req.NodePools) != 0 {
+		t.Errorf("the request carries node pools, want none: %#v", *req.NodePools)
 	}
 }
 
