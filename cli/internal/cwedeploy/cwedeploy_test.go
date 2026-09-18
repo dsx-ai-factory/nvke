@@ -34,6 +34,10 @@ type fakeRunner struct {
 	// applied holds the contents of every manifest a kubectl apply was
 	// pointed at. See captureApply.
 	applied []string
+
+	// chartFiles holds the files present in the chart directory a helm install
+	// was pointed at. See captureChart.
+	chartFiles map[string]bool
 }
 
 type fakeOutput struct {
@@ -61,9 +65,43 @@ func (f *fakeRunner) captureApply(name string, args []string) {
 	}
 }
 
+// captureChart records the files in the chart directory a helm install was
+// pointed at, for the same reason captureApply exists: an extracted chart is
+// removed as soon as Deploy returns, so a test that looked afterwards would
+// find nothing.
+func (f *fakeRunner) captureChart(name string, args []string) {
+	if name != "helm" || len(args) == 0 {
+		return
+	}
+	joined := joinArgs(args)
+	if !strings.Contains(joined, "upgrade --install "+cweReleaseName+" ") {
+		return
+	}
+	fields := strings.Fields(joined)
+	for i, field := range fields {
+		if field != cweReleaseName || i+1 >= len(fields) {
+			continue
+		}
+		root := fields[i+1]
+		f.chartFiles = map[string]bool{}
+		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() {
+				return nil //nolint:nilerr // a missing chart is what the test asserts on
+			}
+			rel, relErr := filepath.Rel(root, path)
+			if relErr == nil {
+				f.chartFiles[filepath.ToSlash(rel)] = true
+			}
+			return nil
+		})
+		return
+	}
+}
+
 func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string, error) {
 	f.calls = append(f.calls, fakeCall{name: name, args: args})
 	f.captureApply(name, args)
+	f.captureChart(name, args)
 	idx := len(f.calls) - 1
 	if idx < len(f.outputs) {
 		return f.outputs[idx].output, f.outputs[idx].err
@@ -129,7 +167,6 @@ func testConfig(t *testing.T) Config {
 		CWEImage:                 "nvcr.io/org/controller:edge",
 		ProvisionedProviderImage: "cluster-api-provider-provisioned:local",
 		ProvisionedProviderPath:  t.TempDir(),
-		ChartPath:                t.TempDir(), // any existing dir stands in for the chart
 		PostgresPassword:         "test-password",
 	}
 }
@@ -366,8 +403,8 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 		t.Errorf("SPIRE call = %q, want the pinned chart and CWE identity", spire)
 	}
 
-	if !strings.Contains(cwe, "upgrade --install cloud-workflow-engine "+cfg.ChartPath) {
-		t.Errorf("cwe call = %q, want the cwe release/chart path", cwe)
+	if !strings.Contains(cwe, "upgrade --install "+cweReleaseName+" ") {
+		t.Errorf("cwe call = %q, want the cwe release and its chart directory", cwe)
 	}
 	if !strings.Contains(cwe, "--set-string supportedInfraProviders=infra") {
 		t.Errorf("cwe call = %q, want infra provider support enabled", cwe)
@@ -409,63 +446,54 @@ func TestDeploy_PropagatesHelmError(t *testing.T) {
 	}
 }
 
-func TestDeploy_ResolvesChartPathFromRepoRoot(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "go.work"), []byte("go 1.26\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	chartDir := filepath.Join(root, "controller", "deploy", "charts", "controller")
-	if err := os.MkdirAll(chartDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
+// TestDeploy_UsesTheEmbeddedChartOutsideARepo is the reason the chart is
+// embedded: a binary run from anywhere installs the chart it was built with,
+// with no checkout above the working directory, no environment variable and
+// no way to point it somewhere else.
+func TestDeploy_UsesTheEmbeddedChartOutsideARepo(t *testing.T) {
 	oldWd, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
 	}
-	nested := filepath.Join(root, "cli", "cmd", "nkectl")
-	if err := os.MkdirAll(nested, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(nested); err != nil {
+	outside := t.TempDir()
+	if err := os.Chdir(outside); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldWd) })
 
-	got, err := resolveChartPath()
-	if err != nil {
-		t.Fatalf("resolveChartPath returned error: %v", err)
+	cfg := testConfig(t)
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
 	}
-	// Resolve symlinks on both sides: on macOS, t.TempDir() lives under
-	// /tmp, which is itself a symlink to /private/tmp, and os.Getwd() (which
-	// resolveChartPath walks up from) returns the resolved path.
-	wantResolved, err := filepath.EvalSymlinks(chartDir)
-	if err != nil {
-		t.Fatal(err)
+
+	releases := helmCalls(runner)
+	chartArg := chartArgOf(t, releases[len(releases)-1])
+	// The directory is removed when Deploy returns, so what it held is
+	// recorded as the call is made.
+	if runner.chartFiles == nil {
+		t.Fatal("the extracted chart was never inspected")
 	}
-	gotResolved, err := filepath.EvalSymlinks(got)
-	if err != nil {
-		t.Fatal(err)
+	if !runner.chartFiles["Chart.yaml"] || !runner.chartFiles["templates/_helpers.tpl"] {
+		t.Errorf("the extracted chart is incomplete: %v", runner.chartFiles)
 	}
-	if gotResolved != wantResolved {
-		t.Errorf("resolveChartPath() = %q, want %q", gotResolved, wantResolved)
+	if _, err := os.Stat(chartArg); !os.IsNotExist(err) {
+		t.Errorf("the extracted chart outlived Deploy at %s", chartArg)
 	}
 }
 
-func TestDeploy_ChartPathResolutionFailsOutsideARepo(t *testing.T) {
-	oldWd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
+// chartArgOf returns the chart argument of a `helm upgrade --install <release>
+// <chart>` call.
+func chartArgOf(t *testing.T, call string) string {
+	t.Helper()
+	fields := strings.Fields(call)
+	for i, f := range fields {
+		if f == cweReleaseName && i+1 < len(fields) {
+			return fields[i+1]
+		}
 	}
-	dir := t.TempDir()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(oldWd) })
-
-	if _, err := resolveChartPath(); err == nil {
-		t.Fatal("expected an error when no go.work is found above the working directory")
-	}
+	t.Fatalf("no chart argument in %q", call)
+	return ""
 }
 
 func TestWaitReady_SucceedsOnOKStatus(t *testing.T) {

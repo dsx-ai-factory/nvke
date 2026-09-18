@@ -61,6 +61,8 @@ github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1
 ## explicit; go 1.26.0
 # github.com/dsx-ai-factory/nke/controller/api v0.0.0-00010101000000-000000000000 => ./controller/api
 ## explicit; go 1.26.5
+# github.com/dsx-ai-factory/nke/controller/deploy/charts v0.0.0-00010101000000-000000000000 => ./controller/deploy/charts
+## explicit; go 1.26.5
 # github.com/emicklei/go-restful/v3 v3.13.0
 ## explicit; go 1.13
 github.com/emicklei/go-restful/v3

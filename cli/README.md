@@ -182,7 +182,6 @@ metadata.
 |---|---|---|
 | `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
 | `NKECTL_CWE_IMAGE` | required | CWE image to deploy. Side-loaded from the local image store, so it must already be pulled. |
-| `NKECTL_CWE_CHART_PATH` | discovered | Path to the CWE chart |
 | `NKECTL_CWE_POSTGRES_CHART` | `oci://registry-1.docker.io/bitnamicharts/postgresql` | Postgres chart, as an OCI reference or a local path. Point it at a mirror or a downloaded tarball. |
 | `NKECTL_CWE_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
 | `NKECTL_CWE_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |

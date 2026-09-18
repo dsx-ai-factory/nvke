@@ -19,6 +19,12 @@ import (
 	"strings"
 )
 
+// Chart names, so a caller names one by constant rather than by literal.
+const (
+	Controller = "controller"
+	Postgresql = "postgresql"
+)
+
 // all: so that templates/_helpers.tpl is included; plain go:embed skips files
 // whose names start with "_" or ".", and a chart without its helpers renders
 // nothing useful.

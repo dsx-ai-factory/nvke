@@ -448,7 +448,6 @@ func setBootstrapEnv(t *testing.T) {
 	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:local")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_PATH", t.TempDir())
-	t.Setenv("NKECTL_CWE_CHART_PATH", t.TempDir())
 }
 
 func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {

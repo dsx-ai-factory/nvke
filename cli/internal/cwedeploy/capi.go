@@ -151,9 +151,9 @@ func (e *Engine) installProvisionedProvider(
 }
 
 // resolveProvisionedProviderPath finds cluster-api-provider-provisioned's
-// kustomize base the same way resolveChartPath finds the CWE chart, and carries
-// the same known gap: it only works inside a checkout of this monorepo. Set
-// NKECTL_CAPI_PROVISIONED_PATH when running the binary anywhere else.
+// kustomize base by walking up to the repository root, so it only works inside
+// a checkout of this monorepo. Set NKECTL_CAPI_PROVISIONED_PATH when running
+// the binary anywhere else. The CWE chart needs no equivalent: it is embedded.
 func resolveProvisionedProviderPath() (string, error) {
 	root, err := repoRoot()
 	if err != nil {

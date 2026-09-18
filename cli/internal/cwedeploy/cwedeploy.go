@@ -37,6 +37,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/dsx-ai-factory/nke/controller/deploy/charts"
 )
 
 const (
@@ -238,16 +240,6 @@ type Config struct {
 	// routing -- looks the same, and this is the only way to bisect it.
 	DisableMTLS bool
 
-	// ChartPath is the local filesystem path to
-	// controller/deploy/charts/controller. Empty triggers
-	// repo-root discovery from the working directory (see resolveChartPath).
-	// This is a real gap for nkectl shipped as a standalone binary outside a
-	// repository checkout: the chart is not yet published anywhere
-	// (chart-publish.yml only fires on controller/v* release tags, and none
-	// exist yet). Set explicitly once that changes, pointing at an OCI
-	// chart ref instead.
-	ChartPath string
-
 	// ProvisionedProviderImage is the cluster-api-provider-provisioned image to
 	// run as the CAPI infrastructure provider for hosts that already exist.
 	// Required for site-cluster creation. Published by
@@ -258,8 +250,9 @@ type Config struct {
 	ProvisionedProviderImage string
 
 	// ProvisionedProviderPath is the local path to
-	// cluster-api-provider-provisioned/config/default. Empty triggers
-	// repo-root discovery, with the same standalone-binary caveat as ChartPath.
+	// cluster-api-provider-provisioned/config/default. Empty triggers repo-root
+	// discovery, which only works inside a checkout of this monorepo. The
+	// controller chart has no such field: it is embedded in the binary.
 	ProvisionedProviderPath string
 
 	// NodeAgentPort is the port CWE dials nke-agent on. Empty leaves CWE's own
@@ -310,7 +303,6 @@ func DefaultConfig() Config {
 		// Callers set SPIFFEClusterName; an empty trust domain is derived from
 		// it below.
 		SPIFFETrustDomain: os.Getenv("NKECTL_SPIFFE_TRUST_DOMAIN"),
-		ChartPath:         os.Getenv("NKECTL_CWE_CHART_PATH"),
 
 		ProvisionedProviderImage: os.Getenv("NKECTL_CAPI_PROVISIONED_IMAGE"),
 		ProvisionedProviderPath:  os.Getenv("NKECTL_CAPI_PROVISIONED_PATH"),
@@ -385,13 +377,16 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 			"(see Config.ProvisionedProviderImage)")
 	}
 
-	chartPath := cfg.ChartPath
-	if chartPath == "" {
-		var err error
-		chartPath, err = resolveChartPath()
-		if err != nil {
-			return err
-		}
+	// The chart this binary was built with, and the only one it installs.
+	// helm takes a directory and this process runs the helm binary rather than
+	// linking its loader, so it is written out for the length of the deploy.
+	chartPath, err := os.MkdirTemp("", "nkectl-controller-chart-*")
+	if err != nil {
+		return fmt.Errorf("cwedeploy: creating a directory for the controller chart: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(chartPath) }()
+	if err := charts.Extract(charts.Controller, chartPath); err != nil {
+		return fmt.Errorf("cwedeploy: writing out the controller chart: %w", err)
 	}
 
 	password := cfg.PostgresPassword
@@ -707,28 +702,11 @@ func writeTempFile(pattern string, body []byte) (path string, cleanup func(), er
 	return tmpName, cleanup, nil
 }
 
-// resolveChartPath locates controller/deploy/charts/controller by
-// walking up from the current working directory looking for go.work (the
-// repository root marker). This only works inside a checkout of this
-// monorepo -- see the ChartPath doc comment for why that is a known gap, not
-// an oversight.
-func resolveChartPath() (string, error) {
-	root, err := repoRoot()
-	if err != nil {
-		return "", fmt.Errorf("cwedeploy: Config.ChartPath is empty and %w; "+
-			"set NKECTL_CWE_CHART_PATH explicitly", err)
-	}
-	chart := filepath.Join(root, "controller", "deploy", "charts", "controller")
-	if _, err := os.Stat(chart); err != nil {
-		return "", fmt.Errorf("cwedeploy: found repository root at %s but no chart at %s", root, chart)
-	}
-	return chart, nil
-}
-
 // repoRoot walks up from the working directory looking for go.work, this
-// repository's root marker. Shared by everything that has to find a path inside
-// the checkout; see resolveChartPath for why that is a known gap for a
-// standalone binary rather than an oversight.
+// repository's root marker. It is how the provisioned provider's kustomize
+// base is found, which only works inside a checkout of this monorepo -- a
+// known gap for a standalone binary, and the reason the controller chart is
+// embedded rather than located this way.
 func repoRoot() (string, error) {
 	dir, err := os.Getwd()
 	if err != nil {
