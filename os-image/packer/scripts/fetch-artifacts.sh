@@ -23,12 +23,12 @@ case "${ARCH}" in
     ;;
 esac
 
-repo_root="$(cd "${SOURCE_ROOT}" && pwd -P)"
 script_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd -P)"
-if [[ "${repo_root}" != "${script_repo_root}" ]]; then
-  echo "SOURCE_ROOT ${repo_root} does not own ${BASH_SOURCE[0]}" >&2
+if [[ ! "${SOURCE_ROOT}" -ef "${script_repo_root}" ]]; then
+  echo "SOURCE_ROOT ${SOURCE_ROOT} does not own ${BASH_SOURCE[0]}" >&2
   exit 1
 fi
+repo_root="${script_repo_root}"
 
 mkdir -p "${ARTIFACTS_DIR}"
 

@@ -200,6 +200,8 @@ fi
         artifacts_override=None,
         fetch_fails=False,
         make_options=(),
+        material_inputs_from_environment=False,
+        material_inputs=None,
         python_path=None,
         promotion_fails=False,
         unsafe_artifacts=False,
@@ -209,20 +211,22 @@ fi
                 root, unsafe_artifacts=unsafe_artifacts
             )
         )
-        material_inputs = (
-            ("K8S_VERSIONS", "1.33.5 1.34.1"),
-            ("CALICO_VERSIONS", "3.30.3 3.31.0"),
-            ("OVN_STREAMS", "stable next"),
-            ("SPIRE_VERSION", "1.13.1"),
-            ("TPM_PLUGIN_VERSION", "0.13.1"),
-        )
+        if material_inputs is None:
+            material_inputs = (
+                ("K8S_VERSIONS", "1.33.5 1.34.1"),
+                ("CALICO_VERSIONS", "3.30.3 3.31.0"),
+                ("OVN_STREAMS", "stable next"),
+                ("SPIRE_VERSION", "1.13.1"),
+                ("TPM_PLUGIN_VERSION", "0.13.1"),
+            )
         variables = [
             f"PACKER={packer}",
             f"PYTHON={python_path or sys.executable}",
             f"SOURCE_ROOT={source}",
             f"ARCH={arch}",
-            *(f"{name}={value}" for name, value in material_inputs),
         ]
+        if not material_inputs_from_environment:
+            variables.extend(f"{name}={value}" for name, value in material_inputs)
         if artifacts_override is not None:
             variables.append(f"ARTIFACTS={artifacts_override}")
 
@@ -261,7 +265,10 @@ exec "${REAL_MV:?}" "$@"
                 "ARTIFACTS_DIR": str(root / "wrong-artifacts"),
                 "SOURCE_ROOT": str(root / "wrong-source"),
                 "ARCH": "wrong-arch",
-                **{name: f"wrong-{name}" for name, _ in material_inputs},
+                **{
+                    name: value if material_inputs_from_environment else f"wrong-{name}"
+                    for name, value in material_inputs
+                },
                 "FETCH_FAIL": "1" if fetch_fails else "0",
                 "PROMOTION_FAIL": "1" if promotion_fails else "0",
                 "REAL_MV": real_mv,
@@ -555,6 +562,30 @@ exec "${REAL_MV:?}" "$@"
             self.assertEqual(
                 list(artifacts.parent.glob(".artifacts.backup.*")), []
             )
+
+    def test_environment_material_inputs_reach_fetch_without_make_expansion(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            expansion_marker = root / "make-expanded"
+            material_inputs = (
+                ("K8S_VERSIONS", f"$(shell touch {expansion_marker})"),
+                ("CALICO_VERSIONS", "3.30.3 3.31.0"),
+                ("OVN_STREAMS", "stable next"),
+                ("SPIRE_VERSION", "1.13.1"),
+                ("TPM_PLUGIN_VERSION", "0.13.1"),
+            )
+
+            result, events, artifacts, expected_fields = self.run_image_build(
+                "os-image-fde",
+                "amd64",
+                root,
+                material_inputs=material_inputs,
+                material_inputs_from_environment=True,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assert_single_staging_fetch(events, artifacts, expected_fields)
+            self.assertFalse(expansion_marker.exists())
 
     def test_artifact_path_override_cannot_redirect_make_owned_staging(self):
         with tempfile.TemporaryDirectory() as tmp:

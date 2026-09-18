@@ -16,6 +16,8 @@ os-image/packer/output/
 os-image/packer/output-fde/
 os-image/packer/output-non-fde/
 os-image/packer/artifacts/
+os-image/packer/.artifacts.tmp.*/
+os-image/packer/.artifacts.backup.*/
 os-image/packer/iso-cache/
 os-image/packer/build-logs/
 os-image/packer/.ssh/

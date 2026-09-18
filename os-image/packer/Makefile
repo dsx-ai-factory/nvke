@@ -9,8 +9,9 @@ endif
 override PACKER_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 override PACKER_ROOT := $(abspath $(dir $(PACKER_MAKEFILE)))
 SSH_DIR     := $(CURDIR)/.ssh
-# Packer's HCL consumes this exact path. Keep it Make-owned so a command-line
-# override cannot redirect cleanup or promotion into caller-owned data.
+# Packer's HCL consumes this mutable scratch path. Keep it Make-owned because
+# prepare-artifacts replaces it and clean removes it. Externally staged inputs
+# need a separate read-only path rather than an override of this directory.
 override ARTIFACTS := $(PACKER_ROOT)/artifacts
 # Deliberately separate from ARTIFACTS: the FDE/non-FDE "file" provisioner
 # uploads ARTIFACTS/ to the guest wholesale (it's meant to hold only
@@ -213,12 +214,6 @@ prepare-artifacts: preflight
 	trap 'exit 1' 1 2 15; \
 	ARTIFACTS_DIR="$$stage" \
 	ARCH="$(ARCH)" \
-	SOURCE_ROOT="$(SOURCE_ROOT)" \
-	K8S_VERSIONS="$(K8S_VERSIONS)" \
-	CALICO_VERSIONS="$(CALICO_VERSIONS)" \
-	OVN_STREAMS="$(OVN_STREAMS)" \
-	SPIRE_VERSION="$(SPIRE_VERSION)" \
-	TPM_PLUGIN_VERSION="$(TPM_PLUGIN_VERSION)" \
 	"$(PACKER_ROOT)/scripts/fetch-artifacts.sh"; \
 	if [ -L "$$artifacts" ] || { [ -e "$$artifacts" ] && [ ! -d "$$artifacts" ]; }; then \
 		echo "refusing unsafe artifact staging path: $$artifacts" >&2; \
