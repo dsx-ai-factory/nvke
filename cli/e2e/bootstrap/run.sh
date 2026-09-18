@@ -710,13 +710,17 @@ log "PASS: all ${ready_nodes} pre-provisioned hosts are Ready nodes"
 # ── Stage 4a: control-plane VIP ───────────────────────────
 #
 # Node IPs are the expected BGP next-hops and valid endpoints without a VIP.
-# grep exits non-zero when no node has an InternalIP; the guard below names
-# that case, so keep the substitution from tripping pipefail.
-cp_node_ips="$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
-  -o 'jsonpath={range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}' \
-  2>/dev/null | grep -E '^[0-9]' | sort -u || true)"
+# An unreachable API and a node without an InternalIP are different failures,
+# so the lookup and the filter are checked apart. kubectl keeps its stderr to
+# name the first; grep exits non-zero on no match, which is the second.
+if ! node_addresses="$(kubectl --kubeconfig "${TENANT_KUBECONFIG}" get nodes \
+  -o 'jsonpath={range .items[*]}{.status.addresses[?(@.type=="InternalIP")].address}{"\n"}{end}')"; then
+  log "FAIL: could not list nodes for the API-server and BGP checks"
+  exit 1
+fi
+cp_node_ips="$(printf '%s\n' "${node_addresses}" | grep -E '^[0-9]' | sort -u || true)"
 if [ -z "${cp_node_ips}" ]; then
-  log "FAIL: could not read node InternalIPs for the API-server and BGP checks"
+  log "FAIL: no node reports an InternalIP for the API-server and BGP checks"
   exit 1
 fi
 
