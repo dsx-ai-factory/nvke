@@ -187,7 +187,28 @@ prepare-artifacts: preflight
 		exit 1; \
 	fi; \
 	stage="$$(mktemp -d "$(PACKER_ROOT)/.artifacts.tmp.XXXXXX")"; \
-	cleanup() { rm -rf -- "$$stage"; }; \
+	backup=""; \
+	cleanup() { \
+		status="$$?"; \
+		trap - 0 1 2 15; \
+		if [ -n "$$backup" ] && [ -d "$$backup" ]; then \
+			if [ ! -e "$$artifacts" ] && [ ! -L "$$artifacts" ]; then \
+				if mv -- "$$backup" "$$artifacts"; then \
+					backup=""; \
+				else \
+					echo "failed to restore previous artifacts directory: $$backup" >&2; \
+					status=1; \
+				fi; \
+			elif [ ! -e "$$stage" ] && [ -d "$$artifacts" ] && [ ! -L "$$artifacts" ]; then \
+				rm -rf -- "$$backup"; \
+				backup=""; \
+			fi; \
+		fi; \
+		if [ -n "$$stage" ]; then \
+			rm -rf -- "$$stage"; \
+		fi; \
+		exit "$$status"; \
+	}; \
 	trap cleanup 0; \
 	trap 'exit 1' 1 2 15; \
 	ARTIFACTS_DIR="$$stage" \
@@ -204,9 +225,16 @@ prepare-artifacts: preflight
 		exit 1; \
 	fi; \
 	if [ -d "$$artifacts" ]; then \
-		rm -rf -- "$$artifacts"; \
+		backup="$$(mktemp -d "$(PACKER_ROOT)/.artifacts.backup.XXXXXX")"; \
+		rmdir -- "$$backup"; \
+		mv -- "$$artifacts" "$$backup"; \
 	fi; \
 	mv -- "$$stage" "$$artifacts"; \
+	stage=""; \
+	if [ -n "$$backup" ]; then \
+		rm -rf -- "$$backup"; \
+		backup=""; \
+	fi; \
 	trap - 0 1 2 15
 
 check-deps:

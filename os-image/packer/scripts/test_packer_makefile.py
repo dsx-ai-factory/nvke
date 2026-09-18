@@ -201,6 +201,7 @@ fi
         fetch_fails=False,
         make_options=(),
         python_path=None,
+        promotion_fails=False,
         unsafe_artifacts=False,
     ):
         workspace, source, tools, packer, events, artifacts = (
@@ -225,6 +226,30 @@ fi
         if artifacts_override is not None:
             variables.append(f"ARTIFACTS={artifacts_override}")
 
+        real_mv = shutil.which("mv")
+        if real_mv is None:
+            raise RuntimeError("mv is required to test artifact promotion")
+        self.write_executable(
+            tools / "mv",
+            """#!/bin/sh
+set -eu
+source_path="$1"
+destination_path="$2"
+if [ "$source_path" = "--" ]; then
+  source_path="$2"
+  destination_path="$3"
+fi
+case "$source_path" in
+  */.artifacts.tmp.*)
+    if [ "${PROMOTION_FAIL:-0}" = "1" ] && [ "$destination_path" = "${EXPECTED_ARTIFACTS_DIR:?}" ]; then
+      exit 73
+    fi
+    ;;
+esac
+exec "${REAL_MV:?}" "$@"
+""",
+        )
+
         result = self.run_make(
             target,
             cwd=workspace,
@@ -238,6 +263,8 @@ fi
                 "ARCH": "wrong-arch",
                 **{name: f"wrong-{name}" for name, _ in material_inputs},
                 "FETCH_FAIL": "1" if fetch_fails else "0",
+                "PROMOTION_FAIL": "1" if promotion_fails else "0",
+                "REAL_MV": real_mv,
             },
             make_options=make_options,
             makefile=workspace / "Makefile",
@@ -506,6 +533,28 @@ fi
                 self.assertFalse((artifacts / "partial").exists())
                 self.assertFalse(stage.exists())
                 self.assertEqual(list(artifacts.parent.glob(".artifacts.tmp.*")), [])
+
+    def test_failed_artifact_promotion_restores_previous_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            result, events, artifacts, expected_fields = self.run_image_build(
+                "os-image-fde",
+                "amd64",
+                Path(tmp),
+                promotion_fails=True,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            _, stage = self.assert_single_staging_fetch(
+                events, artifacts, expected_fields
+            )
+            self.assertNotIn("packer:build", events)
+            self.assertEqual((artifacts / "stale").read_text(), "stale\n")
+            self.assertFalse((artifacts / "partial").exists())
+            self.assertFalse(stage.exists())
+            self.assertEqual(list(artifacts.parent.glob(".artifacts.tmp.*")), [])
+            self.assertEqual(
+                list(artifacts.parent.glob(".artifacts.backup.*")), []
+            )
 
     def test_artifact_path_override_cannot_redirect_make_owned_staging(self):
         with tempfile.TemporaryDirectory() as tmp:
