@@ -836,28 +836,17 @@ configure_kind_dockerhub_mirror
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_IMAGE}"
 kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}"
 
-# capd-reboot-controller is a CAPD test double, not management-plane software:
-# CAPD "nodes" are containers, so a machine reboot has no analogue and this
-# restarts the container instead. The Tilt path gets it from its provider
-# module; the nke-stack path has no Tilt, so it is built here and applied by
-# deploy-sbom.sh. It stays out of the deploy path deliberately -- no
-# operator deploys it, and its image is a local ko.local reference.
-# The suite reads the SPIRE server's ConfigMap and lists its pods by label, and
-# both names derive from the helm release: <release>-server and
-# instance=<release>. Tilt installs SPIRE as its own release named "spire",
-# which is what the suite defaults to; under the umbrella every subchart
-# inherits the umbrella's release instead, so the defaults find nothing and
-# every spec needing the management trust domain fails with
-# `configmaps "spire-server" not found`. Must match STACK_RELEASE in
-# deploy-sbom.sh.
+# The suite finds SPIRE's ConfigMap and pods from the release name. Its own
+# default is "spire", which is what both paths now install: Tilt installs SPIRE
+# as its own release, and the deploy path names the release in
+# deploy/capd-e2e/spire/release.yaml. The umbrella was the odd one out -- every
+# subchart inherited its release, so this had to be overridden to nke-stack or
+# the defaults found nothing and every spec needing the management trust domain
+# failed with `configmaps "spire-server" not found`.
 NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-}"
-if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  NKE_E2E_SPIRE_RELEASE="${NKE_E2E_SPIRE_RELEASE:-nke-stack}"
-  log "spire release for the suite: ${NKE_E2E_SPIRE_RELEASE}"
-fi
 
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  log "building capd-reboot-controller for the nke-stack path"
+  log "building capd-reboot-controller for the deploy-path lane"
   docker build \
     -t "${CAPD_REBOOT_IMAGE}" \
     -f "${CONTROLLER_ROOT}/hack/capd-reboot-controller/Dockerfile" \
@@ -967,6 +956,10 @@ runner_exec tar -xzf /state/cwe-source.tgz -C /workspace/cloud-workflow-engine
 # not in it. Stage them separately, preserving the build/ + generated/ layout the
 # script derives REPO_ROOT from. Only when the stack path is selected.
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
+  # docker cp will not create a missing parent, so the root has to exist before
+  # the first copy. It used to arrive as a side effect of mkdir -p on the
+  # generated chart directory, which no longer gets staged.
+  runner_exec mkdir -p /workspace/nke-stack
   docker cp "${WORKSPACE_ROOT}/build" "${RUNNER_NAME}:/workspace/nke-stack/build"
   docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-sbom.sh" \
     "${RUNNER_NAME}:/usr/local/bin/deploy-sbom.sh"
@@ -1067,14 +1060,14 @@ jq -n \
   }' >"${E2E_CONFIG}"
 docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 
-# NKE_E2E_STACK_CHART deploys the six management-plane charts from the nke-stack
-# umbrella instead of Tilt. Everything below -- rollout checks, CAPI probes, the
-# Ginkgo legs -- is identical either way. Tilt remains the default: it also
-# runs the inner-loop live_update the umbrella has no equivalent for. The pieces
-# its providers deploy -- capd-reboot-controller, the CAPD RBAC for CWE and the
-# BGP container -- are handled explicitly on this path instead.
+# Installs the management plane from deploy/capd-e2e, one helm release per
+# component, instead of Tilt. Everything below -- rollout checks, CAPI probes,
+# the Ginkgo legs -- is identical either way. Tilt stays available for the
+# inner loop, which the deploy path has no live_update equivalent for. The
+# pieces its providers deploy that the deploy path does not carry -- the BGP
+# container -- are handled explicitly here.
 if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
-  log "deploying the management plane from the nke-stack umbrella chart"
+  log "deploying the management plane from the capd-e2e deploy path"
 
   # FRR, so kube-vip on container-based tenant nodes can peer through the kind
   # gateway. Tilt's bgp-containers provider runs this; without Tilt nothing did,
