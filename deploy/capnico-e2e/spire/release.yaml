@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# NOT A PUBLISHED CHART. The version below is pinned to a commit of
+# spiffe/helm-charts-hardened for global.spire.jwtIssuer, which has no upstream
+# release; oci://ghcr.io/dsx-ai-factory/nke/charts/spire:0.29.0 does not exist.
+#
+# So this item names no repository and no path: the installer must materialise
+# the chart and pass --chart-override spire=<dir>. Cloning it and running
+# `helm dependency build` is the caller's job, because it needs network and a
+# writable directory that a published artifact cannot assume.
+#
+#   https://github.com/spiffe/helm-charts-hardened.git
+#   commit 585203462b6bc7aa06d67b3a153bfff7ff287173, charts/spire
+chart:
+  name: spire
+  version: "0.29.0"
+release:
+  name: spire
+  namespace: spire-server
+values:
+  - values.yaml
+  - overlay.yaml
+# Preconditions this item needs and does not own. helm --wait only waits on
+# workloads, and a Certificate is not one, so --wait would return before the CA
+# is issued. nke-base-config applies it; this blocks until cert-manager has.
+requires:
+  - {kind: certificate, name: oidc-provider-upstream-ca, namespace: spire-server, condition: Ready}

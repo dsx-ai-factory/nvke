@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# OIDC upstream CA chain. cert-manager generates the CA private key inside
+# the cluster from a one-time SelfSigned Issuer; the resulting CA Secret
+# (oidc-provider-upstream-ca) is then consumed by the namespace-scoped
+# CA-type Issuer that signs the OIDC discovery provider's leaf serving cert.
+#
+# A ClusterIssuer of type `ca` would read from cert-manager's
+# --cluster-resource-namespace, so we keep this namespace-scoped on purpose.
+#
+# renewBefore is set so the CA's auto-rotation trigger lands ~30 days before
+# notAfter — i.e. never during normal operation. Operator-driven rotation is
+# tracked separately. Do not mutate this Certificate's spec post-install:
+# any subject/key/SAN/duration change forces a re-issue with a new private
+# key, which invalidates every tenant's embedded trust anchor.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: oidc-ca-bootstrap
+  namespace: spire-server
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: oidc-provider-upstream-ca
+  namespace: spire-server
+spec:
+  isCA: true
+  commonName: "NKE OIDC Upstream CA"
+  subject:
+    organizations: ["NVIDIA"]
+    organizationalUnits: ["NKE"]
+  duration: 87600h        # 10 years
+  renewBefore: 720h       # 30 days — keeps auto-rotation out of the CA's useful life
+  secretName: oidc-provider-upstream-ca
+  privateKey:
+    algorithm: ECDSA
+    size: 384
+  issuerRef:
+    name: oidc-ca-bootstrap
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: nke-oidc-upstream-ca
+  namespace: spire-server
+spec:
+  ca:
+    secretName: oidc-provider-upstream-ca

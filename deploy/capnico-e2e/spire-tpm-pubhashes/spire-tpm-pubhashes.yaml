@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# spire-tpm-pubhashes, copied from this repository per manifests/spire-tpm-pubhashes.pin.yaml. Applied with kubectl apply --server-side.
+---
+apiVersion: v1
+data: {}
+kind: ConfigMap
+metadata:
+    name: tpm-pubhashes
+    namespace: spire-server
