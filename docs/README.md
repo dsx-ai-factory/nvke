@@ -9,8 +9,10 @@ indexes both.
 | Document | Contents |
 |---|---|
 | [overview.md](overview.md) | What NKE is and the problem it solves |
+| [dsx-stack.md](dsx-stack.md) | Where NKE sits in the DSX component ecosystem (NICo, AICR, CRE, Nodewright, NVSentinel) |
 | [concepts.md](concepts.md) | The terms the rest of the documentation uses |
 | [first-cluster.md](first-cluster.md) | Three paths to a running cluster, driven by `nkectl` |
+| [lifecycle.md](lifecycle.md) | Day 0 → Day 1 → Day 2 operational lifecycle |
 | [architecture.md](architecture.md) | The modules, how a cluster request flows through them, and what is deployed where |
 
 ## Working on the code
@@ -45,6 +47,14 @@ indexes both.
 | [../controller/docs/authenticating-to-the-api.md](../controller/docs/authenticating-to-the-api.md) | Authenticating to the API |
 | [../controller/docs/configuring-api-authentication.md](../controller/docs/configuring-api-authentication.md) | Turning API authentication on, including RBAC for `nkectl` |
 | [../controller/docs/byo-os.md](../controller/docs/byo-os.md) | Bringing your own OS image |
+
+## Operating a site
+
+| Document | Contents |
+|---|---|
+| [operations/upgrade.md](operations/upgrade.md) | Upgrading NKE and tenant cluster Kubernetes versions |
+| [operations/observability.md](operations/observability.md) | Temporal UI, CWE logs, database health, and CAPNICo diagnostics |
+| [operations/faq.md](operations/faq.md) | Common bootstrap and tenant cluster failure modes |
 
 ## The modules
 
