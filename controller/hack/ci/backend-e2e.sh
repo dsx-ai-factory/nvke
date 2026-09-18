@@ -1001,7 +1001,10 @@ runner_exec env CLUSTER_TOPOLOGY=true clusterctl init \
   --infrastructure "docker:${CAPD_PROVIDER_VERSION}"
 runner_exec kubectl rollout status deployment/capi-controller-manager -n capi-system --timeout=5m
 runner_exec kubectl rollout status deployment/capd-controller-manager -n capd-system --timeout=5m
-if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true ]]; then
+# On the deploy path these are the capnico-crds item, vendored at the ref
+# controller/go.mod pins, so applying them here too would give them two owners.
+if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true \
+      && "${NKE_E2E_USE_STACK:-false}" != "true" ]]; then
   log "installing CAPNICo CRDs"
   runner_exec kubectl apply -f "${CAPNICO_SOURCE_CONTAINER_DIR}/config/crd/bases"
   runner_exec kubectl wait --for=condition=Established crd \
@@ -1011,8 +1014,14 @@ if [[ -n "${CAPNICO_SOURCE_SRC:-}" && "${NICO_PROVIDER_ENABLED}" != true ]]; the
     nicomachinetemplates.infrastructure.cluster.x-k8s.io \
     --timeout=2m
 fi
-log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
-runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
+# Deferred on the deploy path until after the install: the script only waits for
+# the patched pods to roll out when csi.spiffe.io is registered, and that
+# CSIDriver arrives with the spire item. Run here it patches and moves on,
+# leaving the rollout unverified; run after, it is checked.
+if [[ "${NKE_E2E_USE_STACK:-false}" != "true" ]]; then
+  log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
+  runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
+fi
 
 if ! management_vip="$(e2e_management_vip "${KIND_CLUSTER_NAME}")"; then
   log "Kind control-plane IP was not found"
@@ -1100,6 +1109,9 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
     NKE_E2E_STACK_CHART="${NKE_E2E_STACK_CHART}" \
     NKE_E2E_STACK_VERSION="${NKE_E2E_STACK_VERSION:-}" \
     bash /usr/local/bin/deploy-sbom.sh "${CWE_IMAGE}"
+
+  log "injecting SPIRE exec-auth plugin into CAPI/CAPD controllers"
+  runner_exec bash /workspace/cloud-workflow-engine/hack/apply-capi-spiffe-exec-auth.sh
 else
 log "deploying the management plane with Tilt"
 BGP_CONTAINER_OWNED=true

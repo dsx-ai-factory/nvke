@@ -7,7 +7,11 @@
 # deploy-repository.md specifies.
 #
 # cert-manager is deliberately absent. clusterctl init installs it before this
-# runs, so a second owner would fail on CRDs it cannot adopt.
+# runs, so a second owner would fail on CRDs it cannot adopt. The CAPI
+# providers are absent for the same reason -- clusterctl brings all four.
+#
+# capnico-crds is here rather than in the prologue because it is a plain apply
+# of a pinned release's CRDs, which is what a manifest item is.
 items:
   - {name: nke-base-config, type: manifest}
   - {name: nke-auth-dev, type: manifest}
@@ -15,6 +19,7 @@ items:
   - {name: spire-server-nodeport, type: manifest}
   - {name: spire-oidc-provider-nodeport, type: manifest}
   - {name: nke-spire-client, type: manifest}
+  - {name: capnico-crds, type: manifest}
   - {name: capd-cwe-rbac, type: manifest}
   - {name: capd-reboot-controller, type: manifest}
   - {name: postgresql, type: helm}
