@@ -470,7 +470,7 @@ spiffe:
   # tenant clusters trust the exchange's issuer, otherwise the controller's calls
   # to them will start failing authentication.
   jwtExchangeEndpoint: ""
-  # -- Subject the nke:cwe RBAC bindings name in tenant clusters. Defaults to this
+  # -- Subject the nkeOIDCAuth.tenantRbacName RBAC bindings name in tenant clusters. Defaults to this
   # controller's own SPIFFE ID, spiffe://<trustDomain>/nke-service/cloud-workflow-engine,
   # which is what a tenant sees when no exchange is in play. Set it whenever
   # jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust
@@ -493,7 +493,7 @@ spiffe:
   capdManagerSubject: ""
   # -- SPIRE trust domain. When set, the chart renders ConfigMap nke-rbac.
   # Required when nkeOIDCAuth.enabled is true: builds the
-  # nke:cwe SPIFFE subject ID in that ConfigMap. Must equal the
+  # nkeOIDCAuth.tenantRbacName SPIFFE subject ID in that ConfigMap. Must equal the
   # SPIRE server's trust domain (the spire chart's global.spire.trustDomain) so the
   # RBAC principals match issued identities.
   trustDomain: ""
