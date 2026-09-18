@@ -64,7 +64,7 @@ autoinstall:
             nodeAgentPort: "15005"
           registry:
             bootstrapRepo: "nvcr.io/org"
-            bootstrapChart: "nke-controller-chart"
+            bootstrapChart: "controller-chart"
     runcmd:
       # Expand root LVM volume
       - [sh, -c, "lvextend -l +100%FREE /dev/ubuntu-vg/ubuntu-lv"]

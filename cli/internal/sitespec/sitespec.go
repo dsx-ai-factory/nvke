@@ -202,8 +202,8 @@ type Registry struct {
 	// (e.g. "nvcr.io/org").
 	BootstrapRepo string `yaml:"bootstrapRepo"`
 	// BootstrapChart is the bootstrap engine chart name within BootstrapRepo
-	// (e.g. "nke-controller-chart" on NVCR, which has no path segment to keep
-	// the chart from colliding with the controller image's repository).
+	// (e.g. "controller-chart" on NVCR, which has no path segment to keep the
+	// chart from colliding with the controller image's repository).
 	BootstrapChart string `yaml:"bootstrapChart"`
 	// APIKey is an optional registry credential. It is never defaulted: a
 	// secret is only ever used when the operator supplies one, via this field,
