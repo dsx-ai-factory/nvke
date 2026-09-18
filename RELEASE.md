@@ -96,8 +96,8 @@ additionally publishes the controller image and Helm chart:
 | Workflow | What it publishes |
 |---|---|
 | `image-nvcr.yml` | multi-arch image to `nvcr.io/<org>/controller`, promotes that released image to DSX as `nvcr.io/<dsx-org-team>/controller`, and promotes release tags to `ghcr.io/dsx-ai-factory/nke/controller` |
-| `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nke/charts/controller` |
-| `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/controller-chart` and `nvcr.io/<dsx-org-team>/controller-chart` |
+| `chart-publish.yml` | chart to `ghcr.io/dsx-ai-factory/nke/charts/nke-controller` |
+| `chart-publish-nvcr.yml` | chart to `nvcr.io/<org>/nke-controller-chart` and `nvcr.io/<dsx-org-team>/nke-controller-chart` |
 
 Every `main` commit already publishes the image and chart to NVCR. GHCR receives
 released versions only, which is why a chart built from a tag can safely point at
@@ -127,8 +127,8 @@ logs in with the DSX token and pushes that same index to
 when an existing destination digest matches the source digest; a mismatch fails
 the run. The `edge` tag is mutable and moves only on `main`.
 
-The DSX chart is packaged from the controller chart as `controller-chart`, the
-same chart artifact name used for the NKE NVCR chart, and pushed to
+The DSX chart is packaged from the controller chart as `nke-controller-chart`,
+the same chart artifact name used for the NKE NVCR chart, and pushed to
 `oci://nvcr.io/<dsx-org-team>`. Its chart version is the controller git describe
 string without the leading `v`, while `appVersion` keeps the leading `v` so the
 rendered Deployment pulls the same image tag promoted by `image-nvcr.yml`.

@@ -15,20 +15,22 @@ name: Chart Publish NVCR
 #   DSX_NGC_ORG_TEAM         variable  DSX NGC org/team path
 #   NGC_REGISTRY_TOKEN_DSX   secret    NGC API key with write access on DSX
 #
-# The chart is pushed to nvcr.io/<destination>/controller-chart, so the chart is
-# REPACKAGED under the name controller-chart below. On GHCR the same chart
-# publishes as charts/controller; the NVCR and GHCR paths deliberately differ.
+# The chart is pushed to nvcr.io/<destination>/nke-controller-chart, so the
+# chart is REPACKAGED under the name nke-controller-chart below. On GHCR the
+# same chart publishes as charts/nke-controller; the NVCR and GHCR paths
+# deliberately differ.
 #
 # NVCR cannot take the `charts/` path segment GHCR uses. An NGC reference is
 # nvcr.io/<org>/<repo> or nvcr.io/<org>/<team>/<repo> -- at most one middle
 # segment, and it names a TEAM, an access-control object an org owner has to
-# create, not a free path component. Pushing to nvcr.io/<org>/charts/controller
-# asks NGC for a team named `charts` that does not exist, and the push dies
-# before it reaches the registry:
+# create, not a free path component. Pushing to
+# nvcr.io/<org>/charts/nke-controller asks NGC for a team named `charts` that
+# does not exist, and the push dies before it reaches the registry:
 
-# Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine
-# and published at nvcr.io/<NKE_NGC_ORG>/cloud-workflow-engine; those
-# versions stay there.
+# Through controller/v0.1.1-rc.1 the chart was named cloud-workflow-engine and
+# published at nvcr.io/<NKE_NGC_ORG>/cloud-workflow-engine; through the last
+# release before this rename it was named controller-chart and published at
+# nvcr.io/<NKE_NGC_ORG>/controller-chart. Both stay where they are.
 
 on:
   push:
@@ -134,7 +136,7 @@ jobs:
         id: package
         shell: bash
         env:
-          CHART_NAME: controller-chart
+          CHART_NAME: nke-controller-chart
           IMAGE_REPOSITORY: ${{ steps.meta.outputs.image }}
           IMAGE_PULL_SECRET: ${{ matrix.pull_secret }}
           CHART_VERSION: ${{ steps.meta.outputs.version }}
@@ -148,7 +150,7 @@ jobs:
           # helm push takes the destination's last path segment from `name:` in
           # Chart.yaml, not from the push argument. Keep this explicit so image
           # and chart repositories do not accidentally collide in NVCR.
-          sed -i -e "s#^name: controller\$#name: ${CHART_NAME}#" \
+          sed -i -e "s#^name: nke-controller\$#name: ${CHART_NAME}#" \
             "${CHART}/Chart.yaml"
           grep -q "^name: ${CHART_NAME}\$" "${CHART}/Chart.yaml" \
             || { echo "::error::chart rename did not apply"; exit 1; }
@@ -208,4 +210,4 @@ jobs:
         run: |
           set -euo pipefail
           helm push "${CHART_PACKAGE}" "oci://${REPO}"
-          echo "Pushed ${REPO}/controller-chart:${VERSION}"
+          echo "Pushed ${REPO}/nke-controller-chart:${VERSION}"

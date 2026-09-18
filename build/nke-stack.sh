@@ -101,7 +101,7 @@ publish_deps() {
   log "publishing controller ${version}"
   helm package "${CWE_CHART}" --version "${version}" --app-version "v${version}" \
     --destination "${staging}" >/dev/null
-  helm push "${staging}/controller-${version}.tgz" "${REGISTRY}"
+  helm push "${staging}/nke-controller-${version}.tgz" "${REGISTRY}"
 
   clone="${WORK_DIR}/helm-charts-hardened"
   if [[ ! -d "${clone}/.git" ]]; then
@@ -145,8 +145,8 @@ build_local() {
   # image built from this same commit.
   helm package "${CWE_CHART}" --version "${version}" --app-version "v${version}" \
     --destination "${staging}" >/dev/null
-  rm -rf "${CHART_DIR}/charts/controller"
-  tar xzf "${staging}/controller-${version}.tgz" -C "${CHART_DIR}/charts"
+  rm -rf "${CHART_DIR}/charts/nke-controller"
+  tar xzf "${staging}/nke-controller-${version}.tgz" -C "${CHART_DIR}/charts"
 
 
   clone="${WORK_DIR}/helm-charts-hardened"
