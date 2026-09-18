@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# manager.image.repository and .tag are NOT here: the lane builds the image and
+# supplies them with --values-for, exactly as it does the controller's.
+#
+# CAPNICo's endpoint and credentials reach it through the nico-credentials
+# Secret rather than through chart values, which is why this target and a real
+# site differ by a Secret rather than by a release.
+#
+# STILL MISSING, and it is not a value today: install-capnico.sh follows the
+# install with a kubectl patch setting the manager's args --
+#
+#   --leader-elect
+#   --reboot-annotation=nke.nvidia.com/reboot
+#   --repair-annotation=nke.nvidia.com/machine-health-issue
+#
+# -- because those are the annotation keys CWE actually writes, and CAPNICo's
+# nico.nvidia.com/* defaults would ignore every reboot and repair request
+# silently. The vendored manifest form bakes them in through its pin's patch
+# block. Whether this chart can express them as values needs checking against
+# the chart itself; until then the patch stays with the installer.
+{}

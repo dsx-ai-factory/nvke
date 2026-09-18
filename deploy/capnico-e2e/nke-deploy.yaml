@@ -9,9 +9,6 @@
 # Absent deliberately:
 #   cert-manager   clusterctl init installs it before this runs, so a second
 #                  owner would fail on CRDs it cannot adopt.
-#   CAPNICo        installed from source by hack/nico-provider/install-capnico.sh
-#                  at controller/go.mod's ref, with a locally built image. No
-#                  static deploy path can name a chart that is compiled per run.
 #   the CAPD items this lane has no use for -- the reboot test double and CWE's
 #   RBAC over dockerclusters -- and nke-spire-client, whose authn-spire specs
 #   the nico lane does not run.
@@ -21,6 +18,7 @@ items:
   - {name: spire-tpm-pubhashes, type: manifest}
   - {name: spire-server-nodeport, type: manifest}
   - {name: spire-oidc-provider-nodeport, type: manifest}
+  - {name: capnico, type: helm}
   - {name: postgresql, type: helm}
   - {name: spire-crds, type: helm}
   - {name: temporal, type: helm}

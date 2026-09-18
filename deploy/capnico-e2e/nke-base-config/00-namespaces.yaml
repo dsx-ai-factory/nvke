@@ -45,3 +45,11 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: temporal
+---
+# CAPNICo's controller. install-capnico.sh creates this itself when Tilt drives
+# the install; here the capnico item is an ordinary helm release, and the
+# executor does not pass --create-namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capnico-system
