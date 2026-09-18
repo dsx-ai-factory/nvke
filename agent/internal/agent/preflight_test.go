@@ -60,7 +60,7 @@ func TestExecuteNodePreflight(t *testing.T) {
 	})
 
 	t.Run("check cloud init status done passes", func(t *testing.T) {
-		srv := cloudInitStatusServer([]byte("status: done\n"), nil)
+		srv := cloudInitStatusServer(t, []byte("status: done\n"), nil)
 
 		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
@@ -72,8 +72,41 @@ func TestExecuteNodePreflight(t *testing.T) {
 		assert.True(t, resp.GetResults()[0].GetPassed())
 	})
 
+	t.Run("DSX CIDATA completion marker passes when cloud init is disabled", func(t *testing.T) {
+		root := t.TempDir()
+		marker := filepath.Join(root, "var", "lib", "dsxos", ".cidata-consumed")
+		require.NoError(t, os.MkdirAll(filepath.Dir(marker), 0o755))
+		require.NoError(t, os.WriteFile(marker, nil, 0o644))
+
+		srv := cloudInitStatusServer(t, []byte("status: disabled\n"), nil)
+		srv.RootPath = root
+
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, ReadyStatus, resp.GetStatus())
+		assert.Empty(t, resp.GetErrorMessage())
+		require.Len(t, resp.GetResults(), 1)
+		assert.True(t, resp.GetResults()[0].GetPassed())
+		assert.Contains(t, resp.GetResults()[0].GetMessage(), dsxCIDATAConsumedPath)
+	})
+
+	t.Run("disabled cloud init without DSX CIDATA completion marker is notready", func(t *testing.T) {
+		srv := cloudInitStatusServer(t, []byte("status: disabled\n"), nil)
+
+		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
+			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
+		})
+		require.NoError(t, err)
+		assert.Equal(t, NotReadyStatus, resp.GetStatus())
+		require.Len(t, resp.GetResults(), 1)
+		assert.False(t, resp.GetResults()[0].GetPassed())
+		assert.Contains(t, resp.GetResults()[0].GetMessage(), "status: disabled")
+	})
+
 	t.Run("check cloud init status running is notready", func(t *testing.T) {
-		srv := cloudInitStatusServer([]byte("status: running\n"), nil)
+		srv := cloudInitStatusServer(t, []byte("status: running\n"), nil)
 
 		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
@@ -84,7 +117,7 @@ func TestExecuteNodePreflight(t *testing.T) {
 	})
 
 	t.Run("check cloud init status error returns error response", func(t *testing.T) {
-		srv := cloudInitStatusServer([]byte("status: error\n"), nil)
+		srv := cloudInitStatusServer(t, []byte("status: error\n"), nil)
 
 		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
@@ -98,6 +131,7 @@ func TestExecuteNodePreflight(t *testing.T) {
 	// even after it finishes, so a degraded node must still report ready.
 	t.Run("check cloud init status degraded done passes", func(t *testing.T) {
 		srv := cloudInitStatusServer(
+			t,
 			[]byte("status: done\n"),
 			cloudInitExitError(t, cloudInitStatusRecoverableExitCode),
 		)
@@ -114,6 +148,7 @@ func TestExecuteNodePreflight(t *testing.T) {
 
 	t.Run("check cloud init status degraded running is notready", func(t *testing.T) {
 		srv := cloudInitStatusServer(
+			t,
 			[]byte("status: running\n"),
 			cloudInitExitError(t, cloudInitStatusRecoverableExitCode),
 		)
@@ -128,7 +163,7 @@ func TestExecuteNodePreflight(t *testing.T) {
 	})
 
 	t.Run("check cloud init status unrecoverable exit returns error response", func(t *testing.T) {
-		srv := cloudInitStatusServer([]byte("status: error\n"), cloudInitExitError(t, 1))
+		srv := cloudInitStatusServer(t, []byte("status: error\n"), cloudInitExitError(t, 1))
 
 		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
@@ -140,7 +175,7 @@ func TestExecuteNodePreflight(t *testing.T) {
 	})
 
 	t.Run("check cloud init status unavailable returns error response", func(t *testing.T) {
-		srv := cloudInitStatusServer(nil, &exec.Error{Name: "cloud-init", Err: exec.ErrNotFound})
+		srv := cloudInitStatusServer(t, nil, &exec.Error{Name: "cloud-init", Err: exec.ErrNotFound})
 
 		resp, err := srv.ExecuteNodePreflight(context.Background(), &pb.ExecuteNodePreflightRequest{
 			CheckCloudInitStatus: &pb.CheckCloudInitStatus{},
@@ -212,8 +247,11 @@ func TestEvaluateCloudInitStatus(t *testing.T) {
 
 // cloudInitStatusServer builds a server whose runner answers
 // `cloud-init status` with the given output and error.
-func cloudInitStatusServer(output []byte, runErr error) *NodeAgentServer {
+func cloudInitStatusServer(t *testing.T, output []byte, runErr error) *NodeAgentServer {
+	t.Helper()
+
 	return &NodeAgentServer{
+		RootPath: t.TempDir(),
 		Runner: &MockRunner{
 			Runners: []runner{
 				func(name string, args []string, _ *nkeutils.CommandOptions) (bool, []byte, error) {
