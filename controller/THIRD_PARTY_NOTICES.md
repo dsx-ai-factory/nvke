@@ -165,8 +165,8 @@ notices-check` verifies it is up to date.
 | `k8s.io/kube-openapi/pkg` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
 | `k8s.io/kube-openapi/pkg/internal/third_party/go-json-experiment/json` | BSD-3-Clause | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
 | `k8s.io/kube-openapi/pkg/validation/spec` | Apache-2.0 | `k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad` | Unknown |
-| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.35.3` | Unknown |
-| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.35.3` | Unknown |
+| `k8s.io/kube-proxy/config/v1alpha1` | Apache-2.0 | `k8s.io/kube-proxy@v0.37.0` | Unknown |
+| `k8s.io/kubelet/config/v1beta1` | Apache-2.0 | `k8s.io/kubelet@v0.37.0` | Unknown |
 | `k8s.io/utils` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `k8s.io/utils/internal/third_party/forked/golang` | BSD-3-Clause | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `k8s.io/utils/third_party/forked/golang/btree` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
@@ -17837,7 +17837,7 @@ _Apache-2.0 — k8s.io/kube-openapi@v0.0.0-20260721132016-d427ff9ee9ad_
 
 ### k8s.io/kube-proxy/config/v1alpha1
 
-_Apache-2.0 — k8s.io/kube-proxy@v0.35.3_
+_Apache-2.0 — k8s.io/kube-proxy@v0.37.0_
 
 #### LICENSE
 
@@ -18049,7 +18049,7 @@ _Apache-2.0 — k8s.io/kube-proxy@v0.35.3_
 
 ### k8s.io/kubelet/config/v1beta1
 
-_Apache-2.0 — k8s.io/kubelet@v0.35.3_
+_Apache-2.0 — k8s.io/kubelet@v0.37.0_
 
 #### LICENSE
 
