@@ -42,28 +42,6 @@ spec:
     - name: nke-sbom-e2e
       publish: false
       targets:
-        - name: capd-e2e
-          provider: capd
-          overlay: overlays/capd-e2e.yaml
-          stack: helm
-          # Images are loaded into the kind cluster rather than pulled and the
-          # lane passes the tenant credentials as --set, so the only secret-
-          # bearing entry this target needs is the precondition the chart itself
-          # declares.
-          baseConfig: [oidc-upstream-ca]
-          # What the lane applies by hand today, in the order it applies them.
-          # These are copies of this repository's own files rather than vendored
-          # upstream releases: auth scaffolding and the empty TPM ConfigMap the
-          # chart mounts, then the two CAPD pieces -- the RBAC without which every
-          # provisioning write is forbidden, and the reboot test double, since a
-          # CAPD node is a container and has no reboot of its own.
-          #
-          # clusterctl init stays outside the SBOM: it installs four providers
-          # plus cert-manager, and it runs on the Tilt path too.
-          manifests: [nke-auth-dev, spire-tpm-pubhashes, spire-server-nodeport,
-                      spire-oidc-provider-nodeport, nke-spire-client, capd-cwe-rbac,
-                      capd-reboot-controller]
-
         - name: capnico-e2e
           provider: capnico
           overlay: overlays/capnico-e2e.yaml

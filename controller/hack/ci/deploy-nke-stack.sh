@@ -10,7 +10,7 @@
 # unaware of which path deployed the stack.
 #
 # This script no longer applies anything. build/use-nke-sbom.sh walks
-# generated/nke-sbom-e2e/capd-e2e/nke-deploy.yaml and installs its items in
+# deploy/capd-e2e/nke-deploy.yaml and installs its items in
 # order: the namespaces and OIDC CA chain, nke-auth-dev, the TPM pubhashes
 # ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, the
 # CAPD RBAC and reboot test double, and finally the nke-stack umbrella, one

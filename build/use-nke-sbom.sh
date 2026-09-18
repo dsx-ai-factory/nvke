@@ -2,20 +2,23 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Install a generated deploy path: walk its nke-deploy.yaml and apply the items
-# in the order listed. The list IS the order -- see
+# Install a deploy path: walk its nke-deploy.yaml and apply the items in the
+# order listed. The list IS the order -- see
 # docs/site-bootstrap/deploy-repository.md, which this format follows.
 #
-# Replaces `build/nke-stack.sh install`. The difference that matters is where the
-# phase list comes from: that script parsed the chart's values.yaml and built
-# cumulative flags, emitting `--set <dep>.enabled=true` for everything up to the
-# phase -- which beat the overlay, so a component an overlay disabled came back
-# on. Here the phases arrive in release.yaml, generated from the same source as
-# the ArgoCD Applications, and only ever as `enabled=false`. Nothing this script
-# emits can turn a component on that an overlay turned off.
+# A helm item takes one of two shapes, and release.yaml says which:
 #
-# Both inputs are local paths. The e2e SBOMs are publish: false and are consumed
-# in place, so there is no registry, no oras pull and no tarball to extract.
+#   one chart, one release   the item order does the sequencing. Nothing can
+#                            override an overlay, because a release contains
+#                            only its own chart and there are no enable flags.
+#   an umbrella              one chart of subcharts installed over the phases
+#                            the chart itself declares, with only
+#                            `enabled=false` ever emitted -- build/nke-stack.sh
+#                            install asserted the positive, which beat the
+#                            overlay and turned disabled components back on.
+#
+# Everything is a local path. These trees are consumed in place, so there is no
+# registry, no oras pull and no tarball to extract.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -41,7 +44,7 @@ usage() {
   cat >&2 <<'USAGE'
 usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
 
-  --sbom DIR          generated SBOM directory, e.g. ./generated/nke-sbom-e2e
+  --sbom DIR          directory holding deploy paths, e.g. ./deploy
   --target NAME       deploy path inside it, e.g. capd-e2e
   --chart PATH        packaged .tgz or chart directory, for a deploy path whose
                       helm item is an umbrella chart
