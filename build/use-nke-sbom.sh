@@ -16,6 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ITEMS_PY="${SCRIPT_DIR}/nke-sbom-items.py"
+RENDER_PY="${SCRIPT_DIR}/render-template.py"
 
 SBOM=""
 TARGET=""
@@ -24,6 +25,7 @@ KUBECONFIG_PATH=""
 PHASE_TIMEOUT="${PHASE_TIMEOUT:-15m}"
 REQUIRE_TIMEOUT="${REQUIRE_TIMEOUT:-180s}"
 PASSTHROUGH=()
+CONFIG=""
 CHART_OVERRIDES=()
 VALUES_FOR=()
 DEPLOY_PATH=""
@@ -40,6 +42,8 @@ usage: use-nke-sbom.sh install --sbom DIR --target NAME [options] [-- helm args]
   --chart-override ITEM=PATH
                       where to find one item's chart, for a component this
                       repository does not publish. Repeatable.
+  --config PATH       BootstrapConfig, as JSON. Required by a template item;
+                      its fields are the context those templates render against.
   --values-for ITEM=PATH
                       an extra values file for one item, applied after the
                       item's own values. This is how per-run values reach a
@@ -84,6 +88,22 @@ apply_manifest_item() {
     kubectl_run apply --server-side -f "${file}"
   done
   [[ -n "${found}" ]] || die "manifest item ${dir} contains no .yaml files"
+}
+
+# render_template_item renders the item and applies what comes out.
+#
+# The output goes to a temp directory rather than over the source: the tree may
+# be a read-only extraction of a published artifact, and what is rendered holds
+# credentials. Removed as soon as it is applied.
+render_template_item() {
+  local dir="$1" item="$2" out
+  [[ -n "${CONFIG}" ]] || die "item ${item} is type template, which needs --config <BootstrapConfig json>.
+Its .yaml.tmpl files render against that context; see
+docs/site-bootstrap/deploy-repository.md for the field names."
+  out="$(mktemp -d)"
+  python3 "${RENDER_PY}" "${CONFIG}" "${dir}" "${out}" >/dev/null
+  apply_manifest_item "${out}"
+  rm -rf "${out}"
 }
 
 # apply_argocd_item creates the Application. Server-side apply of the CR rather
@@ -205,11 +225,7 @@ install() {
       manifest) apply_manifest_item "${dir}" ;;
       argocd)   apply_argocd_item "${dir}" ;;
       helm)     install_helm_item "${dir}" "${name}" ;;
-      template)
-        die "item ${name} is type template, which needs the Go renderer.
-Targets whose base-config carries .yaml.tmpl files cannot be installed by this
-script; the e2e targets pass their credentials as --set instead."
-        ;;
+      template) render_template_item "${dir}" "${name}" ;;
       *) die "item ${name} has unknown type ${type}" ;;
     esac
   done < <(python3 "${ITEMS_PY}" items "${DEPLOY_PATH}/nke-deploy.yaml")
@@ -225,6 +241,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --sbom) SBOM="$2"; shift 2 ;;
     --target) TARGET="$2"; shift 2 ;;
+    --config) CONFIG="$2"; shift 2 ;;
     --chart-override) CHART_OVERRIDES+=("$2"); shift 2 ;;
     --values-for) VALUES_FOR+=("$2"); shift 2 ;;
     --kubeconfig) KUBECONFIG_PATH="$2"; shift 2 ;;

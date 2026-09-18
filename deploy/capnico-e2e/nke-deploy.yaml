@@ -12,8 +12,13 @@
 #   the CAPD items this lane has no use for -- the reboot test double and CWE's
 #   RBAC over dockerclusters -- and nke-spire-client, whose authn-spire specs
 #   the nico lane does not run.
+#
+# nke-base-config is a template item because nico-credentials carries the
+# simulator's endpoint, which is computed per run. Nothing in it is secret on
+# this lane -- the token is nico-simctl-token -- but the endpoint still has to
+# be substituted, and a Secret is not reachable by helm values.
 items:
-  - {name: nke-base-config, type: manifest}
+  - {name: nke-base-config, type: template}
   - {name: nke-auth-dev, type: manifest}
   - {name: spire-tpm-pubhashes, type: manifest}
   - {name: spire-server-nodeport, type: manifest}
