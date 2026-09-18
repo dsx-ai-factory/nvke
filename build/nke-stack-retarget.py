@@ -5,12 +5,13 @@ s = open(path).read()
 def sub(name, ver):
     global s
     pat = r'(\{name: %s, version: )"([^"]*)"(, repository: )"[^"]*"' % re.escape(name)
-    s, n = re.subn(pat, lambda m: '%s"%s"%s"%s"' % (m.group(1), ver or m.group(2), m.group(3), registry), s, count=1)
-    # A miss leaves the dependency on its committed placeholder version and
-    # GHCR repository, which helm resolves as a real chart -- the wrong one.
-    # Renaming a published chart is exactly how the pattern stops matching.
+    # Unlimited, so a duplicate raises the count rather than hiding behind the
+    # limit. A miss leaves the dependency on its committed placeholder version
+    # and GHCR repository, which helm resolves as a real chart -- the wrong one;
+    # renaming a published chart is exactly how the pattern stops matching.
+    s, n = re.subn(pat, lambda m: '%s"%s"%s"%s"' % (m.group(1), ver or m.group(2), m.group(3), registry), s)
     if n != 1:
-        sys.exit("nke-stack-retarget: no %s dependency in %s" % (name, path))
+        sys.exit("nke-stack-retarget: expected 1 %s dependency in %s, found %d" % (name, path, n))
 sub("nke-controller", version)
 sub("spire", None)
 open(path, "w").write(s)
