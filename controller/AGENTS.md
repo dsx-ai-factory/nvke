@@ -280,7 +280,7 @@ the release and publishes the controller image and Helm chart. Follow the root
 
 ## Reference Grafana dashboards
 
-JSON under `deploy/dashboards/` is imported by operators. It is not rendered by Helm. Before editing those files, read [deploy/dashboards/AGENTS.md](deploy/dashboards/AGENTS.md).
+JSON under `deploy/dashboards/` is imported by operators (see [deploy/dashboards/README.md](deploy/dashboards/README.md)). It is not rendered by Helm. Before editing those files, read [deploy/dashboards/AGENTS.md](deploy/dashboards/AGENTS.md).
 
 ## PR Guidelines
 

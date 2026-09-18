@@ -4,6 +4,8 @@ Read this before adding, copying, or editing JSON under `controller/deploy/dashb
 
 These files are **operator-importable reference dashboards**. They are **not** installed by the `nke-stack` Helm composition, and they are not Grafana Cloud or private-fleet exports.
 
+Operators: import steps and a short description of each file are in [README.md](README.md). This file is the contributor contract.
+
 ## What lives here
 
 | File | Purpose | Primary scrape |
