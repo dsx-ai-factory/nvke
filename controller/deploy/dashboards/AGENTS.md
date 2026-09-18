@@ -20,7 +20,7 @@ Each dashboard has a **Requirements and scope** markdown panel. Keep that panel 
 
 - Grafana **import JSON** (schema with `__inputs`, `panels` / rows, `templating`), not `dashboard.grafana.app/v2` Kubernetes CRDs.
 - Datasource: `__inputs` entry `DS_PROMETHEUS` (Prometheus plugin). Operators pick a datasource at import. Do not pin `mimir-*`, Promxy, or a Grafana Cloud UID.
-- `id`: `null`. Stable `uid` and `title` prefixed `Reference - …`.
+- `id`: `null`. Stable `uid` matching the filename without `.json` (Grafana's 40-character limit; e.g. `nke-site-controller-health-reference`). `title` prefixed `Reference - …`.
 - Filenames: `nke-<topic>-reference.json`.
 - `refresh`: `1m` or slower, and keep `timepicker.refresh_intervals` starting at `1m`. Grafana refuses anything below its `min_refresh_interval` with "Dashboard refresh interval is too low", so do not copy an upstream mixin's `10s`.
 - Query variables: write `query` as a **plain `label_values(...)` string**, matching `definition`. Grafana migrates a string into a Label-values query; an object without `qryType` falls back to **Label names**, so the dropdown lists label names (`namespace`, `pod`, `instance`) instead of values.

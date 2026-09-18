@@ -934,6 +934,6 @@
   },
   "timezone": "browser",
   "title": "Reference - etcd",
-  "uid": null,
+  "uid": "nke-etcd-reference",
   "weekStart": ""
 }
