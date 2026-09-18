@@ -83,9 +83,6 @@ func TestCAPDNodePoolRequest(t *testing.T) {
 	if req.Infra == nil {
 		t.Fatalf("CAPD request has no infra fields")
 	}
-	if req.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateJoinToken {
-		t.Errorf("SPIRE attestation method = %q, want %q", req.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateJoinToken)
-	}
 	assertBootstrapSuccessCommands(t, req.Infra.PreKubeadmCommands)
 
 	spec, ok := req.Infra.MachineTemplate["spec"].(map[string]any)

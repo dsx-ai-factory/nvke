@@ -27,7 +27,6 @@ nodeLabels:
 # A pool carries either infra or nico, never both. This path supplies CAPI
 # manifests directly, matching nico-mock-cluster.yaml; a real site uses nico.
 infra:
-  spireAttestationMethod: joinToken
   preKubeadmCommands:
     - "mkdir -p /run/cluster-api"
     - "echo success > /run/cluster-api/bootstrap-success.complete"

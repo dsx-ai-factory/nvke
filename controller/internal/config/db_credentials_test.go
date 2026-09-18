@@ -19,9 +19,10 @@ func TestValidateWeakDBCredentials(t *testing.T) {
 	t.Parallel()
 
 	base := config.Config{
-		MetricsListenAddress:  "127.0.0.1:9090",
-		SpireServerAPIAddress: "spire-server.spire-server.svc.cluster.local:8081",
-		SpireJoinTokenTTL:     time.Hour,
+		MetricsListenAddress:            "127.0.0.1:9090",
+		SpireServerAPIAddress:           "spire-server.spire-server.svc.cluster.local:8081",
+		SpireJoinTokenTTL:               time.Hour,
+		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
 	}
 
 	tests := []struct {

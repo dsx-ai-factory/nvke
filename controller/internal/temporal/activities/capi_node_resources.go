@@ -23,6 +23,7 @@ import (
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/capi"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 	"github.com/dsx-ai-factory/nke/controller/internal/nodes"
@@ -164,11 +165,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 }
 
 func (a *Activities) createCAPISpireJoinToken(ctx context.Context, createCtx *capiMachineCreateContext) (string, string, error) {
-	capiNodeSetProvider, err := createCtx.nodeSet.CAPIProvider()
-	if err != nil {
-		return "", "", fmt.Errorf("failed to read node set capi provider: %w", err)
-	}
-	if capiNodeSetProvider.SpireAttestationMethod != db.SpireAttestationMethodJoinToken {
+	if a.cfg.NodeAgentSpireAttestationMethod != config.SpireAttestationMethodJoinToken {
 		return "", "", nil
 	}
 	// A site stood up without SPIFFE has no SPIRE server to mint against, and no

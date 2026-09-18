@@ -20,7 +20,6 @@ NICO_SITE_ID="${NICO_SITE_ID:-e85ae455-2962-4742-b885-4b9ae22769c8}"
 NICO_VPC_ID="${NICO_VPC_ID:-b64210af-8f8e-4e37-ad0a-8cf7c6babf28}"
 NICO_SUBNET_ID="${NICO_SUBNET_ID:-53c42b79-3dbf-40e8-9363-75228d7b6e1b}"
 NICO_SSH_KEY_GROUP_ID="${NICO_SSH_KEY_GROUP_ID:-5057cbb3-51ba-4568-b9ad-531cdd626d97}"
-CAPI_SPIRE_ATTESTATION_METHOD="${CAPI_SPIRE_ATTESTATION_METHOD:-tpm}"
 
 # Reference:
 # ngc --format_type=json forge instance-type list --site e85ae455-2962-4742-b885-4b9ae22769c8 --org novxwn552ssc | jq
@@ -94,7 +93,6 @@ BODY=$(cat <<EOF
           }
         }
         },
-        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
         "preKubeadmCommands": [
         "install -d -m 0755 /etc/apt/keyrings",
         "curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-public.key",
@@ -147,7 +145,6 @@ BODY=$(cat <<EOF
           }
         }
         },
-        "spireAttestationMethod": "${CAPI_SPIRE_ATTESTATION_METHOD}",
         "preKubeadmCommands": [
         "install -d -m 0755 /etc/apt/keyrings",
         "curl -fsSL -o /etc/apt/keyrings/nke.asc https://nke-prod-assets.s3.us-west-2.amazonaws.com/nke-apt-public.key",

@@ -127,10 +127,6 @@ func TestClusterRequest_ControlPlaneSizedToTheSiteSpec(t *testing.T) {
 	if got := cp.Infra.MachineTemplate["kind"]; got != provisionedMachineTemplateKind {
 		t.Errorf("infra.machineTemplate kind = %v, want %q", got, provisionedMachineTemplateKind)
 	}
-	if cp.Infra.SpireAttestationMethod != api.SpireAttestationMethodCreateTpm {
-		t.Errorf("infra.spireAttestationMethod = %q, want %q",
-			cp.Infra.SpireAttestationMethod, api.SpireAttestationMethodCreateTpm)
-	}
 }
 
 // TestClusterRequest_SendsNoControlPlaneNodePool: CWE rejects a control-plane

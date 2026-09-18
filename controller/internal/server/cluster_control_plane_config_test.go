@@ -550,9 +550,8 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		cfg := &api.CreateClusterControlPlaneConfig{
 			DesiredCount: 3,
 			Infra: &api.InfraControlPlaneProvider{
-				MachineTemplate:        tmpl,
-				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
-				PreKubeadmCommands:     []string{"prep"},
+				MachineTemplate:    tmpl,
+				PreKubeadmCommands: []string{"prep"},
 			},
 		}
 
@@ -561,7 +560,7 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		require.NotNil(t, spec.Capi)
 		require.Len(t, spec.Capi.InfraMachineTemplatePreferences, 1)
 		assert.JSONEq(t, `{"kind":"DockerMachineTemplate"}`, string(spec.Capi.InfraMachineTemplatePreferences[0]))
-		assert.Equal(t, db.SpireAttestationMethodTPM, spec.Capi.SpireAttestationMethod)
+		assert.Empty(t, spec.Capi.SpireAttestationMethod)
 		assert.Equal(t, []string{"prep"}, spec.Capi.PreKubeadmCommands)
 	})
 }

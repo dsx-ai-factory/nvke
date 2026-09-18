@@ -24,8 +24,7 @@ func TestValidateCreateNodePoolRequest_CAPICloudInitInputs(t *testing.T) {
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
 		Infra: &api.InfraNodePoolProvider{
-			MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
-			SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+			MachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 			BootstrapFiles: []api.CloudInitFile{
 				{Path: "/etc/custom.conf", Content: "hello"},
 			},
@@ -44,8 +43,7 @@ func TestValidateCreateNodePoolRequest_CAPIAllowsMissingConfigProfile(t *testing
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
 		Infra: &api.InfraNodePoolProvider{
-			MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
-			SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+			MachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 		},
 	}
 	err := service.validateCreateNodePoolRequest(capiCluster(), req)
@@ -108,8 +106,7 @@ func TestValidateUpdatedNodePool_RejectsManagedSpirePathsWhenSpireEnabled(t *tes
 		NodeNamePrefix:   "worker",
 		DesiredNodeCount: 1,
 		Infra: &api.InfraNodePoolProvider{
-			MachineTemplate:        map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
-			SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
+			MachineTemplate: map[string]interface{}{"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1", "kind": "ExampleMachineTemplate"},
 			BootstrapFiles: []api.CloudInitFile{
 				{Path: "/etc/spire-agent/agent.conf", Content: "override"},
 			},
@@ -217,10 +214,9 @@ func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T
 		Name:           "worker",
 		NodeNamePrefix: "w",
 		Infra: &api.InfraNodePoolProvider{
-			MachineTemplate:        tmpl,
-			SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
-			BootstrapFiles:         files,
-			PreKubeadmCommands:     []string{"echo hi"},
+			MachineTemplate:    tmpl,
+			BootstrapFiles:     files,
+			PreKubeadmCommands: []string{"echo hi"},
 		},
 	}
 
@@ -228,7 +224,7 @@ func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T
 	require.NoError(t, err)
 	require.NotNil(t, pool.Capi)
 	assert.Nil(t, pool.Nico)
-	assert.Equal(t, db.SpireAttestationMethodJoinToken, pool.Capi.SpireAttestationMethod)
+	assert.Empty(t, pool.Capi.SpireAttestationMethod)
 	assert.Equal(t, []string{"echo hi"}, pool.Capi.PreKubeadmCommands)
 	assert.Equal(t, []db.CloudInitFile{{Path: "/tmp/a", Content: "x"}}, pool.Capi.BootstrapFiles)
 

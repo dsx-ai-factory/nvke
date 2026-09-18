@@ -2382,9 +2382,6 @@ components:
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
           x-go-type-skip-optional-pointer: true
-        spireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethodCreate"
-          description: How CWE configures SPIRE agent attestation for CAPI-backed nodes
         bootstrapFiles:
           type: array
           items:
@@ -2410,9 +2407,6 @@ components:
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infra provider MachineTemplate resource
           x-go-type-skip-optional-pointer: true
-        spireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethod"
-          description: How CWE configures SPIRE agent attestation for CAPI-backed nodes
         bootstrapFiles:
           type: array
           items:
@@ -2436,9 +2430,6 @@ components:
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
           x-go-type-skip-optional-pointer: true
-        spireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethodCreate"
-          description: How CWE configures SPIRE agent attestation for CAPI-backed nodes
         bootstrapFiles:
           type: array
           items:
@@ -2604,9 +2595,6 @@ components:
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
           x-go-type-skip-optional-pointer: true
-        spireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethodCreate"
-          description: How CWE configures SPIRE agent attestation for CAPI-backed control plane nodes
         bootstrapFiles:
           type: array
           items:
@@ -2632,9 +2620,6 @@ components:
           additionalProperties: true
           description: Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
           x-go-type-skip-optional-pointer: true
-        spireAttestationMethod:
-          $ref: "#/components/schemas/SpireAttestationMethod"
-          description: How CWE configures SPIRE agent attestation for CAPI-backed control plane nodes
         bootstrapFiles:
           type: array
           items:
@@ -2680,21 +2665,6 @@ components:
         - "smallest"
         - "largest"
       description: The strategy to use for selecting the OS install disk on nodes.
-      x-go-type-skip-optional-pointer: true
-
-    SpireAttestationMethod:
-      type: string
-      enum:
-        - "tpm"
-        - "joinToken"
-      description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.
-
-    SpireAttestationMethodCreate:
-      type: string
-      enum:
-        - "tpm"
-        - "joinToken"
-      description: How CWE configures SPIRE agent attestation for CAPI-backed nodes.
       x-go-type-skip-optional-pointer: true
 
     ListOSProfilesResponse:

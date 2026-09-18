@@ -1,3 +1,10 @@
+{{- $spireAttestationMethod := required "nodeAgent.spireAttestationMethod is required" .Values.nodeAgent.spireAttestationMethod }}
+{{- if not (has $spireAttestationMethod (list "tpm" "joinToken")) }}
+{{- fail (printf "nodeAgent.spireAttestationMethod must be one of tpm or joinToken, got %q" $spireAttestationMethod) }}
+{{- end }}
+{{- if and (eq $spireAttestationMethod "joinToken") (not .Values.spiffe.enabled) }}
+{{- fail "spiffe.enabled must be true when nodeAgent.spireAttestationMethod is joinToken" }}
+{{- end }}
 {{- include "controller.apiAuth.validate" . }}
 apiVersion: apps/v1
 kind: Deployment
@@ -313,6 +320,8 @@ spec:
               value: {{ .Values.spiffe.spire.serverPort | quote }}
             - name: SPIRE_JOIN_TOKEN_TTL
               value: {{ .Values.spiffe.spire.joinTokenTTL | quote }}
+            - name: NODE_AGENT_SPIRE_ATTESTATION_METHOD
+              value: {{ $spireAttestationMethod | quote }}
             # Teleport config
             {{- if .Values.teleport.enabled }}
             - name: TELEPORT_ENABLED

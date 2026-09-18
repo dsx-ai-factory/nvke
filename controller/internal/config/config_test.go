@@ -43,15 +43,48 @@ func TestConfig_ParseSupportedInfraProviders(t *testing.T) {
 	}
 }
 
+func TestConfig_ParseSpireAttestationMethod(t *testing.T) {
+	type parameters struct {
+		envValue      *string
+		spiffeEnabled *string
+		want          config.SpireAttestationMethod
+	}
+
+	tests := map[string]parameters{
+		"defaults to TPM": {
+			want: config.SpireAttestationMethodTPM,
+		},
+		"accepts join token": {
+			envValue:      ptr.To("joinToken"),
+			spiffeEnabled: ptr.To("true"),
+			want:          config.SpireAttestationMethodJoinToken,
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			withEnv(t, "NODE_AGENT_SPIRE_ATTESTATION_METHOD", params.envValue)
+			withEnv(t, "SPIFFE_ENABLED", params.spiffeEnabled)
+			setMinimumEnv(t)
+
+			cfg, err := config.ParseConfigFromEnv()
+
+			require.NoError(t, err)
+			require.Equal(t, params.want, cfg.NodeAgentSpireAttestationMethod)
+		})
+	}
+}
+
 func TestConfig_ValidateSupportedInfraProviders(t *testing.T) {
 	t.Parallel()
 
 	base := config.Config{
-		MetricsListenAddress:    "127.0.0.1:9090",
-		DBConnectionString:      "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
-		SpireServerAPIAddress:   "spire-server.spire-server.svc.cluster.local:8081",
-		SpireJoinTokenTTL:       time.Hour,
-		SupportedInfraProviders: []string{config.InfraProviderNico, config.InfraProviderInfra},
+		MetricsListenAddress:            "127.0.0.1:9090",
+		DBConnectionString:              "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
+		SpireServerAPIAddress:           "spire-server.spire-server.svc.cluster.local:8081",
+		SpireJoinTokenTTL:               time.Hour,
+		SupportedInfraProviders:         []string{config.InfraProviderNico, config.InfraProviderInfra},
+		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
 	}
 
 	type parameters struct {
@@ -109,11 +142,12 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 	t.Parallel()
 
 	base := config.Config{
-		MetricsListenAddress:    "127.0.0.1:9090",
-		DBConnectionString:      "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
-		SpireServerAPIAddress:   "spire-server.spire-server.svc.cluster.local:8081",
-		SpireJoinTokenTTL:       time.Hour,
-		SupportedInfraProviders: []string{config.InfraProviderNico},
+		MetricsListenAddress:            "127.0.0.1:9090",
+		DBConnectionString:              "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
+		SpireServerAPIAddress:           "spire-server.spire-server.svc.cluster.local:8081",
+		SpireJoinTokenTTL:               time.Hour,
+		SupportedInfraProviders:         []string{config.InfraProviderNico},
+		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
 	}
 
 	enabled := base
@@ -183,6 +217,63 @@ func TestUnit_ConfigValidateNodeAgentTLSJWT(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			err := params.config.Validate()
+			if params.wantErr != "" {
+				require.EqualError(t, err, params.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestConfig_ValidateSpireAttestationMethod(t *testing.T) {
+	t.Parallel()
+
+	base := config.Config{
+		MetricsListenAddress:            "127.0.0.1:9090",
+		DBConnectionString:              "postgres://cwe:strong@localhost:5432/cwe?sslmode=disable",
+		SpireServerAPIAddress:           "spire-server.spire-server.svc.cluster.local:8081",
+		SpireJoinTokenTTL:               time.Hour,
+		SupportedInfraProviders:         []string{config.InfraProviderInfra},
+		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
+	}
+
+	type parameters struct {
+		method        config.SpireAttestationMethod
+		spiffeEnabled bool
+		wantErr       string
+	}
+
+	tests := map[string]parameters{
+		"accepts TPM": {
+			method: config.SpireAttestationMethodTPM,
+		},
+		"accepts join token": {
+			method:        config.SpireAttestationMethodJoinToken,
+			spiffeEnabled: true,
+		},
+		"rejects join token when SPIFFE is disabled": {
+			method:  config.SpireAttestationMethodJoinToken,
+			wantErr: "SPIFFE_ENABLED must be true when NODE_AGENT_SPIRE_ATTESTATION_METHOD is joinToken",
+		},
+		"rejects an empty method": {
+			wantErr: `NODE_AGENT_SPIRE_ATTESTATION_METHOD must be one of tpm or joinToken, got ""`,
+		},
+		"rejects an unknown method": {
+			method:  "unknown",
+			wantErr: `NODE_AGENT_SPIRE_ATTESTATION_METHOD must be one of tpm or joinToken, got "unknown"`,
+		},
+	}
+
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := base
+			cfg.NodeAgentSpireAttestationMethod = params.method
+			cfg.SpiffeEnabled = params.spiffeEnabled
+
+			err := cfg.Validate()
 			if params.wantErr != "" {
 				require.EqualError(t, err, params.wantErr)
 				return

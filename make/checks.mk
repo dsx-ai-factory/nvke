@@ -70,6 +70,7 @@ lint-chart: ## Lint and render the Helm chart, then validate it. (run by the mer
 	@./controller/hack/chart-auth-assertions.sh
 	@./controller/hack/chart-node-agent-auth-assertions.sh
 	@./controller/hack/chart-provider-assertions.sh
+	@./controller/hack/chart-spire-attestation-assertions.sh
 
 chart-rbac-check: ## Assert that tenant RBAC grants every permission the controller uses.
 	@$(call require_tool,helm,$(HELM_VERSION))

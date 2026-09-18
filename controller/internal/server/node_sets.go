@@ -111,9 +111,8 @@ func apiInfraNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider)
 		obj = nil
 	}
 	out := &api.InfraNodeSetProvider{
-		MachineTemplate:        obj,
-		PreKubeadmCommands:     append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
-		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiNodeSetProvider.SpireAttestationMethod),
+		MachineTemplate:    obj,
+		PreKubeadmCommands: append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
 	}
 	if apiFiles := apiCloudInitFilesFromDB(capiNodeSetProvider.BootstrapFiles); apiFiles != nil {
 		out.BootstrapFiles = *apiFiles

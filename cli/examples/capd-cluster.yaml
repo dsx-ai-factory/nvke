@@ -25,7 +25,6 @@ nodePools:
     autoModeDisabled: false
     recycleBudget: 0
     infra:
-      spireAttestationMethod: joinToken
       preKubeadmCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"
@@ -49,7 +48,6 @@ nodePools:
     autoModeDisabled: false
     recycleBudget: 0
     infra:
-      spireAttestationMethod: joinToken
       preKubeadmCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"

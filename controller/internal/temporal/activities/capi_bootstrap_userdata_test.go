@@ -20,17 +20,19 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 	t.Parallel()
 
 	customBootstrap := db.CAPINodePoolProvider{
-		SpireAttestationMethod: db.SpireAttestationMethodTPM,
 		BootstrapFiles: []db.CloudInitFile{
 			{Path: "/etc/custom.conf", Owner: "root:root", Permissions: "0600", Content: "hello"},
 		},
 		PreKubeadmCommands: []string{"echo before kubeadm"},
 	}
-	spiffeConfig := config.Config{
-		SpiffeEnabled:      true,
-		SpireServerAddress: "spire.example.org",
-		SpireServerPort:    "9091",
+	tpmSpiffeConfig := config.Config{
+		SpiffeEnabled:                   true,
+		SpireServerAddress:              "spire.example.org",
+		SpireServerPort:                 "9091",
+		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
 	}
+	joinTokenSpiffeConfig := tpmSpiffeConfig
+	joinTokenSpiffeConfig.NodeAgentSpireAttestationMethod = config.SpireAttestationMethodJoinToken
 
 	type parameters struct {
 		config                config.Config
@@ -45,7 +47,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 	}
 	tests := map[string]parameters{
 		"TPM attestor": {
-			config:                spiffeConfig,
+			config:                tpmSpiffeConfig,
 			provider:              customBootstrap,
 			trustDomain:           "example.org",
 			trustBundle:           "-----BEGIN CERT-----\nabc123\n-----END CERT-----",
@@ -64,10 +66,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			},
 		},
 		"join-token attestor": {
-			config: spiffeConfig,
-			provider: db.CAPINodePoolProvider{
-				SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
-			},
+			config:                joinTokenSpiffeConfig,
 			spireJoinToken:        "join-token-123",
 			trustDomain:           "example.org",
 			trustBundle:           "bundle",
@@ -80,10 +79,10 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			},
 		},
 		"join-token attestor requires a token": {
-			provider: db.CAPINodePoolProvider{
-				SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+			config: config.Config{
+				NodeAgentSpireAttestationMethod: config.SpireAttestationMethodJoinToken,
 			},
-			wantErr: "spire join token is required when infra.spireAttestationMethod is joinToken",
+			wantErr: "spire join token is required when SPIRE attestation method is joinToken",
 		},
 		"SPIFFE disabled does not fetch or render SPIRE data": {
 			provider:         customBootstrap,

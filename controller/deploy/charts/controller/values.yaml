@@ -72,6 +72,11 @@ controllers:
     enabled: true
 
 nodeAgent:
+  # -- SPIRE node attestation method used by every cluster managed by this
+  # controller deployment. Set this value once when the environment is first
+  # deployed. Changing it in an existing environment is unsupported and
+  # requires a separately coordinated migration.
+  spireAttestationMethod: "tpm"
   tlsJwt:
     # -- Add JWT node authentication to the existing secure node-agent transport
     # for every node agent managed by this controller. Requires spiffe.enabled

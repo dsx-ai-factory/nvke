@@ -212,17 +212,6 @@ func validateNicoNetworkSelection(subnetIDs, vpcPrefixIDs []uuid.UUID, fieldPref
 	return nil
 }
 
-func validateCAPISpireAttestationMethod(method string) error {
-	switch method {
-	case "":
-		return fmt.Errorf("infra.spireAttestationMethod is required")
-	case string(db.SpireAttestationMethodTPM), string(db.SpireAttestationMethodJoinToken):
-		return nil
-	default:
-		return fmt.Errorf("invalid infra.spireAttestationMethod: %q", method)
-	}
-}
-
 func clusterIsCAPIBacked(cluster db.Cluster) bool {
 	return cluster.ProviderType == db.ProviderTypeCAPI
 }
@@ -278,9 +267,6 @@ func validateCreateCAPINodePoolRequest(req *api.CreateNodePoolRequest) error {
 	}
 	if isEmptyManifestObject(req.Infra.MachineTemplate) {
 		return fmt.Errorf("infra.machineTemplate cannot be empty")
-	}
-	if err := validateCAPISpireAttestationMethod(string(req.Infra.SpireAttestationMethod)); err != nil {
-		return err
 	}
 	if err := validateCAPIInfrastructureManifest(req.Infra.MachineTemplate); err != nil {
 		return fmt.Errorf("invalid infra.machineTemplate: %w", err)
@@ -575,9 +561,6 @@ func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req
 		if req.Infra.PreKubeadmCommands != nil {
 			capiProvider.PreKubeadmCommands = append([]string(nil), req.Infra.PreKubeadmCommands...)
 		}
-		if req.Infra.SpireAttestationMethod != nil {
-			capiProvider.SpireAttestationMethod = db.SpireAttestationMethod(*req.Infra.SpireAttestationMethod)
-		}
 		dbNodePool.SetCapi(capiProvider)
 	}
 
@@ -611,9 +594,6 @@ func validateUpdatedCAPINodePool(dbNodePool *db.NodePool) error {
 	if err := validateCAPIInfrastructureManifest(capiInfraMachineTemplate); err != nil {
 		return newBadRequestErrorf("invalid infra.machineTemplate: %s", err)
 	}
-	if err := validateCAPISpireAttestationMethod(string(capiNodePoolProvider.SpireAttestationMethod)); err != nil {
-		return newBadRequestErrorf("%s", err.Error())
-	}
 	for _, file := range capiNodePoolProvider.BootstrapFiles {
 		switch file.Path {
 		case constants.CAPISpireAgentConfigPath, constants.CAPISpireTrustBundlePath:
@@ -631,9 +611,6 @@ func validateUpdatedForgeNodePool(dbNodePool *db.NodePool) error {
 	}
 	if err := validateForgeDiskSelectionStrategy(api.DiskSelectionStrategyCreate(diskSelectionStrategy)); err != nil {
 		return newBadRequestErrorf("%s", err.Error())
-	}
-	if dbNodePool.Capi != nil && dbNodePool.Capi.SpireAttestationMethod != "" {
-		return newBadRequestErrorf("infra.spireAttestationMethod is not supported on a nico node pool")
 	}
 	return nil
 }
@@ -798,9 +775,8 @@ func apiInfraNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvide
 		obj = nil
 	}
 	out := &api.InfraNodePoolProvider{
-		MachineTemplate:        obj,
-		PreKubeadmCommands:     append([]string(nil), capiNodePoolProvider.PreKubeadmCommands...),
-		SpireAttestationMethod: api.SpireAttestationMethodCreate(capiNodePoolProvider.SpireAttestationMethod),
+		MachineTemplate:    obj,
+		PreKubeadmCommands: append([]string(nil), capiNodePoolProvider.PreKubeadmCommands...),
 	}
 	if apiFiles := apiCloudInitFilesFromDB(capiNodePoolProvider.BootstrapFiles); apiFiles != nil {
 		out.BootstrapFiles = *apiFiles
@@ -830,7 +806,10 @@ func cloneUUIDSlicePtr(s []uuid.UUID) *[]uuid.UUID {
 	return &out
 }
 
-func dbNodePoolFromAPI(req *api.CreateNodePoolRequest, kubernetesVersion string) (db.NodePool, error) {
+func dbNodePoolFromAPI(
+	req *api.CreateNodePoolRequest,
+	kubernetesVersion string,
+) (db.NodePool, error) {
 	nodeLabels := make([]string, 0)
 	if req.NodeLabels != nil {
 		nodeLabels = *req.NodeLabels
@@ -906,10 +885,9 @@ func dbNodePoolFromAPI(req *api.CreateNodePoolRequest, kubernetesVersion string)
 			return db.NodePool{}, err
 		}
 		nodePool.SetCapi(db.CAPINodePoolProvider{
-			InfraMachineTemplate:   infraMachineTemplate,
-			SpireAttestationMethod: db.SpireAttestationMethod(req.Infra.SpireAttestationMethod),
-			BootstrapFiles:         dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles),
-			PreKubeadmCommands:     append([]string(nil), req.Infra.PreKubeadmCommands...),
+			InfraMachineTemplate: infraMachineTemplate,
+			BootstrapFiles:       dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles),
+			PreKubeadmCommands:   append([]string(nil), req.Infra.PreKubeadmCommands...),
 		})
 	}
 

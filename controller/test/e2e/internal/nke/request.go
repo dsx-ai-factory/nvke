@@ -225,9 +225,8 @@ func buildNicoControlPlaneConfig(clusterName string, vpcID uuid.UUID, spec Clust
 		MaxSurge:             cp.MaxSurge,
 		SystemReservedMemory: pool.SystemReservedMemory,
 		Infra: &api.InfraControlPlaneProvider{
-			SpireAttestationMethod: pool.Infra.SpireAttestationMethod,
-			PreKubeadmCommands:     pool.Infra.PreKubeadmCommands,
-			MachineTemplate:        pool.Infra.MachineTemplate,
+			PreKubeadmCommands: pool.Infra.PreKubeadmCommands,
+			MachineTemplate:    pool.Infra.MachineTemplate,
 		},
 	}, nil
 }
@@ -269,8 +268,7 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec) (
 		DesiredNodeCount:     spec.DesiredNodeCount,
 		SystemReservedMemory: spec.SystemReservedMemory,
 		Infra: &api.InfraNodePoolProvider{
-			SpireAttestationMethod: api.SpireAttestationMethodCreateJoinToken,
-			PreKubeadmCommands:     containerCAPIReadyCommands(),
+			PreKubeadmCommands: containerCAPIReadyCommands(),
 			MachineTemplate: map[string]any{
 				"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
 				"kind":       "NicoMachineTemplate",

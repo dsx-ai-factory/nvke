@@ -907,7 +907,10 @@ func TestCreateCAPISpireJoinTokenSkippedWhenSpiffeDisabled(t *testing.T) {
 		node:    db.Node{ID: uuid.New()},
 	}
 
-	a := &Activities{cfg: config.Config{SpiffeEnabled: false}}
+	a := &Activities{cfg: config.Config{
+		SpiffeEnabled:                   false,
+		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodJoinToken,
+	}}
 	token, path, err := a.createCAPISpireJoinToken(context.Background(), createCtx)
 	require.NoError(t, err, "must not reach SPIRE when SPIFFE is off")
 	assert.Empty(t, token)

@@ -611,7 +611,6 @@ nodePools:
     autoModeDisabled: false
     recycleBudget: 0
     infra:
-      spireAttestationMethod: joinToken
       machineTemplate:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
         kind: DockerMachineTemplate
@@ -808,7 +807,6 @@ autoProvisionDisabled: true
 autoModeDisabled: false
 recycleBudget: 0
 infra:
-  spireAttestationMethod: joinToken
   machineTemplate:
     apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
     kind: DockerMachineTemplate

@@ -19,7 +19,13 @@ const (
 	InfraProviderNico = "nico"
 	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
 	InfraProviderInfra = "infra"
+
+	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
+	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
 )
+
+// SpireAttestationMethod selects the deployment-wide SPIRE node attestation method.
+type SpireAttestationMethod string
 
 type Config struct {
 	// LogLevel is the level of logs to output (debug|info|warn|error)
@@ -212,6 +218,10 @@ type Config struct {
 	// NodeAgentTLSJWTSubjectTrustDomain is the exact SPIFFE trust domain accepted
 	// in the verified node-agent JWT subject.
 	NodeAgentTLSJWTSubjectTrustDomain string `env:"NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN"`
+
+	// NodeAgentSpireAttestationMethod selects the SPIRE attestation method used by
+	// every cluster managed by this controller deployment.
+	NodeAgentSpireAttestationMethod SpireAttestationMethod `env:"NODE_AGENT_SPIRE_ATTESTATION_METHOD" default:"tpm"`
 
 	// DgxcTenantUser is the DGXC tenant SSH username injected into OS profile userData templates.
 	DgxcTenantUser string `env:"DGXC_TENANT_USER"`
@@ -426,6 +436,14 @@ func (c *Config) Validate() error {
 	}
 	if c.SpireJoinTokenTTL <= 0 {
 		return fmt.Errorf("SPIRE_JOIN_TOKEN_TTL must be greater than 0")
+	}
+	switch c.NodeAgentSpireAttestationMethod {
+	case SpireAttestationMethodTPM, SpireAttestationMethodJoinToken:
+	default:
+		return fmt.Errorf("NODE_AGENT_SPIRE_ATTESTATION_METHOD must be one of tpm or joinToken, got %q", c.NodeAgentSpireAttestationMethod)
+	}
+	if c.NodeAgentSpireAttestationMethod == SpireAttestationMethodJoinToken && !c.SpiffeEnabled {
+		return fmt.Errorf("SPIFFE_ENABLED must be true when NODE_AGENT_SPIRE_ATTESTATION_METHOD is joinToken")
 	}
 	if err := c.Teleport.Validate(); err != nil {
 		return err

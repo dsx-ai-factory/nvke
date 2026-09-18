@@ -63,11 +63,7 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 			DesiredCount:         len(hosts),
 			SystemReservedMemory: inv.Cluster.KubeletConfig.SystemReservedMemory,
 			Infra: &api.InfraControlPlaneProvider{
-				// The provisioned provider copies the allocated host's TPM identity
-				// to the CAPI Machine. CWE uses it as the parent of the node-agent
-				// workload entry; no bootstrap join token is needed.
-				SpireAttestationMethod: api.SpireAttestationMethodCreateTpm,
-				MachineTemplate:        provisionedMachineTemplate(),
+				MachineTemplate: provisionedMachineTemplate(),
 			},
 		},
 		Infra: &api.InfraClusterProvider{
