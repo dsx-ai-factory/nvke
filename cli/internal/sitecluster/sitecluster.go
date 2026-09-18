@@ -57,7 +57,7 @@ func ClusterRequest(inv *sitespec.SiteSpec) (api.CreateClusterJSONRequestBody, e
 		ControlPlaneKubernetesVersion: inv.Cluster.K8sVersion,
 		CniPlugin:                     inv.Cluster.CniName,
 		EtcdEncrypted:                 inv.Cluster.EtcdEncryptionEnabled(),
-		// omitempty avoids sending an empty VIP, which CWE rejects.
+		// A plain string with omitempty: an unset VIP is left out of the body.
 		ControlPlaneVIP: inv.Cluster.ControlPlaneVIP,
 		ControlPlaneConfig: &api.CreateClusterControlPlaneConfig{
 			DesiredCount:         len(hosts),
