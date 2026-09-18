@@ -297,6 +297,54 @@ server:
           password: "${CNPG_SUPERUSER_PASSWORD:-example-password}"
 EOF
 
+EXTRA=()
+
+# capnico-e2e installs the provider as an item, and renders a Secret for it.
+# Neither applies to CAPD: clusterctl init brings that provider, and CWE reaches
+# it with no credentials at all.
+if [[ "${SBOM_TARGET}" == capnico-e2e ]]; then
+  : "${CAPNICO_SOURCE_DIR:?CAPNICO_SOURCE_DIR is required for ${SBOM_TARGET}}"
+  : "${CAPNICO_IMAGE:=cluster-api-provider-nico:local}"
+
+  # The chart is built from source, like the controller's, so the deploy path
+  # names the component and this says where it materialised.
+  cat >"${VALUES_DIR}/capnico.yaml" <<EOF
+manager:
+  image:
+    repository: "${CAPNICO_IMAGE%:*}"
+    tag: "${CAPNICO_IMAGE##*:}"
+EOF
+
+  # Where CAPNICo reaches the NICo API. Empty NICO_ENDPOINT means the simulator,
+  # matching controller/hack/nico-provider/Tiltfile: the host defaults to the
+  # kind host address and the port is the simulator's. The other three are the
+  # simulator's own constants -- nothing here is secret, which is why this
+  # target renders the same Secret shape a real site fills with Forge
+  # credentials.
+  nico_endpoint="${NICO_ENDPOINT:-http://${NICO_SIM_ENDPOINT_HOST:-${KIND_GATEWAY_IP}}:18080}"
+  : "${nico_endpoint:?NICO_ENDPOINT or NICO_SIM_ENDPOINT_HOST is required: the kind gateway could not be read}"
+
+  # The BootstrapConfig the template item renders against. JSON because
+  # build/render-template.py takes JSON -- PyYAML is not guaranteed here.
+  BOOTSTRAP_CONFIG="${VALUES_DIR}/bootstrap-config.json"
+  NICO_ENDPOINT="${nico_endpoint}" \
+  NICO_ORG_ID="${NICO_ORG_ID:-novxwn552ssc}" \
+  NICO_TOKEN="${NICO_TOKEN:-nico-simctl-token}" \
+  NICO_API_NAME="${NICO_API_NAME:-forge}" python3 -c '
+import json, os
+print(json.dumps({"Nico": {
+    "Endpoint": os.environ["NICO_ENDPOINT"],
+    "OrgID":    os.environ["NICO_ORG_ID"],
+    "Token":    os.environ["NICO_TOKEN"],
+    "APIName":  os.environ["NICO_API_NAME"],
+}}, indent=2))
+' >"${BOOTSTRAP_CONFIG}"
+
+  EXTRA+=(--config "${BOOTSTRAP_CONFIG}")
+  EXTRA+=(--chart-override "capnico=${CAPNICO_SOURCE_DIR}/chart")
+  EXTRA+=(--values-for "capnico=${VALUES_DIR}/capnico.yaml")
+fi
+
 log "installing ${SBOM_TARGET} from ${SBOM_DIR}"
 bash "${STACK_DIR}/build/use-nke-sbom.sh" install \
   --sbom "${SBOM_DIR}" \
@@ -305,4 +353,5 @@ bash "${STACK_DIR}/build/use-nke-sbom.sh" install \
   --values-for "controller=${VALUES_DIR}/controller.yaml" \
   --values-for "spire=${VALUES_DIR}/spire.yaml" \
   --values-for "postgresql=${VALUES_DIR}/postgresql.yaml" \
-  --values-for "temporal=${VALUES_DIR}/temporal.yaml"
+  --values-for "temporal=${VALUES_DIR}/temporal.yaml" \
+  ${EXTRA[@]+"${EXTRA[@]}"}
