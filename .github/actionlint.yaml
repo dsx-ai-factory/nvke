@@ -16,3 +16,11 @@ self-hosted-runner:
     - nke-arm64-8c16g
     - nke-arm64-4c32g
     - nke-arm64-16c64g
+    # Scale sets on the RelEng EKS cluster (dgxc-eks-use1-rel-prd1).
+    # Both amd64 sizes share one node pool; the two KVM sizes share the
+    # bare-metal pool, which is the only one with /dev/kvm.
+    - arc-amd64-cpu8
+    - arc-amd64-cpu16
+    - arc-arm64-cpu16
+    - arc-arm64-kvm
+    - arc-arm64-kvm-8c16g
