@@ -106,6 +106,14 @@ git clone https://github.com/dsx-ai-factory/nke.git
 cd nke
 ```
 
+The entire repository builds from a clean checkout with no network access:
+
+```bash
+GOPROXY=off make build
+```
+
+This compiles all nine modules and links six binaries into `bin/`. It is the quickest way to confirm your toolchain is correct.
+
 **Build and test the agent:**
 
 ```bash
