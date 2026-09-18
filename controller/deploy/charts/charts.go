@@ -26,7 +26,9 @@ import (
 //go:embed all:controller all:postgresql
 var files embed.FS
 
-// Names returns every embedded chart, sorted.
+// Names returns every embedded chart, sorted. These are directory names, which
+// is what FS and Extract take; a chart's Helm name is declared in its
+// Chart.yaml and need not match.
 func Names() []string {
 	entries, err := files.ReadDir(".")
 	if err != nil {

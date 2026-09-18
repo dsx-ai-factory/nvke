@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -122,6 +123,9 @@ func TestExtract_SecuresTheDirectoryItWasGiven(t *testing.T) {
 	}
 }
 
+// chartName matches the name field of a Chart.yaml.
+var chartName = regexp.MustCompile(`(?m)^name:[ \t]+\S+`)
+
 func TestNames(t *testing.T) {
 	if got, want := Names(), []string{"controller", "postgresql"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("Names() = %v, want %v", got, want)
@@ -149,8 +153,12 @@ func TestEveryChartIsComplete(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(string(meta), "name: "+name) {
-			t.Errorf("chart %s: Chart.yaml does not name it:\n%s", name, meta)
+		// That it declares a name, not which one: the directory is the key
+		// this package indexes by, and the Helm chart name is independent of
+		// it. controller/ holds the chart named nke-controller, after the OCI
+		// repository it publishes to.
+		if !chartName.Match(meta) {
+			t.Errorf("chart %s: Chart.yaml declares no name:\n%s", name, meta)
 		}
 	}
 }
