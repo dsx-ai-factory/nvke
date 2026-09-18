@@ -8,7 +8,9 @@ If you already have nodes provisioned and running, you can manually prepare them
 
 ## Self-Bootstrap Models: Managed vs Unmanaged
 
-What you get after bootstrap depends on whether your environment includes a [NVIDIA Infra Controller (NICo)](https://github.com/dsx-ai-factory/infra-controller) infrastructure provider for NKE, integrated via [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico).
+What you get after bootstrap depends on whether your environment includes a [NVIDIA Infra Controller (NICo)](https://github.com/dsx-ai-factory/infra-controller) site, integrated with NKE via [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico).
+
+> **Note:** NICo is NKE's only supported CAPI infrastructure provider. The self-managed path is the supported production deployment model. The unmanaged path produces a working Kubernetes cluster but no NKE day-2 operations are possible — it is not a supported NKE deployment.
 
 | | Self-bootstrapped, **self-managed** | Self-bootstrapped, **unmanaged** |
 |---|---|---|
@@ -238,12 +240,13 @@ All nodes should show `Ready` status.
 
 **Self-managed sites:**
 
-1. Install your environment SBOM so NKE can drive day-2 operations through NICo.
-2. Wait until the SBOM is fully deployed and healthy.
-3. Complete NKE and NICo ingestion with the NKE team. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish ingestion runbook here once it exists.
-4. Operate the site through NKE day-2 workflows.
+1. Ensure your NICo site is set up and healthy before proceeding. See the [NICo Site Setup guide](https://nvidia.github.io/ncx-infra-controller-core/manuals/site-setup.html) and [Networking Requirements](https://nvidia.github.io/ncx-infra-controller-core/manuals/networking_requirements.html).
+2. Install your environment SBOM so NKE can drive day-2 operations through NICo.
+3. Wait until the SBOM is fully deployed and healthy.
+4. Complete NKE and NICo host ingestion with the NKE team. See [Ingesting Hosts](https://nvidia.github.io/ncx-infra-controller-core/manuals/ingesting_machines.html) in the NICo docs. Keep the etcd encryption key file until this step succeeds: ingestion applies it to the controller, which needs it to join control-plane nodes and rotate the key. **TODO:** Publish NKE-specific ingestion runbook here once it exists.
+5. Operate the site through NKE day-2 workflows.
 
-**Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NKE site-controller installation is required.
+**Unmanaged sites:** Deploy workloads with whatever tooling fits your environment. No NKE site-controller installation is required. Note that without NICo, no NKE day-2 operations (tenant cluster creation, node add/remove, upgrades) are available.
 
 ## Important Notes
 
