@@ -977,6 +977,11 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   done
   docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-nke-stack.sh" \
     "${RUNNER_NAME}:/usr/local/bin/deploy-nke-stack.sh"
+  # The deploy path itself. build/use-nke-sbom.sh reads nke-deploy.yaml from
+  # here and applies every item in it, so without this the runner has the
+  # executor and the chart but nothing describing what to install.
+  docker cp "${WORKSPACE_ROOT}/generated/nke-sbom-e2e" \
+    "${RUNNER_NAME}:/workspace/nke-stack/generated/nke-sbom-e2e"
   # build-local packages the CWE chart from the working tree, so the build tree
   # needs it at the path build/nke-stack.sh derives from REPO_ROOT.
   runner_exec mkdir -p /workspace/nke-stack/controller/deploy

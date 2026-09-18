@@ -95,6 +95,80 @@ type Spec struct {
 	Requires []Requirement `yaml:"requires"`
 }
 
+// SBOMSet is delivery rather than composition: which artifact sets are cut from
+// the chart and for whom. controller/deploy/composition/nke-sbom.yaml. Optional
+// -- a consumer that wants only the chart needs no such file.
+type SBOMSet struct {
+	APIVersion string      `yaml:"apiVersion"`
+	Kind       string      `yaml:"kind"`
+	Metadata   Metadata    `yaml:"metadata"`
+	Spec       SBOMSetSpec `yaml:"spec"`
+}
+
+type SBOMSetSpec struct {
+	SBOMs []SBOM `yaml:"sboms"`
+}
+
+// SBOM is one generated artifact set: a directory of deploy paths, one per
+// target, published as a unit or not at all.
+type SBOM struct {
+	Name string `yaml:"name"`
+	// Publish decides whether the push target will touch this tree. It is a
+	// property of the set rather than a command-line flag: the e2e trees are
+	// built by lanes that deliberately hold no registry credentials, so they
+	// must not be pushable by typo.
+	Publish bool `yaml:"publish"`
+
+	// Registry is the OCI repository an emitted Application resolves the chart
+	// from -- the repoURL of its helm source, in OCI-Helm form, which carries no
+	// scheme and no chart name. Required for a set with an argocd target;
+	// unused by one without, because a helm target is handed a chart by
+	// whoever runs the install.
+	Registry string `yaml:"registry,omitempty"`
+
+	Targets []Target `yaml:"targets"`
+}
+
+// Target is one deploy path: a provider, an overlay, and how the umbrella
+// arrives on the cluster.
+type Target struct {
+	Name string `yaml:"name"`
+	// Provider names what the capi phase installs. `provisioned` adopts a host
+	// that already exists rather than creating one, which is what a bootstrap
+	// cluster needs: the machine being provisioned is the one running kind.
+	Provider string `yaml:"provider"`
+	// Overlay is relative to the recipe directory, and is copied into the
+	// target so the generated tree is self-contained -- a published set is
+	// tarred and pushed, so it cannot reference files outside itself.
+	Overlay string `yaml:"overlay"`
+	// Stack is how the umbrella arrives: StackHelm installs it directly, one
+	// release per phase, and is the only option where no ArgoCD exists;
+	// StackArgoCD emits Applications for a site that outlives its installation.
+	Stack string `yaml:"stack"`
+
+	// BaseConfig names the files from base-config/ this target carries, without
+	// their numeric prefix or extension. Namespaces are always generated; these
+	// are not inferred, because which credentials a cluster holds should be read
+	// off the target rather than derived from a rule that can change under it.
+	//
+	// oidc-upstream-ca is resolved from the composition's own requires block
+	// instead of base-config/, so the chart keeps one source of truth for the
+	// precondition it declares.
+	BaseConfig []string `yaml:"baseConfig,omitempty"`
+
+	// Manifests names the pins under manifests/ this target installs, in the
+	// order they are applied, between base-config and the umbrella. Each is a
+	// vendored upstream manifest with its edits baked in at generate time, so
+	// the item is a plain apply.
+	Manifests []string `yaml:"manifests,omitempty"`
+}
+
+// The values Target.Stack accepts.
+const (
+	StackHelm   = "helm"
+	StackArgoCD = "argocd"
+)
+
 // ComponentRef selects a registry component into this composition.
 type ComponentRef struct {
 	Name string `yaml:"name"`

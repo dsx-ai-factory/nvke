@@ -1,0 +1,153 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Site-controller overlay for nke-stack: a permanent cluster on Forge hardware
+# that mints tenant clusters through CAPNICo.
+#
+# Reverse-engineered from a site stood up by hand on az61 -- see the NKE OSS
+# Forge Provisioning exercise. Where a value here differs from the e2e overlays
+# it is because this cluster outlives its installation: storage is persisted,
+# metrics are collected, and the API is reached from outside the cluster.
+#
+# What stays --set at install time, because only the installer knows it: the
+# controller image, the generated database password, the trust domain, and
+# profiles.image.* (CWE reads OS and config profiles from a directory an init
+# container materialises, and without it /api/osProfiles returns 500 and no
+# tenant node can be rendered).
+#
+# Not here either: the Forge endpoint and credentials. Those reach CAPNICo
+# through the nico-credentials Secret, which is why this target and the NICo e2e
+# lane differ by a URL rather than by a chart value.
+
+# Monitoring off, matching the exercise: the site ran postgres, temporal and CWE
+# and nothing else, so the Prometheus half has never been on this hardware.
+#
+# Both keys, not one. global.monitoring.enabled left true with the stack off
+# renders ServiceMonitors against CRDs that are not there, and the install fails
+# outright rather than degrading -- cloud-workflow-engine ANDs its own
+# serviceMonitor.enabled with this global.
+global:
+  monitoring:
+    enabled: false
+prometheus-operator-crds:
+  enabled: false
+kube-prometheus-stack:
+  enabled: false
+
+# SPIRE off, and with it the identity plane.
+#
+# This matches what was proven on hardware: the exercise ran the site with
+# --disable-mtls throughout, so CWE dialled each node agent in plaintext and no
+# ClusterSPIFFEID, NodePort or tpm-pubhashes ConfigMap was ever registered. A
+# site with SPIRE on needs those five manifests as an item between the identity
+# and controller phases, which this deploy path does not carry yet.
+#
+# The two sides must agree: the agent's own --disable-mtls comes from the OS
+# profile, and a mismatch surfaces as `tls: first record does not look like a
+# TLS handshake` during node preflight, naming neither side. Turning SPIRE on
+# here means turning it on there too.
+spire-crds:
+  enabled: false
+spire:
+  enabled: false
+
+# Installed as a deploy-path item ahead of this chart, because Cluster API's
+# manifests embed an Issuer and a Certificate: cert-manager has to be serving
+# before CAPI applies, which is one item earlier than the umbrella can manage.
+# Disabled here so exactly one owner remains.
+cert-manager:
+  enabled: false
+
+postgresql:
+  # Top level, NOT nested under `primary:`. That nesting is Bitnami's, and this
+  # composition ships the in-repo chart instead (see registry.yaml), whose
+  # values have no `primary` key at all -- so `primary.persistence.enabled: true`
+  # renders emptyDir, which is the exercise's own "Postgres running on emptyDir,
+  # no PVC" failure reintroduced by carrying its fix onto a different chart.
+  # Verified by rendering both forms: only this one emits a PersistentVolumeClaim.
+  #
+  # Helm does not reject unknown values, so the wrong path costs nothing at
+  # install time and loses the database on the first pod restart.
+  persistence:
+    enabled: true
+    size: 40Gi
+    # No default StorageClass ships with a bootstrapped cluster, and an
+    # instance type with a single disk carrying root cannot offer the spare
+    # unpartitioned device the documented option wants. The nke-storage item
+    # installs local-path; naming it here rather than relying on a default
+    # keeps the failure legible if it is absent.
+    storageClass: local-path
+
+controller:
+  # NicoCluster and NicoMachineTemplate: tenant machines do not exist yet and
+  # CAPNICo creates them against Forge.
+  supportedInfraProviders: nico
+
+  # CWE reconciles CAPI objects, so it needs the RBAC for them. The chart
+  # default is false, and without it the controllers start normally while every
+  # provisioning write is forbidden.
+  capi:
+    enabled: true
+    rbac:
+      create: true
+
+  # The controller publishes each tenant's kubeconfig as a Secret on this
+  # cluster. Cluster API also needs it to probe the workload cluster, so without
+  # this a tenant never leaves Provisioning.
+  tenantAccess:
+    enabled: true
+
+  # Off, because it travels with SPIRE: the OIDC discovery provider is a
+  # subchart of spire, so with spire disabled there is no issuer for a tenant
+  # kube-apiserver to fetch keys from. Enabling it here would configure CWE to
+  # present tokens from a provider that does not exist. The chart default is
+  # false; this states it rather than relying on that.
+  nkeOIDCAuth:
+    enabled: false
+
+  # Plaintext to the node agents, matching spire.enabled above and the agent's
+  # own flag. Left at the chart default this would be true, and CWE would dial
+  # with mTLS a node that is not serving it.
+  spiffe:
+    enabled: false
+
+  # The Secret nke-base-config creates. CWE refuses to render Forge user-data
+  # without DGXC_TENANT_USER and DGXC_TENANT_PASSWORD, and the chart injects them
+  # only when this names a Secret carrying keys `user` and `password` -- creating
+  # the Secret without naming it here leaves the refusal in place, which is how
+  # the exercise first met it.
+  secrets:
+    dgxcTenantCredSecretName: dgxc-tenant-credentials
+
+  # Where CWE reads OS and config profiles from, and where the init container
+  # mounts the profiles content image. The chart defaults this to "", and left
+  # empty /api/osProfiles returns 500 and no tenant node can be rendered -- a
+  # failure that names neither profiles nor this value.
+  #
+  # The path is static; which image supplies the content is not, so
+  # profiles.image.repository and .tag stay --set at install time.
+  profiles:
+    path: /profiles
+
+  # A tenant node joins and then has its CNI installed by the agent.
+  cni:
+    installAfterInit: true
+
+  # The API is reached on the node address from outside the cluster, which under
+  # OVN is how the exercise reached it after finding 127.0.0.1:30080 dead.
+  #
+  # nodePort, NOT port. `port` is the ClusterIP Service's own port: setting it to
+  # 30080 moves the port in-cluster callers dial and publishes nothing, which is
+  # the failure this is meant to fix rather than a fix for it. nodePort renders a
+  # second NodePort Service beside the ClusterIP one, which is what the bootstrap
+  # applies by hand today.
+  service:
+    nodePort: 30080
+
+  env:
+    # Must match the --secure-server-port the agent was configured with when the
+    # host was provisioned, which is a property of the OS profile rather than of
+    # this cluster. A mismatch surfaces as a connection failure during node
+    # preflight, naming neither side.
+    - name: NODE_AGENT_PORT
+      value: "15005"

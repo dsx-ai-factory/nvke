@@ -1,0 +1,215 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# CAPD e2e overlay for nke-stack.
+#
+# The composition installs the management plane; this is the application-level
+# configuration the suite needs on top of it, and it mirrors what
+# controller/Tiltfile assembles as --set flags for the cwe helm_resource.
+#
+# Everything here is static. The values that genuinely vary per run -- the
+# management VIP, the trust domain (derived from the kind cluster name), the
+# locally built image and the generated database password -- are passed as
+# --set by controller/hack/ci/deploy-nke-stack.sh, which is the only place that
+# knows them.
+#
+# Keep in step with _cwe_chart_flags in controller/Tiltfile.
+
+# Monitoring is off in this lane. kube-prometheus-stack asks for 500m CPU and
+# 1Gi of memory for Prometheus alone, before Grafana, Alertmanager and the
+# node exporters, on a single-node kind cluster that is already tight enough
+# for tenant provisioning to have timed out at ten minutes. The suite asserts
+# nothing about metrics, so it would be cost without coverage.
+#
+# Both keys, not one: global.monitoring.enabled left true with the stack off
+# renders ServiceMonitors against CRDs that no longer exist, which fails the
+# install rather than degrading it.
+global:
+  monitoring:
+    enabled: false
+prometheus-operator-crds:
+  enabled: false
+kube-prometheus-stack:
+  enabled: false
+
+controller:
+  # The suite mints its own token and presents it on every call, so the ordinary
+  # specs exercise the shipping authentication path rather than bypassing it.
+  # backend-e2e.sh fails rather than skips when authentication is not enforced.
+  apiAuth:
+    enabled: true
+    permissive: false
+
+  # CWE reconciles CAPI objects, so it needs the RBAC for them.
+  # CWE accepts only the API provider blocks named here, and the chart defaults
+  # to nico. This lane submits Infra blocks against CAPD, so without it every
+  # create is rejected with "infra provider is not supported by this
+  # deployment" -- which is what the first real run of this deploy path hit.
+  # controller/Tiltfile:129 appends the same value for the capd provider.
+  supportedInfraProviders: infra
+  capi:
+    rbac:
+      create: true
+
+  tenantAccess:
+    enabled: true
+
+  nkeOIDCAuth:
+    enabled: true
+    # Logical issuer, string-compared against the JWT's iss claim; it does not
+    # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
+    issuerURL: "https://nke.site-controller.internal"
+    # The CA the OIDC provider's leaf is signed by, published by the chain in
+    # controller/deploy/k8s/oidc-upstream-ca.yaml.
+    caBundleSecret:
+      namespace: spire-server
+      name: oidc-provider-upstream-ca
+      key: ca.crt
+
+  # The CAPD lane installs the CNI as part of cluster creation rather than after
+  # init; the node-pool lane differs and overrides this.
+  cni:
+    installAfterInit: false
+
+  # Empty on this path: none of the twelve variables the Tiltfile forwards
+  # (TEMPORAL_UI_URL, LOG_LEVEL, FORGE_URL, ...) are set by backend-e2e.sh.
+  env: []
+
+  # ---------------------------------------------------------------------------
+  # Moved here from controller/hack/tilt-cwe-chart-values.yaml, which the lane
+  # used to read off disk and pass as a second --values file. It is static
+  # configuration -- the same on every run -- so it belongs in the overlay: a
+  # deploy path that does not carry it under-describes the deployment, and a
+  # reader of the generated tree could not tell how CWE was configured.
+  #
+  # The Tiltfile still reads that file (controller/Tiltfile:1018,1197), so this
+  # is a second copy and the two can drift. Verified equivalent at the time of
+  # the move by rendering the controller chart from each and diffing: identical.
+  #
+  # Two things deliberately NOT copied, because the run supplies them:
+  # image.repository/tag (the locally built controller) and
+  # spiffe.spire.serverAddress (the kind VIP). image.pullPolicy IS kept -- the
+  # image is side-loaded into kind, so it must not be re-pulled.
+  # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+  # SPDX-License-Identifier: Apache-2.0
+
+  fullnameOverride: cloud-workflow-engine
+  namespaceOverride: cloud-workflow-engine
+
+  nkeSystemNamespace:
+    create: false
+
+  image:
+    # repository and tag are per-run: the lane --sets the tag it just built.
+    pullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+  podSecurityContext: null
+  securityContext:
+    readOnlyRootFilesystem: false
+
+  metrics:
+    networkPolicy:
+      enabled: false
+  serviceMonitor:
+    enabled: false
+
+  livenessProbe:
+    httpGet:
+      path: /api/version
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 20
+  readinessProbe:
+    httpGet:
+      path: /api/version
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  appDb:
+    url: postgres-postgresql.postgres.svc.cluster.local:5432
+    dbName: cloud-workflow
+    postgresUser: postgres
+    # postgresPassword is supplied by the Tiltfile from CNPG_SUPERUSER_PASSWORD —
+    # do not hardcode it here.
+    sslMode: disable
+
+  secrets:
+    dgxcTenantCredSecretName: ""
+
+  temporal:
+    host: temporal-frontend.temporal.svc.cluster.local
+    port: 7233
+
+  profiles:
+    path: /profiles
+    # Exercise the fleet profiles.image materialize path. Tilt builds
+    # docker.local/cwe-profiles:tilt from the sibling nke-site-deploy tree.
+    image:
+      enabled: true
+      repository: docker.local/cwe-profiles
+      tag: tilt
+
+  # apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
+  # NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
+  # the one deploy/k8s/nke-auth-dev.yaml applies.
+
+  spiffe:
+    enabled: true
+    endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
+    spire:
+      serverNamespace: spire-server
+      className: spire-mgmt-spire
+      tpmPubhashesConfigMapName: tpm-pubhashes
+      serverPort: "30440"
+
+
+# The identity the API-authentication spec's probe presents.
+#
+# Declared here rather than in components/spire.yaml because the grant is
+# deliberately wide -- any pod carrying both labels below gets full NKE API
+# access -- so it belongs to this lane and to no published target. The rest of
+# the probe (namespace, service account, script) is the nke-spire-client
+# manifest item; only the ClusterSPIFFEID has to come from the chart, because
+# its CRD does not exist until the datastore phase has run.
+#
+# type: raw for the same reason nke-service uses it: any other type makes the
+# chart append its own namespace expression and merge a podSelector in.
+spire:
+  spire-server:
+    controllerManager:
+      identities:
+        clusterSPIFFEIDs:
+          nke-spire-client:
+            type: raw
+            # /nke-e2e/ rather than NKE's own /nke-service/, so the probe does
+            # not share NKE's prefix and admit.spiffe's prefix check is actually
+            # exercised.
+            spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-e2e/{{.PodSpec.ServiceAccountName}}"
+            namespaceSelector:
+              matchExpressions:
+                - key: kubernetes.io/metadata.name
+                  operator: In
+                  values:
+                    - nke-spire-clients
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/part-of: cloud-workflow-engine
+                nke.nvidia.com/purpose: nke-auth-dev
+
+  # The hostnames the OIDC discovery provider will answer to, minus the two this
+  # run computes. A tenant kube-apiserver fetches the discovery document by IP,
+  # and the provider rejects any request whose Host header is not on this list.
+  #
+  # Stated here, not just in components/spire.yaml, so the deploy path describes
+  # its own deployment: the chart is not part of the generated tree, so a reader
+  # of capd-e2e/ alone could not otherwise see them. deploy-nke-stack.sh reads
+  # this list and appends MANAGEMENT_VIP and the kind bridge gateway, because
+  # --set-json replaces a list rather than appending to it.
+  spiffe-oidc-discovery-provider:
+    config:
+      additionalDomains:
+        - "nke.site-controller.internal"
+        - "localhost"
+        - "127.0.0.1"

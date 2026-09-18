@@ -9,8 +9,9 @@ import (
 	"testing"
 )
 
-// TestCompositionUpToDate fails when generated/nke-stack has drifted from the
-// recipe under deploy/composition.
+// TestCompositionUpToDate fails when the generated output has drifted from the
+// recipe under deploy/composition -- both the nke-stack chart and, when the
+// recipe carries an nke-sbom.yaml, the deploy paths generated beside it.
 //
 // This lives in a test rather than in `make generate-check` because that check
 // runs in CI under controller/api's pinned Go with GOTOOLCHAIN=local, and this

@@ -326,6 +326,35 @@ spire:
                   operator: NotIn
                   values:
                     - cloud-workflow-engine
+
+          # The identity NKE's own services present. This was a loose manifest in
+          # controller/deploy/k8s, which the CAPD lane had to apply between two
+          # install phases because a ClusterSPIFFEID needs a CRD the datastore
+          # phase installs. Declared here it is rendered by the spire release
+          # itself, so the CRD is present by construction and the ordering problem
+          # does not arise.
+          #
+          # type: raw is required, not cosmetic. Every other type makes the chart
+          # append its own expression to namespaceSelector and merge a podSelector
+          # in; raw is the one branch that passes these through verbatim.
+          #
+          # The emitted CR is named <release namespace>-<release>-nke-service
+          # rather than nke-service -- the chart derives it. Nothing reads it by
+          # name on this path; what matters is the SPIFFE ID below, which has to
+          # keep matching spire-server.adminIDs above and the prefixes
+          # agent/cmd/agent/main.go admits.
+          nke-service:
+            type: raw
+            spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nke-service/{{.PodSpec.ServiceAccountName}}"
+            namespaceSelector:
+              matchExpressions:
+                - key: kubernetes.io/metadata.name
+                  operator: In
+                  values:
+                    - cloud-workflow-engine
+                    - capi-system
+                    - capi-kubeadm-control-plane-system
+                    - capd-system
     nodeAttestor:
       k8sPSAT:
         # The agent moved to spire-system, so the server must accept it from

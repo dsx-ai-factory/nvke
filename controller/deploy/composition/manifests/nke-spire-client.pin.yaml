@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The SPIRE-attested client the API-authentication e2e spec exercises: a
+# namespace, a service account, and the probe script it runs.
+# controller/test/e2e/authn_spire_test.go creates the pod.
+#
+# A copy of controller/deploy/k8s/nke-spire-client.yaml with its ClusterSPIFFEID
+# REMOVED. That resource needs the spire.spiffe.io CRD, which the datastore phase
+# installs, so it cannot be applied by an item that runs before the umbrella. It
+# is declared instead as a clusterSPIFFEIDs entry in overlays/capd-e2e.yaml,
+# where the spire release renders it -- the same split the nke-service identity
+# uses. It lives in the overlay rather than components/spire.yaml because the
+# grant is deliberately wide and belongs to no published target.
+#
+# No version: this is our own file, not a vendored upstream release.
+item: nke-spire-client
+file: nke-spire-client.yaml
+sha256: "c70b61b347207800b142131ce7c9b7c6e99ce3e89f5b26ea84ce8574e842bba2"

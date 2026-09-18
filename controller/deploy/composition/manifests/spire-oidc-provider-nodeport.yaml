@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Override NodePort for the OIDC discovery provider — the upstream chart's
+# service is ClusterIP only, and we need a stable nodePort tenants can reach.
+# Mirrors the pattern in spire-server-nodeport.yaml.
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-oidc-provider-np
+  namespace: spire-server
+spec:
+  type: NodePort
+  ports:
+    - name: https
+      nodePort: 30443
+      port: 443
+      protocol: TCP
+      targetPort: https
+  selector:
+    app.kubernetes.io/name: spiffe-oidc-discovery-provider

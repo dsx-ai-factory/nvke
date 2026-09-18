@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# The local-path provisioner the nke-storage item installs.
+#
+# A bootstrapped cluster ships no StorageClass at all, so every PVC sits Pending
+# -- Postgres asks for one, and the failure looks like a stuck install rather
+# than missing storage. The documented alternative needs a spare unpartitioned
+# device, which an instance type carrying root on its only disk cannot offer.
+#
+# Vendored rather than fetched: the exercise applied this straight from a
+# GitHub raw URL, which made the run unreproducible the moment upstream moved.
+# 161 lines.
+# The deploy-path item this becomes.
+item: nke-storage
+
+version: v0.0.31
+file: local-path-v0.0.31.yaml
+sha256: "bed8d03e3e07e03d3dd3e4e2150ea6eb03f8753bd317bfeb1bfa49e9b432f78d"
+
+# Applied to the StorageClass when the item is generated. Upstream ships it
+# without the annotation, so the exercise had to `kubectl patch` afterwards --
+# which leaves a window where a PVC created in between binds to nothing.
+patch:
+  defaultStorageClass: local-path

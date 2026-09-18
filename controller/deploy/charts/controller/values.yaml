@@ -158,6 +158,12 @@ service:
   type: ClusterIP
   # -- apiserver port
   port: 8080
+  # -- NodePort to publish the apiserver on, via a second Service beside the one
+  # above. Empty renders no such Service. Set it where the API has to be
+  # reachable without a cluster route -- the host running `nkectl bootstrap
+  # site`, or an operator reaching /api on a node address. This does not change
+  # the Service above, which stays ClusterIP for in-cluster callers.
+  nodePort: ""
   # -- Additional annotations for the service
   annotations: {}
   # -- Additional labels for the service

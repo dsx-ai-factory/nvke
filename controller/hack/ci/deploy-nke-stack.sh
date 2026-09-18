@@ -1,35 +1,42 @@
 #!/usr/bin/env bash
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
-# Deploy the management plane from the nke-stack umbrella chart instead of Tilt.
+# Deploy the management plane from the generated capd-e2e deploy path instead of
+# Tilt.
 #
 # Runs INSIDE the e2e runner container, invoked by backend-e2e.sh when
-# NKE_E2E_STACK_CHART is set. Everything after this point in backend-e2e.sh --
-# the rollout checks, the CAPI controller probes, the Ginkgo legs -- is unchanged
-# and unaware of which path deployed the stack.
+# NKE_E2E_USE_STACK is true. Everything after this point in backend-e2e.sh -- the
+# rollout checks, the CAPI controller probes, the Ginkgo legs -- is unchanged and
+# unaware of which path deployed the stack.
 #
-# What Tilt does that this reproduces:
-#   * the six helm charts, now one release (nke-stack)
-#   * deploy/k8s/*.yaml, which includes the OIDC CA chain the chart declares as
-#     a prerequisite but deliberately does not own -- the CA is long-lived and
-#     re-issuing it invalidates every tenant's embedded trust anchor
+# This script no longer applies anything. build/use-nke-sbom.sh walks
+# generated/nke-sbom-e2e/capd-e2e/nke-deploy.yaml and installs its items in
+# order: the namespaces and OIDC CA chain, nke-auth-dev, the TPM pubhashes
+# ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, the
+# CAPD RBAC and reboot test double, and finally the nke-stack umbrella, one
+# release per phase from the chart's own phases: block.
 #
-# The pieces Tilt's provider modules deploy are handled explicitly: the CAPD RBAC
-# for cloud-workflow-engine and capd-reboot-controller below, and the BGP
-# container in backend-e2e.sh. capi-core-provider deploys nothing of its own.
+# What remains here is the values that vary per RUN and cannot live in an
+# artifact: the per-architecture TPM attestor checksum, whether cert-manager is
+# already owned by clusterctl init, the kind bridge gateway, the trust domain
+# derived from the kind cluster name, the locally built controller image, and the
+# generated database passwords.
 #
-# What it does NOT reproduce, and why the Tilt path stays the default:
-#   * capd-reboot-controller, the BGP container wiring, the profiles ConfigMap
-#     renderer, and the CWE env overrides Tilt assembles per provider
-#   * live_update; this deploys a fixed image and does not watch
+# Still outside the deploy path, and deliberately so:
+#   * clusterctl init -- four providers plus cert-manager, and it runs on the
+#     Tilt path too
+#   * hack/apply-capi-spiffe-exec-auth.sh -- it PATCHES the Deployments
+#     clusterctl init created; a deploy path applies manifests, it does not patch
+#     what another installer owns
+#   * the BGP container and the image side-loads, both in backend-e2e.sh
 #
 # Layout inside the runner:
 #   /workspace/cloud-workflow-engine   the CONTROLLER directory (tar --transform)
-#   /workspace/nke-stack               build/ + generated/nke-stack, copied in
+#   /workspace/nke-stack               build/ + generated/, copied in
 set -euo pipefail
 
-# CHART and VERSION are optional. Given, they name a published artifact to
-# install; omitted, nke-stack is built from this working tree.
+# CHART is optional. Given, it names a packaged chart to install; omitted,
+# nke-stack is built from this working tree.
 #
 # Build is the default because subcharts are BAKED INTO the package: installing
 # a published nke-stack would test the controller chart as it was
@@ -42,21 +49,24 @@ CWE_IMAGE="${1:?usage: $0 <cwe-image>}"
 # Optional, from the workflow inputs of the same name. Set together to install a
 # published artifact; leave empty to build.
 CHART="${NKE_E2E_STACK_CHART:-}"
-# The version of a PUBLISHED chart to install. Deliberately not named VERSION:
-# that is the build version backend-e2e.sh passes in for build-local, and
-# assigning an empty NKE_E2E_STACK_VERSION over it wiped it.
-CHART_VERSION="${NKE_E2E_STACK_VERSION:-}"
+# A published chart's version has nowhere to go now: use-nke-sbom.sh resolves a
+# chart from a path, so helm needs no --version, and the SBOM's own release.yaml
+# carries the version the artifact was cut with. Refuse rather than accept a
+# value and ignore it -- a silently dropped pin is how you end up testing a
+# different chart than the one you named.
+if [[ -n "${NKE_E2E_STACK_VERSION:-}" ]]; then
+  echo "NKE_E2E_STACK_VERSION is set but no longer used: pass a packaged chart path or an OCI ref in NKE_E2E_STACK_CHART." >&2
+  exit 1
+fi
 
 # Defaults are the paths inside the e2e runner. Overridable so the script can
 # be exercised directly against a local kind cluster, without backend-e2e.sh --
 # which is a Linux-host entrypoint and refuses to run elsewhere.
-CONTROLLER_DIR="${CONTROLLER_DIR:-/workspace/cloud-workflow-engine}"
-# Static application configuration for this suite, mirroring the --set flags
-# controller/Tiltfile assembles. Kept as a values file rather than a block of
-# --set flags here so it stays reviewable and does not drift silently.
-E2E_OVERLAY="${E2E_OVERLAY:-${CONTROLLER_DIR}/deploy/composition/overlays/capd-e2e.yaml}"
 STACK_DIR="${STACK_DIR:-/workspace/nke-stack}"
-VALUES_OUT="${VALUES_OUT:-/state/nke-stack-cwe-values.yaml}"
+# The generated deploy path this lane installs. The overlay is inside it, copied
+# there by composition-gen, so it is no longer named separately here.
+SBOM_DIR="${SBOM_DIR:-${STACK_DIR}/generated/nke-sbom-e2e}"
+SBOM_TARGET="${SBOM_TARGET:-capd-e2e}"
 
 log() { printf '\n=== %s\n' "$*" >&2; }
 
@@ -118,105 +128,22 @@ log "cert-manager.enabled=${CERT_MANAGER_ENABLED}"
 cwe_repository="${CWE_IMAGE%:*}"
 cwe_tag="${CWE_IMAGE##*:}"
 
-# The OIDC CA chain, SPIRE nodeports, the TPM pubhashes ConfigMap and the
-# nke-system namespace. Applied before the install because the identity phase's
-# requires: gate blocks on the CA certificate being Ready.
-# Namespaces first: the manifests below target spire-server, which does not
-# exist on a clean cluster. Earlier runs only passed because a previous deploy
-# had left the namespaces behind.
-CHART="${CHART}" bash "${STACK_DIR}/build/nke-stack.sh" namespaces
-
-# capd-reboot-controller: a CAPD test double, deliberately outside the nke-stack
-# chart. CAPD "nodes" are containers, so a machine reboot has no analogue and
-# this restarts the container when the reboot label appears. The reboot spec
-# inherits the `capd` label from its Entry and so runs in this lane; without the
-# controller nothing transitions the node and the spec sits until its 45-minute
-# timeout. backend-e2e.sh builds and side-loads the image.
-# CWE's ServiceAccount needs a ClusterRole over CAPD's own kinds --
-# dockerclusters and dockermachines -- to provision a tenant. The capd-provider
-# Tilt module applies this; without it CWE accepts the create request, the
-# cluster appears in the list, and then ApplyCAPIClusterResources fails with
-# "dockerclusters ... is forbidden" until the spec times out ten minutes later.
+# Everything this script used to apply by hand is now an item of the capd-e2e
+# deploy path, applied by build/use-nke-sbom.sh in the order nke-deploy.yaml
+# lists: the namespaces, the OIDC CA chain, nke-auth-dev, the TPM pubhashes
+# ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, and
+# the two CAPD pieces -- the RBAC over dockerclusters/dockermachines without
+# which every provisioning write is forbidden, and the reboot test double, since
+# a CAPD node is a container and has no reboot of its own.
 #
-# Like the reboot controller this is CAPD test scaffolding, not management-plane
-# software, so it stays out of the nke-stack chart. The chart's own capi.rbac
-# covers the provider-independent CAPI kinds; this is the CAPD-specific half.
-apply_capd_cwe_rbac() {
-  log "applying CAPD RBAC for cloud-workflow-engine"
-  kubectl apply -f "${CONTROLLER_DIR}/hack/capd-provider/cwe-rbac.yaml"
-}
-
-apply_capd_reboot_controller() {
-  log "applying capd-reboot-controller"
-  kubectl apply -f "${CONTROLLER_DIR}/hack/capd-reboot-controller/deploy/k8s/capd-reboot-controller.yaml"
-  # The ConfigMap is generated rather than checked in, matching the provider
-  # module, so the sleep duration stays a knob.
-  kubectl apply -f - <<EOF
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: capd-reboot-controller-config
-  namespace: capd-reboot-system
-data:
-  CAPD_REBOOT_CONTROLLER_SLEEP_DURATION: "${CAPD_REBOOT_SLEEP_DURATION:-10s}"
-EOF
-}
-
-log "applying cluster prerequisites from deploy/k8s"
-# The CRD-free manifests can go first. oidc-upstream-ca.yaml has to, because
-# the identity phase's requires: gate blocks on its certificate.
-for m in oidc-upstream-ca nke-system-namespace nke-auth-dev; do
-  kubectl apply -f "${CONTROLLER_DIR}/deploy/k8s/${m}.yaml"
-done
-
-# hack/tilt-cwe-chart-values.yaml is written for the controller chart installed
-# standalone, so its keys sit at the top level. Under the umbrella they have to
-# be nested one level down. Indent rather than parse: python3 is present but
-# PyYAML is not guaranteed, and this file is a single plain document.
-apply_capd_reboot_controller
-apply_capd_cwe_rbac
-
-log "nesting the CWE values under the subchart key"
-{
-  printf 'controller:\n'
-  sed -e 's/^/  /' -e 's/^  $//' "${CONTROLLER_DIR}/hack/tilt-cwe-chart-values.yaml"
-} >"${VALUES_OUT}"
-
-# ClusterSPIFFEID and the spire Services need spire's CRDs and namespace, which
-# the datastore/identity phases create -- so these are applied after the install
-# rather than before it. The controller blocks on "no identity issued"
-# until nke-service exists, which is why the controller phase can need a second
-# convergence pass.
-# The two NodePort Services select pods by app.kubernetes.io/instance, which
-# Helm sets to the RELEASE NAME. Tilt installs spire as its own release named
-# "spire", so the manifests hardcode that; under the umbrella every subchart
-# inherits the release, and the pods carry instance=nke-stack instead. Applied
-# unpatched the selectors match nothing, the Services get zero endpoints, and
-# CWE fails to mint a join token with "produced zero addresses" -- the same
-# release-derived-identity trap postgresql and temporal needed fullnameOverride
-# for. The manifests are shared with the Tilt path, so patch the stream rather
-# than the file.
-STACK_RELEASE="${STACK_RELEASE:-nke-stack}" # must match build/nke-stack.sh
-RELEASE_SCOPED_NODEPORTS=(spire-server-nodeport spire-oidc-provider-nodeport)
-
-apply_spire_dependents() {
-  log "applying spire-dependent manifests"
-  local m
-  for m in spire-server-nodeport spire-oidc-provider-nodeport \
-           spire-nke-services-spiffe-id spire-tpm-pubhashes-configmap \
-           nke-spire-client; do
-    local src="${CONTROLLER_DIR}/deploy/k8s/${m}.yaml"
-    case " ${RELEASE_SCOPED_NODEPORTS[*]} " in
-      *" ${m} "*)
-        sed "s|app.kubernetes.io/instance: spire$|app.kubernetes.io/instance: ${STACK_RELEASE}|" \
-          "${src}" | kubectl apply -f -
-        ;;
-      *)
-        kubectl apply -f "${src}"
-        ;;
-    esac
-  done
-}
+# The two ClusterSPIFFEIDs moved into the spire chart's own values, so they are
+# rendered by the release that installs spire rather than applied between
+# phases. That is what retired the PHASES_UNTIL two-pass and the sed that
+# rewrote app.kubernetes.io/instance on the NodePort Services.
+#
+# What stays here is only what this RUN knows: the per-architecture TPM
+# checksum, cert-manager ownership, the kind gateway address, the trust domain
+# derived from the cluster name, the built image, and the generated passwords.
 
 if [[ -z "${CHART}" ]]; then
   log "building nke-stack from the working tree"
@@ -228,12 +155,42 @@ if [[ -z "${CHART}" ]]; then
   fi
   CHART="$(tail -1 "${build_log}")"
   rm -f "${build_log}"
-  # A packaged chart is a path, so helm needs no --version.
-  CHART_VERSION=""
   log "built ${CHART}"
 fi
 
-log "installing nke-stack from ${CHART} (through identity)"
+# Which release owns spire's Service, derived rather than assumed.
+#
+# CWE dials spire-server by name, and that name is <release>-server because the
+# upstream chart has no fullnameOverride. Under per-phase releases the owning
+# release is <prefix>-<the phase spire is in>, so hardcoding "nke-stack" would
+# dial a host that does not exist -- and the failure, "produced zero addresses"
+# when CWE tries to mint a join token, names neither the release nor the
+# Service. Both halves are read from the artifacts that decide them: the prefix
+# and release model from release.yaml, the phase membership from the chart.
+# The chart's own values, read once. Everything below that needs to know what
+# the chart declares -- the phase list, the static OIDC domains -- reads this
+# rather than restating it, so the composition stays the single source of truth.
+CHART_VALUES="$(mktemp)"
+trap 'rm -f "${CHART_VALUES}"' EXIT
+helm show values "${CHART}" >"${CHART_VALUES}"
+
+spire_release() {
+  local prefix per_phase phase
+  IFS=$'\t' read -r _ _ prefix _ per_phase _ \
+    < <(python3 "${STACK_DIR}/build/nke-sbom-items.py" release \
+          "${SBOM_DIR}/${SBOM_TARGET}/nke-stack/release.yaml")
+  if [[ "${per_phase}" != "true" ]]; then
+    printf '%s' "${prefix}"
+    return
+  fi
+  phase="$(python3 "${STACK_DIR}/build/nke-sbom-items.py" phases "${CHART_VALUES}" \
+    | awk -F'\t' '$2 ~ /(^|,)spire(,|$)/ { print $1; exit }')"
+  [[ -n "${phase}" ]] || { echo "no phase in ${CHART} contains spire" >&2; exit 1; }
+  printf '%s-%s' "${prefix}" "${phase}"
+}
+STACK_RELEASE="$(spire_release)"
+log "spire is installed by release ${STACK_RELEASE}"
+
 # Two passes, mirroring the order controller/Tiltfile gets from resource_deps:
 # spire's CRDs and namespace must exist before ClusterSPIFFEID can be applied,
 # and the controller blocks on "no identity issued" until it is. Phases
@@ -305,17 +262,34 @@ KIND_GATEWAY_IP="$(docker network inspect kind \
 # list the chart already has: helm builds a sparse array and merges it, which
 # dropped two static entries and left a null in their place. The provider then
 # refused to start with "unable to decode configuration: unexpected token while
-# parsing list: NULL". The static entries are repeated here so the list is
-# complete by construction.
+# parsing list: NULL".
 #
-# Keep the static half in step with components/spire.yaml, which is where a
-# consumer that is not this suite gets them.
-OIDC_DOMAINS="$(MANAGEMENT_VIP="${MANAGEMENT_VIP}" KIND_GATEWAY_IP="${KIND_GATEWAY_IP}" python3 -c '
-import json, os
-domains = ["nke.site-controller.internal", "localhost", "127.0.0.1", os.environ["MANAGEMENT_VIP"]]
-gw = os.environ.get("KIND_GATEWAY_IP", "")
-if gw and gw not in domains:
-    domains.append(gw)
+# So the list has to be complete, which used to mean re-typing the chart's
+# static entries here -- and then the artifact said three domains while the
+# deployment had five. They are read out of the DEPLOY PATH's own values
+# instead, so the tree describes the deployment it produces and editing the
+# overlay reaches this.
+#
+# Required, not optional: if the overlay stops declaring them this silently
+# drops three hostnames and the provider starts rejecting tenants by Host
+# header, which surfaces far from here.
+OIDC_OVERLAY="${SBOM_DIR}/${SBOM_TARGET}/nke-stack/values.yaml"
+if ! grep -q 'additionalDomains' "${OIDC_OVERLAY}"; then
+  echo "the ${SBOM_TARGET} overlay declares no additionalDomains." >&2
+  echo "This script appends MANAGEMENT_VIP and the kind gateway to that list; without it" >&2
+  echo "the static hostnames would be dropped, because --set-json replaces the whole list." >&2
+  exit 1
+fi
+OIDC_DOMAINS="$(VALUES_FILE="${OIDC_OVERLAY}" MANAGEMENT_VIP="${MANAGEMENT_VIP}" KIND_GATEWAY_IP="${KIND_GATEWAY_IP}" python3 -c '
+import json, os, re, sys
+raw = open(os.environ["VALUES_FILE"]).read()
+blocks = re.findall(r"^[ \t]*additionalDomains:[ \t]*\n((?:[ \t]*-[ \t]*\S.*\n)+)", raw, re.M)
+if len(blocks) != 1:
+    sys.exit("expected exactly one additionalDomains block in the overlay, found %d" % len(blocks))
+domains = [re.sub(r"^[ \t]*-[ \t]*", "", line).strip().strip("\"'"'"'") for line in blocks[0].splitlines() if line.strip()]
+for extra in (os.environ["MANAGEMENT_VIP"], os.environ.get("KIND_GATEWAY_IP", "")):
+    if extra and extra not in domains:
+        domains.append(extra)
 print(json.dumps(domains))
 ')"
 OIDC_IP_SANS="$(MANAGEMENT_VIP="${MANAGEMENT_VIP}" python3 -c '
@@ -323,12 +297,19 @@ import json, os
 print(json.dumps([os.environ["MANAGEMENT_VIP"]]))
 ')"
 
-run_install() {
-  CHART="${CHART}" VERSION="${CHART_VERSION}" \
-    bash "${STACK_DIR}/build/nke-stack.sh" install \
-      --values "${E2E_OVERLAY}" \
+# One pass, and one release model. The deploy path decides what is installed and
+# in what order; everything below is a value only this run knows.
+#
+# The overlay is NOT passed here any more: the executor supplies it from
+# <target>/nke-stack/values.yaml, which is the same file the generator copied in.
+# It lands before this passthrough, so these still win.
+log "installing ${SBOM_TARGET} from ${SBOM_DIR} with chart ${CHART}"
+bash "${STACK_DIR}/build/use-nke-sbom.sh" install \
+  --sbom "${SBOM_DIR}" \
+  --target "${SBOM_TARGET}" \
+  --chart "${CHART}" \
+  -- \
       --set-json "controller.env=${CWE_ENV_JSON}" \
-      --values "${VALUES_OUT}" \
       --set-string "controller.nkeOIDCAuth.discoveryURL=https://${MANAGEMENT_VIP}:30443/.well-known/openid-configuration" \
       --set-string "controller.spiffe.trustDomain=${TRUST_DOMAIN}" \
       --set-string "controller.spiffe.spire.serverAddress=${MANAGEMENT_VIP}" \
@@ -347,9 +328,3 @@ run_install() {
       --set-string temporal.server.config.persistence.default.sql.password="${CNPG_SUPERUSER_PASSWORD:-example-password}" \
       --set-string temporal.server.config.persistence.visibility.sql.password="${CNPG_SUPERUSER_PASSWORD:-example-password}" \
       --set-string "spire.spire-server.nodeAttestor.tpmDirect.checksum=${TPM_CHECKSUM}"
-}
-
-PHASES_UNTIL=identity run_install
-apply_spire_dependents
-log "installing nke-stack (controller)"
-run_install

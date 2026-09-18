@@ -1,0 +1,37 @@
+{{- if .Values.service.nodePort }}
+# A second Service beside the chart's own, published on every node.
+#
+# The chart's Service stays ClusterIP for everything inside the cluster; this
+# one exists for callers that have no cluster route -- the host running
+# `nkectl bootstrap site`, and an operator reaching /api on the node address.
+# Two Services may select the same pods, and neither knows about the other.
+#
+# Before this field the only way to get one was a hand-applied manifest
+# alongside the release (cli/internal/cwedeploy/manifests/cwe-nodeport.yaml),
+# which a deploy path built from this chart has no way to carry.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "controller.fullname" . }}-external
+  namespace: {{ include "controller.namespace" . }}
+  labels:
+    {{- include "controller.labels" . | nindent 4 }}
+    {{- if .Values.service.labels }}
+    {{- toYaml .Values.service.labels | nindent 4 }}
+    {{- end }}
+  {{- if .Values.service.annotations }}
+  annotations:
+    {{- toYaml .Values.service.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  type: NodePort
+  ports:
+    - port: {{ .Values.service.port }}
+      # By name, so this keeps working if the container port moves.
+      targetPort: http
+      nodePort: {{ .Values.service.nodePort }}
+      name: http
+      protocol: TCP
+  selector:
+    {{- include "controller.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# API authentication scaffolding for the e2e lanes: the nke-auth-config ConfigMap CWE reads through AUTH_CONFIG_PATH, and the nke-e2e ServiceAccount the Ginkgo suite mints tokens from.
+#
+# A copy of this repository's own controller/deploy/k8s/nke-auth-dev.yaml, not a vendored upstream release, so
+# it carries no version: there is nothing upstream for it to drift from. The
+# sha256 still applies -- it catches an edit made here rather than at the source.
+#
+# To update: copy the file again and refresh the checksum below.
+item: nke-auth-dev
+file: nke-auth-dev.yaml
+sha256: "cbdc5f5ec6599b5ad6a34c29165f96b7f119925c9fadffb96b456bfaa277f767"

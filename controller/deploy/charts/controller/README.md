@@ -94,6 +94,7 @@ A Helm chart to deploy the NKE controller service
 | service.annotations | object | `{}` | Additional annotations for the service |
 | service.labels | object | `{}` | Additional labels for the service |
 | service.port | int | `8080` | apiserver port |
+| service.nodePort | string | `""` | NodePort for a second Service beside the one above, reachable without a cluster route. Empty renders none; the Service above stays ClusterIP. |
 | service.type | string | `"ClusterIP"` |  |
 | serviceAccount.annotations | object | `{}` |  |
 | serviceAccount.automount | bool | `true` |  |

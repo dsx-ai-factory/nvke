@@ -14,10 +14,12 @@ import (
 
 const (
 	registryFile = "registry.yaml"
+	sbomFile     = "nke-sbom.yaml"
 
 	apiVersion      = "nke.nvidia.com/v1alpha1"
 	registryKind    = "ComponentRegistry"
 	compositionKind = "Composition"
+	sbomKind        = "SBOMSet"
 )
 
 // Recipe is a composition resolved against its registry, with every component
@@ -28,7 +30,10 @@ const (
 type Recipe struct {
 	Registry    Registry
 	Composition Composition
-	Dir         string
+	// SBOMs is empty when the recipe carries no nke-sbom.yaml: the chart is
+	// generated either way, and only delivery is skipped.
+	SBOMs SBOMSet
+	Dir   string
 
 	// byName indexes the registry for lookups during emission.
 	byName map[string]Component
@@ -59,6 +64,20 @@ func Load(dir, compositionFile string) (*Recipe, error) {
 	}
 	if err := r.validate(compositionFile); err != nil {
 		return nil, err
+	}
+
+	// Delivery is optional: a consumer that wants only the chart carries no
+	// nke-sbom.yaml, and generating the chart must not depend on one.
+	sbomPath := filepath.Join(dir, sbomFile)
+	if _, err := os.Stat(sbomPath); err == nil {
+		if err := readYAML(sbomPath, &r.SBOMs); err != nil {
+			return nil, err
+		}
+		if err := checkHeader(sbomFile, r.SBOMs.APIVersion, r.SBOMs.Kind, sbomKind); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("%s: %w", sbomFile, err)
 	}
 	return r, nil
 }
