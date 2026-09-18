@@ -536,6 +536,13 @@ func (v *validator) checkControlPlaneVIP(c Cluster) {
 		v.addf("%s %q must be an IPv4 address", pathControlPlaneVIP, c.ControlPlaneVIP)
 		return
 	}
+	// The VIP becomes kubeadm's controlPlaneEndpoint and a /32 advertised over
+	// BGP, so the other control-plane nodes have to be able to dial it: not the
+	// unspecified, loopback, multicast, link-local or broadcast forms.
+	if !vip.IsGlobalUnicast() {
+		v.addf("%s %q must be a routable unicast address", pathControlPlaneVIP, c.ControlPlaneVIP)
+		return
+	}
 
 	// Compare equivalent address forms. checkNode reports malformed node IPs.
 	for _, n := range c.Nodes {

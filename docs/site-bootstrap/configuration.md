@@ -43,7 +43,7 @@ registry:
 | `cluster.k8sVersion` | string | yes | Plain semver, e.g. `1.34.2` — no leading `v`. |
 | `cluster.cniName` | string | yes | `calico` or `ovn-kubernetes`. |
 | `cluster.cniVersion` | string | no | CNI plugin version. Empty uses the agent's built-in default. |
-| `cluster.controlPlaneVIP` | string | no | Optional IPv4 kube-vip control-plane VIP. Must be routable to the nodes over BGP, outside `podCidr` and `serviceCidr`, and not a node IP. Empty uses the IP of the node that initializes the cluster. |
+| `cluster.controlPlaneVIP` | string | no | Optional kube-vip control-plane VIP. Must be a routable unicast IPv4 address, reachable by the nodes over BGP, outside `podCidr` and `serviceCidr`, and not a node IP. Empty uses the IP of the node that initializes the cluster. |
 | `cluster.podCidr` | string | yes | Valid CIDR. Comma-separated list allowed for dual-stack. |
 | `cluster.serviceCidr` | string | yes | Valid CIDR. |
 | `cluster.nodeAgentPort` | string | no | gRPC port nke-agent listens on. Defaults to `15005`. Set it only if you passed `--secure-server-port` to the agent. |

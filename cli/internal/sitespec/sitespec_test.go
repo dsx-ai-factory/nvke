@@ -218,6 +218,12 @@ func TestValidateInvalidInputs(t *testing.T) {
 		{"vip mapped IPv4 unabbreviated", func(i *SiteSpec) {
 			i.Cluster.ControlPlaneVIP = "0:0:0:0:0:ffff:10.0.0.1"
 		}, pathControlPlaneVIP},
+		// IPv4 forms that clear the overlap checks but cannot serve an endpoint.
+		{"vip unspecified", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "0.0.0.0" }, pathControlPlaneVIP},
+		{"vip loopback", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "127.0.0.1" }, pathControlPlaneVIP},
+		{"vip broadcast", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "255.255.255.255" }, pathControlPlaneVIP},
+		{"vip multicast", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "224.0.0.1" }, pathControlPlaneVIP},
+		{"vip link-local", func(i *SiteSpec) { i.Cluster.ControlPlaneVIP = "169.254.1.1" }, pathControlPlaneVIP},
 		{"bad nodeAgentPort", func(i *SiteSpec) { i.Cluster.NodeAgentPort = "70000" }, pathNodeAgentPort},
 		{"missing bootstrapRepo", func(i *SiteSpec) { i.Registry.BootstrapRepo = "" }, pathBootstrapRepo},
 		{"missing bootstrapChart", func(i *SiteSpec) { i.Registry.BootstrapChart = "" }, pathBootstrapChart},
@@ -242,8 +248,10 @@ func TestValidateInvalidInputs(t *testing.T) {
 // TestValidateControlPlaneVIP_Accepts checks empty and non-overlapping IPv4 VIPs.
 func TestValidateControlPlaneVIP_Accepts(t *testing.T) {
 	for name, vip := range map[string]string{
-		"empty is valid": "",
-		"valid IPv4 VIP": "10.0.0.100",
+		"empty is valid":       "",
+		"valid IPv4 VIP":       "10.0.0.100",
+		"public address":       "198.51.100.10",
+		"shared address space": "100.64.0.10",
 	} {
 		t.Run(name, func(t *testing.T) {
 			inv := minimalValid()
