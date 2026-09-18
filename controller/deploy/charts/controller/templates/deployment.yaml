@@ -111,7 +111,7 @@ spec:
         {{- end }}
       {{- end }}
       containers:
-        {{- /* The name helper, not .Chart.Name: the chart is named `controller`
+        {{- /* The name helper, not .Chart.Name: the chart is named `nke-controller`
         for its OCI path, and a bare .Chart.Name would rename this container on
         upgrade, breaking every `kubectl logs -c` and log/metric selector keyed
         on it. */}}
