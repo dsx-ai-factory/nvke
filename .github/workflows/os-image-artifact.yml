@@ -125,14 +125,17 @@ jobs:
         run: |
           set -euo pipefail
           amd64='{"arch":"amd64","runner":"linux-amd64-gpu-l4-latest-1","timeout_minutes":180,"build_fde":true}'
-          # Scale set on the self-hosted fleet; the name is the size,
-          # 16 vCPU and 64 GiB. linux-arm64-cpu16 has no /dev/kvm.
+          # Scale set on the RelEng EKS cluster (dgxc-eks-use1-rel-prd1),
+          # 16 vCPU and 64 GiB on bare-metal Graviton. linux-arm64-cpu16 has
+          # no /dev/kvm, and neither does any EC2 Graviton — KVM needs metal.
           #
-          # 16c64g, not 8c16g, for its disk: that shape grows the runner's root
-          # to 200 GiB where the image gives 40, and the bake outgrew 40. It
-          # stages the kubeadm-distro and CNI debs, then bakes and converts two
-          # 12 GiB qcow2s, and ran out at "No space left on device".
-          arm64='{"arch":"arm64","runner":"nke-arm64-16c64g","timeout_minutes":180,"build_fde":true}'
+          # Sized for its disk as much as its CPU: this fleet requests 200 GiB
+          # of ephemeral storage where the image gives 40, and the bake
+          # outgrew 40. It stages the kubeadm-distro and CNI debs, then bakes
+          # and converts two 12 GiB qcow2s, and ran out at "No space left on
+          # device". The smaller arc-arm64-kvm-8c16g class has 100 GiB and is
+          # for kubeadm-bringup, not for this.
+          arm64='{"arch":"arm64","runner":"arc-arm64-kvm","timeout_minutes":180,"build_fde":true}'
           case "${WANT:-both}" in
             amd64) legs="[${amd64}]" ;;
             arm64) legs="[${arm64}]" ;;

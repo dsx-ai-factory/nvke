@@ -53,10 +53,15 @@ jobs:
           # /dev/kvm: trades 16 cores for 12, and TCG for KVM.
           - arch: amd64
             runner: linux-amd64-gpu-l4-latest-1
-          # Scale set on the self-hosted fleet; the name is the size,
-          # 8 vCPU and 16 GiB. linux-arm64-cpu16 has no /dev/kvm.
+          # Scale set on the RelEng EKS cluster (dgxc-eks-use1-rel-prd1),
+          # 8 vCPU and 16 GiB on bare-metal Graviton. linux-arm64-cpu16 has
+          # no /dev/kvm, and neither does any EC2 Graviton — KVM needs metal.
+          #
+          # The 8c16g class, not arc-arm64-kvm: both share the one c7g.metal,
+          # so this job and an os-image bake run concurrently instead of
+          # queueing behind each other.
           - arch: arm64
-            runner: nke-arm64-8c16g
+            runner: arc-arm64-kvm-8c16g
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'dsx-ai-factory/nke'
     # Still sized for the emulated path, so a fall back to TCG cannot time out.
