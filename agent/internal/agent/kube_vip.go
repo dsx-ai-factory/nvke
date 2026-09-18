@@ -437,7 +437,13 @@ func renderKubeVipManifest(
 	falseValue := false
 	fileType := corev1.HostPathFile
 	securityContext := &corev1.SecurityContext{
-		SeccompProfile: &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
+		// kube-vip needs UID 0 for its networking machinery -- pinning it to a
+		// non-root UID lets the pod start but silently stops it announcing the
+		// control-plane VIP over BGP (kube-vip/kube-vip#1010), so runAsNonRoot
+		// is deliberately not set here. allowPrivilegeEscalation is independent
+		// of that: it clears no_new_privs without requiring a UID change.
+		AllowPrivilegeEscalation: &falseValue,
+		SeccompProfile:           &corev1.SeccompProfile{Type: corev1.SeccompProfileTypeRuntimeDefault},
 		Capabilities: &corev1.Capabilities{
 			Add: []corev1.Capability{"NET_ADMIN", "NET_RAW"},
 		},
