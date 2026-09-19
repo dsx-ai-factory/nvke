@@ -122,6 +122,34 @@ dhcp_leases() {
   fi
 }
 
+# aarch64 guests always boot EFI (domain_xml.go:35-36), and libvirt picks the
+# firmware by matching the descriptors in /usr/share/qemu/firmware against what
+# QEMU reports. When that match fails the only symptom is "Unable to find 'efi'
+# firmware that is compatible with the current configuration", which does not
+# say whether the blobs, the descriptors or the QEMU probe are at fault. These
+# dumps separate those cases. The second domcapabilities pins virttype=kvm:
+# libvirt resolves the `virt` machine alias from the machine list of the
+# accelerator in use, and every descriptor targets `virt-*`, so an empty KVM
+# list leaves the domain asking for `virt` and nothing matches.
+firmware_blobs() {
+  local found=false d
+  for d in /usr/share/AAVMF /usr/share/OVMF /usr/share/qemu-efi-aarch64; do
+    if [[ -d "${d}" ]]; then
+      found=true
+      ls -la "${d}"
+    fi
+  done
+  "${found}" || echo "(no UEFI firmware directories present)"
+}
+
+firmware_descriptors() {
+  if [[ -d /usr/share/qemu/firmware ]]; then
+    ls -la /usr/share/qemu/firmware
+  else
+    echo "(no /usr/share/qemu/firmware directory)"
+  fi
+}
+
 {
   printf 'teardown-ci-host diagnostics -- %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   printf 'bridge=%s cidr=%s\n' "${BRIDGE_NAME}" "${BRIDGE_CIDR}"
@@ -138,6 +166,10 @@ dhcp_leases() {
   dump "running QEMU processes" qemu_processes
   dump "running nico-sim / dnsmasq processes" nicovms_processes
   dump "virsh list --all (${LIBVIRT_URI})" virsh -c "${LIBVIRT_URI}" list --all
+  dump "UEFI firmware blobs" firmware_blobs
+  dump "libvirt firmware descriptors" firmware_descriptors
+  dump "virsh domcapabilities (${LIBVIRT_URI})" virsh -c "${LIBVIRT_URI}" domcapabilities
+  dump "virsh domcapabilities --virttype kvm" virsh -c "${LIBVIRT_URI}" domcapabilities --virttype kvm
   dump "dnsmasq leases" dhcp_leases
 } 2>&1 | tee "${DIAG_FILE}"
 
