@@ -47,14 +47,11 @@ on:
       use-nke-stack:
         description: >-
           Deploy the management plane from deploy/capnico-e2e with
-          use-nke-sbom.sh instead of Tilt. OFF by default, unlike the CAPD lane,
-          for one reason: Tilt supervises nico-sim as a serve_cmd and the deploy
-          path has no equivalent yet, so the simulator never starts and every
-          NicoMachine hangs on a dead endpoint. Turn this on to exercise the
-          deploy path once that is supervised outside Tilt.
+          use-nke-sbom.sh. This is the default on every trigger, as on the CAPD
+          lane; set false here to fall back to Tilt.
         required: false
         type: boolean
-        default: false
+        default: true
 
 permissions: {}
 
@@ -127,8 +124,14 @@ jobs:
       # only one in CI not covering controller-managed control planes.
       single-runner-control-plane-modes: ${{ github.event_name != 'push' || !startsWith(github.ref_name, 'pull-request/') }}
       needs-capnico-source: true
-      # Dispatch-only, and false on every other trigger. Written as
-      # "is a dispatch AND the input" -- the mirror image of the CAPD lane,
-      # which defaults on -- so a push or a schedule can never select a path
-      # nothing has run green yet.
-      use-nke-stack: ${{ github.event_name == 'workflow_dispatch' && inputs.use-nke-stack }}
+      # Default on every trigger; a dispatch can still opt out, the same form
+      # the CAPD lane uses. Written as "not a dispatch OR the input" rather
+      # than `inputs.x || true`: in GitHub expressions `false || true` is true,
+      # so the `|| true` form would swallow an explicit false and leave no way
+      # back to Tilt.
+      #
+      # Tilt is the fallback for one thing the deploy path does not replace:
+      # it supervises nico-sim as a serve_cmd, where run-nico-sim.sh starts the
+      # process and leaves it. A simulator that dies mid-suite shows up as
+      # specs timing out rather than as a resource error.
+      use-nke-stack: ${{ github.event_name != 'workflow_dispatch' || inputs.use-nke-stack }}
