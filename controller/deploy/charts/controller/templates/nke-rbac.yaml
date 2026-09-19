@@ -65,11 +65,12 @@ metadata:
 {{- fail "spiffe.cweSubject must be set when spiffe.jwtExchangeEndpoint is set: the exchange re-issues the token under its own trust domain and rewrites sub, so the default subject (this controller's SPIFFE ID) would match nothing and every call into a tenant cluster would authenticate and then be denied" }}
 {{- end }}
 {{- /*
-  The default below also hardcodes "cloud-workflow-engine" as the last SPIFFE
-  path segment, independently of serviceAccount.name. A site that renames the
-  service account without also setting spiffe.cweSubject gets a ClusterRole
-  bound to a subject nothing will ever present -- same failure mode as the
-  jwtExchangeEndpoint case above, just reached by a different value.
+  The default below also hardcodes the legacy service account name as the
+  last SPIFFE path segment, independently of serviceAccount.name. A site that
+  renames the service account without also setting spiffe.cweSubject gets a
+  ClusterRole bound to a subject nothing will ever present -- same failure
+  mode as the jwtExchangeEndpoint case above, just reached by a different
+  value.
 */}}
 {{- if and (ne .Values.serviceAccount.name "cloud-workflow-engine") (not .Values.spiffe.cweSubject) }}
 {{- fail "spiffe.cweSubject must be set when serviceAccount.name is overridden: the default subject is derived from the legacy service account name, so a renamed service account would authenticate under a SPIFFE ID that matches no nke:cwe binding and every call into a tenant cluster would then be denied" }}
