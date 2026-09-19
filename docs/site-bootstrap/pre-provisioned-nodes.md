@@ -10,7 +10,7 @@ If you already have nodes provisioned and running, you can manually prepare them
 
 What you get after bootstrap depends on whether your environment includes a [NVIDIA Infra Controller (NICo)](https://github.com/dsx-ai-factory/infra-controller) site, integrated with NKE via [`cluster-api-provider-nico`](https://github.com/dsx-ai-factory/cluster-api-provider-nico).
 
-> **Note:** NICo is NKE's only supported CAPI infrastructure provider. The self-managed path is the supported production deployment model. The unmanaged path produces a working Kubernetes cluster but no NKE day-2 operations are possible — it is not a supported NKE deployment.
+> **Note:** During bootstrap, NKE uses `cluster-api-provider-provisioned` as a temporary CAPI provider to bootstrap the site controller cluster from pre-provisioned hosts. For production day-2 operations (tenant cluster creation, node add/remove, rolling upgrades), NICo is the supported infrastructure provider, integrated through CAPNICo. The self-managed path is the supported production deployment model. The unmanaged path produces a working Kubernetes cluster but no NKE day-2 operations are possible — it is not a supported NKE deployment.
 
 | | Self-bootstrapped, **self-managed** | Self-bootstrapped, **unmanaged** |
 |---|---|---|

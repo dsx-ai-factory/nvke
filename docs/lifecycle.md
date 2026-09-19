@@ -34,9 +34,9 @@ The cluster at this point is a plain kubeadm cluster. No NKE services are instal
 
 This phase installs everything that makes the cluster an NKE site:
 
-1. **Deploy the NKE SBOM** — CWE, NICo, Temporal, CloudNative-PG, SPIRE, and supporting services via ArgoCD or your GitOps tooling. See [Deploy Repository](site-bootstrap/deploy-repository.md).
+1. **Deploy the NKE component stack** — the NKE SBOM (Software Bill of Materials) is the versioned bundle of NKE components: the controller, Temporal, PostgreSQL, SPIRE, and supporting services. Deploy it via ArgoCD or your GitOps tooling. See [Deploy Repository](site-bootstrap/deploy-repository.md).
 2. **Configure CAPNICo** — install the `cluster-api-provider-nico` chart and connect it to your NICo site with a `nico-credentials` Secret. Run `nkectl get providers` to confirm `nico: CONFIGURED`.
-3. **Ingest the site into NKE** — the NKE team applies the etcd encryption key to the site controller and registers the site. This step requires coordination with the NKE team. **See the ingestion runbook (TODO: publish link).**
+3. **Ingest the site into NKE** — the NKE team registers the site and applies the etcd encryption key from Day 0. This step requires coordination with the NKE team; contact your NKE onboarding contact with your site's kubeconfig and the etcd encryption key file from Day 0.
 4. **Create your first tenant cluster** — `nkectl create cluster -f cluster.yaml`. See [Your First Cluster — Path C, Step 7](first-cluster.md#7-create-a-tenant-cluster).
 
 **What Day 1 requires:**
@@ -58,7 +58,7 @@ Once the site is ingested, day-2 operations go through NKE:
 | List tenant clusters | `nkectl get clusters` |
 | Get a tenant kubeconfig | `nkectl get kubeconfig <name>` |
 | Add a node pool | `nkectl create nodepool -f spec.yaml` |
-| Scale a node pool | `nkectl patch nodepool <name> --patch 'desiredNodeCount: N'` |
+| Scale a node pool | `nkectl patch nodepool <name> --cluster <cluster> --patch 'desiredNodeCount: N'` |
 | Upgrade a cluster's Kubernetes version | `nkectl patch cluster <name> --patch 'controlPlaneKubernetesVersion: "1.34.0"'` |
 | Delete a tenant cluster | `nkectl delete cluster <name>` |
 | Check infrastructure provider status | `nkectl get providers` |

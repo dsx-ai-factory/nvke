@@ -51,7 +51,7 @@ navigation:
 
       - section: Operations
         contents:
-          - page: Upgrading NKE
+          - page: Tenant Cluster Kubernetes Upgrades
             path: operations/upgrade.md
           - page: Observability
             path: operations/observability.md
@@ -64,6 +64,8 @@ navigation:
             path: ../cli/docs/user-flow.md
           - page: Site Spec
             path: ../cli/docs/sitespec.md
+          - page: Configuring API Authentication
+            path: ../controller/docs/configuring-api-authentication.md
 
   - tab: api
     layout:

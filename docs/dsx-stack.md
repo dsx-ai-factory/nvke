@@ -35,13 +35,13 @@ flowchart TB
 
 NICo manages bare-metal machine lifecycle below the Kubernetes layer: BMC access, firmware updates, network configuration, DPU management, and host provisioning. It exposes a REST API and a set of Kubernetes custom resources that CAPI infrastructure providers can drive.
 
-NKE's only supported CAPI infrastructure provider is [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), which integrates NKE with NICo. A working NICo site is a prerequisite for NKE day-2 operations — tenant cluster creation, node add/remove, and upgrades all go through NICo.
+NKE's primary CAPI infrastructure provider is [CAPNICo](https://github.com/dsx-ai-factory/cluster-api-provider-nico), which integrates NKE with NICo. A working NICo site is a prerequisite for NKE day-2 operations — tenant cluster creation, node add/remove, and upgrades all go through NICo.
 
-**Docs:** https://docs.nvidia.com/infra-controller/documentation/home
+[NICo documentation](https://docs.nvidia.com/infra-controller/documentation/home)
 
 ### NKE (this project)
 
-NKE sits between NICo and the Kubernetes workload layer. It bootstraps the site controller cluster, then uses NICo (through CAPNICo and Cluster API) to provision and manage tenant Kubernetes clusters. NKE's job ends at the Kubernetes API — it does not configure what runs inside clusters.
+NKE sits between NICo and the Kubernetes workload layer. It bootstraps the site controller cluster, then uses NICo (through CAPNICo and Cluster API) to provision and manage tenant Kubernetes clusters. NKE provisions the cluster and installs the selected CNI, then hands off — the GPU software stack, workload configuration, and cluster readiness certification are handled by the components above.
 
 **NKE's scope:**
 - Bootstrap a site controller cluster from pre-provisioned nodes (`nkectl bootstrap site`)
@@ -58,25 +58,25 @@ NKE sits between NICo and the Kubernetes workload layer. It bootstraps the site 
 
 Nodewright is a Kubernetes-native package manager for host-level changes. It installs, updates, and removes packages on nodes without re-imaging them, using Kubernetes-aware scheduling to protect running workloads. After NKE provisions a tenant cluster, Nodewright (deployed via AICR) configures the GPU software stack on each node.
 
-**Docs:** https://docs.nvidia.com/nodewright
+[Nodewright documentation](https://docs.nvidia.com/nodewright)
 
 ### AICR (AI Cluster Runtime)
 
 AICR publishes validated recipes — version-locked combinations of GPU Operator, drivers, kernel configuration, and Kubernetes that are known to work together. Each recipe is rendered into deployment-ready GitOps bundles (ArgoCD, Flux, Helm). After NKE bootstraps a site controller and a tenant cluster exists, the operator deploys the appropriate AICR recipe bundle to configure the cluster for AI workloads.
 
-**Docs:** https://docs.nvidia.com/aicr
+[AICR documentation](https://docs.nvidia.com/aicr)
 
 ### CRE (Cluster Readiness Engine)
 
 CRE certifies that a GPU cluster is working correctly before production workloads run on it. It runs real training and communication workloads across topology-aware node groups, measures performance, detects hardware failures, and reports every bad node with a reason. CRE never modifies nodes — quarantine is the platform's responsibility (typically NVSentinel).
 
-**Docs:** https://docs.nvidia.com/cluster-readiness-engine
+[CRE documentation](https://docs.nvidia.com/cluster-readiness-engine)
 
 ### NVSentinel
 
 NVSentinel is a break-fix system for node health. It watches nodes for hardware faults and, when a node needs repair, applies workload-aware cordon and drain before triggering NKE's node replacement lifecycle. NKE provides the lifecycle APIs; NVSentinel enforces the SLO policy.
 
-**Docs:** https://github.com/NVIDIA/NVSentinel
+[NVSentinel repository](https://github.com/NVIDIA/NVSentinel)
 
 ## A Typical Site Bring-Up Sequence
 
@@ -92,6 +92,6 @@ NVSentinel is a break-fix system for node health. It watches nodes for hardware 
 
 ## Why NKE Rather Than Plain kubeadm or CAPI?
 
-Stock `kubeadm` bootstraps Kubernetes but has no concept of NICo capacity, NVLink fabric, validated software recipes, or the long-running operations (rolling upgrades, node replacement) that a GPU cluster needs at scale. Stock Cluster API needs an infrastructure provider — NICo is NKE's — and does not include the workflow engine, the etcd encryption lifecycle, or the validated NKD recipe.
+Stock `kubeadm` bootstraps Kubernetes but has no concept of NICo capacity, NVLink fabric, validated software recipes, or the long-running operations (rolling upgrades, node replacement) that a GPU cluster needs at scale. Stock Cluster API needs an infrastructure provider — NICo is NKE's primary one — and does not include the workflow engine or the etcd encryption lifecycle.
 
-NKE provides the operational layer that ties these pieces together: Temporal-backed durable workflows for long-running operations, the validated NKD recipe for the right Kubernetes + driver + operator combination, and the CAPNICo integration so CAPI can drive NICo-managed bare metal.
+NKE provides the operational layer that ties these pieces together: Temporal-backed durable workflows for long-running operations, etcd encryption key management, and the CAPNICo integration so CAPI can drive NICo-managed bare metal.

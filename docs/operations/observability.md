@@ -8,64 +8,54 @@ NKE's operational surface spans three layers: the site controller services, the 
 
 The Temporal Web UI is the primary window into what NKE is doing. Every cluster provisioning, upgrade, or node replacement runs as a Temporal workflow. When an operation stalls or fails, the Temporal UI shows the current workflow state and the last activity that ran.
 
-Port-forward the Temporal frontend from the site controller cluster:
+Port-forward the Temporal Web UI from the site controller cluster:
 
 ```bash
-kubectl port-forward -n temporal svc/temporal-frontend-headless 8233:8233 \
+kubectl port-forward -n temporal svc/temporal-web 8233:8080 \
   --kubeconfig <sitename>.kubeconfig
 ```
 
-Then open http://localhost:8233 in a browser. Workflows are organized by namespace; NKE workflows run in the `cloud-workflow-engine` namespace.
+Then open http://localhost:8233 in a browser. Workflows are organized by namespace; NKE workflows run in the `nke-controller` namespace.
 
 **What to look for:**
 - Workflows stuck in `Running` with no recent activity — usually a stalled infrastructure operation, a node that isn't responding, or a timeout waiting for NICo
 - Workflows in `Failed` — expand the history to see which activity failed and what error it returned
-- A backlog of `Pending` workflow tasks — indicates a CWE worker health issue
+- A backlog of `Pending` workflow tasks — indicates a controller worker health issue
 
-### CWE Logs
+### Controller Logs
 
-The Cloud Workflow Engine (CWE) emits structured JSON logs. Fetch them from the site controller cluster:
+The NKE controller emits structured JSON logs. Fetch them from the site controller cluster:
 
 ```bash
-kubectl logs -n cloud-workflow-engine deploy/cloud-workflow-engine \
+kubectl logs -n nke-controller deploy/nke-controller \
   --kubeconfig <sitename>.kubeconfig -f
 ```
 
-Logs include workflow and activity identifiers so a failure in the Temporal UI can be correlated to a CWE log line. Set `LOG_LEVEL=debug` in the CWE deployment environment to increase verbosity.
+Logs include workflow and activity identifiers so a failure in the Temporal UI can be correlated to a controller log line. Set `LOG_LEVEL=debug` in the controller deployment environment to increase verbosity.
 
-### CWE REST API Health
+### Controller REST API Health
 
-The CWE API exposes a health endpoint:
-
-```bash
-curl https://<cwe-url>/health
-```
-
-A `200 OK` with `{"status":"ok"}` means the API server is up. `nkectl get providers` is the fastest check that both CWE and CAPNICo are healthy — it returns `CONFIGURED` when the infrastructure provider is ready to mint clusters.
-
-### CloudNative-PG (Database)
-
-CWE and Temporal both depend on PostgreSQL managed by CloudNative-PG. Check cluster health:
+The NKE controller API exposes liveness and readiness endpoints:
 
 ```bash
-kubectl get cluster -n cloud-workflow-engine --kubeconfig <sitename>.kubeconfig
-kubectl get cluster -n temporal --kubeconfig <sitename>.kubeconfig
+curl https://<controller-url>/healthz   # liveness
+curl https://<controller-url>/readyz    # readiness
 ```
 
-Each cluster should show `Cluster in healthy state`. A `Failing` status means a replica is down or a backup is overdue.
+A `200 OK` means the API server is up. `nkectl get providers` shows whether the CAPI infrastructure provider is configured — it returns `CONFIGURED` when the provider's CRDs are present, the controller manager is running, and the credentials Secret exists. Note that `CONFIGURED` does not validate credentials against the provider backend; a separate connectivity issue can still prevent cluster creation even when the status shows `CONFIGURED`.
 
 ## Infrastructure Provider
 
-### CAPNICo Logs
+### Infrastructure Provider Logs
 
-CAPNICo reconciles `NicoCluster` and `NicoMachine` objects and calls the NICo API to allocate and manage bare-metal machines. Logs are in the `capnico-system` namespace:
+The CAPI infrastructure provider reconciles cluster and machine objects and calls the underlying infrastructure API to allocate and manage bare-metal machines. Check the logs of your infrastructure provider's controller manager:
 
 ```bash
-kubectl logs -n capnico-system deploy/cluster-api-provider-nico-controller-manager \
+kubectl logs -n <provider-namespace> deploy/<provider-controller-manager> \
   --kubeconfig <sitename>.kubeconfig -f
 ```
 
-If a tenant cluster is stuck provisioning, CAPNICo logs show whether NICo returned an error, whether machine allocation timed out, or whether a `NicoMachine` is waiting for a node to appear in Kubernetes.
+If a tenant cluster is stuck provisioning, provider logs show whether the infrastructure API returned an error, whether machine allocation timed out, or whether a machine object is waiting for a node to appear in Kubernetes.
 
 ### NICo Site Health
 
