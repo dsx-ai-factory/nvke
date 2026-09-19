@@ -11,12 +11,16 @@ apiAuth:
   permissive: false
 
 # CWE reconciles CAPI objects, so it needs the RBAC for them.
-# CWE accepts only the API provider blocks named here. This lane submits Nico
-# blocks. Stated rather than left to the chart default, because the value
-# decides whether a create is accepted at all: the CAPD lane failed every
-# cluster create with "infra provider is not supported by this deployment"
-# for want of it.
-supportedInfraProviders: nico
+# CWE accepts only the API provider blocks named here, and this lane needs
+# BOTH. The e2e suite submits an Infra block for the nico-containers backend --
+# buildNicoRequest in test/e2e/internal/nke/request.go builds NicoCluster and
+# NicoMachine manifests inside api.InfraClusterProvider -- and reserves the Nico
+# block for nico-vms. controller/Tiltfile derives the same pair for a provider
+# list containing "nico".
+#
+# "nico" alone parses and starts CWE, then rejects every create with "infra
+# provider is not supported by this deployment", which is how this was found.
+supportedInfraProviders: nico,infra
 capi:
   rbac:
     create: true
