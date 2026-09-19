@@ -25,8 +25,9 @@ patches:
 ---
 apiServer:
   extraArgs:
+    anonymous-auth: "false"
     audit-log-maxage: "30"
-    audit-log-maxbackup: "3"
+    audit-log-maxbackup: "10"
     audit-log-maxsize: "100"
     audit-log-path: /var/log/kubernetes_audit/audit.log
     audit-policy-file: /etc/kubernetes/policies/audit-policy.yaml
@@ -35,9 +36,11 @@ apiServer:
     feature-gates: ImageVolume=true
     kubelet-certificate-authority: /etc/kubernetes/pki/ca.crt
     profiling: "false"
+    service-account-extend-token-expiration: "false"
     shutdown-delay-duration: 10s
     shutdown-send-retry-after: "true"
     shutdown-watch-termination-grace-period: 20s
+    tls-cipher-suites: TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
   extraVolumes:
   - hostPath: /var/log/kubernetes_audit
     mountPath: /var/log/kubernetes_audit

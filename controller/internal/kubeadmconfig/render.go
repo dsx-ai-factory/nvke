@@ -20,24 +20,50 @@ import (
 )
 
 const (
-	defaultPatchesDirectory          = "/etc/kubernetes/patches"
-	defaultClusterName               = "kubernetes"
-	defaultDNSDomain                 = "cluster.local"
-	defaultBindPort                  = 6443
-	defaultCRISocket                 = "unix:///var/run/containerd/containerd.sock"
-	defaultImagePullPolicy           = "IfNotPresent"
-	defaultImageRepository           = "registry.k8s.io"
-	defaultAuditPolicyFile           = "/etc/kubernetes/policies/audit-policy.yaml"
-	defaultAuditLogPath              = "/var/log/kubernetes_audit/audit.log"
-	defaultKubeletCertificateAuth    = "/etc/kubernetes/pki/ca.crt"
-	defaultCertificatesDir           = "/etc/kubernetes/pki"
-	defaultEtcdDataDir               = "/var/lib/etcd"
-	defaultListenMetricsURLs         = "http://0.0.0.0:2381"
-	defaultKubeProxyMetricsBind      = "0.0.0.0:10249"
-	defaultBindAddress               = "0.0.0.0"
-	defaultAuditLogMaxAge            = "30"
-	defaultAuditLogMaxBackup         = "3"
-	defaultAuditLogMaxSize           = "100"
+	defaultPatchesDirectory       = "/etc/kubernetes/patches"
+	defaultClusterName            = "kubernetes"
+	defaultDNSDomain              = "cluster.local"
+	defaultBindPort               = 6443
+	defaultCRISocket              = "unix:///var/run/containerd/containerd.sock"
+	defaultImagePullPolicy        = "IfNotPresent"
+	defaultImageRepository        = "registry.k8s.io"
+	defaultAuditPolicyFile        = "/etc/kubernetes/policies/audit-policy.yaml"
+	defaultAuditLogPath           = "/var/log/kubernetes_audit/audit.log"
+	defaultKubeletCertificateAuth = "/etc/kubernetes/pki/ca.crt"
+	defaultCertificatesDir        = "/etc/kubernetes/pki"
+	defaultEtcdDataDir            = "/var/lib/etcd"
+	defaultListenMetricsURLs      = "http://0.0.0.0:2381"
+	defaultKubeProxyMetricsBind   = "0.0.0.0:10249"
+	defaultBindAddress            = "0.0.0.0"
+	defaultAuditLogMaxAge         = "30"
+	// defaultAuditLogMaxBackup is held at or above ten so a rotation storm cannot
+	// age the audit trail out faster than it can be shipped. Three rotations of a
+	// 100Mi log is well under a day of retained history on a busy API server,
+	// which is what CIS 1.2.18 objects to.
+	defaultAuditLogMaxBackup = "10"
+	defaultAuditLogMaxSize   = "100"
+	// defaultAnonymousAuth disables the anonymous system:unauthenticated identity
+	// rather than leaving it to the kube-apiserver default of true. Anonymous
+	// requests were already refused by RBAC, so this closes the gap between what
+	// the cluster enforces and what its flags declare (CIS 1.2.1). kubeadm's own
+	// bootstrap probes authenticate with admin.conf, so they are unaffected.
+	defaultAnonymousAuth = "false"
+	// defaultServiceAccountExtendTokenExpiration turns off the extended
+	// (one-year) service account token lifetime, so projected tokens expire on
+	// the bound schedule the cluster actually intends (CIS 1.2.30). The extension
+	// exists to shield clients that cannot re-read a rotating token; NKE ships no
+	// such client, and leaving it on silently grants every workload a year-long
+	// credential.
+	defaultServiceAccountExtendTokenExpiration = "false"
+	// defaultTLSCipherSuites pins the TLS 1.2 handshake to AEAD suites with
+	// forward secrecy, instead of accepting Go's broader default set (CIS 1.2.29).
+	// TLS 1.3 suites are not configurable through this flag and are unaffected.
+	defaultTLSCipherSuites = "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384," +
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384," +
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256," +
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256," +
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256," +
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
 	defaultProfilingDisabled         = "false"
 	defaultAPIServerShutdownDelay    = "10s"
 	defaultAPIServerShutdownRetry    = "true"
