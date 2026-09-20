@@ -198,8 +198,8 @@ github.com/containerd/platforms v0.2.1 h1:zvwtM3rz2YHPQsF2CHYM8+KtB5dvhISiXh5ZpS
 github.com/containerd/platforms v0.2.1/go.mod h1:XHCb+2/hzowdiut9rkudds9bE5yJ7npe7dG/wG+uFPw=
 github.com/coredns/caddy v1.1.1 h1:2eYKZT7i6yxIfGP3qLJoJ7HAsDJqYB+X68g4NYjSrE0=
 github.com/coredns/caddy v1.1.1/go.mod h1:A6ntJQlAWuQfFlsd9hvigKbo2WS0VUs2l1e2F+BawD4=
-github.com/coredns/corefile-migration v1.0.32 h1:tlbtXBpt7UzmedEoMqnfqOTnGCvzYfJ/Rrfqf+/W+TY=
-github.com/coredns/corefile-migration v1.0.32/go.mod h1:56DPqONc3njpVPsdilEnfijCwNGC3/kTJLl7i7SPavY=
+github.com/coredns/corefile-migration v1.0.35 h1:kZ4NRtenBmavOkFHCBCekxhrvoEzwAKRlNnD+9daVkI=
+github.com/coredns/corefile-migration v1.0.35/go.mod h1:56DPqONc3njpVPsdilEnfijCwNGC3/kTJLl7i7SPavY=
 github.com/coreos/go-oidc v2.5.0+incompatible h1:6W0vGJR3Tu0r0PwfmjOrRZSlfxeEln8dsejt3ZWIvwo=
 github.com/coreos/go-oidc v2.5.0+incompatible/go.mod h1:CgnwVTmzoESiwO9qyAFEMiHoZ1nMCKZlZ9V6mm3/LKc=
 github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf h1:iW4rZ826su+pqaw19uhpSCzhj44qo35pNgKFGqzDKkU=
