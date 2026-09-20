@@ -127,9 +127,9 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.46.0` | Unknown |
 | `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.46.0` | Unknown |
 | `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.0` | Unknown |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.5` | Unknown |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.5` | Unknown |
-| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.48.0` | Unknown |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.6` | Unknown |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.6` | Unknown |
+| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.49.0` | Unknown |
 | `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | Unknown |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | Unknown |
 | `go.uber.org/atomic` | MIT | `go.uber.org/atomic@v1.11.0` | Unknown |
@@ -13516,7 +13516,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.0_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.63.5_
+_MIT — go.temporal.io/api@v1.63.6_
 
 #### LICENSE
 
@@ -13546,7 +13546,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.63.5_
+_BSD-3-Clause — go.temporal.io/api@v1.63.6_
 
 #### LICENSE
 
@@ -13583,7 +13583,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.temporal.io/sdk
 
-_MIT — go.temporal.io/sdk@v1.48.0_
+_MIT — go.temporal.io/sdk@v1.49.0_
 
 #### LICENSE
 
