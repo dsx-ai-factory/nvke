@@ -424,7 +424,7 @@ github.com/oasdiff/yaml
 # github.com/oasdiff/yaml3 v0.0.14
 ## explicit; go 1.25
 github.com/oasdiff/yaml3
-# github.com/onsi/ginkgo/v2 v2.32.2
+# github.com/onsi/ginkgo/v2 v2.33.0
 ## explicit; go 1.25.0
 github.com/onsi/ginkgo/v2
 github.com/onsi/ginkgo/v2/config
@@ -448,7 +448,7 @@ github.com/onsi/ginkgo/v2/internal/reporters
 github.com/onsi/ginkgo/v2/internal/testingtproxy
 github.com/onsi/ginkgo/v2/reporters
 github.com/onsi/ginkgo/v2/types
-# github.com/onsi/gomega v1.43.0
+# github.com/onsi/gomega v1.43.1
 ## explicit; go 1.25.0
 github.com/onsi/gomega
 github.com/onsi/gomega/format
@@ -771,8 +771,6 @@ go.opentelemetry.io/otel/sdk/resource
 go.opentelemetry.io/otel/sdk/trace
 go.opentelemetry.io/otel/sdk/trace/internal/env
 go.opentelemetry.io/otel/sdk/trace/internal/observ
-# go.opentelemetry.io/otel/sdk/metric v1.46.0
-## explicit; go 1.25.0
 # go.opentelemetry.io/otel/trace v1.46.0
 ## explicit; go 1.25.0
 go.opentelemetry.io/otel/trace
@@ -785,7 +783,7 @@ go.opentelemetry.io/proto/otlp/collector/trace/v1
 go.opentelemetry.io/proto/otlp/common/v1
 go.opentelemetry.io/proto/otlp/resource/v1
 go.opentelemetry.io/proto/otlp/trace/v1
-# go.temporal.io/api v1.63.5
+# go.temporal.io/api v1.63.6
 ## explicit; go 1.25.4
 go.temporal.io/api/activity/v1
 go.temporal.io/api/batch/v1
@@ -810,7 +808,9 @@ go.temporal.io/api/internal/protojson/strs
 go.temporal.io/api/internal/strcase
 go.temporal.io/api/namespace/v1
 go.temporal.io/api/nexus/v1
+go.temporal.io/api/nexusoperation/v1
 go.temporal.io/api/nexusservices/workerservice/v1
+go.temporal.io/api/notificationservice/v1
 go.temporal.io/api/operatorservice/v1
 go.temporal.io/api/protocol/v1
 go.temporal.io/api/protometa/v1
@@ -830,8 +830,8 @@ go.temporal.io/api/worker/v1
 go.temporal.io/api/workflow/v1
 go.temporal.io/api/workflowservice/v1
 go.temporal.io/api/workflowservicemock/v1
-# go.temporal.io/sdk v1.48.0
-## explicit; go 1.25.4
+# go.temporal.io/sdk v1.49.0
+## explicit; go 1.26.0
 go.temporal.io/sdk/activity
 go.temporal.io/sdk/client
 go.temporal.io/sdk/converter
@@ -1009,7 +1009,7 @@ google.golang.org/genproto/googleapis/api/httpbody
 ## explicit; go 1.25.0
 google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
-# google.golang.org/grpc v1.83.2
+# google.golang.org/grpc v1.84.0
 ## explicit; go 1.25.0
 google.golang.org/grpc
 google.golang.org/grpc/attributes

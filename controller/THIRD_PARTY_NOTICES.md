@@ -81,7 +81,7 @@ notices-check` verifies it is up to date.
 | `github.com/oapi-codegen/runtime` | Apache-2.0 | `github.com/oapi-codegen/runtime@v1.7.0` | Unknown |
 | `github.com/oasdiff/yaml` | BSD-3-Clause / MIT | `github.com/oasdiff/yaml@v0.1.1` | Unknown |
 | `github.com/oasdiff/yaml3` | MIT | `github.com/oasdiff/yaml3@v0.0.14` | Unknown |
-| `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.43.0` | Unknown |
+| `github.com/onsi/gomega` | MIT | `github.com/onsi/gomega@v1.43.1` | Unknown |
 | `github.com/pkg/errors` | BSD-2-Clause | `github.com/pkg/errors@v0.9.1` | Unknown |
 | `github.com/pmezard/go-difflib/difflib` | BSD-3-Clause | `github.com/pmezard/go-difflib@v1.0.1-0.20181226105442-5d4384ee4fb2` | Unknown |
 | `github.com/prometheus/client_golang/internal/github.com/golang/gddo/httputil` | BSD-3-Clause | `github.com/prometheus/client_golang@v1.24.1` | Unknown |
@@ -127,9 +127,9 @@ notices-check` verifies it is up to date.
 | `go.opentelemetry.io/otel/sdk` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/sdk@v1.46.0` | Unknown |
 | `go.opentelemetry.io/otel/trace` | Apache-2.0 / BSD-3-Clause | `go.opentelemetry.io/otel/trace@v1.46.0` | Unknown |
 | `go.opentelemetry.io/proto/otlp` | Apache-2.0 | `go.opentelemetry.io/proto/otlp@v1.11.0` | Unknown |
-| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.5` | Unknown |
-| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.5` | Unknown |
-| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.48.0` | Unknown |
+| `go.temporal.io/api` | MIT | `go.temporal.io/api@v1.63.6` | Unknown |
+| `go.temporal.io/api/internal/protojson` | BSD-3-Clause | `go.temporal.io/api@v1.63.6` | Unknown |
+| `go.temporal.io/sdk` | MIT | `go.temporal.io/sdk@v1.49.0` | Unknown |
 | `go.temporal.io/sdk/contrib/opentelemetry` | MIT | `go.temporal.io/sdk/contrib/opentelemetry@v0.8.1` | Unknown |
 | `go.temporal.io/sdk/contrib/tally` | MIT | `go.temporal.io/sdk/contrib/tally@v0.2.0` | Unknown |
 | `go.uber.org/atomic` | MIT | `go.uber.org/atomic@v1.11.0` | Unknown |
@@ -148,7 +148,7 @@ notices-check` verifies it is up to date.
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | Unknown |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260819154853-08b0e4226688` | Unknown |
 | `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688` | Unknown |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | Unknown |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.84.0` | Unknown |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | Unknown |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | Unknown |
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | Unknown |
@@ -7629,7 +7629,7 @@ limitations under the License.
 
 ### github.com/onsi/gomega
 
-_MIT — github.com/onsi/gomega@v1.43.0_
+_MIT — github.com/onsi/gomega@v1.43.1_
 
 #### LICENSE
 
@@ -13516,7 +13516,7 @@ _Apache-2.0 — go.opentelemetry.io/proto/otlp@v1.11.0_
 
 ### go.temporal.io/api
 
-_MIT — go.temporal.io/api@v1.63.5_
+_MIT — go.temporal.io/api@v1.63.6_
 
 #### LICENSE
 
@@ -13546,7 +13546,7 @@ THE SOFTWARE.
 
 ### go.temporal.io/api/internal/protojson
 
-_BSD-3-Clause — go.temporal.io/api@v1.63.5_
+_BSD-3-Clause — go.temporal.io/api@v1.63.6_
 
 #### LICENSE
 
@@ -13583,7 +13583,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### go.temporal.io/sdk
 
-_MIT — go.temporal.io/sdk@v1.48.0_
+_MIT — go.temporal.io/sdk@v1.49.0_
 
 #### LICENSE
 
@@ -15216,7 +15216,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-
 
 ### google.golang.org/grpc
 
-_Apache-2.0 — google.golang.org/grpc@v1.83.2_
+_Apache-2.0 — google.golang.org/grpc@v1.84.0_
 
 #### LICENSE
 
