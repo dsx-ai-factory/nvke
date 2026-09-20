@@ -7,7 +7,7 @@
 # ClusterSPIFFEID.
 chart:
   name: spire-crds
-  version: "0.5.0"
+  version: "0.6.1"
   repository: https://spiffe.github.io/helm-charts-hardened/
 release:
   name: spire-crds

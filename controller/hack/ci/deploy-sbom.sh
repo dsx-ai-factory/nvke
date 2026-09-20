@@ -122,15 +122,6 @@ cwe_tag="${CWE_IMAGE##*:}"
 # checksum, cert-manager ownership, the kind gateway address, the trust domain
 # derived from the cluster name, the built image, and the generated passwords.
 
-# spire is the one component nothing can install by coordinates: it is pinned to
-# a commit of spiffe/helm-charts-hardened for global.spire.jwtIssuer, which has
-# no upstream release, and oci://ghcr.io/dsx-ai-factory/nke/charts/spire:0.29.0
-# does not exist. postgresql and controller are in this repository and have no
-# dependencies, so their release.yaml names a path and helm reads the directory.
-log "materialising the spire chart"
-SPIRE_CHART="$(bash "${STACK_DIR}/build/spire-chart.sh")"
-log "spire chart at ${SPIRE_CHART}"
-
 # Values that genuinely vary per run. MANAGEMENT_VIP and KIND_CLUSTER_NAME come
 # from backend-e2e.sh, which computes them; the trust domain follows the cluster
 # name exactly as SPIRE_TRUST_DOMAIN does in the Tiltfile, so the identities
@@ -337,7 +328,6 @@ log "installing ${SBOM_TARGET} from ${SBOM_DIR}"
 bash "${STACK_DIR}/build/use-nke-sbom.sh" install \
   --sbom "${SBOM_DIR}" \
   --target "${SBOM_TARGET}" \
-  --chart-override "spire=${SPIRE_CHART}" \
   --values-for "controller=${VALUES_DIR}/controller.yaml" \
   --values-for "spire=${VALUES_DIR}/spire.yaml" \
   --values-for "postgresql=${VALUES_DIR}/postgresql.yaml" \

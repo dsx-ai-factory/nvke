@@ -1,20 +1,25 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# NOT A PUBLISHED CHART. The version below is pinned to a commit of
-# spiffe/helm-charts-hardened for global.spire.jwtIssuer, which has no upstream
-# release; oci://ghcr.io/dsx-ai-factory/nke/charts/spire:0.29.0 does not exist.
+# The published SPIFFE hardened chart, like spire-crds beside it.
 #
-# So this item names no repository and no path: the installer must materialise
-# the chart and pass --chart-override spire=<dir>. Cloning it and running
-# `helm dependency build` is the caller's job, because it needs network and a
-# writable directory that a published artifact cannot assume.
+# This was pinned to a COMMIT until 2026-09-20, because global.spire.jwtIssuer
+# had no upstream release: 0.29.0 accepts the value but never renders
+# "jwt_issuer" into the SPIRE server config, so the value is silently ignored.
+# Only the templating in that commit emitted it. 0.30.1 does, so the pin is no
+# longer needed -- and build/spire-chart.sh, which existed only to clone and
+# `helm dependency build` that commit, is gone with it.
 #
-#   https://github.com/spiffe/helm-charts-hardened.git
-#   commit 585203462b6bc7aa06d67b3a153bfff7ff287173, charts/spire
+# 0.30.1 is also what cli/internal/cwedeploy installs, so the deploy path and
+# nkectl now agree on the version.
+#
+# The only difference against the pinned commit is four ClusterSPIFFEIDs for
+# SPIKE (spire-spike-bootstrap/keeper/nexus/pilot), which 0.30.1 no longer
+# emits by default and nothing here installs or uses.
 chart:
   name: spire
-  version: "0.29.0"
+  version: "0.30.1"
+  repository: https://spiffe.github.io/helm-charts-hardened/
 release:
   name: spire
   namespace: spire-server
