@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Read back from the az61 site controller's live release, which is the
+# configuration that provisioned a real tenant.
+#
+# auth.postgresPassword is NOT here. It is a site secret and comes in through
+# --values-for postgresql=<file>, and the SAME value has to reach both of
+# Temporal's datastores -- default and visibility. Setting it on only one
+# leaves the Temporal schema job crash-looping with "password authentication
+# failed", which the Forge exercise hit.
+auth:
+  username: postgres
+  database: postgres
+
+primary:
+  # primary.persistence, NOT a top-level persistence: the Bitnami chart nests
+  # it here, and helm does not reject unknown values, so a top-level
+  # persistence.enabled=true is accepted and silently ignored. That is how the
+  # exercise ended up running Postgres on an emptyDir.
+  persistence:
+    enabled: true
+    size: 40Gi
+    # az61 binds this to local-path. Left empty here so it takes whatever the
+    # site made default -- which provisioner is right is a property of the
+    # hardware, and there must BE a default or the PVC sits Pending forever.
+    storageClass: ""
+  resources:
+    limits:
+      memory: 512Mi
+    requests:
+      memory: 256Mi
+  # The databases CWE and Temporal expect to exist. Nothing else creates them.
+  initdb:
+    scripts:
+      init-cwe.sql: |
+        CREATE DATABASE "cloud-workflow";
+      init-temporal.sql: |
+        CREATE DATABASE temporal;
+        CREATE DATABASE temporal_visibility;

@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Namespaces for target "capd-e2e", derived from the registry's defaultNamespace fields.
+# The chart emits none of its own: a consumer creates them, and
+# helm --create-namespace makes only the release namespace.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cert-manager
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cloud-workflow-engine
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nke-system
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: postgres
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spire-server
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: spire-system
+  labels:
+    # spire-agent and spiffe-csi-driver need hostNetwork,
+    # hostPID and privileged containers.
+    pod-security.kubernetes.io/enforce: privileged
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: temporal
+---
+# CAPNICo's controller. ../capnico/capnico.yaml declares this Namespace too --
+# the release asset carries one -- but that item installs later, and both
+# nico-credentials and ghcr-imagepull land here first. Two server-side applies
+# of the same bare Namespace is not a conflict; neither claims a field the
+# other owns.
+#
+# No Helm ownership metadata, unlike the e2e lane: nothing installs CAPNICo
+# from a chart on this path.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: capnico-system

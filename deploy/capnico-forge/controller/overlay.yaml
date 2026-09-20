@@ -1,0 +1,204 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What this target changes about controller, applied over values.yaml.
+
+# OFF, matching the az61 site controller that provisioned a real tenant.
+#
+# Not a recommendation for a production site -- a deliberate choice for the
+# first run on this path, which is already changing one thing that has never
+# been exercised on Forge (spiffe.enabled). API authentication is a separate
+# axis: apiAuth is REST tokens, spiffe is CWE-to-agent mTLS. Turning both on at
+# once means a failure could be either.
+#
+# It also cannot simply be flipped true here. The chart defaults
+# apiAuth.configMap.create to false and mounts `nke-auth-config`, which on the
+# e2e lanes comes from the nke-auth-dev item -- and that item is test
+# scaffolding (it creates nke-client, nke-outsider and nke-e2e ServiceAccounts)
+# that a site has no business installing. CWE treats a configured-but-unreadable
+# AUTH_CONFIG_PATH as a startup failure, never as "disabled", so enabling this
+# without supplying the ConfigMap does not degrade -- it fails to start.
+#
+# To turn it on later: set apiAuth.configMap.create=true and supply real
+# apiAuth.config, or add a site-specific auth-config item.
+apiAuth:
+  enabled: false
+  permissive: false
+
+# CWE reconciles CAPI objects, so it needs the RBAC for them.
+# nico ALONE, unlike capnico-e2e, which needs nico,infra.
+#
+# Not a guess: the az61 site controller that provisioned a real tenant ran
+# `supportedInfraProviders: nico`, read back from its live release. The
+# difference is the client. The e2e suite's nico-containers backend submits an
+# Infra block (buildNicoRequest in test/e2e/internal/nke/request.go wraps
+# NicoCluster manifests in api.InfraClusterProvider); a site is driven by
+# `nkectl create cluster`, which submits the Nico block.
+#
+# Widening this to nico,infra would not break anything, but it would accept
+# payloads no client on this path sends.
+supportedInfraProviders: nico
+capi:
+  rbac:
+    create: true
+
+tenantAccess:
+  enabled: true
+
+# OFF, for the same reason and matching az61.
+#
+# The settings below are kept, not deleted: the SPIRE OIDC discovery provider
+# and its nodeport are still installed by this path, and the CA chain in
+# nke-base-config still publishes oidc-provider-upstream-ca -- the spire item
+# waits on that Certificate regardless. So turning this true is a one-line
+# change once the SPIRE half is proven, with nothing else to reassemble.
+nkeOIDCAuth:
+  enabled: false
+  # Logical issuer, string-compared against the JWT's iss claim; it does not
+  # have to resolve. discoveryURL does, and is VIP-derived, so it is passed in.
+  issuerURL: "https://nke.site-controller.internal"
+  # The CA the OIDC provider's leaf is signed by, published by the chain in
+  # controller/deploy/k8s/oidc-upstream-ca.yaml.
+  caBundleSecret:
+    namespace: spire-server
+    name: oidc-provider-upstream-ca
+    key: ca.crt
+
+# The CAPD lane installs the CNI as part of cluster creation rather than after
+# init; the node-pool lane differs and overrides this.
+cni:
+  installAfterInit: true
+
+# Empty on this path: none of the twelve variables the Tiltfile forwards
+# (TEMPORAL_UI_URL, LOG_LEVEL, FORGE_URL, ...) are set by backend-e2e.sh.
+env: []
+
+# ---------------------------------------------------------------------------
+# Moved here from controller/hack/tilt-cwe-chart-values.yaml, which the lane
+# used to read off disk and pass as a second --values file. It is static
+# configuration -- the same on every run -- so it belongs in the overlay: a
+# deploy path that does not carry it under-describes the deployment, and a
+# reader of the generated tree could not tell how CWE was configured.
+#
+# The Tiltfile still reads that file (controller/Tiltfile:1018,1197), so this
+# is a second copy and the two can drift. Verified equivalent at the time of
+# the move by rendering the controller chart from each and diffing: identical.
+#
+# Two things deliberately NOT copied, because the run supplies them:
+# image.repository/tag (the locally built controller) and
+# spiffe.spire.serverAddress (the kind VIP). image.pullPolicy IS kept -- the
+# image is side-loaded into kind, so it must not be re-pulled.
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+fullnameOverride: cloud-workflow-engine
+namespaceOverride: cloud-workflow-engine
+
+nkeSystemNamespace:
+  create: false
+
+image:
+  # repository and tag are per-run: the lane --sets the tag it just built.
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+podSecurityContext: null
+securityContext:
+  readOnlyRootFilesystem: false
+
+metrics:
+  networkPolicy:
+    enabled: false
+serviceMonitor:
+  enabled: false
+
+# /readyz, not /api/version. /api/version proves only that HTTP is serving;
+# /readyz returns {"status":"ok","checks":{"database":"ok","temporal":"ok"}},
+# so readiness means Postgres and Temporal are actually reachable. With the
+# weaker probe a pod reports Ready while both are down, which is how the first
+# run of this path looked healthy without having been checked.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+appDb:
+  url: postgres-postgresql.postgres.svc.cluster.local:5432
+  dbName: cloud-workflow
+  postgresUser: postgres
+  # postgresPassword is a real credential on this path and is NOT committed.
+  # Supply it with --values-for controller=<file>, together with the matching
+  # value on BOTH of temporal's datastores -- default and visibility. Setting
+  # it on only one leaves the Temporal schema job crash-looping with
+  # "password authentication failed", which the Forge exercise hit.
+  sslMode: disable
+
+# The port nke-agent listens on, and it has to agree with three other places:
+# the sitespec used at bootstrap (nkectl's default, cli/internal/sitespec),
+# os-image/SPEC.md's contract, and the agent drop-in the node's cloud-init
+# writes. The az61 site set it explicitly rather than relying on a default, and
+# so does this.
+env:
+  - name: NODE_AGENT_PORT
+    value: "15005"
+
+# service.port is the CLUSTER-IP port and must stay the chart default: the
+# container listens on 8080, and setting port: 30080 here only renames the
+# in-cluster port while leaving nothing reachable from the node. That is the
+# mistake this file made on its first run -- az61's live release shows
+# service.port: 30080, but az61 reaches CWE through the separate NodePort
+# Service nkectl's bootstrap applies (cwe-nodeport.yaml), not through that.
+#
+# nodePort renders a SECOND Service beside the ClusterIP one, which is the
+# chart's supported way to publish the API without a cluster route -- for the
+# host running nkectl, or an operator reaching /api on a node address.
+service:
+  port: 8080
+  nodePort: 30080
+
+secrets:
+  # Names the Secret ../nke-base-config/35-dgxc-tenant-credentials.yaml.tmpl
+  # renders. Empty means CWE never receives DGXC_TENANT_USER and
+  # DGXC_TENANT_PASSWORD, and every tenant create fails at user-data rendering
+  # -- one of the Forge exercise's eleven failures. The chart injects them only
+  # when this names a Secret carrying keys `user` and `password`.
+  dgxcTenantCredSecretName: dgxc-tenant-credentials
+
+temporal:
+  host: temporal-frontend.temporal.svc.cluster.local
+  port: 7233
+
+profiles:
+  path: /profiles
+  # Profiles are a separate content image, materialised by an init container.
+  # Without it /api/osProfiles returns 500 and nothing can be provisioned --
+  # the profiles directory may be empty at startup, but it must exist by the
+  # time a cluster is created.
+  #
+  # repository and tag are per-site: fleet profile content is maintained
+  # outside this repository. The exercise staged a locally built image into the
+  # node's containerd, which is why no registry credential is needed for it.
+  # Supply them with --values-for controller=<file>.
+  image:
+    enabled: true
+
+# apiAuth is not set here. The Tiltfile drives it from NKE_AUTH_ENABLED and
+# NKE_PERMISSIVE_MODE, and the chart's default ConfigMap name already matches
+# the one deploy/k8s/nke-auth-dev.yaml applies.
+
+spiffe:
+  enabled: true
+  endpointSocket: unix:///spiffe-workload-api/spire-agent.sock
+  spire:
+    serverNamespace: spire-server
+    className: spire-mgmt-spire
+    tpmPubhashesConfigMapName: tpm-pubhashes
+    serverPort: "30440"
