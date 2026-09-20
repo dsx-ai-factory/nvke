@@ -172,7 +172,7 @@ notices-check` verifies it is up to date.
 | `k8s.io/utils/third_party/forked/golang/btree` | Apache-2.0 | `k8s.io/utils@v0.0.0-20260626114624-be93311217bd` | Unknown |
 | `mellium.im/sasl` | BSD-2-Clause | `mellium.im/sasl@v0.3.2` | Unknown |
 | `sigs.k8s.io/cluster-api` | Apache-2.0 | `sigs.k8s.io/cluster-api@v1.13.4` | Unknown |
-| `sigs.k8s.io/controller-runtime` | Apache-2.0 | `sigs.k8s.io/controller-runtime@v0.25.0` | Unknown |
+| `sigs.k8s.io/controller-runtime` | Apache-2.0 | `sigs.k8s.io/controller-runtime@v0.25.1` | Unknown |
 | `sigs.k8s.io/json` | Apache-2.0 / BSD-3-Clause | `sigs.k8s.io/json@v0.0.0-20250730193827-2d320260d730` | Unknown |
 | `sigs.k8s.io/randfill` | Apache-2.0 | `sigs.k8s.io/randfill@v1.0.0` | Unknown |
 | `sigs.k8s.io/structured-merge-diff/v6` | Apache-2.0 | `sigs.k8s.io/structured-merge-diff/v6@v6.4.2` | Unknown |
@@ -18965,7 +18965,7 @@ _Apache-2.0 — sigs.k8s.io/cluster-api@v1.13.4_
 
 ### sigs.k8s.io/controller-runtime
 
-_Apache-2.0 — sigs.k8s.io/controller-runtime@v0.25.0_
+_Apache-2.0 — sigs.k8s.io/controller-runtime@v0.25.1_
 
 #### LICENSE
 
