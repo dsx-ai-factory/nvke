@@ -399,6 +399,17 @@ jobs:
               echo "  - image → Image Provisioned NVCR (promote-ghcr → ghcr.io/dsx-ai-factory/nke/cluster-api-provider-provisioned)"
               ;;
 
+            cli/v*)
+              echo "CLI tag ${GITHUB_REF_NAME}:"
+              echo "  - binaries → CLI Artifact GHCR / CLI Artifact NVCR / CLI S3 Publish"
+              ;;
+
+            controller/v*)
+              echo "Controller tag ${GITHUB_REF_NAME}:"
+              echo "  - image → Image NVCR (nvcr.io source, promoted to ghcr.io/dsx-ai-factory/nke/nke-controller and DSX NVCR)"
+              echo "  - chart → Chart Publish / Chart Publish NVCR"
+              ;;
+
             *)
               echo "::warning::No component publish workflow for '${GITHUB_REF_NAME}' yet."
               ;;
