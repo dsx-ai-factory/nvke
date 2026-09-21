@@ -109,8 +109,8 @@ func (s *CachingTokenSource) Token(ctx context.Context) (string, error) {
 	if token.Value == "" {
 		return "", errors.New("token exchange returned an empty DSX identity token")
 	}
-	if !s.now().Before(token.Expiry) {
-		return "", fmt.Errorf("token exchange returned a token that expired at %s", token.Expiry.UTC())
+	if !s.now().Add(s.refreshBefore).Before(token.Expiry) {
+		return "", fmt.Errorf("token exchange returned a token too close to expiry at %s", token.Expiry.UTC())
 	}
 
 	s.cached = token
