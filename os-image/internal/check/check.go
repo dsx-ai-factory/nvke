@@ -52,6 +52,10 @@ type Options struct {
 	Endpoint          string
 	SPIFFESocket      string
 	ExpectTrustDomain string
+	// ExpectAuthRecord matches an agent running --grpc-auth-mode=tls-jwt. Such
+	// an agent writes an NKEAuth record before the HTTP/2 preface, and a probe
+	// that does not consume it reads the record as a corrupt preface.
+	ExpectAuthRecord bool
 }
 
 // Result is a successful probe.
@@ -61,6 +65,11 @@ type Result struct {
 	AgentVersion string
 	Kubeadm      string
 	Services     []string
+	// AuthRecord reports that the agent sent an NKEAuth record, and
+	// AuthSubject its sub claim. The claim is read without verifying the
+	// signature: only the controller validates this token.
+	AuthRecord  bool
+	AuthSubject string
 }
 
 // NormalizeEndpoint accepts host or host:port and returns host:port.
@@ -130,10 +139,14 @@ func Probe(ctx context.Context, opts Options) (Result, error) {
 		return nil
 	})
 
-	conn, err := grpc.NewClient(
-		endpoint,
-		grpc.WithTransportCredentials(grpccredentials.MTLSClientCredentials(x509Source, bundleSource, authorizer)),
-	)
+	creds := grpccredentials.MTLSClientCredentials(x509Source, bundleSource, authorizer)
+	var authCreds *authRecordCredentials
+	if opts.ExpectAuthRecord {
+		authCreds = newAuthRecordCredentials(creds)
+		creds = authCreds
+	}
+
+	conn, err := grpc.NewClient(endpoint, grpc.WithTransportCredentials(creds))
 	if err != nil {
 		return Result{}, fmt.Errorf("%w: %w", ErrDial, err)
 	}
@@ -152,13 +165,17 @@ func Probe(ctx context.Context, opts Options) (Result, error) {
 		return Result{}, fmt.Errorf("%w: GetKubeadmStatus: %w", ErrAgentRPC, err)
 	}
 
-	return Result{
+	result := Result{
 		Endpoint:     endpoint,
 		ClientSVID:   svid.ID.String(),
 		AgentVersion: statusResp.GetAgentVersion(),
 		Kubeadm:      statusResp.GetKubeadmStatus(),
 		Services:     services,
-	}, nil
+	}
+	if authCreds != nil {
+		result.AuthRecord, result.AuthSubject = authCreds.observed()
+	}
+	return result, nil
 }
 
 func classifyDial(err error) error {
