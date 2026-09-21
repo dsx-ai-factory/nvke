@@ -385,7 +385,7 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 		return fmt.Errorf("cwedeploy: creating a directory for the controller chart: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(chartPath) }()
-	if err := charts.Extract(charts.Controller, chartPath); err != nil {
+	if err := charts.Extract(charts.NKEController, chartPath); err != nil {
 		return fmt.Errorf("cwedeploy: writing out the controller chart: %w", err)
 	}
 
