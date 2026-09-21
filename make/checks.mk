@@ -177,6 +177,7 @@ gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory docs-check
 	@$(MAKE) --no-print-directory chart-check
 	@$(MAKE) --no-print-directory -C controller generate-check
+	@$(MAKE) --no-print-directory -C cli provider-manifest-check
 	@$(MAKE) --no-print-directory vulncheck
 	@echo
 	@echo "Merge-gate jobs not run locally:"
