@@ -12,6 +12,22 @@ ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
 sudo install -d -m 0755 /usr/lib/nke /etc/nke /var/lib/nke /usr/local/bin
 sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nke/wait-spiffe-socket.sh
 
+# Own the etcd data directory as etcd:etcd (CIS 1.1.12). kubeadm creates
+# /var/lib/etcd as root:root during `kubeadm init` and exposes no knob for its
+# ownership, so the only way to influence it is to have the directory already
+# exist: kubeadm reuses one it finds rather than creating its own, and leaves
+# the ownership alone. Doing it at bake time also means it is in place before
+# any control-plane node is ever provisioned.
+#
+# There is no etcd user on a node otherwise -- etcd runs from
+# registry.k8s.io/etcd as a static pod, as root, mounting this directory as a
+# hostPath. Root bypasses directory permissions, so an etcd-owned 0700 data
+# directory stays writable by it; this changes what the node reports, not what
+# etcd can do. Mirrors how the SPIRE agent's own user and state directory are
+# created (files/spire-configure.sh).
+id -u etcd >/dev/null 2>&1 || sudo useradd -r -s /bin/false -d /var/lib/etcd etcd
+sudo install -d -m 0700 -o etcd -g etcd /var/lib/etcd
+
 # Keep image-specific identity ordering in a drop-in so agent upgrades retain it.
 sudo install -d -m 0755 /etc/systemd/system/nke-agent.service.d
 sudo install -m 0644 "${SRC}/nke-agent-spire.conf" /etc/systemd/system/nke-agent.service.d/10-spire.conf
