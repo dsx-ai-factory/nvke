@@ -61,7 +61,11 @@ jobs:
           # firmware that is compatible with the current configuration", and
           # nico-vms-e2e boots the same guests on this fleet.
           - arch: arm64
-            runner: nke-arm64-8c16g
+            # Back on the ARC fleet. The failure in #863 was /dev/kvm being
+            # reset to root:kvm 0660 by the QEMU package install, which
+            # setup-ci-host.sh now re-asserts; nothing about libvirt itself
+            # was wrong.
+            runner: arc-arm64-kvm-8c16g
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'dsx-ai-factory/nke'
     # Still sized for the emulated path, so a fall back to TCG cannot time out.

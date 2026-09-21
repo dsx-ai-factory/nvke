@@ -226,6 +226,28 @@ if [[ "${FDE}" == true ]]; then
     sshpass
 fi
 
+# Re-assert the device mode, because installing the packages above took it
+# away. qemu-system-common's postinst chowns /dev/kvm to root:kvm and chmods
+# it 0660, undoing the "Report the accelerator" step that ran before this
+# script. On a VM runner that is harmless -- the login user is in the kvm
+# group. In a container the runner is uid 1001 in groups runner, sudo, users,
+# docker and libvirt, but not kvm, so it loses the device:
+#
+#   1. pod starts           crw-rw---- root 994
+#   2. after chmod 666      crw-rw-rw- root 994
+#   3. after installing     crw-rw---- root kvm   <- here
+#
+# QEMU then cannot open it, libvirt reports
+#   the accel 'kvm' is not supported by '/usr/bin/qemu-system-aarch64'
+# so the KVM machine list is empty, 'virt' never resolves to 'virt-*', and
+# the domain is refused with "Unable to find 'efi' firmware that is
+# compatible with the current configuration" -- which is what #863 recorded.
+# os-image-artifact.yml never hit this because it chmods after installing.
+if [[ -c /dev/kvm ]]; then
+  sudo chmod 666 /dev/kvm
+  log "/dev/kvm re-opened after package install: $(ls -l /dev/kvm)"
+fi
+
 # GRO merges inbound segments into super-frames the tap cannot take, so guest
 # downloads crawl or stall: 1.6-5 MB/s against 62 with it off, and outright
 # timeouts where the uplink's MTU exceeds the bridge's. Every lane here bridges

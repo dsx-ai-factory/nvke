@@ -95,16 +95,17 @@ jobs:
       # One architecture failing must not hide the other's result.
       fail-fast: false
       # amd64 is linux-amd64-gpu-l4-latest-1, the one hosted label with
-      # /dev/kvm; see kubeadm-bringup-e2e.yml. arm64 is nke-arm64-16c64g on the
-      # self-hosted fleet, which holds two of that shape, so one run takes half
-      # of it.
+      # /dev/kvm; see kubeadm-bringup-e2e.yml. arm64 is arc-arm64-kvm on the
+      # RelEng EKS fleet.
       matrix:
         include:
           - arch: amd64
             runner: linux-amd64-gpu-l4-latest-1
             label_filter: 'nico-vms && happy-path'
           - arch: arm64
-            runner: nke-arm64-16c64g
+            # Back on the ARC fleet, same root cause and fix as
+            # kubeadm-bringup-e2e; see setup-ci-host.sh.
+            runner: arc-arm64-kvm
             # arm64 also carries the two OVN-Kubernetes scenarios, because it
             # is the faster leg -- see the timing note below. parallel-lifecycle
             # is the two-tenant-cluster spec; ovn is the only entry that runs
