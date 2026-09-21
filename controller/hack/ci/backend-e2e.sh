@@ -485,6 +485,26 @@ collect_diagnostics() {
           >"${STATE_DIR}/nodes/${node_name}-crictl-images.txt" 2>&1
         docker exec "${node_name}" crictl info \
           >"${STATE_DIR}/nodes/${node_name}-crictl-info.json" 2>&1
+        # Static control-plane container logs. crictl ps -a already records
+        # that, say, kube-apiserver is on its third attempt, but without the
+        # containers' own stderr a crashloop is only diagnosable by inference:
+        # every other signal (kubelet unable to reach :6443, SPIFFE identity
+        # never issued, CNI uninitialised) is downstream of it. -a covers the
+        # exited attempts, which are the ones carrying the failure.
+        docker exec "${node_name}" sh -c '
+          for comp in kube-apiserver etcd kube-controller-manager kube-scheduler; do
+            echo "===== ${comp} ====="
+            ids=$(crictl ps -a --label io.kubernetes.container.name="${comp}" -q 2>/dev/null)
+            if [ -z "${ids}" ]; then
+              echo "(no container)"
+              continue
+            fi
+            for id in ${ids}; do
+              echo "--- ${comp} ${id} ---"
+              crictl logs "${id}" 2>&1 || echo "(logs unavailable)"
+            done
+          done' \
+          >"${STATE_DIR}/nodes/${node_name}-control-plane-containers.log" 2>&1
         docker exec "${node_name}" cat /etc/containerd/certs.d/docker.io/hosts.toml \
           >"${STATE_DIR}/nodes/${node_name}-dockerhub-hosts.toml" 2>&1
         docker exec "${node_name}" sh -c 'ip -brief address; ip route show; ip -6 route show' \

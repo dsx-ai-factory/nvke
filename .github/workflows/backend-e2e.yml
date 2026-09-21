@@ -330,6 +330,7 @@ jobs:
             "${state_dir}"/nodes/*-crictl-pods.txt \
             "${state_dir}"/nodes/*-crictl-images.txt \
             "${state_dir}"/nodes/*-crictl-info.json \
+            "${state_dir}"/nodes/*-control-plane-containers.log \
             "${state_dir}"/nodes/*-dockerhub-hosts.toml \
             "${state_dir}"/nodes/*-network.txt; do
             [[ -f "${path}" ]] || continue
