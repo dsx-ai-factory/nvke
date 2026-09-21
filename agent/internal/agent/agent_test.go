@@ -1685,3 +1685,82 @@ func TestExecuteKubeadmInitWithoutConfigRemovesStaleInitConfig(t *testing.T) {
 		})
 	}
 }
+
+// fileMode returns a pointer to m, so a table case can distinguish "create
+// this file with this mode" from "do not create it at all".
+func fileMode(m os.FileMode) *os.FileMode { return &m }
+
+func TestHardenKubeletFileModes(t *testing.T) {
+	// writeAt creates rel under root with mode, making parents as needed.
+	writeAt := func(t *testing.T, root, rel string, mode os.FileMode) string {
+		t.Helper()
+		path := filepath.Join(root, rel)
+		require.NoError(t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(t, os.WriteFile(path, []byte("x"), mode))
+		// WriteFile is subject to umask, so set the mode explicitly.
+		require.NoError(t, os.Chmod(path, mode))
+		return path
+	}
+
+	tests := []struct {
+		name    string
+		dropIn  *os.FileMode
+		config  *os.FileMode
+		wantErr bool
+	}{
+		{name: "tightens both when kubeadm left them 0644", dropIn: fileMode(0o644), config: fileMode(0o644)},
+		{name: "idempotent when both already 0600", dropIn: fileMode(0o600), config: fileMode(0o600)},
+		{name: "tightens the config alone on a worker-shaped tree", config: fileMode(0o644)},
+		{name: "no files yet, before init or join, is not an error"},
+		{name: "tightens a mode looser than 0644", dropIn: fileMode(0o666), config: fileMode(0o640)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			paths := make([]string, 0, 2)
+			if tt.dropIn != nil {
+				paths = append(paths, writeAt(t, tmp, kubeletKubeadmDropInPath, *tt.dropIn))
+			}
+			if tt.config != nil {
+				paths = append(paths, writeAt(t, tmp, kubeletConfigPath, *tt.config))
+			}
+
+			server := &NodeAgentServer{RootPath: tmp}
+
+			require.NoError(t, server.hardenKubeletFileModes())
+
+			for _, p := range paths {
+				info, err := os.Stat(p)
+				require.NoError(t, err)
+				assert.Equal(t, os.FileMode(kubeletHardenedFileMode), info.Mode().Perm(), "mode of %s", p)
+			}
+
+			// Re-running must not change anything or fail: the startup call
+			// site invokes this on every agent restart.
+			require.NoError(t, server.hardenKubeletFileModes())
+			for _, p := range paths {
+				info, err := os.Stat(p)
+				require.NoError(t, err)
+				assert.Equal(t, os.FileMode(kubeletHardenedFileMode), info.Mode().Perm(), "mode of %s after re-run", p)
+			}
+		})
+	}
+
+	t.Run("reports the error when a file cannot be chmodded", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root bypasses the directory permissions this case relies on")
+		}
+		tmp := t.TempDir()
+		writeAt(t, tmp, kubeletConfigPath, 0o644)
+
+		// Make the parent directory non-writable and non-executable so the
+		// chmod inside it fails.
+		dir := filepath.Dir(filepath.Join(tmp, kubeletConfigPath))
+		require.NoError(t, os.Chmod(dir, 0o000))
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+
+		err := (&NodeAgentServer{RootPath: tmp}).hardenKubeletFileModes()
+		require.Error(t, err)
+	})
+}

@@ -76,6 +76,15 @@ const (
 	maxScriptLogOutputBytes = 4096
 	kubeletConfigPath       = "/var/lib/kubelet/config.yaml"
 
+	// kubeletKubeadmDropInPath is the systemd drop-in kubeadm writes for the
+	// kubelet. It is what CIS 4.1.1 calls "the kubelet service file".
+	kubeletKubeadmDropInPath = "/etc/systemd/system/kubelet.service.d/10-kubeadm.conf"
+
+	// kubeletHardenedFileMode is the mode CIS 4.1.1 and 4.1.9 require on the
+	// two files above. kubeadm writes both 0644, which leaves them world
+	// readable.
+	kubeletHardenedFileMode = 0o600
+
 	kubeSystemNamespace  = "kube-system"
 	kubeadmConfigMapName = "kubeadm-config"
 
@@ -414,6 +423,9 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 			if err := server.disableKubeletSelfRegistration(); err != nil {
 				slog.Error("startup: failed to disable kubelet self-registration", "err", err)
 			}
+			if err := server.hardenKubeletFileModes(); err != nil {
+				slog.Error("startup: failed to tighten kubelet file modes", "err", err)
+			}
 		}
 	}
 
@@ -621,6 +633,10 @@ func (s *NodeAgentServer) processKubeadmJoin(args []string, req *pb.KubeadmJoinR
 
 		if err := s.disableKubeletSelfRegistration(); err != nil {
 			slog.Error("failed to disable kubelet self-registration", "err", err)
+		}
+
+		if err := s.hardenKubeletFileModes(); err != nil {
+			slog.Error("failed to tighten kubelet file modes", "err", err)
 		}
 	}
 	ns.CompletedPhases = append(ns.CompletedPhases, JoinPhase)
@@ -867,9 +883,61 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 		slog.Error("failed to disable kubelet self-registration", "err", err)
 	}
 
+	if err := s.hardenKubeletFileModes(); err != nil {
+		slog.Error("failed to tighten kubelet file modes", "err", err)
+	}
+
 	ns.KubeadmErrorMessage = ""
 	ns.KubeadmStatus = "init succeeded"
 	slog.Info("kubeadm init process completed successfully")
+}
+
+// hardenKubeletFileModes tightens the kubelet's kubeadm-written service drop-in
+// and config file to 0600 (CIS 4.1.1 and 4.1.9). kubeadm creates both 0644 and
+// offers no configuration for their permissions, so the only way to hold them
+// at 0600 is to re-apply after kubeadm has run.
+//
+// Called from the same three places as disableKubeletSelfRegistration, and for
+// the same reason: kubeadm recreates both files on init, on join, and on
+// upgrade, so a one-shot chmod during initial provisioning would silently drift
+// back to 0644. The startup call site is what corrects that drift.
+//
+// A missing file is not an error. The drop-in exists on any kubeadm-managed
+// node, but this runs on startup before init or join on a fresh node too, and
+// "not there yet" is the expected state then rather than a failure.
+func (s *NodeAgentServer) hardenKubeletFileModes() error {
+	var errs []error
+
+	for _, rel := range []string{kubeletKubeadmDropInPath, kubeletConfigPath} {
+		path := filepath.Join(s.RootPath, rel)
+
+		info, err := os.Stat(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			errs = append(errs, fmt.Errorf("stat %s: %w", path, err))
+			continue
+		}
+
+		// Skip the chmod when it would be a no-op, so a healthy node does not
+		// log or syscall on every agent restart.
+		if info.Mode().Perm() == kubeletHardenedFileMode {
+			continue
+		}
+
+		if err := os.Chmod(path, kubeletHardenedFileMode); err != nil {
+			errs = append(errs, fmt.Errorf("chmod %s: %w", path, err))
+			continue
+		}
+
+		slog.Info("tightened kubelet file mode",
+			"path", path,
+			"from", fmt.Sprintf("%#o", info.Mode().Perm()),
+			"to", fmt.Sprintf("%#o", os.FileMode(kubeletHardenedFileMode)))
+	}
+
+	return errors.Join(errs...)
 }
 
 // disableKubeletSelfRegistration sets registerNode: false in the kubelet config
