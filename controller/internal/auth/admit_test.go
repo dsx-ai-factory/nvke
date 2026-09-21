@@ -251,6 +251,66 @@ func TestAdmitSPIFFE(t *testing.T) {
 	}
 }
 
+func oidcPrincipal(groups []any) *auth.Principal {
+	return &auth.Principal{
+		IssuerName: "keycloak",
+		Issuer:     "http://keycloak.nke.test:8180/realms/nke",
+		Subject:    "user-1",
+		Claims:     map[string]any{"sub": "user-1", "groups": groups},
+	}
+}
+
+func TestAdmitGroups(t *testing.T) {
+	t.Parallel()
+
+	rule := &auth.Admit{Groups: []string{"nke-operators"}}
+
+	tests := []struct {
+		name      string
+		admit     *auth.Admit
+		principal *auth.Principal
+		want      bool
+	}{
+		{
+			name:      "a matching group in a string list is admitted",
+			admit:     rule,
+			principal: oidcPrincipal([]any{"nke-operators"}),
+			want:      true,
+		},
+		{
+			name:      "any listed group is enough",
+			admit:     &auth.Admit{Groups: []string{"nke-readers", "nke-operators"}},
+			principal: oidcPrincipal([]any{"nke-operators"}),
+			want:      true,
+		},
+		{
+			name:      "a different group is not admitted",
+			admit:     rule,
+			principal: oidcPrincipal([]any{"other"}),
+			want:      false,
+		},
+		{
+			name:      "a missing groups claim is not admitted",
+			admit:     rule,
+			principal: &auth.Principal{Subject: "user-1", Claims: map[string]any{"sub": "user-1"}},
+			want:      false,
+		},
+		{
+			name:      "a service-account principal is not admitted by a groups rule",
+			admit:     rule,
+			principal: serviceAccountPrincipal("nke-clients", "nke-client"),
+			want:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.admit.Admits(tt.principal))
+		})
+	}
+}
+
 // The rule sets that must admit nobody, plus what a set carrying both rule kinds
 // does. The "both" case shows that a SPIFFE rule beside a service account rule
 // restricts nothing, which is why Admit.validate refuses the combination at

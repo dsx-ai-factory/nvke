@@ -944,7 +944,7 @@ func TestLoadValidationAdmit(t *testing.T) {
     admit:
       serviceAccounts: [{namespace: nke-clients}]
       spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}`),
-			wantErr: "must not set both serviceAccounts and spiffe",
+			wantErr: "must not set more than one of serviceAccounts, spiffe, and groups",
 		},
 		{
 			name: "an empty serviceAccounts list beside a spiffe rule is not \"both\"",
@@ -955,6 +955,34 @@ func TestLoadValidationAdmit(t *testing.T) {
     admit:
       serviceAccounts: []
       spiffe: {trustDomain: example.org, pathPrefixes: ["/nke-service/"]}`),
+		},
+		{
+			name: "admit.groups",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {groups: [nke-operators]}`),
+		},
+		{
+			name: "admit.groups with an empty name",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit: {groups: [""]}`),
+			wantErr: "groups[0] is required and must not be empty",
+		},
+		{
+			name: "admit with both groups and serviceAccounts is a startup failure",
+			yaml: issuerConfig(`name: keycloak
+    issuer: "http://keycloak.nke.test:8180/realms/nke"
+    jwks: {uri: "https://keycloak.nke.test:8180/realms/nke/protocol/openid-connect/certs"}
+    algorithms: [RS256]
+    admit:
+      groups: [nke-operators]
+      serviceAccounts: [{namespace: nke-clients}]`),
+			wantErr: "must not set more than one of serviceAccounts, spiffe, and groups",
 		},
 
 		// --- admit.spiffe ---

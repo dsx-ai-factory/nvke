@@ -103,11 +103,12 @@ type JWKSKeys struct {
 	BearerTokenPath string `json:"bearerTokenPath,omitempty"`
 }
 
-// Admit is the per-issuer admission rule set. Exactly one rule kind, never both;
-// see Admit.validate.
+// Admit is the per-issuer admission rule set. One of serviceAccounts, spiffe,
+// or groups; see Admit.validate.
 type Admit struct {
 	ServiceAccounts []ServiceAccountRule `json:"serviceAccounts,omitempty"`
 	SPIFFE          *SPIFFERule          `json:"spiffe,omitempty"`
+	Groups          []string             `json:"groups,omitempty"`
 }
 
 // ServiceAccountRule admits Kubernetes service accounts.
@@ -385,17 +386,37 @@ func (s *JWKSKeys) validate() error {
 }
 
 func (a *Admit) validate() error {
-	if len(a.ServiceAccounts) == 0 && a.SPIFFE == nil {
-		return errors.New("must contain at least one rule: serviceAccounts or spiffe")
+	kinds := 0
+	if len(a.ServiceAccounts) > 0 {
+		kinds++
 	}
-	// Either match admits, so a set carrying both rule kinds restricts nothing.
-	if len(a.ServiceAccounts) > 0 && a.SPIFFE != nil {
+	if a.SPIFFE != nil {
+		kinds++
+	}
+	if len(a.Groups) > 0 {
+		kinds++
+	}
+	if kinds == 0 {
+		return errors.New("must contain at least one rule: serviceAccounts, spiffe, or groups")
+	}
+	// Either match admits, so a set carrying more than one rule kind restricts nothing.
+	if kinds > 1 {
 		return errors.New(
-			"must not set both serviceAccounts and spiffe on one issuer: the two are alternatives and either " +
-				"match admits, so neither restricts the other. An issuer mints one shape of identity; " +
-				"give it the one rule kind that matches",
+			"must not set more than one of serviceAccounts, spiffe, and groups on one issuer: they are " +
+				"alternatives and either match admits, so neither restricts the other. An issuer mints one " +
+				"shape of identity; give it the one rule kind that matches",
 		)
 	}
+
+	for i, g := range a.Groups {
+		if strings.TrimSpace(g) == "" {
+			return fmt.Errorf("groups[%d] is required and must not be empty", i)
+		}
+		if err := requireUnpadded(fmt.Sprintf("groups[%d]", i), g); err != nil {
+			return err
+		}
+	}
+
 	for i, r := range a.ServiceAccounts {
 		// Ordered so the most specific message wins: empty, then padded, then
 		// whether Kubernetes would accept the name at all.
@@ -428,6 +449,7 @@ func (a *Admit) validate() error {
 				i, *r.Name, strings.Join(msgs, "; "))
 		}
 	}
+
 	if a.SPIFFE != nil {
 		if err := a.SPIFFE.validate(); err != nil {
 			return fmt.Errorf("spiffe: %w", err)
