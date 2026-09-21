@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -121,23 +120,20 @@ func TestCreatePendingNode_RequiresControlPlaneConfigurationID(t *testing.T) {
 		},
 	}
 
-	_, err := r.createPendingNode(
-		context.Background(),
-		cluster,
-		nil,
-		ptr.To(""),
-	)
+	_, err := r.createPendingNode(context.Background(), cluster, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "missing control plane configuration ID")
 	mockTx.AssertNotCalled(t, "CreateNode", mock.Anything, mock.Anything)
 }
 
-func TestCreatePendingNode_PersistsFailureDomainAndLeavesInstanceTypeUnset(t *testing.T) {
+// TestCreatePendingNode_LeavesInstanceTypeAndFailureDomainUnset pins that
+// creation makes no placement decision: assignFailureDomains is the only writer
+// of FailureDomain, and the scheduler is the only writer of the instance type.
+func TestCreatePendingNode_LeavesInstanceTypeAndFailureDomainUnset(t *testing.T) {
 	t.Parallel()
 
 	clusterID := uuid.New()
 	controlPlaneConfigID := uuid.New()
-	failureDomain := "fd-a"
 
 	mockTx := &testutil.MockTx{}
 	mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
@@ -147,7 +143,7 @@ func TestCreatePendingNode_PersistsFailureDomainAndLeavesInstanceTypeUnset(t *te
 			node.NodeSetID == uuid.Nil &&
 			node.NicoInstanceTypeID() == uuid.Nil &&
 			node.ControlPlaneConfigurationID == controlPlaneConfigID &&
-			ptr.Deref(node.FailureDomain, "") == failureDomain
+			node.FailureDomain == nil
 	})).Return(db.Node{}, nil).Once()
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
@@ -159,7 +155,7 @@ func TestCreatePendingNode_PersistsFailureDomainAndLeavesInstanceTypeUnset(t *te
 		},
 	}
 
-	_, err := r.createPendingNode(context.Background(), cluster, nil, ptr.To(failureDomain))
+	_, err := r.createPendingNode(context.Background(), cluster, nil)
 	require.NoError(t, err)
 	mockTx.AssertExpectations(t)
 }
@@ -205,7 +201,7 @@ func TestCreatePendingNode_ProviderPayload(t *testing.T) {
 				},
 			}
 
-			_, err := r.createPendingNode(context.Background(), cluster, nil, ptr.To(""))
+			_, err := r.createPendingNode(context.Background(), cluster, nil)
 			require.NoError(t, err)
 			mockTx.AssertExpectations(t)
 		})
@@ -228,7 +224,7 @@ func TestReconcile_SkipsClusterBeingDeleted(t *testing.T) {
 	}
 	cluster.Conditions.Deleting = db.NewCondition(true, "cluster teardown in progress")
 
-	err := r.reconcile(context.Background(), cluster)
+	_, err := r.reconcile(context.Background(), cluster)
 	require.NoError(t, err)
 	// The teardown workflow owns CP node deletion; the reconciler must not read or
 	// (re)create nodes for a cluster being torn down.

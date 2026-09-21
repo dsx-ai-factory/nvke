@@ -114,10 +114,7 @@ func (s *ControlPlaneNodeScheduler) listManagedControlPlanePending(ctx context.C
 
 	managed := make([]db.Node, 0, len(pendingNodes))
 	for _, node := range pendingNodes {
-		// A nil failure domain means the control-plane controller has not made
-		// the placement decision yet. An empty value is a completed decision for
-		// a provider that does not advertise failure domains.
-		if node.IsManagedByControlPlaneController() && node.FailureDomain != nil {
+		if node.IsManagedByControlPlaneController() && node.HasFailureDomainDecision() {
 			managed = append(managed, node)
 		}
 	}

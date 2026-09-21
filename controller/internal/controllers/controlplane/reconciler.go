@@ -10,6 +10,7 @@ import (
 	"log/slog"
 
 	"go.temporal.io/sdk/client"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
@@ -18,14 +19,14 @@ import (
 // reconciler reconciles control planes.
 // It is responsible for ensuring the control plane is healthy and that the control plane nodes are up to date.
 type reconciler struct {
-	cfg                   config.Config
-	logger                *slog.Logger
-	db                    db.Tx
-	cweTemporalClient     client.Client
-	failureDomainSnapshot failureDomainSnapshot
-	domainAssignments     []string
-	unknownDomains        []string
-	retryFailureDomains   bool
+	cfg               config.Config
+	logger            *slog.Logger
+	db                db.Tx
+	cweTemporalClient client.Client
+	// One discovery pass per reconcile, read before the transaction opened. A
+	// failure defers placement rather than failing the reconcile.
+	failureDomains    failureDomains
+	failureDomainsErr error
 }
 
 func newReconciler(
@@ -33,30 +34,29 @@ func newReconciler(
 	logger *slog.Logger,
 	db db.Tx,
 	cweTemporalClient client.Client,
-	fdSnapshot failureDomainSnapshot,
+	failureDomains failureDomains,
+	failureDomainsErr error,
 ) *reconciler {
 	return &reconciler{
-		cfg:                   cfg,
-		logger:                logger,
-		db:                    db,
-		cweTemporalClient:     cweTemporalClient,
-		failureDomainSnapshot: fdSnapshot,
+		cfg:               cfg,
+		logger:            logger,
+		db:                db,
+		cweTemporalClient: cweTemporalClient,
+		failureDomains:    failureDomains,
+		failureDomainsErr: failureDomainsErr,
 	}
 }
 
-func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
+func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) (reconcile.Result, error) {
 	// The TeardownCluster workflow deletes CP nodes for a deleting cluster;
 	// reconciling scale-up here would keep recreating them and deadlock teardown.
 	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
-		return nil
+		return reconcile.Result{}, nil
 	}
 
 	controlPlane, err := readControlPlane(ctx, r.db, cluster, r.cfg.UseControlPlaneControllerForControlPlane())
 	if err != nil {
-		return fmt.Errorf("reading control plane: %w", err)
-	}
-	if err := r.prepareFailureDomainAssignments(ctx, controlPlane); err != nil {
-		return fmt.Errorf("preparing control-plane failure-domain assignments: %w", err)
+		return reconcile.Result{}, fmt.Errorf("reading control plane: %w", err)
 	}
 
 	// The order below is deliberate: everything that does not change etcd
@@ -65,48 +65,59 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 
 	// Status only; no membership change.
 	if err := r.reconcileControlPlaneRolloutRequiredCondition(ctx, controlPlane); err != nil {
-		return fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
+		return reconcile.Result{}, fmt.Errorf("reconciling control plane rollout-required conditions: %w", err)
 	}
 
 	// Host creation only. A pending or in-flight delete must not stall it: the
 	// replacement host is exactly what lets the control plane shrink safely.
 	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane); err != nil {
-		return fmt.Errorf("reconciling control plane scale-up: %w", err)
+		return reconcile.Result{}, fmt.Errorf("reconciling control plane scale-up: %w", err)
 	}
 
 	// Records delete intent only; the teardown itself is started at the bottom.
 	if _, err := r.remediateMachines(ctx, cluster, controlPlane); err != nil {
-		return err
+		return reconcile.Result{}, err
 	}
 
 	// ConfigMap changes only.
 	if err := r.reconcileK8sUpgrade(ctx, cluster, controlPlane); err != nil {
-		return fmt.Errorf("reconciling k8s upgrade: %w", err)
+		return reconcile.Result{}, fmt.Errorf("reconciling k8s upgrade: %w", err)
 	}
 
 	// FIXME: https://github.com/dsx-ai-factory/nke/issues/784 - reconcileNodesNeedingRollout
 	// still tears a node down directly instead of recording intent and letting the
 	// promotion below start it, so rollout teardowns bypass the serialized path.
 	if err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane); err != nil {
-		return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
+		return reconcile.Result{}, fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
+	}
+
+	// Runs after the last step that can create a node, so a node created above is
+	// placed in this same pass rather than waiting for the next one.
+	result := reconcile.Result{}
+	requeue, err := r.assignFailureDomains(ctx, cluster.ID)
+	if err != nil {
+		return reconcile.Result{}, fmt.Errorf("assigning control-plane failure domains: %w", err)
+	}
+	if requeue {
+		result.RequeueAfter = failureDomainRetryInterval
 	}
 
 	// Grow before shrink: join a ready host if one is waiting, and leave any
 	// queued delete alone until that join is done.
 	joinInFlight, err := r.reconcileControlPlaneJoins(ctx, cluster, controlPlane)
 	if err != nil {
-		return fmt.Errorf("reconciling control plane joins: %w", err)
+		return reconcile.Result{}, fmt.Errorf("reconciling control plane joins: %w", err)
 	}
 	if joinInFlight {
-		return nil
+		return result, nil
 	}
 
 	// Promote the oldest accepted delete into a teardown, one at a time.
 	if _, err := r.reconcileRequestedDeletes(ctx, cluster, controlPlane); err != nil {
-		return fmt.Errorf("reconciling requested control plane deletes: %w", err)
+		return reconcile.Result{}, fmt.Errorf("reconciling requested control plane deletes: %w", err)
 	}
 
-	return nil
+	return result, nil
 }
 
 // reconcileControlPlaneRolloutRequiredCondition refreshes each

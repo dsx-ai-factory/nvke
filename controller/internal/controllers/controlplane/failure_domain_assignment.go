@@ -6,98 +6,152 @@ package controlplane
 import (
 	"context"
 	"fmt"
+	"math"
 
-	"k8s.io/utils/ptr"
+	"github.com/google/uuid"
 
-	"github.com/dsx-ai-factory/nke/controller/internal/capi"
 	"github.com/dsx-ai-factory/nke/controller/internal/db"
 )
 
-// prepareFailureDomainAssignments persists placement decisions for control-plane nodes using
-// control plane configuration from the database.
-func (r *reconciler) prepareFailureDomainAssignments(ctx context.Context, controlPlane *controlPlane) error {
+// failureDomainSelectionAlgorithm picks the next failure domain from the
+// current placement count per eligible domain.
+//
+// It is called only with a non-empty map, must be deterministic, and must not
+// modify the map. Counting the returned domain belongs to the caller.
+type failureDomainSelectionAlgorithm func(counts map[string]int) string
+
+// leastUsedFailureDomainSelection returns the domain with the fewest
+// placements, breaking ties by domain name.
+func leastUsedFailureDomainSelection(counts map[string]int) string {
+	selected, fewest := "", math.MaxInt
+	for domain, count := range counts {
+		if count < fewest || (count == fewest && domain < selected) {
+			selected, fewest = domain, count
+		}
+	}
+	return selected
+}
+
+// domainAllocator hands out control-plane failure domains, keeping the count per
+// domain balanced. It owns the counting; selection is the injected algorithm's.
+// An allocator built from no domains hands out "", the placement for an
+// infrastructure provider that does not advertise them.
+type domainAllocator struct {
+	counts    map[string]int
+	selection failureDomainSelectionAlgorithm
+}
+
+// newDomainAllocator builds an allocator over the eligible domains. Unnamed domains are
+// dropped: "" is reserved for a provider that advertises none, so no node may be
+// placed in one.
+func newDomainAllocator(selection failureDomainSelectionAlgorithm, eligible []string) *domainAllocator {
+	counts := make(map[string]int, len(eligible))
+	for _, domain := range eligible {
+		if domain != "" {
+			counts[domain] = 0
+		}
+	}
+	return &domainAllocator{counts: counts, selection: selection}
+}
+
+// record counts a placement that already exists. Domains that are no longer
+// eligible are ignored, so a retired domain cannot skew new placements.
+func (a *domainAllocator) record(domain string) {
+	if _, eligible := a.counts[domain]; eligible {
+		a.counts[domain]++
+	}
+}
+
+// take returns the next placement and counts it.
+func (a *domainAllocator) take() string {
+	if len(a.counts) == 0 {
+		return ""
+	}
+	selected := a.selection(a.counts)
+	a.counts[selected]++
+	return selected
+}
+
+// assignFailureDomains records a failure domain on every control-plane node that
+// does not have one.
+//
+// It returns true when the reconciler needs a requeue due to a failed discovery
+// or a node whose infrastructure exists but whose placement CAPI has not reported.
+func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UUID) (bool, error) {
 	if !r.cfg.UseControlPlaneControllerForControlPlane() {
-		return nil
+		return false, nil
 	}
 
-	// Zero-out struct fields to avoid using stale data
-	r.domainAssignments = r.domainAssignments[:0]
-	r.unknownDomains = r.unknownDomains[:0]
-	r.retryFailureDomains = false
-	pending := []*db.Node{}
+	nodes, err := r.getControlPlaneNodes(ctx, clusterID)
+	if err != nil {
+		return false, err
+	}
 
-	for i := range controlPlane.nodes {
-		node := &controlPlane.nodes[i]
-		if node.IsMarkedForDeletion() {
-			continue
-		}
+	// Provider advertises no domains, so there's nothing to assign.
+	if r.failureDomainsErr == nil && len(r.failureDomains.eligible) == 0 {
+		return false, r.recordNoFailureDomain(ctx, nodes)
+	}
 
-		// Node database record does not have a failure domain set and the nil
-		// discoveryErr value indicates it is safe to assign one.
-		if !node.HasFailureDomainDecision() && r.failureDomainSnapshot.discoveryErr == nil {
-			if observed := r.failureDomainSnapshot.observedByNodeName[node.Name]; observed != "" {
-				node.FailureDomain = ptr.To(observed)
-			} else if len(r.failureDomainSnapshot.eligible) == 0 {
-				// This provider does not support control-plane failure domains.
-				node.FailureDomain = ptr.To("")
-			}
-			if node.HasFailureDomainDecision() {
-				if _, err := r.db.UpdateNode(ctx, node); err != nil {
-					return fmt.Errorf("persist failure domain for node %s: %w", node.ID, err)
-				}
-			}
-		}
+	allocator := newDomainAllocator(leastUsedFailureDomainSelection, r.failureDomains.eligible)
 
+	// Both lack a recorded placement: unplaced nodes can still take one,
+	// unobserved nodes already have infrastructure but the domain is unknown.
+	var unplaced []*db.Node
+	var unobserved []string // names only; for the log line below
+
+	for i := range nodes {
+		node := &nodes[i]
 		switch {
+		case node.IsMarkedForDeletion():
 		case node.HasFailureDomainDecision():
-			if failureDomain := node.GetFailureDomain(); failureDomain != "" {
-				r.domainAssignments = append(r.domainAssignments, failureDomain)
+			allocator.record(node.GetFailureDomain())
+		case r.failureDomains.observedByNodeName[node.Name] != "":
+			node.FailureDomain = new(r.failureDomains.observedByNodeName[node.Name])
+			allocator.record(*node.FailureDomain)
+			if _, err := r.db.UpdateNode(ctx, node); err != nil {
+				return false, fmt.Errorf("adopting observed failure domain for node %s: %w", node.ID, err)
 			}
 		case node.HasInfrastructureProvisioningStarted():
-			r.unknownDomains = append(r.unknownDomains, node.Name)
+			unobserved = append(unobserved, node.Name)
 		default:
-			// Node failure domain decision not made and infra provisioning has not started,
-			// so it's safe to assign the failure domain to the node.
-			pending = append(pending, node)
+			unplaced = append(unplaced, node)
 		}
 	}
 
-	if r.failureDomainSnapshot.discoveryErr != nil || len(r.unknownDomains) > 0 {
-		// Defer new assignments until discovery succeeds and every node whose
-		// infrastructure has started has an observed placement. A later snapshot
-		// can resolve unknownDomains from the CAPI Machine's spec or status.
-		r.retryFailureDomains = len(pending) > 0 || len(r.unknownDomains) > 0
-		return nil
+	if len(unplaced) == 0 {
+		return false, nil
 	}
-	for _, node := range pending {
-		failureDomain, err := r.selectFailureDomain()
-		if err != nil {
-			return err
-		}
-		node.FailureDomain = failureDomain
+	if len(unobserved) > 0 || r.failureDomainsErr != nil {
+		r.logger.Info("Deferring control-plane failure-domain placement",
+			"clusterID", clusterID,
+			"unplacedCount", len(unplaced),
+			"nodesWithUnobservedPlacement", unobserved,
+			"discoveryError", r.failureDomainsErr,
+		)
+		return true, nil
+	}
+
+	for _, node := range unplaced {
+		node.FailureDomain = new(allocator.take())
 		if _, err := r.db.UpdateNode(ctx, node); err != nil {
-			return fmt.Errorf("persist failure domain for pending node %s: %w", node.ID, err)
+			return false, fmt.Errorf("persisting failure domain for node %s: %w", node.ID, err)
 		}
-		if *failureDomain != "" {
-			r.domainAssignments = append(r.domainAssignments, *failureDomain)
+	}
+	return false, nil
+}
+
+// recordNoFailureDomain marks every undecided node at "", the placement for a
+// provider that advertises no domains.
+func (r *reconciler) recordNoFailureDomain(ctx context.Context, nodes []db.Node) error {
+	for i := range nodes {
+		node := &nodes[i]
+		if node.IsMarkedForDeletion() || node.HasFailureDomainDecision() {
+			continue
+		}
+		node.FailureDomain = new("")
+		if _, err := r.db.UpdateNode(ctx, node); err != nil {
+			return fmt.Errorf("recording absent failure domain for node %s: %w", node.ID, err)
 		}
 	}
 	return nil
-}
-
-// selectFailureDomain chooses the eligible failure domain using the chosen
-// FailureDomainSelectionAlgorithm implementation
-func (r *reconciler) selectFailureDomain() (*string, error) {
-	if r.failureDomainSnapshot.discoveryErr != nil {
-		return nil, r.failureDomainSnapshot.discoveryErr
-	}
-	if len(r.unknownDomains) > 0 {
-		return nil, fmt.Errorf("waiting for observed failure domains for existing control-plane nodes: %v", r.unknownDomains)
-	}
-
-	domain, err := capi.LeastUsedFailureDomainSelection(r.failureDomainSnapshot.eligible, r.domainAssignments)
-	if err != nil {
-		return nil, fmt.Errorf("select control-plane failure domain: %w", err)
-	}
-	return ptr.To(domain), nil
 }
