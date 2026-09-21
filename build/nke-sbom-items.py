@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 """Parse a generated deploy path into tab-separated lines a shell can read.
 
   items   <nke-deploy.yaml>  -> "<name>\t<type>" per item, in listed order

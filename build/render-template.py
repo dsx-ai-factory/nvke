@@ -1,3 +1,5 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 """Render a template item's .yaml.tmpl files against a BootstrapConfig.
 
   render-template.py <config.json> <item-dir> <out-dir>
