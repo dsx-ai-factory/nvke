@@ -7,6 +7,7 @@
 # https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/
 replicaCount: 1
 
+# -- Annotations on the Deployment `metadata` (evaluated with `tpl`)
 deploymentAnnotations: {}
 
 # This sets the container image.
@@ -55,6 +56,9 @@ image:
 #     --docker-server=ghcr.io --docker-username=<user> --docker-password=<token>
 #
 #   --set imagePullSecrets[0].name=ghcr-imagepull
+# -- Must match image.repository, which defaults to ghcr.io. The
+# NVCR-published chart gets the NGC secret put back at package time. Supply
+# your own for a private GHCR package.
 imagePullSecrets: []
 # This is to override the chart name.
 #
@@ -445,9 +449,11 @@ temporal:
   port: 7233
   publicTemporalHostPort: ""
   mtls:
+    # -- Enable mTLS when connecting to Temporal.
     enabled: false
     # -- Secret containing ca.crt, tls.crt, and tls.key for the Temporal client.
     secretName: ""
+    # -- Mount path for the Temporal client certificate secret.
     mountPath: /var/secrets/temporal/certs/client
     caCertFile: ca.crt
     clientCertFile: tls.crt
@@ -462,6 +468,7 @@ profiles:
   # scripts from its runbooks/ child (RUNBOOKS_DIR).
   # When image.enabled is true, an initContainer copies /profiles from the
   # profiles content image into an emptyDir mounted at this path.
+  # -- Directory mounted/read as PROFILES_DIR
   path: ""
   image:
     # Materialize fleet profiles from an external OCI content image. Prefer
@@ -479,9 +486,15 @@ profiles:
     # ImagePullBackOff:
     #
     #   --set imagePullSecrets[0].name=svc-nke-ngc-imagepull
+    # -- Copy `/profiles` from a content image into profiles.path
     enabled: false
+    # -- Profiles content image repository, including registry. Override to
+    # pull from a different registry (e.g. a private mirror); pair any change
+    # with a matching `imagePullSecrets` entry.
     repository: nvcr.io/j7sbcjl3qgta/cwe-profiles
+    # -- Image tag (used when digest is empty)
     tag: ""
+    # -- Image digest pin (preferred; e.g. `sha256:…`)
     digest: ""
 
 spiffe:

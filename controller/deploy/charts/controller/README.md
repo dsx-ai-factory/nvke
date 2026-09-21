@@ -30,14 +30,14 @@ A Helm chart to deploy the NKE controller service
 | cni.imageRegistry | string | `""` | Optional OCI registry prefix for CNI component images. Empty uses chart defaults. |
 | cni.installAfterInit | bool | `false` | Install CNI after kubeadm init through the agent's InstallCNI RPC, which reads manifests from a Debian package rather than a bundle server. Needs the CNI charts package on the node that runs kubeadm init: nke-cni-ovn-charts-<stream> for OVN, or nke-cni-calico-manifests-<stream> for Calico. |
 | controllers.nico.enabled | bool | `true` | Run controllers that watch NICo infrastructure resources. |
-| deploymentAnnotations | object | `{}` |  |
+| deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`) |
 | env | list | `[]` | Additional environment variables to inject into the CWE container. |
 | fullnameOverride | string | `""` |  |
 | image.digest | string | `""` | Optional image digest (sha256:...). When set, the pod pulls by digest and the tag becomes informational only. Use this to pin an immutable image. |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
 | image.repository | string | `"ghcr.io/dsx-ai-factory/nke/nke-controller"` | Controller image repository, including registry. Override to pull the controller image from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. |
 | image.tag | string | `""` | Overrides the image tag whose default is the chart appVersion. |
-| imagePullSecrets | list | `[]` |  |
+| imagePullSecrets | list | `[]` | Must match image.repository, which defaults to ghcr.io. The NVCR-published chart gets the NGC secret put back at package time. Supply your own for a private GHCR package. |
 | ingress.annotations | object | `{}` |  |
 | ingress.className | string | `""` |  |
 | ingress.enabled | bool | `false` |  |
@@ -74,11 +74,11 @@ A Helm chart to deploy the NKE controller service
 | podLabels.project | string | `"nke"` |  |
 | podLabels.team | string | `"nke"` |  |
 | podSecurityContext.runAsNonRoot | bool | `true` |  |
-| profiles.image.digest | string | `""` |  |
-| profiles.image.enabled | bool | `false` |  |
-| profiles.image.repository | string | `"nvcr.io/j7sbcjl3qgta/cwe-profiles"` |  |
-| profiles.image.tag | string | `""` |  |
-| profiles.path | string | `""` |  |
+| profiles.image.digest | string | `""` | Image digest pin (preferred; e.g. `sha256:…`) |
+| profiles.image.enabled | bool | `false` | Copy `/profiles` from a content image into profiles.path |
+| profiles.image.repository | string | `"nvcr.io/j7sbcjl3qgta/cwe-profiles"` | Profiles content image repository, including registry. Override to pull from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. |
+| profiles.image.tag | string | `""` | Image tag (used when digest is empty) |
+| profiles.path | string | `""` | Directory mounted/read as PROFILES_DIR |
 | readinessProbe | string | `nil` |  |
 | replicaCount | int | `1` |  |
 | resources | object | `{}` |  |
@@ -130,8 +130,8 @@ A Helm chart to deploy the NKE controller service
 | temporal.mtls.caCertFile | string | `"ca.crt"` |  |
 | temporal.mtls.clientCertFile | string | `"tls.crt"` |  |
 | temporal.mtls.clientKeyFile | string | `"tls.key"` |  |
-| temporal.mtls.enabled | bool | `false` |  |
-| temporal.mtls.mountPath | string | `"/var/secrets/temporal/certs/client"` |  |
+| temporal.mtls.enabled | bool | `false` | Enable mTLS when connecting to Temporal. |
+| temporal.mtls.mountPath | string | `"/var/secrets/temporal/certs/client"` | Mount path for the Temporal client certificate secret. |
 | temporal.mtls.secretName | string | `""` | Secret containing ca.crt, tls.crt, and tls.key for the Temporal client. |
 | temporal.mtls.serverName | string | `""` |  |
 | temporal.port | int | `7233` |  |
