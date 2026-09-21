@@ -128,6 +128,13 @@ absolute file path. Its sibling `materials/` directory must contain:
 - `image-inputs`, a tar archive whose root contains the same prepared files that Make
   stages in `packer/artifacts/`.
 
+The direct defaults assume a same-architecture, KVM-capable host:
+`accelerator=kvm` and `cpu_model=host`. A caller without usable KVM must set
+`accelerator=tcg`, select the architecture-appropriate CPU model (`max` for
+amd64 or `max,pauth-impdef=on` for arm64), and provide longer `ssh_timeout` and
+`boot_wait` values. The Make targets detect KVM and supply those four settings
+automatically.
+
 The manifest's `installer-iso` entry carries the ISO's `sha256:` digest. Packer
 checks the staged ISO against that authenticated value before booting it. The
 project also checks the `image-inputs` archive against its manifest digest

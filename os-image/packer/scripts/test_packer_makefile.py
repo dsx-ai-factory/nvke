@@ -198,6 +198,7 @@ if [ "$1" = "build" ]; then
   test -n "${variant}"
   mkdir -p "${output_directory}/${variant}"
   printf 'qcow2 bytes\n' > "${output_directory}/${variant}/nke-node.qcow2"
+  printf 'efi vars\n' > "${output_directory}/${variant}/efivars.fd"
 fi
 """,
         )
@@ -597,6 +598,7 @@ exec "${REAL_MV:?}" "$@"
                     (artifacts.parent / f"output-{variant}" / output_name).read_bytes(),
                     b"qcow2 bytes\n",
                 )
+                self.assertFalse((artifacts.parent / ".packer-output").exists())
 
                 archive = artifacts.parent / ".packer-inputs/materials/image-inputs"
                 self.assertTrue(archive.is_file())

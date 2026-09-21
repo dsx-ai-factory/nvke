@@ -396,6 +396,7 @@ os-image-fde: ssh-key init-fde prepare-packer-inputs
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY)/fde/nke-node.qcow2" \
 		"$(CURDIR)/output-fde/nke-node-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
+	rm -f -- "$(PACKER_OUTPUT_DIRECTORY)/fde/efivars.fd"
 	rmdir "$(PACKER_OUTPUT_DIRECTORY)/fde" "$(PACKER_OUTPUT_DIRECTORY)"
 
 # Non-FDE variant: LVM-backed ext4 without LUKS. See
@@ -431,6 +432,7 @@ os-image-non-fde: ssh-key init-non-fde prepare-packer-inputs
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY)/non-fde/nke-node.qcow2" \
 		"$(CURDIR)/output-non-fde/nke-node-non-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
+	rm -f -- "$(PACKER_OUTPUT_DIRECTORY)/non-fde/efivars.fd"
 	rmdir "$(PACKER_OUTPUT_DIRECTORY)/non-fde" "$(PACKER_OUTPUT_DIRECTORY)"
 
 clean:
