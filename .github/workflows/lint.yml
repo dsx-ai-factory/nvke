@@ -63,11 +63,11 @@ jobs:
     permissions:
       contents: read
     env:
-      # Workspace mode for the four modules that lint against the root vendor/
-      # tree -- controller, controller/api, controller/deploy/charts and
-      # capd-reboot-controller; module mode for the rest, which resolve their
-      # own go.mod. Empty means "use the default", overriding the
-      # workflow-level off.
+      # Workspace mode for the five modules that lint against the root vendor/
+      # tree -- controller, controller/api, controller/deploy/charts,
+      # capd-reboot-controller and management-engine; module mode for the rest,
+      # which resolve their own go.mod. Empty means "use the default",
+      # overriding the workflow-level off.
       GOWORK: ${{ matrix.gowork }}
     strategy:
       fail-fast: false
@@ -116,6 +116,11 @@ jobs:
             timeout: 15
           - name: capd-reboot-controller
             dir: controller/hack/capd-reboot-controller
+            goversion: go.work
+            gowork: ""
+            timeout: 15
+          - name: management-engine
+            dir: management-engine
             goversion: go.work
             gowork: ""
             timeout: 15

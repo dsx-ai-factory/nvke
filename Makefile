@@ -70,6 +70,7 @@ WORK_MODULES := agent \
                 controller/hack/capd-reboot-controller \
                 cli \
                 controller/test/e2e \
+                management-engine \
                 os-image
 
 # Modules whose commands `build` can compile with `go build -o bin/ ./cmd/...`,
@@ -405,6 +406,7 @@ PREFLIGHT_MODULES := controller/hack/capd-reboot-controller \
                      agent \
                      cli \
                      controller \
+                     management-engine \
                      os-image
 
 # controller/api ships no tests of its own, so linting and testing it alone

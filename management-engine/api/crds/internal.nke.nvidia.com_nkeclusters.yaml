@@ -1,0 +1,426 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.1
+  name: nkeclusters.internal.nke.nvidia.com
+spec:
+  group: internal.nke.nvidia.com
+  names:
+    kind: NKECluster
+    listKind: NKEClusterList
+    plural: nkeclusters
+    singular: nkecluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NKECluster is the internal representation of a managed workload
+          control plane.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: NKEClusterSpec describes tenant intent for a managed control
+              plane.
+            properties:
+              acceleratedRuntime:
+                description: |-
+                  AcceleratedRuntime selects a runtime bundle; name "none" requests opt-out,
+                  subject to operator policy. Omission leaves selection to engine policy.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  version:
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                type: object
+                x-kubernetes-validations:
+                - message: version is required for a runtime release and must be omitted
+                    for none
+                  rule: 'self.name == ''none'' ? !has(self.version) : has(self.version)'
+              apiServerAccess:
+                description: APIServerAccess describes the requested network access
+                  to the workload API.
+                properties:
+                  publicAccessCidrs:
+                    items:
+                      description: PublicAccessCIDR is an allowed source network and
+                        optional description.
+                      properties:
+                        cidr:
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an IPv4 or IPv6 CIDR
+                            rule: isCIDR(self)
+                        description:
+                          maxLength: 256
+                          type: string
+                      required:
+                      - cidr
+                      type: object
+                    maxItems: 64
+                    type: array
+                    x-kubernetes-list-map-keys:
+                    - cidr
+                    x-kubernetes-list-type: map
+                  publicAccessEnabled:
+                    type: boolean
+                required:
+                - publicAccessEnabled
+                type: object
+              authentication:
+                description: |-
+                  Authentication configures additional tenant JWT issuers. The engine adds
+                  the platform issuer separately; omission does not disable platform identity.
+                properties:
+                  jwt:
+                    items:
+                      description: JWTAuthenticator maps a trusted issuer's claims
+                        to Kubernetes identities.
+                      properties:
+                        claimMappings:
+                          description: JWTClaimMappings maps the token's username
+                            and optional groups claims.
+                          properties:
+                            groups:
+                              description: |-
+                                ClaimMapping selects a claim and optionally specifies its identity prefix.
+                                An empty prefix is meaningful and must remain distinct from an omitted prefix.
+                              properties:
+                                claim:
+                                  maxLength: 256
+                                  minLength: 1
+                                  type: string
+                                prefix:
+                                  maxLength: 256
+                                  type: string
+                              required:
+                              - claim
+                              type: object
+                            username:
+                              description: |-
+                                ClaimMapping selects a claim and optionally specifies its identity prefix.
+                                An empty prefix is meaningful and must remain distinct from an omitted prefix.
+                              properties:
+                                claim:
+                                  maxLength: 256
+                                  minLength: 1
+                                  type: string
+                                prefix:
+                                  maxLength: 256
+                                  type: string
+                              required:
+                              - claim
+                              type: object
+                          required:
+                          - username
+                          type: object
+                        claimValidationRules:
+                          items:
+                            description: ClaimValidationRule requires a claim to equal
+                              a configured string.
+                            properties:
+                              claim:
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                              requiredValue:
+                                maxLength: 256
+                                type: string
+                            required:
+                            - claim
+                            - requiredValue
+                            type: object
+                          maxItems: 32
+                          minItems: 1
+                          type: array
+                          x-kubernetes-list-type: atomic
+                        issuer:
+                          description: JWTIssuer identifies an HTTPS issuer and the
+                            audiences accepted from it.
+                          properties:
+                            audiences:
+                              items:
+                                description: Audience is a nonempty JWT audience identifier.
+                                maxLength: 256
+                                minLength: 1
+                                type: string
+                              maxItems: 16
+                              minItems: 1
+                              type: array
+                              x-kubernetes-list-type: set
+                            url:
+                              maxLength: 2048
+                              pattern: ^https://[^/?#]+[^#]*$
+                              type: string
+                          required:
+                          - audiences
+                          - url
+                          type: object
+                      required:
+                      - claimMappings
+                      - issuer
+                      type: object
+                    maxItems: 60
+                    minItems: 1
+                    type: array
+                    x-kubernetes-list-type: atomic
+                    x-kubernetes-validations:
+                    - message: issuer URLs must be unique
+                      rule: self.all(x, self.filter(y, y.issuer.url == x.issuer.url).size()
+                        == 1)
+                type: object
+              clusterNetwork:
+                description: ClusterNetwork describes the pod/service networks and
+                  cluster DNS domain.
+                properties:
+                  pods:
+                    description: NetworkRanges contains the CIDRs requested for a
+                      cluster network.
+                    properties:
+                      cidrBlocks:
+                        description: |-
+                          Order is significant: the first CIDR selects the default IP family. A
+                          second CIDR makes the network dual-stack, which Kubernetes accepts only
+                          as one range per family.
+                        items:
+                          description: NetworkCIDR is an IPv4 or IPv6 network in CIDR
+                            notation.
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an IPv4 or IPv6 CIDR
+                            rule: isCIDR(self)
+                        maxItems: 2
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                        x-kubernetes-validations:
+                        - message: CIDRs must be distinct
+                          rule: self.size() < 2 || self[0] != self[1]
+                        - message: CIDRs must be of different IP families
+                          rule: self.size() < 2 || cidr(self[0]).ip().family() !=
+                            cidr(self[1]).ip().family()
+                    required:
+                    - cidrBlocks
+                    type: object
+                  serviceDomain:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  services:
+                    description: NetworkRanges contains the CIDRs requested for a
+                      cluster network.
+                    properties:
+                      cidrBlocks:
+                        description: |-
+                          Order is significant: the first CIDR selects the default IP family. A
+                          second CIDR makes the network dual-stack, which Kubernetes accepts only
+                          as one range per family.
+                        items:
+                          description: NetworkCIDR is an IPv4 or IPv6 network in CIDR
+                            notation.
+                          maxLength: 49
+                          type: string
+                          x-kubernetes-validations:
+                          - message: must be an IPv4 or IPv6 CIDR
+                            rule: isCIDR(self)
+                        maxItems: 2
+                        minItems: 1
+                        type: array
+                        x-kubernetes-list-type: atomic
+                        x-kubernetes-validations:
+                        - message: CIDRs must be distinct
+                          rule: self.size() < 2 || self[0] != self[1]
+                        - message: CIDRs must be of different IP families
+                          rule: self.size() < 2 || cidr(self[0]).ip().family() !=
+                            cidr(self[1]).ip().family()
+                    required:
+                    - cidrBlocks
+                    type: object
+                required:
+                - pods
+                - serviceDomain
+                - services
+                type: object
+              controlPlaneClass:
+                description: ResourceName is a Kubernetes DNS subdomain name, not
+                  a provider identifier.
+                maxLength: 253
+                minLength: 1
+                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                type: string
+              release:
+                description: ClusterReleaseSelection selects the release channel used
+                  for the cluster.
+                properties:
+                  channel:
+                    description: |-
+                      ReleaseChannelReference identifies a channel and an optional preferred version.
+                      Version may be a minor version or an exact release, as permitted by the channel.
+                    properties:
+                      name:
+                        description: ResourceName is a Kubernetes DNS subdomain name,
+                          not a provider identifier.
+                        maxLength: 253
+                        minLength: 1
+                        pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                        type: string
+                      version:
+                        maxLength: 128
+                        minLength: 1
+                        type: string
+                    required:
+                    - name
+                    type: object
+                required:
+                - channel
+                type: object
+            required:
+            - apiServerAccess
+            - clusterNetwork
+            - controlPlaneClass
+            - release
+            type: object
+            x-kubernetes-validations:
+            - message: authentication is only configurable at cluster creation
+              rule: has(self.authentication) == has(oldSelf.authentication) && (!has(self.authentication)
+                || self.authentication == oldSelf.authentication)
+          status:
+            description: NKEClusterStatus reports observed state; only controllers
+              write status.
+            properties:
+              conditions:
+                description: |-
+                  Conditions use positive polarity for Ready and report the generation each
+                  observation describes. Absence means unknown, not false.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                maxItems: 32
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              observedGeneration:
+                format: int64
+                minimum: 0
+                type: integer
+              resolvedRelease:
+                description: |-
+                  ResolvedRelease is the actual selected control-plane release, which can
+                  differ from the tenant's channel preference after an operator override.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  version:
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - version
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

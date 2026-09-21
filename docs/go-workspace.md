@@ -1,6 +1,6 @@
 # The Go workspace
 
-This repository holds ten Go modules. `go.work` at the root ties together all
+This repository holds eleven Go modules. `go.work` at the root ties together all
 of them, so one `make build` covers the whole tree and one Go toolchain version
 applies across it.
 
@@ -20,6 +20,7 @@ when the first two go stale.
 | `controller/test/e2e` | yes | builds from public dependencies |
 | `controller` | yes | public dependencies + one vendored INTERNAL module |
 | `controller/nico-sim` | yes | builds from public dependencies |
+| `management-engine` | yes | builds from public dependencies |
 | `os-image` | yes | builds from public dependencies |
 
 ### The vendored dependency

@@ -1,12 +1,12 @@
 # Architecture overview
 
 nke (NVIDIA Kubernetes Engine) orchestrates the lifecycle of Kubernetes clusters
-on NVIDIA infrastructure. The repository is a Go workspace of ten modules. Three
+on NVIDIA infrastructure. The repository is a Go workspace of eleven modules. Three
 of them run in production: the Cloud Workflow Engine, deployed as a Helm chart,
 the node agent, installed on each node as a Debian package and run by systemd,
 and the Cluster API infrastructure provider, deployed into the same cluster as
-the engine. The rest are a CLI, the generated API module, and test and
-development tooling.
+the engine. The rest are a CLI, the generated API module, the management engine's
+CRD types, and test and development tooling.
 
 ```
               ┌──────────────────────────────────────────────┐
@@ -34,7 +34,7 @@ development tooling.
               └──────────────────────┘  └─────────────┘
 ```
 
-## The ten modules
+## The eleven modules
 
 | Module | Binary | What it is |
 |---|---|---|
@@ -47,6 +47,7 @@ development tooling.
 | `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |
 | `controller/hack/capd-reboot-controller/` | `capd-reboot-controller` | Test helper for CAPD reboot behaviour |
+| `management-engine/` | none | The management engine, including NKECluster and NodePool |
 | `os-image/` | `nke-os-image-check` | OS image checks |
 
 `go.work` is the list of record. See [go-workspace.md](go-workspace.md) for how

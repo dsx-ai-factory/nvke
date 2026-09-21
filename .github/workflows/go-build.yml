@@ -115,3 +115,9 @@ jobs:
           CGO_ENABLED: "1"
           GO_TEST_FLAGS: -race
         run: make -C cluster-api-provider-provisioned test
+
+      # The management engine's only unit-test lane: it has no *-test.yml of its
+      # own, and lint.yml covers only linting. No -race, unlike the two above --
+      # the CRD schema and CEL validators these tests drive are single-threaded.
+      - name: Test management engine API
+        run: make -C management-engine test
