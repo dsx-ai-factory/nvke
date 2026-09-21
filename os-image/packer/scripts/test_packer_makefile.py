@@ -1353,6 +1353,169 @@ image_transport_ref docker.io/calico/node:v3.30.1
             ],
         )
 
+    def test_cni_dockerhub_mirror_falls_back_for_resolution_and_transfer(self):
+        bundle_lib = REPO_ROOT / "os-image/packages/cni-common/bundle-lib.sh"
+        digest = "sha256:" + "1" * 64
+        bash_candidates = (
+            "/opt/homebrew/bin/bash",
+            "/usr/local/bin/bash",
+            shutil.which("bash"),
+        )
+        modern_bash = next(
+            (
+                candidate
+                for candidate in bash_candidates
+                if candidate
+                and Path(candidate).is_file()
+                and subprocess.run(
+                    [candidate, "-c", "(( BASH_VERSINFO[0] >= 4 ))"],
+                    check=False,
+                ).returncode
+                == 0
+            ),
+            None,
+        )
+        if modern_bash is None:
+            self.skipTest("Bash 4 or newer is required for CNI bundle tests")
+        cases = (
+            ("digest miss", "1", "0", 3, 0),
+            ("transfer miss", "0", "1", 1, 3),
+        )
+        for (
+            name,
+            digest_fails,
+            pull_fails,
+            mirror_digests,
+            mirror_pulls,
+        ) in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                lock = root / "locks/amd64/v1.lock"
+                lock.parent.mkdir(parents=True)
+                lock.write_text(
+                    f"# test lock\ntest v1\nimage docker.io/calico/node:v1 {digest}\n",
+                    encoding="utf-8",
+                )
+                crane = root / "crane"
+                self.write_executable(
+                    crane,
+                    """#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\\n' "$*" >> "${CRANE_LOG:?}"
+operation="$1"
+shift
+case "$operation" in
+  digest)
+    ref="${@: -1}"
+    if [[ "$ref" == mirror.gcr.io/* && "${MIRROR_DIGEST_FAIL:-0}" == 1 ]]; then
+      exit 1
+    fi
+    printf '%s\\n' "${LOCKED_DIGEST:?}"
+    ;;
+  pull)
+    output="${@: -1}"
+    if [[ "$*" == *mirror.gcr.io/* && "${MIRROR_PULL_FAIL:-0}" == 1 ]]; then
+      exit 1
+    fi
+    if [[ "$*" == *mirror.gcr.io/* ]]; then
+      repo=mirror.gcr.io/calico/node
+    else
+      repo=docker.io/calico/node
+    fi
+    temporary="$(mktemp -d)"
+    printf '[{"RepoTags":["%s:i-was-a-digest"]}]\\n' "$repo" >"${temporary}/manifest.json"
+    tar -C "$temporary" -cf "$output" manifest.json
+    rm -rf -- "$temporary"
+    ;;
+  *) exit 2 ;;
+esac
+""",
+                )
+                calls = root / "crane.log"
+                script = """
+set -euo pipefail
+source "$1"
+sleep() { :; }
+if [[ "$(uname -s)" == Darwin ]]; then
+  sed() {
+    if [[ "$1" == -i ]]; then
+      command sed -i '' "$2" "$3"
+    else
+      command sed "$@"
+    fi
+  }
+  tar() {
+    if [[ "$1" == --format=gnu ]]; then
+      command tar -C "$8" -cf "${10}" -T "${12}"
+    else
+      command tar "$@"
+    fi
+  }
+fi
+CNI=cni-test
+CNI_DOCKERHUB_MIRROR=mirror.gcr.io
+parse_bundle_args --version v1 --dist "$2/dist" --lock-dir "$2/locks" --crane "$3" --arch amd64
+stage_images
+"""
+
+                result = subprocess.run(
+                    [
+                        modern_bash,
+                        "-c",
+                        script,
+                        "bundle-lib-test",
+                        str(bundle_lib),
+                        str(root),
+                        str(crane),
+                    ],
+                    env={
+                        **os.environ,
+                        "CRANE_LOG": str(calls),
+                        "LOCKED_DIGEST": digest,
+                        "MIRROR_DIGEST_FAIL": digest_fails,
+                        "MIRROR_PULL_FAIL": pull_fails,
+                    },
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                call_lines = calls.read_text(encoding="utf-8").splitlines()
+                self.assertEqual(
+                    sum(
+                        "digest --platform linux/amd64 mirror.gcr.io/" in line
+                        for line in call_lines
+                    ),
+                    mirror_digests,
+                )
+                self.assertEqual(
+                    sum(
+                        line.startswith("pull ") and "mirror.gcr.io/" in line
+                        for line in call_lines
+                    ),
+                    mirror_pulls,
+                )
+                self.assertTrue(
+                    any(
+                        line.startswith("pull ") and "docker.io/" in line
+                        for line in call_lines
+                    )
+                )
+                with tarfile.open(root / "dist/v1/images.tgz", "r:gz") as archive:
+                    manifest_member = next(
+                        member
+                        for member in archive.getmembers()
+                        if member.name in ("manifest.json", "./manifest.json")
+                    )
+                    manifest_file = archive.extractfile(manifest_member)
+                    self.assertIsNotNone(manifest_file)
+                    manifest = json.load(manifest_file)
+                self.assertEqual(
+                    manifest[0]["RepoTags"],
+                    ["docker.io/calico/node:v1"],
+                )
+
 
 if __name__ == "__main__":
     unittest.main()
