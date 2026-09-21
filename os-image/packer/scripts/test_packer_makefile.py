@@ -239,6 +239,7 @@ fi
         unsafe_artifacts=False,
         preexisting_output=False,
         preexisting_scratch=False,
+        preexisting_other_scratch=False,
     ):
         workspace, source, tools, packer, events, artifacts = (
             self.create_image_build_fixture(
@@ -251,9 +252,15 @@ fi
             output.mkdir()
             (output / "keep").write_text("existing output\n", encoding="utf-8")
         if preexisting_scratch:
-            scratch = workspace / ".packer-output"
+            variant = "fde" if target == "os-image-fde" else "non-fde"
+            scratch = workspace / f".packer-output-{variant}"
             scratch.mkdir()
             (scratch / "keep").write_text("existing scratch\n", encoding="utf-8")
+        if preexisting_other_scratch:
+            other_variant = "non-fde" if target == "os-image-fde" else "fde"
+            scratch = workspace / f".packer-output-{other_variant}"
+            scratch.mkdir()
+            (scratch / "keep").write_text("other scratch\n", encoding="utf-8")
         if material_inputs is None:
             material_inputs = (
                 ("K8S_VERSIONS", "1.33.5 1.34.1"),
@@ -468,6 +475,21 @@ exec "${REAL_MV:?}" "$@"
             f"default Packer cache is not ignored: {ignored.stderr}",
         )
 
+    def test_variant_packer_scratch_directories_are_ignored(self):
+        for name in (".packer-output-fde", ".packer-output-non-fde"):
+            with self.subTest(name=name):
+                ignored = subprocess.run(
+                    [
+                        "git",
+                        "check-ignore",
+                        "--quiet",
+                        str((PACKER_DIR / name / "scratch").relative_to(REPO_ROOT)),
+                    ],
+                    cwd=REPO_ROOT,
+                    check=False,
+                )
+                self.assertEqual(ignored.returncode, 0)
+
     def test_packer_cache_environment_override_is_preserved_and_exported(self):
         override = PACKER_DIR.parent / "caller-owned-packer-cache"
         self.assertEqual(self.exported_packer_cache_dir(override), str(override))
@@ -582,6 +604,7 @@ exec "${REAL_MV:?}" "$@"
                 ]
                 self.assertEqual(len(build_events), 1)
                 build = build_events[0]
+                variant = "fde" if target == "os-image-fde" else "non-fde"
                 self.assertIn(f"-only={selector}", build)
                 self.assertNotIn("-var architecture=", build)
                 self.assertIn(
@@ -589,7 +612,7 @@ exec "${REAL_MV:?}" "$@"
                     build,
                 )
                 self.assertIn(
-                    f"-var output_directory={artifacts.parent}/.packer-output",
+                    f"-var output_directory={artifacts.parent}/.packer-output-{variant}",
                     build,
                 )
                 self.assertIn(
@@ -602,7 +625,6 @@ exec "${REAL_MV:?}" "$@"
                 )
                 self.assertTrue(build.endswith(str(artifacts.parent)))
 
-                variant = "fde" if target == "os-image-fde" else "non-fde"
                 output_name = (
                     f"nke-node-{variant}-ubuntu-26.04.1-{arch}.qcow2"
                 )
@@ -610,7 +632,9 @@ exec "${REAL_MV:?}" "$@"
                     (artifacts.parent / f"output-{variant}" / output_name).read_bytes(),
                     b"qcow2 bytes\n",
                 )
-                self.assertFalse((artifacts.parent / ".packer-output").exists())
+                self.assertFalse(
+                    (artifacts.parent / f".packer-output-{variant}").exists()
+                )
 
                 archive = artifacts.parent / ".packer-inputs/materials/image-inputs"
                 self.assertTrue(archive.is_file())
@@ -805,10 +829,68 @@ exec "${REAL_MV:?}" "$@"
                         "existing output\n",
                     )
                 else:
+                    variant = "fde" if target == "os-image-fde" else "non-fde"
                     self.assertEqual(
-                        (artifacts.parent / ".packer-output" / "keep").read_text(encoding="utf-8"),
+                        (
+                            artifacts.parent
+                            / f".packer-output-{variant}"
+                            / "keep"
+                        ).read_text(encoding="utf-8"),
                         "existing scratch\n",
                     )
+
+    def test_variant_cleanup_preserves_other_variant_scratch(self):
+        cases = (
+            ("os-image-fde", "non-fde"),
+            ("os-image-non-fde", "fde"),
+        )
+        for target, other_variant in cases:
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                result, _, artifacts, _ = self.run_image_build(
+                    target,
+                    "amd64",
+                    Path(tmp),
+                    preexisting_other_scratch=True,
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(
+                    (
+                        artifacts.parent
+                        / f".packer-output-{other_variant}"
+                        / "keep"
+                    ).read_text(encoding="utf-8"),
+                    "other scratch\n",
+                )
+
+    def test_variant_clean_target_preserves_other_variant_scratch(self):
+        cases = (
+            ("clean-fde-output", "fde", "non-fde"),
+            ("clean-non-fde-output", "non-fde", "fde"),
+        )
+        for target, variant, other_variant in cases:
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                workspace, _, _, _, _, _ = self.create_image_build_fixture(root)
+                (workspace / f"output-{variant}").mkdir()
+                (workspace / f".packer-output-{variant}").mkdir()
+                other = workspace / f".packer-output-{other_variant}"
+                other.mkdir()
+                (other / "keep").write_text("other scratch\n", encoding="utf-8")
+
+                result = self.run_make(
+                    target,
+                    cwd=workspace,
+                    makefile=workspace / "Makefile",
+                )
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((workspace / f"output-{variant}").exists())
+                self.assertFalse((workspace / f".packer-output-{variant}").exists())
+                self.assertEqual(
+                    (other / "keep").read_text(encoding="utf-8"),
+                    "other scratch\n",
+                )
 
     def test_material_verifier_accepts_only_matching_regular_file(self):
         verifier = PACKER_DIR / "scripts/verify-material.sh"

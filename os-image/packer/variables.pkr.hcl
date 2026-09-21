@@ -22,6 +22,14 @@ variable "material_manifest" {
     condition = try(
       length([
         for material in jsondecode(file(var.material_manifest)).materials : material
+        if material.binding == "installer-iso" && material.path == "materials/installer-iso"
+      ]) == 1 &&
+      length([
+        for material in jsondecode(file(var.material_manifest)).materials : material
+        if material.binding == "image-inputs" && material.path == "materials/image-inputs"
+      ]) == 1 &&
+      length([
+        for material in jsondecode(file(var.material_manifest)).materials : material
         if material.binding == "installer-iso" && material.kind == "disk-image" && material.path == "materials/installer-iso" && contains(["amd64", "arm64"], material.architecture)
       ]) == 1 &&
       length([

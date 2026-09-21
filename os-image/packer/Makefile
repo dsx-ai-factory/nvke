@@ -16,7 +16,12 @@ SSH_DIR     := $(CURDIR)/.ssh
 override ARTIFACTS := $(PACKER_ROOT)/artifacts
 override PACKER_INPUT_ROOT := $(PACKER_ROOT)/.packer-inputs
 override MATERIAL_MANIFEST := $(PACKER_INPUT_ROOT)/material-manifest.json
-override PACKER_OUTPUT_DIRECTORY := $(PACKER_ROOT)/.packer-output
+# Keep the variants in separate scratch roots. Direct Packer callers already
+# get variant subdirectories under their output_directory; Make additionally
+# isolates its two entry points so one completed build cannot remove the other
+# build's active output during cleanup.
+override PACKER_OUTPUT_DIRECTORY_FDE := $(PACKER_ROOT)/.packer-output-fde
+override PACKER_OUTPUT_DIRECTORY_NON_FDE := $(PACKER_ROOT)/.packer-output-non-fde
 # Deliberately separate from ARTIFACTS: prepare-packer-inputs archives that
 # directory for guest provisioning. The multi-gigabyte installer ISO must stay
 # outside the archive and is staged as its own Packer material.
@@ -376,14 +381,14 @@ os-image-fde:
 		echo "output-fde already exists; run make clean-fde-output before rebuilding" >&2; \
 		exit 1; \
 	fi
-	@if [ -e "$(PACKER_OUTPUT_DIRECTORY)" ] || [ -L "$(PACKER_OUTPUT_DIRECTORY)" ]; then \
-		echo "Packer output scratch already exists; run make clean-packer-scratch before rebuilding" >&2; \
+	@if [ -e "$(PACKER_OUTPUT_DIRECTORY_FDE)" ] || [ -L "$(PACKER_OUTPUT_DIRECTORY_FDE)" ]; then \
+		echo "Packer output scratch already exists; run make clean-fde-output before rebuilding" >&2; \
 		exit 1; \
 	fi
 	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" _os-image-fde
 
 _os-image-fde: ssh-key init-fde prepare-packer-inputs
-	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY)"
+	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY_FDE)"
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
@@ -391,7 +396,7 @@ _os-image-fde: ssh-key init-fde prepare-packer-inputs
 	$(PACKER) build \
 		-only=$(PACKER_BUILD_FDE) \
 		-var material_manifest=$(MATERIAL_MANIFEST) \
-		-var output_directory=$(PACKER_OUTPUT_DIRECTORY) \
+		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE) \
 		-var build_log_directory=$(BUILD_LOGS) \
 		-var ssh_private_key_file=$(SSH_DIR)/id_ed25519 \
 		-var ssh_public_key_file=$(SSH_DIR)/id_ed25519.pub \
@@ -403,9 +408,9 @@ _os-image-fde: ssh-key init-fde prepare-packer-inputs
 		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PACKER_PROJECT)
 	mkdir "$(CURDIR)/output-fde"
-	mv "$(PACKER_OUTPUT_DIRECTORY)/fde/nke-node.qcow2" \
+	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nke-node.qcow2" \
 		"$(CURDIR)/output-fde/nke-node-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
-	rm -rf -- "$(PACKER_OUTPUT_DIRECTORY)"
+	rm -rf -- "$(PACKER_OUTPUT_DIRECTORY_FDE)"
 
 # Non-FDE variant: LVM-backed ext4 without LUKS. See
 # nke-node-non-fde.pkr.hcl.
@@ -414,21 +419,21 @@ os-image-non-fde:
 		echo "output-non-fde already exists; run make clean-non-fde-output before rebuilding" >&2; \
 		exit 1; \
 	fi
-	@if [ -e "$(PACKER_OUTPUT_DIRECTORY)" ] || [ -L "$(PACKER_OUTPUT_DIRECTORY)" ]; then \
-		echo "Packer output scratch already exists; run make clean-packer-scratch before rebuilding" >&2; \
+	@if [ -e "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)" ] || [ -L "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)" ]; then \
+		echo "Packer output scratch already exists; run make clean-non-fde-output before rebuilding" >&2; \
 		exit 1; \
 	fi
 	@$(MAKE) --no-print-directory --file "$(PACKER_MAKEFILE)" _os-image-non-fde
 
 _os-image-non-fde: ssh-key init-non-fde prepare-packer-inputs
-	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY)"
+	mkdir -p "$(BUILD_LOGS)" "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)"
 	@if [ "$(ACCELERATOR)" = "tcg" ]; then \
 		echo "no usable /dev/kvm: building with software emulation, which is far slower"; \
 	fi
 	$(PACKER) build \
 		-only=$(PACKER_BUILD_NON_FDE) \
 		-var material_manifest=$(MATERIAL_MANIFEST) \
-		-var output_directory=$(PACKER_OUTPUT_DIRECTORY) \
+		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE) \
 		-var build_log_directory=$(BUILD_LOGS) \
 		-var ssh_private_key_file=$(SSH_DIR)/id_ed25519 \
 		-var ssh_public_key_file=$(SSH_DIR)/id_ed25519.pub \
@@ -440,18 +445,18 @@ _os-image-non-fde: ssh-key init-non-fde prepare-packer-inputs
 		-var root_fs_label=$(ROOT_FS_LABEL) \
 		$(PACKER_PROJECT)
 	mkdir "$(CURDIR)/output-non-fde"
-	mv "$(PACKER_OUTPUT_DIRECTORY)/non-fde/nke-node.qcow2" \
+	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nke-node.qcow2" \
 		"$(CURDIR)/output-non-fde/nke-node-non-fde-ubuntu-$(UBUNTU_VERSION)-$(ARCH).qcow2"
-	rm -rf -- "$(PACKER_OUTPUT_DIRECTORY)"
+	rm -rf -- "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)"
 
 clean-packer-scratch:
-	rm -rf -- "$(PACKER_INPUT_ROOT)" "$(PACKER_OUTPUT_DIRECTORY)"
+	rm -rf -- "$(PACKER_INPUT_ROOT)" "$(PACKER_ROOT)/.packer-output" "$(PACKER_OUTPUT_DIRECTORY_FDE)" "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)"
 
-clean-fde-output: clean-packer-scratch
-	rm -rf -- "$(CURDIR)/output-fde"
+clean-fde-output:
+	rm -rf -- "$(CURDIR)/output-fde" "$(PACKER_OUTPUT_DIRECTORY_FDE)"
 
-clean-non-fde-output: clean-packer-scratch
-	rm -rf -- "$(CURDIR)/output-non-fde"
+clean-non-fde-output:
+	rm -rf -- "$(CURDIR)/output-non-fde" "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)"
 
 clean:
-	rm -rf -- "$(CURDIR)/output-fde" "$(CURDIR)/output-non-fde" "$(ARTIFACTS)" "$(PACKER_INPUT_ROOT)" "$(PACKER_OUTPUT_DIRECTORY)" "$(ISO_CACHE)" "$(BUILD_LOGS)"
+	rm -rf -- "$(CURDIR)/output-fde" "$(CURDIR)/output-non-fde" "$(ARTIFACTS)" "$(PACKER_INPUT_ROOT)" "$(PACKER_ROOT)/.packer-output" "$(PACKER_OUTPUT_DIRECTORY_FDE)" "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)" "$(ISO_CACHE)" "$(BUILD_LOGS)"

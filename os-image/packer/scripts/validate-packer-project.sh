@@ -87,3 +87,34 @@ grep -F "must contain one installer-iso" <<<"${output}" >/dev/null || {
   echo "Packer rejected mismatched architectures without the contract error" >&2
   exit 1
 }
+
+duplicate_manifest="${work}/amd64/material-manifest-duplicate-binding.json"
+"${PYTHON:-python3}" - "${work}/amd64/material-manifest.json" "${duplicate_manifest}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    manifest = json.load(source)
+duplicate = dict(manifest["materials"][0])
+duplicate["kind"] = "archive"
+duplicate["architecture"] = "arm64"
+manifest["materials"].insert(0, duplicate)
+with open(sys.argv[2], "w", encoding="utf-8") as destination:
+    json.dump(manifest, destination)
+PY
+if output="$("${packer_bin}" validate \
+  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "material_manifest=${duplicate_manifest}" \
+  -var "output_directory=${work}/amd64/output" \
+  -var "build_log_directory=${work}/amd64/logs" \
+  -var "ssh_private_key_file=${work}/id_ed25519" \
+  -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+  "${project_root}" 2>&1)"; then
+  echo "Packer accepted duplicate installer material bindings" >&2
+  exit 1
+fi
+grep -F "must contain one installer-iso" <<<"${output}" >/dev/null || {
+  printf '%s\n' "${output}" >&2
+  echo "Packer rejected duplicate bindings without the contract error" >&2
+  exit 1
+}
