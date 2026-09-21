@@ -1,4 +1,4 @@
-# capnico-forge
+# nke-sbom
 
 The deploy path for a NICo site controller on Forge hardware, with SPIRE.
 
