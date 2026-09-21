@@ -8,6 +8,7 @@ BootstrapConfig as the context, and the item is then applied as a manifest.
 That tooling is nkectl, and it does not exist yet -- there is no BootstrapConfig
 type in this repository, only the documented shape. This stands in until there
 is, and is deleted with build/use-nke-sbom.sh when nkectl takes over.
+Tracked in https://github.com/dsx-ai-factory/nke/issues/873.
 
 The context is JSON rather than YAML because PyYAML is not guaranteed on the
 e2e runners; the caller writes it, and its field names are BootstrapConfig's

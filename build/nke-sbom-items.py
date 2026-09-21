@@ -17,6 +17,12 @@ recognise is a hard error, because a parser that skips what it does not
 understand turns a malformed artifact into a deploy that silently does less than
 it claims. phases reads one block out of a large hand-commented values.yaml, so
 it is strict only within that block.
+
+TRANSITIONAL. This parser stands in for nkectl, which is the intended owner of
+NKE software stack installation. It is deleted -- together with
+use-nke-sbom.sh and render-template.py beside it -- once nkectl installs a
+deploy path directly. Tracked in
+https://github.com/dsx-ai-factory/nke/issues/873.
 """
 import re
 import sys

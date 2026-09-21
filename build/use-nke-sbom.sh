@@ -12,6 +12,16 @@
 #
 # Everything is a local path. These trees are consumed in place, so there is no
 # registry, no oras pull and no tarball to extract.
+#
+# TRANSITIONAL. This script stands in for nkectl, which is the intended owner of
+# NKE software stack installation. It is deleted -- together with
+# nke-sbom-items.py and render-template.py beside it -- once nkectl installs a
+# deploy path directly, from either a local directory or an OCI registry.
+# Tracked in https://github.com/dsx-ai-factory/nke/issues/873.
+#
+# Because it is going away, it deliberately carries no tests and no golden
+# files: those belong to the implementation that replaces it, not to the
+# stand-in.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
