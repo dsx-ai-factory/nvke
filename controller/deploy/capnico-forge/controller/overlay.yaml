@@ -208,6 +208,15 @@ secrets:
   # when this names a Secret carrying keys `user` and `password`.
   dgxcTenantCredSecretName: dgxc-tenant-credentials
 
+# TPM, explicitly. The chart defaults to this and validates the value, but a
+# site SBOM should state it rather than inherit it: the alternative, joinToken,
+# is what the CAPD lane uses because its containers have no TPM. This path's
+# whole identity chain runs the other way -- NicoMachine.status.tpmEkPubHash to
+# the tpm-pubhashes ConfigMap to SPIRE's tpmDirect attestor -- so tpm is not a
+# default here, it is the requirement.
+nodeAgent:
+  spireAttestationMethod: tpm
+
 temporal:
   host: temporal-frontend.temporal.svc.cluster.local
   port: 7233

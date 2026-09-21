@@ -244,6 +244,8 @@ spiffe:
   trustDomain: "${TRUST_DOMAIN}"
   spire:
     serverAddress: "${MANAGEMENT_VIP}"
+nodeAgent:
+  spireAttestationMethod: "${NODE_AGENT_SPIRE_ATTESTATION_METHOD}"
 env: ${CWE_ENV_JSON}
 EOF
 
