@@ -169,10 +169,10 @@ jobs:
       packages: write
     env:
       # Crane does not use the runner's Docker daemon mirror configuration.
-      # Route Docker Hub reads through the same NVIDIA pull-through mirror used
-      # by this repository's e2e workflows; locks and installed names remain
+      # Route Docker Hub reads through a public pull-through mirror reachable
+      # from both runner architectures; locks and installed names remain
       # docker.io identities.
-      CNI_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
+      CNI_DOCKERHUB_MIRROR: mirror.gcr.io
     steps:
       # GitHub's own timeout-minutes has no grace period: it kills the whole
       # job process tree at once, so nothing started beforehand (a
