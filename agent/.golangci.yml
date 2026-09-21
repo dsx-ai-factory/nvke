@@ -65,6 +65,7 @@ linters:
     - testpackage
     - wrapcheck
     # TODO: fix and re-enable the following linters
+    # Tracked in https://github.com/dsx-ai-factory/nke/issues/938
     - contextcheck   # 20 issues - context propagation
     - dupl           # 3 issues - duplicate code blocks
     - dupword        # 3 issues - duplicate words in comments
