@@ -19,12 +19,12 @@ notices-check` verifies it is up to date.
 |---------|---------|--------|--------|
 | `github.com/go-jose/go-jose/v4` | Apache-2.0 | `github.com/go-jose/go-jose/v4@v4.1.5` | Unknown |
 | `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.5` | Unknown |
-| `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | Unknown |
+| `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.2` | Unknown |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.58.0` | Unknown |
 | `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.48.0` | Unknown |
 | `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.42.0` | Unknown |
 | `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688` | Unknown |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | Unknown |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.84.0` | Unknown |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | Unknown |
 
 ## Go Module License Texts
@@ -280,7 +280,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/spiffe/go-spiffe/v2
 
-_Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.8.1_
+_Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.8.2_
 
 #### LICENSE
 
@@ -814,7 +814,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-
 
 ### google.golang.org/grpc
 
-_Apache-2.0 — google.golang.org/grpc@v1.83.2_
+_Apache-2.0 — google.golang.org/grpc@v1.84.0_
 
 #### LICENSE
 

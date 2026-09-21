@@ -96,7 +96,7 @@ notices-check` verifies it is up to date.
 | `github.com/santhosh-tekuri/jsonschema/v6` | Apache-2.0 | `github.com/santhosh-tekuri/jsonschema/v6@v6.0.3` | Unknown |
 | `github.com/spf13/cobra` | Apache-2.0 | `github.com/spf13/cobra@v1.10.2` | Unknown |
 | `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.0.10` | Unknown |
-| `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.1` | Unknown |
+| `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.8.2` | Unknown |
 | `github.com/spiffe/spire-api-sdk/proto/spire/api` | Apache-2.0 | `github.com/spiffe/spire-api-sdk@v1.15.3` | Unknown |
 | `github.com/spiffe/spire-controller-manager` | Apache-2.0 | `github.com/spiffe/spire-controller-manager@v0.7.0` | Unknown |
 | `github.com/stretchr/objx` | MIT | `github.com/stretchr/objx@v0.5.3` | Unknown |
@@ -148,7 +148,7 @@ notices-check` verifies it is up to date.
 | `gomodules.xyz/jsonpatch/v2` | Apache-2.0 | `gomodules.xyz/jsonpatch/v2@v2.5.0` | Unknown |
 | `google.golang.org/genproto/googleapis/api` | Apache-2.0 | `google.golang.org/genproto/googleapis/api@v0.0.0-20260819154853-08b0e4226688` | Unknown |
 | `google.golang.org/genproto/googleapis/rpc` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-08b0e4226688` | Unknown |
-| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.83.2` | Unknown |
+| `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.84.0` | Unknown |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | Unknown |
 | `gopkg.in/evanphx/json-patch.v4` | BSD-3-Clause | `gopkg.in/evanphx/json-patch.v4@v4.13.0` | Unknown |
 | `gopkg.in/inf.v0` | BSD-3-Clause | `gopkg.in/inf.v0@v0.9.1` | Unknown |
@@ -9687,7 +9687,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### github.com/spiffe/go-spiffe/v2
 
-_Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.8.1_
+_Apache-2.0 — github.com/spiffe/go-spiffe/v2@v2.8.2_
 
 #### LICENSE
 
@@ -15216,7 +15216,7 @@ _Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20260819154853-
 
 ### google.golang.org/grpc
 
-_Apache-2.0 — google.golang.org/grpc@v1.83.2_
+_Apache-2.0 — google.golang.org/grpc@v1.84.0_
 
 #### LICENSE
 
