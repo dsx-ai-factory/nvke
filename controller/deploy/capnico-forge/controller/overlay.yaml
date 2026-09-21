@@ -97,9 +97,31 @@ namespaceOverride: cloud-workflow-engine
 nkeSystemNamespace:
   create: false
 
+# PINNED, unlike the e2e targets. A site is not building the controller from
+# source, so "whatever the lane just built" is not a meaningful default here:
+# with these unset the chart falls back to its own repository plus appVersion
+# 0.0.0, which is not a published image and fails to pull.
+#
+# This is the image the az61 run staged into containerd and proved. Note the repository:
+# #827 renamed the published image to nke-controller, and rc.7 onward live at
+# ghcr.io/dsx-ai-factory/nke/nke-controller. rc.6 predates the rename and is
+# only at the old path, so moving to a newer tag means changing BOTH lines.
+#
+# Still overridable with --values-for controller=<file>, which is how a site
+# on a different registry or a newer build repoints it.
 image:
-  # repository and tag are per-run: the lane --sets the tag it just built.
+  repository: ghcr.io/dsx-ai-factory/nke/controller
+  tag: v0.1.1-rc.6
   pullPolicy: IfNotPresent
+
+# EMPTY, and it must stay empty. The controller image is staged into the node's
+# containerd before the install -- the node IS the cluster, so it resolves under
+# pullPolicy: IfNotPresent with no credential. The only pull secret this path
+# renders is ghcr-imagepull, and it lives in capnico-system for CAPNICo's image;
+# naming it here would reference a Secret that does not exist in this namespace.
+#
+# A site that pulls the controller from a registry instead needs its own secret
+# in cloud-workflow-engine, supplied with --values-for.
 imagePullSecrets: []
 
 podSecurityContext: null
@@ -183,10 +205,15 @@ profiles:
   # the profiles directory may be empty at startup, but it must exist by the
   # time a cluster is created.
   #
-  # repository and tag are per-site: fleet profile content is maintained
-  # outside this repository. The exercise staged a locally built image into the
-  # node's containerd, which is why no registry credential is needed for it.
-  # Supply them with --values-for controller=<file>.
+  # NOT pinned, unlike image above: fleet profile content is maintained outside
+  # this repository, so there is no tag here that would mean the same thing on
+  # another site. The az61 run staged a locally built `cwe-profiles:forge2` into
+  # the node's containerd -- a bare name with no registry, which is why it needs
+  # no credential and why pinning it here would not be portable.
+  #
+  # Supply repository and tag with --values-for controller=<file>. Without them
+  # the chart refuses to render: profiles.image.tag or .digest is required when
+  # enabled=true.
   image:
     enabled: true
 
