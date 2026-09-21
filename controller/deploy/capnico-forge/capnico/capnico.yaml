@@ -12,8 +12,8 @@
 # path does not assume. The release asset needs only the image, and the image
 # needs only a pull secret.
 #
-# This is the finding the Forge exercise called its most useful: CAPNICo needs
-# neither GitLab nor NGC org access. nke-mgmt-sw's ci/capnico fetches the same
+# The most useful finding from that run: CAPNICo needs neither GitLab nor NGC
+# org access. The management-software CI fetches the same
 # manifest from a GitLab generic package and repoints the image at
 # nvcr.io/j7sbcjl3qgta only because sites hold that org's credentials -- not
 # because the public path does not exist.
@@ -28,7 +28,7 @@
 #     the image is not anonymously pullable (ghcr.io answers 403 to an
 #     anonymous token). The Secret is rendered by
 #     ../nke-base-config/30-ghcr-imagepull.yaml.tmpl, which the first item
-#     applies. The exercise patched the Deployment after applying instead; a
+#     applies. That run patched the Deployment after applying instead; a
 #     manifest item has no patch step, so it is baked in here.
 #
 # The third edit ci/capnico applies -- repointing the image at nvcr.io -- is

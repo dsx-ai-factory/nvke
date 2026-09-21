@@ -8,7 +8,7 @@
 # --values-for postgresql=<file>, and the SAME value has to reach both of
 # Temporal's datastores -- default and visibility. Setting it on only one
 # leaves the Temporal schema job crash-looping with "password authentication
-# failed", which the Forge exercise hit.
+# failed", which that run hit.
 auth:
   username: postgres
   database: postgres
@@ -17,7 +17,7 @@ primary:
   # primary.persistence, NOT a top-level persistence: the Bitnami chart nests
   # it here, and helm does not reject unknown values, so a top-level
   # persistence.enabled=true is accepted and silently ignored. That is how the
-  # exercise ended up running Postgres on an emptyDir.
+  # that run ended up running Postgres on an emptyDir.
   persistence:
     enabled: true
     size: 40Gi

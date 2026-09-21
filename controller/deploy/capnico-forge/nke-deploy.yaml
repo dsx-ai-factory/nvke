@@ -3,10 +3,10 @@
 
 # Deploy path for a NICo site controller on Forge hardware.
 #
-# Reverse-engineered from the NKE OSS Forge Provisioning Exercise, which stood a
-# site controller up on Forge hardware and had it provision a tenant
-# cluster. Its install-site-controller.sh is this file in script form; the order
-# below is its order, which it in turn took from nke-mgmt-sw's phases:
+# The order is not designed from first principles. It was derived from a
+# provisioning run that stood a site controller up on bare metal and had it
+# provision a tenant cluster, whose install script is this file in script form.
+# That order in turn follows the management-software phases:
 #
 #   untaint -> storage class -> cert-manager -> CAPI core -> CAPNICo
 #            -> Postgres -> Temporal -> CWE
@@ -24,7 +24,7 @@
 #                  for CAPNICo, whose manifest names a remote image.
 #   a default StorageClass  a bare site ships none, so every PVC sits Pending.
 #                  Deliberately not an item: which provisioner is right is a
-#                  property of the hardware, not of NKE. The exercise installed
+#                  property of the hardware, not of NKE. That run installed
 #                  rancher local-path because its instance type has a single
 #                  NVMe with root on it, which also means the documented
 #                  prerequisite of a spare unpartitioned device cannot be met
@@ -36,7 +36,7 @@
 # once csi.spiffe.io is registered, and that CSIDriver arrives with the spire
 # item. See README.md.
 #
-# DIFFERENT FROM capnico-e2e in four ways, each of which the exercise hit:
+# DIFFERENT FROM capnico-e2e in four ways, each of which that run hit:
 #   capnico        a manifest item, not a helm item installed from source:
 #                  there is no provider checkout on a site, and the published
 #                  chart is not reachable without credentials this path does
@@ -46,7 +46,7 @@
 #   secrets        four of them carry real credentials, so they are template
 #                  items rendered from BootstrapConfig rather than committed.
 #
-# SPIRE IS IN, deliberately. The exercise ran --disable-mtls end to end, but its
+# SPIRE IS IN, deliberately. That run used --disable-mtls end to end, but its
 # own notes record that os-image/SPEC.md lists that as NOT a supported
 # production mode, and the reference image ships mTLS on. The flag is a property
 # of bootstrapping the site controller's own node -- at that moment the only

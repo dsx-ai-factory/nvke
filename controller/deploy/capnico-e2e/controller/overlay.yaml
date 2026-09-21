@@ -119,7 +119,7 @@ temporal:
 profiles:
   path: /profiles
   # Exercise the fleet profiles.image materialize path. Tilt builds
-  # docker.local/cwe-profiles:tilt from the sibling nke-site-deploy tree.
+  # docker.local/cwe-profiles:tilt, built outside this repository.
   image:
     enabled: true
     repository: docker.local/cwe-profiles

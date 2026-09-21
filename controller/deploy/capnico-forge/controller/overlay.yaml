@@ -174,7 +174,7 @@ appDb:
   # Supply it with --values-for controller=<file>, together with the matching
   # value on BOTH of temporal's datastores -- default and visibility. Setting
   # it on only one leaves the Temporal schema job crash-looping with
-  # "password authentication failed", which the Forge exercise hit.
+  # "password authentication failed", which that run hit.
   sslMode: disable
 
 # The port nke-agent listens on, and it has to agree with three other places:
@@ -204,7 +204,7 @@ secrets:
   # Names the Secret ../nke-base-config/35-dgxc-tenant-credentials.yaml.tmpl
   # renders. Empty means CWE never receives DGXC_TENANT_USER and
   # DGXC_TENANT_PASSWORD, and every tenant create fails at user-data rendering
-  # -- one of the Forge exercise's eleven failures. The chart injects them only
+  # -- one of that run's eleven failures. The chart injects them only
   # when this names a Secret carrying keys `user` and `password`.
   dgxcTenantCredSecretName: dgxc-tenant-credentials
 

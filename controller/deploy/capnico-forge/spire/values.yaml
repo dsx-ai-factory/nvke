@@ -40,7 +40,7 @@ global:
 # they fall through to spire-system under the recommended layout. Both need
 # hostNetwork/hostPID and privileged, which the restricted PodSecurity label
 # on spire-server rejects outright. Pinning them to spire-server is what
-# nke-spire 0.1.0 did, and 0.1.1 had to undo after the DaemonSets failed to
+# an earlier chart did, and had to undo after the DaemonSets failed to
 # create.
 spiffe-csi-driver: {}
 spire-agent:
@@ -62,7 +62,7 @@ spire-agent:
 spire-server:
   namespaceOverride: spire-server
   # The bundle ConfigMap the agent mounts must land where the agent runs, or
-  # the agent sits at Init:0/2 forever (nke-spire 0.1.2).
+  # the agent sits at Init:0/2 forever.
   bundlePublisher:
     k8sConfigMap:
       namespace: spire-system
@@ -151,7 +151,7 @@ spire-server:
       # The agent moved to spire-system, so the server must accept it from
       # there: the default allowlist is empty and attestation fails with
       # "is not an allowed service account". Stable because spire-agent's
-      # fullnameOverride pins the ServiceAccount name (nke-spire 0.1.3 hit
+      # fullnameOverride pins the ServiceAccount name (an earlier chart hit
       # this and pinned the release name instead).
       serviceAccountAllowList: ["spire-system:spire-agent"]
     tpmDirect:

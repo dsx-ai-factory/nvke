@@ -2,11 +2,10 @@
 
 The deploy path for a NICo site controller on Forge hardware, with SPIRE.
 
-Not a reference implementation: the item list and its order are
-reverse-engineered from the NKE OSS Forge Provisioning Exercise, which stood a
-site controller up on Forge hardware and had it provision a tenant. Where that run and
-`capnico-e2e` disagree, the live site wins -- it is the one that ran on real
-hardware.
+Not a reference implementation: the item list and its order are derived from a
+provisioning run that stood a site controller up on bare metal and had it
+provision a tenant. Where that run and `capnico-e2e` disagree, this path follows
+the run -- it is the one that has been exercised on real hardware.
 
 ## Where this sits
 
@@ -64,7 +63,7 @@ already be true, all of them outside the deploy path:
    ```
 
    Namespace `k8s.io`, not `default`: an image imported into the wrong
-   containerd namespace is invisible to the kubelet, which the Forge exercise
+   containerd namespace is invisible to the kubelet, which that run
    hit as "401 Unauthorized pulling the controller image". Build
    single-manifest too (`--provenance=false --output type=docker`) -- an OCI
    index with an attestation manifest made nkectl try to pull by digest.
@@ -95,7 +94,7 @@ leaving the rollout unverified; run after, it is checked.
 The overlay includes `capd-controller-manager.yaml`, which a Forge site has no
 namespace for. The script skips Deployments that are absent, so this is fine.
 
-install-site-controller.sh does none of this, because that run had
+That run's install script does none of this, because it had
 `spiffe.enabled=false` and nothing needed a workload API.
 
 ## Per-site values
