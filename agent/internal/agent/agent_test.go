@@ -1764,3 +1764,41 @@ func TestHardenKubeletFileModes(t *testing.T) {
 		require.Error(t, err)
 	})
 }
+
+// TestHardenKubeletFileModesAfterConfigRewrite pins the ordering requirement
+// between disableKubeletSelfRegistration and hardenKubeletFileModes.
+//
+// disableKubeletSelfRegistration rewrites /var/lib/kubelet/config.yaml with
+// mode 0644. If hardening ran before it, the rewrite would immediately undo the
+// mode and the node would sit at 0644 with nothing reporting it. This asserts
+// the recovery direction: whatever leaves the file 0644, a subsequent harden
+// brings it back to 0600.
+func TestHardenKubeletFileModesAfterConfigRewrite(t *testing.T) {
+	const kubeletConfigYAML = `apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+registerNode: false
+`
+
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, kubeletConfigPath)
+	require.NoError(t, os.MkdirAll(filepath.Dir(configPath), 0o755))
+	require.NoError(t, os.WriteFile(configPath, []byte(kubeletConfigYAML), 0o600))
+	require.NoError(t, os.Chmod(configPath, 0o600))
+
+	server := &NodeAgentServer{RootPath: tmp}
+
+	// Stand in for the 0644 rewrite disableKubeletSelfRegistration performs.
+	require.NoError(t, os.WriteFile(configPath, []byte(kubeletConfigYAML), 0o644))
+	require.NoError(t, os.Chmod(configPath, 0o644))
+
+	info, err := os.Stat(configPath)
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0o644), info.Mode().Perm(), "precondition: the rewrite loosened the mode")
+
+	require.NoError(t, server.hardenKubeletFileModes())
+
+	info, err = os.Stat(configPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(kubeletHardenedFileMode), info.Mode().Perm(),
+		"hardening must run after the config rewrite, not before")
+}

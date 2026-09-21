@@ -423,10 +423,18 @@ func NewNodeAgentServer(doMlx5Rescan bool, bundleServerURL, indexFileURL, cniIma
 			if err := server.disableKubeletSelfRegistration(); err != nil {
 				slog.Error("startup: failed to disable kubelet self-registration", "err", err)
 			}
-			if err := server.hardenKubeletFileModes(); err != nil {
-				slog.Error("startup: failed to tighten kubelet file modes", "err", err)
-			}
 		}
+	}
+
+	// Deliberately outside the branch above, and ungated by CompletedPhases.
+	// disableKubeletSelfRegistration needs the state file to know whether the
+	// node ever initialized, because rewriting a config that is not there would
+	// be wrong. Tightening a mode needs no such knowledge: a missing file is a
+	// no-op, so the safe thing on an unreadable state file is still to run. An
+	// initialized node whose state file will not load would otherwise keep
+	// kubeadm's 0644 with nothing left to correct it.
+	if err := server.hardenKubeletFileModes(); err != nil {
+		slog.Error("startup: failed to tighten kubelet file modes", "err", err)
 	}
 
 	server.NodeStatus.BundleIndexFile = server.BundleIndexFile
@@ -860,6 +868,15 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 	}
 	ns.CompletedPhases = append(ns.CompletedPhases, string(InitPhase))
 
+	// Tighten here as well as after disableKubeletSelfRegistration below: kubeadm
+	// has already written both files 0644 by this point, and the CNI install in
+	// between can return early on failure, which would leave them world readable
+	// until something else happened to run. Cheap to repeat -- a mode that is
+	// already 0600 is skipped.
+	if err := s.hardenKubeletFileModes(); err != nil {
+		slog.Error("failed to tighten kubelet file modes", "err", err)
+	}
+
 	// Legacy in-init CNI: when no_cni_install is false (the default), install via InstallCNIPlugin
 	// to match pre–InstallCNI callers. New callers set no_cni_install and use InstallCNI after init.
 	if !req.GetNoCniInstall() && !req.GetSkipCniPluginInstall() {
@@ -897,10 +914,16 @@ func (s *NodeAgentServer) processKubeadmInit(args []string, req *pb.KubeadmInitR
 // offers no configuration for their permissions, so the only way to hold them
 // at 0600 is to re-apply after kubeadm has run.
 //
-// Called from the same three places as disableKubeletSelfRegistration, and for
-// the same reason: kubeadm recreates both files on init, on join, and on
+// Called from four places: agent startup, straight after a successful kubeadm
+// init, and after each of the two disableKubeletSelfRegistration calls on the
+// init and join paths. kubeadm recreates both files on init, on join and on
 // upgrade, so a one-shot chmod during initial provisioning would silently drift
-// back to 0644. The startup call site is what corrects that drift.
+// back to 0644; the startup call is what corrects that drift on an existing
+// node.
+//
+// The ordering against disableKubeletSelfRegistration matters and is not
+// incidental: that function rewrites config.yaml with mode 0644, so hardening
+// has to follow it rather than precede it or the mode is immediately undone.
 //
 // A missing file is not an error. The drop-in exists on any kubeadm-managed
 // node, but this runs on startup before init or join on a fresh node too, and
