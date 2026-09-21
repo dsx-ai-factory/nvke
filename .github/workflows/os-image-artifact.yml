@@ -126,14 +126,18 @@ jobs:
         run: |
           set -euo pipefail
           amd64='{"arch":"amd64","runner":"linux-amd64-gpu-l4-latest-1","timeout_minutes":180,"build_fde":true}'
-          # Scale set on the self-hosted fleet; the name is the size,
-          # 16 vCPU and 64 GiB. linux-arm64-cpu16 has no /dev/kvm.
+          # Scale set on the RelEng EKS fleet: 16 vCPU, 64 GiB and 200 GiB of
+          # ephemeral storage on the same c7g.metal, so /dev/kvm is real
+          # hardware. linux-arm64-cpu16 has no /dev/kvm at all.
           #
-          # Back off the arc-arm64-kvm class #838 moved this to, with
-          # kubeadm-bringup-e2e, whose every run there fails at `virsh define`
-          # for want of EFI firmware. Move both back together: one bake on the
-          # old fleet and one on the new would compare two variables at once.
-          arm64='{"arch":"arm64","runner":"nke-arm64-16c64g","timeout_minutes":180,"build_fde":true}'
+          # Back on arc-arm64-kvm after #863 backed it off. The only thing
+          # that failed there was the udev block above, which cannot work in
+          # a container; this leg never needed libvirt, because Packer drives
+          # its own QEMU. kubeadm-bringup-e2e stays on the self-hosted fleet
+          # until the libvirt side of #863 is solved — it is a different
+          # failure, so moving them separately isolates the variable rather
+          # than confusing it.
+          arm64='{"arch":"arm64","runner":"arc-arm64-kvm","timeout_minutes":180,"build_fde":true}'
           case "${WANT:-both}" in
             amd64) legs="[${amd64}]" ;;
             arm64) legs="[${arm64}]" ;;
@@ -295,10 +299,21 @@ jobs:
             ls -la /dev
             exit 1
           fi
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --settle --name-match=kvm
+          # Widening the device mode is only possible, and only needed, on a
+          # VM runner. A container has no udev: there is no /etc/udev/rules.d
+          # for the rule to land in and no udevd for udevadm to talk to, so
+          # under set -e this block ended the job (#863). The device is
+          # bind-mounted from the host, which already applies this same rule,
+          # so the mode is correct before the job starts. The open test below
+          # is what actually decides either way.
+          if [[ -d /run/udev ]] && command -v udevadm >/dev/null; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules
+            sudo udevadm trigger --settle --name-match=kvm
+          else
+            echo "::notice::no udev on this runner; relying on the device mode the host set"
+          fi
           ls -l /dev/kvm
           exec 3<>/dev/kvm
           exec 3>&-
