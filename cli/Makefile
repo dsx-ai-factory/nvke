@@ -232,7 +232,50 @@ license: ## Ensure license headers at code.
 # the controller's generator rather than copying it: the script discovers the
 # vendor tree by walking up, and takes the module and its packages from the
 # environment, so one implementation serves every module in the workspace.
+.PHONY: provider-manifest provider-manifest-check
+
 .PHONY: notices notices-check
+# The provisioned provider's kustomize base, rendered into the binary so nkectl
+# installs it without a checkout. The base is the source of truth and its CRDs
+# and RBAC are controller-gen output, so this is regenerated from there rather
+# than edited: change the provider, `make -C cluster-api-provider-provisioned
+# manifests`, then this.
+PROVIDER_KUSTOMIZE := ../cluster-api-provider-provisioned/config/default
+PROVIDER_MANIFEST  := internal/cwedeploy/manifests/provisioned-provider.yaml
+
+provider-manifest: ## Regenerate the embedded provisioned-provider manifest.
+	@# Pinned kubectl: the rendered bytes are compared, so the renderer has to
+	@# be the same one everywhere or the check below fails on version drift.
+	@../hack/check-tool-version.sh kubectl $(KUBECTL_VERSION)
+	@{ \
+		printf '%s\n' \
+			'# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.' \
+			'# SPDX-License-Identifier: Apache-2.0' \
+			'#' \
+			'# GENERATED FILE -- do not edit. Regenerate with `make -C cli provider-manifest`.' \
+			'#' \
+			'# `kubectl kustomize cluster-api-provider-provisioned/config/default`, rendered' \
+			'# here so nkectl installs the provider of the commit it was built from without' \
+			'# a checkout. The source of truth is that kustomize base, whose CRDs and RBAC' \
+			'# are themselves controller-gen output; edit the provider, regenerate there,' \
+			'# then regenerate this.' \
+			'#' \
+			'# image.repository is the placeholder cwedeploy rewrites to the image the' \
+			'# bootstrap was told to run.'; \
+		kubectl kustomize $(PROVIDER_KUSTOMIZE); \
+	} > $(PROVIDER_MANIFEST)
+	@echo "  wrote $(PROVIDER_MANIFEST)"
+
+provider-manifest-check: ## Verify the embedded provisioned-provider manifest is up to date.
+	@# Tracking first, as notices-check does: git diff says nothing about an
+	@# untracked path, so a never-committed manifest would pass silently.
+	@git ls-files --error-unmatch $(PROVIDER_MANIFEST) > /dev/null 2>&1 \
+		|| { echo "$(PROVIDER_MANIFEST) is not tracked by git. Run 'make -C cli provider-manifest' and commit it."; exit 1; }
+	@$(MAKE) --no-print-directory provider-manifest
+	@git diff --exit-code -- $(PROVIDER_MANIFEST) \
+		|| { echo "ERROR: $(PROVIDER_MANIFEST) is stale. Run 'make -C cli provider-manifest' and commit it."; exit 1; }
+	@echo "  $(PROVIDER_MANIFEST) is up to date."
+
 notices: ## Regenerate THIRD_PARTY_NOTICES.md for the nkectl binary.
 	@# The tool and the script both live in controller/, which is a sibling now,
 	@# not the parent. `go-licenses`, not `bin/go-licenses`: the real rule's

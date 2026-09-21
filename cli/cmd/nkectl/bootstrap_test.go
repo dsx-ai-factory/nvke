@@ -48,11 +48,6 @@ func (fakeCWERunner) Run(_ context.Context, name string, args ...string) (string
 		return `{"apiVersion":"v1","kind":"Secret","data":{"active":"` +
 			base64.StdEncoding.EncodeToString([]byte(fakeEtcdKey)) + `","active-since":"MQ=="}}`, nil
 	}
-	if name == "kubectl" && strings.Contains(joined, "kustomize") {
-		// The provisioned provider's rendered manifest, carrying the
-		// placeholder image cwedeploy rewrites.
-		return "        image: docker.io/library/cluster-api-provider-provisioned:latest\n", nil
-	}
 	if name == "kubectl" && strings.Contains(joined, "readyz") {
 		return `{"status":"ok","checks":{"database":"ok","temporal":"ok"}}`, nil
 	}
@@ -447,7 +442,6 @@ func setBootstrapEnv(t *testing.T) {
 	t.Helper()
 	t.Setenv("NKECTL_CWE_IMAGE", "nvcr.io/org/controller:edge")
 	t.Setenv("NKECTL_CAPI_PROVISIONED_IMAGE", "cluster-api-provider-provisioned:local")
-	t.Setenv("NKECTL_CAPI_PROVISIONED_PATH", t.TempDir())
 }
 
 func TestCWEDeployConfigUsesSiteSpecTrustDomain(t *testing.T) {

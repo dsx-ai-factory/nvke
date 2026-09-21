@@ -249,12 +249,6 @@ type Config struct {
 	// pulled, because the bootstrap cluster has no pull secret.
 	ProvisionedProviderImage string
 
-	// ProvisionedProviderPath is the local path to
-	// cluster-api-provider-provisioned/config/default. Empty triggers repo-root
-	// discovery, which only works inside a checkout of this monorepo. The
-	// controller chart has no such field: it is embedded in the binary.
-	ProvisionedProviderPath string
-
 	// NodeAgentPort is the port CWE dials nke-agent on. Empty leaves CWE's own
 	// default (15005) alone. It comes from the site spec, because it describes
 	// how the site's hosts were configured long before this cluster existed.
@@ -305,7 +299,6 @@ func DefaultConfig() Config {
 		SPIFFETrustDomain: os.Getenv("NKECTL_SPIFFE_TRUST_DOMAIN"),
 
 		ProvisionedProviderImage: os.Getenv("NKECTL_CAPI_PROVISIONED_IMAGE"),
-		ProvisionedProviderPath:  os.Getenv("NKECTL_CAPI_PROVISIONED_PATH"),
 		CWEPort:                  envPort("NKECTL_CWE_PORT", DefaultCWEPort),
 
 		HelmTimeout:  envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
@@ -700,28 +693,6 @@ func writeTempFile(pattern string, body []byte) (path string, cleanup func(), er
 		return "", func() {}, fmt.Errorf("cwedeploy: closing %s: %w", tmpName, err)
 	}
 	return tmpName, cleanup, nil
-}
-
-// repoRoot walks up from the working directory looking for go.work, this
-// repository's root marker. It is how the provisioned provider's kustomize
-// base is found, which only works inside a checkout of this monorepo -- a
-// known gap for a standalone binary, and the reason the controller chart is
-// embedded rather than located this way.
-func repoRoot() (string, error) {
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("resolving the working directory: %w", err)
-	}
-	for {
-		if _, statErr := os.Stat(filepath.Join(dir, "go.work")); statErr == nil {
-			return dir, nil
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return "", errors.New("no repository root (go.work) was found above the working directory")
-		}
-		dir = parent
-	}
 }
 
 // splitImageRef splits "repo:tag", "repo@sha256:..." or "repo:tag@sha256:..."

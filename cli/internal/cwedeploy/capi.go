@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -92,7 +90,8 @@ func (e *Engine) installCAPICore(ctx context.Context, kubeconfigPath string) err
 }
 
 // installProvisionedProvider renders cluster-api-provider-provisioned's
-// kustomize base, points it at Config.ProvisionedProviderImage, and applies it.
+// manifest embedded in this binary, points it at
+// Config.ProvisionedProviderImage, and applies it.
 //
 // Server-side apply: the CRDs are large enough that a client-side apply can
 // exceed the last-applied-configuration annotation limit.
@@ -109,23 +108,15 @@ func (e *Engine) installProvisionedProvider(
 			"`docker build -f cluster-api-provider-provisioned/Dockerfile .`)")
 	}
 
-	path := cfg.ProvisionedProviderPath
-	if path == "" {
-		var err error
-		path, err = resolveProvisionedProviderPath()
-		if err != nil {
-			return err
-		}
-	}
-
-	rendered, err := e.Runner.Run(ctx, "kubectl", "kustomize", path)
+	raw, err := manifestsFS.ReadFile(provisionedProviderFile)
 	if err != nil {
-		return fmt.Errorf("cwedeploy: rendering the provisioned provider from %s: %w\n%s", path, err, rendered)
+		return fmt.Errorf("cwedeploy: reading the embedded provisioned provider manifest: %w", err)
 	}
+	rendered := string(raw)
 	if !strings.Contains(rendered, provisionedDefaultImage) {
 		return fmt.Errorf("cwedeploy: %s does not contain the expected placeholder image %q; "+
 			"the provider's manager manifest changed and this install can no longer set its image",
-			path, provisionedDefaultImage)
+			provisionedProviderFile, provisionedDefaultImage)
 	}
 	rendered = strings.ReplaceAll(rendered, provisionedDefaultImage, cfg.ProvisionedProviderImage)
 
@@ -136,7 +127,7 @@ func (e *Engine) installProvisionedProvider(
 	defer cleanup()
 
 	e.log.Info("installing the provisioned infrastructure provider",
-		"namespace", provisionedNamespace, "image", cfg.ProvisionedProviderImage, "source", path)
+		"namespace", provisionedNamespace, "image", cfg.ProvisionedProviderImage)
 	if out, err := e.Runner.Run(ctx, "kubectl", "--kubeconfig", kubeconfigPath,
 		"apply", "--server-side", "--force-conflicts", "-f", manifest); err != nil {
 		return fmt.Errorf("cwedeploy: applying the provisioned provider: %w\n%s", err, out)
@@ -148,21 +139,4 @@ func (e *Engine) installProvisionedProvider(
 		return fmt.Errorf("cwedeploy: waiting for the provisioned provider: %w\n%s", err, out)
 	}
 	return nil
-}
-
-// resolveProvisionedProviderPath finds cluster-api-provider-provisioned's
-// kustomize base by walking up to the repository root, so it only works inside
-// a checkout of this monorepo. Set NKECTL_CAPI_PROVISIONED_PATH when running
-// the binary anywhere else. The CWE chart needs no equivalent: it is embedded.
-func resolveProvisionedProviderPath() (string, error) {
-	root, err := repoRoot()
-	if err != nil {
-		return "", fmt.Errorf("cwedeploy: Config.ProvisionedProviderPath is empty and %w; "+
-			"set NKECTL_CAPI_PROVISIONED_PATH explicitly", err)
-	}
-	dir := filepath.Join(root, "cluster-api-provider-provisioned", "config", "default")
-	if _, err := os.Stat(dir); err != nil {
-		return "", fmt.Errorf("cwedeploy: found repository root at %s but no provisioned provider config at %s", root, dir)
-	}
-	return dir, nil
 }

@@ -96,7 +96,7 @@ jobs:
         run: make generate-check
 
   provisioned-generate-check:
-    name: Check generated provisioned provider code, CRDs, and RBAC
+    name: Check generated provisioned provider code, CRDs, RBAC, and embedded manifest
     runs-on: ubuntu-latest
     if: github.repository == 'dsx-ai-factory/nke'
     timeout-minutes: 20
@@ -119,6 +119,33 @@ jobs:
 
       - name: Verify generated provider code, CRDs, and RBAC are up to date
         run: make -C cluster-api-provider-provisioned generate-check
+
+      # nkectl embeds this kustomize base rendered, so the render is checked
+      # here rather than in a job of its own: the inputs are the CRDs and RBAC
+      # the step above just verified, and a change to either stales it.
+      - name: Read pinned tool versions
+        id: versions
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          for var in KIND_VERSION KUBECTL_VERSION; do
+            value="$(make --no-print-directory "print-${var}")"
+            if [ -z "${value}" ]; then
+              echo "::error::make print-${var} returned nothing; make/versions.mk is broken"
+              exit 1
+            fi
+            echo "$(echo "${var}" | tr '[:upper:]' '[:lower:]')=${value}" >> "$GITHUB_OUTPUT"
+          done
+
+      # The renderer has to be the pinned one: the check compares bytes.
+      - name: Set up kubectl
+        uses: ./.github/actions/setup-kind
+        with:
+          kind_version: ${{ steps.versions.outputs.kind_version }}
+          kubectl_version: ${{ steps.versions.outputs.kubectl_version }}
+
+      - name: Verify the embedded provisioned provider manifest is up to date
+        run: make -C cli provider-manifest-check
 
   # The third generated artifact. buf downloads its two remote plugins, both
   # version-pinned in agent/buf.gen.yaml, so this needs the network the other

@@ -110,13 +110,6 @@ func (f *fakeRunner) Run(_ context.Context, name string, args ...string) (string
 		last := f.outputs[len(f.outputs)-1]
 		return last.output, last.err
 	}
-	// `kubectl kustomize` is the one call whose stdout Deploy reads rather than
-	// discards: it renders the provisioned provider and rewrites its image. An
-	// empty answer is not a manifest, so stand in for one here rather than
-	// making every test script it.
-	if name == "kubectl" && len(args) > 0 && args[0] == "kustomize" {
-		return "        image: " + provisionedDefaultImage + "\n", nil
-	}
 	// The CAPI probe must report "not installed", or Deploy skips clusterctl.
 	if name == "kubectl" && containsArg(args, "deployment") && containsArg(args, capiCoreDeployment) {
 		return "Error from server (NotFound)", errors.New("exit status 1")
@@ -166,7 +159,6 @@ func testConfig(t *testing.T) Config {
 	return Config{
 		CWEImage:                 "nvcr.io/org/controller:edge",
 		ProvisionedProviderImage: "cluster-api-provider-provisioned:local",
-		ProvisionedProviderPath:  t.TempDir(),
 		PostgresPassword:         "test-password",
 	}
 }

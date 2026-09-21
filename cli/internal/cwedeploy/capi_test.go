@@ -94,19 +94,64 @@ func TestInstallProvisionedProvider_RewritesTheImage(t *testing.T) {
 // carrying the placeholder image, a blind ReplaceAll leaves the rendered YAML
 // unchanged and the cluster runs an image nobody published — with the install
 // reporting success.
-func TestInstallProvisionedProvider_RejectsAnUnexpectedRender(t *testing.T) {
-	runner := &fakeRunner{outputs: []fakeOutput{
-		{output: "image: some.registry/something-else:v1\n"},
-	}}
+// TestEmbeddedProvisionedProviderManifest is the generated artifact's contract
+// with installProvisionedProvider: it must carry the placeholder image exactly
+// once, so rewriting it sets the image on the manager and nothing else, and it
+// must still declare the provider's own objects. The install's placeholder
+// check stays as a guard for a hand-edited file; this is what keeps it
+// unreachable.
+func TestEmbeddedProvisionedProviderManifest(t *testing.T) {
+	raw, err := manifestsFS.ReadFile(provisionedProviderFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest := string(raw)
+
+	if got := strings.Count(manifest, provisionedDefaultImage); got != 1 {
+		t.Errorf("placeholder image %q appears %d times, want exactly 1; regenerate with `make -C cli provider-manifest`",
+			provisionedDefaultImage, got)
+	}
+	if !strings.Contains(manifest, "GENERATED FILE") {
+		t.Error("the embedded manifest has lost its generated-file banner")
+	}
+	for _, want := range []string{
+		"kind: Namespace",
+		"kind: CustomResourceDefinition",
+		"kind: ClusterRole",
+		"kind: Deployment",
+		"name: " + provisionedDeployment,
+		"namespace: " + provisionedNamespace,
+	} {
+		if !strings.Contains(manifest, want) {
+			t.Errorf("the embedded manifest is missing %q", want)
+		}
+	}
+}
+
+// TestInstallProvisionedProvider_AppliesTheEmbeddedManifest: the image is
+// rewritten and the result is what reaches kubectl, with no kustomize run.
+func TestInstallProvisionedProvider_AppliesTheEmbeddedManifest(t *testing.T) {
+	runner := &fakeRunner{}
 	cfg := testConfig(t)
 
-	err := New(runner, nil).installProvisionedProvider(
-		context.Background(), "/tmp/kubeconfig", cfg, time.Minute)
-	if err == nil {
-		t.Fatal("expected an error when the render does not contain the placeholder image")
+	if err := New(runner, nil).installProvisionedProvider(
+		context.Background(), "/tmp/kubeconfig", cfg, time.Minute); err != nil {
+		t.Fatalf("installProvisionedProvider: %v", err)
 	}
-	if !strings.Contains(err.Error(), provisionedDefaultImage) {
-		t.Errorf("error %q does not name the image it looked for", err)
+	for _, call := range runner.calls {
+		if call.name == "kubectl" && len(call.args) > 0 && call.args[0] == "kustomize" {
+			t.Error("the provider was rendered at run time; it is embedded")
+		}
+	}
+	if len(runner.applied) != 1 {
+		t.Fatalf("applied %d manifests, want 1", len(runner.applied))
+	}
+	applied := runner.applied[0]
+	if !strings.Contains(applied, cfg.ProvisionedProviderImage) {
+		t.Errorf("the applied manifest does not name the configured image %q", cfg.ProvisionedProviderImage)
+	}
+	if strings.Contains(applied, provisionedDefaultImage) {
+		t.Errorf("the placeholder image survived into the applied manifest")
 	}
 }
 
