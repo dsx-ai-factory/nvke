@@ -62,7 +62,7 @@ clusterName: kubernetes
 controlPlaneEndpoint: cluster.local:6443
 controllerManager:
   extraArgs:
-    bind-address: 0.0.0.0
+    bind-address: 127.0.0.1
     large-cluster-size-threshold: "50"
     profiling: "false"
     secondary-node-eviction-rate: "0"
@@ -83,7 +83,7 @@ networking:
   serviceSubnet: 10.96.0.0/12
 scheduler:
   extraArgs:
-    bind-address: 0.0.0.0
+    bind-address: 127.0.0.1
     profiling: "false"
 ---
 apiVersion: kubeproxy.config.k8s.io/v1alpha1

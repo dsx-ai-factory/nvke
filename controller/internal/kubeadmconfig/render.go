@@ -36,6 +36,15 @@ const (
 	defaultKubeProxyMetricsBind   = "0.0.0.0:10249"
 	defaultBindAddress            = "0.0.0.0"
 	defaultAuditLogMaxAge         = "30"
+	// defaultControlPlaneBindAddress keeps kube-controller-manager and
+	// kube-scheduler on loopback. Both serve only their own metrics and health
+	// endpoints, and nothing outside the node consumes them, so binding all
+	// interfaces exposed them for no gain (CIS 1.3.7 and 1.4.2). Deliberately
+	// separate from defaultBindAddress, which the API server also uses and which
+	// must keep listening on a routable address for nodes and clients to reach
+	// it. A scraper that later needs these endpoints should reach them through a
+	// localhost-scoped path rather than widening this back to 0.0.0.0.
+	defaultControlPlaneBindAddress = "127.0.0.1"
 	// defaultAuditLogMaxBackup is held at or above ten so a rotation storm cannot
 	// age the audit trail out faster than it can be shipped. Three rotations of a
 	// 100Mi log is well under a day of retained history on a busy API server,
@@ -239,7 +248,7 @@ func controlPlaneComponent() kubeadmv1beta3.ControlPlaneComponent {
 	return kubeadmv1beta3.ControlPlaneComponent{
 		ExtraArgs: map[string]string{
 			"profiling":    defaultProfilingDisabled,
-			"bind-address": defaultBindAddress,
+			"bind-address": defaultControlPlaneBindAddress,
 		},
 	}
 }
