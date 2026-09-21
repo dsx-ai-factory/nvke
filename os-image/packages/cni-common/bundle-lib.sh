@@ -88,6 +88,18 @@ pull_images() {
   "$CRANE" pull --platform "linux/${ARCH}" "$@" "$out"
 }
 
+# image_transport_ref keeps the locked and installed image identity unchanged
+# while allowing CI or another caller to route Docker Hub reads through a
+# pull-through registry mirror. Other registries are never rewritten.
+image_transport_ref() {
+  local ref="$1"
+  if [[ -n "${CNI_DOCKERHUB_MIRROR:-}" && "$ref" == docker.io/* ]]; then
+    printf '%s/%s\n' "${CNI_DOCKERHUB_MIRROR%/}" "${ref#docker.io/}"
+    return
+  fi
+  printf '%s\n' "$ref"
+}
+
 # lock_value <kind> <key> prints the pinned value, or nothing when absent.
 lock_value() {
   local kind="$1" key="$2"
@@ -120,8 +132,8 @@ tar_paths_safe() {
 # docker-archive, ${STAGE}/images.tgz, repacked so two builds of the same lock
 # are byte-identical, plus a sha256sum sidecar naming the installed file.
 stage_images() {
-  local -a refs pinned=()
-  local ref digest want repo placeholder manifest leftover ref_src
+  local -a refs pinned=() transport_refs=()
+  local ref transport_ref digest want repo placeholder manifest leftover ref_src i
   IMAGE_LINES=()
   # amd64's lock decides which images ship; other arches pin their own digests
   # for the same refs. Reading refs from amd64 keeps the sets in step.
@@ -135,9 +147,11 @@ stage_images() {
   [[ ${#refs[@]} -gt 0 ]] || die "${ref_src} lists no images; seed it with 'image <ref>' lines"
 
   for ref in "${refs[@]}"; do
-    digest="$(retry "crane digest ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$ref")"
+    transport_ref="$(image_transport_ref "$ref")"
+    transport_refs+=("$transport_ref")
+    digest="$(retry "crane digest ${transport_ref} for ${ref}" "$CRANE" digest --platform "linux/${ARCH}" "$transport_ref")"
     [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
-      die "crane digest ${ref} returned ${digest}"
+      die "crane digest ${transport_ref} for ${ref} returned ${digest}"
     if [[ "$WRITE_LOCK" == false ]]; then
       want="$(lock_value image "$ref")"
       [[ -n "$want" ]] || die "${LOCK} has no digest for ${ref}; run 'make lock' first"
@@ -146,7 +160,7 @@ stage_images() {
     fi
     IMAGE_LINES+=("image ${ref} ${digest}")
     # Pull by digest so the archive cannot drift from what was verified.
-    pinned+=("${ref%:*}@${digest}")
+    pinned+=("${transport_ref%:*}@${digest}")
   done
 
   # A partial tarball from a failed attempt would otherwise be re-read as a
@@ -160,8 +174,10 @@ stage_images() {
   # the tag the pods ask containerd for.
   manifest="${WORK}/unpacked/manifest.json"
   [[ -f "$manifest" ]] || die "crane archive has no manifest.json"
-  for ref in "${refs[@]}"; do
-    repo="${ref%:*}"
+  for i in "${!refs[@]}"; do
+    ref="${refs[$i]}"
+    transport_ref="${transport_refs[$i]}"
+    repo="${transport_ref%:*}"
     placeholder="${repo}:i-was-a-digest"
     grep -q -- "$placeholder" "$manifest" ||
       die "crane did not name ${ref} as expected; it would import under the wrong name"

@@ -16,13 +16,18 @@ source "qemu" "nke-non-fde" {
   disk_interface = "virtio"
   format         = "qcow2"
   accelerator    = var.accelerator
-  disk_discard   = "unmap"
-  disk_cache     = "unsafe"
+  # Propagate guest TRIM so provision.sh's fstrim can release unused QCOW2
+  # clusters; without unmap the guest reports success but the image stays large.
+  disk_discard = "unmap"
+  # This is a throwaway build VM that Packer shuts down cleanly. Avoid paying
+  # the runner-storage cost of every package-install fsync.
+  disk_cache = "unsafe"
 
   efi_firmware_code = local.efi_firmware_code
   efi_firmware_vars = local.efi_firmware_vars
-  efi_drop_efivars  = true
-  efi_boot          = true
+  # The per-build variable store is execution state, not a published artifact.
+  efi_drop_efivars = true
+  efi_boot         = true
 
   # The source-owned compressor below is the only final QCOW2 conversion.
   skip_compaction  = true
@@ -45,9 +50,11 @@ source "qemu" "nke-non-fde" {
     ["-serial", "file:${local.build_log_directory}/non-fde-install-console.log"],
   ])
 
-  ssh_username           = "ubuntu"
-  ssh_private_key_file   = var.ssh_private_key_file
-  ssh_timeout            = var.ssh_timeout
+  ssh_username         = "ubuntu"
+  ssh_private_key_file = var.ssh_private_key_file
+  ssh_timeout          = var.ssh_timeout
+  # The live installer may accept and drop many probes before its final reboot;
+  # do not let those expected attempts exhaust Packer's handshake counter.
   ssh_handshake_attempts = 10000
 
   shutdown_command = "sudo shutdown -P now"

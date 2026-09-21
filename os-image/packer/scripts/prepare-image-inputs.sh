@@ -28,6 +28,24 @@ case "${mode}" in
     MATERIAL_PATH="${material_path}" EXPECTED_DIGEST="${expected_digest}" \
       "$(dirname "${BASH_SOURCE[0]}")/verify-material.sh"
 
+    # The archive is authenticated by digest above, but its member types are a
+    # separate host-safety boundary. Packer's SSH file provisioner follows
+    # local symlinks, so only regular files and directories may reach the
+    # transient upload tree.
+    "${PYTHON:-python3}" - "${material_path}" <<'PY'
+import pathlib
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1]) as archive:
+    for member in archive.getmembers():
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts:
+            raise SystemExit(f"unsafe archive path: {member.name}")
+        if not (member.isfile() or member.isdir()):
+            raise SystemExit(f"unsafe archive member type: {member.name}")
+PY
+
     install -d -m 0700 "${staging_directory}"
     cleanup_failed_stage() {
       rm -rf -- "${staging_directory}"

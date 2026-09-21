@@ -1,16 +1,6 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-variable "architecture" {
-  type        = string
-  description = "Target image architecture."
-
-  validation {
-    condition     = contains(["amd64", "arm64"], var.architecture)
-    error_message = "The architecture value must be amd64 or arm64."
-  }
-}
-
 variable "material_manifest" {
   type        = string
   description = "Absolute path to the caller-authenticated material manifest. Materials are staged in its sibling materials directory."
@@ -18,6 +8,36 @@ variable "material_manifest" {
   validation {
     condition     = startswith(var.material_manifest, "/") && can(file(var.material_manifest))
     error_message = "The material_manifest value must name an existing absolute file."
+  }
+
+  validation {
+    condition = try(
+      jsondecode(file(var.material_manifest)).schemaVersion == "nke.dev/os-image-materials/v1",
+      false,
+    )
+    error_message = "The material manifest must use schemaVersion nke.dev/os-image-materials/v1."
+  }
+
+  validation {
+    condition = try(
+      length([
+        for material in jsondecode(file(var.material_manifest)).materials : material
+        if material.binding == "installer-iso" && material.kind == "disk-image" && material.path == "materials/installer-iso" && contains(["amd64", "arm64"], material.architecture)
+      ]) == 1 &&
+      length([
+        for material in jsondecode(file(var.material_manifest)).materials : material
+        if material.binding == "image-inputs" && material.kind == "archive" && material.path == "materials/image-inputs" && contains(["amd64", "arm64"], material.architecture)
+      ]) == 1 &&
+      [
+        for material in jsondecode(file(var.material_manifest)).materials : material.architecture
+        if material.binding == "installer-iso" && material.path == "materials/installer-iso"
+        ][0] == [
+        for material in jsondecode(file(var.material_manifest)).materials : material.architecture
+        if material.binding == "image-inputs" && material.path == "materials/image-inputs"
+      ][0],
+      false,
+    )
+    error_message = "The material manifest must contain one installer-iso and one image-inputs record with matching amd64 or arm64 architecture."
   }
 }
 
@@ -65,7 +85,7 @@ variable "ssh_public_key_file" {
 variable "disk_size" {
   type        = string
   default     = "12G"
-  description = "Build-time disk size shared by both variants. The deployed disk grows on first boot."
+  description = "Build-time disk size shared by both variants, with headroom for the installer and FDE overhead. The deployed disk grows on first boot."
 }
 
 variable "root_fs_label" {
@@ -110,7 +130,7 @@ variable "cpus" {
 variable "ssh_timeout" {
   type        = string
   default     = "60m"
-  description = "Maximum time Packer waits for SSH after autoinstall."
+  description = "Maximum time Packer waits for the complete installer run and reboot before SSH becomes available."
 }
 
 variable "boot_wait" {
@@ -123,5 +143,5 @@ variable "luks_passphrase" {
   type        = string
   default     = "changeit"
   sensitive   = true
-  description = "FDE bootstrap passphrase used during image construction."
+  description = "FDE-only bootstrap passphrase used during encrypted image construction; ignored by the non-FDE build."
 }

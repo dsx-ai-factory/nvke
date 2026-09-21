@@ -167,6 +167,12 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      # Crane does not use the runner's Docker daemon mirror configuration.
+      # Route Docker Hub reads through the same NVIDIA pull-through mirror used
+      # by this repository's e2e workflows; locks and installed names remain
+      # docker.io identities.
+      CNI_DOCKERHUB_MIRROR: dc.local.gha-runners.nvidia.com
     steps:
       # GitHub's own timeout-minutes has no grace period: it kills the whole
       # job process tree at once, so nothing started beforehand (a
@@ -325,6 +331,9 @@ jobs:
           unzip -d "${tmp}" "${tmp}/${zip}" packer
           sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
           packer version
+
+      - name: Validate the Packer directory project
+        run: make -C os-image/packer validate-packer
 
       # Only the qcow2 push below needs GHCR; fetch-artifacts.sh builds
       # nke-agent from this checkout's source and pulls nothing from GHCR.

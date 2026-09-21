@@ -111,7 +111,6 @@ For example, for a local invocation after installing the pinned plugin with
 cd packer
 packer build \
   -only=nke-node-non-fde.qemu.nke-non-fde \
-  -var architecture=amd64 \
   -var material_manifest=/run/nke-image/inputs/material-manifest.json \
   -var output_directory=/run/nke-image/output \
   -var ssh_private_key_file=/run/nke-image/state/id_ed25519 \
@@ -119,14 +118,51 @@ packer build \
   .
 ```
 
-Both builds require the `architecture`, `material_manifest`,
-`output_directory`, `ssh_private_key_file`, and `ssh_public_key_file`
-variables. `architecture` is `amd64` or `arm64`. The manifest must be an
-absolute file path. Its sibling `materials/` directory must contain:
+The `-only` selector is required. Omitting it is unsupported because Packer
+runs both directory-project builds, including the FDE build, by default.
+
+Both builds require the `material_manifest`, `output_directory`,
+`ssh_private_key_file`, and `ssh_public_key_file` variables. The manifest must
+be an absolute file path. It is the authenticated source of the target
+architecture, so there is no separate architecture variable that can drift
+from the staged ISO or package archive. Its sibling `materials/` directory must
+contain:
 
 - `installer-iso`, the prepared installer ISO;
 - `image-inputs`, a tar archive whose root contains the same prepared files that Make
   stages in `packer/artifacts/`.
+
+The manifest contract is:
+
+```json
+{
+  "schemaVersion": "nke.dev/os-image-materials/v1",
+  "materials": [
+    {
+      "binding": "installer-iso",
+      "component": "ubuntu-installer",
+      "kind": "disk-image",
+      "architecture": "amd64",
+      "digest": "sha256:<digest>",
+      "path": "materials/installer-iso"
+    },
+    {
+      "binding": "image-inputs",
+      "component": "nke-image-inputs",
+      "kind": "archive",
+      "architecture": "amd64",
+      "digest": "sha256:<digest>",
+      "path": "materials/image-inputs"
+    }
+  ]
+}
+```
+
+Both records must declare the same `amd64` or `arm64` architecture. The caller
+must keep the authenticated manifest and material bytes immutable for the
+entire Packer process. The image-input archive may contain only regular files
+and directories; links and special entries are rejected before host-side
+extraction.
 
 The direct defaults assume a same-architecture, KVM-capable host:
 `accelerator=kvm` and `cpu_model=host`. A caller without usable KVM must set
@@ -153,6 +189,11 @@ The Make targets remain the normal developer and CI entry point. They prepare
 the same material layout, pass the existing generated SSH key explicitly, run
 one exact selector, and move the byte-identical finalized QCOW2 to the existing
 versioned output filename.
+
+After an interrupted build, `make clean-packer-scratch` removes only transient
+Packer inputs and output state while preserving the downloaded ISO and prepared
+packages. `make clean-fde-output` and `make clean-non-fde-output` additionally
+remove the selected variant's completed output.
 
 ## Full-disk-encryption (FDE) variant
 
