@@ -143,7 +143,7 @@ fi
 # No stdlib list is needed anyway: go-licenses already excludes the standard
 # library, verified by it emitting zero packages whose first path component
 # lacks a dot.
-IGNORE="${LOCAL_MODULE},github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/controller/api,github.com/dsx-ai-factory/cluster-api-provider-nico"
+IGNORE="${LOCAL_MODULE},github.com/dsx-ai-factory/nke/agent,github.com/dsx-ai-factory/nke/controller/api,github.com/dsx-ai-factory/nke/controller/deploy/charts,github.com/dsx-ai-factory/cluster-api-provider-nico"
 
 # Explicit mktemp templates: macOS mktemp with no template ignores TMPDIR and
 # allocates under confstr(_CS_DARWIN_USER_TEMP_DIR), which makes the scratch
