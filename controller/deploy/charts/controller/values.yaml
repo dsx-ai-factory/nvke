@@ -374,7 +374,7 @@ apiAuth:
     # listed here, rather than leaving NKE to crash-loop on a missing file.
     #
     # extraFiles:
-    #   spire-ca.crt: |
+    #   spire-ca.crt: \|
     #     -----BEGIN CERTIFICATE-----
     #     ...
     #     -----END CERTIFICATE-----
