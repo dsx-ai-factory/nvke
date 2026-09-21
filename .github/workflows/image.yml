@@ -72,14 +72,14 @@ jobs:
           fi
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
         with:
           buildkitd-config: ${{ steps.buildkit.outputs.config }}
 
       # Enable arm64 cross-compilation on the amd64 runner via QEMU so
       # BuildKit can produce a genuine linux/arm64 layer.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@1f40c72289eff860ee54a304f1438e3cff362e0a # v4.3.0
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
 
       # Validates every Dockerfile parses and every FROM resolves against the
       # default BASE_REGISTRY. This is what catches a base image that external
@@ -284,7 +284,7 @@ jobs:
 
       - name: Upload the image scan SARIF
         if: always() && steps.image-scan.outputs.sarif != ''
-        uses: github/codeql-action/upload-sarif@b96794f015dfd88f77b49b1c93e0fa7110f94c63 # v4.38.0
+        uses: github/codeql-action/upload-sarif@1c5b675653bb5c22dbe9b12b556ec555138e09fd # v4.38.1
         with:
           sarif_file: ${{ steps.image-scan.outputs.sarif }}
           category: grype-image
