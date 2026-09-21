@@ -4,7 +4,7 @@
 # Postgres, backing both CWE's own database and Temporal's persistence store.
 #
 # The BITNAMI chart, not this repository's controller/deploy/charts/postgresql,
-# because that is what a site actually runs: install-cwe.sh on az61 installs
+# because that is what a site actually runs: install-cwe.sh on a live site installs
 # oci://registry-1.docker.io/bitnamicharts/postgresql at 18.5.15, and it is what
 # cli/internal/cwedeploy -- the code path nkectl ships -- installs too. This
 # repository's own chart is the development instance the e2e lanes use.

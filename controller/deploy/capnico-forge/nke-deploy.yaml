@@ -4,7 +4,7 @@
 # Deploy path for a NICo site controller on Forge hardware.
 #
 # Reverse-engineered from the NKE OSS Forge Provisioning Exercise, which stood a
-# site controller up on az61 over 2026-09-14/15 and had it provision a tenant
+# site controller up on Forge hardware and had it provision a tenant
 # cluster. Its install-site-controller.sh is this file in script form; the order
 # below is its order, which it in turn took from nke-mgmt-sw's phases:
 #

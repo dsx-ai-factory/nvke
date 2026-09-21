@@ -4,7 +4,7 @@ The deploy path for a NICo site controller on Forge hardware, with SPIRE.
 
 Not a reference implementation: the item list and its order are
 reverse-engineered from the NKE OSS Forge Provisioning Exercise, which stood a
-site controller up on az61 and had it provision a tenant. Where that run and
+site controller up on Forge hardware and had it provision a tenant. Where that run and
 `capnico-e2e` disagree, the live site wins -- it is the one that ran on real
 hardware.
 
@@ -31,7 +31,7 @@ the image story cheap: the node's containerd IS the cluster's containerd, so
 an image imported there resolves with `imagePullPolicy: IfNotPresent` and needs
 no registry credential. CAPNICo is the one exception, and the one pull secret.
 
-What the node needs, all present on az61:
+What the node needs, all present on the reference instance type:
 
 - `helm`, `kubectl`, `git`, `python3` (the executor's item parser and template
   renderer are Python), plus `clusterctl` for the prerequisites
@@ -70,7 +70,7 @@ already be true, all of them outside the deploy path:
    index with an attestation manifest made nkectl try to pull by digest.
 
 4. **A default StorageClass exists.** A bare site ships none and every PVC sits
-   Pending. az61 used rancher local-path because its instance type has a single
+   Pending. The reference site used rancher local-path because its instance type has a single
    NVMe with root on it; a site with real storage should use that instead.
 
 ## After this runs

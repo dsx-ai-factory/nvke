@@ -3,7 +3,7 @@
 
 # What this target changes about controller, applied over values.yaml.
 
-# OFF, matching the az61 site controller that provisioned a real tenant.
+# OFF, matching a Forge site controller that provisioned a real tenant.
 #
 # Not a recommendation for a production site -- a deliberate choice for the
 # first run on this path, which is already changing one thing that has never
@@ -28,7 +28,7 @@ apiAuth:
 # CWE reconciles CAPI objects, so it needs the RBAC for them.
 # nico ALONE, unlike capnico-e2e, which needs nico,infra.
 #
-# Not a guess: the az61 site controller that provisioned a real tenant ran
+# Not a guess: a Forge site controller that provisioned a real tenant ran
 # `supportedInfraProviders: nico`, read back from its live release. The
 # difference is the client. The e2e suite's nico-containers backend submits an
 # Infra block (buildNicoRequest in test/e2e/internal/nke/request.go wraps
@@ -45,7 +45,7 @@ capi:
 tenantAccess:
   enabled: true
 
-# OFF, for the same reason and matching az61.
+# OFF, for the same reason and matching that same site.
 #
 # The settings below are kept, not deleted: the SPIRE OIDC discovery provider
 # and its nodeport are still installed by this path, and the CA chain in
@@ -102,13 +102,27 @@ nkeSystemNamespace:
 # with these unset the chart falls back to its own repository plus appVersion
 # 0.0.0, which is not a published image and fails to pull.
 #
-# This is the image the az61 run staged into containerd and proved. Note the repository:
-# #827 renamed the published image to nke-controller, and rc.7 onward live at
-# ghcr.io/dsx-ai-factory/nke/nke-controller. rc.6 predates the rename and is
-# only at the old path, so moving to a newer tag means changing BOTH lines.
+# THE TAG HERE MUST BE ONE THE SITE HAS STAGED. With imagePullSecrets empty
+# (see below) the only images that resolve are those already in the node's
+# containerd, so bumping this without staging the new image first gives
+# ImagePullBackOff, not an upgrade. Verified the hard way on a live site: pinning
+# rc.8, which the node had never seen, took CWE down until it was reverted.
 #
-# Still overridable with --values-for controller=<file>, which is how a site
-# on a different registry or a newer build repoints it.
+# Staging a newer build, in the k8s.io namespace the kubelet reads:
+#   ctr -n k8s.io images import <saved-image>.tar
+#
+# NOTE THE REPOSITORY. #827 renamed the published image to nke-controller, so
+# rc.7 onward are at ghcr.io/dsx-ai-factory/nke/nke-controller and rc.6 and
+# earlier ONLY at the path below. Moving between them changes both lines.
+#
+# This block becomes redundant once the item installs a published chart rather
+# than ../charts/controller: the chart carries the repository as its default
+# and its appVersion as the tag, so one version would pin both. It cannot
+# switch yet -- no published chart has the NodePort Service template this path
+# relies on, and Helm ignores an unknown value silently.
+#
+# CWE_IMAGE overrides this for an unreleased build or another registry; the
+# SBOM is otherwise authoritative.
 image:
   repository: ghcr.io/dsx-ai-factory/nke/controller
   tag: v0.1.1-rc.6
@@ -166,7 +180,7 @@ appDb:
 # The port nke-agent listens on, and it has to agree with three other places:
 # the sitespec used at bootstrap (nkectl's default, cli/internal/sitespec),
 # os-image/SPEC.md's contract, and the agent drop-in the node's cloud-init
-# writes. The az61 site set it explicitly rather than relying on a default, and
+# writes. A real site sets it explicitly rather than relying on a default, and
 # so does this.
 env:
   - name: NODE_AGENT_PORT
@@ -175,8 +189,8 @@ env:
 # service.port is the CLUSTER-IP port and must stay the chart default: the
 # container listens on 8080, and setting port: 30080 here only renames the
 # in-cluster port while leaving nothing reachable from the node. That is the
-# mistake this file made on its first run -- az61's live release shows
-# service.port: 30080, but az61 reaches CWE through the separate NodePort
+# mistake this file made on its first run -- a live site's release shows
+# service.port: 30080, but it reaches CWE through the separate NodePort
 # Service nkectl's bootstrap applies (cwe-nodeport.yaml), not through that.
 #
 # nodePort renders a SECOND Service beside the ClusterIP one, which is the
@@ -207,7 +221,7 @@ profiles:
   #
   # NOT pinned, unlike image above: fleet profile content is maintained outside
   # this repository, so there is no tag here that would mean the same thing on
-  # another site. The az61 run staged a locally built `cwe-profiles:forge2` into
+  # another site. The reference run staged a locally built profiles image into
   # the node's containerd -- a bare name with no registry, which is why it needs
   # no credential and why pinning it here would not be portable.
   #
