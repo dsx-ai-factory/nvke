@@ -3,11 +3,14 @@
 
 """Behavioral contract tests for the OS-image Packer Makefile."""
 
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import unittest
 
@@ -163,7 +166,11 @@ touch "${ARTIFACTS_DIR}/ready"
         )
         self.write_executable(
             scripts / "prepare-installer-iso.sh",
-            "#!/bin/sh\nset -eu\n",
+            """#!/bin/sh
+set -eu
+mkdir -p "${OUT_DIR:?}"
+touch "${OUT_DIR}/${ISO_URL##*/}.patched.iso"
+""",
         )
 
         tools = root / "tools"
@@ -174,9 +181,23 @@ touch "${ARTIFACTS_DIR}/ready"
             """#!/bin/sh
 set -eu
 printf 'packer:%s\\n' "$1" >> "${EVENT_LOG:?}"
+printf 'packer-args|%s\\n' "$*" >> "${EVENT_LOG:?}"
 if [ "$1" = "build" ]; then
   test -f "${EXPECTED_ARTIFACTS_DIR:?}/ready"
   test ! -e "${EXPECTED_ARTIFACTS_DIR}/stale"
+  output_directory=""
+  variant=""
+  for argument in "$@"; do
+    case "${argument}" in
+      output_directory=*) output_directory="${argument#output_directory=}" ;;
+      -only=nke-node-fde.qemu.nke-fde) variant=fde ;;
+      -only=nke-node-non-fde.qemu.nke-non-fde) variant=non-fde ;;
+    esac
+  done
+  test -n "${output_directory}"
+  test -n "${variant}"
+  mkdir -p "${output_directory}/${variant}"
+  printf 'qcow2 bytes\n' > "${output_directory}/${variant}/nke-node.qcow2"
 fi
 """,
         )
@@ -186,7 +207,16 @@ fi
         ssh_dir = workspace / ".ssh"
         ssh_dir.mkdir()
         (ssh_dir / "id_ed25519").write_text("test key\n", encoding="utf-8")
-        for template in ("nke-node-fde.pkr.hcl", "nke-node-non-fde.pkr.hcl"):
+        (ssh_dir / "id_ed25519.pub").write_text(
+            "ssh-ed25519 test-key packer-test\n", encoding="utf-8"
+        )
+        for template in (
+            "versions.pkr.hcl",
+            "variables.pkr.hcl",
+            "locals.pkr.hcl",
+            "nke-node-fde.pkr.hcl",
+            "nke-node-non-fde.pkr.hcl",
+        ):
             (workspace / template).write_text("# test fixture\n", encoding="utf-8")
 
         return workspace, source, tools, packer, events, artifacts
@@ -224,6 +254,7 @@ fi
             f"PYTHON={python_path or sys.executable}",
             f"SOURCE_ROOT={source}",
             f"ARCH={arch}",
+            "UBUNTU_VERSION=not-the-iso-version",
         ]
         if not material_inputs_from_environment:
             variables.extend(f"{name}={value}" for name, value in material_inputs)
@@ -476,10 +507,10 @@ exec "${REAL_MV:?}" "$@"
 
     def test_source_preflight_runs_before_any_packer_command(self):
         cases = (
-            ("os-image-fde", "nke-node-fde.pkr.hcl"),
-            ("os-image-non-fde", "nke-node-non-fde.pkr.hcl"),
+            ("os-image-fde", "nke-node-fde.qemu.nke-fde"),
+            ("os-image-non-fde", "nke-node-non-fde.qemu.nke-non-fde"),
         )
-        for target, template in cases:
+        for target, selector in cases:
             with self.subTest(target=target):
                 output = self.dry_run(target)
                 source_check = output.index('git -C "$SOURCE_ROOT" rev-parse')
@@ -489,7 +520,10 @@ exec "${REAL_MV:?}" "$@"
                 artifact_fetch = output.index(fetch_command)
                 packer_build = output.index("/tmp/nkd-packer build")
 
-                self.assertIn(template, output[packer_init:].splitlines()[0])
+                self.assertIn(str(PACKER_DIR), output[packer_init:].splitlines()[0])
+                build_command = output[packer_build:]
+                self.assertIn(f"-only={selector}", build_command)
+                self.assertIn(str(PACKER_DIR), build_command)
                 self.assertEqual(output.count(fetch_command), 1)
                 self.assertLess(source_check, packer_init)
                 self.assertLess(dependency_check, packer_init)
@@ -499,12 +533,20 @@ exec "${REAL_MV:?}" "$@"
 
     def test_each_image_build_stages_clean_artifacts_once_before_packer_build(self):
         cases = (
-            ("os-image-fde", "amd64"),
-            ("os-image-fde", "arm64"),
-            ("os-image-non-fde", "amd64"),
-            ("os-image-non-fde", "arm64"),
+            ("os-image-fde", "amd64", "nke-node-fde.qemu.nke-fde"),
+            ("os-image-fde", "arm64", "nke-node-fde.qemu.nke-fde"),
+            (
+                "os-image-non-fde",
+                "amd64",
+                "nke-node-non-fde.qemu.nke-non-fde",
+            ),
+            (
+                "os-image-non-fde",
+                "arm64",
+                "nke-node-non-fde.qemu.nke-non-fde",
+            ),
         )
-        for target, arch in cases:
+        for target, arch, selector in cases:
             with self.subTest(target=target, arch=arch), tempfile.TemporaryDirectory() as tmp:
                 result, events, artifacts, expected_fields = self.run_image_build(
                     target, arch, Path(tmp)
@@ -519,6 +561,66 @@ exec "${REAL_MV:?}" "$@"
                 self.assertFalse((artifacts / "stale").exists())
                 self.assertFalse(stage.exists())
                 self.assertEqual(list(artifacts.parent.glob(".artifacts.tmp.*")), [])
+
+                build_events = [
+                    event
+                    for event in events
+                    if event.startswith("packer-args|build ")
+                ]
+                self.assertEqual(len(build_events), 1)
+                build = build_events[0]
+                self.assertIn(f"-only={selector}", build)
+                self.assertIn(f"-var architecture={arch}", build)
+                self.assertIn(
+                    f"-var material_manifest={artifacts.parent}/.packer-inputs/material-manifest.json",
+                    build,
+                )
+                self.assertIn(
+                    f"-var output_directory={artifacts.parent}/.packer-output",
+                    build,
+                )
+                self.assertIn(
+                    f"-var ssh_private_key_file={artifacts.parent}/.ssh/id_ed25519",
+                    build,
+                )
+                self.assertIn(
+                    f"-var ssh_public_key_file={artifacts.parent}/.ssh/id_ed25519.pub",
+                    build,
+                )
+                self.assertTrue(build.endswith(str(artifacts.parent)))
+
+                variant = "fde" if target == "os-image-fde" else "non-fde"
+                output_name = (
+                    f"nke-node-{variant}-ubuntu-26.04.1-{arch}.qcow2"
+                )
+                self.assertEqual(
+                    (artifacts.parent / f"output-{variant}" / output_name).read_bytes(),
+                    b"qcow2 bytes\n",
+                )
+
+                archive = artifacts.parent / ".packer-inputs/materials/image-inputs"
+                self.assertTrue(archive.is_file())
+                with tarfile.open(archive) as image_inputs:
+                    self.assertIn("./ready", image_inputs.getnames())
+                manifest = json.loads(
+                    (
+                        artifacts.parent
+                        / ".packer-inputs/material-manifest.json"
+                    ).read_text(encoding="utf-8")
+                )
+                materials = {
+                    material["binding"]: material
+                    for material in manifest["materials"]
+                }
+                self.assertEqual(
+                    materials["installer-iso"]["digest"],
+                    "sha256:e3b0c44298fc1c149afbf4c8996fb924"
+                    "27ae41e4649b934ca495991b7852b855",
+                )
+                self.assertEqual(
+                    materials["image-inputs"]["digest"],
+                    "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest(),
+                )
 
     def test_failed_artifact_staging_prevents_packer_build(self):
         cases = (
@@ -651,7 +753,86 @@ exec "${REAL_MV:?}" "$@"
             with self.subTest(template=template):
                 contents = (PACKER_DIR / template).read_text(encoding="utf-8")
                 self.assertNotIn("fetch-artifacts.sh", contents)
-                self.assertNotIn('provisioner "shell-local"', contents)
+                self.assertEqual(contents.count('provisioner "shell-local"'), 1)
+                self.assertIn("scripts/verify-material.sh", contents)
+
+    def test_material_verifier_accepts_only_matching_regular_file(self):
+        verifier = PACKER_DIR / "scripts/verify-material.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            material = root / "image-inputs"
+            material.write_bytes(b"authenticated material\n")
+            digest = "sha256:" + hashlib.sha256(material.read_bytes()).hexdigest()
+
+            accepted = subprocess.run(
+                [verifier],
+                env={
+                    **os.environ,
+                    "MATERIAL_PATH": str(material),
+                    "EXPECTED_DIGEST": digest,
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(accepted.returncode, 0, accepted.stderr)
+
+            for name, path, expected in (
+                ("mismatch", material, "sha256:" + "0" * 64),
+                ("malformed", material, "sha256:not-a-digest"),
+                ("symlink", root / "image-inputs-link", digest),
+            ):
+                with self.subTest(name=name):
+                    if name == "symlink":
+                        path.symlink_to(material.name)
+                    rejected = subprocess.run(
+                        [verifier],
+                        env={
+                            **os.environ,
+                            "MATERIAL_PATH": str(path),
+                            "EXPECTED_DIGEST": expected,
+                        },
+                        check=False,
+                        capture_output=True,
+                        text=True,
+                    )
+                    self.assertNotEqual(rejected.returncode, 0)
+
+    def test_packer_directory_project_has_one_explicit_shared_contract(self):
+        project_files = tuple(sorted(PACKER_DIR.glob("*.pkr.hcl")))
+        project = "\n".join(
+            path.read_text(encoding="utf-8") for path in project_files
+        )
+
+        self.assertEqual(project.count("packer {"), 1)
+        for variable in (
+            "architecture",
+            "material_manifest",
+            "output_directory",
+            "ssh_private_key_file",
+            "ssh_public_key_file",
+        ):
+            self.assertEqual(
+                project.count(f'variable "{variable}"'),
+                1,
+                f"{variable} must be declared once in the directory project",
+            )
+
+        self.assertIn('required_version = "= 1.14.2"', project)
+        self.assertIn('version = "= 1.1.6"', project)
+        self.assertIn('source "qemu" "nke-fde"', project)
+        self.assertIn('source "qemu" "nke-non-fde"', project)
+        self.assertIn('name    = "nke-node-fde"', project)
+        self.assertIn('name    = "nke-node-non-fde"', project)
+        self.assertIn('ssh_private_key_file   = var.ssh_private_key_file', project)
+        self.assertEqual(project.count("ssh_public_key        = local.ssh_public_key"), 2)
+        self.assertNotIn("{{ .SSHPublicKey }}", project)
+        self.assertEqual(project.count('script = "${local.project_root}/scripts/verify-material.sh"'), 2)
+        self.assertEqual(project.count("skip_compaction  = true"), 2)
+        self.assertEqual(project.count("disk_compression = false"), 2)
+        self.assertEqual(project.count("efi_drop_efivars  = true"), 2)
+        self.assertNotIn('${path.root}/artifacts', project)
+        self.assertNotIn('${path.root}/.ssh', project)
 
     def test_failed_source_preflight_blocks_parallel_packer_init(self):
         with tempfile.TemporaryDirectory() as tmp:

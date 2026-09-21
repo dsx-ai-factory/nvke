@@ -22,7 +22,7 @@ Prereqs, on a Linux host:
 
 | Tool | Version | Install |
 |---|---|---|
-| [Packer](https://developer.hashicorp.com/packer) | >= 1.10.0 | https://developer.hashicorp.com/packer/install |
+| [Packer](https://developer.hashicorp.com/packer) | 1.14.2 | https://developer.hashicorp.com/packer/install |
 | [Go](https://go.dev/) | per `go.work` | https://go.dev/dl/ |
 | Python | >= 3.10, standard library only | via your package manager |
 | `curl` | any | via your package manager |
@@ -92,6 +92,59 @@ preserves its basename, and verifies that the copied publication bytes are
 identical. By default, the Makefile exports `PACKER_CACHE_DIR` under the ignored
 `packer/iso-cache/` tree so Packer's build/download cache does not dirty the
 checkout; callers may override that directory without changing the recipe.
+
+### Direct Packer interface
+
+`packer/` is one directory project. External build systems select exactly one
+build and supply already prepared local inputs. Packer does not download image
+materials or build packages:
+
+| Build | Exact selector | Output below `output_directory` |
+|---|---|---|
+| Non-FDE | `nke-node-non-fde.qemu.nke-non-fde` | `non-fde/nke-node.qcow2` |
+| FDE | `nke-node-fde.qemu.nke-fde` | `fde/nke-node.qcow2` |
+
+For example, for a local invocation after installing the pinned plugin with
+`packer init`:
+
+```bash
+cd packer
+packer build \
+  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var architecture=amd64 \
+  -var material_manifest=/run/nke-image/inputs/material-manifest.json \
+  -var output_directory=/run/nke-image/output \
+  -var ssh_private_key_file=/run/nke-image/state/id_ed25519 \
+  -var ssh_public_key_file=/run/nke-image/state/id_ed25519.pub \
+  .
+```
+
+Both builds require the `architecture`, `material_manifest`,
+`output_directory`, `ssh_private_key_file`, and `ssh_public_key_file`
+variables. `architecture` is `amd64` or `arm64`. The manifest must be an
+absolute file path. Its sibling `materials/` directory must contain:
+
+- `installer-iso`, the prepared installer ISO;
+- `image-inputs`, a tar archive whose root contains the same prepared files that Make
+  stages in `packer/artifacts/`.
+
+The manifest's `installer-iso` entry carries the ISO's `sha256:` digest. Packer
+checks the staged ISO against that authenticated value before booting it. The
+project also checks the `image-inputs` archive against its manifest digest
+before uploading it to the guest.
+
+The SSH files are caller-owned attempt state. The direct caller generates the
+pair before invoking Packer and supplies both absolute paths. Packer uses the
+private key while autoinstall injects the matching public key. Packer's generated
+`SSHPublicKey` value is available only to its boot-command template and cannot be
+interpolated into `http_content`, so omitting these inputs would not produce a
+bootable SSH handoff. `provision.sh` removes the authorized build key before the
+image is finalized.
+
+The Make targets remain the normal developer and CI entry point. They prepare
+the same material layout, pass the existing generated SSH key explicitly, run
+one exact selector, and move the byte-identical finalized QCOW2 to the existing
+versioned output filename.
 
 ## Full-disk-encryption (FDE) variant
 

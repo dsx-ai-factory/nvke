@@ -1,0 +1,127 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+variable "architecture" {
+  type        = string
+  description = "Target image architecture."
+
+  validation {
+    condition     = contains(["amd64", "arm64"], var.architecture)
+    error_message = "The architecture value must be amd64 or arm64."
+  }
+}
+
+variable "material_manifest" {
+  type        = string
+  description = "Absolute path to the caller-authenticated material manifest. Materials are staged in its sibling materials directory."
+
+  validation {
+    condition     = startswith(var.material_manifest, "/") && can(file(var.material_manifest))
+    error_message = "The material_manifest value must name an existing absolute file."
+  }
+}
+
+variable "output_directory" {
+  type        = string
+  description = "Absolute caller-owned parent directory for image outputs and build logs."
+
+  validation {
+    condition     = startswith(var.output_directory, "/")
+    error_message = "The output_directory value must be absolute."
+  }
+}
+
+variable "build_log_directory" {
+  type        = string
+  default     = ""
+  description = "Optional absolute directory for serial-console logs. Defaults to output_directory."
+
+  validation {
+    condition     = var.build_log_directory == "" || startswith(var.build_log_directory, "/")
+    error_message = "The build_log_directory value must be empty or absolute."
+  }
+}
+
+variable "ssh_private_key_file" {
+  type        = string
+  description = "Absolute path to the caller-owned private key used for Packer SSH."
+
+  validation {
+    condition     = startswith(var.ssh_private_key_file, "/") && fileexists(var.ssh_private_key_file)
+    error_message = "The ssh_private_key_file value must name an existing absolute file."
+  }
+}
+
+variable "ssh_public_key_file" {
+  type        = string
+  description = "Absolute path to the caller-owned public key injected by autoinstall for Packer SSH."
+
+  validation {
+    condition     = startswith(var.ssh_public_key_file, "/") && fileexists(var.ssh_public_key_file)
+    error_message = "The ssh_public_key_file value must name an existing absolute file."
+  }
+}
+
+variable "disk_size" {
+  type        = string
+  default     = "12G"
+  description = "Build-time disk size shared by both variants. The deployed disk grows on first boot."
+}
+
+variable "root_fs_label" {
+  type        = string
+  default     = "cloudimg-rootfs"
+  description = "Filesystem label applied to the root volume for cloud-image discovery."
+
+  validation {
+    condition     = length(var.root_fs_label) > 0 && length(var.root_fs_label) <= 16
+    error_message = "The root_fs_label value must contain 1 to 16 characters for ext4."
+  }
+}
+
+variable "accelerator" {
+  type        = string
+  default     = "kvm"
+  description = "QEMU accelerator: kvm for hardware virtualization or tcg for software emulation."
+
+  validation {
+    condition     = contains(["kvm", "tcg"], var.accelerator)
+    error_message = "The accelerator value must be kvm or tcg."
+  }
+}
+
+variable "cpu_model" {
+  type        = string
+  default     = "host"
+  description = "QEMU CPU model. Use host with KVM and max with TCG emulation."
+}
+
+variable "cpus" {
+  type        = number
+  default     = 4
+  description = "Guest vCPU count."
+
+  validation {
+    condition     = var.cpus >= 1
+    error_message = "The cpus value must be at least 1."
+  }
+}
+
+variable "ssh_timeout" {
+  type        = string
+  default     = "60m"
+  description = "Maximum time Packer waits for SSH after autoinstall."
+}
+
+variable "boot_wait" {
+  type        = string
+  default     = "5s"
+  description = "Delay before Packer types the autoinstall boot command into the patched ISO's extended GRUB window."
+}
+
+variable "luks_passphrase" {
+  type        = string
+  default     = "changeit"
+  sensitive   = true
+  description = "FDE bootstrap passphrase used during image construction."
+}
