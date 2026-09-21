@@ -42,12 +42,6 @@ const (
 	// which is what CIS 1.2.18 objects to.
 	defaultAuditLogMaxBackup = "10"
 	defaultAuditLogMaxSize   = "100"
-	// defaultAnonymousAuth disables the anonymous system:unauthenticated identity
-	// rather than leaving it to the kube-apiserver default of true. Anonymous
-	// requests were already refused by RBAC, so this closes the gap between what
-	// the cluster enforces and what its flags declare (CIS 1.2.1). kubeadm's own
-	// bootstrap probes authenticate with admin.conf, so they are unaffected.
-	defaultAnonymousAuth = "false"
 	// defaultServiceAccountExtendTokenExpiration turns off the extended
 	// (one-year) service account token lifetime, so projected tokens expire on
 	// the bound schedule the cluster actually intends (CIS 1.2.30). The extension
