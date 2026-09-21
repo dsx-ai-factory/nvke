@@ -302,7 +302,7 @@ if [[ "${SBOM_TARGET}" == capnico-e2e ]]; then
   # matching controller/hack/nico-provider/Tiltfile: the host defaults to the
   # kind host address and the port is the simulator's. The other three are the
   # simulator's own constants -- nothing here is secret, which is why this
-  # target renders the same Secret shape a real site fills with Forge
+  # target renders the same Secret shape a real site fills with NICo
   # credentials.
   nico_endpoint="${NICO_ENDPOINT:-http://${NICO_SIM_ENDPOINT_HOST:-${KIND_GATEWAY_IP}}:18080}"
   : "${nico_endpoint:?NICO_ENDPOINT or NICO_SIM_ENDPOINT_HOST is required: the kind gateway could not be read}"

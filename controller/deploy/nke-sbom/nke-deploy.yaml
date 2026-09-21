@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Deploy path for a NICo site controller on Forge hardware.
+# Deploy path for a NICo site controller on real hardware.
 #
 # The order is not designed from first principles. It was derived from a
 # provisioning run that stood a site controller up on bare metal and had it

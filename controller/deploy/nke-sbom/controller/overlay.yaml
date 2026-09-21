@@ -3,11 +3,11 @@
 
 # What this target changes about controller, applied over values.yaml.
 
-# OFF, matching a Forge site controller that provisioned a real tenant.
+# OFF, matching a NICo site controller that provisioned a real tenant.
 #
 # Not a recommendation for a production site -- a deliberate choice for the
 # first run on this path, which is already changing one thing that has never
-# been exercised on Forge (spiffe.enabled). API authentication is a separate
+# been exercised on NICo (spiffe.enabled). API authentication is a separate
 # axis: apiAuth is REST tokens, spiffe is CWE-to-agent mTLS. Turning both on at
 # once means a failure could be either.
 #

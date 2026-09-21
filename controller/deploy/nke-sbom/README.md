@@ -1,6 +1,6 @@
 # nke-sbom
 
-The deploy path for a NICo site controller on Forge hardware, with SPIRE.
+The deploy path for a NICo site controller on real hardware, with SPIRE.
 
 Not a reference implementation: the item list and its order are derived from a
 provisioning run that stood a site controller up on bare metal and had it
@@ -13,7 +13,7 @@ Four steps, three owners:
 
 | step | who | produces |
 |---|---|---|
-| 1. create and image the instance | **not NKE** -- the Forge API, iPXE and cloud-init | a booted host running `nke-agent` |
+| 1. create and image the instance | **not NKE** -- the NICo API, iPXE and cloud-init | a booted host running `nke-agent` |
 | 2. `nkectl bootstrap site` | nkectl, on the instance | a **vanilla** Kubernetes cluster |
 | 3. this deploy path | `use-nke-sbom.sh`, on the node | the management plane |
 | 4. `nkectl create cluster` | the site controller itself | tenant clusters |
@@ -91,7 +91,7 @@ skips its rollout wait until `csi.spiffe.io` is registered, and that CSIDriver
 arrives with the spire item. Run before the install it patches and moves on,
 leaving the rollout unverified; run after, it is checked.
 
-The overlay includes `capd-controller-manager.yaml`, which a Forge site has no
+The overlay includes `capd-controller-manager.yaml`, which a NICo site has no
 namespace for. The script skips Deployments that are absent, so this is fine.
 
 That run's install script does none of this, because it had
@@ -103,7 +103,7 @@ Every item's committed values are site-independent. What varies comes in
 through `--values-for`, exactly as `controller/hack/ci/deploy-sbom.sh` does it
 for the e2e lanes -- that script is the reference for these derivations.
 
-| value | e2e derivation | on a Forge site |
+| value | e2e derivation | on a NICo site |
 |---|---|---|
 | trust domain | `${KIND_CLUSTER_NAME}.nke.local` | `<site-name>.nke.local` |
 | management VIP | kind control-plane IP | the site controller's node IP |
@@ -132,7 +132,7 @@ the other being `/etc/nke/spire.env` plus the image's renderer. A profile that
 takes the first path works on an image that lacks the second.
 
 Two ordering facts worth knowing before the first run, neither of which any
-lane has exercised on Forge:
+lane has exercised on NICo:
 
 - CWE fills `initial-trust-bundle.pem` from its own SPIFFE workload socket, so
   **CWE must hold an SVID before it can bootstrap a node**.
