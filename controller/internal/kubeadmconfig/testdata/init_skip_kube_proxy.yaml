@@ -95,6 +95,7 @@ kubeReserved:
   memory: 2Gi
 maxParallelImagePulls: 4
 podPidsLimit: 16384
+seccompDefault: true
 serializeImagePulls: false
 serverTLSBootstrap: true
 systemReserved:
