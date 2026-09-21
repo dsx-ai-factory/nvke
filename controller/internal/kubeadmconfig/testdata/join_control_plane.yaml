@@ -29,5 +29,13 @@ metricsBindAddress: 0.0.0.0:10249
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 maxParallelImagePulls: 4
+podPidsLimit: 16384
 serializeImagePulls: false
 serverTLSBootstrap: true
+tlsCipherSuites:
+- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256

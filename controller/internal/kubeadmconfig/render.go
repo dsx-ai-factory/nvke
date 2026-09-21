@@ -81,7 +81,35 @@ const (
 	// featureGatesFlag is the kube-apiserver flag carrying comma-separated
 	// `Name=bool` pairs.
 	featureGatesFlag = "feature-gates"
+
+	// defaultPodPidsLimit caps PIDs per pod, which the kubelet otherwise leaves
+	// unbounded so a single runaway process can exhaust the node's PID space
+	// (CIS 4.2.13). Threads count against this cgroup limit, not just processes,
+	// and GPU training pods run many dataloader workers and CUDA threads apiece
+	// — so this sits well above a general-purpose default. The control asks only
+	// that a limit exist; the value is chosen to bound a fork bomb without being
+	// reachable by a legitimate workload.
+	defaultPodPidsLimit = 16384
 )
+
+// kubeletTLSCipherSuites returns the TLS 1.2 cipher suites the kubelet's
+// serving endpoint accepts, restricting it to AEAD suites with forward secrecy
+// instead of Go's broader default set (CIS 4.2.12). TLS 1.3 suites are not
+// configurable through this field and are unaffected.
+//
+// Returns a fresh slice per call: KubeletConfiguration holds it by reference
+// and there is more than one call site, so a shared backing array could be
+// mutated through one config and observed through the other.
+func kubeletTLSCipherSuites() []string {
+	return []string{
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+		"TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+	}
+}
 
 // imageVolumeGAVersion is the release where KEP-4639 went GA and the gate
 // became enabled by default. Kubernetes removes a gate roughly two releases
@@ -167,6 +195,8 @@ func initKubeletConfiguration(containerMode bool, kubernetesVersion string) kube
 		// deadline.
 		SerializeImagePulls:   ptr.To(false),
 		MaxParallelImagePulls: ptr.To[int32](defaultMaxParallelImagePulls),
+		TLSCipherSuites:       kubeletTLSCipherSuites(),
+		PodPidsLimit:          ptr.To[int64](defaultPodPidsLimit),
 		KubeReserved: map[string]string{
 			"cpu":               "1000m",
 			memoryKey:           defaultKubeReservedMemory,
@@ -209,6 +239,8 @@ func joinKubeletConfiguration(kubernetesVersion string) kubeletconfigv1beta1.Kub
 		ServerTLSBootstrap:    true,
 		SerializeImagePulls:   ptr.To(false),
 		MaxParallelImagePulls: ptr.To[int32](defaultMaxParallelImagePulls),
+		TLSCipherSuites:       kubeletTLSCipherSuites(),
+		PodPidsLimit:          ptr.To[int64](defaultPodPidsLimit),
 		FeatureGates:          imageVolumeKubeletFeatureGates(kubernetesVersion),
 	}
 }
