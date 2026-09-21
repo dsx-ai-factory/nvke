@@ -9,7 +9,7 @@
 # unaware of which path deployed the stack.
 #
 # This script no longer applies anything. build/use-nke-sbom.sh walks
-# deploy/capd-e2e/nke-deploy.yaml and installs its items in
+# controller/deploy/capd-e2e/nke-deploy.yaml and installs its items in
 # order: the namespaces and OIDC CA chain, nke-auth-dev, the TPM pubhashes
 # ConfigMap, the two SPIRE NodePorts, the nke-spire-client probe scaffolding, the
 # CAPD RBAC and reboot test double, and finally the nke-stack umbrella, one
@@ -47,7 +47,7 @@ CWE_IMAGE="${1:?usage: $0 <cwe-image>}"
 # published artifact; leave empty to build.
 if [[ -n "${NKE_E2E_STACK_CHART:-}" ]]; then
   echo "NKE_E2E_STACK_CHART is set but no longer used: there is no umbrella chart." >&2
-  echo "Each component is its own release, named in deploy/${SBOM_TARGET:-capd-e2e}." >&2
+  echo "Each component is its own release, named in controller/deploy/${SBOM_TARGET:-capd-e2e}." >&2
   exit 1
 fi
 # A published chart's version has nowhere to go now: use-nke-sbom.sh resolves a
@@ -66,7 +66,7 @@ fi
 STACK_DIR="${STACK_DIR:-/workspace/nke-stack}"
 # The generated deploy path this lane installs. The overlay is inside it, copied
 # beside each item, so it is no longer named separately here.
-SBOM_DIR="${SBOM_DIR:-${STACK_DIR}/deploy}"
+SBOM_DIR="${SBOM_DIR:-${STACK_DIR}/controller/deploy}"
 SBOM_TARGET="${SBOM_TARGET:-capd-e2e}"
 
 log() { printf '\n=== %s\n' "$*" >&2; }

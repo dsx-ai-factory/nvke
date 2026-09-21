@@ -11,7 +11,7 @@
 chart:
   name: nke-controller
   version: "0.0.0"
-  path: ../../controller/deploy/charts/controller
+  path: ../charts/controller
 release:
   name: controller
   namespace: cloud-workflow-engine

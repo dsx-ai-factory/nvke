@@ -30,7 +30,7 @@ on:
       # The deploy path this lane installs. Without it a change to the tree
       # that defines the management plane triggers nothing, and the lane that
       # would have caught the break runs on some later, unrelated push.
-      - "deploy/**"
+      - "controller/deploy/**"
       - .github/workflows/capd-e2e.yml
       - .github/workflows/backend-e2e.yml
       - .github/workflows/e2e-pr-path-filter.yml

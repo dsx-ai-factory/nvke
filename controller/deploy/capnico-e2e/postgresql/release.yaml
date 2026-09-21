@@ -12,7 +12,7 @@
 chart:
   name: postgresql
   version: "0.1.0"
-  path: ../../controller/deploy/charts/postgresql
+  path: ../charts/postgresql
 release:
   name: postgresql
   namespace: postgres

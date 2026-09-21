@@ -851,7 +851,7 @@ kind load docker-image --name "${KIND_CLUSTER_NAME}" "${CWE_PROFILES_TILT_IMAGE}
 # The suite finds SPIRE's ConfigMap and pods from the release name. Its own
 # default is "spire", which is what both paths now install: Tilt installs SPIRE
 # as its own release, and the deploy path names the release in
-# deploy/capd-e2e/spire/release.yaml. The umbrella was the odd one out -- every
+# controller/deploy/capd-e2e/spire/release.yaml. The umbrella was the odd one out -- every
 # subchart inherited its release, so this had to be overridden to nke-stack or
 # the defaults found nothing and every spec needing the management trust domain
 # failed with `configmaps "spire-server" not found`.
@@ -975,16 +975,13 @@ if [[ "${NKE_E2E_USE_STACK:-false}" == "true" ]]; then
   docker cp "${WORKSPACE_ROOT}/build" "${RUNNER_NAME}:/workspace/nke-stack/build"
   docker cp "${WORKSPACE_ROOT}/controller/hack/ci/deploy-sbom.sh" \
     "${RUNNER_NAME}:/usr/local/bin/deploy-sbom.sh"
-  # The deploy path itself. build/use-nke-sbom.sh reads nke-deploy.yaml from
-  # here and installs every item in it, so without this the runner has the
-  # executor but nothing describing what to install.
-  docker cp "${WORKSPACE_ROOT}/deploy" "${RUNNER_NAME}:/workspace/nke-stack/deploy"
-  # postgresql and controller are installed straight from their chart
-  # directories, which deploy/capd-e2e/*/release.yaml names relative to the
-  # deploy path -- so they have to sit at the same offset here as in the repo.
-  runner_exec mkdir -p /workspace/nke-stack/controller/deploy
-  docker cp "${WORKSPACE_ROOT}/controller/deploy/charts" \
-    "${RUNNER_NAME}:/workspace/nke-stack/controller/deploy/charts"
+  # The deploy paths and the charts they install from live under one root, so
+  # this is a single copy. build/use-nke-sbom.sh reads nke-deploy.yaml from
+  # here; controller/deploy/<target>/controller/release.yaml reaches its chart
+  # as ../../charts/controller, which resolves inside the same tree.
+  runner_exec mkdir -p /workspace/nke-stack/controller
+  docker cp "${WORKSPACE_ROOT}/controller/deploy" \
+    "${RUNNER_NAME}:/workspace/nke-stack/controller/deploy"
   # A chart in a private package needs credentials inside the runner too; helm
   # on the outer host already has them if anyone pushed or pulled it.
   if [[ -f "${HOME}/.config/helm/registry/config.json" ]]; then
@@ -1081,7 +1078,7 @@ jq -n \
   }' >"${E2E_CONFIG}"
 docker cp "${E2E_CONFIG}" "${RUNNER_NAME}:/state/e2e-config.json"
 
-# Installs the management plane from deploy/capd-e2e, one helm release per
+# Installs the management plane from controller/deploy/capd-e2e, one helm release per
 # component, instead of Tilt. Everything below -- rollout checks, CAPI probes,
 # the Ginkgo legs -- is identical either way. Tilt stays available for the
 # inner loop, which the deploy path has no live_update equivalent for. The
