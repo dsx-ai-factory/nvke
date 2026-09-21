@@ -170,7 +170,16 @@ logs.
    readonly VALIDATION_DIR
    TENANT_KUBECONFIG="${VALIDATION_DIR}/tenant.kubeconfig"
    TENANT_CA="${VALIDATION_DIR}/tenant-ca.pem"
-   trap 'rm -rf -- "${VALIDATION_DIR:?}"' EXIT
+   VALIDATION_NAMESPACE=
+   cleanup_validation() {
+     if [ -n "${VALIDATION_NAMESPACE}" ]; then
+       kubectl --kubeconfig "$TENANT_KUBECONFIG" delete namespace \
+         "$VALIDATION_NAMESPACE" --ignore-not-found --wait=false \
+         >/dev/null 2>&1 || true
+     fi
+     rm -rf -- "${VALIDATION_DIR:?}"
+   }
+   trap cleanup_validation EXIT
 
    nkectl get kubeconfig "$CLUSTER_NAME" --output-file "$TENANT_KUBECONFIG"
    chmod 0600 "$TENANT_KUBECONFIG"
@@ -179,8 +188,9 @@ logs.
 2. Confirm that the kubeconfig names the expected VIP or fallback node IP:
 
    ```bash
-   kubectl --kubeconfig "$TENANT_KUBECONFIG" \
-     config view --minify -o jsonpath='{.clusters[0].cluster.server}{"\n"}'
+   TENANT_API_SERVER="$(kubectl --kubeconfig "$TENANT_KUBECONFIG" \
+     config view --minify -o jsonpath='{.clusters[0].cluster.server}')"
+   printf '%s\n' "$TENANT_API_SERVER"
    ```
 
    Inspect the embedded client certificate's exact validity window:
@@ -213,8 +223,8 @@ logs.
      -o jsonpath='{.clusters[0].cluster.certificate-authority-data}' \
      | openssl base64 -d -A > "$TENANT_CA"
 
-   curl --cacert "$TENANT_CA" \
-     "https://${TENANT_API_ENDPOINT}:6443/api/v1/nodes"
+   curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+     --cacert "$TENANT_CA" "$TENANT_API_SERVER/api/v1/nodes"
    ```
 
    The request must not return a successful node list. Depending on the
@@ -236,8 +246,40 @@ logs.
    wrong audience or an unbound `sub` must be rejected or denied.
 
 6. Create a test ServiceAccount and narrowly scoped Role for tenant automation.
-   Confirm the token can perform its allowed operation and receives HTTP 403 for
-   an operation outside the binding. Remove the test objects afterward.
+   Use a named ConfigMap so the allowed request needs only the `get` verb, then
+   confirm that a cluster-scoped request outside the binding receives HTTP 403:
+
+   ```bash
+   VALIDATION_NAMESPACE="nke-api-access-validation-$(date +%s)"
+   kubectl --kubeconfig "$TENANT_KUBECONFIG" \
+     create namespace "$VALIDATION_NAMESPACE"
+   kubectl --kubeconfig "$TENANT_KUBECONFIG" -n "$VALIDATION_NAMESPACE" \
+     create serviceaccount reader
+   kubectl --kubeconfig "$TENANT_KUBECONFIG" -n "$VALIDATION_NAMESPACE" \
+     create configmap validation-target --from-literal=result=expected
+   kubectl --kubeconfig "$TENANT_KUBECONFIG" -n "$VALIDATION_NAMESPACE" \
+     create role configmap-reader --verb=get --resource=configmaps
+   kubectl --kubeconfig "$TENANT_KUBECONFIG" -n "$VALIDATION_NAMESPACE" \
+     create rolebinding configmap-reader --role=configmap-reader \
+     --serviceaccount="$VALIDATION_NAMESPACE:reader"
+
+   TENANT_TOKEN="$(kubectl --kubeconfig "$TENANT_KUBECONFIG" \
+     -n "$VALIDATION_NAMESPACE" create token reader --duration=10m)"
+   kubectl --server="$TENANT_API_SERVER" --certificate-authority="$TENANT_CA" \
+     --token="$TENANT_TOKEN" -n "$VALIDATION_NAMESPACE" \
+     get configmap validation-target -o name
+   kubectl --server="$TENANT_API_SERVER" --certificate-authority="$TENANT_CA" \
+     --token="$TENANT_TOKEN" get nodes
+
+   kubectl --kubeconfig "$TENANT_KUBECONFIG" \
+     delete namespace "$VALIDATION_NAMESPACE" --wait=true
+   VALIDATION_NAMESPACE=
+   unset TENANT_TOKEN
+   ```
+
+   The named ConfigMap request must succeed. The node-list request must fail
+   with HTTP 403. The explicit deletion removes the test objects; the exit trap
+   also requests namespace deletion if the shell exits early.
 
 7. From a network that is intentionally not peered, routed, or connected by the
    approved VPN, confirm that the tenant endpoint is unreachable. Separately
