@@ -755,8 +755,10 @@ exec "${REAL_MV:?}" "$@"
             with self.subTest(template=template):
                 contents = (PACKER_DIR / template).read_text(encoding="utf-8")
                 self.assertNotIn("fetch-artifacts.sh", contents)
-                self.assertEqual(contents.count('provisioner "shell-local"'), 1)
-                self.assertIn("scripts/verify-material.sh", contents)
+                self.assertEqual(contents.count('provisioner "shell-local"'), 2)
+                self.assertEqual(contents.count("scripts/prepare-image-inputs.sh"), 2)
+                self.assertIn("generated   = true", contents)
+                self.assertNotIn("/tmp/nke-image-inputs.tar", contents)
 
     def test_material_verifier_accepts_only_matching_regular_file(self):
         verifier = PACKER_DIR / "scripts/verify-material.sh"
@@ -800,6 +802,72 @@ exec "${REAL_MV:?}" "$@"
                     )
                     self.assertNotEqual(rejected.returncode, 0)
 
+    def test_image_input_staging_verifies_extracts_and_cleans(self):
+        helper = PACKER_DIR / "scripts/prepare-image-inputs.sh"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            payload = root / "payload"
+            (payload / "debs").mkdir(parents=True)
+            (payload / "debs/example.deb").write_bytes(b"package bytes\n")
+            (payload / "wait-spiffe-socket.sh").write_bytes(b"script bytes\n")
+            archive = root / "image-inputs"
+            with tarfile.open(archive, "w") as image_inputs:
+                image_inputs.add(payload, arcname=".")
+
+            digest = "sha256:" + hashlib.sha256(archive.read_bytes()).hexdigest()
+            rejected_staging = root / "output/non-fde/.image-inputs"
+            rejected = subprocess.run(
+                [helper],
+                env={
+                    **os.environ,
+                    "MODE": "stage",
+                    "MATERIAL_PATH": str(archive),
+                    "EXPECTED_DIGEST": "sha256:" + "0" * 64,
+                    "STAGING_DIRECTORY": str(rejected_staging),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertFalse(rejected_staging.exists())
+
+            staging = root / "output/fde/.image-inputs"
+            staged = subprocess.run(
+                [helper],
+                env={
+                    **os.environ,
+                    "MODE": "stage",
+                    "MATERIAL_PATH": str(archive),
+                    "EXPECTED_DIGEST": digest,
+                    "STAGING_DIRECTORY": str(staging),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(staged.returncode, 0, staged.stderr)
+            self.assertEqual(
+                (staging / "debs/example.deb").read_bytes(), b"package bytes\n"
+            )
+            self.assertEqual(
+                (staging / "wait-spiffe-socket.sh").read_bytes(), b"script bytes\n"
+            )
+
+            cleaned = subprocess.run(
+                [helper],
+                env={
+                    **os.environ,
+                    "MODE": "clean",
+                    "STAGING_DIRECTORY": str(staging),
+                },
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(cleaned.returncode, 0, cleaned.stderr)
+            self.assertFalse(staging.exists())
+
     def test_packer_directory_project_has_one_explicit_shared_contract(self):
         project_files = tuple(sorted(PACKER_DIR.glob("*.pkr.hcl")))
         project = "\n".join(
@@ -829,7 +897,14 @@ exec "${REAL_MV:?}" "$@"
         self.assertIn('ssh_private_key_file   = var.ssh_private_key_file', project)
         self.assertEqual(project.count("ssh_public_key        = local.ssh_public_key"), 2)
         self.assertNotIn("{{ .SSHPublicKey }}", project)
-        self.assertEqual(project.count('script = "${local.project_root}/scripts/verify-material.sh"'), 2)
+        self.assertEqual(
+            project.count(
+                'script = "${local.project_root}/scripts/prepare-image-inputs.sh"'
+            ),
+            4,
+        )
+        self.assertEqual(project.count("generated   = true"), 2)
+        self.assertNotIn("/tmp/nke-image-inputs.tar", project)
         self.assertEqual(project.count("skip_compaction  = true"), 2)
         self.assertEqual(project.count("disk_compression = false"), 2)
         self.assertEqual(project.count("efi_drop_efivars  = true"), 2)

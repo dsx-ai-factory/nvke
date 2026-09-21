@@ -138,7 +138,8 @@ automatically.
 The manifest's `installer-iso` entry carries the ISO's `sha256:` digest. Packer
 checks the staged ISO against that authenticated value before booting it. The
 project also checks the `image-inputs` archive against its manifest digest
-before uploading it to the guest.
+before extracting it into transient host-side state and uploading the expanded
+contents. The archive itself is not copied into the guest disk.
 
 The SSH files are caller-owned attempt state. The direct caller generates the
 pair before invoking Packer and supplies both absolute paths. Packer uses the

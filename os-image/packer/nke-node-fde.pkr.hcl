@@ -65,23 +65,30 @@ build {
 
   provisioner "shell-local" {
     environment_vars = [
+      "MODE=stage",
       "MATERIAL_PATH=${local.image_inputs}",
       "EXPECTED_DIGEST=${local.image_inputs_digest}",
+      "STAGING_DIRECTORY=${local.staged_image_inputs.fde}",
     ]
-    script = "${local.project_root}/scripts/verify-material.sh"
-  }
-
-  provisioner "file" {
-    source      = local.image_inputs
-    destination = "/tmp/nke-image-inputs.tar"
+    script = "${local.project_root}/scripts/prepare-image-inputs.sh"
   }
 
   provisioner "shell" {
-    inline = [
-      "mkdir -p /tmp/nke-image/luks",
-      "tar -xf /tmp/nke-image-inputs.tar -C /tmp/nke-image",
-      "rm -f /tmp/nke-image-inputs.tar",
+    inline = ["mkdir -p /tmp/nke-image/luks"]
+  }
+
+  provisioner "file" {
+    source      = "${local.staged_image_inputs.fde}/"
+    destination = "/tmp/nke-image/"
+    generated   = true
+  }
+
+  provisioner "shell-local" {
+    environment_vars = [
+      "MODE=clean",
+      "STAGING_DIRECTORY=${local.staged_image_inputs.fde}",
     ]
+    script = "${local.project_root}/scripts/prepare-image-inputs.sh"
   }
 
   provisioner "file" {

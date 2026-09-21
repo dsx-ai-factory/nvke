@@ -20,6 +20,10 @@ locals {
   installer_checksum  = local.installer_record.digest
   image_inputs        = "${local.material_root}/${local.image_input_record.path}"
   image_inputs_digest = local.image_input_record.digest
+  staged_image_inputs = {
+    fde     = "${var.output_directory}/fde/.image-inputs"
+    non_fde = "${var.output_directory}/non-fde/.image-inputs"
+  }
   ssh_public_key      = trimspace(file(var.ssh_public_key_file))
   build_log_directory = var.build_log_directory == "" ? var.output_directory : var.build_log_directory
 
