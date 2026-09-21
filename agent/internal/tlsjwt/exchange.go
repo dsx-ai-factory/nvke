@@ -70,7 +70,13 @@ func NewExchangeClient(endpoint, caBundlePath string, timeout time.Duration) (*E
 
 	return &ExchangeClient{
 		endpoint: endpoint,
-		client:   &http.Client{Timeout: timeout, Transport: transport},
+		client: &http.Client{
+			Timeout:   timeout,
+			Transport: transport,
+			CheckRedirect: func(*http.Request, []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		},
 		now:      time.Now,
 	}, nil
 }
