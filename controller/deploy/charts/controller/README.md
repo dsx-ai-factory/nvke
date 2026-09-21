@@ -33,10 +33,10 @@ A Helm chart to deploy the NKE controller service
 | deploymentAnnotations | object | `{}` | Annotations on the Deployment `metadata` (evaluated with `tpl`) |
 | env | list | `[]` | Additional environment variables to inject into the CWE container. |
 | fullnameOverride | string | `""` |  |
-| image.digest | string | `""` | Optional image digest (sha256:...). When set, the pod pulls by digest and the tag becomes informational only. Use this to pin an immutable image. |
+| image.digest | string | `""` | Optional digest (sha256:...) for the CWE controller image. When set, the pod pulls by digest and the tag becomes informational only. Use this to pin an immutable image. |
 | image.pullPolicy | string | `"IfNotPresent"` | This sets the pull policy for images. |
 | image.repository | string | `"ghcr.io/dsx-ai-factory/nke/nke-controller"` | Repository, including registry, for the CWE (cloud-workflow-engine) controller image that this chart deploys. Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. Not to be confused with `profiles.image.repository` below, a separate optional content image. |
-| image.tag | string | `""` | Overrides the image tag whose default is the chart appVersion. |
+| image.tag | string | `""` | Overrides the tag for the CWE controller image; default is the chart appVersion. |
 | imagePullSecrets | list | `[]` | Must match image.repository, which defaults to ghcr.io. The NVCR-published chart gets the NGC secret put back at package time. Supply your own for a private GHCR package. |
 | ingress.annotations | object | `{}` |  |
 | ingress.className | string | `""` |  |
@@ -74,10 +74,10 @@ A Helm chart to deploy the NKE controller service
 | podLabels.project | string | `"nke"` |  |
 | podLabels.team | string | `"nke"` |  |
 | podSecurityContext.runAsNonRoot | bool | `true` |  |
-| profiles.image.digest | string | `""` | Image digest pin (preferred; e.g. `sha256:…`) |
+| profiles.image.digest | string | `""` | Digest pin for the profiles content image (preferred; e.g. `sha256:…`) |
 | profiles.image.enabled | bool | `false` | Copy `/profiles` from a content image into profiles.path |
 | profiles.image.repository | string | `"nvcr.io/j7sbcjl3qgta/cwe-profiles"` | Repository, including registry, for the fleet profiles content image (not the CWE controller image above). Override to pull it from a different registry (e.g. a private mirror); pair any change with a matching `imagePullSecrets` entry. |
-| profiles.image.tag | string | `""` | Image tag (used when digest is empty) |
+| profiles.image.tag | string | `""` | Tag for the profiles content image (used when digest is empty) |
 | profiles.path | string | `""` | Directory mounted/read as PROFILES_DIR |
 | readinessProbe | string | `nil` |  |
 | replicaCount | int | `1` |  |

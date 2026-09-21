@@ -32,10 +32,12 @@ image:
   repository: ghcr.io/dsx-ai-factory/nke/nke-controller
   # -- This sets the pull policy for images.
   pullPolicy: IfNotPresent
-  # -- Overrides the image tag whose default is the chart appVersion.
+  # -- Overrides the tag for the CWE controller image; default is the chart
+  # appVersion.
   tag: ""
-  # -- Optional image digest (sha256:...). When set, the pod pulls by digest
-  # and the tag becomes informational only. Use this to pin an immutable image.
+  # -- Optional digest (sha256:...) for the CWE controller image. When set,
+  # the pod pulls by digest and the tag becomes informational only. Use this
+  # to pin an immutable image.
   digest: ""
 
 # This is for the secrets for pulling an image from a private repository.
@@ -495,9 +497,9 @@ profiles:
     # different registry (e.g. a private mirror); pair any change with a
     # matching `imagePullSecrets` entry.
     repository: nvcr.io/j7sbcjl3qgta/cwe-profiles
-    # -- Image tag (used when digest is empty)
+    # -- Tag for the profiles content image (used when digest is empty)
     tag: ""
-    # -- Image digest pin (preferred; e.g. `sha256:…`)
+    # -- Digest pin for the profiles content image (preferred; e.g. `sha256:…`)
     digest: ""
 
 spiffe:
