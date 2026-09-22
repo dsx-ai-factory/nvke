@@ -64,6 +64,8 @@ jobs:
     permissions:
       contents: write         # creates the GitHub release
       security-events: write  # the malware scan uploads SARIF
+      id-token: write         # the OIDC token the attestation is signed against
+      attestations: write     # writes the provenance attestation
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -221,6 +223,36 @@ jobs:
           scan_path: 'dist'
           category: 'clamav-release'
           output_file: 'clamav-release.sarif'
+
+      # Provenance over checksums.txt, not over each artifact: that file
+      # already names every asset by SHA-256, so one attestation covers all of
+      # them and a consumer runs one verify rather than one per download. It
+      # also covers the assets a release does not attach -- os-image's four
+      # qcow2s ship as OCI artifacts because they are too large, and
+      # checksums.txt names them too.
+      #
+      # This is provenance, not just a signature: the attestation records the
+      # workflow, the ref and the commit that produced the bytes. See
+      # RELEASE.md, "Verifying a release".
+      - name: Attest the release checksums
+        id: attest
+        if: steps.artifacts.outputs.has_files == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/checksums.txt
+
+      # Attached as a release asset as well as stored by GitHub, so a consumer
+      # can verify offline with `gh attestation verify --bundle` and never call
+      # the API. Added after the count above, which verify-release-assets
+      # treats as a minimum -- an extra asset is fine, a missing one is not.
+      - name: Attach the attestation bundle
+        if: steps.artifacts.outputs.has_files == 'true'
+        shell: bash
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: |
+          set -euo pipefail
+          cp "${BUNDLE}" dist/checksums.txt.sigstore.json
 
       - name: Extract changelog section for this tag
         id: changelog
