@@ -114,6 +114,15 @@ else
     info "docker installed"
 fi
 
+# docker.io does not ship the buildx CLI plugin. install-capnico.sh builds the
+# local CAPNICo chart with DOCKER_BUILDKIT=1, and the CLI rejects that build
+# when the plugin is missing.
+if ! docker buildx version >/dev/null 2>&1; then
+    info "Installing docker-buildx..."
+    sudo apt-get update -qq
+    sudo apt-get install -y -qq -o Dpkg::Options::="--force-confold" docker-buildx
+fi
+
 # Ensure the current shell can talk to docker without re-login.
 if ! docker info &>/dev/null 2>&1; then
     sudo chmod 666 /var/run/docker.sock
@@ -211,13 +220,26 @@ else
     info "kind $(kind version 2>&1 | head -1) installed"
 fi
 
+# install-capnico.sh passes --server-side, which Helm 3 does not have.
+# get-helm-4 installs the latest Helm 4. A Helm 3 binary already on PATH is replaced.
+helm_major=""
 if check helm; then
+    helm_major="$(helm version --short 2>/dev/null | awk '{print $1}')"
+    helm_major="${helm_major%%.*}"
+    helm_major="${helm_major#v}"
+fi
+if [[ "$helm_major" == "4" ]]; then
     ver=$(helm version --short 2>&1 | head -1)
     printf "  ${GREEN}ok${NC}  %-20s %s\n" "helm" "$ver"
 else
-    info "Installing helm..."
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    info "helm installed"
+    if [[ -n "$helm_major" ]]; then
+        warn "Helm ${helm_major} is installed; replacing with Helm 4..."
+    else
+        info "Installing Helm 4..."
+    fi
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash
+    hash -r
+    info "helm $(helm version --short 2>&1 | head -1) installed"
 fi
 
 export PATH="/usr/local/go/bin:$HOME/go/bin:$PATH"
