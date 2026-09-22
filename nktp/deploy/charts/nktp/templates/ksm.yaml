@@ -1,0 +1,90 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $root := . -}}
+{{- $ksm := index .Values "kube-state-metrics" -}}
+{{- range $name, $group := (include "nktp.ksm.groups" . | fromYaml) -}}
+{{- $k := $group.kubernetes -}}
+{{- $daemon := $group.daemonset -}}
+{{- range $shard := until (int $group.shards) }}
+---
+apiVersion: apps/v1
+kind: {{ ternary "DaemonSet" "Deployment" $daemon }}
+metadata:
+  name: {{ $group.name }}{{ if not $daemon }}-{{ $shard }}{{ end }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 4 }}
+spec:
+  {{- if not $daemon }}
+  replicas: 1
+  # Each Deployment owns one hash shard. Avoid two active copies during updates.
+  strategy:
+    type: Recreate
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 6 }}
+      nktp.nvidia.io/ksm-shard: {{ $shard | quote }}
+  template:
+    metadata:
+      labels:
+        {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 8 }}
+        nktp.nvidia.io/ksm-shard: {{ $shard | quote }}
+    spec:
+      {{- /* Container settings are separated from the remaining PodSpec fields. */}}
+      {{- omit $k "resources" "env" "securityContext" "podSecurityContext" "serviceAccount" "containers" "serviceAccountName" | toYaml | nindent 6 }}
+      serviceAccountName: {{ $group.serviceAccount }}
+      {{- with $k.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: kube-state-metrics
+          image: {{ $ksm.image | quote }}
+          args:
+            {{- $group.args | toYaml | nindent 12 }}
+            {{- if not $daemon }}
+            - --shard={{ $shard }}
+            - --total-shards={{ int $group.shards }}
+            {{- end }}
+          {{- if or $daemon $k.env }}
+          env:
+            {{- if $daemon }}
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            {{- end }}
+            {{- with $k.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+          {{- with $k.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $k.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http-metrics
+              containerPort: 8080
+            - name: telemetry
+              containerPort: 8081
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http-metrics
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: telemetry
+            initialDelaySeconds: 5
+            timeoutSeconds: 5
+{{- end }}
+{{- end }}

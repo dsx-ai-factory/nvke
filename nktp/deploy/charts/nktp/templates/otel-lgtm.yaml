@@ -1,0 +1,132 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $lgtm := index .Values "otel-lgtm" }}
+{{- $provider := `apiVersion: 1
+providers:
+  - name: nktp
+    type: file
+    options:
+      path: /otel-lgtm/dashboards-nktp
+      foldersFromFilesStructure: false` }}
+{{- if $lgtm.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lgtm-dashboard-provider
+data:
+  nktp.yaml: |
+{{ $provider | trim | indent 4 }}
+  # Replaces the image's own provider file to remove its demo dashboards.
+  wipe-defaults.yaml: |
+    apiVersion: 1
+    providers: []
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lgtm-dashboards
+data:
+{{ (.Files.Glob "dashboards/*.json").AsConfig | indent 2 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+spec:
+  selector:
+    app: lgtm
+  ports:
+    - name: prometheus
+      protocol: TCP
+      port: 9090
+      targetPort: 9090
+    - name: grafana
+      protocol: TCP
+      port: 3000
+      targetPort: 3000
+    - name: otel-grpc
+      protocol: TCP
+      port: 4317
+      targetPort: 4317
+    - name: otel-http
+      protocol: TCP
+      port: 4318
+      targetPort: 4318
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lgtm
+  template:
+    metadata:
+      labels:
+        app: lgtm
+      annotations:
+        # Roll the pod when dashboards change; Grafana only reads them at startup.
+        checksum/dashboards: {{ print ((.Files.Glob "dashboards/*.json").AsConfig) $provider | sha256sum }}
+    spec:
+      containers:
+        - name: lgtm
+          image: {{ $lgtm.image }}
+          env:
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Admin
+          ports:
+            - containerPort: 3000
+            - containerPort: 4317
+            - containerPort: 4318
+          readinessProbe:
+            exec:
+              command:
+                - cat
+                - /tmp/ready
+          volumeMounts:
+            - name: dashboard-provider
+              mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/nktp.yaml
+              subPath: nktp.yaml
+            - name: dashboard-provider
+              mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml
+              subPath: wipe-defaults.yaml
+            - name: dashboards
+              mountPath: /otel-lgtm/dashboards-nktp
+            - name: tempo-data
+              mountPath: /data/tempo
+            - name: grafana-data
+              mountPath: /data/grafana
+            - name: loki-data
+              mountPath: /data/loki
+            - name: loki-storage
+              mountPath: /loki
+            - name: p8s-storage
+              mountPath: /data/prometheus
+            - name: pyroscope-storage
+              mountPath: /data/pyroscope
+      volumes:
+        - name: dashboard-provider
+          configMap:
+            name: lgtm-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: lgtm-dashboards
+        - name: tempo-data
+          emptyDir: {}
+        - name: loki-data
+          emptyDir: {}
+        - name: grafana-data
+          emptyDir: {}
+        - name: loki-storage
+          emptyDir: {}
+        - name: p8s-storage
+          emptyDir: {}
+        - name: pyroscope-storage
+          emptyDir: {}
+{{- end }}

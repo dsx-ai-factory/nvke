@@ -1,0 +1,18 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: nktp-gateway-traces
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- /* The upstream pre-delete Job selects this label to delete the Collector before the Operator. */}}
+    helm.sh/chart: {{ include "opentelemetry-kube-stack.chart" (index .Subcharts "opentelemetry-kube-stack") }}
+spec:
+  {{- $collector := dict "image" (.Values.gateway_traces.otelcol.image | default .Values.otelcol_image) }}
+  {{- /* Kubernetes workload values override defaults. The resolved Collector image overrides any workload image. */}}
+  {{- mustMergeOverwrite (dict "mode" "deployment" "managementState" "managed" "upgradeStrategy" "automatic" "replicas" 1) (omit .Values.gateway_traces.kubernetes "config") $collector | toYaml | nindent 2 }}
+  config:
+    {{- .Values.gateway_traces.otelcol.config | toYaml | nindent 4 }}

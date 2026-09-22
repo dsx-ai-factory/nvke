@@ -1,0 +1,28 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $root := . -}}
+{{- range $name, $group := (include "nktp.ksm.groups" . | fromYaml) }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ $group.name }}
+  namespace: {{ $root.Release.Namespace }}
+  labels:
+    {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 4 }}
+    {{- if not $group.daemonset }}
+    # Central groups belong to the large-target pool, even when their Pods have a node.
+    nktp.nvidia.io/large-target: "true"
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "nktp.ksm.labels" (dict "root" $root "group" $group) | nindent 6 }}
+  podMetricsEndpoints:
+    - port: http-metrics
+      # Preserve the namespace and Pod labels of the objects described by KSM.
+      honorLabels: true
+    - port: telemetry
+{{- end }}

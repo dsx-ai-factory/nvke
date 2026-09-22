@@ -1,0 +1,57 @@
+{
+  "uid": "otel-lgtm-health",
+  "title": "OTel LGTM Health",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Internal collector up",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "sum(up{job=\"otelcol-contrib\"})", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Received /s",
+      "gridPos": { "x": 6, "y": 0, "w": 9, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(otelcol_receiver_accepted_metric_points_total[5m]))", "legendFormat": "metric points", "refId": "A" },
+        { "expr": "sum(rate(otelcol_receiver_accepted_log_records_total[5m]))", "legendFormat": "log records", "refId": "B" },
+        { "expr": "sum(rate(otelcol_receiver_accepted_spans_total[5m]))", "legendFormat": "spans", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Exported /s",
+      "gridPos": { "x": 15, "y": 0, "w": 9, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "sum(rate(otelcol_exporter_sent_metric_points_total[5m]))", "legendFormat": "metric points", "refId": "A" },
+        { "expr": "sum(rate(otelcol_exporter_sent_log_records_total[5m]))", "legendFormat": "log records", "refId": "B" },
+        { "expr": "sum(rate(otelcol_exporter_sent_spans_total[5m]))", "legendFormat": "spans", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Collector memory (RSS)",
+      "gridPos": { "x": 0, "y": 6, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "targets": [{ "expr": "otelcol_process_memory_rss", "legendFormat": "{{job}}", "refId": "A" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Exporter queue size",
+      "gridPos": { "x": 12, "y": 6, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" } },
+      "targets": [
+        { "expr": "otelcol_exporter_queue_size", "legendFormat": "{{data_type}} size", "refId": "A" },
+        { "expr": "otelcol_exporter_queue_capacity", "legendFormat": "{{data_type}} capacity", "refId": "B" }
+      ]
+    }
+  ]
+}

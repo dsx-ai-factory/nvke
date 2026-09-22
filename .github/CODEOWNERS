@@ -60,6 +60,11 @@ docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
 /*.toml @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
 /*.yaml @dsx-ai-factory/nke-write @TerryHowe @j-griffith @junshun
 
+# area/nktp — the NKTP telemetry chart and its workflows. After ci-build so
+# the workflow glob wins over /.github/ for nktp-*.yml.
+/nktp/ @dsx-ai-factory/nke-write @vineeth-bandi
+/.github/workflows/nktp-*.yml @dsx-ai-factory/nke-write @vineeth-bandi
+
 # area/deps again: vendor/ beats the bare `docs/` rule, dependabot.yml
 # beats /.github/.
 /vendor/ @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia

@@ -71,6 +71,7 @@ Deeper module documentation:
 | [../os-image/SPEC.md](../os-image/SPEC.md) | The contract a node image has to meet |
 | [../controller/profiles/README.md](../controller/profiles/README.md) | External profiles |
 | [../controller/deploy/charts/controller/README.md](../controller/deploy/charts/controller/README.md) | The engine's Helm chart and its values |
+| [../nktp/deploy/charts/nktp/README.md](../nktp/deploy/charts/nktp/README.md) | The NKTP Helm chart, what it deploys and its values |
 | [../build/README.md](../build/README.md) | The per-component build and publish scripts |
 | [../os-image/README.md](../os-image/README.md) | Node image build, FDE/non-FDE variants, release |
 

@@ -1,0 +1,78 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $allocator := .Values.daemonset.kubernetes.targetAllocator | default dict }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nktp-daemonset-targetallocator-{{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, endpoints, namespaces, nodes]
+    verbs: [get, list, watch]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list, watch]
+  - apiGroups: [monitoring.coreos.com]
+    resources: [servicemonitors, podmonitors, probes, scrapeconfigs]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nktp-daemonset-targetallocator-{{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nktp-daemonset-targetallocator-{{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $allocator.serviceAccount | default "nktp-daemonset-targetallocator" }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: nktp-daemonset-kubelet-metrics-{{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [nodes/metrics]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: nktp-daemonset-kubelet-metrics-binding-{{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: nktp-daemonset-kubelet-metrics-{{ .Release.Namespace }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.daemonset.kubernetes.serviceAccount | default "nktp-daemonset-collector" }}
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: nktp-daemonset-targetallocator-metrics
+  namespace: {{ .Release.Namespace }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: nktp-daemonset-targetallocator-metrics
+  namespace: {{ .Release.Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: nktp-daemonset-targetallocator-metrics
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.daemonset.kubernetes.serviceAccount | default "nktp-daemonset-collector" }}
+    namespace: {{ .Release.Namespace }}

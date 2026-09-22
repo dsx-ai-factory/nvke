@@ -1,0 +1,25 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- $allocator := .Values.watchdog.kubernetes.targetAllocator | default dict -}}
+{{- if not (and (kindIs "map" $allocator) (deepEqual $allocator.enabled true)) -}}
+{{- fail "watchdog.kubernetes.targetAllocator.enabled must be true to assign each scrape target to one watchdog replica" -}}
+{{- end -}}
+{{- if not (kindIs "map" .Values.watchdog.otelcol.config) -}}
+{{- fail "watchdog.otelcol.config must be a native Collector YAML map" -}}
+{{- end -}}
+apiVersion: opentelemetry.io/v1beta1
+kind: OpenTelemetryCollector
+metadata:
+  name: nktp-watchdog
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- /* The upstream pre-delete Job selects this label to delete the Collector before the Operator. */}}
+    helm.sh/chart: {{ include "opentelemetry-kube-stack.chart" (index .Subcharts "opentelemetry-kube-stack") }}
+spec:
+  {{- $collector := dict "image" (.Values.watchdog.otelcol.image | default .Values.otelcol_image) }}
+  {{- /* Kubernetes workload values override defaults. The resolved Collector image overrides any workload image. */}}
+  {{- mustMergeOverwrite (dict "mode" "deployment" "managementState" "managed" "upgradeStrategy" "automatic" "replicas" 1) (omit .Values.watchdog.kubernetes "config") $collector | toYaml | nindent 2 }}
+  config:
+    {{- .Values.watchdog.otelcol.config | toYaml | nindent 4 }}

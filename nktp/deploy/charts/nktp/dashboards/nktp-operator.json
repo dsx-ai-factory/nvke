@@ -1,0 +1,113 @@
+{
+  "uid": "nktp-operator",
+  "title": "NKTP Operator",
+  "description": "OpenTelemetry Operator reconciliation, webhook HTTP traffic and process health. Requires scraped Operator metrics in the selected Prometheus datasource.",
+  "tags": ["nktp", "opentelemetry"],
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource", "label": "Datasource", "type": "datasource", "query": "prometheus",
+        "current": { "text": "prometheus", "value": "prometheus" }
+      },
+      {
+        "name": "job", "label": "Scrape job", "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(controller_runtime_active_workers{controller=\"opentelemetrycollector\"}, job)",
+        "refresh": 1, "multi": true, "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "Reporting replicas",
+      "description": "Operator processes with recent metrics for the selected scrape jobs. This is not the desired or Kubernetes Ready replica count.",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0 } },
+      "targets": [{ "expr": "count(count by (instance) (process_start_time_seconds{job=~\"$job\"}))", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 2, "type": "stat", "title": "Leaders",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "sum(leader_election_master_status{job=~\"$job\"})", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 3, "type": "stat", "title": "Reconciliation errors /s",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "sum(rate(controller_runtime_reconcile_errors_total{job=~\"$job\"}[$__rate_interval]))", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 4, "type": "stat", "title": "Webhook HTTP errors /s",
+      "description": "HTTP 4xx and 5xx responses from the webhook server.",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 5 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "sum(rate(controller_runtime_webhook_requests_total{job=~\"$job\",code=~\"[45]..\"}[$__rate_interval])) or (0 * sum(rate(controller_runtime_webhook_requests_total{job=~\"$job\"}[$__rate_interval])))", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "Reconciliation events",
+      "gridPos": { "x": 0, "y": 5, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "interval": "2m",
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 80, "barAlignment": -1, "stacking": { "mode": "normal", "group": "reconciliations" } } } },
+      "targets": [{ "expr": "sum by (pod, controller, result) (increase(controller_runtime_reconcile_total{job=~\"$job\"}[$__interval]))", "legendFormat": "{{pod}} / {{controller}} / {{result}}", "refId": "A" }]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Reconciliation duration p95",
+      "gridPos": { "x": 12, "y": 5, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, pod, controller) (rate(controller_runtime_reconcile_time_seconds_bucket{job=~\"$job\"}[$__rate_interval])))", "legendFormat": "{{pod}} / {{controller}}", "refId": "A" }]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "Workqueue depth",
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [{ "expr": "sum by (name, pod) (workqueue_depth{job=~\"$job\"})", "legendFormat": "{{name}} / {{pod}}", "refId": "A" }]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "Reconciliation workers",
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [
+        { "expr": "controller_runtime_active_workers{job=~\"$job\"}", "legendFormat": "{{controller}} / {{pod}} active", "refId": "A" },
+        { "expr": "controller_runtime_max_concurrent_reconciles{job=~\"$job\"}", "legendFormat": "{{controller}} / {{pod}} limit", "refId": "B" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Webhook requests /s",
+      "gridPos": { "x": 0, "y": 19, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "min": 0 } },
+      "targets": [{ "expr": "sum by (webhook, code) (rate(controller_runtime_webhook_requests_total{job=~\"$job\"}[$__rate_interval]))", "legendFormat": "{{webhook}} / HTTP {{code}}", "refId": "A" }]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "Webhook duration p95",
+      "gridPos": { "x": 12, "y": 19, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "s", "min": 0 } },
+      "targets": [{ "expr": "histogram_quantile(0.95, sum by (le, pod, webhook) (rate(controller_runtime_webhook_latency_seconds_bucket{job=~\"$job\"}[$__rate_interval])))", "legendFormat": "{{pod}} / {{webhook}}", "refId": "A" }]
+    },
+    {
+      "id": 11, "type": "timeseries", "title": "Operator CPU",
+      "gridPos": { "x": 0, "y": 26, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "cores", "min": 0 } },
+      "targets": [{ "expr": "rate(process_cpu_seconds_total{job=~\"$job\"}[$__rate_interval])", "legendFormat": "{{pod}}", "refId": "A" }]
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "Operator memory (RSS)",
+      "gridPos": { "x": 12, "y": 26, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "fieldConfig": { "defaults": { "unit": "bytes", "min": 0 } },
+      "targets": [{ "expr": "process_resident_memory_bytes{job=~\"$job\"}", "legendFormat": "{{pod}}", "refId": "A" }]
+    }
+  ]
+}
