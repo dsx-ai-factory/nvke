@@ -19,7 +19,7 @@ import (
 	"github.com/dsx-ai-factory/nke/controller/test/e2e/internal/kube"
 )
 
-const openVSwitchMetricName = "nke_controller_open_vswitch_reconciliation_total"
+const openVSwitchMetricName = "nke_open_vswitch_reconciliation_total"
 
 func validateOpenVSwitchPostCreate(test *tenantTest) {
 	It("configures Open vSwitch through the typed node-agent RPC", func(ctx context.Context) {
@@ -106,11 +106,11 @@ func openVSwitchMetricLabel(labels, name string) (string, bool) {
 }
 
 func TestOpenVSwitchPathCounts(t *testing.T) {
-	exposition := `# TYPE nke_controller_open_vswitch_reconciliation_total counter
-nke_controller_open_vswitch_reconciliation_total{node_name="cp-0",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 2
-nke_controller_open_vswitch_reconciliation_total{node_name="cp-1",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 1
-nke_controller_open_vswitch_reconciliation_total{node_name="other",path="legacy_runbook",result="success",tenant_cluster="another-cluster"} 7
-nke_controller_open_vswitch_reconciliation_total{node_name="cp-2",path="legacy_runbook",result="failure",tenant_cluster="e2e-nico-vms"} 1
+	exposition := `# TYPE nke_open_vswitch_reconciliation_total counter
+nke_open_vswitch_reconciliation_total{node_name="cp-0",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 2
+nke_open_vswitch_reconciliation_total{node_name="cp-1",path="rpc",result="success",tenant_cluster="e2e-nico-vms"} 1
+nke_open_vswitch_reconciliation_total{node_name="other",path="legacy_runbook",result="success",tenant_cluster="another-cluster"} 7
+nke_open_vswitch_reconciliation_total{node_name="cp-2",path="legacy_runbook",result="failure",tenant_cluster="e2e-nico-vms"} 1
 `
 
 	rpcSuccess, fallback, err := openVSwitchPathCounts(exposition, "e2e-nico-vms")

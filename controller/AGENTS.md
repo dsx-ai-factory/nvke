@@ -99,6 +99,9 @@ make debug        # Run with delve debugger on :12345
 ### License Headers
 All Go files must use the repository's Apache-2.0 SPDX header. Run `make license` to add missing headers.
 
+### Prometheus metric naming
+All metric names use the `nke_` prefix — never `cwe_` (legacy) and never a `controller_` infix (e.g. `nke_node_provision_total`, not `cwe_node_provision_total` or `nke_controller_node_provision_total`). Metrics live in `internal/metrics/` and `internal/dbmetrics/`.
+
 ### Linting Notes
 - Use `FIXME:` for things to address in a future PR, with a tracking link
 - `TODO:` comments will cause lint failures - resolve before merging
