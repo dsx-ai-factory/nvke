@@ -167,6 +167,15 @@
             </div>
             <div class="modal-footer">
                 <label class="follow-toggle">
+                    Source
+                    <select id="console-source">
+                        <option value="auto">Auto</option>
+                        <option value="ttyS0">ttyS0</option>
+                        <option value="ttyS1">ttyS1</option>
+                        <option value="console">console.log</option>
+                    </select>
+                </label>
+                <label class="follow-toggle">
                     <input type="checkbox" id="console-follow"> Follow
                 </label>
                 <button class="btn btn-secondary" onclick="refreshConsoleLog()">Refresh</button>

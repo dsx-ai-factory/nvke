@@ -15,12 +15,16 @@ import (
 	"time"
 )
 
-// consoleLogNames are the known console log file names produced by each VM
-// backend, in preference order. Matches the list in consolessh/server.go.
-var consoleLogNames = []string{
-	"console.log",          // darwin-qemu
-	"disk.qcow2.ttyS1.log", // libvirt serial 1 (preferred)
-	"disk.qcow2.ttyS0.log", // libvirt serial 0 (fallback)
+type consoleLogFile struct {
+	source string
+	name   string
+}
+
+// consoleLogFiles are the known console log files produced by each VM backend.
+var consoleLogFiles = []consoleLogFile{
+	{source: "console", name: "console.log"}, // darwin-qemu
+	{source: "ttyS0", name: "disk.qcow2.ttyS0.log"},
+	{source: "ttyS1", name: "disk.qcow2.ttyS1.log"},
 }
 
 // handleConsoleLog serves VM console log content.
@@ -29,6 +33,7 @@ var consoleLogNames = []string{
 //   - order=newest  — reverse line order so most recent output comes first
 //   - order=oldest  — original chronological order (default)
 //   - follow=true   — stream new output as it's written (like tail -f)
+//   - source=ttyS0  — choose a specific console source instead of auto
 //
 // Supports gzip via Accept-Encoding (except in follow mode).
 // The web UI handles ANSI parsing client-side.
@@ -43,7 +48,7 @@ func (s *Server) handleConsoleLog(w nethttp.ResponseWriter, r *nethttp.Request) 
 		return
 	}
 
-	logPath := s.findConsoleLog(instanceID)
+	logPath := s.findConsoleLog(instanceID, r.URL.Query().Get("source"))
 	if logPath == "" {
 		nethttp.Error(w, "no console log found for instance", nethttp.StatusNotFound)
 		return
@@ -217,13 +222,32 @@ func reverseLines(data []byte) []byte {
 }
 
 // findConsoleLog locates the console log file for the given instance.
-func (s *Server) findConsoleLog(instanceID string) string {
+func (s *Server) findConsoleLog(instanceID, source string) string {
 	instanceDir := filepath.Join(s.instancesDir, instanceID)
-	for _, name := range consoleLogNames {
-		path := filepath.Join(instanceDir, name)
+	if source != "" && source != "auto" {
+		for _, file := range consoleLogFiles {
+			if file.source != source {
+				continue
+			}
+			path := filepath.Join(instanceDir, file.name)
+			if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+				return path
+			}
+			return ""
+		}
+		return ""
+	}
+
+	var bestPath string
+	var bestModTime time.Time
+	for _, file := range consoleLogFiles {
+		path := filepath.Join(instanceDir, file.name)
 		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
-			return path
+			if bestPath == "" || info.ModTime().After(bestModTime) {
+				bestPath = path
+				bestModTime = info.ModTime()
+			}
 		}
 	}
-	return ""
+	return bestPath
 }

@@ -41,7 +41,7 @@ type Config struct {
 // logType defines a category of log files to discover per instance.
 type logType struct {
 	// Names are filenames to look for, in preference order.
-	// The first match wins (e.g. ttyS1 preferred over ttyS0).
+	// The first match wins.
 	Names []string
 	// Type is the log_type label value.
 	Type string
@@ -53,8 +53,8 @@ var knownLogTypes = []logType{
 	{
 		Names: []string{
 			"console.log",          // darwin-qemu
-			"disk.qcow2.ttyS1.log", // libvirt serial 1 (preferred)
-			"disk.qcow2.ttyS0.log", // libvirt serial 0 (fallback)
+			"disk.qcow2.ttyS0.log", // libvirt serial 0 (VM console)
+			"disk.qcow2.ttyS1.log", // libvirt serial 1 (fallback)
 		},
 		Type: "console",
 	},
