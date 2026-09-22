@@ -24,9 +24,9 @@ const (
 // failureDomains is what control-plane placement needs from outside the database.
 type failureDomains struct {
 	eligible []string
-	// observedByNodeName carries the placement CAPI already made, for node rows
-	// that never recorded their own. Empty once no such row remains, at which
-	// point the Machine list below can go.
+	// Migration only: observedByNodeName carries the placement CAPI already made
+	// for node rows that never recorded their own. Remove it and the Machine list
+	// below once every control-plane node has a non-nil failure_domain.
 	observedByNodeName map[string]string
 }
 
@@ -68,6 +68,8 @@ func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster)
 		return discovered, nil
 	}
 
+	// Migration only: collect existing Machine placements for the nullable-row
+	// backfill described by observedByNodeName.
 	machines := &clusterv1.MachineList{}
 	if err := r.k8sClient.List(ctx, machines,
 		client.InNamespace(constants.NamespaceNKESystem),

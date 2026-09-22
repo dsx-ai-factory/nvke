@@ -117,8 +117,9 @@ func (s *ControlPlaneNodeScheduler) listManagedControlPlanePending(ctx context.C
 		if !node.IsManagedByControlPlaneController() {
 			continue
 		}
-		// New nodes receive their decision at creation. This guard remains for
-		// pre-existing rows while their nil failure domains are being backfilled.
+		// Migration only: keep pre-existing rows out of scheduling while their nil
+		// failure domains are being backfilled. Remove once every control-plane
+		// node is guaranteed to have a non-nil failure_domain.
 		if !node.HasFailureDomainDecision() {
 			continue
 		}
