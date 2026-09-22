@@ -161,10 +161,19 @@ lint: ## Lint every module. (run by the merge gate)
 go-version-check: ## Verify every hand-kept Go version matches go.work.
 	@./hack/go-version-check.sh
 
+# A tag is mutable, so an image built from one is not reproducible and not the
+# thing that was scanned. The script also carries the list of development-only
+# Dockerfiles that are deliberately exempt, so that stays a recorded decision
+# rather than an unexplained gap.
+.PHONY: base-image-check
+base-image-check: ## Verify release-relevant Dockerfiles pin base images by digest.
+	@./hack/base-image-check.sh
+
 gate: ## Run the merge-gate checks that work on a laptop.
 	@$(MAKE) --no-print-directory tools-check
 	@$(MAKE) --no-print-directory version-check
 	@$(MAKE) --no-print-directory go-version-check
+	@$(MAKE) --no-print-directory base-image-check
 	@CGO_ENABLED=1 $(MAKE) --no-print-directory GO_TEST_FLAGS=-race test
 	@$(MAKE) --no-print-directory test-compile
 	@$(MAKE) --no-print-directory lint
