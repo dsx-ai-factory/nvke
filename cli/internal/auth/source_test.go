@@ -6,6 +6,8 @@ package auth
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -14,7 +16,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/rest"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 )
 
 // The controller namespaces authConfigNamespaces searches, by name, so a
@@ -59,7 +64,7 @@ func TestTokenMintsForConfiguredAudience(t *testing.T) {
 		}, nil
 	})
 
-	token, err := (&Source{client: client}).Mint(context.Background())
+	token, err := (&TokenSource{client: client}).Mint(context.Background())
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
@@ -77,7 +82,7 @@ func TestTokenUsesCachedToken(t *testing.T) {
 		},
 	}}
 	client := fake.NewClientset()
-	source := &Source{
+	source := &TokenSource{
 		client:   client,
 		endpoint: endpoint,
 		cache:    cache,
@@ -116,7 +121,7 @@ func TestTokenRenewsAndCachesNearExpiryToken(t *testing.T) {
 			ExpiresAt: time.Now().Add(tokenRenewBefore),
 		},
 	}}
-	source := &Source{client: client, endpoint: endpoint, cache: cache}
+	source := &TokenSource{client: client, endpoint: endpoint, cache: cache}
 
 	token, err := source.Mint(t.Context())
 	if err != nil {
@@ -147,7 +152,7 @@ func TestTokenReusesMintedTokenInMemory(t *testing.T) {
 			},
 		}, nil
 	})
-	source := &Source{
+	source := &TokenSource{
 		client: client,
 		cache:  &tokenCache{tokens: make(map[string]cachedToken)},
 	}
@@ -169,7 +174,7 @@ func TestTokenReusesMintedTokenInMemory(t *testing.T) {
 func TestTokenReturnsNoCredentialWhenAuthenticationIsDisabled(t *testing.T) {
 	client := fake.NewClientset()
 
-	token, err := (&Source{client: client}).Mint(t.Context())
+	token, err := (&TokenSource{client: client}).Mint(t.Context())
 	if err != nil {
 		t.Fatalf("Mint: %v", err)
 	}
@@ -213,7 +218,7 @@ func TestTokenRequiresConfiguredAudience(t *testing.T) {
 				}
 			}
 
-			if _, err := (&Source{client: client}).Mint(t.Context()); err == nil {
+			if _, err := (&TokenSource{client: client}).Mint(t.Context()); err == nil {
 				t.Fatal("Mint returned no error")
 			}
 		})
@@ -264,7 +269,7 @@ func TestAudienceSearchesBothControllerNamespaces(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			client := fake.NewClientset(tt.objects...)
-			audience, enabled, err := (&Source{client: client}).audience(t.Context())
+			audience, enabled, err := (&TokenSource{client: client}).audience(t.Context())
 			if err != nil {
 				t.Fatalf("audience: %v", err)
 			}
@@ -289,7 +294,173 @@ func TestAudienceReportsNonNotFoundErrors(t *testing.T) {
 		return false, nil, nil
 	})
 
-	if _, _, err := (&Source{client: client}).audience(t.Context()); err == nil {
+	if _, _, err := (&TokenSource{client: client}).audience(t.Context()); err == nil {
 		t.Fatal("audience returned no error for a failed read of the greenfield namespace")
 	}
+}
+
+func TestUsesOIDCLogin(t *testing.T) {
+	tests := []struct {
+		name string
+		exec *clientcmdapi.ExecConfig
+		want bool
+	}{
+		{name: "nil"},
+		{name: "teleport", exec: &clientcmdapi.ExecConfig{Command: "tsh", Args: []string{"kube", "credentials"}}},
+		{name: "eks", exec: &clientcmdapi.ExecConfig{Command: "aws", Args: []string{"eks", "get-token"}}},
+		{name: "gke", exec: &clientcmdapi.ExecConfig{Command: "gke-gcloud-auth-plugin"}},
+		{
+			name: "kubectl oidc-login",
+			exec: &clientcmdapi.ExecConfig{Command: "kubectl", Args: []string{"oidc-login", "get-token"}},
+			want: true,
+		},
+		{
+			name: "kubectl-oidc_login",
+			exec: &clientcmdapi.ExecConfig{Command: "/usr/local/bin/kubectl-oidc_login", Args: []string{"get-token"}},
+			want: true,
+		},
+		{name: "name substring", exec: &clientcmdapi.ExecConfig{Command: "not-oidc-login"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := usesOIDCLogin(tt.exec); got != tt.want {
+				t.Fatalf("usesOIDCLogin() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestUseExecToken(t *testing.T) {
+	oidc := &clientcmdapi.ExecConfig{Command: "kubectl", Args: []string{"oidc-login", "get-token"}}
+	tests := []struct {
+		name string
+		cfg  *rest.Config
+		want bool
+	}{
+		{name: "oidc only", cfg: &rest.Config{ExecProvider: oidc}, want: true},
+		{name: "oidc plus token", cfg: &rest.Config{ExecProvider: oidc, BearerToken: "static"}},
+		{name: "oidc plus basic", cfg: &rest.Config{ExecProvider: oidc, Username: "u", Password: "p"}},
+		{name: "oidc plus cert", cfg: &rest.Config{
+			ExecProvider:    oidc,
+			TLSClientConfig: rest.TLSClientConfig{CertData: []byte("c"), KeyData: []byte("k")},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := useExecToken(tt.cfg); got != tt.want {
+				t.Fatalf("useExecToken() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMintUsesOIDCLoginToken(t *testing.T) {
+	const want = "exec-plugin-token"
+	source := newExecSource(t, execSourceOpts{
+		args:       []string{"oidc-login", "get-token"},
+		credential: `{"kind":"ExecCredential","apiVersion":"client.authentication.k8s.io/v1","status":{"token":"` + want + `"}}`,
+	})
+	if source.restConfig == nil {
+		t.Fatal("expected oidc-login token source")
+	}
+	source.client = fake.NewClientset()
+
+	token, err := source.Mint(t.Context())
+	if err != nil {
+		t.Fatalf("Mint: %v", err)
+	}
+	if token != want {
+		t.Fatalf("token = %q, want %q", token, want)
+	}
+	if actions := source.client.(*fake.Clientset).Actions(); len(actions) != 0 {
+		t.Fatalf("oidc-login mint made Kubernetes API calls: %v", actions)
+	}
+}
+
+func TestMintUsesTokenRequestForExecBlockers(t *testing.T) {
+	const staticToken = "static-k8s-token"
+	const execToken = "exec-plugin-token"
+	tests := []struct {
+		name string
+		opts execSourceOpts
+	}{
+		{
+			name: "teleport client cert",
+			opts: execSourceOpts{
+				credential: `{"kind":"ExecCredential","apiVersion":"client.authentication.k8s.io/v1","status":{"clientCertificateData":"dummy-cert","clientKeyData":"dummy-key"}}`,
+			},
+		},
+		{
+			name: "static token plus oidc-login",
+			opts: execSourceOpts{
+				args:       []string{"oidc-login", "get-token"},
+				credential: `{"kind":"ExecCredential","apiVersion":"client.authentication.k8s.io/v1","status":{"token":"` + execToken + `"}}`,
+				token:      staticToken,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := newExecSource(t, tt.opts)
+			if source.restConfig != nil {
+				t.Fatal("expected TokenRequest path")
+			}
+			source.client = fake.NewClientset()
+
+			token, err := source.Mint(t.Context())
+			if err != nil {
+				t.Fatalf("Mint: %v", err)
+			}
+			if token != "" {
+				t.Fatalf("token = %q, want empty (auth ConfigMap absent)", token)
+			}
+		})
+	}
+}
+
+type execSourceOpts struct {
+	args       []string
+	credential string
+	token      string
+}
+
+func newExecSource(t *testing.T, opts execSourceOpts) *TokenSource {
+	t.Helper()
+	dir := t.TempDir()
+	command := filepath.Join(dir, "exec-helper.sh")
+	if err := os.WriteFile(command, []byte("#!/bin/sh\nprintf '%s' '"+opts.credential+"'\n"), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	cfg := clientcmdapi.NewConfig()
+	cfg.Clusters["site"] = &clientcmdapi.Cluster{
+		Server:                "https://127.0.0.1:6443",
+		InsecureSkipTLSVerify: true,
+	}
+	cfg.AuthInfos["user"] = &clientcmdapi.AuthInfo{
+		Token: opts.token,
+		Exec: &clientcmdapi.ExecConfig{
+			APIVersion:      "client.authentication.k8s.io/v1",
+			Command:         command,
+			Args:            opts.args,
+			InteractiveMode: clientcmdapi.NeverExecInteractiveMode,
+		},
+	}
+	cfg.Contexts["user"] = &clientcmdapi.Context{Cluster: "site", AuthInfo: "user"}
+	cfg.CurrentContext = "user"
+	kcPath := filepath.Join(dir, "kubeconfig")
+	data, err := clientcmd.Write(*cfg)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := os.WriteFile(kcPath, data, 0o600); err != nil {
+		t.Fatalf("write kubeconfig: %v", err)
+	}
+
+	source, err := NewTokenSource(kcPath, "https://cwe.example")
+	if err != nil {
+		t.Fatalf("NewTokenSource: %v", err)
+	}
+	return source
 }

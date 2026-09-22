@@ -35,7 +35,7 @@ type tokenSource interface {
 func New(cfg config.SiteConfig) (*ControllerClient, error) {
 	var tokens tokenSource
 	if cfg.Kubeconfig != "" {
-		source, err := auth.NewSource(cfg.Kubeconfig, cfg.URL)
+		source, err := auth.NewTokenSource(cfg.Kubeconfig, cfg.URL)
 		if err != nil {
 			return nil, fmt.Errorf("building CWE authentication: %w", err)
 		}

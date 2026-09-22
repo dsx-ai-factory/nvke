@@ -1,13 +1,15 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package auth mints CWE bearer tokens through the management cluster's
-// Kubernetes TokenRequest API.
+// Package auth mints CWE bearer tokens from the management-cluster kubeconfig.
 package auth
 
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,7 +19,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/client-go/transport"
 )
 
 // authConfigNamespaces are the namespaces the controller runs in, in the order
@@ -34,19 +39,21 @@ const (
 	tokenRenewBefore    = time.Minute
 )
 
-// Source supplies audience-scoped tokens for nkectl's CWE identity. Mint
-// returns no credential when the management cluster has no CWE auth ConfigMap
-// in either controller namespace.
-type Source struct {
-	client   kubernetes.Interface
-	endpoint string
-	cache    *tokenCache
+// TokenSource supplies bearer tokens for nkectl's CWE calls. Mint returns the
+// oidc-login plugin's bearer token, a TokenRequest for nke-clients/nke-client,
+// or no credential when the management cluster has no CWE auth ConfigMap in
+// either controller namespace.
+type TokenSource struct {
+	client     kubernetes.Interface
+	restConfig *rest.Config
+	endpoint   string
+	cache      *tokenCache
 
 	mu sync.Mutex
 }
 
-// NewSource builds a token source from a management cluster kubeconfig.
-func NewSource(kubeconfig, endpoint string) (*Source, error) {
+// NewTokenSource builds a token source from a management cluster kubeconfig.
+func NewTokenSource(kubeconfig, endpoint string) (*TokenSource, error) {
 	if kubeconfig == "" {
 		return nil, fmt.Errorf("kubeconfig is empty: run 'nkectl config set-site --kubeconfig <path>'")
 	}
@@ -55,22 +62,57 @@ func NewSource(kubeconfig, endpoint string) (*Source, error) {
 	if err != nil {
 		return nil, fmt.Errorf("loading kubeconfig %q: %w", kubeconfig, err)
 	}
+
+	if useExecToken(restConfig) {
+		return &TokenSource{
+			restConfig: restConfig,
+			endpoint:   endpoint,
+		}, nil
+	}
+
 	client, err := kubernetes.NewForConfig(restConfig)
 	if err != nil {
 		return nil, fmt.Errorf("building Kubernetes client from kubeconfig %q: %w", kubeconfig, err)
 	}
-	return &Source{
+	return &TokenSource{
 		client:   client,
 		endpoint: endpoint,
 		cache:    loadTokenCache(),
 	}, nil
 }
 
-// Mint returns a cached token when it remains valid beyond the renewal window,
-// or creates and caches a token for nkectl using the configured CWE audience.
-func (s *Source) Mint(ctx context.Context) (string, error) {
+// useExecToken is true only when client-go would actually run oidc-login.
+// A token, basic auth, or client cert on the same user makes it skip exec.
+func useExecToken(cfg *rest.Config) bool {
+	if !usesOIDCLogin(cfg.ExecProvider) {
+		return false
+	}
+	if cfg.BearerToken != "" || cfg.BearerTokenFile != "" || cfg.Username != "" {
+		return false
+	}
+	hasCert := len(cfg.CertData) != 0 || cfg.CertFile != ""
+	hasKey := len(cfg.KeyData) != 0 || cfg.KeyFile != ""
+	return !hasCert || !hasKey
+}
+
+func usesOIDCLogin(exec *clientcmdapi.ExecConfig) bool {
+	if exec == nil {
+		return false
+	}
+	if filepath.Base(exec.Command) == "kubectl-oidc_login" {
+		return true
+	}
+	return len(exec.Args) > 0 && exec.Args[0] == "oidc-login"
+}
+
+// Mint returns a bearer token for the next CWE request.
+func (s *TokenSource) Mint(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.restConfig != nil {
+		return s.mintExec()
+	}
 
 	now := time.Now()
 	if s.cache != nil {
@@ -115,7 +157,52 @@ func (s *Source) Mint(ctx context.Context) (string, error) {
 	return response.Status.Token, nil
 }
 
-func (s *Source) audience(ctx context.Context) (string, bool, error) {
+// mintExec runs client-go's exec wrappers against a stub RoundTripper that
+// steals the Authorization header and never hits the network.
+func (s *TokenSource) mintExec() (string, error) {
+	tc, err := s.restConfig.TransportConfig()
+	if err != nil {
+		return "", fmt.Errorf("building kubeconfig exec transport: %w", err)
+	}
+	catcher := &tokenCatcher{}
+	rt, err := transport.HTTPWrappersForConfig(tc, catcher)
+	if err != nil {
+		return "", fmt.Errorf("wrapping kubeconfig exec transport: %w", err)
+	}
+	req, err := http.NewRequest(http.MethodGet, "http://nkectl.exec.invalid/", nil)
+	if err != nil {
+		return "", fmt.Errorf("building exec token request: %w", err)
+	}
+	resp, err := rt.RoundTrip(req)
+	if err != nil {
+		return "", fmt.Errorf("running kubeconfig exec plugin: %w", err)
+	}
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if catcher.token == "" {
+		return "", fmt.Errorf("kubeconfig exec plugin returned no token")
+	}
+	return catcher.token, nil
+}
+
+type tokenCatcher struct {
+	token string
+}
+
+func (t *tokenCatcher) RoundTrip(req *http.Request) (*http.Response, error) {
+	if token, ok := strings.CutPrefix(req.Header.Get("Authorization"), "Bearer "); ok {
+		t.token = token
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     make(http.Header),
+		Body:       http.NoBody,
+		Request:    req,
+	}, nil
+}
+
+func (s *TokenSource) audience(ctx context.Context) (string, bool, error) {
 	var configMap *corev1.ConfigMap
 	var namespace string
 	for _, candidate := range authConfigNamespaces {
