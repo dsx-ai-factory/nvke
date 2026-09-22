@@ -40,6 +40,7 @@ DEB_REVISION ?= 1
 # Downloaded upstream artifacts, reused across runs when they still verify.
 DIST_DIR ?= $(CURDIR)/dist
 BIN_DIR ?= $(CURDIR)/bin
+NFPM_BIN := $(BIN_DIR)/nfpm-v$(NFPM_VERSION)/nfpm
 
 # The committed lock files, one per Kubernetes version per architecture. The
 # build refuses to run without them.
@@ -54,7 +55,7 @@ debs: check-host check-deb-tools bundle ## Build one .deb per K8S_VERSIONS into 
 	rm -f "$(OUT_DIR)"/nke-kubeadm-distro-*.deb "$(OUT_DIR)/Packages"
 	@set -eu; \
 	for v in $(K8S_VERSIONS_V); do \
-		PEER_VERSIONS="$(K8S_VERSIONS_V)" DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(BIN_DIR)/nfpm" ARCH="$(ARCH)" \
+		PEER_VERSIONS="$(K8S_VERSIONS_V)" DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(NFPM_BIN)" ARCH="$(ARCH)" \
 			./packaging/build-deb.sh "$$v" "$(DIST_DIR)/$$v" "$(OUT_DIR)"; \
 	done
 	@cd "$(OUT_DIR)" && dpkg-scanpackages . /dev/null >Packages
@@ -135,12 +136,12 @@ $(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release in
 	mv "$$tmp/crane" "$(BIN_DIR)/crane"
 
 # Phony alias so ../../Makefile's `test` can ask for the binary by name rather
-# than by the absolute $(BIN_DIR)/nfpm path.
+# than by its absolute, versioned path.
 .PHONY: nfpm
-nfpm: $(BIN_DIR)/nfpm ## Build the pinned nfpm (goreleaser) into ./bin.
+nfpm: $(NFPM_BIN) ## Build the pinned nfpm (goreleaser) into ./bin.
 
-$(BIN_DIR)/nfpm:
-	@GOBIN=$(BIN_DIR) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
+$(NFPM_BIN):
+	@GOBIN=$(dir $(NFPM_BIN)) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
 
 ##@ Checks
 
@@ -164,7 +165,7 @@ check-host: ## Fail early when this host cannot run the bundle step.
 	fi
 
 .PHONY: check-deb-tools
-check-deb-tools: $(BIN_DIR)/nfpm ## Fail early when the Debian packaging tools are missing.
+check-deb-tools: $(NFPM_BIN) ## Fail early when the Debian packaging tools are missing.
 	@set -eu; \
 	if [ "$$(uname -s)" != "Linux" ]; then \
 		echo "kubeadm-distro: packages are built on a Linux host only; this is $$(uname -s)." >&2; \
@@ -187,8 +188,8 @@ check-deb-tools: $(BIN_DIR)/nfpm ## Fail early when the Debian packaging tools a
 	esac
 
 .PHONY: test
-test: $(BIN_DIR)/nfpm ## Run this package's Go tests.
-	NFPM_BIN="$(BIN_DIR)/nfpm" $(GO) test ./...
+test: $(NFPM_BIN) ## Run this package's Go tests.
+	NFPM_BIN="$(NFPM_BIN)" $(GO) test ./...
 
 .PHONY: clean
 clean: ## Remove the built tools and the downloaded artifact tree.

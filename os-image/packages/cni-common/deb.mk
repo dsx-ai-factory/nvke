@@ -33,6 +33,7 @@ ARCH ?= amd64
 
 DIST_DIR ?= $(CURDIR)/dist
 BIN_DIR ?= $(CURDIR)/bin
+NFPM_BIN := $(BIN_DIR)/nfpm-v$(NFPM_VERSION)/nfpm
 LOCK_DIR ?= $(CURDIR)/lock
 BUNDLE_DEPS ?=
 
@@ -45,7 +46,7 @@ debs: check-host check-deb-tools bundle ## Build the content and images debs int
 	@set -eu; \
 	for v in $(VERSIONS); do \
 		CNI="$(CNI)" PRODUCT="$(PRODUCT)" CONTENT_SPEC="$(CONTENT_SPEC)" CONTENT_KIND="$(CONTENT_KIND)" \
-		DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(BIN_DIR)/nfpm" ARCH="$(ARCH)" \
+		DEB_REVISION="$(DEB_REVISION)" NFPM_BIN="$(NFPM_BIN)" ARCH="$(ARCH)" \
 			$(COMMON_DIR)/build-deb.sh "$$v" "$(DIST_DIR)/$$v" "$(OUT_DIR)"; \
 	done
 	@# Index everything in OUT_DIR: the CNI packages share it.
@@ -105,10 +106,10 @@ $(BIN_DIR)/crane: ## Download the pinned crane (go-containerregistry) release in
 	mv "$$tmp/crane" "$(BIN_DIR)/crane"
 
 .PHONY: nfpm
-nfpm: $(BIN_DIR)/nfpm ## Build the pinned nfpm (goreleaser) into ./bin.
+nfpm: $(NFPM_BIN) ## Build the pinned nfpm (goreleaser) into ./bin.
 
-$(BIN_DIR)/nfpm:
-	@GOBIN=$(BIN_DIR) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
+$(NFPM_BIN):
+	@GOBIN=$(dir $(NFPM_BIN)) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
 
 ##@ Checks
 
@@ -129,7 +130,7 @@ check-host: ## Fail early when this host cannot run the bundle step.
 	fi
 
 .PHONY: check-deb-tools
-check-deb-tools: $(BIN_DIR)/nfpm ## Fail early when the Debian packaging tools are missing.
+check-deb-tools: $(NFPM_BIN) ## Fail early when the Debian packaging tools are missing.
 	@set -eu; \
 	if [ "$$(uname -s)" != "Linux" ]; then \
 		echo "$(CNI): packages are built on a Linux host only; this is $$(uname -s)." >&2; \

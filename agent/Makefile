@@ -67,7 +67,7 @@ BUF_VERSION := v1.65.0
 GIT_HOOKS_DIR := $(shell git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)
 
 BIN_DIR ?= $(CURDIR)/bin
-NFPM_BIN ?= $(BIN_DIR)/nfpm
+NFPM_BIN ?= $(BIN_DIR)/nfpm-v$(NFPM_VERSION)/nfpm
 AGENT_PACKAGING_DIR := $(abspath ../os-image/packages/nke-agent/packaging)
 # Optional exact output path for consumers such as the Packer image build.
 DEB_OUTPUT ?=
