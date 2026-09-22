@@ -12,12 +12,9 @@ TEMPORAL_CLI_DOWNLOAD_DIR	?= $(CURDIR)/.go/temporal-cli
 CWE_GOFAIL_E2E_WORKER_BINARY	?= $(CURDIR)/.go/bin/cwe-worker-gofail
 GOFAIL				?= $(shell go env GOPATH)/bin/gofail
 SETUP_ENVTEST			?= $(shell go env GOPATH)/bin/setup-envtest
-SETUP_ENVTEST_VERSION		?= release-0.24
 # Explicit store, so CI can cache a known path instead of guessing setup-envtest's
 # platform-dependent default.
 ENVTEST_BIN_DIR			?= $(CURDIR)/.go/envtest
-# Kubernetes version for the envtest kube-apiserver and etcd binaries.
-ENVTEST_K8S_VERSION		?= 1.34.1
 CWE_GOFAIL_E2E_CLUSTER_CRDS	?= $(shell go env GOMODCACHE)/sigs.k8s.io/cluster-api@$(shell go list -m -f '{{.Version}}' sigs.k8s.io/cluster-api)/config/crd/bases
 CWE_GOFAIL_E2E_CAPNICO_CRDS	?= $(shell go env GOMODCACHE)/github.com/dsx-ai-factory/cluster-api-provider-nico@$(shell go list -m -f '{{.Version}}' github.com/dsx-ai-factory/cluster-api-provider-nico)/config/crd/bases
 
@@ -148,8 +145,8 @@ build: ## Build controller into bin/.
 
 .PHONY: fmt
 fmt: ## Format code (gofumpt + goimports; matches .golangci.yml formatters).
-	go run mvdan.cc/gofumpt@v0.11.0 -w -extra .
-	go run golang.org/x/tools/cmd/goimports@v0.48.0 -w -local github.com/dsx-ai-factory/nke/controller .
+	go run mvdan.cc/gofumpt@$(GOFUMPT_VERSION) -w -extra .
+	go run golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VERSION) -w -local github.com/dsx-ai-factory/nke/controller .
 
 # GO_TEST_FLAGS lets CI add -race without the workflow having to restate the
 # test command, so `make test` stays the one definition of what "the tests" are.
@@ -219,7 +216,6 @@ test-integration-teleport: ## Execute Teleport client integration tests (require
 
 E2E_DIR := test/e2e
 E2E_TIMEOUT ?= 2h
-GINKGO_VERSION ?= v2.27.2
 # Ginkgo CLI flags, e.g. ARGS='--label-filter="nico-vms && happy-path"'
 ARGS ?=
 
@@ -263,7 +259,7 @@ e2e-gofail: ## Execute gofail e2e tests against a local Temporal dev server.
 			last=$$now; \
 		}; \
 		mkdir -p "$(TEMPORAL_CLI_DOWNLOAD_DIR)" "$$(dirname "$(CWE_GOFAIL_E2E_WORKER_BINARY)")"; \
-		go install go.etcd.io/gofail@v0.2.0; \
+		go install go.etcd.io/gofail@$(GOFAIL_VERSION); \
 		go install sigs.k8s.io/controller-runtime/tools/setup-envtest@$(SETUP_ENVTEST_VERSION); \
 		phase "install-tools"; \
 		KUBEBUILDER_ASSETS="$$("$(SETUP_ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(ENVTEST_BIN_DIR)" -p path)"; \

@@ -205,7 +205,7 @@ docs/               # Design and security context docs
   included, fails with `go.work requires go >= <version>`. Editors and language
   servers hit this first, because they call `go list` directly rather than
   through `make`, which pins `GOTOOLCHAIN` to the `go.work` value for you.
-- **buf** (for proto generation; see `BUF_VERSION` in Makefile)
+- **buf** (for proto generation; see `BUF_VERSION` in `make/tool-versions.mk`)
 - **protoc** plugins via buf remote plugins (`protoc-gen-go`, `protoc-gen-go-grpc`)
 
 ## State Management

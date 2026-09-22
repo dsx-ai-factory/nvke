@@ -169,6 +169,13 @@ vulncheck: ## Report vulnerabilities reachable from each module. (run by the mer
 	 [ $$fail -eq 0 ] || exit 1
 	@echo "  govulncheck gate passed"
 
+# tools-check asks what is installed. This asks whether the repository still
+# agrees with itself about what should be installed -- so it needs none of the
+# tools present and runs anywhere.
+.PHONY: tool-version-check
+tool-version-check: ## Verify every tool pin is declared once, in make/tool-versions.mk.
+	@./hack/tool-version-check.sh
+
 tools-check: ## Check the versions of tools used by local merge-gate targets.
 	@fail=0; \
 	 ./hack/check-tool-version.sh actionlint "$(ACTIONLINT_VERSION)" || fail=1; \
@@ -210,6 +217,7 @@ base-image-check: ## Verify release-relevant Dockerfiles pin base images by dige
 	@./hack/base-image-check.sh
 
 gate: ## Run the merge-gate checks that work on a laptop.
+	@$(MAKE) --no-print-directory tool-version-check
 	@$(MAKE) --no-print-directory tools-check
 	@$(MAKE) --no-print-directory version-check
 	@$(MAKE) --no-print-directory go-version-check

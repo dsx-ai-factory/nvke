@@ -116,12 +116,13 @@ jobs:
       # 160 MB of etcd, kube-apiserver and kubectl. The Makefile pins the store
       # to controller/.go/envtest with --bin-dir, so this path is exact rather
       # than a guess at setup-envtest's platform-dependent default.
-      # Keyed on the Makefile, which is where ENVTEST_K8S_VERSION lives.
+      # Keyed on make/tool-versions.mk, which is where ENVTEST_K8S_VERSION
+      # lives, and on the Makefile that pins the store path.
       - name: Cache envtest binaries
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: controller/.go/envtest
-          key: envtest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('controller/Makefile') }}
+          key: envtest-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('make/tool-versions.mk', 'controller/Makefile') }}
           restore-keys: envtest-${{ runner.os }}-${{ runner.arch }}-
 
       # The runner image already ships PostgreSQL, so start that rather than

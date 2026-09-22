@@ -12,16 +12,9 @@ help: ## Show the available targets.
 
 GO ?= go
 
-# NFPM_VERSION comes from make/tool-versions.mk.
+# NFPM_VERSION, SPIRE_VERSION and TPM_PLUGIN_VERSION come from
+# make/tool-versions.mk, which owns them.
 include ../../../make/tool-versions.mk
-
-# The upstream releases this package wraps. Bump them here; see README.md.
-# TPM_PLUGIN_VERSION also pins the *server*-side attestor elsewhere in the
-# repo (controller/Tiltfile, controller/hack/ci/prepare-capd-bundles.sh,
-# cli/internal/bootstrap/manifest/bootstrap-manifest.yaml, and the tpm-direct
-# checksums in cli/internal/bootstrap/cwedeploy/cwedeploy.go) -- move them together.
-SPIRE_VERSION      ?= 1.14.1
-TPM_PLUGIN_VERSION ?= 1.9.0
 
 # Both architectures: unlike the CNI and kubeadm-distro packages, every
 # artifact here is published for arm64 too and the lock pins both.

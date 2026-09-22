@@ -83,3 +83,31 @@ REDOCLY_VERSION     ?= 2.57.0
 # Checks and publishes the documentation site (.github/workflows/api-docs.yml).
 # fern/fern.config.json pins the same number; move both together.
 FERN_VERSION        ?= 5.143.6
+
+# Development tools invoked by module Makefiles. These were declared where they
+# were used -- buf in agent/, setup-envtest and ginkgo in controller/, and
+# controller-gen separately in two modules -- so nothing stopped two copies of
+# the same pin drifting apart, and hack/tool-version-check.sh had nothing to
+# check against. One declaration each, here.
+ADDLICENSE_VERSION       ?= v1.1.1
+BUF_VERSION              ?= v1.65.0
+CONTROLLER_TOOLS_VERSION ?= v0.20.1
+GINKGO_VERSION           ?= v2.27.2
+GOFAIL_VERSION           ?= v0.2.0
+GOFUMPT_VERSION          ?= v0.11.0
+GOIMPORTS_VERSION        ?= v0.48.0
+SETUP_ENVTEST_VERSION    ?= release-0.24
+# Kubernetes version for the envtest kube-apiserver and etcd binaries.
+ENVTEST_K8S_VERSION      ?= 1.34.1
+
+# The upstream SPIRE artifacts os-image/packages/spire-agent wraps into a .deb.
+# Not a development tool, but the same one-owner rule applies for the same
+# reason: TPM_PLUGIN_VERSION also selects the bundle that
+# controller/hack/ci/prepare-capd-bundles.sh downloads for the CAPD e2e, and
+# that script restated it as a literal under a comment asking a human to keep
+# the two in step. It now reads this file. The server-side attestor in
+# controller/Tiltfile, cli/internal/bootstrap/manifest/bootstrap-manifest.yaml
+# and the tpm-direct checksums in cli/internal/bootstrap/cwedeploy/cwedeploy.go
+# track TPM_PLUGIN_VERSION too; move them with it.
+SPIRE_VERSION      ?= 1.14.1
+TPM_PLUGIN_VERSION ?= 1.9.0

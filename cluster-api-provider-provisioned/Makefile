@@ -14,7 +14,9 @@ GOBIN = $(shell go env GOPATH)/bin
 endif
 
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
-CONTROLLER_TOOLS_VERSION ?= v0.20.1
+# CONTROLLER_TOOLS_VERSION comes from make/tool-versions.mk, which owns it
+# for this module and for management-engine/.
+include ../make/tool-versions.mk
 IMG ?= docker.io/library/cluster-api-provider-provisioned:latest
 PLATFORMS ?= linux/amd64,linux/arm64
 OCI_ARCHIVE ?= $(CURDIR)/out/cluster-api-provider-provisioned.oci.tar

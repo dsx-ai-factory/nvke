@@ -86,8 +86,8 @@ release archives. It needs Python 3, Bash, curl, tar, awk, and GNU coreutils.
 
 ## Bumping the versions
 
-Set `SPIRE_VERSION` and/or `TPM_PLUGIN_VERSION` in the `Makefile`, refresh the
-lock, review it, commit it:
+Set `SPIRE_VERSION` and/or `TPM_PLUGIN_VERSION` in `make/tool-versions.mk` at
+the repository root, refresh the lock, review it, commit it:
 
 ```bash
 make lock

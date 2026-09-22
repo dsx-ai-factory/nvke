@@ -100,6 +100,12 @@ jobs:
       - name: Check the Go version copies agree with go.work
         run: make go-version-check
 
+      # make/tool-versions.mk owns every tool pin. This is what notices a
+      # second declaration of one, which is the only way two can disagree.
+      # Reads files only, so it is safe for a fork pull request.
+      - name: Check every tool pin is declared once
+        run: make tool-version-check
+
       # The two images this repository publishes build from base images named
       # by digest. Reads files only, so it is safe for a fork pull request.
       - name: Check release-relevant base images are digest-pinned

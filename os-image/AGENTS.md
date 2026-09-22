@@ -61,14 +61,16 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
 
 - Do not bake SPIRE server address, trust domain, trust bundle, or join token.
 - Do not default `nke-agent` to `--disable-mtls`.
-- Pin SPIRE and the TPM attestor plugin (version + sha256) in
-  `packages/spire-agent/` — `SPIRE_VERSION` / `TPM_PLUGIN_VERSION` in its
-  `Makefile`, digests in its committed `lock/`. Do not float `latest`, and
-  regenerate the lock with `make lock` rather than hand-editing it.
-  The DSX IMDS node attestor is pinned in that same lock. Its S3 objects are
-  unversioned and have no checksum sidecar, so the lock digest is the only pin.
-  `TPM_PLUGIN_VERSION` also pins the server-side attestor in `controller/` and
-  `cli/`; move both halves together.
+- Pin SPIRE and the TPM attestor plugin (version + sha256): `SPIRE_VERSION` /
+  `TPM_PLUGIN_VERSION` in `make/tool-versions.mk`, which owns them for the
+  whole repository, and digests in `packages/spire-agent/lock/`. Do not float
+  `latest`, and regenerate the lock with `make lock` rather than hand-editing
+  it. The DSX IMDS node attestor is pinned in that same lock. Its S3 objects
+  are unversioned and have no checksum sidecar, so the lock digest is the only
+  pin. `TPM_PLUGIN_VERSION` also selects the bundle
+  `controller/hack/ci/prepare-capd-bundles.sh` downloads; that script reads the
+  pin rather than restating it, and `make tool-version-check` fails if anything
+  declares it a second time.
 - Keep the generic image target's TCG development path. `image-native` requires
   usable native KVM; CI uses matching Linux KVM runners for both architectures.
   Package builds execute Linux kubeadm; matching Linux hosts build locally,

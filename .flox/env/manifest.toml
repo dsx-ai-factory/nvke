@@ -18,7 +18,7 @@ schema-version = "1.11.0"
 # from 3.19.1 to 4.2.4, a major release.
 [install]
 go = { pkg-path = "go_1_27", pkg-group = "go" }
-# GOLANGCI_LINT_VERSION in six module Makefiles, and lint.yml:223.
+# GOLANGCI_LINT_VERSION in make/golangci.mk, and lint.yml:223.
 golangci-lint = { pkg-path = "golangci-lint", version = "2.13.2", pkg-group = "golangci-lint" }
 # Shared by local checks and workflows through make/tool-versions.mk.
 kubernetes-helm = { pkg-path = "kubernetes-helm", version = "4.2.4", pkg-group = "helm" }

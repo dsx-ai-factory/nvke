@@ -62,7 +62,6 @@ ARCHES := amd64 arm64
 include ../make/tool-versions.mk
 include ../make/golangci.mk
 
-BUF_VERSION := v1.65.0
 
 GIT_HOOKS_DIR := $(shell git rev-parse --git-path hooks 2>/dev/null || echo .git/hooks)
 
@@ -238,7 +237,7 @@ ADDLICENSE_IGNORES := \
 
 .PHONY: license
 license: ## Ensure license headers at code.
-	go run github.com/google/addlicense@v1.1.1 -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" $(ADDLICENSE_IGNORES) .
+	go run github.com/google/addlicense@$(ADDLICENSE_VERSION) -f $(REPO_ROOT)/hack/license-header.tmpl -c "NVIDIA CORPORATION & AFFILIATES" $(ADDLICENSE_IGNORES) .
 
 # Expected to be run on clean working directory.
 .PHONY: file-license-check
