@@ -104,14 +104,26 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 		switch {
 		case node.IsMarkedForDeletion():
 		case node.HasFailureDomainDecision():
+			// Node record in db has a placement decision.
+			// An empty string is a valid placement decision:
+			// it's interpreted as belonging to a provider without
+			// failure domain support.
 			allocator.record(node.GetFailureDomain())
 		case r.failureDomains.observedByNodeName[node.Name] != "":
+			// Node record in db does not yet have a placement decision,
+			// but its CAPI CR does have a failure domain set in the
+			// status or spec (its "observed placement"),
+			// so we update the node record in the db accordingly.
 			node.FailureDomain = new(r.failureDomains.observedByNodeName[node.Name])
 			allocator.record(*node.FailureDomain)
 			if _, err := r.db.UpdateNode(ctx, node); err != nil {
 				return false, fmt.Errorf("adopting observed failure domain for node %s: %w", node.ID, err)
 			}
 		case node.HasInfrastructureProvisioningStarted():
+			// Nodes should not normally reach this state: the
+			// scheduler starts ProvisionNode only after a failure-domain decision
+			// has been persisted. This branch handles nodes that were already provisioning
+			// when failure-domain assignment support was introduced.
 			hasUnobserved = true
 		default:
 			unplaced = append(unplaced, node)
@@ -121,10 +133,17 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 	if len(unplaced) == 0 {
 		return false, nil
 	}
+
+	// In order to ensure a balanced topology, we can't proceed
+	// until unobserved, existing nodes get a placement decision, nor can we
+	// proceed with incomplete info on a failed discovery attempt.
+	// In either case, return true here to signal a requeue to the caller.
 	if hasUnobserved || !r.failureDomainDiscoverySucceeded {
 		return true, nil
 	}
 
+	// We have what we need to assign a failure domain to
+	// all pending nodes.
 	for _, node := range unplaced {
 		node.FailureDomain = new(allocator.take())
 		if _, err := r.db.UpdateNode(ctx, node); err != nil {

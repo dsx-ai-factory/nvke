@@ -23,8 +23,7 @@ type reconciler struct {
 	logger            *slog.Logger
 	db                db.Tx
 	cweTemporalClient client.Client
-	// One discovery pass per reconcile, read before the transaction opened. A
-	// failure defers placement rather than failing the reconcile.
+
 	failureDomains                  failureDomains
 	failureDomainDiscoverySucceeded bool
 }
