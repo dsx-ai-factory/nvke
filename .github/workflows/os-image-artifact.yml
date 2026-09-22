@@ -139,8 +139,54 @@ jobs:
           echo "legs=${legs}" >> "$GITHUB_OUTPUT"
           echo "building: ${legs}"
 
+  validate-packer:
+    needs: changes
+    if: github.repository == 'dsx-ai-factory/nke' && needs.changes.outputs.run_e2e == 'true'
+    name: Validate Packer project
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read pinned Packer version
+        id: versions
+        run: |
+          {
+            echo "packer_version=$(make --no-print-directory print-PACKER_VERSION)"
+            echo "packer_sha256=$(make --no-print-directory print-PACKER_SHA256_AMD64)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Install pinned Packer
+        env:
+          PACKER_VERSION: ${{ steps.versions.outputs.packer_version }}
+          PACKER_SHA256: ${{ steps.versions.outputs.packer_sha256 }}
+        run: |
+          set -euo pipefail
+          zip="packer_${PACKER_VERSION}_linux_amd64.zip"
+          tmp="$(mktemp -d)"
+          curl -fsSL -o "${tmp}/${zip}" \
+            "https://releases.hashicorp.com/packer/${PACKER_VERSION}/${zip}"
+          actual="$(sha256sum "${tmp}/${zip}" | awk '{print $1}')"
+          if [[ "${actual}" != "${PACKER_SHA256}" ]]; then
+            echo "::error::checksum mismatch for ${zip}: got ${actual}, expected ${PACKER_SHA256}"
+            exit 1
+          fi
+          unzip -d "${tmp}" "${tmp}/${zip}" packer
+          sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
+          packer version
+
+      - name: Validate the Packer directory project
+        env:
+          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make -C os-image/packer validate-packer
+
   publish:
-    needs: matrix
+    needs: [matrix, validate-packer]
     if: github.repository == 'dsx-ai-factory/nke'
     name: Build and verify (${{ matrix.arch }})
     # Both legs need /dev/kvm; the "matrix" job picks them. The arm64 leg
@@ -331,9 +377,6 @@ jobs:
           unzip -d "${tmp}" "${tmp}/${zip}" packer
           sudo install -m 0755 "${tmp}/packer" /usr/local/bin/packer
           packer version
-
-      - name: Validate the Packer directory project
-        run: make -C os-image/packer validate-packer
 
       # Only the qcow2 push below needs GHCR; fetch-artifacts.sh builds
       # nke-agent from this checkout's source and pulls nothing from GHCR.

@@ -28,11 +28,26 @@ case "${mode}" in
     MATERIAL_PATH="${material_path}" EXPECTED_DIGEST="${expected_digest}" \
       "$(dirname "${BASH_SOURCE[0]}")/verify-material.sh"
 
+    install -d -m 0700 "${staging_directory}"
+    cleanup_failed_stage() {
+      rm -rf -- "${staging_directory}"
+    }
+    trap cleanup_failed_stage ERR
+
+    # Snapshot the caller-owned archive into private attempt state, then verify,
+    # inspect, and extract only that copy. A concurrent replacement of the
+    # caller path can therefore produce only a digest failure, not different
+    # bytes between validation and host extraction.
+    material_snapshot="$(mktemp "${staging_directory}/.material.XXXXXX")"
+    install -m 0600 "${material_path}" "${material_snapshot}"
+    MATERIAL_PATH="${material_snapshot}" EXPECTED_DIGEST="${expected_digest}" \
+      "$(dirname "${BASH_SOURCE[0]}")/verify-material.sh"
+
     # The archive is authenticated by digest above, but its member types are a
     # separate host-safety boundary. Packer's SSH file provisioner follows
     # local symlinks, so only regular files and directories may reach the
     # transient upload tree.
-    "${PYTHON:-python3}" - "${material_path}" <<'PY'
+    "${PYTHON:-python3}" - "${material_snapshot}" <<'PY'
 import pathlib
 import sys
 import tarfile
@@ -46,12 +61,9 @@ with tarfile.open(sys.argv[1]) as archive:
             raise SystemExit(f"unsafe archive member type: {member.name}")
 PY
 
-    install -d -m 0700 "${staging_directory}"
-    cleanup_failed_stage() {
-      rm -rf -- "${staging_directory}"
-    }
-    trap cleanup_failed_stage ERR
-    tar -xf "${material_path}" -C "${staging_directory}"
+    tar -xf "${material_snapshot}" -C "${staging_directory}"
+    rm -f -- "${material_snapshot}"
+    chmod 0700 "${staging_directory}"
     trap - ERR
     ;;
   clean)

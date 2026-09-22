@@ -794,12 +794,22 @@ exec "${REAL_MV:?}" "$@"
             with self.subTest(template=template):
                 contents = (PACKER_DIR / template).read_text(encoding="utf-8")
                 self.assertNotIn("fetch-artifacts.sh", contents)
-                self.assertEqual(contents.count('provisioner "shell-local"'), 2)
-                self.assertEqual(contents.count("scripts/prepare-image-inputs.sh"), 2)
+                self.assertEqual(contents.count('provisioner "shell-local"'), 3)
+                self.assertEqual(contents.count("scripts/prepare-image-inputs.sh"), 3)
+                self.assertEqual(
+                    contents.count('error-cleanup-provisioner "shell-local"'), 1
+                )
                 self.assertIn("generated   = true", contents)
                 self.assertNotIn("/tmp/nke-image-inputs.tar", contents)
-                self.assertLess(contents.index('"MODE=stage"'), contents.index('provisioner "file"'))
-                self.assertLess(contents.index('provisioner "file"'), contents.index('"MODE=clean"'))
+                self.assertEqual(contents.count('"MODE=clean"'), 2)
+                self.assertLess(
+                    contents.index('"MODE=stage"'),
+                    contents.index('provisioner "file"'),
+                )
+                self.assertLess(
+                    contents.index('provisioner "file"'),
+                    contents.rindex('"MODE=clean"'),
+                )
 
     def test_existing_output_or_scratch_blocks_packer_without_destroying_state(self):
         cases = (
@@ -941,6 +951,9 @@ exec "${REAL_MV:?}" "$@"
 
     def test_image_input_staging_verifies_extracts_and_cleans(self):
         helper = PACKER_DIR / "scripts/prepare-image-inputs.sh"
+        helper_contents = helper.read_text(encoding="utf-8")
+        self.assertIn('tar -xf "${material_snapshot}"', helper_contents)
+        self.assertNotIn('tar -xf "${material_path}"', helper_contents)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             payload = root / "payload"
@@ -990,6 +1003,7 @@ exec "${REAL_MV:?}" "$@"
             self.assertEqual(
                 (staging / "wait-spiffe-socket.sh").read_bytes(), b"script bytes\n"
             )
+            self.assertEqual(list(staging.glob(".material.*")), [])
 
             cleaned = subprocess.run(
                 [helper],
@@ -1075,6 +1089,13 @@ exec "${REAL_MV:?}" "$@"
 
         self.assertRegex(project, r'required_version\s*=\s*"= 1\.14\.2"')
         self.assertRegex(project, r'version\s*=\s*"= 1\.1\.6"')
+        self.assertIn(
+            "abspath(var.output_directory) == var.output_directory", project
+        )
+        self.assertEqual(
+            project.count('can(regex("^sha256:[0-9a-f]{64}$", material.digest))'),
+            2,
+        )
         self.assertIn('source "qemu" "nke-fde"', project)
         self.assertIn('source "qemu" "nke-non-fde"', project)
         self.assertRegex(project, r'name\s*=\s*"nke-node-fde"')
@@ -1092,7 +1113,7 @@ exec "${REAL_MV:?}" "$@"
             project.count(
                 'script = "${local.project_root}/scripts/prepare-image-inputs.sh"'
             ),
-            4,
+            6,
         )
         self.assertEqual(len(re.findall(r"generated\s*=\s*true", project)), 2)
         self.assertNotIn("/tmp/nke-image-inputs.tar", project)
@@ -1101,6 +1122,20 @@ exec "${REAL_MV:?}" "$@"
         self.assertEqual(len(re.findall(r"efi_drop_efivars\s*=\s*true", project)), 2)
         self.assertNotIn('${path.root}/artifacts', project)
         self.assertNotIn('${path.root}/.ssh', project)
+
+    def test_workflow_validates_packer_before_scarce_runner_builds(self):
+        workflow = (REPO_ROOT / ".github/workflows/os-image-artifact.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("  validate-packer:\n", workflow)
+        self.assertIn("    runs-on: ubuntu-latest\n", workflow)
+        self.assertIn("    needs: [matrix, validate-packer]\n", workflow)
+        self.assertEqual(workflow.count("Validate the Packer directory project"), 1)
+        self.assertIn(
+            "          PACKER_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}",
+            workflow,
+        )
 
     def test_failed_source_preflight_blocks_parallel_packer_init(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -80,6 +80,14 @@ build {
     script = "${local.project_root}/scripts/prepare-image-inputs.sh"
   }
 
+  error-cleanup-provisioner "shell-local" {
+    environment_vars = [
+      "MODE=clean",
+      "STAGING_DIRECTORY=${local.staged_image_inputs.fde}",
+    ]
+    script = "${local.project_root}/scripts/prepare-image-inputs.sh"
+  }
+
   provisioner "shell" {
     inline = ["mkdir -p /tmp/nke-image/luks"]
   }

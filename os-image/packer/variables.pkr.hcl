@@ -30,11 +30,11 @@ variable "material_manifest" {
       ]) == 1 &&
       length([
         for material in jsondecode(file(var.material_manifest)).materials : material
-        if material.binding == "installer-iso" && material.kind == "disk-image" && material.path == "materials/installer-iso" && contains(["amd64", "arm64"], material.architecture)
+        if material.binding == "installer-iso" && material.kind == "disk-image" && material.path == "materials/installer-iso" && contains(["amd64", "arm64"], material.architecture) && can(regex("^sha256:[0-9a-f]{64}$", material.digest))
       ]) == 1 &&
       length([
         for material in jsondecode(file(var.material_manifest)).materials : material
-        if material.binding == "image-inputs" && material.kind == "archive" && material.path == "materials/image-inputs" && contains(["amd64", "arm64"], material.architecture)
+        if material.binding == "image-inputs" && material.kind == "archive" && material.path == "materials/image-inputs" && contains(["amd64", "arm64"], material.architecture) && can(regex("^sha256:[0-9a-f]{64}$", material.digest))
       ]) == 1 &&
       [
         for material in jsondecode(file(var.material_manifest)).materials : material.architecture
@@ -45,7 +45,7 @@ variable "material_manifest" {
       ][0],
       false,
     )
-    error_message = "The material manifest must contain one installer-iso and one image-inputs record with matching amd64 or arm64 architecture."
+    error_message = "The material manifest must contain one installer-iso and one image-inputs record with matching amd64 or arm64 architecture and lowercase sha256 digests."
   }
 }
 
@@ -54,8 +54,8 @@ variable "output_directory" {
   description = "Absolute caller-owned parent directory for image outputs and build logs."
 
   validation {
-    condition     = startswith(var.output_directory, "/")
-    error_message = "The output_directory value must be absolute."
+    condition     = startswith(var.output_directory, "/") && abspath(var.output_directory) == var.output_directory
+    error_message = "The output_directory value must be a clean absolute path without dot segments."
   }
 }
 

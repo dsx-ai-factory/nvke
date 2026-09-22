@@ -60,6 +60,51 @@ grep -F "must use schemaVersion nke.dev/os-image-materials/v1" <<<"${output}" >/
   exit 1
 }
 
+missing_digest_manifest="${work}/amd64/material-manifest-missing-digest.json"
+"${PYTHON:-python3}" - "${work}/amd64/material-manifest.json" "${missing_digest_manifest}" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    manifest = json.load(source)
+del manifest["materials"][0]["digest"]
+with open(sys.argv[2], "w", encoding="utf-8") as destination:
+    json.dump(manifest, destination)
+PY
+if output="$("${packer_bin}" validate \
+  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "material_manifest=${missing_digest_manifest}" \
+  -var "output_directory=${work}/amd64/output" \
+  -var "build_log_directory=${work}/amd64/logs" \
+  -var "ssh_private_key_file=${work}/id_ed25519" \
+  -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+  "${project_root}" 2>&1)"; then
+  echo "Packer accepted a material record without a digest" >&2
+  exit 1
+fi
+grep -F "lowercase sha256 digests" <<<"${output}" >/dev/null || {
+  printf '%s\n' "${output}" >&2
+  echo "Packer rejected a missing digest without the contract error" >&2
+  exit 1
+}
+
+if output="$("${packer_bin}" validate \
+  -only=nke-node-non-fde.qemu.nke-non-fde \
+  -var "material_manifest=${work}/amd64/material-manifest.json" \
+  -var "output_directory=${work}/amd64/output/../escaped" \
+  -var "build_log_directory=${work}/amd64/logs" \
+  -var "ssh_private_key_file=${work}/id_ed25519" \
+  -var "ssh_public_key_file=${work}/id_ed25519.pub" \
+  "${project_root}" 2>&1)"; then
+  echo "Packer accepted an output directory containing a dot segment" >&2
+  exit 1
+fi
+grep -F "clean absolute path without dot segments" <<<"${output}" >/dev/null || {
+  printf '%s\n' "${output}" >&2
+  echo "Packer rejected an unsafe output directory without the contract error" >&2
+  exit 1
+}
+
 mismatched_manifest="${work}/amd64/material-manifest-mismatched-architecture.json"
 "${PYTHON:-python3}" - "${work}/amd64/material-manifest.json" "${mismatched_manifest}" <<'PY'
 import json
