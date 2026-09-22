@@ -5,8 +5,8 @@ package cwedeploy
 
 import "embed"
 
-// manifestsFS embeds the Helm values files this package installs Postgres,
-// Temporal, SPIRE, and CWE with, and the rendered manifest of the provisioned
+// manifestsFS embeds the Helm values files this package installs Temporal,
+// SPIRE, and CWE with, and the rendered manifest of the provisioned
 // infrastructure provider. Embedded rather than read from controller/ at
 // runtime: cli is a separate Go module from controller, and nkectl ships as a
 // standalone binary that may run far from a monorepo checkout. See the
@@ -16,7 +16,6 @@ import "embed"
 var manifestsFS embed.FS
 
 const (
-	postgresValuesFile = "manifests/postgres-values.yaml"
 	temporalValuesFile = "manifests/temporal-values.yaml"
 	spireValuesFile    = "manifests/spire-values.yaml"
 	spireNodePortFile  = "manifests/spire-server-nodeport.yaml"

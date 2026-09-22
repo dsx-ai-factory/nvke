@@ -21,25 +21,20 @@
 # workflow_call for one to reach it by, so a red run has to be looked at
 # deliberately rather than blocking a merge.
 #
-# WHY IT STAYS ADVISORY, so the question stops being reopened. It fails all
-# three tests README.md's "Adding a required gate member" asks, and invariant 5
+# WHY IT STAYS ADVISORY, so the question stops being reopened. It fails the
+# tests README.md's "Adding a required gate member" asks, and invariant 5
 # there is explicit that such work stays advisory:
 #
 #   Self-hosted runner.  Both legs need linux-*-cpu16 for a bootstrap cluster
 #   and three nested control planes. merge-gate.yml runs on `pull_request`, and
 #   a fork pull request cannot reach the NVIDIA pool at all.
 #
-#   Internal dependency with no fallback.  NKECTL_CWE_POSTGRES_CHART below
-#   pins an OCI chart on dc.local.gha-runners.nvidia.com, and cwedeploy's
-#   Engine.Deploy substitutes its default only when that value is empty. A
-#   non-empty unreachable value fails the deploy rather than falling back.
-#
 #   Latency.  12-17 minutes against a gate whose wall clock is about nine.
 #
 # Making it required would mean `gate` never reporting on a fork pull request,
 # so it could never merge -- the same failure the required-member rules exist
-# to prevent. Making it gateable means removing both dependencies first, which
-# is a change to the lane, not to its gate membership.
+# to prevent. Making it gateable means removing the runner dependency first,
+# which is a change to the lane, not to its gate membership.
 name: nkectl bootstrap e2e
 
 # No workflow_call: this lane left the merge gate when it moved to the mirror
@@ -84,9 +79,7 @@ jobs:
     name: e2e (${{ matrix.arch }})
     # The bootstrap cluster and three nested control planes need the 16-CPU
     # pool; pull requests reach it through the mirror branch. Neither leg needs
-    # /dev/kvm. Both stay on the fleet for NKECTL_CWE_POSTGRES_CHART below:
-    # cwedeploy Engine.Deploy defaults it only when empty, so it has no
-    # fallback.
+    # /dev/kvm.
     runs-on: ${{ matrix.runner }}
     if: github.repository == 'dsx-ai-factory/nke'
     strategy:
@@ -118,9 +111,6 @@ jobs:
       # run.sh writes it into the site inventory and uses it for every fixture
       # host's pre-provisioned SPIRE agent configuration.
       NKECTL_E2E_SPIRE_TRUST_DOMAIN: nkectl-e2e.example.test
-      # The postgres chart is an OCI artifact on Docker Hub too, and helm's
-      # pull of it counts against the same limit.
-      NKECTL_CWE_POSTGRES_CHART: oci://dc.local.gha-runners.nvidia.com/bitnamicharts/postgresql
       # nerdctl >= 1.7.0 is kind's stated minimum for its nerdctl provider.
       # nerdctl-full bundles a matching containerd, runc and CNI plugins, so
       # nothing here depends on the containerd shipped with the image's Docker.

@@ -128,8 +128,8 @@ site spec file rather than from flags or the environment. See
 
 `bootstrap site` deploys a SPIRE server, so nodes with a hardware identity have
 something to attest to and CWE gets a workload identity of its own. It comes
-from the SPIFFE project's own hardened charts, pinned alongside the Postgres and
-Temporal pins in [`internal/cwedeploy/cwedeploy.go`](internal/cwedeploy/cwedeploy.go)
+from the SPIFFE project's own hardened charts, pinned alongside the Temporal pin
+in [`internal/cwedeploy/cwedeploy.go`](internal/cwedeploy/cwedeploy.go)
 and installed with `helm --repo`, so nothing is added to your global Helm
 repository list. Everything it names is public, so a bootstrap needs no registry
 credential.
@@ -182,7 +182,6 @@ metadata.
 |---|---|---|
 | `NKECTL_BOOTSTRAP_CLUSTER_NAME` | `nkectl-bootstrap` | Name of the ephemeral cluster |
 | `NKECTL_CWE_IMAGE` | required | CWE image to deploy. Side-loaded from the local image store, so it must already be pulled. |
-| `NKECTL_CWE_POSTGRES_CHART` | `oci://registry-1.docker.io/bitnamicharts/postgresql` | Postgres chart, as an OCI reference or a local path. Point it at a mirror or a downloaded tarball. |
 | `NKECTL_CWE_TEMPORAL_CHART` | `temporal` from `https://go.temporal.io/helm-charts` | Temporal chart, as an OCI reference or a local path. Set, it replaces the repo lookup. |
 | `NKECTL_CWE_SPIRE_CHART` | `spire` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE chart, same semantics |
 | `NKECTL_CWE_SPIRE_CRDS_CHART` | `spire-crds` from `https://spiffe.github.io/helm-charts-hardened/` | SPIRE CRDs chart, same semantics |
@@ -190,10 +189,12 @@ metadata.
 | `NKECTL_CWE_READY_TIMEOUT` | `5m` | Bounds the wait for CWE's `/readyz` |
 | `NKECTL_BOOTSTRAP_DIAGNOSTICS_DIR` | `cluster-diagnostics` | Where a failed bootstrap writes a cluster dump before tearing the cluster down (`--diagnostics-dir`) |
 
-The chart versions stay pinned in `nkectl` whichever source a chart comes
-from. Helm does not check a local path against the pin, so a tarball has to be
-the pinned version. With the four chart variables set, no Helm chart is
-pulled from the internet. The images those charts run still come from their
+The controller and Postgres charts are carried in the binary and are never
+pulled, so they have no variable. For the three that are pulled, the chart
+version stays pinned in `nkectl` whichever source the chart comes from; helm
+does not check a local path against the pin, so a tarball has to be the pinned
+version. With those three variables set, no Helm chart is pulled from the
+internet. The images those charts run still come from their
 registries (`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` covers Docker Hub), and
 `clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
 

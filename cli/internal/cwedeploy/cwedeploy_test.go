@@ -35,9 +35,9 @@ type fakeRunner struct {
 	// pointed at. See captureApply.
 	applied []string
 
-	// chartFiles holds the files present in the chart directory a helm install
-	// was pointed at. See captureChart.
-	chartFiles map[string]bool
+	// chartFiles holds, per release, the files present in the chart directory
+	// that release's helm install was pointed at. See captureChart.
+	chartFiles map[string]map[string]bool
 }
 
 type fakeOutput struct {
@@ -74,27 +74,35 @@ func (f *fakeRunner) captureChart(name string, args []string) {
 		return
 	}
 	joined := joinArgs(args)
-	if !strings.Contains(joined, "upgrade --install "+cweReleaseName+" ") {
-		return
-	}
-	fields := strings.Fields(joined)
-	for i, field := range fields {
-		if field != cweReleaseName || i+1 >= len(fields) {
+	// The two releases installed from a chart carried in the binary. The rest
+	// name an upstream chart, which has no directory to walk.
+	for _, release := range []string{cweReleaseName, postgresReleaseName} {
+		if !strings.Contains(joined, "upgrade --install "+release+" ") {
 			continue
 		}
-		root := fields[i+1]
-		f.chartFiles = map[string]bool{}
-		_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
-				return nil //nolint:nilerr // a missing chart is what the test asserts on
+		fields := strings.Fields(joined)
+		for i, field := range fields {
+			if field != release || i+1 >= len(fields) {
+				continue
 			}
-			rel, relErr := filepath.Rel(root, path)
-			if relErr == nil {
-				f.chartFiles[filepath.ToSlash(rel)] = true
+			root := fields[i+1]
+			files := map[string]bool{}
+			_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+				if err != nil || info.IsDir() {
+					return nil //nolint:nilerr // a missing chart is what the test asserts on
+				}
+				rel, relErr := filepath.Rel(root, path)
+				if relErr == nil {
+					files[filepath.ToSlash(rel)] = true
+				}
+				return nil
+			})
+			if f.chartFiles == nil {
+				f.chartFiles = map[string]map[string]bool{}
 			}
-			return nil
-		})
-		return
+			f.chartFiles[release] = files
+			return
+		}
 	}
 }
 
@@ -318,27 +326,31 @@ func TestDeploy_EnablesPostInitCNI(t *testing.T) {
 	}
 }
 
-func TestDeploy_PullsThePostgresChartFromTheConfiguredRef(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		ref  string
-		want string
-	}{
-		{name: "default is Docker Hub", ref: "", want: postgresChartRef},
-		{name: "override is used verbatim", ref: "oci://mirror.example.com/bitnamicharts/postgresql", want: "oci://mirror.example.com/bitnamicharts/postgresql"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			runner := &fakeRunner{}
-			cfg := testConfig(t)
-			cfg.PostgresChartRef = tt.ref
-			if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", cfg); err != nil {
-				t.Fatalf("Deploy returned error: %v", err)
-			}
-			postgres := helmCalls(runner)[0]
-			if !strings.Contains(postgres, "upgrade --install postgres "+tt.want+" ") {
-				t.Errorf("postgres helm call = %q, want chart %q", postgres, tt.want)
-			}
-		})
+// TestDeploy_InstallsPostgresFromTheEmbeddedChart: Postgres comes from the
+// binary, like the controller chart. Nothing is pulled, so the call carries
+// neither a chart version nor a values file -- the chart's own values hold the
+// databases, the Service name both consumers dial, and the pinned image.
+func TestDeploy_InstallsPostgresFromTheEmbeddedChart(t *testing.T) {
+	runner := &fakeRunner{}
+	if err := New(runner, nil).Deploy(context.Background(), "/tmp/kubeconfig", testConfig(t)); err != nil {
+		t.Fatalf("Deploy returned error: %v", err)
+	}
+	postgres := helmCalls(runner)[0]
+
+	chartArg := chartArgOf(t, postgres, postgresReleaseName)
+	if !filepath.IsAbs(chartArg) {
+		t.Errorf("postgres chart = %q, want the path of an extracted chart", chartArg)
+	}
+	if !runner.chartFiles[postgresReleaseName]["templates/postgresql.yaml"] {
+		t.Errorf("the chart installed for postgres is not the embedded one: %v", runner.chartFiles[postgresReleaseName])
+	}
+	for _, unwanted := range []string{"--version", "--values"} {
+		if strings.Contains(postgres, unwanted+" ") {
+			t.Errorf("postgres call passes %s, but nothing is pulled and the chart carries its own values: %q", unwanted, postgres)
+		}
+	}
+	if !strings.Contains(postgres, "auth.password=test-password") {
+		t.Errorf("postgres call = %q, want the password supplied per run", postgres)
 	}
 }
 
@@ -370,7 +382,7 @@ func TestDeploy_InstallsPostgresTemporalSPIREThenCWEInOrder(t *testing.T) {
 
 	postgres, temporal, spireCRDs, spire, cwe := releases[0], releases[1], releases[2], releases[3], releases[4]
 
-	if !strings.Contains(postgres, "upgrade --install postgres "+postgresChartRef) {
+	if !strings.Contains(postgres, "upgrade --install postgres "+chartArgOf(t, postgres, postgresReleaseName)) {
 		t.Errorf("postgres call = %q, want the postgres release/chart", postgres)
 	}
 	if !strings.Contains(postgres, "auth.password=test-password") {
@@ -460,27 +472,49 @@ func TestDeploy_UsesTheEmbeddedChartOutsideARepo(t *testing.T) {
 	}
 
 	releases := helmCalls(runner)
-	chartArg := chartArgOf(t, releases[len(releases)-1])
-	// The directory is removed when Deploy returns, so what it held is
-	// recorded as the call is made.
-	if runner.chartFiles == nil {
-		t.Fatal("the extracted chart was never inspected")
+	// The directories are removed when Deploy returns, so what they held is
+	// recorded as each call is made.
+	for release, want := range map[string][]string{
+		cweReleaseName:      {"Chart.yaml", "templates/_helpers.tpl"},
+		postgresReleaseName: {"Chart.yaml", "templates/_helpers.tpl", "templates/postgresql.yaml"},
+	} {
+		files, ok := runner.chartFiles[release]
+		if !ok {
+			t.Fatalf("the chart installed for %s was never inspected", release)
+		}
+		for _, f := range want {
+			if !files[f] {
+				t.Errorf("the chart extracted for %s is missing %s: %v", release, f, files)
+			}
+		}
 	}
-	if !runner.chartFiles["Chart.yaml"] || !runner.chartFiles["templates/_helpers.tpl"] {
-		t.Errorf("the extracted chart is incomplete: %v", runner.chartFiles)
+	for _, release := range []string{cweReleaseName, postgresReleaseName} {
+		chartArg := chartArgOf(t, callFor(t, releases, release), release)
+		if _, err := os.Stat(chartArg); !os.IsNotExist(err) {
+			t.Errorf("the chart extracted for %s outlived Deploy at %s", release, chartArg)
+		}
 	}
-	if _, err := os.Stat(chartArg); !os.IsNotExist(err) {
-		t.Errorf("the extracted chart outlived Deploy at %s", chartArg)
+}
+
+// callFor returns the `helm upgrade --install <release>` call from calls.
+func callFor(t *testing.T, calls []string, release string) string {
+	t.Helper()
+	for _, call := range calls {
+		if strings.Contains(call, "upgrade --install "+release+" ") {
+			return call
+		}
 	}
+	t.Fatalf("no helm install for %s in %v", release, calls)
+	return ""
 }
 
 // chartArgOf returns the chart argument of a `helm upgrade --install <release>
 // <chart>` call.
-func chartArgOf(t *testing.T, call string) string {
+func chartArgOf(t *testing.T, call, release string) string {
 	t.Helper()
 	fields := strings.Fields(call)
 	for i, f := range fields {
-		if f == cweReleaseName && i+1 < len(fields) {
+		if f == release && i+1 < len(fields) {
 			return fields[i+1]
 		}
 	}

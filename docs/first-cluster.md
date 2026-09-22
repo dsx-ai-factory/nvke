@@ -295,12 +295,13 @@ REGISTRY_API_KEY=<key> nkectl bootstrap site -f sitespec.yaml
 The key can come from the environment, from `--registry-api-key`, or from
 `registry.apiKey` in the spec; the flag wins.
 
-Where Docker Hub is slow or blocked, point the seed cluster at a mirror:
-`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR` and `NKECTL_CWE_POSTGRES_CHART`. The Postgres
-chart pull is the step that times out. The Temporal and SPIRE charts have the
-same knob — `NKECTL_CWE_TEMPORAL_CHART`, `NKECTL_CWE_SPIRE_CHART` and
-`NKECTL_CWE_SPIRE_CRDS_CHART`, each an OCI reference or a local path — so every
-Helm chart the bootstrap installs can come from a mirror or from disk.
+Where Docker Hub is slow or blocked, point the seed cluster at a mirror with
+`NKECTL_BOOTSTRAP_DOCKERHUB_MIRROR`. The Postgres and controller charts are
+carried in the `nkectl` binary and are never pulled. The Temporal and SPIRE
+charts are, and each has a knob — `NKECTL_CWE_TEMPORAL_CHART`,
+`NKECTL_CWE_SPIRE_CHART` and `NKECTL_CWE_SPIRE_CRDS_CHART`, an OCI reference or
+a local path — so every Helm chart the bootstrap pulls can come from a mirror
+or from disk.
 `clusterctl init` still fetches Cluster API and cert-manager from `github.com`.
 For the full set of third-party images
 the bootstrap pulls — Postgres, Temporal, and the SPIRE stack — and to mirror

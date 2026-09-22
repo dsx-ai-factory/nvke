@@ -66,12 +66,6 @@ const (
 	spireReleaseName     = "spire"
 	cweReleaseName       = "cloud-workflow-engine"
 
-	// postgresChartRef is the Bitnami postgresql chart, pulled over OCI to
-	// avoid the classic HTTP repo's full index.yaml download. Version pin
-	// matches controller/Tiltfile's CHART_VERSION_POSTGRESQL.
-	postgresChartRef     = "oci://registry-1.docker.io/bitnamicharts/postgresql"
-	postgresChartVersion = "18.5.15"
-
 	// temporalChartRepo/temporalChartName are passed via `helm ... --repo`
 	// rather than a `helm repo add`, so this package does not mutate the
 	// caller's global Helm repo list. Version pin matches controller/
@@ -268,10 +262,6 @@ type Config struct {
 	// ReadyTimeout bounds how long WaitReady polls /readyz before giving up.
 	ReadyTimeout time.Duration
 
-	// PostgresChartRef is where helm pulls the Bitnami postgresql chart from,
-	// as an OCI reference or a local path. Empty uses Docker Hub's OCI registry.
-	PostgresChartRef string
-
 	// TemporalChartRef is where helm pulls the Temporal chart from, as an OCI
 	// reference or a local path. Empty uses the go.temporal.io chart repo.
 	TemporalChartRef string
@@ -304,7 +294,6 @@ func DefaultConfig() Config {
 		HelmTimeout:  envDuration("NKECTL_CWE_HELM_TIMEOUT", 5*time.Minute),
 		ReadyTimeout: envDuration("NKECTL_CWE_READY_TIMEOUT", 5*time.Minute),
 
-		PostgresChartRef:  os.Getenv("NKECTL_CWE_POSTGRES_CHART"),
 		TemporalChartRef:  os.Getenv("NKECTL_CWE_TEMPORAL_CHART"),
 		SPIREChartRef:     os.Getenv("NKECTL_CWE_SPIRE_CHART"),
 		SPIRECRDsChartRef: os.Getenv("NKECTL_CWE_SPIRE_CRDS_CHART"),
@@ -370,9 +359,9 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 			"(see Config.ProvisionedProviderImage)")
 	}
 
-	// The chart this binary was built with, and the only one it installs.
-	// helm takes a directory and this process runs the helm binary rather than
-	// linking its loader, so it is written out for the length of the deploy.
+	// The charts this binary was built with. helm takes a directory and this
+	// process runs the helm binary rather than linking its loader, so they are
+	// written out for the length of the deploy.
 	chartPath, err := os.MkdirTemp("", "nkectl-controller-chart-*")
 	if err != nil {
 		return fmt.Errorf("cwedeploy: creating a directory for the controller chart: %w", err)
@@ -380,6 +369,14 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	defer func() { _ = os.RemoveAll(chartPath) }()
 	if err := charts.Extract(charts.NKEController, chartPath); err != nil {
 		return fmt.Errorf("cwedeploy: writing out the controller chart: %w", err)
+	}
+	postgresChartPath, err := os.MkdirTemp("", "nkectl-postgres-chart-*")
+	if err != nil {
+		return fmt.Errorf("cwedeploy: creating a directory for the postgres chart: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(postgresChartPath) }()
+	if err := charts.Extract(charts.Postgresql, postgresChartPath); err != nil {
+		return fmt.Errorf("cwedeploy: writing out the postgres chart: %w", err)
 	}
 
 	password := cfg.PostgresPassword
@@ -405,23 +402,15 @@ func (e *Engine) Deploy(ctx context.Context, kubeconfigPath string, cfg Config) 
 	}
 	cwePort := effectiveCWEPort(cfg)
 
-	postgresValues, cleanup, err := writeEmbeddedFile(postgresValuesFile)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	postgresChart := cfg.PostgresChartRef
-	if postgresChart == "" {
-		postgresChart = postgresChartRef
-	}
-	e.log.Info("installing postgres", "namespace", postgresNamespace, "version", postgresChartVersion, "chart", postgresChart)
+	// No values file and no version flag: the chart carries its own defaults
+	// -- the databases CWE and Temporal expect, the Service name both dial,
+	// and the image pinned by digest -- and its version is the binary's.
+	// Only the password is supplied per run.
+	e.log.Info("installing postgres", "namespace", postgresNamespace, "chart", postgresChartPath)
 	if _, err := e.helm(ctx, kubeconfigPath,
-		"upgrade", "--install", postgresReleaseName, postgresChart,
+		"upgrade", "--install", postgresReleaseName, postgresChartPath,
 		"--namespace", postgresNamespace, "--create-namespace",
-		"--values", postgresValues,
 		"--set-string", "auth.password="+password,
-		"--version", postgresChartVersion,
 		"--wait", "--timeout", helmTimeout.String(),
 	); err != nil {
 		return fmt.Errorf("cwedeploy: installing postgres: %w", err)
