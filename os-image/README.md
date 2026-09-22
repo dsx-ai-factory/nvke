@@ -142,9 +142,9 @@ firmware, or guest packages. Its sibling `materials/` directory must contain:
   stages in `packer/artifacts/`.
 
 The Make targets accept `SSH_PRIVATE_KEY_FILE` and `SSH_PUBLIC_KEY_FILE` as an
-optional pair. When both are set, Make verifies that they are regular files and
-that the public key matches the private key, then passes their absolute paths to
-Packer. When neither is set, Make generates or reuses
+optional pair. When both are set, they must be absolute paths. Make verifies
+that they are regular files and that the public key matches the private key,
+then passes the paths to Packer. When neither is set, Make generates or reuses
 `packer/.ssh/id_ed25519` and `packer/.ssh/id_ed25519.pub`. Setting only one path
 is rejected before artifact preparation or Packer execution.
 

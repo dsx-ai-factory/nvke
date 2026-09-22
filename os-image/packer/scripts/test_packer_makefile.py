@@ -724,7 +724,7 @@ exec "${REAL_MV:?}" "$@"
     def test_make_uses_supplied_matching_ssh_key_pair(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            state = root / "caller-state"
+            state = root / "caller state"
             state.mkdir()
             private_key = state / "build-key"
             public_key = state / "build-key.pub"
@@ -776,8 +776,8 @@ exec "${REAL_MV:?}" "$@"
             self.assertIn(f"-var ssh_private_key_file={private_key}", build)
             self.assertIn(f"-var ssh_public_key_file={public_key}", build)
 
-    def test_make_rejects_incomplete_or_mismatched_ssh_key_inputs(self):
-        cases = ("private-only", "public-only", "mismatched")
+    def test_make_rejects_invalid_ssh_key_inputs(self):
+        cases = ("private-only", "public-only", "relative", "mismatched")
         for case in cases:
             with self.subTest(case=case), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
@@ -792,6 +792,7 @@ exec "${REAL_MV:?}" "$@"
                 key_files = {
                     "private-only": (private_key, None),
                     "public-only": (None, public_key),
+                    "relative": (Path("caller-key"), Path("caller-key.pub")),
                     "mismatched": (private_key, public_key),
                 }[case]
 
@@ -810,6 +811,8 @@ exec "${REAL_MV:?}" "$@"
                     self.assertIn("SSH_PUBLIC_KEY_FILE is required", result.stderr)
                 elif case == "public-only":
                     self.assertIn("SSH_PRIVATE_KEY_FILE is required", result.stderr)
+                elif case == "relative":
+                    self.assertIn("SSH private key path must be absolute", result.stderr)
                 else:
                     self.assertIn(
                         "SSH public key does not match private key", result.stderr

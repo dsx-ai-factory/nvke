@@ -19,8 +19,8 @@ ifneq ($(strip $(SSH_PRIVATE_KEY_FILE)),)
 else ifneq ($(strip $(SSH_PUBLIC_KEY_FILE)),)
   $(error SSH_PRIVATE_KEY_FILE is required when SSH_PUBLIC_KEY_FILE is set)
 endif
-override PACKER_SSH_PRIVATE_KEY_FILE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),$(abspath $(SSH_PRIVATE_KEY_FILE)),$(SSH_DIR)/id_ed25519)
-override PACKER_SSH_PUBLIC_KEY_FILE := $(if $(strip $(SSH_PUBLIC_KEY_FILE)),$(abspath $(SSH_PUBLIC_KEY_FILE)),$(SSH_DIR)/id_ed25519.pub)
+override PACKER_SSH_PRIVATE_KEY_FILE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),$(SSH_PRIVATE_KEY_FILE),$(SSH_DIR)/id_ed25519)
+override PACKER_SSH_PUBLIC_KEY_FILE := $(if $(strip $(SSH_PUBLIC_KEY_FILE)),$(SSH_PUBLIC_KEY_FILE),$(SSH_DIR)/id_ed25519.pub)
 override SSH_KEY_PREREQUISITE := $(if $(strip $(SSH_PRIVATE_KEY_FILE)),,$(SSH_DIR)/id_ed25519)
 # Make stages source-built packages here before adapting them into Packer's
 # explicit material layout. Keep the mutable scratch path Make-owned because
@@ -159,6 +159,14 @@ ssh-key: preflight $(SSH_KEY_PREREQUISITE)
 	@set -eu; \
 	private="$(PACKER_SSH_PRIVATE_KEY_FILE)"; \
 	public="$(PACKER_SSH_PUBLIC_KEY_FILE)"; \
+	case "$$private" in /*) ;; *) \
+		echo "SSH private key path must be absolute: $$private" >&2; \
+		exit 1; \
+	esac; \
+	case "$$public" in /*) ;; *) \
+		echo "SSH public key path must be absolute: $$public" >&2; \
+		exit 1; \
+	esac; \
 	if [ ! -f "$$private" ] || [ -L "$$private" ]; then \
 		echo "SSH private key is not a regular file: $$private" >&2; \
 		exit 1; \
@@ -436,8 +444,8 @@ _os-image-fde: ssh-key init-fde prepare-packer-inputs
 		-var material_manifest=$(MATERIAL_MANIFEST) \
 		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_FDE) \
 		-var build_log_directory=$(BUILD_LOGS) \
-		-var ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE) \
-		-var ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE) \
+		-var "ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE)" \
+		-var "ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE)" \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
 		-var cpus=$(CPUS) \
@@ -474,8 +482,8 @@ _os-image-non-fde: ssh-key init-non-fde prepare-packer-inputs
 		-var material_manifest=$(MATERIAL_MANIFEST) \
 		-var output_directory=$(PACKER_OUTPUT_DIRECTORY_NON_FDE) \
 		-var build_log_directory=$(BUILD_LOGS) \
-		-var ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE) \
-		-var ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE) \
+		-var "ssh_private_key_file=$(PACKER_SSH_PRIVATE_KEY_FILE)" \
+		-var "ssh_public_key_file=$(PACKER_SSH_PUBLIC_KEY_FILE)" \
 		-var accelerator=$(ACCELERATOR) \
 		-var cpu_model=$(CPU_MODEL) \
 		-var cpus=$(CPUS) \
