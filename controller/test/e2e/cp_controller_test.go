@@ -345,3 +345,102 @@ func validateControllerManagedControlPlaneSerializedDelete(test *tenantTest) {
 		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
 	}, Label("cp-controller", "cp-delete"), NodeTimeout(45*time.Minute))
 }
+
+// validateControllerManagedControlPlaneUnreachableDelete is the repair path an
+// operator needs when a control-plane node dies on a three-node control plane.
+// The quorum floor refuses an ordinary delete at that size -- removing one always
+// leaves two -- but a node that has stopped reporting healthy is not providing
+// fault tolerance, so refusing to remove it would preserve a three-node control
+// plane in name only and leave no way to take a failed member out through the API.
+//
+// The same node is deleted twice: once while healthy, which must be refused, and
+// again once it is genuinely unreachable, which must be accepted. Health is the
+// only thing that changes between them. Stopping kubelet rather than marking the
+// node is what makes drain and the graceful-shutdown wait actually fail, so this
+// exercises their tolerations instead of stepping past them, and asserting the
+// teardown runs to completion is what the unit tests cannot cover.
+func validateControllerManagedControlPlaneUnreachableDelete(test *tenantTest) {
+	It("refuses deleting a healthy control-plane node but removes an unreachable one", func(ctx context.Context) {
+		if os.Getenv("PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER") != "true" {
+			Skip("requires CWE deployed with PROVISION_CONTROL_PLANE_WITH_CONTROL_PLANE_CONTROLLER=true")
+		}
+
+		By("Confirming the control plane is settled at the three-node fault-tolerant floor")
+		Eventually(func(ctx context.Context) error {
+			return test.nke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
+			Should(Succeed(), "this spec needs a settled three-node control plane")
+		Expect(test.nke.WaitForJoinedControlPlaneNodes(ctx, test.cluster.ID, controlPlaneControllerUpdateDesiredCount)).To(Succeed(),
+			"all three control-plane nodes must report Joined for this to test the floor it bypasses")
+
+		cpNodes := expectSucceed(test.nke.ListClusterNodesByControlPlane(ctx, test.cluster.ID, true))
+		Expect(cpNodes).To(HaveLen(controlPlaneControllerUpdateDesiredCount))
+		victim := cpNodes[0]
+
+		By("Confirming the delete is refused while the node is healthy")
+		message := expectSucceed(test.nke.DeleteNodeExpectingRefusal(ctx, victim.ID))
+		Expect(message).To(ContainSubstring("below the minimum of 3"),
+			"a healthy node must still be held by the floor")
+
+		By(fmt.Sprintf("Stopping kubelet on %s so the node is genuinely unreachable", victim.Name))
+		// On CAPD a node maps to a Docker container of the same name.
+		Expect(runDockerCommand(ctx, "exec", victim.Name, "systemctl", "stop", "kubelet")).To(Succeed(),
+			"stopping kubelet is how this spec makes the node unreachable")
+
+		By("Waiting for CWE to observe the node as no longer ready")
+		Eventually(func(ctx context.Context) error {
+			state, err := test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			if err != nil {
+				return err
+			}
+			if state.ReadyNodeCount != controlPlaneControllerUpdateDesiredCount-1 {
+				return fmt.Errorf("control plane reports %d nodes ready; want %d after stopping one kubelet",
+					state.ReadyNodeCount, controlPlaneControllerUpdateDesiredCount-1)
+			}
+			return nil
+		}).WithContext(ctx).WithTimeout(10*time.Minute).WithPolling(5*time.Second).
+			Should(Succeed(), "CWE should notice the node stopped being ready")
+
+		By("Deleting the same node now that it is unreachable")
+		Expect(test.nke.DeleteNode(ctx, victim.ID)).To(Succeed(),
+			"the delete refused a moment ago must be accepted once the node is not serving")
+
+		By("Waiting for the teardown to finish and the node to be gone")
+		Eventually(func(ctx context.Context) error {
+			ids, err := test.nke.ControlPlaneNodeIDs(ctx, test.cluster.ID)
+			if err != nil {
+				return err
+			}
+			if _, present := ids[victim.ID]; present {
+				return fmt.Errorf("control-plane node %s (%s) is still present", victim.ID, victim.Name)
+			}
+			return nil
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5*time.Second).
+			Should(Succeed(), "an accepted delete must actually tear the node down, not stall")
+
+		By("Waiting for the controller to replace it and return to three healthy nodes")
+		Eventually(func(ctx context.Context) error {
+			state, err := test.nke.ControlPlaneDeleteStateAt(ctx, test.cluster.ID)
+			if err != nil {
+				return err
+			}
+			if state.InFlight() {
+				return fmt.Errorf("a control-plane delete is still in flight: %d deleting, %d requested",
+					state.Deleting, state.DeleteRequested)
+			}
+			if len(state.JoinedNodeIDs) != controlPlaneControllerUpdateDesiredCount {
+				return fmt.Errorf("control plane has %d joined nodes; want %d",
+					len(state.JoinedNodeIDs), controlPlaneControllerUpdateDesiredCount)
+			}
+			if state.ReadyNodeCount != controlPlaneControllerUpdateDesiredCount {
+				return fmt.Errorf("control plane has %d nodes KubernetesReady; want %d",
+					state.ReadyNodeCount, controlPlaneControllerUpdateDesiredCount)
+			}
+			return nil
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(10*time.Second).
+			Should(Succeed(), "the control plane should recover to three healthy nodes on its own")
+
+		By("Asserting the tenant cluster reports Ready for the recovered control plane")
+		assertControlPlaneNodesReadyInTenant(ctx, test, controlPlaneControllerUpdateDesiredCount)
+	}, Label("cp-controller", "cp-delete"), NodeTimeout(60*time.Minute))
+}

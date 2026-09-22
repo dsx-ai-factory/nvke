@@ -1103,6 +1103,11 @@ func TestNodeService_DeleteControlPlaneNodeThroughController(t *testing.T) {
 			Name:         fmt.Sprintf("cp-%d", n),
 			Conditions: db.NodeConditions{
 				Joined: db.NewCondition(joined, "Joined"),
+				// A joined control-plane node is a serving one. The quorum floor
+				// reads health to tell a live member from a dead one, so a fixture
+				// that omits it would read as unreachable and skip the floor.
+				KubernetesReady: db.NewCondition(joined, "Ready"),
+				NodeAgentReady:  db.NewCondition(joined, "Ready"),
 			},
 		}
 	}

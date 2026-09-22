@@ -180,6 +180,7 @@ var _ = DescribeTableSubtree("NKE with backend", withNicoVMSOSProfileEntries(
 			if spec.validate.controlPlaneControllerDelete {
 				validateControllerManagedControlPlaneDeleteRefused(&test)
 				validateControllerManagedControlPlaneSerializedDelete(&test)
+				validateControllerManagedControlPlaneUnreachableDelete(&test)
 			}
 			if spec.validate.nodePoolLifecycle {
 				validateAdditionalNodePool(&test)
