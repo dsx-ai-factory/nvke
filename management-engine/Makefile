@@ -26,7 +26,7 @@ lint: ## Run the repository-pinned Go linter.
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m ./...
 
 fmt: ## Format the handwritten API sources and tests.
-	gofmt -w api/v1alpha1/*.go
+	gofmt -w apis/v1alpha1/*.go
 
 controller-gen: ## Install the pinned CRD and deepcopy generator.
 	@if [ "$$($(CONTROLLER_GEN) --version 2>/dev/null)" != "Version: $(CONTROLLER_TOOLS_VERSION)" ]; then \
@@ -35,13 +35,13 @@ controller-gen: ## Install the pinned CRD and deepcopy generator.
 	fi
 
 generate: controller-gen ## Generate deepcopy code and CRD manifests from Go types.
-	"$(CONTROLLER_GEN)" object:headerFile=api/boilerplate.go.txt paths=./api/v1alpha1
-	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=api/boilerplate.yaml.txt paths=./api/v1alpha1 output:crd:artifacts:config=api/crds
+	"$(CONTROLLER_GEN)" object:headerFile=apis/boilerplate.go.txt paths=./apis/v1alpha1
+	"$(CONTROLLER_GEN)" crd:crdVersions=v1,headerFile=apis/boilerplate.yaml.txt paths=./apis/v1alpha1 output:crd:artifacts:config=apis/crds
 
 manifests: generate ## Generate the installable internal CRDs.
 
 generate-check: ## Verify generation without relying on Git tracking new files.
 	@set -eu; snapshot=$$(mktemp -d); trap 'rm -rf "$$snapshot"' EXIT; \
-		cp -R api "$$snapshot/api"; \
+		cp -R apis "$$snapshot/apis"; \
 		$(MAKE) generate; \
-		diff -ru "$$snapshot/api" api
+		diff -ru "$$snapshot/apis" apis
