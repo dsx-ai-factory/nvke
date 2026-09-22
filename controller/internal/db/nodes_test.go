@@ -155,6 +155,181 @@ func TestNode_HasInfrastructureProvisioningStarted(t *testing.T) {
 	}
 }
 
+func TestNode_IsKubernetesReady(t *testing.T) {
+	tests := []struct {
+		name string
+		node db.Node
+		want bool
+	}{
+		{
+			name: "kubernetes ready is true",
+			node: db.Node{Conditions: db.NodeConditions{KubernetesReady: db.Condition{Status: db.ConditionStatusTrue}}},
+			want: true,
+		},
+		{
+			name: "kubernetes ready is false",
+			node: db.Node{Conditions: db.NodeConditions{KubernetesReady: db.Condition{Status: db.ConditionStatusFalse}}},
+			want: false,
+		},
+		{
+			name: "kubernetes ready is unknown",
+			node: db.Node{Conditions: db.NodeConditions{KubernetesReady: db.Condition{Status: db.ConditionStatusUnknown}}},
+			want: false,
+		},
+		{
+			name: "kubernetes ready is empty",
+			node: db.Node{Conditions: db.NodeConditions{KubernetesReady: db.Condition{Status: ""}}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.node.IsKubernetesReady())
+		})
+	}
+}
+
+func TestNode_IsPending(t *testing.T) {
+	tests := []struct {
+		name string
+		node db.Node
+		want bool
+	}{
+		{
+			name: "pending is true",
+			node: db.Node{Conditions: db.NodeConditions{Pending: db.Condition{Status: db.ConditionStatusTrue}}},
+			want: true,
+		},
+		{
+			name: "pending is false",
+			node: db.Node{Conditions: db.NodeConditions{Pending: db.Condition{Status: db.ConditionStatusFalse}}},
+			want: false,
+		},
+		{
+			name: "pending is unknown",
+			node: db.Node{Conditions: db.NodeConditions{Pending: db.Condition{Status: db.ConditionStatusUnknown}}},
+			want: false,
+		},
+		{
+			name: "pending is empty",
+			node: db.Node{Conditions: db.NodeConditions{Pending: db.Condition{Status: ""}}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.node.IsPending())
+		})
+	}
+}
+
+func TestNode_IsMarkedForRecycling(t *testing.T) {
+	tests := []struct {
+		name string
+		node db.Node
+		want bool
+	}{
+		{
+			name: "marked for recycling is true",
+			node: db.Node{Conditions: db.NodeConditions{MarkedForRecycling: db.Condition{Status: db.ConditionStatusTrue}}},
+			want: true,
+		},
+		{
+			name: "marked for recycling is false",
+			node: db.Node{Conditions: db.NodeConditions{MarkedForRecycling: db.Condition{Status: db.ConditionStatusFalse}}},
+			want: false,
+		},
+		{
+			name: "marked for recycling is unknown",
+			node: db.Node{Conditions: db.NodeConditions{MarkedForRecycling: db.Condition{Status: db.ConditionStatusUnknown}}},
+			want: false,
+		},
+		{
+			name: "marked for recycling is empty",
+			node: db.Node{Conditions: db.NodeConditions{MarkedForRecycling: db.Condition{Status: ""}}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.node.IsMarkedForRecycling())
+		})
+	}
+}
+
+func TestNode_IsMarkedForDeletion(t *testing.T) {
+	tests := []struct {
+		name string
+		node db.Node
+		want bool
+	}{
+		{
+			name: "deleting is true",
+			node: db.Node{Conditions: db.NodeConditions{Deleting: db.Condition{Status: db.ConditionStatusTrue}}},
+			want: true,
+		},
+		{
+			name: "deleting is false",
+			node: db.Node{Conditions: db.NodeConditions{Deleting: db.Condition{Status: db.ConditionStatusFalse}}},
+			want: false,
+		},
+		{
+			name: "deleting is unknown",
+			node: db.Node{Conditions: db.NodeConditions{Deleting: db.Condition{Status: db.ConditionStatusUnknown}}},
+			want: false,
+		},
+		{
+			name: "deleting is empty",
+			node: db.Node{Conditions: db.NodeConditions{Deleting: db.Condition{Status: ""}}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.node.IsMarkedForDeletion())
+		})
+	}
+}
+
+func TestNode_IsProvisioned(t *testing.T) {
+	tests := []struct {
+		name string
+		node db.Node
+		want bool
+	}{
+		{
+			name: "provisioned is true",
+			node: db.Node{Conditions: db.NodeConditions{Provisioned: db.Condition{Status: db.ConditionStatusTrue}}},
+			want: true,
+		},
+		{
+			name: "provisioned is false",
+			node: db.Node{Conditions: db.NodeConditions{Provisioned: db.Condition{Status: db.ConditionStatusFalse}}},
+			want: false,
+		},
+		{
+			name: "provisioned is unknown",
+			node: db.Node{Conditions: db.NodeConditions{Provisioned: db.Condition{Status: db.ConditionStatusUnknown}}},
+			want: false,
+		},
+		{
+			name: "provisioned is empty",
+			node: db.Node{Conditions: db.NodeConditions{Provisioned: db.Condition{Status: ""}}},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.node.IsProvisioned())
+		})
+	}
+}
+
 func TestNode_NicoProvider(t *testing.T) {
 	instanceTypeID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 
