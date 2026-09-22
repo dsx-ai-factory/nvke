@@ -32,29 +32,30 @@ type failureDomains struct {
 	observedByNodeName map[string]string
 }
 
-// readFailureDomains returns the control-plane-eligible failure domains of a
-// cluster and the domain CAPI already reports for each of its active
-// control-plane Machines.
+// readFailureDomains returns a complete snapshot of the control-plane-eligible
+// failure domains of a cluster and the domain CAPI already reports for each of
+// its active control-plane Machines. A discovery error is returned with a nil
+// snapshot.
 //
 // Call it outside the reconcile transaction so the cluster row lock is not held
 // across the Kubernetes reads.
-func (c *Controller) readFailureDomains(ctx context.Context, clusterID uuid.UUID) (failureDomains, error) {
+func (c *Controller) readFailureDomains(ctx context.Context, clusterID uuid.UUID) (*failureDomains, error) {
 	if !c.cfg.UseControlPlaneControllerForControlPlane() {
-		return failureDomains{}, nil
+		return &failureDomains{}, nil
 	}
 
 	cluster, err := c.db.GetCluster(ctx, clusterID)
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
-			return failureDomains{}, nil
+			return &failureDomains{}, nil
 		}
-		return failureDomains{}, fmt.Errorf("get cluster for failure-domain discovery: %w", err)
+		return nil, fmt.Errorf("get cluster for failure-domain discovery: %w", err)
 	}
 	if cluster.Conditions.Deleting.Status == db.ConditionStatusTrue {
-		return failureDomains{}, nil
+		return &failureDomains{}, nil
 	}
 	if c.k8sClient == nil {
-		return failureDomains{}, fmt.Errorf("kubernetes client is not configured")
+		return nil, fmt.Errorf("kubernetes client is not configured")
 	}
 
 	capiCluster := &clusterv1.Cluster{}
@@ -62,16 +63,16 @@ func (c *Controller) readFailureDomains(ctx context.Context, clusterID uuid.UUID
 		Name:      cluster.Name,
 		Namespace: constants.NamespaceNKESystem,
 	}, capiCluster); err != nil {
-		return failureDomains{}, fmt.Errorf("get CAPI cluster for failure-domain discovery: %w", err)
+		return nil, fmt.Errorf("get CAPI cluster for failure-domain discovery: %w", err)
 	}
 
 	// An initializing cluster has not published its domains yet, which is not the
 	// same as a provider that has none.
 	if !ptr.Deref(capiCluster.Status.Initialization.InfrastructureProvisioned, false) {
-		return failureDomains{}, fmt.Errorf("capi cluster infrastructure is not yet provisioned")
+		return nil, fmt.Errorf("capi cluster infrastructure is not yet provisioned")
 	}
 
-	discovered := failureDomains{}
+	discovered := &failureDomains{}
 	for _, domain := range capiCluster.Status.FailureDomains {
 		if ptr.Deref(domain.ControlPlane, false) {
 			discovered.eligible = append(discovered.eligible, domain.Name)
@@ -86,9 +87,7 @@ func (c *Controller) readFailureDomains(ctx context.Context, clusterID uuid.UUID
 		client.InNamespace(constants.NamespaceNKESystem),
 		client.MatchingLabels{clusterv1.ClusterNameLabel: cluster.Name},
 	); err != nil {
-		// Eligible domains are already known so we can return
-		// and use those even if the observation failed.
-		return discovered, fmt.Errorf("list CAPI machines for failure-domain discovery: %w", err)
+		return nil, fmt.Errorf("list CAPI machines for failure-domain discovery: %w", err)
 	}
 
 	discovered.observedByNodeName = make(map[string]string, len(machines.Items))

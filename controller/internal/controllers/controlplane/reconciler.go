@@ -24,8 +24,8 @@ type reconciler struct {
 	db                db.Tx
 	cweTemporalClient client.Client
 
-	failureDomains                  failureDomains
-	failureDomainDiscoverySucceeded bool
+	// failureDomains is nil when discovery failed
+	failureDomains *failureDomains
 }
 
 func newReconciler(
@@ -33,16 +33,14 @@ func newReconciler(
 	logger *slog.Logger,
 	db db.Tx,
 	cweTemporalClient client.Client,
-	failureDomains failureDomains,
-	failureDomainDiscoverySucceeded bool,
+	failureDomains *failureDomains,
 ) *reconciler {
 	return &reconciler{
-		cfg:                             cfg,
-		logger:                          logger,
-		db:                              db,
-		cweTemporalClient:               cweTemporalClient,
-		failureDomains:                  failureDomains,
-		failureDomainDiscoverySucceeded: failureDomainDiscoverySucceeded,
+		cfg:               cfg,
+		logger:            logger,
+		db:                db,
+		cweTemporalClient: cweTemporalClient,
+		failureDomains:    failureDomains,
 	}
 }
 

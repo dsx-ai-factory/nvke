@@ -87,8 +87,20 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 		return false, err
 	}
 
+	// No snapshot means discovery failed, but we only defer when a node is actually
+	// waiting for a placement decision (existing infrastructure is not eligible).
+	if r.failureDomains == nil {
+		for i := range nodes {
+			node := &nodes[i]
+			if !node.IsMarkedForDeletion() && !node.HasInfrastructureProvisioningStarted() && !node.HasFailureDomainDecision() {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+
 	// Provider advertises no domains, so there's nothing to assign.
-	if r.failureDomainDiscoverySucceeded && len(r.failureDomains.eligible) == 0 {
+	if len(r.failureDomains.eligible) == 0 {
 		return false, r.recordNoFailureDomain(ctx, nodes)
 	}
 
@@ -135,10 +147,9 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 	}
 
 	// In order to ensure a balanced topology, we can't proceed
-	// until unobserved, existing nodes get a placement decision, nor can we
-	// proceed with incomplete info on a failed discovery attempt.
-	// In either case, return true here to signal a requeue to the caller.
-	if hasUnobserved || !r.failureDomainDiscoverySucceeded {
+	// until unobserved, existing nodes get a placement decision. Return true here
+	// to signal a requeue to the caller.
+	if hasUnobserved {
 		return true, nil
 	}
 

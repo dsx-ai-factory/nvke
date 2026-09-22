@@ -91,6 +91,7 @@ func TestReadFailureDomains(t *testing.T) {
 		domains, err := controller.readFailureDomains(context.Background(), clusterID)
 
 		require.NoError(t, err)
+		require.NotNil(t, domains)
 		assert.Equal(t, []string{"fd-a"}, domains.eligible)
 		assert.Equal(t, map[string]string{
 			"cp-status": "fd-status",
@@ -124,6 +125,7 @@ func TestReadFailureDomains(t *testing.T) {
 		domains, err := controller.readFailureDomains(context.Background(), clusterID)
 
 		require.NoError(t, err)
+		require.NotNil(t, domains)
 		assert.Empty(t, domains.eligible)
 		assert.Zero(t, k8sClient.listCalls)
 		mockDB.AssertExpectations(t)
@@ -217,10 +219,12 @@ func TestReadFailureDomainsWithoutAPlacementView(t *testing.T) {
 
 			if tc.wantErr == "" {
 				require.NoError(t, err)
+				require.NotNil(t, domains)
+				assert.Empty(t, domains.eligible)
 			} else {
 				require.ErrorContains(t, err, tc.wantErr)
+				assert.Nil(t, domains)
 			}
-			assert.Empty(t, domains.observedByNodeName)
 			mockDB.AssertExpectations(t)
 		})
 	}
@@ -385,8 +389,7 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 			slog.New(slog.DiscardHandler),
 			tx,
 			nil,
-			failureDomains{eligible: []string{"fd-c", "fd-a", "fd-b"}},
-			true,
+			&failureDomains{eligible: []string{"fd-c", "fd-a", "fd-b"}},
 		)
 		result, err := r.reconcile(ctx, cluster)
 		require.NoError(t, err)
