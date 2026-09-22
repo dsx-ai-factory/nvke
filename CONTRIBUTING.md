@@ -142,18 +142,18 @@ Remember, if you are unsure about anything, don't hesitate to comment on issues 
 
 ### Managing PR labels
 
-Each PR must be labeled according to whether it is a "breaking" or "non-breaking" change (using GitHub labels). This is used to highlight changes that users should know about when upgrading.
+Each PR must mark whether it is a breaking change. This is used to highlight changes that users should know about when upgrading.
 
 For nke, a "breaking" change is one that modifies the public API in a non-backward-compatible way.
-Backward-compatible changes (such as adding a new optional parameter) do not need to be labeled breaking.
+Backward-compatible changes (such as adding a new optional parameter) are not breaking.
+Mark a breaking change with `!` after the type in the PR title or a `BREAKING CHANGE:` footer (see [Commit message format](#commit-message-format)); there is no label for it.
 
-Labels to apply:
+Apply one change-category label:
 
 | Label | When to use |
 |-------|------------|
-| `breaking` | Public API change that is not backward-compatible |
 | `feature` | New capability added |
-| `improvement` | Enhancement to existing functionality |
+| `enhancement` | Improvement to existing functionality |
 | `bug` | Regression or defect fix |
 | `documentation` | Docs-only change |
 

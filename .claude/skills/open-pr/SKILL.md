@@ -29,9 +29,9 @@ executable checklist, not a replacement for it.
    the squash; do not polish them.
 5. Reference the issue with `Closes #<N>` for non-trivial changes (the repo is
    issue-first — open one before a significant PR).
-6. Apply exactly one change-category label: `breaking`, `feature`,
-   `improvement`, `bug`, or `documentation`. `breaking` also needs `!` in the
-   title or a `BREAKING CHANGE:` footer.
+6. Apply exactly one change-category label: `feature`, `enhancement`, `bug`,
+   or `documentation`. There is no `breaking` label; mark a breaking change
+   with `!` in the title or a `BREAKING CHANGE:` footer.
 7. If a substantial portion of the change was AI-generated, disclose that in
    the PR description (required by CONTRIBUTING.md).
 
