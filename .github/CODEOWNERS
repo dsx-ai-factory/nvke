@@ -20,7 +20,7 @@ go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 /go.work.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 
 # area/controller — Cloud Workflow Engine
-/controller/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris
+/controller/ @dsx-ai-factory/nke-write @TerryHowe @vwilson-nvidia @rbever-nvidia @danbudris @jedimt
 /cluster-api-provider-provisioned/ @dsx-ai-factory/nke-write @jonathanmeier5 @rbever-nvidia @TerryHowe
 
 # area/agent — renamed from node-agent in #36
@@ -42,8 +42,8 @@ go.sum @dsx-ai-factory/nke-write @TerryHowe @rbever-nvidia
 # area/docs
 # `docs/` has no leading slash, so it matches any depth, like labeler's
 # `**/docs/**`. `/*.md` does not cross a `/`, so a module README stays put.
-docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
-/docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
+docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
+/docs/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris @jedimt
 /fern/ @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
 /*.md @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
 /LICENSE @dsx-ai-factory/nke-write @TerryHowe @j-griffith @danbudris
