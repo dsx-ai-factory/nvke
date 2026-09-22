@@ -206,12 +206,12 @@ func buildTLSJWTCredentials(
 ) (credentials.TransportCredentials, error) {
 	jwtSource, err := workloadapi.NewJWTSource(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(cfg.SPIFFESocketPath)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create JWT-SVID source: %w", err)
+		return nil, fmt.Errorf("failed to create jwt-svid source: %w", err)
 	}
 
 	exchanger, err := tlsjwt.NewExchangeClient(cfg.DSXIdentityExchangeURL, cfg.DSXIdentityCABundle, cfg.DSXIdentityTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create DSX Identity exchange client: %w", err)
+		return nil, fmt.Errorf("failed to create dsx identity exchange client: %w", err)
 	}
 
 	tokens, err := tlsjwt.NewCachingTokenSource(tlsjwt.WorkloadAPISVIDs(jwtSource), exchanger)
@@ -280,7 +280,8 @@ func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server
 			slog.Info("adding TLS/JWT authentication to gRPC", "exchange_endpoint", cfg.DSXIdentityExchangeURL)
 			transportCredentials, err = buildTLSJWTCredentials(ctx, cfg, transportCredentials)
 			if err != nil {
-				log.Fatalf("failed to build TLS/JWT credentials: %v", err)
+				slog.Error("failed to build TLS/JWT credentials", "err", err)
+				os.Exit(1)
 			}
 		}
 		serverOptions = append(serverOptions, grpc.Creds(transportCredentials))
@@ -419,7 +420,8 @@ func main() {
 	}
 
 	if err := validateAuthConfig(cfg); err != nil {
-		log.Fatalf("invalid authentication configuration: %v", err)
+		slog.Error("invalid authentication configuration", "err", err)
+		os.Exit(1)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

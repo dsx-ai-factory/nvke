@@ -42,10 +42,10 @@ func NewServerCredentials(
 	logger *slog.Logger,
 ) (*ServerCredentials, error) {
 	if base == nil {
-		return nil, errors.New("TLS/JWT authentication requires base transport credentials")
+		return nil, errors.New("tls/jwt authentication requires base transport credentials")
 	}
 	if tokens == nil {
-		return nil, errors.New("TLS/JWT authentication requires a token source")
+		return nil, errors.New("tls/jwt authentication requires a token source")
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -66,7 +66,7 @@ func NewServerCredentials(
 func (c *ServerCredentials) ServerHandshake(rawConn net.Conn) (net.Conn, credentials.AuthInfo, error) {
 	deadline := time.Now().Add(c.timeout)
 	if err := rawConn.SetDeadline(deadline); err != nil {
-		return nil, nil, fmt.Errorf("setting TLS/JWT handshake deadline: %w", err)
+		return nil, nil, fmt.Errorf("setting tls/jwt handshake deadline: %w", err)
 	}
 
 	// A failed base handshake means the peer did not present an acceptable
@@ -92,7 +92,7 @@ func (c *ServerCredentials) ServerHandshake(rawConn net.Conn) (net.Conn, credent
 		return fail(fmt.Errorf("writing node-agent authentication record: %w", err))
 	}
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		return fail(fmt.Errorf("clearing TLS/JWT handshake deadline: %w", err))
+		return fail(fmt.Errorf("clearing tls/jwt handshake deadline: %w", err))
 	}
 
 	c.logger.Debug("node-agent authentication record sent", "remote_address", remoteAddress(conn))
@@ -102,7 +102,7 @@ func (c *ServerCredentials) ServerHandshake(rawConn net.Conn) (net.Conn, credent
 // ClientHandshake reports that these credentials are server-only. The agent
 // never dials a controller.
 func (c *ServerCredentials) ClientHandshake(context.Context, string, net.Conn) (net.Conn, credentials.AuthInfo, error) {
-	return nil, nil, errors.New("TLS/JWT node-agent credentials support server handshakes only")
+	return nil, nil, errors.New("tls/jwt node-agent credentials support server handshakes only")
 }
 
 func (c *ServerCredentials) Info() credentials.ProtocolInfo {

@@ -74,17 +74,17 @@ func TestNewExchangeClient_RejectsUnusableConfiguration(t *testing.T) {
 		"plaintext endpoint": {
 			endpoint: "http://identity.example.test/v1/exchange",
 			timeout:  time.Second,
-			wantErr:  "absolute https URL",
+			wantErr:  "absolute https url",
 		},
 		"relative endpoint": {
 			endpoint: "/v1/exchange",
 			timeout:  time.Second,
-			wantErr:  "absolute https URL",
+			wantErr:  "absolute https url",
 		},
 		"empty endpoint": {
 			endpoint: "",
 			timeout:  time.Second,
-			wantErr:  "absolute https URL",
+			wantErr:  "absolute https url",
 		},
 		"zero timeout": {
 			endpoint: "https://identity.example.test/v1/exchange",
@@ -121,7 +121,7 @@ func TestNewExchangeClient_RejectsUnusableCABundle(t *testing.T) {
 		client, err := NewExchangeClient(endpoint, filepath.Join(t.TempDir(), "absent.pem"), time.Second)
 		assert.Nil(t, client)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "reading DSX Identity CA bundle")
+		assert.Contains(t, err.Error(), "reading dsx identity ca bundle")
 	})
 
 	t.Run("file with no certificates", func(t *testing.T) {
@@ -166,10 +166,28 @@ func TestExchange_SendsRFC8693RequestAndReturnsToken(t *testing.T) {
 	assert.Equal(t, "application/x-www-form-urlencoded", gotContentType)
 	assert.Equal(t, grantTypeTokenExchange, gotForm.Get("grant_type"))
 	assert.Equal(t, "spire-jwt-svid", gotForm.Get("subject_token"))
-	assert.Equal(t, subjectTokenTypeJWT, gotForm.Get("subject_token_type"))
+	assert.Equal(t, tokenTypeJWT, gotForm.Get("subject_token_type"))
+	assert.Equal(t, tokenTypeJWT, gotForm.Get("requested_token_type"))
 	// The endpoint takes no audience parameter; it preserves the audience of
 	// the subject token.
 	assert.Empty(t, gotForm.Get("audience"))
+}
+
+func TestExchange_AcceptsAResponseThatOmitsTheIssuedTokenType(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"access_token":"dsx-token","token_type":"Bearer","expires_in":300}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewExchangeClient(server.URL+"/v1/exchange", writeServerCABundle(t, server), 5*time.Second)
+	require.NoError(t, err)
+
+	token, err := client.Exchange(context.Background(), "spire-jwt-svid")
+	require.NoError(t, err)
+	assert.Equal(t, "dsx-token", token.Value)
 }
 
 func TestExchange_FailsClosedOnUnusableResponses(t *testing.T) {
@@ -184,17 +202,17 @@ func TestExchange_FailsClosedOnUnusableResponses(t *testing.T) {
 		"unauthorized": {
 			status:  http.StatusUnauthorized,
 			body:    `{"error":"invalid_grant"}`,
-			wantErr: "returned HTTP 401",
+			wantErr: "returned http 401",
 		},
 		"server error": {
 			status:  http.StatusInternalServerError,
 			body:    "",
-			wantErr: "returned HTTP 500",
+			wantErr: "returned http 500",
 		},
 		"malformed json": {
 			status:  http.StatusOK,
 			body:    "{",
-			wantErr: "decoding DSX Identity exchange response",
+			wantErr: "decoding dsx identity exchange response",
 		},
 		"no access token": {
 			status:  http.StatusOK,
@@ -210,6 +228,11 @@ func TestExchange_FailsClosedOnUnusableResponses(t *testing.T) {
 			status:  http.StatusOK,
 			body:    `{"access_token":"dsx-token","expires_in":-1}`,
 			wantErr: "returned expires_in -1",
+		},
+		"issued token type is not a jwt": {
+			status:  http.StatusOK,
+			body:    `{"access_token":"dsx-token","issued_token_type":"urn:ietf:params:oauth:token-type:access_token","expires_in":300}`,
+			wantErr: `issued token type "urn:ietf:params:oauth:token-type:access_token"`,
 		},
 	}
 
@@ -269,7 +292,7 @@ func TestExchange_RejectsAnEndpointOutsideTheCABundle(t *testing.T) {
 
 	_, err = client.Exchange(context.Background(), "spire-jwt-svid")
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "calling DSX Identity exchange")
+	assert.Contains(t, err.Error(), "calling dsx identity exchange")
 }
 
 func TestExchange_RejectsAnEmptySubjectToken(t *testing.T) {

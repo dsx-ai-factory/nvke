@@ -71,7 +71,7 @@ func TestNewCachingTokenSource_RequiresItsCollaborators(t *testing.T) {
 		source, err := NewCachingTokenSource(nil, &stubExchanger{})
 		assert.Nil(t, source)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "JWT-SVID source")
+		assert.Contains(t, err.Error(), "jwt-svid source")
 	})
 
 	t.Run("nil exchanger", func(t *testing.T) {
@@ -154,22 +154,27 @@ func TestToken_FailsClosedAndKeepsTheCacheWhenRefreshFails(t *testing.T) {
 	tests := map[string]parameters{
 		"workload API unavailable": {
 			svidErr:      errors.New("no such file or directory"),
-			wantErr:      "fetching JWT-SVID for audience " + ControllerAudience,
+			wantErr:      "fetching jwt-svid for audience " + ControllerAudience,
 			wantSVIDCall: 1,
 		},
 		"exchange unavailable": {
 			exchangeErr:  errors.New("connection refused"),
-			wantErr:      "exchanging JWT-SVID for a DSX identity token",
+			wantErr:      "exchanging jwt-svid for a dsx identity token",
 			wantSVIDCall: 1,
 		},
 		"exchange returns an empty token": {
 			tokens:       []Token{{Value: "", Expiry: now.Add(time.Minute)}},
-			wantErr:      "empty DSX identity token",
+			wantErr:      "empty dsx identity token",
 			wantSVIDCall: 1,
 		},
 		"exchange returns an expired token": {
 			tokens:       []Token{{Value: "dsx-a", Expiry: now.Add(-time.Second)}},
-			wantErr:      "token that expired at",
+			wantErr:      "token too close to expiry at",
+			wantSVIDCall: 1,
+		},
+		"exchange returns a token inside the refresh window": {
+			tokens:       []Token{{Value: "dsx-a", Expiry: now.Add(DefaultRefreshBefore / 2)}},
+			wantErr:      "token too close to expiry at",
 			wantSVIDCall: 1,
 		},
 	}

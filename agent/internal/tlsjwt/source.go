@@ -38,7 +38,7 @@ func WorkloadAPISVIDs(fetcher JWTSVIDFetcher) FetchSVIDFunc {
 			return "", err
 		}
 		if svid == nil {
-			return "", errors.New("workload API returned no JWT-SVID")
+			return "", errors.New("workload api returned no jwt-svid")
 		}
 		return svid.Marshal(), nil
 	}
@@ -68,7 +68,7 @@ type CachingTokenSource struct {
 // DSX Identity exchange.
 func NewCachingTokenSource(fetchSVID FetchSVIDFunc, exchanger Exchanger) (*CachingTokenSource, error) {
 	if fetchSVID == nil {
-		return nil, errors.New("node-agent token source requires a JWT-SVID source")
+		return nil, errors.New("node-agent token source requires a jwt-svid source")
 	}
 	if exchanger == nil {
 		return nil, errors.New("node-agent token source requires a token exchanger")
@@ -96,18 +96,18 @@ func (s *CachingTokenSource) Token(ctx context.Context) (string, error) {
 
 	svid, err := s.fetchSVID(ctx, s.audience)
 	if err != nil {
-		return "", fmt.Errorf("fetching JWT-SVID for audience %s: %w", s.audience, err)
+		return "", fmt.Errorf("fetching jwt-svid for audience %s: %w", s.audience, err)
 	}
 	if svid == "" {
-		return "", fmt.Errorf("workload API returned an empty JWT-SVID for audience %s", s.audience)
+		return "", fmt.Errorf("workload api returned an empty jwt-svid for audience %s", s.audience)
 	}
 
 	token, err := s.exchanger.Exchange(ctx, svid)
 	if err != nil {
-		return "", fmt.Errorf("exchanging JWT-SVID for a DSX identity token: %w", err)
+		return "", fmt.Errorf("exchanging jwt-svid for a dsx identity token: %w", err)
 	}
 	if token.Value == "" {
-		return "", errors.New("token exchange returned an empty DSX identity token")
+		return "", errors.New("token exchange returned an empty dsx identity token")
 	}
 	if !s.now().Add(s.refreshBefore).Before(token.Expiry) {
 		return "", fmt.Errorf("token exchange returned a token too close to expiry at %s", token.Expiry.UTC())
