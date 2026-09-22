@@ -3,6 +3,7 @@ anonymous:
   - path: /livez
   - path: /readyz
   - path: /healthz
+  - path: /api/v1/namespaces/kube-public/configmaps/cluster-info
   enabled: true
 apiVersion: apiserver.config.k8s.io/v1
 jwt: []

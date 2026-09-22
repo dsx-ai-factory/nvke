@@ -41,7 +41,7 @@ func TestClusterConfigurationNeverSetsAnonymousAuthFlag(t *testing.T) {
 }
 
 // Anonymous access is closed everywhere except the endpoints kubeadm points the
-// kube-apiserver static Pod probes at.
+// kube-apiserver static Pod probes at, plus the cluster-info discovery read.
 func TestAnonymousProbeAuthConfigCoversTheProbeEndpoints(t *testing.T) {
 	anonymous := anonymousProbeAuthConfig()
 	require.NotNil(t, anonymous)
@@ -51,7 +51,20 @@ func TestAnonymousProbeAuthConfigCoversTheProbeEndpoints(t *testing.T) {
 	for _, condition := range anonymous.Conditions {
 		paths = append(paths, condition.Path)
 	}
-	assert.Equal(t, []string{"/livez", "/readyz", "/healthz"}, paths)
+	assert.Equal(t, []string{"/livez", "/readyz", "/healthz", clusterInfoPath}, paths)
+}
+
+// Bootstrap token discovery reads kube-public/cluster-info before the joining
+// node has a credential. Dropping it from the anonymous allow list fails every
+// `kubeadm join` at preflight, which surfaces as control-plane nodes that never
+// leave "Not yet provisioned" rather than as an auth error.
+func TestAnonymousProbeAuthConfigAllowsClusterInfoDiscovery(t *testing.T) {
+	conditions := anonymousProbeAuthConfig().Conditions
+	paths := make([]string, 0, len(conditions))
+	for _, condition := range conditions {
+		paths = append(paths, condition.Path)
+	}
+	assert.Contains(t, paths, "/api/v1/namespaces/kube-public/configmaps/cluster-info")
 }
 
 // The anonymous restriction is folded in at render time, so a config that

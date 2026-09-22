@@ -26,11 +26,17 @@ const (
 	// which is what rbac.yaml binds as kind:User with no prefix.
 	oidcUsernameClaim  = "sub"
 	oidcUsernamePrefix = ""
+
+	// clusterInfoPath is the kube-public/cluster-info ConfigMap that
+	// `kubeadm join` reads to pin the cluster CA. The read happens before the
+	// joining node holds any credential, so it is necessarily anonymous.
+	clusterInfoPath = "/api/v1/namespaces/kube-public/configmaps/cluster-info"
 )
 
 // anonymousProbeAuthConfig denies anonymous requests everywhere except the
 // three endpoints kubeadm points the kube-apiserver static Pod's startup,
-// liveness and readiness probes at.
+// liveness and readiness probes at, plus the cluster-info ConfigMap every
+// control-plane and worker join reads before it has a credential.
 //
 // This is deliberately not `--anonymous-auth=false`. The two are mutually
 // exclusive -- see the `Anonymous` field on AuthenticationConfiguration:
@@ -42,6 +48,14 @@ const (
 // restarts the API server in a loop. Restricting anonymous access to the probe
 // paths reaches the posture the flag was meant to express while leaving the
 // control plane able to report its own health.
+//
+// clusterInfoPath is on the list for the same reason the probes are: bootstrap
+// token discovery reads it unauthenticated, so denying it fails every join at
+// preflight with "couldn't validate the identity of the API Server: failed to
+// request the cluster-info ConfigMap: Unauthorized". Allowing it gives up
+// nothing -- the ConfigMap is public by design (cluster CA and endpoint, JWS
+// signed), and kubeadm's own kubeadm:bootstrap-signer-clusterinfo RoleBinding
+// already grants system:anonymous the read.
 func anonymousProbeAuthConfig() *apiserverv1.AnonymousAuthConfig {
 	return &apiserverv1.AnonymousAuthConfig{
 		Enabled: true,
@@ -49,6 +63,7 @@ func anonymousProbeAuthConfig() *apiserverv1.AnonymousAuthConfig {
 			{Path: "/livez"},
 			{Path: "/readyz"},
 			{Path: "/healthz"},
+			{Path: clusterInfoPath},
 		},
 	}
 }
