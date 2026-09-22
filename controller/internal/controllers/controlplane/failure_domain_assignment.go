@@ -88,7 +88,7 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 	}
 
 	// Provider advertises no domains, so there's nothing to assign.
-	if r.failureDomainsErr == nil && len(r.failureDomains.eligible) == 0 {
+	if r.failureDomainDiscoverySucceeded && len(r.failureDomains.eligible) == 0 {
 		return false, r.recordNoFailureDomain(ctx, nodes)
 	}
 
@@ -97,7 +97,7 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 	// Both lack a recorded placement: unplaced nodes can still take one,
 	// unobserved nodes already have infrastructure but the domain is unknown.
 	var unplaced []*db.Node
-	var unobserved []string // names only; for the log line below
+	var hasUnobserved bool
 
 	for i := range nodes {
 		node := &nodes[i]
@@ -112,7 +112,7 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 				return false, fmt.Errorf("adopting observed failure domain for node %s: %w", node.ID, err)
 			}
 		case node.HasInfrastructureProvisioningStarted():
-			unobserved = append(unobserved, node.Name)
+			hasUnobserved = true
 		default:
 			unplaced = append(unplaced, node)
 		}
@@ -121,13 +121,7 @@ func (r *reconciler) assignFailureDomains(ctx context.Context, clusterID uuid.UU
 	if len(unplaced) == 0 {
 		return false, nil
 	}
-	if len(unobserved) > 0 || r.failureDomainsErr != nil {
-		r.logger.Info("Deferring control-plane failure-domain placement",
-			"clusterID", clusterID,
-			"unplacedCount", len(unplaced),
-			"nodesWithUnobservedPlacement", unobserved,
-			"discoveryError", r.failureDomainsErr,
-		)
+	if hasUnobserved || !r.failureDomainDiscoverySucceeded {
 		return true, nil
 	}
 

@@ -386,7 +386,7 @@ func TestReconcilePlacesTheNodesItCreatedInTheSamePass(t *testing.T) {
 			tx,
 			nil,
 			failureDomains{eligible: []string{"fd-c", "fd-a", "fd-b"}},
-			nil,
+			true,
 		)
 		result, err := r.reconcile(ctx, cluster)
 		require.NoError(t, err)

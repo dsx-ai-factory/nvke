@@ -6,7 +6,6 @@ package controlplane
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"maps"
 	"testing"
 
@@ -204,9 +203,9 @@ func TestAssignFailureDomainsBackfillsAndSpreadsUnplacedNodes(t *testing.T) {
 	}
 
 	r := &reconciler{
-		cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:     mockTx,
-		logger: slog.Default(),
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomainDiscoverySucceeded: true,
 		failureDomains: failureDomains{
 			eligible:           []string{"fd-c", "fd-b", "fd-a"},
 			observedByNodeName: map[string]string{"cp-a": "fd-a"},
@@ -249,10 +248,10 @@ func TestAssignFailureDomainsDefersUntilExistingPlacementIsObserved(t *testing.T
 	mockTx := &testutil.MockTx{}
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		logger:         slog.Default(),
-		failureDomains: failureDomains{eligible: []string{"fd-a", "fd-b"}},
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomains:                  failureDomains{eligible: []string{"fd-a", "fd-b"}},
+		failureDomainDiscoverySucceeded: true,
 	}
 
 	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
@@ -297,10 +296,9 @@ func TestAssignFailureDomainsDefersWhenDiscoveryFailed(t *testing.T) {
 	mockTx := &testutil.MockTx{}
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	r := &reconciler{
-		cfg:               config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:                mockTx,
-		logger:            slog.Default(),
-		failureDomainsErr: errors.New("capi cluster infrastructure is not yet provisioned"),
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomainDiscoverySucceeded: false,
 	}
 
 	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
@@ -329,10 +327,9 @@ func TestAssignFailureDomainsWithNothingToPlaceDoesNotRequeue(t *testing.T) {
 	mockTx := &testutil.MockTx{}
 	mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(nodes, nil).Once()
 	r := &reconciler{
-		cfg:               config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:                mockTx,
-		logger:            slog.Default(),
-		failureDomainsErr: errors.New("capi cluster infrastructure is not yet provisioned"),
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomainDiscoverySucceeded: false,
 	}
 
 	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
@@ -363,10 +360,10 @@ func TestAssignFailureDomainsMarksUnsupportedProviderComplete(t *testing.T) {
 		return node.Name == "cp-pending" && node.FailureDomain != nil && *node.FailureDomain == ""
 	})).Return(db.Node{}, nil).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		logger:         slog.Default(),
-		failureDomains: failureDomains{},
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomains:                  failureDomains{},
+		failureDomainDiscoverySucceeded: true,
 	}
 
 	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
@@ -417,10 +414,10 @@ func TestAssignFailureDomainsSkipsNodesMarkedForDeletion(t *testing.T) {
 		return node.Name == "cp-pending" && ptr.Deref(node.FailureDomain, "") == "fd-b"
 	})).Return(db.Node{}, nil).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		logger:         slog.Default(),
-		failureDomains: failureDomains{eligible: []string{"fd-a", "fd-b"}},
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomains:                  failureDomains{eligible: []string{"fd-a", "fd-b"}},
+		failureDomainDiscoverySucceeded: true,
 	}
 
 	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
@@ -486,9 +483,9 @@ func TestAssignFailureDomainsSurfacesDatabaseErrors(t *testing.T) {
 					Return(db.Node{}, errors.New("deadlock detected")).Once()
 			}
 			r := &reconciler{
-				cfg:    config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-				db:     mockTx,
-				logger: slog.Default(),
+				cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+				db:                              mockTx,
+				failureDomainDiscoverySucceeded: true,
 				failureDomains: failureDomains{
 					eligible:           []string{"fd-a", "fd-b"},
 					observedByNodeName: tc.observed,
@@ -508,7 +505,7 @@ func TestAssignFailureDomainsSkippedWhenControllerDoesNotOwnTheControlPlane(t *t
 	t.Parallel()
 
 	mockTx := &testutil.MockTx{}
-	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
+	r := &reconciler{cfg: config.Config{}, db: mockTx}
 
 	requeue, err := r.assignFailureDomains(context.Background(), uuid.New())
 
@@ -549,10 +546,10 @@ func TestAssignFailureDomainsReconcilesNodesOnAProviderWithoutDomains(t *testing
 		})).Return(db.Node{}, nil).Once()
 	}
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		logger:         slog.Default(),
-		failureDomains: failureDomains{},
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomains:                  failureDomains{},
+		failureDomainDiscoverySucceeded: true,
 	}
 
 	requeue, err := r.assignFailureDomains(context.Background(), clusterID)
@@ -576,10 +573,10 @@ func TestAssignFailureDomainsSurfacesErrorsRecordingAbsentDomains(t *testing.T) 
 	mockTx.On("UpdateNode", mock.Anything, mock.Anything).
 		Return(db.Node{}, errors.New("deadlock detected")).Once()
 	r := &reconciler{
-		cfg:            config.Config{ProvisionControlPlaneWithControlPlaneController: true},
-		db:             mockTx,
-		logger:         slog.Default(),
-		failureDomains: failureDomains{},
+		cfg:                             config.Config{ProvisionControlPlaneWithControlPlaneController: true},
+		db:                              mockTx,
+		failureDomains:                  failureDomains{},
+		failureDomainDiscoverySucceeded: true,
 	}
 
 	requeue, err := r.assignFailureDomains(context.Background(), clusterID)

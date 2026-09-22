@@ -25,8 +25,8 @@ type reconciler struct {
 	cweTemporalClient client.Client
 	// One discovery pass per reconcile, read before the transaction opened. A
 	// failure defers placement rather than failing the reconcile.
-	failureDomains    failureDomains
-	failureDomainsErr error
+	failureDomains                  failureDomains
+	failureDomainDiscoverySucceeded bool
 }
 
 func newReconciler(
@@ -35,15 +35,15 @@ func newReconciler(
 	db db.Tx,
 	cweTemporalClient client.Client,
 	failureDomains failureDomains,
-	failureDomainsErr error,
+	failureDomainDiscoverySucceeded bool,
 ) *reconciler {
 	return &reconciler{
-		cfg:               cfg,
-		logger:            logger,
-		db:                db,
-		cweTemporalClient: cweTemporalClient,
-		failureDomains:    failureDomains,
-		failureDomainsErr: failureDomainsErr,
+		cfg:                             cfg,
+		logger:                          logger,
+		db:                              db,
+		cweTemporalClient:               cweTemporalClient,
+		failureDomains:                  failureDomains,
+		failureDomainDiscoverySucceeded: failureDomainDiscoverySucceeded,
 	}
 }
 
@@ -94,11 +94,12 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) (reconci
 	// Runs after the last step that can create a node, so a node created above is
 	// placed in this same pass rather than waiting for the next one.
 	result := reconcile.Result{}
-	requeue, err := r.assignFailureDomains(ctx, cluster.ID)
+	deferred, err := r.assignFailureDomains(ctx, cluster.ID)
 	if err != nil {
 		return reconcile.Result{}, fmt.Errorf("assigning control-plane failure domains: %w", err)
 	}
-	if requeue {
+	if deferred {
+		r.logger.Info("deferring control-plane failure-domain placement", "clusterID", cluster.ID)
 		result.RequeueAfter = failureDomainRetryInterval
 	}
 
