@@ -196,6 +196,11 @@ type NicoMachineStatus struct {
 	// +optional
 	MachineID string `json:"machineID,omitempty"`
 
+	// PrimaryDPUMachineID is the NICo machine ID of the DPU attached to the
+	// host's primary interface.
+	// +optional
+	PrimaryDPUMachineID string `json:"primaryDPUMachineID,omitempty"`
+
 	// SiteID is the observed Forge/Carbide site ID for this machine.
 	// +optional
 	SiteID string `json:"siteID,omitempty"`
