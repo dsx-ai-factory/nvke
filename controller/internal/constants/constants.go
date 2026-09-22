@@ -107,9 +107,9 @@ const (
 	// NKE Field Managers for server-side apply. This controller's own three
 	// (config.Config.FieldManagerName, FieldManagerRebootMachineName,
 	// FieldManagerMachineHealthIssueName) are per-install configurable, not
-	// constants here. FieldManagerNicoTpmSpiffe and FieldManagerMachineSpireEntry
-	// are not CWE-branded and stay fixed.
-	FieldManagerNicoTpmSpiffe     = "nico-tpm-spiffe-controller"
+	// constants here. The NICo manager retains its existing identity when the
+	// controller starts managing DSX IMDS entries too, avoiding SSA ownership churn.
+	FieldManagerNicoSpiffe        = "nico-tpm-spiffe-controller"
 	FieldManagerMachineSpireEntry = "machine-spire-entry-controller"
 
 	// Node annotations
@@ -135,6 +135,7 @@ const (
 
 	// SPIFFE ID paths expected from SPIRE agents
 	TPMSpireAgentPath                = "/spire/agent/tpm/"
+	DSXIMDSSpireAgentPath            = "/spire/agent/dsx_imds/tenant/"
 	JoinTokenAlternateSpireAgentPath = "/join-token-spire-agent/host-id/" //nolint:gosec // This is a SPIFFE path prefix, not a credential.
 
 	CAPISpireAgentConfigPath = "/etc/spire-agent/agent.conf"

@@ -20,6 +20,8 @@ import (
 func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 	t.Parallel()
 
+	const checksum = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
 	customBootstrap := db.CAPINodePoolProvider{
 		BootstrapFiles: []db.CloudInitFile{
 			{Path: "/etc/custom.conf", Owner: "root:root", Permissions: "0600", Content: "hello"},
@@ -27,14 +29,21 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 		PreKubeadmCommands: []string{"echo before kubeadm"},
 	}
 	tpmSpiffeConfig := config.Config{
-		SpiffeEnabled:                   true,
-		SpireServerAddress:              "spire.example.org",
-		SpireServerPort:                 "9091",
-		NodeAgentPort:                   "15005",
-		NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
+		SpiffeEnabled:      true,
+		SpireServerAddress: "spire.example.org",
+		SpireServerPort:    "9091",
+		NodeAgent: config.NodeAgentConfig{
+			Port:                   "15005",
+			SpireAttestationMethod: config.SpireAttestationMethodTPM,
+		},
 	}
 	joinTokenSpiffeConfig := tpmSpiffeConfig
-	joinTokenSpiffeConfig.NodeAgentSpireAttestationMethod = config.SpireAttestationMethodJoinToken
+	joinTokenSpiffeConfig.NodeAgent.SpireAttestationMethod = config.SpireAttestationMethodJoinToken
+	dsxIMDSSpiffeConfig := tpmSpiffeConfig
+	dsxIMDSSpiffeConfig.NodeAgent.SpireAttestationMethod = config.SpireAttestationMethodDSXIMDS
+	dsxIMDSSpiffeConfig.NodeAgent.DSXImds.Endpoint = "http://192.0.2.10"
+	dsxIMDSChecksumOverrideConfig := dsxIMDSSpiffeConfig
+	dsxIMDSChecksumOverrideConfig.NodeAgent.DSXImds.PluginChecksum = checksum
 
 	type parameters struct {
 		config                config.Config
@@ -64,6 +73,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 				assert.Contains(t, userData, "/etc/spire-agent/initial-trust-bundle.pem")
 				assert.Contains(t, userData, `NodeAttestor "tpm"`)
 				assert.NotContains(t, userData, `NodeAttestor "join_token"`)
+				assert.NotContains(t, userData, `NodeAttestor "dsx_imds"`)
 				assert.Contains(t, userData, "echo before kubeadm")
 				var parsed map[string]interface{}
 				require.NoError(t, yaml.Unmarshal([]byte(userData), &parsed))
@@ -82,16 +92,37 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 				assert.Contains(t, userData, `join_token = "join-token-123"`)
 				assert.Contains(t, userData, `NodeAttestor "join_token"`)
 				assert.NotContains(t, userData, `NodeAttestor "tpm"`)
+				assert.NotContains(t, userData, `NodeAttestor "dsx_imds"`)
 			},
 		},
 		"join-token attestor requires a token": {
 			config: config.Config{
-				NodeAgentSpireAttestationMethod: config.SpireAttestationMethodJoinToken,
+				NodeAgent: config.NodeAgentConfig{SpireAttestationMethod: config.SpireAttestationMethodJoinToken},
 			},
 			wantErr: "spire join token is required when SPIRE attestation method is joinToken",
 		},
+		"DSX IMDS attestor uses the node-image checksum by default": {
+			config:                dsxIMDSSpiffeConfig,
+			trustDomain:           "example.org",
+			trustBundle:           "bundle",
+			expectTrustBundleCall: true,
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assertDSXIMDSAgentConfig(t, userData, "${DSX_IMDS_PLUGIN_CHECKSUM}")
+			},
+		},
+		"DSX IMDS attestor uses the configured checksum override": {
+			config:                dsxIMDSChecksumOverrideConfig,
+			trustDomain:           "example.org",
+			trustBundle:           "bundle",
+			expectTrustBundleCall: true,
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assertDSXIMDSAgentConfig(t, userData, checksum)
+			},
+		},
 		"SPIFFE disabled does not fetch or render SPIRE data": {
-			config:           config.Config{NodeAgentPort: "15005"},
+			config:           config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
 			provider:         customBootstrap,
 			trustBundleError: errors.New("workload API is not reachable without SPIRE"),
 			verify: func(t *testing.T, userData string) {
@@ -105,7 +136,13 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			},
 		},
 		"TLS JWT renders the agent arguments": {
-			config:   config.Config{NodeAgentTLSJWTEnabled: true, NodeAgentPort: "15005", NodeAgentTLSJWTDSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"},
+			config: config.Config{NodeAgent: config.NodeAgentConfig{
+				Port: "15005",
+				TLSJWT: config.TLSJWTConfig{
+					Enabled:                true,
+					DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
+				},
+			}},
 			provider: customBootstrap,
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
@@ -124,7 +161,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			},
 		},
 		"existing agent restart is followed by the final restart": {
-			config: config.Config{NodeAgentTLSJWTEnabled: true, NodeAgentPort: "15005"},
+			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005", TLSJWT: config.TLSJWTConfig{Enabled: true, DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"}}},
 			provider: db.CAPINodePoolProvider{
 				PreKubeadmCommands: []string{"echo prepare agent", "systemctl restart nke-agent"},
 			},
@@ -136,7 +173,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			},
 		},
 		"agent restarts without caller commands": {
-			config: config.Config{NodeAgentPort: "15005"},
+			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}},
 			verify: func(t *testing.T, userData string) {
 				t.Helper()
 				var rendered capiCloudInitConfig
@@ -182,10 +219,12 @@ func TestRenderCAPIBootstrapUserData_ExternalMTLS(t *testing.T) {
 	controllerCA := "-----BEGIN CERTIFICATE-----\npublic-ca\n-----END CERTIFICATE-----\n"
 	activities := &Activities{
 		cfg: config.Config{
-			NodeAgentExternalMTLSEnabled:    true,
-			NodeAgentPort:                   "15005",
-			NodeAgentSpireAttestationMethod: config.SpireAttestationMethodTPM,
-			SpiffeEnabled:                   true,
+			NodeAgentExternalMTLSEnabled: true,
+			NodeAgent: config.NodeAgentConfig{
+				Port:                   "15005",
+				SpireAttestationMethod: config.SpireAttestationMethodTPM,
+			},
+			SpiffeEnabled: true,
 		},
 		controllerClientCABundle: controllerCA,
 		getTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
@@ -261,7 +300,7 @@ func TestUnit_RenderCAPIBootstrapUserData_AllowsFileOverride(t *testing.T) {
 			t.Parallel()
 			activities := &Activities{
 				cfg: config.Config{
-					NodeAgentPort:                "15005",
+					NodeAgent:                    config.NodeAgentConfig{Port: "15005"},
 					NodeAgentExternalMTLSEnabled: params.externalMTLS,
 				},
 				controllerClientCABundle: "public-ca",
@@ -280,4 +319,17 @@ func TestUnit_RenderCAPIBootstrapUserData_AllowsFileOverride(t *testing.T) {
 			assert.Equal(t, config.NodeAgentConfigPath, rendered.WriteFiles[len(rendered.WriteFiles)-1].Path)
 		})
 	}
+}
+
+func assertDSXIMDSAgentConfig(t *testing.T, userData, checksum string) {
+	t.Helper()
+
+	assert.Contains(t, userData, `NodeAttestor "dsx_imds"`)
+	assert.Contains(t, userData, `plugin_cmd = "/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent"`)
+	assert.Contains(t, userData, `plugin_checksum = "`+checksum+`"`)
+	assert.Contains(t, userData, `endpoint = "http://192.0.2.10"`)
+	assert.Contains(t, userData, `audience = "spiffe://example.org/spire/server"`)
+	assert.NotContains(t, userData, `NodeAttestor "join_token"`)
+	assert.NotContains(t, userData, `NodeAttestor "tpm"`)
+	assert.NotContains(t, userData, "join_token =")
 }

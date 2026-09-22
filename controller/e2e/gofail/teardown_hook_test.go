@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/sdk/client"
 
 	"github.com/dsx-ai-factory/nke/controller/e2e/framework"
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/temporal/workflows"
 )
 
@@ -71,7 +72,7 @@ func TestGofailTeardownHookBlocksUnlessForceUnreachable(t *testing.T) {
 		BinaryPath:         framework.CWEWorkerBinary(t),
 		DBConnectionString: databaseDSN,
 		KubeconfigPath:     kubeconfigPath,
-		NodeAgentPort:      nodeAgent.Port(t),
+		NodeAgent:          config.NodeAgentConfig{Port: nodeAgent.Port(t)},
 		TemporalHostPort:   server.FrontendHostPort(),
 		Namespace:          "default",
 		TaskQueue:          taskQueue,

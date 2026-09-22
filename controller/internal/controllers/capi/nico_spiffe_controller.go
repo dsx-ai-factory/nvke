@@ -18,29 +18,32 @@ import (
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
+	"github.com/dsx-ai-factory/nke/controller/internal/config"
 	"github.com/dsx-ai-factory/nke/controller/internal/constants"
 )
 
-type NicoTpmSpiffeController struct {
+type NicoSpiffeController struct {
+	cfg       config.Config
 	k8sClient client.Client
 	logger    *slog.Logger
 }
 
-func NewNicoTpmSpiffeController(k8sClient client.Client, logger *slog.Logger) *NicoTpmSpiffeController {
-	return &NicoTpmSpiffeController{
+func NewNicoSpiffeController(cfg config.Config, k8sClient client.Client, logger *slog.Logger) *NicoSpiffeController {
+	return &NicoSpiffeController{
+		cfg:       cfg,
 		k8sClient: k8sClient,
 		logger:    logger,
 	}
 }
 
-func (c *NicoTpmSpiffeController) SetupWithManager(mgr ctrl.Manager) error {
+func (c *NicoSpiffeController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&nicov1.NicoMachine{}).
-		Named("nico-tpm-spiffe").
+		Named("nico-spiffe").
 		Complete(c)
 }
 
-func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (c *NicoSpiffeController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := c.logger.With("namespace", req.Namespace, "nicoMachineName", req.Name)
 
 	nicoMachine := &nicov1.NicoMachine{}
@@ -57,8 +60,9 @@ func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	if nicoMachine.Status.TpmEkPubHash == "" {
-		logger.Info("Waiting for TPM EK public hash to be set on NicoMachine")
+	spireAgentSpiffeIDPath, expectedPathPrefix := c.spireAgentSpiffeIDPath(nicoMachine)
+	if spireAgentSpiffeIDPath == "" {
+		logger.Info("Waiting for SPIRE agent identity source on NicoMachine", "attestationMethod", c.cfg.NodeAgent.SpireAttestationMethod)
 		return ctrl.Result{}, nil
 	}
 
@@ -71,17 +75,12 @@ func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, nil
 	}
 
-	// If the annotation already exists and does not start with the TPM spire agent path (e.g. join-token based path), skip the update.
-	existingSpireAgentSpiffeIDPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]
-	if existingSpireAgentSpiffeIDPath != "" && !strings.HasPrefix(existingSpireAgentSpiffeIDPath, constants.TPMSpireAgentPath) {
-		logger.Info("Machine already has non-TPM spire agent ID path, skipping annotation update")
+	existingPath := machine.GetAnnotations()[constants.MachineAnnotationKeySpireAgentSpiffeIDPath]
+	if existingPath != "" && !strings.HasPrefix(existingPath, expectedPathPrefix) {
+		logger.Info("Machine already has a SPIRE agent ID path for another attestation method, skipping annotation update")
 		return ctrl.Result{}, nil
 	}
 
-	// e.g. /spire/agent/tpm/<pubhash>
-	spireAgentSpiffeIDPath := fmt.Sprintf("%s%s", constants.TPMSpireAgentPath, nicoMachine.Status.TpmEkPubHash)
-
-	// Minimal Machine Object for SSA
 	applyMachine := &clusterv1.Machine{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: clusterv1.GroupVersion.String(),
@@ -97,9 +96,29 @@ func (c *NicoTpmSpiffeController) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	logger.Info("Applying Machine annotation", "machineNamespace", applyMachine.Namespace, "machineName", applyMachine.Name, "annotation", constants.MachineAnnotationKeySpireAgentSpiffeIDPath)
-	if err := c.k8sClient.Patch(ctx, applyMachine, client.Apply, client.FieldOwner(constants.FieldManagerNicoTpmSpiffe), client.ForceOwnership); err != nil {
+	if err := c.k8sClient.Patch(ctx, applyMachine, client.Apply, client.FieldOwner(constants.FieldManagerNicoSpiffe), client.ForceOwnership); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to apply machine: %w", err)
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func (c *NicoSpiffeController) spireAgentSpiffeIDPath(nicoMachine *nicov1.NicoMachine) (string, string) {
+	switch c.cfg.NodeAgent.SpireAttestationMethod {
+	case config.SpireAttestationMethodJoinToken:
+		return "", ""
+	case config.SpireAttestationMethodTPM:
+		if nicoMachine.Status.TpmEkPubHash == "" {
+			return "", constants.TPMSpireAgentPath
+		}
+		return constants.TPMSpireAgentPath + nicoMachine.Status.TpmEkPubHash, constants.TPMSpireAgentPath
+	case config.SpireAttestationMethodDSXIMDS:
+		if nicoMachine.Status.PrimaryDPUMachineID == "" {
+			return "", constants.DSXIMDSSpireAgentPath
+		}
+		pathPrefix := constants.DSXIMDSSpireAgentPath + c.cfg.NodeAgent.DSXImds.OperatorTenant + "/bm/"
+		return pathPrefix + nicoMachine.Status.PrimaryDPUMachineID, pathPrefix
+	default:
+		return "", ""
+	}
 }

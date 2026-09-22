@@ -86,8 +86,21 @@ nodeAgent:
   # -- SPIRE node attestation method used by every cluster managed by this
   # controller deployment. Set this value once when the environment is first
   # deployed. Changing it in an existing environment is unsupported and
-  # requires a separately coordinated migration.
+  # requires a separately coordinated migration. dsxImds also requires SPIFFE
+  # to be enabled and a DSX node image that installs the plugin and supplies
+  # DSX_IMDS_PLUGIN_CHECKSUM through /etc/spire-agent/spire-agent.env.
   spireAttestationMethod: "tpm"
+  dsxImds:
+    # -- Operator tenant encoded in dsx_imds-attested SPIRE agent IDs. This
+    # must match the DSX Identity global.operatorTenant value.
+    operatorTenant: ""
+    # -- Metadata endpoint used by the external dsx_imds node attestor. The
+    # default is the standard link-local metadata service address.
+    endpoint: "http://169.254.169.254"
+    # -- Optional SHA-256 checksum for the external dsx_imds plugin binary.
+    # Leave empty to expand DSX_IMDS_PLUGIN_CHECKSUM from the node image's
+    # /etc/spire-agent/spire-agent.env file.
+    pluginChecksum: ""
   tlsJwt:
     # -- Add JWT node authentication to the existing secure node-agent transport
     # for every node agent managed by this controller. Requires either

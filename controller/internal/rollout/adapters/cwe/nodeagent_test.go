@@ -86,7 +86,7 @@ func TestNewSPIFFEDialer_ValidResolver(t *testing.T) {
 	t.Parallel()
 
 	resolve := cwe.NewNodeResolver(nil)
-	d, err := cwe.NewSPIFFEDialer(config.Config{NodeAgentPort: "15005"}, "example.org", resolve)
+	d, err := cwe.NewSPIFFEDialer(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "example.org", resolve)
 	require.NoError(t, err)
 	assert.NotNil(t, d)
 }
@@ -104,7 +104,7 @@ func TestNewMethodSupportChecker_ValidResolver(t *testing.T) {
 	t.Parallel()
 
 	resolve := cwe.NewNodeResolver(nil)
-	c, err := cwe.NewMethodSupportChecker(config.Config{NodeAgentPort: "15005"}, "example.org", resolve)
+	c, err := cwe.NewMethodSupportChecker(config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005"}}, "example.org", resolve)
 	require.NoError(t, err)
 	assert.NotNil(t, c)
 }

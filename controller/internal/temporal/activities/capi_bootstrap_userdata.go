@@ -77,7 +77,7 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	if err != nil {
 		return "", err
 	}
-	if a.cfg.NodeAgentSpireAttestationMethod == config.SpireAttestationMethodJoinToken && spireJoinToken == "" {
+	if a.cfg.NodeAgent.SpireAttestationMethod == config.SpireAttestationMethodJoinToken && spireJoinToken == "" {
 		return "", fmt.Errorf("spire join token is required when SPIRE attestation method is joinToken")
 	}
 
@@ -103,6 +103,10 @@ func (a *Activities) renderCAPIBootstrapUserData(
 		})
 	}
 	if a.cfg.SpiffeEnabled {
+		dsxIMDSPluginChecksum := a.cfg.NodeAgent.DSXImds.PluginChecksum
+		if dsxIMDSPluginChecksum == "" {
+			dsxIMDSPluginChecksum = "${DSX_IMDS_PLUGIN_CHECKSUM}"
+		}
 		files = append(files,
 			capiCloudInitFile{
 				Path:        constants.CAPISpireTrustBundlePath,
@@ -114,13 +118,16 @@ func (a *Activities) renderCAPIBootstrapUserData(
 				Path:        constants.CAPISpireAgentConfigPath,
 				Owner:       "root:root",
 				Permissions: "0644",
-				Content: buildCAPISpireAgentConfig(
-					db.SpireAttestationMethod(a.cfg.NodeAgentSpireAttestationMethod),
-					a.cfg.SpireServerAddress,
-					a.cfg.SpireServerPort,
-					trustDomain,
-					spireJoinToken,
-				),
+				Content: buildCAPISpireAgentConfig(capiSpireAgentConfig{
+					AttestationMethod:     string(a.cfg.NodeAgent.SpireAttestationMethod),
+					ServerAddress:         a.cfg.SpireServerAddress,
+					ServerPort:            a.cfg.SpireServerPort,
+					TrustDomain:           trustDomain,
+					TrustBundlePath:       constants.CAPISpireTrustBundlePath,
+					SpireJoinToken:        spireJoinToken,
+					DSXIMDSEndpoint:       a.cfg.NodeAgent.DSXImds.Endpoint,
+					DSXIMDSPluginChecksum: dsxIMDSPluginChecksum,
+				}),
 			},
 		)
 	}
@@ -151,26 +158,18 @@ func (a *Activities) renderCAPIBootstrapUserData(
 	return "#cloud-config\n" + string(yamlBytes), nil
 }
 
-func buildCAPISpireAgentConfig(
-	attestationMethod db.SpireAttestationMethod,
-	serverAddress, serverPort, trustDomain, spireJoinToken string,
-) string {
-	data := struct {
-		ServerAddress   string
-		ServerPort      string
-		TrustDomain     string
-		TrustBundlePath string
-		SpireJoinToken  string
-		UseJoinToken    bool
-	}{
-		ServerAddress:   serverAddress,
-		ServerPort:      serverPort,
-		TrustDomain:     trustDomain,
-		TrustBundlePath: constants.CAPISpireTrustBundlePath,
-		SpireJoinToken:  spireJoinToken,
-		UseJoinToken:    attestationMethod == db.SpireAttestationMethodJoinToken,
-	}
+type capiSpireAgentConfig struct {
+	ServerAddress         string
+	ServerPort            string
+	TrustDomain           string
+	TrustBundlePath       string
+	SpireJoinToken        string
+	AttestationMethod     string
+	DSXIMDSEndpoint       string
+	DSXIMDSPluginChecksum string
+}
 
+func buildCAPISpireAgentConfig(data capiSpireAgentConfig) string {
 	var buf bytes.Buffer
 	tmpl := template.Must(template.New("capi-spire-agent-config").Parse(capiSpireAgentConfigTemplateText))
 	if err := tmpl.Execute(&buf, data); err != nil {

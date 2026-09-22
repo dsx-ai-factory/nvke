@@ -165,7 +165,7 @@ func (a *Activities) createTemplateBackedCAPIMachineForNode(ctx context.Context,
 }
 
 func (a *Activities) createCAPISpireJoinToken(ctx context.Context, createCtx *capiMachineCreateContext) (string, string, error) {
-	if a.cfg.NodeAgentSpireAttestationMethod != config.SpireAttestationMethodJoinToken {
+	if a.cfg.NodeAgent.SpireAttestationMethod != config.SpireAttestationMethodJoinToken {
 		return "", "", nil
 	}
 	// A site stood up without SPIFFE has no SPIRE server to mint against, and no

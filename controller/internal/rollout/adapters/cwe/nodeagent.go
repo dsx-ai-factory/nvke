@@ -142,7 +142,7 @@ func NewMethodSupportChecker(cfg config.Config, trustDomain string, resolve Node
 // node's SPIFFE ID authorized. It returns the raw connection plus a cleanup the
 // caller must invoke.
 func dialNodeAgent(ctx context.Context, cfg config.Config, trustDomain string, node db.Node) (*grpc.ClientConn, func(), error) {
-	endpoint := net.JoinHostPort(node.IP, cfg.NodeAgentPort)
+	endpoint := net.JoinHostPort(node.IP, cfg.NodeAgent.Port)
 
 	var closeFuncs []func() error
 	cleanup := func() {

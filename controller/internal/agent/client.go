@@ -82,15 +82,15 @@ func NewClient(
 
 	var tlsJWTVerifier *auth.Verifier
 	var tlsJWTLogger *slog.Logger
-	if cfg.NodeAgentTLSJWTEnabled {
+	if cfg.NodeAgent.TLSJWT.Enabled {
 		tlsJWTLogger = logger.With("logger", "node-agent-auth")
 		verifier, err := auth.SetupTokenVerifier(ctx, &auth.Config{
 			Audiences: []string{auth.NodeAgentAudience},
 			Issuers: []auth.Issuer{{
 				Name:       auth.NodeAgentIssuerName,
-				Issuer:     cfg.NodeAgentTLSJWTIssuer,
-				JWKS:       &auth.JWKSKeys{URI: cfg.NodeAgentTLSJWTJWKSURI},
-				Algorithms: cfg.NodeAgentTLSJWTAlgorithms,
+				Issuer:     cfg.NodeAgent.TLSJWT.Issuer,
+				JWKS:       &auth.JWKSKeys{URI: cfg.NodeAgent.TLSJWT.JWKSURI},
+				Algorithms: cfg.NodeAgent.TLSJWT.Algorithms,
 			}},
 		}, tlsJWTLogger)
 		if err != nil {
@@ -121,7 +121,7 @@ func NewClient(
 }
 
 func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
-	endpoint := net.JoinHostPort(node.IP, c.cfg.NodeAgentPort)
+	endpoint := net.JoinHostPort(node.IP, c.cfg.NodeAgent.Port)
 
 	var closeFuncs []func() error
 	cleanup := func() {
@@ -161,7 +161,7 @@ func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (
 		transportCredentials, err = newTLSJWTTransportCredentials(
 			baseTransportCredentials,
 			c.tlsJWTVerifier,
-			c.cfg.NodeAgentTLSJWTSubjectTrustDomain,
+			c.cfg.NodeAgent.TLSJWT.SubjectTrustDomain,
 			node,
 			c.logger,
 		)

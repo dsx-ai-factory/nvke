@@ -4,6 +4,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/caarlos0/env/v11"
+	"github.com/spiffe/go-spiffe/v2/spiffeid"
 )
 
 const (
@@ -22,6 +24,7 @@ const (
 
 	SpireAttestationMethodTPM       SpireAttestationMethod = "tpm"
 	SpireAttestationMethodJoinToken SpireAttestationMethod = "joinToken"
+	SpireAttestationMethodDSXIMDS   SpireAttestationMethod = "dsxImds"
 
 	NodeAgentExternalTLSCertPath = "/etc/nke/node-agent-client-tls/tls.crt"
 	NodeAgentExternalTLSKeyPath  = "/etc/nke/node-agent-client-tls/tls.key"
@@ -32,6 +35,58 @@ const (
 
 // SpireAttestationMethod selects the deployment-wide SPIRE node attestation method.
 type SpireAttestationMethod string
+
+// DSXImdsConfig configures the external dsx_imds SPIRE node attestor.
+type DSXImdsConfig struct {
+	// Endpoint is the metadata endpoint used by the external node attestor.
+	Endpoint string `env:"ENDPOINT" default:"http://169.254.169.254"`
+
+	// PluginChecksum overrides the checksum supplied by the DSX node image. An
+	// empty value keeps the image-owned environment expansion.
+	PluginChecksum string `env:"PLUGIN_CHECKSUM"`
+
+	// OperatorTenant is the tenant segment in dsx_imds-attested SPIRE agent IDs.
+	// It must match the DSX Identity operator tenant.
+	OperatorTenant string `env:"OPERATOR_TENANT"`
+}
+
+// TLSJWTConfig configures TLS/JWT authentication for controller calls to node agents.
+type TLSJWTConfig struct {
+	// Enabled selects the deployment-wide TLS/JWT transport.
+	Enabled bool `env:"ENABLED" default:"false"`
+
+	// Issuer is the identity issuer expected in node-agent JWTs.
+	Issuer string `env:"ISSUER"`
+
+	// JWKSURI is the HTTPS endpoint used to fetch node-agent JWT signing keys.
+	JWKSURI string `env:"JWKS_URI"`
+
+	// Algorithms is the asymmetric JWT algorithm allow-list.
+	Algorithms []string `env:"ALGORITHMS" envSeparator:","`
+
+	// SubjectTrustDomain is the exact SPIFFE trust domain accepted in the
+	// verified node-agent JWT subject.
+	SubjectTrustDomain string `env:"SUBJECT_TRUST_DOMAIN"`
+
+	// DSXIdentityExchangeURL is injected into node-agent bootstrap arguments.
+	DSXIdentityExchangeURL string `env:"DSX_IDENTITY_EXCHANGE_URL"`
+}
+
+// NodeAgentConfig configures connections to and SPIRE attestation for managed node agents.
+type NodeAgentConfig struct {
+	// Port is the secure port that the NKE node agent listens on.
+	Port string `env:"PORT" default:"15005"`
+
+	// SpireAttestationMethod selects the SPIRE attestation method used by every
+	// cluster managed by this controller deployment.
+	SpireAttestationMethod SpireAttestationMethod `env:"SPIRE_ATTESTATION_METHOD" default:"tpm"`
+
+	// DSXImds contains settings specific to dsx_imds attestation.
+	DSXImds DSXImdsConfig `envPrefix:"DSX_IMDS_"`
+
+	// TLSJWT contains TLS/JWT transport settings.
+	TLSJWT TLSJWTConfig `envPrefix:"TLS_JWT_"`
+}
 
 type Config struct {
 	// LogLevel is the level of logs to output (debug|info|warn|error)
@@ -226,34 +281,7 @@ type Config struct {
 	// SpireJoinTokenTTL is the TTL used when creating SPIRE join tokens via the server API.
 	SpireJoinTokenTTL time.Duration `env:"SPIRE_JOIN_TOKEN_TTL" default:"1h"`
 
-	// NodeAgentPort is the "new" port that nke node-agent listens on.
-	// Note: This will only be used if SpiffeEnabled is true. Eventually this will be the only port used.
-	NodeAgentPort string `env:"NODE_AGENT_PORT" default:"15005"`
-
-	// NodeAgentTLSJWTEnabled selects the deployment-wide TLS/JWT transport for
-	// controller calls to every node agent managed by this controller.
-	NodeAgentTLSJWTEnabled bool `env:"NODE_AGENT_TLS_JWT_ENABLED" default:"false"`
-
-	// NodeAgentTLSJWTIssuer is the identity issuer expected in node-agent JWTs.
-	NodeAgentTLSJWTIssuer string `env:"NODE_AGENT_TLS_JWT_ISSUER"`
-
-	// NodeAgentTLSJWTJWKSURI is the HTTPS endpoint used to fetch node-agent JWT signing keys.
-	NodeAgentTLSJWTJWKSURI string `env:"NODE_AGENT_TLS_JWT_JWKS_URI"`
-
-	// NodeAgentTLSJWTAlgorithms is the asymmetric JWT algorithm allow-list.
-	NodeAgentTLSJWTAlgorithms []string `env:"NODE_AGENT_TLS_JWT_ALGORITHMS" envSeparator:","`
-
-	// NodeAgentTLSJWTSubjectTrustDomain is the exact SPIFFE trust domain accepted
-	// in the verified node-agent JWT subject.
-	NodeAgentTLSJWTSubjectTrustDomain string `env:"NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN"`
-
-	// NodeAgentTLSJWTDSXIdentityExchangeURL is the token-exchange endpoint
-	// injected into TLS/JWT node-agent bootstrap arguments.
-	NodeAgentTLSJWTDSXIdentityExchangeURL string `env:"NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL"`
-
-	// NodeAgentSpireAttestationMethod selects the SPIRE attestation method used by
-	// every cluster managed by this controller deployment.
-	NodeAgentSpireAttestationMethod SpireAttestationMethod `env:"NODE_AGENT_SPIRE_ATTESTATION_METHOD" default:"tpm"`
+	NodeAgent NodeAgentConfig `envPrefix:"NODE_AGENT_"`
 
 	// NodeAgentExternalMTLSEnabled selects an externally issued client
 	// certificate as the deployment-wide node-agent base transport instead of
@@ -483,12 +511,32 @@ func (c *Config) Validate() error {
 	if c.SpireJoinTokenTTL <= 0 {
 		return fmt.Errorf("SPIRE_JOIN_TOKEN_TTL must be greater than 0")
 	}
-	switch c.NodeAgentSpireAttestationMethod {
-	case SpireAttestationMethodTPM, SpireAttestationMethodJoinToken:
+	switch c.NodeAgent.SpireAttestationMethod {
+	case SpireAttestationMethodTPM, SpireAttestationMethodJoinToken, SpireAttestationMethodDSXIMDS:
 	default:
-		return fmt.Errorf("NODE_AGENT_SPIRE_ATTESTATION_METHOD must be one of tpm or joinToken, got %q", c.NodeAgentSpireAttestationMethod)
+		return fmt.Errorf("NODE_AGENT_SPIRE_ATTESTATION_METHOD must be one of tpm, joinToken, or dsxImds, got %q", c.NodeAgent.SpireAttestationMethod)
 	}
-	if c.NodeAgentSpireAttestationMethod == SpireAttestationMethodJoinToken && !c.SpiffeEnabled {
+	if c.NodeAgent.SpireAttestationMethod == SpireAttestationMethodDSXIMDS && !c.SpiffeEnabled {
+		return fmt.Errorf("SPIFFE_ENABLED must be true when NODE_AGENT_SPIRE_ATTESTATION_METHOD is dsxImds")
+	}
+	if c.NodeAgent.SpireAttestationMethod == SpireAttestationMethodDSXIMDS {
+		c.NodeAgent.DSXImds.OperatorTenant = strings.TrimSpace(c.NodeAgent.DSXImds.OperatorTenant)
+		if c.NodeAgent.DSXImds.OperatorTenant == "" {
+			return fmt.Errorf("NODE_AGENT_DSX_IMDS_OPERATOR_TENANT is required when NODE_AGENT_SPIRE_ATTESTATION_METHOD is dsxImds")
+		}
+		if err := spiffeid.ValidatePathSegment(c.NodeAgent.DSXImds.OperatorTenant); err != nil {
+			return fmt.Errorf("NODE_AGENT_DSX_IMDS_OPERATOR_TENANT must be a valid SPIFFE path segment: %w", err)
+		}
+		dsxIMDSEndpoint, err := normalizeDSXIMDSEndpoint(c.NodeAgent.DSXImds.Endpoint)
+		if err != nil {
+			return err
+		}
+		c.NodeAgent.DSXImds.Endpoint = dsxIMDSEndpoint
+		if err := validateDSXIMDSPluginChecksum(c.NodeAgent.DSXImds.PluginChecksum); err != nil {
+			return err
+		}
+	}
+	if c.NodeAgent.SpireAttestationMethod == SpireAttestationMethodJoinToken && !c.SpiffeEnabled {
 		return fmt.Errorf("SPIFFE_ENABLED must be true when NODE_AGENT_SPIRE_ATTESTATION_METHOD is joinToken")
 	}
 	if err := c.Teleport.Validate(); err != nil {
@@ -499,27 +547,53 @@ func (c *Config) Validate() error {
 		return err
 	}
 	c.SupportedInfraProviders = supportedInfraProviders
-	if c.NodeAgentTLSJWTEnabled {
+	if c.NodeAgent.TLSJWT.Enabled {
 		if !c.SpiffeEnabled && !c.NodeAgentExternalMTLSEnabled {
 			return fmt.Errorf("SPIFFE_ENABLED or NODE_AGENT_EXTERNAL_MTLS_ENABLED must be true when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
-		if strings.TrimSpace(c.NodeAgentTLSJWTIssuer) == "" {
+		if strings.TrimSpace(c.NodeAgent.TLSJWT.Issuer) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_ISSUER is required when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
-		if strings.TrimSpace(c.NodeAgentTLSJWTJWKSURI) == "" {
+		if strings.TrimSpace(c.NodeAgent.TLSJWT.JWKSURI) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_JWKS_URI is required when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
-		if len(c.NodeAgentTLSJWTAlgorithms) == 0 {
+		if len(c.NodeAgent.TLSJWT.Algorithms) == 0 {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_ALGORITHMS is required when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
-		if strings.TrimSpace(c.NodeAgentTLSJWTSubjectTrustDomain) == "" {
+		if strings.TrimSpace(c.NodeAgent.TLSJWT.SubjectTrustDomain) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_SUBJECT_TRUST_DOMAIN is required when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
-		if strings.TrimSpace(c.NodeAgentTLSJWTDSXIdentityExchangeURL) == "" {
+		if strings.TrimSpace(c.NodeAgent.TLSJWT.DSXIdentityExchangeURL) == "" {
 			return fmt.Errorf("NODE_AGENT_TLS_JWT_DSX_IDENTITY_EXCHANGE_URL is required when NODE_AGENT_TLS_JWT_ENABLED=true")
 		}
 	}
 
+	return nil
+}
+
+func normalizeDSXIMDSEndpoint(endpoint string) (string, error) {
+	trimmedEndpoint := strings.TrimSpace(endpoint)
+	if trimmedEndpoint == "" {
+		return "", fmt.Errorf("NODE_AGENT_DSX_IMDS_ENDPOINT is required when NODE_AGENT_SPIRE_ATTESTATION_METHOD is dsxImds")
+	}
+
+	parsedEndpoint, err := url.ParseRequestURI(trimmedEndpoint)
+	if err != nil || parsedEndpoint.Hostname() == "" ||
+		(!strings.EqualFold(parsedEndpoint.Scheme, "http") && !strings.EqualFold(parsedEndpoint.Scheme, "https")) {
+		return "", fmt.Errorf("NODE_AGENT_DSX_IMDS_ENDPOINT must be an absolute HTTP(S) URL with a host, got %q", endpoint)
+	}
+
+	return trimmedEndpoint, nil
+}
+
+func validateDSXIMDSPluginChecksum(checksum string) error {
+	if checksum == "" {
+		return nil
+	}
+	decodedChecksum, err := hex.DecodeString(checksum)
+	if err != nil || len(decodedChecksum) != 32 {
+		return fmt.Errorf("NODE_AGENT_DSX_IMDS_PLUGIN_CHECKSUM must be a 64-character SHA-256 hex digest")
+	}
 	return nil
 }
 
