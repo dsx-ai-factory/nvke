@@ -145,18 +145,6 @@ gateway_traces:
 Credentials belong in a Secret referenced from the workload's `kubernetes.env`,
 read by the Collector through `${env:NAME}` substitution, never in values.
 
-### Rules the templates enforce
-
-Rendering fails with a message rather than deploying something broken when:
-
-- Target allocation is disabled on `watchdog`, `daemonset` or `large_target_metrics`.
-- A Collector configuration is not a YAML map.
-- `kube-state-metrics` is enabled with a central workload that has no shard, or
-  with resource types it cannot map to RBAC.
-
-Keep `GOMEMLIMIT` and `GOGC` when replacing a workload's `env` list; the
-cluster event reader also needs `POD_NAMESPACE`.
-
 ### Bundled components
 
 - `kube-state-metrics` runs as one node DaemonSet for scheduled Pods, one
