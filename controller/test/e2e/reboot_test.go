@@ -35,6 +35,7 @@ func validateLabelReboot(test *tenantTest) {
 
 		By("Waiting for reboot to complete (Rebooting=False and KubernetesReady=True)")
 		expectSucceed(test.nke.WaitForNodeRebootComplete(ctx, worker.ID))
+		validateOVNLifecycleTraffic(ctx, test, "worker reboot", worker.Name)
 	}, Label("lifecycle", "reboot"), NodeTimeout(45*time.Minute))
 }
 

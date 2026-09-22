@@ -93,6 +93,12 @@ func upgradeControlPlaneTo(test *tenantTest, targetVersion string) func(context.
 		Eventually(func(ctx context.Context) error {
 			return assertKubeadmKubernetesVersion(ctx, tenantClient, targetVersion)
 		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(2 * time.Second).Should(Succeed())
+
+		replacementControlPlaneNodeNames := make([]string, 0, len(currentControlPlaneNodes))
+		for _, node := range currentControlPlaneNodes {
+			replacementControlPlaneNodeNames = append(replacementControlPlaneNodeNames, node.Name)
+		}
+		validateOVNLifecycleTraffic(ctx, test, "Kubernetes upgrade to "+targetVersion, replacementControlPlaneNodeNames...)
 	}
 }
 
